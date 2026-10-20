@@ -11,6 +11,12 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: manage sells a butterfly's long spread near its full value.** `legs.long_vertical` (close
+  legs, confidence 50): when the long spread of a butterfly, broken-wing or broken-heart butterfly is
+  worth 90% of its width, the evaluation says to sell just that spread and keep the short spread,
+  naming what the short spread costs to buy back and how wide it is. The strategy guide's defence for
+  these shapes.
+
 - **Added: manage names the strategy guide's structures, and some take profit on their own target.**
   The short straddle and strangle, big lizard, reverse jade and big lizards, zebras, front-ratios and
   the broken-heart butterfly were all `custom`; they are now named as the tastylive Options Strategy

@@ -228,6 +228,7 @@ def evaluate_trade(
         "profile": None,
         "earnings": None,
         "ex_dividend": None,
+        "long_vertical": None,
         "fired": [],
         "exit_levels": {},
     }
@@ -640,7 +641,45 @@ def evaluate_trade(
                     [_label(leg) for leg in done + wings],
                 )
             )
-            trade["leg_order"] = _order(done + wings)
+            trade.setdefault("leg_orders", {})["legs.short_take_profit"] = _order(done + wings)
+
+    # ---- a butterfly's long vertical near its full value is sold, keeping the short side
+    lv = rules["legs"]["long_vertical"]
+    # Inside the expiry window the whole trade closes: a short spread is never kept into expiry.
+    expiring = any(leg["dte"] is not None and leg["dte"] <= int(ex["close_by_dte"]) for leg in options)
+    split = (
+        _long_vertical(options, trade["shape"]) if not off("legs.long_vertical") and not expiring else None
+    )
+    if split:
+        sold, rest = split
+        worth = sum(leg["value"] for leg in sold)
+        width = abs(sold[0]["strike"] - sold[1]["strike"]) * sold[0]["quantity"] * pricing.MULTIPLIER
+        share = float(lv["share_of_width"])
+        if width > 0 and worth >= share * width:
+            rest_cost = -sum(leg["value"] for leg in rest)
+            rest_width = (
+                abs(rest[0]["strike"] - rest[1]["strike"]) * abs(rest[0]["quantity"]) * pricing.MULTIPLIER
+            )
+            trade["long_vertical"] = {
+                "legs": [_label(leg) for leg in sold],
+                "value": worth,
+                "width": width,
+                "rest": [_label(leg) for leg in rest],
+                "rest_cost": rest_cost,
+                "rest_width": rest_width,
+            }
+            fired.append(
+                _fire(
+                    "legs.long_vertical",
+                    CLOSE_LEGS,
+                    lv["confidence"],
+                    f"the long spread is worth ${worth:,.0f}, {worth / width:.0%} of its ${width:,.0f} width "
+                    f"(sell at {share:.0%}); sell it and keep the short spread, "
+                    f"${rest_cost:,.0f} to buy back, ${rest_width:,.0f} wide",
+                    [_label(leg) for leg in sold],
+                )
+            )
+            trade.setdefault("leg_orders", {})["legs.long_vertical"] = _order(sold)
 
     # ---- ex-dividend assignment risk on short calls
     xr = rules["ex_dividend"]
@@ -860,6 +899,34 @@ def earnings_trade(
         "lead_days": (report - opened).days if opened else None,
         "passed": passed,
     }
+
+
+LONG_VERTICAL_SHAPES = frozenset({"butterfly", "broken-wing butterfly", "broken-heart butterfly"})
+
+
+def _long_vertical(
+    options: list[dict[str, Any]], shape: str | None
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | None:
+    """A butterfly's long vertical and the short spread left without it, or None for any other shape.
+
+    Read from the money outward (calls up, puts down), a butterfly is long the first strike and short the
+    body; its long vertical is the first long with as many of the body as it has, and what is left is a
+    short spread from the body to the far wing. A broken-heart butterfly's two verticals are its first two
+    and last two legs. The body is split by copying its leg at the vertical's quantity, valued at its mid."""
+    if shape not in LONG_VERTICAL_SHAPES:
+        return None
+    outward = sorted(options, key=lambda leg: leg["strike"], reverse=options[0]["right"] == "P")
+    if shape == "broken-heart butterfly":
+        return outward[:2], outward[2:]
+    near, body, far = outward
+    qty = near["quantity"]
+
+    def part(leg: dict[str, Any], q: float) -> dict[str, Any]:
+        out = {**leg, "quantity": q, "value": q * leg["mid"] * pricing.MULTIPLIER}
+        out["label"] = _label(out)
+        return out
+
+    return [near, part(body, -qty)], [part(body, body["quantity"] + qty), far]
 
 
 def _diagonal_width(options: list[dict[str, Any]]) -> float | None:
@@ -1113,10 +1180,12 @@ def _recommend(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str
         trade["order"] = _order(legs)
     elif chosen["action"] == CLOSE_LEGS:
         named = set(chosen["legs"] or [])
-        trade["order"] = trade.get("leg_order") or _order([leg for leg in legs if _label(leg) in named])
+        trade["order"] = (trade.get("leg_orders") or {}).get(chosen["rule"]) or _order(
+            [leg for leg in legs if _label(leg) in named]
+        )
     else:
         trade["order"] = None
-    trade.pop("leg_order", None)
+    trade.pop("leg_orders", None)
     return trade
 
 

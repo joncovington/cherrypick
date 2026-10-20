@@ -112,6 +112,10 @@ DEFAULT_RULES: dict[str, Any] = {
     "legs": {
         # A short leg that has given up this share of its premium is bought back, whatever the trade does.
         "short_take_profit": {"enabled": True, "capture": 0.80, "confidence": 85},
+        # A butterfly's (broken-wing, broken-heart) long vertical worth this share of its width is sold,
+        # keeping the short spread: its value is banked rather than given back if the stock comes back
+        # through the body. The tastylive strategy guide's defence (2023); no outside test.
+        "long_vertical": {"enabled": True, "share_of_width": 0.90, "confidence": 50},
     },
     "roll": {
         # A roll is only ever for a net credit; one that would cost a debit is a close instead.
@@ -291,6 +295,7 @@ RULE_IDS = (
     "debit.diagonal_width",
     "debit.time_exit",
     "legs.short_take_profit",
+    "legs.long_vertical",
     "roll.naked_put",
     "roll.diagonal_short",
     "directional.take_profit",

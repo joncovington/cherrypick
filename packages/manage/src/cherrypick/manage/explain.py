@@ -238,6 +238,16 @@ def explain(t: dict[str, Any]) -> str:
             "Some legs expire within days and settle into shares, not cash. Holding them into expiry risks "
             "being assigned stock, even after the closing bell. Close before then."
         )
+    elif rule == "legs.long_vertical":
+        lv = t.get("long_vertical") or {}
+        why = (
+            f"Sell only the long spread: {', '.join(lv.get('legs') or [])}. It is worth "
+            f"{_usd(lv.get('value'))}, nearly all of its {_usd(lv.get('width'))} width, and holding it gives "
+            "that back if the stock comes back through the body. What is left is a short spread "
+            f"({', '.join(lv.get('rest') or [])}): {_usd(lv.get('rest_cost'))} to buy back, "
+            f"{_usd(lv.get('rest_width'))} wide. Hold it for its credit, close it too, or add the other "
+            "side to make it a condor."
+        )
     elif rule == "legs.short_take_profit":
         f = _fired(t, rule) or {}
         legs = ", ".join(f.get("legs") or []) or "the short legs"
@@ -360,6 +370,7 @@ PLAIN = {
     "debit.diagonal_width": "diagonal width check",
     "debit.time_exit": "time exit",
     "legs.short_take_profit": "short-leg buy-back rule",
+    "legs.long_vertical": "long-spread sale",
     "roll.naked_put": "naked-put credit roll",
     "roll.diagonal_short": "diagonal short roll",
     "ex_dividend": "ex-dividend check",
