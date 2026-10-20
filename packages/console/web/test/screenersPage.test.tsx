@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ScreenerFidelityPayload, ScreenerPayload, ScreenerRow } from "@console/shared";
+import type { ScreenerPayload, ScreenerRow } from "@console/shared";
 
 /**
  * The Screeners page: what its defaults hide, and how a row says which trade to take. It decides
@@ -76,22 +76,12 @@ let payload: ScreenerPayload = {
   rows: ROWS,
 };
 
-const R = (hit: number, n: number) => ({ hit, n });
-const SESSION = {
-  day: "2026-10-13",
-  shortPuts: { monthly: R(1, 1), weekly: R(330, 450), expiry: R(450, 450), returns: R(450, 450) },
-  coveredCalls: { monthly: R(0, 1), weekly: R(230, 460), expiry: R(0, 0), returns: R(400, 460) },
-  creditSpreads: { expiry: R(30, 30), short: R(30, 30), long: R(19, 30), floor: R(30, 30) },
-};
-const fidelity: ScreenerFidelityPayload = { sessions: [SESSION], totals: SESSION };
-
 vi.mock("../src/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/lib/api")>()),
   useScreener: () => ({ data: payload, isLoading: false, isError: false }),
-  useScreenerFidelity: () => ({ data: fidelity, isLoading: false, isError: false }),
 }));
 
-const { FidelityTab, ScreenerTab } = await import("../src/pages/Screeners/ScreenersPage");
+const { ScreenerTab } = await import("../src/pages/Screeners/ScreenersPage");
 
 function render(url: string): string {
   return renderToString(
@@ -186,20 +176,5 @@ describe("the screener page", () => {
     payload = { ...payload, scored: false };
     expect(render("/screeners/short-puts")).toContain("Our rule has not scored this list yet");
     payload = { ...payload, scored: true };
-  });
-});
-
-describe("the fidelity tab", () => {
-  it("shows a percentage only where there are enough rows to mean one", () => {
-    const html = renderToString(<FidelityTab />).replace(/<!-- -->/g, "");
-    expect(html).toContain('title="0 of 1">0/1<');
-    expect(html).toContain('title="330 of 450">73%<');
-    expect(html).toContain('title="0 of 0">—<');
-  });
-
-  it("says what it measures and what it is for", () => {
-    const html = renderToString(<FidelityTab />).replace(/<!-- -->/g, "");
-    expect(html).toContain("Whether our own rules pick the same option");
-    expect(html).toContain("not which names make the list");
   });
 });

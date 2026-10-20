@@ -1,14 +1,13 @@
 import { EarningsCalendarTab } from "../../pages/Screeners/EarningsCalendarTab";
 import { EarningsRecordTab } from "../../pages/Screeners/EarningsRecordTab";
-import { FidelityTab, ScreenerTab } from "../../pages/Screeners/ScreenersPage";
+import { ScreenerTab } from "../../pages/Screeners/ScreenersPage";
 import { SignalBoardTab } from "../../pages/Screeners/SignalBoardTab";
 import { SkateTab } from "../../pages/Screeners/SkateTab";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
 /**
- * The income screener lists (2026-10-16): one tab per list, and how well our reproduction of the
- * screen's rules matches them; the earnings calendar (2026-10-17); the signal board (2026-10-17); and
+ * The income screener lists (2026-10-16): one tab per list; the earnings calendar (2026-10-17); the signal board (2026-10-17); and
  * the skate screen (2026-10-19). This manifest holds the page list and nothing else.
  */
 const slides: SlideDef[] = [
@@ -19,7 +18,6 @@ const slides: SlideDef[] = [
   { id: "earnings-record", label: "earnings record", render: () => <EarningsRecordTab /> },
   { id: "board", label: "signal board", render: () => <SignalBoardTab /> },
   { id: "skate", label: "skate", render: () => <SkateTab /> },
-  { id: "fidelity", label: "fidelity", render: () => <FidelityTab /> },
 ];
 
 export function ScreenersLightbox({ slide }: { slide: string }) {

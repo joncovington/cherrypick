@@ -117,21 +117,3 @@ export interface ScreenerPayload {
   scored: boolean;
   rows: ScreenerRow[];
 }
-
-export interface ScreenerRate {
-  hit: number;
-  n: number;
-}
-
-export interface ScreenerFidelitySession {
-  day: string;
-  shortPuts: { monthly: ScreenerRate; weekly: ScreenerRate; expiry: ScreenerRate; returns: ScreenerRate };
-  coveredCalls: { monthly: ScreenerRate; weekly: ScreenerRate; expiry: ScreenerRate; returns: ScreenerRate };
-  creditSpreads: { expiry: ScreenerRate; short: ScreenerRate; long: ScreenerRate; floor: ScreenerRate };
-}
-
-export interface ScreenerFidelityPayload {
-  sessions: ScreenerFidelitySession[];
-  /** Every scored session summed. */
-  totals: Omit<ScreenerFidelitySession, "day"> | null;
-}

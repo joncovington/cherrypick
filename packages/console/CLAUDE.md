@@ -377,10 +377,11 @@ the setups watchlist:
 **Screeners** (`/screeners`, 2026-10-16; `lightbox/manifests/ScreenersLightbox.tsx`) — two groups
 (2026-10-18 order). Our own screens first: the earnings calendar, its forward record and the signal
 board. Then the income lists: short puts, covered calls and credit spreads, one tab each, which stop
-when the vendor subscription ends on 2026-10-24, and a fidelity tab (detail view only).
+when the vendor subscription ends on 2026-10-24. The fidelity tab was retired on 2026-10-19; its
+final rates are in `packages/technicals/CLAUDE.md`.
 
 - The income lists (`pages/Screeners/ScreenersPage.tsx`, `readers/screeners.ts`,
-  `GET /api/screeners/:list[?day=]` and `/api/screeners/fidelity`) are one row a name.
+  `GET /api/screeners/:list[?day=]`) are one row a name.
   The reader JOINS other packages' files and re-derives no rule: our strike is `score-screeners`'
   `picks`, each leg's verdict and the listed-or-cycle recommendation are `fetch_screener_greeks.py`'s
   (`rebar` re-applies the bars to saved readings), the tradable verdict is `technicals liquidity`'s

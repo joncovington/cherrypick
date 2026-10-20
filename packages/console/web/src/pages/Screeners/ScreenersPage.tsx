@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import type { ScreenerLeg, ScreenerList, ScreenerRate, ScreenerRow } from "@console/shared";
+import type { ScreenerLeg, ScreenerList, ScreenerRow } from "@console/shared";
 import { SortTh, sortRows, useSort } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
-import { useScreener, useScreenerFidelity } from "../../lib/api";
+import { useScreener } from "../../lib/api";
 
 /**
  * The income screener lists (2026-10-16): short puts, covered calls and credit spreads, one row a
@@ -468,112 +468,6 @@ export function ScreenerTab({ list }: { list: ScreenerList }) {
         (halfway from the mid to the natural fill: a limit at the mid stepped down a quarter of the spread). The listed
         columns are the list's own, at the mid of an after-close quote; a row whose quote has no bid, or is wider than its
         mid, says so instead of a yield.
-      </p>
-    </section>
-  );
-}
-
-function rate(r: ScreenerRate): string {
-  // Under 20 rows a percentage overstates itself: one row of one is not "0%" of anything.
-  if (r.n === 0) return "—";
-  return r.n < 20 ? `${r.hit}/${r.n}` : `${((r.hit / r.n) * 100).toFixed(0)}%`;
-}
-
-function RateCell({ r }: { r: ScreenerRate }) {
-  return (
-    <td className="num" title={`${r.hit} of ${r.n}`}>
-      {rate(r)}
-    </td>
-  );
-}
-
-/** How well our reproduced rules match the lists, session by session. A series: never sorted. */
-export function FidelityTab() {
-  const { data, isLoading, isError } = useScreenerFidelity();
-  const rows = data?.sessions ?? [];
-  return (
-    <section className="card">
-      <div className="card-head">
-        <h2>Reproduction fidelity</h2>
-        <span className="chip">record-only</span>
-      </div>
-      <p className="muted" style={{ marginTop: 0 }}>
-        Whether our own rules pick the same option as each row of the income lists. Every night (
-        <code>score-screeners</code>) the listed trades are re-derived from the broker's chain: the expiry (nearest 30
-        days for short puts, 45 for covered calls and credit spreads), the strike (0.40 delta for puts, 0.165 for
-        calls; a spread's short at the first strike out of the money, its long nearest 0.25 delta) and the spread's
-        credit floor (a third of the width). Each cell is how often ours matched. A high rate means the rule is
-        understood and the lists can be built without the vendor; a low one means a rule is still wrong. It scores how a
-        listed name's trade is built, not which names make the list. The vendor's lists stop on 2026-10-24, so no session
-        after that is scored; the record stays as the evidence behind any lists of our own.
-      </p>
-      {isError && <p className="muted">Could not read the scores.</p>}
-      {isLoading && <p className="muted">Reading the scores…</p>}
-      {data && rows.length === 0 && <p className="muted">No session scored yet: `score-screeners` runs at 06:40 ET.</p>}
-      {rows.length > 0 && (
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th rowSpan={2}>Session</th>
-                <th colSpan={3}>Short puts</th>
-                <th colSpan={3}>Covered calls</th>
-                <th colSpan={4}>Credit spreads</th>
-              </tr>
-              <tr>
-                <th className="num" title="Strike, monthly rows">monthly</th>
-                <th className="num" title="Strike, weekly rows">weekly</th>
-                <th className="num" title="Expiry, where a chain listing was recorded">expiry</th>
-                <th className="num">monthly</th>
-                <th className="num">weekly</th>
-                <th className="num">expiry</th>
-                <th className="num" title="Short leg: the first strike out of the money">short</th>
-                <th className="num" title="Long leg: nearest 0.25 delta">long</th>
-                <th className="num">expiry</th>
-                <th className="num" title="Credit at least a third of the width">floor</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data?.totals && (
-                <tr>
-                  <td>
-                    <strong>all {rows.length}</strong>
-                  </td>
-                  <RateCell r={data.totals.shortPuts.monthly} />
-                  <RateCell r={data.totals.shortPuts.weekly} />
-                  <RateCell r={data.totals.shortPuts.expiry} />
-                  <RateCell r={data.totals.coveredCalls.monthly} />
-                  <RateCell r={data.totals.coveredCalls.weekly} />
-                  <RateCell r={data.totals.coveredCalls.expiry} />
-                  <RateCell r={data.totals.creditSpreads.short} />
-                  <RateCell r={data.totals.creditSpreads.long} />
-                  <RateCell r={data.totals.creditSpreads.expiry} />
-                  <RateCell r={data.totals.creditSpreads.floor} />
-                </tr>
-              )}
-              {rows.map((s) => (
-                <tr key={s.day}>
-                  <td>{s.day}</td>
-                  <RateCell r={s.shortPuts.monthly} />
-                  <RateCell r={s.shortPuts.weekly} />
-                  <RateCell r={s.shortPuts.expiry} />
-                  <RateCell r={s.coveredCalls.monthly} />
-                  <RateCell r={s.coveredCalls.weekly} />
-                  <RateCell r={s.coveredCalls.expiry} />
-                  <RateCell r={s.creditSpreads.short} />
-                  <RateCell r={s.creditSpreads.long} />
-                  <RateCell r={s.creditSpreads.expiry} />
-                  <RateCell r={s.creditSpreads.floor} />
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <p className="muted" style={{ marginTop: 8 }}>
-        Each session's lists against our reproduced rules, scored from the broker chain recorded that evening. Strikes use
-        Black-Scholes delta on each strike's own broker IV. A miss is almost always one strike either side: the list is built
-        mid-afternoon and our chain is taken at 19:00 ET. Which names make each list is not reproduced.
       </p>
     </section>
   );

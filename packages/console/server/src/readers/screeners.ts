@@ -27,12 +27,9 @@ import fs from "node:fs";
 import path from "node:path";
 import type {
   EarningsInCycle,
-  ScreenerFidelityPayload,
-  ScreenerFidelitySession,
   ScreenerLeg,
   ScreenerList,
   ScreenerPayload,
-  ScreenerRate,
   ScreenerRow,
   ScreenerTrade,
 } from "@console/shared";
@@ -385,49 +382,5 @@ export function readScreener(config: ConsoleConfig, which: ScreenerList, wanted?
     pricesAt: str(body["pricesAt"]),
     scored: score !== null,
     rows,
-  };
-}
-
-function rate(v: unknown): ScreenerRate {
-  const r = rec(v);
-  return { hit: num(r["hit"]) ?? 0, n: num(r["n"]) ?? 0 };
-}
-
-export function readScreenerFidelity(config: ConsoleConfig): ScreenerFidelityPayload {
-  const dir = path.join(config.paths.technicalsDir, "screeners");
-  let files: string[] = [];
-  try {
-    files = fs.readdirSync(dir).filter((n) => /^\d{4}-\d{2}-\d{2}\.json$/.test(n));
-  } catch {
-    files = [];
-  }
-  const sessions: ScreenerFidelitySession[] = files
-    .sort()
-    .reverse()
-    .flatMap((f) => {
-      const d = readJson(path.join(dir, f));
-      if (d === null) return [];
-      const sp = rec(d["short-puts"]);
-      const cc = rec(d["covered-calls"]);
-      const cs = rec(d["credit-spreads"]);
-      return [
-        {
-          day: f.slice(0, 10),
-          shortPuts: { monthly: rate(rec(sp["strike"])["monthly"]), weekly: rate(rec(sp["strike"])["weekly"]), expiry: rate(sp["expiry"]), returns: rate(sp["returns"]) },
-          coveredCalls: { monthly: rate(rec(cc["strike"])["monthly"]), weekly: rate(rec(cc["strike"])["weekly"]), expiry: rate(cc["expiry"]), returns: rate(cc["returns"]) },
-          creditSpreads: { expiry: rate(cs["expiry"]), short: rate(cs["short"]), long: rate(cs["long"]), floor: rate(cs["floor"]) },
-        },
-      ];
-    });
-  if (sessions.length === 0) return { sessions, totals: null };
-  const sum = (pick: (s: ScreenerFidelitySession) => ScreenerRate): ScreenerRate =>
-    sessions.reduce((t, s) => ({ hit: t.hit + pick(s).hit, n: t.n + pick(s).n }), { hit: 0, n: 0 });
-  return {
-    sessions,
-    totals: {
-      shortPuts: { monthly: sum((s) => s.shortPuts.monthly), weekly: sum((s) => s.shortPuts.weekly), expiry: sum((s) => s.shortPuts.expiry), returns: sum((s) => s.shortPuts.returns) },
-      coveredCalls: { monthly: sum((s) => s.coveredCalls.monthly), weekly: sum((s) => s.coveredCalls.weekly), expiry: sum((s) => s.coveredCalls.expiry), returns: sum((s) => s.coveredCalls.returns) },
-      creditSpreads: { expiry: sum((s) => s.creditSpreads.expiry), short: sum((s) => s.creditSpreads.short), long: sum((s) => s.creditSpreads.long), floor: sum((s) => s.creditSpreads.floor) },
-    },
   };
 }

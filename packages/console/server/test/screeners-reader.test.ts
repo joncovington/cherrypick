@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ConsoleConfig } from "../src/config.js";
-import { cycleExpiry, earningsState, listedQuote, readScreener, readScreenerFidelity, tradePrice } from "../src/readers/screeners.js";
+import { cycleExpiry, earningsState, listedQuote, readScreener, tradePrice } from "../src/readers/screeners.js";
 
 /**
  * The Screeners page's reader joins files other packages write and derives two calendar facts. What
@@ -158,7 +158,6 @@ describe("readScreener", () => {
   it("an empty home is an empty list, not an error", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
     expect(readScreener(config, "credit-spreads")).toMatchObject({ day: null, days: [], rows: [] });
-    expect(readScreenerFidelity(config)).toEqual({ sessions: [], totals: null });
   });
 });
 
@@ -192,18 +191,5 @@ describe("the trade's price", () => {
     expect(listedQuote(0.39, 1.16)).toBeNull(); // 99% of its mid: wide, but not past it
     expect(listedQuote(1.9, 2.1)).toBeNull();
     expect(listedQuote(null, null)).toBeNull();
-  });
-});
-
-describe("readScreenerFidelity", () => {
-  it("reads each scored session newest first and sums them", () => {
-    const strike = (m: number, w: number) => ({ monthly: { hit: m, n: 10 }, weekly: { hit: w, n: 10 } });
-    write("technicals/screeners/2026-10-13.json", { "short-puts": { strike: strike(9, 7), expiry: { hit: 5, n: 5 }, returns: { hit: 20, n: 20 } } });
-    write("technicals/screeners/2026-10-14.json", { "short-puts": { strike: strike(8, 6), expiry: { hit: 4, n: 5 }, returns: { hit: 20, n: 20 } } });
-    const f = readScreenerFidelity(config);
-    expect(f.sessions.map((s) => s.day)).toEqual(["2026-10-14", "2026-10-13"]);
-    expect(f.totals?.shortPuts.monthly).toEqual({ hit: 17, n: 20 });
-    expect(f.totals?.shortPuts.expiry).toEqual({ hit: 9, n: 10 });
-    expect(f.totals?.creditSpreads.short).toEqual({ hit: 0, n: 0 });
   });
 });

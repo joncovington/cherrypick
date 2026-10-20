@@ -171,17 +171,22 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   `market-report/vendor-securities/`. On the 2026-10-07 list, 90.3% on held-out symbols (strong bull
   95%, strong bear 99%). The label names other than strong bull and bear are ours, inferred.
   `score-bearing` fits on earlier lists and scores the latest; it needs two lists.
-- **Income screens' expiry and strike** (`screeners.py`, `score-screeners`, 2026-10-16, six sessions):
+- **Income screens' expiry and strike** (`screeners.py`, `score-screeners`; final record, seven
+  sessions 2026-10-07 to 10-16):
   expiry nearest 30 days (short puts) / 45 (covered calls, credit spreads) — 100% wherever a chain
   listing was recorded. Strike by Black-Scholes |delta| on each strike's own broker IV at 4%: short
-  put nearest 0.40 (91% monthly, 77% weekly), covered call nearest 0.165 (72% / 51%); spread short
-  = first strike out of the money (183/184), long nearest 0.25 (66%), credit ≥ 33.1% of the width.
+  put nearest 0.40 (91% monthly, 77% weekly), covered call nearest 0.165 (72% / 50%); spread short
+  = first strike out of the money (208/209), long nearest 0.25 (65%), credit ≥ 33.1% of the width
+  (234/234).
   The misses are one strike either side: the vendor's own chain deltas at its picks centre on 0.400
   and 0.157, so the rule is right and the residual is the IV input and the list's 15:49 ET build
   time against our 19:00 chain. Tried and worse: the broker's own delta, one IV per expiry, the IV
   index, a delta cap or floor, a one-SD move. Returns: mid ÷ share price, × 365 ÷ days (100% of
   short puts; ~98% of covered calls — the rest divide by price less mid, condition unknown).
-  **Which names make each list is not here**; the spread list's selection is open.
+  **Which names make each list is not here**; the spread list's selection is open. The console's
+  fidelity tab that showed these rates was retired on 2026-10-19; the per-session files stay in
+  `screeners/`, and `score-screeners` keeps running because the income tabs' "ours" strike is its
+  `picks`.
 - **The security list** (`securities.py`, `securities`, 2026-10-17): every listed symbol's type
   (Nasdaq Trader's directory), options (any OCC volume in 20 sessions) and a liquidity rank that is
   **ours**: 2 at 200 contracts and $100M of stock a day, 1 at 2,000 and $300M. Against the
