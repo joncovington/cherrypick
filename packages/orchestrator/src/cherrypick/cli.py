@@ -510,7 +510,7 @@ def _ensure_dolt(cfg) -> None:
 
     results = {}
     held = holds.is_held(_proc.DOLT_DAEMON)
-    for name, mcfg in cfgmod.enabled_modules(cfg).items():
+    for name, mcfg in cfgmod.dolt_hosts(cfg).items():
         paper = mcfg.get("paper", {})
         svc = paper.get("dolt_service")
         if not svc:
@@ -534,9 +534,9 @@ def _ensure_dolt(cfg) -> None:
 
 
 def _dolt_target(cfg) -> dict | None:
-    """The one Dolt sql-server the suite runs: the first enabled module declaring `dolt_service`
-    (every module that reads Dolt shares the one server and port)."""
-    for mcfg in cfgmod.enabled_modules(cfg).values():
+    """The one Dolt sql-server the suite runs: the first module `config.dolt_hosts` names (every
+    reader of Dolt shares the one server and port)."""
+    for mcfg in cfgmod.dolt_hosts(cfg).values():
         paper = mcfg.get("paper", {})
         if paper.get("dolt_service"):
             return {
@@ -558,7 +558,7 @@ def cmd_dolt_server(cfg, action: str) -> None:
     so a stop is what a crash would be, which it recovers from on start."""
     target = _dolt_target(cfg)
     if target is None:
-        _emit({"ok": False, "running": False, "error": "no enabled module declares a dolt_service"})
+        _emit({"ok": False, "running": False, "error": "no Dolt server is wanted (config.dolt_hosts)"})
         sys.exit(1)
     host, port = target["host"], target["port"]
     up = watchdog._dolt_reachable(host, port)

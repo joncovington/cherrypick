@@ -359,6 +359,33 @@ def module_states(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return out
 
 
+def dolt_hosts(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """{name: module_cfg} for the modules whose declared `dolt_service` keeps the suite's one Dolt
+    sql-server up: every enabled module that declares one, and -- when none does but the technicals
+    block is on with Dolt set up -- the first configured module that declares one (earnings,
+    switched off), because technicals reads the same server.
+
+    Until 2026-10-19 only an enabled module's `dolt_service` counted, so turning the earnings module
+    off silently took the server, the 05:30 pull and every technicals job with it. The service's
+    settings stay where they are (`modules.earnings.paper.dolt_service`); only who needs them moved.
+    The one gate every Dolt-server caller goes through (the keep-alive job, the pull, the managed
+    daemon, `ensure-dolt`, `dolt-sql`)."""
+    out = {n: m for n, m in enabled_modules(cfg).items() if (m.get("paper") or {}).get("dolt_service")}
+    if out or not technicals_settings(cfg)["enabled"]:
+        return out
+    for n, m in (cfg.get("modules") or {}).items():
+        if isinstance(m, dict) and (m.get("paper") or {}).get("dolt_service"):
+            return {n: m}
+    return {}
+
+
+def dolt_read(cfg: dict[str, Any]) -> bool:
+    """Whether anything on this machine reads the local Dolt clones: the earnings module (whether or
+    not it declares the server it reads), or a server kept for technicals (`dolt_hosts`). The 05:30
+    pull, its freshness check and the Dolt-reading technicals jobs follow this."""
+    return "earnings" in enabled_modules(cfg) or bool(dolt_hosts(cfg))
+
+
 def enabled_modules(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Return {name: module_cfg} for modules with enabled=true AND every capability they need
     (MODULE_REQUIRES). The one gate every caller goes through, so the capability rule cannot be
