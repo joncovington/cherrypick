@@ -31,6 +31,11 @@ beyond the latest release.
   place of the local Dolt clone, on every machine. On 2026-10-19 the two sources agreed to a
   median ratio of 1.0000 and gave the same rank-1-or-2 set on 889 of 890 names. The job runs
   whether or not Dolt is installed, and so (entry above) do the security list and liquidity jobs.
+- **Removed: the Screeners fidelity tab.** It scored how often our rules picked the same expiry and
+  strike as the vendor's income lists, and with the subscription ending on 2026-10-24 there is
+  nothing left to score. The final rates over seven sessions are in `packages/technicals/CLAUDE.md`,
+  and the scored files stay on disk. `score-screeners` still runs, since the income tabs' "ours"
+  strike comes from it.
 - **Fixed: the console's concentration guidance showed the wrong figure.** The reader took the
   first figure in each driver row, which for concentration is the theta share, and the card printed
   it as a signed number: a name at 30% of the book's theta read "+0.3", and a name over the cap on

@@ -25,7 +25,6 @@ import type {
   OptionsFlowPayload,
   TechnicalsChartPayload,
   TechnicalsWatchlist,
-  ScreenerFidelityPayload,
   EarningsCalendarPayload,
   EarningsRecordPayload,
   SignalBoardPayload,
@@ -244,14 +243,6 @@ export function useScreener(list: ScreenerList, day: string | null) {
     queryFn: () => getJson<ScreenerPayload>(`/api/screeners/${list}${day ? `?day=${day}` : ""}`),
     // A list is saved once an evening; its readings land twice the next session.
     refetchInterval: 300_000,
-  });
-}
-
-export function useScreenerFidelity() {
-  return useQuery<ScreenerFidelityPayload>({
-    queryKey: ["screener-fidelity"],
-    queryFn: () => getJson<ScreenerFidelityPayload>("/api/screeners/fidelity"),
-    refetchInterval: 600_000,
   });
 }
 
