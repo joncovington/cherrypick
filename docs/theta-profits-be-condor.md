@@ -2,9 +2,10 @@
 
 *Drafted 2026-10-20 from the YouTube video "After 9,000 Trades, This Is Still My Most Profitable
 0DTE Strategy" (Theta Profits, self-interview, ~40 min; full caption transcript kept at
-[transcripts/theta-profits-0dte-be-ic.txt](transcripts/theta-profits-0dte-be-ic.txt)). Nothing is
-built. This file is the hypothesis; the arm draft at the bottom is a proposal only — the registry
-(~/.cherrypick/config/meic.risk.json) is untouched.*
+[transcripts/theta-profits-0dte-be-ic.txt](transcripts/theta-profits-0dte-be-ic.txt)). The arm at
+the bottom was installed into the machine-local registry
+(~/.cherrypick/config/meic.risk.json — not this repo) on 2026-10-20 at 09:59 ET and took its first
+trade the same minute; see Installation below. Paper only, live untouched.*
 
 ## The short version
 
@@ -122,7 +123,7 @@ change the trade's shape, only its measurement fidelity.
 | Concurrent book ≤ 10 | `max_concurrent_ics` | `10` |
 | Same-zone discipline | `overlap_scope "none"` (matches control and `bt-1400-2x`; his hourly re-entries naturally land on new strikes as the market moves) | `none` |
 
-### Draft arm (proposal only — not in the registry)
+### The arm — installed 2026-10-20 as `be-hourly-1x`
 
 ```json
 "be-hourly-1x": {
@@ -219,10 +220,23 @@ returns on). Minimum bar to keep running: beat control on capture rate without a
 double-stop rate; the arm is a *candidate shape for the live rotation*, not a threat to anything
 today. Paper only — `enable_live_trading` untouched, live arm untouched.
 
-### If installed later
+### Installation (2026-10-20)
 
-Same procedure as `bt-1400-2x`: back up the registry to
-`~/.cherrypick/state/config-backups/`, add the profile, validate the merge via
-`paper._merged_params`, and journal the `arm_added` break in the paper ledger's
-`measurement_breaks` for the first session. `union_widths_for_symbol` will pick the 30-wide SPX
-candidate up on the next supervisor cycle automatically.
+Same procedure as `bt-1400-2x`, run at 09:56–10:00 ET while Tuesday's session was open: the
+registry was backed up to `~/.cherrypick/state/config-backups/meic.risk.20261020-0659.json`, the
+profile added, the merge validated through `paper._merged_params` (SPX width menu came out
+`[5, 10, 30]`), and the `arm_added` break journaled in the paper ledger's `measurement_breaks`
+(id 8, break date 2026-10-20, beside `bt-1400-2x`'s). The `meic-paper` loop (every 60 s) picked the
+profile up on its next tick — no restart, no stream-request change (SPX 0DTE was already
+subscribed).
+
+The first trade filled the same minute, **09:59:42 ET** — short 7655P / 7740C, 30-wide, spot
+7703.61, deltas −0.138 / +0.124, $372.50 credit, per-side stop armed at 1.0× the credit. The
+10:00 and 10:01 ticks were declined `entry_spacing_wait`, so the 55-minute cadence was holding
+from the first hour. Note for the record: the entry landed on an `open_volatile` tick with
+confirmed-negative GEX — that is the neutralized gate block working as specified (he times
+nothing), not a gate leak.
+
+The registry, the ledger and the break journal all live under `~/.cherrypick/` on this machine —
+outside the repo, so this doc and the arm's config travel on different rails: the branch carries
+the reasoning, the machine carries the position.
