@@ -11,6 +11,16 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: manage names the strategy guide's structures, and some take profit on their own target.**
+  The short straddle and strangle, big lizard, reverse jade and big lizards, zebras, front-ratios and
+  the broken-heart butterfly were all `custom`; they are now named as the tastylive Options Strategy
+  Guide (2023) draws them. A short straddle, iron butterfly or big lizard takes profit at 25% of the
+  credit, and a calendar or zebra at +25% on the debit (`by_shape` under each take-profit rule,
+  overridable per shape). A reverse lizard's in-the-money put is no longer a breached strike, and a
+  broken-heart butterfly is judged on its risk. A new review, `debit.diagonal_width`, flags a PMCC-style
+  diagonal held for more than 75% of its strike width. Over the six stored snapshots it fires on one
+  trade, TLT, and changes nothing else.
+
 - **Changed: a Screeners tab that needs Dolt says so.** On a machine without the Dolt data, the
   earnings, earnings record, signal board and skate tabs showed empty tables, which read as a quiet
   day (and once as "it needs a vendor"). They now show what they need and the steps to set it

@@ -437,8 +437,12 @@ def evaluate_trade(
             stop_at = float(cr["stop"]["fallback_max_loss_fraction"]) * max_loss
             stop_basis = "max_loss"
         trade["exit_levels"]["stop"] = {"close_value": -(credit + stop_at), "basis": stop_basis}
-        tp_capture = float(cr["take_profit"]["capture"])
-        trade["exit_levels"]["take_profit"] = {"close_value": -(credit * (1 - tp_capture))}
+        tp_capture, tp_confidence, tp_shaped = _rules.for_shape(cr["take_profit"], trade["shape"], "capture")
+        trade["exit_levels"]["take_profit"] = {
+            "close_value": -(credit * (1 - tp_capture)),
+            "target": tp_capture,
+            "by_shape": trade["shape"] if tp_shaped else None,
+        }
 
         if not off("credit.stop") and loss >= stop_at:
             fired.append(
@@ -456,8 +460,10 @@ def evaluate_trade(
                 _fire(
                     "credit.take_profit",
                     TAKE_PROFIT,
-                    cr["take_profit"]["confidence"],
-                    f"{trade['capture']:.0%} of the ${credit:,.0f} credit captured (target {tp_capture:.0%})",
+                    tp_confidence,
+                    f"{trade['capture']:.0%} of the ${credit:,.0f} credit captured (target {tp_capture:.0%}"
+                    + (f", a {trade['shape']}'s own" if tp_shaped else "")
+                    + ")",
                 )
             )
         te = cr["time_exit"]
@@ -481,9 +487,11 @@ def evaluate_trade(
         br = cr["breached"]
         if not off("credit.breached") and profile and spot:
             itm = [leg for leg in shorts if (leg["intrinsic"] or 0) > 0]
-            if trade["shape"].startswith("jade lizard"):
-                # No upside risk by construction: a call spread trading through is not a broken thesis.
-                itm = [leg for leg in itm if leg["right"] == "P"]
+            risk_side = _shapes.RISK_SIDE.get(trade["shape"])
+            if risk_side:
+                # A lizard has no risk on its spread's side by construction: a short trading through
+                # there is not a broken thesis.
+                itm = [leg for leg in itm if leg["right"] == risk_side]
             downside = -profile["downside_from_now"]
             if itm and downside > 0:
                 ratio = profile["upside_from_now"] / downside
@@ -521,9 +529,14 @@ def evaluate_trade(
         debit = basis
         db = rules["debit"]
         ret = trade["capture"]
+        gain, gain_confidence, gain_shaped = _rules.for_shape(
+            db["take_profit"], trade["shape"], "gain_fraction"
+        )
         trade["exit_levels"]["stop"] = {"close_value": debit * (1 - float(db["stop"]["loss_fraction"]))}
         trade["exit_levels"]["take_profit"] = {
-            "close_value": debit * (1 + float(db["take_profit"]["gain_fraction"]))
+            "close_value": debit * (1 + gain),
+            "target": gain,
+            "by_shape": trade["shape"] if gain_shaped else None,
         }
         if not off("debit.stop") and ret is not None and ret <= -float(db["stop"]["loss_fraction"]):
             fired.append(
@@ -535,18 +548,14 @@ def evaluate_trade(
                     f"(stop at -{float(db['stop']['loss_fraction']):.0%})",
                 )
             )
-        if (
-            not off("debit.take_profit")
-            and ret is not None
-            and ret >= float(db["take_profit"]["gain_fraction"])
-        ):
+        if not off("debit.take_profit") and ret is not None and ret >= gain:
             fired.append(
                 _fire(
                     "debit.take_profit",
                     TAKE_PROFIT,
-                    db["take_profit"]["confidence"],
+                    gain_confidence,
                     f"up {ret:.0%} on the ${debit:,.0f} debit: take profit, roll or add "
-                    f"(target +{float(db['take_profit']['gain_fraction']):.0%})",
+                    f"(target +{gain:.0%}" + (f", a {trade['shape']}'s own" if gain_shaped else "") + ")",
                 )
             )
         te = db["time_exit"]
@@ -571,6 +580,27 @@ def evaluate_trade(
                         "profitable, so the shorts may roll out, for a net credit only"
                         if winner
                         else "losing, so close; never roll a loser"
+                    ),
+                )
+            )
+
+    # ---- a diagonal held for most of the distance between its strikes has little left to make
+    dw = rules["debit"]["diagonal_width"]
+    width = _diagonal_width(options) if trade["shape"] == "diagonal" else None
+    if width and cost > 0 and not off("debit.diagonal_width"):
+        share = float(dw["max_share_of_width"])
+        if cost > share * width:
+            fired.append(
+                _fire(
+                    "debit.diagonal_width",
+                    REVIEW,
+                    dw["confidence"],
+                    f"${cost:,.0f} net debit is {cost / width:.0%} of the ${width:,.0f} between the strikes "
+                    f"(at most {share:.0%}): "
+                    + (
+                        "a deep move through the short loses money once the long's time value runs off"
+                        if cost >= width
+                        else "a deep move through the short leaves little to make"
                     ),
                 )
             )
@@ -830,6 +860,23 @@ def earnings_trade(
         "lead_days": (report - opened).days if opened else None,
         "passed": passed,
     }
+
+
+def _diagonal_width(options: list[dict[str, Any]]) -> float | None:
+    """A two-leg diagonal's strike distance in whole-position dollars: one long of one right sold
+    against one short of the same size expiring first, the short further out of the money (a PMCC, or
+    its put mirror). None for any other diagonal."""
+    longs = [leg for leg in options if leg["quantity"] > 0]
+    shorts = [leg for leg in options if leg["quantity"] < 0]
+    if len(longs) != 1 or len(shorts) != 1:
+        return None
+    long, short = longs[0], shorts[0]
+    if long["right"] != short["right"] or long["quantity"] != -short["quantity"]:
+        return None
+    if short["expiration"] >= long["expiration"]:
+        return None
+    gap = short["strike"] - long["strike"] if long["right"] == "C" else long["strike"] - short["strike"]
+    return gap * long["quantity"] * pricing.MULTIPLIER if gap > 0 else None
 
 
 def long_breakeven(longs: list[dict[str, Any]], basis: float) -> dict[str, float]:

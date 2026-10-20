@@ -41,8 +41,15 @@ fired is a **hold** at 70, less 10 when an earnings report falls inside its shor
 
 ## Shapes
 
-Every trade is named (`shapes.py`) and the page shows it. Two shape families change how a trade is
-judged:
+Every trade is named (`shapes.py`) and the page shows it. Besides the verticals, condors, butterflies,
+calendars and diagonals, manage names the structures of the tastylive Options Strategy Guide (2023):
+the short straddle and strangle, the big lizard, the reverse jade and reverse big lizards, the call and
+put zebra (two longs against one short further out), the call and put front-ratio (one long against
+two shorts further out), and the broken-heart butterfly (a long vertical financed by a wider short
+vertical further out). A structure that matches none of them is `custom`, and is judged as a credit or
+a debit trade like any other.
+
+Three shape families change how a trade is judged:
 
 - **Super bear / super bull / risk reversal.** A super bear is a long put spread below a short call
   spread (OIC's double bear spread); a super bull is the mirror. A risk reversal is long one side and short
@@ -50,17 +57,27 @@ judged:
   under a quarter of the modelled max loss, the trade is `directional`: it takes profit at half its max
   gain (capped at 1x its risk), stops at half its max loss, and exits at 21 DTE. Percentages of a $23 credit
   measure nothing; XLU on 2026-10-13 was being closed on a $30 loss against a $277 risk.
-- **Jade lizard** (and the variant with a put wing). Taken in for at least the call spread's width, it has
-  no upside risk, so an in-the-money call is not a broken thesis: the breached-strike rule looks only at
-  its puts.
+- **Lizards.** A jade lizard (and the variant with a put wing) or a big lizard, taken in for at least
+  the call spread's width, has no upside risk, so an in-the-money call is not a broken thesis: the
+  breached-strike rule looks only at its puts. A reverse jade or reverse big lizard is the mirror: taken
+  in for at least the put spread's width, it is judged on its calls alone.
+- **Shapes with their own profit target** (`by_shape` under `credit.take_profit` and
+  `debit.take_profit`). A short straddle, an iron butterfly and both big lizards take profit at 25% of
+  the credit: one of their short strikes is nearly always in the money, so they rarely keep half. A
+  calendar, and a call or put zebra, take profit at +25% on the debit. The targets are the strategy
+  guide's, at confidence 55. Any shape manage names can be given its own target in the override file, and
+  a shape it never names is reported.
 
 A **broken-wing butterfly** bought for under a quarter of its max loss is judged the same way (`risk-judged`):
 its premium says little about the tail beyond its wider wing. GLD on 2026-10-13 was $193 in with $1,693
 at risk, and the percentage of the $193 said nothing useful. So is a **ratio butterfly**: long-short-long at
 three strikes, the wings together matching the body but not 1-2-1, named by its quantities from the top
 strike (`1-3-2`; SPY on 2026-10-18 was +1 745P / -3 740P / +2 730P, $200 in against $1,300 at risk), or a
-**ratio time spread** when its legs span expiries. Ordinary butterflies, condors, verticals and
-diagonals are named but judged by their premium as before.
+**ratio time spread** when its legs span expiries. So is a **broken-heart butterfly**, which gives up
+nearly all of its credit to open the gap between its two spreads. Ordinary butterflies, condors,
+verticals and diagonals are named but judged by their premium as before. A front-ratio is named but
+judged by its premium too: the call's risk is unbounded, so it cannot be judged on its max loss, and the
+put's runs to the strike.
 
 ## Checking a roll before sending it
 
@@ -101,6 +118,9 @@ presenter who cuts losers rather than the one who repairs them, and checked agai
 | `credit.close_before_earnings` | off | close | 55 | the repair-style presenter (not the default) | No data |
 | `debit.stop` | −50% of the debit | close | 65 | vendor, "hard and fast" | No outside test; stop-loss theory says it only helps when trends persist |
 | `debit.take_profit` | +75% on the debit | take profit, roll or add | 65 | vendor (75–100%) | No outside test |
+| `credit.take_profit` by shape | short straddle, iron butterfly, big and reverse big lizard at 25% of the credit | take profit | 55 | the tastylive Options Strategy Guide (2023): one strike is always in the money, so "we temper our profit target to 25%" | The 25%-loses-after-commissions result above was on OTM credit trades; none tested these shapes |
+| `debit.take_profit` by shape | calendar, call and put zebra at +25% on the debit | take profit, roll or add | 55 | the strategy guide: a calendar at 10–25% of the debit, a zebra at 25% | No outside test |
+| `debit.diagonal_width` | a two-leg diagonal (a PMCC or its put mirror) whose net debit, rolls counted, is over 75% of the distance between its strikes | review | 60 | the strategy guide's PMCC entry rule, applied while held | Option arithmetic: deep in the money both legs go to intrinsic and the spread to its width, so a net past the width loses there. A long with years left keeps time value and softens it (TLT on 2026-10-19: $572 in a $5-wide diagonal, long Jan 2029) |
 | `debit.time_exit` | nearest short at 21 DTE, or long-only at 14 DTE | roll or close | 70 | vendor | Long premium decays fastest in its last weeks |
 | `roll.naked_put` | a naked short put a rule says to close: same strike, next monthly 4+ weeks out, modelled credit ≥ 0.10 | roll for credit (in the close's place) | 60 | your rule, 2026-10-14: rolling out in time for a credit can be useful, especially for naked short puts | Mixed: rolling tested short puts beat holding them (tastylive); repairing defined-risk spreads did not |
 | `roll.diagonal_short` | a diagonal's short structure at 21 DTE or 80% captured: same strikes, next monthly 4+ weeks out | roll for credit | 60 | your rule, 2026-10-14; the vendor's PMCC teaching (close or roll the short at 14-21 DTE) | Our own PMCC study: the short calls' edge rests on the IV assumption and the held long does most of the work, so the roll is routine, not a rescue |

@@ -22,6 +22,8 @@ from typing import Any
 
 from cherrypick.core import home as _home
 
+from cherrypick.manage import shapes as _shapes
+
 RULESET_NAME = "manage-2026-10"
 
 DEFAULT_RULES: dict[str, Any] = {
@@ -45,7 +47,21 @@ DEFAULT_RULES: dict[str, Any] = {
         "confidence": 60,
     },
     "credit": {
-        "take_profit": {"enabled": True, "capture": 0.50, "confidence": 80},
+        "take_profit": {
+            "enabled": True,
+            "capture": 0.50,
+            "confidence": 80,
+            # A shape's own target, in place of `capture` and `confidence` (shapes.py names the shapes).
+            # One short strike of these is nearly always in the money, so they rarely keep half: the
+            # tastylive strategy guide (2023) takes them off at 25%. Outside tests found 25% loses after
+            # commissions on OTM credit trades; none tested these shapes, hence the lower confidence.
+            "by_shape": {
+                "short straddle": {"capture": 0.25, "confidence": 55},
+                "iron butterfly": {"capture": 0.25, "confidence": 55},
+                "big lizard": {"capture": 0.25, "confidence": 55},
+                "reverse big lizard": {"capture": 0.25, "confidence": 55},
+            },
+        },
         "stop": {
             "enabled": True,
             # Stop when the loss reaches this multiple of the credit (1.0 = the spread costs 2x the credit).
@@ -64,7 +80,25 @@ DEFAULT_RULES: dict[str, Any] = {
     },
     "debit": {
         "stop": {"enabled": True, "loss_fraction": 0.50, "confidence": 65},
-        "take_profit": {"enabled": True, "gain_fraction": 0.75, "confidence": 65},
+        "take_profit": {
+            "enabled": True,
+            "gain_fraction": 0.75,
+            "confidence": 65,
+            # A shape's own target, in place of `gain_fraction` and `confidence`. A calendar trades only
+            # the time value between its expiries and cannot run far either way, so the strategy guide
+            # takes it off at 10-25% of the debit; a zebra starts with no time value and takes 25%.
+            "by_shape": {
+                "calendar": {"gain_fraction": 0.25, "confidence": 55},
+                "call zebra": {"gain_fraction": 0.25, "confidence": 55},
+                "put zebra": {"gain_fraction": 0.25, "confidence": 55},
+            },
+        },
+        # A diagonal (a PMCC or its put mirror) whose net debit is over this share of the distance
+        # between its strikes: a fast move through the short takes both legs to intrinsic, where the
+        # trade is worth about that distance, so a debit near it has little left to make and one past
+        # it loses. The strategy guide's entry rule, applied while the trade is held (the chain's net
+        # debit, so the short calls rolled for credit count).
+        "diagonal_width": {"enabled": True, "max_share_of_width": 0.75, "confidence": 60},
         "time_exit": {
             "enabled": True,
             # A debit trade carrying short legs (a diagonal) is managed when its nearest short is this close.
@@ -254,6 +288,7 @@ RULE_IDS = (
     "credit.close_before_earnings",
     "debit.stop",
     "debit.take_profit",
+    "debit.diagonal_width",
     "debit.time_exit",
     "legs.short_take_profit",
     "roll.naked_put",
@@ -294,8 +329,50 @@ def _merge(base: Any, over: Any, path: str, warnings: list[str]) -> Any:
         if key == "positions":
             out[key] = copy.deepcopy(value) if isinstance(value, dict) else {}
             continue
+        if key == "by_shape" and isinstance(value, dict):
+            out[key] = _merge_by_shape(base, value, where, warnings)
+            continue
         out[key] = _merge(base[key], value, where, warnings)
     return out
+
+
+def _merge_by_shape(rule: dict[str, Any], over: dict[str, Any], path: str, warnings: list[str]) -> dict:
+    """A rule's per-shape targets with `over` merged in. Any shape `shapes.classify` names may be added
+    (a ratio butterfly by its quantities, "1-3-2"), carrying only the rule's own fields; a shape it
+    never names is reported, as a misspelt key is."""
+    out = copy.deepcopy(rule["by_shape"])
+    fields = {k for k in rule if k not in ("enabled", "by_shape")}
+    for shape, entry in over.items():
+        if shape.startswith("_"):
+            continue
+        where = f"{path}.{shape}"
+        if shape not in _shapes.NAMES and not _shapes.is_ratio(shape):
+            warnings.append(f"{where}: unknown shape, ignored")
+            continue
+        if not isinstance(entry, dict):
+            warnings.append(f"{where}: expected an object")
+            continue
+        if shape in out:
+            out[shape] = _merge(out[shape], entry, where, warnings)
+            continue
+        kept = {}
+        for name, value in entry.items():
+            if name.startswith("_"):
+                continue
+            if name in fields:
+                kept[name] = copy.deepcopy(value)
+            else:
+                warnings.append(f"{where}.{name}: unknown key, ignored")
+        out[shape] = kept
+    return out
+
+
+def for_shape(rule: dict[str, Any], shape: str | None, field: str) -> tuple[float, Any, bool]:
+    """A rule's threshold and confidence for a trade of `shape`: its `by_shape` entry where it has one
+    (a field the entry leaves out is the rule's own), else the rule's. The flag is True when the shape's
+    own entry set it."""
+    entry = (rule.get("by_shape") or {}).get(shape or "") or {}
+    return float(entry.get(field, rule[field])), entry.get("confidence", rule["confidence"]), bool(entry)
 
 
 def _check_positions(rules: dict[str, Any], warnings: list[str]) -> None:
