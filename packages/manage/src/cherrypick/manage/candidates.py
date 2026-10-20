@@ -15,7 +15,15 @@ user's cycle monthly rather than the vendor's expiry):
   `spread_long_delta` (0.25) beyond it, offered only at a credit of `spread_min_credit` (a third) of
   the width;
 - a **covered call** at the strike nearest `covered_call_delta` (0.165), only on a name the account
-  holds at least 100 shares of, never more contracts than the shares cover.
+  holds at least 100 shares of, never more contracts than the shares cover. Shares already written
+  against are spoken for: the calls still sellable are (shares - 100 x the short calls already open
+  on the name) // 100, counting every expiry and every short call leg, including the short in a
+  call spread or a diagonal whose long would cover it. That last part is deliberately cautious: a
+  long call covers a short only at a strike and expiry the broker accepts, and in an IRA a spread
+  needs its own approval, so the shares are never assumed free on the strength of a long. A name
+  whose shares are all written against gets no covered call (counted in `excluded`). Working sell
+  orders would reduce it further, but the snapshot has no open-orders read yet, so a call sold and
+  not yet filled is not seen.
 
 Deltas are Black-Scholes on each strike's own IV, solved from its mid, as the screener rules found.
 
@@ -92,8 +100,21 @@ def _nearest(options: list[dict], right: str, target: float, where=lambda o: Tru
     return min(pool, key=lambda o: abs(abs(o["delta"]) - target)) if pool else None
 
 
-def structures(entry: dict[str, Any], options: list[dict], cfg: dict[str, Any], shares: float) -> list[dict]:
-    """Every structure the rules build on this name, legs as (option, signed quantity per unit)."""
+def uncovered_shares(shares: float, short_calls: float) -> float:
+    """Shares not already written against: each short call open on the name ties up 100."""
+    return shares - 100 * short_calls
+
+
+def structures(
+    entry: dict[str, Any],
+    options: list[dict],
+    cfg: dict[str, Any],
+    shares: float,
+    short_calls: float = 0.0,
+) -> list[dict]:
+    """Every structure the rules build on this name, legs as (option, signed quantity per unit).
+    `short_calls` is the count of short call contracts already open on the name, every one of which
+    takes 100 shares out of what a covered call may be written against."""
     spot = _f(entry.get("spot")) or 0.0
     out = []
     sp = _nearest(options, "P", float(cfg["short_put_delta"]))
@@ -117,10 +138,11 @@ def structures(entry: dict[str, Any], options: list[dict], cfg: dict[str, Any], 
             out.append(
                 {"kind": "put_spread" if right == "P" else "call_spread", "legs": [(short, -1), (long_, 1)]}
             )
-    if shares >= 100:
+    free = uncovered_shares(shares, short_calls)
+    if free >= 100:
         cc = _nearest(options, "C", float(cfg["covered_call_delta"]), lambda o: o["strike"] > spot)
         if cc:
-            out.append({"kind": "covered_call", "legs": [(cc, -1)], "max_units": int(shares // 100)})
+            out.append({"kind": "covered_call", "legs": [(cc, -1)], "max_units": int(free // 100)})
     return out
 
 
@@ -360,10 +382,15 @@ def suggest(
     rate = float(rules["pricing"]["rate"])
     basis = account_basis(account_type)
     shares: dict[str, float] = {}
+    short_calls: dict[str, float] = {}
     for t in trades:
         for leg in t.get("legs") or []:
+            qty = float(leg.get("quantity") or 0.0)
             if leg.get("right") not in ("C", "P"):
-                shares[t["underlying"]] = shares.get(t["underlying"], 0.0) + float(leg.get("quantity") or 0.0)
+                shares[t["underlying"]] = shares.get(t["underlying"], 0.0) + qty
+            elif leg.get("right") == "C" and qty < 0:
+                # Every short call, whatever its expiry or structure, ties up 100 shares.
+                short_calls[t["underlying"]] = short_calls.get(t["underlying"], 0.0) - qty
     excluded: dict[str, int] = {}
 
     def drop(reason: str) -> None:
@@ -382,7 +409,10 @@ def suggest(
         options = priced_options(entry, session, rate)
         spot, beta = _f(entry.get("spot")), _f(entry.get("beta"))
         scale = beta * spot / benchmark_spot if beta is not None and spot and benchmark_spot else None
-        for s in structures(entry, options, cfg, shares.get(sym, 0.0)):
+        held, written = shares.get(sym, 0.0), short_calls.get(sym, 0.0)
+        if held >= 100 and uncovered_shares(held, written) < 100:
+            drop("shares already written against")
+        for s in structures(entry, options, cfg, held, written):
             if any(not o.get("passes") for o, _ in s["legs"]):
                 drop("a leg is illiquid or unquoted")
                 continue

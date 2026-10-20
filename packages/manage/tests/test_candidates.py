@@ -105,6 +105,40 @@ def test_a_covered_call_only_on_held_shares_and_never_more_than_they_cover():
     assert abs(cc["legs"][0][0]["delta"]) == pytest.approx(0.165, abs=0.04)
 
 
+def _held(shares, *calls):
+    """A name's trades: the shares, and each (signed quantity, strike) call leg open against them."""
+    legs = [{"quantity": float(shares), "right": None, "strike": None}]
+    legs += [{"quantity": float(q), "right": "C", "strike": float(k)} for q, k in calls]
+    return [{"underlying": "SLV", "legs": legs}]
+
+
+def test_shares_already_written_against_are_not_offered_another_covered_call():
+    # 100 shares with a call already sold against them: another would be naked, which an IRA cannot
+    # carry. The name is counted as excluded, not offered at quantity 0 as if it were too big.
+    out = _suggest({"SLV": _entry()}, trades=_held(100, (-1, 55)))
+    assert _rows(out, "covered_call") == []
+    assert out["excluded"].get("shares already written against") == 1
+    # 300 shares, one written: two left.
+    (row,) = _rows(_suggest({"SLV": _entry()}, trades=_held(300, (-1, 55))), "covered_call")
+    assert row["units"] == 2
+    (row,) = _rows(_suggest({"SLV": _entry()}, trades=_held(300)), "covered_call")
+    assert row["units"] == 3
+
+
+def test_every_short_call_counts_against_the_shares_even_inside_a_spread():
+    # A call spread's short (and a second expiry's short) still ties up shares: a long call is not
+    # taken as cover, which the broker may not accept in an IRA.
+    e = _entry()
+    opts = candidates.priced_options(e, SESSION, 0.04)
+    built = {s["kind"]: s for s in candidates.structures(e, opts, CFG, 300.0, 2.0)}
+    assert built["covered_call"]["max_units"] == 1
+    out = _suggest({"SLV": _entry()}, trades=_held(300, (-2, 55), (1, 60), (-1, 58)))
+    assert _rows(out, "covered_call") == []
+    # A long call alone takes nothing.
+    (row,) = _rows(_suggest({"SLV": _entry()}, trades=_held(200, (1, 60))), "covered_call")
+    assert row["units"] == 2
+
+
 # --------------------------------------------------------------------------- the filters
 def test_earnings_inside_the_trade_excludes_it_and_after_expiry_does_not():
     inside = _suggest({"AAA": _entry(earnings_date="2026-11-05")})

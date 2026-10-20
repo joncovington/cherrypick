@@ -16,6 +16,13 @@ beyond the latest release.
   agent's `execute-entry` command; the loops classify by 10:15 and 14:45, so 10:00–10:15 entries meet
   the open-volatile gates the docs said could not fire there. Both are back on the code's windows, and
   a test now reads the doc's table and checks every row against `_session_quality`.
+- **Fixed: manage offered a covered call on shares already written against.** The income card sized
+  a covered call from the share count alone, so 100 SLV shares with a call already sold on them were
+  offered another, at no buying power and no stress loss; sold, that is a naked call, which an IRA
+  cannot carry. Every short call open on the name now ties up 100 shares, at any expiry and inside
+  any spread or diagonal (a long call is not taken as cover). A name with nothing left uncovered gets
+  no covered call and is counted as `shares already written against`. Working orders are still not
+  seen: the snapshot has no open-orders read.
 - **Fixed: the skate score set history against the wrong implied odds.** A skate is judged at
   expiry, so its odds are the chance of finishing out of the money, 1 − N(d2), not 1 − |delta|. At a
   0.15-delta band that read calls about two points too risky and puts about two points too safe,
