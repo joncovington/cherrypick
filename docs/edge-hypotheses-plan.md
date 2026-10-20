@@ -65,6 +65,10 @@ has to justify that build on its own.
   dealer profiles available.
 - 13, Option Alpha's credit-structure screener.
 
+**Added 2026-10-19:**
+- 14, selecting credit spreads for the income lists (which names, which side), declared before
+  any fetch; its first step is a probe of how far back ThetaData's end-of-day chains reach.
+
 ### Provisional now, re-tested after the unlock (decided 2026-10-18)
 
 9–12 needn't wait for validation to unlock vendor history (`validate.UNLOCK_SESSIONS`, ~2026-10-26).
@@ -557,6 +561,103 @@ sell-off.*
     intervals below zero. A sell-off-versus-other difference wasn't a declared test, so acting on it
     would need its own.
   - Not tested: the 7-DTE version (no Dolt expiry that short) and the 40% take-profit.
+
+### 14. Selecting credit spreads: which names, which side
+
+*Source: the user's own trade (2026-10-19). Credit spreads on the monthly 30-45 days out, sold for
+premium, at a credit of 35-40% of the width, on both sides. The Screeners page's credit-spread tab
+still shows the vendor's lists, which stop on 2026-10-24, because which names make them was never
+reproduced (the best rule found picked 10-15% of its slots right).*
+
+- **Rule as traded:**
+  - the standard monthly 30-45 days out;
+  - a put spread (bullish) or a call spread (bearish);
+  - the working credit 35-40% of the width;
+  - no earnings report inside the trade.
+- **Where the edge would live:** a **selection signal**.
+  - At 35-40% of the width the short strike sits near 35-40 delta, so the payoff is mostly
+    direction.
+  - The premium alone has measured fair to slightly negative after costs: the short-put and
+    covered-call delta studies (2026-10-19) and the delta-hedged put tests.
+  - A spread earns here only if something picks the name and the side better than chance.
+- **Selectors, each a side:**
+  - **A: `mr-300m` → put spread.** The one setup that passed the historical study's confirmation:
+    mean reversion, long, on names trading $300M a day ([setups.md](../packages/technicals/docs/setups.md),
+    round 2). It was tested on stock fills only; this asks whether it survives as an option trade.
+  - **B: the signal board → either side.** A put spread where 3 or more of the board's methods agree
+    bullish, a call spread where 3 or more agree bearish. The methods are stage, sector rotation,
+    fundamentals against industry peers, fundamentals against price, the trend scan and analyst
+    revisions. This is the "fundamentals against the industry, mixed with technical signals"
+    hypothesis for how the vendor picked its names. Its fit to the vendor's lists is not the test;
+    whether it makes money is.
+  - **C: the short setups → call spread.** The short pullback and fading strength (mean reversion,
+    short). As stock shorts they lost money through 2011-2026, and fading strength did worse than
+    random. A call spread is not a stock short, though: it wins if the stock merely fails to rally
+    past the short strike, and gives up nothing below it. This asks whether that difference is
+    enough.
+  - **D: SPY, QQQ, IWM with no selector → both sides.** The reference: the place premium selling
+    has looked least bad. A stock selector has to clear it to be worth a list.
+- **Structure, the same for every selector:**
+  - the latest standard monthly 30-45 days out at entry (no trade when there is none);
+  - the short is the out-of-the-money strike nearest 0.40 delta;
+  - the long is the widest listed strike beyond it whose working credit is 35-40% of the width;
+  - no trade when no width lands in that range.
+- **Entry and fills:**
+  - Entry is at the end of the session after the signal, on that session's quotes.
+  - Fills are at the working price (the mid less a quarter of the width) both ways.
+  - Costs are `core.fees`' schedule plus $5 for each leg settled in the money.
+- **Excluded:**
+  - an earnings report between entry and expiry;
+  - a call spread across an ex-dividend date (early assignment is not modelled, so a spread that
+    risks it is left out and counted);
+  - trades across a suspected unadjusted split (`history.suspected_actions`).
+- **Exits:**
+  - **(i) hold to expiry**, the primary exit;
+  - (ii) close at half the credit, on end-of-day marks;
+  - (iii) close on the selector's own exit, for A and C;
+  - (ii) and (iii) are reported but cannot pass on their own.
+- **Universe:** every name that, on the session before entry, has listed options and a 50-session
+  median dollar volume of at least $300M on raw bars, the study's own universe rule. Weekly-option
+  listings have no history here, so the options-tradable label is not used.
+- **Baseline, per selector and side:** five matched random entries for each selector trade. Each is
+  the same name, a random session in the same calendar year on which the name was in the universe,
+  and the same structure, exits, costs and exclusions. The test is what the selector adds, not
+  whether spreads paid in a rising market.
+- **Data:**
+  - End-of-day option quotes from the ThetaData subscription, fetched for the universe into
+    `packages/backtest`'s store. A new fetch: the store holds SPX intraday only.
+  - Bars, the board's inputs and the study's setups from `history.db`, rebuilt as of each session.
+  - **Window:** from the later of 2017-11 (Dolt's first estimate snapshot, 2017-10-26, which B's
+    fundamentals need) and ThetaData's first end-of-day chain. It ends at the holdout boundary
+    (`cherrypick.backtest.settings`).
+  - A, C and D may start earlier if ThetaData reaches back further; B never does.
+  - The halves are split by date at the window's midpoint.
+  - Results stay under `~/.cherrypick`, per the licence.
+- **Probe first, before any fetch:**
+  - which years the subscription serves end-of-day chains for single stocks;
+  - whether a whole chain comes in one request;
+  - the fetch's size and time for the universe;
+  - the result decides the window, and is recorded here.
+- **Passes if,** for a selector and side, with the hold-to-expiry exit:
+  - the mean of (selector trade's net − the mean of its five matched baselines' net) is positive;
+  - its one-sided t is above 2 in **both** halves;
+  - the selector's own mean net per trade is positive in both halves;
+  - it survives Holm across the five selector-sides tested (A, B-put, B-call, C, and D's two sides
+    reported as reference, not tested).
+  - Fewer than 100 trades in a half is no verdict, only counts.
+- **What would falsify it:** no selector beats its matched baseline; or one does but loses money
+  outright (a better loser is not a list).
+- **Known limits, declared:**
+  - B's sector map holds today's names only, which biases the older years towards survivors.
+  - The board's three flow tags are not counted, as on the live board.
+  - Revisions cover the names their fetch has read.
+  - Early assignment is not modelled, so call-spread results are an upper bound beside the ex-date
+    exclusion.
+  - Fills at the working price assume a liquid chain, which the $300M universe makes likelier but
+    does not ensure; trades whose legs fail the leg bars on the entry quote are reported separately.
+- **Build only if:** a selector passes. A pass becomes a proposal for the credit-spread tab, and for
+  manage's spread candidates, which today build the vendor's structure with no side rule. It is
+  never an arm by itself.
 
 ## Not worth revisiting
 
