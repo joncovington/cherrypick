@@ -3144,6 +3144,61 @@ def test_expire_settlement_charges_the_per_side_long(tmp_path):
     assert settled["settlement_fees"] == pytest.approx(10.0)  # 2 ITM strikes x $5
 
 
+# ── The imbalance cap (`equalize_max_imbalance_pct`) ─────────────────────────
+#
+# `equalize_credit` picks the most balanced candidate on the menu; the cap asks whether
+# "most balanced" is balanced enough. Absent (the default) nothing about the pick changes --
+# the scan, the chosen row, even which candidate wins. Over the cap the tick declines as
+# `equalize_imbalance` rather than enter a lopsided pair.
+
+# Net credit 0.73, side gap 0.72 -- ~99%, far over any sane cap.
+LOPSIDED_EQUALIZE = {**EQUALIZE, "equalize_max_imbalance_pct": 0.10}
+LOPSIDED_MENU = [
+    _candidate(5, 583, 598, **LOPSIDED),
+    _candidate(4, 583, 598, **LOPSIDED),
+]
+
+
+def test_equalize_imbalance_cap_declines_a_lopsided_best_available():
+    snap = _base_snapshot(now_et="13:00", candidates=LOPSIDED_MENU)
+    entered, reason, chosen = paper.evaluate_entry(snap, _params(LOPSIDED_EQUALIZE), [])
+    assert entered is False and reason == "equalize_imbalance" and chosen is None
+    # The decline is a refusal, not a fallback: with the cap absent the same tick enters the
+    # lopsided best-available -- this is exactly the behavior the cap exists to trade away.
+    entered, reason, chosen = paper.evaluate_entry(snap, _params(EQUALIZE), [])
+    assert entered is True and reason == "entered"
+
+
+def test_equalize_imbalance_cap_enters_when_the_pick_is_under_it():
+    # Gap 0.02 on 0.73 net = 2.7%, comfortably under the same 10% cap.
+    tight = {"sp_bid": 0.55, "sp_ask": 0.65, "sc_bid": 0.50, "sc_ask": 0.60}
+    snap = _base_snapshot(
+        now_et="13:00",
+        candidates=[_pair(5, 4, 583, 598, **tight), _candidate(5, 583, 598, **LOPSIDED)],
+    )
+    entered, reason, chosen = paper.evaluate_entry(snap, _params(LOPSIDED_EQUALIZE), [])
+    assert entered is True and reason == "entered"
+    assert chosen["is_pair"] and (chosen["put_wing"], chosen["call_wing"]) == (5, 4)
+
+
+def test_equalize_imbalance_cap_absent_key_leaves_the_pick_untouched():
+    snap = _base_snapshot(now_et="13:00", candidates=LOPSIDED_MENU)
+    entered, reason, chosen = paper.evaluate_entry(snap, _params(EQUALIZE), [])
+    assert entered is True and reason == "entered"
+    assert chosen["wing_width"] == 5  # widest-first among the tied lopsided quotes
+    assert chosen["put_credit"] == pytest.approx(0.825, abs=1e-4)  # the lopsided 5-wide, as before
+
+
+def test_equalize_imbalance_cap_decline_is_counted_as_a_no_candidate_attempt():
+    # The read side: an over-cap decline must be countable per tick. It lands in the attempts
+    # ledger as outcome `no_candidate` with the reason preserved, and -- like every other
+    # no-candidate tick -- leaves the cadence stagger alone.
+    assert paper._ATTEMPT_OUTCOMES["equalize_imbalance"] == "no_candidate"
+    snap = _base_snapshot(now_et="13:00", candidates=LOPSIDED_MENU)
+    entered, reason, _ = paper.evaluate_entry(snap, _params(LOPSIDED_EQUALIZE), [])
+    assert (entered, reason) == (False, "equalize_imbalance")
+
+
 def test_candidates_from_chain_builds_tagged_width_pairs():
     from cherrypick.meic import paper_loop
 

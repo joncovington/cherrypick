@@ -1157,7 +1157,17 @@ def evaluate_entry(
             best_balanced = (imbalance, chosen)
 
     if best_balanced is not None:
-        return True, "entered", best_balanced[1]
+        # `equalize_max_imbalance_pct` (2026-10-20): optional ceiling on the residual side
+        # imbalance, as a fraction of the net credit. The scan enters the best-balanced candidate
+        # on offer; the cap asks whether "best-balanced" is balanced ENOUGH. Absent (the default)
+        # keeps best-available behavior. Over the cap the tick declines as `equalize_imbalance`
+        # instead of entering a lopsided pair -- the decline returns before any entry bookkeeping,
+        # so the cadence stagger is untouched and the next tick simply re-scans the menu.
+        cap_pct = params.get("equalize_max_imbalance_pct")
+        gap, best = best_balanced
+        if cap_pct is not None and gap > cap_pct * best["net_credit"] + 1e-9:
+            return False, "equalize_imbalance", None
+        return True, "entered", best
 
     return False, last_reason, None
 
@@ -1730,6 +1740,7 @@ _ATTEMPT_OUTCOMES = {
     "max_open_bp_reached": "window_blocked",
     "no_candidate_cleared_all_gates": "no_candidate",
     "no_0dte_expiration": "no_candidate",
+    "equalize_imbalance": "no_candidate",
 }
 
 
