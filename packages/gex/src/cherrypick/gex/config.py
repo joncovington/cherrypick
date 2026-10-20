@@ -69,9 +69,10 @@ def load() -> dict:
     src = cfg.get("source", {}) or {}
     cfg["source"] = src
     gex_data = _home.data_dir("gex")  # ~/.cherrypick/data/gex (or relocated by CHERRYPICK_HOME)
-    # The stream cache defaults to the suite's CANONICAL shared cache (data/marketdata), produced by
-    # whichever streamer is active — MEIC's, the standalone packages/streamer daemon, or this module's
-    # own streamer when it is the producer. source.stream_cache_db overrides it. The spot-trail history_db
+    # The stream cache defaults to the suite's CANONICAL shared cache (data/marketdata), which only the
+    # packages/streamer daemon writes; gex reads it. This module's standalone streamer (`run.py
+    # stream`) is refused that path by the engine, so running it needs source.stream_cache_db set to a
+    # cache of gex's own, which the provider then reads instead. The spot-trail history_db
     # below stays gex-owned (data/gex) — that one is this module's, not shared.
     marketdata = _home.data_dir("marketdata")
     cfg["stream_cache_db"] = (

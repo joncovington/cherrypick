@@ -6,6 +6,10 @@ tastytrade OAuth session and writes to this module's own `stream_cache.db`, whic
 reads read-only. No open-position policy, no ORB, no HTTP API — just stream the configured underlyings'
 chains + ATM/GEX windows.
 
+"This module's own" is enforced: `source.stream_cache_db` must name a cache of gex's own. The config
+defaults it to the suite's shared cache, which only packages/streamer writes, and the engine refuses
+that path to any other writer (2026-10-19), so on a default config this exits with that reason.
+
 Credentials come from the OS keyring under the same service the rest of the suite uses ("meicagent",
 with a read-only fallback to the pre-rename "tastytrade-mcp"), so no re-entry is needed on a box that
 already has the suite's tastytrade OAuth stored.

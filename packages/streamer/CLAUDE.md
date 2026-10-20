@@ -98,7 +98,10 @@ Config: copy `config.example.json` → `config.json` (git-ignored, machine-local
 
 - **Exactly one producer writes the cache: this daemon.** MEIC's rollback streamer, the last other
   writer, was removed on 2026-10-18. A second writer means two DXLink connections into one account;
-  the PID guard and the orchestrator knowing only this producer enforce it — do not add one.
+  the PID guard, the orchestrator knowing only this producer, and the engine itself enforce it — do
+  not add one. `ChainStreamer` refuses the shared cache path unless constructed with
+  `producer=True`, which only this daemon passes (since 2026-10-19; gex's standalone streamer took the
+  shared path by default before).
   `orchestrator/tests/test_single_cache_writer.py` pins the example config and this machine's to one
   producer, and `doctor` warns on an enabled `modules.<m>.streamer` block. (gex's standalone
   `run.py stream` is development-only and must never run beside this daemon.)

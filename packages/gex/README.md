@@ -40,8 +40,8 @@ recorder (the `gex-recorder` service, on by default), so there is nothing to sta
 **Standalone (development only).** `run.py stream` runs this module's own connection to the
 market-data feed, signing in with the same OS-stored credentials as the rest of the suite. It writes to
 whatever `source.stream_cache_db` resolves to — by default the shared cache — so repoint that key at a
-private file first, and never run it beside `packages/streamer`: the shared cache has exactly one
-writer.
+private file first: the shared cache has exactly one writer, and the streaming engine refuses it to
+anything but `packages/streamer`.
 
 Either way, the open-interest and per-option volume figures only exist because a live data
 connection is actively subscribed to the relevant strikes — without one running somewhere, the
