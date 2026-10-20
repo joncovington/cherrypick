@@ -55,6 +55,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import sys
 import time
 from datetime import UTC, date, datetime
@@ -539,7 +540,7 @@ def apply_bars(rows: list[dict], bars: dict | None) -> None:
 def judge_income(doc: dict, bars: dict | None) -> None:
     """Each quoted option of an `income` reading against the bars, in place."""
     for entry in (doc.get("symbols") or {}).values():
-        for o in entry.get("options") or []:
+        for o in [*(entry.get("options") or []), *((entry.get("cc") or {}).get("options") or [])]:
             q = {k: o.get(k) for k in ("bid", "ask", "volume", "open_interest")}
             quoted = o.get("bid") is not None or o.get("ask") is not None
             o["passes"] = leg_passes(q, bars) if bars and quoted else None
@@ -1101,6 +1102,17 @@ def cmd_measure(args) -> int:
 # and ranks; this decides nothing about a trade.
 
 INCOME_REACH = CAND_REACH
+# A 16-delta strike sits about one standard deviation out, past 20% of the price on a volatile name
+# 45-60 days away (TSLA at 49% IV: ~22%). So the reach widens with the name's implied vol: this many
+# standard deviations over the expiry, never under INCOME_REACH and never past INCOME_REACH_MAX
+# (2026-10-19, with the lists' 16-delta rule).
+INCOME_REACH_SD = 2.5
+INCOME_REACH_MAX = 0.6
+# The covered call's expiry: the standard monthly 30-45 days out (the covered-call study's best
+# window, 2026-10-19), else the cycle monthly the puts use. Calls only, fewer strikes: one side.
+COVERED_CALL_RANGE = (30, 45)
+CC_STRIKES = 8
+CC_NEAR = 2
 INCOME_STRIKES = CAND_STRIKES
 INCOME_NEAR = CAND_NEAR
 # The history a stress move is read from: five years of sessions, and at least a year of windows.
@@ -1129,21 +1141,80 @@ def income_names(verdicts: dict[str, dict], funds: set[str] = frozenset()) -> li
     return sorted({*(s for s, v in verdicts.items() if (v or {}).get("verdict") == "tradable"), *funds})
 
 
-def income_plan(listing: list[dict], spot: float | None, is_monthly) -> dict | None:
-    """The cycle monthly and the out-of-the-money strikes either side of `spot` to quote, or None
-    when the cycle lists no monthly or there is no price to centre on."""
-    cyc = cycle_expiry(listing, is_monthly)
-    if cyc is None or not spot:
-        return None
-    by_strike = {float(k): (call, put) for k, call, put in cyc["strikes"]}
+def income_reach(iv: float | None, dte: int) -> float:
+    """How far out of the money to quote: INCOME_REACH_SD standard deviations over `dte` days at the
+    name's implied vol, kept between INCOME_REACH and INCOME_REACH_MAX; INCOME_REACH with no vol."""
+    if not iv or iv <= 0 or dte <= 0:
+        return INCOME_REACH
+    return min(INCOME_REACH_MAX, max(INCOME_REACH, INCOME_REACH_SD * iv * math.sqrt(dte / 365.0)))
+
+
+def covered_call_expiry(expirations: list[dict], is_monthly) -> dict | None:
+    """The standard monthly inside COVERED_CALL_RANGE days (the latest there), or None: monthlies are
+    28 or 35 days apart, so the range can hold none."""
+    lo, hi = COVERED_CALL_RANGE
+    inside = [e for e in expirations if is_monthly(e["expiration"]) and lo <= e["dte"] <= hi]
+    return max(inside, key=lambda e: e["dte"]) if inside else None
+
+
+def _plan_legs(expiry: dict, spot: float, rights: str, reach: float, most: int, near: int) -> list[dict]:
+    by_strike = {float(k): (call, put) for k, call, put in expiry["strikes"]}
     legs = []
-    for right in ("P", "C"):
-        for k in candidate_strikes(list(by_strike), spot, right, INCOME_REACH, INCOME_STRIKES, INCOME_NEAR):
+    for right in rights:
+        for k in candidate_strikes(list(by_strike), spot, right, reach, most, near):
             call, put = by_strike[k]
             option = put if right == "P" else call
             if option:
                 legs.append({"strike": k, "right": right, "option": option})
-    return {"expiry": cyc["expiration"], "dte": cyc["dte"], "legs": legs}
+    return legs
+
+
+def income_plan(listing: list[dict], spot: float | None, is_monthly, iv: float | None = None) -> dict | None:
+    """The cycle monthly and the out-of-the-money strikes either side of `spot` to quote, reaching
+    further on a volatile name (`income_reach`), and the covered call's own expiry (`cc`): the
+    30-45 day monthly's calls, or -- when that is the cycle monthly, or there is none -- the cycle's
+    calls (`legs` None: nothing more to quote). None when the cycle lists no monthly or there is no
+    price to centre on."""
+    cyc = cycle_expiry(listing, is_monthly)
+    if cyc is None or not spot:
+        return None
+    reach = income_reach(iv, cyc["dte"])
+    legs = _plan_legs(cyc, spot, "PC", reach, INCOME_STRIKES, INCOME_NEAR)
+    ce = covered_call_expiry(listing, is_monthly)
+    if ce is None or ce["expiration"] == cyc["expiration"]:
+        cc = {
+            "expiry": cyc["expiration"],
+            "dte": cyc["dte"],
+            "window": "30-45" if ce is not None else "cycle",
+            "legs": None,
+        }
+    else:
+        cc_reach = income_reach(iv, ce["dte"])
+        cc = {
+            "expiry": ce["expiration"],
+            "dte": ce["dte"],
+            "window": "30-45",
+            "legs": _plan_legs(ce, spot, "C", cc_reach, CC_STRIKES, CC_NEAR),
+        }
+    return {"expiry": cyc["expiration"], "dte": cyc["dte"], "reach": round(reach, 4), "legs": legs, "cc": cc}
+
+
+def income_rows(legs: list[dict]) -> list[dict]:
+    """The file's rows for quoted legs: the quote's fields and its verdict against the bars."""
+    rows = []
+    for leg in legs:
+        q = leg.get("quote") or {}
+        rows.append(
+            {
+                "strike": leg["strike"],
+                "right": leg["right"],
+                "option": leg["option"],
+                **{k: q.get(k) for k in ("bid", "ask", "volume", "open_interest", "updated_at")},
+                "passes": leg_passes(q, LEG_BARS) if q else None,
+                "quiet": legbars.quiet(q, LEG_BARS) if q else None,
+            }
+        )
+    return rows
 
 
 def stress_move(closes: list[float], days: int) -> dict | None:
@@ -1198,7 +1269,9 @@ def latest_metrics() -> tuple[str | None, dict]:
     return day, days[day] or {}
 
 
-async def _income_quotes(session, ub, names: list[str], cache: dict) -> tuple[dict, dict, str | None]:
+async def _income_quotes(
+    session, ub, names: list[str], cache: dict, ivs: dict | None = None
+) -> tuple[dict, dict, str | None]:
     """(spots, plans, problem): each name's price (mid in hours, else mark, else last), its plan on the
     cycle monthly, and the options quoted in place. Chain listings go through the day's shared cache,
     so the 11:30 and 14:30 measures' listings are not asked for again. A 429 ends the listings and is
@@ -1220,10 +1293,11 @@ async def _income_quotes(session, ub, names: list[str], cache: dict) -> tuple[di
         await asyncio.sleep(ub.TT_PAUSE_S)
     plans: dict[str, dict] = {}
     for sym in names:
-        plan = income_plan(cache.get(sym) or [], spots.get(sym), ub.is_monthly)
+        plan = income_plan(cache.get(sym) or [], spots.get(sym), ub.is_monthly, (ivs or {}).get(sym))
         if plan:
             plans[sym] = plan
-    await _quote_options(session, ub, [leg for p in plans.values() for leg in p["legs"]])
+    legs = [leg for p in plans.values() for leg in (*p["legs"], *(p["cc"]["legs"] or []))]
+    await _quote_options(session, ub, legs)
     return spots, plans, problem
 
 
@@ -1265,16 +1339,17 @@ def cmd_income(args) -> int:
         **ub._read_json(chain_path, {}),
     }
     started = datetime.now(UTC)
+    metrics_day, metric_rows = latest_metrics()
+    ivs = {s: _f((metric_rows.get(s) or {}).get("iv_index")) for s in names}
     try:
         session = SessionManager(store).get_session()
-        spots, plans, problem = asyncio.run(_income_quotes(session, ub, names, cache))
+        spots, plans, problem = asyncio.run(_income_quotes(session, ub, names, cache, ivs))
     except Exception as exc:  # noqa: BLE001 -- keep the listings gathered so far for the next run
         ub._write_json(chain_path, cache)
         print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"[:300]}))
         return 1
     ub._write_json(chain_path, cache)
 
-    metrics_day, metric_rows = latest_metrics()
     conn = tstore.connect(tpaths.history_db())
     symbols: dict[str, dict] = {}
     for sym in names:
@@ -1285,24 +1360,24 @@ def cmd_income(args) -> int:
             symbols[sym] = entry
             continue
         closes = stress_closes(conn, sym)
-        options = []
-        for leg in plan["legs"]:
-            q = leg.get("quote") or {}
-            options.append(
-                {
-                    "strike": leg["strike"],
-                    "right": leg["right"],
-                    "option": leg["option"],
-                    **{k: q.get(k) for k in ("bid", "ask", "volume", "open_interest", "updated_at")},
-                    "passes": leg_passes(q, LEG_BARS) if q else None,
-                    "quiet": legbars.quiet(q, LEG_BARS) if q else None,
-                }
-            )
+        options = income_rows(plan["legs"])
+        cc = plan["cc"]
         entry.update(
             expiry=plan["expiry"],
             dte=plan["dte"],
+            reach=plan["reach"],
             stress=stress_move(closes, holding_sessions(plan["dte"])),
             options=options,
+            cc={
+                "expiry": cc["expiry"],
+                "dte": cc["dte"],
+                "window": cc["window"],
+                "stress": stress_move(closes, holding_sessions(cc["dte"])),
+                # The cycle's own calls when the covered call is written on the cycle monthly.
+                "options": [o for o in options if o["right"] == "C"]
+                if cc["legs"] is None
+                else income_rows(cc["legs"]),
+            },
         )
         symbols[sym] = entry
     # A trial (a --limit run) never stands in for the day's file, which manage would read as complete.
@@ -1317,15 +1392,20 @@ def cmd_income(args) -> int:
             "metrics_day": metrics_day,
             "rule": {
                 "cycle": {"preferred": CYCLE_PREFERRED, "allowed": CYCLE_ALLOWED},
-                "reach": INCOME_REACH,
+                "reach": {"min": INCOME_REACH, "sd": INCOME_REACH_SD, "max": INCOME_REACH_MAX},
                 "strikes": INCOME_STRIKES,
+                "covered_call": {"window": COVERED_CALL_RANGE, "else": "cycle", "strikes": CC_STRIKES},
                 "stress_sessions": STRESS_SESSIONS,
             },
             "bars": LEG_BARS,
             "symbols": symbols,
         },
     )
+    # The covered call's options, less the cycle calls it reuses (the same rows, not copies).
     quoted = [o for s in symbols.values() for o in s.get("options") or []]
+    seen = {id(o) for o in quoted}
+    cc_rows = [o for s in symbols.values() for o in (s.get("cc") or {}).get("options") or []]
+    quoted += [o for o in cc_rows if id(o) not in seen]
     print(
         json.dumps(
             {

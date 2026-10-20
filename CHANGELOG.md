@@ -11,6 +11,12 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed: income candidates at 16 delta, and the afternoon chains on their own switch.**
+  manage's short put and covered call move from the vendor's 0.40 and 0.165 delta to 16, the
+  delta studies' least-bad rule; the covered call is written on the monthly 30-45 days out where
+  one is listed. The income chain fetch quotes that expiry's calls too, reaches further out of the
+  money on a volatile name (2.5 standard deviations at its IV, 20% to 60%), and runs on its own
+  switch, `market_report.income`, on by default (it waited on `screener_greeks`, off).
 - **Changed: technicals no longer needs the earnings module on.** The Dolt sql-server, the 05:30
   pull and every Dolt-reading technicals job used to follow the earnings module, because only an
   enabled module's `dolt_service` kept the server up. Technicals now keeps the same server by

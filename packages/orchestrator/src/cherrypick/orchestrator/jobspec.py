@@ -1856,15 +1856,17 @@ def derive_jobs(
             id="report-income-chains",
             # Our own income candidates (docs/portfolio-guidance-plan.md, piece 4): every tradable name's
             # cycle-monthly chain, out of the money both sides, quoted in regular hours for manage to
-            # size against the account. Needs no vendor list. Read-only REST; the script refuses
-            # outside the measuring window. After the 14:30 measure, whose chain listings it reuses.
+            # size against the account, and the Screeners page's own short-put and covered-call lists.
+            # Needs no vendor list; its own switch (`market_report.income`, on). Read-only REST; the
+            # script refuses outside the measuring window. After the 14:30 measure, whose chain
+            # listings it reuses when that runs.
             argv=(pythonw, _suite_script(launcher, "fetch_screener_greeks.py"), "income"),
             kind=KIND_DAILY,
             at_et=mr["income_chains_at"],
             catchup_minutes=CATCHUP_MINUTES["report-income-chains"],
             trading_days_only=True,
-            enabled=mr["screener_greeks"],
-            enabled_reason=sg_reason,
+            enabled=mr["income"],
+            enabled_reason="" if mr["income"] else "disabled in config (market_report.income)",
         ),
     )
     skate_q_on = mr["screener_greeks"] and skate_on

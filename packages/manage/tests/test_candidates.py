@@ -121,7 +121,7 @@ def test_the_structures_follow_the_screener_rules():
     built = {s["kind"]: s for s in candidates.structures(e, opts, CFG, 0.0)}
     assert set(built) == {"short_put", "put_spread", "call_spread"}  # no covered call without shares
     ((sp, _),) = built["short_put"]["legs"]
-    assert abs(sp["delta"]) == pytest.approx(0.40, abs=0.04)
+    assert abs(sp["delta"]) == pytest.approx(0.16, abs=0.04)
     short, long_ = (o for o, _ in built["put_spread"]["legs"])
     assert short["strike"] == 50.0 and long_["strike"] < 50.0  # short the first strike out of the money
     assert abs(long_["delta"]) == pytest.approx(0.25, abs=0.04)
@@ -135,7 +135,30 @@ def test_a_covered_call_only_on_held_shares_and_never_more_than_they_cover():
     assert "covered_call" not in {s["kind"] for s in candidates.structures(e, opts, CFG, 99.0)}
     cc = next(s for s in candidates.structures(e, opts, CFG, 250.0) if s["kind"] == "covered_call")
     assert cc["max_units"] == 2
-    assert abs(cc["legs"][0][0]["delta"]) == pytest.approx(0.165, abs=0.04)
+    assert abs(cc["legs"][0][0]["delta"]) == pytest.approx(0.16, abs=0.04)
+
+
+def test_the_covered_call_is_written_on_its_own_expiry_when_the_reading_has_one():
+    """From 2026-10-19 the reading carries the 30-45 day monthly's calls (`cc`): the covered call is
+    built there, the put and the spreads on the cycle monthly, and each is checked for earnings
+    against its own expiry."""
+    cycle = _entry(dte=52)
+    near = _entry(dte=33)
+    cc = {"expiry": "2026-11-20", "dte": 33, "window": "30-45", "stress": cycle["stress"]}
+    cc["options"] = [o for o in near["options"] if o["right"] == "C"]
+    e = {**cycle, "cc": cc}
+    out = _suggest({"SLV": e}, trades=_held(300))
+    (call,) = _rows(out, "covered_call")
+    assert (call["expiry"], call["dte"]) == ("2026-11-20", 33)
+    (put,) = _rows(out, "short_put")
+    assert (put["expiry"], put["dte"]) == ("2026-12-03", 52)
+    # A report after the call's expiry and before the cycle's: the call stands, the put does not.
+    late = {**e, "earnings_date": "2026-11-27"}
+    out = _suggest({"SLV": late}, trades=_held(300))
+    assert _rows(out, "covered_call") and not _rows(out, "short_put")
+    # A reading from before the block: the call on the cycle monthly, as before.
+    (old,) = _rows(_suggest({"SLV": cycle}, trades=_held(300)), "covered_call")
+    assert old["dte"] == 52
 
 
 def _held(shares, *calls):

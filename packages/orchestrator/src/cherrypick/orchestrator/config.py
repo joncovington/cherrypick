@@ -653,8 +653,13 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # evening's chain listing (`fetch_screener_greeks.py strikes`), after the 19:10 calendar build.
         "earnings_strikes_at": mr.get("earnings_strikes_at", "19:20"),
         "screener_measure_at": list(mr.get("screener_measure_at", ["11:30", "14:30"])),
-        # After the 14:30 measure (its chain listings are reused), inside the window that closes half
-        # an hour before the bell.
+        # `income`: every tradable name's cycle-monthly chain (and the covered call's 30-45 day
+        # monthly), quoted in regular hours -- our own income lists and manage's candidates, no vendor
+        # list needed. Its own switch from 2026-10-19, ON by default (it was `screener_greeks`, off):
+        # it needs only the shared broker credential the installer sets up.
+        "income": bool(mr.get("income", True)),
+        # After the 14:30 measure (its chain listings are reused when that runs), inside the window
+        # that closes half an hour before the bell.
         "income_chains_at": mr.get("income_chains_at", "14:45"),
         # `skate_quotes_at`: the skate screen's strikes quoted and scored in regular hours
         # (`fetch_screener_greeks.py skate`, docs/skate-plan.md), after each measure and clear of the

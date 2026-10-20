@@ -10,6 +10,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "fetch_screener_greeks.py"
 
 
@@ -152,6 +154,38 @@ def test_the_income_plan_is_the_cycle_monthly_both_sides_out_of_the_money():
     # No cycle monthly, or no price to centre on: no plan, never a weekly instead.
     assert fsg.income_plan([_exp("2026-11-06", 45, strikes)], 101.0, _is_monthly) is None
     assert fsg.income_plan(exps, None, _is_monthly) is None
+
+
+def test_the_reach_widens_with_the_names_vol_between_its_floor_and_cap():
+    assert fsg.income_reach(None, 50) == fsg.INCOME_REACH
+    assert fsg.income_reach(0.15, 50) == fsg.INCOME_REACH  # 2.5 SD of a quiet name is inside 20%
+    # TSLA-like: 49% over 52 days is ~18.5% a standard deviation, so 2.5 of them reach ~46%.
+    assert fsg.income_reach(0.49, 52) == pytest.approx(2.5 * 0.49 * (52 / 365) ** 0.5)
+    assert fsg.income_reach(3.0, 52) == fsg.INCOME_REACH_MAX
+    strikes = [(float(k), f"C{k}", f"P{k}") for k in range(40, 161, 5)]
+    plan = fsg.income_plan([_exp("2026-12-18", 50, strikes)], 100.0, _is_monthly, iv=0.6)
+    puts = [leg["strike"] for leg in plan["legs"] if leg["right"] == "P"]
+    assert min(puts) < 80.0 and plan["reach"] > fsg.INCOME_REACH  # past the old 20%
+
+
+def test_the_covered_call_has_its_own_30_to_45_day_monthly():
+    strikes = [(float(k), f"C{k}", f"P{k}") for k in range(80, 121, 5)]
+    near, cycle = _exp("2026-11-20", 33, strikes), _exp("2026-12-18", 50, strikes)
+    plan = fsg.income_plan([near, cycle], 101.0, _is_monthly)
+    assert plan["expiry"] == "2026-12-18"
+    cc = plan["cc"]
+    assert (cc["expiry"], cc["dte"], cc["window"]) == ("2026-11-20", 33, "30-45")
+    assert cc["legs"] and {leg["right"] for leg in cc["legs"]} == {"C"}
+    assert all(leg["strike"] >= 101.0 for leg in cc["legs"]) and len(cc["legs"]) <= fsg.CC_STRIKES
+    # The cycle itself 30-45 days out: the same expiry, nothing more to quote.
+    plan = fsg.income_plan(
+        [_exp("2026-11-20", 40, strikes), _exp("2027-01-15", 68, strikes)], 101.0, _is_monthly
+    )
+    assert plan["cc"]["expiry"] == plan["expiry"] == "2026-11-20" and plan["cc"]["legs"] is None
+    assert plan["cc"]["window"] == "30-45"
+    # No monthly 30-45 days out: the cycle's calls, said so.
+    plan = fsg.income_plan([_exp("2026-11-20", 28, strikes), cycle], 101.0, _is_monthly)
+    assert (plan["cc"]["expiry"], plan["cc"]["window"], plan["cc"]["legs"]) == ("2026-12-18", "cycle", None)
 
 
 def test_the_stress_move_is_the_names_bad_tail_over_the_holding_period():
