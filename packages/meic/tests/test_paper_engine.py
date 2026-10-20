@@ -2997,7 +2997,11 @@ def test_evaluate_entry_without_the_flag_still_takes_the_widest():
     # widest single clears first, lopsidedness and all.
     snap = _base_snapshot(
         now_et="13:00",
-        candidates=[_candidate(4, 583, 598), _pair(5, 4, 583, 598, **LOPSIDED), _candidate(5, 583, 598, **LOPSIDED)],
+        candidates=[
+            _candidate(4, 583, 598),
+            _pair(5, 4, 583, 598, **LOPSIDED),
+            _candidate(5, 583, 598, **LOPSIDED),
+        ],
     )
     entered, reason, chosen = paper.evaluate_entry(snap, _params(NO_FLAG), [])
     assert entered is True and reason == "entered"
@@ -3009,7 +3013,11 @@ def test_evaluate_entry_equalize_enters_the_most_balanced_clearing_candidate():
     # are 0.825 vs 0.055. The opted-in profile scans past it to the balanced 4-wide.
     snap = _base_snapshot(
         now_et="13:00",
-        candidates=[_pair(5, 4, 583, 598, **LOPSIDED), _candidate(5, 583, 598, **LOPSIDED), _candidate(4, 583, 598)],
+        candidates=[
+            _pair(5, 4, 583, 598, **LOPSIDED),
+            _candidate(5, 583, 598, **LOPSIDED),
+            _candidate(4, 583, 598),
+        ],
     )
     entered, reason, chosen = paper.evaluate_entry(snap, _params(EQUALIZE), [])
     assert entered is True and reason == "entered"
@@ -3047,7 +3055,11 @@ def test_ic_legs_and_settlement_read_per_side_wings():
     legs = paper.ic_legs(
         {"put_strike": 585, "call_strike": 595, "wing_width": 7, "put_wing": 4, "call_wing": 7}
     )
-    assert legs[-3:] == [(paper._EXPIRY, "P", 581.0, 1), (paper._EXPIRY, "C", 595, -1), (paper._EXPIRY, "C", 602.0, 1)]
+    assert legs[-3:] == [
+        (paper._EXPIRY, "P", 581.0, 1),
+        (paper._EXPIRY, "C", 595, -1),
+        (paper._EXPIRY, "C", 602.0, 1),
+    ]
     # A row from before the columns (NULL per-side) derives BOTH wings from the scalar, as
     # always -- its history must keep reading the way it was written.
     assert paper.ic_legs({"put_strike": 585, "call_strike": 595, "wing_width": 7}) == [
@@ -3058,9 +3070,7 @@ def test_ic_legs_and_settlement_read_per_side_wings():
     ]
     # Settlement counts the per-side long: at 579 both put strikes are ITM with a 4-wide put
     # wing (long at 581), but only the short would be with the scalar 7 (long at 578).
-    n = paper.settlement_itm_strikes(
-        585, 595, 7, 579, put_open=True, call_open=True, put_wing=4, call_wing=7
-    )
+    n = paper.settlement_itm_strikes(585, 595, 7, 579, put_open=True, call_open=True, put_wing=4, call_wing=7)
     assert n == 2
     assert paper.settlement_itm_strikes(585, 595, 7, 579, put_open=True, call_open=True) == 1
 

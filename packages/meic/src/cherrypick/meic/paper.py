@@ -120,8 +120,15 @@ def close_fees_one_side(symbol: str, quantity: int = 1) -> float:
 
 
 def settlement_itm_strikes(
-    put_strike, call_strike, wing_width, underlying, *, put_open: bool, call_open: bool,
-    put_wing: float | None = None, call_wing: float | None = None,
+    put_strike,
+    call_strike,
+    wing_width,
+    underlying,
+    *,
+    put_open: bool,
+    call_open: bool,
+    put_wing: float | None = None,
+    call_wing: float | None = None,
 ) -> int | None:
     """How many of an IC's option symbols settle IN THE MONEY at `underlying`, counting only the
     sides still held to settlement. None when the count cannot be known (a strike, the width or the
