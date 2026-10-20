@@ -116,7 +116,7 @@ change the trade's shape, only its measurement fidelity.
 | ~1 entry/hour, 6–7/day | `stagger_entries` (target = hard cap) + `daily_ic_trade_target` + `min_minutes_between_entries` (5-min loop → 55 ≈ hourly) | `true`, `7`, `55` |
 | Sessions 09:45 → last hour | `paper_entry_window_start` / `entry_window_end` | `09:45` / `15:30` |
 | 10–15 delta shorts | `delta_target` flat (he does not VIX-band; mid of his range) | `0.12` |
-| 30-wide wings | `wing_widths_by_symbol` (`max_wing_width` is documentation only — the width resolver never clamps) | `{"SPX": [30]}` |
+| 30-wide wings, adjusted until the premiums match | `wing_widths_by_symbol` as a search list + `equalize_credit` — the most credit-balanced clearing candidate wins instead of the widest-first one (`max_wing_width` is documentation only — the width resolver never clamps) | `[25, 30, 35, 40]`, `true` |
 | $100–200/side ≈ 3–7% of width | `min_credit_pct_of_width` — control's `0.15` would reject nearly every one of his trades on 30-wide wings; his floor is the credit itself | `0.05` |
 | Call spread first, then put | `separate_spread_entry` (cosmetic in paper fills; the honest part is parity with his live order flow) | `true` |
 | No regime timing (every hour) | neutralize the gate block the way `bt-1400-2x` does (VIX/ATR/VIX1D `999`/`null`, GEX block off, IV-rank floor 0, OTM floors `0.0001`, late-bias off) | as `bt-1400-2x` |
@@ -128,7 +128,7 @@ change the trade's shape, only its measurement fidelity.
 ```json
 "be-hourly-1x": {
   "enabled": true,
-  "_note": "Theta Profits' 0DTE break-even condor (docs/theta-profits-be-condor.md): ~1 IC/hour, 10-15 delta, 30-wide, per-side stop = total credit (the 'break-even' identity), neutralized gates like bt-1400-2x. Paper only.",
+  "_note": "Theta Profits' 0DTE break-even condor (docs/theta-profits-be-condor.md): ~1 IC/hour, 10-15 delta, 25-40-wide with per-side widths equalized to balance the premiums, per-side stop = total credit (the 'break-even' identity), neutralized gates like bt-1400-2x. Paper only.",
   "symbols": ["SPX"],
   "min_iv_rank": 0.0,
   "min_credit_pct_of_width": 0.05,
@@ -149,7 +149,8 @@ change the trade's shape, only its measurement fidelity.
   "delta_target_vix_elevated": 0.12,
   "delta_target_vix_high": 0.12,
   "delta_target_vix_crisis": 0.12,
-  "wing_widths_by_symbol": { "SPX": [30] },
+  "wing_widths_by_symbol": { "SPX": [25, 30, 35, 40] },
+  "equalize_credit": true,
   "separate_spread_entry": true,
   "paper_entry_window_start": "09:45",
   "entry_window_end": "15:30",
@@ -164,18 +165,29 @@ change the trade's shape, only its measurement fidelity.
 ```
 
 Read against `control` this arm differs on exactly the axes his bundle does: cadence (7/day vs
-sample-stream), width (30 vs 5/10), delta (0.12 vs VIX-banded), stop basis (1.0× per-side vs 0.95
-whole-IC), credit floor (0.05 vs 0.15), and separate-spread entry. Like `bt-1400-2x` it is a
-**bundle** replication, so a P&L difference vs control is "his package vs ours", not any single
-knob. The cleanest single-axis read is against `bt-1400-2x` (same neutralized gates, SPX-only,
-same engine): hourly-vs-14:00-only, 30-vs-10-wide, 1.0-vs-2.0 stop, 0.12-vs-0.16 delta.
+sample-stream), width (25–40, credit-equalized, vs 5/10), delta (0.12 vs VIX-banded), stop basis
+(1.0× per-side vs 0.95 whole-IC), credit floor (0.05 vs 0.15), and separate-spread entry. Like
+`bt-1400-2x` it is a **bundle** replication, so a P&L difference vs control is "his package vs
+ours", not any single knob. The cleanest single-axis read is against `bt-1400-2x` (same neutralized
+gates, SPX-only, same engine): hourly-vs-14:00-only, 25–40-vs-10-wide, 1.0-vs-2.0 stop,
+0.12-vs-0.16 delta.
 
 ### Fidelity gaps (rules with no seam)
 
-1. **Equal premium both sides.** The engine picks each short by delta independently and widths are
-   per-symbol, not per-side — his width-asymmetry (25–40 to balance the premiums) cannot be
-   expressed. Impact: small. Two 0.12-delta shorts on SPX usually pay within a few tens of dollars
-   of each other; the arm captures the break-even stop arithmetic, which is the load-bearing part.
+1. **Equal premium both sides — closed the same day, 2026-10-20 12:33 ET.** The gap as written at
+   install time: each short was picked by delta with one per-symbol width, so his width-asymmetry
+   (25–40 to balance the premiums) was unexpressable. The engine flag `equalize_credit` (branch
+   `paper/equalize-credit`, off by default, pairs hidden from every other profile) builds
+   width-pair candidates — each wing sized independently from a search list — and enters the most
+   credit-balanced candidate that clears every gate instead of the widest-first one; this arm's
+   menu became `[25, 30, 35, 40]`, his own adjustment range around the 30-wide start. Each side's
+   width is recorded as `put_wing`/`call_wing` (`wing_width` keeps the wider wing, so buying
+   power and the credit floors read the same scalar as before), and a `gate_changed` break (id 9)
+   quarantines the pre-flip session. Worth keeping in proportion, in both directions: the impact
+   was always the *small* one — two 0.12-delta SPX shorts usually pay within a few tens of
+   dollars of each other, and the break-even stop identity never depended on the split (trigger =
+   ratio × total credit either way) — so the closure buys fidelity to his stated practice, not a
+   different P&L shape.
 2. **The stabilization read** (2–3 flat 5-min candles). No gate exists; the arm enters on the first
    passing 5-min tick after the cadence wait — in or out of a live move. Impact: moderate and the
    most interesting gap: his entry *filter* is arguably the discretionary edge, and the arm would
@@ -236,6 +248,17 @@ The first trade filled the same minute, **09:59:42 ET** — short 7655P / 7740C,
 from the first hour. Note for the record: the entry landed on an `open_volatile` tick with
 confirmed-negative GEX — that is the neutralized gate block working as specified (he times
 nothing), not a gate leak.
+
+**Same-day addendum (12:33 ET): gap #1 closed.** The one fidelity gap that could be closed
+without inventing a new gate was closed mid-session, on branch `paper/equalize-credit`: the
+engine gained `equalize_credit` (per profile, default off, documented in
+`config.example.json`), and the registry was flipped to the `[25, 30, 35, 40]` width search with
+the flag on — backup `meic.risk.20261020-0933.json`, merge re-validated through
+`paper._merged_params`, `gate_changed` break journaled (id 9, break date 2026-10-20). The loop
+runs from the working tree as a fresh process per tick, so every tick from 12:33 onward had both
+the new code and the new profile; no restart. The three 30-wide singles entered before the flip
+(09:59, 10:55, 11:50) keep reading their wings from the scalar via the column fallback, and
+today's session is mixed either way — the first clean read of the equalized arm is tomorrow.
 
 The registry, the ledger and the break journal all live under `~/.cherrypick/` on this machine —
 outside the repo, so this doc and the arm's config travel on different rails: the branch carries
