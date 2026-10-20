@@ -110,9 +110,10 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `suite-backup` | daily **01:30** | `run.py backup` | on | one zip at `backup.dest`; `doctor` warns past 36 h |
 | `config-backup` | every `config_backup.interval_minutes` (15) | `run.py config-backup` | **off** (opt in) | commits the config files the home repo's allow-list tracks and pushes to its remote; `doctor` warns when on but not set up or failing |
 | `log-archive` | monthly, day 1 @ **03:30** | `run.py archive` | on | catchup 7 days (idempotent, finished months only) |
+| `report-income-chains` | daily **14:45**, trading days | `scripts/fetch_screener_greeks.py income` | on (`market_report.income`) | every tradable name's cycle-monthly chain and the covered call's 30-45 day monthly, for our income lists and manage's candidates |
 
-Research and screener collectors (`technicals-*` beyond the five above, `report-screener-*`,
-`report-skate-quotes-*`, `report-income-chains`, `report-earnings-strikes`, `pmcc-earnings-refresh`,
+Research and screener collectors (the other `technicals-*` jobs, `report-screener-*`,
+`report-skate-quotes-*`, `report-earnings-strikes`, `pmcc-earnings-refresh`,
 `flies-intraday-agent`) are derived the same way; `run.py status` lists them with their schedules.
 
 Missed-fire policy after sleep/hibernate: interval jobs fire once immediately and resume cadence

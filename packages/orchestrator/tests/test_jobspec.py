@@ -1312,6 +1312,16 @@ def test_the_dollar_volume_fetch_needs_no_dolt_and_runs_before_its_readers():
     assert not {j.id: j for j in derive(switched)[0]}["technicals-dollar-volume"].enabled
 
 
+def test_the_income_chains_are_their_own_switch_on_by_default():
+    """Our own income lists and manage's candidates read them, and they need no vendor list, so they
+    no longer wait on `screener_greeks` (off): on by default, off by `market_report.income`."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    assert by_id["report-income-chains"].enabled and not by_id["report-screener-greeks"].enabled
+    off = {j.id: j for j in derive(suite_cfg(market_report={"income": False}))[0]}
+    assert not off["report-income-chains"].enabled
+    assert "market_report.income" in off["report-income-chains"].enabled_reason
+
+
 def test_the_dividend_fetch_is_a_script_on_by_default():
     by_id = {j.id: j for j in derive(suite_cfg())[0]}
     job = by_id["technicals-dividends"]

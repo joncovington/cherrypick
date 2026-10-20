@@ -109,7 +109,8 @@ fixed a snapshot that one timed-out broker read could crash.
 **4. Screener candidates, sized to the account.** Short puts, credit spreads, and covered calls on
 shares the account holds. The candidate universe is our own options-tradable list (weeklies, $100M a
 day), not the vendor's evening lists, which stop when the subscription ends on 2026-10-24; strikes
-follow our own scored rules (short put 0.40Δ, covered call 0.165Δ, credit spread short at the first
+follow our own rules (short put 0.16Δ and covered call 0.16Δ on the 30-45 day monthly from 2026-10-19,
+after the delta studies; before, the vendor's 0.40Δ and 0.165Δ; credit spread short at the first
 OTM strike with the long at 0.25Δ). Filters: liquid by the screener leg bars, tradable, no earnings
 inside the trade, the monthly at 30–60 DTE preferring 45–60.
 
