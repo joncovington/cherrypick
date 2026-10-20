@@ -135,12 +135,24 @@ export interface ManageBand {
   inside: boolean | null;
 }
 
+/**
+ * What a guidance driver's figure measures, so the page states it in its own unit: `bwd` in benchmark
+ * shares, `theta` in dollars a day, and the two shares of the book as fractions (0.30 = 30%).
+ */
+export type ManageDriverKind = "bwd" | "theta" | "bwd_share" | "theta_share";
+
+export interface ManageGuidanceFigure {
+  kind: ManageDriverKind;
+  value: number | null;
+}
+
 export interface ManageGuidance {
   rule: string;
   confidence: number | null;
   reason: string;
-  /** What drives it, largest first: an underlying and its figure (`bwd`, `theta`, shares). */
-  drivers: Array<{ underlying: string; value: number | null }>;
+  /** What drives it, largest first: an underlying and its figures, each with its kind. A
+   *  concentration driver carries both shares, since either one can be what breached the cap. */
+  drivers: Array<{ underlying: string; figures: ManageGuidanceFigure[] }>;
 }
 
 export interface ManagePortfolioUnderlying {
@@ -242,6 +254,9 @@ export interface ManagePortfolio {
     buyingPower: (ManageBand & { vix: number | null }) | null;
   } | null;
   guidance: ManageGuidance[];
+  /** The lowest and highest confidence the evaluation's ruleset gives the portfolio rules (theta,
+   *  delta, break-even, buying power, concentration); null where the evaluation embeds no ruleset. */
+  ruleConfidence: { low: number; high: number } | null;
   underlyings: ManagePortfolioUnderlying[];
   hedges: ManageHedges | null;
   vix: number | null;
@@ -291,6 +306,14 @@ export interface ManageCandidates {
   tooBig: ManageCandidate[];
   tooBigTotal: number;
   error: string | null;
+  /** The sizing caps from the evaluation's ruleset (`portfolio.candidates`), as fractions of net liq
+   *  (the theta share of the theta the account may carry). The notional cap is the one `size` applies
+   *  to this account's basis. Null where the evaluation embeds no ruleset. */
+  caps: {
+    perTradeRiskPct: number | null;
+    notionalPerNamePct: number | null;
+    maxNameThetaShare: number | null;
+  } | null;
 }
 
 /** The book repriced across benchmark moves (packages/manage `portfolio.scenarios`). */

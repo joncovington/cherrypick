@@ -71,7 +71,10 @@ function reading(over: Partial<ManagePortfolio> = {}): ManagePortfolio {
       ],
       earnings: { trades: ["RTX", "META"], theta: 35, thetaShare: 0.724, downside: -4292.5 },
     },
-    guidance: [{ rule: "portfolio.theta", confidence: 40, reason: "above the ceiling", drivers: [{ underlying: "GOOGL", value: 9.06 }] }],
+    guidance: [
+      { rule: "portfolio.theta", confidence: 40, reason: "above the ceiling", drivers: [{ underlying: "GOOGL", figures: [{ kind: "theta", value: 9.06 }] }] },
+    ],
+    ruleConfidence: { low: 40, high: 40 },
     underlyings: [
       { underlying: "SPY", beta: 1, bwd: -9.13, theta: 5.93, vega30: 9.84, bwdShare: 0.164, thetaShare: 0.128, betaDoubt: null },
       { underlying: "META", beta: 1.6, bwd: 6.22, theta: 6.42, vega30: -10.06, bwdShare: 0.112, thetaShare: 0.138, betaDoubt: null },
@@ -146,6 +149,37 @@ describe("PortfolioCards", () => {
     expect(html).toContain("portfolio.theta");
     expect(html).toContain("SPY −10%");
     expect(html).toContain("Traditional IRA");
+  });
+
+  it("states each guidance driver in its own unit, and a concentration driver as both shares", () => {
+    const html = render(
+      <PortfolioCards
+        p={reading({
+          guidance: [
+            { rule: "portfolio.theta", confidence: 40, reason: "above", drivers: [{ underlying: "GOOGL", figures: [{ kind: "theta", value: 9.06 }] }] },
+            { rule: "portfolio.delta", confidence: 40, reason: "outside", drivers: [{ underlying: "META", figures: [{ kind: "bwd", value: 6.22 }] }] },
+            {
+              rule: "portfolio.concentration",
+              confidence: 40,
+              reason: "over 25%",
+              drivers: [{ underlying: "SPY", figures: [{ kind: "bwd_share", value: 0.31 }, { kind: "theta_share", value: 0.128 }] }],
+            },
+          ],
+        })}
+      />,
+    );
+    expect(html).toContain("+$9.06/day");
+    expect(html).toContain("+6.2 SPY sh");
+    expect(html).toContain("31% of delta · 13% of theta");
+    expect(html).not.toContain("+0.3<"); // never a share printed as a signed number
+  });
+
+  it("states the ruleset's own confidence in the caption", () => {
+    const at55 = render(<PortfolioCards p={reading({ ruleConfidence: { low: 55, high: 55 } })} />);
+    expect(at55).toContain("retail heuristics at confidence 55");
+    expect(at55).not.toContain("confidence 40:");
+    expect(render(<PortfolioCards p={reading({ ruleConfidence: { low: 35, high: 40 } })} />)).toContain("at confidence 35–40");
+    expect(render(<PortfolioCards p={reading({ ruleConfidence: null })} />)).toContain("retail heuristics: no published evidence");
   });
 
   it("draws long and short delta without a sign tone", () => {
@@ -291,6 +325,7 @@ function income(over: Partial<ManageCandidates> = {}): ManageCandidates {
     tooBig: [],
     tooBigTotal: 0,
     error: null,
+    caps: { perTradeRiskPct: 0.03, notionalPerNamePct: 0.25, maxNameThetaShare: 0.25 },
     ...over,
   };
 }
@@ -338,6 +373,22 @@ describe("IncomeCard", () => {
     const html = render(<IncomeCard c={income({ fits: [put] })} />);
     expect(html).toContain("$251.07");
     expect(html.split("$1067.00").length - 1).toBe(1); // the buying power column only, never as risk
+  });
+
+  it("states the caps the evaluation's ruleset set for this account, not fixed numbers", () => {
+    const margin = render(
+      <IncomeCard
+        c={income({ accountBasis: "margin", caps: { perTradeRiskPct: 0.02, notionalPerNamePct: 0.5, maxNameThetaShare: 0.2 } })}
+      />,
+    );
+    expect(margin).toContain("one trade&#x27;s risk 2% of net liq");
+    expect(margin).toContain("a short put&#x27;s strike 50% of net liq (margin)");
+    expect(margin).toContain("no name over 20% of the theta");
+    expect(margin).not.toContain("25%");
+    // An evaluation with no ruleset embedded names no number rather than a default.
+    const bare = render(<IncomeCard c={income({ caps: null })} />);
+    expect(bare).toContain("a short put&#x27;s strike of net liq (cash)");
+    expect(bare).not.toMatch(/\d+%/);
   });
 
   it("says nothing fits, or why there is no list, rather than drawing an empty table", () => {

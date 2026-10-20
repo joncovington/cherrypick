@@ -13,10 +13,18 @@ import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, num, str } from "./db.js";
 import { isoStamp } from "../services/report.js";
+import { perShare } from "./earnings.js";
+
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
+}
 
 export interface EarningsMark {
   markedAt: string | null;
+  /** Per share: what closing costs, a debit positive (the ledger's position total over the quantity). */
   exitDebit: number | null;
+  /** Whole-position dollars to close now, signed (a debit paid is −). */
+  exitCash: number | null;
   unrealizedPnl: number | null;
   spot: number | null;
   source: string | null;
@@ -28,7 +36,12 @@ export interface EarningsOpenPosition {
   symbol: string;
   strategy: string;
   expiration: string | null;
+  /** Per share, signed (credit +, debit −): the ledger's `entry_credit`, a position total, over the
+   *  quantity (`readers/earnings.ts` `perShare`). */
   entryCredit: number | null;
+  /** Whole-position entry cash, signed: `entry_credit` x 100 alone, since it already carries every
+   *  contract. */
+  entryCash: number | null;
   quantity: number | null;
   capitalAtRisk: number | null;
   openedAt: string | null;
@@ -128,13 +141,20 @@ export function readEarningsLive(config: ConsoleConfig): EarningsLivePayload {
       const orderId = String(r["order_id"] ?? "");
       const m = markFor?.get(orderId);
       const e = eventFor?.get(orderId);
+      // entry_credit and a mark's exit_debit are POSITION totals per share (strat_test_harness:
+      // per-contract x quantity; management.unrealized_pnl = (entry_credit − exit_debit) x 100), so
+      // the per-share figures divide the quantity back out and the whole-position ones are x100 alone.
+      const quantity = num(r["quantity"]);
+      const credit = num(r["entry_credit"]);
+      const debit = m ? num(m["exit_debit"]) : null;
       return {
         orderId,
         symbol: str(r["symbol"]) ?? "",
         strategy: str(r["strategy"]) ?? "",
         expiration: str(r["expiration"]),
-        entryCredit: num(r["entry_credit"]),
-        quantity: num(r["quantity"]),
+        entryCredit: perShare(credit, quantity),
+        entryCash: credit !== null ? round2(credit * 100) : null,
+        quantity,
         capitalAtRisk: num(r["capital_at_risk"]),
         openedAt: isoStamp(r["opened_at"]),
         status: str(r["status"]),
@@ -144,7 +164,8 @@ export function readEarningsLive(config: ConsoleConfig): EarningsLivePayload {
         mark: m
           ? {
               markedAt: isoStamp(m["marked_at"]),
-              exitDebit: num(m["exit_debit"]),
+              exitDebit: perShare(debit, quantity),
+              exitCash: debit !== null ? round2(-debit * 100) : null,
               unrealizedPnl: num(m["unrealized_pnl"]),
               spot: num(m["spot"]),
               source: str(m["source"]),

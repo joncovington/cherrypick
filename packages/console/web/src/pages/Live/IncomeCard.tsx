@@ -25,6 +25,13 @@ const BASIS: Record<string, string> = {
   portfolio_margin: "portfolio margin (buying power not modelled)",
 };
 
+/** A cap from the evaluation's ruleset as the caption states it (` 25%`), or nothing where the
+ *  evaluation embeds no ruleset: a caption naming a number the account is not held to is worse than
+ *  one naming none. */
+function capPct(v: number | null | undefined): string {
+  return v === null || v === undefined ? "" : ` ${Math.round(v * 1000) / 10}%`;
+}
+
 function legs(c: ManageCandidate): string {
   return c.legs.map((l) => `${l.quantity > 0 ? "+" : "−"}${l.strike}${l.right}`).join(" / ");
 }
@@ -155,9 +162,10 @@ export function IncomeCard({ c }: { c: ManageCandidates | null }) {
         </>
       )}
       <p className="muted pf-caption">
-        caps: one trade's risk 3% of net liq · a short put's strike 25% of net liq (cash) · buying power under the VIX cap · delta
-        in band · theta under its ceiling · no name over a quarter of the theta the account may carry. Retail heuristics, modelled
-        at mid: nothing here is placed.
+        caps: one trade's risk{capPct(c.caps?.perTradeRiskPct)} of net liq · a short put's strike
+        {capPct(c.caps?.notionalPerNamePct)} of net liq ({c.accountBasis === "cash" ? "cash" : "margin"}) · buying power under
+        the VIX cap · delta in band · theta under its ceiling · no name over{capPct(c.caps?.maxNameThetaShare) || " its share"} of
+        the theta the account may carry. Retail heuristics, modelled at mid: nothing here is placed.
       </p>
     </Card>
   );

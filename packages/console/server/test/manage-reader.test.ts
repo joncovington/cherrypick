@@ -217,7 +217,7 @@ describe("readManage", () => {
     expect(p.bands?.delta).toEqual({ low: -21.84, high: 32.76, basis: "theta", value: 5.85, inside: true });
     expect(p.bands?.theta.inside).toBe(false);
     expect(p.breakeven).toEqual({ kind: "short_gamma", points: 15.22, pct: 0.01994 });
-    expect(p.guidance[0]!.drivers).toEqual([{ underlying: "GOOGL", value: 9.06 }]);
+    expect(p.guidance[0]!.drivers).toEqual([{ underlying: "GOOGL", figures: [{ kind: "theta", value: 9.06 }] }]);
     expect(p.underlyings[0]!.betaDoubt).toMatch(/opposite signs/);
     expect(p.stress[0]!.leftOut).toEqual(["ABC"]);
     expect(p.complete).toBe(false);
@@ -263,6 +263,62 @@ describe("readManage", () => {
     expect(iwm!.heldForEarnings.map((f) => f.rule)).toEqual(["credit.time_exit"]);
     expect(ko!.earningsTrade).toBeNull();
     expect(ko!.heldForEarnings).toEqual([]);
+  });
+
+  it("carries each guidance driver's figures with their kind, and both shares for concentration", () => {
+    const doc = evalDoc("2026-10-19");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    acct["portfolio"] = {
+      benchmark: "SPY",
+      guidance: [
+        { rule: "portfolio.delta", confidence: 40, reason: "outside", drivers: [{ underlying: "META", bwd: 6.22 }] },
+        // The cap is breached by the delta share; the theta share comes first in the row and is smaller.
+        {
+          rule: "portfolio.concentration",
+          confidence: 40,
+          reason: "over 25%",
+          drivers: [{ underlying: "SPY", theta_share: 0.128, bwd_share: 0.31 }],
+        },
+      ],
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    const [delta, conc] = readManage(config).accounts[0]!.portfolio!.guidance;
+    expect(delta!.drivers).toEqual([{ underlying: "META", figures: [{ kind: "bwd", value: 6.22 }] }]);
+    expect(conc!.drivers).toEqual([
+      { underlying: "SPY", figures: [{ kind: "bwd_share", value: 0.31 }, { kind: "theta_share", value: 0.128 }] },
+    ]);
+  });
+
+  it("reads the caption figures from the evaluation's own ruleset, and none where it embeds none", () => {
+    const doc = evalDoc("2026-10-19");
+    doc["rules"] = {
+      ruleset: "manage-2026-10",
+      portfolio: {
+        theta: { confidence: 55 },
+        delta: { confidence: 50 },
+        breakeven: { confidence: 55 },
+        buying_power: { confidence: 60 },
+        concentration: { confidence: 55 },
+        candidates: { per_trade_risk_pct: 0.02, notional_per_name_pct: { cash: 0.25, margin: 0.5 }, max_name_theta_share: 0.2 },
+      },
+    };
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    acct["portfolio"] = { benchmark: "SPY", candidates: { account_basis: "margin", fits: [], too_big: [] } };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    const p = readManage(config).accounts[0]!.portfolio!;
+    expect(p.ruleConfidence).toEqual({ low: 50, high: 60 });
+    // A margin account is held to the margin notional cap, not the cash one.
+    expect(p.candidates!.caps).toEqual({ perTradeRiskPct: 0.02, notionalPerNamePct: 0.5, maxNameThetaShare: 0.2 });
+
+    (acct["portfolio"] as Record<string, unknown>)["candidates"] = { account_basis: "cash", fits: [], too_big: [] };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    expect(readManage(config).accounts[0]!.portfolio!.candidates!.caps!.notionalPerNamePct).toBe(0.25);
+
+    doc["rules"] = { ruleset: "manage-2026-10" };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    const bare = readManage(config).accounts[0]!.portfolio!;
+    expect(bare.ruleConfidence).toBeNull();
+    expect(bare.candidates!.caps).toBeNull();
   });
 
   it("reads an older session when asked", () => {

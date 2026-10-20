@@ -54,7 +54,7 @@ export function earningsExitKind(exitReason: string | null, settlementFees: numb
 
 /** The per-share net price from the ledger's quantity-scaled `entry_credit`. No quantity reads as
  *  one contract (older rows); a zero or negative one cannot be divided out and is not a price. */
-function perShare(credit: number | null, quantity: number | null): number | null {
+export function perShare(credit: number | null, quantity: number | null): number | null {
   if (credit === null) return null;
   const qty = quantity ?? 1;
   return qty > 0 ? Math.round((credit / qty) * 10_000) / 10_000 : null;
