@@ -11,6 +11,11 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: an end-of-day option chain fetch for backtests.** `python -m cherrypick.backtest
+  fetch-chains --requests FILE` fetches exactly the (name, session, expiry) chains a study asks for
+  into the licensed store, resumably, with a refusal recorded and retried and a lost session
+  stopping the run; `chains-status` shows what it holds. Event-driven because the subscription's
+  tier serves single-stock chains from 2016 at about a second a request, with no whole-market file.
 - **Changed: manage's credit stop at lower confidence, and the untested-side roll off by default.**
   After a declared local study of short-strangle management on licensed history (its plan and
   results stay under `~/.cherrypick`, by the data licence), `credit.stop` reports at confidence 50
