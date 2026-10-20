@@ -719,7 +719,7 @@ def evaluate_trade(
         and not expiring
         and not off("roll.untested_side")
     ):
-        roll = _untested_roll(options, trade["shape"], spot, rate, ur, (roll_chains or {}), underlying)
+        roll = _untested_roll(options, spot, rate, ur, (roll_chains or {}), underlying)
         if roll:
             trade["untested_roll"] = roll
             if not roll.get("blocked"):
@@ -1006,7 +1006,6 @@ def _long_vertical(
 
 def _untested_roll(
     options: list[dict[str, Any]],
-    shape: str,
     spot: float,
     rate: float,
     cfg: dict[str, Any],
@@ -1016,9 +1015,14 @@ def _untested_roll(
     """The untested short of a tested strangle or straddle rolled toward the money, or None when it is
     not tested. Tested: one short at `tested_delta` or more while the other is under `target_delta`.
     The new strike is the listed one, in the same expiry, nearest `target_delta`, never further out than
-    the old one; a strangle's untested side stops at the tested strike (a straddle at most), while a
-    straddle's may pass it (the guide's inversion). Priced at the snapshot's quoted mids, each strike's
-    delta at its own IV. A tested trade with no usable chain or credit comes back `blocked`."""
+    the old one and never past the tested strike (a strangle may become a straddle, no more). Priced at
+    the snapshot's quoted mids, each strike's delta at its own IV. A tested trade with no usable chain,
+    strike or credit comes back `blocked`.
+
+    An inverted strangle always ranks below closing or rolling out in time without the inversion (the
+    user's rule, 2026-10-19), so a roll that would invert -- every in-expiry roll of a straddle's
+    untested side -- is never proposed: it comes back `blocked: "inverts"`, the best such strike kept
+    under `inversion` as the last alternative, after the close."""
     put = next(leg for leg in options if leg["right"] == "P")
     call = next(leg for leg in options if leg["right"] == "C")
     if put["delta"] is None or call["delta"] is None or put["mid"] is None or call["mid"] is None:
@@ -1040,7 +1044,7 @@ def _untested_roll(
     if not chain or not chain.get("options"):
         return {**head, "blocked": "no_chain", "error": (chain or {}).get("error")}
     target = float(cfg["target_delta"])
-    candidates = []
+    candidates, inversions = [], []
     for o in chain["options"]:
         mid = _f(o.get("mid"))
         if o.get("right") != untested["right"] or not mid or mid <= 0:
@@ -1049,19 +1053,29 @@ def _untested_roll(
         toward = k > untested["strike"] if untested["right"] == "P" else k < untested["strike"]
         if not toward:
             continue
-        if shape == "short strangle":
-            past = k > tested["strike"] if untested["right"] == "P" else k < tested["strike"]
-            if past:
-                continue
         iv = pricing.implied_vol(spot, k, untested["years"], mid, untested["right"], rate)
         if not iv:
             continue
         delta = pricing.delta(spot, k, untested["years"], iv, untested["right"], rate)
-        candidates.append((abs(abs(delta) - target), k, mid, delta))
-    if not candidates:
-        return {**head, "blocked": "no_strike"}
-    _, k, mid, delta = min(candidates)
+        past = k > tested["strike"] if untested["right"] == "P" else k < tested["strike"]
+        (inversions if past else candidates).append((abs(abs(delta) - target), k, mid, delta))
     qty = abs(untested["quantity"])
+    if not candidates:
+        if not inversions:
+            return {**head, "blocked": "no_strike"}
+        _, k, mid, delta = min(inversions)
+        return {
+            **head,
+            "blocked": "inverts",
+            "inversion": {
+                "to_strike": k,
+                "to_delta": delta,
+                "to_mid": mid,
+                "credit": mid - untested["mid"],
+                "ranked_below": ["close", "roll out in time without inverting"],
+            },
+        }
+    _, k, mid, delta = min(candidates)
     credit = mid - untested["mid"]
     roll = {
         **head,

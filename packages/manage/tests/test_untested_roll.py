@@ -100,20 +100,38 @@ def test_a_tested_strangle_without_a_quoted_chain_says_so_and_proposes_nothing()
 
 
 def test_a_strangles_untested_side_never_passes_the_tested_strike():
-    # Only strikes beyond the tested call are listed above the old put: nothing to roll to.
+    # Only strikes beyond the tested call are listed above the old put: each would invert it, so
+    # nothing is proposed, and the inversion is kept as the alternative ranked last.
     spot = 107.0
     t = run(strangle(spot), spot, chain(spot, [85, 88, 112, 115]))
+    assert "roll.untested_side" not in fired(t)
+    assert t["untested_roll"]["blocked"] == "inverts"
+    # With nothing toward the money at all, there is no strike.
+    t = run(strangle(spot), spot, chain(spot, [85, 88]))
     assert t["untested_roll"]["blocked"] == "no_strike"
 
 
-def test_a_straddles_untested_side_may_invert():
-    # Short 100 straddle, the stock at 108: the call is tested, the put rolls up past 100.
+def test_an_inversion_is_never_proposed_and_ranks_below_closing_or_rolling_out():
+    # Short 100 straddle, the stock at 108: the call is tested, and any in-expiry roll of the put
+    # passes 100 -- an inversion, which always ranks below closing or rolling out in time.
     spot = 108.0
     legs = strangle(spot, put=100, call=100, opened=(4.0, 4.0))
     t = run(legs, spot, chain(spot, range(95, 115)))
     assert t["shape"] == "short straddle"
+    assert "roll.untested_side" not in fired(t)
     r = t["untested_roll"]
-    assert r and not r.get("blocked") and r["to_strike"] > 100
+    assert r["blocked"] == "inverts"
+    assert r["inversion"]["to_strike"] > 100
+    assert r["inversion"]["ranked_below"] == ["close", "roll out in time without inverting"]
+    assert t["recommendation"]["action"] != ev.ROLL_FOR_CREDIT
+
+
+def test_a_strangles_roll_may_reach_the_tested_strike_but_not_pass_it():
+    # Listed strikes at and past the tested 110 call only: 110 is a straddle, not an inversion.
+    spot = 109.0
+    t = run(strangle(spot), spot, chain(spot, [85, 110, 111, 112]))
+    r = t["untested_roll"]
+    assert r.get("blocked") != "inverts" and r["to_strike"] == 110
 
 
 def test_a_roll_under_the_minimum_credit_is_not_proposed():
