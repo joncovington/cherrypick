@@ -34,8 +34,8 @@ Abort if `ic_mid` ≤ 0 or `ic_natural_bid` ≤ 0.
 
    *Gate — skip mid attempt and go straight to natural_bid if any of:*
    - `avg_spread_per_leg` > `mid_spread_gate` (default 0.10) — spread too wide for a mid fill
-   - Session is `open_volatile` (09:30–10:00, elevated gamma) — mid orders stale too fast
-   - Session is `late` (14:30–15:30) — time pressure outweighs credit improvement
+   - Session is `open_volatile` (before 10:15, elevated gamma) — mid orders stale too fast
+   - Session is `late` (from 14:45) — time pressure outweighs credit improvement
    - `ic_mid − ic_natural_bid` < 0.03 — spread so tight the improvement isn't worth the wait
 
    *If gate passes:*
