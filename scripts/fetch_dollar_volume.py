@@ -73,15 +73,23 @@ def feed_symbol(name: str) -> str:
     return securities.vendor_spelling(name)
 
 
-async def fetch_batch(session, names: list[str], start: datetime) -> tuple[dict[str, list], set[str]]:
-    """({name: [(session date, close, volume)]}, the names whose history ended) for one batch."""
+def _sdk() -> tuple[type, type]:
     from tastytrade import DXLinkStreamer
     from tastytrade.dxfeed import Candle
 
+    return DXLinkStreamer, Candle
+
+
+async def fetch_batch(
+    session, names: list[str], start: datetime, sdk: tuple[type, type] | None = None
+) -> tuple[dict[str, list], set[str]]:
+    """({name: [(session date, close, volume)]}, the names whose history ended) for one batch.
+    `sdk` is (streamer class, candle event class), the SDK's unless a test passes its own."""
+    streamer_cls, Candle = sdk or _sdk()
     back = {feed_symbol(n): n for n in names}
     bars: dict[str, list] = {n: [] for n in names}
     ended: set[str] = set()
-    async with DXLinkStreamer(session) as streamer:
+    async with streamer_cls(session) as streamer:
         # Extended hours: the consolidated volume. The default (regular hours) is a fraction of it.
         await streamer.subscribe_candle(
             list(back), interval="1d", start_time=start, extended_trading_hours=True
@@ -107,14 +115,16 @@ async def fetch_batch(session, names: list[str], start: datetime) -> tuple[dict[
     return bars, ended
 
 
-async def fetch(session, names: list[str], start: datetime) -> tuple[dict[str, list], set[str], list[str]]:
+async def fetch(
+    session, names: list[str], start: datetime, sdk: tuple[type, type] | None = None
+) -> tuple[dict[str, list], set[str], list[str]]:
     bars: dict[str, list] = {}
     ended: set[str] = set()
     failed: list[str] = []
     for k in range(0, len(names), BATCH):
         batch = names[k : k + BATCH]
         try:
-            got, done = await fetch_batch(session, batch, start)
+            got, done = await fetch_batch(session, batch, start, sdk)
         except Exception as exc:  # noqa: BLE001 -- the batch is reported and the run goes on
             failed.append(f"{batch[0]}..{batch[-1]}: {type(exc).__name__}: {str(exc)[:120]}")
             continue
