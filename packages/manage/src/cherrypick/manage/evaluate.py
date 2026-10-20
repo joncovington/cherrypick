@@ -303,6 +303,10 @@ def evaluate_trade(
         trade["kind"] = "directional" if trade["shape"] in _shapes.DIRECTIONAL else "risk-judged"
 
     fired: list[dict] = []
+    # The expiry close and the first day its legs expire: an earnings trade closed after its call
+    # before that day lets it wait.
+    expiry_close: dict | None = None
+    expiring_on: date | None = None
 
     # ---- expiry: cash-settled legs settle; physically-settled ones are never held into it
     ex = rules["expiry"]
@@ -350,16 +354,16 @@ def evaluate_trade(
         if expiring:
             whole = len(expiring) == len(options)
             soonest = min(leg["dte"] for leg in expiring)
-            fired.append(
-                _fire(
-                    "expiry",
-                    CLOSE if whole else CLOSE_LEGS,
-                    ex["confidence"],
-                    f"physically-settled legs expire in {soonest} day(s); never hold into expiry "
-                    "(pin and post-close exercise risk)",
-                    [_label(leg) for leg in expiring],
-                )
+            expiring_on = min(_date(leg["expiration"]) for leg in expiring)
+            expiry_close = _fire(
+                "expiry",
+                CLOSE if whole else CLOSE_LEGS,
+                ex["confidence"],
+                f"physically-settled legs expire in {soonest} day(s); never hold into expiry "
+                "(pin and post-close exercise risk)",
+                [_label(leg) for leg in expiring],
             )
+            fired.append(expiry_close)
 
     # ---- earnings and ex-dividend facts
     er_date = _date(metrics.get("earnings_date"))
@@ -889,7 +893,12 @@ def evaluate_trade(
         after = report if before_open(et["time_of_day"]) else _calendar.next_trading_day(report)
         trade["exit_levels"]["time_exit"] = {"date": after.isoformat(), "rule": "earnings_trade"}
         if not et["passed"]:
-            held = [f for f in fired if f["rule"].split(".")[0] in HELD_FOR_EARNINGS]
+            # The expiry close waits too when the trade comes off after the call before its legs'
+            # expiry day: the pin and post-close exercise risk it guards against is never reached. An
+            # earnings trade sits on a short expiring days after the call, so otherwise it is always
+            # inside the window and the hold could never apply. Closed on expiry day itself, it stands.
+            waits = (expiry_close,) if expiring_on is not None and after < expiring_on else ()
+            held = [f for f in fired if f["rule"].split(".")[0] in HELD_FOR_EARNINGS or f in waits]
             fired = [f for f in fired if f not in held]
             trade["held_for_earnings"] = held
             if held:
@@ -909,7 +918,8 @@ def evaluate_trade(
 
 
 # The rule families an earnings trade's report outranks: closing, taking profit and rolling wait for
-# the call. Safety (expiry and assignment, ex-dividend), sizing and unpriced legs never wait.
+# the call. Safety (expiry and assignment, ex-dividend), sizing and unpriced legs never wait, except
+# the expiry close when the trade comes off after the call before its legs expire.
 HELD_FOR_EARNINGS = {"credit", "debit", "directional", "legs", "roll"}
 
 # A report before the open: the broker spells it BTO, most calendars BMO.
@@ -931,8 +941,9 @@ def earnings_trade(
     """The trade as an EARNINGS TRADE -- one put on to hold through an announcement -- or None.
 
     The user's practice (2026-10-18): earnings trades are put on 1 to 7 days before the call, on a
-    short that expires soon after it. So a trade is one when its opening order (the order chain's
-    first) came `min_days_before`..`max_days_before` days before the report, and its nearest short
+    short that expires soon after it, or on the report's own day before an after-the-close call. So
+    a trade is one when its opening order (the order chain's first) came
+    `min_days_before`..`max_days_before` days before the report, and its nearest short
     expires on or after the report and no more than `max_days_expiry_after` days later. A trade
     without an order chain has no opening date to judge and is not classified.
 
@@ -964,6 +975,10 @@ def earnings_trade(
             return None
         lead = (report - opened).days
         if not int(cfg["min_days_before"]) <= lead <= int(cfg["max_days_before"]):
+            return None
+        # Opened on the report's own day, it went on before an after-the-close call; a before-the-open
+        # call had already happened, so the trade was not put on for it.
+        if lead == 0 and before_open(time_of_day):
             return None
     passed = session > report or (session == report and before_open(time_of_day))
     return {
