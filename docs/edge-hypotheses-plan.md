@@ -99,6 +99,11 @@ Each gets a provisional look now, and a re-test once validation unlocks.
   the full vendor history by choice, holdout dates included, so its evidence also has to come from
   sessions after 2026-10-12. Its first four recorded sessions (10-13 to 10-16) are such sessions:
   provisional and far too few to judge.
+- **Added 2026-10-19: `pm-200-1400-w5`**, with the same consequence. It's `pm-200-1400` with SPX
+  wings one strike (5 points) wide instead of 10, run over the same full history to answer whether
+  live could trade the rule at half the buying power. It did worse than the 10-wide in the paired
+  sessions and in nearly every quarter, and isn't adopted: live trades `pm-200-1400`'s rule at 10
+  wide from 2026-10-19. The figures stay under `~/.cherrypick`.
 
 ### Declared pass tests for the provisional looks (2026-10-18, before any look ran)
 
@@ -148,6 +153,35 @@ These apply to the looks and, unchanged, to their re-tests. They're stricter tha
     of delta, weighted by screened counts.
   - *(b) Passes if*, for one ~0.20-delta spread of each type per name and day, sell-off days (SPY
     down ≥ 3% over 5 sessions) have their q25 interval above zero in both halves.
+
+### Declared pass test for item 7 (2026-10-19, before any look)
+
+Item 7 runs on the recorder's own quote history (SPX 0DTE, 20 strikes each side, from 2026-10-13),
+not the vendor store. Every session in it is after 2026-10-12, so for the `pm-200` arms its result
+counts as evidence, not a provisional look. Its figures can be published.
+
+- **Condors:** every one `pm-200` would enter on a recorded session (16 delta, 10 wide, every 30
+  minutes 12:00–14:30), rebuilt from the recorded chain. `pm-200-1400`'s entries, the live rule, are
+  reported as a subset. A session whose recording has a gap while a condor is open is left out and
+  counted.
+- **Baseline:** `pm-200`'s stop. A side closes when its cost reaches 2× the whole credit; the other
+  side is held to settlement.
+- **Variant A, a tighter surviving side.** Once one side stops, the other side's trigger drops by
+  10% and, separately, by 25% (1.8× and 1.5× the whole credit). Those are the ends of Talon's stated
+  range.
+- **Variant B, a stop on the short leg only.** The short is bought back when its own ask reaches the
+  side's trigger plus the long's entry price. The long is then sold at the first bid after the fill;
+  separately, it's held to settlement. Both are declared.
+- **Fills:** every rule is priced on the same recorded quotes. A stop fills at the natural (ask to
+  buy, bid to sell) on the first sample at or past its trigger.
+- **Costs:** `core.fees`' close fee for each leg closed, plus $5 per ITM leg at settlement.
+- **Sample:** no verdict before 30 condors have had a first stop, across at least 10 sessions.
+  Until then, only counts are reported.
+- **Passes if** the paired difference in net per condor (variant − baseline) has a positive mean
+  and its 95% interval's lower bound above zero. The interval comes from a day-level bootstrap
+  (2,000 resamples, fixed seed). Drawdown (Talon's claim: similar profit, half the drawdown) is
+  reported beside it, but it can't pass the test alone. A drawdown-only gain is a sizing argument
+  and is made as one.
 
 ### Results of the provisional looks (2026-10-19)
 
