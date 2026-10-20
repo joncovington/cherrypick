@@ -11,6 +11,12 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed: manage's credit stop at lower confidence, and the untested-side roll off by default.**
+  After a declared local study of short-strangle management on licensed history (its plan and
+  results stay under `~/.cherrypick`, by the data licence), `credit.stop` reports at confidence 50
+  (was 70) and `roll.untested_side` is off unless the override file turns it on. 50% or 21 DTE stays
+  the base. The snapshot still quotes a strangle's chain, so turning the roll on needs nothing else.
+
 - **Changed: a new install gets its universe on day one, and Dolt is set up by default.** The
   liquidity check (and the nightly IV-rank fetch) now also judge every rank 1-2 optionable name on
   the security list; before, a machine without the universe builder or the vendor lists judged only

@@ -31,7 +31,7 @@
       "enabled": true,
       "loss_multiple_of_credit": 1.0,
       "fallback_max_loss_fraction": 0.5,
-      "confidence": 70
+      "confidence": 50
     },
     "time_exit": {
       "enabled": true,
@@ -119,8 +119,8 @@
       "confidence": 55
     },
     "untested_side": {
-      "_comment": "A short strangle or straddle with one short at tested_delta or more and the other under target_delta: roll the untested short toward the money, same expiry, to the listed strike nearest target_delta, for at least min_credit a share at the snapshot's quoted mids (roll_chains). A review; in place of the short-leg buy-back when that names the untested leg; never in place of a stop. Never past the tested strike: an inversion ranks below closing or rolling out in time, so it is only recorded, never proposed.",
-      "enabled": true,
+      "_comment": "A short strangle or straddle with one short at tested_delta or more and the other under target_delta: roll the untested short toward the money, same expiry, to the listed strike nearest target_delta, for at least min_credit a share at the snapshot's quoted mids (roll_chains). A review; in place of the short-leg buy-back when that names the untested leg; never in place of a stop. Never past the tested strike: an inversion ranks below closing or rolling out in time, so it is only recorded, never proposed. Off by default since 2026-10-20; set enabled to true to use it.",
+      "enabled": false,
       "tested_delta": 0.4,
       "target_delta": 0.3,
       "min_credit": 0.1,

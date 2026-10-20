@@ -70,7 +70,9 @@ DEFAULT_RULES: dict[str, Any] = {
             # Where that stop cannot fire (the credit exceeds what is left to lose), stop at this share of
             # the modelled max loss instead.
             "fallback_max_loss_fraction": 0.50,
-            "confidence": 70,
+            # 70 until 2026-10-20; lowered after a declared local study of strangle management on
+            # licensed history (its plan and results stay under ~/.cherrypick, by the data licence).
+            "confidence": 50,
         },
         "time_exit": {"enabled": True, "dte": 21, "roll_if_profitable": True, "confidence": 75},
         # Thesis rule: a short strike is in the money and what is left to win, against what is left to
@@ -164,9 +166,10 @@ DEFAULT_RULES: dict[str, Any] = {
         # never passes the tested strike: an inverted strangle always ranks below closing or rolling out
         # in time without the inversion (the user's rule, 2026-10-19), so a straddle's untested side is
         # never rolled in its own expiry. The tastylive strategy guide's (2023) strangle defence,
-        # without its inversion; no outside test.
+        # without its inversion. OFF by default since 2026-10-20, after the same declared local study
+        # (results under ~/.cherrypick, by the data licence); kept as an option an override turns on.
         "untested_side": {
-            "enabled": True,
+            "enabled": False,
             "tested_delta": 0.40,
             "target_delta": 0.30,
             "min_credit": 0.10,

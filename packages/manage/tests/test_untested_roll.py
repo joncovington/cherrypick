@@ -33,9 +33,23 @@ def chain(spot, strikes, right="P", underlying="XYZ"):
     }
 
 
+ON = {"enabled": True}  # the rule is off by default (2026-10-20); these tests turn it on
+
+
+def rules_on(**untested):
+    return _rules.effective({"roll": {"untested_side": {**ON, **untested}}})[0]
+
+
 def run(legs, spot, chains, rules=None):
-    rules = rules or _rules.effective(None)[0]
+    rules = rules or rules_on()
     return ev.evaluate_trade("XYZ", legs, {"last": spot}, SESSION, 100_000.0, rules, None, None, chains)
+
+
+def test_the_untested_roll_is_off_by_default():
+    spot = 107.0
+    t = run(strangle(spot), spot, chain(spot, range(85, 112)), _rules.effective(None)[0])
+    assert "roll.untested_side" not in fired(t) and t["untested_roll"] is None
+    assert _rules.DEFAULT_RULES["roll"]["untested_side"]["enabled"] is False
 
 
 def test_a_tested_strangle_rolls_its_untested_put_up_to_the_listed_strike_nearest_30_delta():
@@ -136,7 +150,7 @@ def test_a_strangles_roll_may_reach_the_tested_strike_but_not_pass_it():
 
 def test_a_roll_under_the_minimum_credit_is_not_proposed():
     spot = 107.0
-    rules = _rules.effective({"roll": {"untested_side": {"min_credit": 5.0}}})[0]
+    rules = rules_on(min_credit=5.0)
     t = run(strangle(spot), spot, chain(spot, range(85, 112)), rules)
     assert "roll.untested_side" not in fired(t) and t["untested_roll"]["blocked"] == "credit"
 
@@ -158,13 +172,15 @@ def test_the_untested_roll_reads_the_snapshots_chains():
         "metrics": {"XYZ": {"last": spot}},
         "roll_chains": chain(spot, range(85, 112)),
     }
-    result = ev.evaluate(snapshot, _rules.effective(None)[0])
+    result = ev.evaluate(snapshot, rules_on())
     (trade,) = result["accounts"][0]["trades"]
     assert "roll.untested_side" in fired(trade)
 
 
 def test_the_untested_roll_can_be_switched_off():
     spot = 107.0
-    rules = _rules.effective({"positions": {"XYZ": {"disable": ["roll.untested_side"]}}})[0]
+    rules = _rules.effective(
+        {"roll": {"untested_side": ON}, "positions": {"XYZ": {"disable": ["roll.untested_side"]}}}
+    )[0]
     t = run(strangle(spot), spot, chain(spot, range(85, 112)), rules)
     assert "roll.untested_side" not in fired(t) and t["untested_roll"] is None
