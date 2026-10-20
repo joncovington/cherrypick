@@ -256,6 +256,63 @@ def latest(day: str | None = None, vendor_on: bool | None = None) -> tuple[list[
     return _rows(root / f"{pick['day']}.json"), pick
 
 
+# The income lists' universe: the liquid optionable names (2026-10-19). A fresh install has no
+# universe builder, no vendor lists and no earnings calendar without Dolt, so the liquidity verdict
+# would judge only the ~40 reference funds; these are the names it judges besides. Until the first
+# list is built (the installer's first evening), the shipped seed stands in: bare tickers, never
+# figures, never mixed with a built list.
+SEED_UNIVERSE = Path(__file__).with_name("seed_universe.json")
+
+
+def liquid_optionable_rows(rows: list[dict]) -> list[str]:
+    """The rank 1-2 optionable names of a security list, in the store's spelling (BRK.B)."""
+    return sorted(
+        {
+            str(r["symbol"]).replace("/PR/", "$").replace("/", ".")
+            for r in rows
+            if r.get("symbol") and r.get("hasOptions") and r.get("liquidityRank") in (1, 2)
+        }
+    )
+
+
+def seed_universe() -> list[str]:
+    try:
+        return list(json.loads(SEED_UNIVERSE.read_text(encoding="utf-8")).get("symbols") or [])
+    except (OSError, ValueError):
+        return []
+
+
+def liquid_optionable(day: str | None = None) -> tuple[list[str], str]:
+    """(the liquid optionable names, where they came from): the current security list's rank 1-2
+    optionable names, else -- no list built yet -- the shipped seed."""
+    rows, pick = latest(day)
+    names = liquid_optionable_rows(rows)
+    if names:
+        return names, f"{pick.get('source')} list of {pick.get('day')}"
+    return seed_universe(), "the shipped seed (no security list built yet)"
+
+
+def write_seed(day: str | None = None) -> dict[str, Any]:
+    """Rewrite the shipped seed from the newest PUBLIC list (never the vendor's): tickers only."""
+    days = _days(paths.securities_dir())
+    pick = max((d for d in days if d <= (day or date.today().isoformat())), default=None)
+    if pick is None:
+        return {"ok": False, "reason": "no public security list built"}
+    names = liquid_optionable_rows(_rows(paths.securities_dir() / f"{pick}.json"))
+    doc = {
+        "_note": (
+            "The income lists' bootstrap universe: the rank 1-2 optionable names of our own public "
+            "security list (securities.py), tickers only. Used only until a machine builds its first "
+            "list. Regenerate with `python -m cherrypick.technicals seed-universe --write`."
+        ),
+        "from": f"public security list of {pick}",
+        "rule": {"rank_2": {"contracts": TOP_TWO_CONTRACTS, "dollar_volume": TOP_TWO_DOLLARS}},
+        "symbols": names,
+    }
+    SEED_UNIVERSE.write_text(json.dumps(doc, indent=1) + "\n", encoding="utf-8")
+    return {"ok": True, "from": pick, "symbols": len(names), "file": str(SEED_UNIVERSE)}
+
+
 # ------------------------------------------------------------------------------------------------
 # The nightly build.
 

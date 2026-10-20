@@ -175,10 +175,14 @@ def screener_names() -> list[str]:
 
 
 def build(today: date | None = None) -> dict[str, Any]:
-    """Judge every name the store holds and every listed screener name; write the verdicts."""
+    """Judge every name the store holds, every listed screener name and every liquid optionable name
+    (`securities.liquid_optionable`, the income lists' universe); write the verdicts."""
+    from . import securities
+
     today = today or date.today()
     sweep = is_sweep_day(today)
-    names = sorted({*symbols.all_symbols(), *screener_names()} - REFERENCE)
+    liquid, liquid_from = securities.liquid_optionable(today.isoformat())
+    names = sorted({*symbols.all_symbols(), *screener_names(), *liquid} - REFERENCE)
     # The reference funds, judged by the same test but kept apart: never sticky, never hidden.
     funds = sorted(REFERENCE - set(symbols.INDEXES))
     rows, label_day = tradable.latest_rows()
@@ -192,6 +196,7 @@ def build(today: date | None = None) -> dict[str, Any]:
         "sweep": sweep,
         "label_day": label_day,
         "dollar_volume_file": dv_header.get("file"),
+        "liquid_optionable_from": liquid_from,
         "names": verdicts,
         "reference": reference_verdicts(funds, rows, dv, today.isoformat()),
     }

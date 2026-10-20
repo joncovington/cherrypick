@@ -64,6 +64,8 @@ Subcommands:
   run-earnings-entry   Run EarningsAgent's paper entry now (invoked by its daily task).
   run-earnings-exit    Run EarningsAgent's paper exit now (invoked by its daily task).
   ensure-dolt          Start any module's declared Dolt server if down (invoked by its keep-alive task).
+  bootstrap            Run the evening jobs that build the income lists' universe once, now (market files,
+                       dollar volume, security list, IV rank, liquidity), as the installer does.
   notify-test          Fire a test notification through all configured channels.
   notify-trades        Push new paper entries/exits to the trade channels (also runs on each watchdog tick).
   notify-desk          Card manual-desk orders and watch them to fill (own task, broker + network call).
@@ -1181,6 +1183,19 @@ def supersnap_anchor() -> str:
 
 
 # --------------------------------------------------------------------------- misc
+def cmd_bootstrap(cfg) -> None:
+    """The universe's evening jobs, once, in order, with the supervisor's own commands (bootstrap.py)."""
+    from .orchestrator import bootstrap, jobspec
+
+    jobs, _ = jobspec.derive_jobs(
+        cfg, pythonw=cfgmod.pythonw_exe(), launcher=str(_LAUNCHER), now=timeutil.now_et()
+    )
+    report = bootstrap.run(bootstrap.plan(jobs, sys.executable))
+    _emit(report)
+    if not report["ok"]:
+        sys.exit(1)
+
+
 def cmd_capabilities(cfg, args) -> None:
     """Show (default), detect (--detect [--write]) or set (--cap name=bool ...) what this machine has.
     See orchestrator/capabilities.py; the installer runs `--detect --write`."""
@@ -1914,6 +1929,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=[
             "init",
             "capabilities",
+            "bootstrap",
             "config-backup",
             "install",
             "uninstall",
@@ -2244,6 +2260,7 @@ def main() -> None:
         "status": lambda: cmd_status(cfg),
         "doctor": lambda: cmd_doctor(cfg, fast=args.fast),
         "capabilities": lambda: cmd_capabilities(cfg, args),
+        "bootstrap": lambda: cmd_bootstrap(cfg),
         "config-backup": lambda: cmd_config_backup(cfg, args),
         "watchdog": lambda: cmd_watchdog(cfg),
         "preopen-check": lambda: cmd_preopen_check(cfg),
