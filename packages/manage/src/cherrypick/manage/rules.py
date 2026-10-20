@@ -155,6 +155,22 @@ DEFAULT_RULES: dict[str, Any] = {
         # The new wing is MODELLED (its IV read off the body's and the old wing's): re-quote first. The
         # tastylive strategy guide's (2023) first goal for a BWB; no outside test.
         "fly_off": {"enabled": True, "max_share_of_credit": 1.0, "confidence": 55},
+        # A short strangle or straddle is TESTED when one short reaches `tested_delta` while the other
+        # is under `target_delta`: roll the untested short toward the money, in the same expiry, to the
+        # listed strike nearest `target_delta`, when that takes in `min_credit` a share at the quoted
+        # mids (the snapshot's `roll_chains`, v11). It adds credit and cuts the trade's delta; it is
+        # REPAIR, which this ruleset otherwise avoids, so it is a review and never replaces a stop. It
+        # never passes the tested strike: an inverted strangle always ranks below closing or rolling out
+        # in time without the inversion (the user's rule, 2026-10-19), so a straddle's untested side is
+        # never rolled in its own expiry. The tastylive strategy guide's (2023) strangle defence,
+        # without its inversion; no outside test.
+        "untested_side": {
+            "enabled": True,
+            "tested_delta": 0.40,
+            "target_delta": 0.30,
+            "min_credit": 0.10,
+            "confidence": 50,
+        },
     },
     "expiry": {
         "enabled": True,
@@ -305,6 +321,7 @@ RULE_IDS = (
     "roll.naked_put",
     "roll.diagonal_short",
     "roll.fly_off",
+    "roll.untested_side",
     "directional.take_profit",
     "directional.stop",
     "ex_dividend",
