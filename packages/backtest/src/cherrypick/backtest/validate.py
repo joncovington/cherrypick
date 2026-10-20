@@ -5,15 +5,17 @@ Three layers, each answering whether a backtest on vendor data would see what th
 1. **Quotes.** Every recorded quote against the vendor's quote standing at the same instant (the
    recorded quote's own time, `ts - age`), on the same strike and side: the share matched, the share
    identical, and the size of the mid gap. Spot the same way.
-2. **Profile.** The GEX surface the replay rebuilds (`core.gex.compute_gex` over each profile row, the
-   rule `flies.replay` uses) from the recorder's profile and from the vendor's computed one: walls,
-   gamma flip, and the sign of net GEX.
-3. **Decisions.** `flies replay-check` run twice, on the recorder's history and on the vendor's, each
-   against paper's own book. Run as a subprocess (this package imports no strategy module).
+2. **Profile.** The GEX surface the replay rebuilds (`core.quotehistory.profile_surface` over each
+   profile row, the build every replay uses) from the recorder's profile and from the vendor's computed
+   one: walls, gamma flip, and the sign of net GEX.
+3. **Decisions.** The validated module's own check (`CHECKS`, one entry per module: flies'
+   `replay-check`, MEIC's `meic.replay check`) run on the recorder's history and on the vendor's, each
+   against paper's own book. Run as a subprocess (this package imports no strategy module), and each
+   module's report unlocks only that module's history.
 
 **The declared bar for unlocking history runs (2026-10-17):** at least `UNLOCK_SESSIONS` sessions in
 both stores, and the vendor-sourced replay at least as good as the recorder-sourced one on every one of
-flies' declared checks. The question is whether the vendor's data is as good as our own recording,
+the module's declared checks. The question is whether the vendor's data is as good as our own recording,
 not whether the replay is perfect: the recorder-sourced replay itself fails flies' completion-timing
 check, and a bar it cannot meet would measure the replay, not the data.
 

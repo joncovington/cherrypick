@@ -102,7 +102,10 @@ It is written into `market_regime_history`, the recorder's table, in the recorde
 (`reading = 'vix'`, `symbol = 'VIX'`), so `core.regime` reads a vendor session as it reads a recorded
 one; the mirror tests hold that table equal to gex's too. `fetch` fills it for the sessions it
 writes; `fetch-vix --from --to` backfills stored sessions (resumable, `--refetch` replaces, never an
-empty series).
+empty series), and exits 1 when any session was refused or came back empty. A session without VIX
+rows replays on the Cboe daily open, so a MEIC run records each session's VIX source and states
+`vix_fallback_sessions`, and MEIC's data fingerprint covers the VIX rows and the Cboe files
+(`runner._meic_inputs`): adding VIX to a session is new evidence under a new stamp.
 
 The vendor library is an **extra** (`pip install -e "packages/backtest[thetadata]"`), not a
 dependency: it pins its own pandas/polars/grpc, and nothing but a fetch needs it. It imports
