@@ -16,6 +16,7 @@ param(
     [switch]$Yes,
     [switch]$AcceptDisclaimer,
     [switch]$SkipDolt,
+    [switch]$SkipBootstrap,
     [switch]$WithDesk,
     [switch]$NoStart,
     [switch]$ConfigHistory,
@@ -143,11 +144,11 @@ else { Note "Claude Code: not found - AI features stay off and hidden. Install C
 if ($hasDolt) {
     Note "Dolt data: found - earnings and technicals are available."
 } elseif (-not $SkipDolt) {
-    Step "Optional: Dolt market data (for the earnings module and the technicals report)"
+    Step "Dolt market data (needed by the earnings module, the technicals report and the screeners)"
     Note "Dolt is a free database tool. cherrypick uses three free public datasets from DoltHub"
-    Note "(earnings calendar, option history and stock history). The download is SEVERAL GB and"
-    Note "can take an hour or more on a slow connection."
-    if (Ask "Set up Dolt now?" $false) {
+    Note "(earnings calendar, option history and stock history), about 12 GB, which can take an hour"
+    Note "or more on a slow connection. Without it those features stay off; -SkipDolt skips this."
+    if (Ask "Set up Dolt now?" $true) {
         if (-not (Get-Command dolt -ErrorAction SilentlyContinue)) {
             if (Ask "Dolt is not installed. Install it now with winget?" $true) {
                 Run "winget" @("install", "-e", "--id", "DoltHub.Dolt", "--accept-source-agreements", "--accept-package-agreements") "Installing Dolt"
@@ -176,8 +177,8 @@ if ($hasDolt) {
     }
 }
 if (-not $hasDolt) {
-    Warn "Without the Dolt data, the EARNINGS module and the TECHNICALS report are turned off"
-    Warn "automatically and hidden from the console. Run this installer again any time to add it."
+    Warn "Without the Dolt data, the EARNINGS module, the TECHNICALS report and four Screeners tabs"
+    Warn "are turned off (the tabs say what they need). Run this installer again any time to add it."
 }
 
 # ---------------------------------------------------------------------------------- broker
@@ -197,6 +198,23 @@ if ($connected) {
     if ($LASTEXITCODE -ne 0) { Warn "Not connected. Run this installer again to try once more." }
 } else {
     Warn "Skipped. Market data will not flow until you connect; run this installer again to do it."
+}
+
+# ---------------------------------------------------------------------------------- first lists
+# The evening jobs that build the income lists' universe, once, now: otherwise a new install waits a
+# day or two for them to run in order at their own times (run.py bootstrap says why).
+try {
+    $secrets = (& $VPy -m cherrypick.core.auth status | ConvertFrom-Json).secrets
+    $connected = [bool]$secrets.client_secret -and [bool]$secrets.refresh_token
+} catch { $connected = $false }
+if ($connected -and -not $SkipBootstrap) {
+    Step "Building the universe for your first lists (a few minutes)"
+    Note "Market files, each optionable name's dollar volume, the security list, IV ranks and the"
+    Note "liquidity check -- the jobs that otherwise first run this evening. The short-put and"
+    Note "covered-call lists then appear after 15:10 ET on the next trading day."
+    $null = & $VPy $RunPy bootstrap
+    if ($LASTEXITCODE -eq 0) { Note "Done." }
+    else { Warn "Some steps did not finish; they run again this evening on their own. 'run.py bootstrap' retries now." }
 }
 
 # ---------------------------------------------------------------------------------- config history

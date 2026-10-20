@@ -11,6 +11,14 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed: a new install gets its universe on day one, and Dolt is set up by default.** The
+  liquidity check (and the nightly IV-rank fetch) now also judge every rank 1-2 optionable name on
+  the security list; before, a machine without the universe builder or the vendor lists judged only
+  ~40 funds, so its income lists held no stocks. Until a first list is built, a shipped seed of
+  tickers stands in (`seed_universe.json`, ours, no figures). The installer now runs `run.py
+  bootstrap` after the broker login -- the five evening jobs that build that universe, once -- and
+  sets up Dolt unless told not to (`-SkipDolt`); `doctor` warns without it. Shallow Dolt clones
+  were measured (4.8 GB against 12) and rejected: Dolt 2.4 cannot pull into one.
 - **Added: our own short-put and covered-call lists.** The Screeners page's short puts and covered
   calls tabs now show the suite's own list by default, with the vendor's saved days behind a toggle
   (its subscription ends on 2026-10-24). Every options-tradable name, the strike nearest 16 delta (a

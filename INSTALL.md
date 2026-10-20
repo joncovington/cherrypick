@@ -21,7 +21,7 @@ the suite does once it is running, see the [README](README.md) and the [User Gui
 | **Node.js 22+** | **Yes** | For the console, the suite's web UI. Windows: `winget install -e --id OpenJS.NodeJS.LTS`. macOS: `brew install node`. |
 | **pnpm 11** | Installed for you | The installer runs `npm install -g pnpm@11` if pnpm is missing. |
 | git | Optional | Downloading the ZIP from GitHub works just as well. |
-| [Dolt](https://github.com/dolthub/dolt) | Optional | Needed only by the **earnings** module and the **technicals** report. It serves three public DoltHub datasets: `stocks` (about 3 GB), `earnings` (about 1.35 GB) and `options` (large — the biggest of the three). Without it, those two features are switched off and hidden. |
+| [Dolt](https://github.com/dolthub/dolt) | Expected (the installer sets it up; `-SkipDolt` to skip) | Needed by the **earnings** module, the **technicals** report and four **Screeners** tabs (earnings, earnings record, signal board, skate). It serves three public DoltHub datasets, about 12 GB in all (`options` the largest), kept current by a 05:30 pull. A shallow clone would be a third of that, but Dolt 2.4 cannot pull into one, so the clones are full. Without it those features are off, and the Screeners tabs say so. The short-put and covered-call lists do not need it. |
 | [Claude Code](https://docs.claude.com/en/docs/claude-code) | Optional | Needed only by the AI advisor and the end-of-day and morning narratives, and for the repo's slash commands. Without it, those features are switched off and hidden. |
 | A machine that stays awake in market hours | **Yes** | It runs on your computer, not a cloud service. Windows is the most proven platform (see [below](#macos-and-linux)); on Windows, see [Leaving a Windows PC unattended](#leaving-a-windows-pc-unattended). |
 
@@ -131,13 +131,19 @@ there, never overwrite your configuration, and are how you add Dolt or Claude Co
 6. **Capabilities.** `run.py capabilities --detect --write` probes for Claude Code and Dolt and
    records what it finds in the config's `capabilities` block. A feature whose capability is missing
    stays off and is hidden in the console.
-7. **Dolt (optional, skippable).** If you say yes, Dolt is installed where it can be (winget on
+7. **Dolt (yes by default; `-SkipDolt` to skip).** Dolt is installed where it can be (winget on
    Windows; on macOS and Linux it prints the command), and `post-no-preference/earnings`, `options`
-   and `stocks` are cloned into `~/.cherrypick/data/earnings`. This is the slow part: several GB, and
-   an hour or more on a slow connection. An interrupted clone resumes on the next run.
+   and `stocks` are cloned into `~/.cherrypick/data/earnings`. This is the slow part: about 12 GB, and
+   an hour or more on a slow connection. An interrupted clone resumes on the next run. Without it,
+   the earnings module, the technicals report and four Screeners tabs stay off (each tab says what
+   it needs) and `run.py doctor` warns.
 8. **Broker login.** `python -m cherrypick.core.auth setup` asks for your OAuth `client_secret` and
    `refresh_token` (hidden input) and stores them in the OS keyring — Windows Credential Manager,
    the macOS Keychain or the Linux Secret Service — never in a file.
+   With a login in place, **`run.py bootstrap`** then runs, once, the evening jobs that build the
+   income lists' universe (market files, each optionable name's dollar volume, the security list,
+   IV ranks, the liquidity check), so the short-put and covered-call lists appear after 15:10 ET on
+   the next trading day instead of a day or two later. A few minutes; `-SkipBootstrap` skips it.
 9. **Settings history (optional, off unless you say yes).** `run.py config-backup --init --enable
    [--remote <url>]` makes `~/.cherrypick` a git repository that tracks only `config.json` and
    `config/*.json`, and the supervisor's `config-backup` job commits changes every 15 minutes and
@@ -151,8 +157,9 @@ there, never overwrite your configuration, and are how you add Dolt or Claude Co
 | Option (Windows / macOS and Linux) | Effect |
 |---|---|
 | `-AcceptDisclaimer` / `--accept-disclaimer` | You have read DISCLAIMER.md and accept it; no prompt. |
-| `-Yes` / `--yes` | Accept every default without asking (Dolt: no; connect: yes). The disclaimer still needs `-AcceptDisclaimer`. |
-| `-SkipDolt` / `--skip-dolt` | Do not offer the Dolt setup. Earnings and technicals stay off. |
+| `-Yes` / `--yes` | Accept every default without asking (Dolt: yes; connect: yes). The disclaimer still needs `-AcceptDisclaimer`. |
+| `-SkipDolt` / `--skip-dolt` | Do not offer the Dolt setup. Earnings, technicals and four Screeners tabs stay off; `doctor` warns. |
+| `-SkipBootstrap` / `--skip-bootstrap` | Do not build the income lists' universe at the end of the install (`run.py bootstrap`); it builds that evening instead. |
 | `-WithDesk` / `--with-desk` | Also install the EXPERIMENTAL manual desk. Installing it does not enable it. |
 | `-ConfigHistory` / `--config-history` | Keep a git history of your settings without being asked (add `-ConfigRemote <url>` / `--config-remote <url>` to push it to a private repository you own). |
 | `-NoStart` / `--no-start` | Install only. Start later with `.venv/bin/python packages/orchestrator/run.py install` (`.venv\Scripts\python` on Windows). |

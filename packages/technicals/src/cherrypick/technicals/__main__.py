@@ -214,6 +214,24 @@ def cmd_score_screeners(args) -> int:
     return 0
 
 
+def cmd_seed_universe(args) -> int:
+    """Show (or with --write, rewrite) the shipped bootstrap universe (securities.SEED_UNIVERSE)."""
+    from . import securities
+
+    if args.write:
+        report = securities.write_seed()
+    else:
+        names, source = securities.liquid_optionable()
+        report = {
+            "ok": True,
+            "source": source,
+            "symbols": len(names),
+            "seed": len(securities.seed_universe()),
+        }
+    print(json.dumps(report, indent=1))
+    return 0 if report.get("ok") else 1
+
+
 def cmd_income_lists(args) -> int:
     """Our own short-put and covered-call lists from the afternoon income chains (incomelists.py)."""
     from pathlib import Path
@@ -688,6 +706,13 @@ def main(argv: list[str] | None = None) -> int:
     il.add_argument("--day", help="the newest reading on or before this day (YYYY-MM-DD); default today")
     il.add_argument("--source", help="build from this income file instead (written as a .trial.json)")
     il.set_defaults(fn=cmd_income_lists)
+    su = sub.add_parser(
+        "seed-universe", help="the income lists' universe source; --write rewrites the shipped seed"
+    )
+    su.add_argument(
+        "--write", action="store_true", help="rewrite seed_universe.json from the newest public list"
+    )
+    su.set_defaults(fn=cmd_seed_universe)
     sk = sub.add_parser(
         "skate", help="the skate screen's range bands and how often each has held, per name and expiry"
     )

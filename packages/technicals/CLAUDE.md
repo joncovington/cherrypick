@@ -308,7 +308,11 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
 - **Liquidity verdicts** (`liquidity.py`, `liquidity` command, nightly 18:57 ET) hold a name that
   fails the options-tradable test **illiquid until the monthly sweep** (the first trading day of the
   month). The test's dollar volume is the candle file's for every name (2026-10-19; before, the
-  store's bars, else Dolt's). Every broker-spending script skips those names (universe measurement, the IV-rank fetch,
+  store's bars, else Dolt's). It judges the store's names, the screener names and, from
+  2026-10-19, every **liquid optionable** name (`securities.liquid_optionable`: the current security
+  list's rank 1-2 optionable names, else the shipped `seed_universe.json`) -- the income lists'
+  universe, which a fresh install (no universe builder, no vendor lists) would otherwise lack; the
+  IV-rank fetch reads the same names. Every broker-spending script skips those names (universe measurement, the IV-rank fetch,
   the screener spread readings and greeks, the earnings moves), and no listed view names them:
   chart files, the picker, the watchlist, and the report's lists. Their bars stay in the store and
   every count still includes them -- breadth, sector net, rank cut-offs -- because the engines are
@@ -430,6 +434,7 @@ tight, open interest) and soft thresholds as a marker.
 | `python -m cherrypick.technicals score-board` | The board's six methods vs every saved board: found, tagged, extra; rows on the board's side. |
 | `python -m cherrypick.technicals securities [--session D]` | The public security list from local files, `securities/current.json` naming the list readers use, and the public list scored against the vendor's of that day where one is saved. |
 | `python -m cherrypick.technicals score-bearing` | The bearing lookup fitted on earlier security lists, scored on the latest. |
+| `python -m cherrypick.technicals seed-universe [--write]` | Where the income lists' universe comes from tonight (the security list's rank 1-2 optionable names, or the shipped seed when none is built); `--write` regenerates `seed_universe.json` from the newest PUBLIC list -- tickers only, never the vendor's list, never a figure. |
 | `python -m cherrypick.technicals income-lists [--day D] [--source FILE]` | Our own short-put and covered-call lists from the newest afternoon income chains: the strike nearest 16 delta within 0.05 (`cherrypick.core.incomerules`), at the working price, earnings against each trade's expiry; `income-lists/<session>.json` (`.trial.json` with `--source`). |
 | `python -m cherrypick.technicals score-screeners [--rescore]` | The income screens' expiry, strike and return rules vs every saved list with its broker chain; one file per session in `screeners/`, totals printed. |
 | `python -m cherrypick.technicals skate [--day YYYY-MM-DD]` | The skate screen's fixed and by-expiry range bands for every options-tradable name, side and weekly expiry to 63 days, with each band's skate curve over history; `skate/<day>.json`. |
