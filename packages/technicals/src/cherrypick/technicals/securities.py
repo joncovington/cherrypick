@@ -7,7 +7,8 @@ plan, and the console's fund labels. Until 2026-10-17 the only such list was the
 nightly by the collector; the subscription ends 2026-10-24 and may be taken up again, so the vendor
 is a configured source (`cherrypick.core.vendor`), and this list is the default.
 
-**From what, all local** -- no broker, no network; the morning pack's fetcher lands both files:
+**From what, all local** -- no broker, no network; the morning pack's fetcher lands the first two
+files, `scripts/fetch_dollar_volume.py` the third:
 
 - **type**: Nasdaq Trader's directory (`market-files/occ/nasdaqtraded.txt`), its ETF flag and the
   security's name, labelled in the vendor's words so a reader reads either list the same way.
@@ -19,7 +20,10 @@ is a configured source (`cherrypick.core.vendor`), and this list is the default.
   of them ranks 3, so no reader's set changes.
 - **liquidityRank**: OURS, not the vendor's. 2 needs `TOP_TWO_CONTRACTS` contracts a day (median
   over the sessions) and `TOP_TWO_DOLLARS` of stock a day (50-session median close x volume from
-  the local Dolt, the options-tradable test's bar); 1 needs `TOP_CONTRACTS` and `TOP_DOLLARS`.
+  the broker's daily candles, `dollarvolume.py`, the options-tradable test's bar); 1 needs
+  `TOP_CONTRACTS` and `TOP_DOLLARS`. Until 2026-10-19 the dollar volume was read from the local
+  Dolt, so the list could not be built without it; the candles' figure matched Dolt's to about
+  0.05%.
   Fitted on 5,942 optionable names against the vendor's 2026-10-16 list: its rank-1-or-2 set is
   matched at 78% precision and 78% recall, its rank 1 at about 0.77 F1. The vendor's rank is not
   volume alone (its rank-1 names run from 950 to 640,000 contracts a day), and no rule from these
@@ -45,10 +49,9 @@ from typing import Any
 from cherrypick.core import jsonio as _jsonio
 from cherrypick.core import vendor as _vendor
 
-from . import paths
+from . import dollarvolume, paths
 
 OPTION_SESSIONS = 20
-DOLLAR_SESSIONS = 50
 MIN_DOLLAR_SESSIONS = 20
 TOP_CONTRACTS = 2_000
 TOP_DOLLARS = 300e6
@@ -160,8 +163,8 @@ def public_rows(
 ) -> list[dict]:
     """One row per directory symbol. `contracts` is each OCC underlying's contracts over the
     sessions read (a session it is absent from traded none: OCC lists every underlying with
-    volume, so those count as zeros); `dollars` the 50-session median close x volume by Dolt
-    symbol (the directory's own spelling)."""
+    volume, so those count as zeros); `dollars` the 50-session median close x volume by
+    symbol (the store's spelling, the directory's own: BRK.B)."""
     sessions = max((len(v) for v in contracts.values()), default=0)
     rows = []
     for d in directory:
@@ -275,58 +278,56 @@ def _occ_contracts(day: str) -> tuple[dict[str, list[int]], list[str]]:
     return out, [s for s, _ in read]
 
 
-def _dolt_dollars(cfg: dict, day: str) -> tuple[dict[str, float], str | None]:
-    """{Dolt symbol: 50-session median close x volume} through `day`, from one date-window read (the
-    table's key leads with date, so a symbol filter would walk it)."""
-    from . import land
-
-    cfg = {**land.DEFAULTS, **cfg}
-    db = land._connect(cfg, cfg["stocks_db"])
-    try:
-        cur = db.cursor()
-        cur.execute(
-            "SELECT act_symbol, date, close, volume FROM ohlcv "
-            "WHERE date <= %s AND date > DATE_SUB(%s, INTERVAL 100 DAY) ORDER BY date",
-            (day, day),
-        )
-        by: dict[str, list[float]] = {}
-        through = None
-        for sym, d, close, volume in cur.fetchall():
-            by.setdefault(sym, []).append(float(close) * float(volume or 0))
-            through = str(d)[:10]
-    finally:
-        db.close()
-    dollars = {
-        s: statistics.median(v[-DOLLAR_SESSIONS:]) for s, v in by.items() if len(v) >= MIN_DOLLAR_SESSIONS
-    }
-    return dollars, through
-
-
-def build(dolt_cfg: dict | None = None, day: str | None = None) -> dict[str, Any]:
-    """Build `day`'s public list, write it and the pointer, and score it against the vendor's list
-    of the same day or the one before it, when one is saved."""
-    day = day or date.today().isoformat()
+def read_directory() -> tuple[list[dict], str | None, str]:
+    """(the symbol directory's rows, its footer date, why it is empty) from the morning pack's copy."""
     text_path = paths.market_files_dir() / "occ" / "nasdaqtraded.txt"
     try:
         text = text_path.read_text(encoding="utf-8")
     except OSError:
-        return {"ok": False, "reason": f"no symbol directory at {text_path}"}
+        return [], None, f"no symbol directory at {text_path}"
     directory = parse_directory(text)
     if not directory:
-        return {"ok": False, "reason": "the symbol directory is not readable"}
+        return [], None, "the symbol directory is not readable"
+    return directory, directory_as_of(text), ""
+
+
+def optionable(day: str | None = None) -> list[str]:
+    """Every directory symbol with option volume at OCC in the last OPTION_SESSIONS sessions on or
+    before `day`, in the directory's spelling: the names whose dollar volume the list ranks, and so
+    the names scripts/fetch_dollar_volume.py fetches."""
+    day = day or date.today().isoformat()
+    directory, _, _ = read_directory()
+    contracts, _ = _occ_contracts(day)
+    return sorted(
+        d["symbol"] for d in directory if any(v > 0 for v in contracts.get(occ_spelling(d["symbol"])) or [])
+    )
+
+
+def build(day: str | None = None) -> dict[str, Any]:
+    """Build `day`'s public list, write it and the pointer, and score it against the vendor's list
+    of the same day or the one before it, when one is saved."""
+    day = day or date.today().isoformat()
+    directory, as_of, why = read_directory()
+    if not directory:
+        return {"ok": False, "reason": why}
     contracts, sessions = _occ_contracts(day)
     if not sessions:
         return {"ok": False, "reason": "no OCC volume sessions"}
-    dollars, through = _dolt_dollars(dolt_cfg or {}, day)
+    names, dv_header = dollarvolume.latest(day)
+    if not names:
+        why = f"no dollar-volume file on or before {day} (scripts/fetch_dollar_volume.py)"
+        return {"ok": False, "reason": why}
+    dollars = dollarvolume.medians(names, MIN_DOLLAR_SESSIONS)
     rows = public_rows(directory, contracts, dollars)
     doc = {
         "session": day,
         "built_at": datetime.now(UTC).isoformat(),
         "source": "public",
         "inputs": {
-            "directory_as_of": directory_as_of(text),
+            "directory_as_of": as_of,
             "occ_sessions": [sessions[0], sessions[-1], len(sessions)],
-            "dolt_through": through,
+            "dollar_volume_file": dv_header.get("file"),
+            "dollar_volume_through": dv_header.get("through"),
         },
         "rule": {
             "option_sessions": OPTION_SESSIONS,

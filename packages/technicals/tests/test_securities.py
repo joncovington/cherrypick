@@ -113,7 +113,7 @@ def test_the_comparison_scores_the_top_two_set():
     assert out["top_two"] == {"ours": 2, "vendor": 2, "both": 1, "precision": 0.5, "recall": 0.5}
 
 
-def test_the_build_writes_the_list_and_the_pointer(monkeypatch):
+def _directory_and_occ() -> None:
     occ = paths.market_files_dir() / "occ"
     header = (
         "Nasdaq Traded|Symbol|Security Name|Listing Exchange|Market Category|ETF|Round Lot Size|Test Issue"
@@ -127,7 +127,12 @@ def test_the_build_writes_the_list_and_the_pointer(monkeypatch):
     (occ / "nasdaqtraded.txt").write_text("\n".join(lines), encoding="utf-8")
     for s, q in (("2026-10-15", 6000), ("2026-10-16", 4000)):
         _write(occ / f"{s}.json", {"session": s, "underlyings": {"AAPL": [q, 0, 0, 0, q, 0, 0, 0]}})
-    monkeypatch.setattr(securities, "_dolt_dollars", lambda cfg, day: ({"AAPL": 9e9}, "2026-10-16"))
+
+
+def test_the_build_writes_the_list_and_the_pointer():
+    _directory_and_occ()
+    dv = {"AAPL": {"median": 9e9, "sessions": 50}, "S1": {"median": 9e9, "sessions": 19}}
+    _write(paths.dollar_volume_dir() / "2026-10-16.json", {"through": "2026-10-15", "names": dv})
     out = securities.build(day="2026-10-16")
     assert out["ok"] and out["current"]["source"] == "public"
     doc = json.loads((paths.securities_dir() / "2026-10-16.json").read_text(encoding="utf-8"))
@@ -135,6 +140,20 @@ def test_the_build_writes_the_list_and_the_pointer(monkeypatch):
     assert "TEST" not in rows
     # 6,000 and 4,000 sides a session each way: 6,000 and 4,000 contracts, median 5,000.
     assert (rows["AAPL"]["option_contracts"], rows["AAPL"]["liquidityRank"]) == (5000, 1)
+    # Under 20 sessions of candles, a name's dollar volume is unknown and so is its rank.
+    assert (rows["S1"]["dollar_volume"], rows["S1"]["liquidityRank"]) == (None, None)
     assert doc["inputs"]["directory_as_of"] == "2026-10-16"
+    assert (doc["inputs"]["dollar_volume_file"], doc["inputs"]["dollar_volume_through"]) == (
+        "2026-10-16",
+        "2026-10-15",
+    )
+    assert securities.optionable("2026-10-16") == ["AAPL"]
     ptr = json.loads((paths.securities_dir() / "current.json").read_text(encoding="utf-8"))
     assert (ptr["source"], ptr["day"], ptr["vendor_on"]) == ("public", "2026-10-16", False)
+
+
+def test_no_dollar_volume_file_is_no_list_never_a_list_of_unknown_ranks():
+    _directory_and_occ()
+    out = securities.build(day="2026-10-16")
+    assert not out["ok"] and "fetch_dollar_volume" in out["reason"]
+    assert not (paths.securities_dir() / "2026-10-16.json").exists()

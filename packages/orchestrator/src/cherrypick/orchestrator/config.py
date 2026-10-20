@@ -482,7 +482,16 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # ON by default, but only on a machine with the Dolt clones set up (capabilities.dolt).
         "enabled": bool(tc.get("enabled", True))
         and not missing_capabilities(cfg, FEATURE_REQUIRES["technicals"]),
+        # The block's own switch, before the Dolt capability folds in: the jobs that read no Dolt
+        # (the dollar-volume fetch) follow this one, so a machine without Dolt still runs them.
+        "switch": bool(tc.get("enabled", True)),
         "land_at": tc.get("land_at", "06:15"),
+        # `dollar_volume_at`: scripts/fetch_dollar_volume.py, every optionable name's 50-session median
+        # dollar volume from the broker's daily candles (~140 s), which the security list's rank and
+        # the liquidity verdict read. No Dolt; the shared broker credential, read-only. Before the
+        # 18:48 security list, its first reader.
+        "dollar_volume": bool(tc.get("dollar_volume", True)),
+        "dollar_volume_at": tc.get("dollar_volume_at", "18:35"),
         # The market-report readings the console shows (stages by sector, breadth, rotation,
         # signals, leaders), written once from the bars the landing just refreshed.
         "report_at": tc.get("report_at", "06:30"),

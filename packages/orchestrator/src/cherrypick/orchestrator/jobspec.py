@@ -94,6 +94,8 @@ CATCHUP_MINUTES = {
     # A reading of the day's close: a run after the next open would record the next session instead,
     # which the file keys correctly but is not the day that was missed.
     "technicals-iv-rank": 600,
+    # The previous session's figure whenever it runs that evening; its readers run from 18:48.
+    "technicals-dollar-volume": 240,
     # The month's times as the evening sees them; the late calendar pass still reads a late fetch.
     "technicals-earnings-times": 240,
     # The file accumulates and a sector rarely changes, so any time that evening is the same fetch.
@@ -260,6 +262,7 @@ RETRY_ON_FAILURE = {
     "market-files-retry": 2,
     "technicals-index-bars": 2,
     "technicals-iv-rank": 2,
+    "technicals-dollar-volume": 2,
     "technicals-dividends": 2,
     "earnings-moves": 2,
     "futures-contracts": 2,
@@ -1302,6 +1305,24 @@ def derive_jobs(
             trading_days_only=True,
             enabled=ivr_on,
             enabled_reason="" if ivr_on else "disabled in config (technicals.iv_rank)",
+        ),
+    )
+    # The block's own switch, not `enabled`: this fetch reads no Dolt, so a machine without the clones
+    # still records the dollar volume the security list and the liquidity verdict rank by.
+    dv_on = tc["switch"] and tc["dollar_volume"]
+    add(
+        "technicals-dollar-volume",
+        lambda: JobSpec(
+            id="technicals-dollar-volume",
+            # A script, not package code: the broker's daily candles with the shared credential,
+            # read-only, 100 names a subscription. technicals reads the file it writes.
+            argv=(pythonw, _suite_script(launcher, "fetch_dollar_volume.py")),
+            kind=KIND_DAILY,
+            at_et=tc["dollar_volume_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-dollar-volume"],
+            trading_days_only=True,
+            enabled=dv_on,
+            enabled_reason="" if dv_on else "disabled in config (technicals, or technicals.dollar_volume)",
         ),
     )
     times_on = tc["enabled"] and tc["earnings_times"]

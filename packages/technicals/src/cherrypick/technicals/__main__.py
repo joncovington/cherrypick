@@ -39,7 +39,7 @@ def cmd_liquidity(_args) -> int:
     """Tonight's liquidity verdicts (liquidity.py): local data only."""
     from . import liquidity
 
-    report = liquidity.build(_config().get("dolt") or {})
+    report = liquidity.build()
     for key in ("newly_illiquid", "readmitted"):
         if len(report[key]) > 30:
             report[key] = report[key][:30] + [f"... {len(report[key]) - 30} more"]
@@ -51,7 +51,7 @@ def cmd_securities(args) -> int:
     """The public security list and the pointer naming the current one (securities.py)."""
     from . import securities
 
-    report = securities.build(_config().get("dolt") or {}, args.session)
+    report = securities.build(args.session)
     print(json.dumps(report, indent=1))
     return 0 if report.get("ok") else 1
 
