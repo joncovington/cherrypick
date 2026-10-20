@@ -11,6 +11,11 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Fixed: MEIC's session windows in the docs disagreed with the code.** The v0.11.1 documentation
+  review set `open_volatile` to 09:30–10:00 and `late` to 14:30–15:30 in `docs/strategy.md` and the
+  agent's `execute-entry` command; the loops classify by 10:15 and 14:45, so 10:00–10:15 entries meet
+  the open-volatile gates the docs said could not fire there. Both are back on the code's windows, and
+  a test now reads the doc's table and checks every row against `_session_quality`.
 - **Fixed: the skate score set history against the wrong implied odds.** A skate is judged at
   expiry, so its odds are the chance of finishing out of the money, 1 − N(d2), not 1 − |delta|. At a
   0.15-delta band that read calls about two points too risky and puts about two points too safe,

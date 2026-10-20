@@ -38,11 +38,11 @@ Every loop iteration classifies the current time into one of these labels (used 
 
 | Window | Label | Notes |
 |---|---|---|
-| 09:30–10:00 | `open_volatile` | Elevated volatility; entries blocked until `entry_window_start` (default 10:00, configurable in `config.json`); weigh IV rank and skew carefully |
-| 10:00–11:30 | `prime` | Preferred entry window |
-| 11:30–13:00 | `midday` | Generally good conditions |
-| 13:00–14:30 | `afternoon` | Less time remaining; weigh credit vs. time risk |
-| 14:30–15:30 | `late` | Applies to stop tightening and existing positions; new IC entries are already hard-blocked here by `entry_window_end` (default 14:30) |
+| 09:30–10:15 | `open_volatile` | Elevated volatility; entries blocked until `entry_window_start` (default 10:00, configurable in `config.json`), so 10:00–10:15 entries are taken *as* `open_volatile` and meet its gates (`max_call_delta_entry_open_volatile`, `quarterly_expiry_skip_open_volatile`); weigh IV rank and skew carefully |
+| 10:15–12:00 | `prime` | Preferred entry window |
+| 12:00–14:00 | `midday` | Generally good conditions |
+| 14:00–14:45 | `afternoon` | Less time remaining; weigh credit vs. time risk |
+| 14:45–15:30 | `late` | Applies to stop tightening and existing positions; new IC entries are already hard-blocked by `entry_window_end` (default 14:30) |
 | After 15:30 | — | No new entries; non-cash-settled symbols force-closed by `physical_settlement_force_close_time`/`force_close_time`, cash-settled left to expire (see EOD handling) |
 
 ---
