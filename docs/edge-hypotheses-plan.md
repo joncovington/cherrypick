@@ -668,6 +668,20 @@ reproduced (the best rule found picked 10-15% of its slots right).*
   - **Fetch size:** with five matched baselines a trade, about 60,000 one-session chain requests,
     about 46,000 of them in the deciding window. That is before the earnings exclusion, and
     overnight work for a few workers at about a second a request.
+- **The plan itself** (2026-10-20, local data only): `scripts/credit_spread_plan.py`.
+  - **What it does:** applies every exclusion above and draws the five baselines per trade with a fixed
+    seed. It writes `trades.json` and the fetch's `requests.json` under
+    `~/.cherrypick/data/backtest/results/research/item14/`.
+  - **Window:** trades end on the design window's last day (2025-06-30). A trade whose expiry falls in
+    the holdout is dropped.
+  - **Deciding-era trades:**
+    - A: 1,150;
+    - C `pullback-short`: 614;
+    - C `reversion-short`: 1,338;
+    - D: 683.
+  - **Reported years are thin:** 2016-19 hold 300, 101, 238 and 543. The 14-60-day report
+    approximation covers most 30-45-day trades.
+  - **Fetch:** 21,707 distinct chain requests, since trades and baselines share chains.
 - **Passes if,** for a selector and side, with the hold-to-expiry exit:
   - the mean of (selector trade's net − the mean of its five matched baselines' net) is positive;
   - its one-sided t is above 2 in **both** halves;
