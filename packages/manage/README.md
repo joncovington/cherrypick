@@ -218,10 +218,13 @@ afternoon's income reading (`fetch_screener_greeks.py income`). It covers every 
 verdict calls tradable, on the cycle monthly, quoted in regular hours, with earnings dates, beta and
 the name's stress move. From it manage builds the screener rules' structures:
 
-- a short put near 0.40 delta;
+- a short put near 0.16 delta (from 2026-10-19; it was the vendor's 0.40, which the short-put delta
+  study found to be market exposure, not premium);
 - put and call credit spreads, short the first strike out of the money and long near 0.25 delta, at
   a credit of at least a third of the width;
-- a covered call near 0.165 delta, on shares the account holds and has not already written against.
+- a covered call near 0.16 delta, on its own expiry -- the monthly 30-45 days out (the covered-call
+  study's least-bad window), else the cycle monthly -- on shares the account holds and has not
+  already written against.
   Each short call open on the name, at any expiry and inside any structure (a spread's or diagonal's
   short included, its long not taken as cover), ties up 100 shares; a name with fewer than 100 left
   gets none. A call being sold to open on a working order counts too (snapshot v10's

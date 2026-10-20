@@ -8,15 +8,17 @@ liquid by the leg bars (`cherrypick.core.legbars`: one option as a leg, a spread
 clear of an earnings report, and gives each a QUANTITY: the largest that clears every cap, with the
 cap that stops it named.
 
-The structures (the vendor's rules as `packages/technicals` `screeners.py` reproduced them, on the
-user's cycle monthly rather than the vendor's expiry):
+The structures, the Screeners lists' rules from 2026-10-19 (before, the vendor's as `packages/technicals`
+`screeners.py` reproduced them: a 0.40-delta put and a 0.165-delta call, which the delta studies
+measured as worse), on the user's cycle monthly:
 
-- a **short put** at the strike nearest `short_put_delta` (0.40);
+- a **short put** at the strike nearest `short_put_delta` (0.16);
 - a **put or call credit spread**: short the first strike out of the money, long the strike nearest
   `spread_long_delta` (0.25) beyond it, offered only at a credit of `spread_min_credit` (a third) of
   the width at the WORKING price (halfway from the mid to the natural fill; from 2026-10-19 -- over
   seven sessions of cycle-monthly spreads 78% cleared a third at the mid and 62% at the natural);
-- a **covered call** at the strike nearest `covered_call_delta` (0.165), only on a name the account
+- a **covered call** at the strike nearest `covered_call_delta` (0.16), on its OWN expiry: the
+  reading's `cc` block (the monthly 30-45 days out, else the cycle monthly), only on a name the account
   holds at least 100 shares of, never more contracts than the shares cover. Shares already written
   against are spoken for: the calls still sellable are (shares - 100 x the short calls already open
   on the name) // 100, counting every expiry and every short call leg, including the short in a
@@ -144,22 +146,28 @@ def uncovered_shares(shares: float, short_calls: float) -> float:
     return shares - 100 * short_calls
 
 
+ALL_KINDS = frozenset({"short_put", "put_spread", "call_spread", "covered_call"})
+
+
 def structures(
     entry: dict[str, Any],
     options: list[dict],
     cfg: dict[str, Any],
     shares: float,
     short_calls: float = 0.0,
+    kinds: frozenset[str] = ALL_KINDS,
 ) -> list[dict]:
-    """Every structure the rules build on this name, legs as (option, signed quantity per unit).
-    `short_calls` is the count of short call contracts already open on the name, every one of which
-    takes 100 shares out of what a covered call may be written against."""
+    """Every structure the rules build on this name, legs as (option, signed quantity per unit), of
+    the `kinds` asked for. `short_calls` is the count of short call contracts already open on the
+    name, every one of which takes 100 shares out of what a covered call may be written against."""
     spot = _f(entry.get("spot")) or 0.0
     out = []
-    sp = _nearest(options, "P", float(cfg["short_put_delta"]))
+    sp = _nearest(options, "P", float(cfg["short_put_delta"])) if "short_put" in kinds else None
     if sp:
         out.append({"kind": "short_put", "legs": [(sp, -1)]})
     for right in ("P", "C"):
+        if ("put_spread" if right == "P" else "call_spread") not in kinds:
+            continue
         otm = [
             o
             for o in options
@@ -178,7 +186,7 @@ def structures(
                 {"kind": "put_spread" if right == "P" else "call_spread", "legs": [(short, -1), (long_, 1)]}
             )
     free = uncovered_shares(shares, short_calls)
-    if free >= 100:
+    if free >= 100 and "covered_call" in kinds:
         cc = _nearest(options, "C", float(cfg["covered_call_delta"]), lambda o: o["strike"] > spot)
         if cc:
             out.append({"kind": "covered_call", "legs": [(cc, -1)], "max_units": int(free // 100)})
@@ -406,6 +414,23 @@ def _describe(
 
 
 # --------------------------------------------------------------------------- the whole list
+def views(entry: dict[str, Any]) -> list[tuple[dict[str, Any], frozenset[str]]]:
+    """(the chain a structure is built on, the kinds built there). The covered call has its own
+    expiry where the reading carries one (`cc`, from 2026-10-19), with its own options and stress
+    move; a reading without it writes the call on the cycle monthly, as before."""
+    cc = entry.get("cc")
+    if not cc:
+        return [(entry, ALL_KINDS)]
+    cc_entry = {
+        **entry,
+        "expiry": cc.get("expiry"),
+        "dte": cc.get("dte"),
+        "stress": cc.get("stress"),
+        "options": cc.get("options") or [],
+    }
+    return [(entry, ALL_KINDS - {"covered_call"}), (cc_entry, frozenset({"covered_call"}))]
+
+
 def suggest(
     income: dict[str, Any] | None,
     book: dict[str, Any],
@@ -446,22 +471,9 @@ def suggest(
         excluded[reason] = excluded.get(reason, 0) + 1
 
     fits, too_big = [], []
-    for sym, entry in sorted(income["symbols"].items()):
-        if entry.get("error"):
-            drop("no chain")
-            continue
-        exp = entry.get("expiry")
-        er = entry.get("earnings_date")
-        if er and exp and session.isoformat() <= er <= exp:
-            drop("earnings inside the trade")
-            continue
-        options = priced_options(entry, session, rate)
-        spot, beta = _f(entry.get("spot")), _f(entry.get("beta"))
-        scale = beta * spot / benchmark_spot if beta is not None and spot and benchmark_spot else None
-        held, written = shares.get(sym, 0.0), short_calls.get(sym, 0.0)
-        if held >= 100 and uncovered_shares(held, written) < 100:
-            drop("shares already written against")
-        for s in structures(entry, options, cfg, held, written):
+
+    def _build(entry, options, kinds, sym, held, written, scale) -> None:
+        for s in structures(entry, options, cfg, held, written, kinds):
             if not liquid(s["legs"], bars):
                 drop("a leg is illiquid or unquoted")
                 continue
@@ -492,6 +504,23 @@ def suggest(
                         if a_units >= 1:
                             fits.append(alt_row)
             too_big.append(row)
+
+    for sym, entry in sorted(income["symbols"].items()):
+        if entry.get("error"):
+            drop("no chain")
+            continue
+        spot, beta = _f(entry.get("spot")), _f(entry.get("beta"))
+        scale = beta * spot / benchmark_spot if beta is not None and spot and benchmark_spot else None
+        held, written = shares.get(sym, 0.0), short_calls.get(sym, 0.0)
+        if held >= 100 and uncovered_shares(held, written) < 100:
+            drop("shares already written against")
+        for view, kinds in views(entry):
+            exp, er = view.get("expiry"), view.get("earnings_date")
+            if er and exp and session.isoformat() <= er <= exp:
+                drop("earnings inside the trade")
+                continue
+            options = priced_options(view, session, rate)
+            _build(view, options, kinds, sym, held, written, scale)
 
     def rank(r: dict) -> float:
         return r["theta_per_bp"] if r["theta_per_bp"] is not None else -math.inf

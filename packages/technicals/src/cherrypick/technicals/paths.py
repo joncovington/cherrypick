@@ -73,6 +73,12 @@ def tastytrade_iv_rank() -> Path:
     return market_report_dir() / "iv" / "tastytrade.json"
 
 
+def dollar_volume_dir() -> Path:
+    """Each name's 50-session median dollar volume from the broker's daily candles, one file a
+    session (`<day>.json`), written by scripts/fetch_dollar_volume.py. Read-only here."""
+    return market_report_dir() / "dollar-volume"
+
+
 def earnings_times_dir() -> Path:
     """Nasdaq's public earnings calendar's time of day per report date, one file a session
     (`<day>.json`), written by scripts/fetch_earnings_times.py. The earnings calendar reads it.

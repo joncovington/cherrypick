@@ -88,11 +88,13 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `futures-contracts` | daily **08:45**, trading days | `scripts/refresh_futures_contracts.py` | on | |
 | `morning-factpack` | daily **08:30**, trading days | `run.py morning` | on | the overview's fact pack and GREEN/YELLOW/RED phase |
 | `morning-narrative` | daily **09:00**, trading days | `scripts/morning_narrative.py` | off, needs `claude` | |
-| `technicals-index-bars` | daily **06:00** | `scripts/fetch_index_bars.py` | on with `dolt` + earnings | |
-| `technicals-land` | daily **06:15** | `-m cherrypick.technicals land` | on with `dolt` + earnings | lands the end-of-day store from the Dolt clones |
-| `technicals-report` | daily **06:30** | `-m cherrypick.technicals report` | on with `dolt` + earnings | disabled with `technicals-land` |
-| `technicals-iv-rank` | daily **18:50**, trading days | `scripts/fetch_iv_rank.py` | on with `dolt` + earnings | |
-| `technicals-dividends` | daily **19:30** | `scripts/fetch_dividends.py` | on with `dolt` + earnings | |
+| `technicals-index-bars` | daily **06:00** | `scripts/fetch_index_bars.py` | on with `dolt` | |
+| `technicals-land` | daily **06:15** | `-m cherrypick.technicals land` | on with `dolt` | lands the end-of-day store from the Dolt clones |
+| `technicals-report` | daily **06:30** | `-m cherrypick.technicals report` | on with `dolt` | disabled with `technicals-land` |
+| `technicals-dollar-volume` | daily **18:35**, trading days | `scripts/fetch_dollar_volume.py` | on (no `dolt` needed) | each name's 50-session dollar volume from the broker's candles; the security list and the liquidity verdict read it |
+| `technicals-iv-rank` | daily **18:50**, trading days | `scripts/fetch_iv_rank.py` | on (no `dolt` needed) | |
+| `technicals-securities` / `technicals-liquidity` | daily **18:48** / **18:57**, trading days | `-m cherrypick.technicals securities` / `liquidity` | on (no `dolt` needed) | the security list and the liquidity verdict, the income lists' universe |
+| `technicals-dividends` | daily **19:30** | `scripts/fetch_dividends.py` | on with `dolt` | |
 | `report-edition` / `-retry`, `report-charts` | daily 07:00 / 08:15, 17:15, trading days | `scripts/fetch_vendor_edition.py` | off | `market_report.collector`; needs both vendor keys set |
 | `universe-measure-1` / `-2`, `universe-daily`, `universe-watchlist` | daily 11:00 / 14:00, 18:00, 18:30, trading days | `scripts/build_stock_universe.py` | off | `market_report.universe` / `universe_watchlist` |
 | `advisor-deep` | daily **17:00**, trading days | `scripts/advisor_checkpoint.py --slot deep` | off, needs `claude` | the post-close run, after `review-provisional`, on the strong model. It also ISSUES the next session's advice, even when the AI call failed. Catchup 300 min |
@@ -108,9 +110,10 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `suite-backup` | daily **01:30** | `run.py backup` | on | one zip at `backup.dest`; `doctor` warns past 36 h |
 | `config-backup` | every `config_backup.interval_minutes` (15) | `run.py config-backup` | **off** (opt in) | commits the config files the home repo's allow-list tracks and pushes to its remote; `doctor` warns when on but not set up or failing |
 | `log-archive` | monthly, day 1 @ **03:30** | `run.py archive` | on | catchup 7 days (idempotent, finished months only) |
+| `report-income-chains` | daily **14:45**, trading days | `scripts/fetch_screener_greeks.py income` | on (`market_report.income`) | every tradable name's cycle-monthly chain and the covered call's 30-45 day monthly, for our income lists and manage's candidates |
 
-Research and screener collectors (`technicals-*` beyond the five above, `report-screener-*`,
-`report-skate-quotes-*`, `report-income-chains`, `report-earnings-strikes`, `pmcc-earnings-refresh`,
+Research and screener collectors (the other `technicals-*` jobs, `report-screener-*`,
+`report-skate-quotes-*`, `report-earnings-strikes`, `pmcc-earnings-refresh`,
 `flies-intraday-agent`) are derived the same way; `run.py status` lists them with their schedules.
 
 Missed-fire policy after sleep/hibernate: interval jobs fire once immediately and resume cadence

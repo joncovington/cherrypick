@@ -221,13 +221,15 @@ DEFAULT_RULES: dict[str, Any] = {
             "max_buying_power_pct": 0.50,
         },
         # Income trades from our own universe, sized to the account (candidates.py). The structures
-        # are the screener rules on the cycle monthly; the caps scale with net liq. Buying power is
-        # held under the VIX-scaled cap the reading states, else `max_buying_power_pct`.
+        # are the screener rules on the cycle monthly; the caps scale with net liq. The short put and
+        # covered call deltas are the Screeners lists' (16, 2026-10-19: the short-put and covered-call
+        # delta studies found no edge at the vendor's 0.40 and 0.165, and the least loss at 16).
+        # Buying power is held under the VIX-scaled cap the reading states, else `max_buying_power_pct`.
         "candidates": {
             "enabled": True,
-            "short_put_delta": 0.40,
+            "short_put_delta": 0.16,
             "spread_long_delta": 0.25,
-            "covered_call_delta": 0.165,
+            "covered_call_delta": 0.16,
             "spread_min_credit": 0.331,
             "per_trade_risk_pct": 0.03,
             "notional_per_name_pct": {"cash": 0.25, "margin": 0.50},

@@ -730,7 +730,7 @@ def _check_earnings_calendar(cfg: dict[str, Any]) -> list[Finding]:
     path is stdlib and files only, and adding a MySQL driver to it would put a network client on the
     one path that must never have one.
     """
-    if "earnings" not in cfgmod.enabled_modules(cfg):
+    if not cfgmod.dolt_read(cfg):
         return []
     raw = _read_json_file(cfgmod.state_file("dolt_data.json"))
     if raw is None:

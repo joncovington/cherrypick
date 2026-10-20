@@ -11,6 +11,26 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed: income candidates at 16 delta, and the afternoon chains on their own switch.**
+  manage's short put and covered call move from the vendor's 0.40 and 0.165 delta to 16, the
+  delta studies' least-bad rule; the covered call is written on the monthly 30-45 days out where
+  one is listed. The income chain fetch quotes that expiry's calls too, reaches further out of the
+  money on a volatile name (2.5 standard deviations at its IV, 20% to 60%), and runs on its own
+  switch, `market_report.income`, on by default (it waited on `screener_greeks`, off).
+- **Changed: technicals no longer needs the earnings module on.** The Dolt sql-server, the 05:30
+  pull and every Dolt-reading technicals job used to follow the earnings module, because only an
+  enabled module's `dolt_service` kept the server up. Technicals now keeps the same server by
+  earnings' declared service when earnings is off. The income lists' inputs (dollar volume,
+  security list, liquidity verdict, IV rank) read no Dolt and run on the technicals switch alone,
+  so a machine without Dolt still builds the lists' universe. A job switched off for want of Dolt
+  now says so, rather than "disabled in config".
+- **Added: dollar volume from the broker's candles, so the security list builds without Dolt.**
+  A new evening job (`technicals-dollar-volume`, 18:35 ET, `scripts/fetch_dollar_volume.py`)
+  records every optionable name's 50-session median dollar volume from tastytrade's daily
+  candles. The public security list's liquidity rank and the liquidity verdict now read it in
+  place of the local Dolt clone, on every machine. On 2026-10-19 the two sources agreed to a
+  median ratio of 1.0000 and gave the same rank-1-or-2 set on 889 of 890 names. The job runs
+  whether or not Dolt is installed, and so (entry above) do the security list and liquidity jobs.
 - **Removed: the Screeners fidelity tab.** It scored how often our rules picked the same expiry and
   strike as the vendor's income lists, and with the subscription ending on 2026-10-24 there is
   nothing left to score. The final rates over seven sessions are in `packages/technicals/CLAUDE.md`,

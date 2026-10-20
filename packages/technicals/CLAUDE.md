@@ -189,7 +189,12 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   `picks`.
 - **The security list** (`securities.py`, `securities`, 2026-10-17): every listed symbol's type
   (Nasdaq Trader's directory), options (any OCC volume in 20 sessions) and a liquidity rank that is
-  **ours**: 2 at 200 contracts and $100M of stock a day, 1 at 2,000 and $300M. Against the
+  **ours**: 2 at 200 contracts and $100M of stock a day, 1 at 2,000 and $300M. The dollar volume
+  is the broker's daily candles' (`dollarvolume.py`, written by `scripts/fetch_dollar_volume.py`),
+  not Dolt's, from 2026-10-19, so the list builds without Dolt; on that day's list the two agreed
+  to a median ratio of 1.0000 and on 889 of 890 rank-1-or-2 names (CTVA the one apart). **The
+  candle must be the extended-hours one**: the SDK's default is regular hours, a median 0.40 of
+  the consolidated volume, and halved the rank-1-or-2 set; a test pins the flag. Against the
   vendor's 2026-10-16 list: types 98.2%, options 96.7%, its rank-1-or-2 set at 78% precision and
   78% recall — the vendor's rank is not volume alone, and these inputs get no closer. **Which list
   readers get is `cherrypick.core.vendor`'s switch (`market_report.collector`)**: the vendor's while
@@ -292,7 +297,8 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   part of it, because the rating marks a name down for its share price.
 - **Liquidity verdicts** (`liquidity.py`, `liquidity` command, nightly 18:57 ET) hold a name that
   fails the options-tradable test **illiquid until the monthly sweep** (the first trading day of the
-  month). Every broker-spending script skips those names (universe measurement, the IV-rank fetch,
+  month). The test's dollar volume is the candle file's for every name (2026-10-19; before, the
+  store's bars, else Dolt's). Every broker-spending script skips those names (universe measurement, the IV-rank fetch,
   the screener spread readings and greeks, the earnings moves), and no listed view names them:
   chart files, the picker, the watchlist, and the report's lists. Their bars stay in the store and
   every count still includes them -- breadth, sector net, rank cut-offs -- because the engines are
@@ -353,7 +359,11 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
 ## Scheduling
 
 `technicals-land` (06:15 ET daily, after the 05:30 Dolt pull; config block `technicals`), enabled
-only while the earnings module is, since that job keeps the dolt sql-server alive.
+with Dolt set up. The sql-server it reads is kept by earnings' declared `dolt_service`, with or
+without the earnings module on (`orchestrator.config.dolt_hosts`, 2026-10-19; before, switching
+earnings off stopped the server and every Dolt-reading job here). The income lists' inputs --
+`-dollar-volume`, `-securities`, `-liquidity`, `-iv-rank` -- read no Dolt and need only the block's
+switch.
 `technicals-iv-rank` runs after the close on trading days. `technicals-screeners` (06:40 ET,
 `screeners_at`) scores every saved screener session with its broker chain, after the previous
 evening's late greeks run; a scored session is skipped. `technicals-skate` (06:45 ET, `skate_at`)
@@ -364,6 +374,7 @@ is reported and never fails the bands).
 The rest run daily under the same `technicals` block (times ET, each overridable by its `*_at` key):
 `technicals-index-bars` 06:00, `-history` 06:20, `-fundamentals` 06:25, `-report` 06:30,
 `-stage-lists` 06:35, `-board` 06:45, `-earnings-record` 06:50; in the evening `-sectors` 18:40,
+`-dollar-volume` 18:35 (the one that needs no Dolt: it follows the block's own switch),
 `-earnings-times` 18:45, `-securities` 18:48, `-iv-rank` 18:50, `-liquidity` 18:57,
 `-earnings-calendar` 19:10 (and a late pass at 23:40), `-dividends` 19:30, `-revisions` 20:15.
 
