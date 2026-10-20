@@ -50,7 +50,9 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 10
+    assert snap["snapshot_version"] == 11
+    assert snap["roll_chains"] == {}  # no short strangle held, no chain read
+    assert not any("get_option_chain" in c[0] and "GLD" in c[0] for c in calls)
     assert snap["transactions"] == {"GLD": [{"order_id": 1}]}
     assert snap["transactions_error"] is None
     (tx_argv, tx_timeout) = next(c for c in calls if "get_transactions" in c[0])
@@ -350,6 +352,74 @@ def test_the_days_orders_are_kept_without_the_account_or_the_user(monkeypatch):
     assert "5WT12345" not in text and "someone" not in text and "fills" not in text
     assert kept["status"] == "Live" and kept["legs"][0]["action"] == "Sell to Open"
     assert snap["working_orders_error"] is None
+
+
+def _strangle_positions(*legs):
+    return {
+        "ok": True,
+        "broker_module": "meic",
+        "accounts": [{"account": "****1234", "underlyings": [{"underlying": "SLV", "legs": list(legs)}]}],
+    }
+
+
+def test_a_short_strangles_expiry_is_quoted_around_spot(monkeypatch):
+    def chain(argv):
+        if argv[argv.index("--symbol") + 1] != "SLV":
+            return {"ok": False, "error": "not this test"}
+        assert argv[argv.index("--expiration") + 1] == "2026-11-20"
+        assert argv[argv.index("--around_price") + 1] == "52.4"
+        assert argv[argv.index("--strike_count") + 1] == str(managesnap.ROLL_STRIKES)
+        row = {"symbol": "SLV 261120P51", "option_type": "P", "strike_price": "51", "bid": 1.0, "ask": 1.1,
+               "mid": 1.05, "delta": -0.38}  # fmt: skip
+        return {"ok": True, "quotes_complete": True, "chain": {"2026-11-20": [row]}}
+
+    calls = _fake(
+        monkeypatch,
+        {
+            "get_market_overview": {"ok": True, "metrics": [{"symbol": "SLV", "last": 52.4}]},
+            "get_transactions": {"ok": True, "transactions": {}},
+            "get_option_chain": chain,
+        },
+    )
+    monkeypatch.setattr(
+        managesnap.positions_mod,
+        "run",
+        lambda cfg: _strangle_positions(
+            {"symbol": "SLV   261120P00048000", "right": "P", "quantity": "-1", "expiration": "2026-11-20"},
+            {"symbol": "SLV   261120C00055000", "right": "C", "quantity": -1, "expiration": "2026-11-20"},
+            # A put spread in another expiry is not a strangle: no chain for it.
+            {"symbol": "SLV   261218P00045000", "right": "P", "quantity": -1, "expiration": "2026-12-18"},
+            {"symbol": "SLV   261218P00043000", "right": "P", "quantity": 1, "expiration": "2026-12-18"},
+        ),
+    )
+    snap = managesnap.build({})
+    assert set(snap["roll_chains"]) == {"SLV|2026-11-20"}
+    got = snap["roll_chains"]["SLV|2026-11-20"]
+    assert got["error"] is None and got["spot"] == 52.4 and got["quotes_complete"] is True
+    assert [(o["strike"], o["right"], o["mid"]) for o in got["options"]] == [(51.0, "P", 1.05)]
+    slv_reads = [c for c in calls if "get_option_chain" in c[0] and "SLV" in c[0]]
+    assert len(slv_reads) == 1
+
+
+def test_a_strangle_chain_that_cannot_be_read_is_recorded_not_fatal(monkeypatch):
+    _fake(
+        monkeypatch,
+        {
+            "get_market_overview": {"ok": True, "metrics": [{"symbol": "SLV", "last": 52.4}]},
+            "get_transactions": {"ok": True, "transactions": {}},
+            "get_option_chain": {"ok": False, "error": "HTTP 504"},
+        },
+    )
+    monkeypatch.setattr(
+        managesnap.positions_mod,
+        "run",
+        lambda cfg: _strangle_positions(
+            {"symbol": "SLV   261120P00048000", "right": "P", "quantity": -1, "expiration": "2026-11-20"},
+            {"symbol": "SLV   261120C00055000", "right": "C", "quantity": -1, "expiration": "2026-11-20"},
+        ),
+    )
+    got = managesnap.build({})["roll_chains"]["SLV|2026-11-20"]
+    assert got["options"] == [] and "HTTP 504" in got["error"]
 
 
 def test_an_orders_read_that_fails_is_recorded_not_fatal(monkeypatch):

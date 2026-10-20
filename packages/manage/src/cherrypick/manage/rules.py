@@ -112,6 +112,10 @@ DEFAULT_RULES: dict[str, Any] = {
     "legs": {
         # A short leg that has given up this share of its premium is bought back, whatever the trade does.
         "short_take_profit": {"enabled": True, "capture": 0.80, "confidence": 85},
+        # A butterfly's (broken-wing, broken-heart) long vertical worth this share of its width is sold,
+        # keeping the short spread: its value is banked rather than given back if the stock comes back
+        # through the body. The tastylive strategy guide's defence (2023); no outside test.
+        "long_vertical": {"enabled": True, "share_of_width": 0.90, "confidence": 50},
     },
     "roll": {
         # A roll is only ever for a net credit; one that would cost a debit is a close instead.
@@ -144,6 +148,28 @@ DEFAULT_RULES: dict[str, Any] = {
             "min_long_days": 45,
             "skip_through_earnings": False,
             "confidence": 60,
+        },
+        # A broken-wing butterfly opened for a credit "flies off" its risk: buy the wing that makes it a
+        # plain butterfly and sell the wide one, when that costs no more than `max_share_of_credit` of
+        # the net credit taken in. What is left cannot lose (fees aside) and still pays most at the body.
+        # The new wing is MODELLED (its IV read off the body's and the old wing's): re-quote first. The
+        # tastylive strategy guide's (2023) first goal for a BWB; no outside test.
+        "fly_off": {"enabled": True, "max_share_of_credit": 1.0, "confidence": 55},
+        # A short strangle or straddle is TESTED when one short reaches `tested_delta` while the other
+        # is under `target_delta`: roll the untested short toward the money, in the same expiry, to the
+        # listed strike nearest `target_delta`, when that takes in `min_credit` a share at the quoted
+        # mids (the snapshot's `roll_chains`, v11). It adds credit and cuts the trade's delta; it is
+        # REPAIR, which this ruleset otherwise avoids, so it is a review and never replaces a stop. It
+        # never passes the tested strike: an inverted strangle always ranks below closing or rolling out
+        # in time without the inversion (the user's rule, 2026-10-19), so a straddle's untested side is
+        # never rolled in its own expiry. The tastylive strategy guide's (2023) strangle defence,
+        # without its inversion; no outside test.
+        "untested_side": {
+            "enabled": True,
+            "tested_delta": 0.40,
+            "target_delta": 0.30,
+            "min_credit": 0.10,
+            "confidence": 50,
         },
     },
     "expiry": {
@@ -291,8 +317,11 @@ RULE_IDS = (
     "debit.diagonal_width",
     "debit.time_exit",
     "legs.short_take_profit",
+    "legs.long_vertical",
     "roll.naked_put",
     "roll.diagonal_short",
+    "roll.fly_off",
+    "roll.untested_side",
     "directional.take_profit",
     "directional.stop",
     "ex_dividend",

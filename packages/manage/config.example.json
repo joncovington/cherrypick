@@ -87,6 +87,12 @@
       "enabled": true,
       "capture": 0.8,
       "confidence": 85
+    },
+    "long_vertical": {
+      "_comment": "A butterfly's (broken-wing, broken-heart) long spread worth share_of_width of its width is sold, keeping the short spread.",
+      "enabled": true,
+      "share_of_width": 0.9,
+      "confidence": 50
     }
   },
   "roll": {
@@ -105,6 +111,20 @@
       "min_long_days": 45,
       "skip_through_earnings": false,
       "confidence": 60
+    },
+    "fly_off": {
+      "_comment": "A broken-wing butterfly opened for a credit: buy the wing that makes it a plain butterfly and sell the wide one, when that costs at most max_share_of_credit of the net credit. The new wing is modelled.",
+      "enabled": true,
+      "max_share_of_credit": 1.0,
+      "confidence": 55
+    },
+    "untested_side": {
+      "_comment": "A short strangle or straddle with one short at tested_delta or more and the other under target_delta: roll the untested short toward the money, same expiry, to the listed strike nearest target_delta, for at least min_credit a share at the snapshot's quoted mids (roll_chains). A review; in place of the short-leg buy-back when that names the untested leg; never in place of a stop. Never past the tested strike: an inversion ranks below closing or rolling out in time, so it is only recorded, never proposed.",
+      "enabled": true,
+      "tested_delta": 0.4,
+      "target_delta": 0.3,
+      "min_credit": 0.1,
+      "confidence": 50
     }
   },
   "expiry": {
@@ -248,6 +268,6 @@
       "show_too_big": 10
     }
   },
-  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.time_exit, legs.short_take_profit, roll.naked_put, roll.diagonal_short, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power",
+  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.time_exit, legs.short_take_profit, legs.long_vertical, roll.naked_put, roll.diagonal_short, roll.fly_off, roll.untested_side, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power",
   "positions": {}
 }
