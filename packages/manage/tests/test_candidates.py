@@ -182,9 +182,40 @@ def test_earnings_inside_the_trade_excludes_it_and_after_expiry_does_not():
     assert all(r["earnings_unknown"] for r in _rows(unknown))  # flagged, never called clear
 
 
-def test_an_illiquid_leg_excludes_the_structure():
+def test_an_illiquid_option_excludes_a_short_put_but_a_spread_is_judged_as_one_order():
+    # Every leg failing on its own: the short put goes, the spreads stay -- a 4-cent-wide leg on the
+    # model's prices costs a few cents to trade as a spread, well under a tenth of its credit.
     out = _suggest({"AAA": _entry(passes=False)})
-    assert out["excluded"]["a leg is illiquid or unquoted"] == 3 and not _rows(out)
+    assert out["excluded"]["a leg is illiquid or unquoted"] == 1 and not _rows(out, "short_put")
+    assert _rows(out, "put_spread") and _rows(out, "call_spread")
+
+
+def test_a_spread_that_costs_too_much_to_trade_is_excluded():
+    # 60 cents wide a leg: mid less natural is 60 cents on a credit of about a dollar.
+    out = _suggest({"AAA": _entry(spread=0.60)})
+    assert not _rows(out, "put_spread") and not _rows(out, "call_spread")
+    assert out["excluded"]["a leg is illiquid or unquoted"] >= 2
+
+
+def test_a_spread_without_open_interest_on_a_leg_is_excluded():
+    e = _entry()
+    for o in e["options"]:
+        o["open_interest"] = 20
+    out = _suggest({"AAA": e})
+    assert not _rows(out, "put_spread") and not _rows(out, "call_spread")
+
+
+def test_the_credit_floor_is_tested_at_the_working_price_not_the_mid():
+    row = next(r for r in _rows(_suggest({"AAA": _entry()}), "put_spread") if not r["alternative_to"])
+    pu = row["per_unit"]
+    assert pu["natural"] < pu["working"] < pu["credit"]
+    width = abs(row["legs"][0]["strike"] - row["legs"][1]["strike"])
+    # A floor the spread clears at its mid but not at its working price.
+    rules = copy.deepcopy(RULES)
+    rules["portfolio"]["candidates"]["spread_min_credit"] = (pu["credit"] - 0.005) / width
+    out = _suggest({"AAA": _entry()}, rules=rules)
+    assert not [r for r in _rows(out, "put_spread") if not r["alternative_to"]]
+    assert out["excluded"]["credit under a third of the width"] >= 1
 
 
 def test_a_spread_under_a_third_of_its_width_is_not_offered():

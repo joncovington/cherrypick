@@ -222,10 +222,18 @@ def test_the_chosen_bars_are_the_ones_the_readings_picked():
     assert fsg.LEG_BARS == BARS
 
 
+def _one(q):
+    return [(q, -1)]
+
+
+def _spread(short, long_):
+    return [(short, -1), (long_, 1)]
+
+
 def test_a_row_says_whether_its_monthly_passes_too():
-    assert fsg.monthly_passes([GOOD], BARS) is True
-    assert fsg.monthly_passes([GOOD, {**GOOD, "open_interest": 5}], BARS) is False
-    assert fsg.monthly_passes(None, BARS) is None and fsg.monthly_passes([GOOD], None) is None
+    assert fsg.monthly_passes(_one(GOOD), BARS) is True
+    assert fsg.monthly_passes(_spread(GOOD, {**GOOD, "open_interest": 5}), BARS) is False
+    assert fsg.monthly_passes(None, BARS) is None and fsg.monthly_passes(_one(GOOD), None) is None
 
 
 def test_apply_bars_judges_each_leg_and_the_row():
@@ -242,21 +250,51 @@ def test_apply_bars_judges_each_leg_and_the_row():
 
 
 def test_no_recommendation_until_the_bars_are_chosen():
-    assert fsg.recommend([GOOD], [GOOD], None) is None
+    assert fsg.recommend(_one(GOOD), _one(GOOD), None) is None
 
 
 def test_a_liquid_vendor_leg_is_recommended():
-    assert fsg.recommend([GOOD], [GOOD], BARS) == "vendor"
+    assert fsg.recommend(_one(GOOD), _one(GOOD), BARS) == "vendor"
 
 
 def test_each_failing_input_sends_the_trade_to_the_monthly():
-    for broken in ({"ask": 1.60}, {"open_interest": 20}, {"volume": 2}, {"bid": 0.0}):
-        assert fsg.recommend([{**GOOD, **broken}], [GOOD], BARS) == "monthly", broken
+    for broken in ({"ask": 1.60}, {"open_interest": 20}, {"bid": 0.0}):
+        assert fsg.recommend(_one({**GOOD, **broken}), _one(GOOD), BARS) == "monthly", broken
 
 
-def test_a_spread_passes_only_when_both_legs_do_and_no_monthly_is_none():
-    assert fsg.recommend([GOOD, {**GOOD, "volume": 0}], [GOOD, GOOD], BARS) == "monthly"
-    assert fsg.recommend([{**GOOD, "volume": 0}], None, BARS) == "none"
+def test_volume_is_a_flag_not_a_bar():
+    # 2026-10-19: a part-day count failed tight, open legs -- 15% of monthly short puts at 11:30.
+    assert fsg.recommend(_one({**GOOD, "volume": 2}), _one(GOOD), BARS) == "vendor"
+    rows = [{"vendor": [{"quote": {**GOOD, "volume": 2}}], "monthly": None}]
+    fsg.apply_bars(rows, BARS)
+    assert rows[0]["vendor"][0]["passes"] is True and rows[0]["vendor"][0]["quiet"] is True
+
+
+CHEAP_LONG = {"bid": 0.30, "ask": 0.36, "open_interest": 500, "volume": 50}  # 18% of mid, over a nickel
+
+
+def test_a_spread_is_judged_as_one_order():
+    # The cheap long fails on its own, but the spread costs 5.5 cents on a 0.695 credit: 7.9%.
+    assert not fsg.leg_passes(CHEAP_LONG, BARS)
+    assert fsg.recommend(_spread(GOOD, CHEAP_LONG), None, BARS) == "vendor"
+    # A short leg a dime wide makes the spread cost 8 cents on 0.72: 11%, over the bar.
+    wide = {"bid": 1.00, "ask": 1.10, "open_interest": 500, "volume": 50}
+    assert fsg.recommend(_spread(wide, CHEAP_LONG), None, BARS) == "none"
+    # Each leg must still have its open interest.
+    assert fsg.recommend(_spread(GOOD, {**CHEAP_LONG, "open_interest": 3}), None, BARS) == "none"
+
+
+def test_a_spread_with_no_monthly_is_none():
+    assert fsg.recommend(_spread(GOOD, {**GOOD, "open_interest": 0}), None, BARS) == "none"
+
+
+def test_apply_bars_prices_each_side_at_mid_working_and_natural():
+    rows = [
+        {"vendor": [{"role": "short", "quote": GOOD}, {"role": "long", "quote": CHEAP_LONG}], "monthly": None}
+    ]
+    fsg.apply_bars(rows, BARS)
+    assert rows[0]["vendor_prices"] == {"mid": 0.695, "natural": 0.64, "working": 0.6675, "cost": 0.055}
+    assert rows[0]["monthly_prices"] is None
 
 
 def test_a_cheap_option_passes_on_the_absolute_width():

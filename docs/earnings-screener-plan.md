@@ -197,7 +197,8 @@ Two broker reads, both paced, both in jobs that already run:
 
   No chain is needed.
 - **The suggested spread's legs**, for strong reads only, evening and again at 11:30 / 14:30 on the
-  entry day under the leg bars (10% of mid or a nickel, 100 open, 10 traded). This is an `earnings`
+  entry day under the leg bars (10% of mid or a nickel, 100 open; volume a flag and the spread judged
+  as one order from 2026-10-19, `cherrypick.core.legbars`). This is an `earnings`
   plan in `fetch_screener_greeks.py`. A row whose legs fail is marked thin.
 
 ### 4. The console tab

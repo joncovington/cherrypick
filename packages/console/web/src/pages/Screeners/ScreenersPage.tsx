@@ -13,11 +13,16 @@ import { useScreener, useScreenerFidelity } from "../../lib/api";
  *
  * Two layers, as the plan doc settles them. The LISTED trade is the screen's own expiry and strike
  * (often a weekly), with our rule's strike beside it; that is the reproduction. The TRADE column is
- * the user's: the listed option where it is liquid (10% of mid or a nickel, 100 open, 10 traded),
- * otherwise the same strike on the standard monthly 45-60 days out (else 30-60), with a "thin" mark
- * when that monthly fails the same bars. Earnings are judged against the expiry of that trade (the
- * later of the two until a reading says which), and a date that does not reach it is "unknown",
- * never clear.
+ * the user's: the listed option where it is liquid (10% of mid or a nickel and 100 open; a spread
+ * judged as one order, on what it costs to trade against its credit), otherwise the same strike on
+ * the standard monthly 45-60 days out (else 30-60), with a "thin" mark when that monthly fails the
+ * same bars. Earnings are judged against the expiry of that trade (the later of the two until a
+ * reading says which), and a date that does not reach it is "unknown", never clear.
+ *
+ * The trade is priced from the regular-hours reading at the WORKING price -- halfway from the mid to
+ * the natural fill -- and leads the return columns (2026-10-19): the list's own return is at the mid
+ * of an evening quote, often a weekly with no bid, and a row whose quote cannot back it says so
+ * instead of showing a yield.
  *
  * Defaults cut to what the user would trade: options-tradable names, no earnings inside the cycle,
  * and a liquid trade (the listed option or the cycle monthly passes the bars). Each has its escape. Which names make each list is NOT reproduced; the page says so.
@@ -67,8 +72,64 @@ function Flag({ on, onChange, children, title }: { on: boolean; onChange: (on: b
 function legLine(l: ScreenerLeg): string {
   return (
     `${l.role} ${l.strike}${l.right} ${l.expiry}: ${money(l.bid)} × ${money(l.ask)}, ` +
-    `OI ${l.openInterest ?? "—"}, volume ${l.volume ?? "—"}` +
-    (l.passes === null ? "" : l.passes ? " — passes" : " — fails")
+    `OI ${l.openInterest ?? "—"}, volume ${l.volume ?? "—"}${l.quiet ? " (quiet)" : ""}` +
+    (l.passes === null ? "" : l.passes ? " — passes" : " — fails on its own")
+  );
+}
+
+/** The list's own return, unless its quote cannot back it: no bid, or a spread wider than the mid. */
+function ListedReturnCell({ r, v, digits = 1 }: { r: ScreenerRow; v: number | null; digits?: number }) {
+  if (r.listedQuote !== null) {
+    const why =
+      r.listedQuote === "no-bid"
+        ? `The list's quote has no bid (${money(r.bid)} × ${money(r.ask)}): its return is priced at a mid nobody would pay.`
+        : `The list's quote is wider than its own mid (${money(r.bid)} × ${money(r.ask)}): its mid-priced return is not a fill.`;
+    return (
+      <td className="num muted" title={`${why} The list states ${pct(v, digits)}.`}>
+        <span className="chip chip-warn">{r.listedQuote === "no-bid" ? "no bid" : "wide"}</span>
+      </td>
+    );
+  }
+  return <td className="num">{pct(v, digits)}</td>;
+}
+
+function tradeTitle(r: ScreenerRow): string {
+  const t = r.trade!;
+  const where = t.side === "listed" ? "the listed option" : "the cycle monthly";
+  return (
+    `${where}, ${t.expiry} (${t.dte ?? "—"} days), from the regular-hours reading: ` +
+    `mid ${money(t.mid)}, working ${money(t.working)}, natural ${money(t.natural)} ` +
+    `(${money(t.cost)} a share to cross the whole spread). Working is halfway from the mid to the natural fill: ` +
+    `a limit at the mid stepped down a quarter of the spread. A model of a fill, not one.`
+  );
+}
+
+/** Per share at the working price. */
+function TradePriceCell({ r }: { r: ScreenerRow }) {
+  if (r.trade === null) return <td className="num muted">—</td>;
+  return (
+    <td className="num" title={tradeTitle(r)}>
+      {money(r.trade.working)}
+    </td>
+  );
+}
+
+/** The trade's return at the working price: annualised for one option, credit share for a spread. */
+function TradeReturnCell({ r }: { r: ScreenerRow }) {
+  const t = r.trade;
+  if (t === null) return <td className="num muted">—</td>;
+  if (t.workingCreditPct !== null) {
+    const under = t.workingCreditPct < 33.1;
+    return (
+      <td className={under ? "num pnl-neg" : "num"} title={`${tradeTitle(r)}\nThe list's floor is a third of the width; tested here at the working price.`}>
+        {pct(t.workingCreditPct)}
+      </td>
+    );
+  }
+  return (
+    <td className="num" title={`${tradeTitle(r)}\nAt the natural fill: ${pct(t.naturalAnnualisedPct)}.`}>
+      {pct(t.workingAnnualisedPct)}
+    </td>
   );
 }
 
@@ -195,6 +256,8 @@ const SORTS: Record<string, (r: ScreenerRow) => number | string | null> = {
   width: (r) => r.width,
   creditPct: (r) => r.creditPct,
   earnings: (r) => r.earningsDate,
+  tradePrice: (r) => r.trade?.working ?? null,
+  tradeReturn: (r) => r.trade?.workingCreditPct ?? r.trade?.workingAnnualisedPct ?? null,
 };
 
 export function ScreenerTab({ list }: { list: ScreenerList }) {
@@ -273,7 +336,7 @@ export function ScreenerTab({ list }: { list: ScreenerList }) {
         <Flag
           on={!allTrades}
           onChange={(on) => set("trade", on ? null : "all")}
-          title="Hide names with no liquid trade: the listed option is thin and so is the same strike on the cycle monthly (10% of mid or a nickel, 100 open, 10 traded, every leg). A name not yet read stays shown, marked no reading."
+          title="Hide names with no liquid trade: the listed option is thin and so is the same strike on the cycle monthly (10% of mid or a nickel and 100 open; a spread judged as one order, its cost to trade within 10% of its credit, 100 open a leg). A name not yet read stays shown, marked no reading."
         >
           Liquid trade
         </Flag>
@@ -332,6 +395,24 @@ export function ScreenerTab({ list }: { list: ScreenerList }) {
                 <th title="The listed option when it is liquid, else the same strike on the cycle monthly; 'thin' when that monthly fails the same bars">
                   Trade
                 </th>
+                <SortTh
+                  label={spread ? "Trade credit" : "Trade prem"}
+                  k="tradePrice"
+                  sort={sort}
+                  className="num"
+                  title="The trade's price per share at the working price: halfway from the mid to the natural fill, from the regular-hours reading"
+                />
+                <SortTh
+                  label={spread ? "Trade %" : "Trade annual"}
+                  k="tradeReturn"
+                  sort={sort}
+                  className="num"
+                  title={
+                    spread
+                      ? "The trade's working credit as a share of its width; red under the list's floor of a third"
+                      : "The trade's working premium ÷ share price × 365 ÷ days, simple, as the list states its own"
+                  }
+                />
               </tr>
             </thead>
             <tbody>
@@ -355,13 +436,15 @@ export function ScreenerTab({ list }: { list: ScreenerList }) {
                     </>
                   ) : (
                     <>
-                      <td className="num">{pct(r.rawReturnPct, 2)}</td>
-                      <td className="num">{pct(r.annualisedPct)}</td>
+                      <ListedReturnCell r={r} v={r.rawReturnPct} digits={2} />
+                      <ListedReturnCell r={r} v={r.annualisedPct} />
                       <td className="num">{signedPct(r.distancePct)}</td>
                     </>
                   )}
                   <EarningsCell r={r} />
                   <TradeCell r={r} />
+                  <TradePriceCell r={r} />
+                  <TradeReturnCell r={r} />
                 </tr>
               ))}
             </tbody>
@@ -381,8 +464,10 @@ export function ScreenerTab({ list }: { list: ScreenerList }) {
             ? " (the put nearest 0.40 delta on the expiry nearest 30 days)"
             : " (the call nearest 0.165 delta on the expiry nearest 45 days)"}
         . Which names make the list is not reproduced. “Trade” is yours: the listed option when it is liquid in regular
-        hours, else the same strike on the standard monthly you trade. Prices are the list's, after the close; mids are not
-        fills.
+        hours, else the same strike on the standard monthly you trade, priced from that reading at the working price
+        (halfway from the mid to the natural fill: a limit at the mid stepped down a quarter of the spread). The listed
+        columns are the list's own, at the mid of an after-close quote; a row whose quote has no bid, or is wider than its
+        mid, says so instead of a yield.
       </p>
     </section>
   );
