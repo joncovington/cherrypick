@@ -271,6 +271,12 @@ links to (#422). An unread Live Today keeps it shown, and the account-wide tabs 
 and never the module. Config always lists every toggle. Calendars, pmcc, curve and contango carry
 an `experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`.
 
+- **The Dolt-backed Screeners tabs are shown off, not hidden** (2026-10-19, the user's choice):
+  earnings, earnings record, signal board and skate (`SCREENERS_NEED_DOLT`). With `features.technicals`
+  false the tab renders `pages/Screeners/NeedsDolt.tsx` in place of its content: Dolt not set up
+  (`capabilities.dolt`) gets the install steps and the INSTALL link, the switch off points to Config.
+  A tab that vanished, or showed an empty table, read as "no data today"; a fresh install was told it
+  needed a vendor. Fail open like the rest: unknown renders the tab.
 - **The one exception fails closed: Backtest** (`FAIL_CLOSED_PAGES` in `visibility.ts`). Its results
   come from licensed vendor history whose licence forbids redistribution, so it is shown only when
   the reply was read and says `features.backtest === true` — hidden while loading, on `{ok: false}`,

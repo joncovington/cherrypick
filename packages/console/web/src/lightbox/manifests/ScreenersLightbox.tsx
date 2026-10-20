@@ -1,5 +1,6 @@
 import { EarningsCalendarTab } from "../../pages/Screeners/EarningsCalendarTab";
 import { EarningsRecordTab } from "../../pages/Screeners/EarningsRecordTab";
+import { NeedsDolt } from "../../pages/Screeners/NeedsDolt";
 import { ScreenerTab } from "../../pages/Screeners/ScreenersPage";
 import { SignalBoardTab } from "../../pages/Screeners/SignalBoardTab";
 import { SkateTab } from "../../pages/Screeners/SkateTab";
@@ -14,10 +15,26 @@ const slides: SlideDef[] = [
   { id: "short-puts", label: "short puts", render: () => <ScreenerTab list="short-puts" /> },
   { id: "covered-calls", label: "covered calls", render: () => <ScreenerTab list="covered-calls" /> },
   { id: "credit-spreads", label: "credit spreads", render: () => <ScreenerTab list="credit-spreads" /> },
-  { id: "earnings", label: "earnings", render: () => <EarningsCalendarTab /> },
-  { id: "earnings-record", label: "earnings record", render: () => <EarningsRecordTab /> },
-  { id: "board", label: "signal board", render: () => <SignalBoardTab /> },
-  { id: "skate", label: "skate", render: () => <SkateTab /> },
+  { id: "earnings", label: "earnings", render: () => (
+      <NeedsDolt slide="earnings" label="earnings">
+        <EarningsCalendarTab />
+      </NeedsDolt>
+    ) },
+  { id: "earnings-record", label: "earnings record", render: () => (
+      <NeedsDolt slide="earnings-record" label="earnings record">
+        <EarningsRecordTab />
+      </NeedsDolt>
+    ) },
+  { id: "board", label: "signal board", render: () => (
+      <NeedsDolt slide="board" label="signal board">
+        <SignalBoardTab />
+      </NeedsDolt>
+    ) },
+  { id: "skate", label: "skate", render: () => (
+      <NeedsDolt slide="skate" label="skate">
+        <SkateTab />
+      </NeedsDolt>
+    ) },
 ];
 
 export function ScreenersLightbox({ slide }: { slide: string }) {

@@ -32,7 +32,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { consoleUrl } from "@console/shared";
+import { consoleUrl } from "@console/shared/paths";
 
 const SKIP = 0;
 const FAIL_EXPECT = 1;

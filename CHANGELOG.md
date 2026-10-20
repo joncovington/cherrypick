@@ -11,6 +11,11 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed: a Screeners tab that needs Dolt says so.** On a machine without the Dolt data, the
+  earnings, earnings record, signal board and skate tabs showed empty tables, which read as a quiet
+  day (and once as "it needs a vendor"). They now show what they need and the steps to set it
+  up, or that technicals is switched off, in place of the table. Also fixed: `pnpm ui-check` failed
+  to start since the Node-only path helpers moved to `@console/shared/paths`.
 - **Changed: income candidates at 16 delta, and the afternoon chains on their own switch.**
   manage's short put and covered call move from the vendor's 0.40 and 0.165 delta to 16, the
   delta studies' least-bad rule; the covered call is written on the monthly 30-45 days out where

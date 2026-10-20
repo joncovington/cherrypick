@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { LiveAttentionItem, LiveTodayLoop, LiveTodayPayload, SuiteFeatures, SuiteFeaturesOk } from "@console/shared";
-import { isFeatureOn, isHiddenAsUnknown, isModuleVisible, isSlideVisible, liveLoopsInUse, offReason } from "../src/lib/visibility";
+import { isFeatureOn, isHiddenAsUnknown, isModuleVisible, isSlideVisible, liveLoopsInUse, offReason, screenerOffReason } from "../src/lib/visibility";
 import { visibleNavLinks } from "../src/components/shell/navLinks";
 
 /**
@@ -229,5 +229,30 @@ describe("backtest fails closed", () => {
         expect(isHiddenAsUnknown(id, f)).toBe(false);
       }
     }
+  });
+});
+
+describe("a Dolt-backed screener tab", () => {
+  const noDolt = withOff({ capabilities: { claude: true, dolt: false }, features: { ...ALL_ON.features, technicals: false } });
+  const switchedOff = withOff({ features: { ...ALL_ON.features, technicals: false } });
+
+  it("says it needs Dolt when the machine has none, and is never hidden", () => {
+    for (const slide of ["earnings", "earnings-record", "board", "skate"]) {
+      expect(screenerOffReason(slide, noDolt)).toMatchObject({ needs: "dolt" });
+      expect(isSlideVisible("screeners", slide, noDolt)).toBe(true);
+    }
+  });
+
+  it("says the switch is off when Dolt is there but technicals is not", () => {
+    const off = screenerOffReason("board", switchedOff);
+    expect(off?.needs).toBeUndefined();
+    expect(off?.reason).toContain("technicals.enabled");
+  });
+
+  it("has nothing to say when technicals is on, for the income lists, or when the answer is unknown", () => {
+    expect(screenerOffReason("earnings", ALL_ON)).toBeNull();
+    expect(screenerOffReason("short-puts", noDolt)).toBeNull();
+    expect(screenerOffReason("earnings", undefined)).toBeNull();
+    expect(screenerOffReason("earnings", { ok: false, error: "bridge down" } as SuiteFeatures)).toBeNull();
   });
 });
