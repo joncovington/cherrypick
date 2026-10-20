@@ -347,6 +347,44 @@ def test_a_scored_leg_carries_history_implied_odds_and_yield():
     assert g["tested_per_month"] == pytest.approx(1 - 0.816, abs=1e-3)
 
 
+def test_the_monthly_test_odds_compound_the_cycle_odds_over_a_month():
+    # A 7-day option skating 81.6% a cycle is run five times in a 35-day month: tested 1 - 0.816^5.
+    # (At 35 days the exponent is 1, which is why the test above cannot see a wrong one.)
+    g = skate.score_leg(
+        {**_row(), "days": 7},
+        "fixed",
+        105.0,
+        {"bid": 0.30, "ask": 0.34, "open_interest": 400},
+        100.0,
+        7,
+        7 / 365,
+        0.0,
+        CFG,
+        skate.offsets(CFG),
+    )
+    assert g["tested_per_cycle"] == pytest.approx(1 - 0.816, abs=1e-3)
+    assert g["tested_per_month"] == pytest.approx(1 - 0.816**5, abs=1e-3)
+
+
+def _both(symbol, side, passes):
+    leg = {"band": "fixed", "role": "pick", "expiry": "2026-11-20", "strike": 100.0, "hard": True}
+    leg["soft"] = {"all": passes}
+    best = {"fixed": {"expiry": "2026-11-20", "strike": 100.0}, "by_expiry": None}
+    return {"symbol": symbol, "side": side, "best": best, "legs": [leg]}
+
+
+def test_both_sides_is_marked_only_when_the_call_and_the_put_both_pass():
+    rows = [
+        _both("XYZ", "C", True),
+        _both("XYZ", "P", True),
+        _both("ABC", "C", True),
+        _both("ABC", "P", False),
+    ]
+    skate.mark_both_sides(rows)
+    assert [r["both_sides"]["fixed"] for r in rows] == [True, True, False, False]
+    assert not any(r["both_sides"]["by_expiry"] for r in rows)  # no best on that band
+
+
 def test_a_put_yields_on_the_strike_it_secures():
     g = skate.score_leg(
         _row("P", 95.0),

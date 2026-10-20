@@ -373,7 +373,7 @@ def build(
 
 # ------------------------------------------------------------------------------------------------
 # Pure: planning the regular-hours quotes and scoring them (docs/skate-plan.md, steps 2 and 3).
-# `scripts/fetch_screener_greeks.py measure` lists the chains and fetches the quotes; every choice it
+# `scripts/fetch_screener_greeks.py skate` lists the chains and fetches the quotes; every choice it
 # makes comes from here, and the scored file is what the console reads.
 #
 # A chain is the measure run's cache entry: [{"expiration", "dte", "strikes": [[k, call, put], ...]}].
@@ -694,6 +694,38 @@ def best_expiries(entry: dict, monthly: str | None) -> dict[str, dict | None]:
             "vs_monthly": round(top["per_day_bid"] / mon["per_day_bid"], 3) if mon else None,
         }
     return out
+
+
+def _best_passes(entry: dict, band: str) -> bool:
+    """Whether the band's best pick on this name-side passes every soft threshold."""
+    best = (entry.get("best") or {}).get(band)
+    if not best:
+        return False
+    leg = next(
+        (
+            g
+            for g in entry["legs"]
+            if g["band"] == band
+            and g["role"] == "pick"
+            and g["expiry"] == best["expiry"]
+            and g["strike"] == best["strike"]
+        ),
+        None,
+    )
+    return bool(leg and leg.get("hard") and (leg.get("soft") or {}).get("all"))
+
+
+def mark_both_sides(rows: list[dict]) -> None:
+    """Set each row's `both_sides` per band: the name's call AND put best picks both pass every soft
+    threshold (plan step 3), a name the range brackets from both sides at once. In place; rows need
+    `best` set first."""
+    passing: dict[tuple[str, str], set[str]] = {}
+    for e in rows:
+        for band in BANDS:
+            if _best_passes(e, band):
+                passing.setdefault((e["symbol"], band), set()).add(e["side"])
+    for e in rows:
+        e["both_sides"] = {band: passing.get((e["symbol"], band)) == set(SIDES) for band in BANDS}
 
 
 def select(scored: list[dict], n: int) -> list[tuple[str, str]]:

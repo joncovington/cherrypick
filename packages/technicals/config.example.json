@@ -8,7 +8,7 @@
     "options_db": "options"
   },
   "skate": {
-    "_comment": "The skate screen's range band (skate.py, docs/skate-plan.md): close +/- haircut x SMA(smoothing) of (highest high - lowest low over the sessions to expiry). 'haircut' is the fixed band's; 'by_expiry' is the second band's schedule, [[max calendar days, haircut], ...], first match wins, 'haircut' past the last. History counts from 'history_from' and over the last 'recent_years'; a name with fewer than 'min_history' past sessions is left out. The skate rate is recorded at strikes 0 to 'offset_max' past the band in steps of 'offset_step'.",
+    "_comment": "The skate screen's range band (skate.py, docs/skate-plan.md): close +/- haircut x SMA(smoothing) of (highest high - lowest low over the sessions to expiry). 'haircut' is the fixed band's; 'by_expiry' is the second band's schedule, [[max calendar days, haircut], ...], first match wins, 'haircut' past the last. History counts from 'history_from' and over the last 'recent_years'; a name with fewer than 'min_history' past sessions is left out. The skate rate is recorded at strikes from 'offset_min' inside the band to 'offset_max' past it, in steps of 'offset_step'.",
     "haircut": 0.75,
     "by_expiry": [[14, 0.65]],
     "smoothing": 10,

@@ -1489,7 +1489,7 @@ def cmd_income(args) -> int:
 # bands at 06:45; here the strikes past them are listed, quoted in regular hours and scored by
 # technicals' own functions. Two stages keep the broker load near the other passes': every name-side
 # on its cycle monthly, then every weekly expiry for the name-sides whose history beats their implied
-# odds by the most. Chain listings reach further than the builder's (3 to 70 days), so they are cached
+# odds by the most. Chain listings reach further than the builder's (1 to 70 days), so they are cached
 # apart, once a day, and the second run reuses the first's.
 
 SKATE_DTE_RANGE = (1, 70)
@@ -1554,6 +1554,7 @@ async def _skate_quotes(session, ub, doc: dict, cfg: dict, cache: dict, now) -> 
         entry["monthly"] = monthly.get(key)
         entry["best"] = skate.best_expiries(entry, entry["monthly"])
         rows.append(entry)
+    skate.mark_both_sides(rows)
     return rows, problem
 
 
