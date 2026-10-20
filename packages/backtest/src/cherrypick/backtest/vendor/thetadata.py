@@ -255,6 +255,34 @@ class ThetaDataClient:
             )
         return out
 
+    def eod_chain(self, root: str, day: str, expiration: str) -> list[dict]:
+        """One expiry's whole chain as the session closed: every strike and side, end-of-day bid and
+        ask (the account's Standard tier serves single stocks from 2016). Missing values leave as
+        None, never NaN."""
+        d = date.fromisoformat(day)
+        df = self._call(
+            "option_history_eod",
+            start_date=d,
+            end_date=d,
+            symbol=root,
+            expiration=date.fromisoformat(expiration),
+        )
+        out = []
+        for r in df.itertuples(index=False):
+            out.append(
+                {
+                    "strike": float(r.strike),
+                    "right": str(r.right).upper(),
+                    "bid": _num(getattr(r, "bid", None)),
+                    "ask": _num(getattr(r, "ask", None)),
+                    "close": _num(getattr(r, "close", None)),
+                    "volume": _num(getattr(r, "volume", None)),
+                    "bid_size": _num(getattr(r, "bid_size", None)),
+                    "ask_size": _num(getattr(r, "ask_size", None)),
+                }
+            )
+        return out
+
     def open_interest(self, root: str, day: str) -> dict:
         d = date.fromisoformat(day)
         df = self._call("option_history_open_interest", symbol=root, expiration=d, date=d)

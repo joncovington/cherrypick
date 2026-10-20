@@ -6,6 +6,8 @@ python -m cherrypick.backtest key set             # store it (hidden prompt; bla
 python -m cherrypick.backtest key import-env      # copy the vendor's env var into the keyring once
 python -m cherrypick.backtest fetch --from 2026-10-13 --to 2026-10-16 [--dataset SPX] [--refetch]
 python -m cherrypick.backtest fetch-vix --from 2022-05-16 --to 2025-06-30   # VIX minutes, from VIX options
+python -m cherrypick.backtest fetch-chains --requests FILE [--workers 3] [--limit N]   # end-of-day chains
+python -m cherrypick.backtest chains-status        # what the end-of-day chain store holds
 python -m cherrypick.backtest coverage [--dataset SPX]
 python -m cherrypick.backtest derive-regimes [--dataset SPX]   # regime rows from stored profiles
 python -m cherrypick.backtest validate [--module flies|meic] [--dates a,b,...]   # against the recorder
@@ -171,6 +173,40 @@ def cmd_fetch_vix(args) -> int:
     if why:
         print(f"fetch-vix incomplete: {why}", file=sys.stderr)
         return 1
+    return 0
+
+
+def cmd_fetch_chains(args) -> int:
+    """End-of-day chains for a study's list of (name, session, expiry) requests (chainfetch.py): a
+    network verb, refused on the same terms as `fetch`."""
+    from pathlib import Path
+
+    from . import chainfetch
+    from .vendor import VendorRefusal, client_for
+
+    s = settings.load(args.config)
+    refusal = _fetch_refusal(s)
+    if refusal:
+        print(f"fetch-chains refused: {refusal}", file=sys.stderr)
+        return 2
+    requests = chainfetch.read_requests(Path(args.requests))
+    try:
+        client = client_for(s)
+    except VendorRefusal as exc:
+        print(f"fetch-chains refused: {exc}", file=sys.stderr)
+        return 2
+    report = chainfetch.fetch_chains(
+        s, client, requests, workers=args.workers, refetch=args.refetch, limit=args.limit,
+        log=lambda m: print(m, file=sys.stderr),
+    )  # fmt: skip
+    _emit(report)
+    return 1 if report.get("aborted") else 0
+
+
+def cmd_chains_status(args) -> int:
+    from . import chainfetch
+
+    _emit(chainfetch.status(settings.load(args.config)))
     return 0
 
 
@@ -397,6 +433,16 @@ def main(argv: list[str] | None = None) -> int:
     fv.add_argument("--to", dest="end", required=True)
     fv.add_argument("--refetch", action="store_true", help="replace sessions that already hold VIX rows")
     fv.set_defaults(fn=cmd_fetch_vix)
+    fc = sub.add_parser("fetch-chains", help="end-of-day chains for a study's request list (a network verb)")
+    fc.add_argument(
+        "--requests", required=True, help='JSON: {"requests": [{"symbol","session","expiration"}]}'
+    )
+    fc.add_argument("--workers", type=int, default=3, help="concurrent requests on the one session")
+    fc.add_argument("--limit", type=int, help="fetch at most this many requests this run")
+    fc.add_argument("--refetch", action="store_true", help="replace requests already complete or empty")
+    fc.set_defaults(fn=cmd_fetch_chains)
+    cs = sub.add_parser("chains-status", help="what the end-of-day chain store holds")
+    cs.set_defaults(fn=cmd_chains_status)
     ff = sub.add_parser("fetch-flow", help="large options orders per name and session (a network verb)")
     ff.add_argument("--symbols", required=True, help="comma-separated stock symbols")
     ff.add_argument("--from", dest="start", required=True)

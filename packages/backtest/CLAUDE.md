@@ -173,6 +173,15 @@ backfilled; and the vendor store carries no volume, so the regime rows' flow col
 Built: the config, the key verbs, the licence clock, purge, the backup skip, the fence, the store, the
 fetch (SPXW 0DTE, any cadence the profile cadence divides), regime rows, validation and the flies
 and MEIC runners with their statistics, and the flow fetch (below); its test is not built yet.
+**The end-of-day chain fetch** (`chainfetch.py`, `fetch-chains`, `chains-status`, 2026-10-20):
+- **Event-driven:** a study writes the (name, session, expiry) requests it needs, and this fetches
+  exactly those, one session-chain a request, into `vendor/<name>/eod_chains.db` beside the marker.
+- **Why event-driven:** the Standard tier serves single-stock end-of-day chains from 2016 only, has
+  no whole-market daily file, and answers about a request a second, so a full crawl would take weeks.
+- **What each request becomes:** complete, empty or refused (with why). A re-run skips the first two
+  and retries refusals; a fatal refusal stops the run. Workers share the one session, and every
+  write is on the main thread.
+- Its first user is edge-hypotheses item 14.
 The console's Backtest page reads `python -m cherrypick.backtest read overview|run` (`readout.py`)
 and is **fail-closed**: shown only when the orchestrator's `features.backtest` is true
 (`orchestrator/backtestgate.py`: the operator's config enabled, the licence active, the key in the
