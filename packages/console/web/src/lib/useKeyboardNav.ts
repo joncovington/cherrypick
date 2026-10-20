@@ -6,6 +6,7 @@ import { readViewMode } from "./viewMode";
 import { reduceKey, type KeyState } from "./keyboardNav";
 import { useFeatures } from "./useFeatures";
 import { isSlideVisible } from "./visibility";
+import { useLiveLoopsInUse } from "./useLiveToday";
 
 function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -30,13 +31,14 @@ export function useKeyboardNav() {
   const [params] = useSearchParams();
   const stateRef = useRef<KeyState>({ pendingG: null });
   const features = useFeatures();
+  const liveInUse = useLiveLoopsInUse(features);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const seg = location.pathname.split("/")[1] ?? "";
       const module = isModuleId(seg) ? seg : null;
       const rawSlide = location.pathname.split("/")[2] ?? "";
-      const visible = module === null ? [] : (NAV_DECL[module]?.slides ?? []).filter((s) => isSlideVisible(module, s.id, features));
+      const visible = module === null ? [] : (NAV_DECL[module]?.slides ?? []).filter((s) => isSlideVisible(module, s.id, features, liveInUse));
       const view = readViewMode();
       const slide =
         module === null || visible.length === 0
@@ -65,5 +67,5 @@ export function useKeyboardNav() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [location.pathname, navigate, params, features]);
+  }, [location.pathname, navigate, params, features, liveInUse]);
 }

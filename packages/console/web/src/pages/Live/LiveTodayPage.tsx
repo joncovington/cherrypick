@@ -1,9 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import type { LiveTodayLoop, LiveTodayPayload } from "@console/shared";
 import { DataCard, PnlCell, fmtNum } from "../../components/DataTable";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { fmtMoney } from "../../lib/format";
+import { useLiveToday } from "../../lib/useLiveToday";
 import { Tile } from "../Flies/PerformanceTab";
 
 /**
@@ -16,17 +16,7 @@ import { Tile } from "../Flies/PerformanceTab";
  * recorded apart reads n/r. The suite total sums only today's realised net, which every loop states
  * the same way; the worst case and the mark are each loop's own measure and are never added up.
  */
-export function useLiveToday() {
-  return useQuery<LiveTodayPayload>({
-    queryKey: ["live-today"],
-    queryFn: async () => {
-      const res = await fetch("/api/live/today");
-      if (!res.ok) throw new Error(`live today: HTTP ${res.status}`);
-      return (await res.json()) as LiveTodayPayload;
-    },
-    refetchInterval: 15_000,
-  });
-}
+export { useLiveToday };
 
 /** The header badge's words: how many loops are armed now, and the halt flag. */
 export function suiteBadgeText(d: LiveTodayPayload): string {

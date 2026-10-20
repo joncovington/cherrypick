@@ -438,7 +438,7 @@ function PortfolioAccount({ a, oversize }: { a: ManageAccount; oversize: number 
  * One table of trades. `act` rows carry the rule's reason; `hold` rows carry the levels the trade is
  * waiting on instead, since "no rule fired" is the same sentence on every one of them.
  */
-function TradesCard({
+export function TradesCard({
   title,
   trades,
   loading,

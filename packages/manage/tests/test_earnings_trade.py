@@ -158,9 +158,19 @@ def test_the_record_carries_a_trade_past_its_report_when_the_broker_moves_on():
 
 def test_the_switch_and_a_per_name_override_restore_the_ordinary_rules():
     off, _ = _rules.effective({"earnings_trade": {"enabled": False}})
-    assert rec(run(date(2026, 10, 18), rules=off)) == (ev.CLOSE, "credit.time_exit")
+    t = run(date(2026, 10, 18), rules=off)
+    assert rec(t) == (ev.CLOSE, "credit.time_exit")
+    assert t["earnings_trade"] is None
     excused, _ = _rules.effective({"positions": {"XYZ": {"disable": ["earnings_trade"]}}})
-    assert rec(run(date(2026, 10, 18), rules=excused)) == (ev.CLOSE, "credit.time_exit")
+    t = run(date(2026, 10, 18), rules=excused)
+    assert rec(t) == (ev.CLOSE, "credit.time_exit")
+    # Excused, it is not an earnings trade: a reader (the console's held-for-call chip) must not be
+    # told it is holding for a call while its ordinary exit closes it.
+    assert t["earnings_trade"] is None
+    assert t["exit_levels"]["time_exit"].get("rule") != "earnings_trade"
+    # Another name's opt-out excuses nothing here.
+    other, _ = _rules.effective({"positions": {"ABC": {"disable": ["earnings_trade"]}}})
+    assert run(date(2026, 10, 18), rules=other)["earnings_trade"]["report"] == "2026-10-20"
 
 
 def test_the_evaluate_command_carries_yesterdays_earnings_trades_and_drops_expired_ones(tmp_path):

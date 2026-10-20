@@ -7,6 +7,7 @@ import type { SlideDef } from "./types";
 import { ExperimentalChip } from "../components/ExperimentalChip";
 import { useFeatures } from "../lib/useFeatures";
 import { isSlideVisible } from "../lib/visibility";
+import { useLiveLoopsInUse } from "../lib/useLiveToday";
 
 /**
  * What every page renders inside: the breadcrumb header, the integrity drawer, and the body.
@@ -93,7 +94,8 @@ export function ModuleFrame({
   // A tab the suite has turned off (a module's advisor tab, Reports' chart) is not rendered, so a
   // URL naming it resolves to the first tab like any other id the page does not have.
   const features = useFeatures();
-  const slides = allSlides.filter((s) => isSlideVisible(module, s.id, features));
+  const liveInUse = useLiveLoopsInUse(features);
+  const slides = allSlides.filter((s) => isSlideVisible(module, s.id, features, liveInUse));
 
   // A bare module URL lands on the reader's VIEW's first tab (MEIC's summary in simple view); a
   // named tab outside the view still renders, since a deep link is a request, not a mistake.

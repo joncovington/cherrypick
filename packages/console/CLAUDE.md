@@ -260,8 +260,11 @@ capabilities like Dolt and Claude Code. Every web rule is in `lib/visibility.ts`
 rows and the default log sources are filtered on the server with the same answer. **Fail open:**
 loading, `{ok: false}` or an id the reply does not name all show the thing, with a status-bar chip on
 failure. A Live tab named for a module (flies, meic) follows that module's live master switch,
-which the same reply carries as `live` (2026-10-18); only an explicit `false` hides it, and the
-account-wide tabs never leave. A direct URL to an off page renders `ModuleOffCard` (why, and a link to Config), never a 404
+which the same reply carries as `live` (2026-10-18), but only once that loop is idle: it hides on an
+explicit `false` AND a read Live Today payload reporting nothing for the loop (no open position,
+working or held order, orphan, overdue settlement or attention item; `liveLoopsInUse`). A switch
+turned off mid-session must not strand the one page showing what is still open, which Live Today
+links to (#422). An unread Live Today keeps it shown, and the account-wide tabs never leave. A direct URL to an off page renders `ModuleOffCard` (why, and a link to Config), never a 404
 and never the module. Config always lists every toggle. Calendars, pmcc, curve and contango carry
 an `experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`.
 
@@ -588,7 +591,7 @@ the Advisor page only.
 
 **Live** (`/live`, `lightbox/manifests/LiveLightbox.tsx`, `pages/Live/`) — five tabs: `today` (where
 `/live` lands), the account-wide `positions` and `portfolio`, and one per live loop with a page of its
-own (`flies`, `meic`; each hidden when that module's live switch is off, see *What is off*). The
+own (`flies`, `meic`; each hidden when that module's live switch is off and the loop is idle, see *What is off*). The
 `flies` tab is the pilot's day over `GET /api/live/flies` (`routes/live.ts` → `readers/fliesLive.ts`), composing existing readers
 (`services/liveLock`, `readFliesLoopStatus`, `readFliesJournal`, `readFliesAnalytics`) plus settled
 net per period, the intraday series and the broker account. Rules, stated on the page:

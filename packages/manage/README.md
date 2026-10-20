@@ -114,7 +114,8 @@ presenter who cuts losers rather than the one who repairs them, and checked agai
 **An earnings trade is remembered past its report.** The day after a report the broker may already
 show next quarter's date. So the `evaluate` command carries each earnings trade the previous evaluation
 found (by underlying and short expiry) into the snapshot as `earnings_trades_seen`, where `reevaluate`
-reads it too.
+reads it too. A name excused with `positions.<SYMBOL>.disable: ["earnings_trade"]` is not one at all:
+its evaluation carries no `earnings_trade`, its ordinary exits stand, and nothing is carried forward.
 
 **A roll is only ever for a net credit.** A winner at its time exit may roll out, but only if the roll
 takes in money; one that would cost a debit is a close. A losing spread at its time exit closes.
