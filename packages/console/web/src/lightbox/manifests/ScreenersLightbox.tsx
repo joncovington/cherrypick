@@ -1,5 +1,6 @@
 import { EarningsCalendarTab } from "../../pages/Screeners/EarningsCalendarTab";
 import { EarningsRecordTab } from "../../pages/Screeners/EarningsRecordTab";
+import { IncomeTab } from "../../pages/Screeners/IncomeTab";
 import { NeedsDolt } from "../../pages/Screeners/NeedsDolt";
 import { ScreenerTab } from "../../pages/Screeners/ScreenersPage";
 import { SignalBoardTab } from "../../pages/Screeners/SignalBoardTab";
@@ -12,8 +13,9 @@ import type { SlideDef } from "../types";
  * the skate screen (2026-10-19). This manifest holds the page list and nothing else.
  */
 const slides: SlideDef[] = [
-  { id: "short-puts", label: "short puts", render: () => <ScreenerTab list="short-puts" /> },
-  { id: "covered-calls", label: "covered calls", render: () => <ScreenerTab list="covered-calls" /> },
+  // Ours by default, the vendor's saved days behind a toggle (2026-10-19). Credit spreads stay the vendor's.
+  { id: "short-puts", label: "short puts", render: () => <IncomeTab list="short-puts" /> },
+  { id: "covered-calls", label: "covered calls", render: () => <IncomeTab list="covered-calls" /> },
   { id: "credit-spreads", label: "credit spreads", render: () => <ScreenerTab list="credit-spreads" /> },
   { id: "earnings", label: "earnings", render: () => (
       <NeedsDolt slide="earnings" label="earnings">

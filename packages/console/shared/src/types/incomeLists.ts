@@ -1,0 +1,67 @@
+/**
+ * Our own short-put and covered-call lists (`packages/technicals` `income-lists`, 2026-10-19): one row
+ * a name, built from the afternoon income chains with the suite's 16-delta rule. Every figure is the
+ * builder's; the reader renames and decides nothing.
+ */
+
+export type IncomeList = "short-puts" | "covered-calls";
+
+/** The next announcement against the trade's own expiry; `none` for a fund, which reports none. */
+export type IncomeEarnings = "in-trade" | "clear" | "unknown" | "none";
+
+export interface IncomeListRow {
+  symbol: string;
+  /** The security list's type (Stock, Exchange Traded Fund, ...), null where it has none. */
+  type: string | null;
+  spot: number;
+  expiry: string;
+  dte: number;
+  /** Covered calls: "30-45" (the monthly 30-45 days out) or "cycle" (none was listed). */
+  window: string | null;
+  strike: number;
+  /** Black-Scholes on the option's own IV, solved from its mid: negative for a put. */
+  delta: number;
+  iv: number;
+  bid: number | null;
+  ask: number | null;
+  mid: number;
+  /** Per share, the mid less a quarter of the width: what a limit at the mid stepped down fills at. */
+  working: number | null;
+  /** Whole contract: working × 100. */
+  premium: number | null;
+  /** Working premium over the cash tied up (the strike for a put, the share price for a call), a fraction. */
+  returnFraction: number | null;
+  /** returnFraction × 365 ÷ days, simple. */
+  annualFraction: number | null;
+  /** Strike against the share price, a fraction (negative below it). */
+  distanceFraction: number;
+  openInterest: number | null;
+  volume: number | null;
+  /** The reading's own verdict against the leg bars; null when unquoted. */
+  passes: boolean | null;
+  quiet: boolean | null;
+  earnings: IncomeEarnings;
+  earningsDate: string | null;
+  earningsEstimated: boolean | null;
+  /** Covered calls only: an ex-dividend date between today and expiry (early assignment, flagged). */
+  exDividendInTrade: boolean | null;
+}
+
+export interface IncomeListPayload {
+  list: IncomeList;
+  /** The session shown; null when no list has been built. */
+  day: string | null;
+  /** Every built session, newest first. */
+  days: string[];
+  builtAt: string | null;
+  chainTakenAt: string | null;
+  chainComplete: boolean | null;
+  chainProblem: string | null;
+  /** Names the chain reading held; rows are the ones a strike could be picked for. */
+  names: number;
+  /** Why a name has no row, by reason. */
+  dropped: Record<string, number>;
+  /** The deltas the builder picked at, as it recorded them. */
+  targetDelta: number | null;
+  rows: IncomeListRow[];
+}

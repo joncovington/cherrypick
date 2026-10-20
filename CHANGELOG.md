@@ -11,6 +11,14 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: our own short-put and covered-call lists.** The Screeners page's short puts and covered
+  calls tabs now show the suite's own list by default, with the vendor's saved days behind a toggle
+  (its subscription ends on 2026-10-24). Every options-tradable name, the strike nearest 16 delta (a
+  put on the 45-60 day monthly, a call on the monthly 30-45 days out), within 0.05 of it, priced at
+  the working fill, from the 14:45 income chains (new job `technicals-income-lists`, 15:10 ET, no
+  Dolt needed). Rows are by symbol, never ranked by yield, under a standing note that the rule has no
+  tested edge. manage's income candidates apply the same 0.05 tolerance, and the chain fetch always
+  quotes the strikes nearest 16 delta. The rule's numbers live once, in `cherrypick.core.incomerules`.
 - **Changed: a Screeners tab that needs Dolt says so.** On a machine without the Dolt data, the
   earnings, earnings record, signal board and skate tabs showed empty tables, which read as a quiet
   day (and once as "it needs a vendor"). They now show what they need and the steps to set it

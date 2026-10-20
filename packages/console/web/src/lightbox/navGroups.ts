@@ -334,8 +334,9 @@ export const CHARTS_SLIDES = [
 ] as const satisfies readonly NavSlide[];
 
 /** The screeners (2026-10-18 order): our own screens first -- the earnings calendar and its record,
- *  the signal board, the skate screen (2026-10-19) -- then the vendor's three income lists (one tab
- *  each, 2026-10-16), which stop when its subscription ends on 2026-10-24. The fidelity tab, how
+ *  the signal board, the skate screen (2026-10-19) -- then the income lists (one tab each,
+ *  2026-10-16): short puts and covered calls ours from 2026-10-19 with the vendor's saved days behind
+ *  a toggle, credit spreads the vendor's, which stop when its subscription ends on 2026-10-24. The fidelity tab, how
  *  well our rules matched them, was retired on 2026-10-19 (`packages/technicals/CLAUDE.md`). */
 export const SCREENERS_SLIDES = [
   { id: "earnings", label: "earnings" },
