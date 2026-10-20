@@ -629,7 +629,8 @@ reproduced (the best rule found picked 10-15% of its slots right).*
   - Bars, the board's inputs and the study's setups from `history.db`, rebuilt as of each session.
   - **Window:** from the later of 2017-11 (Dolt's first estimate snapshot, 2017-10-26, which B's
     fundamentals need) and ThetaData's first end-of-day chain. It ends at the holdout boundary
-    (`cherrypick.backtest.settings`).
+    (`cherrypick.backtest.settings`). *Amended 2026-10-20 by the probe result below: the deciding
+    window starts 2020-01.*
   - A, C and D may start earlier if ThetaData reaches back further; B never does.
   - The halves are split by date at the window's midpoint.
   - Results stay under `~/.cherrypick`, per the licence.
@@ -638,6 +639,35 @@ reproduced (the best rule found picked 10-15% of its slots right).*
   - whether a whole chain comes in one request;
   - the fetch's size and time for the universe;
   - the result decides the window, and is recorded here.
+- **Probe result (2026-10-20), and the window it sets.** Declared before any option data was fetched.
+  - **Depth:** the Standard subscription serves end-of-day single-stock chains from 2016. 2012 and
+    2014 need the Professional tier and were refused. Expirations are listed from 2012, but listings
+    are not quotes.
+  - **No whole-market file:** the per-day file (`option_flat_file_eod`) is Professional-only.
+  - **Speed:** one name's chain for one session takes about a second. A 45-session range of one
+    expiry took about 30 seconds.
+  - **So the fetch is event-driven:** with hold-to-expiry the primary exit, a trade needs only its
+    entry session's chain, because the expiry value comes from the stock's close. The half-credit
+    exit's daily marks are fetched only for a selector that passes on the primary exit.
+  - **Earnings (amendment):** Dolt's earnings calendar starts 2020-01-22, and `eps_history` holds
+    quarter-ends, not report dates. So the **deciding window is 2020-01 to the holdout boundary**,
+    where the earnings exclusion is exact, and its halves are split at its midpoint.
+  - **2016-2019** are reported beside it, with reports approximated as 14-60 days after each quarter
+    end. Those years can't pass or fail a selector.
+  - B's own start (2017-11) is unchanged and falls inside the reported years.
+  - The report (counts and timings only) is kept at
+    `~/.cherrypick/data/backtest/results/research/item14-probe-20261020.txt`.
+- **Trade counts (2026-10-20, local bars only; no option data yet).** Over 2016-01 to 2026-09, on the
+  4,970 names that ever traded $300M a day. A signal is a trade only if a standard monthly falls 30-45
+  days after entry, which about 55% do.
+  - **A** (`reversion`): 2,828 trades, 2,207 of them from 2020.
+  - **C** (`pullback-short`): 1,873 trades, 1,309 from 2020.
+  - **C** (`reversion-short`): 5,167 trades, 4,131 from 2020.
+  - **D:** 297 entry sessions across 3 funds and both sides, 1,782 trades.
+  - **B** is counted once its historical board is built.
+  - **Fetch size:** with five matched baselines a trade, about 60,000 one-session chain requests,
+    about 46,000 of them in the deciding window. That is before the earnings exclusion, and
+    overnight work for a few workers at about a second a request.
 - **Passes if,** for a selector and side, with the hold-to-expiry exit:
   - the mean of (selector trade's net − the mean of its five matched baselines' net) is positive;
   - its one-sided t is above 2 in **both** halves;
