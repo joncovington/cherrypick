@@ -113,6 +113,27 @@ def _broker_iv(broker_greeks: dict[str, dict] | None, symbol: Any) -> float | No
     return iv if iv and iv > 0 else None
 
 
+# `implied_vol`'s lower bound, and the extrinsic under which a mid at that bound is a real zero-vol
+# reading (an in-the-money leg worth its intrinsic) rather than a mid the model cannot reach.
+_IV_FLOOR = 0.0002
+_NO_EXTRINSIC = 0.01
+
+
+def _reprices(
+    leg: dict[str, Any], spot: float, strike: float, years: float, iv: float, right: str, rate: float
+) -> bool:
+    """Whether the broker's IV, priced in our model at the snapshot's spot, lands inside the leg's own
+    quote. The broker computes its greeks on its own underlying price, which after the close on an
+    earnings night is the after-hours print: META's 705C (2026-10-21, 16:35 ET) took an IV that priced
+    it at $10.40 against a 21.80/24.40 quote, and beside its partner solved from a mid it gave the
+    bull call spread a negative delta. An IV that cannot price the quote at our spot is not used."""
+    bid, ask = _f(leg.get("bid")), _f(leg.get("ask"))
+    if bid is None or ask is None or ask < bid:
+        return False
+    model = pricing.price(spot, strike, years, iv, right, rate)
+    return model is not None and bid - 1e-9 <= model <= ask + 1e-9
+
+
 def _legs(
     raw: list[dict[str, Any]],
     session: date,
@@ -124,8 +145,9 @@ def _legs(
     and the broker has an IV for it: a wide mid is the midpoint of a market nobody quoted seriously
     (before the open, a 0.00/1.05 call), and the IVs solved off two such mids in one spread disagreed
     about twice as much as the broker's surface IVs did (median 0.030 against 0.014 over the wide
-    pairs of 2026-10-20/21; on tight quotes ours agreed better, 0.005 against 0.010). `iv_source`
-    says which: `mid` or `broker`."""
+    pairs of 2026-10-20/21; on tight quotes ours agreed better, 0.005 against 0.010). The broker's IV
+    is taken only when it prices the leg inside its quote at our spot (`_reprices`). `iv_source` says
+    which: `mid`, `broker`, or `unpriceable` (no vol prices the mid; the leg is left unmodelled)."""
     out = []
     for leg in raw:
         right = leg.get("right") if leg.get("right") in ("C", "P") else None
@@ -169,11 +191,22 @@ def _legs(
             item["extrinsic"] = mid - item["intrinsic"]
             if dte and dte > 0:
                 broker_iv = _broker_iv(broker_greeks, leg.get("symbol")) if item["wide"] else None
+                if broker_iv is not None and not _reprices(
+                    leg, spot, strike, item["years"], broker_iv, right, rate
+                ):
+                    broker_iv = None
                 if broker_iv is not None:
                     item["iv"], item["iv_source"] = broker_iv, "broker"
                 else:
                     item["iv"] = pricing.implied_vol(spot, strike, item["years"], mid, right, rate)
                     item["iv_source"] = "mid" if item["iv"] else None
+                    if item["iv"] and item["iv"] <= _IV_FLOOR and item["extrinsic"] > _NO_EXTRINSIC:
+                        # The solver's floor, reached by a mid that still carries extrinsic: the mid
+                        # sits under what the model calls the least this option can be worth. That is
+                        # the model's missing dividend (TLT's 2029 80C, 2026-10-21: mid 7.10 under a
+                        # no-dividend floor of 10.00, read as delta 1.00 against the broker's 0.55),
+                        # not a vol of zero, so the leg is left unmodelled rather than given one.
+                        item["iv"], item["iv_source"] = None, "unpriceable"
                 if item["iv"]:
                     item["delta"] = pricing.delta(spot, strike, item["years"], item["iv"], right, rate)
         item["label"] = _label(item)
