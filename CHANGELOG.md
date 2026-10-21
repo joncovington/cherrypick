@@ -11,6 +11,12 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: a manage snapshot older than the code says so.** The watchdog's `manage.snapshot_version`
+  WARNs while the newest stored snapshot was taken by an older `SNAPSHOT_VERSION` than is installed,
+  and the console's manage tabs carry that finding as a banner. On 10-20 a v11 snapshot under v14
+  code left wheel and PMCC empty with only a field-level note. No broker read is made: manage already
+  snapshots every half hour from 10:00 to 16:35 ET, so this only covers a merge after the day's last
+  run, until the next morning's. Off while manage is.
 - **Changed: Live → today folds a retired loop to one line.** A loop whose module is switched off in
   the orchestrator config (`modules.<name>.enabled`, missing read as off, as the orchestrator reads
   it) and that holds nothing -- not armed, nothing open or working, no held, orphaned or overdue

@@ -49,7 +49,7 @@ import type {
   ManageWheelRollCheck,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { num } from "./db.js";
+import { num, readJson } from "./db.js";
 
 function rec(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -1006,9 +1006,19 @@ function account(v: unknown, rules: Record<string, unknown>): ManageAccount {
   };
 }
 
+/** The watchdog's word on the newest snapshot's version (`watchdog._check_manage_snapshot`): its WARN
+ *  message, or null. Read from the watchdog's last run rather than judged here, so the tab and the
+ *  alert cannot disagree -- only the watchdog runs the code that knows the version it takes. */
+function snapshotStale(config: ConsoleConfig): string | null {
+  const findings = arr(rec(readJson(config.paths.watchdogLast))["findings"]);
+  const f = findings.map(rec).find((x) => x["key"] === "manage.snapshot_version");
+  return f && f["status"] === "WARN" ? str(f["message"]) : null;
+}
+
 export function readManage(config: ConsoleConfig, session?: string): ManagePayload {
   const sessions = listSessions(config);
   const wanted = session && sessions.includes(session) ? session : sessions[sessions.length - 1];
+  const newest = wanted !== undefined && wanted === sessions[sessions.length - 1];
   const empty: ManagePayload = {
     session: null,
     sessions,
@@ -1022,6 +1032,7 @@ export function readManage(config: ConsoleConfig, session?: string): ManagePaylo
     ruleWarnings: [],
     rules: null,
     accounts: [],
+    snapshotStale: null,
   };
   if (!wanted) return empty;
   let doc: Record<string, unknown>;
@@ -1043,5 +1054,6 @@ export function readManage(config: ConsoleConfig, session?: string): ManagePaylo
     ruleWarnings: strs(doc["rule_warnings"]),
     rules: Object.keys(rec(doc["rules"])).length ? rec(doc["rules"]) : null,
     accounts: arr(doc["accounts"]).map((a) => account(a, rec(doc["rules"]))),
+    snapshotStale: newest ? snapshotStale(config) : null,
   };
 }

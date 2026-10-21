@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -2735,6 +2736,56 @@ def _check_disk_space(cfg: dict[str, Any]) -> list[Finding]:
     ]
 
 
+_SNAPSHOT_VERSION_RE = re.compile(rb'"snapshot_version"\s*:\s*(\d+)')
+
+
+def _snapshot_version(path: Path) -> int | None:
+    """A stored manage snapshot's version, read off the file's head (it is the first key, and the
+    file runs to megabytes); the whole file only when the head does not carry it."""
+    try:
+        with path.open("rb") as fh:
+            m = _SNAPSHOT_VERSION_RE.search(fh.read(512))
+        if m:
+            return int(m.group(1))
+        value = json.loads(path.read_text(encoding="utf-8")).get("snapshot_version")
+        return int(value) if value is not None else None
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+
+
+def _check_manage_snapshot(cfg: dict[str, Any]) -> list[Finding]:
+    """WARN while the newest manage snapshot was taken by older code than is installed: a merge that
+    raises SNAPSHOT_VERSION lands after the day's last run, and until the next one the views that need
+    the new fields read empty (2026-10-20: a v11 snapshot under v14 code left wheel and PMCC blank with
+    only a field-level note). No broker read is made here -- the next scheduled run takes the fresh
+    snapshot; this says why the tabs are thin until it does. The console's manage tabs show this
+    finding as their banner. Off while manage is."""
+    from . import managesnap
+
+    if not cfgmod.manage_settings(cfg)["enabled"]:
+        return []
+    found = sorted(core_home.data_dir("manage", env="MANAGE_DATA_DIR").glob("snapshot-*.json"))
+    if not found:
+        return []
+    latest = found[-1]
+    version, code = _snapshot_version(latest), managesnap.SNAPSHOT_VERSION
+    session = latest.stem.removeprefix("snapshot-")
+    title = "manage snapshot version"
+    if version is None:
+        return [Finding("manage.snapshot_version", WARN, title, f"the {session} snapshot states no version")]
+    if version < code:
+        return [
+            Finding(
+                "manage.snapshot_version",
+                WARN,
+                title,
+                f"the {session} snapshot is v{version} and the installed code takes v{code}: views that "
+                "need the newer fields read empty until the next scheduled manage run takes a fresh one",
+            )
+        ]
+    return [Finding("manage.snapshot_version", OK, title, f"the {session} snapshot is v{version}, current")]
+
+
 def _check_config_health() -> list[Finding]:
     """CRITICAL while `config.json` cannot be parsed: the suite is running on the last good copy, so
     no edit made since then is in effect -- including the one that broke it (2026-10-08 audit)."""
@@ -2992,6 +3043,7 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     findings += _check_notify_delivery(cfg)
     findings += _check_config_health()
     findings += _check_disk_space(cfg)
+    findings += _check_manage_snapshot(cfg)
     try:
         findings += _check_duplicate_processes(cfg)
     except Exception as exc:

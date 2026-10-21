@@ -569,6 +569,11 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
           places an order
         </p>
         {data?.error && <p className="pnl-neg">evaluation error: {data.error}</p>}
+        {data?.snapshotStale && (
+          <p className="pnl-neg" title="the watchdog's manage.snapshot_version check; no broker read is made to fix it">
+            snapshot older than the code: {data.snapshotStale}
+          </p>
+        )}
         {data?.metricsError && (
           <p className="muted">earnings and dividend dates unavailable ({data.metricsError}); price rules still ran</p>
         )}
