@@ -371,7 +371,11 @@ def evaluate_trade(
 
     # ---- earnings and ex-dividend facts
     er_date = _date(metrics.get("earnings_date"))
-    if rules["earnings"]["enabled"] and er_date and er_date >= session and expiries:
+    # A report before today's open is already out: no longer inside the trade.
+    upcoming = er_date is not None and (
+        er_date > session or (er_date == session and not before_open(metrics.get("earnings_time")))
+    )
+    if rules["earnings"]["enabled"] and upcoming and expiries:
         last_exp = _date(expiries[-1])
         if er_date <= last_exp:
             trade["earnings"] = {
@@ -911,6 +915,10 @@ def evaluate_trade(
             trade["held_for_earnings"] = held
             if held:
                 trade["roll"] = None
+        elif len(expiries) > 1 and pnl < 0:
+            # A loser with a leg in a later expiry (a diagonal, a calendar) can recover after the call,
+            # so it is not closed for being an earnings trade: the ordinary rules manage it from here.
+            et["kept"] = True
         else:
             fired.append(
                 _fire(
@@ -955,11 +963,14 @@ def earnings_trade(
     expires on or after the report and no more than `max_days_expiry_after` days later. A trade
     without an order chain has no opening date to judge and is not classified.
 
-    The report date comes from yesterday's record of the trade (`seen`, keyed by underlying and short
-    expiry, carried forward by the evaluate command) before the broker's metrics: the day after a
-    report the broker may already show next quarter's date, and the trade would forget it ever was
-    one. `passed` is the call having happened: a day after the report, or the report's own day when
-    it came before the open (BTO)."""
+    The report date is the broker's while it falls inside the trade (from its opening to its short's
+    expiry), so a rescheduled report moves the trade with it. Otherwise it is yesterday's record of
+    the trade (`seen`, keyed by underlying and short expiry, carried forward by the evaluate command):
+    the day after a report the broker may already show next quarter's date, and the trade would
+    forget it ever was one. A report on the short's expiry day counts only before the open; after
+    the close, the short has expired before the call. `passed` is the call having happened: a day
+    after the report, or the report's own day when it came before the open (BTO). After the call a
+    winner closes; a loser with a leg in a later expiry is `kept` for the ordinary rules."""
     cfg = rules["earnings_trade"]
     if cfg.get("enabled") is False:
         return None
@@ -968,15 +979,20 @@ def earnings_trade(
         return None
     key = f"{trade['underlying']}|{expiry.isoformat()}"
     prior = (seen or {}).get(key) or {}
-    report = _date(prior.get("report")) or _date(metrics.get("earnings_date"))
-    # Yesterday's time stands, but a blank one takes today's for the same report: a time can arrive a
-    # day late, and an untimed report is held a day past a before-the-open call.
-    time_of_day = prior.get("time") if prior.get("report") else None
-    if not time_of_day and _date(metrics.get("earnings_date")) == report:
-        time_of_day = metrics.get("earnings_time")
     orders = (trade.get("chain") or {}).get("orders") or []
     opened = _date(orders[0].get("date")) if orders else _date(prior.get("opened"))
+    broker = _date(metrics.get("earnings_date"))
+    inside = broker is not None and broker <= expiry and (opened is None or broker >= opened)
+    report = broker if inside or not prior.get("report") else _date(prior.get("report"))
+    # The broker's time for this report wins (a corrected time is taken); without one, yesterday's
+    # for the same report: a time can arrive a day late, and an untimed report is held a day past a
+    # before-the-open call.
+    time_of_day = metrics.get("earnings_time") if broker == report else None
+    if not time_of_day and _date(prior.get("report")) == report:
+        time_of_day = prior.get("time")
     if report is None or report > expiry or (expiry - report).days > int(cfg["max_days_expiry_after"]):
+        return None
+    if report == expiry and not before_open(time_of_day):
         return None
     if not prior:
         if opened is None:
@@ -994,6 +1010,7 @@ def earnings_trade(
         "report": report.isoformat(),
         "time_of_day": time_of_day,
         "opened": opened.isoformat() if opened else None,
+        "kept": False,
         "lead_days": (report - opened).days if opened else None,
         "passed": passed,
     }

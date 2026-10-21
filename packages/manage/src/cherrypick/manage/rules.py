@@ -216,7 +216,8 @@ DEFAULT_RULES: dict[str, Any] = {
     # days before the call (the user's practice, 2026-10-18: 1 to 7; the report's own day counts for
     # an after-the-close call since 2026-10-20), its nearest short expiring no more than
     # `max_days_expiry_after` days after it. Before the call its close, take-profit and roll rules
-    # wait, and the expiry close when the trade comes off before its legs expire; after it, close.
+    # wait, and the expiry close when the trade comes off before its legs expire; after it, close,
+    # unless losing with a leg in a later expiry (the user's call, 2026-10-20: it can recover).
     # Other safety rules never wait.
     "earnings_trade": {
         "enabled": True,

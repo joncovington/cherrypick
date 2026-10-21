@@ -75,7 +75,12 @@ def test_its_time_exit_is_the_day_after_the_call_not_expiry_less_21_days():
     assert run(date(2026, 10, 18))["exit_levels"]["time_exit"]["date"] == "2026-10-21"
     assert run(date(2026, 10, 18), time_of_day="BTO")["exit_levels"]["time_exit"]["date"] == "2026-10-20"
     # A Friday report closes the next trading day.
-    assert run(date(2026, 10, 18), report="2026-10-23")["exit_levels"]["time_exit"]["date"] == "2026-10-26"
+    later = [
+        leg(-1, "C", 192.5, 5.15, 5.72, exp="2026-10-30"),
+        leg(1, "C", 200, 2.36, 2.74, exp="2026-10-30"),
+    ]
+    friday = run(date(2026, 10, 18), report="2026-10-23", legs=later)
+    assert friday["exit_levels"]["time_exit"]["date"] == "2026-10-26"
     # Not an earnings trade (opened too early): the 21-day exit stands.
     assert run(date(2026, 10, 18), opened_on="2026-10-01")["exit_levels"]["time_exit"]["date"] == "2026-10-02"
 
@@ -110,9 +115,65 @@ def test_a_blank_time_carried_from_yesterday_takes_todays_for_the_same_report():
         ]
         is None
     )
-    # A time yesterday already had stands.
+    # The broker correcting yesterday's time for the same report is taken; a blank today keeps it.
     timed = {f"XYZ|{EXPIRY}": {"report": "2026-10-20", "time": "AMC", "opened": "2026-10-16"}}
-    assert run(date(2026, 10, 20), time_of_day="BTO", seen=timed)["earnings_trade"]["time_of_day"] == "AMC"
+    corrected = run(date(2026, 10, 20), time_of_day="BTO", seen=timed)
+    assert corrected["earnings_trade"]["time_of_day"] == "BTO" and corrected["earnings_trade"]["passed"]
+    assert run(date(2026, 10, 20), time_of_day=None, seen=timed)["earnings_trade"]["time_of_day"] == "AMC"
+
+
+SEEN = {f"XYZ|{EXPIRY}": {"report": "2026-10-20", "time": "AMC", "opened": "2026-10-16"}}
+
+
+def test_a_rescheduled_report_moves_the_trade_with_it():
+    # Recorded for 10-20; the broker now says 10-21. On 10-21 the call is still ahead: hold, not close.
+    t = run(date(2026, 10, 21), report="2026-10-21", time_of_day="AMC", seen=SEEN)
+    assert t["earnings_trade"]["report"] == "2026-10-21" and not t["earnings_trade"]["passed"]
+    assert rec(t) == (ev.HOLD, "earnings_trade")
+    # Moved to 10-22 after the close, it would come off on expiry day: the expiry close stands, but
+    # not the earnings trade's own close.
+    late = run(date(2026, 10, 21), report="2026-10-22", time_of_day="AMC", seen=SEEN)
+    assert not late["earnings_trade"]["passed"] and rec(late) == (ev.CLOSE, "expiry")
+    assert "earnings_trade" not in {f["rule"] for f in late["fired"]}
+    # Next quarter's date (past the short's expiry) is not a reschedule: the record stands.
+    rolled = run(date(2026, 10, 21), report="2027-01-20", seen=SEEN)
+    assert rolled["earnings_trade"]["report"] == "2026-10-20" and rolled["earnings_trade"]["passed"]
+
+
+def test_a_report_on_the_shorts_expiry_day_counts_only_before_the_open():
+    friday = "2026-10-23"
+    for when in ("AMC", None):
+        t = run(date(2026, 10, 21), report=friday, time_of_day=when, opened_on="2026-10-19")
+        assert t["earnings_trade"] is None, when
+    bto = run(date(2026, 10, 21), report=friday, time_of_day="BTO", opened_on="2026-10-19")
+    assert bto["earnings_trade"]["report"] == friday
+
+
+DIAGONAL_LOSING = [leg(-1, "C", 192.5, 5.15, 5.72), leg(1, "C", 200, 6.00, 5.00, exp="2026-12-18")]
+DIAGONAL_WINNING = [leg(-1, "C", 192.5, 5.15, 1.00), leg(1, "C", 200, 6.00, 6.50, exp="2026-12-18")]
+
+
+def test_after_the_call_a_losing_trade_with_a_later_expiry_is_kept_for_the_ordinary_rules():
+    lose = run(date(2026, 10, 21), legs=DIAGONAL_LOSING, opened_on=None, seen=SEEN)
+    assert lose["pnl_gross"] < 0
+    assert lose["earnings_trade"]["passed"] and lose["earnings_trade"]["kept"]
+    assert "earnings_trade" not in {f["rule"] for f in lose["fired"]}
+    assert "ordinary rules manage it" in lose["explanation"]
+    # A winner with the same shape closes after the call.
+    win = run(date(2026, 10, 21), legs=DIAGONAL_WINNING, opened_on=None, seen=SEEN)
+    assert win["pnl_gross"] > 0 and not win["earnings_trade"]["kept"]
+    assert "earnings_trade" in {f["rule"] for f in win["fired"]}
+    # A losing single-expiry spread still closes after the call.
+    single = run(date(2026, 10, 21))
+    assert single["pnl_gross"] < 0 and "earnings_trade" in {f["rule"] for f in single["fired"]}
+
+
+def test_a_report_before_todays_open_is_no_longer_inside_an_ordinary_trade():
+    far = [leg(-1, "C", 192.5, 5.15, 4.00, exp="2026-11-20"), leg(1, "C", 200, 2.36, 1.80, exp="2026-11-20")]
+    out = run(date(2026, 10, 20), time_of_day="BTO", opened_on="2026-09-20", legs=far)
+    assert out["earnings"] is None and "inside the trade" not in out["recommendation"]["reason"]
+    ahead = run(date(2026, 10, 20), time_of_day="AMC", opened_on="2026-09-20", legs=far)
+    assert ahead["earnings"]["date"] == "2026-10-20"
 
 
 def test_only_a_trade_put_on_up_to_seven_days_before_the_report_is_one():
@@ -228,3 +289,10 @@ def test_the_evaluate_command_carries_yesterdays_earnings_trades_and_drops_expir
     seen = cli.earnings_trades_seen("2026-10-21", tmp_path)
     assert seen == {"XYZ|2026-10-23": {"report": "2026-10-20", "time": "AMC", "opened": "2026-10-16"}}
     assert cli.earnings_trades_seen("2026-10-21", tmp_path / "none") == {}
+    # A failed day in between (no trades read, or an unreadable file) is passed over, not taken as
+    # "no earnings trades".
+    failed = tmp_path / "eval-2026-10-21.json"
+    failed.write_text(json.dumps({"ok": False, "accounts": []}), encoding="utf-8")
+    assert cli.earnings_trades_seen("2026-10-22", tmp_path) == seen
+    failed.write_text("{broken", encoding="utf-8")
+    assert cli.earnings_trades_seen("2026-10-22", tmp_path) == seen
