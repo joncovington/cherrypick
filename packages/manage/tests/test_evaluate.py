@@ -231,3 +231,43 @@ def test_evaluate_whole_snapshot_counts_actions():
     out = ev.evaluate(snap, _rules.effective(None)[0])
     assert out["accounts"][0]["counts"] == {ev.CLOSE: 1}
     assert out["accounts"][0]["risk_budget"] == pytest.approx(1000)
+    assert out["pre_open"] is None  # a snapshot with no time is never called pre-open
+
+
+def _expiring(mark):
+    legs = [
+        {"expiration": "2026-10-21", "mark": mark},
+        {"expiration": "2026-11-20", "mark": None},  # unquoted, but not expiring today
+    ]
+    return [
+        {
+            "trades": [
+                {"trade_id": "SPCX", "underlying": "SPCX", "legs": legs},
+                {"underlying": "SPY", "legs": []},
+            ]
+        }
+    ]
+
+
+def test_a_snapshot_taken_before_the_open_says_so_in_new_york_time():
+    day = date(2026, 10, 21)
+    # 05:17 in Denver is 07:17 in New York: before the open, and today's SPCX leg has no mark.
+    out = ev.pre_open("2026-10-21T05:17:04-0600", day, _expiring(None))
+    assert out == {"taken_at": "07:17", "expiring_unpriced": ["SPCX"]}
+    # 07:29 in Denver is 09:29 in New York, still before the open; a quoted leg is not listed.
+    assert ev.pre_open("2026-10-21T07:29:59-0600", day, _expiring(1.2)) == {
+        "taken_at": "09:29",
+        "expiring_unpriced": [],
+    }
+    assert ev.pre_open("2026-10-21T07:30:00-0600", day, _expiring(None)) is None
+
+
+def test_a_snapshot_after_the_open_or_from_another_day_is_not_pre_open():
+    day = date(2026, 10, 21)
+    assert ev.pre_open("2026-10-21T09:30:00-0400", day, _expiring(None)) is None
+    assert ev.pre_open("2026-10-20T23:00:00-0400", day, _expiring(None)) is None
+    assert ev.pre_open("2026-10-21T09:29:00-0400", day, _expiring(2.0)) == {
+        "taken_at": "09:29",
+        "expiring_unpriced": [],
+    }
+    assert ev.pre_open("not a time", day, []) is None

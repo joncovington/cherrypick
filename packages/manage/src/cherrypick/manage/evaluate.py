@@ -18,9 +18,10 @@ every P&L here is a mark P&L GROSS of fees -- the broker snapshot carries no fee
 from __future__ import annotations
 
 import math
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from functools import reduce
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from cherrypick.core import calendar as _calendar
 
@@ -36,6 +37,7 @@ from cherrypick.manage import shapes as _shapes
 from cherrypick.manage import wheel as _wheel
 
 EVAL_VERSION = 1
+NEW_YORK = ZoneInfo("America/New_York")
 
 CLOSE = "CLOSE"
 TAKE_PROFIT = "TAKE_PROFIT"
@@ -954,6 +956,34 @@ HELD_FOR_EARNINGS = {"credit", "debit", "directional", "legs", "roll", "wheel"}
 
 # A report before the open: the broker spells it BTO, most calendars BMO.
 BEFORE_OPEN = {"BTO", "BMO"}
+
+
+def pre_open(generated_at: Any, session: date, accounts: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Set when the snapshot was taken on the session's own day before 09:30 New York time: its spot
+    prices and marks are the last session's, and an option expiring today has no quote yet, so the
+    expiring legs are left unpriced and a name's delta reads off yesterday's close. `taken_at` is the
+    New York wall clock; `expiring_unpriced` the trades holding a leg that expires today with no mark.
+    None for a snapshot taken after the open, on another day, or with no readable time."""
+    try:
+        taken = datetime.strptime(str(generated_at), "%Y-%m-%dT%H:%M:%S%z").astimezone(NEW_YORK)
+    except ValueError:
+        try:
+            taken = datetime.fromisoformat(str(generated_at)).astimezone(NEW_YORK)
+        except ValueError:
+            return None
+    if taken.tzinfo is None or taken.date() != session or taken.time() >= time(9, 30):
+        return None
+    today = session.isoformat()
+    unpriced = sorted(
+        {
+            t.get("trade_id") or t["underlying"]
+            for a in accounts
+            for t in a.get("trades") or []
+            for leg in t.get("legs") or []
+            if leg.get("expiration") == today and leg.get("mark") is None
+        }
+    )
+    return {"taken_at": taken.strftime("%H:%M"), "expiring_unpriced": unpriced}
 
 
 def before_open(time_of_day: Any) -> bool:
@@ -2326,6 +2356,7 @@ def evaluate(
         if "transactions" in snapshot
         else "no trade history in this snapshot (taken before chains were read)",
         "marks": positions.get("marks"),
+        "pre_open": pre_open(snapshot.get("generated_at"), session, accounts),
         "ruleset": rules.get("ruleset"),
         "rules": rules,
         "rule_warnings": list(warnings or []),

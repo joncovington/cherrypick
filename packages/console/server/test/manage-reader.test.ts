@@ -90,6 +90,14 @@ describe("readManage", () => {
     expect(out.accounts).toEqual([]);
   });
 
+  it("passes manage's pre-open flag through, and none on an evaluation without it", () => {
+    const doc = { ...evalDoc("2026-10-21"), pre_open: { taken_at: "07:17", expiring_unpriced: ["SPCX"] } };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-21.json"), JSON.stringify(doc));
+    expect(readManage(config).preOpen).toEqual({ takenAt: "07:17", expiringUnpriced: ["SPCX"] });
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-21.json"), JSON.stringify(evalDoc("2026-10-21")));
+    expect(readManage(config).preOpen).toBeNull();
+  });
+
   it("carries the watchdog's stale-snapshot WARN on the newest session only", () => {
     for (const s of ["2026-10-19", "2026-10-20"]) {
       fs.writeFileSync(path.join(tmp, "manage", `eval-${s}.json`), JSON.stringify(evalDoc(s)));

@@ -1080,6 +1080,7 @@ export function readManage(config: ConsoleConfig, session?: string): ManagePaylo
     rules: null,
     accounts: [],
     snapshotStale: null,
+    preOpen: null,
   };
   if (!wanted) return empty;
   let doc: Record<string, unknown>;
@@ -1102,5 +1103,8 @@ export function readManage(config: ConsoleConfig, session?: string): ManagePaylo
     rules: Object.keys(rec(doc["rules"])).length ? rec(doc["rules"]) : null,
     accounts: arr(doc["accounts"]).map((a) => account(a, rec(doc["rules"]), leveragedFor(config, wanted))),
     snapshotStale: newest ? snapshotStale(config) : null,
+    preOpen: doc["pre_open"]
+      ? { takenAt: str(rec(doc["pre_open"])["taken_at"]), expiringUnpriced: strs(rec(doc["pre_open"])["expiring_unpriced"]) }
+      : null,
   };
 }

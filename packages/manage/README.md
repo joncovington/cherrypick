@@ -439,6 +439,10 @@ income card switches between the two lists with a checkbox.
 
 - **Marks are mids** and the payoff model is Black-Scholes at today's IV per leg, with no dividends.
   It bounds what a trade can still do; it is not a price.
+- **A run before the open reads yesterday's close** (2026-10-21). Spot and marks are the last
+  session's, and an option expiring today has no quote, so its leg is unpriced and a name's delta
+  reads off the stale spot. The evaluation says so (`pre_open`: the New York time it was taken, and
+  the trades with an unpriced leg expiring today); a run after 09:30 reprices.
 - **Fees are known only for a reconciled chain.** A trade priced from its open legs shows gross P&L only, and its basis misses any earlier roll.
 - **Ex-dividend dates are the last declared ones.** The rule fires once the next ex-date is announced.
 - **Earnings dates are the broker's expected dates**, which can move.

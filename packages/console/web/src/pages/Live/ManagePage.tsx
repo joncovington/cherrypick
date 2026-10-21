@@ -574,6 +574,16 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
             snapshot older than the code: {data.snapshotStale}
           </p>
         )}
+        {data?.preOpen && (
+          <p className="pnl-neg" title="manage's pre_open: the snapshot was taken before 09:30 ET on its own session">
+            taken {data.preOpen.takenAt ?? "—"} ET, before the open: spot and marks are the last session's close, so every delta,
+            theta and stress figure reads off it
+            {data.preOpen.expiringUnpriced.length
+              ? ` · options expiring today have no quote and are left unpriced (${data.preOpen.expiringUnpriced.join(", ")})`
+              : ""}{" "}
+            · a run after 09:30 reprices
+          </p>
+        )}
         {data?.metricsError && (
           <p className="muted">earnings and dividend dates unavailable ({data.metricsError}); price rules still ran</p>
         )}

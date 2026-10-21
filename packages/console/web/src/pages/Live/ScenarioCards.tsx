@@ -52,17 +52,25 @@ export function LadderCard({ ladder }: { ladder: ManageLadder | null }) {
   const rows = ladder.expiries
     .filter((x) => x.trades.length > 0 || (x.theta ?? 0) !== 0)
     .map((x) => ({
-      label: `${x.expiration} · ${x.trades.length} trade${x.trades.length === 1 ? "" : "s"} · θ ${fmtCash(x.theta)}`,
+      // A date where only long legs of trades filed under an earlier short expire has no trades of its own.
+      label:
+        x.trades.length > 0
+          ? `${x.expiration} · ${x.trades.length} trade${x.trades.length === 1 ? "" : "s"} · θ ${fmtCash(x.theta)}`
+          : `${x.expiration} · long legs only · θ ${fmtCash(x.theta)}`,
       value: x.trades.length > 0 ? x.downside : null,
-      title: `${x.trades.join(", ") || "no trade's nearest short"} · can still lose ${wholeCash(x.downside)}${
-        x.downsideUnknown ? ` (+${x.downsideUnknown} not modelled)` : ""
-      } · theta of the legs expiring then ${fmtCash(x.theta)}/day`,
+      title:
+        x.trades.length > 0
+          ? `${x.trades.join(", ")} · can still lose ${wholeCash(x.downside)}${
+              x.downsideUnknown ? ` (+${x.downsideUnknown} not modelled)` : ""
+            } · theta of the legs expiring then ${fmtCash(x.theta)}/day`
+          : `no trade's nearest short expires then: these are the later legs of trades listed under their short, whose downside is counted there · their theta ${fmtCash(x.theta)}/day`,
     }));
   return (
     <Card title="what expires when">
       <DivergingBars rows={rows} format={wholeCash} emptyText="no expiries" />
       <p className="muted pf-caption">
-        each bar: what the trades whose nearest short expires then can still lose (modelled)
+        each bar: what the trades whose nearest short expires then can still lose (modelled) · θ is the legs expiring that
+        day, so a long leg outlasting its trade's short shows on its own date
       </p>
       {e.trades.length > 0 && (
         <p className="pf-earnings">

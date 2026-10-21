@@ -779,7 +779,8 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
                 _fire(
                     "portfolio.concentration",
                     cc["confidence"],
-                    f"over {cap:.0%} of the book's theta or beta-weighted delta in one name: {names}",
+                    f"over {cap:.0%} of the book's theta (without the legs about to expire, as the band "
+                    f"reads it) or beta-weighted delta in one name: {names}",
                     [
                         {
                             "underlying": u["underlying"],
