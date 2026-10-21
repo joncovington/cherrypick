@@ -702,6 +702,87 @@ reproduced (the best rule found picked 10-15% of its slots right).*
 - **Build only if:** a selector passes. A pass becomes a proposal for the credit-spread tab, and for
   manage's spread candidates, which today build the vendor's structure with no side rule. It is
   never an arm by itself.
+- **Result (2026-10-21), run offline over the fetched chains; figures kept locally per the licence:**
+  - **A and C: no verdict.** Fewer than 100 paired trades in each half: a 0.40-delta short rarely
+    admits a 35-40% working credit at any width, so most trades and baselines had no structure.
+  - **B: not run.** There is no historical board yet.
+  - **D:** the call side lost in both halves; the put side priced too few trades to read.
+  - A sensitivity added after the declared run (the short moved to the strike nearest 0.40 delta that
+    does admit the credit) cannot pass by construction, and failed the bar anyway.
+  - Beside it, the income review's question (`docs/income-review-plan.md`, item 2): at 0.20, 0.25 and
+    0.30 delta and the first out-of-the-money strike, unconditioned, **no short delta had edge after
+    costs**, on either side, in either half. The credit-share constraint is what starved this test;
+    item 15 drops it.
+
+### 15. Which strike and exit for a bullish put spread on `mr-300m`
+
+*Source: the income review (2026-10-21). After item 14 gave no verdict, the user asked which strikes a
+bullish put spread should use when a directional signal stands behind it, and whether closing at 50%
+of the credit helps. Declared here before any of it is run.*
+
+- **Question:** does `mr-300m`, the one directional signal that passed its historical confirmation,
+  make a put credit spread worth its risk after costs, and if so with which short strike and which
+  exit? The answer decides manage's put-spread candidates (`docs/income-review-plan.md`, item 2).
+- **Where the edge would live:** the **selection signal**. Item 14's delta comparison found no edge in
+  the premium alone; a spread earns here only if the signal moves the odds of finishing above the
+  short strike by more than the costs.
+- **Entries:**
+  - **Signal:** every `mr-300m` long entry in item 14's plan (`trades.json`, selector A), entering at
+    the end of the session after the signal on that session's quotes.
+  - **Baseline:** two matched random entries per trade, drawn from item 14's five (same name, a random
+    session in the same calendar year on which the name was in the universe), first two by its fixed
+    seed. Two, not five, to bound the daily-mark fetch below.
+  - **Excluded,** as item 14: an earnings report between entry and expiry, a suspected unadjusted
+    split. No ex-dividend exclusion for puts.
+- **Structure (one rule for every cell):**
+  - **Expiry:** the latest standard monthly 45 to 60 days after entry; no trade when there is none.
+  - **Short:** the out-of-the-money put nearest **0.20, 0.30 or 0.40** delta (three cells).
+  - **Long:** the listed put nearest **half the short's delta** (0.10, 0.15, 0.20), so each cell keeps
+    its shape on every name, a high-IV name getting a wider spread in dollars. No trade when that is
+    the short's own strike.
+  - **No credit-share floor.** The credit is an output.
+  - Delta: Black-76 on a forward from put-call parity at the three strikes nearest the close, IV from
+    each strike's mid, r = 0, calendar days, as item 14's run.
+- **Exits (two cells each):**
+  - **(i) hold to expiry**, settled at intrinsic from the expiry close, capped at the width;
+  - **(ii) close at 50% of the credit** on an end-of-day mark, **else at 21 days to expiry**, else
+    hold.
+  - No stop-loss arm: the strangle management test (2026-10-20) found stops lose in both halves.
+- **Costs:** fills at the working price (`legbars.structure_prices`: the mid credit less a quarter of
+  the legs' bid-ask widths) on entry and on any early close; `core.fees` per leg; $5 for each leg
+  settled in the money. Early assignment of a deep in-the-money put is not modelled: an upper bound.
+- **Marks for exit (ii):**
+  - **Modelled, for every trade:** each leg repriced each session from the stock's close and the
+    name's daily IV in `history.db`, scaled by the leg's entry IV over the name's entry-day IV (the
+    entry skew held fixed), at the leg's own remaining time.
+  - **Real, for a sample:** 200 trades drawn at random (fixed seed) across signal and baseline, their
+    expiry's end-of-day chain fetched for every session from entry to exit.
+  - **The model is used only if** on the sample its 50%-hit rate is within 5 points of the real one,
+    and its mean net per trade as a share of max loss is within 2 points. If it is not, exit (ii) is
+    reported as not decidable from the model, and decided only on a fuller real-mark fetch.
+- **Reported per cell (short delta × exit), signal and baseline:**
+  - trades; mean net per trade as a share of max loss (the comparable figure across accounts) and in
+    dollars per unit; credit as a share of max loss; win rate;
+  - for exit (ii): the share reaching 50%, the median sessions to it, and the share closed at 50% that
+    would have finished worthless anyway (what the early close gave up);
+  - worst trade, cost drag (round-trip costs ÷ credit);
+  - **fit by budget:** the share of signals whose one unit's max loss fits a per-trade budget of
+    $250, $361, $500, $1,000 and $2,500, and the signals a month that leaves at each.
+- **Window:** item 14's deciding window, 2020-01-22 to 2025-06-30, halves split at its midpoint;
+  2016-19 reported only.
+- **Passes if,** for a cell:
+  - the mean of (signal trade's net − the mean of its two baselines' net), as a share of max loss, is
+    positive with a one-sided t above 2 in **both** halves, t clustered by expiry date;
+  - the signal's own mean net per trade is positive in both halves;
+  - it survives Holm across the six cells.
+  - Fewer than 100 trades in a half is no verdict.
+- **Decides:** manage's put-spread candidates use the best passing cell (its short and long rule and
+  its exit), on names with a live `mr-300m` signal. If none passes, put spreads stay offered with "no
+  tested edge" at the least-bad unconditioned short from item 14's comparison.
+- **Data:** item 14's store holds 30-45-day expiries only. The 45-60-day entry chains for the signal
+  and its two baselines, and the 200 sampled trades' daily chains, are a new fetch into the same store
+  (`fetch-chains`), run only while no other session holds the ThetaData login. Results under
+  `~/.cherrypick`, never in this repo.
 
 ## Not worth revisiting
 
