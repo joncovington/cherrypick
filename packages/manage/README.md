@@ -283,7 +283,7 @@ rules in the table above read it.
   order's cash, so each premium lowers it; the width check and the P&L if assigned (short strike -
   long strike - net cost per share, x 100 x contracts) are read from it, gross and net of fees. Every
   short sold against the long is listed with its cash and how it ended. The skate yield is a
-  comparison figure: the shorts' P&L to date (the open one at its mark) over the long's own cost,
+  comparison figure: the shorts' net P&L to date (the open one at its mark, their fees subtracted) over the long's own cost,
   x 365 / days since it was bought; none under a week, flagged past 500%.
 - **Today.** The long: delta at entry and today, extrinsic as a share of its price, days left, and the
   roll flag. The short: tested or not, against today's skate call band moved to today's price ("band
@@ -433,7 +433,8 @@ its formula, and portfolio margin is not modelled. The list is by symbol (from 2
 tested edge, a ranking would read as one, and the theta-per-buying-power order before it favoured the
 near-the-money spreads most likely to lose. A trade that does not fit is shown with the cap that
 stopped it. A short put or spread the rule built too wide is offered narrowed: the same short, and the
-widest long that keeps one unit under the per-trade cap (and over `spread_min_credit`, 0 by default).
+widest long that keeps one unit under the per-trade cap (and over `spread_min_credit`, 0 by default),
+and for a spread strictly narrower than its own: one stopped by how full the book is gets no wider version.
 Priced at mid from a day-old reading: re-quote before sending.
 
 **Waiting for room** (2026-10-20). A trade stopped only by how full the book already is -- buying
