@@ -16,7 +16,11 @@ the stream cache has one writer.
 
 Three steps, each its own subcommand and its own schedule:
 
-- **harvest** (after the close): every symbol linked in the saved vendor editions, plus the follow
+- **harvest** (after the close): every symbol linked in the saved vendor editions, every stock OCC
+  shows trading `OCC_CANDIDATE_CONTRACTS` contracts a day or more (median over the last
+  `OCC_CANDIDATE_SESSIONS` stored sessions; added 2026-10-20 so the universe keeps finding names
+  after the vendor subscription ends on 2026-10-24 -- the editions saved by then stay candidates,
+  but no new ones arrive), plus the follow
   feed. The feed returns only its 50 newest orders, about a day's worth, so it is asked once per
   trader (about a week each) and the orders are kept, merged by id, so the history grows. Futures
   are dropped here; indexes are dropped by tastytrade, which does not list them as equities.
@@ -656,13 +660,58 @@ def sector_map(editions: dict[str, str], manual: dict[str, str] | None = None) -
     return {"canonical": list(SECTORS), "relabel": RELABEL, "sectors": sectors, "changes": changes}
 
 
-def merge_candidates(vendor: dict[str, dict], follow: dict[str, dict]) -> dict[str, dict]:
+# A stock is a candidate on OCC volume alone at this median over this many stored sessions. 10,000 a
+# day took 287 stocks on 2026-10-19, 186 of them already candidates; membership still needs the
+# measured spreads and volume (`judge`), so the bar only decides who gets measured.
+OCC_CANDIDATE_CONTRACTS = 10_000
+OCC_CANDIDATE_SESSIONS = 20
+
+
+def occ_candidates(
+    volumes: dict[str, dict[str, int]],
+    stocks: dict[str, str],
+    *,
+    bar: int = OCC_CANDIDATE_CONTRACTS,
+    sessions: int = OCC_CANDIDATE_SESSIONS,
+) -> dict[str, dict]:
+    """{symbol: {median_contracts, sessions, through}} for each stock whose median daily contracts over
+    the last `sessions` stored sessions is at least `bar`. `volumes` is {session: {OCC underlying:
+    contracts}}; `stocks` maps an OCC underlying to the stock's own spelling (BRKB -> BRK.B), so funds
+    and indexes, absent from it, are never candidates. A session without the underlying counts zero."""
+    days = sorted(volumes)[-sessions:]
+    if len(days) < sessions:
+        return {}
+    out = {}
+    for und, sym in stocks.items():
+        series = sorted(volumes[d].get(und, 0) for d in days)
+        mid = len(series) // 2
+        median = series[mid] if len(series) % 2 else (series[mid - 1] + series[mid]) / 2
+        if median >= bar:
+            out[sym] = {"median_contracts": median, "sessions": len(days), "through": days[-1]}
+    return out
+
+
+def merge_candidates(
+    vendor: dict[str, dict], follow: dict[str, dict], occ: dict[str, dict] | None = None
+) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for sym, row in vendor.items():
         out.setdefault(sym, {})["vendor"] = row
     for sym, row in follow.items():
         out.setdefault(sym, {})["follow"] = row
+    for sym, row in (occ or {}).items():
+        out.setdefault(sym, {})["occ"] = row
     return dict(sorted(out.items()))
+
+
+def occ_stock_names() -> tuple[dict[str, str], str]:
+    """({OCC underlying: stock symbol} for every non-fund in Nasdaq Trader's directory, why it is
+    empty). Imported here, not at the top: this script's tests run where only the orchestrator is
+    installed."""
+    from cherrypick.technicals import securities
+
+    directory, _, why = securities.read_directory()
+    return {securities.occ_spelling(d["symbol"]): d["symbol"] for d in directory if not d["etf"]}, why
 
 
 # ------------------------------------------------------------------------------------------------
@@ -773,7 +822,12 @@ def cmd_harvest(args) -> int:
     occ_landed, occ_problems = harvest_occ()
     problems += occ_problems
 
-    candidates = merge_candidates(vendor, follow)
+    volumes = load_volumes()
+    stocks, why = occ_stock_names()
+    if why:
+        problems.append(f"no OCC-volume candidates: {why}")
+    occ = occ_candidates(volumes, stocks)
+    candidates = merge_candidates(vendor, follow, occ)
     _write_json(
         store_dir() / "candidates.json",
         {"harvested_at": datetime.now(UTC).isoformat(), "editions": sorted(editions), "names": candidates},
@@ -787,9 +841,10 @@ def cmd_harvest(args) -> int:
                 "follow_orders": len(feed["orders"]),
                 "follow_new": new,
                 "follow_names": len(follow),
+                "occ_names": len(occ),
                 "candidates": len(candidates),
                 "occ_sessions_landed": occ_landed,
-                "occ_sessions_stored": len(load_volumes()),
+                "occ_sessions_stored": len(volumes),
                 "problems": problems,
             },
             indent=1,

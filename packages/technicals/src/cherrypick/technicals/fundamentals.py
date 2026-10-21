@@ -324,8 +324,8 @@ def sector_map() -> dict[str, str]:
 def sector_sources() -> dict[str, tuple[str, str]]:
     """{symbol: (sector, source)}: the vendor's map (`sector_map`) where it has the name, else
     Yahoo's (`scripts/fetch_sectors.py`, relabelled to the vendor's sector names; it agreed with the
-    vendor's on all 120 names sampled, 2026-10-17). The report's own sector measures keep
-    `sector_map` alone; the earnings calendar and the signal board read this."""
+    vendor's on all 120 names sampled, 2026-10-17). The earnings calendar, the signal board and,
+    from 2026-10-20, the report's sector measures read this."""
     import json
 
     try:

@@ -33,7 +33,7 @@ import urllib.parse
 import urllib.request
 from datetime import UTC, date, datetime
 
-from cherrypick.technicals import earnings_calendar, fundamentals, paths
+from cherrypick.technicals import earnings_calendar, fundamentals, paths, symbols
 
 PAUSE_S = 0.5
 REFRESH_DAYS = 180  # a sector rarely changes
@@ -103,7 +103,9 @@ def main(argv=None) -> int:
         doc = {}
     have = doc.get("names") or {}
     today = datetime.now(UTC).date()
-    names = sorted({*calendar_names(), *fundamentals.sector_map()})
+    # The universe's candidates too (2026-10-20): the report's sector measures fall back to this
+    # file for a name the vendor's map lacks, which every name added after 2026-10-24 will be.
+    names = sorted({*calendar_names(), *fundamentals.sector_map(), *symbols.candidates()})
     todo = due(names, have, today)[: args.limit]
     failed: list[str] = []
     started = time.monotonic()

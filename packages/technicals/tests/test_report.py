@@ -47,3 +47,24 @@ def test_the_report_gathers_stages_by_sector_breadth_rotation_and_leaders():
     )
     path = report.write(doc)
     assert json.loads(open(path, encoding="utf-8").read())["session"] == days[-1]
+
+
+def test_a_name_the_vendor_map_lacks_takes_its_yahoo_sector():
+    universe = paths.market_report_dir() / "universe"
+    universe.mkdir(parents=True, exist_ok=True)
+    (universe / "sectors.json").write_text(
+        json.dumps({"sectors": {"CB": {"sector": "Financials"}}}), encoding="utf-8"
+    )
+    paths.yahoo_sectors().parent.mkdir(parents=True, exist_ok=True)
+    paths.yahoo_sectors().write_text(
+        json.dumps(
+            {
+                "names": {
+                    "CB": {"sector": "Industrials", "fetched_on": "2026-10-20"},
+                    "NEW": {"sector": "Technology", "fetched_on": "2026-10-20"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert report._sectors() == {"CB": "Financials", "NEW": "Technology"}
