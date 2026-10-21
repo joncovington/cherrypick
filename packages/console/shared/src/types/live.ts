@@ -16,8 +16,15 @@ export interface LivePeriod {
   net: number;
   trades: number;
   sessions: number;
-  /** The paper control's same-period settled net, for the pilot's paper-vs-live comparison. */
+  /**
+   * The paper control's settled net over the SAME sessions this period's live figure covers (the
+   * trade dates the pilot's arm settled), not the calendar period: the paper loop ran sessions the
+   * pilot sat out, and a year of one beside a few weeks of the other is no comparison. Null when
+   * the paper ledger could not be read.
+   */
   paperNet: number | null;
+  /** How many of those live sessions the paper control settled anything on; null with `paperNet`. */
+  paperSessions: number | null;
   /** Return on session peak risk over the period's finished sessions that recorded a peak: see
    *  LiveRiskSession. Not the buying-power cap (`live.max_open_margin_dollars`), which is a limit. */
   onRisk: LiveOnRisk;
@@ -204,6 +211,12 @@ export interface LiveFliesPayload {
    * the numbers it just finished rather than an empty day.
    */
   sessionBasis: "requested" | "today" | "last_completed";
+  /**
+   * `modules.flies.enabled` in the suite config, read as the Live → today tab's "off — module
+   * disabled" fold reads it (`moduleIds`); null when the suite config does not list flies. False is
+   * a retired or switched-off module: nothing runs, and the tab reads history.
+   */
+  moduleEnabled: boolean | null;
   ledger: LiveLedgerState;
   ledgerError: string | null;
   arm: {
@@ -226,8 +239,8 @@ export interface LiveFliesPayload {
     /** Every open position's own worst case, summed (negative = a real loss is still possible). */
     maxPossibleLoss: number;
     /**
-     * The session's largest worst case at expiry, held after the book settles until the next
-     * session opens (null while it cannot apply). Same figure as the flies session tab's.
+     * The session's largest worst case at expiry, the session's own figure: it stands through
+     * settlement for as long as the page shows this session (null when nothing was recorded).
      */
     sessionPeakWorst: { worst: number; at: string } | null;
     /** The latest tick's summed mid mark across open positions, and when it was taken. */

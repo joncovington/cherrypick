@@ -18,7 +18,9 @@
  * Two things ARE worked out here, both the user's calendar rather than a measurement: the cycle
  * expiry (the standard monthly 45-60 days out, else 30-60, as `fetch_screener_greeks.cycle_expiry`
  * picks it; the reading's own monthly leg wins where there is one) and whether an announcement falls
- * inside the trade (the list day through the expiry of the trade the row stands for, inclusive -- the
+ * inside the trade (the day of the reading the trade is priced from -- the list day when there is no
+ * reading yet -- through the expiry of the trade the row stands for, inclusive, a before-the-open
+ * report on that day already behind it -- the
  * listed one or the cycle monthly, the later of the two until a reading says which; a date that does
  * not reach that far is `unknown`, never `clear`).
  */
@@ -106,11 +108,36 @@ export function cycleExpiry(day: string): string | null {
   return null;
 }
 
+/** A report before the open: the broker spells it BTO, most calendars BMO (`cherrypick.manage`'s
+ *  `BEFORE_OPEN`, mirrored). */
+const BEFORE_OPEN = new Set(["BTO", "BMO"]);
+
+/** Whether a report on `date`, at `time`, has already happened by an afternoon reading on `day`: any
+ *  earlier day, or `day` itself when it was before the open. An untimed report on `day` has not --
+ *  the safe reading keeps it in the trade. */
+export function reportedBy(date: string, time: string | null | undefined, day: string): boolean {
+  return date < day || (date === day && BEFORE_OPEN.has(String(time ?? "").toUpperCase()));
+}
+
+/** The New York calendar day of an ISO instant ("2026-10-21T18:30:11Z" -> "2026-10-21"); null when unreadable. */
+export function newYorkDay(iso: string | null): string | null {
+  if (iso === null) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(t);
+}
+
 /** In cycle when any known date falls in [day, expiry]; clear only when a known date lies past the
- *  expiry and none inside; otherwise unknown. */
-export function earningsState(dates: Array<string | null>, day: string, expiry: string | null): EarningsInCycle {
+ *  expiry and none inside; otherwise unknown. `done` is a date already reported by the reading (a
+ *  before-the-open report on `day` itself), which is behind the trade, not in it. */
+export function earningsState(
+  dates: Array<string | null>,
+  day: string,
+  expiry: string | null,
+  done: string | null = null,
+): EarningsInCycle {
   if (expiry === null) return "unknown";
-  const ahead = dates.filter((d): d is string => d !== null && d >= day);
+  const ahead = dates.filter((d): d is string => d !== null && d >= day && d !== done);
   if (ahead.some((d) => d <= expiry)) return "in-cycle";
   if (ahead.some((d) => d > expiry)) return "clear";
   return "unknown";
@@ -180,15 +207,17 @@ function leg(raw: unknown): ScreenerLeg | null {
  * The recommended trade priced from the reading's own figures (`vendor_prices` / `monthly_prices`,
  * written by `fetch_screener_greeks.py` where the bars are applied). The one thing worked out here is
  * arithmetic the list itself states its returns in: premium over the share price, x 365 / days.
+ * `day` is the reading's own day (the session after the list), so the days to expiry are the trade's;
+ * `spot` is the share price that afternoon, against which a short already in the money is marked.
  */
 export function tradePrice(
   reading: Record<string, unknown> | undefined,
   listedExpiry: string,
-  listedDte: number | null,
   cycleLegs: ScreenerLeg[] | null,
   day: string,
   price: number | null,
   width: number | null,
+  spot: number | null = null,
 ): ScreenerTrade | null {
   if (!reading) return null;
   const which = reading["recommendation"];
@@ -201,13 +230,20 @@ export function tradePrice(
   if (mid === null || working === null || natural === null || cost === null) return null;
   const expiry = which === "vendor" ? listedExpiry : (cycleLegs?.[0]?.expiry ?? null);
   if (expiry === null) return null;
-  const dte = which === "vendor" ? listedDte : daysBetween(day, expiry);
+  // Days from the reading the trade is priced at, never from the list day before it.
+  const dte = daysBetween(day, expiry);
   const annual = (premium: number): number | null =>
-    width === null && price !== null && price > 0 && dte !== null && dte > 0 ? (premium / price) * (365 / dte) * 100 : null;
+    width === null && price !== null && price > 0 && dte > 0 ? (premium / price) * (365 / dte) * 100 : null;
+  const legs = which === "vendor" ? list(reading["vendor"]).map(leg) : (cycleLegs ?? []);
+  const short = legs.find((l) => l !== null && l.role === "short") ?? null;
+  const itm =
+    short === null || spot === null ? null : short.right === "C" ? short.strike < spot : short.strike > spot;
   return {
     side: which === "vendor" ? "listed" : "cycle",
     expiry,
     dte,
+    spot,
+    shortInTheMoney: itm,
     mid,
     working,
     natural,
@@ -227,8 +263,11 @@ export function listedQuote(bid: number | null, ask: number | null): "no-bid" | 
 }
 
 /** The broker's report dates from the latest IV-rank reading on or before `day`. */
-function brokerEarnings(root: string, day: string): Map<string, { date: string | null; estimated: boolean | null }> {
-  const out = new Map<string, { date: string | null; estimated: boolean | null }>();
+function brokerEarnings(
+  root: string,
+  day: string,
+): Map<string, { date: string | null; estimated: boolean | null; time: string | null }> {
+  const out = new Map<string, { date: string | null; estimated: boolean | null; time: string | null }>();
   const days = rec(readJson(path.join(root, "iv", "tastytrade.json"))?.["days"]);
   const at = Object.keys(days)
     .filter((d) => d <= day)
@@ -240,9 +279,22 @@ function brokerEarnings(root: string, day: string): Map<string, { date: string |
     out.set(sym, {
       date: str(r["earnings_date"]),
       estimated: typeof r["earnings_estimated"] === "boolean" ? r["earnings_estimated"] : null,
+      time: str(r["earnings_time"]),
     });
   }
   return out;
+}
+
+/** Each name's share price in the afternoon income reading of `day` (`screener-greeks/income/<day>.json`,
+ *  14:45 ET), and when it was taken; empty when there is none. */
+function afternoonSpots(root: string, day: string): { at: string | null; spots: Map<string, number> } {
+  const doc = readJson(path.join(root, "screener-greeks", "income", `${day}.json`));
+  const spots = new Map<string, number>();
+  for (const [sym, raw] of Object.entries(rec(doc?.["symbols"]))) {
+    const s = num(rec(raw)["spot"]);
+    if (s !== null && s > 0) spots.set(sym, s);
+  }
+  return { at: str(doc?.["taken_at"]), spots };
 }
 
 /** Types that never hold an earnings announcement. Stocks and depository receipts do. */
@@ -294,7 +346,17 @@ export function readScreener(config: ConsoleConfig, which: ScreenerList, wanted?
   const root = marketReportDir(config);
   const days = screenerDays(config);
   const day = wanted && days.includes(wanted) ? wanted : (days[0] ?? null);
-  const empty: ScreenerPayload = { list: which, day, days, createdAt: null, pricesAt: null, scored: false, rows: [] };
+  const empty: ScreenerPayload = {
+    list: which,
+    day,
+    days,
+    createdAt: null,
+    pricesAt: null,
+    scored: false,
+    tradeDay: null,
+    spotAt: null,
+    rows: [],
+  };
   if (day === null) return empty;
   const doc = readJson(path.join(root, "vendor-screeners", day, `${which}.json`));
   if (doc === null) return empty;
@@ -302,10 +364,14 @@ export function readScreener(config: ConsoleConfig, which: ScreenerList, wanted?
   const score = readJson(path.join(config.paths.technicalsDir, "screeners", `${day}.json`));
   const picks = rec(rec(score?.[which])["picks"]);
   const readings = readLegs(root, day);
-  const earnings = brokerEarnings(root, day);
+  // The trade is priced from the regular-hours reading the session after the list: its days to
+  // expiry, its earnings and its spot are judged from THAT day, not the list day before it.
+  const tradeDay = newYorkDay(readings.at) ?? day;
+  const earnings = brokerEarnings(root, tradeDay);
   const liquid = verdicts(root);
   const types = securityTypes(root, day);
   const defaultCycle = cycleExpiry(day);
+  const afternoon = readings.at === null ? { at: null, spots: new Map<string, number>() } : afternoonSpots(root, tradeDay);
 
   const rows: ScreenerRow[] = list(body[BODY_KEY[which]]).flatMap((raw) => {
     const r = rec(raw);
@@ -327,7 +393,9 @@ export function readScreener(config: ConsoleConfig, which: ScreenerList, wanted?
     const broker = earnings.get(symbol) ?? earnings.get(symbol.replace("/", "."));
     const listed = mdy(r["earningsDate"]);
     const dates = [broker?.date ?? null, listed];
-    const nextKnown = dates.filter((d): d is string => d !== null && d >= day).sort()[0] ?? null;
+    // A report before the open on the reading's own day has happened by the afternoon reading.
+    const done = broker?.date && broker.date === tradeDay && reportedBy(broker.date, broker.time, tradeDay) ? broker.date : null;
+    const nextKnown = dates.filter((d): d is string => d !== null && d >= tradeDay && d !== done).sort()[0] ?? null;
     const rec_ = reading ? reading["recommendation"] : null;
     // Earnings are judged against the expiry of the trade the row stands for: the listed option
     // when it is the trade, the cycle monthly when that is; unread or with no liquid trade, the
@@ -364,13 +432,22 @@ export function readScreener(config: ConsoleConfig, which: ScreenerList, wanted?
         earningsEstimated: nextKnown !== null && nextKnown === broker?.date ? broker.estimated : null,
         cycleExpiry: cycle,
         earningsExpiry: judged,
-        earnings: FUND_TYPES.has(types.get(symbol) ?? "") ? "none" : earningsState(dates, day, judged),
+        earnings: FUND_TYPES.has(types.get(symbol) ?? "") ? "none" : earningsState(dates, tradeDay, judged, done),
+        earningsFrom: tradeDay,
         readingAt: reading ? readings.at : null,
         listedLegs: reading ? list(reading["vendor"]).map(leg).filter((l): l is ScreenerLeg => l !== null) : [],
         cycleLegs,
         recommendation: rec_ === "vendor" ? "listed" : rec_ === "monthly" ? "cycle" : rec_ === "none" ? "none" : null,
         cyclePasses: reading && typeof reading["monthly_passes"] === "boolean" ? reading["monthly_passes"] : null,
-        trade: tradePrice(reading, expiry, dte, cycleLegs, day, price, width),
+        trade: tradePrice(
+          reading,
+          expiry,
+          cycleLegs,
+          tradeDay,
+          price,
+          width,
+          afternoon.spots.get(symbol.replace("/", ".")) ?? afternoon.spots.get(symbol) ?? null,
+        ),
       },
     ];
   });
@@ -381,6 +458,8 @@ export function readScreener(config: ConsoleConfig, which: ScreenerList, wanted?
     createdAt: str(body["created"]),
     pricesAt: str(body["pricesAt"]),
     scored: score !== null,
+    tradeDay: readings.at === null ? null : tradeDay,
+    spotAt: afternoon.at,
     rows,
   };
 }

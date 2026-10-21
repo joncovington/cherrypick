@@ -11,7 +11,8 @@ import { closePooledDbs } from "../src/readers/db.js";
  * The session tab's "worst case at expiry" summed only OPEN positions, so on 2026-09-24 it read $0
  * the moment the live pilot settled while the page still showed that session -- a day whose book
  * had carried $283.44 of worst case. The live figure is now the session's peak from the loop's own
- * `fly_live_marks.open_margin`, held until the paper loop records the next session's 09:30 open.
+ * `fly_live_marks.open_margin`: the session's own, standing through settlement. (Until 2026-10-21 it
+ * was also nulled once the paper loop recorded a later 09:30 open -- a second "next session" rule.)
  * `completed` is pinned beside it: the completion tile named only the open count ("0 still open of
  * 4 entered") beside 75%.
  */
@@ -82,11 +83,14 @@ describe("the live session's worst case at expiry after settlement", () => {
     expect(readFliesAnalytics(config, "live", noFilter).today.sessionPeakWorst?.worst).toBe(-283.44);
   });
 
-  it("lets go once the paper loop records the next session's open", () => {
+  it("is the session's own figure, so a later paper open does not take it away", () => {
+    // Shown to fail before 2026-10-21: a paper-only "next session opened" rule nulled it here,
+    // while the Live page's own rule (`resolveLiveSession`, today only) still served this session --
+    // so the tile fell back to the last tick's margin and read a settled book as open exposure.
     paperSnapshots([["2026-09-25T09:30:00-04:00", "2026-09-25"]]);
     const t = readFliesAnalytics(config, "live", noFilter).today;
     expect(t.positions).toBe(4); // a real read, not withReadOnlyDb's empty fallback
-    expect(t.sessionPeakWorst).toBeNull();
+    expect(t.sessionPeakWorst).toEqual({ worst: -283.44, at: "2026-09-24T10:31:25-04:00" });
   });
 
   it("is a live-only figure", () => {
