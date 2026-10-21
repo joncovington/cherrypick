@@ -6,13 +6,14 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type { IncomeEarnings, IncomeList, IncomeListPayload, IncomeListRow } from "@console/shared";
+import type { IncomeEarnings, IncomeExDividend, IncomeList, IncomeListPayload, IncomeListRow } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num, str } from "./db.js";
 
 export const INCOME_LISTS: readonly IncomeList[] = ["short-puts", "covered-calls"];
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const EARNINGS: readonly IncomeEarnings[] = ["in-trade", "clear", "unknown", "none"];
+const EX_DIVIDEND: readonly IncomeExDividend[] = ["in-trade", "after", "past", "unknown"];
 
 function rec(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -78,6 +79,9 @@ function toRow(v: unknown): IncomeListRow | null {
     earningsDate: str(r["earnings_date"]),
     earningsEstimated: bool(r["earnings_estimated"]),
     exDividendInTrade: bool(r["ex_dividend_in_trade"]),
+    // A list built before the state existed has none: null, and the page reads the old flag.
+    exDividend: EX_DIVIDEND.includes(str(r["ex_dividend"]) as IncomeExDividend) ? (str(r["ex_dividend"]) as IncomeExDividend) : null,
+    exDividendDate: str(r["ex_dividend_date"]),
     leveraged: str(r["leveraged"]),
     fit: null, // joined from manage's evaluation in readIncomeList
   };

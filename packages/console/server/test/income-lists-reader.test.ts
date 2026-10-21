@@ -139,6 +139,21 @@ describe("readIncomeList", () => {
     expect(readIncomeList(config, "short-puts", null).rows[0].earnings).toBe("unknown");
   });
 
+  it("passes a call's ex-dividend state and date through; an older list has neither, and a junk state is none", () => {
+    const calls = [
+      { ...ROW, symbol: "PAST", ex_dividend_in_trade: false, ex_dividend: "past", ex_dividend_date: "2026-08-17" },
+      { ...ROW, symbol: "OLD", ex_dividend_in_trade: false },
+      { ...ROW, symbol: "JUNK", ex_dividend_in_trade: false, ex_dividend: "clear" },
+    ];
+    write("2026-10-20.json", { ...doc("2026-10-20", []), lists: { "short-puts": [], "covered-calls": calls } });
+    const rows = readIncomeList(config, "covered-calls", null).rows;
+    expect(rows.map((r) => [r.symbol, r.exDividend, r.exDividendDate, r.exDividendInTrade])).toEqual([
+      ["PAST", "past", "2026-08-17", false],
+      ["OLD", null, null, false],
+      ["JUNK", null, null, false],
+    ]);
+  });
+
   it("nothing built is an empty list, not an error", () => {
     expect(readIncomeList(config, "short-puts", null)).toMatchObject({ day: null, days: [], rows: [] });
   });
