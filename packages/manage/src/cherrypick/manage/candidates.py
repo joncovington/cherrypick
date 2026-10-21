@@ -487,7 +487,10 @@ def _describe(
         },
         "theta_per_bp": round(u["theta"] / u["bp"], 5) if u["bp"] else None,
         "earnings_date": entry.get("earnings_date"),
-        "earnings_unknown": entry.get("earnings_date") is None,
+        # A fund reports no earnings, so its missing date is none, not unknown. A reading from before
+        # the income file carried `fund` leaves it unknown.
+        "earnings_unknown": entry.get("earnings_date") is None and entry.get("fund") is not True,
+        "fund": entry.get("fund"),
         "beta": entry.get("beta"),
     }
 

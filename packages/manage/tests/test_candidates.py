@@ -215,6 +215,12 @@ def test_earnings_inside_the_trade_excludes_it_and_after_expiry_does_not():
     assert _rows(after)
     unknown = _suggest({"AAA": _entry()})
     assert all(r["earnings_unknown"] for r in _rows(unknown))  # flagged, never called clear
+    # A fund reports no earnings: no date is none, not unknown. A stock, or a name the listings did
+    # not carry, stays unknown.
+    fund = _suggest({"SPY": _entry(fund=True)})
+    assert _rows(fund) and not any(r["earnings_unknown"] for r in _rows(fund))
+    for flag in (False, None):
+        assert all(r["earnings_unknown"] for r in _rows(_suggest({"AAA": _entry(fund=flag)})))
 
 
 def test_an_illiquid_option_excludes_a_short_put_but_a_spread_is_judged_as_one_order():

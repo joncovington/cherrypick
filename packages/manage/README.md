@@ -396,7 +396,9 @@ the name's stress move. From it manage builds the screener rules' structures:
   `working_orders`; only the part not yet filled, since the filled part is already a position).
 
 It drops any structure with an illiquid or unquoted leg, or an earnings report inside the trade. An
-unknown earnings date is flagged, never called clear. Each structure left gets the largest quantity
+unknown earnings date is flagged, never called clear. A fund (the reading's `fund`, from the
+technicals store's listings, from 2026-10-21) reports no earnings, so its missing date is none, not
+unknown; a reading without the flag leaves it unknown. Each structure left gets the largest quantity
 that clears every cap, all scaled by net liq:
 
 | Cap | Default |

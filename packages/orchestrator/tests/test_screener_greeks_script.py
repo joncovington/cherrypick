@@ -141,6 +141,15 @@ def test_income_names_are_the_tradable_verdicts_only():
     assert fsg.income_names(verdicts) == ["AA", "BRK.B"]
 
 
+def test_a_fund_is_flagged_from_the_listings_and_an_unlisted_name_is_left_out():
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE listings (symbol TEXT PRIMARY KEY, is_etf INTEGER NOT NULL)")
+    conn.executemany("INSERT INTO listings VALUES (?, ?)", [("SPY", 1), ("TSLL", 1), ("NVDA", 0), ("QQQ", 1)])
+    assert fsg.fund_flags(conn, ["SPY", "TSLL", "NVDA", "NEW"]) == {"SPY": True, "TSLL": True, "NVDA": False}
+
+
 def test_the_income_plan_is_the_cycle_monthly_both_sides_out_of_the_money():
     strikes = [(float(k), f"C{k}", f"P{k}") for k in range(80, 121, 5)]
     exps = [_exp("2026-11-06", 30, strikes), _exp("2026-12-18", 50, strikes)]
