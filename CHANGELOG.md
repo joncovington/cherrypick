@@ -11,6 +11,13 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: the skate forward record on the Skate tab.** Below the table, a section reads the record
+  `technicals.skate_record` writes each morning (`GET /api/screeners/skate/record`): rows recorded
+  and settled, distinct expiries settled out of the declared count, and per band the high-gap and
+  below-zero groups' size, skate rate against implied and z. The verdict is the record's own: "not
+  yet decision-grade" until it says otherwise, then each band's pass or fail as the file states it,
+  with no tone before that. The declared test is written out from the file's thresholds. A missing or
+  unreadable record says so, never zeros.
 - **Added: an end-of-day option chain fetch for backtests.** `python -m cherrypick.backtest
   fetch-chains --requests FILE` fetches exactly the (name, session, expiry) chains a study asks for
   into the licensed store, resumably, with a refusal recorded and retried and a lost session

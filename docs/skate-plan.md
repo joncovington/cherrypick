@@ -9,7 +9,7 @@ were decided by the user on 2026-10-18 (see "Decisions").
 | 1, the range band engine (`technicals skate`) | built: `skate.py`, `leveraged_funds.json`, job `technicals-skate` 06:45 ET, `core.calendar.trading_days_between` |
 | 2, regular-hours quotes (`fetch_screener_greeks.py skate`, jobs `report-skate-quotes-1/2`) | built |
 | 3, the score and the console's Skate tab | the score built (`skate.score`, in the quote file); the tab built 2026-10-19; the income tabs' leveraged badge not started |
-| 4, the forward record | built: `skate_record.py`, recording from 2026-10-20 (the tab section not started) |
+| 4, the forward record | built: `skate_record.py`, recording from 2026-10-20; the tab section built 2026-10-20 |
 | 5, the wheel view (`manage`, Live → positions) | not started |
 | 6, the PMCC view (`manage`, beside the wheel view) | not started |
 
@@ -255,7 +255,9 @@ never fails the bands.
   two-proportion z. The test is judged per band.
 
 The reading lands beside the bands as `data/technicals/skate/record.json`, with rows in `record.db`.
-The tab section is the next PR.
+The tab section (2026-10-20) reads `record.json` through its own route, below the Skate table: the
+counts, each band's groups and z scores, and the record's verdict as it states it, "not yet
+decision-grade" until then.
 
 ### 5. The wheel view (packages/manage)
 

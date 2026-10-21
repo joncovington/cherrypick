@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import type { SkateBand, SkateConfig, SkatePayload, SkateSide } from "@console/shared";
 import { SortTh, sortRows, useSort } from "../../components/DataTable";
 import { useSkate } from "../../lib/api";
+import { SkateRecordSection } from "./SkateRecord";
 import { beatsMonthly, otherBand, skateCounts, skateViews, type SkateView } from "./skateRows";
 
 /**
@@ -406,9 +407,11 @@ export function SkateTab() {
       </p>
       <p className="muted">
         History minus implied is a history estimate: the share of past days the band held, against the model's odds today. It is
-        not yet a tested edge; the forward record (plan step 4) will say whether rows with a wide gap skate more than priced.
-        Closer strikes tend to top that sort, so skate yield and the skate rate stay beside it.
+        not yet a tested edge; the forward record below will say whether rows with a wide gap skate more than priced, once
+        it is decision-grade. Closer strikes tend to top that sort, so skate yield and the skate rate stay beside it.
       </p>
+
+      <SkateRecordSection />
     </section>
   );
 }

@@ -127,3 +127,68 @@ export interface SkatePayload {
   config: SkateConfig | null;
   rows: SkateRow[];
 }
+
+/**
+ * The skate screen's forward record (docs/skate-plan.md step 4): `technicals.skate_record` keeps each
+ * session's shown rows, settles them at expiry and writes its reading as
+ * `data/technicals/skate/record.json`. The console passes that reading through and decides nothing:
+ * the counts, rates, z scores, `decision_grade` and each band's `passes` are the file's.
+ */
+
+/** One group of settled rows against its own implied odds. */
+export interface SkateRecordGroup {
+  n: number | null;
+  /** Rows that skated, tested ones included, as the skate rate counts them. */
+  skated: number | null;
+  rate: number | null;
+  /** The group's mean implied skate rate. */
+  implied: number | null;
+  /** Skates over the summed implied odds, in Poisson-binomial standard deviations. */
+  z: number | null;
+}
+
+export interface SkateRecordBand {
+  /** Rows with history minus implied above the test's high gap. */
+  highGap: SkateRecordGroup | null;
+  /** Rows with history minus implied below the test's low gap. */
+  belowZero: SkateRecordGroup | null;
+  /** Two-proportion z of the high-gap rate over the below-zero rate. */
+  zHighOverLow: number | null;
+  /** The file's verdict: null until decision-grade, and null when the file states none. */
+  passes: boolean | null;
+  /** Settled rows that skated but touched the strike on the way. */
+  tested: number | null;
+}
+
+/** The declared test's thresholds, as the file states them. */
+export interface SkateRecordTest {
+  /** Rate units: 0.05 is five points. */
+  gapHigh: number | null;
+  gapLow: number | null;
+  minExpiries: number | null;
+  zOneSided: number | null;
+}
+
+export interface SkateRecordPayload {
+  /**
+   * `ok`: the reading was read. `none`: no `record.json` written yet. `unreadable`: the file would
+   * not parse, or holds no verdict. Never zeros standing in for a missing record.
+   */
+  status: "ok" | "none" | "unreadable";
+  /** The file's modification time, UTC ISO. */
+  writtenAt: string | null;
+  /** Every row recorded so far, settled or not. */
+  recorded: number | null;
+  /** Rows added by the last run, per session. */
+  added: Record<string, number>;
+  /** What the last run settled. */
+  settledNow: { skated: number | null; tested: number | null; through: number | null; waiting: number | null } | null;
+  /** Settled rows the test reads. */
+  settled: number | null;
+  /** Distinct settled expiry dates. */
+  expiries: number | null;
+  /** The file's own flag; false when it is absent. */
+  decisionGrade: boolean;
+  bands: Record<SkateBand, SkateRecordBand | null>;
+  test: SkateRecordTest | null;
+}
