@@ -28,6 +28,7 @@ from cherrypick.manage import candidates as _candidates
 from cherrypick.manage import chains as _chains
 from cherrypick.manage import explain as _explain
 from cherrypick.manage import hedge as _hedge
+from cherrypick.manage import pmcc as _pmcc
 from cherrypick.manage import portfolio as _portfolio
 from cherrypick.manage import pricing
 from cherrypick.manage import rules as _rules
@@ -192,12 +193,14 @@ def evaluate_trade(
     seen: dict[str, Any] | None = None,
     roll_chains: dict[str, Any] | None = None,
     wheel_ctx: dict[str, Any] | None = None,
+    pmcc_ctx: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """`chain`, when the broker history reconciled one, sets the basis: the chain's net cash across its
     opening order and every roll, not the open legs' average prices. `seen` is the earnings trades the
     previous evaluation found (`earnings_trade`). `roll_chains` is the snapshot's quoted chains, keyed
     "<UNDERLYING>|<expiry>", that a strangle's untested side is rolled along. `wheel_ctx` is the wheel
-    cycles holding this trade's legs (`_wheel_context`), which the wheel rules read."""
+    cycles holding this trade's legs (`_wheel_context`), which the wheel rules read; `pmcc_ctx` the PMCC
+    view entries whose short this trade holds (`_pmcc_context`), which the PMCC rules read."""
     metrics = metrics or {}
     spot = _f(metrics.get("last"))
     pr = rules["pricing"]
@@ -237,6 +240,7 @@ def evaluate_trade(
         "fly_off": None,
         "untested_roll": None,
         "wheel": None,
+        "pmcc": None,
         "fired": [],
         "exit_levels": {},
     }
@@ -897,6 +901,13 @@ def evaluate_trade(
     if wheel_ctx:
         fired += _wheel_rules(trade, legs, wheel_ctx, session, net_liq, metrics, rules, off)
 
+    # ---- a recognised PMCC's width, assignment exposure and long (pmcc.py): ranked by action too
+    if pmcc_ctx:
+        try:
+            fired += _pmcc_rules(trade, legs, pmcc_ctx, session, net_liq, metrics, rules, off)
+        except Exception as exc:  # noqa: BLE001 -- the PMCC view is a reading; the evaluation is the product
+            trade["pmcc"] = {"error": f"PMCC rules failed: {type(exc).__name__}: {exc}"[:300]}
+
     # ---- an earnings trade holds through the report and closes after the call
     et = trade["earnings_trade"]
     if et and not off("earnings_trade"):
@@ -1555,6 +1566,128 @@ def _wheel_rules(
     return fired
 
 
+def _pmcc_rules(
+    trade: dict[str, Any],
+    legs: list[dict[str, Any]],
+    ctx: dict[str, Any],
+    session: date,
+    net_liq: float | None,
+    metrics: dict[str, Any],
+    rules: dict[str, Any],
+    off,
+) -> list[dict[str, Any]]:
+    """The PMCC rules on the trade holding a recognised PMCC's short: roll or close it when the width
+    check fails or the short is exposed to early assignment (with the short's roll candidates, each
+    judged by check-roll against the long and the short together), and review a roll of the long.
+
+    Ranked with every other rule by action (PRIORITY): a stop or the expiry close outranks them, and
+    the diagonal's credit roll (roll.diagonal_short), when it fires, is offered in their place as it
+    is for any close. An unrecognised candidate gets nothing (its diagonal rules stand), and a PMCC
+    whose orders do not reconcile gets only a review saying so.
+    """
+    cfg = rules["pmcc"]
+    fired: list[dict[str, Any]] = []
+    mine = {_leg_symbol(leg): leg for leg in legs}
+    for view in ctx["views"]:
+        # The trade carries the verdict's inputs; the whole entry is the account's `pmcc` view.
+        trade["pmcc"] = {
+            "underlying": view["underlying"],
+            "long": view["long"]["leg"],
+            "short": view["short"]["leg"],
+            "recognized": view["recognized"],
+            "recognized_by": view["recognized_by"],
+            "reconciled": view["reconciled"],
+            "width_passes": view["width"]["passes"],
+            "pnl_if_assigned": view["width"]["pnl_if_assigned"],
+            "assignment_exposed": view["short"]["assignment"]["exposed"],
+            "roll_long": view["long"]["roll"],
+        }
+        if not view["recognized"]:
+            continue
+        if not view["reconciled"]:
+            fired.append(
+                _fire(
+                    "pmcc_data",
+                    REVIEW,
+                    None,
+                    "the PMCC's orders do not reconcile ("
+                    + "; ".join(view["problems"][:3])
+                    + "): no PMCC rule judged; check it by hand",
+                )
+            )
+            continue
+        long, short, width = view["long"], view["short"], view["width"]
+        short_leg = mine.get(short["symbol"])
+        both = [leg for leg in (mine.get(long["symbol"]), short_leg) if leg is not None]
+        rolls = view.get("rolls") or {}
+        if rolls.get("candidates"):
+            # check-roll judges the long and the short together, wherever the evaluation grouped them.
+            pair = _legs(
+                [ctx["raw"][long["symbol"]], ctx["raw"][short["symbol"]]],
+                session,
+                view["spot"],
+                float(rules["pricing"]["rate"]),
+            )
+            whole = {"legs": pair, "cost": width["net_cost"], "shape": "diagonal", "spot": view["spot"]}
+            rolls["candidates"] = [
+                _wheel_check(whole, pair[1], c, c["expiration"], session, net_liq, metrics, rules, 0.0)
+                for c in rolls["candidates"]
+            ]
+        rolls_text = (
+            "Rolls at the snapshot's quotes -- "
+            + "; ".join(
+                f"{c['expiration']} {c['open']['strike']:g}C at {c['delta']:.2f} delta, "
+                f"{c['net']:+.2f} a share, check-roll {(c.get('check') or {}).get('verdict') or 'unchecked'}"
+                for c in rolls["candidates"]
+            )
+            if rolls.get("candidates")
+            else f"No roll priced: {rolls.get('why') or 'not needed'}"
+        )
+        if width["passes"] is False and not off("pmcc.width"):
+            fired.append(
+                _fire(
+                    "pmcc.width",
+                    ROLL_OR_CLOSE,
+                    cfg["width"]["confidence"],
+                    f"the {short['leg']} is {width['width']:g} over the {long['leg']}, but the long has cost "
+                    f"{width['net_cost_per_share']:.2f} a share net of every premium: an assignment there "
+                    f"loses ${-width['pnl_if_assigned']:,.0f}. Roll the short up and out, or close. "
+                    + rolls_text,
+                    [leg["label"] for leg in both],
+                )
+            )
+            if both:
+                trade.setdefault("leg_orders", {})["pmcc.width"] = _order(both)
+        exposure = short["assignment"]
+        if exposure["exposed"] and not off("pmcc.assignment"):
+            fired.append(
+                _fire(
+                    "pmcc.assignment",
+                    ROLL_OR_CLOSE,
+                    cfg["assignment"]["confidence"],
+                    f"the {short['leg']} is {exposure['why']}: early assignment is likely. Roll it out "
+                    f"(or up and out), or buy it back. {rolls_text}",
+                    [short_leg["label"]] if short_leg else None,
+                )
+            )
+            if short_leg:
+                trade.setdefault("leg_orders", {})["pmcc.assignment"] = _order([short_leg])
+        if long["roll"] and not off("pmcc.roll_long"):
+            fired.append(
+                _fire(
+                    "pmcc.roll_long",
+                    REVIEW,
+                    cfg["roll_long"]["confidence"],
+                    f"the long {long['leg']} is at "
+                    + " and ".join(long["roll"])
+                    + ": review rolling it to a "
+                    f"later expiry at a deeper strike (the method enters at "
+                    f"{float(cfg['recognize']['entry_min_delta']):.2f} delta or more)",
+                )
+            )
+    return fired
+
+
 def _price_levels(trade: dict[str, Any], legs: list[dict[str, Any]]) -> None:
     """Each exit level's close value as the net price a person would enter (per unit of the trade)."""
     if not legs or not all(leg["right"] for leg in legs):
@@ -1877,6 +2010,59 @@ def _wheel_context(
     }
 
 
+def _pmcc_view(
+    account: dict[str, Any],
+    n_accounts: int,
+    history: dict[str, Any],
+    history_ok: bool,
+    session: date,
+    metrics: dict[str, Any],
+    snapshot: dict[str, Any],
+    rules: dict[str, Any],
+) -> dict[str, Any]:
+    """The account's PMCCs (`pmcc.py`), recognised or not. Like the wheel view, only the designated
+    account (or the only one) has the history to link them, and a failure costs the view: every trade
+    is still judged, by its diagonal rules alone."""
+    if not (account.get("designated") or n_accounts == 1):
+        return {"positions": [], "error": "the trade history is the designated account's"}
+    if not history_ok:
+        return {"positions": [], "error": "no trade history in this snapshot"}
+    try:
+        view = _pmcc.build(account.get("underlyings") or [], history, session, metrics, snapshot, rules)
+    except Exception as exc:  # noqa: BLE001 -- the PMCC view is a reading; the evaluation is the product
+        return {"positions": [], "error": f"PMCC view failed: {type(exc).__name__}: {exc}"[:300]}
+    view["error"] = None
+    return view
+
+
+def _pmcc_context(view: dict[str, Any] | None, group: list[dict[str, Any]], account: dict[str, Any]):
+    """The PMCC entries whose short this trade holds, and the raw legs check-roll prices them from."""
+    mine = {_leg_symbol(leg) for leg in group}
+    found = [v for v in (view or {}).get("positions") or [] if v["short"]["symbol"] in mine]
+    if not found:
+        return None
+    raw = {
+        _leg_symbol(leg): leg
+        for u in account.get("underlyings") or []
+        for leg in u.get("legs") or []
+        if leg.get("right") in ("C", "P")
+    }
+    return {"views": found, "raw": raw}
+
+
+def _link_pmcc(view: dict[str, Any], trades: list[dict[str, Any]]) -> None:
+    """Name, on each PMCC, the evaluated trades holding its long and its short (two, when the short was
+    sold in an order of its own and the evaluation's order chains keep it apart)."""
+    held_by: dict[str, set[str]] = {}
+    for t in trades:
+        for leg in t["legs"]:
+            held_by.setdefault(_leg_symbol(leg), set()).add(t.get("trade_id"))
+    for v in view.get("positions") or []:
+        v["trade_ids"] = sorted(
+            {tid for s in (v["long"]["symbol"], v["short"]["symbol"]) for tid in held_by.get(s, ()) if tid}
+        )
+
+
 # --------------------------------------------------------------------------- the whole snapshot
 def evaluate(
     snapshot: dict[str, Any], rules: dict[str, Any], warnings: list[str] | None = None
@@ -1908,6 +2094,16 @@ def evaluate(
             snapshot,
             trades,
         )
+        pmcc_view = _pmcc_view(
+            account,
+            len(positions.get("accounts") or []),
+            history,
+            history_ok,
+            session,
+            metrics,
+            snapshot,
+            rules,
+        )
         for u in account.get("underlyings") or []:
             legs, dropped = _without_excluded(u, session, rules)
             if dropped:
@@ -1933,6 +2129,7 @@ def evaluate(
                     snapshot.get("earnings_trades_seen"),
                     snapshot.get("roll_chains"),
                     _wheel_context(wheel_view, group, snapshot, u["underlying"]),
+                    _pmcc_context(pmcc_view, group, account),
                 )
                 trade["trade_id"] = u["underlying"] if len(groups) == 1 else f"{u['underlying']}#{i + 1}"
                 trades.append(trade)
@@ -1962,10 +2159,12 @@ def evaluate(
             snapshot.get("working_orders"),
         )
         _link_wheel(wheel_view, trades)
+        _link_pmcc(pmcc_view, trades)
         accounts.append(
             {
                 "account": account.get("account"),
                 "wheel": wheel_view,
+                "pmcc": pmcc_view,
                 "designated": account.get("designated"),
                 "error": account.get("error"),
                 "net_liq": net_liq,

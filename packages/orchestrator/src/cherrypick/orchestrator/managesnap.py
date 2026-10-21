@@ -79,6 +79,16 @@ rates mean), since the whole file is ~2 MB. The band is copied as the file state
 day's close; manage moves it to today's price (`wheel._band`, band + today's spot - that close, as
 `technicals.skate.shift_for` does), so a re-run with a different spot stays consistent. A missing,
 stale or unreadable file is `skate_bands: null` with `skate_bands_error` saying why, never fatal.
+
+Version 13 carries `underlying_history` for each name holding a long call: the underlying's close on
+every day the history shows that call bought to open, and its dividends and splits around those days,
+read-only from the technicals end-of-day store (`technicals/eod.db`, Dolt's raw bars as last landed).
+manage's PMCC view (docs/skate-plan.md step 6) solves the long's delta at entry from its opening fill
+and that day's close, carrying the dividend yield (the dividends gone ex in the year before, over the
+close), and today's from the same dividends over today's price. The store's raw dividend table is
+used as Dolt states it, not reconciled with the broker's. A close the store does not hold yet (a long
+bought today: bars land overnight) is simply absent, and manage says the delta at entry is unknown. A
+missing or unreadable store is `underlying_history: null` with `underlying_history_error`.
 """
 
 from __future__ import annotations
@@ -97,7 +107,7 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 12
+SNAPSHOT_VERSION = 13
 # Greeks move far more slowly than a bid; the cache's are used up to this old, the feed's otherwise.
 GREEKS_MAX_AGE_SECONDS = 900.0
 # Monday reads Friday's afternoon reading; anything older is a stale book of quotes.
@@ -517,6 +527,101 @@ def skate_bands(session: date, symbols: list[str], folder=None) -> tuple[dict[st
     }, None
 
 
+def eod_db():
+    from cherrypick.core import home
+
+    # technicals' own end-of-day store (`technicals.paths.eod_db`), override included.
+    return home.data_dir("technicals", env="TECHNICALS_DATA_DIR") / "eod.db"
+
+
+def _long_call_openings(positions: dict[str, Any], history: dict[str, list]) -> dict[str, set[str]]:
+    """{underlying: the days each long call held was bought to open}, from the trade history."""
+    held: dict[str, set[str]] = {}
+    for account in positions.get("accounts") or []:
+        for u in account.get("underlyings") or []:
+            for leg in u.get("legs") or []:
+                if leg.get("right") == "C" and (leg.get("quantity") or 0) > 0:
+                    sym = " ".join(str(leg.get("symbol") or "").split())
+                    held.setdefault(str(u.get("underlying") or "").upper(), set()).add(sym)
+    out: dict[str, set[str]] = {}
+    for name, symbols in held.items():
+        for row in history.get(name) or []:
+            if (
+                isinstance(row, dict)
+                and row.get("action") == "Buy to Open"
+                and " ".join(str(row.get("symbol") or "").split()) in symbols
+                and str(row.get("executed_at") or "")[:10]
+            ):
+                out.setdefault(name, set()).add(str(row["executed_at"])[:10])
+    return out
+
+
+def underlying_history(
+    session: date, positions: dict[str, Any], history: dict[str, list], db=None
+) -> tuple[dict[str, Any] | None, str | None]:
+    """For each name holding a long call: its close on each day a held long call was bought to open,
+    its dividends from a year before the earliest of those days to the session, and its splits since
+    that day. Read-only; the store's own spelling (BRK.B) is tried after the broker's (BRK/B)."""
+    from cherrypick.core.db import connect_ro
+
+    wanted = _long_call_openings(positions, history)
+    if not wanted:
+        return {}, None
+    path = eod_db() if db is None else db
+    if not path.exists():
+        return None, f"no end-of-day store at {path.name} (python -m cherrypick.technicals land)"
+    try:
+        conn = connect_ro(path)
+    except Exception as exc:  # noqa: BLE001 -- a missing input, never a missing snapshot
+        return None, f"{path.name} is unreadable: {exc}"[:200]
+    out: dict[str, Any] = {}
+    try:
+        for name, days in sorted(wanted.items()):
+            first = min(days)
+            since = (date.fromisoformat(first) - timedelta(days=366)).isoformat()
+            for store_sym in dict.fromkeys((name, name.replace("/", "."))):
+                closes = {
+                    r["date"]: r["close"]
+                    for r in conn.execute(
+                        "SELECT date, close FROM bars WHERE symbol = ? AND date IN "
+                        f"({','.join('?' * len(days))})",
+                        (store_sym, *sorted(days)),
+                    )
+                    if r["close"] is not None
+                }
+                through = conn.execute(
+                    "SELECT MAX(date) FROM bars WHERE symbol = ?", (store_sym,)
+                ).fetchone()[0]
+                if through is None:
+                    continue
+                out[name] = {
+                    "store_symbol": store_sym,
+                    "through": through,
+                    "closes": closes,
+                    "dividends": [
+                        [r["ex_date"], r["amount"]]
+                        for r in conn.execute(
+                            "SELECT ex_date, amount FROM dividends WHERE symbol = ? AND ex_date > ? "
+                            "AND ex_date <= ? ORDER BY ex_date",
+                            (store_sym, since, session.isoformat()),
+                        )
+                    ],
+                    "splits": [
+                        r["ex_date"]
+                        for r in conn.execute(
+                            "SELECT ex_date FROM splits WHERE symbol = ? AND ex_date > ? ORDER BY ex_date",
+                            (store_sym, first),
+                        )
+                    ],
+                }
+                break
+    except Exception as exc:  # noqa: BLE001
+        return None, f"{path.name} could not be read: {exc}"[:200]
+    finally:
+        conn.close()
+    return out, None
+
+
 def earnings_times_dir():
     from cherrypick.core import home
 
@@ -585,6 +690,7 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
     orders, orders_error = working_orders(cfg, prefer) if ok else ([], None)
     chains = roll_chains(cfg, positions, metrics, prefer) if ok else {}
     bands, bands_error = skate_bands(date.fromisoformat(session), symbols)
+    underlying, underlying_error = underlying_history(date.fromisoformat(session), positions, history)
     return {
         "snapshot_version": SNAPSHOT_VERSION,
         "session": session,
@@ -604,4 +710,6 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "income": income_reading(date.fromisoformat(session)),
         "skate_bands": bands,
         "skate_bands_error": bands_error,
+        "underlying_history": underlying,
+        "underlying_history_error": underlying_error,
     }

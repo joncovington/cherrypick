@@ -11,7 +11,7 @@ were decided by the user on 2026-10-18 (see "Decisions").
 | 3, the score and the console's Skate tab | the score built (`skate.score`, in the quote file); the tab built 2026-10-19; the income tabs' leveraged badge not started |
 | 4, the forward record | built: `skate_record.py`, recording from 2026-10-20; the tab section built 2026-10-20 |
 | 5, the wheel view (`manage`, Live → positions) | cycle linking, accounting and the day's check built (`manage/wheel.py`, 2026-10-20); the bands in the snapshot (v12) and its rules (`wheel.take_profit`, `wheel.tested`, `wheel.next_leg`) built 2026-10-20; the console's Live → wheel tab built 2026-10-20 |
-| 6, the PMCC view (`manage`, beside the wheel view) | not started |
+| 6, the PMCC view (`manage`, beside the wheel view) | recognition, linking, accounting, the day's check and the rules (`pmcc.width`, `pmcc.assignment`, `pmcc.roll_long`) built (`manage/pmcc.py`, 2026-10-20), with the long's entry-day close in the snapshot (v13's `underlying_history`); the tab not started |
 
 A screen for short options sold where the seller does not want assignment: covered calls above
 the stock's recent range and cash-secured puts below it, on our own options-tradable names. The
@@ -327,6 +327,30 @@ Jan 2027) has the shape but was entered as a diagonal, and stays one. What it ad
   `REVIEW` when the long needs rolling (90–120 days left or under ~0.70 delta, both config). Each with a
   confidence and a README row.
 - **Console**: a PMCC tab beside the wheel tab, same columns where they mean the same thing.
+
+**As built (2026-10-20, all but the tab):**
+
+- **The long's days are judged when it was bought.** The 180-day floor read on today's days would drop
+  a PMCC before its long reached the 90-120-day roll, so it applies on the opening day (today's, when
+  the purchase predates the history).
+- **The entry-day close comes from the snapshot.** Snapshot v13's `underlying_history` copies, for each
+  name holding a long call, the close on each day the history shows it bought, and the dividends and
+  splits around those days, from the technicals end-of-day store. The yield is the dividends gone ex
+  in the year to the day over the close; today's, the same over today's price. A close not landed yet,
+  a split since, or a fill no volatility prices leaves the delta at entry **unknown**, which does not
+  recognise. TLT's long, solved this way, was entered at 0.45 delta (79.32 close, 6.22 fill, ~4.9%
+  trailing yield): a diagonal, as the plan said.
+- **Linking.** A short sold after the last one expired is an order chain of its own, so the view
+  links the long's chain with every short-call-only chain on the name since it was bought, as the
+  wheel view links a wheel, and the evaluation still judges that short as its own trade; the PMCC
+  rules fire into it and the view names both trades.
+- **Roll candidates** come from what the snapshot quotes (the income reading's cycle monthly and
+  covered-call expiry, and any roll chain), usually one or two expiries, not five; `check-roll`
+  rejects any debit, so a candidate inside the $0.10 allowance says so.
+- **Precedence.** The PMCC rules rank by action with the diagonal rules: a close or stop outranks them;
+  `roll.diagonal_short`'s credit roll replaces them when it fires. On every stored snapshot (10-13 to
+  10-20, 110 trade evaluations) no recommendation changed: TLT is the account's only call diagonal and
+  its short is 87+ days out.
 
 ## The build, in pull requests
 

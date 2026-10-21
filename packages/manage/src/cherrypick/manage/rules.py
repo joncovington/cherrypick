@@ -192,6 +192,28 @@ DEFAULT_RULES: dict[str, Any] = {
         # skate call band (`band`: "fixed" or "by_expiry"). Never a strike without the band.
         "next_leg": {"enabled": True, "band": "fixed", "confidence": 50},
     },
+    # The PMCC view (pmcc.py, docs/skate-plan.md step 6): a call diagonal is a PMCC only when its long
+    # was entered at `entry_min_delta` or more, or `positions.<SYM>.intent` is "pmcc"; "diagonal"
+    # keeps it out. Its rules fire only on a recognised PMCC whose orders reconcile (an unreconciled
+    # one gets a review saying so), into the trade holding the short, ranked by action with the
+    # diagonal rules it keeps: a close or stop outranks them, and the diagonal's credit roll is offered
+    # in place of a roll-or-close, as it is for any close.
+    "pmcc": {
+        # The long's days are judged on the day it was bought (it is rolled at 90-120 days left).
+        "recognize": {"min_long_days": 180, "max_short_days": 60, "entry_min_delta": 0.80},
+        # The short strike less the long strike must exceed the long's net cost per share after every
+        # premium collected, or an assignment (the long exercised to deliver) locks in a loss.
+        "width": {"enabled": True, "confidence": 65},
+        # The short in the money with less time value than the next dividend before an ex-date inside
+        # its life, or under `near_zero_extrinsic` at any time (the pmcc package's flag).
+        "assignment": {"enabled": True, "near_zero_extrinsic": 0.05, "confidence": 65},
+        # The long at `days_left` or fewer (the guides' 90-120) or under `min_delta`: review a roll of
+        # the long down and out.
+        "roll_long": {"enabled": True, "days_left": 120, "min_delta": 0.70, "confidence": 45},
+        # The short's roll candidates for a roll-or-close: one per quoted expiry after the short and
+        # before the long, the next `expiries`, at most `max_delta`, costing at most `max_debit` a share.
+        "roll": {"max_delta": 0.40, "max_debit": 0.10, "expiries": 5},
+    },
     "expiry": {
         "enabled": True,
         # Physically-settled legs are closed at or inside this many calendar days to expiry.
@@ -327,6 +349,7 @@ DEFAULT_RULES: dict[str, Any] = {
         },
     },
     # Per-underlying overrides: {"SPY": {"intent": "hedge", "disable": ["debit.stop"], "note": "..."}}.
+    # `intent: "pmcc"` recognises a call diagonal as a PMCC; `"diagonal"` keeps it out (pmcc.py).
     "positions": {},
 }
 
@@ -351,6 +374,9 @@ RULE_IDS = (
     "wheel.take_profit",
     "wheel.tested",
     "wheel.next_leg",
+    "pmcc.width",
+    "pmcc.assignment",
+    "pmcc.roll_long",
     "directional.take_profit",
     "directional.stop",
     "ex_dividend",

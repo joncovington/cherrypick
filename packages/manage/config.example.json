@@ -148,6 +148,38 @@
       "confidence": 50
     }
   },
+  "pmcc": {
+    "_comment": "The PMCC view. A call diagonal (a long bought with min_long_days or more left, one short of the same size at or above its strike with max_short_days or fewer) is a PMCC only when its long was entered at entry_min_delta or more, or positions.<SYMBOL>.intent is \"pmcc\"; \"diagonal\" keeps it out. Its rules fire only on a recognised PMCC whose orders reconcile, rank with the diagonal rules by action, and give way to the diagonal's credit roll.",
+    "recognize": {
+      "min_long_days": 180,
+      "max_short_days": 60,
+      "entry_min_delta": 0.8
+    },
+    "width": {
+      "_comment": "Roll or close when the short strike less the long strike does not exceed the long's net cost per share after every premium collected: an assignment there locks in a loss.",
+      "enabled": true,
+      "confidence": 65
+    },
+    "assignment": {
+      "_comment": "Roll or close a short in the money with less time value than the next dividend before an ex-date inside its life, or under near_zero_extrinsic at any time.",
+      "enabled": true,
+      "near_zero_extrinsic": 0.05,
+      "confidence": 65
+    },
+    "roll_long": {
+      "_comment": "Review rolling the long when it has days_left or fewer, or its delta is under min_delta.",
+      "enabled": true,
+      "days_left": 120,
+      "min_delta": 0.7,
+      "confidence": 45
+    },
+    "roll": {
+      "_comment": "The short's roll candidates: one per quoted expiry after the short and before the long, the next `expiries`, delta at most max_delta, a roll costing at most max_debit a share.",
+      "max_delta": 0.4,
+      "max_debit": 0.1,
+      "expiries": 5
+    }
+  },
   "expiry": {
     "_comment": "Physically-settled legs are closed at or inside close_by_dte; roots listed as cash-settled settle instead.",
     "enabled": true,
@@ -290,6 +322,6 @@
       "show_too_big": 10
     }
   },
-  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.time_exit, legs.short_take_profit, legs.long_vertical, roll.naked_put, roll.diagonal_short, roll.fly_off, roll.untested_side, wheel.take_profit, wheel.tested, wheel.next_leg, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power",
+  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. intent \"pmcc\" recognises a call diagonal as a PMCC, \"diagonal\" keeps it out. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.time_exit, legs.short_take_profit, legs.long_vertical, roll.naked_put, roll.diagonal_short, roll.fly_off, roll.untested_side, wheel.take_profit, wheel.tested, wheel.next_leg, pmcc.width, pmcc.assignment, pmcc.roll_long, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power",
   "positions": {}
 }
