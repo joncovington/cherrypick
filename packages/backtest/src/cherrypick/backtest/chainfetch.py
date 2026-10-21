@@ -11,7 +11,8 @@ list also reads). Its order is kept; a repeated request is fetched once.
 
 **The store** is `eod_chains.db` in the licensed vendor directory (`paths.ensure_vendor_dir`, marker
 first): `eod_chain_quotes` holds the rows, `eod_chain_requests` what became of each request --
-`complete` (rows written), `empty` (the vendor holds nothing for it) or `refused` (with why). A run
+`complete` (rows written), `empty` (the vendor holds nothing for it, its `no_data` included) or
+`refused` (with why). A run
 skips complete and empty requests and retries refused ones, so it is resumable and a re-run is
 cheap; `refetch` replaces everything asked for. A fatal refusal (`vendor.FATAL`: the session was
 taken by another login) stops the run instead of marking every remaining request refused.
@@ -33,6 +34,8 @@ from . import paths
 from .vendor import FATAL, VendorRefusal
 
 DB_NAME = "eod_chains.db"
+#: The vendor's way of saying it holds nothing for a request: an empty chain, not a refusal to retry.
+NO_DATA = "no_data"
 COMPLETE, EMPTY, REFUSED = "complete", "empty", "refused"
 
 SCHEMA = """
@@ -58,6 +61,12 @@ def connect(settings: dict) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path(settings))
     conn.executescript(SCHEMA)
     return conn
+
+
+def vendor_root(symbol: str) -> str:
+    """The vendor's option root for a study's symbol: a share class has no separator (BRK.B is BRKB,
+    checked 2026-10-20: BRK.B and BRK/B return no data). The store keeps the study's spelling."""
+    return symbol.replace(".", "").replace("/", "")
 
 
 def read_requests(path: Path) -> list[tuple[str, str, str]]:
@@ -147,7 +156,7 @@ def fetch_chains(
                 key = next(pending, None)
                 if key is None:
                     return False
-                running[ex.submit(client.eod_chain, key[0], key[1], key[2])] = key
+                running[ex.submit(client.eod_chain, vendor_root(key[0]), key[1], key[2])] = key
                 return True
 
             for _ in range(max(1, workers)):
@@ -160,16 +169,19 @@ def fetch_chains(
                     try:
                         rows = fut.result()
                     except VendorRefusal as refusal:
-                        with conn:
-                            _record(conn, key, REFUSED, 0, f"{refusal.reason}: {refusal.detail}"[:300])
-                        report["refused"] += 1
+                        if refusal.reason == NO_DATA:
+                            write_chain(conn, key, [])
+                            report["empty"] += 1
+                        else:
+                            with conn:
+                                _record(conn, key, REFUSED, 0, f"{refusal.reason}: {refusal.detail}"[:300])
+                            report["refused"] += 1
                         if refusal.reason in FATAL:
                             report["aborted"] = f"{refusal.reason}: {refusal.detail}"[:300]
                             for other in running:
                                 other.cancel()
                             running.clear()
                             break
-                        continue
                     except Exception as exc:  # noqa: BLE001 -- one request's failure is that request's
                         with conn:
                             _record(conn, key, REFUSED, 0, f"{type(exc).__name__}: {exc}"[:300])
