@@ -11,6 +11,14 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: the manage snapshot carries the held names' skate bands.** Snapshot v12's `skate_bands`
+  is the newest skate band file at most three trading sessions behind the session, cut to the names
+  the account holds and to what manage reads: the band day's close, each row's side, expiry and
+  bands with their skate curves, and the file's offsets, so the skate rate at any strike can be read
+  from the snapshot alone (about 11 KB a name against the file's 2 MB). The wheel view's "strike against
+  today's band" check now has data; manage moves the band to today's price, so `reevaluate` with a
+  different spot stays consistent. A missing, stale or unreadable file is `skate_bands: null` with
+  `skate_bands_error` saying why, and the evaluation runs on without it.
 - **Changed: the stock universe and the report's sectors no longer depend on the vendor.** The
   universe harvest adds every stock with a median of at least 10,000 option contracts a day at
   OCC over the last 20 sessions (101 new candidates on 2026-10-19; membership is still decided by

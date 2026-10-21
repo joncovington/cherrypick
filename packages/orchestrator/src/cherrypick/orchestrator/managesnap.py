@@ -68,6 +68,17 @@ strikes either side of spot. manage rolls a tested strangle's untested short tow
 tastylive strategy guide's defence), and needs a strike that is listed and a price that was quoted for
 it, which the trade's own legs cannot supply. One read per such expiry; none when the account holds
 none.
+
+Version 12 carries `skate_bands`, the skate screen's range bands (docs/skate-plan.md step 1) for the
+names the account holds, so the wheel view can judge each short strike against today's band and
+`reevaluate` still gets the same answer twice. A file read, not a broker call: the newest
+`technicals/skate/<day>.json` on or before the session and at most SKATE_MAX_SESSIONS trading sessions
+behind it, cut to the held names and to what manage reads (the band day's close; each row's side,
+expiry and bands with their skate curves; the file's `offsets` and the settings that say what the
+rates mean), since the whole file is ~2 MB. The band is copied as the file states it, at the band
+day's close; manage moves it to today's price (`wheel._band`, band + today's spot - that close, as
+`technicals.skate.shift_for` does), so a re-run with a different spot stays consistent. A missing,
+stale or unreadable file is `skate_bands: null` with `skate_bands_error` saying why, never fatal.
 """
 
 from __future__ import annotations
@@ -86,7 +97,7 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 11
+SNAPSHOT_VERSION = 12
 # Greeks move far more slowly than a bid; the cache's are used up to this old, the feed's otherwise.
 GREEKS_MAX_AGE_SECONDS = 900.0
 # Monday reads Friday's afternoon reading; anything older is a stale book of quotes.
@@ -112,6 +123,16 @@ ROLL_STRIKES = 40
 # How far back a chain is rebuilt. A LEAPS-backed position can roll for a year; anything older than
 # this is reported as an incomplete chain rather than guessed.
 HISTORY_DAYS = 400
+# The band file is built at 06:45 ET from the previous session's bars, so it is normally one session
+# behind; two is one missed build, three two. Past that the range under the band is a week old and its
+# weekly expiries have begun to roll off, so the wheel check says it has no band rather than use it.
+SKATE_MAX_SESSIONS = 3
+# What the snapshot copies of a band file: per row, and per band within a row (the skate curves are
+# what the rate at a strike is read from, on the file's `offsets`), and the settings that say what
+# the rates mean (`recent` is the last `recent_years` from `history_from`; `soft` the screen's marks).
+SKATE_ROW_KEEP = ("side", "expiry", "days", "sessions")
+SKATE_BAND_KEEP = ("haircut", "band", "n", "n_recent", "skate", "skate_recent")
+SKATE_CONFIG_KEEP = ("history_from", "recent_years", "soft")
 
 
 def _metric(entry: dict[str, Any]) -> dict[str, Any]:
@@ -425,6 +446,77 @@ def income_reading(session: date, folder=None) -> dict[str, Any]:
     return {**doc, "error": None}
 
 
+def skate_dir():
+    from cherrypick.core import home
+
+    # technicals' own home for the band files (`technicals.paths.data_dir`), override included.
+    return home.data_dir("technicals", env="TECHNICALS_DATA_DIR") / "skate"
+
+
+def _slim_skate_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **{k: row.get(k) for k in SKATE_ROW_KEEP},
+        "bands": {
+            which: {k: (b or {}).get(k) for k in SKATE_BAND_KEEP}
+            for which, b in (row.get("bands") or {}).items()
+        },
+    }
+
+
+def skate_bands(session: date, symbols: list[str], folder=None) -> tuple[dict[str, Any] | None, str | None]:
+    """The held names' entries from the newest skate band file on or before `session`, at most
+    SKATE_MAX_SESSIONS trading sessions behind it, and an error string when there is none.
+
+    Only `symbols` are copied, and of each only what manage reads: the band day's close, and each row's
+    side, expiry and bands with their skate curves. With the file's `offsets` (the grid the curves are
+    recorded on) that is enough to read the skate rate at any strike. A band file keys BRK.B where the
+    broker says BRK/B; the copy is keyed by the broker's spelling, which is what the positions use."""
+    from cherrypick.core import calendar as cal
+
+    folder = skate_dir() if folder is None else folder
+    days = []
+    for f in folder.glob("????-??-??.json") if folder.is_dir() else []:
+        try:
+            d = date.fromisoformat(f.stem)
+        except ValueError:
+            continue
+        if d <= session:
+            days.append((d, f))
+    if not days:
+        return None, "no skate band file yet (python -m cherrypick.technicals skate, 06:45 ET)"
+    day, path = max(days)
+    behind = cal.trading_days_between(day, session)
+    if behind > SKATE_MAX_SESSIONS:
+        return None, (
+            f"the newest skate band file is from {day.isoformat()}, {behind} sessions old; "
+            f"bands older than {SKATE_MAX_SESSIONS} are not read"
+        )
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return None, f"{path.name} is unreadable: {exc}"[:200]
+    names = doc.get("names") if isinstance(doc.get("names"), dict) else {}
+    out: dict[str, dict] = {}
+    for sym in symbols:
+        entry = next(
+            (names[s] for s in (sym, sym.replace("/", "."), sym.replace(".", "/")) if s in names), None
+        )
+        if isinstance(entry, dict):
+            out[sym] = {
+                "spot": entry.get("spot"),
+                "rows": [_slim_skate_row(r) for r in entry.get("rows") or [] if isinstance(r, dict)],
+            }
+    cfg = doc.get("config") if isinstance(doc.get("config"), dict) else {}
+    return {
+        "day": doc.get("day") or day.isoformat(),
+        "sessions_behind": behind,
+        "offsets": doc.get("offsets"),
+        "config": {k: cfg.get(k) for k in SKATE_CONFIG_KEEP},
+        "names": out,
+        "not_banded": [s for s in symbols if s not in out],
+    }, None
+
+
 def earnings_times_dir():
     from cherrypick.core import home
 
@@ -492,6 +584,7 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
     greeks, greeks_error = broker_greeks(cfg, positions, prefer) if ok else ({}, None)
     orders, orders_error = working_orders(cfg, prefer) if ok else ([], None)
     chains = roll_chains(cfg, positions, metrics, prefer) if ok else {}
+    bands, bands_error = skate_bands(date.fromisoformat(session), symbols)
     return {
         "snapshot_version": SNAPSHOT_VERSION,
         "session": session,
@@ -509,4 +602,6 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "working_orders_error": orders_error,
         "roll_chains": chains,
         "income": income_reading(date.fromisoformat(session)),
+        "skate_bands": bands,
+        "skate_bands_error": bands_error,
     }
