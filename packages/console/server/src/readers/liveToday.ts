@@ -16,7 +16,9 @@
  * Three small mirrors are new, each a module's own status query (`live_loop.py`), named where it
  * sits: flies' and MEIC's `daily_loss_tripped`, and flies' `overdue_settlement`. bwb's breaker
  * input IS today's settled net (`db.settled_net_for_session`), so it is read off the composed
- * money rather than queried again.
+ * money rather than queried again. The breakers do not all sum the same figure: flies' and bwb's
+ * are net, MEIC's sums `ic_trades.pnl`, which is GROSS (before fees) on that ledger, so its figure
+ * says so (`figureKind`). That is the loop's rule, mirrored, not restated here.
  *
  * The suite line totals each loop's realised net for today. All three state it the same way --
  * resolved positions at the broker's fills, less trading fees and settlement, slippage never
@@ -100,33 +102,49 @@ function moneyOf(
 ): LiveTodayMoney {
   let gross = 0;
   let fees = 0;
+  let feesTrades = 0;
   let settlement = 0;
   let settlementTrades = 0;
+  let netRecorded = 0;
   for (const r of rows) {
     gross += r.gross ?? 0;
-    fees += r.fees ?? 0;
     if (r.settlementFees !== null) {
       settlement += r.settlementFees;
       settlementTrades += 1;
     }
+    // A row that never recorded its fees has no known net; it stays out of the recorded share, and
+    // makes the day's fees and net n/r rather than charging it $0.
+    if (r.fees !== null) {
+      fees += r.fees;
+      feesTrades += 1;
+      netRecorded += (r.gross ?? 0) - r.fees - (r.settlementFees ?? 0);
+    }
   }
+  const all = feesTrades === rows.length;
   return {
     trades: rows.length,
     gross: round2(gross),
-    fees: round2(fees),
+    fees: all ? round2(fees) : null,
     settlementFees: sumIfAllRecorded(round2(settlement), settlementTrades, rows.length),
     settlementRecorded: round2(settlement),
     settlementTrades,
     // gross − trading fees − settlement: the ledger's own `gross_pnl - fees`, since trading fees
     // are the fee total less the settlement recorded apart (and the whole total where it was not).
-    net: round2(gross - fees - settlement),
+    net: all ? round2(gross - fees - settlement) : null,
+    feesTrades,
+    netRecorded: round2(netRecorded),
     basis,
   };
 }
 
-function breakerOf(limit: number | null, figure: number | null, basis: string): LiveTodayLoop["breaker"] {
-  if (!limit) return { limit: null, figure, tripped: null, basis };
-  return { limit, figure, tripped: figure === null ? null : figure <= -Math.abs(limit), basis };
+function breakerOf(
+  limit: number | null,
+  figure: number | null,
+  basis: string,
+  figureKind: "net" | "gross" = "net",
+): LiveTodayLoop["breaker"] {
+  if (!limit) return { limit: null, figure, figureKind, tripped: null, basis };
+  return { limit, figure, figureKind, tripped: figure === null ? null : figure <= -Math.abs(limit), basis };
 }
 
 // --------------------------------------------------------------------------- flies
@@ -242,6 +260,26 @@ function readFliesToday(config: ConsoleConfig, session: string, minute: number):
 }
 
 // --------------------------------------------------------------------------- meic
+/**
+ * The supervisor's `meic-live` job as the loop's state: MEIC's live loop records no iterations of
+ * its own, and the job is one tick a run (every 60 s while that day's arm record is valid). "live"
+ * when a tick is running or one finished within two minutes, as flies reads its last iteration;
+ * null when the supervisor's registry names no such job.
+ */
+export function meicLoopState(config: ConsoleConfig, now: Date): LiveTodayLoop["loopState"] {
+  const reg = readJson(path.join(config.paths.cherrypick, "state", "supervisor-jobs.json"));
+  const jobs = reg?.["jobs"];
+  const job = typeof jobs === "object" && jobs !== null ? (jobs as Record<string, unknown>)["meic-live"] : undefined;
+  if (typeof job !== "object" || job === null) return null;
+  const row = job as Record<string, unknown>;
+  const running = num(row["running_pid"]) !== null;
+  const lastAt = str(row["last_exit_at"]) ?? str(row["last_start"]);
+  if (lastAt === null && !running) return { state: "no-data", lastAt: null, ageSeconds: null };
+  const t = lastAt === null ? Number.NaN : Date.parse(lastAt);
+  const ageSeconds = Number.isNaN(t) ? null : Math.max(0, (now.getTime() - t) / 1000);
+  return { state: running || (ageSeconds !== null && ageSeconds < 120) ? "live" : "idle", lastAt, ageSeconds };
+}
+
 /** MEIC `live_loop.daily_loss_tripped`'s input: today's `pnl` over every status, open ICs included. */
 function meicBreakerFigure(dbPath: string, session: string): number | null {
   const r = readOnlyDb(dbPath, (db) =>
@@ -283,6 +321,8 @@ function readMeicToday(config: ConsoleConfig, now: Date): LoopRead {
           settlementRecorded: t.settlementRecorded,
           settlementTrades: t.settlementTrades,
           net: t.net,
+          feesTrades: t.feesTrades,
+          netRecorded: t.netRecorded,
           basis: "iron condors resolved today (stopped, expired, force-closed); an IC still open with one side stopped is not in it",
         }
       : null;
@@ -300,7 +340,7 @@ function readMeicToday(config: ConsoleConfig, now: Date): LoopRead {
     ledger: p.ledger,
     ledgerError: p.ledgerError,
     arm,
-    loopState: null,
+    loopState: meicLoopState(config, now),
     open: p.open.filter((r) => !r.working).length,
     working: p.open.filter((r) => r.working).length + p.open.filter((r) => r.putClosing).length + p.open.filter((r) => r.callClosing).length,
     workingBasis: "entry orders working, plus each side with a close order working",
@@ -313,7 +353,9 @@ function readMeicToday(config: ConsoleConfig, now: Date): LoopRead {
     breaker: breakerOf(
       limit,
       limit ? meicBreakerFigure(dbPath, session) : null,
-      "today's pnl over every status, open ICs included (live_loop.daily_loss_tripped)",
+      "GROSS: today's ledger pnl (before fees) over every status, open ICs included -- " +
+        "live_loop.daily_loss_tripped sums ic_trades.pnl, which is gross on this ledger, so the breaker trips on gross, not net",
+      "gross",
     ),
     orphans: { at: p.orphans.at, count: p.orphans.orders.length },
     held: p.held.unresolved.length + p.held.unrecorded.length,
@@ -455,19 +497,26 @@ export function suiteOf(loops: LiveTodayLoop[]): LiveTodaySuite {
   }
   const armed = loops.filter((l) => l.arm.armed && !l.arm.pastDisarm).map((l) => l.loop);
   // A loop unread makes the total n/r; so does nothing read at all -- no ledger anywhere is not a flat day.
-  if (failed || summed.length === 0) return { loops: loops.length, armed, net: null, gross: null, fees: null, settlementFees: null, trades: null, summed: [], excluded };
-  const money = loops.filter((l) => summed.includes(l.loop)).map((l) => l.today!);
+  if (failed || summed.length === 0)
+    return { loops: loops.length, armed, net: null, gross: null, fees: null, settlementFees: null, trades: null, summed: [], excluded, feesUnrecorded: [] };
+  const read = loops.filter((l) => summed.includes(l.loop));
+  const money = read.map((l) => l.today!);
   const sum = (f: (m: LiveTodayMoney) => number) => round2(money.reduce((s, m) => s + f(m), 0));
+  // A loop whose fees are n/r today makes the suite's fees and net n/r too: a total missing one
+  // trade's fees is a partial sum. Gross and the count still sum.
+  const feesUnrecorded = read.filter((l) => l.today!.net === null || l.today!.fees === null).map((l) => l.loop);
+  const whole = feesUnrecorded.length === 0;
   return {
     loops: loops.length,
     armed,
-    net: sum((m) => m.net),
+    net: whole ? sum((m) => m.net ?? 0) : null,
     gross: sum((m) => m.gross),
-    fees: sum((m) => m.fees),
+    fees: whole ? sum((m) => m.fees ?? 0) : null,
     settlementFees: money.some((m) => m.settlementFees === null) ? null : sum((m) => m.settlementFees ?? 0),
     trades: money.reduce((s, m) => s + m.trades, 0),
     summed,
     excluded,
+    feesUnrecorded,
   };
 }
 

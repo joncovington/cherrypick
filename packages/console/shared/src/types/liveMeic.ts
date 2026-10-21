@@ -83,13 +83,19 @@ export interface LiveMeicTotals {
   trades: number;
   sessions: number;
   gross: number;
-  fees: number;
+  /** null (n/r) when any row never recorded its fees -- never a partial sum. */
+  fees: number | null;
   /** null (n/r) when any row never recorded its settlement -- never a partial sum. */
   settlementFees: number | null;
   /** Settlement summed over the rows that recorded it, so gross − fees − this = net always holds. */
   settlementRecorded: number;
   settlementTrades: number;
-  net: number;
+  /** null (n/r) when any row never recorded its fees: that row's net is unknown, so the total is. */
+  net: number | null;
+  /** Rows that recorded their fees, of `trades`; `feesRecorded` and `netRecorded` cover only these. */
+  feesTrades: number;
+  feesRecorded: number;
+  netRecorded: number;
 }
 
 export interface LiveMeicPayload {

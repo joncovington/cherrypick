@@ -46,11 +46,14 @@ function breakerWords(l: LiveTodayLoop): string {
   const b = l.breaker;
   if (b.limit === null) return "no limit";
   if (b.tripped === null) return `unknown · limit ${fmtMoney(b.limit)}`;
-  return `${b.tripped ? "TRIPPED" : "ok"} · ${fmtMoney(b.figure)} of −${fmtMoney(Math.abs(b.limit))}`;
+  // MEIC's breaker sums the ledger's gross pnl, not net: the figure says which, so it is never read
+  // beside the net column as the same kind of number.
+  const kind = b.figureKind === "gross" ? " gross" : "";
+  return `${b.tripped ? "TRIPPED" : "ok"} · ${fmtMoney(b.figure)}${kind} of −${fmtMoney(Math.abs(b.limit))}`;
 }
 
 function loopStateWords(l: LiveTodayLoop): string {
-  if (l.loopState === null) return "no loop record";
+  if (l.loopState === null) return l.loop === "meic" ? "no meic-live job" : "no loop record";
   if (l.loopState.state === "no-data") return "no iterations";
   const age = l.loopState.ageSeconds;
   return age === null ? l.loopState.state : `${l.loopState.state} · ${age < 120 ? `${Math.round(age)}s` : `${Math.round(age / 60)}m`} ago`;
@@ -80,7 +83,9 @@ export function LiveTodayView({ data: d }: { data: LiveTodayPayload }) {
             tone={s.net === null ? "dim" : s.net >= 0 ? "pos" : "neg"}
             title={
               s.net === null
-                ? `Not totalled: ${s.excluded.map((e) => `${e.loop} — ${e.reason}`).join("; ")}`
+                ? s.feesUnrecorded.length > 0 && s.gross !== null
+                  ? `Not totalled: fees were never recorded on a trade resolved today in ${s.feesUnrecorded.join(", ")}, so its net is unknown.`
+                  : `Not totalled: ${s.excluded.map((e) => `${e.loop} — ${e.reason}`).join("; ")}`
                 : `Realised net today over ${s.summed.join(", ") || "no loop"}: gross − fees − settlement, positions resolved today.` +
                   (s.excluded.length > 0 ? ` Left out: ${s.excluded.map((e) => `${e.loop} (${e.reason})`).join(", ")}.` : "")
             }
@@ -90,7 +95,7 @@ export function LiveTodayView({ data: d }: { data: LiveTodayPayload }) {
             value={
               s.gross === null
                 ? "n/r"
-                : `${fmtMoney(s.gross)} · ${fmtMoney(s.fees)} · ${s.settlementFees === null ? "n/r" : fmtMoney(s.settlementFees)}`
+                : `${fmtMoney(s.gross)} · ${s.fees === null ? "n/r" : fmtMoney(s.fees)} · ${s.settlementFees === null ? "n/r" : fmtMoney(s.settlementFees)}`
             }
             tone="dim"
             title="Summed over the same loops as the net. Settlement is n/r when any loop's is: some row never recorded it apart, so it stays inside that row's fees."
@@ -175,10 +180,18 @@ export function LiveTodayView({ data: d }: { data: LiveTodayPayload }) {
               <td>{l.ledger === "ok" ? fmtNum(l.entriesToday, 0) : "—"}</td>
               <td title={t?.basis}>{t !== null ? fmtNum(t.trades, 0) : "—"}</td>
               <td>{t !== null ? fmtMoney(t.gross) : "—"}</td>
-              <td>{t !== null ? fmtMoney(t.fees) : "—"}</td>
+              <td title={t !== null && t.fees === null ? `fees recorded on ${t.feesTrades} of ${t.trades} trades resolved today` : undefined}>
+                {t === null ? "—" : t.fees === null ? `n/r (${t.feesTrades} of ${t.trades})` : fmtMoney(t.fees)}
+              </td>
               <td>{t !== null ? settlementWords(t.settlementFees, t.settlementTrades, t.trades) : "—"}</td>
-              <td>
-                <PnlCell v={t?.net ?? null} />
+              <td
+                title={
+                  t !== null && t.net === null
+                    ? `a trade resolved today never recorded its fees, so its net is unknown; ${fmtMoney(t.netRecorded)} over the other ${t.feesTrades}`
+                    : undefined
+                }
+              >
+                {t !== null && t.net === null ? <span className="muted">n/r</span> : <PnlCell v={t?.net ?? null} />}
               </td>
               <td className={l.breaker.tripped === true ? "pnl-neg" : "muted"} title={l.breaker.basis}>
                 {breakerWords(l)}

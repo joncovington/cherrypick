@@ -129,10 +129,11 @@ def readiness(config: dict, *, designated: str | None) -> list[str]:
 
 
 def daily_loss_tripped(db_path: str, day: str, limit_dollars: float | None) -> bool:
-    """The daily-loss breaker over the LIVE ledger: today's net P&L (summed across every
-    status -- a still-open IC with one stopped side already contributes via `_apply_exit_decision`'s
-    running total) at or below -limit halts new entries. Direct query, same style as
-    `paper.py::_profile_day_stats`."""
+    """The daily-loss breaker over the LIVE ledger: today's GROSS P&L, `ic_trades.pnl`, which is
+    before fees on this ledger (fees sit in their own column), summed across every status -- a
+    still-open IC with one stopped side already contributes via `_apply_exit_decision`'s running
+    total -- at or below -limit halts new entries. So it trips on gross, not net. Direct query,
+    same style as `paper.py::_profile_day_stats`."""
     if not limit_dollars:
         return False
     import sqlite3
