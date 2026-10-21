@@ -44,6 +44,22 @@ def test_credit_take_profit_at_half_the_credit():
     assert t["recommendation"]["action"] == ev.TAKE_PROFIT
 
 
+def test_the_payoff_profile_is_stated_as_pnl_to_the_cent():
+    # $1.20 credit on a $5 wide put spread: at expiry it can lose $380 from open and win the $120.
+    t = run([leg(-1, "P", 95, "2026-11-20", 2.00, 0.95), leg(1, "P", 90, "2026-11-20", 0.80, 0.35)])
+    pf = t["profile"]
+    assert pf["max_loss_from_open"] == -380.0 and pf["max_gain_from_open"] == 120.0
+    for k in (
+        "min_value",
+        "max_value",
+        "max_loss_from_open",
+        "max_gain_from_open",
+        "downside_from_now",
+        "upside_from_now",
+    ):
+        assert pf[k] == round(pf[k], 2)
+
+
 def test_credit_stop_when_loss_equals_the_credit():
     # $1.20 credit on a $10 wide spread, now costing $2.40 to close: loss = credit.
     t = run([leg(-1, "P", 100, "2026-11-20", 3.00, 5.40), leg(1, "P", 90, "2026-11-20", 1.80, 3.00)], spot=97)

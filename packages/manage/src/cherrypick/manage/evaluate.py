@@ -285,12 +285,14 @@ def evaluate_trade(
     if spot and expiries and _date(expiries[0]) >= session:
         horizon = max((_date(expiries[0]) - session).days, 0) / 365.0
         profile = pricing.payoff_profile(legs, spot, horizon, pr)
+        # Whole-position dollars to the cent: summing Black-Scholes legs leaves float noise
+        # (-300.00000000000364 for a $300 loss), which every reader would otherwise round itself.
         profile.update(
             horizon=expiries[0],
-            max_loss_from_open=profile["min_value"] - cost,
-            max_gain_from_open=profile["max_value"] - cost,
-            downside_from_now=profile["min_value"] - value,
-            upside_from_now=profile["max_value"] - value,
+            max_loss_from_open=round(profile["min_value"] - cost, 2),
+            max_gain_from_open=round(profile["max_value"] - cost, 2),
+            downside_from_now=round(profile["min_value"] - value, 2),
+            upside_from_now=round(profile["max_value"] - value, 2),
         )
         trade["profile"] = profile
 

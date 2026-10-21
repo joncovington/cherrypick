@@ -86,9 +86,9 @@ def payoff_profile(
     worst = min(range(len(values)), key=values.__getitem__)
     best = max(range(len(values)), key=values.__getitem__)
     return {
-        "min_value": values[worst],
+        "min_value": round(values[worst], 2),
         "min_at": grid[worst],
-        "max_value": values[best],
+        "max_value": round(values[best], 2),
         "max_at": grid[best],
         "unbounded_low": worst == len(values) - 1 and values[-1] < values[-2],
         "unbounded_high": best == len(values) - 1 and values[-1] > values[-2],

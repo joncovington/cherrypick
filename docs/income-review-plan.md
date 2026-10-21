@@ -31,9 +31,8 @@ surfaces, flags and bug-level fixes that land when ready.
   cash-secured in the account, and no covered call was writable (no 100-share lot held).
 - **The credit-spreads tab is the vendor's list** and freezes when that subscription ends (10-24).
 - **Smaller things:** a snapshot older than the code (v11 against v14) leaves wheel and PMCC
-  empty with only a field-level note; payoff extremes print float noise (`-2.8e-13`) and a credit
-  spread's "max gain 0" reads value at expiry, not P&L; the retired flies loop shows in full on
-  Live → today every day.
+  empty with only a field-level note; the stored payoff figures carry float noise
+  (`-300.00000000000364`); the retired flies loop shows in full on Live → today every day.
 
 ## The decisions
 
@@ -51,7 +50,7 @@ surfaces, flags and bug-level fixes that land when ready.
 | 10 | A candidate on a name already held | **Stands alone, badged** when the name already has a position on the *same expiry*. |
 | 11 | Retired loops on Live → today | **Collapsed** to one "off" line when the module is disabled and nothing is open or overdue; expanded again otherwise. |
 | 12 | Snapshot older than the code | **Re-taken on deploy**: when the code's `SNAPSHOT_VERSION` is newer than the latest snapshot's, the supervisor takes one fresh read-only snapshot and re-evaluates. Once per version; the read places nothing. |
-| 13–14 | Payoff profile figures | **Rounded to cents and stated as P&L** from the opening cash (a credit spread: max gain = credit, max loss = width − credit), per the money layout. |
+| 13–14 | Payoff profile figures | **Rounded to cents** where manage computes them. The review read them as value at expiry rather than P&L, but that was the raw `min_value`/`max_value` fields; the positions card already shows P&L from the opening cash (max loss from open, left to win, left to lose). Done. |
 
 ## The boundary for #2 and #3
 
@@ -61,7 +60,7 @@ so no ledger restarts; the boundary is for anyone comparing suggestions across i
 
 ## Order
 
-1. #13–14 profile figures (display only).
+1. #13–14 profile figures (done).
 2. #1 theta band.
 3. #11 retired loops.
 4. #12 snapshot re-take on deploy.

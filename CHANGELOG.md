@@ -11,6 +11,13 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Fixed: manage's payoff figures are whole cents.** The modelled extremes and the P&L read from
+  them (max loss and gain from open, left to win and lose) carried float noise from summing
+  Black-Scholes legs (`-300.00000000000364`), which every reader had to round for itself. They are
+  rounded to the cent where manage computes them. Re-evaluated on this branch and on main, every
+  stored snapshot (10-13 to 10-20) gives the same action, confidence, rule, candidates and guidance;
+  seven oversize reasons now state an exact half-dollar downside rounded to even (`$728`, where the
+  noise made it `$729`).
 - **Fixed: one dropped connection no longer fails the nightly analyst-revisions fetch.** The
   `technicals-revisions` job exited 1 if any single symbol failed, so one timeout among about 1,030
   names raised a WARN (eight on 10-19, one on 10-20). Symbols that fail are now asked once more at the
