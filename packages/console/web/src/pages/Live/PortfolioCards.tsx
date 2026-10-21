@@ -3,8 +3,10 @@ import type { ManageBand, ManageGuidance, ManageGuidanceFigure, ManageHedgeSugge
 import { Card } from "../../components/DataTable";
 import { Bullet } from "../../components/grid/Bullet";
 import { DivergingBars } from "../../components/grid/DivergingBars";
-import { TileGrid } from "../../components/performance/TileGrid";
+import { useColumns } from "../../components/columns";
+import { TileGrid, tileCount } from "../../components/performance/TileGrid";
 import { fmtCash, fmtMoney } from "../../lib/format";
+import { useViewMode } from "../../lib/viewMode";
 import { Tile } from "../Flies/PerformanceTab";
 import { IncomeCard } from "./IncomeCard";
 
@@ -225,6 +227,27 @@ function BreakevenCard({ p }: { p: ManagePortfolio }) {
 }
 
 function StressCard({ p }: { p: ManagePortfolio }) {
+  // The vega tile is the detail view's. No account-type tile (2026-10-21): the income card's caption
+  // already says what kind of account the sizing is for.
+  const framing = useColumns([
+    { key: "bp", node: <Tile key="bp" label="buying power used" value={pctOf(p.buyingPowerUsedPct, 0)} title={fmtMoney(p.buyingPowerUsed)} /> },
+    {
+      key: "vega",
+      detailOnly: true,
+      node: <Tile key="vega" label="vega (30-day weighted)" value={fmtCash(p.vega30)} title="dollars per volatility point, front months weighted up" />,
+    },
+    {
+      key: "em",
+      node: (
+        <Tile
+          key="em"
+          label={`${p.benchmark ?? "SPY"} implied 1-day move`}
+          value={p.expectedMove === null ? "—" : `±${p.expectedMove.toFixed(2)}`}
+          title="points, from its implied volatility index, per calendar day"
+        />
+      ),
+    },
+  ]);
   const tiles = [
     ...p.stress.map((s) => (
       <Tile
@@ -237,21 +260,14 @@ function StressCard({ p }: { p: ManagePortfolio }) {
         }`}
       />
     )),
-    <Tile key="bp" label="buying power used" value={pctOf(p.buyingPowerUsedPct, 0)} title={fmtMoney(p.buyingPowerUsed)} />,
-    <Tile key="vega" label="vega (30-day weighted)" value={fmtCash(p.vega30)} title="dollars per volatility point, front months weighted up" />,
-    <Tile
-      key="em"
-      label={`${p.benchmark ?? "SPY"} implied 1-day move`}
-      value={p.expectedMove === null ? "—" : `±${p.expectedMove.toFixed(2)}`}
-      title="points, from its implied volatility index, per calendar day"
-    />,
-    <Tile key="kind" label="account" value={p.accountKind.typeName ?? p.accountKind.marginOrCash ?? "—"} title={p.accountKind.marginOrCash ?? "kind unknown"} />,
+    ...framing.map((f) => f.node),
   ];
   return (
     <Card title="if the market moves">
-      {/* Six tiles: the two shocks manage writes by default, then four that frame them. A ruleset with
-          other shocks would change the count, so the row is cut to six rather than left ragged. */}
-      <TileGrid count={6}>{tiles.slice(0, 6)}</TileGrid>
+      {/* The two shocks manage writes by default, then the tiles that frame them: five in detail,
+          four in simple. A ruleset with more shocks would lengthen the row, so it is cut to six
+          rather than left ragged. */}
+      <TileGrid count={tileCount(Math.min(tiles.length, 6))}>{tiles.slice(0, 6)}</TileGrid>
       <p className="muted pf-caption">modelled repricing at each name's beta, not a forecast</p>
     </Card>
   );
@@ -501,6 +517,9 @@ function HedgeCard({ p }: { p: ManagePortfolio }) {
  * breakdowns, `scenarios` (ScenarioCards.tsx) and the hedge come after it.
  */
 export function PortfolioCards({ p, scenarios }: { p: ManagePortfolio | null; scenarios?: ReactNode }) {
+  // The broker check (a record of our model against the broker's) and the scenarios (the risk matrix
+  // and graph) are the detail view's (2026-10-21).
+  const detail = useViewMode() === "detail";
   if (!p) return null;
   return (
     <>
@@ -515,8 +534,8 @@ export function PortfolioCards({ p, scenarios }: { p: ManagePortfolio | null; sc
         <ContributionCard p={p} figure="bwd" />
         <ContributionCard p={p} figure="theta" />
       </div>
-      <BrokerCheckCard p={p} />
-      {scenarios}
+      {detail && <BrokerCheckCard p={p} />}
+      {detail && scenarios}
       <HedgeCard p={p} />
       <IncomeCard c={p.candidates} />
     </>

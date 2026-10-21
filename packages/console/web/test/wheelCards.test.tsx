@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ManageAccount, ManageTrade, ManageWheel, ManageWheelCheck, ManageWheelCycle } from "@console/shared";
 import { NO_WHEEL, WheelCards } from "../src/pages/Live/WheelCards";
+import { aligned, inView, tables } from "./viewTables";
 
 /**
  * Live → wheel draws packages/manage's wheel view and decides nothing. The guards: an account with no
@@ -318,5 +319,25 @@ describe("the wheel tab", () => {
     expect(out).toContain("ABC: 2026-10-02 sold 1 2026-11-20 60C, no shares behind it");
     expect(out).not.toContain("DEF:");
     expect(render(account(wheel()))).not.toContain("history outside any cycle");
+  });
+});
+
+/** Live → wheel in the simple and detail views (2026-10-21). */
+describe("the wheel check, simple and detail", () => {
+  const shape = (view: "simple" | "detail") =>
+    tables(inView(view, () => renderToString(<WheelCards a={account(wheel())} />))).find((t) => t.headers.includes("tested"))!;
+
+  it("has no intrinsic column in either view, and keeps the band columns to detail", () => {
+    const simple = shape("simple");
+    const detail = shape("detail");
+    expect(simple.headers).not.toContain("intrinsic (a share)");
+    expect(detail.headers).not.toContain("intrinsic (a share)");
+    for (const h of ["skate band", "strike vs band"]) {
+      expect(simple.headers).not.toContain(h);
+      expect(detail.headers).toContain(h);
+    }
+    expect(simple.headers).toContain("underlying");
+    expect(aligned(simple)).toBe(true);
+    expect(aligned(detail)).toBe(true);
   });
 });

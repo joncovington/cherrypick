@@ -1,5 +1,6 @@
 import type { ManageAccount, ManagePmccPosition, ManagePmccRecognize, ManagePmccRoll, ManageTrade } from "@console/shared";
 import { Card } from "../../components/DataTable";
+import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
 import {
   ActionChip,
@@ -275,48 +276,57 @@ function ShortCheck({ p }: { p: ManagePmccPosition }) {
     s.earnings.inside === null
       ? (s.earnings.why ?? "—")
       : `${s.earnings.date ?? "?"}: ${s.earnings.inside ? "inside its life" : "after it expires"}`;
+  // No intrinsic column (2026-10-21): it is the mid less the extrinsic. The band, the strike against
+  // it and N(d2) explain a roll; they are the detail view's.
+  const cols = useColumns<Column<null>>([
+    {
+      key: "short",
+      label: "short",
+      td: () => (
+        <td>
+          {s.quantity ?? "?"} {s.leg}
+        </td>
+      ),
+    },
+    { key: "dte", label: "dte", td: () => <td>{s.dte ?? "—"}</td> },
+    { key: "spot", label: "underlying", td: () => <td>{px(p.spot)}</td> },
+    { key: "mid", label: "mid (a share)", td: () => <td>{px(s.mid)}</td> },
+    {
+      key: "tested",
+      label: "tested",
+      td: () => (
+        <td>
+          <TestedChip tested={s.tested} />
+        </td>
+      ),
+    },
+    { key: "extrinsic", label: "extrinsic (a share)", td: () => <td>{px(s.extrinsic)}</td> },
+    { key: "band", label: "skate band", detailOnly: true, td: () => <td style={{ whiteSpace: "normal" }}>{bandText(s)}</td> },
+    { key: "beyond", label: "strike vs band", detailOnly: true, td: () => <td>{beyondText(s)}</td> },
+    {
+      key: "assignment",
+      label: "assignment",
+      td: () => (
+        <td style={{ whiteSpace: "normal" }}>
+          <ExposureChip exposed={s.assignment.exposed} />
+          {s.assignment.why ? <span className="muted"> {s.assignment.why}</span> : null}
+        </td>
+      ),
+    },
+    { key: "nd2", label: "N(d2)", detailOnly: true, td: () => <td>{pct(s.probItm)}</td> },
+    { key: "earnings", label: "earnings", td: () => <td style={{ whiteSpace: "normal" }}>{earnings}</td> },
+  ]);
   return (
     <>
       <p className="md-subhead">today's check</p>
       <div className="table-scroll">
         <table className="data-table">
           <thead>
-            <tr>
-              <th>short</th>
-              <th>dte</th>
-              <th>underlying</th>
-              <th>mid (a share)</th>
-              <th>tested</th>
-              <th>intrinsic (a share)</th>
-              <th>extrinsic (a share)</th>
-              <th>skate band</th>
-              <th>strike vs band</th>
-              <th>assignment</th>
-              <th>N(d2)</th>
-              <th>earnings</th>
-            </tr>
+            <HeadRow cols={cols} />
           </thead>
           <tbody>
             <tr>
-              <td>
-                {s.quantity ?? "?"} {s.leg}
-              </td>
-              <td>{s.dte ?? "—"}</td>
-              <td>{px(p.spot)}</td>
-              <td>{px(s.mid)}</td>
-              <td>
-                <TestedChip tested={s.tested} />
-              </td>
-              <td>{px(s.intrinsic)}</td>
-              <td>{px(s.extrinsic)}</td>
-              <td style={{ whiteSpace: "normal" }}>{bandText(s)}</td>
-              <td>{beyondText(s)}</td>
-              <td style={{ whiteSpace: "normal" }}>
-                <ExposureChip exposed={s.assignment.exposed} />
-                {s.assignment.why ? <span className="muted"> {s.assignment.why}</span> : null}
-              </td>
-              <td>{pct(s.probItm)}</td>
-              <td style={{ whiteSpace: "normal" }}>{earnings}</td>
+              <Cells cols={cols} row={null} />
             </tr>
           </tbody>
         </table>

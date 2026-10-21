@@ -1,8 +1,9 @@
 import { Fragment, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ManageAccount, ManageLevel, ManagePayload, ManageTrade } from "@console/shared";
-import { Card, DataCard, sortRows, useSort, type SortHeader } from "../../components/DataTable";
-import { TileGrid } from "../../components/performance/TileGrid";
+import { Card, DataCard, sortRows, useSort } from "../../components/DataTable";
+import { Cells, HeadRow, headersOf, useColumns, type Column } from "../../components/columns";
+import { TileGrid, tileCount } from "../../components/performance/TileGrid";
 import { useOverview } from "../../lib/api";
 import { parseSuiteTs } from "../../lib/etTime";
 import { fmtCash, fmtMoney } from "../../lib/format";
@@ -114,6 +115,7 @@ function TradeDetail({ t }: { t: ManageTrade }) {
   // Entry + close at mid = gross; gross − fees = net. Fees are a cost, shown positive and subtracted once.
   const fees = t.fees === null ? null : Math.abs(t.fees);
   const cashLabel = (v: number | null) => (v !== null && v < 0 ? "net paid in" : "net taken in");
+  const legCols = useColumns(LEG_COLUMNS);
   return (
     <div className="md-detail">
       {t.explanation && <p className="md-lead">{t.explanation}</p>}
@@ -279,28 +281,12 @@ function TradeDetail({ t }: { t: ManageTrade }) {
       <div className="table-scroll">
       <table className="data-table num-from-2">
         <thead>
-          <tr>
-            <th>leg</th>
-            <th>dte</th>
-            <th>open</th>
-            <th>mid</th>
-            <th>capture / return</th>
-            <th>delta</th>
-            <th>iv</th>
-          </tr>
+          <HeadRow cols={legCols} />
         </thead>
         <tbody>
           {t.legs.map((l, i) => (
             <tr key={i}>
-              <td>{l.label}</td>
-              <td>{l.dte ?? "—"}</td>
-              <td>{px(l.openPrice)}</td>
-              <td>{px(l.mid)}</td>
-              <td className={tone(l.capture)}>{pct(l.capture)}</td>
-              <td>{l.delta === null ? "—" : l.delta.toFixed(2)}</td>
-              <td>
-                <IvCell l={l} />
-              </td>
+              <Cells cols={legCols} row={l} />
             </tr>
           ))}
         </tbody>
@@ -309,6 +295,29 @@ function TradeDetail({ t }: { t: ManageTrade }) {
     </div>
   );
 }
+
+type Leg = ManageTrade["legs"][number];
+
+/** An expanded trade's legs: strike, time, mid and delta are what a roll or close turns on; the
+ *  open price, each leg's capture and its IV are the model's working, in the detail view. */
+const LEG_COLUMNS: Column<Leg>[] = [
+  { key: "leg", label: "leg", td: (l) => <td>{l.label}</td> },
+  { key: "dte", label: "dte", td: (l) => <td>{l.dte ?? "—"}</td> },
+  { key: "open", label: "open", detailOnly: true, td: (l) => <td>{px(l.openPrice)}</td> },
+  { key: "mid", label: "mid", td: (l) => <td>{px(l.mid)}</td> },
+  { key: "capture", label: "capture / return", detailOnly: true, td: (l) => <td className={tone(l.capture)}>{pct(l.capture)}</td> },
+  { key: "delta", label: "delta", td: (l) => <td>{l.delta === null ? "—" : l.delta.toFixed(2)}</td> },
+  {
+    key: "iv",
+    label: "iv",
+    detailOnly: true,
+    td: (l) => (
+      <td>
+        <IvCell l={l} />
+      </td>
+    ),
+  },
+];
 
 const IV_TITLE = {
   broker:
@@ -358,27 +367,53 @@ function oversizeMultiple(rules: Record<string, unknown> | null | undefined): nu
   return typeof m === "number" && Number.isFinite(m) ? m : null;
 }
 
-function AccountTiles({ a, oversize }: { a: ManageAccount; oversize: number | null }) {
+export function AccountTiles({ a, oversize }: { a: ManageAccount; oversize: number | null }) {
   const acting = a.trades.filter((t) => !PASSIVE.has(t.action)).length;
   const flagAt = a.riskBudget !== null && oversize !== null ? a.riskBudget * oversize : null;
-  return (
-    <TileGrid count={6}>
-      <Tile label={`net liq · ${a.account ?? "?"}`} value={fmtMoney(a.netLiq)} />
-      <Tile
-        label="per-trade budget"
-        value={fmtMoney(a.riskBudget)}
-        title="risk.max_risk_pct of net liq: the unit a trade's modelled downside from here is measured in"
-      />
-      <Tile
-        label={oversize === null ? "review over" : `review over (${oversize}×)`}
-        value={fmtMoney(flagAt)}
-        title="risk.oversize: a trade is flagged REVIEW when its modelled downside from today's marks exceeds this many budgets"
-      />
-      <Tile label="mark P&L (gross)" value={fmtMoney(a.pnlGross)} tone={a.pnlGross === null ? "dim" : a.pnlGross >= 0 ? "pos" : "neg"} />
-      <Tile label="action needed" value={`${acting} of ${a.trades.length}`} />
-      <Tile label="holding" value={String(a.trades.length - acting)} tone="dim" />
-    </TileGrid>
-  );
+  // The budget and its review line are the ruleset's working, in the detail view. No "holding" count:
+  // it is the holding table's row count. The P&L stays gross because the evaluation writes no
+  // account net (the tables' P&L is each trade's net); the label and hover say so.
+  const tiles = useColumns([
+    { key: "liq", node: <Tile key="liq" label={`net liq · ${a.account ?? "?"}`} value={fmtMoney(a.netLiq)} /> },
+    {
+      key: "budget",
+      detailOnly: true,
+      node: (
+        <Tile
+          key="budget"
+          label="per-trade budget"
+          value={fmtMoney(a.riskBudget)}
+          title="risk.max_risk_pct of net liq: the unit a trade's modelled downside from here is measured in"
+        />
+      ),
+    },
+    {
+      key: "review",
+      detailOnly: true,
+      node: (
+        <Tile
+          key="review"
+          label={oversize === null ? "review over" : `review over (${oversize}×)`}
+          value={fmtMoney(flagAt)}
+          title="risk.oversize: a trade is flagged REVIEW when its modelled downside from today's marks exceeds this many budgets"
+        />
+      ),
+    },
+    {
+      key: "pnl",
+      node: (
+        <Tile
+          key="pnl"
+          label="mark P&L (gross, before fees)"
+          value={fmtMoney(a.pnlGross)}
+          tone={a.pnlGross === null ? "dim" : a.pnlGross >= 0 ? "pos" : "neg"}
+          title="every trade's mark P&L at mid, before fees: the evaluation writes no account-wide net. Each trade's net is in the tables."
+        />
+      ),
+    },
+    { key: "acting", node: <Tile key="acting" label="action needed" value={`${acting} of ${a.trades.length}`} /> },
+  ]);
+  return <TileGrid count={tileCount(tiles.length)}>{tiles.map((t) => t.node)}</TileGrid>;
 }
 
 /** Positions: what to do with each trade today, the actions first. */
@@ -417,6 +452,148 @@ function PortfolioAccount({ a, oversize }: { a: ManageAccount; oversize: number 
 }
 
 /**
+ * The trade tables' columns. `conf.` and `kind` are the detail view's; the holding table has no
+ * `action` column (every row in it is a hold, and its title says so -- an earnings trade's chip sits in
+ * the trade cell). P&L is net of fees in both views (2026-10-21; it was gross, with net only in the
+ * expanded chain); a trade whose fees were never read shows a dash, its gross on hover.
+ */
+function tradeColumns(
+  variant: "act" | "hold",
+  open: string | null,
+  setOpen: (id: string | null) => void,
+): Column<ManageTrade>[] {
+  const head: Column<ManageTrade>[] = [
+    {
+      key: "trade",
+      label: "trade",
+      sort: "trade",
+      td: (t) => (
+        <td>
+          <button
+            type="button"
+            className="btn btn-quiet"
+            aria-expanded={open === t.tradeId}
+            onClick={() => setOpen(open === t.tradeId ? null : t.tradeId)}
+          >
+            {open === t.tradeId ? "▾" : "▸"} {t.tradeId}
+          </button>
+          {t.shape ? <span className="muted"> · {t.shape}</span> : null}
+          {t.intent ? <span className="muted"> · {t.intent}</span> : null}
+          {/* The holding table has no action column; a passive action other than hold (settles)
+              still says so, here. */}
+          {variant === "hold" && t.action !== "HOLD" ? (
+            <>
+              {" "}
+              <ActionChip action={t.action} />
+            </>
+          ) : null}
+          {t.earningsTrade ? (
+            <>
+              {" "}
+              <EarningsChip et={t.earningsTrade} label="earnings" />
+            </>
+          ) : null}
+        </td>
+      ),
+    },
+    ...(variant === "act"
+      ? [
+          {
+            key: "action",
+            label: "action",
+            sort: "action",
+            td: (t: ManageTrade) => (
+              <td>
+                <ActionChip action={t.action} />
+              </td>
+            ),
+          },
+        ]
+      : []),
+    { key: "conf", label: "conf.", sort: "conf", detailOnly: true, td: (t) => <td style={RIGHT}>{t.confidence ?? "—"}</td> },
+    { key: "kind", label: "kind", sort: "kind", detailOnly: true, td: (t) => <td>{t.kind ?? "—"}</td> },
+    {
+      key: "pnl",
+      label: "P&L (net)",
+      sort: "pnl",
+      title: "mark P&L at mid less the fees paid",
+      td: (t) => (
+        <td
+          className={tone(t.pnlNet)}
+          style={RIGHT}
+          title={t.pnlNet === null ? `fees not read, so no net; gross ${fmtMoney(t.pnlGross)}` : `gross ${fmtMoney(t.pnlGross)}`}
+        >
+          {fmtMoney(t.pnlNet)}
+        </td>
+      ),
+    },
+    {
+      key: "capture",
+      label: "capture / return",
+      sort: "capture",
+      td: (t) => (
+        <td className={tone(t.capture)} style={RIGHT}>
+          {pct(t.capture)}
+        </td>
+      ),
+    },
+    { key: "dte", label: "short dte", sort: "dte", td: (t) => <td style={RIGHT}>{t.nearestShortDte ?? "—"}</td> },
+    {
+      key: "earnings",
+      label: "earnings",
+      sort: "earnings",
+      title: "sorts by days to the announcement",
+      td: (t) => <td>{t.earnings ? `${t.earnings.date}${daysText(t.earnings.days)}` : "—"}</td>,
+    },
+  ];
+  if (variant === "act") {
+    return [
+      ...head,
+      {
+        key: "reason",
+        label: "reason",
+        td: (t) => (
+          <td style={{ whiteSpace: "normal", minWidth: "18rem" }}>
+            {t.reason}
+            {t.conflicts.length > 0 ? <span className="muted"> · conflicts: {t.conflicts.join(", ")}</span> : null}
+          </td>
+        ),
+      },
+    ];
+  }
+  const waits = (
+    <td className="muted" style={RIGHT} title={HELD_TITLE}>
+      waits for call
+    </td>
+  );
+  return [
+    ...head,
+    {
+      key: "tp",
+      label: "take profit",
+      sort: "tp",
+      td: (t) => (heldForCall(t) ? waits : <td style={RIGHT}>{net(t.takeProfit?.netPrice ?? null, t.takeProfit?.netSide ?? null)}</td>),
+    },
+    {
+      key: "stop",
+      label: "stop",
+      sort: "stop",
+      td: (t) => (heldForCall(t) ? waits : <td style={RIGHT}>{net(t.stop?.netPrice ?? null, t.stop?.netSide ?? null)}</td>),
+    },
+    {
+      key: "timeExit",
+      label: "time exit",
+      td: (t) => (
+        <td title={t.earningsTrade ? HELD_TITLE : undefined}>
+          {t.timeExit ?? "—"}
+          {t.earningsTrade ? <span className="muted"> · after call</span> : null}
+        </td>
+      ),
+    },
+  ];
+}
+
+/**
  * One table of trades. `act` rows carry the rule's reason; `hold` rows carry the levels the trade is
  * waiting on instead, since "no rule fired" is the same sentence on every one of them.
  */
@@ -435,15 +612,14 @@ export function TradesCard({
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const sort = useSort();
-  const tail: Array<string | SortHeader> =
-    variant === "act" ? ["reason"] : [{ label: "take profit", k: "tp" }, { label: "stop", k: "stop" }, "time exit"];
+  const cols = useColumns(tradeColumns(variant, open, setOpen));
   // Each trade's detail row is rendered inside its own Fragment, so it follows its trade through a sort.
   const rows = sortRows(trades, sort, {
     trade: (t) => t.tradeId,
     action: (t) => ACTION_PRIORITY[t.action] ?? 9,
     conf: (t) => t.confidence,
     kind: (t) => t.kind,
-    pnl: (t) => t.pnlGross,
+    pnl: (t) => t.pnlNet,
     capture: (t) => t.capture,
     dte: (t) => t.nearestShortDte,
     earnings: (t) => t.earnings?.days ?? null,
@@ -453,17 +629,7 @@ export function TradesCard({
   return (
     <DataCard
       title={title}
-      headers={[
-        { label: "trade", k: "trade" },
-        { label: "action", k: "action" },
-        { label: "conf.", k: "conf" },
-        { label: "kind", k: "kind" },
-        { label: "mark P&L (gross)", k: "pnl" },
-        { label: "capture / return", k: "capture" },
-        { label: "short dte", k: "dte" },
-        { label: "earnings", k: "earnings", title: "sorts by days to the announcement" },
-        ...tail,
-      ]}
+      headers={headersOf(cols)}
       sort={sort}
       loading={loading}
       rowCount={trades.length}
@@ -472,65 +638,11 @@ export function TradesCard({
       {rows.map((t) => (
         <Fragment key={t.tradeId}>
           <tr>
-            <td>
-              <button
-                type="button"
-                className="btn btn-quiet"
-                aria-expanded={open === t.tradeId}
-                onClick={() => setOpen(open === t.tradeId ? null : t.tradeId)}
-              >
-                {open === t.tradeId ? "▾" : "▸"} {t.tradeId}
-              </button>
-              {t.shape ? <span className="muted"> · {t.shape}</span> : null}
-              {t.intent ? <span className="muted"> · {t.intent}</span> : null}
-              {t.earningsTrade ? (
-                <>
-                  {" "}
-                  <EarningsChip et={t.earningsTrade} label="earnings" />
-                </>
-              ) : null}
-            </td>
-            <td>
-              <ActionChip action={t.action} />
-            </td>
-            <td style={RIGHT}>{t.confidence ?? "—"}</td>
-            <td>{t.kind ?? "—"}</td>
-            <td className={tone(t.pnlGross)} style={RIGHT}>{fmtMoney(t.pnlGross)}</td>
-            <td className={tone(t.capture)} style={RIGHT}>{pct(t.capture)}</td>
-            <td style={RIGHT}>{t.nearestShortDte ?? "—"}</td>
-            <td>{t.earnings ? `${t.earnings.date}${daysText(t.earnings.days)}` : "—"}</td>
-            {variant === "act" ? (
-              <td style={{ whiteSpace: "normal", minWidth: "18rem" }}>
-                {t.reason}
-                {t.conflicts.length > 0 ? <span className="muted"> · conflicts: {t.conflicts.join(", ")}</span> : null}
-              </td>
-            ) : (
-              <>
-                {heldForCall(t) ? (
-                  <>
-                    <td className="muted" style={RIGHT} title={HELD_TITLE}>
-                      waits for call
-                    </td>
-                    <td className="muted" style={RIGHT} title={HELD_TITLE}>
-                      waits for call
-                    </td>
-                  </>
-                ) : (
-                  <>
-                    <td style={RIGHT}>{net(t.takeProfit?.netPrice ?? null, t.takeProfit?.netSide ?? null)}</td>
-                    <td style={RIGHT}>{net(t.stop?.netPrice ?? null, t.stop?.netSide ?? null)}</td>
-                  </>
-                )}
-                <td title={t.earningsTrade ? HELD_TITLE : undefined}>
-                  {t.timeExit ?? "—"}
-                  {t.earningsTrade ? <span className="muted"> · after call</span> : null}
-                </td>
-              </>
-            )}
+            <Cells cols={cols} row={t} />
           </tr>
           {open === t.tradeId && (
             <tr>
-              <td colSpan={8 + tail.length}>
+              <td colSpan={cols.length}>
                 <TradeDetail t={t} />
               </td>
             </tr>
@@ -565,7 +677,7 @@ const VIEW_TITLE = { positions: "position evaluation", portfolio: "portfolio", w
 
 /** What each tab's money is, for the header: the tabs do not share one P&L figure. */
 const VIEW_MONEY: Record<keyof typeof VIEW_TITLE, string> = {
-  positions: "table P&L is gross (net of fees is in each trade's chain)",
+  positions: "table P&L is net of fees (the header's mark P&L is gross)",
   portfolio: "mark P&L is gross; the stress and income figures are modelled",
   wheel: "a cycle's P&L net is after fees; its option and stock P&L are gross",
   pmcc: "P&L if assigned is shown gross and net of fees; the skate yield is net",

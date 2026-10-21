@@ -520,7 +520,8 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
       { label: "tables", ids: ["birdseye", "trades", "spreads", "voloi"] },
     ],
   },
-  live: { slides: LIVE_SLIDES, legacy: { manage: "positions" } },
+  // Simple leaves out flies (2026-10-21): the module is retired, and its live tab is its history.
+  live: { slides: LIVE_SLIDES, simple: ["today", "positions", "portfolio", "wheel", "pmcc", "meic"], legacy: { manage: "positions" } },
   charts: { slides: CHARTS_SLIDES },
   screeners: {
     slides: SCREENERS_SLIDES,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ManageTrade } from "@console/shared";
 import { TradesCard } from "../src/pages/Live/ManagePage";
+import { aligned, inView, tables } from "./viewTables";
 
 /**
  * The held-for-call chip and "waits for call" are packages/manage's `earnings_trade` verdict, read and
@@ -83,5 +84,46 @@ describe("the held-for-call chip on the positions table", () => {
     expect(html).not.toContain("after call");
     expect(html).toContain("5.60");
     expect(html).toContain("1.40");
+  });
+});
+
+/** Live → positions in the simple and detail views (2026-10-21). */
+describe("the positions tables, simple and detail", () => {
+  const card = (variant: "act" | "hold", t: ManageTrade) =>
+    renderToString(<TradesCard title={variant} trades={[t]} loading={false} empty="none" variant={variant} />);
+  const act = trade({ action: "CLOSE", reason: "stop hit", pnlGross: -57, pnlNet: -59.6, fees: -2.6 });
+
+  it("hides conf. and kind in simple, keeps them in detail, and every row stays under its headers", () => {
+    for (const variant of ["act", "hold"] as const) {
+      const simple = tables(inView("simple", () => card(variant, act)))[0]!;
+      const detail = tables(inView("detail", () => card(variant, act)))[0]!;
+      expect(simple.headers).not.toContain("conf.");
+      expect(simple.headers).not.toContain("kind");
+      expect(detail.headers).toEqual(expect.arrayContaining(["conf.", "kind"]));
+      expect(aligned(simple)).toBe(true);
+      expect(aligned(detail)).toBe(true);
+    }
+  });
+
+  it("the holding table has no action column in either view; action needed keeps it", () => {
+    for (const view of ["simple", "detail"] as const) {
+      expect(tables(inView(view, () => card("hold", trade({}))))[0]!.headers).not.toContain("action");
+      expect(tables(inView(view, () => card("act", act)))[0]!.headers).toContain("action");
+    }
+  });
+
+  it("a settling trade in the holding table still says so, in its trade cell", () => {
+    expect(text(card("hold", trade({ action: "SETTLES" })))).toContain("settles");
+  });
+
+  it("shows P&L net of fees in both views, and a dash (never the gross) where fees were not read", () => {
+    for (const view of ["simple", "detail"] as const) {
+      const html = inView(view, () => card("act", act));
+      expect(tables(html)[0]!.headers).toContain("P&L (net)");
+      expect(tables(html)[0]!.headers).not.toContain("mark P&L (gross)");
+      expect(text(html)).toContain("-$59.60");
+    }
+    const unread = text(card("hold", trade({ pnlGross: -57, pnlNet: null })));
+    expect(unread).not.toContain("-$57.00");
   });
 });

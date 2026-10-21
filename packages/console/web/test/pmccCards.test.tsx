@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ManageAccount, ManagePmcc, ManagePmccPosition, ManageTrade } from "@console/shared";
 import { NO_PMCC, PmccCards } from "../src/pages/Live/PmccCards";
+import { aligned, inView, tables } from "./viewTables";
 
 /**
  * Live → pmcc draws packages/manage's PMCC view and decides nothing. The guards: an account with no
@@ -330,5 +331,25 @@ describe("the pmcc tab", () => {
     const html = renderToString(<PmccCards a={account(view())} />);
     expect(html).toContain("<th>underlying</th>");
     expect(html).not.toContain("<th>price</th>");
+  });
+});
+
+/** Live → pmcc in the simple and detail views (2026-10-21). */
+describe("the pmcc check, simple and detail", () => {
+  const shape = (mode: "simple" | "detail") =>
+    tables(inView(mode, () => renderToString(<PmccCards a={account(view())} />))).find((t) => t.headers.includes("assignment"))!;
+
+  it("has no intrinsic column in either view, and keeps the band and N(d2) to detail", () => {
+    const simple = shape("simple");
+    const detail = shape("detail");
+    expect(simple.headers).not.toContain("intrinsic (a share)");
+    expect(detail.headers).not.toContain("intrinsic (a share)");
+    for (const h of ["skate band", "strike vs band", "N(d2)"]) {
+      expect(simple.headers).not.toContain(h);
+      expect(detail.headers).toContain(h);
+    }
+    expect(simple.headers).toContain("underlying");
+    expect(aligned(simple)).toBe(true);
+    expect(aligned(detail)).toBe(true);
   });
 });

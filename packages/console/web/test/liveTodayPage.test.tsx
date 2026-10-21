@@ -3,6 +3,7 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { LiveTodayLoop, LiveTodayPayload } from "@console/shared";
 import { LiveTodayView, suiteBadgeText } from "../src/pages/Live/LiveTodayPage";
+import { aligned, inView, tables } from "./viewTables";
 
 /**
  * The Live page's `today` tab. Pinned: a quiet day says plainly that nothing needs a person; an
@@ -136,5 +137,37 @@ describe("the suite badge", () => {
   it("counts the loops armed now and names the halt flag", () => {
     expect(suiteBadgeText(payload())).toBe("none armed");
     expect(suiteBadgeText(payload({ halted: true, suite: { ...payload().suite, armed: ["flies", "meic"] } }))).toBe("2 armed · HALTED");
+  });
+});
+
+/** Live → today in the simple and detail views (2026-10-21). */
+describe("the loops table, simple and detail", () => {
+  const shape = (view: "simple" | "detail", d: LiveTodayPayload) => tables(inView(view, () => render(d)))[0]!;
+
+  it("names the loop's state `state`, and keeps the gate, the counts and the net's parts to detail", () => {
+    const simple = shape("simple", payload());
+    const detail = shape("detail", payload());
+    expect(simple.headers.filter((h) => h === "loop")).toHaveLength(1);
+    expect(detail.headers.filter((h) => h === "loop")).toHaveLength(1);
+    expect(simple.headers).toContain("state");
+    for (const h of ["gate · symbol", "entries", "resolved", "gross", "fees", "settlement", "working"]) {
+      expect(simple.headers).not.toContain(h);
+      expect(detail.headers).toContain(h);
+    }
+    expect(simple.headers).toEqual(expect.arrayContaining(["arm", "open", "worst case", "mark", "net", "loss breaker"]));
+    expect(aligned(simple)).toBe(true);
+    expect(aligned(detail)).toBe(true);
+  });
+
+  it("shows `working` in simple too whenever a loop has an order working", () => {
+    const d = payload({ loops: [loop("flies"), loop("meic", { working: 1 }), loop("bwb")] });
+    expect(shape("simple", d).headers).toContain("working");
+    expect(aligned(shape("simple", d))).toBe(true);
+  });
+
+  it("a retired loop's folded line spans the simple view's columns", () => {
+    const d = payload({ loops: [loop("flies", { moduleEnabled: false, retired: true }), loop("meic")] });
+    expect(aligned(shape("simple", d))).toBe(true);
+    expect(aligned(shape("detail", d))).toBe(true);
   });
 });

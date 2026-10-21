@@ -1293,6 +1293,36 @@ select.text-input {
   }
 }
 
+/* Rows the simple view shortens (2026-10-21): three, four and five tiles. Each steps only to a
+   column count that divides it, so a narrow card stacks them (in two columns, for four) rather
+   than leaving a half row. */
+.stats-grid.tile-grid-3,
+.stats-grid.tile-grid-5 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.stats-grid.tile-grid-4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container (min-width: 27rem) {
+  .stats-grid.tile-grid-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 36rem) {
+  .stats-grid.tile-grid-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 45rem) {
+  .stats-grid.tile-grid-5 {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
 @container (min-width: 54rem) {
   .stats-grid.tile-grid-6,
   .stats-grid.tile-grid-12 {

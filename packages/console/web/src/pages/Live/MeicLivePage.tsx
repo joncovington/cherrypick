@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { LiveMeicOpenRow, LiveMeicPayload } from "@console/shared";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
+import { Cells, headersOf, useColumns, type Column } from "../../components/columns";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { HistoryTable } from "../../components/table/HistoryTable";
 import { fmtCash, fmtPrice } from "../../lib/format";
@@ -48,6 +49,73 @@ function state(r: LiveMeicOpenRow): string {
   return r.overdue ? `${r.status} · overdue` : r.status;
 }
 
+/**
+ * The open condors' columns. Live trades one pinned symbol on one arm, on today's date, so `date`,
+ * `sym` and `arm` never vary and are the detail view's; an overdue row still says so in its state.
+ */
+export const OPEN_COLUMNS: Column<LiveMeicOpenRow>[] = [
+  { key: "date", label: "date", detailOnly: true, td: (r) => <td className={r.overdue ? "pnl-neg" : ""}>{r.tradeDate}</td> },
+  { key: "time", label: "time", td: (r) => <td className="muted">{hhmmOf(r.entryTime)}</td> },
+  { key: "sym", label: "sym", detailOnly: true, td: (r) => <td>{r.symbol}</td> },
+  { key: "arm", label: "arm", detailOnly: true, td: (r) => <td className="muted">{r.arm ?? "—"}</td> },
+  { key: "put", label: "put", td: (r) => <td>{fmtNum(r.putStrike, 0)}</td> },
+  { key: "call", label: "call", td: (r) => <td>{fmtNum(r.callStrike, 0)}</td> },
+  { key: "wing", label: "wing", td: (r) => <td>{fmtNum(r.wingWidth, 0)}</td> },
+  { key: "qty", label: "qty", td: (r) => <td>{fmtNum(r.quantity, 0)}</td> },
+  {
+    key: "price",
+    label: "price",
+    td: (r) => (
+      <td title={r.working ? "the limit asked — the order has not filled" : "net entry price per share, from the broker's fill"}>
+        {r.working ? `limit ${fmtPrice(r.netCredit)}` : fmtPrice(r.netCredit)}
+      </td>
+    ),
+  },
+  {
+    key: "entry",
+    label: "entry",
+    td: (r) => (
+      <td title={r.working ? "a working order has taken in nothing yet" : "entry cash flow for the whole position: + received"}>
+        {fmtCash(r.entryCash)}
+      </td>
+    ),
+  },
+  {
+    key: "state",
+    label: "state",
+    td: (r) => (
+      <td className={r.overdue ? "pnl-neg" : ""} title={r.fillConfirmedAt !== null ? `fill confirmed ${r.fillConfirmedAt}` : undefined}>
+        {state(r)}
+      </td>
+    ),
+  },
+  {
+    key: "sides",
+    label: "sides held",
+    td: (r) => <td title="a side with a recorded close cost is closed; 'closing' is a close order working at the broker">{sides(r)}</td>,
+  },
+];
+
+/** One row of the orphaned and held orders: an orphan, an unresolved submission or an unrecorded fill. */
+export interface AttentionRow {
+  key: string;
+  kind: string;
+  order: string;
+  status: string;
+  quietStatus: boolean;
+  symbol: string;
+  ext: string;
+}
+
+/** The external id is the detail view's: the order id and status are what a person acts on. */
+export const ORDER_COLUMNS: Column<AttentionRow>[] = [
+  { key: "kind", label: "kind", td: (r) => <td className="pnl-neg">{r.kind}</td> },
+  { key: "order", label: "order", td: (r) => <td>{r.order}</td> },
+  { key: "status", label: "status", td: (r) => <td className={r.quietStatus ? "muted" : undefined}>{r.status}</td> },
+  { key: "symbol", label: "symbol", td: (r) => <td>{r.symbol}</td> },
+  { key: "ext", label: "external id", detailOnly: true, td: (r) => <td className="muted">{r.ext}</td> },
+];
+
 function armLabel(d: LiveMeicPayload): { value: string; tone?: "pos" | "neg" | "dim" } {
   const a = d.arm;
   if (a.armed && a.pastDisarm) return { value: "armed · past disarm", tone: "dim" };
@@ -62,6 +130,8 @@ export function MeicLivePage() {
   const health = d?.brokerHealth ?? null;
   const heldCount = d !== undefined ? d.held.unresolved.length + d.held.unrecorded.length : 0;
   const t = d?.totals;
+  const openCols = useColumns(OPEN_COLUMNS);
+  const orderCols = useColumns(ORDER_COLUMNS);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
@@ -129,36 +199,40 @@ export function MeicLivePage() {
       {d && (d.orphans.orders.length > 0 || heldCount > 0) && (
         <DataCard
           title="orphaned and held orders"
-          headers={["kind", "order", "status", "symbol", "external id"]}
+          headers={headersOf(orderCols)}
           loading={false}
           isError={isError}
           rowCount={d.orphans.orders.length + heldCount}
         >
-          {d.orphans.orders.map((o, i) => (
-            <tr key={`o-${i}`}>
-              <td className="pnl-neg">orphan</td>
-              <td>{o.orderId ?? "—"}</td>
-              <td>{o.status ?? "—"}</td>
-              <td>{o.underlyingSymbol ?? "—"}</td>
-              <td className="muted">{o.externalIdentifier ?? "—"}</td>
-            </tr>
-          ))}
-          {d.held.unresolved.map((ext) => (
-            <tr key={`u-${ext}`}>
-              <td className="pnl-neg">unresolved</td>
-              <td>—</td>
-              <td className="muted">no broker answer</td>
-              <td>—</td>
-              <td className="muted">{ext}</td>
-            </tr>
-          ))}
-          {d.held.unrecorded.map((u) => (
-            <tr key={`r-${u.ext}`}>
-              <td className="pnl-neg">unrecorded</td>
-              <td>{u.orderId}</td>
-              <td className="muted">filled, not in the ledger</td>
-              <td>—</td>
-              <td className="muted">{u.ext}</td>
+          {[
+            ...d.orphans.orders.map(
+              (o, i): AttentionRow => ({
+                key: `o-${i}`,
+                kind: "orphan",
+                order: o.orderId ?? "—",
+                status: o.status ?? "—",
+                quietStatus: false,
+                symbol: o.underlyingSymbol ?? "—",
+                ext: o.externalIdentifier ?? "—",
+              }),
+            ),
+            ...d.held.unresolved.map(
+              (ext): AttentionRow => ({ key: `u-${ext}`, kind: "unresolved", order: "—", status: "no broker answer", quietStatus: true, symbol: "—", ext }),
+            ),
+            ...d.held.unrecorded.map(
+              (u): AttentionRow => ({
+                key: `r-${u.ext}`,
+                kind: "unrecorded",
+                order: String(u.orderId),
+                status: "filled, not in the ledger",
+                quietStatus: true,
+                symbol: "—",
+                ext: u.ext,
+              }),
+            ),
+          ].map((r) => (
+            <tr key={r.key}>
+              <Cells cols={orderCols} row={r} />
             </tr>
           ))}
         </DataCard>
@@ -166,8 +240,8 @@ export function MeicLivePage() {
 
       <DataCard
         title={`Open — ${d?.open.length ?? 0} live iron condor${d?.open.length === 1 ? "" : "s"}`}
-        headers={["date", "time", "sym", "arm", "put", "call", "wing", "qty", "price", "entry", "state", "sides held"]}
-        numFrom={4}
+        headers={headersOf(openCols)}
+        numFrom={openCols.findIndex((c) => c.key === "put")}
         loading={isLoading}
         isError={isError}
         rowCount={d?.open.length ?? 0}
@@ -176,22 +250,7 @@ export function MeicLivePage() {
       >
         {d?.open.map((r) => (
           <tr key={r.id} className={r.working ? "muted" : ""}>
-            <td className={r.overdue ? "pnl-neg" : ""}>{r.tradeDate}</td>
-            <td className="muted">{hhmmOf(r.entryTime)}</td>
-            <td>{r.symbol}</td>
-            <td className="muted">{r.arm ?? "—"}</td>
-            <td>{fmtNum(r.putStrike, 0)}</td>
-            <td>{fmtNum(r.callStrike, 0)}</td>
-            <td>{fmtNum(r.wingWidth, 0)}</td>
-            <td>{fmtNum(r.quantity, 0)}</td>
-            <td title={r.working ? "the limit asked — the order has not filled" : "net entry price per share, from the broker's fill"}>
-              {r.working ? `limit ${fmtPrice(r.netCredit)}` : fmtPrice(r.netCredit)}
-            </td>
-            <td title={r.working ? "a working order has taken in nothing yet" : "entry cash flow for the whole position: + received"}>
-              {fmtCash(r.entryCash)}
-            </td>
-            <td title={r.fillConfirmedAt !== null ? `fill confirmed ${r.fillConfirmedAt}` : undefined}>{state(r)}</td>
-            <td title="a side with a recorded close cost is closed; 'closing' is a close order working at the broker">{sides(r)}</td>
+            <Cells cols={openCols} row={r} />
           </tr>
         ))}
       </DataCard>

@@ -9,6 +9,7 @@ import type {
   ManageWheelRolls,
 } from "@console/shared";
 import { Card } from "../../components/DataTable";
+import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
 import {
   ActionChip,
@@ -128,51 +129,74 @@ function CycleYield({ c }: { c: ManageWheelCycle }) {
 
 /* ------------------------------------------------------------------ today's check */
 
+/** Today's check on each short. No intrinsic column (2026-10-21): it is the mid less the extrinsic,
+ *  both shown. The band and where the strike sits against it are the reasoning behind "tested", in
+ *  the detail view. */
+const CHECK_COLUMNS: Column<ManageWheelCheck>[] = [
+  {
+    key: "short",
+    label: "short",
+    td: (r) => (
+      <td>
+        {r.quantity ?? "?"} {r.leg}
+      </td>
+    ),
+  },
+  { key: "dte", label: "dte", td: (r) => <td>{r.dte ?? "—"}</td> },
+  { key: "spot", label: "underlying", td: (r) => <td>{px(r.spot)}</td> },
+  { key: "mid", label: "mid (a share)", td: (r) => <td>{px(r.mid)}</td> },
+  {
+    key: "tested",
+    label: "tested",
+    td: (r) => (
+      <td>
+        <TestedChip tested={r.tested} />
+      </td>
+    ),
+  },
+  {
+    key: "extrinsic",
+    label: "extrinsic",
+    td: (r) => (
+      <td>
+        {px(r.extrinsic)} a share · {fmtMoney(r.extrinsicDollars)}
+      </td>
+    ),
+  },
+  { key: "band", label: "skate band", detailOnly: true, td: (r) => <td style={{ whiteSpace: "normal" }}>{bandText(r)}</td> },
+  { key: "beyond", label: "strike vs band", detailOnly: true, td: (r) => <td>{beyondText(r)}</td> },
+  {
+    key: "btc",
+    label: "resting buy-to-close",
+    td: (r) => (
+      <td>
+        {r.restingBtc.length === 0
+          ? "none resting"
+          : r.restingBtc.map((o) => `${px(o.price)} × ${o.quantity ?? "?"}${o.timeInForce ? ` ${o.timeInForce}` : ""}`).join(", ")}
+      </td>
+    ),
+  },
+  {
+    key: "underBtc",
+    label: "mark at or under it",
+    td: (r) => <td>{r.btcPrice === null ? "—" : yesNo(r.markAtOrUnderBtc, "at or under", "above")}</td>,
+  },
+];
+
 function TodayCheck({ rows }: { rows: ManageWheelCheck[] }) {
+  const cols = useColumns(CHECK_COLUMNS);
   return (
     <>
       <p className="md-subhead">today's check</p>
       <div className="table-scroll">
         <table className="data-table">
           <thead>
-            <tr>
-              <th>short</th>
-              <th>dte</th>
-              <th>underlying</th>
-              <th>mid (a share)</th>
-              <th>tested</th>
-              <th>intrinsic (a share)</th>
-              <th>extrinsic</th>
-              <th>skate band</th>
-              <th>strike vs band</th>
-              <th>resting buy-to-close</th>
-              <th>mark at or under it</th>
-            </tr>
+            <HeadRow cols={cols} />
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.symbol}>
-                <td>
-                  {r.quantity ?? "?"} {r.leg}
-                </td>
-                <td>{r.dte ?? "—"}</td>
-                <td>{px(r.spot)}</td>
-                <td>{px(r.mid)}</td>
-                <td>
-                  <TestedChip tested={r.tested} />
-                </td>
-                <td>{px(r.intrinsic)}</td>
-                <td>
-                  {px(r.extrinsic)} a share · {fmtMoney(r.extrinsicDollars)}
-                </td>
-                <td style={{ whiteSpace: "normal" }}>{bandText(r)}</td>
-                <td>{beyondText(r)}</td>
-                <td>
-                  {r.restingBtc.length === 0
-                    ? "none resting"
-                    : r.restingBtc.map((o) => `${px(o.price)} × ${o.quantity ?? "?"}${o.timeInForce ? ` ${o.timeInForce}` : ""}`).join(", ")}
-                </td>
-                <td>{r.btcPrice === null ? "—" : yesNo(r.markAtOrUnderBtc, "at or under", "above")}</td>
+                <Cells cols={cols} row={r} />
               </tr>
             ))}
           </tbody>
