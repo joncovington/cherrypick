@@ -734,6 +734,13 @@ of the credit helps. Declared here before any of it is run.*
     seed. Two, not five, to bound the daily-mark fetch below.
   - **Excluded,** as item 14: an earnings report between entry and expiry, a suspected unadjusted
     split. No ex-dividend exclusion for puts.
+  - **Universe (amended 2026-10-21, before any of it was run):** **single-name stocks only** -- every
+    signal on a name `history.db` does not list as a fund (`listings.is_etf`). That is 285 names and
+    736 signal trades in the deciding window before the structure's own drops, against 1,101 with the
+    funds. Funds are left out because the user trades credit spreads on single names and on a few
+    funds of their own (item 16), and because a mean-reversion long on an inverse fund is a short.
+    GLD, SLV, GDX and GDXJ, which do clear the signal's liquidity rule, are reported as one row of
+    their own (12 signals in the window: never a verdict).
 - **Structure (one rule for every cell):**
   - **Expiry:** the latest standard monthly 45 to 60 days after entry; no trade when there is none.
   - **Short:** the out-of-the-money put nearest **0.20, 0.30 or 0.40** delta (three cells).
@@ -783,6 +790,48 @@ of the credit helps. Declared here before any of it is run.*
   and its two baselines, and the 200 sampled trades' daily chains, are a new fetch into the same store
   (`fetch-chains`), run only while no other session holds the ThetaData login. Results under
   `~/.cherrypick`, never in this repo.
+
+### 16. Put credit spreads on the funds the user trades: precious metals and bitcoin
+
+*Source: the income review (2026-10-21). The user's own credit spreads are, beyond single names,
+GLD, GDX, SLV, GDXJ, SIL and SILJ, and IBIT now and then. `mr-300m` fires on them 12 times in five
+years and never on SIL or SILJ (about $15M a day, against its $300M rule), and precious metals trend
+rather than revert. So this asks the premium question directly, with no signal. Declared before any
+of it is run.*
+
+- **Question:** on each of these funds, is a put credit spread worth its risk after costs, and with
+  which short strike and which exit? The expectation, from the short-put delta studies, is "least bad,
+  not edge"; this measures it on the funds actually traded.
+- **Funds and what decides each:**
+  - **Precious metals:** GLD, SLV, GDX, GDXJ, SIL, SILJ, each decided on its own.
+  - **Bitcoin:** **BITO** (options from 2021-10) decides; its futures-roll drag makes it a
+    conservative stand-in for a short put. **IBIT** (options from 2024-11, about seven monthly cycles
+    before the window ends) is reported, never decided. The holdout after 2025-06-30 may be opened
+    for IBIT alone later, under these same rules, once it has enough cycles.
+- **Entries:** every Monday (or the next session when Monday is a holiday) on which a standard monthly
+  expires 45 to 60 days later, entering at that session's close on its quotes. No signal and no
+  baseline: overlapping trades on one expiry are handled by clustering t by expiry date.
+- **Structure, exits and costs:** exactly item 15's -- shorts at 0.20, 0.30 and 0.40 delta, the long
+  at half the short's delta, no credit-share floor; hold to expiry against close at 50% of the credit
+  else at 21 days; working-price fills, `core.fees`, $5 per leg settled in the money; early
+  assignment not modelled.
+- **Marks:** **real** end-of-day chains for every session of every trade. The universe is small
+  enough to fetch them all, so no model is needed here.
+- **Window:** 2020-01-22 to 2025-06-30 (BITO from its first listed monthly), halves split at its
+  midpoint.
+- **Reported per fund and cell:** item 15's figures (net and credit as a share of max loss, win rate,
+  50%-hit rate and sessions to it, what the early close gave up, worst trade, cost drag, fit by
+  budget), plus the leg bars' pass rate on entry quotes, which says whether SIL's and SILJ's chains can
+  be filled near the mid at all.
+- **Passes if,** for a fund and cell: the mean net per trade as a share of max loss is positive with a
+  one-sided t above 2 (clustered by expiry) in **both** halves, surviving Holm across that fund's six
+  cells. Fewer than 40 trades in a half is no verdict.
+- **Decides:** a passing cell becomes the rule manage and the Screeners lists use for that fund's put
+  spreads. A fund with no passing cell keeps "no tested edge" at its least-bad cell, which the report
+  names.
+- **Data:** a new fetch into item 14's store (`fetch-chains`): every entry session's chain and every
+  later session's chain for each trade's expiry, about 70 monthly expiries a fund. Run only while no
+  other session holds the ThetaData login. Results under `~/.cherrypick`, never in this repo.
 
 ## Not worth revisiting
 
