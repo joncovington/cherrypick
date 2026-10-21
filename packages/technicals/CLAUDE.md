@@ -242,8 +242,10 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   - **Spread:** the navigator spread, as target strikes.
   - **Sector:** the vendor's map where it has the name, else Yahoo's (`scripts/fetch_sectors.py`,
     `paths.yahoo_sectors`), relabelled to the vendor's names (it agreed on all 120 names sampled,
-    2026-10-17). `sector_source` says which. The market report's sector measures keep the vendor's
-    map alone.
+    2026-10-17). `sector_source` says which. The market report's sector measures use the same
+    fallback since 2026-10-20 (`report._sectors`), so a universe name the vendor's map never saw
+    still has a sector after the subscription ends; `fetch_sectors.py` asks for every universe
+    candidate too.
   - **Checked against the vendor's page** for Oct 20-21, while its reads still led: its 12 names,
     same date, direction and strength; moves within 0.42 points on average. History found no edge in
     the spread.

@@ -12,13 +12,12 @@ Record-only, like every market-report reading: it feeds no gate, no sizing and n
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from typing import Any
 
 from cherrypick.core import jsonio as _jsonio
 
-from . import levels, liquidity, paths, rotation, signals, stage, store, symbols, trend
+from . import fundamentals, levels, liquidity, paths, rotation, signals, stage, store, symbols, trend
 
 REPORT_VERSION = 2  # 2: `movers`
 BREADTH_SESSIONS = 10
@@ -28,13 +27,11 @@ MOVER_VOLUME_SESSIONS = 50
 
 
 def _sectors() -> dict[str, str]:
-    try:
-        doc = json.loads(
-            (paths.market_report_dir() / "universe" / "sectors.json").read_text(encoding="utf-8")
-        )
-    except (OSError, ValueError):
-        return {}
-    return {s: row.get("sector") for s, row in (doc.get("sectors") or {}).items() if row.get("sector")}
+    """{symbol: sector}: the vendor's map where it has the name, else Yahoo's relabelled to the
+    vendor's sector names (`fundamentals.sector_sources`, 2026-10-20). Before, the report kept the
+    vendor's map alone, so a name added after the subscription ends (2026-10-24) would have had no
+    sector in the report's sector measures."""
+    return {s: sector for s, (sector, _src) in fundamentals.sector_sources().items()}
 
 
 def build(session: str | None = None, conn=None) -> dict[str, Any]:

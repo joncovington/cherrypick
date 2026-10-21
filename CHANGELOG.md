@@ -11,6 +11,13 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed: the stock universe and the report's sectors no longer depend on the vendor.** The
+  universe harvest adds every stock with a median of at least 10,000 option contracts a day at
+  OCC over the last 20 sessions (101 new candidates on 2026-10-19; membership is still decided by
+  the measured spreads and volume). The market report's sector measures take Yahoo's sector,
+  relabelled, for a name the vendor's map lacks, and the sector fetch asks for every candidate.
+  Without this the candidate list and the sector map would have frozen when the subscription ends
+  on 2026-10-24.
 - **Added: the skate forward record on the Skate tab.** Below the table, a section reads the record
   `technicals.skate_record` writes each morning (`GET /api/screeners/skate/record`): rows recorded
   and settled, distinct expiries settled out of the declared count, and per band the high-gap and

@@ -497,7 +497,11 @@ Each phase ends with something that runs and a test that has been shown to fail.
   is built on free data and scored per tag like the others; the flow methods remain deferred.
 - **The stock universe: decided 2026-09-27, being built.** Candidates are every ticker the saved
   vendor editions link (454 over Sept 21-25, the breadth table included) and every underlying the
-  tastylive follow feed trades (110 from the first harvest; futures dropped). A candidate is kept
+  tastylive follow feed trades (110 from the first harvest; futures dropped). **Since 2026-10-20,
+  also every stock (not a fund or index) whose median OCC volume over the last 20 stored sessions
+  is at least 10,000 contracts a day**, so candidates keep arriving after the vendor subscription
+  ends on 2026-10-24 (287 stocks on 2026-10-19, 101 of them new). The editions saved by then stay
+  candidates. A candidate is kept
   only when it is **very liquid by measurement**: the stock's spread within 0.05% of mid or one
   cent; the worse of its at-the-money call and put about 30 days out within 3% of mid or five
   cents (both read from tastytrade REST quotes inside regular hours; **on the standard monthly

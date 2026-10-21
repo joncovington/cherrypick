@@ -275,6 +275,35 @@ def test_edition_candidates_count_each_edition_once():
     assert bsu.to_tastytrade("BRK.B") == "BRK/B"
 
 
+def _sessions(n, **contracts):
+    return {f"2026-09-{i + 1:02d}": dict(contracts) for i in range(n)}
+
+
+def test_occ_volume_alone_makes_a_stock_a_candidate():
+    vols = _sessions(20, BRKB=12_000, THIN=9_999, SPY=900_000)
+    stocks = {"BRKB": "BRK.B", "THIN": "THIN"}
+    c = bsu.occ_candidates(vols, stocks)
+    assert list(c) == ["BRK.B"], "spelled the stock's way; a fund absent from `stocks` never enters"
+    assert c["BRK.B"] == {"median_contracts": 12_000, "sessions": 20, "through": "2026-09-20"}
+
+
+def test_occ_candidates_need_the_full_window_and_a_missing_session_counts_zero():
+    assert bsu.occ_candidates(_sessions(19, AMD=50_000), {"AMD": "AMD"}) == {}
+    vols = _sessions(20, AMD=50_000)
+    for d in sorted(vols)[:10]:
+        vols[d] = {}
+    assert bsu.occ_candidates(vols, {"AMD": "AMD"})["AMD"]["median_contracts"] == 25_000
+    for d in sorted(vols)[10:11]:
+        vols[d] = {}
+    assert bsu.occ_candidates(vols, {"AMD": "AMD"}) == {}, "11 of 20 sessions empty: median 0"
+
+
+def test_occ_candidates_merge_beside_the_vendor_and_follow_entries():
+    merged = bsu.merge_candidates({"AMD": {"editions": 2}}, {}, {"AMD": {"m": 1}, "NEW": {"m": 2}})
+    assert merged == {"AMD": {"vendor": {"editions": 2}, "occ": {"m": 1}}, "NEW": {"occ": {"m": 2}}}
+    assert bsu.merge_candidates({"AMD": {}}, {}) == {"AMD": {"vendor": {}}}
+
+
 def test_choose_options_takes_the_atm_strike_of_the_monthly_never_a_nearer_weekly():
     """The 30 October weekly is nearer 30 days than the 16 October monthly, and was what the measure
     took until 2026-10-04. Weeklies quote wider, so the monthly is the name's spread."""
