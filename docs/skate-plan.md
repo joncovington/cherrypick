@@ -10,7 +10,7 @@ were decided by the user on 2026-10-18 (see "Decisions").
 | 2, regular-hours quotes (`fetch_screener_greeks.py skate`, jobs `report-skate-quotes-1/2`) | built |
 | 3, the score and the console's Skate tab | the score built (`skate.score`, in the quote file); the tab built 2026-10-19; the income tabs' leveraged badge not started |
 | 4, the forward record | built: `skate_record.py`, recording from 2026-10-20; the tab section built 2026-10-20 |
-| 5, the wheel view (`manage`, Live → positions) | not started |
+| 5, the wheel view (`manage`, Live → positions) | cycle linking, accounting and the day's check built (`manage/wheel.py`, 2026-10-20); the bands in the snapshot, the rules and the tab not started |
 | 6, the PMCC view (`manage`, beside the wheel view) | not started |
 
 A screen for short options sold where the seller does not want assignment: covered calls above

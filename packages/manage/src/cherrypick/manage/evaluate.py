@@ -32,6 +32,7 @@ from cherrypick.manage import portfolio as _portfolio
 from cherrypick.manage import pricing
 from cherrypick.manage import rules as _rules
 from cherrypick.manage import shapes as _shapes
+from cherrypick.manage import wheel as _wheel
 
 EVAL_VERSION = 1
 
@@ -1526,6 +1527,47 @@ def group_trades(
     return out
 
 
+def _wheel_view(
+    account: dict[str, Any],
+    n_accounts: int,
+    history: dict[str, Any],
+    history_ok: bool,
+    session: date,
+    metrics: dict[str, Any],
+    snapshot: dict[str, Any],
+    trades: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """The account's wheel cycles (`wheel.py`), each naming the evaluated trades that hold its legs.
+
+    The trade history and the day's orders are the broker tool's designated account's, so only that
+    account (or the only one) gets a view; the others say why they have none.
+    """
+    if not (account.get("designated") or n_accounts == 1):
+        return {"cycles": [], "error": "the trade history is the designated account's"}
+    if not history_ok:
+        return {"cycles": [], "error": "no trade history in this snapshot"}
+    view = _wheel.build(
+        account.get("underlyings") or [],
+        history,
+        session,
+        metrics,
+        snapshot.get("working_orders"),
+        snapshot.get("skate_bands"),
+    )
+    held_by: dict[str, set[str]] = {}
+    for t in trades:
+        for leg in t["legs"]:
+            sym = " ".join(str(leg.get("symbol") or "").split())
+            held_by.setdefault(sym if leg.get("right") else sym.upper(), set()).add(t.get("trade_id"))
+    for cycle in view["cycles"]:
+        syms = [o["symbol"] for o in cycle["open_options"]] + (
+            [cycle["underlying"]] if cycle["shares"] else []
+        )
+        cycle["trade_ids"] = sorted({tid for s in syms for tid in held_by.get(s, ()) if tid})
+    view["error"] = None
+    return view
+
+
 # --------------------------------------------------------------------------- the whole snapshot
 def evaluate(
     snapshot: dict[str, Any], rules: dict[str, Any], warnings: list[str] | None = None
@@ -1597,9 +1639,20 @@ def evaluate(
             # The broker tool's day list is for its designated account, the one manage evaluates.
             snapshot.get("working_orders"),
         )
+        wheel_view = _wheel_view(
+            account,
+            len(positions.get("accounts") or []),
+            history,
+            history_ok,
+            session,
+            metrics,
+            snapshot,
+            trades,
+        )
         accounts.append(
             {
                 "account": account.get("account"),
+                "wheel": wheel_view,
                 "designated": account.get("designated"),
                 "error": account.get("error"),
                 "net_liq": net_liq,

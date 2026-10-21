@@ -18,6 +18,14 @@ beyond the latest release.
   yet decision-grade" until it says otherwise, then each band's pass or fail as the file states it,
   with no tone before that. The declared test is written out from the file's thresholds. A missing or
   unreadable record says so, never zeros.
+- **Added: manage follows each wheel cycle.** The evaluation now carries the account's `wheel`: every
+  cash-secured put, the shares it delivered and the calls written against them, linked from the
+  broker's trade history through rolls and assignments until the shares are called away or sold. Each
+  cycle shows the broker's cash, net premium, a tax basis and a wheel basis, the breakeven, option and
+  stock P&L (realised and unrealised apart), days in the cycle, a skate yield labelled a comparison
+  figure, and for each short still open whether it is tested, its extrinsic value and any resting
+  buy-to-close. A cycle that does not replay to today's positions is unreconciled, an unexplained
+  delivery is flagged, and shares older than the history get no basis. View only: no rule reads it yet.
 - **Added: an end-of-day option chain fetch for backtests.** `python -m cherrypick.backtest
   fetch-chains --requests FILE` fetches exactly the (name, session, expiry) chains a study asks for
   into the licensed store, resumably, with a refusal recorded and retried and a lost session
