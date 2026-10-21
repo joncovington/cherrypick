@@ -311,7 +311,13 @@ def build(
         if day is None:
             return {"ok": False, "reason": "the history store holds no bars"}
         on = date.fromisoformat(day)
-        tradable = sorted(s for s, v in liquidity.load().items() if v.get("verdict") == liquidity.TRADABLE)
+        # The names' verdicts and the reference funds' (SPY, QQQ, IWM, TLT, the sector funds), judged
+        # apart by the same test. Until 2026-10-20 skate read only the first, so the most liquid
+        # underlyings there are were never banded.
+        tradable = sorted(
+            {s for s, v in liquidity.load().items() if v.get("verdict") == liquidity.TRADABLE}
+            | liquidity.reference_tradable()
+        )
         lev = leveraged_funds()
         at, reports = earnings_calendar.broker_dates(day)
         rows, _ = securities.latest(day)

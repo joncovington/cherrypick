@@ -19,6 +19,10 @@ beyond the latest release.
   today's band" check now has data; manage moves the band to today's price, so `reevaluate` with a
   different spot stays consistent. A missing, stale or unreadable file is `skate_bands: null` with
   `skate_bands_error` saying why, and the evaluation runs on without it.
+- **Fixed: skate never banded the reference funds.** Its universe was the names' liquidity verdicts
+  alone, and SPY, QQQ, IWM, TLT and the sector funds are judged apart, under `reference`
+  (`liquidity.reference_tradable`), as the income run already reads them. The 32 that pass the same
+  test tonight are now banded, quoted and scored like any other fund.
 - **Changed: the stock universe and the report's sectors no longer depend on the vendor.** The
   universe harvest adds every stock with a median of at least 10,000 option contracts a day at
   OCC over the last 20 sessions (101 new candidates on 2026-10-19; membership is still decided by

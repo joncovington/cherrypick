@@ -260,6 +260,38 @@ def test_the_build_drops_a_listed_fund_and_judges_the_rest(tmp_path):
     assert len({r["expiry"] for r in doc["names"]["SPY"]["rows"]}) == 9
 
 
+def test_a_reference_fund_that_passes_the_liquidity_test_is_banded_too(tmp_path):
+    # As the real verdicts file has it: SPY is judged under "reference", never among the names.
+    db = tmp_path / "h.db"
+    conn = store.connect(db)
+    dates, highs, lows, closes = _series()
+    for sym in ("SPY", "XLU", "XYZ"):
+        store.upsert_bars(
+            conn, [(sym, d, c, h, lo, c, 1e6) for d, h, lo, c in zip(dates, highs, lows, closes, strict=True)]
+        )
+    conn.commit()
+    conn.close()
+    mr = paths.market_report_dir()
+    _write(
+        mr / "liquidity" / "verdicts.json",
+        {
+            "names": {"XYZ": {"verdict": "tradable"}},
+            "reference": {"SPY": {"verdict": "tradable"}, "XLU": {"verdict": "illiquid"}},
+        },
+    )
+    _write(
+        mr / "iv" / "tastytrade.json", {"days": {DAY.isoformat(): {"XYZ": {"earnings_date": "2026-11-05"}}}}
+    )
+    _write(
+        mr / "securities" / f"{DAY.isoformat()}.json",
+        {"rows": [{"symbol": "SPY", "type": "Exchange Traded Fund"}, {"symbol": "XYZ", "type": "Stock"}]},
+    )
+    result = skate.build(cfg={"history_from": "2000-01-01"}, db=db, out_dir=tmp_path / "out")
+    assert result["ok"] and result["universe"] == 2
+    doc = json.loads((tmp_path / "out" / f"{DAY.isoformat()}.json").read_text(encoding="utf-8"))
+    assert set(doc["names"]) == {"SPY", "XYZ"}  # a reference fund that fails the test stays out
+
+
 # ------------------------------------------------------------------------------------------------
 # Planning the quotes and scoring them (steps 2 and 3).
 
