@@ -3,6 +3,7 @@ from datetime import date
 import pytest
 
 from cherrypick.manage import evaluate as ev
+from cherrypick.manage import pricing
 from cherrypick.manage import rules as _rules
 
 SESSION = date(2026, 10, 13)
@@ -41,7 +42,12 @@ def test_a_wide_quote_takes_the_brokers_iv_and_a_tight_one_its_own():
     # 2026-10-21 before the open: NFLX's 70C was bid 0.01 ask 1.50, and the IV solved off that mid
     # sat 55 points under its spread partner's; the broker's surface had the two within 15.
     rules = _rules.effective(None)[0]
-    wide = leg(-1, "C", 105, "2026-11-20", 2.00, 1.50) | {"wide": True}
+    at_042 = pricing.price(100.0, 105, 38 / 365.0, 0.42, "C", float(rules["pricing"]["rate"]))
+    wide = leg(-1, "C", 105, "2026-11-20", 2.00, 1.50) | {
+        "wide": True,
+        "bid": at_042 - 0.6,
+        "ask": at_042 + 0.6,
+    }
     tight = leg(1, "C", 110, "2026-11-20", 1.00, 0.60)
     broker = {wide["symbol"]: {"iv": 0.42}, tight["symbol"]: {"iv": 0.99}}
     t = ev.evaluate_trade("XYZ", [wide, tight], {"last": 100.0}, SESSION, 1e5, rules, broker_greeks=broker)
@@ -52,6 +58,42 @@ def test_a_wide_quote_takes_the_brokers_iv_and_a_tight_one_its_own():
     # No broker IV for a wide leg: its own mid, as before.
     alone = ev.evaluate_trade("XYZ", [wide], {"last": 100.0}, SESSION, 1e5, rules)
     assert alone["legs"][0]["iv_source"] == "mid" and alone["legs"][0]["iv"] != pytest.approx(0.42)
+
+
+def test_a_brokers_iv_that_cannot_price_the_quote_at_our_spot_is_not_taken():
+    # 2026-10-21, 16:35 ET on META's report night: the broker's IV for the long 705C priced it at
+    # $10.40 at the snapshot's spot against a 21.80/24.40 quote (its greeks were on the after-hours
+    # print), and beside the short 712.5C solved from its mid the bull call spread read a negative
+    # delta. Both legs now solve from their mids, and the long's delta is the larger.
+    rules = _rules.effective(None)[0]
+    long_ = leg(1, "C", 705, "2026-10-26", 26.37, 23.10, "META", "META") | {
+        "bid": 21.80,
+        "ask": 24.40,
+        "wide": True,
+    }
+    short = leg(-1, "C", 712.5, "2026-10-26", 22.72, 19.275, "META", "META") | {"bid": 18.80, "ask": 19.75}
+    broker = {long_["symbol"]: {"iv": 0.4186}, short["symbol"]: {"iv": 0.4679}}
+    session = date(2026, 10, 21)
+    t = ev.evaluate_trade("META", [long_, short], {"last": 697.41}, session, 1e5, rules, broker_greeks=broker)
+    legs = {x["symbol"]: x for x in t["legs"]}
+    assert legs[long_["symbol"]]["iv_source"] == "mid"
+    assert legs[long_["symbol"]]["delta"] > legs[short["symbol"]]["delta"]
+    # The same leg with no quote to check against keeps its own mid too.
+    bare = {k: v for k, v in long_.items() if k not in ("bid", "ask")}
+    t = ev.evaluate_trade("META", [bare], {"last": 697.41}, session, 1e5, rules, broker_greeks=broker)
+    assert t["legs"][0]["iv_source"] == "mid"
+
+
+def test_a_mid_under_the_models_floor_leaves_the_leg_unmodelled():
+    # TLT's 2029-01-19 80C on 2026-10-21: mid 7.10 with TLT at 80.25, under the no-dividend model's
+    # floor of about 10.00 (the fund pays ~4% a year). The solver ran to its lower bound and the leg
+    # read IV 0 and delta 1.00 against the broker's 0.55. It is now left unmodelled, not given a delta.
+    t = run([leg(1, "C", 80, "2029-01-19", 6.22, 7.10, "TLT", "TLT")], spot=80.25, underlying="TLT")
+    x = t["legs"][0]
+    assert x["iv"] is None and x["delta"] is None and x["iv_source"] == "unpriceable"
+    # A deep in-the-money leg worth only its intrinsic is a real zero-extrinsic reading and keeps it.
+    t = run([leg(-1, "P", 120, "2026-11-20", 20.0, 20.0)], spot=100.0)
+    assert t["legs"][0]["iv_source"] == "mid" and t["legs"][0]["delta"] == pytest.approx(-1.0, abs=1e-6)
 
 
 # --------------------------------------------------------------------------- credit trades

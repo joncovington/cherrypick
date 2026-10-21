@@ -330,7 +330,12 @@ except where the snapshot flags its quote `wide` and the broker has an IV for it
 broker's, and the leg's `iv_source` says so. Two wide mids in one spread gave IVs about twice as far
 apart as the broker's surface did (median 0.030 against 0.014 over the wide pairs of 2026-10-20/21;
 before the open NFLX's 70C, bid 0.01 ask 1.50, solved 55 points under its partner), while on tight
-quotes our own agreed better (0.005 against 0.010). A leg the model cannot price, or an
+quotes our own agreed better (0.005 against 0.010). The broker's IV is taken only when, priced at the
+snapshot's spot, it lands inside the leg's own bid/ask: the broker figures its greeks on its own
+underlying price, which after the close on a report night is the after-hours print (META's 705C at
+16:35 ET on 2026-10-21 took an IV worth $10.40 against a 21.80/24.40 quote, and its bull call spread
+read a negative delta). A mid under the no-dividend model's floor (TLT's 2029 80C, a fund paying ~4%
+a year) solves to no vol at all; it is `unpriceable`, not IV zero and delta 1. A leg the model cannot price, or an
 underlying with no beta, is named and left out, never counted as zero; the reading says it is
 partial. A leg expiring today is taken at its moneyness, with its remaining time value as that day's
 theta.
