@@ -319,10 +319,18 @@ Beside the trades, each evaluation reads the whole account as one book (`portfol
   which happens (RTX, FXI, DELL on 2026-10-18), so their BWD may be misstated;
 - **the broker check** (`broker_check`, from snapshot v9): BWD and theta summed again on the
   broker's own per-leg greeks, over the same legs with the same betas, with the gap overall and by
-  underlying. A leg only one model prices is named and left out of both. It decides nothing; it is
-  the daily record of how far our model sits from the broker's before the bands are trusted.
+  underlying. A leg only one model prices is named and left out of both. Legs expiring today are
+  their own line (`expiring`), out of the totals: ours takes them at moneyness and the broker's
+  prices a whole day at the quote's IV, which before the open on 2026-10-21 was $374 of a $434 theta
+  gap. `legs_on_broker_iv` counts the legs whose IV is the broker's (below). It decides nothing; it
+  is the daily record of how far our model sits from the broker's before the bands are trusted.
 
-Everything is modelled (Black-Scholes at each leg's own IV). A leg the model cannot price, or an
+Everything is modelled (Black-Scholes at each leg's own IV). That IV is solved from the leg's mid,
+except where the snapshot flags its quote `wide` and the broker has an IV for it: then it is the
+broker's, and the leg's `iv_source` says so. Two wide mids in one spread gave IVs about twice as far
+apart as the broker's surface did (median 0.030 against 0.014 over the wide pairs of 2026-10-20/21;
+before the open NFLX's 70C, bid 0.01 ask 1.50, solved 55 points under its partner), while on tight
+quotes our own agreed better (0.005 against 0.010). A leg the model cannot price, or an
 underlying with no beta, is named and left out, never counted as zero; the reading says it is
 partial. A leg expiring today is taken at its moneyness, with its remaining time value as that day's
 theta.

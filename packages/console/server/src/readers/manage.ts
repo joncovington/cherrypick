@@ -848,6 +848,21 @@ function brokerCheck(v: unknown): ManageBrokerCheck | null {
         thetaGap: num(u["theta_gap"]),
       };
     }),
+    legsOnBrokerIv: num(c["legs_on_broker_iv"]),
+    expiring: c["expiring"]
+      ? (() => {
+          const e = rec(c["expiring"]);
+          return {
+            legs: strs(e["legs"]),
+            bwdOurs: num(e["bwd_ours"]),
+            bwdBroker: num(e["bwd_broker"]),
+            bwdGap: num(e["bwd_gap"]),
+            thetaOurs: num(e["theta_ours"]),
+            thetaBroker: num(e["theta_broker"]),
+            thetaGap: num(e["theta_gap"]),
+          };
+        })()
+      : null,
   };
 }
 

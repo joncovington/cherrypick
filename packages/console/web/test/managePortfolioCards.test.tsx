@@ -143,6 +143,8 @@ describe("PortfolioCards", () => {
             thetaBroker: 41.2,
             thetaGap: 2.48,
             underlyings: [{ underlying: "META", legs: 4, bwdGap: -0.8, thetaGap: 0.4 }],
+            legsOnBrokerIv: 7,
+            expiring: null,
           },
         })}
       />,
@@ -150,7 +152,43 @@ describe("PortfolioCards", () => {
     expect(html).toContain("against the broker");
     expect(html).toContain("−1.2 sh"); // the delta gap
     expect(html).toContain("30 legs on both models");
+    expect(html).toContain("the broker&#x27;s IV on 7 with a wide quote");
     expect(html).toContain("-1 GOOGL 370C");
+    expect(html).not.toContain("expiring today");
+  });
+
+  it("shows the legs expiring today as their own line under the check", () => {
+    const html = render(
+      <PortfolioCards
+        p={reading({
+          brokerCheck: {
+            legsCompared: 38,
+            legsLeftOut: [],
+            bwdOurs: 19.18,
+            bwdBroker: 24.77,
+            bwdGap: -5.59,
+            thetaOurs: 13.14,
+            thetaBroker: 27.62,
+            thetaGap: -14.48,
+            underlyings: [],
+            legsOnBrokerIv: null,
+            expiring: {
+              legs: ["-2 2026-10-21 160C", "+1 2026-10-21 162.5C"],
+              bwdOurs: 0,
+              bwdBroker: -30.69,
+              bwdGap: 30.69,
+              thetaOurs: 180.5,
+              thetaBroker: 554.55,
+              thetaGap: -374.05,
+            },
+          },
+        })}
+      />,
+    );
+    expect(html).toContain("expiring today, not in the figures above");
+    expect(html).toContain("-2 2026-10-21 160C, +1 2026-10-21 162.5C");
+    expect(html).toContain("+30.7 sh");
+    expect(html).not.toContain("wide quote"); // an older evaluation has no count, so says nothing
   });
 
   it("shows each band's chip from the reading and the guidance it fired", () => {

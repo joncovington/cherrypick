@@ -108,7 +108,24 @@ def _fire(rule: str, action: str, confidence: Any, reason: str, legs: list[str] 
 
 
 # --------------------------------------------------------------------------- leg facts
-def _legs(raw: list[dict[str, Any]], session: date, spot: float | None, rate: float) -> list[dict[str, Any]]:
+def _broker_iv(broker_greeks: dict[str, dict] | None, symbol: Any) -> float | None:
+    iv = _f(((broker_greeks or {}).get(str(symbol or "")) or {}).get("iv"))
+    return iv if iv and iv > 0 else None
+
+
+def _legs(
+    raw: list[dict[str, Any]],
+    session: date,
+    spot: float | None,
+    rate: float,
+    broker_greeks: dict[str, dict] | None = None,
+) -> list[dict[str, Any]]:
+    """Each leg's facts. Its IV is solved from its own mid, unless the snapshot flags the quote `wide`
+    and the broker has an IV for it: a wide mid is the midpoint of a market nobody quoted seriously
+    (before the open, a 0.00/1.05 call), and the IVs solved off two such mids in one spread disagreed
+    about twice as much as the broker's surface IVs did (median 0.030 against 0.014 over the wide
+    pairs of 2026-10-20/21; on tight quotes ours agreed better, 0.005 against 0.010). `iv_source`
+    says which: `mid` or `broker`."""
     out = []
     for leg in raw:
         right = leg.get("right") if leg.get("right") in ("C", "P") else None
@@ -135,6 +152,8 @@ def _legs(raw: list[dict[str, Any]], session: date, spot: float | None, rate: fl
             "priced": bool(leg.get("priced")) and value is not None,
             "years": max(dte, 0) / 365.0 if dte is not None else 0.0,
             "iv": None,
+            "iv_source": None,
+            "wide": bool(leg.get("wide")),
             "delta": None,
             "intrinsic": None,
             "extrinsic": None,
@@ -149,7 +168,12 @@ def _legs(raw: list[dict[str, Any]], session: date, spot: float | None, rate: fl
             item["intrinsic"] = pricing.intrinsic(spot, strike, right)
             item["extrinsic"] = mid - item["intrinsic"]
             if dte and dte > 0:
-                item["iv"] = pricing.implied_vol(spot, strike, item["years"], mid, right, rate)
+                broker_iv = _broker_iv(broker_greeks, leg.get("symbol")) if item["wide"] else None
+                if broker_iv is not None:
+                    item["iv"], item["iv_source"] = broker_iv, "broker"
+                else:
+                    item["iv"] = pricing.implied_vol(spot, strike, item["years"], mid, right, rate)
+                    item["iv_source"] = "mid" if item["iv"] else None
                 if item["iv"]:
                     item["delta"] = pricing.delta(spot, strike, item["years"], item["iv"], right, rate)
         item["label"] = _label(item)
@@ -196,18 +220,20 @@ def evaluate_trade(
     roll_chains: dict[str, Any] | None = None,
     wheel_ctx: dict[str, Any] | None = None,
     pmcc_ctx: dict[str, Any] | None = None,
+    broker_greeks: dict[str, dict] | None = None,
 ) -> dict[str, Any]:
     """`chain`, when the broker history reconciled one, sets the basis: the chain's net cash across its
     opening order and every roll, not the open legs' average prices. `seen` is the earnings trades the
     previous evaluation found (`earnings_trade`). `roll_chains` is the snapshot's quoted chains, keyed
     "<UNDERLYING>|<expiry>", that a strangle's untested side is rolled along. `wheel_ctx` is the wheel
     cycles holding this trade's legs (`_wheel_context`), which the wheel rules read; `pmcc_ctx` the PMCC
-    view entries whose short this trade holds (`_pmcc_context`), which the PMCC rules read."""
+    view entries whose short this trade holds (`_pmcc_context`), which the PMCC rules read.
+    `broker_greeks` is the snapshot's per-leg broker greeks, whose IV a leg with a wide quote takes."""
     metrics = metrics or {}
     spot = _f(metrics.get("last"))
     pr = rules["pricing"]
     rate = float(pr["rate"])
-    legs = _legs(raw_legs, session, spot, rate)
+    legs = _legs(raw_legs, session, spot, rate, broker_greeks)
     override = (rules.get("positions") or {}).get(underlying) or {}
 
     def off(rule_id: str) -> bool:
@@ -908,7 +934,7 @@ def evaluate_trade(
     # ---- a recognised PMCC's width, assignment exposure and long (pmcc.py): ranked by action too
     if pmcc_ctx:
         try:
-            fired += _pmcc_rules(trade, legs, pmcc_ctx, session, net_liq, metrics, rules, off)
+            fired += _pmcc_rules(trade, legs, pmcc_ctx, session, net_liq, metrics, rules, off, broker_greeks)
         except Exception as exc:  # noqa: BLE001 -- the PMCC view is a reading; the evaluation is the product
             trade["pmcc"] = {"error": f"PMCC rules failed: {type(exc).__name__}: {exc}"[:300]}
 
@@ -1617,6 +1643,7 @@ def _pmcc_rules(
     metrics: dict[str, Any],
     rules: dict[str, Any],
     off,
+    broker_greeks: dict[str, dict] | None = None,
 ) -> list[dict[str, Any]]:
     """The PMCC rules on the trade holding a recognised PMCC's short: roll or close it when the width
     check fails or the short is exposed to early assignment (with the short's roll candidates, each
@@ -1669,6 +1696,7 @@ def _pmcc_rules(
                 session,
                 view["spot"],
                 float(rules["pricing"]["rate"]),
+                broker_greeks,
             )
             whole = {"legs": pair, "cost": width["net_cost"], "shape": "diagonal", "spot": view["spot"]}
             rolls["candidates"] = [
@@ -2292,6 +2320,7 @@ def evaluate(
                     snapshot.get("roll_chains"),
                     _wheel_context(wheel_view, group, snapshot, u["underlying"]),
                     _pmcc_context(pmcc_view, group, account),
+                    snapshot.get("broker_greeks"),
                 )
                 trade["trade_id"] = u["underlying"] if len(groups) == 1 else f"{u['underlying']}#{i + 1}"
                 # How the legs became one trade: the broker's chains, unless a join made two into one.

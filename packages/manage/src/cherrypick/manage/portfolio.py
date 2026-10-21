@@ -181,11 +181,18 @@ def broker_check(
     broker's own greeks (snapshot v9), with the same beta, spot and benchmark, so the gap is the two
     models' and nothing else. A leg only one side prices is left out of both and named, never
     counted on one side as zero. Shares are delta 1 on both sides. Nothing reads this to decide
-    anything: it is the record the portfolio plan asks for before the bands are trusted."""
+    anything: it is the record the portfolio plan asks for before the bands are trusted.
+
+    Legs expiring today are summed apart (`expiring`) and kept out of the totals and the names: ours
+    takes them at moneyness, the broker's prices a whole day left at whatever IV the quote implies,
+    and on 2026-10-21 (before the open, the morning after a report) one such pair was $374 of a
+    $434 theta gap. `legs_on_broker_iv` counts the legs priced on the broker's IV (a wide quote,
+    `evaluate._legs`): on those the gap is the two models' spot and formula, not their IVs."""
     if broker is None:
         return {"available": False, "reason": "snapshot carries no broker greeks (before v9)"}
     per: dict[str, dict[str, Any]] = {}
-    compared, left_out = 0, []
+    expiring = {"delta": [0.0, 0.0], "theta": [0.0, 0.0], "legs": [], "scaled": True}
+    compared, left_out, on_broker_iv = 0, [], 0
     for trade in trades:
         und = trade["underlying"]
         spot = _f(trade.get("spot"))
@@ -208,12 +215,24 @@ def broker_check(
                 left_out.append(leg.get("label") or str(leg.get("symbol")))
                 continue
             size = float(leg.get("quantity") or 0.0) * MULTIPLIER
+            if ours["basis"] == "expiring":
+                # Beta-weighted here, so the line is in the same benchmark shares as the totals.
+                if row["scale"] is None:
+                    expiring["scaled"] = False
+                scale = row["scale"] or 0.0
+                expiring["delta"][0] += ours["delta"] * scale
+                expiring["delta"][1] += size * b_delta * scale
+                expiring["theta"][0] += ours["theta"]
+                expiring["theta"][1] += size * b_theta
+                expiring["legs"].append(leg.get("label") or str(leg.get("symbol")))
+                continue
             row["delta"][0] += ours["delta"]
             row["delta"][1] += size * b_delta
             row["theta"][0] += ours["theta"]
             row["theta"][1] += size * b_theta
             row["legs"] += 1
             compared += 1
+            on_broker_iv += leg.get("iv_source") == "broker"
 
     names = []
     totals = {"bwd": [0.0, 0.0], "theta": [0.0, 0.0]}
@@ -239,10 +258,23 @@ def broker_check(
             )
     names.sort(key=lambda n: -abs(n["bwd_gap"] if n["bwd_gap"] is not None else n["theta_gap"] or 0.0))
     have_bench = bench_spot is not None
+    exp_bwd = expiring["delta"] if have_bench and expiring["scaled"] else None
     return {
         "available": True,
         "legs_compared": compared,
         "legs_left_out": left_out,
+        "legs_on_broker_iv": on_broker_iv,
+        "expiring": {
+            "legs": expiring["legs"],
+            "bwd_ours": _round(exp_bwd[0]) if exp_bwd else None,
+            "bwd_broker": _round(exp_bwd[1]) if exp_bwd else None,
+            "bwd_gap": _round(exp_bwd[0] - exp_bwd[1]) if exp_bwd else None,
+            "theta_ours": _round(expiring["theta"][0]),
+            "theta_broker": _round(expiring["theta"][1]),
+            "theta_gap": _round(expiring["theta"][0] - expiring["theta"][1]),
+        }
+        if expiring["legs"]
+        else None,
         "bwd_ours": _round(totals["bwd"][0]) if have_bench else None,
         "bwd_broker": _round(totals["bwd"][1]) if have_bench else None,
         "bwd_gap": _round(totals["bwd"][0] - totals["bwd"][1]) if have_bench else None,

@@ -265,6 +265,8 @@ describe("readManage", () => {
         theta_broker: 41.2,
         theta_gap: 2.48,
         underlyings: [{ underlying: "META", legs: 4, bwd_ours: 6.2, bwd_broker: 7.0, bwd_gap: -0.8, theta_ours: 6.4, theta_broker: 6.0, theta_gap: 0.4 }],
+        legs_on_broker_iv: 7,
+        expiring: { legs: ["-2 SPCX 160C"], bwd_ours: 0, bwd_broker: -30.69, bwd_gap: 30.69, theta_ours: 180.5, theta_broker: 554.55, theta_gap: -374.05 },
       },
     };
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
@@ -322,6 +324,8 @@ describe("readManage", () => {
       thetaBroker: 41.2,
       thetaGap: 2.48,
       underlyings: [{ underlying: "META", legs: 4, bwdGap: -0.8, thetaGap: 0.4 }],
+      legsOnBrokerIv: 7,
+      expiring: { legs: ["-2 SPCX 160C"], bwdOurs: 0, bwdBroker: -30.69, bwdGap: 30.69, thetaOurs: 180.5, thetaBroker: 554.55, thetaGap: -374.05 },
     });
     // An evaluation from before the reading existed has no portfolio, not an empty one.
     expect(readManage(config, "2026-10-16").accounts[0]!.portfolio).toBeNull();
