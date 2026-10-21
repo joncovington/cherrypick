@@ -35,6 +35,11 @@ function leg(over: Partial<SkateLeg>): SkateLeg {
     perDayBid: 3.91,
     testedPerCycle: 0.1,
     testedPerMonth: 0.11,
+    feeOpen: 1.14,
+    netPremiumBid: 123.86,
+    netYieldBid: 0.118,
+    historyWindows: 2772,
+    historyWindowsRecent: 750,
     hard: true,
     soft: { skate: true, skateRecent: true, yield: true, all: true },
     ...over,
@@ -159,7 +164,7 @@ describe("the skate tab", () => {
     const html = render("/screeners/skate");
     expect(html).toContain('<span class="chip chip-ok">pass</span>');
     expect(html).toContain('<span class="chip">miss</span>');
-    expect(html).toContain("Misses: 11-year skate rate under 84%");
+    expect(html).toContain("Misses: full-history skate rate under 84%");
     expect(html).toMatch(/font-weight:700[^>]*>Oct 30/);
     expect(html).not.toMatch(/font-weight:700[^>]*>Nov 20/);
     expect(html).toContain("1.25 bid");
@@ -175,6 +180,32 @@ describe("the skate tab", () => {
     // The forward record's section sits below the table.
     expect(html).toContain("Forward record");
     expect(html).toContain("No forward record written yet");
+  });
+
+  it("shows the fee beside the gross premium, and marks a premium that does not cover it", () => {
+    const html = render("/screeners/skate");
+    expect(html).toContain("Premium, gross");
+    expect(html).toContain('+$123.86<span class="muted"> fee $1.14</span>');
+    expect(html).toContain("11.8%"); // the net yield
+    // KHC-style: a one-cent bid, a dollar of premium, under the fee to open.
+    const tiny = row("TINY", band({ quote: { bid: 0.01, ask: 0.02, volume: 1, openInterest: 900 }, netPremiumBid: -0.14, netYieldBid: -0.001 }), band(null));
+    const under = render("/screeners/skate?q=TINY", { ...base, rows: [tiny] });
+    expect(under).toContain("−$0.14");
+    expect(under).toContain(">under cost<");
+    // A run older than the fee fields shows a dash, never a zero fee.
+    const old = row("OLD", band({ feeOpen: null, netPremiumBid: null, netYieldBid: null }), band(null));
+    expect(render("/screeners/skate?q=OLD", { ...base, rows: [old] })).toContain("This run predates the fee figures");
+  });
+
+  it("states how much history the skate rate stands on, and keeps 'through' apart from the record's 'tested'", () => {
+    const html = render("/screeners/skate");
+    expect(html).toContain("Skate, full history");
+    expect(html).not.toContain("Skate 11y");
+    expect(html).toContain('<span class="muted"> 11.0y</span>');
+    const young = row("SNOW", band({ historyWindows: 1514 }), band(null));
+    expect(render("/screeners/skate?q=SNOW", { ...base, rows: [young] })).toContain('<span class="muted"> 6.0y</span>');
+    expect(html).toContain("Through / mo");
+    expect(html).not.toContain("Tested / mo");
   });
 
   it("says when there is no run, an unreadable run, an incomplete run or a stated problem", () => {

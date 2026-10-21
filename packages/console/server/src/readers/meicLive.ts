@@ -57,6 +57,9 @@ const EMPTY_TOTALS: LiveMeicTotals = {
   settlementRecorded: 0,
   settlementTrades: 0,
   net: 0,
+  feesTrades: 0,
+  feesRecorded: 0,
+  netRecorded: 0,
 };
 
 function round2(v: number): number {
@@ -251,6 +254,7 @@ function readLedger(db: Database.Database, session: string): { open: LiveMeicOpe
 export function totalsOf(rows: MeicTradeRow[]): LiveMeicTotals {
   let gross = 0;
   let fees = 0;
+  let feesTrades = 0;
   let settlement = 0;
   let settlementTrades = 0;
   let net = 0;
@@ -258,22 +262,30 @@ export function totalsOf(rows: MeicTradeRow[]): LiveMeicTotals {
   for (const r of rows) {
     sessions.add(r.tradeDate);
     gross += r.gross ?? 0;
-    fees += r.fees ?? 0;
+    // A row that never recorded its fees has a null net too (meicTradeCash): both totals then read
+    // n/r, with the recorded share kept beside them -- never a partial sum dressed as the total.
+    if (r.fees !== null && r.net !== null) {
+      fees += r.fees;
+      net += r.net;
+      feesTrades += 1;
+    }
     if (r.settlementFees !== null) {
       settlement += r.settlementFees;
       settlementTrades += 1;
     }
-    net += r.net ?? 0;
   }
   return {
     trades: rows.length,
     sessions: sessions.size,
     gross: round2(gross),
-    fees: round2(fees),
+    fees: sumIfAllRecorded(round2(fees), feesTrades, rows.length),
     settlementFees: sumIfAllRecorded(round2(settlement), settlementTrades, rows.length),
     settlementRecorded: round2(settlement),
     settlementTrades,
-    net: round2(net),
+    net: sumIfAllRecorded(round2(net), feesTrades, rows.length),
+    feesTrades,
+    feesRecorded: round2(fees),
+    netRecorded: round2(net),
   };
 }
 

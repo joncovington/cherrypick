@@ -24,14 +24,19 @@ locally -- never the broker, so this stays credential-free:
   choose the suggested spread's side (chosen 2026-10-17); the vendor's is kept as `vendor_iv_rank`,
   never shown or used. A name the broker gives no rank gets no suggestion.
 - **price:** Dolt's latest daily close (`stocks.ohlcv`), which covers every listed name, where the
-  technicals store holds only ~1,000.
+  technicals store holds only ~1,000. Its date is `inputs.close_date`, which can sit sessions behind
+  the build day when Dolt has not caught up (the 2026-10-20 calendar priced off the 10-19 close).
 - **expected move:** the broker's own rule for an earnings move, 0.85 x the ATM straddle on the
   first expiration on or after the reaction day (`em_move`, shown on the tab since 2026-10-17), with
   the straddle read off that expiration's implied vol (`iv/expiry-iv/<day>.json`): an ATM straddle
   is ~0.8 x one standard deviation, so the move is ~0.68 SD (`EM_TO_SD`). One standard deviation --
-  price x that IV x the root of its calendar days over 365, which matched the vendor's figures to
-  about a third of a point -- is kept beside it (`sd_move`). The suggested spread's legs are placed
-  by `em_move`.
+  price x that IV x the root of its calendar days over 365, counted from the close's date (not the
+  build day), which matched the vendor's figures to about a third of a point -- is kept beside it
+  (`sd_move`). The suggested spread's legs are placed by `em_move`. The event expiry is the first
+  LISTED one, so for a name without weeklies it can be weeks past the reaction and the move a
+  month's rather than the announcement's: `event_expiry_days` (calendar days from the reaction day
+  to that expiry) says how far, and the tabs flag one over `EARNINGS_WEEK_DAYS`. Which expiry to
+  use is the user's choice and unchanged here.
 - **the suggested spread,** for strong reads only: the earnings-navigator rule. IV rank under the cut
   buys a debit spread in the direction (long at the money, short at the suite's expected move);
   otherwise sells a credit spread on the other side (short at the money, long just outside the
@@ -62,6 +67,9 @@ DEFAULTS = {"iv_rank_cut": 50, "trade_expiry": "cycle", "window_days": WINDOW_DA
 # expected move is 0.85 of the straddle: 0.85 x 0.798 ~ 0.678 SD.
 EM_TO_SD = 0.85 * math.sqrt(2 / math.pi)
 STRONG = {"sb": "bull", "sbe": "bear"}
+# An event expiry more than this many calendar days past the reaction day prices more than the
+# announcement: the move is then a fortnight's or a month's, and the tabs say so.
+EARNINGS_WEEK_DAYS = 7
 BMO, AMC = "Before market open", "After market close"
 CYCLE_PREFERRED, CYCLE_ALLOWED = (45, 60), (30, 60)
 NAME_TAIL = re.compile(
@@ -161,8 +169,15 @@ def event_expiry(ivs: dict[str, float], react: date) -> tuple[str, float] | None
     return (after[0], ivs[after[0]]) if after else None
 
 
+def expiry_days_past(expiry: str, react: date) -> int:
+    """Calendar days from the reaction day to the event expiry: 0-4 for a name with weeklies, up to a
+    month for one listing only monthlies."""
+    return (date.fromisoformat(expiry) - react).days
+
+
 def sd_move(price: float, iv: float, session: date, expiry: str) -> float:
-    """One standard deviation to `expiry` from the `session` close, in dollars."""
+    """One standard deviation to `expiry` from the `session` close (the close the price is), in
+    dollars."""
     days = (date.fromisoformat(expiry) - session).days
     return price * iv * math.sqrt(max(days, 0) / 365.0)
 
@@ -387,6 +402,7 @@ def build(
     # shown, filtered on and used for the suggestion. The vendor's are kept on the row
     # (`vendor_edge`, `vendor_strength`), never shown or used. A name we hold no bars for has none.
     candidates = sorted(set(dolt["events"]) | in_window)
+    close_day = date.fromisoformat(dolt["close_date"]) if dolt.get("close_date") else session
     ours = ours if ours is not None else our_reads(day, candidates)
 
     rows = []
@@ -405,7 +421,8 @@ def build(
         price = dolt["closes"].get(sym)
         react = reaction_day(d, timing)
         ev = event_expiry(expiry_ivs.get(sym) or {}, react)
-        sd = sd_move(price, ev[1], session, ev[0]) if (ev and price) else None
+        # Counted from the close the price is, not the build day: Dolt can sit a session or two behind.
+        sd = sd_move(price, ev[1], close_day, ev[0]) if (ev and price) else None
         em = sd * EM_TO_SD if sd is not None else None
         ivr = (broker_all.get(sym) or {}).get("iv_rank")
         mine = ours.get(sym) or {}
@@ -447,6 +464,9 @@ def build(
                 "price": price,
                 "event_expiry": ev[0] if ev else None,
                 "event_iv": ev[1] if ev else None,
+                # Calendar days from the reaction day to the event expiry: over EARNINGS_WEEK_DAYS the
+                # move prices more than the announcement.
+                "event_expiry_days": expiry_days_past(ev[0], react) if ev else None,
                 "sd_move": round(sd, 4) if sd is not None else None,
                 "sd_move_pct": round(100 * sd / price, 2) if (sd is not None and price) else None,
                 # The expected move the tab shows (chosen 2026-10-17): the broker's own rule for an

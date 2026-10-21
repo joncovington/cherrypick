@@ -6,6 +6,7 @@ import { LoopPill } from "../../components/ScopeBar";
 import { AlertDaemonChip } from "../../components/AlertDaemonChip";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
+import type { LiveFliesPayload } from "@console/shared";
 
 /**
  * The Live page (2026-09-17): the flies live pilot's day, on the module frame since 2026-09-25.
@@ -49,15 +50,26 @@ const slides: SlideDef[] = [
 /** The tabs that read the whole account, not one loop: they wear the suite's badge. */
 const ACCOUNT_WIDE = new Set(["today", "positions", "portfolio", "wheel", "pmcc"]);
 
+/** The flies header badge. A switched-off module says so first: "not armed" on a retired module
+ *  reads as a pilot waiting for today's arm. A halt or a live arm record still outranks it. */
+export function fliesBadgeText(data: Pick<LiveFliesPayload, "arm" | "moduleEnabled" | "session">): string {
+  const a = data.arm;
+  if (data.moduleEnabled === false && !a.halted && !a.armed) return `flies · module off · history to ${data.session}`;
+  const label = a.halted ? "HALTED" : a.armed ? "ARMED" : a.stale ? "stale arm" : "not armed";
+  return `${label} · ${a.arm ?? "?"} · ${a.symbol ?? "?"}`;
+}
+
 function ArmBadge() {
   const { data } = useLiveFlies();
   if (!data) return null;
   const a = data.arm;
-  const label = a.halted ? "HALTED" : a.armed ? "ARMED" : a.stale ? "stale arm" : "not armed";
   const cls = a.halted ? "pnl-neg" : a.armed ? "pnl-pos" : "muted";
   return (
-    <span className={`chip ${cls}`} title={`live.enabled ${a.liveEnabled === null ? "unknown" : String(a.liveEnabled)}; arm record ${a.date ?? "none"}; halt flag ${a.halted ? "present" : "absent"}`}>
-      {label} · {a.arm ?? "?"} · {a.symbol ?? "?"}
+    <span
+      className={`chip ${cls}`}
+      title={`modules.flies.enabled ${data.moduleEnabled === null ? "not set" : String(data.moduleEnabled)}; live.enabled ${a.liveEnabled === null ? "unknown" : String(a.liveEnabled)}; arm record ${a.date ?? "none"}; halt flag ${a.halted ? "present" : "absent"}`}
+    >
+      {fliesBadgeText(data)}
     </span>
   );
 }
@@ -101,6 +113,14 @@ function SuiteBadge() {
 function LivePill() {
   const { data } = useLiveFlies();
   const l = data?.loop;
+  // "idle" on a switched-off module reads as a loop between ticks; it is not scheduled at all.
+  if (data?.moduleEnabled === false && l?.state !== "live") {
+    return (
+      <span className="chip muted" title={l?.lastIterationAt != null ? `last live iteration ${l.lastIterationAt}` : "no live iteration recorded"}>
+        loop off
+      </span>
+    );
+  }
   return <LoopPill state={l?.state} ageSeconds={l?.ageSeconds} detail={l?.lastIterationAt != null ? `last live iteration ${l.lastIterationAt}` : undefined} />;
 }
 

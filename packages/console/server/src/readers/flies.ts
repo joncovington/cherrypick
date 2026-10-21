@@ -1902,8 +1902,8 @@ export interface FliesAnalytics {
     maxPossibleLoss: number;
     /**
      * LIVE only: the largest worst case at expiry the pilot's book carried at any tick of this
-     * session, from the loop's own `fly_live_marks.open_margin`. Held after settlement until the
-     * next session opens, then null -- see `sessionPeakWorst`.
+     * session, from the loop's own `fly_live_marks.open_margin`. The session's own figure, so it
+     * stands through settlement -- see `sessionPeakWorst`. Null when nothing was recorded.
      */
     sessionPeakWorst: { worst: number; at: string } | null;
     /**
@@ -1927,21 +1927,6 @@ export interface FliesAnalytics {
   feeDrag: Array<{ arm: string; premium: number; gross: number; fees: number; settlementFees: number | null; net: number; dragPct: number | null }>;
 }
 
-/**
- * The live pilot's largest worst case at expiry on `tradeDate`, held until the next session opens.
- *
- * The figure is the loop's own: `fly_live_marks.open_margin` is the tick's open worst-case
- * exposure, the number the buying-power gate reads, so this page and the gate cannot disagree.
- * (Checked against a replay of `fly.book_floor` over the rewound positions on 2026-09-24: both
- * $283.44.) The tile it feeds summed only OPEN positions, so it read $0 the moment the book settled
- * while the page was still showing that session.
- *
- * "Until the next session opens" needs a calendar, and this package keeps none of its own. The
- * paper loop runs every trading session and writes its first `fly_snapshots` row at 09:30 ET, so a
- * paper row dated after `tradeDate` at or past 09:30 IS the next open having happened -- weekends
- * and holidays included, with nothing re-derived. No paper ledger means that cannot be known, and
- * the figure stays up, labelled with its time.
- */
 /** The session's settlement print, off its books. Optional columns: an older ledger reads null. */
 function sessionSettlement(
   db: DatabaseHandle,
@@ -1975,11 +1960,25 @@ function medianCompletion(db: DatabaseHandle, tradeDate: string, armClause: stri
   return mins.length % 2 === 1 ? mins[mid]! : (mins[mid - 1]! + mins[mid]!) / 2;
 }
 
-function sessionPeakWorst(
-  config: ConsoleConfig,
-  db: DatabaseHandle,
-  tradeDate: string,
-): { worst: number; at: string } | null {
+/**
+ * The live pilot's largest worst case at expiry on `tradeDate`: the session's own figure, so it
+ * stands through settlement for as long as a page shows that session.
+ *
+ * The figure is the loop's own: `fly_live_marks.open_margin` is the tick's open worst-case
+ * exposure, the number the buying-power gate reads, so this page and the gate cannot disagree.
+ * (Checked against a replay of `fly.book_floor` over the rewound positions on 2026-09-24: both
+ * $283.44.) The tile it feeds summed only OPEN positions, so it read $0 the moment the book settled
+ * while the page was still showing that session.
+ *
+ * Until 2026-10-21 this also nulled itself once the paper loop recorded ANY later session's 09:30
+ * open, a second "has the next session opened" rule beside `resolveLiveSession`'s (which asks only
+ * about today). The two disagreed whenever the pilot sat out a session the paper loop ran: the Live
+ * page went on serving the last live session, the peak went null, and the tile fell back to the
+ * last tick's margin -- "open exposure $890.33 / $1000" on a book settled five sessions earlier.
+ * Which session a page shows is now decided in one place (`sessionOpened`, used by
+ * `resolveLiveSession`); this figure belongs to whichever session that is.
+ */
+function sessionPeakWorst(db: DatabaseHandle, tradeDate: string): { worst: number; at: string } | null {
   const hasMarks = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='fly_live_marks'").get();
   if (hasMarks === undefined) return null;
   const peak = db
@@ -1989,16 +1988,7 @@ function sessionPeakWorst(
     )
     .get(tradeDate);
   if (peak === undefined || peak.margin === null || !(peak.margin > 0)) return null;
-  const nextOpened = withReadOnlyDb<boolean>(path.join(config.paths.fliesDir, "paper_trades.db"), false, (paper) => {
-    const row = paper
-      .prepare<[string], { n: number }>(
-        `SELECT COUNT(*) AS n FROM fly_snapshots
-          WHERE trade_date > ? AND substr(iteration_ts, 12, 5) >= '09:30'`,
-      )
-      .get(tradeDate);
-    return (row?.n ?? 0) > 0;
-  });
-  return nextOpened ? null : { worst: -peak.margin, at: peak.at };
+  return { worst: -peak.margin, at: peak.at };
 }
 
 export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, filter: FliesFilter): FliesAnalytics {
@@ -2075,7 +2065,7 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
         fees: Number(t["fees"] ?? 0),
         completed: Number(t["completed"] ?? 0),
         maxPossibleLoss,
-        sessionPeakWorst: mode === "live" ? sessionPeakWorst(config, db, tradeDate) : null,
+        sessionPeakWorst: mode === "live" ? sessionPeakWorst(db, tradeDate) : null,
         dailyPeakRisk: (() => {
           const s = peakRiskSessions(db, { arm: filter.arm, start: tradeDate, end: tradeDate })[0];
           return s === undefined ? null : { peak: s.peakRisk ?? 0, at: s.peakAt, source: s.peakSource };

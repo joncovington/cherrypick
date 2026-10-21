@@ -83,6 +83,8 @@ function row(v: unknown): EarningsRecordRow | null {
     region: region === "US" || region === "intl" ? region : null,
     movePct: num(r["move_pct"]),
     emMovePct: num(r["em_move_pct"]),
+    eventExpiry: str(r["event_expiry"]),
+    eventExpiryDays: num(r["event_expiry_days"]),
     moveOverEm: num(r["move_over_em"]),
     insideEm: bool(r["inside_em"]),
     directionRight: bool(r["direction_right"]),
@@ -103,13 +105,21 @@ export function readEarningsRecord(config: ConsoleConfig): EarningsRecordPayload
     return { asOf: null, summary: null, rows: [] };
   }
   const s = rec(doc["summary"]);
+  const wk = rec(s["earnings_week"]);
+  const wkDays = num(wk["max_days"]);
   return {
     asOf: str(doc["as_of"]),
     summary: {
       announcements: num(s["announcements"]) ?? 0,
-      measured: num(s["measured"]) ?? 0,
+      measuredMoves: num(s["measured_moves"]),
+      // An older record called the compared count `measured`.
+      compared: num(s["compared"]) ?? num(s["measured"]) ?? 0,
       insideEm: num(s["inside_em"]),
       medianMoveOverEm: num(s["median_move_over_em"]),
+      earningsWeek:
+        wkDays === null
+          ? null
+          : { maxDays: wkDays, n: num(wk["n"]) ?? 0, insideEm: num(wk["inside_em"]), medianMoveOverEm: num(wk["median_move_over_em"]) },
       strongReads: num(s["strong_reads"]) ?? 0,
       directionRight: num(s["direction_right"]),
       react: totals(s["spreads_react"]),

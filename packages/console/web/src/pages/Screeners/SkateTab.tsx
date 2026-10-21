@@ -104,17 +104,25 @@ function hardLine(c: SkateConfig | null): string {
 }
 
 function softLine(c: SkateConfig | null): string {
-  if (c === null) return "the skate rate over 11 years and 3, and skate yield";
+  if (c === null) return "the skate rate over the name's full history and the last 3 years, and skate yield";
   const s = c.soft;
-  return `skate rate ${pct(s.skate, 0)} or more over 11 years and ${pct(s.skateRecent, 0)} over 3, skate yield on the bid ${pct(s.yield, 0)} or more`;
+  return (
+    `skate rate ${pct(s.skate, 0)} or more over the name's full history (from 2015, as little as a year for a young name) ` +
+    `and ${pct(s.skateRecent, 0)} over the last 3 years, gross skate yield on the bid ${pct(s.yield, 0)} or more`
+  );
+}
+
+/** Windows of history as years, ~252 a year: "6.0y". */
+function years(windows: number | null): string | null {
+  return windows === null ? null : `${(windows / 252).toFixed(1)}y`;
 }
 
 function SoftCell({ v, c }: { v: SkateView; c: SkateConfig | null }) {
   const s = v.pick.soft;
   const missed = [
-    s.skate ? null : `11-year skate rate under ${pct(c?.soft.skate ?? null, 0)}`,
+    s.skate ? null : `full-history skate rate under ${pct(c?.soft.skate ?? null, 0)}`,
     s.skateRecent ? null : `3-year skate rate under ${pct(c?.soft.skateRecent ?? null, 0)}`,
-    s.yield ? null : `skate yield under ${pct(c?.soft.yield ?? null, 0)}`,
+    s.yield ? null : `gross skate yield under ${pct(c?.soft.yield ?? null, 0)}`,
   ].filter((x): x is string => x !== null);
   return s.all ? (
     <td title="Passes every soft threshold">
@@ -123,6 +131,37 @@ function SoftCell({ v, c }: { v: SkateView; c: SkateConfig | null }) {
   ) : (
     <td title={`A marker, not a filter. Misses: ${missed.join("; ")}`}>
       <span className="chip">miss</span>
+    </td>
+  );
+}
+
+/** The premium less the fee to open one contract, with the fee beside it; flagged where the premium
+ *  does not cover it. A dash on a run older than the fee fields. */
+function NetPremiumCell({ v }: { v: SkateView }) {
+  const p = v.pick;
+  if (p.netPremiumBid === null || p.feeOpen === null) {
+    return (
+      <td className="muted num" title="This run predates the fee figures">
+        {DASH}
+      </td>
+    );
+  }
+  const net = p.netPremiumBid;
+  return (
+    <td
+      className={`num ${net > 0 ? "" : "pnl-neg"}`}
+      title={`The bid premium less ${dollars(p.feeOpen)} to open one short contract (commission and pass-through fees, the suite's schedule). Net yield on the bid: ${pct(p.netYieldBid)}.`}
+    >
+      {`${net > 0 ? "+" : net < 0 ? "−" : ""}${dollars(Math.abs(net))}`}
+      <span className="muted"> fee {dollars(p.feeOpen)}</span>
+      {net <= 0 && (
+        <>
+          {" "}
+          <span className="chip chip-warn" title="The premium does not cover the fee to open: a loss even if it skates">
+            under cost
+          </span>
+        </>
+      )}
     </td>
   );
 }
@@ -174,6 +213,8 @@ const SORTS: Record<string, (v: SkateView) => number | string | null> = {
   skateRecent: (v) => v.pick.skateRecent,
   implied: (v) => v.pick.impliedSkate,
   yield: (v) => v.pick.yieldBid,
+  netPremium: (v) => v.pick.netPremiumBid,
+  netYield: (v) => v.pick.netYieldBid,
   delta: (v) => (v.pick.delta === null ? null : Math.abs(v.pick.delta)),
   oi: (v) => v.pick.quote.openInterest,
   tested: (v) => v.pick.testedPerMonth,
@@ -202,18 +243,38 @@ function SkateTable({ views, data }: { views: SkateView[]; data: SkatePayload })
               title="The strike against the spot at the quote, not against the band: the band is set on the band day's close, so a name that has moved since can have its pick at or through the money"
             />
             <SortTh label="Bid / share" k="bid" sort={sort} className="num" title="The one per-share figure: the bid, and the ask beside it" />
-            <th className="num" title="Premium received per contract at the bid (bid × 100), a credit">
-              Premium
+            <th className="num" title="Premium received per contract at the bid (bid × 100), a credit, before costs">
+              Premium, gross
             </th>
-            <SortTh label="$ / day" k="perDay" sort={sort} className="num" title="Premium per contract per calendar day, on the bid" />
-            <SortTh label="Hist − implied" k="gap" sort={sort} className="num" title="The 11-year skate rate minus the model's (1 − N(d2)): the default sort, widest first. A history estimate until the forward record exists." />
-            <SortTh label="Skate 11y" k="skate" sort={sort} className="num" title="Share of past days on which the band, at this strike's offset, held to expiry, over 11 years" />
+            <SortTh
+              label="Net of fee"
+              k="netPremium"
+              sort={sort}
+              className="num"
+              title="The bid premium less the fee to open one short contract (commission and pass-through fees). The ranking and the best expiry stay on the gross."
+            />
+            <SortTh label="$ / day, gross" k="perDay" sort={sort} className="num" title="Premium per contract per calendar day, on the bid, before costs: what picks the best expiry" />
+            <SortTh label="Hist − implied" k="gap" sort={sort} className="num" title="The full-history skate rate minus the model's (1 − N(d2)): the default sort, widest first. A history estimate until the forward record exists." />
+            <SortTh
+              label="Skate, full history"
+              k="skate"
+              sort={sort}
+              className="num"
+              title="Share of past days on which the band, at this strike's offset, held to expiry, over the name's whole history since 2015: about 11 years for an old name, as little as one for a young one. The years it stands on are beside it."
+            />
             <SortTh label="3y" k="skateRecent" sort={sort} className="num" title="The same over the last 3 years" />
             <SortTh label="Implied" k="implied" sort={sort} className="num" title="The model's chance of finishing out of the money" />
-            <SortTh label="Yield" k="yield" sort={sort} className="num" title="Skate yield on the bid: premium ÷ capital × 365 ÷ days, simple (capital: the shares for a call, the strike for a put)" />
+            <SortTh label="Yield, gross" k="yield" sort={sort} className="num" title="Skate yield on the bid before costs: premium ÷ capital × 365 ÷ days, simple (capital: the shares for a call, the strike for a put)" />
+            <SortTh label="Net yield" k="netYield" sort={sort} className="num" title="The same on the premium net of the fee to open" />
             <SortTh label="Δ" k="delta" sort={sort} className="num" title="Delta from the IV solved at the mid" />
             <SortTh label="OI" k="oi" sort={sort} className="num" title="Open interest at the strike" />
-            <SortTh label="Tested / mo" k="tested" sort={sort} className="num" title="Chance of being tested at least once over a month of cycles at this expiry, from the 11-year rate" />
+            <SortTh
+              label="Through / mo"
+              k="tested"
+              sort={sort}
+              className="num"
+              title="Chance that at least one cycle finishes past the strike over a month of cycles at this expiry, from the full-history rate. Not the record's “tested” below, which is a strike touched that still skated."
+            />
             <th title="The soft thresholds: a marker, never a filter">Soft</th>
             <th className="num" title={`The ${other} band's best strike (its expiry when different) and premium a day per contract`}>
               {other} band
@@ -247,12 +308,24 @@ function SkateTable({ views, data }: { views: SkateView[]; data: SkatePayload })
                 <span className="muted"> / {v.pick.quote.ask === null ? DASH : v.pick.quote.ask.toFixed(2)}</span>
               </td>
               <td className="num">{v.pick.quote.bid === null ? DASH : `+${dollars(v.pick.quote.bid * 100, 0)}`}</td>
+              <NetPremiumCell v={v} />
               <td className="num">{dollars(v.pick.perDayBid)}</td>
               <td className={`num ${v.pick.gap === null ? "" : v.pick.gap > 0 ? "pnl-pos" : v.pick.gap < 0 ? "pnl-neg" : ""}`}>{points(v.pick.gap)}</td>
-              <td className="num">{pct(v.pick.skate)}</td>
+              <td
+                className="num"
+                title={
+                  v.pick.historyWindows === null
+                    ? "This run predates the history-span figure"
+                    : `${v.pick.historyWindows.toLocaleString("en-US")} past windows (about ${years(v.pick.historyWindows)} of history)`
+                }
+              >
+                {pct(v.pick.skate)}
+                {v.pick.historyWindows !== null && <span className="muted"> {years(v.pick.historyWindows)}</span>}
+              </td>
               <td className="num">{pct(v.pick.skateRecent)}</td>
               <td className="num">{pct(v.pick.impliedSkate)}</td>
               <td className="num">{pct(v.pick.yieldBid)}</td>
+              <td className={`num ${v.pick.netYieldBid !== null && v.pick.netYieldBid <= 0 ? "pnl-neg" : ""}`}>{pct(v.pick.netYieldBid)}</td>
               <td className="num">{v.pick.delta === null ? DASH : v.pick.delta.toFixed(2)}</td>
               <td className="num">{v.pick.quote.openInterest === null ? DASH : v.pick.quote.openInterest.toLocaleString("en-US")}</td>
               <td className="num">{pct(v.pick.testedPerMonth, 0)}</td>
@@ -402,8 +475,10 @@ export function SkateTab() {
         strikes that pass the hard filters ({hardLine(data?.config ?? null)}); expiries spanning an earnings report are dropped
         before quoting. A row whose pick fails them is hidden. The soft thresholds ({softLine(data?.config ?? null)}) are a
         marker, never a filter, unless “passing only” is on. The expiry is bold where it pays more a day than the monthly.{" "}
-        {bandsLine(data?.config ?? null)} Premium and premium a day are per contract (100 shares) at the bid; the bid and ask
-        are the one per-share figure.
+        {bandsLine(data?.config ?? null)} Premium and premium a day are per contract (100 shares) at the bid, gross; the bid and
+        ask are the one per-share figure. Net of fee takes off what opening one short contract costs (commission and
+        pass-through fees; the bid already concedes the spread), and a premium that does not cover it is marked. The best
+        expiry, the ranking and the forward record all stay on the gross.
       </p>
       <p className="muted">
         History minus implied is a history estimate: the share of past days the band held, against the model's odds today. It is

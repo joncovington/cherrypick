@@ -198,7 +198,8 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
   command's and the watchdog's read (no broker). `live.max_structures_per_day` (default 1) caps new
   ICs a session (`null` lifts the count cap, so buying power alone sizes); a one-tick lock keeps a
   slow tick from overlapping the next. `live.daily_loss_halt_dollars` and the halt flag block NEW ICs
-  only: fills are still confirmed and open ICs still stopped and force-closed.
+  only: fills are still confirmed and open ICs still stopped and force-closed. The breaker sums
+  today's `ic_trades.pnl`, which is gross (before fees), so it trips on gross, not net.
   `live.use_order_alert_daemon` makes the supervisor keep `cherrypick.meic.alert_daemon` up until
   `disarm_time`; it records order alerts in `live_alerts.db` and starts a tick when an order the
   ledger knows stops working, so a fill is confirmed in seconds rather than at the next minute.

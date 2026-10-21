@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import calendar as cal
+from cherrypick.core import fees as _fees
 
 from . import adjust, earnings_calendar, liquidity, paths, securities, store
 
@@ -473,6 +474,16 @@ def hard_pass(quote: dict | None, hard: dict) -> bool:
     return tight and (q.get("open_interest") or 0) >= hard["min_open_interest"]
 
 
+SHORT_ONE = {"order": {"legs": [{"quantity": 1}]}}
+
+
+def open_fee() -> float:
+    """The fee to open one short option contract on the suite's schedule (commission plus clearing and
+    regulatory pass-throughs), dollars; no slippage, since the premium is already read at the bid."""
+    c = _fees.apply_entry_costs(SHORT_ONE, [{"bid": 0.0, "ask": 0.0}], 1, {})
+    return round(c["commission"] + c["pass_through_fees"], 2)
+
+
 def score_leg(
     row: dict,
     band: str,
@@ -508,6 +519,13 @@ def score_leg(
     implied = None if itm is None else 1 - itm
     capital = spot if side == "C" else strike
     per = 365 / max(days, 1)
+    # Tested on the unrounded yield: 0.05995 rounds to 0.06 and must still miss a 6% bar.
+    yield_bid = bid / capital * per if bid and capital else None
+    # What opening one short contract costs (commission and pass-through fees, `cherrypick.core.fees`):
+    # the premium is quoted gross, and on a few-cent bid this fee is most of it. A fill at the bid
+    # already concedes the spread, so no slippage is added. Shown beside the gross; never ranks.
+    fee = open_fee()
+    net_premium = round(100 * bid - fee, 2) if bid else None
     out: dict[str, Any] = {
         "band": band,
         "band_level": round(level, 4),
@@ -522,9 +540,19 @@ def score_leg(
         "skate": None if hist is None else round(hist, 4),
         "skate_recent": None if recent is None else round(recent, 4),
         "gap": None if hist is None or implied is None else round(hist - implied, 4),
-        "yield_bid": round(bid / capital * per, 4) if bid and capital else None,
+        "yield_bid": None if yield_bid is None else round(yield_bid, 4),
         "yield_mid": round(mid / capital * per, 4) if mid and capital else None,
         "per_day_bid": round(100 * bid / max(days, 1), 3) if bid else None,
+        # Per contract, dollars: the fee to open, the bid premium less it, and the yield on that.
+        "fee_open": fee,
+        "net_premium_bid": net_premium,
+        "net_yield_bid": round(net_premium / (100 * capital) * per, 4)
+        if net_premium is not None and capital
+        else None,
+        # How much history the skate rates stand on: the band's windows (about 252 a year) since
+        # `history_from`, which a younger name meets with as little as `min_history`.
+        "history_windows": b.get("n"),
+        "history_windows_recent": b.get("n_recent"),
         "tested_per_cycle": None if hist is None else round(1 - hist, 4),
         "tested_per_month": None
         if hist is None
@@ -535,7 +563,7 @@ def score_leg(
     out["soft"] = {
         "skate": hist is not None and hist >= soft["skate"],
         "skate_recent": recent is not None and recent >= soft["skate_recent"],
-        "yield": out["yield_bid"] is not None and out["yield_bid"] >= soft["yield"],
+        "yield": yield_bid is not None and yield_bid >= soft["yield"],
     }
     out["soft"]["all"] = all(out["soft"].values())
     return out

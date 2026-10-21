@@ -35,6 +35,8 @@ function row(over: Partial<IncomeListRow>): IncomeListRow {
     earningsDate: "2027-01-28",
     earningsEstimated: false,
     exDividendInTrade: null,
+    exDividend: null,
+    exDividendDate: null,
     leveraged: null,
     fit: null,
     ...over,
@@ -47,12 +49,12 @@ vi.mock("../src/lib/api", async (importOriginal) => ({
   useIncomeList: () => ({ data: payload, isLoading: false, isError: false }),
 }));
 
-const { OwnListTab } = await import("../src/pages/Screeners/OwnListTab");
+const { OwnListTab, applyFilters } = await import("../src/pages/Screeners/OwnListTab");
 
-function render(url = "/screeners/short-puts"): string {
+function render(url = "/screeners/short-puts", list: "short-puts" | "covered-calls" = "short-puts"): string {
   return renderToString(
     <MemoryRouter initialEntries={[url]}>
-      <OwnListTab list="short-puts" />
+      <OwnListTab list={list} />
     </MemoryRouter>,
   ).replace(/<!-- -->/g, "");
 }
@@ -108,6 +110,73 @@ describe("our short-put list", () => {
     // A value between stops reads as the stop below it, so the slider and the URL always agree.
     expect(render("/screeners/short-puts?premium=60")).toContain("Premium ≥ $50");
     expect(render("/screeners/short-puts?premium=junk")).toContain("Premium ≥ any");
+  });
+
+  it("counts every hidden row once, so the parts add up to all less shown", () => {
+    // Every combination of the four filters failing, plus a symbol search: rows failing two or more
+    // used to count nowhere.
+    const rows: IncomeListRow[] = [];
+    for (let m = 0; m < 16; m++) {
+      rows.push(
+        row({
+          symbol: `S${m}`,
+          passes: m & 1 ? false : true,
+          earnings: m & 2 ? "in-trade" : "clear",
+          fit: m & 4 ? false : true,
+          premium: m & 8 ? 10 : 200,
+        }),
+      );
+    }
+    for (const q of ["", "S1"]) {
+      for (const minPremium of [0, 25]) {
+        for (const allTrades of [false, true]) {
+          const { shown, hidden } = applyFilters(rows, { allTrades, allEarnings: false, allFit: false, minPremium, q });
+          const parts = hidden.thin + hidden.inTrade + hidden.unfit + hidden.small + hidden.unmatched;
+          expect(parts).toBe(rows.length - shown.length);
+        }
+      }
+    }
+    const { hidden } = applyFilters(rows, { allTrades: false, allEarnings: false, allFit: false, minPremium: 25, q: "" });
+    expect(hidden).toEqual({ thin: 8, inTrade: 4, unfit: 2, small: 1, unmatched: 0 });
+    payload = { ...base(rows), fitBasis: { session: "2026-10-20", availableBp: 1000, basis: "cash" } };
+    const html = render("/screeners/short-puts?premium=25");
+    expect(html).toContain("1 of 16 names · 8 thin hidden · 4 more with earnings in the trade hidden · 2 more that do not fit the account hidden · 1 more under $25 hidden");
+    expect(html).toContain("counted once");
+  });
+
+  it("says plainly when no call fits because the account holds no uncovered lot", () => {
+    payload = {
+      ...base([row({ symbol: "AAA", fit: false, delta: 0.16, strike: 110 }), row({ symbol: "BBB", fit: false, delta: 0.16, strike: 60 })]),
+      list: "covered-calls",
+      fitBasis: { session: "2026-10-20", availableBp: 1000, basis: "cash" },
+    };
+    const html = render("/screeners/covered-calls", "covered-calls");
+    expect(html).toContain("The account holds no uncovered 100-share lot, so no call fits");
+    expect(html).not.toContain("Nothing matches these filters");
+    const all = render("/screeners/covered-calls?fit=all", "covered-calls");
+    expect(all).not.toContain("so no call fits");
+    expect(all).toContain("AAA");
+  });
+
+  it("reads a call's ex-dividend date with its state, never a bare dash", () => {
+    payload = {
+      ...base([
+        row({ symbol: "INTR", exDividend: "in-trade", exDividendDate: "2026-11-10", exDividendInTrade: true }),
+        row({ symbol: "AFTR", exDividend: "after", exDividendDate: "2026-12-30", exDividendInTrade: false }),
+        row({ symbol: "PAST", exDividend: "past", exDividendDate: "2026-08-17", exDividendInTrade: false }),
+        row({ symbol: "NONE", exDividend: "unknown", exDividendDate: null, exDividendInTrade: false }),
+        row({ symbol: "OLDF", exDividendInTrade: false }), // a list built before the state: unknown
+        row({ symbol: "OLDT", exDividendInTrade: true }),
+      ]),
+      list: "covered-calls",
+    };
+    const html = render("/screeners/covered-calls", "covered-calls");
+    expect(html).toContain("in trade · Nov 10");
+    expect(html).toContain("after · Dec 30");
+    expect(html).toContain("past · Aug 17");
+    expect(html.match(/>unknown</g)?.length).toBe(2);
+    expect(html).toMatch(/>in trade</);
+    expect(html).not.toMatch(/<td><span class="muted">—<\/span><\/td>/);
   });
 
   it("offers no fit filter when no evaluation judged the session", () => {

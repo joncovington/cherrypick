@@ -9,6 +9,9 @@ export type IncomeList = "short-puts" | "covered-calls";
 /** The next announcement against the trade's own expiry; `none` for a fund, which reports none. */
 export type IncomeEarnings = "in-trade" | "clear" | "unknown" | "none";
 
+/** A covered call's ex-dividend date against its expiry. Only `after` is clear of the trade. */
+export type IncomeExDividend = "in-trade" | "after" | "past" | "unknown";
+
 export interface IncomeListRow {
   symbol: string;
   /** The security list's type (Stock, Exchange Traded Fund, ...), null where it has none. */
@@ -43,8 +46,14 @@ export interface IncomeListRow {
   earnings: IncomeEarnings;
   earningsDate: string | null;
   earningsEstimated: boolean | null;
-  /** Covered calls only: an ex-dividend date between today and expiry (early assignment, flagged). */
+  /** Covered calls only: an ex-dividend date between today and expiry (early assignment, flagged).
+   *  False never meant clear: it was also a past date or none at all. */
   exDividendInTrade: boolean | null;
+  /** Covered calls only: the broker's ex-dividend date against the trade -- between today and expiry,
+   *  after it, already past (the next not posted) or no date. Null for a put, and on a list built
+   *  before the state was recorded (2026-10-21), which carries only `exDividendInTrade`. */
+  exDividend: IncomeExDividend | null;
+  exDividendDate: string | null;
   /** `leveraged`, `inverse` or `volatility` for a declared daily-reset fund; null otherwise, and on a
    *  list built before the badge existed. */
   leveraged: string | null;

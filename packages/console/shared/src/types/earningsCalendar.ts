@@ -4,6 +4,10 @@
  * (`technicals/earnings-calendar/<day>.json`). The console reads the file and re-derives nothing.
  */
 
+/** An event expiry more than this many calendar days past the reaction prices more than the
+ *  announcement (`earnings_calendar.EARNINGS_WEEK_DAYS`). */
+export const EARNINGS_WEEK_DAYS = 7;
+
 /** The direction read's codes, as the security list spells them; `edgeLabel` carries the words. */
 export type EarningsEdge = "sb" | "bn" | "bp" | "bi" | "mx" | "br" | "bd" | "brn" | "sbe";
 
@@ -33,6 +37,11 @@ export interface EarningsTradeLeg {
 /** The suggested spread as `fetch_screener_greeks.py measure` read it: snapped, quoted, priced. */
 export interface EarningsTrade {
   readingAt: string | null;
+  /** The session the reading was taken on (its folder), which can be after the announcement. */
+  takenOn: string;
+  /** True when the reading was taken after the announcement (a session past the entry session):
+   *  shown only where no reading before it exists, and marked. Null when the time of day is unknown. */
+  afterReport: boolean | null;
   kind: "debit" | "credit";
   right: "P" | "C";
   expiry: string;
@@ -84,8 +93,13 @@ export interface EarningsCalendarRow {
   liquidityRank: number | null;
   optionable: boolean | null;
   sector: string | null;
+  /** Dolt's close, as of the payload's `inputs.closeDate` (which can sit sessions behind the build). */
   price: number | null;
+  /** The first listed expiry on or after the reaction day: what the expected move is priced on. */
   eventExpiry: string | null;
+  /** Calendar days from the reaction day to `eventExpiry`; over `EARNINGS_WEEK_DAYS` the move is a
+   *  fortnight's or a month's, not the announcement's. */
+  eventExpiryDays: number | null;
   eventIv: number | null;
   /** One standard deviation to the event expiry, in dollars and as a share of the price (%). */
   sdMove: number | null;
@@ -140,6 +154,9 @@ export interface EarningsRecordRow {
   region: "US" | "intl" | null;
   movePct: number | null;
   emMovePct: number | null;
+  /** The expiry the expected move was priced on, and calendar days from the reaction day to it. */
+  eventExpiry: string | null;
+  eventExpiryDays: number | null;
   moveOverEm: number | null;
   insideEm: boolean | null;
   directionRight: boolean | null;
@@ -158,9 +175,15 @@ export interface EarningsRecordPayload {
   asOf: string | null;
   summary: {
     announcements: number;
-    measured: number;
+    /** Announcements whose one-day move is measured; null on a record older than this field. */
+    measuredMoves: number | null;
+    /** Of those, the ones with an expected move to compare against: what `insideEm` and the median read. */
+    compared: number;
     insideEm: number | null;
     medianMoveOverEm: number | null;
+    /** The same two, over only the moves priced on an expiry within `maxDays` of the reaction; null
+     *  on an older record. */
+    earningsWeek: { maxDays: number; n: number; insideEm: number | null; medianMoveOverEm: number | null } | null;
     strongReads: number;
     directionRight: number | null;
     react: EarningsRecordTotals;

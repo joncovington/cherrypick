@@ -35,6 +35,23 @@ const LIST_TITLE: Record<ScreenerList, string> = {
 };
 const PAGE_SIZES = [50, 100, 200, 500] as const;
 
+/** The last day the vendor's lists are captured (the subscription ends). */
+const VENDOR_END = "2026-10-24";
+
+/** What our studies found for each list's kind of trade (docs/income-review-plan.md). */
+const VENDOR_NOTE: Record<ScreenerList, string> = {
+  "short-puts":
+    "This is the vendor's screen, not a rule of ours. Our short-put studies (0.40-delta puts like this list's, and 16 delta on " +
+    "the 45-60 day monthly, after costs) found no edge beyond the market exposure the put carries.",
+  "covered-calls":
+    "This is the vendor's screen, not a rule of ours. Our covered-call study (16 names, 2020–2026, after costs) found writing " +
+    "the call lost to holding the shares on most names.",
+  "credit-spreads":
+    "This is the vendor's screen, not a rule of ours. Our credit-spread studies found none with edge after costs: no short " +
+    "delta (0.20, 0.25, 0.30 or the first out of the money) on either side, no direction signal (the one that passed history, " +
+    "on single names), and no put spread on the funds traded; the declared selection test gave no verdict.",
+};
+
 function money(v: number | null | undefined): string {
   return v === null || v === undefined ? "—" : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -96,20 +113,39 @@ function ListedReturnCell({ r, v, digits = 1 }: { r: ScreenerRow; v: number | nu
 function tradeTitle(r: ScreenerRow): string {
   const t = r.trade!;
   const where = t.side === "listed" ? "the listed option" : "the cycle monthly";
+  // A spread's prices are signed cash flow: below zero it costs to put on, a debit.
+  const px = (v: number) => (r.width === null ? money(v) : `${money(Math.abs(v))} ${v < 0 ? "db" : "cr"}`);
   return (
     `${where}, ${t.expiry} (${t.dte ?? "—"} days), from the regular-hours reading: ` +
-    `mid ${money(t.mid)}, working ${money(t.working)}, natural ${money(t.natural)} ` +
+    `mid ${px(t.mid)}, working ${px(t.working)}, natural ${px(t.natural)} ` +
     `(${money(t.cost)} a share to cross the whole spread). Working is halfway from the mid to the natural fill: ` +
     `a limit at the mid stepped down a quarter of the spread. A model of a fill, not one.`
   );
 }
 
-/** Per share at the working price. */
+/** The list's floor: a credit of a third of the width. Exact, so 33.12% is not under it. */
+const CREDIT_FLOOR_PCT = 100 / 3;
+
+/** Per share at the working price. A spread's price is signed cash flow: a credit `cr`, and a working
+ *  price below zero -- the spread costs to put on -- a debit, `db`. */
 function TradePriceCell({ r }: { r: ScreenerRow }) {
   if (r.trade === null) return <td className="num muted">—</td>;
+  const w = r.trade.working;
+  const spread = r.width !== null;
   return (
-    <td className="num" title={tradeTitle(r)}>
-      {money(r.trade.working)}
+    <td className={spread && w < 0 ? "num pnl-neg" : "num"} title={tradeTitle(r)}>
+      {spread ? `${money(Math.abs(w))} ${w < 0 ? "db" : "cr"}` : money(w)}
+      {r.trade.shortInTheMoney ? (
+        <>
+          {" "}
+          <span
+            className="chip chip-warn"
+            title={`The short ${r.trade.spot === null ? "" : `is in the money at ${money(r.trade.spot)}, `}the share price at the afternoon reading this trade is priced from; the list's own price (${money(r.price)}) is the evening before. The trade's figures are priced on that day's chain.`}
+          >
+            ITM
+          </span>
+        </>
+      ) : null}
     </td>
   );
 }
@@ -119,7 +155,7 @@ function TradeReturnCell({ r }: { r: ScreenerRow }) {
   const t = r.trade;
   if (t === null) return <td className="num muted">—</td>;
   if (t.workingCreditPct !== null) {
-    const under = t.workingCreditPct < 33.1;
+    const under = t.workingCreditPct < CREDIT_FLOOR_PCT;
     return (
       <td className={under ? "num pnl-neg" : "num"} title={`${tradeTitle(r)}\nThe list's floor is a third of the width; tested here at the working price.`}>
         {pct(t.workingCreditPct)}
@@ -137,11 +173,19 @@ function TradeReturnCell({ r }: { r: ScreenerRow }) {
 function OursCell({ r }: { r: ScreenerRow }) {
   if (r.ours === null) return <td className="muted" title="This session's broker chain was not recorded for this name">—</td>;
   const same = r.ours.length === r.strikes.length && r.ours.every((k, i) => k === r.strikes[i]);
+  const unpicked = r.ours.some((k) => k === null);
   return same ? (
     <td className="pnl-pos" title="Our reproduced rule picks the same strike(s)">✓</td>
   ) : (
-    <td className="num" title="Our reproduced rule's strike(s) where they differ from the list's">
-      {r.ours.map(strike).join(" / ")}
+    <td
+      className="num"
+      title={
+        unpicked
+          ? "Our reproduced rule's strike(s) where they differ from the list's. “no pick”: the recorded broker chain had no priced strike past the short on that side, so the rule could not choose a long"
+          : "Our reproduced rule's strike(s) where they differ from the list's"
+      }
+    >
+      {r.ours.map((k) => (k === null ? "no pick" : strike(k))).join(" / ")}
     </td>
   );
 }
@@ -165,7 +209,7 @@ function EarningsCell({ r }: { r: ScreenerRow }) {
   const title =
     `Next announcement ${r.earningsDate ?? "unknown"}` +
     (r.earningsSource ? ` (${r.earningsSource === "broker" ? "broker" : "the list"}${r.earningsEstimated ? ", estimated" : ""})` : "") +
-    `; judged against ${r.earningsExpiry ?? "no expiry"} (${earningsBasis(r)}). A date that does not reach that expiry is unknown, never clear.`;
+    `; judged from ${r.earningsFrom} (the day of the reading the trade is priced from; a report before the open that day is already behind it) to ${r.earningsExpiry ?? "no expiry"} (${earningsBasis(r)}). A date that does not reach that expiry is unknown, never clear.`;
   return (
     <td title={title}>
       {r.earningsDate ? shortDate(r.earningsDate) : ""} <span className={cls}>{label}</span>
@@ -295,14 +339,23 @@ export function ScreenerTab({ list }: { list: ScreenerList }) {
     <section className="card">
       <div className="card-head">
         <h2>{LIST_TITLE[list]}</h2>
+        <span className="chip" title="These rows are the vendor's screen as the evening capture saved them, not a list of ours">
+          the vendor's list
+        </span>
         <span className="chip">read-only</span>
         {data?.day && (
           <span className="card-asof">
             list of {data.day}
             {data.pricesAt ? ` · priced ${data.pricesAt}` : data.createdAt ? ` · built ${data.createdAt}` : ""}
+            {data.tradeDay ? ` · trades read ${data.tradeDay}` : ""}
           </span>
         )}
       </div>
+
+      <p className="muted" style={{ margin: "0 0 10px" }}>
+        <strong>No tested edge.</strong> {VENDOR_NOTE[list]} The vendor's subscription ends on {VENDOR_END}: no list is saved
+        after it, and this tab freezes on the last one.
+      </p>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
         {data && data.days.length > 0 && (

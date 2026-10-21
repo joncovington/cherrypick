@@ -153,6 +153,23 @@ describe("readSkate", () => {
     expect(aaa.bands.byExpiry.pick).toMatchObject({ expiry: "2026-10-30", strike: 106, gap: 0.02 });
     expect(p.rows[1]!.bands).toEqual({ fixed: { best: null, pick: null }, byExpiry: { best: null, pick: null } });
     expect(p.rows[1]).toMatchObject({ fund: true, earnings: null, stage: 1, monthly: null });
+    // A run older than the fee and history-span fields: null, never a zero fee.
+    expect(aaa.bands.fixed.pick).toMatchObject({ feeOpen: null, netPremiumBid: null, netYieldBid: null, historyWindows: null });
+  });
+
+  it("carries the fee to open, the net premium and yield, and the history span", () => {
+    const withFees = {
+      ...RUN,
+      rows: [
+        {
+          ...RUN.rows[0],
+          legs: [leg({ fee_open: 1.14, net_premium_bid: 118.86, net_yield_bid: 0.1189, history_windows: 1514, history_windows_recent: 740 })],
+        },
+      ],
+    };
+    write("2026-10-19", "1505.json", withFees);
+    const pick = readSkate(config).rows[0]!.bands.fixed.pick;
+    expect(pick).toMatchObject({ feeOpen: 1.14, netPremiumBid: 118.86, netYieldBid: 0.1189, historyWindows: 1514, historyWindowsRecent: 740 });
   });
 
   it("says an unreadable run is unreadable, never an empty screen", () => {
