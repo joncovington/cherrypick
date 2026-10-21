@@ -617,8 +617,8 @@ of the last evening pass, tomorrow's artifact, the queue and the last concluded.
 experiments tab opens with the cross-module roll-up. Module slides are read-only; kill/dismiss stay on
 the Advisor page only.
 
-**Live** (`/live`, `lightbox/manifests/LiveLightbox.tsx`, `pages/Live/`) — six tabs: `today` (where
-`/live` lands), the account-wide `positions`, `portfolio` and `wheel`, and one per live loop with a page of its
+**Live** (`/live`, `lightbox/manifests/LiveLightbox.tsx`, `pages/Live/`) — seven tabs: `today` (where
+`/live` lands), the account-wide `positions`, `portfolio`, `wheel` and `pmcc`, and one per live loop with a page of its
 own (`flies`, `meic`; each hidden when that module's live switch is off and the loop is idle, see *What is off*). The
 `flies` tab is the pilot's day over `GET /api/live/flies` (`routes/live.ts` → `readers/fliesLive.ts`), composing existing readers
 (`services/liveLock`, `readFliesLoopStatus`, `readFliesJournal`, `readFliesAnalytics`) plus settled
@@ -730,7 +730,28 @@ candidates and check-roll verdicts. **`basis_known: false` reads "unknown, share
 history", never a number. "Tested", "at or under the buy-to-close" and "beyond the band" are
 manage's flags**, never worked out from a price and a strike: `web/test/wheelCards.test.tsx` gives a
 flag that disagrees with the arithmetic both ways and was shown to fail against a re-derived chip.
-The shared pieces of the three tabs (action chip, detail card, rows) are in `manageParts.tsx`.
+The shared pieces of the evaluation's tabs (action chip, detail card, rows, the per-share and fee
+formats, the status, tested and check-roll chips, the band text) are in `manageParts.tsx`.
+
+**The Live page's `pmcc` tab** (2026-10-20, `pages/Live/PmccCards.tsx`) is the fourth view: the
+account's `pmcc` (packages/manage `pmcc.py`, docs/skate-plan.md step 6), one card per name whose calls
+have a PMCC's shape, recognised or not, in the wheel cards' columns wherever they mean the same thing.
+It is the **real account's** PMCCs, not the paper pmcc module's page. Its id is a trading-module id,
+so `visibility.ts` lists the account-wide Live tabs (`LIVE_ACCOUNT_WIDE`) and shows them before the
+live-switch rule runs: the paper module has no live gate, the features reply names it false, and the
+tab would otherwise vanish (`visibility.test.ts`, shown to fail with the check removed). The reader
+passes `pmcc` and each trade's `pmcc` note (or its `error`) through, nulls kept; an evaluation from
+before the view has `pmcc: null` and says so, and an empty one says how a PMCC is recognised (a long
+call entered at 0.80 delta or more, or `intent: "pmcc"`). A card shows the long (delta at entry or
+"delta at entry unknown" with manage's reason, today's delta, extrinsic share, days left, the roll
+flag), the width check with the P&L if assigned gross and net of fees, the long's net cost after
+premiums, the short's check (band or "band not in the snapshot", assignment exposure, N(d2),
+earnings in its life), every short sold against the long, the skate yield as a comparison figure,
+and the `pmcc.*` rules with the roll candidates and check-roll verdicts. Unrecognised: "its diagonal
+rules stand". Unreconciled: its problems, no rule, and the net P&L if assigned `n/r`. **The width
+check's pass and the assignment exposure are manage's flags**: `web/test/pmccCards.test.tsx` gives
+each a flag that disagrees with the figures beside it, both ways, and was shown to fail against chips
+re-derived from them.
 
 **There is no Overview page** (removed 2026-10-16): `/` redirects to `/live`, whose `today` tab is
 the every-loop summary. The morning phase chip moved to the status bar and the alert-daemon chip to

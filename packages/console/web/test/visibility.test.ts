@@ -86,6 +86,15 @@ describe("gex, the advisor and the reports", () => {
     expect(isSlideVisible("live", "meic", meicOff, liveLoopsInUse(undefined))).toBe(true);
   });
 
+  it("the account-wide pmcc tab never follows the paper pmcc module's live switch", () => {
+    // The paper module's config has no live gate, so the features reply names it false. The Live tab
+    // shares the id but reads the real account's evaluation, and stays like positions and the wheel.
+    const paperOnly = withOff({ live: { flies: true, meic: true, pmcc: false } });
+    expect(isSlideVisible("live", "pmcc", paperOnly, liveLoopsInUse(today([{ loop: "flies" }])))).toBe(true);
+    expect(isSlideVisible("live", "pmcc", paperOnly)).toBe(true);
+    expect(isSlideVisible("live", "wheel", withOff({ live: { flies: false, meic: false } }))).toBe(true);
+  });
+
   it("an idle live loop's Live tab follows its live switch; unread or absent stays shown", () => {
     const fliesOff = withOff({ live: { flies: false, meic: true } });
     expect(isSlideVisible("live", "flies", fliesOff)).toBe(false);

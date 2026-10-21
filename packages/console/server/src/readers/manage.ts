@@ -40,6 +40,13 @@ import type {
   ManageWheelQuote,
   ManageWheelRoll,
   ManageWheelRolls,
+  ManagePmcc,
+  ManagePmccLong,
+  ManagePmccNote,
+  ManagePmccPosition,
+  ManagePmccShort,
+  ManageWheelBand,
+  ManageWheelRollCheck,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num } from "./db.js";
@@ -250,6 +257,184 @@ function trade(v: unknown): ManageTrade {
       : null,
     heldForEarnings: arr(t["held_for_earnings"]).map(fired),
     wheel: Array.isArray(t["wheel"]) ? t["wheel"].map(wheelNote) : null,
+    pmcc: pmccNote(t["pmcc"]),
+  };
+}
+
+/* ------------------------------------------------------------------ the PMCC view (pmcc.py) */
+
+function pmccNote(v: unknown): ManagePmccNote | null {
+  if (v === null || v === undefined) return null;
+  const n = rec(v);
+  return {
+    underlying: str(n["underlying"]),
+    long: str(n["long"]),
+    short: str(n["short"]),
+    recognized: flag(n["recognized"]),
+    recognizedBy: str(n["recognized_by"]),
+    reconciled: flag(n["reconciled"]),
+    widthPasses: flag(n["width_passes"]),
+    pnlIfAssigned: num(n["pnl_if_assigned"]),
+    assignmentExposed: flag(n["assignment_exposed"]),
+    rollLong: strs(n["roll_long"]),
+    error: str(n["error"]),
+  };
+}
+
+function wheelBand(v: unknown): ManageWheelBand | null {
+  if (v === null || v === undefined) return null;
+  const b = rec(v);
+  return { day: str(b["day"]), shift: num(b["shift"]), fixed: num(b["fixed"]), byExpiry: num(b["by_expiry"]) };
+}
+
+function beyondBand(v: unknown): { fixed: boolean | null; byExpiry: boolean | null } | null {
+  if (v === null || v === undefined) return null;
+  const b = rec(v);
+  return { fixed: flag(b["fixed"]), byExpiry: flag(b["by_expiry"]) };
+}
+
+function pmccLong(v: unknown): ManagePmccLong {
+  const l = rec(v);
+  return {
+    symbol: str(l["symbol"]) ?? "?",
+    leg: str(l["leg"]) ?? str(l["symbol"]) ?? "?",
+    strike: num(l["strike"]),
+    expiration: str(l["expiration"]),
+    dte: num(l["dte"]),
+    quantity: num(l["quantity"]),
+    mid: num(l["mid"]),
+    opened: str(l["opened"]),
+    daysAtEntry: num(l["days_at_entry"]),
+    deltaAtEntry: num(l["delta_at_entry"]),
+    deltaAtEntryWhy: str(l["delta_at_entry_why"]),
+    entryFills: arr(l["entry_fills"]).map((raw) => {
+      const f = rec(raw);
+      return {
+        date: str(f["date"]),
+        price: num(f["price"]),
+        close: num(f["close"]),
+        divYield: num(f["div_yield"]),
+        iv: num(f["iv"]),
+        delta: num(f["delta"]),
+      };
+    }),
+    delta: num(l["delta"]),
+    intrinsic: num(l["intrinsic"]),
+    extrinsic: num(l["extrinsic"]),
+    extrinsicShare: num(l["extrinsic_share"]),
+    roll: strs(l["roll"]),
+    rollDeltaUnknown: flag(l["roll_delta_unknown"]),
+  };
+}
+
+function pmccShort(v: unknown): ManagePmccShort {
+  const s = rec(v);
+  const a = rec(s["assignment"]);
+  const e = rec(s["earnings"]);
+  return {
+    symbol: str(s["symbol"]) ?? "?",
+    leg: str(s["leg"]) ?? str(s["symbol"]) ?? "?",
+    strike: num(s["strike"]),
+    expiration: str(s["expiration"]),
+    dte: num(s["dte"]),
+    quantity: num(s["quantity"]),
+    mid: num(s["mid"]),
+    openPrice: num(s["open_price"]),
+    tested: flag(s["tested"]),
+    intrinsic: num(s["intrinsic"]),
+    extrinsic: num(s["extrinsic"]),
+    probItm: num(s["prob_itm"]),
+    band: wheelBand(s["band"]),
+    bandMissing: str(s["band_missing"]),
+    beyondBand: beyondBand(s["beyond_band"]),
+    assignment: {
+      nearZero: flag(a["near_zero"]),
+      dividend: flag(a["dividend"]),
+      exposed: flag(a["exposed"]),
+      why: str(a["why"]),
+      exDividendDate: str(a["ex_dividend_date"]),
+      dividendAmount: num(a["dividend_amount"]),
+    },
+    earnings: { date: str(e["date"]), inside: flag(e["inside"]), why: str(e["why"]) },
+  };
+}
+
+function pmccPosition(v: unknown): ManagePmccPosition {
+  const p = rec(v);
+  const w = rec(p["width"]);
+  const y = p["skate_yield"] === null || p["skate_yield"] === undefined ? null : rec(p["skate_yield"]);
+  const r = p["rolls"] === null || p["rolls"] === undefined ? null : rec(p["rolls"]);
+  return {
+    underlying: str(p["underlying"]) ?? "?",
+    recognized: flag(p["recognized"]),
+    recognizedBy: str(p["recognized_by"]),
+    intent: str(p["intent"]),
+    reconciled: flag(p["reconciled"]),
+    problems: strs(p["problems"]),
+    spot: num(p["spot"]),
+    long: pmccLong(p["long"]),
+    short: pmccShort(p["short"]),
+    width: {
+      width: num(w["width"]),
+      netCost: num(w["net_cost"]),
+      netCostPerShare: num(w["net_cost_per_share"]),
+      basis: str(w["basis"]),
+      passes: flag(w["passes"]),
+      pnlIfAssigned: num(w["pnl_if_assigned"]),
+      pnlIfAssignedNet: num(w["pnl_if_assigned_net"]),
+      assumes: str(w["assumes"]),
+    },
+    shorts: arr(p["shorts"]).map((raw) => {
+      const s = rec(raw);
+      return {
+        symbol: str(s["symbol"]) ?? "?",
+        leg: str(s["leg"]) ?? str(s["symbol"]) ?? "?",
+        sold: str(s["sold"]),
+        soldPrice: num(s["sold_price"]),
+        cash: num(s["cash"]),
+        fees: num(s["fees"]),
+        status: str(s["status"]),
+      };
+    }),
+    orders: arr(p["orders"]).map(ident).filter((x): x is string => x !== null),
+    netCash: num(p["net_cash"]),
+    fees: num(p["fees"]),
+    longCost: num(p["long_cost"]),
+    premiums: num(p["premiums"]),
+    skateYield: y ? { value: num(y["value"]), capped: flag(y["capped"]), basis: str(y["basis"]) } : null,
+    rolls: r
+      ? {
+          candidates: arr(r["candidates"]).map((raw) => {
+            const c = rec(raw);
+            return {
+              expiration: str(c["expiration"]),
+              open: quote(c["open"]),
+              delta: num(c["delta"]),
+              closePrice: num(c["close_price"]),
+              net: num(c["net"]),
+              legs: strs(c["legs"]),
+              check: rollCheck(c["check"]),
+              checkError: str(c["check_error"]),
+            };
+          }),
+          why: str(r["why"]),
+          quotedExpiries: strs(r["quoted_expiries"]),
+          quotedAt: str(r["quoted_at"]),
+        }
+      : null,
+    tradeIds: strs(p["trade_ids"]),
+  };
+}
+
+/** The account's PMCC view, passed through. Null when the evaluation carries no `pmcc` key. */
+function pmcc(v: unknown): ManagePmcc | null {
+  if (v === null || v === undefined) return null;
+  const p = rec(v);
+  return {
+    positions: arr(p["positions"]).map(pmccPosition),
+    underlyingHistoryError: str(p["underlying_history_error"]),
+    bandsMissing: str(p["bands_missing"]),
+    error: str(p["error"]),
   };
 }
 
@@ -271,29 +456,33 @@ function quote(v: unknown): ManageWheelQuote | null {
   return { strike: num(q["strike"]), bid: num(q["bid"]), ask: num(q["ask"]), mid: num(q["mid"]) };
 }
 
+/** check-roll's verdict on a roll, as `rollcheck.check` wrote it; null where none was run. */
+function rollCheck(v: unknown): ManageWheelRollCheck | null {
+  if (v === null || v === undefined) return null;
+  const c = rec(v);
+  return {
+    verdict: str(c["verdict"]),
+    credit: num(c["credit"]),
+    maxLossBefore: num(c["max_loss_before"]),
+    maxLossAfter: num(c["max_loss_after"]),
+    shapeBefore: str(c["shape_before"]),
+    shapeAfter: str(c["shape_after"]),
+    problems: strs(c["problems"]),
+    notes: strs(c["notes"]),
+    after: strs(c["after"]),
+  };
+}
+
 function wheelRoll(v: unknown): ManageWheelRoll | null {
   if (v === null || v === undefined) return null;
   const r = rec(v);
-  const c = r["check"] === null || r["check"] === undefined ? null : rec(r["check"]);
   return {
     closePrice: num(r["close_price"]),
     open: quote(r["open"]),
     net: num(r["net"]),
     expiration: str(r["expiration"]),
     legs: strs(r["legs"]),
-    check: c
-      ? {
-          verdict: str(c["verdict"]),
-          credit: num(c["credit"]),
-          maxLossBefore: num(c["max_loss_before"]),
-          maxLossAfter: num(c["max_loss_after"]),
-          shapeBefore: str(c["shape_before"]),
-          shapeAfter: str(c["shape_after"]),
-          problems: strs(c["problems"]),
-          notes: strs(c["notes"]),
-          after: strs(c["after"]),
-        }
-      : null,
+    check: rollCheck(r["check"]),
     checkError: str(r["check_error"]),
   };
 }
@@ -811,6 +1000,7 @@ function account(v: unknown, rules: Record<string, unknown>): ManageAccount {
     }),
     portfolio: portfolio(a["portfolio"], rules),
     wheel: wheel(a["wheel"]),
+    pmcc: pmcc(a["pmcc"]),
   };
 }
 

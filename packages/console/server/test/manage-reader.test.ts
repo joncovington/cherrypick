@@ -479,6 +479,129 @@ describe("readManage", () => {
     expect(a.trades[1]!.wheel).toBeNull();
   });
 
+  it("an evaluation written before the PMCC view has no PMCC, never an empty one", () => {
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-14.json"), JSON.stringify(evalDoc("2026-10-14")));
+    const a = readManage(config).accounts[0]!;
+    expect(a.pmcc).toBeNull();
+    expect(a.trades[0]!.pmcc).toBeNull();
+  });
+
+  it("passes the PMCC view and the trade's PMCC note through, keeping every null null", () => {
+    // As packages/manage's evaluator writes it (test_pmcc: a failed width with one quoted roll).
+    const doc = evalDoc("2026-10-20");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    acct["pmcc"] = {
+      positions: [
+        {
+          underlying: "XYZ", recognized: true, recognized_by: "entered at 0.82 delta (at least 0.80)", intent: null,
+          reconciled: true, problems: [], spot: 43.0, div_yield: 0.0,
+          long: {
+            symbol: "XYZ 280121C00040000", leg: "2028-01-21 40C", strike: 40.0, expiration: "2028-01-21", dte: 465,
+            quantity: 1.0, mid: 8.0, opened: "2026-04-01", days_at_entry: 660, delta_at_entry: 0.8248,
+            delta_at_entry_why: null,
+            entry_fills: [{ date: "2026-04-01", price: 15.12, close: 50.0, div_yield: 0.0, iv: 0.30, delta: 0.8248 }],
+            delta: 0.7075, intrinsic: 3.0, extrinsic: 5.0, extrinsic_share: 0.625, roll: [], roll_delta_unknown: false,
+          },
+          short: {
+            symbol: "XYZ 261120C00045000", leg: "2026-11-20 45C", strike: 45.0, expiration: "2026-11-20", dte: 38,
+            quantity: -1.0, mid: 0.8, open_price: 6.0, tested: false, intrinsic: 0.0, extrinsic: 0.8, prob_itm: 0.3038,
+            band: null, band_missing: "band not in the snapshot", beyond_band: null,
+            assignment: { near_zero: false, dividend: false, exposed: false, why: null },
+            earnings: { date: null, inside: null, why: "no report date in the snapshot" },
+          },
+          width: {
+            width: 5.0, net_cost: 762.0, net_cost_per_share: 7.62, basis: "linked orders", passes: false,
+            pnl_if_assigned: -262.0, pnl_if_assigned_net: -265.3, assumes: "the long exercised to deliver the shares",
+          },
+          shorts: [
+            { symbol: "XYZ 260515C00055000", leg: "2026-05-15 55C", sold: "2026-04-01", sold_price: 1.5, cash: 150.0, fees: -1.1, status: "expiration" },
+            { symbol: "XYZ 261120C00045000", leg: "2026-11-20 45C", sold: "2026-09-25", sold_price: 6.0, cash: 600.0, fees: -1.1, status: "open" },
+          ],
+          orders: [1, 2],
+          net_cash: -762.0, fees: -3.3, long_cost: 1512.0, premiums: 750.0,
+          skate_yield: { value: 0.829, capped: false, basis: "comparison figure" },
+          rolls: {
+            candidates: [
+              {
+                expiration: "2026-12-18", open: { strike: 48.0, bid: 0.75, ask: 0.85, mid: 0.8 }, delta: 0.246,
+                close_price: 0.8, net: 0.0,
+                legs: ["BTC 1 2026-11-20 45C @ 0.80", "STO 1 2026-12-18 48C @ 0.80 (quoted 0.75/0.85)"],
+                check: { verdict: "ok", credit: 0.0, max_loss_before: 762.0, max_loss_after: 762.0, problems: [], notes: [], after: [] },
+                check_error: null,
+              },
+            ],
+            why: null, quoted_expiries: ["2026-12-18"], quoted_at: "2026-10-12T18:45:00Z",
+          },
+          trade_ids: ["KO"],
+        },
+      ],
+      underlying_history_error: null,
+      bands_missing: "band not in the snapshot",
+      error: null,
+    };
+    (acct["trades"] as Array<Record<string, unknown>>)[0]!["pmcc"] = {
+      underlying: "XYZ", long: "2028-01-21 40C", short: "2026-11-20 45C", recognized: true,
+      recognized_by: "entered at 0.82 delta (at least 0.80)", reconciled: true, width_passes: false,
+      pnl_if_assigned: -262.0, assignment_exposed: false, roll_long: [],
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-20.json"), JSON.stringify(doc));
+    const a = readManage(config).accounts[0]!;
+    const p = a.pmcc!.positions[0]!;
+    expect(a.pmcc!.error).toBeNull();
+    expect(a.pmcc!.bandsMissing).toBe("band not in the snapshot");
+    expect(p).toMatchObject({ underlying: "XYZ", recognized: true, reconciled: true, longCost: 1512, premiums: 750, orders: ["1", "2"], tradeIds: ["KO"] });
+    expect(p.width).toMatchObject({ passes: false, pnlIfAssigned: -262, pnlIfAssignedNet: -265.3, netCostPerShare: 7.62, basis: "linked orders" });
+    expect(p.long).toMatchObject({ deltaAtEntry: 0.8248, deltaAtEntryWhy: null, extrinsicShare: 0.625, roll: [], rollDeltaUnknown: false });
+    expect(p.long.entryFills[0]).toMatchObject({ divYield: 0, iv: 0.3 });
+    expect(p.short.assignment).toEqual({ nearZero: false, dividend: false, exposed: false, why: null, exDividendDate: null, dividendAmount: null });
+    expect(p.short.earnings).toEqual({ date: null, inside: null, why: "no report date in the snapshot" });
+    expect(p.short.band).toBeNull();
+    expect(p.short.probItm).toBeCloseTo(0.3038);
+    expect(p.shorts.map((s) => s.status)).toEqual(["expiration", "open"]);
+    expect(p.rolls!.candidates[0]).toMatchObject({ delta: 0.246, net: 0, check: { verdict: "ok", maxLossAfter: 762 } });
+    expect(p.rolls!.quotedAt).toBe("2026-10-12T18:45:00Z");
+    expect(a.trades[0]!.pmcc).toMatchObject({ widthPasses: false, assignmentExposed: false, pnlIfAssigned: -262, error: null });
+    expect(a.trades[1]!.pmcc).toBeNull();
+  });
+
+  it("an unknown delta at entry, an unpriced roll and an unjudged exposure stay null", () => {
+    const doc = evalDoc("2026-10-20");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    acct["pmcc"] = {
+      positions: [
+        {
+          underlying: "ABC", recognized: false, recognized_by: "delta at entry unknown (no close for 2026-04-01 in the snapshot)",
+          reconciled: false, problems: ["the long's opening predates the history"],
+          long: { symbol: "L", leg: "L", delta_at_entry: null, delta_at_entry_why: "no close for 2026-04-01 in the snapshot", delta: null, roll: [] },
+          short: { symbol: "S", leg: "S", tested: null, assignment: { near_zero: null, dividend: null, exposed: null, why: null }, earnings: {} },
+          width: { passes: null, pnl_if_assigned: null, pnl_if_assigned_net: null, basis: "open_legs" },
+          shorts: [], orders: [], net_cash: null, fees: 0, long_cost: null, premiums: null,
+          skate_yield: { value: null, capped: false, basis: "comparison figure" }, rolls: null, trade_ids: [],
+        },
+      ],
+      underlying_history_error: "the snapshot carries no underlying history (taken before v13)",
+      bands_missing: null,
+      error: null,
+    };
+    (acct["trades"] as Array<Record<string, unknown>>)[0]!["pmcc"] = { error: "PMCC rules failed: KeyError: 'x'" };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-20.json"), JSON.stringify(doc));
+    const a = readManage(config).accounts[0]!;
+    const p = a.pmcc!.positions[0]!;
+    expect(p.recognized).toBe(false);
+    expect(p.long.deltaAtEntry).toBeNull();
+    expect(p.long.deltaAtEntryWhy).toBe("no close for 2026-04-01 in the snapshot");
+    expect(p.long.rollDeltaUnknown).toBeNull();
+    expect(p.short.tested).toBeNull();
+    expect(p.short.assignment.exposed).toBeNull();
+    expect(p.short.earnings).toEqual({ date: null, inside: null, why: null });
+    expect(p.width.passes).toBeNull();
+    expect(p.width.pnlIfAssigned).toBeNull();
+    expect(p.rolls).toBeNull();
+    expect(p.longCost).toBeNull();
+    expect(a.pmcc!.underlyingHistoryError).toBe("the snapshot carries no underlying history (taken before v13)");
+    expect(a.trades[0]!.pmcc).toMatchObject({ error: "PMCC rules failed: KeyError: 'x'", widthPasses: null, recognized: null });
+  });
+
   it("an account with no wheel view says why", () => {
     const doc = evalDoc("2026-10-20");
     (doc["accounts"] as Array<Record<string, unknown>>)[0]!["wheel"] = { cycles: [], error: "no trade history in this snapshot" };

@@ -1,5 +1,5 @@
 import { LivePage, useLiveFlies } from "../../pages/Live/LivePage";
-import { PortfolioPage, PositionsPage, WheelPage } from "../../pages/Live/ManagePage";
+import { PmccPage, PortfolioPage, PositionsPage, WheelPage } from "../../pages/Live/ManagePage";
 import { MeicLivePage, useLiveMeic } from "../../pages/Live/MeicLivePage";
 import { LiveTodayPage, suiteBadgeText, useLiveToday } from "../../pages/Live/LiveTodayPage";
 import { LoopPill } from "../../components/ScopeBar";
@@ -26,7 +26,8 @@ import type { SlideDef } from "../types";
  * 2026-10-18: the `manage` tab split in two, after `today`: `positions` (each trade's action, actions
  * first) and `portfolio` (the account as one book). Both are account-wide, so they carry the suite
  * badge, as `today` does; `/live/manage` lands on `positions`. 2026-10-20: `wheel`, the third view of
- * the same evaluation (each wheel cycle on the account), beside them and account-wide too.
+ * the same evaluation (each wheel cycle on the account), beside them and account-wide too; then `pmcc`,
+ * the fourth (each PMCC on the account).
  */
 const slides: SlideDef[] = [
   // Every live loop on one page: what is armed, open and settled, and what needs a person.
@@ -37,13 +38,16 @@ const slides: SlideDef[] = [
   { id: "portfolio", label: "portfolio", render: () => <PortfolioPage /> },
   // 2026-10-20: each wheel cycle on the account (packages/manage wheel.py) and its wheel rules.
   { id: "wheel", label: "wheel", render: () => <WheelPage /> },
+  // 2026-10-20: each PMCC on the account (packages/manage pmcc.py) and its PMCC rules. Not the paper
+  // pmcc module's page: this is the real account, read from the evaluation.
+  { id: "pmcc", label: "pmcc", render: () => <PmccPage /> },
   { id: "flies", label: "flies", render: () => <LivePage /> },
   // MEIC's live loop: arming, halt, orphans, held submissions, open ICs and resolved history.
   { id: "meic", label: "meic", render: () => <MeicLivePage /> },
 ];
 
 /** The tabs that read the whole account, not one loop: they wear the suite's badge. */
-const ACCOUNT_WIDE = new Set(["today", "positions", "portfolio", "wheel"]);
+const ACCOUNT_WIDE = new Set(["today", "positions", "portfolio", "wheel", "pmcc"]);
 
 function ArmBadge() {
   const { data } = useLiveFlies();

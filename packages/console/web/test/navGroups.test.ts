@@ -57,7 +57,8 @@ describe("the live nav declaration", () => {
   it("opens on the all-loops summary, then the account's positions and portfolio, then each live loop", () => {
     // 2026-10-18: `manage` split in two and moved up beside `today`: both read the whole account.
     // 2026-10-20: the wheel joins them, the third view of the same evaluation.
-    expect(navSlideIds("live")).toEqual(["today", "positions", "portfolio", "wheel", "flies", "meic"]);
+    // 2026-10-20: then the PMCCs, the fourth view.
+    expect(navSlideIds("live")).toEqual(["today", "positions", "portfolio", "wheel", "pmcc", "flies", "meic"]);
   });
 
   it("sends the old manage tab to positions, so a bookmark still lands on the actions", () => {

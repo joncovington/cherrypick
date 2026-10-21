@@ -89,6 +89,9 @@ export function liveLoopsInUse(d: LiveTodayPayload | undefined): LiveInUse {
   return out;
 }
 
+/** The Live tabs that read the whole account, not one live loop: always shown. */
+export const LIVE_ACCOUNT_WIDE: ReadonlySet<string> = new Set(["today", "positions", "portfolio", "wheel", "pmcc"]);
+
 /** Whether one tab of a visible page is shown: each module's advisor tab, the technicals chart, and
  *  each live loop's Live tab. Every tab of a fail-closed page follows the page.
  *
@@ -105,6 +108,9 @@ export function isSlideVisible(module: string, slide: string, f: Features, inUse
   // there; hiding it would bounce that link to Today. So it goes only when the switch is an
   // explicit false AND Live Today was read and reports nothing for the loop. An unreadable switch
   // (absent from the reply) or an unread Live Today stays shown.
+  // The account-wide Live tabs read the manage evaluation and never leave. `pmcc` shares its id with
+  // the paper pmcc module, whose live switch is always false; it is not that module's live loop.
+  if (module === "live" && LIVE_ACCOUNT_WIDE.has(slide)) return true;
   if (module === "live" && isTradingModuleId(slide)) {
     if (!known(f) || f.live?.[slide] !== false) return true;
     return inUse === null || inUse.has(slide);
