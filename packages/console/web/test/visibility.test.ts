@@ -14,7 +14,7 @@ const ALL_ON: SuiteFeaturesOk = {
   modules: Object.fromEntries(
     ["meic", "flies", "calendars", "pmcc", "curve", "bwb", "earnings"].map((m) => [m, { configured: true, enabled: true, missing: [] }]),
   ),
-  services: { "gex-recorder": true, "meic-sidecar": false },
+  services: { "gex-recorder": true },
   features: { advisor: true, review_narrative: true, morning_narrative: true, technicals: true },
 };
 

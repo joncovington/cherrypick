@@ -801,13 +801,14 @@ def build_gex(cfg: dict, symbol: str | None = None) -> dict:
         return {
             "ok": False,
             "symbol": symbol,
-            "error": f"stream cache not found at {cfg['stream_cache_db']} — is the MEIC streamer running?",
+            "error": f"stream cache not found at {cfg['stream_cache_db']} — is the streamer (packages/streamer) running?",
         }
     if snap.expiration is None:
         return {
             "ok": False,
             "symbol": symbol,
-            "error": f"no cached chain for {symbol} yet — is the MEIC streamer subscribed to it?",
+            "error": f"no cached chain for {symbol} yet — has a module declared it to the streamer "
+            "(state/stream_requests)?",
         }
 
     profile = compute_gex_profile(
