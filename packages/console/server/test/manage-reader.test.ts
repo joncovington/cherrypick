@@ -417,6 +417,18 @@ describe("readManage", () => {
     ]);
   });
 
+  it("passes a spread's odds through, none on an older evaluation", () => {
+    const doc = evalDoc("2026-10-19");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    const odds = { p_loss: 0.2, p_max_loss: 0.11, break_even: 23.66, entry_cost: 4.74, entry_cost_share: 0.13 };
+    const cand = { underlying: "CCL", kind: "put_spread", legs: [], units: 1, per_unit: {} };
+    acct["portfolio"] = { benchmark: "SPY", candidates: { fits: [{ ...cand, odds }, { ...cand, underlying: "OLD" }], too_big: [] } };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    const fits = readManage(config).accounts[0]!.portfolio!.candidates!.fits;
+    expect(fits[0]!.odds).toEqual({ pLoss: 0.2, pMaxLoss: 0.11, breakEven: 23.66, entryCost: 4.74, entryCostShare: 0.13 });
+    expect(fits[1]!.odds).toBeNull();
+  });
+
   it("passes the ex-earnings list through as its own list, and a refused one with no list", () => {
     const doc = evalDoc("2026-10-19");
     const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;

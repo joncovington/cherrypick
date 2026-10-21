@@ -353,6 +353,7 @@ function candidate(over: Partial<ManageCandidate> = {}): ManageCandidate {
     ifRoom: null,
     leveraged: null,
     heldSameExpiry: false,
+    odds: null,
     ...over,
   };
 }
@@ -399,6 +400,17 @@ describe("IncomeCard", () => {
     const html = render(<IncomeCard c={income({ fits: [candidate({ underlying: "TSLL", leveraged: "leveraged" }), candidate()] })} />);
     expect(html).toMatch(/TSLL<span class="chip"[^>]*>leveraged</);
     expect(html.match(/>leveraged</g)?.length).toBe(1);
+  });
+
+  it("shows each spread's odds, says it has no tested edge, and lists by symbol", () => {
+    const odds = { pLoss: 0.2, pMaxLoss: 0.11, breakEven: 23.66, entryCost: 4.74, entryCostShare: 0.13 };
+    const html = render(
+      <IncomeCard c={income({ fits: [candidate({ kind: "put_spread", odds }), candidate({ kind: "short_put" })], fitsTotal: 60 })} />,
+    );
+    expect(html).toContain("20% / 11% · b/e 23.66 · cost 13%");
+    expect(html).toContain("No tested edge.");
+    expect(html).toContain("the first 2 of 60 that fit, by symbol");
+    expect(html).not.toContain("theta per dollar");
   });
 
   it("badges a candidate on a name already held on the same expiry", () => {

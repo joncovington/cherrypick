@@ -11,6 +11,26 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed (boundary, 2026-10-22): manage's spread candidates are the least-bad put spread, with its
+  odds, listed by symbol.** Four declared studies over licensed end-of-day chains (edge-hypotheses
+  items 14-16: a selection signal, the short delta, `mr-300m` on single names, and the funds the user
+  trades) found no short strike, direction signal or exit with an edge after costs. So the candidates
+  stop presenting one spread as better than another:
+  - **Put spreads:** short near 0.20 delta, long near 0.10 (`spread_short_delta`, `spread_long_delta`),
+    held to expiry, with no credit floor (`spread_min_credit` 0; a third, before). The first strike out
+    of the money they replace tested worst.
+  - **Call spreads off** (`call_spreads`): they sell against drift and lost at every delta; short
+    delta comes from the hedge when the book needs it.
+  - **Odds on every spread** (`odds`): the chance of any loss and of the max loss from the legs'
+    deltas, the break-even, and what getting in costs over the mid, shown on Live → portfolio.
+  - **By symbol, never ranked** (the lists grow to 50 and 25 so an alphabetical cut is rare): theta per
+    dollar of buying power, the order before, favoured the spreads most likely to lose.
+  - The income card says it plainly: no tested edge, and holding tested better than closing at half
+    the credit. A ruleset without `spread_short_delta` keeps the old construction, so past sessions
+    re-evaluate as they were.
+  This changes which spreads manage suggests, so it is a boundary for anyone comparing candidates
+  across it; nothing trades the list. Also fixed: `portfolio.earnings_exposure` and
+  `portfolio.expiry_concentration` were missing from the rule ids an override may disable.
 - **Added: an income candidate on a name already held on its expiry is badged.** The two settle
   together, and with an opposite side they make one structure no rule judged (a put spread under a
   held call spread is a short strangle). Each candidate carries `held_same_expiry` (any held option

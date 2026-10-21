@@ -352,19 +352,31 @@ DEFAULT_RULES: dict[str, Any] = {
         "candidates": {
             "enabled": True,
             "short_put_delta": _income.SHORT_PUT_DELTA,
-            "spread_long_delta": 0.25,
+            # Credit spreads (2026-10-22, edge-hypotheses items 14-16): the short at the
+            # out-of-the-money strike nearest `spread_short_delta`, the long nearest
+            # `spread_long_delta` beyond it, held to expiry. No short delta, signal or exit showed an
+            # edge after costs; this was the least-bad cell, so it is offered as "no tested edge".
+            # Before, the short was the first strike out of the money, which tested worst.
+            "spread_short_delta": 0.20,
+            "spread_long_delta": 0.10,
+            # Call spreads sell against equity drift and lost at every delta; short delta comes from
+            # the XSP hedge (hedge.py) instead. On only where a direction signal has earned them.
+            "call_spreads": False,
             "covered_call_delta": _income.COVERED_CALL_DELTA,
             # A short put or covered call whose nearest strike misses its delta by more is not built:
             # the Screeners lists' tolerance, the history replay's (`cherrypick.core.incomerules`).
             "delta_tolerance": _income.DELTA_TOLERANCE,
-            "spread_min_credit": 0.331,
+            # A spread's working credit as a share of its width is about its chance of losing, not an
+            # edge: no floor, the credit and the odds are shown instead. (A third until 2026-10-22,
+            # which admitted only near-the-money shorts.)
+            "spread_min_credit": 0.0,
             "per_trade_risk_pct": 0.03,
             "notional_per_name_pct": {"cash": 0.25, "margin": 0.50},
             "max_buying_power_pct": 0.50,
             "max_name_theta_share": 0.25,
             "max_units": 10,
-            "show": 15,
-            "show_too_big": 10,
+            "show": 50,
+            "show_too_big": 25,
             # A waiting candidate (stopped by buying power or the theta ceiling) is graded by the
             # buying power it would leave: under the VIX cap ok, within this much over it `over`,
             # beyond that `far_over`.
@@ -410,6 +422,8 @@ RULE_IDS = (
     "portfolio.breakeven",
     "portfolio.concentration",
     "portfolio.buying_power",
+    "portfolio.earnings_exposure",
+    "portfolio.expiry_concentration",
 )
 
 
