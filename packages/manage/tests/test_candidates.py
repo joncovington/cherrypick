@@ -375,6 +375,16 @@ def test_the_theta_ceiling_and_name_concentration_cap_the_count():
     assert "concentration" in {r["binding"] for r in conc["too_big"]}
 
 
+def test_theta_about_to_expire_does_not_fill_the_ceiling():
+    # $300 of the book's theta is a leg expiring tomorrow: what the band reads is the $10 left, so a
+    # candidate is not stopped by the ceiling, and a name's expiring theta is no concentration.
+    book = _book(theta=300.0, underlyings=[{"underlying": "AAA", "theta": 290.0, "theta_ex_front": 0.0}])
+    book["theta_ex_front"] = 10.0
+    out = _suggest({"AAA": _entry()}, book)
+    assert not {"theta ceiling", "concentration"} & {r["binding"] for r in out["too_big"]}
+    assert not any((r.get("if_room") or {}).get("theta_over") for r in out["waiting"])
+
+
 def test_an_empty_book_is_not_blocked_by_concentration():
     out = _suggest({"AAA": _entry()}, _book(net_liq=50_000.0))
     assert out["fits"] and "concentration" not in {r["binding"] for r in out["too_big"]}

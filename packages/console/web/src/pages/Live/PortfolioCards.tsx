@@ -133,7 +133,7 @@ function DeltaCard({ p }: { p: ManagePortfolio }) {
       {band ? <BandDial band={band} unit={`${p.benchmark ?? "SPY"} sh`} label="beta-weighted delta" /> : <p className="muted">no band recorded</p>}
       <p className="muted pf-caption">
         {fmtCash(p.bwdDollarsPer1pct)} per 1% {p.benchmark ?? "SPY"} move · band{" "}
-        {band?.basis === "theta" ? "scaled by theta" : "scaled by net liq (no theta to scale by)"} · the broker's beta
+        {band?.basis === "theta" ? "scaled by theta" : "scaled by net liq (its floor: too little theta to scale by)"} · the broker's beta
       </p>
     </Card>
   );
@@ -163,8 +163,10 @@ function ThetaCard({ p }: { p: ManagePortfolio }) {
         <p className="muted">no band recorded</p>
       )}
       <p className="muted pf-caption">
-        {fmtMoney(p.theta)} a day · band {pctOf(band?.low ?? null)}–{pctOf(band?.high ?? null)} · theta is paid for by gamma, so
-        more is not more edge
+        {p.thetaExFront !== null && p.frontDte !== null
+          ? `${fmtMoney(p.thetaExFront)} a day without legs ${p.frontDte} days or less from expiry, ${fmtMoney(p.theta)} with them`
+          : `${fmtMoney(p.theta)} a day`}{" "}
+        · band {pctOf(band?.low ?? null)}–{pctOf(band?.high ?? null)} · theta is paid for by gamma, so more is not more edge
       </p>
     </Card>
   );

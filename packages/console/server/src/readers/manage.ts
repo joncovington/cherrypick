@@ -768,6 +768,8 @@ function portfolio(v: unknown, rules: Record<string, unknown>): ManagePortfolio 
     bwdDollarsPer1pct: num(p["bwd_dollars_per_1pct"]),
     theta: num(p["theta"]),
     thetaPctNetLiq: num(p["theta_pct_net_liq"]),
+    thetaExFront: num(p["theta_ex_front"]),
+    frontDte: num(p["front_dte"]),
     vega30: num(p["vega_30"]),
     breakeven:
       be["kind"] === "short_gamma" || be["kind"] === "long_gamma"

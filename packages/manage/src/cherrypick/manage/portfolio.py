@@ -10,7 +10,11 @@ display will differ a little (it models American exercise and dividends). What i
 - **Beta-weighted delta (BWD)**, in shares of the benchmark: sum of quantity x multiplier x delta x
   beta x spot / benchmark spot. The beta is the BROKER's, the one its own BWD uses, so the two can be
   set side by side.
-- **Theta**, in dollars per calendar day (the broker's convention) and as a share of net liq.
+- **Theta**, in dollars per calendar day (the broker's convention) and as a share of net liq. Stated
+  twice: the whole book, and without the option legs `front_dte` days or less from expiry. The band,
+  the concentration rule and the candidates read the second: a leg about to expire can carry nearly
+  all of a day's theta and then none of it, which made the band swing from five times its ceiling to
+  under its floor overnight (2026-10-20).
 - **The break-even move.** Theta is paid for by gamma (theta = -1/2 gamma S^2 sigma^2), so a short-gamma
   book loses a day's theta on a benchmark move of sqrt(2 theta / |gamma|). Gamma is stated in benchmark
   terms -- each underlying's gamma times (beta x spot / benchmark spot)^2 -- and the move is set against
@@ -260,6 +264,7 @@ def reading(
 ) -> dict[str, Any]:
     cfg = rules["portfolio"]
     rate = float(rules["pricing"]["rate"])
+    front_dte = int(cfg["theta"].get("front_dte", 0))
     net_liq = _f(balances.get("net_liquidating_value"))
     bench = (metrics or {}).get(benchmark or "") or {}
     bench_spot = _f(bench.get("last"))
@@ -285,6 +290,7 @@ def reading(
                 "delta": 0.0,
                 "gamma": 0.0,
                 "theta": 0.0,
+                "theta_front": 0.0,
                 "vega": 0.0,
                 "vega_30": 0.0,
                 "bwd": None,
@@ -299,6 +305,8 @@ def reading(
                 continue
             for key in ("delta", "gamma", "theta", "vega", "vega_30"):
                 row[key] += g[key]
+            if leg.get("right") in ("C", "P") and leg.get("dte") is not None and leg["dte"] <= front_dte:
+                row["theta_front"] += g["theta"]
             row["legs"].append(leg)
             leg_thetas.append((leg.get("expiration"), g["theta"]))
             trade_theta[id(trade)] = trade_theta.get(id(trade), 0.0) + g["theta"]
@@ -312,7 +320,10 @@ def reading(
             no_beta.append(row["underlying"])
 
     rows = list(per.values())
+    for r in rows:
+        r["theta_ex_front"] = r["theta"] - r["theta_front"]
     theta = sum(r["theta"] for r in rows)
+    theta_ex_front = sum(r["theta_ex_front"] for r in rows)
     bwd = sum(r["bwd"] for r in rows if r["bwd"] is not None) if bench_spot else None
     gamma_bench = sum(r["gamma_bench"] for r in rows if r["gamma_bench"] is not None) if bench_spot else None
 
@@ -324,7 +335,8 @@ def reading(
     breakeven = _breakeven(theta, gamma_bench, bench_spot)
 
     used = _f(balances.get("used_derivative_buying_power"))
-    gross_theta = sum(abs(r["theta"]) for r in rows)
+    # Concentration's theta share is of the theta that is not about to expire, like the band.
+    gross_theta = sum(abs(r["theta_ex_front"]) for r in rows)
     gross_bwd = sum(abs(r["bwd"]) for r in rows if r["bwd"] is not None)
 
     underlyings = []
@@ -338,11 +350,12 @@ def reading(
                 "delta_shares": _round(r["delta"]),
                 "bwd": _round(r["bwd"]),
                 "theta": _round(r["theta"]),
+                "theta_ex_front": _round(r["theta_ex_front"]),
                 "vega_30": _round(r["vega_30"]),
                 "bwd_share": _round(abs(r["bwd"]) / gross_bwd, 3)
                 if r["bwd"] is not None and gross_bwd
                 else None,
-                "theta_share": _round(abs(r["theta"]) / gross_theta, 3) if gross_theta else None,
+                "theta_share": _round(abs(r["theta_ex_front"]) / gross_theta, 3) if gross_theta else None,
             }
         )
 
@@ -359,6 +372,9 @@ def reading(
         "bwd_dollars_per_1pct": _round(bwd * bench_spot * 0.01) if bwd is not None and bench_spot else None,
         "theta": _round(theta),
         "theta_pct_net_liq": _round(theta / net_liq, 5) if net_liq else None,
+        "front_dte": front_dte,
+        "theta_ex_front": _round(theta_ex_front),
+        "theta_ex_front_pct_net_liq": _round(theta_ex_front / net_liq, 5) if net_liq else None,
         "gamma_bench": _round(gamma_bench, 4),
         "vega": _round(sum(r["vega"] for r in rows)),
         "vega_30": _round(sum(r["vega_30"] for r in rows)),
@@ -513,12 +529,12 @@ def bands(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     decides "inside" on its own. `inside` is None where there is no figure to place."""
     delta = delta_band(r, cfg["delta"])
     lo_pct, hi_pct = float(cfg["theta"]["min_pct_nlv"]), float(cfg["theta"]["max_pct_nlv"])
-    pct, bwd = r["theta_pct_net_liq"], r["bwd"]
+    pct, bwd = r["theta_ex_front_pct_net_liq"], r["bwd"]
     return {
         "delta": {
             "low": _round(delta[0]) if delta else None,
             "high": _round(delta[1]) if delta else None,
-            "basis": "theta" if r["theta"] is not None and r["theta"] > 0 else "net_liq",
+            "basis": delta_band_basis(r, cfg["delta"]),
             "value": bwd,
             "inside": (delta[0] <= bwd <= delta[1]) if delta and bwd is not None else None,
         },
@@ -527,6 +543,9 @@ def bands(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
             "high": hi_pct,
             "value": pct,
             "inside": (lo_pct <= pct <= hi_pct) if pct is not None else None,
+            # `value` leaves out legs `front_dte` days or less from expiry; `raw_value` is the whole book.
+            "raw_value": r["theta_pct_net_liq"],
+            "front_dte": r["front_dte"],
         },
         "buying_power": _bp_band(r, cfg["buying_power"]),
     }
@@ -601,15 +620,40 @@ def _fire(rule: str, confidence: Any, reason: str, drivers: list[dict[str, Any]]
 
 
 def delta_band(reading_: dict[str, Any], cfg: dict[str, Any]) -> tuple[float, float] | None:
-    """(low, high) BWD band in benchmark shares. Scaled by theta while the book collects it; by net
-    liq when it does not, since a band of zero width would fire on every share."""
-    theta, net_liq, spot = reading_["theta"], reading_["net_liq"], reading_["benchmark_spot"]
-    if theta is not None and theta > 0:
-        return (-float(cfg["short_per_theta"]) * theta, float(cfg["long_per_theta"]) * theta)
+    """(low, high) BWD band in benchmark shares; `delta_band_basis` says which band it is."""
+    band = _delta_band(reading_, cfg)
+    return band[:2] if band else None
+
+
+def delta_band_basis(reading_: dict[str, Any], cfg: dict[str, Any]) -> str | None:
+    band = _delta_band(reading_, cfg)
+    return band[2] if band else None
+
+
+def _delta_band(reading_: dict[str, Any], cfg: dict[str, Any]) -> tuple[float, float, str] | None:
+    """(low, high, basis). Scaled by theta while the book collects it, and never narrower than the
+    net-liq band (the BWD whose 1% move costs `fallback_pct_nlv_per_1pct` of net liq), which is also
+    the band when there is no theta to scale by: a band of zero width would fire on every share, and
+    before the floor a book collecting $1.63 a day got a band eight times narrower than one
+    collecting nothing. The theta is the theta band's (without the legs about to expire), so a leg
+    expiring tomorrow cannot widen it: on 2026-10-20 one did, to -106 to +160 shares."""
+    theta = reading_.get("theta_ex_front")
+    if theta is None:  # a reading from before the split
+        theta = reading_["theta"]
+    net_liq, spot = reading_["net_liq"], reading_["benchmark_spot"]
+    by_theta = (
+        (-float(cfg["short_per_theta"]) * theta, float(cfg["long_per_theta"]) * theta, "theta")
+        if theta is not None and theta > 0
+        else None
+    )
+    by_net_liq = None
     if net_liq and spot:
         half = float(cfg["fallback_pct_nlv_per_1pct"]) * net_liq / (spot * 0.01)
-        return (-half, half)
-    return None
+        by_net_liq = (-half, half, "net_liq")
+    if by_theta and by_net_liq:
+        # The wider of the two, whole: halves from different bands would lean neither way they mean.
+        return by_theta if by_theta[1] - by_theta[0] >= by_net_liq[1] - by_net_liq[0] else by_net_liq
+    return by_theta or by_net_liq
 
 
 def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
@@ -622,18 +666,29 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
         return _rules.disabled(rules, underlying, rule_id)
 
     partial = "" if r["complete"] else " (partial: some legs or betas are missing)"
-    pct = r["theta_pct_net_liq"]
+    pct = r["theta_ex_front_pct_net_liq"]
     tc = cfg["theta"]
     if not off("portfolio.theta") and pct is not None:
         lo, hi = float(tc["min_pct_nlv"]), float(tc["max_pct_nlv"])
+        # Which theta the band read, stated with the whole book's when the expiring legs moved it.
+        stated = f"theta ${r['theta_ex_front']:,.2f}/day"
+        if round(r["theta_ex_front"], 2) != round(r["theta"], 2):
+            stated += (
+                f" without the legs {r['front_dte']} days or less from expiry (${r['theta']:,.2f} with them)"
+            )
         if pct > hi:
+            # Drivers carry the theta the band read, under the `theta` figure every surface knows.
+            drivers = [
+                {"underlying": d["underlying"], "theta": d["theta_ex_front"]}
+                for d in _drivers(r, "theta_ex_front", 1.0)
+            ]
             fired.append(
                 _fire(
                     "portfolio.theta",
                     tc["confidence"],
-                    f"theta ${r['theta']:,.2f}/day is {pct:.2%} of net liq, above the {hi:.2%} ceiling: "
+                    f"{stated} is {pct:.2%} of net liq, above the {hi:.2%} ceiling: "
                     f"the book is selling more gamma than the band allows{partial}",
-                    _drivers(r, "theta", 1.0),
+                    drivers,
                 )
             )
         elif pct < lo:
@@ -641,8 +696,7 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
                 _fire(
                     "portfolio.theta",
                     tc["confidence"],
-                    f"theta ${r['theta']:,.2f}/day is {pct:.2%} of net liq, "
-                    f"under the {lo:.2%} floor{partial}",
+                    f"{stated} is {pct:.2%} of net liq, under the {lo:.2%} floor{partial}",
                 )
             )
 

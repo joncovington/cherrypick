@@ -247,14 +247,15 @@
     "_comment": "The account as one book: beta-weighted delta (in SPY shares, on the broker's beta), theta per calendar day, the break-even move and a stress line. Retail heuristics with no published out-of-sample evidence, hence confidence 40. Guidance is REVIEW, naming what drives it. enabled: false turns all of it off; the reading is still recorded.",
     "enabled": true,
     "theta": {
-      "_comment": "Theta as a share of net liq per day. Above max the book sells more gamma than the band allows; under min only informs.",
+      "_comment": "Theta as a share of net liq per day. Above max the book sells more gamma than the band allows; under min only informs. The band, concentration and the candidates' theta cap leave out option legs front_dte days or less from expiry, whose theta is about to vanish; the raw figure is shown beside it.",
       "enabled": true,
       "min_pct_nlv": 0.001,
       "max_pct_nlv": 0.003,
+      "front_dte": 2,
       "confidence": 40
     },
     "delta": {
-      "_comment": "BWD band: -short_per_theta x theta to +long_per_theta x theta SPY shares. With no positive theta, +/- the BWD whose 1% move costs fallback_pct_nlv_per_1pct of net liq.",
+      "_comment": "BWD band: -short_per_theta x theta to +long_per_theta x theta SPY shares, on theta without the legs theta.front_dte days or less from expiry. Never narrower than, and with no positive theta equal to, +/- the BWD whose 1% move costs fallback_pct_nlv_per_1pct of net liq.",
       "enabled": true,
       "short_per_theta": 0.5,
       "long_per_theta": 0.75,
