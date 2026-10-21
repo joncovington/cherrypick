@@ -43,11 +43,12 @@ def test_a_diagonal_entered_as_one_order_is_untouched():
     assert t["grouped_by"] is None and a["pmcc"]["positions"] == []
 
 
-def test_a_separate_short_further_out_than_a_pmcc_s_stays_apart():
+def test_a_separate_short_further_out_than_a_pmcc_s_is_not_the_pmcc_link_s():
+    # Past 60 days the PMCC view has no entry; the covered-call join takes it (test_covered_join.py).
     short = occ("2027-01-15", "C", 55)
     rows = [*history()[:3], tx(2, "2026-09-25T15:00:00Z", "Sell to Open", short, 1, 1.20)]
     a = evaluate(snapshot(rows, legs(short=short)))
-    assert len(a["trades"]) == 2 and all(t["grouped_by"] is None for t in a["trades"])
+    assert a["pmcc"]["positions"] == [] and [t["grouped_by"] for t in a["trades"]] == ["covered call"]
 
 
 def test_an_unreconciled_link_is_never_joined():

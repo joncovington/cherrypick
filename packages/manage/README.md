@@ -34,15 +34,23 @@ history is missing, starts after the position did, or the broker moved a leg wit
 trade falls back to grouping by expiry (a diagonal stays whole) and is priced from its open legs, and
 the page says so. A net credit is a **credit trade**, a net debit a **debit trade**.
 
-One exception joins two chains. A short call sold in an order of its own, after the last one sold
+Two exceptions join two chains. A short call sold in an order of its own, after the last one sold
 against a long call expired, is a chain of its own, and alone it reads as a naked call. When the PMCC
 view links that short to the long call it is sold against, and the link reconciles (the PMCC shape:
 one long, one short of the same size at or above its strike within 60 days, no shares; its orders
 replaying to exactly those two legs), the two are one trade (`grouped_by: "pmcc link"`), whether or
 not the trade is recognised as a PMCC: coverage is a fact about the legs. Its basis is every order the
 link found, the earlier shorts' premiums included. Only a group holding the long or the short alone
-is moved; a short further out, an unreconciled link or a group with other legs keeps the chains'
-grouping.
+is moved; an unreconciled link or a group with other legs keeps the chains' grouping.
+
+The second covers what the link cannot reach, a short more than 60 days out (`grouped_by: "covered
+call"`). When the name's groups hold exactly one long call alone and exactly one short call alone,
+both reconciled order chains, the long expiring on or after the short at or below its strike in at
+least its quantity, and the name holds no shares (shares covering a call are the wheel's), the two
+are one trade. Its basis is the two chains' orders; nothing links the shorts that expired earlier in
+orders of their own, so their premiums are not in it. Two lone longs or shorts that could pair, a long
+that covers only part, or a chain that does not reconcile keep the chains' grouping. A long call alone
+and a short call alone with nothing covering it stay as they are.
 
 Every rule that fires names an action. The trade's recommendation is the most decisive one (close,
 then take profit, then roll-or-close, then close legs, then review) at that rule's confidence, less 10
@@ -407,9 +415,9 @@ that waits is listed once; its narrowed version waits only when it does not.
 - **Earnings dates are the broker's expected dates**, which can move.
 - **SPX 0DTE is left out** (`exclude.zero_dte_underlyings`): it is the flies live loop's own book,
   managed by that loop and cash-settled at the close.
-- **A diagonal whose separately sold short is more than 60 days out is two trades.** The join above
-  follows the PMCC view's shape, so a longer-dated short sold in its own order is still judged as a
-  naked call beside a lone long call.
+- **A covered call joined past 60 days counts only its two chains.** Earlier shorts sold in orders of
+  their own and expired are not in its basis, and an ambiguous pairing (two lone longs or shorts on
+  one name) is left split.
 - **A PMCC between shorts is not shown.** With no short open the long is a long call and the view
   drops it until the next short is sold.
 - **Thesis is not knowable.** `credit.breached` is a mechanical stand-in for "the reason for the trade
