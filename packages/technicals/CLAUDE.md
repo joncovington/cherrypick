@@ -238,7 +238,11 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
     The vendor's is kept as `vendor_iv_rank`, unused; a name with no broker rank gets no suggestion.
   - **Expected move:** the broker's earnings rule, 0.85 × the at-the-money straddle on the first
     expiry after the reaction day (chosen 2026-10-17), the straddle read off that expiry's IV. One SD
-    (price × IV × √(days/365), the vendor's figure) is kept beside it.
+    (price × IV × √(days/365), the vendor's figure; days from the close the price is) is kept beside
+    it. The first LISTED expiry can be a monthly weeks out (286 of 649 moves on the 10-20 calendar),
+    so each row carries `event_expiry_days` and the tabs flag one past `EARNINGS_WEEK_DAYS` (7) as a
+    fortnight's or month's move; the record states its inside-the-move share over those within a week
+    too. Which expiry to use is the user's call, unchanged.
   - **Spread:** the navigator spread, as target strikes.
   - **Sector:** the vendor's map where it has the name, else Yahoo's (`scripts/fetch_sectors.py`,
     `paths.yahoo_sectors`), relabelled to the vendor's names (it agreed on all 120 names sampled,
@@ -409,7 +413,10 @@ records each name's trailing dividend yield.
 `scripts/fetch_screener_greeks.py skate` (jobs `report-skate-quotes-1/2`, 12:00 and 15:05 ET): the
 morning's bands snapped to listed strikes and quoted in regular hours; history at the strike read off
 the band's curve, implied odds from an IV solved at the mid, skate yield, hard filters (two-sided,
-tight, open interest) and soft thresholds as a marker.
+tight, open interest) and soft thresholds as a marker. Each leg also carries the fee to open one
+short contract (`cherrypick.core.fees`), the net premium and net yield, and the band's history
+window count; these are shown only -- the best expiry, `select` and the forward record stay on the
+gross, and ranking by net is the user's decision.
 
 ## Tool Reference
 

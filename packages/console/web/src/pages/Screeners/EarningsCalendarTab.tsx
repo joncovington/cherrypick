@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import type { EarningsCalendarRow, EarningsSuggestion, EarningsTrade, EarningsTradeLeg } from "@console/shared";
+import { EARNINGS_WEEK_DAYS, type EarningsCalendarRow, type EarningsSuggestion, type EarningsTrade, type EarningsTradeLeg } from "@console/shared";
 import { useEarningsCalendar } from "../../lib/api";
+import { ExpiryNote } from "./ExpiryNote";
 
 /**
  * The earnings calendar (2026-10-17; docs/earnings-screener-plan.md): every announcement in the
@@ -161,8 +162,9 @@ function IvRankCell({ r }: { r: EarningsCalendarRow }) {
   );
 }
 
-/** The broker's own rule for an earnings move: 0.85 × the at-the-money straddle on the first expiry
- *  after the reaction, shown as "6.5% (±$23.40)". One standard deviation is in the tooltip. */
+/** The broker's own rule for an earnings move: 0.85 × the at-the-money straddle on the first listed
+ *  expiry on or after the reaction, shown as "6.5% (±$23.40) to Oct 23 +2d". One standard deviation
+ *  is in the tooltip. */
 function MoveCell({ r }: { r: EarningsCalendarRow }) {
   if (r.emMovePct === null || r.emMove === null) {
     return (
@@ -172,12 +174,15 @@ function MoveCell({ r }: { r: EarningsCalendarRow }) {
     );
   }
   const title =
-    `Expected move to ${r.eventExpiry}: 0.85 × the at-the-money straddle (the broker's rule for an earnings move), ` +
+    `Expected move to ${r.eventExpiry}${r.eventExpiryDays === null ? "" : `, ${r.eventExpiryDays} days past the reaction day`}: ` +
+    `0.85 × the at-the-money straddle (the broker's rule for an earnings move), ` +
     `the straddle read off that expiry's IV of ${r.eventIv === null ? "—" : (100 * r.eventIv).toFixed(1)}%. ` +
-    `One standard deviation is ±$${money(r.sdMove)} (${r.sdMovePct === null ? "—" : r.sdMovePct.toFixed(1)}%), about 1.5 times this.`;
+    `One standard deviation is ±$${money(r.sdMove)} (${r.sdMovePct === null ? "—" : r.sdMovePct.toFixed(1)}%), about 1.5 times this. ` +
+    `Days are counted from the close the price is.`;
   return (
     <td className="num" title={title}>
       {r.emMovePct.toFixed(1)}% <span className="muted">(±${money(r.emMove)})</span>
+      <ExpiryNote expiry={r.eventExpiry} days={r.eventExpiryDays} />
     </td>
   );
 }
@@ -197,7 +202,12 @@ function TradeCell({ t }: { t: EarningsTrade }) {
   const price = t.mid === null ? "unpriced" : `${t.mid.toFixed(2)} ${t.kind === "credit" ? "cr" : "db"}`;
   const title =
     `${t.kind === "credit" ? "Sell" : "Buy"} the ${first?.strike} ${right}, ${t.kind === "credit" ? "buy" : "sell"} the ` +
-    `${second?.strike} ${right}, ${t.expiry}; read ${t.readingAt ?? "—"}.\n` +
+    `${second?.strike} ${right}, ${t.expiry}; read ${t.readingAt ?? "—"}` +
+    (t.afterReport === true
+      ? " -- AFTER the announcement: no reading was taken before it, so this is not an entry price.\n"
+      : t.afterReport === null
+        ? " (the time of day is unknown, so whether this came before the announcement is too).\n"
+        : ", before the announcement.\n") +
     `At mid ${money(t.mid)}, at the natural fill ${money(t.natural)}; ${t.shareOfWidth === null ? "—" : `${(100 * t.shareOfWidth).toFixed(0)}%`} ` +
     `of the ${t.width} width; max loss $${money(t.maxLoss)} a spread.\n` +
     t.legs.map((l) => legLine(l, right)).join("\n") +
@@ -225,6 +235,14 @@ function TradeCell({ t }: { t: EarningsTrade }) {
           {" "}
           <span className="chip chip-ok" title="The spread passes the liquidity bars, judged as one order">
             liquid
+          </span>
+        </>
+      )}
+      {t.afterReport === true && (
+        <>
+          {" "}
+          <span className="chip chip-warn" title={`Read on ${t.takenOn}, after the announcement: a price no one could have entered on`}>
+            after the report
           </span>
         </>
       )}
@@ -357,7 +375,15 @@ export function EarningsCalendarTab() {
         <span className="chip">read-only</span>
         {data?.day && (
           <span className="card-asof">
-            built {data.day} · our reads as of the {data.inputs.closeDate ?? "—"} close · moves from the {data.inputs.expiryIv ?? "—"} IVs
+            built {data.day} · prices from the {data.inputs.closeDate ?? "—"} close · moves from the {data.inputs.expiryIv ?? "—"} IVs
+          </span>
+        )}
+        {data?.day && data.inputs.closeDate !== null && data.inputs.closeDate < data.day && (
+          <span
+            className="chip chip-warn"
+            title={`Dolt did not yet hold the ${data.day} close when this calendar was built, so the price, the expected move as a percentage and the spread targets use the ${data.inputs.closeDate} close`}
+          >
+            prices from {data.inputs.closeDate}, not {data.day}
           </span>
         )}
       </div>
@@ -470,9 +496,14 @@ export function EarningsCalendarTab() {
                 <th>Direction</th>
                 <th>Strength</th>
                 <th className="num">IV rank</th>
-                <th className="num">Last price</th>
-                <th className="num" title="0.85 × the at-the-money straddle on the first expiry after the reaction: the broker's rule for an earnings move">
-                  Exp. move
+                <th className="num" title={`Dolt's daily close on ${data?.inputs.closeDate ?? "—"}: what the expected move's percentage and the spread targets are figured on`}>
+                  Close {data?.inputs.closeDate ? shortDate(data.inputs.closeDate) : ""}
+                </th>
+                <th
+                  className="num"
+                  title={`0.85 × the at-the-money straddle on the first LISTED expiry on or after the reaction (the broker's rule for an earnings move), with that expiry and its days past the reaction. Where only monthlies are listed it can be weeks out: past ${EARNINGS_WEEK_DAYS} days it is flagged, because it prices a fortnight's or a month's move, not the announcement's alone.`}
+                >
+                  Exp. move to expiry
                 </th>
                 <th>Sector</th>
                 <th title="The earnings-navigator spread for strong reads: debit under the IV-rank cut, credit over it">Kind</th>

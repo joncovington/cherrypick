@@ -83,8 +83,37 @@ describe("readEarningsRecord", () => {
   it("carries the summary and the rows, newest first", () => {
     const p = readEarningsRecord(config);
     expect(p.asOf).toBe("2026-10-23");
-    expect(p.summary).toMatchObject({ measured: 2, insideEm: 0.5, directionRight: 0.5, react: { n: 1, net: 130.3, won: 1, returnOnRisk: 0.4311 } });
+    expect(p.summary).toMatchObject({ compared: 2, insideEm: 0.5, directionRight: 0.5, react: { n: 1, net: 130.3, won: 1, returnOnRisk: 0.4311 } });
     expect(p.rows.map((r) => r.symbol)).toEqual(["META", "NFLX"]);
+  });
+
+  it("reads an older record's `measured` as the compared count, with no week figures invented", () => {
+    const p = readEarningsRecord(config);
+    expect(p.summary).toMatchObject({ measuredMoves: null, compared: 2, earningsWeek: null });
+  });
+
+  it("carries the measured and compared counts, the earnings-week figures and each row's expiry", () => {
+    const file = path.join(tmp, "technicals", "earnings-calendar", "record.json");
+    const doc = JSON.parse(fs.readFileSync(file, "utf-8"));
+    delete doc.summary.measured;
+    doc.summary = {
+      ...doc.summary,
+      measured_moves: 50,
+      compared: 18,
+      median_move_over_em: 0.6445,
+      earnings_week: { max_days: 7, n: 9, inside_em: 0.556, median_move_over_em: 0.91 },
+    };
+    doc.rows[0].event_expiry = "2026-11-20";
+    doc.rows[0].event_expiry_days = 30;
+    fs.writeFileSync(file, JSON.stringify(doc));
+    const p = readEarningsRecord(config);
+    expect(p.summary).toMatchObject({
+      measuredMoves: 50,
+      compared: 18,
+      medianMoveOverEm: 0.6445,
+      earningsWeek: { maxDays: 7, n: 9, insideEm: 0.556, medianMoveOverEm: 0.91 },
+    });
+    expect(p.rows.find((r) => r.symbol === "NFLX")).toMatchObject({ eventExpiry: "2026-11-20", eventExpiryDays: 30 });
   });
 
   it("keeps a spread's money and its states apart", () => {

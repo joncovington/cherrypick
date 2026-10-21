@@ -435,6 +435,46 @@ def test_a_put_yields_on_the_strike_it_secures():
     assert g["implied_skate"] < 1 - abs(g["delta"]) - 0.005
 
 
+def _call(bid, ask=None):
+    return skate.score_leg(
+        _row(),
+        "fixed",
+        105.0,
+        {"bid": bid, "ask": ask if ask is not None else bid + 0.05, "open_interest": 400},
+        100.0,
+        35,
+        35 / 365,
+        0.0,
+        CFG,
+        skate.offsets(CFG),
+    )
+
+
+def test_the_soft_yield_is_judged_on_the_unrounded_yield():
+    # 0.5753 / 100 x 365 / 35 = 0.059996: shown as 6.00%, and still under a 6% bar (SLV, 2026-10-21).
+    g = _call(0.5753)
+    assert g["yield_bid"] == 0.06
+    assert g["soft"]["yield"] is False
+    assert _call(0.5754)["soft"]["yield"] is True
+
+
+def test_a_scored_leg_states_its_opening_fee_and_net_premium_beside_the_gross():
+    # One short contract opens for $1 commission plus $0.14 of pass-throughs (cherrypick.core.fees).
+    g = _call(1.00)
+    assert g["fee_open"] == 1.14
+    assert g["net_premium_bid"] == 98.86
+    assert g["net_yield_bid"] == pytest.approx(98.86 / 10_000 * 365 / 35, abs=1e-4)
+    assert g["per_day_bid"] == pytest.approx(100 / 35, abs=1e-3)  # the ranking figure stays gross
+    # A one-cent bid does not cover the fee: its net is a loss, and says so.
+    tiny = _call(0.01, 0.02)
+    assert tiny["net_premium_bid"] == -0.14 and tiny["net_yield_bid"] < 0
+
+
+def test_a_scored_leg_says_how_much_history_its_rates_stand_on():
+    g = _call(1.00)
+    assert (g["history_windows"], g["history_windows_recent"]) == (2000, 700)
+
+
 def _doc():
     return {
         "day": "2026-10-16",

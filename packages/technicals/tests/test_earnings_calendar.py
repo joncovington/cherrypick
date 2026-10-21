@@ -309,3 +309,19 @@ def test_build_joins_the_sources_into_one_row_per_announcement():
     assert rows["SAP"]["edge"] is None  # we hold no bars for it, so it has no read
     assert out["inputs"]["security_list"] == "2026-10-16" and out["inputs"]["expiry_iv"] == "2026-10-16"
     assert out["inputs"]["security_source"] == "vendor"
+    # The event expiry is two days past the reaction: a week's expiry, an earnings move.
+    assert n["event_expiry_days"] == 2
+
+    # Dolt a session behind (its newest close the 15th on the 16th's build): the price is the 15th's,
+    # so the move's days count from the 15th -- 8 to the 23rd, not the 7 from the build day.
+    behind = ec.build("2026-10-16", dolt=dict(dolt, close_date="2026-10-15"), ours=ours)
+    late = {r["symbol"]: r for r in behind["rows"]}["NFLX"]
+    assert late["sd_move"] == pytest.approx(70.53 * 0.85571 * math.sqrt(8 / 365), abs=1e-4)
+    assert behind["inputs"]["close_date"] == "2026-10-15"
+
+
+def test_an_expiry_past_the_reaction_week_is_counted_in_days():
+    # FIX on the 2026-10-20 calendar: reacts 10-23, only monthlies listed, so its move is to 11-20.
+    assert ec.expiry_days_past("2026-11-20", date(2026, 10, 23)) == 28
+    assert ec.expiry_days_past("2026-10-23", date(2026, 10, 23)) == 0
+    assert ec.EARNINGS_WEEK_DAYS == 7

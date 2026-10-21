@@ -13,8 +13,10 @@ import type { EarningsRecordPayload } from "@console/shared";
 let payload: EarningsRecordPayload = {
   asOf: "2026-10-23",
   summary: {
-    announcements: 2,
-    measured: 2,
+    announcements: 3,
+    measuredMoves: 3,
+    compared: 2,
+    earningsWeek: { maxDays: 7, n: 1, insideEm: 0, medianMoveOverEm: 1.2 },
     insideEm: 0.5,
     medianMoveOverEm: 0.875,
     strongReads: 2,
@@ -36,6 +38,8 @@ let payload: EarningsRecordPayload = {
       region: "US",
       movePct: -10,
       emMovePct: 11,
+      eventExpiry: "2026-11-20",
+      eventExpiryDays: 30,
       moveOverEm: 0.875,
       insideEm: true,
       directionRight: true,
@@ -76,7 +80,10 @@ function render(): string {
 describe("the earnings record tab", () => {
   it("shows the running summary", () => {
     const html = render();
-    expect(html).toContain("2 of 2 measured · inside the expected move 50%");
+    expect(html).toContain("3 of 3 measured · 2 with an expected move to compare · inside it 50% · median |move| 0.88× it");
+    expect(html).toContain("priced within 7 days of the reaction: 1 · inside 0% · median 1.20×");
+    expect(html).toContain("to Nov 20 +30d");
+    expect(html).toContain(">month's move<");
     expect(html).toContain("direction called 50% of 2 strong reads");
     expect(html).toMatch(/reaction day: 1 spreads · net <span class="pnl-pos">\+\$130\.30<\/span> · won 100% · RoR 43\.1%/);
   });

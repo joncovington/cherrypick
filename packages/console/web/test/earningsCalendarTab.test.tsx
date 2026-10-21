@@ -35,6 +35,7 @@ function row(over: Partial<EarningsCalendarRow>): EarningsCalendarRow {
     sector: "Financials",
     price: 100,
     eventExpiry: "2026-10-23",
+    eventExpiryDays: 2,
     eventIv: 0.5,
     sdMove: 7,
     sdMovePct: 7,
@@ -194,6 +195,53 @@ describe("the earnings tab", () => {
     const html = render("/screeners/earnings?day=2026-10-15");
     expect(html).toMatch(/symbol=AAA"[^>]*>AAA<\/a>(<span[^]*?<\/span>)?<br\/><span class="muted">Alpha Inc\.<\/span>/);
     expect(html).not.toContain(">Company<");
+  });
+
+  it("says which expiry the move is priced on, and flags one weeks past the reaction", () => {
+    const saved = payload.rows;
+    payload.rows = [row({ symbol: "WEEK" }), row({ symbol: "FIX", eventExpiry: "2026-11-20", eventExpiryDays: 30 })];
+    const html = render("/screeners/earnings?day=2026-10-15");
+    expect(html).toContain("Exp. move to expiry");
+    expect(html).toContain('<span class="muted">to Oct 23 +2d</span>');
+    expect(html).toContain('<span class="muted">to Nov 20 +30d</span>');
+    expect(html.match(/>month's move</g)?.length).toBe(1); // FIX only
+    payload.rows = saved;
+  });
+
+  it("labels the price with its close, and warns when the close is older than the build", () => {
+    expect(render("/screeners/earnings?day=2026-10-15")).toContain(">Close Oct 15</th>");
+    expect(render("/screeners/earnings?day=2026-10-15")).not.toContain("prices from 2026-10-14");
+    const saved = payload.inputs;
+    payload.inputs = { ...saved, closeDate: "2026-10-14" };
+    const html = render("/screeners/earnings?day=2026-10-15");
+    expect(html).toContain(">Close Oct 14</th>");
+    expect(html).toContain("prices from 2026-10-14, not 2026-10-15");
+    payload.inputs = saved;
+  });
+
+  it("marks a spread read after the announcement", () => {
+    const leg = (role: "long" | "short", strike: number) => ({ role, strike, bid: 1, ask: 1.05, openInterest: 500, volume: 50, passes: true });
+    const trade = (afterReport: boolean | null) => ({
+      readingAt: "2026-10-16T18:30:00Z",
+      takenOn: "2026-10-16",
+      afterReport,
+      kind: "credit" as const,
+      right: "P" as const,
+      expiry: "2026-11-20",
+      width: 5,
+      legs: [leg("long", 95), leg("short", 100)],
+      mid: 2.17,
+      natural: 2.1,
+      shareOfWidth: 0.43,
+      maxLoss: 283,
+      passes: true,
+    });
+    const saved = payload.rows;
+    payload.rows = [row({ symbol: "LATE", trade: trade(true) }), row({ symbol: "OK", trade: trade(false) })];
+    const html = render("/screeners/earnings?day=2026-10-15");
+    expect(html.match(/>after the report</g)?.length).toBe(1);
+    expect(html).toContain("AFTER the announcement");
+    payload.rows = saved;
   });
 
   it("always says the suggested spread has no edge", () => {
