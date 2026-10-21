@@ -1,11 +1,12 @@
 # Theta Profits' 0DTE break-even iron condor: rules from one interview, and its fit as a MEIC arm
 
 *Drafted 2026-10-20 from the YouTube video "After 9,000 Trades, This Is Still My Most Profitable
-0DTE Strategy" (Theta Profits, self-interview, ~40 min; full caption transcript kept at
-[transcripts/theta-profits-0dte-be-ic.txt](transcripts/theta-profits-0dte-be-ic.txt)). The arm at
-the bottom was installed into the machine-local registry
-(~/.cherrypick/config/meic.risk.json — not this repo) on 2026-10-20 at 09:59 ET and took its first
-trade the same minute; see Installation below. Paper only, live untouched.*
+0DTE Strategy" (Theta Profits, self-interview, ~40 min;
+<https://www.youtube.com/watch?v=Fj41ojAdwJ8>). Quotes below are short excerpts for the points being
+made; the video is the source. The arm at the bottom is a **proposed** registry profile; it was
+installed into the machine-local registry (~/.cherrypick/config/meic.risk.json — not this repo) on
+2026-10-20 at 09:59 ET and took its first trade the same minute — see Installing the arm below for
+that dated record. Paper only, live untouched.*
 
 ## The short version
 
@@ -123,7 +124,7 @@ change the trade's shape, only its measurement fidelity.
 | Concurrent book ≤ 10 | `max_concurrent_ics` | `10` |
 | Same-zone discipline | `overlap_scope "none"` (matches control and `bt-1400-2x`; his hourly re-entries naturally land on new strikes as the market moves) | `none` |
 
-### The arm — installed 2026-10-20 as `be-hourly-1x`
+### The proposed arm — a registry profile named `be-hourly-1x`
 
 ```json
 "be-hourly-1x": {
@@ -232,34 +233,37 @@ returns on). Minimum bar to keep running: beat control on capture rate without a
 double-stop rate; the arm is a *candidate shape for the live rotation*, not a threat to anything
 today. Paper only — `enable_live_trading` untouched, live arm untouched.
 
-### Installation (2026-10-20)
+### Installing the arm
 
-Same procedure as `bt-1400-2x`, run at 09:56–10:00 ET while Tuesday's session was open: the
-registry was backed up to `~/.cherrypick/state/config-backups/meic.risk.20261020-0659.json`, the
+The JSON above is a **proposed profile**, not a repo artifact. Arm configs live in the
+machine-local registry (`~/.cherrypick/config/meic.risk.json`), which is outside this repo, so the
+branch and the running arm travel on different rails: this doc carries the reasoning, the operator
+carries the position. To stand the arm up, merge the block into that registry's profile map and let
+the paper loop (every 60 s) pick it up on its next tick — no restart, and no stream-request change
+when SPX 0DTE is already subscribed. `equalize_credit` and the per-side wing search
+(`wing_widths_by_symbol`) must both be present, or the arm trades the scalar-width single it used to.
+
+The arm was **installed on 2026-10-20** and ran through the following same-day adjustment, on this
+machine only. That record is kept here as a dated note rather than as a step of the proposal.
+
+**2026-10-20, 09:56–10:00 ET.** Same procedure as `bt-1400-2x`, while that Tuesday's session was
+open: registry backed up to `~/.cherrypick/state/config-backups/meic.risk.20261020-0659.json`, the
 profile added, the merge validated through `paper._merged_params` (SPX width menu came out
 `[5, 10, 30]`), and the `arm_added` break journaled in the paper ledger's `measurement_breaks`
-(id 8, break date 2026-10-20, beside `bt-1400-2x`'s). The `meic-paper` loop (every 60 s) picked the
-profile up on its next tick — no restart, no stream-request change (SPX 0DTE was already
-subscribed).
+(id 8, break date 2026-10-20, beside `bt-1400-2x`'s). The first trade filled the same minute,
+**09:59:42 ET** — short 7655P / 7740C, 30-wide, spot 7703.61, deltas −0.138 / +0.124, $372.50
+credit, per-side stop armed at 1.0× the credit. The 10:00 and 10:01 ticks were declined
+`entry_spacing_wait`, so the 55-minute cadence held from the first hour. For the record: the entry
+landed on an `open_volatile` tick with confirmed-negative GEX — the neutralized gate block working
+as specified (he times nothing), not a gate leak.
 
-The first trade filled the same minute, **09:59:42 ET** — short 7655P / 7740C, 30-wide, spot
-7703.61, deltas −0.138 / +0.124, $372.50 credit, per-side stop armed at 1.0× the credit. The
-10:00 and 10:01 ticks were declined `entry_spacing_wait`, so the 55-minute cadence was holding
-from the first hour. Note for the record: the entry landed on an `open_volatile` tick with
-confirmed-negative GEX — that is the neutralized gate block working as specified (he times
-nothing), not a gate leak.
-
-**Same-day addendum (12:33 ET): gap #1 closed.** The one fidelity gap that could be closed
-without inventing a new gate was closed mid-session, on branch `paper/equalize-credit`: the
-engine gained `equalize_credit` (per profile, default off, documented in
-`config.example.json`), and the registry was flipped to the `[25, 30, 35, 40]` width search with
-the flag on — backup `meic.risk.20261020-0933.json`, merge re-validated through
-`paper._merged_params`, `gate_changed` break journaled (id 9, break date 2026-10-20). The loop
-runs from the working tree as a fresh process per tick, so every tick from 12:33 onward had both
-the new code and the new profile; no restart. The three 30-wide singles entered before the flip
-(09:59, 10:55, 11:50) keep reading their wings from the scalar via the column fallback, and
-today's session is mixed either way — the first clean read of the equalized arm is tomorrow.
-
-The registry, the ledger and the break journal all live under `~/.cherrypick/` on this machine —
-outside the repo, so this doc and the arm's config travel on different rails: the branch carries
-the reasoning, the machine carries the position.
+**2026-10-20, 12:33 ET — gap #1 closed.** The one fidelity gap that could be closed without
+inventing a new gate was closed mid-session, on branch `paper/equalize-credit`: the engine gained
+`equalize_credit` (per profile, default off, documented in `config.example.json`), and the registry
+was flipped to the `[25, 30, 35, 40]` width search with the flag on — backup
+`meic.risk.20261020-0933.json`, merge re-validated through `paper._merged_params`, `gate_changed`
+break journaled (id 9, break date 2026-10-20). The loop runs from the working tree as a fresh
+process per tick, so every tick from 12:33 onward had both the new code and the new profile; no
+restart. The three 30-wide singles entered before the flip (09:59, 10:55, 11:50) keep reading their
+wings from the scalar via the column fallback, so that session is mixed either way — the first clean
+read of the equalized arm was the following day.
