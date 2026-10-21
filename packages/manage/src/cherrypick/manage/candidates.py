@@ -313,7 +313,7 @@ def account_basis(account_type: dict[str, Any] | None) -> str:
 
 # The caps that measure how full the book already is, not the trade: a candidate stopped by one of
 # these is WAITING -- it fits once positions close and free the room.
-ROOM_CAPS = frozenset({"buying power", "theta ceiling"})
+ROOM_CAPS = frozenset({"buying power", "theta ceiling", "expiry concentration"})
 
 
 def _bp_cap(book: dict[str, Any], cfg: dict[str, Any]) -> float:
@@ -379,11 +379,14 @@ def size(
     basis: str,
     max_units: int,
     room: bool = False,
+    expiry_full: bool = False,
 ) -> tuple[int, str | None]:
     """(units, binding cap): the largest count that clears every cap, and the cap the next unit
     breaks (None when `max_units` itself is what stops it). With `room`, the caps that measure how
-    full the book already is (ROOM_CAPS: buying power, the theta ceiling) are set aside: the size the
-    trade would take once the book has room for it."""
+    full the book already is (ROOM_CAPS: buying power, the theta ceiling, an expiry already over its
+    share) are set aside: the size the trade would take once the book has room for it.
+    `expiry_full`: the trade's expiry already holds more downside than `portfolio.expiry_concentration`
+    allows (`portfolio.expiry_over`)."""
     net_liq = book.get("net_liq")
     if not net_liq:
         return 0, "no net liq"
@@ -411,6 +414,8 @@ def size(
             return "notional per name"
         if not room and u["bp"] is not None and used is not None and used + n * u["bp"] > bp_cap * net_liq:
             return "buying power"
+        if not room and expiry_full:
+            return "expiry concentration"
         if (
             bwd is not None
             and u["bwd"] is not None
@@ -590,7 +595,7 @@ def suggest(
             row["if_room"] = room
             waiting.append(row)
 
-    def _build(entry, options, kinds, sym, held, written, scale) -> None:
+    def _build(entry, options, kinds, sym, held, written, scale, full=False) -> None:
         for s in structures(entry, options, cfg, held, written, kinds):
             if not liquid(s["legs"], bars):
                 drop("a leg is illiquid or unquoted")
@@ -601,7 +606,7 @@ def suggest(
                 drop("credit under a third of the width")
                 continue
             max_units = int(s.get("max_units", cfg["max_units"]))
-            units, binding = size(u, book, sym, cfg, basis, max_units)
+            units, binding = size(u, book, sym, cfg, basis, max_units, expiry_full=full)
             row = _describe(s, u, entry, sym, units, binding)
             if units >= 1:
                 fits.append(row)
@@ -618,7 +623,9 @@ def suggest(
                     alt["min_credit_share"] = min_share
                     au = unit(alt, entry, basis, scale)
                     if au is not None:
-                        a_units, a_binding = size(au, book, sym, cfg, basis, int(cfg["max_units"]))
+                        a_units, a_binding = size(
+                            au, book, sym, cfg, basis, int(cfg["max_units"]), expiry_full=full
+                        )
                         alt_row = _describe(alt, au, entry, sym, a_units, a_binding)
                         row["alternative"] = alt_row
                         if a_units >= 1:
@@ -646,7 +653,8 @@ def suggest(
             if er and exp and session.isoformat() <= er <= exp:
                 drop("earnings inside the trade")
                 continue
-            _build(view, options, kinds, sym, held, written, scale)
+            full = _portfolio.expiry_over(book, rules, view.get("expiry"))
+            _build(view, options, kinds, sym, held, written, scale, full)
 
     def rank(r: dict) -> float:
         return r["theta_per_bp"] if r["theta_per_bp"] is not None else -math.inf

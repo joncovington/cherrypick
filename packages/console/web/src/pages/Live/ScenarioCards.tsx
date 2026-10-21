@@ -71,6 +71,12 @@ export function LadderCard({ ladder }: { ladder: ManageLadder | null }) {
           of downside <span className="muted">· {e.trades.join(", ")}</span>
         </p>
       )}
+      {e.byDate.length > 0 && (
+        <p className="muted pf-caption">
+          by report date:{" "}
+          {e.byDate.map((d) => `${d.date} ${wholeCash(d.downside)} (${d.trades.join(", ")})`).join(" · ")}
+        </p>
+      )}
     </Card>
   );
 }

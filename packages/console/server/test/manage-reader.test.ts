@@ -176,7 +176,13 @@ describe("readManage", () => {
       },
       ladder: {
         expiries: [{ expiration: "2026-11-20", trades: ["META"], downside: -6837, downside_unknown: 1, theta: 77.27 }],
-        earnings: { trades: ["META"], theta: 35, theta_share: 0.724, downside: -4292.5 },
+        earnings: {
+          trades: ["META"],
+          theta: 35,
+          theta_share: 0.724,
+          downside: -4292.5,
+          by_date: [{ date: "2026-10-28", trades: ["META"], downside: -4292.5, downside_unknown: 0 }],
+        },
       },
       candidates: {
         source_session: "2026-10-19",
@@ -277,6 +283,7 @@ describe("readManage", () => {
     expect(p.scenarios?.graph.curves[0]).toEqual({ horizonDays: 4, pnl: [-2533, 537, -4] });
     expect(p.ladder?.expiries[0]).toEqual({ expiration: "2026-11-20", trades: ["META"], downside: -6837, downsideUnknown: 1, theta: 77.27 });
     expect(p.ladder?.earnings.thetaShare).toBe(0.724);
+    expect(p.ladder?.earnings.byDate).toEqual([{ date: "2026-10-28", trades: ["META"], downside: -4292.5 }]);
     const c = p.candidates!;
     expect(c.accountBasis).toBe("cash");
     expect(c.excluded).toEqual({ "earnings inside the trade": 120 });

@@ -375,6 +375,18 @@ def test_the_theta_ceiling_and_name_concentration_cap_the_count():
     assert "concentration" in {r["binding"] for r in conc["too_big"]}
 
 
+def test_a_candidate_on_an_expiry_already_over_its_share_waits():
+    # The entry expires 2026-12-03; the book's trades there can already lose 25% of $100,000.
+    book = _book()
+    book["ladder"] = {"expiries": [{"expiration": "2026-12-03", "trades": ["X"], "downside": -25_000.0}]}
+    out = _suggest({"AAA": _entry()}, book)
+    assert not out["fits"]
+    assert {r["binding"] for r in out["too_big"]} == {"expiry concentration"}
+    assert out["waiting"] and all(r["if_room"]["units"] >= 1 for r in out["waiting"])
+    book["ladder"]["expiries"][0]["downside"] = -5_000.0  # 5%: room again
+    assert _suggest({"AAA": _entry()}, book)["fits"]
+
+
 def test_theta_about_to_expire_does_not_fill_the_ceiling():
     # $300 of the book's theta is a leg expiring tomorrow: what the band reads is the $10 left, so a
     # candidate is not stopped by the ceiling, and a name's expiring theta is no concentration.

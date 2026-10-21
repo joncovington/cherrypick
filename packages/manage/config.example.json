@@ -274,6 +274,18 @@
       "max_share": 0.25,
       "confidence": 40
     },
+    "earnings_exposure": {
+      "_comment": "What the trades with an earnings report before their nearest short expires can still lose, summed, over max_pct_nlv of net liq. Each trade passes its own rules; this adds them up.",
+      "enabled": true,
+      "max_pct_nlv": 0.10,
+      "confidence": 40
+    },
+    "expiry_concentration": {
+      "_comment": "What the trades whose nearest short expires on one date can still lose, over max_pct_nlv of net liq. A new income candidate on an expiry already over it waits.",
+      "enabled": true,
+      "max_pct_nlv": 0.20,
+      "confidence": 40
+    },
     "beta_doubt": {
       "_comment": "Flag a broker beta whose sign disagrees with its three-month correlation (|corr| >= min_abs_corr), or that is near zero beside a strong correlation.",
       "min_abs_corr": 0.3,

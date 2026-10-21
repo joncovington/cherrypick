@@ -675,7 +675,14 @@ export interface ManageScenarios {
 
 export interface ManageLadder {
   expiries: Array<{ expiration: string; trades: string[]; downside: number | null; downsideUnknown: number; theta: number | null }>;
-  earnings: { trades: string[]; theta: number | null; thetaShare: number | null; downside: number | null };
+  earnings: {
+    trades: string[];
+    theta: number | null;
+    thetaShare: number | null;
+    downside: number | null;
+    /** The same trades by report date; empty on an evaluation from before it was split out. */
+    byDate: Array<{ date: string; trades: string[]; downside: number | null }>;
+  };
 }
 
 export interface ManageAccount {

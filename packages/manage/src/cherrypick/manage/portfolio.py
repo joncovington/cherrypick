@@ -484,6 +484,7 @@ def ladder(
         if exp:
             slot(exp)["theta"] += th
     earn = {"trades": [], "theta": 0.0, "downside": 0.0}
+    by_report: dict[str, dict[str, Any]] = {}
     for t in trades:
         exp = t.get("nearest_short_expiry") or t.get("nearest_expiry")
         if not exp:
@@ -501,6 +502,14 @@ def ladder(
             if down is not None:
                 earn["downside"] += down
             earn["theta"] += trade_theta.get(id(t), 0.0)
+            day = by_report.setdefault(
+                str(er.get("date") or "unknown"), {"trades": [], "downside": 0.0, "downside_unknown": 0}
+            )
+            day["trades"].append(t.get("trade_id") or t["underlying"])
+            if down is None:
+                day["downside_unknown"] += 1
+            else:
+                day["downside"] += down
     rows = []
     for exp in sorted(by):
         s = by[exp]
@@ -520,6 +529,16 @@ def ladder(
             "theta": round(earn["theta"], 2),
             "theta_share": round(earn["theta"] / theta, 3) if theta > 0 else None,
             "downside": round(earn["downside"], 2),
+            # The same trades by report date: what each day's announcements can take at once.
+            "by_date": [
+                {
+                    "date": d,
+                    "trades": by_report[d]["trades"],
+                    "downside": round(by_report[d]["downside"], 2),
+                    "downside_unknown": by_report[d]["downside_unknown"],
+                }
+                for d in sorted(by_report)
+            ],
         },
     }
 
@@ -771,7 +790,57 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
                     ],
                 )
             )
+
+    net_liq = r.get("net_liq")
+    lad = r.get("ladder") or {}
+    ec = cfg.get("earnings_exposure") or {}
+    earn = lad.get("earnings") or {}
+    if ec and not off("portfolio.earnings_exposure") and net_liq and earn.get("trades"):
+        cap = float(ec["max_pct_nlv"])
+        share = abs(float(earn.get("downside") or 0.0)) / net_liq
+        if share > cap:
+            days = ", ".join(
+                f"{d['date']} ${abs(d['downside']):,.0f} ({', '.join(d['trades'])})"
+                for d in earn.get("by_date") or []
+            )
+            fired.append(
+                _fire(
+                    "portfolio.earnings_exposure",
+                    ec["confidence"],
+                    f"{len(earn['trades'])} trades span an earnings report before their short expires "
+                    f"and can still lose ${abs(earn['downside']):,.0f}, {share:.0%} of net liq, "
+                    f"over {cap:.0%}: {days}",
+                )
+            )
+    xc = cfg.get("expiry_concentration") or {}
+    if xc and not off("portfolio.expiry_concentration") and net_liq:
+        cap = float(xc["max_pct_nlv"])
+        for e in lad.get("expiries") or []:
+            share = abs(float(e.get("downside") or 0.0)) / net_liq
+            if share > cap:
+                fired.append(
+                    _fire(
+                        "portfolio.expiry_concentration",
+                        xc["confidence"],
+                        f"{len(e['trades'])} trades expiring {e['expiration']} can still lose "
+                        f"${abs(e['downside']):,.0f}, {share:.0%} of net liq, over {cap:.0%}: "
+                        f"{', '.join(e['trades'])}",
+                    )
+                )
     return fired
+
+
+def expiry_over(r: dict[str, Any], rules: dict[str, Any], expiration: str | None) -> bool:
+    """Whether the book's trades expiring on `expiration` already hold more downside than
+    `portfolio.expiry_concentration` allows: a new candidate there waits (candidates.size)."""
+    xc = (rules.get("portfolio") or {}).get("expiry_concentration") or {}
+    net_liq = r.get("net_liq")
+    if not xc or xc.get("enabled") is False or not net_liq or not expiration:
+        return False
+    for e in (r.get("ladder") or {}).get("expiries") or []:
+        if e.get("expiration") == expiration:
+            return abs(float(e.get("downside") or 0.0)) / net_liq > float(xc["max_pct_nlv"])
+    return False
 
 
 def _drivers(r: dict[str, Any], key: str, side: float, limit: int = 5) -> list[dict[str, Any]]:

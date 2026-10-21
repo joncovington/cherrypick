@@ -381,6 +381,46 @@ def test_the_ladder_groups_trades_by_their_nearest_short_and_sums_what_they_can_
     assert earn["theta_share"] == pytest.approx(first["theta"] / 2 / r["theta"], rel=1e-2)
 
 
+def _exposed(downs, earnings_dates, expiry="2026-11-20"):
+    """Trades on one expiry, each with its downside from now and (optionally) a report before it."""
+    trades = []
+    for i, (down, er) in enumerate(zip(downs, earnings_dates, strict=True)):
+        sym = f"N{i}"
+        t = _trade(sym, 50.0, [_leg(-1, "P", 45.0, dte=30)])
+        t.update(trade_id=sym, nearest_short_expiry=expiry, profile={"downside_from_now": down})
+        if er:
+            t["earnings"] = {"date": er, "before_nearest_short_expiry": True}
+        t["legs"][0]["expiration"] = expiry
+        trades.append(t)
+    return trades
+
+
+def test_earnings_exposure_sums_the_trades_spanning_a_report_by_date_and_fires_over_its_share():
+    # $10,000 net liq: $600 + $500 across two report days is 11% of net liq, over 10%.
+    trades = _exposed([-600.0, -500.0, -900.0], ["2026-10-22", "2026-10-28", None])
+    r = _read(trades, _metrics(N0=(1.0, 0.9), N1=(1.0, 0.9), N2=(1.0, 0.9)))
+    by = r["ladder"]["earnings"]["by_date"]
+    assert [(d["date"], d["trades"], d["downside"]) for d in by] == [
+        ("2026-10-22", ["N0"], -600.0),
+        ("2026-10-28", ["N1"], -500.0),
+    ]
+    fired = next(g for g in r["guidance"] if g["rule"] == "portfolio.earnings_exposure")
+    assert "$1,100, 11% of net liq, over 10%" in fired["reason"] and "2026-10-22 $600 (N0)" in fired["reason"]
+    quiet = _read(trades[:1] + trades[2:], _metrics(N0=(1.0, 0.9), N2=(1.0, 0.9)))
+    assert "portfolio.earnings_exposure" not in _rules_fired(quiet)
+
+
+def test_one_expiry_holding_too_much_downside_fires_and_a_lighter_one_does_not():
+    heavy = _exposed([-1200.0, -900.0], [None, None])  # 21% of $10,000 on one date
+    r = _read(heavy, _metrics(N0=(1.0, 0.9), N1=(1.0, 0.9)))
+    fired = next(g for g in r["guidance"] if g["rule"] == "portfolio.expiry_concentration")
+    assert "2 trades expiring 2026-11-20 can still lose $2,100, 21% of net liq, over 20%" in fired["reason"]
+    assert portfolio.expiry_over(r, RULES, "2026-11-20") and not portfolio.expiry_over(r, RULES, "2026-12-18")
+    light = _read(heavy[:1], _metrics(N0=(1.0, 0.9)))
+    assert "portfolio.expiry_concentration" not in _rules_fired(light)
+    assert not portfolio.expiry_over(light, RULES, "2026-11-20")
+
+
 # --------------------------------------------------------------------------- buying power by VIX
 @pytest.mark.parametrize(
     ("vix", "cap"), [(12.0, 0.25), (15.0, 0.30), (19.99, 0.30), (25.0, 0.35), (45.0, 0.50)]
