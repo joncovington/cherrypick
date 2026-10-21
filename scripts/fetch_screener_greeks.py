@@ -1279,6 +1279,15 @@ def holding_sessions(dte: int) -> int:
     return max(1, round(dte * 252 / 365))
 
 
+def fund_flags(conn, names: list[str]) -> dict[str, bool]:
+    """Whether each name is a fund, as the technicals store's listings say (`is_etf`). A fund reports
+    no earnings, so manage reads its missing earnings date as none rather than unknown. A name the
+    listings do not carry is left out, and stays unknown."""
+    rows = conn.execute("SELECT symbol, is_etf FROM listings").fetchall()
+    wanted = set(names)
+    return {r[0]: bool(r[1]) for r in rows if r[0] in wanted}
+
+
 def income_metrics(rows: dict, sym: str) -> dict:
     """The fields manage needs from the nightly metrics row (`fetch_iv_rank.py`), as recorded."""
     r = rows.get(sym) or {}
@@ -1407,10 +1416,11 @@ def cmd_income(args) -> int:
     ub._write_json(chain_path, cache)
 
     conn = tstore.connect(tpaths.history_db())
+    funds = fund_flags(conn, names)
     symbols: dict[str, dict] = {}
     for sym in names:
         plan = plans.get(sym)
-        entry: dict = {"spot": spots.get(sym), **income_metrics(metric_rows, sym)}
+        entry: dict = {"spot": spots.get(sym), **income_metrics(metric_rows, sym), "fund": funds.get(sym)}
         if plan is None:
             entry["error"] = "no chain listed" if not cache.get(sym) else "no cycle monthly or no price"
             symbols[sym] = entry
