@@ -37,6 +37,8 @@ class FakeChains:
                 raise VendorRefusal("unauthenticated", "another login took the session")
         if (root, day) in self.refuse:
             raise VendorRefusal("permission_denied", "not on this tier")
+        if (root, day) in getattr(self, "no_data", set()):
+            raise VendorRefusal("no_data", "No data found")
         return [] if (root, day) in self.empty else _rows()
 
 
@@ -45,6 +47,16 @@ REQS = [
     ("DAL", "2024-02-02", "2024-03-15"),
     ("MSFT", "2024-02-05", "2024-03-15"),
 ]
+
+
+_SETTINGS_DIR = {}
+
+
+def _settings_for():
+    import tempfile
+
+    d = _SETTINGS_DIR.setdefault("d", tempfile.mkdtemp(prefix="chainfetch-"))
+    return settings.resolve({"store": {"dir": d + "/vendor"}})
 
 
 def _db(s):
@@ -110,3 +122,35 @@ def test_status_reports_the_store(tmp_path):
     chainfetch.fetch_chains(s, FakeChains(), REQS, log=lambda m: None)
     st = chainfetch.status(s)
     assert st["requests"] == {"complete": 3} and st["rows"] == 18 and st["names"] == 3
+
+
+def test_a_refusal_never_costs_a_worker_so_every_request_is_tried():
+    """2026-10-20: a refused request recorded itself and skipped submitting the next one, so each
+    refusal lost a worker for good. Three refusals with three workers ended a 21,707-request run
+    after 78."""
+    many = [(f"N{k:03d}", "2024-02-02", "2024-03-15") for k in range(30)]
+    fake = FakeChains(refuse={(f"N{k:03d}", "2024-02-02") for k in range(0, 30, 3)})
+    out = chainfetch.fetch_chains(_settings_for(), fake, many, workers=2, log=lambda m: None)
+    assert len(fake.calls) == 30
+    assert (out["complete"], out["refused"]) == (20, 10)
+
+
+def test_no_data_is_empty_and_never_retried(tmp_path):
+    s = _settings(tmp_path)
+    fake = FakeChains()
+    fake.no_data = {("LRCX", "2020-02-05")}
+    out = chainfetch.fetch_chains(s, fake, [("LRCX", "2020-02-05", "2020-03-20")], log=lambda m: None)
+    assert (out["empty"], out["refused"]) == (1, 0)
+    again = FakeChains()
+    chainfetch.fetch_chains(s, again, [("LRCX", "2020-02-05", "2020-03-20")], log=lambda m: None)
+    assert again.calls == []
+
+
+def test_the_vendor_is_asked_in_its_own_spelling_and_the_store_keeps_the_studys(tmp_path):
+    s = _settings(tmp_path)
+    fake = FakeChains()
+    chainfetch.fetch_chains(s, fake, [("BRK.B", "2020-01-22", "2020-02-21")], log=lambda m: None)
+    assert fake.calls == [("BRKB", "2020-01-22", "2020-02-21")]
+    with _db(s) as c:
+        assert c.execute("SELECT symbol FROM eod_chain_requests").fetchone()[0] == "BRK.B"
+    assert chainfetch.vendor_root("BRK.B") == "BRKB" and chainfetch.vendor_root("AAPL") == "AAPL"
