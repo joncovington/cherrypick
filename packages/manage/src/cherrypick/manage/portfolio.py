@@ -670,6 +670,19 @@ def _fire(rule: str, confidence: Any, reason: str, drivers: list[dict[str, Any]]
     }
 
 
+def _apart(value: float, bound: float, places: int, kind: str) -> tuple[str, str]:
+    """`value` and the `bound` it breached, formatted (`kind` is "%" or "f", sign included where the
+    caller's spec wants one) with as many places past `places` as it takes for the two to read
+    differently. A theta of 0.304% above a 0.30% ceiling once read "0.30% ... above the 0.30%"."""
+    sign = "+" if kind.startswith("+") else ""
+    spec = kind.lstrip("+")
+    for p in range(places, places + 5):
+        a, b = format(value, f"{sign}.{p}{spec}"), format(bound, f"{sign}.{p}{spec}")
+        if a != b:
+            return a, b
+    return a, b
+
+
 def delta_band(reading_: dict[str, Any], cfg: dict[str, Any]) -> tuple[float, float] | None:
     """(low, high) BWD band in benchmark shares; `delta_band_basis` says which band it is."""
     band = _delta_band(reading_, cfg)
@@ -733,21 +746,23 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
                 {"underlying": d["underlying"], "theta": d["theta_ex_front"]}
                 for d in _drivers(r, "theta_ex_front", 1.0)
             ]
+            shown, bound = _apart(pct, hi, 2, "%")
             fired.append(
                 _fire(
                     "portfolio.theta",
                     tc["confidence"],
-                    f"{stated} is {pct:.2%} of net liq, above the {hi:.2%} ceiling: "
+                    f"{stated} is {shown} of net liq, above the {bound} ceiling: "
                     f"the book is selling more gamma than the band allows{partial}",
                     drivers,
                 )
             )
         elif pct < lo:
+            shown, bound = _apart(pct, lo, 2, "%")
             fired.append(
                 _fire(
                     "portfolio.theta",
                     tc["confidence"],
-                    f"{stated} is {pct:.2%} of net liq, under the {lo:.2%} floor{partial}",
+                    f"{stated} is {shown} of net liq, under the {bound} floor{partial}",
                 )
             )
 
@@ -757,12 +772,15 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
         lo, hi = band
         if not lo <= r["bwd"] <= hi:
             side = 1.0 if r["bwd"] > hi else -1.0
+            shown, _ = _apart(r["bwd"], hi if side > 0 else lo, 1, "+f")
+            places = len(shown.partition(".")[2])
             fired.append(
                 _fire(
                     "portfolio.delta",
                     dc["confidence"],
-                    f"beta-weighted delta {r['bwd']:+.1f} {r['benchmark']} shares "
-                    f"(${r['bwd_dollars_per_1pct']:+,.0f} per 1% move) is outside {lo:+.1f} to {hi:+.1f}"
+                    f"beta-weighted delta {shown} {r['benchmark']} shares "
+                    f"(${r['bwd_dollars_per_1pct']:+,.0f} per 1% move) is outside "
+                    f"{lo:+.{places}f} to {hi:+.{places}f}"
                     f"{partial}",
                     _drivers(r, "bwd", side),
                 )
@@ -773,22 +791,24 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
     if not off("portfolio.breakeven") and be and be["kind"] == "short_gamma" and expected:
         need = float(bc["min_multiple_of_expected_move"]) * expected
         if be["pct"] < need:
+            shown, bound = _apart(be["pct"], expected, 2, "%")
             fired.append(
                 _fire(
                     "portfolio.breakeven",
                     bc["confidence"],
-                    f"a {be['pct']:.2%} {r['benchmark']} move wipes out a day's theta, under the "
-                    f"{expected:.2%} move its implied volatility expects{partial}",
+                    f"a {shown} {r['benchmark']} move wipes out a day's theta, under the "
+                    f"{bound} move its implied volatility expects{partial}",
                 )
             )
 
     bp = (r.get("bands") or {}).get("buying_power") or {}
     if not off("portfolio.buying_power") and bp.get("inside") is False:
+        shown, bound = _apart(bp["value"], bp["high"], 0, "%")
         fired.append(
             _fire(
                 "portfolio.buying_power",
                 cfg["buying_power"]["confidence"],
-                f"buying power used is {bp['value']:.0%} of net liq, over the {bp['high']:.0%} the VIX at "
+                f"buying power used is {shown} of net liq, over the {bound} the VIX at "
                 f"{bp['vix']:.1f} allows: less room to adjust, and more to lose if the market gaps",
             )
         )

@@ -121,7 +121,7 @@ def test_a_tested_put_rolls_to_an_expiry_the_income_reading_lacked():
     assert roll["net_zero"]["check"]["verdict"] in ("ok", "risky")
     assert roll["premium_gambit"]["check"] is not None
     reason = W.fired(t)["wheel.tested"]["reason"]
-    assert "Rolls to 2026-12-04 at this session's quotes" in reason
+    assert "Rolls to 2026-12-04 at this session's roll-out chains" in reason
 
 
 def test_a_wheel_roll_with_no_net_zero_anywhere_takes_the_nearest_quoted_expiry():

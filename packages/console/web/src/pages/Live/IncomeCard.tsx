@@ -11,7 +11,7 @@ import { fmtCash, fmtMoney } from "../../lib/format";
  * ranking would read as one. Each spread shows its odds (chance of a loss, of the max loss, the
  * break-even, what getting in costs), the reward-against-risk read the studies left the user with.
  * Money follows the suite layout: a credit received is +, whole-position dollars,
- * the one per-share figure is the net price and says so. Priced at mid from the previous afternoon's
+ * the one per-share figure is the net price and says so. Priced at mid from the income reading's afternoon
  * quotes, and the card says to re-quote before sending.
  */
 
@@ -73,6 +73,20 @@ function price(v: number | null): string {
   return v === null ? "—" : `${Math.abs(v).toFixed(2)} ${v >= 0 ? "cr" : "db"}`;
 }
 
+/**
+ * The per-share net price the cash column is: one unit's cash over the 100 multiplier, to the
+ * places it takes (`0.095 cr` beside `+$9.50`). Manage rounds `credit` to the cent but writes `cash`
+ * from the unrounded mid, so a half-cent mid once read "0.10 cr" beside "+$9.50". Falls back to the
+ * credit where a row carries no cash.
+ */
+export function netPrice(c: ManageCandidate): string {
+  const cash = c.perUnit.cash;
+  if (cash === null) return price(c.perUnit.credit);
+  const v = cash / 100;
+  const three = Math.abs(v).toFixed(3);
+  return `${three.endsWith("0") ? Math.abs(v).toFixed(2) : three} ${v >= 0 ? "cr" : "db"}`;
+}
+
 function times(n: number, v: number | null): number | null {
   return v === null ? null : n * v;
 }
@@ -97,9 +111,26 @@ function Odds({ c }: { c: ManageCandidate }) {
   );
 }
 
+/** What an alternative row is. A spread fitted from a spread is narrower (manage offers one only when
+ *  it is, from 2026-10-22); one fitted from a short put is that put with a long bought under it. */
 function narrowed(c: ManageCandidate): string | null {
   if (!c.alternativeTo) return null;
-  return c.alternativeTo === c.kind ? "narrowed to fit" : `narrowed from the ${KIND[c.alternativeTo] ?? c.alternativeTo}`;
+  if (c.alternativeTo === c.kind) return "narrowed to fit";
+  if (c.alternativeTo === "short_put") return "the short put, with a long bought under it to fit";
+  return `fitted from the ${KIND[c.alternativeTo] ?? c.alternativeTo}`;
+}
+
+function width(c: ManageCandidate): number | null {
+  return c.legs.length === 2 ? Math.abs(c.legs[0]!.strike - c.legs[1]!.strike) : null;
+}
+
+/** The verb for a too-big row's alternative, from the two structures' own strikes: an evaluation
+ *  written before manage stopped offering them could carry a WIDER spread as "the version that fits". */
+function altVerb(c: ManageCandidate, alt: ManageCandidate): string {
+  if (c.kind === "short_put") return "as a spread";
+  const a = width(alt);
+  const b = width(c);
+  return a !== null && b !== null && a > b ? "widened to" : "narrowed to";
 }
 
 function FitsTable({ rows }: { rows: ManageCandidate[] }) {
@@ -137,7 +168,7 @@ function FitsTable({ rows }: { rows: ManageCandidate[] }) {
               </td>
               <td className="num">{c.units}</td>
               <td className="num" title={`natural ${price(c.perUnit.natural)}`}>
-                {price(c.perUnit.credit)}
+                {netPrice(c)}
               </td>
               <td className="num pnl-pos">{fmtCash(times(c.units, c.perUnit.cash))}</td>
               <td className="num">{risk(c, c.units)}</td>
@@ -169,7 +200,9 @@ function WaitingTable({ c }: { c: ManageCandidates }) {
   const warn = c.bpWarnOver === null ? "" : ` (amber within ${pct(c.bpWarnOver)} of it, red past that)`;
   return (
     <>
-      <div className="card-subhead">waiting for room: {c.waitingTotal} stopped only by buying power or the theta ceiling</div>
+      <div className="card-subhead">
+        waiting for room: {c.waitingTotal} stopped only by buying power, the theta ceiling or the expiry's concentration
+      </div>
       <p className="muted pf-caption" style={{ marginTop: 0 }}>
         buying power used {pct(c.bpUsedPct)} · cap {pct(c.bpCapPct)} at today's VIX{warn}. Sized as if the book had room;
         the chip is where taking it today would leave you. Close positions to make the room, or take one knowing it runs
@@ -211,7 +244,7 @@ function WaitingTable({ c }: { c: ManageCandidates }) {
                   </td>
                   <td className="num">{n}</td>
                   <td className="num" title={`natural ${price(w.perUnit.natural)}`}>
-                    {price(w.perUnit.credit)}
+                    {netPrice(w)}
                   </td>
                   <td className="num pnl-pos">{fmtCash(times(n, w.perUnit.cash))}</td>
                   <td className="num">{risk(w, n)}</td>
@@ -275,7 +308,7 @@ function TooBig({ rows, total }: { rows: ManageCandidate[]; total: number }) {
             {c.alternative && (
               <span>
                 {" "}
-                → narrowed to {legs(c.alternative)}:{" "}
+                → {altVerb(c, c.alternative)} {legs(c.alternative)}:{" "}
                 {c.alternative.units > 0 ? `fits ${c.alternative.units}` : `still stopped by ${c.alternative.binding ?? "—"}`}
               </span>
             )}

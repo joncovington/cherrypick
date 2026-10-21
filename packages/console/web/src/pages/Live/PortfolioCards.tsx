@@ -128,9 +128,14 @@ export function BandDial({
 
 function DeltaCard({ p }: { p: ManagePortfolio }) {
   const band = p.bands?.delta ?? null;
+  const places = band ? placesApart(band.value, [band.low, band.high], 1) : 1;
   return (
     <Card title="beta-weighted delta" controls={band && <BandChip inside={band.inside} />}>
-      {band ? <BandDial band={band} unit={`${p.benchmark ?? "SPY"} sh`} label="beta-weighted delta" /> : <p className="muted">no band recorded</p>}
+      {band ? (
+        <BandDial band={band} unit={`${p.benchmark ?? "SPY"} sh`} label="beta-weighted delta" fmt={(v) => signed(v, places)} />
+      ) : (
+        <p className="muted">no band recorded</p>
+      )}
       <p className="muted pf-caption">
         {fmtCash(p.bwdDollarsPer1pct)} per 1% {p.benchmark ?? "SPY"} move · band{" "}
         {band?.basis === "theta" ? "scaled by theta" : "scaled by net liq (its floor: too little theta to scale by)"} · the broker's beta
@@ -145,18 +150,33 @@ export function asPercent(b: ManageBand): ManageBand {
   return { low: x(b.low), high: x(b.high), value: x(b.value), inside: b.inside };
 }
 
+/**
+ * The decimal places that keep a reading apart from its bounds: `base`, or more until the value no
+ * longer prints the same as a bound it does not equal. A theta of 0.304% outside a 0.30% ceiling read
+ * "0.30" under an "outside band" chip (2026-10-21). Capped at four more places.
+ */
+export function placesApart(value: number | null, bounds: Array<number | null>, base = 2): number {
+  if (value === null) return base;
+  for (let d = base; d < base + 4; d++) {
+    if (bounds.every((b) => b === null || b === value || b.toFixed(d) !== value.toFixed(d))) return d;
+  }
+  return base + 4;
+}
+
 function ThetaCard({ p }: { p: ManagePortfolio }) {
   const band = p.bands?.theta ?? null;
   const short = (v: number) => (v === 0 ? "0" : v.toFixed(v < 1 ? 2 : 1).replace(/0+$/, "").replace(/\.$/, ""));
+  const pctBand = band ? asPercent(band) : null;
+  const places = pctBand ? placesApart(pctBand.value, [pctBand.low, pctBand.high]) : 2;
   return (
     <Card title="theta" controls={band && <BandChip inside={band.inside} />}>
-      {band ? (
+      {pctBand ? (
         <BandDial
-          band={asPercent(band)}
+          band={pctBand}
           unit="% of net liq a day"
           label="theta"
           signedScale={false}
-          fmt={(v) => v.toFixed(2)}
+          fmt={(v) => v.toFixed(places)}
           tick={short}
         />
       ) : (
@@ -166,7 +186,8 @@ function ThetaCard({ p }: { p: ManagePortfolio }) {
         {p.thetaExFront !== null && p.frontDte !== null
           ? `${fmtMoney(p.thetaExFront)} a day without legs ${p.frontDte} days or less from expiry, ${fmtMoney(p.theta)} with them`
           : `${fmtMoney(p.theta)} a day`}{" "}
-        · band {pctOf(band?.low ?? null)}–{pctOf(band?.high ?? null)} · theta is paid for by gamma, so more is not more edge
+        · band {pctOf(band?.low ?? null, places)}–{pctOf(band?.high ?? null, places)} · theta is paid for by gamma, so more is
+        not more edge
       </p>
     </Card>
   );

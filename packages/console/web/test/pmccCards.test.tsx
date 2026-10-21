@@ -107,6 +107,7 @@ function position(over: Partial<ManagePmccPosition> = {}): ManagePmccPosition {
       why: null,
       quotedExpiries: ["2026-12-18"],
       quotedAt: "2026-10-12T18:45:00Z",
+      chainsTakenAt: null,
     },
     tradeIds: ["XYZ#2"],
     ...over,
@@ -163,7 +164,14 @@ function trade(over: Partial<ManageTrade> = {}): ManageTrade {
 }
 
 function view(over: Partial<ManagePmcc> = {}): ManagePmcc {
-  return { positions: [position()], underlyingHistoryError: null, bandsMissing: "band not in the snapshot", error: null, ...over };
+  return {
+    positions: [position()],
+    underlyingHistoryError: null,
+    bandsMissing: "band not in the snapshot",
+    error: null,
+    recognize: { entryMinDelta: 0.8, minLongDays: 180, maxShortDays: 60 },
+    ...over,
+  };
 }
 
 function account(v: ManagePmcc | null, trades: ManageTrade[] = [trade()]): ManageAccount {
@@ -277,5 +285,50 @@ describe("the pmcc tab", () => {
     expect(out2).toMatch(/width check fails /);
     expect(out2).toMatch(/ exposed in the money over the ex-date/);
     expect(out2).not.toMatch(/ not exposed /);
+  });
+
+  it("names every recognition limit from the evaluation's own ruleset, and no number without one", () => {
+    const empty = render(account(view({ positions: [], recognize: { entryMinDelta: 0.8, minLongDays: 180, maxShortDays: 60 } })));
+    expect(empty).toContain("at least 180 days left when it was bought");
+    expect(empty).toContain("at most 60 days left");
+    const tuned = render(account(view({ positions: [], recognize: { entryMinDelta: 0.75, minLongDays: 200, maxShortDays: 45 } })));
+    expect(tuned).toContain("0.75 delta or more");
+    expect(tuned).toContain("at least 200 days");
+    expect(tuned).toContain("at most 45 days");
+    const none = render(account(view({ positions: [], recognize: null })));
+    expect(none).toContain(NO_PMCC);
+    expect(none).not.toMatch(/\d+ days/);
+  });
+
+  it("says whose quotes the rolls are priced on, in ET", () => {
+    const income = render(account(view()));
+    expect(income).toContain("priced on the income reading (taken 2026-10-12 14:45 ET)");
+    const p = position();
+    p.rolls = { ...p.rolls!, chainsTakenAt: "2026-10-21T14:35:47-0600" };
+    const chains = render(account(view({ positions: [p] })));
+    expect(chains).toContain(
+      "priced on this session's roll-out chains (read 2026-10-21 16:35 ET), and the income reading (taken 2026-10-12 14:45 ET) for any expiry they lack",
+    );
+  });
+
+  it("labels an older evaluation's gross skate yield as gross, and states a net one as manage wrote it", () => {
+    const old = render(account(view()));
+    expect(old).toContain("(gross: the shorts' fees not subtracted)");
+    const p = position({
+      skateYield: {
+        value: 0.81,
+        capped: false,
+        basis: "comparison figure: the shorts' net P&L to date (their fees subtracted) / the long's cost x 365 / days held",
+      },
+    });
+    const now = render(account(view({ positions: [p] })));
+    expect(now).toContain("the shorts' net P&L to date (their fees subtracted)");
+    expect(now).not.toContain("(gross:");
+  });
+
+  it("labels the check's underlying column as the facts card does", () => {
+    const html = renderToString(<PmccCards a={account(view())} />);
+    expect(html).toContain("<th>underlying</th>");
+    expect(html).not.toContain("<th>price</th>");
   });
 });

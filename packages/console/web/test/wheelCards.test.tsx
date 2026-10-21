@@ -141,6 +141,8 @@ function trade(over: Partial<ManageTrade> = {}): ManageTrade {
             leg: "2026-11-20 50P",
             expiration: "2026-12-18",
             quotedAt: "2026-10-12T18:45:00Z",
+            source: null,
+            considered: [],
             why: null,
             netZero: {
               closePrice: 1.2,
@@ -215,7 +217,8 @@ describe("the wheel tab", () => {
     expect(out).toContain("comparison figure");
     expect(out).toContain("-12.8%");
     // Today's check: no band in the snapshot, said so; nothing resting.
-    expect(out).toContain("band not in the snapshot (no band for the name in the snapshot)");
+    expect(out).toContain("no band for this name");
+    expect(out).not.toContain("band not in the snapshot (no band for the name in the snapshot)");
     expect(out).toContain("none resting");
     expect(out).toContain("1.20 a share · $120.00");
     // The wheel rule that fired, and only the wheel's: the roll candidates with their verdicts.
@@ -276,5 +279,44 @@ describe("the wheel tab", () => {
     const unknown = render(account(wheel({ cycles: [cycle({ today: [check({ spot: null, tested: null })] })] })));
     expect(unknown).toMatch(/— 1\.20 no price /);
     expect(unknown).not.toMatch(/1\.20 (not )?tested /);
+  });
+
+  it("says whose quotes a roll is priced on, from manage's own source and stamp, in ET", () => {
+    // The income reading: its own stamp, never "the previous afternoon" (it can be this one).
+    const income = render(account(wheel()));
+    expect(income).toContain("priced on the income reading, taken 2026-10-12 14:45 ET");
+    expect(income).not.toContain("previous afternoon");
+    // This session's roll-out chains, with the expiries looked at; the snapshot's -0600 stamp read as ET.
+    const t = trade();
+    const note = t.wheel![0]!;
+    note.rolls = [
+      {
+        ...note.rolls![0]!,
+        source: "roll-out chains",
+        quotedAt: "2026-10-21T14:35:47-0600",
+        considered: [
+          { expiration: "2026-11-27", netZero: false },
+          { expiration: "2026-12-18", netZero: true },
+        ],
+      },
+    ];
+    const chains = render(account(wheel(), [t]));
+    expect(chains).toContain(
+      "priced on this session's roll-out chains, read 2026-10-21 16:35 ET (looked at 2026-11-27, no net-zero; 2026-12-18)",
+    );
+  });
+
+  it("labels the check's underlying column as the PMCC card does", () => {
+    const html = renderToString(<WheelCards a={account(wheel())} />);
+    expect(html).toContain("<th>underlying</th>");
+    expect(html).not.toContain("<th>price</th>");
+  });
+
+  it("lists history rows outside any cycle, and nothing when there are none", () => {
+    const out = render(account(wheel({ outside: { ABC: ["2026-10-02 sold 1 2026-11-20 60C, no shares behind it"], DEF: [] } })));
+    expect(out).toContain("history outside any cycle");
+    expect(out).toContain("ABC: 2026-10-02 sold 1 2026-11-20 60C, no shares behind it");
+    expect(out).not.toContain("DEF:");
+    expect(render(account(wheel()))).not.toContain("history outside any cycle");
   });
 });

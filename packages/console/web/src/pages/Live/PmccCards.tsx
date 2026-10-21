@@ -1,4 +1,4 @@
-import type { ManageAccount, ManagePmccPosition, ManagePmccRoll, ManageTrade } from "@console/shared";
+import type { ManageAccount, ManagePmccPosition, ManagePmccRecognize, ManagePmccRoll, ManageTrade } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
 import {
@@ -13,6 +13,7 @@ import {
   beyondText,
   feesPaid,
   px,
+  etStamp,
   share,
 } from "./manageParts";
 
@@ -29,9 +30,21 @@ import {
  * per-share figure says so.
  */
 
-export const NO_PMCC =
-  "no PMCC: one is recognised when a long call entered at 0.80 delta or more (or a name given " +
-  'intent: "pmcc" in the ruleset) has one shorter-dated call sold against it';
+export const NO_PMCC = "no PMCC: one is recognised when";
+
+/** Why there is no PMCC, in the evaluation's own recognition limits (`pmcc.recognize`); where the
+ *  evaluation embeds no ruleset, the conditions without their numbers rather than numbers it was not
+ *  judged by. */
+export function noPmccText(rc: ManagePmccRecognize | null | undefined): string {
+  const delta = rc?.entryMinDelta != null ? rc.entryMinDelta.toFixed(2) : "the entry floor";
+  const long = rc?.minLongDays != null ? `at least ${rc.minLongDays} days` : "enough days";
+  const short = rc?.maxShortDays != null ? `at most ${rc.maxShortDays} days` : "few enough days";
+  return (
+    `${NO_PMCC} a long call entered at ${delta} delta or more, with ${long} left when it was ` +
+    `bought (or a name given intent: "pmcc" in the ruleset), has one shorter-dated call sold against it with ${short} ` +
+    "left, at or above the long's strike, and no shares on the name"
+  );
+}
 
 function pct(v: number | null, digits = 0): string {
   return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
@@ -145,9 +158,27 @@ function YieldCard({ p }: { p: ManagePmccPosition }) {
       <Kv
         rows={[["a year", y?.value === null || y?.value === undefined ? "—" : `${(y.value * 100).toFixed(1)}%${y.capped ? " (past the cap)" : ""}`]]}
       />
-      <p className="md-note">{y?.basis ?? "the shorts' P&L over the long's cost, annualised"}. Never a forecast; none under seven days.</p>
+      <p className="md-note">{yieldBasis(y?.basis ?? null)}. Never a forecast; none under seven days.</p>
     </DetailCard>
   );
+}
+
+/** Manage's statement of what the yield is. An evaluation before 2026-10-21 took the shorts' P&L
+ *  gross of their fees and said only "P&L"; "P&L" means net across the suite, so that one is
+ *  labelled gross here rather than left reading as net. */
+export function yieldBasis(basis: string | null): string {
+  if (basis === null) return "the shorts' net P&L over the long's cost, annualised";
+  return /net P&L/.test(basis) ? basis : `${basis} (gross: the shorts' fees not subtracted)`;
+}
+
+/** Whose quotes the rolls are priced on: this session's roll-out chains first where the snapshot read
+ *  them for the name, the income reading for any expiry they lack. */
+export function pmccRollQuotes(r: NonNullable<ManagePmccPosition["rolls"]>): string {
+  const income = etStamp(r.quotedAt);
+  const reading = `the income reading${income ? ` (taken ${income})` : ""}`;
+  if (r.chainsTakenAt == null) return reading;
+  const chains = etStamp(r.chainsTakenAt);
+  return `this session's roll-out chains${chains ? ` (read ${chains})` : ""}, and ${reading} for any expiry they lack`;
 }
 
 function RollLine({ r }: { r: ManagePmccRoll }) {
@@ -220,7 +251,7 @@ function PmccRules({ p, trades }: { p: ManagePmccPosition; trades: ManageTrade[]
         <>
           <p className="md-subhead">
             rolls for the {p.short.leg}
-            {p.rolls.quotedAt ? <span className="muted"> · quoted {p.rolls.quotedAt}</span> : null}
+            <span className="muted"> · priced on {pmccRollQuotes(p.rolls)}</span>
           </p>
           {p.rolls.candidates.length === 0 ? (
             <p className="md-note">no roll priced: {p.rolls.why ?? "nothing quoted"}</p>
@@ -253,7 +284,7 @@ function ShortCheck({ p }: { p: ManagePmccPosition }) {
             <tr>
               <th>short</th>
               <th>dte</th>
-              <th>price</th>
+              <th>underlying</th>
               <th>mid (a share)</th>
               <th>tested</th>
               <th>intrinsic (a share)</th>
@@ -376,7 +407,7 @@ export function PmccCards({ a }: { a: ManageAccount }) {
     return (
       <Card title={`pmcc · ${a.account ?? "?"}`}>
         <p className="muted" style={{ margin: 0 }}>
-          {NO_PMCC}
+          {noPmccText(v.recognize)}
         </p>
         {v.error && <p className="muted">no PMCC view for this account: {v.error}</p>}
         {notes.map((n) => (

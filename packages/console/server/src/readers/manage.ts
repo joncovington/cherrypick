@@ -172,8 +172,12 @@ function leg(v: unknown): ManageLeg {
     capture: num(l["capture"]),
     delta: num(l["delta"]),
     iv: num(l["iv"]),
+    ivSource: IV_SOURCES.find((s) => s === l["iv_source"]) ?? null,
+    wide: flag(l["wide"]),
   };
 }
+
+const IV_SOURCES = ["mid", "broker", "unpriceable"] as const;
 
 function fired(v: unknown): ManageFired {
   const f = rec(v);
@@ -421,21 +425,29 @@ function pmccPosition(v: unknown): ManagePmccPosition {
           why: str(r["why"]),
           quotedExpiries: strs(r["quoted_expiries"]),
           quotedAt: str(r["quoted_at"]),
+          chainsTakenAt: str(r["chains_taken_at"]),
         }
       : null,
     tradeIds: strs(p["trade_ids"]),
   };
 }
 
-/** The account's PMCC view, passed through. Null when the evaluation carries no `pmcc` key. */
-function pmcc(v: unknown): ManagePmcc | null {
+/** The account's PMCC view, passed through. Null when the evaluation carries no `pmcc` key. The
+ *  recognition limits are the evaluation's own ruleset's (`pmcc.recognize`), so the empty state names
+ *  the numbers the account was judged by. */
+function pmcc(v: unknown, rules: Record<string, unknown> = {}): ManagePmcc | null {
   if (v === null || v === undefined) return null;
   const p = rec(v);
+  const rc = rec(rec(rules["pmcc"])["recognize"]);
   return {
     positions: arr(p["positions"]).map(pmccPosition),
     underlyingHistoryError: str(p["underlying_history_error"]),
     bandsMissing: str(p["bands_missing"]),
     error: str(p["error"]),
+    recognize:
+      Object.keys(rc).length === 0
+        ? null
+        : { entryMinDelta: num(rc["entry_min_delta"]), minLongDays: num(rc["min_long_days"]), maxShortDays: num(rc["max_short_days"]) },
   };
 }
 
@@ -494,6 +506,11 @@ function wheelRolls(v: unknown): ManageWheelRolls {
     leg: str(r["leg"]) ?? "?",
     expiration: str(r["expiration"]),
     quotedAt: str(r["quoted_at"]),
+    source: str(r["source"]),
+    considered: arr(r["considered"]).map((raw) => {
+      const c = rec(raw);
+      return { expiration: str(c["expiration"]), netZero: flag(c["net_zero"]) };
+    }),
     why: str(r["why"]),
     netZero: wheelRoll(r["net_zero"]),
     netZeroWhy: str(r["net_zero_why"]),
@@ -512,6 +529,7 @@ function nextLeg(v: unknown): ManageWheelNextLeg | null {
     expiration: str(n["expiration"]),
     why: str(n["why"]),
     quote: quote(n["quote"]),
+    quotedAt: str(n["quoted_at"]),
     contracts: num(n["contracts"]),
     belowWheelBasis: flag(n["below_wheel_basis"]),
   };
@@ -1053,7 +1071,7 @@ function account(v: unknown, rules: Record<string, unknown>, lev: Leveraged = NO
     }),
     portfolio: portfolio(a["portfolio"], rules, lev),
     wheel: wheel(a["wheel"]),
-    pmcc: pmcc(a["pmcc"]),
+    pmcc: pmcc(a["pmcc"], rules),
   };
 }
 

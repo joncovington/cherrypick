@@ -735,4 +735,60 @@ describe("readManage", () => {
     expect(bad.error).toMatch(/unreadable/);
     expect(bad.accounts).toEqual([]);
   });
+
+  it("passes where each figure came from: a leg's IV source, a roll's quotes and the PMCC limits (2026-10-21)", () => {
+    const doc = evalDoc("2026-10-21");
+    doc["rules"] = { ruleset: "manage-2026-10", pmcc: { recognize: { min_long_days: 180, max_short_days: 60, entry_min_delta: 0.8 } } };
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    const trades = acct["trades"] as Array<Record<string, unknown>>;
+    trades[0]!["legs"] = [
+      { label: "-1 2026-11-20 42C", quantity: -1, mid: 0.92, iv: 0.19, iv_source: "broker", wide: true },
+      { label: "+1 2029-01-19 80C", quantity: 1, mid: 7.1, iv: null, iv_source: "unpriceable", wide: false },
+      { label: "+1 2026-11-20 87.5P", quantity: 1, mid: 1.22, iv: 0.21 },
+    ];
+    trades[0]!["wheel"] = [
+      {
+        underlying: "KO", start: "2026-10-01", status: "open", problems: null, take_profit: [],
+        rolls: [
+          {
+            leg: "2026-11-20 50P", expiration: "2026-12-04", quoted_at: "2026-10-21T14:35:47-0600", source: "roll-out chains",
+            considered: [{ expiration: "2026-11-27", net_zero: false }, { expiration: "2026-12-04", net_zero: true }],
+            why: null, net_zero: null, premium_gambit: null,
+          },
+          { leg: "2026-11-20 55P", expiration: "2026-12-18", quoted_at: "2026-10-21T18:45:01+00:00", why: null },
+        ],
+        next_leg: { strike: 60, band: 59.4, band_kind: "fixed", expiration: "2026-12-18", quote: { strike: 60, bid: 1, ask: 1.2, mid: 1.1 }, quoted_at: "2026-10-21T18:45:01+00:00", contracts: 1 },
+      },
+    ];
+    acct["pmcc"] = {
+      positions: [
+        {
+          underlying: "XYZ", long: {}, short: {}, width: {},
+          rolls: { candidates: [], why: null, quoted_expiries: [], quoted_at: "2026-10-21T18:45:01+00:00", chains_taken_at: "2026-10-21T14:35:47-0600" },
+        },
+      ],
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-21.json"), JSON.stringify(doc));
+    const a = readManage(config).accounts[0]!;
+    const [broker, unpriceable, older] = a.trades[0]!.legs;
+    expect(broker).toMatchObject({ iv: 0.19, ivSource: "broker", wide: true });
+    expect(unpriceable).toMatchObject({ iv: null, ivSource: "unpriceable", wide: false });
+    expect(older).toMatchObject({ iv: 0.21, ivSource: null, wide: null }); // before #504: unknown, never "mid"
+    const [chains, income] = a.trades[0]!.wheel![0]!.rolls!;
+    expect(chains).toMatchObject({ source: "roll-out chains", quotedAt: "2026-10-21T14:35:47-0600" });
+    expect(chains!.considered).toEqual([
+      { expiration: "2026-11-27", netZero: false },
+      { expiration: "2026-12-04", netZero: true },
+    ]);
+    expect(income).toMatchObject({ source: null, considered: [] });
+    expect(a.trades[0]!.wheel![0]!.nextLeg!.quotedAt).toBe("2026-10-21T18:45:01+00:00");
+    const p = a.pmcc!;
+    expect(p.positions[0]!.rolls).toMatchObject({ quotedAt: "2026-10-21T18:45:01+00:00", chainsTakenAt: "2026-10-21T14:35:47-0600" });
+    expect(p.recognize).toEqual({ entryMinDelta: 0.8, minLongDays: 180, maxShortDays: 60 });
+    // An evaluation embedding no PMCC rules names no limits.
+    const bare = evalDoc("2026-10-21");
+    (bare["accounts"] as Array<Record<string, unknown>>)[0]!["pmcc"] = { positions: [] };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-21.json"), JSON.stringify(bare));
+    expect(readManage(config).accounts[0]!.pmcc!.recognize).toBeNull();
+  });
 });

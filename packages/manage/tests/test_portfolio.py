@@ -2,6 +2,7 @@
 
 import copy
 import math
+import re
 
 import pytest
 
@@ -165,6 +166,23 @@ def test_theta_above_its_ceiling_fires_and_inside_the_band_does_not():
     assert "portfolio.theta" not in _rules_fired(
         _read([_trade("SPY", 500.0, [_leg(-1, "P", 500.0, dte=7)])], rules=rules)
     )
+
+
+def test_a_breach_never_reads_as_equal_to_its_bound():
+    # 0.304% over a 0.30% ceiling once read "0.30% of net liq, above the 0.30% ceiling".
+    trades = [_trade("SPY", 500.0, [_leg(-1, "P", 500.0, dte=7)])]
+    pct = _read(trades)["theta_ex_front_pct_net_liq"]
+    rules = copy.deepcopy(RULES)
+    rules["portfolio"]["theta"]["max_pct_nlv"] = pct - 1e-6
+    (g,) = [g for g in _read(trades, rules=rules)["guidance"] if g["rule"] == "portfolio.theta"]
+    shown, bound = re.search(r"is ([\d.]+%) of net liq, above the ([\d.]+%) ceiling", g["reason"]).groups()
+    assert shown != bound and float(shown[:-1]) > float(bound[:-1])
+
+
+def test_apart_adds_places_only_until_the_two_differ():
+    assert portfolio._apart(0.00304, 0.003, 2, "%") == ("0.304%", "0.300%")
+    assert portfolio._apart(0.0031, 0.003, 2, "%") == ("0.31%", "0.30%")
+    assert portfolio._apart(50.04, 50.0, 1, "+f") == ("+50.04", "+50.00")
 
 
 def test_legs_about_to_expire_are_left_out_of_the_theta_band():
