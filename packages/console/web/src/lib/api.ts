@@ -29,6 +29,7 @@ import type {
   EarningsRecordPayload,
   SignalBoardPayload,
   SkatePayload,
+  SkateRecordPayload,
   IncomeList,
   IncomeListPayload,
   ScreenerList,
@@ -290,6 +291,15 @@ export function useSkate(day: string | null) {
     queryFn: () => getJson<SkatePayload>(`/api/screeners/skate${day ? `?day=${encodeURIComponent(day)}` : ""}`),
     // Two runs a session (12:00 and 15:05 ET).
     refetchInterval: 300_000,
+  });
+}
+
+export function useSkateRecord() {
+  return useQuery<SkateRecordPayload>({
+    queryKey: ["skate-record"],
+    queryFn: () => getJson<SkateRecordPayload>("/api/screeners/skate/record"),
+    // Written once a morning by the technicals-skate job.
+    refetchInterval: 900_000,
   });
 }
 

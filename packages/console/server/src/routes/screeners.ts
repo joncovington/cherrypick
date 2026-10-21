@@ -8,6 +8,7 @@ import type {
   ScreenerPayload,
   SignalBoardPayload,
   SkatePayload,
+  SkateRecordPayload,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { readEarningsCalendar } from "../readers/earningsCalendar.js";
@@ -16,6 +17,7 @@ import { INCOME_LISTS, readIncomeList } from "../readers/incomeLists.js";
 import { readScreener, SCREENER_LISTS } from "../readers/screeners.js";
 import { readSignalBoard } from "../readers/signalBoard.js";
 import { readSkate } from "../readers/skate.js";
+import { readSkateRecord } from "../readers/skateRecord.js";
 
 export function registerScreenerRoutes(app: FastifyInstance, config: ConsoleConfig): void {
   // Registered before the list route, so `earnings`, `board` and `skate` are never read as list names.
@@ -39,6 +41,8 @@ export function registerScreenerRoutes(app: FastifyInstance, config: ConsoleConf
     "/api/screeners/skate",
     async (req): Promise<SkatePayload> => readSkate(config, req.query.day ?? null),
   );
+  // The forward record: one file for the whole screen, not a session's (docs/skate-plan.md step 4).
+  app.get("/api/screeners/skate/record", async (): Promise<SkateRecordPayload> => readSkateRecord(config));
   app.get("/api/screeners/earnings-record", async (): Promise<EarningsRecordPayload> => readEarningsRecord(config));
   app.get<{ Querystring: { day?: string } }>(
     "/api/screeners/earnings",

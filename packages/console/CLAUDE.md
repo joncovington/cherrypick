@@ -466,6 +466,14 @@ tab was retired on 2026-10-19; its final rates are in `packages/technicals/CLAUD
   - "vs spot" is the strike against the quote's spot, a display figure: the band is set on the
     band day's close, so a name that has moved can have its pick at or through the money, and those
     top the gap sort.
+  - **The forward record** (2026-10-20; `SkateRecord.tsx`, `readers/skateRecord.ts`,
+    `GET /api/screeners/skate/record`; step 4) sits below the table and passes through
+    `data/technicals/skate/record.json`. Its own route, not a field on the run payload: it is one
+    file for the screen, not a session's. `decision_grade` and each band's `passes` are the file's,
+    never worked out from the z scores (`skateRecord.test.tsx` fails if they are); a non-boolean
+    `passes` is "no verdict stated". No pass tone before decision-grade, the test stated in words
+    from the file's `test`, and a missing or unreadable file said plainly, never zeros. `record.db`'s
+    rows are not read.
 **Compare's risk tab** (`/compare/risk`, 2026-10-17, `pages/Compare/RiskTab.tsx` over
 `GET /api/analysis` → `readers/analysis.ts::readArmsRisk`) — every arm of every module on one
 sortable table, each over its own window (the analysis tab's rule), with peak risk, net over the

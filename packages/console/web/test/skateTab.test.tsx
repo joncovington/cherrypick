@@ -112,6 +112,22 @@ const base: SkatePayload = {
 vi.mock("../src/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/lib/api")>()),
   useSkate: () => ({ data: payload, isLoading: false, isError: false }),
+  useSkateRecord: () => ({
+    data: {
+      status: "none",
+      writtenAt: null,
+      recorded: null,
+      added: {},
+      settledNow: null,
+      settled: null,
+      expiries: null,
+      decisionGrade: false,
+      bands: { fixed: null, byExpiry: null },
+      test: null,
+    },
+    isLoading: false,
+    isError: false,
+  }),
 }));
 
 const { SkateTab } = await import("../src/pages/Screeners/SkateTab");
@@ -156,6 +172,9 @@ describe("the skate tab", () => {
     expect(html).toContain("measured 2026-10-19 15:05 ET");
     expect(html).toContain("bands on the 2026-10-16 close");
     expect(html).toContain("a history estimate");
+    // The forward record's section sits below the table.
+    expect(html).toContain("Forward record");
+    expect(html).toContain("No forward record written yet");
   });
 
   it("says when there is no run, an unreadable run, an incomplete run or a stated problem", () => {
