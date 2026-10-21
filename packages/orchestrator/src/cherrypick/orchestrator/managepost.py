@@ -1,14 +1,35 @@
 """The position evaluation as a post: the trades needing action, one line each.
 
 A pure function of one `eval-<session>.json` (packages/manage's output), so the same evaluation
-always says the same thing. `_run_manage` sends it after every run, scheduled or by hand; the text
-is what every channel and the log floor get, and the embed is Discord's card of the same lines.
-Advice only, like the evaluation it reads: nothing here names an order to send.
+always says the same thing. `_run_manage` sends it after a run, scheduled or by hand (no more often
+than `manage.notify_every_minutes`, `post_due`); the text is what every channel and the log floor
+get, and the embed is Discord's card of the same lines. Advice only, like the evaluation it reads:
+nothing here names an order to send.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
+
+# A run posts when the last post is at least `every` minutes old LESS this slack: runs land a few
+# seconds to a minute after their scheduled time, so a strict hour would skip every other one.
+POST_SLACK_MINUTES = 5
+
+
+def post_due(last: dict[str, Any] | None, now: datetime, session: str | None, every: int) -> bool:
+    """Whether this run posts its list. `every` of 0 (the default) posts every run. Otherwise a run
+    posts when nothing has been posted this session (the day's first run always speaks) or the last
+    post (`{"session", "at"}`, ISO with offset) is `every` minutes old, less POST_SLACK_MINUTES. An
+    unreadable record posts: a missed throttle costs one extra post, a stuck one silences the day."""
+    if every <= 0 or not last or last.get("session") != session:
+        return True
+    try:
+        then = datetime.fromisoformat(str(last.get("at")))
+        return (now - then).total_seconds() >= (every - POST_SLACK_MINUTES) * 60
+    except (TypeError, ValueError):
+        return True
+
 
 # Not acting: a held trade, and one the clock settles without a decision.
 QUIET = frozenset({"HOLD", "SETTLES"})
