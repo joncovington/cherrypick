@@ -821,7 +821,8 @@ def evaluate_trade(
                         if profile["unbounded_low"]
                         else f"${downside:,.0f} modelled downside is {downside / budget:.1f}x "
                         f"the ${budget:,.0f} per-trade budget "
-                        f"({float(rk['max_risk_pct']):.0%} of net liq)"
+                        # :g, not :.0%: a 2.5% budget must not read as 2%.
+                        f"({float(rk['max_risk_pct']) * 100:g}% of net liq)"
                     ),
                 )
             )
