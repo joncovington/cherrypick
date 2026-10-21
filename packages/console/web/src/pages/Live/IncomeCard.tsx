@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ManageBpLevel, ManageCandidate, ManageCandidates } from "@console/shared";
 import { Card } from "../../components/DataTable";
+import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { fmtCash, fmtMoney } from "../../lib/format";
 
 /**
@@ -133,50 +134,155 @@ function altVerb(c: ManageCandidate, alt: ManageCandidate): string {
   return a !== null && b !== null && a > b ? "widened to" : "narrowed to";
 }
 
+/**
+ * The columns both lists share, for a row sized at `n(c)` contracts. Quantity, the per-share price,
+ * theta and (on the fits list) delta and the next cap are the detail view's; the per-share price is
+ * on the cash cell's hover in both. No buying-power dollars column (2026-10-21): what a trade does to
+ * the book is the waiting list's `BP after`, and the too-big list states each one's buying power.
+ */
+function sharedColumns(n: (c: ManageCandidate) => number, qtyTitle: string): Column<ManageCandidate>[] {
+  return [
+    {
+      key: "name",
+      label: "name",
+      td: (c) => (
+        <td>
+          <Name c={c} />
+        </td>
+      ),
+    },
+    {
+      key: "trade",
+      label: "trade",
+      td: (c) => (
+        <td>
+          {KIND[c.kind] ?? c.kind}
+          {narrowed(c) ? <span className="muted"> · {narrowed(c)}</span> : null}
+        </td>
+      ),
+    },
+    {
+      key: "legs",
+      label: "legs",
+      td: (c) => (
+        <td className="num">
+          {c.expiry} {legs(c)}
+        </td>
+      ),
+    },
+    { key: "qty", label: "qty", title: qtyTitle, detailOnly: true, td: (c) => <td className="num">{n(c)}</td> },
+    {
+      key: "price",
+      label: "price",
+      title: "per-share net price at mid, and the natural fill (sell at the bid, buy at the ask)",
+      detailOnly: true,
+      td: (c) => (
+        <td className="num" title={`natural ${price(c.perUnit.natural)}`}>
+          {netPrice(c)}
+        </td>
+      ),
+    },
+    {
+      key: "cash",
+      label: "cash",
+      title: "signed cash flow, whole position: a credit received is +",
+      td: (c) => (
+        <td className="num pnl-pos" title={`${netPrice(c)} a share at mid · ${n(c)} contract${n(c) === 1 ? "" : "s"}`}>
+          {fmtCash(times(n(c), c.perUnit.cash))}
+        </td>
+      ),
+    },
+    {
+      key: "risk",
+      label: "risk",
+      title: "a spread's max loss; a short put's loss at the name's 1st-percentile move over the holding period",
+      td: (c) => <td className="num">{risk(c, n(c))}</td>,
+    },
+    {
+      key: "odds",
+      label: "odds",
+      title: "a spread's chance of any loss / of the max loss, its break-even, and what getting in costs as a share of the credit",
+      td: (c) => <Odds c={c} />,
+    },
+  ];
+}
+
+const THETA_COLUMN = (n: (c: ManageCandidate) => number): Column<ManageCandidate> => ({
+  key: "theta",
+  label: "θ / day",
+  title: "theta, whole position, dollars a day",
+  detailOnly: true,
+  td: (c) => <td className="num">{fmtCash(times(n(c), c.perUnit.theta))}</td>,
+});
+
+const fitUnits = (c: ManageCandidate) => c.units;
+
+const FIT_COLUMNS: Column<ManageCandidate>[] = [
+  ...sharedColumns(fitUnits, "contracts (spreads: one of each leg)"),
+  THETA_COLUMN(fitUnits),
+  {
+    key: "bwd",
+    label: "Δ SPY sh",
+    title: "beta-weighted delta the position adds, in SPY shares",
+    detailOnly: true,
+    td: (c) => <td className="num">{c.perUnit.bwd === null ? "—" : (c.units * c.perUnit.bwd).toFixed(1)}</td>,
+  },
+  {
+    key: "binding",
+    label: "next stops at",
+    title: "the cap the next contract would break",
+    detailOnly: true,
+    td: (c) => <td className="muted">{c.binding ?? "max contracts"}</td>,
+  },
+];
+
+const roomUnits = (c: ManageCandidate) => c.ifRoom?.units ?? 0;
+
+const WAITING_COLUMNS: Column<ManageCandidate>[] = [
+  ...sharedColumns(roomUnits, "contracts once there is room (spreads: one of each leg)"),
+  {
+    key: "bpAfter",
+    label: "BP after",
+    title: "buying power used after taking it today, against the VIX-scaled cap",
+    td: (w) => {
+      const room = w.ifRoom;
+      const level = room?.bpLevel ?? null;
+      return (
+        <td>
+          {level ? (
+            <span className={BP_CHIP[level]} title={BP_WORD[level]}>
+              {pct(room?.bpAfterPct ?? null)}
+            </span>
+          ) : (
+            "—"
+          )}
+          {room?.thetaOver ? (
+            <span
+              className="chip chip-warn"
+              title={`book theta after it ${pct(room.thetaAfterPct, 2)} of net liq, over the ${pct(room.thetaCeilingPct, 1)} ceiling`}
+            >
+              θ over
+            </span>
+          ) : null}
+        </td>
+      );
+    },
+  },
+  THETA_COLUMN(roomUnits),
+];
+
 function FitsTable({ rows }: { rows: ManageCandidate[] }) {
+  const cols = useColumns(FIT_COLUMNS);
   return (
     <div className="table-scroll">
       <table className="data-table">
         <thead>
-          <tr>
-            <th>name</th>
-            <th>trade</th>
-            <th>legs</th>
-            <th title="contracts (spreads: one of each leg)">qty</th>
-            <th title="per-share net price at mid, and the natural fill (sell at the bid, buy at the ask)">price</th>
-            <th title="signed cash flow, whole position: a credit received is +">cash</th>
-            <th title="a spread's max loss; a short put's loss at the name's 1st-percentile move over the holding period">risk</th>
-            <th title="a spread's chance of any loss / of the max loss, its break-even, and what getting in costs as a share of the credit">odds</th>
-            <th title="buying power the position ties up">buying power</th>
-            <th title="theta, whole position, dollars a day">θ / day</th>
-            <th title="beta-weighted delta the position adds, in SPY shares">Δ SPY sh</th>
-            <th title="the cap the next contract would break">next stops at</th>
-          </tr>
+          <HeadRow cols={cols} />
         </thead>
         <tbody>
           {rows.map((c, i) => (
             <tr key={`${c.underlying}-${c.kind}-${i}`}>
-              <td>
-                <Name c={c} />
-              </td>
-              <td>
-                {KIND[c.kind] ?? c.kind}
-                {narrowed(c) ? <span className="muted"> · {narrowed(c)}</span> : null}
-              </td>
-              <td className="num">
-                {c.expiry} {legs(c)}
-              </td>
-              <td className="num">{c.units}</td>
-              <td className="num" title={`natural ${price(c.perUnit.natural)}`}>
-                {netPrice(c)}
-              </td>
-              <td className="num pnl-pos">{fmtCash(times(c.units, c.perUnit.cash))}</td>
-              <td className="num">{risk(c, c.units)}</td>
-              <Odds c={c} />
-              <td className="num">{fmtMoney(times(c.units, c.perUnit.buyingPower))}</td>
-              <td className="num">{fmtCash(times(c.units, c.perUnit.theta))}</td>
-              <td className="num">{c.perUnit.bwd === null ? "—" : (c.units * c.perUnit.bwd).toFixed(1)}</td>
-              <td className="muted">{c.binding ?? "max contracts"}</td>
+              <Cells cols={cols} row={c} />
             </tr>
           ))}
         </tbody>
@@ -196,6 +302,7 @@ const BP_WORD: Record<ManageBpLevel, string> = { ok: "under the cap", over: "ove
 /** Trades stopped only by how full the book is, sized as if there were room. The chip is where
  *  taking one TODAY would leave buying power against the VIX-scaled cap, graded by the package. */
 function WaitingTable({ c }: { c: ManageCandidates }) {
+  const cols = useColumns(WAITING_COLUMNS);
   if (c.waiting.length === 0) return null;
   const warn = c.bpWarnOver === null ? "" : ` (amber within ${pct(c.bpWarnOver)} of it, red past that)`;
   return (
@@ -211,66 +318,14 @@ function WaitingTable({ c }: { c: ManageCandidates }) {
       <div className="table-scroll">
         <table className="data-table">
           <thead>
-            <tr>
-              <th>name</th>
-              <th>trade</th>
-              <th>legs</th>
-              <th title="contracts once there is room (spreads: one of each leg)">qty</th>
-              <th title="per-share net price at mid, and the natural fill (sell at the bid, buy at the ask)">price</th>
-              <th title="signed cash flow, whole position: a credit received is +">cash</th>
-              <th title="a spread's max loss; a short put's loss at the name's 1st-percentile move over the holding period">risk</th>
-              <th title="a spread's chance of any loss / of the max loss, its break-even, and what getting in costs as a share of the credit">odds</th>
-              <th title="buying power the position ties up">buying power</th>
-              <th title="buying power used after taking it today, against the VIX-scaled cap">BP after</th>
-              <th title="theta, whole position, dollars a day">θ / day</th>
-            </tr>
+            <HeadRow cols={cols} />
           </thead>
           <tbody>
-            {c.waiting.map((w, i) => {
-              const room = w.ifRoom;
-              const n = room?.units ?? 0;
-              const level = room?.bpLevel ?? null;
-              return (
-                <tr key={`${w.underlying}-${w.kind}-${i}`}>
-                  <td>
-                    <Name c={w} />
-                  </td>
-                  <td>
-                    {KIND[w.kind] ?? w.kind}
-                    {narrowed(w) ? <span className="muted"> · {narrowed(w)}</span> : null}
-                  </td>
-                  <td className="num">
-                    {w.expiry} {legs(w)}
-                  </td>
-                  <td className="num">{n}</td>
-                  <td className="num" title={`natural ${price(w.perUnit.natural)}`}>
-                    {netPrice(w)}
-                  </td>
-                  <td className="num pnl-pos">{fmtCash(times(n, w.perUnit.cash))}</td>
-                  <td className="num">{risk(w, n)}</td>
-                  <Odds c={w} />
-                  <td className="num">{fmtMoney(times(n, w.perUnit.buyingPower))}</td>
-                  <td>
-                    {level ? (
-                      <span className={BP_CHIP[level]} title={BP_WORD[level]}>
-                        {pct(room?.bpAfterPct ?? null)}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                    {room?.thetaOver ? (
-                      <span
-                        className="chip chip-warn"
-                        title={`book theta after it ${pct(room.thetaAfterPct, 2)} of net liq, over the ${pct(room.thetaCeilingPct, 1)} ceiling`}
-                      >
-                        θ over
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="num">{fmtCash(times(n, w.perUnit.theta))}</td>
-                </tr>
-              );
-            })}
+            {c.waiting.map((w, i) => (
+              <tr key={`${w.underlying}-${w.kind}-${i}`}>
+                <Cells cols={cols} row={w} />
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

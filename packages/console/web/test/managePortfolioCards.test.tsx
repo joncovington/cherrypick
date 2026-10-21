@@ -5,6 +5,7 @@ import type { ManageCandidate, ManageCandidateRoom, ManageCandidates, ManagePort
 import { IncomeCard, netPrice } from "../src/pages/Live/IncomeCard";
 import { BandDial, PortfolioCards, placesApart } from "../src/pages/Live/PortfolioCards";
 import { BuyingPowerCard, LadderCard, RiskGraphCard, RiskMatrixCard, ScenarioCards } from "../src/pages/Live/ScenarioCards";
+import { aligned, inView, tables } from "./viewTables";
 
 /**
  * The portfolio cards draw packages/manage's reading and decide nothing. The guards: in-band or
@@ -197,7 +198,7 @@ describe("PortfolioCards", () => {
     expect(html).toContain("outside band"); // theta
     expect(html).toContain("portfolio.theta");
     expect(html).toContain("SPY −10%");
-    expect(html).toContain("Traditional IRA");
+    expect(html).not.toContain("Traditional IRA"); // the account-type tile is gone (2026-10-21)
   });
 
   it("states the theta the band reads beside the whole book's, and only the whole on an older reading", () => {
@@ -505,7 +506,7 @@ describe("IncomeCard", () => {
     });
     const html = render(<IncomeCard c={income({ fits: [put] })} />);
     expect(html).toContain("$251.07");
-    expect(html.split("$1067.00").length - 1).toBe(1); // the buying power column only, never as risk
+    expect(html).not.toContain("$1067.00"); // never as risk, and no buying-power column (2026-10-21)
   });
 
   it("states the caps the evaluation's ruleset set for this account, not fixed numbers", () => {
@@ -668,5 +669,63 @@ describe("income candidates' price and cash agree", () => {
     const html = render(<IncomeCard c={income({ tooBig: [narrow], tooBigTotal: 1 })} />);
     expect(html).toContain("widened to −12P / +8P");
     expect(html).not.toContain("narrowed to −12P");
+  });
+});
+
+/** Live → portfolio in the simple and detail views (2026-10-21). */
+describe("the portfolio tab, simple and detail", () => {
+  const check = {
+    legsCompared: 30,
+    legsLeftOut: [],
+    bwdOurs: 5.85,
+    bwdBroker: 7.1,
+    bwdGap: -1.21,
+    thetaOurs: 43.68,
+    thetaBroker: 41.2,
+    thetaGap: 2.48,
+    underlyings: [],
+    legsOnBrokerIv: 0,
+    expiring: null,
+  };
+  const cards = () => render(<PortfolioCards p={reading({ brokerCheck: check })} scenarios={<p>the scenario cards</p>} />);
+
+  it("keeps the vega tile, the broker check and the scenarios to detail, and drops the account tile in both", () => {
+    const simple = inView("simple", cards);
+    const detail = inView("detail", cards);
+    for (const hidden of ["vega (30-day weighted)", "against the broker", "the scenario cards"]) {
+      expect(simple).not.toContain(hidden);
+      expect(detail).toContain(hidden);
+    }
+    expect(simple).not.toContain("Traditional IRA");
+    expect(detail).not.toContain("Traditional IRA");
+    expect(simple).toContain("tile-grid-4");
+    expect(detail).toContain("tile-grid-5");
+  });
+
+  it("the income tables drop buying power in both views and keep qty, price, theta, delta and the next cap to detail", () => {
+    const c = income({ fits: [candidate()], waiting: [candidate({ ifRoom: room() })], waitingTotal: 1 });
+    const simple = tables(inView("simple", () => render(<IncomeCard c={c} />)));
+    const detail = tables(inView("detail", () => render(<IncomeCard c={c} />)));
+    expect(simple).toHaveLength(2);
+    for (const t of [...simple, ...detail]) {
+      expect(t.headers).not.toContain("buying power");
+      expect(aligned(t)).toBe(true);
+    }
+    expect(simple[1]!.headers).toContain("BP after");
+    for (const h of ["qty", "price", "θ / day"]) {
+      expect(simple[0]!.headers).not.toContain(h);
+      expect(simple[1]!.headers).not.toContain(h);
+      expect(detail[0]!.headers).toContain(h);
+      expect(detail[1]!.headers).toContain(h);
+    }
+    for (const h of ["Δ SPY sh", "next stops at"]) {
+      expect(simple[0]!.headers).not.toContain(h);
+      expect(detail[0]!.headers).toContain(h);
+    }
+  });
+
+  it("puts the per-share price on the cash cell's hover, so the simple view still has it", () => {
+    const html = inView("simple", () => render(<IncomeCard c={income()} />));
+    expect(html).toContain('title="2.47 cr a share at mid · 2 contracts"');
   });
 });

@@ -242,6 +242,10 @@ in `navGroups.ts`); detail shows every tab; a module that declares no list shows
 Simple view also leaves Compare, Backtest, Advisor and System off the rail (`SIMPLE_HIDDEN_PAGES`,
 `navLinks.ts`). A bare module URL lands on the view's first tab, a deep link to a tab outside the view still renders
 (and the rail keeps it listed while you are on it), and `j`/`k` step through the view's tabs.
+Within a page, a column, tile or card is left to detail by marking it `detailOnly` and filtering with
+`useColumns` (`components/columns.tsx`); a table declares each column once, header and cell together
+(`Column`, `HeadRow`/`headersOf`, `Cells`), so dropping one cannot misalign a row. The Live tables use
+it (2026-10-21); a column removed from both views is simply not declared.
 
 **System page** (`/system`): the suite's own health, read-only, from the files the suite writes
 (supervisor registry and heartbeat, watchdog and its renotify memory, holds, pid files, stamps).
