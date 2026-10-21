@@ -165,6 +165,40 @@ reaches the 21-day exit or has given up 80% of its premium. It applies only when
 Earnings inside the new short's life are flagged, not blocked, because the long covers the short through
 a report. When the roll is not taken, the explanation says which condition stopped it.
 
+## The wheel view
+
+Each evaluation also follows every wheel on the account (`wheel.py`, [docs/skate-plan.md](../../docs/skate-plan.md)
+step 5): a cash-secured put, the shares it delivered, the calls written against them, until the shares
+are called away or sold. It is written into the evaluation as the account's `wheel`, one entry per
+cycle, and names the evaluated trades holding its legs. It decides nothing yet; the rules that read it
+come next.
+
+- **Linking.** Orders are linked through the contracts they open and close, as the order chains are.
+  A chain is a wheel leg when every option in it is one right sold to open or bought to close, so a
+  spread, a strangle or anything with a long option stays out, and a call joins only when shares are
+  held as it is sold. An assignment is matched option row to share row: the same name, the side the
+  option implies, shares = contracts x 100, at the strike, within four days, each share row claimed
+  once. A delivery nothing explains is flagged and never filled in.
+- **Reconciled or not.** A running cycle must replay to today's shares and contracts. When it does not
+  (history that starts too late, a close the history never saw opened, an unmatched delivery) it is
+  `unreconciled`, with each reason listed. Shares held before the history began have
+  `basis_known: false`: no basis is guessed for them, not even the positions' open price.
+- **Money.** Every figure is the broker's cash from the history rows, never price x quantity, with
+  fees apart. Two bases: the **tax basis** (the price each lot was acquired at, an assignment at its
+  strike, first in, first out) and the **wheel basis** (what the shares held have cost once every
+  premium, roll, fee and dividend in the cycle is counted, so a net-debit roll raises it). Breakeven
+  is the wheel basis, or with only a put open its strike less the net cash per share. Option and stock
+  P&L are apart, realised and unrealised apart; `pnl_net` adds fees and is null when any part is
+  unknown. A cycle is **complete** when it is flat and its credits exceed its debits; one flat at a
+  loss stays open, and the next put on the name continues it.
+- **Skate yield** is a comparison figure: net P&L over time-weighted capital (strike x 100 per open put,
+  the shares' cost while held; a covered call adds none), x 365 / days. None under seven days, and
+  flagged past 500%.
+- **Today's check**, for each short option a running cycle holds: tested or not (the price at or
+  through the strike), extrinsic value left at the mid, any buy-to-close resting on the day's working
+  orders (snapshot v10), and the strike against the skate screen's band for its expiry, moved to
+  today's price. The snapshot does not carry the bands yet, so that column is null and says why.
+
 ## The account as one book
 
 Beside the trades, each evaluation reads the whole account as one book (`portfolio.py`; the plan is in

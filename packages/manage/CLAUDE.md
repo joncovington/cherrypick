@@ -39,6 +39,10 @@ of that day, not today's.
   no input is null.
 - **Every modelled number says so.** Max loss, downside and upside are Black-Scholes at each leg's own
   IV at the nearest expiry. They bound what a trade can still do; they are never a price.
+- **A wheel cycle is linked, never guessed** (`wheel.py`). An assignment counts only when an option
+  row and a share row match (side, contracts x 100, at the strike, within days, each share row once);
+  a running cycle that does not replay to today's positions is `unreconciled`; shares older than the
+  history have `basis_known: false`, never the positions' open price.
 - **P&L is a mark.** Gross always; net of the chain's recorded fees where a chain reconciled, and null (never gross relabelled) where it did not.
 - **The ruleset is data.** Thresholds and confidences live in `rules.DEFAULT_RULES` and the operator's
   `~/.cherrypick/config/manage.json`; an override key the default lacks is reported, never applied.
