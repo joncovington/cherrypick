@@ -11,6 +11,11 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Fixed: one dropped connection no longer fails the nightly analyst-revisions fetch.** The
+  `technicals-revisions` job exited 1 if any single symbol failed, so one timeout among about 1,030
+  names raised a WARN (eight on 10-19, one on 10-20). Symbols that fail are now asked once more at the
+  end on a fresh session, and the run fails only for what still fails; after a 429 nothing is
+  retried, as before. The printed report gains `retried`.
 - **Added: manage's rolls are priced on the next expiries out in time** (snapshot v14,
   `roll_out_chains`). A PMCC's roll candidates want up to five quoted expiries between the short and
   the long, and the wheel's tested-short rolls want the next expiries out, but both were priced only
