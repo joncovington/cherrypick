@@ -26,6 +26,8 @@ the whole history and there is no asking for only what is new. Run nightly by th
 
 **Paced.** One symbol every `PAUSE_S` seconds (about 35 minutes for the ~1,020 names); a 429
 stops the run with everything fetched so far kept. Funds return no history and cost one call.
+Symbols that fail on anything else (a dropped connection, a timeout) are asked once more at the end
+on a fresh session, and the run exits 1 only for what still fails.
 
     python scripts/fetch_analyst_revisions.py [--symbols A B ...] [--limit N] [--dry-run]
 """
@@ -155,9 +157,37 @@ def main(argv=None) -> int:
         path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(path)
         conn.executescript(SCHEMA)
-    report = {"due": len(todo), "fetched": 0, "events": 0, "new_events": 0, "failed": [], "stopped": None}
+    report = {
+        "due": len(todo),
+        "fetched": 0,
+        "events": 0,
+        "new_events": 0,
+        "retried": [],
+        "failed": [],
+        "stopped": None,
+    }
     started = time.monotonic()
-    opener, crumb = session()
+    failed = run(conn, *session(), todo, report)
+    # One pass more, on a fresh session, over the symbols that failed: a dropped connection or a
+    # read timeout on one name in a thousand is the network, not the source, and on its own it made
+    # the nightly job report a failure. What still fails on the retry is reported; after a 429
+    # nothing is retried.
+    if failed and not report["stopped"]:
+        report["retried"] = [f"{sym}: {error}" for sym, error in failed]
+        time.sleep(PAUSE_S)
+        failed = run(conn, *session(), [sym for sym, _ in failed], report)
+    report["failed"] = [f"{sym}: {error}" for sym, error in failed]
+    if conn is not None:
+        conn.close()
+    report.update(ok=not report["failed"], seconds=round(time.monotonic() - started))
+    print(json.dumps(report, indent=1))
+    return 0 if report["ok"] else 1
+
+
+def run(conn, opener, crumb, todo: list[str], report: dict) -> list[tuple[str, str]]:
+    """Fetch and store each of `todo`, counting into `report`; returns the (symbol, error) pairs
+    that failed. A 429 stops the pass and sets `report["stopped"]`."""
+    failed = []
     for i, sym in enumerate(todo):
         if i:
             time.sleep(PAUSE_S)
@@ -183,18 +213,14 @@ def main(argv=None) -> int:
             )
             conn.commit()
         if error:
-            report["failed"].append(f"{sym}: {error}")
+            failed.append((sym, error))
         else:
             report["fetched"] += 1
             report["events"] += len(rows)
             report["new_events"] += new
         if report["stopped"]:
             break
-    if conn is not None:
-        conn.close()
-    report.update(ok=not report["failed"], seconds=round(time.monotonic() - started))
-    print(json.dumps(report, indent=1))
-    return 0 if report["ok"] else 1
+    return failed
 
 
 if __name__ == "__main__":
