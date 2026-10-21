@@ -161,6 +161,15 @@ def test_oversize_flags_a_trade_whose_downside_dwarfs_the_budget():
     assert fired(t)["risk.oversize"] == ev.REVIEW
 
 
+def test_oversize_states_a_fractional_budget_as_it_is_set():
+    # A 2.5% budget reads as 2.5%, not rounded to 2%.
+    rules = _rules.effective({"risk": {"max_risk_pct": 0.025, "oversize_multiple": 1.0}})[0]
+    legs = [leg(-1, "P", 95, "2026-11-20", 2.00, 0.95), leg(1, "P", 90, "2026-11-20", 0.80, 0.35)]
+    t = run(legs, rules=rules, net_liq=10_000)
+    reason = next(f["reason"] for f in t["fired"] if f["rule"] == "risk.oversize")
+    assert "the $250 per-trade budget (2.5% of net liq)" in reason
+
+
 def test_hold_carries_a_confidence_and_loses_some_to_earnings():
     legs = [leg(-1, "P", 90, "2026-11-20", 1.00, 0.80), leg(1, "P", 85, "2026-11-20", 0.40, 0.35)]
     plain = run(legs)
