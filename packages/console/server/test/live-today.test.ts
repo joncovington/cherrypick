@@ -298,6 +298,23 @@ describe("readLiveToday", () => {
     expect(p.suite.excluded).toContainEqual({ loop: "bwb", reason: "the live ledger could not be read" });
   });
 
+  it("marks a disabled module holding nothing as retired, and an open position brings it back", () => {
+    writeJson("config.json", { modules: { flies: { enabled: false }, meic: { enabled: true } } });
+    const quiet = readLiveToday(config, NOON);
+    expect(quiet.loops.map((l) => [l.loop, l.moduleEnabled, l.retired])).toEqual([
+      ["flies", false, true],
+      ["meic", true, false],
+      ["bwb", null, false], // a module the config does not name is not called off
+    ]);
+    const db = fliesLedger();
+    fly(db, "F1", { status: "open", trade_date: DAY });
+    db.close();
+    closePooledDbs();
+    const open = readLiveToday(config, NOON).loops[0]!;
+    expect(open.open).toBeGreaterThan(0);
+    expect(open.retired).toBe(false);
+  });
+
   it("an arm record past the disarm time is not counted as armed", () => {
     writeJson("config/meic.json", { live: { disarm_time: "11:00" } });
     writeJson("state/meic-live-arm.json", { date: DAY });

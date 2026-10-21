@@ -129,6 +129,19 @@ export function LiveTodayView({ data: d }: { data: LiveTodayPayload }) {
         empty="no live loops"
       >
         {d.loops.map((l) => {
+          // A disabled module holding nothing folds to one line; anything open, working, held,
+          // orphaned or overdue (or an arm record for today) brings the full row back.
+          if (l.retired)
+            return (
+              <tr key={l.loop} className="muted">
+                <td>
+                  <Link to={l.to}>{l.loop}</Link>
+                </td>
+                <td colSpan={14} title="modules.<name>.enabled is false in the orchestrator config">
+                  off — module disabled, nothing open or working
+                </td>
+              </tr>
+            );
           const arm = armWords(l);
           const t = l.today;
           return (

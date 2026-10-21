@@ -32,6 +32,8 @@ function loop(id: LiveTodayLoop["loop"], over: Partial<LiveTodayLoop> = {}): Liv
     held: 0,
     brokerHealth: null,
     overdue: [],
+    moduleEnabled: true,
+    retired: false,
     ...over,
   };
 }
@@ -61,6 +63,13 @@ describe("LiveTodayView", () => {
     expect(html).toContain("Nothing needs a person");
     expect(html).toContain('href="/live/flies"');
     expect(html).toContain('href="/live/meic"');
+  });
+
+  it("folds a retired loop to one line and keeps its link", () => {
+    const html = render(payload({ loops: [loop("flies", { moduleEnabled: false, retired: true }), loop("meic")] }));
+    expect(html).toContain("off — module disabled, nothing open or working");
+    expect(html).toContain('href="/live/flies"');
+    expect(html.match(/not armed/g)?.length).toBe(1); // only meic's full row
   });
 
   it("lists an attention item under its loop", () => {

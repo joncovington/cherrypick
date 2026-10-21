@@ -82,6 +82,12 @@ export interface LiveTodayLoop {
   held: number;
   brokerHealth: LiveMeicBrokerHealth | null;
   overdue: LiveTodayOverdue[];
+  /** The module's `enabled` switch in the orchestrator config; null when the config names no such module. */
+  moduleEnabled: boolean | null;
+  /** Off: the module is disabled and the loop holds nothing -- not armed, nothing open or working, no
+   *  held, orphaned or overdue item, a readable ledger. The tab shows it as one line; anything here
+   *  brings the full row back. */
+  retired: boolean;
 }
 
 export type LiveAttentionKind =
