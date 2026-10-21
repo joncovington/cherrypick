@@ -11,6 +11,14 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: the income lists say whether each trade fits the account.** manage judges every Screeners
+  short put and covered call against the account it evaluates (`candidates.screen_fit`): a put's
+  buying power -- cash-secured, or Reg T on margin -- at each strike within the lists' delta
+  tolerance, against the buying power available, and the covered calls the uncovered shares allow.
+  The short-put and covered-call tabs look their rows up and gain a "Fits the account" filter, on by
+  default, with a "does not fit" chip when it is off. The lists stay account-blind; a row manage did
+  not judge (no evaluation that session, or a strike it did not price) stays shown. On 10-20: 216 of
+  464 puts fit the $8,051 available, and no covered call does (no 100-share lot is held).
 - **Added: daily-reset funds are badged on the income lists and manage's candidates.** Each short-put
   and covered-call row carries `leveraged` (`leveraged`, `inverse` or `volatility`) from the declared
   fund list skate already leaves out (`technicals/leveraged_funds.json`, 492 funds), and the

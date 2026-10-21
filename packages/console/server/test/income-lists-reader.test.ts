@@ -66,6 +66,31 @@ beforeEach(() => {
 });
 
 describe("readIncomeList", () => {
+  it("looks each row's fit up in manage's evaluation of the session, and none without one", () => {
+    write("2026-10-20.json", doc("2026-10-20", [ROW, { ...ROW, symbol: "BIG", strike: 900 }, { ...ROW, symbol: "NEW" }]));
+    const manage = path.join(tmp, "manage");
+    config = { paths: { technicalsDir: path.join(tmp, "technicals"), manageDir: manage } } as unknown as ConsoleConfig;
+    const before = readIncomeList(config, "short-puts", null);
+    expect(before.fitBasis).toBeNull();
+    expect(before.rows.map((r) => r.fit)).toEqual([null, null, null]);
+    fs.mkdirSync(manage, { recursive: true });
+    const screen_fit = {
+      AAA: { short_put: { "88": { bp: 8678, fits: false } }, covered_call: 2 },
+      BIG: { short_put: { "900": { bp: 89000, fits: false } }, covered_call: 0 },
+    };
+    const evalDoc = { accounts: [{ portfolio: { candidates: { account_basis: "cash", available_bp: 8051.34, screen_fit } } }] };
+    fs.writeFileSync(path.join(manage, "eval-2026-10-20.json"), JSON.stringify(evalDoc));
+    const puts = readIncomeList(config, "short-puts", null);
+    expect(puts.fitBasis).toEqual({ session: "2026-10-20", availableBp: 8051.34, basis: "cash" });
+    expect(puts.rows.map((r) => [r.symbol, r.fit])).toEqual([
+      ["AAA", false],
+      ["BIG", false],
+      ["NEW", null], // a name manage did not judge stays unjudged
+    ]);
+    const calls = readIncomeList(config, "covered-calls", null);
+    expect(calls.rows.map((r) => [r.symbol, r.fit])).toEqual([["AAA", true]]);
+  });
+
   it("reads the newest session, never a trial, and renames without deciding", () => {
     write("2026-10-19.json", doc("2026-10-19", []));
     write("2026-10-20.json", doc("2026-10-20", [ROW]));

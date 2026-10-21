@@ -427,3 +427,45 @@ def test_the_switch_and_a_missing_reading():
     assert _suggest({"AAA": _entry()}, rules=rules) is None
     missing = candidates.suggest({"error": "no income reading yet"}, _book(), [], SESSION, RULES, None, 500.0)
     assert missing["error"] == "no income reading yet" and missing["fits"] == []
+
+
+# --------------------------------------------------------------------------- the Screeners fit
+def _fit(entries, available, kind=None, trades=()):
+    income = {"session": "2026-10-16", "taken_at": "t", "complete": True, "symbols": entries}
+    kind = kind or {"margin_or_cash": "Cash", "type_name": "Roth IRA"}
+    out = candidates.suggest(
+        income, _book(), list(trades), SESSION, RULES, kind, 500.0, None, available_bp=available
+    )
+    return out["screen_fit"]
+
+
+def test_the_screen_fit_judges_each_near_16_delta_put_against_the_buying_power_available():
+    fit = _fit({"AAA": _entry()}, available=4_000.0)["AAA"]["short_put"]
+    assert fit, "a strike within the lists' delta tolerance"
+    for strike, f in fit.items():
+        # A cash account secures the strike less the premium; a $40-something strike is ~$4,000.
+        assert f["bp"] == pytest.approx(float(strike) * 100, rel=0.05)
+        assert f["fits"] is (f["bp"] <= 4_000.0)
+    assert {f["fits"] for f in _fit({"AAA": _entry()}, available=100_000.0)["AAA"]["short_put"].values()} == {
+        True
+    }
+    assert {f["fits"] for f in _fit({"AAA": _entry()}, available=100.0)["AAA"]["short_put"].values()} == {
+        False
+    }
+
+
+def test_a_margin_account_needs_far_less_than_the_strike_and_no_reading_is_no_verdict():
+    margin = _fit({"AAA": _entry()}, 1_500.0, kind={"margin_or_cash": "Margin", "type_name": "Individual"})
+    cash = _fit({"AAA": _entry()}, 1_500.0)
+    for strike in margin["AAA"]["short_put"]:
+        assert margin["AAA"]["short_put"][strike]["bp"] < cash["AAA"]["short_put"][strike]["bp"] / 2
+    unknown = _fit({"AAA": _entry()}, None)["AAA"]["short_put"]
+    assert {f["fits"] for f in unknown.values()} == {None}
+
+
+def test_the_screen_fit_is_judged_even_with_earnings_in_the_trade_and_counts_free_shares():
+    # The lists show earnings themselves; the fit is only whether the account can carry it.
+    earn = _entry(earnings_date="2026-11-05")
+    fit = _fit({"SLV": earn}, 100_000.0, trades=_held(250, (-1, 60)))["SLV"]
+    assert fit["short_put"] and fit["covered_call"] == 1  # 250 shares, 100 written against
+    assert _fit({"SLV": _entry()}, 100_000.0)["SLV"]["covered_call"] == 0

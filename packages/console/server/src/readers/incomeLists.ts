@@ -79,7 +79,35 @@ function toRow(v: unknown): IncomeListRow | null {
     earningsEstimated: bool(r["earnings_estimated"]),
     exDividendInTrade: bool(r["ex_dividend_in_trade"]),
     leveraged: str(r["leveraged"]),
+    fit: null, // joined from manage's evaluation in readIncomeList
   };
+}
+
+/** manage's account judgement of the Screeners trades for `day` (`candidates.screen_fit`), from that
+ *  session's evaluation; null when there is none. The lists stay account-blind: the rule that decides
+ *  a fit is manage's, and this only looks it up. */
+function screenFit(config: ConsoleConfig, day: string) {
+  const dir = config.paths.manageDir;
+  const doc = dir ? readJson(path.join(dir, `eval-${day}.json`)) : null;
+  const acct = rec(Array.isArray(doc?.["accounts"]) ? (doc!["accounts"] as unknown[])[0] : null);
+  const cands = rec(rec(acct["portfolio"])["candidates"]);
+  if (!("screen_fit" in cands)) return null;
+  return {
+    basis: { session: day, availableBp: num(cands["available_bp"]), basis: str(cands["account_basis"]) },
+    fit: rec(cands["screen_fit"]),
+  };
+}
+
+function fitOf(list: IncomeList, row: IncomeListRow, fit: Record<string, unknown>): boolean | null {
+  const name = rec(fit[row.symbol]);
+  if (Object.keys(name).length === 0) return null;
+  if (list === "covered-calls") {
+    const n = num(name["covered_call"]);
+    return n === null ? null : n >= 1;
+  }
+  // Keyed as manage writes a strike (`f"{strike:g}"`): 40 -> "40", 37.5 -> "37.5".
+  const f = rec(rec(name["short_put"])[String(row.strike)]);
+  return bool(f["fits"]);
 }
 
 export function readIncomeList(config: ConsoleConfig, list: IncomeList, dayParam: string | null): IncomeListPayload {
@@ -98,6 +126,7 @@ export function readIncomeList(config: ConsoleConfig, list: IncomeList, dayParam
     dropped: {},
     targetDelta: null,
     rows: [],
+    fitBasis: null,
   };
   if (day === null) return empty;
   const doc = readJson(path.join(dir, `${day}.json`));
@@ -109,6 +138,8 @@ export function readIncomeList(config: ConsoleConfig, list: IncomeList, dayParam
     if (n !== null) dropped[k] = n;
   }
   const rawRows = rec(doc["lists"])[list];
+  const judged = screenFit(config, day);
+  const rows = (Array.isArray(rawRows) ? rawRows : []).map(toRow).filter((r): r is IncomeListRow => r !== null);
   return {
     list,
     day,
@@ -120,6 +151,7 @@ export function readIncomeList(config: ConsoleConfig, list: IncomeList, dayParam
     names: num(doc["names"]) ?? 0,
     dropped,
     targetDelta: num(rule[list === "short-puts" ? "short_put_delta" : "covered_call_delta"]),
-    rows: (Array.isArray(rawRows) ? rawRows : []).map(toRow).filter((r): r is IncomeListRow => r !== null),
+    rows: judged === null ? rows : rows.map((r) => ({ ...r, fit: fitOf(list, r, judged.fit) })),
+    fitBasis: judged?.basis ?? null,
   };
 }
