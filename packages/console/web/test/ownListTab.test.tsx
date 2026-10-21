@@ -91,6 +91,25 @@ describe("our short-put list", () => {
     expect(everything).toContain("does not fit");
   });
 
+  it("hides a premium under the slider's floor, keeps an unquoted one, and is off by default", () => {
+    payload = base([
+      row({ symbol: "BIGP", premium: 122.5 }),
+      row({ symbol: "SMLP", premium: 18 }),
+      row({ symbol: "NOQT", premium: null, passes: null }),
+    ]);
+    const off = render();
+    for (const s of ["BIGP", "SMLP", "NOQT"]) expect(off).toContain(s);
+    expect(off).toContain("Premium ≥ any");
+    const html = render("/screeners/short-puts?premium=25");
+    expect(html).toContain("BIGP");
+    expect(html).toContain("NOQT"); // no premium to compare: shown, as under the other filters
+    expect(html).not.toContain("SMLP");
+    expect(html).toContain("1 under $25 hidden");
+    // A value between stops reads as the stop below it, so the slider and the URL always agree.
+    expect(render("/screeners/short-puts?premium=60")).toContain("Premium ≥ $50");
+    expect(render("/screeners/short-puts?premium=junk")).toContain("Premium ≥ any");
+  });
+
   it("offers no fit filter when no evaluation judged the session", () => {
     payload = base([row({ symbol: "AAA" })]);
     expect(render()).not.toContain("Fits the account");

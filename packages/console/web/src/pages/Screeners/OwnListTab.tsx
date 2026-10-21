@@ -46,6 +46,17 @@ function shortDate(iso: string | null): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
+/** The premium slider's stops, whole-contract dollars. 0 is off. Stepped, because most rows' premiums
+ *  are tens of dollars and a straight scale to the largest would leave them a few pixels. */
+const PREMIUM_STEPS: readonly number[] = [0, 10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000];
+
+/** `?premium=` read back onto a stop: anything else (a hand-typed 60, junk) is the nearest stop below. */
+function premiumFloor(raw: string | null): number {
+  const v = Number(raw);
+  if (!raw || !Number.isFinite(v) || v <= 0) return 0;
+  return [...PREMIUM_STEPS].reverse().find((s) => s <= v) ?? 0;
+}
+
 function Flag({ on, onChange, children, title }: { on: boolean; onChange: (on: boolean) => void; children: ReactNode; title: string }) {
   return (
     <div className="mode-toggle" style={{ marginLeft: 0 }}>
@@ -118,12 +129,21 @@ export function OwnListTab({ list }: { list: IncomeList }) {
   const earningsOk = (r: IncomeListRow) => allEarnings || r.earnings !== "in-trade";
   // An unjudged row (no evaluation for the session, or a strike manage did not price) stays shown.
   const fitOk = (r: IncomeListRow) => allFit || r.fit !== false;
-  const shown = all.filter((r) => tradeOk(r) && earningsOk(r) && fitOk(r) && (q === "" || r.symbol.includes(q)));
-  const thin = all.filter((r) => r.passes === false && earningsOk(r) && fitOk(r)).length;
-  const inTrade = all.filter((r) => r.earnings === "in-trade" && tradeOk(r) && fitOk(r)).length;
-  const unfit = all.filter((r) => r.fit === false && tradeOk(r) && earningsOk(r)).length;
+  const minPremium = premiumFloor(params.get("premium"));
+  // An unquoted row has no premium to compare, so it stays shown, marked, as it does under the others.
+  const premiumOk = (r: IncomeListRow) => minPremium === 0 || r.premium === null || r.premium >= minPremium;
+  const shown = all.filter(
+    (r) => tradeOk(r) && earningsOk(r) && fitOk(r) && premiumOk(r) && (q === "" || r.symbol.includes(q)),
+  );
+  const thin = all.filter((r) => r.passes === false && earningsOk(r) && fitOk(r) && premiumOk(r)).length;
+  const inTrade = all.filter((r) => r.earnings === "in-trade" && tradeOk(r) && fitOk(r) && premiumOk(r)).length;
+  const unfit = all.filter((r) => r.fit === false && tradeOk(r) && earningsOk(r) && premiumOk(r)).length;
+  const small = all.filter((r) => !premiumOk(r) && tradeOk(r) && earningsOk(r) && fitOk(r)).length;
   const sorted = sortRows(shown, sort, SORTS);
-  const { page, setOffset, setLimit } = usePage([list, data?.day, allTrades, allEarnings, allFit, q, sort.key, sort.dir], 100);
+  const { page, setOffset, setLimit } = usePage(
+    [list, data?.day, allTrades, allEarnings, allFit, minPremium, q, sort.key, sort.dir],
+    100,
+  );
   const rows = sorted.slice(page.offset, page.offset + page.limit);
   const calls = list === "covered-calls";
   const latest = data?.days[0] ?? null;
@@ -188,6 +208,25 @@ export function OwnListTab({ list }: { list: IncomeList }) {
             Fits the account
           </Flag>
         )}
+        <label
+          className="chip"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          title="Hide a trade whose working premium, for the whole contract, is under this. Steps rather than a straight scale, so the small premiums where most rows sit get room. An unquoted option stays shown."
+        >
+          Premium ≥ {minPremium === 0 ? "any" : `$${minPremium.toLocaleString()}`}
+          <input
+            type="range"
+            aria-label="Minimum premium per contract"
+            min={0}
+            max={PREMIUM_STEPS.length - 1}
+            step={1}
+            value={PREMIUM_STEPS.indexOf(minPremium)}
+            onChange={(e) => {
+              const v = PREMIUM_STEPS[Number(e.target.value)] ?? 0;
+              set("premium", v === 0 ? null : String(v));
+            }}
+          />
+        </label>
         <input
           className="chip review-session-select"
           value={params.get("q") ?? ""}
@@ -200,6 +239,7 @@ export function OwnListTab({ list }: { list: IncomeList }) {
           {!allTrades && thin > 0 ? ` · ${thin} thin hidden` : ""}
           {!allEarnings && inTrade > 0 ? ` · ${inTrade} with earnings in the trade hidden` : ""}
           {!allFit && unfit > 0 ? ` · ${unfit} that do not fit the account hidden` : ""}
+          {small > 0 ? ` · ${small} under $${minPremium.toLocaleString()} hidden` : ""}
         </span>
       </div>
 
