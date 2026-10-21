@@ -905,6 +905,23 @@ def _run_review(cfg, *, final: bool) -> None:
     _emit(rec)
 
 
+def _manage_post_due(cfg, session: str | None, every: int) -> bool:
+    """Whether this manage run posts (managepost.post_due over `state/manage.last_post.json`), and,
+    when it does, the record of it for the next run to read."""
+    from cherrypick.orchestrator import managepost
+
+    path = cfgmod.state_file("manage.last_post.json")
+    try:
+        last = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        last = None
+    now = timeutil.now_et(cfg.get("timezone", "America/New_York"))
+    if not managepost.post_due(last, now, session, every):
+        return False
+    path.write_text(json.dumps({"session": session, "at": now.isoformat()}), encoding="utf-8")
+    return True
+
+
 def _run_manage(cfg) -> None:
     """Invoked by the daily manage-eval job (see cfgmod.manage_settings), or by hand.
 
@@ -957,9 +974,10 @@ def _run_manage(cfg) -> None:
         notifier.notify(
             "WARNING", "manage", "Position evaluation failed", f"{error or 'see logs/manage.log'}"
         )
-    elif settings["notify"]:
-        # Every run posts its list, the all-hold one included: the runs are at times a person
-        # chose (`manage.at`, `manage.also_at`) to read what needs managing.
+    elif settings["notify"] and _manage_post_due(cfg, rec["session"], settings["notify_every_minutes"]):
+        # A run posts its list, the all-hold one included: the runs are at times a person chose
+        # (`manage.at`, `manage.also_at`) to read what needs managing -- no more often than
+        # `manage.notify_every_minutes`, so frequent runs refresh the console without flooding Discord.
         from cherrypick.orchestrator import managepost
 
         written = (result or {}).get("written")

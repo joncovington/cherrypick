@@ -455,6 +455,9 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # Every run posts the trades needing action (or that none does): the notification is the
         # Discord list a person reads at those times, not an alarm.
         "notify": bool(mg.get("notify", True)),
+        # Post no more often than this (minutes; 0 = every run), so runs can be frequent for the
+        # console while Discord hears hourly. The day's first run always posts; a failure always does.
+        "notify_every_minutes": max(0, int(mg.get("notify_every_minutes", 0) or 0)),
     }
 
 
