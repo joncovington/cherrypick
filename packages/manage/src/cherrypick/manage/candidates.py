@@ -505,6 +505,39 @@ def views(entry: dict[str, Any]) -> list[tuple[dict[str, Any], frozenset[str]]]:
     return [(entry, ALL_KINDS - {"covered_call"}), (cc_entry, frozenset({"covered_call"}))]
 
 
+def screen_fit(
+    entry: dict[str, Any],
+    options: list[dict],
+    cfg: dict[str, Any],
+    basis: str,
+    available: float | None,
+    held: float,
+    written: float,
+) -> dict[str, Any]:
+    """Whether the Screeners lists' trades on this name fit the account (income review plan, item 5),
+    for the console to badge them: account-blind lists, judged here where the account's rules live.
+
+    - `short_put`: {strike: {bp, fits}} for every out-of-the-money put within the lists' delta
+      tolerance of `short_put_delta` -- the list picks one of them from the same chain, and a strike
+      map keeps the two from disagreeing over which. `bp` is one contract's buying power on this
+      account (cash-secured, or Reg T), `fits` whether it is within the buying power available now.
+      Neither earnings nor liquidity is judged here: the lists show those themselves.
+    - `covered_call`: the calls the held shares still cover (shares not already written against)."""
+    target, tol = float(cfg["short_put_delta"]), float(cfg.get("delta_tolerance", 1.0))
+    spot = _f(entry.get("spot")) or 0.0
+    puts: dict[str, dict[str, Any]] = {}
+    for o in options:
+        if o["right"] != "P" or o["strike"] >= spot or abs(abs(o["delta"]) - target) > tol + 1e-9:
+            continue
+        u = unit({"kind": "short_put", "legs": [(o, -1)]}, entry, basis, None)
+        bp = None if u is None or u["bp"] is None else round(u["bp"], 2)
+        puts[f"{o['strike']:g}"] = {
+            "bp": bp,
+            "fits": None if bp is None or available is None else bp <= available,
+        }
+    return {"short_put": puts, "covered_call": int(uncovered_shares(held, written) // 100)}
+
+
 def suggest(
     income: dict[str, Any] | None,
     book: dict[str, Any],
@@ -514,6 +547,7 @@ def suggest(
     account_type: dict[str, Any] | None,
     benchmark_spot: float | None,
     orders: list[dict[str, Any]] | None = None,
+    available_bp: float | None = None,
 ) -> dict[str, Any] | None:
     cfg = rules["portfolio"]["candidates"]
     if cfg.get("enabled") is False:
@@ -594,6 +628,7 @@ def suggest(
                             _wait(alt_row, au, sym, int(cfg["max_units"]))
             too_big.append(row)
 
+    fit: dict[str, dict[str, Any]] = {}
     for sym, entry in sorted(income["symbols"].items()):
         if entry.get("error"):
             drop("no chain")
@@ -604,11 +639,13 @@ def suggest(
         if held >= 100 and uncovered_shares(held, written) < 100:
             drop("shares already written against")
         for view, kinds in views(entry):
+            options = priced_options(view, session, rate)
+            if view is entry:  # the cycle monthly, where the Screeners short put is picked
+                fit[sym] = screen_fit(entry, options, cfg, basis, available_bp, held, written)
             exp, er = view.get("expiry"), view.get("earnings_date")
             if er and exp and session.isoformat() <= er <= exp:
                 drop("earnings inside the trade")
                 continue
-            options = priced_options(view, session, rate)
             _build(view, options, kinds, sym, held, written, scale)
 
     def rank(r: dict) -> float:
@@ -636,5 +673,8 @@ def suggest(
         "bp_used_pct": round(used / net_liq, 4) if used is not None and net_liq else None,
         "bp_cap_pct": round(_bp_cap(book, cfg), 4),
         "bp_warn_over": float(cfg.get("bp_warn_over", 0.10)),
+        # Whether each Screeners trade fits the account (`screen_fit`), against this much buying power.
+        "available_bp": available_bp,
+        "screen_fit": fit,
         "error": None,
     }

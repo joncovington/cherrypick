@@ -36,6 +36,7 @@ function row(over: Partial<IncomeListRow>): IncomeListRow {
     earningsEstimated: false,
     exDividendInTrade: null,
     leveraged: null,
+    fit: null,
     ...over,
   };
 }
@@ -69,10 +70,32 @@ function base(rows: IncomeListRow[]): IncomeListPayload {
     dropped: {},
     targetDelta: 0.16,
     rows,
+    fitBasis: null,
   };
 }
 
 describe("our short-put list", () => {
+  it("hides what does not fit the account once manage has judged it, with an escape", () => {
+    payload = {
+      ...base([row({ symbol: "FITS", fit: true }), row({ symbol: "BIGG", fit: false }), row({ symbol: "UNJD", fit: null })]),
+      fitBasis: { session: "2026-10-20", availableBp: 8051.34, basis: "cash" },
+    };
+    const html = render();
+    expect(html).toContain("Fits the account");
+    expect(html).toContain("FITS");
+    expect(html).toContain("UNJD"); // unjudged stays shown
+    expect(html).not.toContain("BIGG");
+    expect(html).toContain("1 that do not fit the account hidden");
+    const everything = render("/screeners/short-puts?fit=all");
+    expect(everything).toContain("BIGG");
+    expect(everything).toContain("does not fit");
+  });
+
+  it("offers no fit filter when no evaluation judged the session", () => {
+    payload = base([row({ symbol: "AAA" })]);
+    expect(render()).not.toContain("Fits the account");
+  });
+
   it("hides a thin option and a trade with earnings inside it, each with an escape", () => {
     payload = base([
       row({ symbol: "KEEP" }),

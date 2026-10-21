@@ -104,6 +104,7 @@ export function OwnListTab({ list }: { list: IncomeList }) {
   const sort = useSort();
   const allTrades = params.get("trade") === "all";
   const allEarnings = params.get("earnings") === "all";
+  const allFit = params.get("fit") === "all";
   const q = (params.get("q") ?? "").trim().toUpperCase();
   const set = (key: string, value: string | null) => {
     const next = new URLSearchParams(params);
@@ -115,11 +116,14 @@ export function OwnListTab({ list }: { list: IncomeList }) {
   const all = data?.rows ?? [];
   const tradeOk = (r: IncomeListRow) => allTrades || r.passes !== false;
   const earningsOk = (r: IncomeListRow) => allEarnings || r.earnings !== "in-trade";
-  const shown = all.filter((r) => tradeOk(r) && earningsOk(r) && (q === "" || r.symbol.includes(q)));
-  const thin = all.filter((r) => r.passes === false && earningsOk(r)).length;
-  const inTrade = all.filter((r) => r.earnings === "in-trade" && tradeOk(r)).length;
+  // An unjudged row (no evaluation for the session, or a strike manage did not price) stays shown.
+  const fitOk = (r: IncomeListRow) => allFit || r.fit !== false;
+  const shown = all.filter((r) => tradeOk(r) && earningsOk(r) && fitOk(r) && (q === "" || r.symbol.includes(q)));
+  const thin = all.filter((r) => r.passes === false && earningsOk(r) && fitOk(r)).length;
+  const inTrade = all.filter((r) => r.earnings === "in-trade" && tradeOk(r) && fitOk(r)).length;
+  const unfit = all.filter((r) => r.fit === false && tradeOk(r) && earningsOk(r)).length;
   const sorted = sortRows(shown, sort, SORTS);
-  const { page, setOffset, setLimit } = usePage([list, data?.day, allTrades, allEarnings, q, sort.key, sort.dir], 100);
+  const { page, setOffset, setLimit } = usePage([list, data?.day, allTrades, allEarnings, allFit, q, sort.key, sort.dir], 100);
   const rows = sorted.slice(page.offset, page.offset + page.limit);
   const calls = list === "covered-calls";
   const latest = data?.days[0] ?? null;
@@ -171,6 +175,19 @@ export function OwnListTab({ list }: { list: IncomeList }) {
         >
           No earnings in the trade
         </Flag>
+        {data?.fitBasis && (
+          <Flag
+            on={!allFit}
+            onChange={(on) => set("fit", on ? null : "all")}
+            title={
+              calls
+                ? "Hide a call the account holds no uncovered 100-share lot for (shares already written against are spoken for)"
+                : `Hide a put whose buying power is more than the ${money(data.fitBasis.availableBp)} the account has (manage's ${data.fitBasis.session} evaluation, ${data.fitBasis.basis === "cash" ? "cash-secured" : "Reg T"})`
+            }
+          >
+            Fits the account
+          </Flag>
+        )}
         <input
           className="chip review-session-select"
           value={params.get("q") ?? ""}
@@ -182,6 +199,7 @@ export function OwnListTab({ list }: { list: IncomeList }) {
           {shown.length} of {all.length} names
           {!allTrades && thin > 0 ? ` · ${thin} thin hidden` : ""}
           {!allEarnings && inTrade > 0 ? ` · ${inTrade} with earnings in the trade hidden` : ""}
+          {!allFit && unfit > 0 ? ` · ${unfit} that do not fit the account hidden` : ""}
         </span>
       </div>
 
@@ -239,6 +257,11 @@ export function OwnListTab({ list }: { list: IncomeList }) {
                         title="A daily-reset fund (the declared leveraged, inverse and volatility list): it decays and gaps in ways its delta does not price"
                       >
                         {r.leveraged}
+                      </span>
+                    ) : null}
+                    {r.fit === false ? (
+                      <span className="chip muted" title={calls ? "No uncovered 100-share lot held" : "More buying power than the account has"}>
+                        does not fit
                       </span>
                     ) : null}
                   </td>

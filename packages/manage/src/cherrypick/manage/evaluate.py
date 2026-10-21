@@ -2291,6 +2291,8 @@ def evaluate(
             book.get("benchmark_spot"),
             # The broker tool's day list is for its designated account, the one manage evaluates.
             snapshot.get("working_orders"),
+            # What the Screeners trades are judged to fit against (`candidates.screen_fit`).
+            available_bp=_f(balances.get("derivative_buying_power")),
         )
         _link_wheel(wheel_view, trades)
         _link_pmcc(pmcc_view, trades)

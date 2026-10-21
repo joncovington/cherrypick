@@ -48,6 +48,10 @@ export interface IncomeListRow {
   /** `leveraged`, `inverse` or `volatility` for a declared daily-reset fund; null otherwise, and on a
    *  list built before the badge existed. */
   leveraged: string | null;
+  /** Whether the trade fits the account, as manage judged it for the session (`candidates.screen_fit`):
+   *  a short put within the buying power available, a covered call on an uncovered 100-share lot.
+   *  null when unjudged -- no evaluation for the session, or a strike manage did not price. */
+  fit: boolean | null;
 }
 
 export interface IncomeListPayload {
@@ -67,4 +71,6 @@ export interface IncomeListPayload {
   /** The deltas the builder picked at, as it recorded them. */
   targetDelta: number | null;
   rows: IncomeListRow[];
+  /** What `fit` was judged against: manage's evaluation of the same session; null with none. */
+  fitBasis: { session: string; availableBp: number | null; basis: string | null } | null;
 }
