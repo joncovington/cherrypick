@@ -11,6 +11,23 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: manage's rolls are priced on the next expiries out in time** (snapshot v14,
+  `roll_out_chains`). A PMCC's roll candidates want up to five quoted expiries between the short and
+  the long, and the wheel's tested-short rolls want the next expiries out, but both were priced only
+  from what the snapshot happened to quote: the income reading's cycle monthly, usually one expiry.
+  The snapshot now reads, for each covered call, PMCC short and short put (on a name with no long
+  put) within 60 days of expiry, the next five listed expiries after it, before the long's expiry for
+  a PMCC and within 60 days of the short's otherwise, quoted that session with the broker's greeks, 40
+  strikes either side of the short's strike. One read per expiry per name, plus one listing per name
+  the stream cache does not list; capped at 30 reads and five minutes (`manage.roll_out` in the
+  orchestrator config), with what the cap cuts and any failed read recorded, never fatal. The PMCC
+  view prices its candidates there first; the wheel rolls to the nearest expiry that prices the
+  net-zero roll, else the nearest quoting anything beyond the strike. Every candidate still goes
+  through `check-roll`, and a snapshot without the field is read as before: re-evaluated on this
+  branch and on main, every stored snapshot (10-13 to 10-20, seven sessions, 110 trades) gives a
+  byte-identical evaluation. On 10-20 the account holds 16 names and none of them a covered call,
+  PMCC-shaped short or bare short put, so the step makes no broker read; the most any stored day
+  would have cost is six (SOFI's short put on 10-13 and 10-14: a listing and five expiries).
 - **Fixed: a covered short call more than 60 days out was still judged as a naked call.** The PMCC
   link's join reaches 60 days, so a longer-dated short sold in its own order stayed a trade of its own
   beside a lone long call. Now, when a name's groups hold exactly one long call alone and one short
