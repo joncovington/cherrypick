@@ -710,7 +710,10 @@ the risk graph and the risk matrix. Every figure is manage's repricing; the matr
 weighting manage used, and a card manage wrote no reading for is not drawn. `IncomeCard.tsx` lists
 manage's sized income trades in the package's own ranking (never re-sorted here), money in the suite's
 layout. Risk is the figure the per-trade cap was applied to: a short put's stress loss, never its
-strike. The card always says the prices are a day old and to re-quote before sending.
+strike. The card always says the prices are a day old and to re-quote before sending. Its "waiting
+for room" table is manage's `waiting` list: each row at its `if_room` size, with a chip coloured by
+manage's own `bp_level` (ok / over / far over, never graded here) and a theta-over chip; the too-big
+list leaves out a row already shown as waiting.
 
 **The Live page's `wheel` tab** (2026-10-20, `pages/Live/WheelCards.tsx`) is the third view of the
 same evaluation: the account's `wheel` (packages/manage `wheel.py`, docs/skate-plan.md step 5), one

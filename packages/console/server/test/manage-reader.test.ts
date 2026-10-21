@@ -185,6 +185,34 @@ describe("readManage", () => {
         fits_total: 1,
         too_big: [],
         too_big_total: 0,
+        waiting: [
+          {
+            underlying: "XLF",
+            kind: "call_spread",
+            alternative_to: null,
+            expiry: "2026-12-18",
+            legs: [],
+            units: 0,
+            binding: "buying power",
+            per_unit: { credit: 0.6, natural: 0.55, cash: 60, max_loss: 190, buying_power: 190, stress_loss: 190, theta: 0.5, bwd: -0.4 },
+            theta_per_bp: 0.0026,
+            if_room: {
+              units: 2,
+              binding: "per-trade risk",
+              bp_after_pct: 0.4532,
+              bp_cap_pct: 0.3,
+              bp_level: "far_over",
+              theta_after_pct: 0.0148,
+              theta_ceiling_pct: 0.003,
+              theta_over: true,
+            },
+          },
+          { underlying: "ODD", kind: "put_spread", units: 0, binding: "buying power", if_room: { units: 1, bp_level: "sideways" } },
+        ],
+        waiting_total: 33,
+        bp_used_pct: 0.4305,
+        bp_cap_pct: 0.3,
+        bp_warn_over: 0.1,
         error: null,
       },
       guidance: [
@@ -237,6 +265,20 @@ describe("readManage", () => {
     expect(c.fits[0]).toMatchObject({ underlying: "AAL", kind: "short_put", units: 1, binding: "per-trade risk" });
     expect(c.fits[0]!.perUnit).toMatchObject({ credit: 0.33, buyingPower: 1067, stressLoss: 251.07, bwd: null });
     expect(c.fits[0]!.alternative).toBeNull();
+    expect(c.fits[0]!.ifRoom).toBeNull();
+    expect(c).toMatchObject({ waitingTotal: 33, bpUsedPct: 0.4305, bpCapPct: 0.3, bpWarnOver: 0.1 });
+    expect(c.waiting[0]!.ifRoom).toEqual({
+      units: 2,
+      binding: "per-trade risk",
+      bpAfterPct: 0.4532,
+      bpCapPct: 0.3,
+      bpLevel: "far_over",
+      thetaAfterPct: 0.0148,
+      thetaCeilingPct: 0.003,
+      thetaOver: true,
+    });
+    // A grade the reader does not know is no grade, never a colour guessed at.
+    expect(c.waiting[1]!.ifRoom!.bpLevel).toBeNull();
     expect(p.brokerCheck).toEqual({
       legsCompared: 30,
       legsLeftOut: ["-1 GOOGL 370C"],

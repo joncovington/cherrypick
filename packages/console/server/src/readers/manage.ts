@@ -12,8 +12,10 @@ import path from "node:path";
 import type {
   ManageAccount,
   ManageBand,
+  ManageBpLevel,
   ManageBrokerCheck,
   ManageCandidate,
+  ManageCandidateRoom,
   ManageCandidates,
   ManageChainOrder,
   ManageHedges,
@@ -693,6 +695,24 @@ function candidate(v: unknown): ManageCandidate {
     earningsDate: str(c["earnings_date"]),
     earningsUnknown: c["earnings_unknown"] === true,
     alternative: c["alternative"] ? candidate(c["alternative"]) : null,
+    ifRoom: c["if_room"] ? candidateRoom(c["if_room"]) : null,
+  };
+}
+
+const BP_LEVELS: ReadonlySet<string> = new Set(["ok", "over", "far_over"]);
+
+function candidateRoom(v: unknown): ManageCandidateRoom {
+  const r = rec(v);
+  const level = str(r["bp_level"]);
+  return {
+    units: num(r["units"]) ?? 0,
+    binding: str(r["binding"]),
+    bpAfterPct: num(r["bp_after_pct"]),
+    bpCapPct: num(r["bp_cap_pct"]),
+    bpLevel: level !== null && BP_LEVELS.has(level) ? (level as ManageBpLevel) : null,
+    thetaAfterPct: num(r["theta_after_pct"]),
+    thetaCeilingPct: num(r["theta_ceiling_pct"]),
+    thetaOver: r["theta_over"] === true,
   };
 }
 
@@ -714,6 +734,11 @@ function candidates(v: unknown, rules: Record<string, unknown>): ManageCandidate
     fitsTotal: num(c["fits_total"]) ?? 0,
     tooBig: arr(c["too_big"]).map(candidate),
     tooBigTotal: num(c["too_big_total"]) ?? 0,
+    waiting: arr(c["waiting"]).map(candidate),
+    waitingTotal: num(c["waiting_total"]) ?? 0,
+    bpUsedPct: num(c["bp_used_pct"]),
+    bpCapPct: num(c["bp_cap_pct"]),
+    bpWarnOver: num(c["bp_warn_over"]),
     error: str(c["error"]),
     caps: candidateCaps(rules, str(c["account_basis"])),
   };
