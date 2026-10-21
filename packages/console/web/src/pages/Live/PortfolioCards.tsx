@@ -133,7 +133,7 @@ function DeltaCard({ p }: { p: ManagePortfolio }) {
       {band ? <BandDial band={band} unit={`${p.benchmark ?? "SPY"} sh`} label="beta-weighted delta" /> : <p className="muted">no band recorded</p>}
       <p className="muted pf-caption">
         {fmtCash(p.bwdDollarsPer1pct)} per 1% {p.benchmark ?? "SPY"} move · band{" "}
-        {band?.basis === "theta" ? "scaled by theta" : "scaled by net liq (no theta to scale by)"} · the broker's beta
+        {band?.basis === "theta" ? "scaled by theta" : "scaled by net liq (its floor: too little theta to scale by)"} · the broker's beta
       </p>
     </Card>
   );

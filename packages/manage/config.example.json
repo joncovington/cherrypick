@@ -255,7 +255,7 @@
       "confidence": 40
     },
     "delta": {
-      "_comment": "BWD band: -short_per_theta x theta to +long_per_theta x theta SPY shares. With no positive theta, +/- the BWD whose 1% move costs fallback_pct_nlv_per_1pct of net liq.",
+      "_comment": "BWD band: -short_per_theta x theta to +long_per_theta x theta SPY shares, on theta without the legs theta.front_dte days or less from expiry. Never narrower than, and with no positive theta equal to, +/- the BWD whose 1% move costs fallback_pct_nlv_per_1pct of net liq.",
       "enabled": true,
       "short_per_theta": 0.5,
       "long_per_theta": 0.75,

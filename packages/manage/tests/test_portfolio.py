@@ -187,6 +187,33 @@ def test_legs_about_to_expire_are_left_out_of_the_theta_band():
     assert spy["theta_ex_front"] == 0.0 and spy["theta_share"] == 0.0
 
 
+def test_a_leg_about_to_expire_does_not_widen_the_delta_band():
+    # The band is scaled by the theta band's figure: the 30-day XYZ shorts alone (here 15 of them),
+    # not the SPY put expiring tomorrow, whose theta would stretch it many times over.
+    trades = [
+        _trade("SPY", 500.0, [_leg(-1, "P", 500.0, dte=1)]),
+        _trade("XYZ", 50.0, [_leg(-15, "P", 50.0, dte=30, iv=0.30)]),
+    ]
+    r = _read(trades, _metrics(XYZ=(1.0, 0.9)))
+    cfg = RULES["portfolio"]["delta"]
+    lo, hi = portfolio.delta_band(r, cfg)
+    assert (lo, hi) == pytest.approx(
+        (-cfg["short_per_theta"] * r["theta_ex_front"], cfg["long_per_theta"] * r["theta_ex_front"])
+    )
+    assert r["bands"]["delta"]["basis"] == "theta" and hi < cfg["long_per_theta"] * r["theta"] / 2
+
+
+def test_a_thin_theta_never_narrows_the_delta_band_below_the_net_liq_band():
+    # One far out-of-the-money put collects cents a day: scaled by that, the band would be a fraction
+    # of a share wide, narrower than the band a book with no theta at all gets. The floor holds it.
+    cfg = RULES["portfolio"]["delta"]
+    none = _read([_trade("XYZ", 50.0, [_leg(1)])], _metrics(XYZ=(1.0, 0.9)))
+    thin = _read([_trade("XYZ", 50.0, [_leg(-1, "P", 40.0, dte=45, iv=0.30)])], _metrics(XYZ=(1.0, 0.9)))
+    assert 0 < thin["theta_ex_front"] < 1
+    assert portfolio.delta_band(thin, cfg) == pytest.approx(portfolio.delta_band(none, cfg))
+    assert thin["bands"]["delta"]["basis"] == "net_liq"
+
+
 def test_the_theta_rule_states_both_figures_when_expiring_legs_move_it():
     # Under the floor without the expiring leg; the reason says so and gives the whole book's too.
     trades = [

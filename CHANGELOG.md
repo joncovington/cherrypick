@@ -21,7 +21,9 @@ beyond the latest release.
   snapshot (10-13 to 10-20): 10-20's theta REVIEW turns from over the ceiling to under the floor and
   its concentration share from 81% to 26%; 10-14's floor REVIEW (a long leg expiring that week
   dragging theta down) gives way to a concentration REVIEW at 26%; nothing else changes. The delta
-  band, scaled by theta, still reads the whole book's.
+  band, scaled by theta, reads the same figure (on 10-20 the expiring leg had stretched it to −106 to
+  +160 shares), and is now never narrower than the net-liq band it falls back to with no theta:
+  before, a book collecting $1.63 a day got a band eight times narrower than one collecting none.
 - **Fixed: manage's payoff figures are whole cents.** The modelled extremes and the P&L read from
   them (max loss and gain from open, left to win and lose) carried float noise from summing
   Black-Scholes legs (`-300.00000000000364`), which every reader had to round for itself. They are

@@ -534,7 +534,7 @@ def bands(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
         "delta": {
             "low": _round(delta[0]) if delta else None,
             "high": _round(delta[1]) if delta else None,
-            "basis": "theta" if r["theta"] is not None and r["theta"] > 0 else "net_liq",
+            "basis": delta_band_basis(r, cfg["delta"]),
             "value": bwd,
             "inside": (delta[0] <= bwd <= delta[1]) if delta and bwd is not None else None,
         },
@@ -620,15 +620,40 @@ def _fire(rule: str, confidence: Any, reason: str, drivers: list[dict[str, Any]]
 
 
 def delta_band(reading_: dict[str, Any], cfg: dict[str, Any]) -> tuple[float, float] | None:
-    """(low, high) BWD band in benchmark shares. Scaled by theta while the book collects it; by net
-    liq when it does not, since a band of zero width would fire on every share."""
-    theta, net_liq, spot = reading_["theta"], reading_["net_liq"], reading_["benchmark_spot"]
-    if theta is not None and theta > 0:
-        return (-float(cfg["short_per_theta"]) * theta, float(cfg["long_per_theta"]) * theta)
+    """(low, high) BWD band in benchmark shares; `delta_band_basis` says which band it is."""
+    band = _delta_band(reading_, cfg)
+    return band[:2] if band else None
+
+
+def delta_band_basis(reading_: dict[str, Any], cfg: dict[str, Any]) -> str | None:
+    band = _delta_band(reading_, cfg)
+    return band[2] if band else None
+
+
+def _delta_band(reading_: dict[str, Any], cfg: dict[str, Any]) -> tuple[float, float, str] | None:
+    """(low, high, basis). Scaled by theta while the book collects it, and never narrower than the
+    net-liq band (the BWD whose 1% move costs `fallback_pct_nlv_per_1pct` of net liq), which is also
+    the band when there is no theta to scale by: a band of zero width would fire on every share, and
+    before the floor a book collecting $1.63 a day got a band eight times narrower than one
+    collecting nothing. The theta is the theta band's (without the legs about to expire), so a leg
+    expiring tomorrow cannot widen it: on 2026-10-20 one did, to -106 to +160 shares."""
+    theta = reading_.get("theta_ex_front")
+    if theta is None:  # a reading from before the split
+        theta = reading_["theta"]
+    net_liq, spot = reading_["net_liq"], reading_["benchmark_spot"]
+    by_theta = (
+        (-float(cfg["short_per_theta"]) * theta, float(cfg["long_per_theta"]) * theta, "theta")
+        if theta is not None and theta > 0
+        else None
+    )
+    by_net_liq = None
     if net_liq and spot:
         half = float(cfg["fallback_pct_nlv_per_1pct"]) * net_liq / (spot * 0.01)
-        return (-half, half)
-    return None
+        by_net_liq = (-half, half, "net_liq")
+    if by_theta and by_net_liq:
+        # The wider of the two, whole: halves from different bands would lean neither way they mean.
+        return by_theta if by_theta[1] - by_theta[0] >= by_net_liq[1] - by_net_liq[0] else by_net_liq
+    return by_theta or by_net_liq
 
 
 def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:

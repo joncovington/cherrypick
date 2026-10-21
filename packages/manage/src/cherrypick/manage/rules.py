@@ -286,8 +286,9 @@ DEFAULT_RULES: dict[str, Any] = {
             "confidence": 40,
         },
         # Beta-weighted delta band in benchmark shares: -short_per_theta x theta to +long_per_theta x
-        # theta (leaning slightly long). With no theta to scale by, +/- the BWD whose 1% move costs
-        # `fallback_pct_nlv_per_1pct` of net liq.
+        # theta (leaning slightly long), on the theta band's figure (without the legs `front_dte`
+        # days or less from expiry). Never narrower than +/- the BWD whose 1% move costs
+        # `fallback_pct_nlv_per_1pct` of net liq, which is also the band with no theta to scale by.
         "delta": {
             "enabled": True,
             "short_per_theta": 0.5,
