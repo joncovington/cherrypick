@@ -346,6 +346,10 @@ DEFAULT_RULES: dict[str, Any] = {
             "max_units": 10,
             "show": 15,
             "show_too_big": 10,
+            # A waiting candidate (stopped by buying power or the theta ceiling) is graded by the
+            # buying power it would leave: under the VIX cap ok, within this much over it `over`,
+            # beyond that `far_over`.
+            "bp_warn_over": 0.10,
         },
     },
     # Per-underlying overrides: {"SPY": {"intent": "hedge", "disable": ["debit.stop"], "note": "..."}}.

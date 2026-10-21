@@ -311,6 +311,59 @@ def account_basis(account_type: dict[str, Any] | None) -> str:
     return "margin"
 
 
+# The caps that measure how full the book already is, not the trade: a candidate stopped by one of
+# these is WAITING -- it fits once positions close and free the room.
+ROOM_CAPS = frozenset({"buying power", "theta ceiling"})
+
+
+def _bp_cap(book: dict[str, Any], cfg: dict[str, Any]) -> float:
+    """The buying-power ceiling as a share of net liq: the portfolio reading's VIX-scaled band, else
+    the configured fallback."""
+    cap = ((book.get("bands") or {}).get("buying_power") or {}).get("high")
+    return float(cfg["max_buying_power_pct"]) if cap is None else float(cap)
+
+
+def if_room(
+    u: dict[str, Any],
+    book: dict[str, Any],
+    underlying: str,
+    cfg: dict[str, Any],
+    basis: str,
+    max_units: int,
+) -> dict[str, Any] | None:
+    """A waiting candidate's size once the book has room (ROOM_CAPS set aside), with where taking it
+    TODAY would leave the account: buying power used after it against the VIX-scaled cap, graded
+    `ok` (under the cap), `over` (within `bp_warn_over` of it) or `far_over`, and the book's theta
+    after it against the theta ceiling. None when even room would not size a unit."""
+    units, binding = size(u, book, underlying, cfg, basis, max_units, room=True)
+    net_liq = book.get("net_liq")
+    if units < 1 or not net_liq:
+        return None
+    cap = _bp_cap(book, cfg)
+    used = book.get("buying_power_used")
+    bp_after = (used + units * u["bp"]) / net_liq if used is not None and u["bp"] is not None else None
+    if bp_after is None:
+        level = None
+    elif bp_after <= cap:
+        level = "ok"
+    elif bp_after <= cap + float(cfg.get("bp_warn_over", 0.10)):
+        level = "over"
+    else:
+        level = "far_over"
+    theta_hi = ((book.get("bands") or {}).get("theta") or {}).get("high")
+    theta_after = ((book.get("theta") or 0.0) + units * u["theta"]) / net_liq
+    return {
+        "units": units,
+        "binding": binding,
+        "bp_after_pct": None if bp_after is None else round(bp_after, 4),
+        "bp_cap_pct": round(cap, 4),
+        "bp_level": level,
+        "theta_after_pct": round(theta_after, 5),
+        "theta_ceiling_pct": theta_hi,
+        "theta_over": theta_hi is not None and theta_after > theta_hi,
+    }
+
+
 def size(
     u: dict[str, Any],
     book: dict[str, Any],
@@ -318,15 +371,17 @@ def size(
     cfg: dict[str, Any],
     basis: str,
     max_units: int,
+    room: bool = False,
 ) -> tuple[int, str | None]:
     """(units, binding cap): the largest count that clears every cap, and the cap the next unit
-    breaks (None when `max_units` itself is what stops it)."""
+    breaks (None when `max_units` itself is what stops it). With `room`, the caps that measure how
+    full the book already is (ROOM_CAPS: buying power, the theta ceiling) are set aside: the size the
+    trade would take once the book has room for it."""
     net_liq = book.get("net_liq")
     if not net_liq:
         return 0, "no net liq"
     used = book.get("buying_power_used")
-    bp_cap = ((book.get("bands") or {}).get("buying_power") or {}).get("high")
-    bp_cap = float(cfg["max_buying_power_pct"]) if bp_cap is None else bp_cap
+    bp_cap = _bp_cap(book, cfg)
     band = (book.get("bands") or {}).get("delta") or {}
     theta_hi = ((book.get("bands") or {}).get("theta") or {}).get("high")
     theta = book.get("theta") or 0.0
@@ -347,7 +402,7 @@ def size(
             return "per-trade risk"
         if n * u["notional"] > notional_pct * net_liq:
             return "notional per name"
-        if u["bp"] is not None and used is not None and used + n * u["bp"] > bp_cap * net_liq:
+        if not room and u["bp"] is not None and used is not None and used + n * u["bp"] > bp_cap * net_liq:
             return "buying power"
         if (
             bwd is not None
@@ -361,7 +416,7 @@ def size(
             closer = abs(after - min(max(after, lo), hi)) < abs(bwd - min(max(bwd, lo), hi))
             if not inside_after and not closer:
                 return "delta band"
-        if theta_hi is not None and (theta + n * u["theta"]) / net_liq > theta_hi:
+        if not room and theta_hi is not None and (theta + n * u["theta"]) / net_liq > theta_hi:
             return "theta ceiling"
         if n * u["theta"] > 0 and name_theta + n * u["theta"] > name_theta_cap:
             return "concentration"
@@ -482,7 +537,17 @@ def suggest(
     def drop(reason: str) -> None:
         excluded[reason] = excluded.get(reason, 0) + 1
 
-    fits, too_big = [], []
+    fits, too_big, waiting = [], [], []
+
+    def _wait(row, u, sym, max_units) -> None:
+        """A row sized to nothing by a cap on how full the book is: kept, with its size once there
+        is room, for the waiting list."""
+        if row["units"] >= 1 or row["binding"] not in ROOM_CAPS:
+            return
+        room = if_room(u, book, sym, cfg, basis, max_units)
+        if room:
+            row["if_room"] = room
+            waiting.append(row)
 
     def _build(entry, options, kinds, sym, held, written, scale) -> None:
         for s in structures(entry, options, cfg, held, written, kinds):
@@ -494,11 +559,13 @@ def suggest(
             if u is None:
                 drop("credit under a third of the width")
                 continue
-            units, binding = size(u, book, sym, cfg, basis, int(s.get("max_units", cfg["max_units"])))
+            max_units = int(s.get("max_units", cfg["max_units"]))
+            units, binding = size(u, book, sym, cfg, basis, max_units)
             row = _describe(s, u, entry, sym, units, binding)
             if units >= 1:
                 fits.append(row)
                 continue
+            _wait(row, u, sym, max_units)
             if s["kind"] in ("short_put", "put_spread", "call_spread"):
                 # The nearest version that fits: the same short strike, the widest long under the
                 # per-trade cap. Offered in the fits list itself when it sizes to a unit or more.
@@ -515,6 +582,9 @@ def suggest(
                         row["alternative"] = alt_row
                         if a_units >= 1:
                             fits.append(alt_row)
+                        elif "if_room" not in row:
+                            # Only when the trade itself does not wait: one trade, listed once.
+                            _wait(alt_row, au, sym, int(cfg["max_units"]))
             too_big.append(row)
 
     for sym, entry in sorted(income["symbols"].items()):
@@ -539,6 +609,9 @@ def suggest(
 
     fits.sort(key=rank, reverse=True)
     too_big.sort(key=rank, reverse=True)
+    waiting.sort(key=rank, reverse=True)
+    net_liq = book.get("net_liq")
+    used = book.get("buying_power_used")
     return {
         "source_session": income.get("session"),
         "taken_at": income.get("taken_at"),
@@ -550,5 +623,11 @@ def suggest(
         "fits_total": len(fits),
         "too_big": too_big[: int(cfg["show_too_big"])],
         "too_big_total": len(too_big),
+        # Stopped only by how full the book is (ROOM_CAPS), each with its size once there is room.
+        "waiting": waiting[: int(cfg["show"])],
+        "waiting_total": len(waiting),
+        "bp_used_pct": round(used / net_liq, 4) if used is not None and net_liq else None,
+        "bp_cap_pct": round(_bp_cap(book, cfg), 4),
+        "bp_warn_over": float(cfg.get("bp_warn_over", 0.10)),
         "error": None,
     }

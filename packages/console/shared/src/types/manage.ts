@@ -463,6 +463,24 @@ export interface ManageCandidate {
   earningsDate: string | null;
   earningsUnknown: boolean;
   alternative: ManageCandidate | null;
+  /** A waiting candidate's size once the book has room (buying power and the theta ceiling set
+   *  aside), and where taking it today would leave the account. Null on every other row. */
+  ifRoom: ManageCandidateRoom | null;
+}
+
+/** `ok`: under the VIX-scaled buying-power cap; `over`: within `bpWarnOver` of it; `far_over`: past that. */
+export type ManageBpLevel = "ok" | "over" | "far_over";
+
+export interface ManageCandidateRoom {
+  units: number;
+  /** The cap the next unit breaks once there is room (a cap on the trade, never on the book). */
+  binding: string | null;
+  bpAfterPct: number | null;
+  bpCapPct: number | null;
+  bpLevel: ManageBpLevel | null;
+  thetaAfterPct: number | null;
+  thetaCeilingPct: number | null;
+  thetaOver: boolean;
 }
 
 export interface ManageCandidates {
@@ -475,6 +493,13 @@ export interface ManageCandidates {
   fitsTotal: number;
   tooBig: ManageCandidate[];
   tooBigTotal: number;
+  /** Stopped only by how full the book is (buying power, the theta ceiling), best first, each with
+   *  its `ifRoom`. Empty from an evaluation written before the list existed. */
+  waiting: ManageCandidate[];
+  waitingTotal: number;
+  bpUsedPct: number | null;
+  bpCapPct: number | null;
+  bpWarnOver: number | null;
   error: string | null;
   /** The sizing caps from the evaluation's ruleset (`portfolio.candidates`), as fractions of net liq
    *  (the theta share of the theta the account may carry). The notional cap is the one `size` applies

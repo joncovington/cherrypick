@@ -390,6 +390,14 @@ built too wide is offered narrowed: the same short, and the widest long that kee
 per-trade cap and still takes a third of the width. Priced at mid from a day-old reading: re-quote
 before sending.
 
+**Waiting for room** (2026-10-20). A trade stopped only by how full the book already is -- buying
+power or the theta ceiling (`ROOM_CAPS`), not a cap on the trade itself -- is also listed as
+`waiting`, sized as if the book had room (`if_room`). Each carries where taking it today would leave
+the account: buying power used after it, graded against the VIX-scaled cap as `ok`, `over` (within
+`bp_warn_over`, 10 points, of it) or `far_over`, and the book's theta after it against the ceiling.
+It is the queue that opens as positions close, never a recommendation to run past a cap. A trade
+that waits is listed once; its narrowed version waits only when it does not.
+
 ## Known limits
 
 - **Marks are mids** and the payoff model is Black-Scholes at today's IV per leg, with no dividends.

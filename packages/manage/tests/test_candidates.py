@@ -311,6 +311,56 @@ def test_buying_power_is_held_under_the_vix_cap_and_past_it_nothing_fits():
     assert not over["fits"] and {r["binding"] for r in over["too_big"]} == {"buying power"}
 
 
+def test_a_candidate_stopped_by_buying_power_waits_sized_as_if_there_were_room():
+    over = _suggest({"AAA": _entry()}, _book(used=35_000.0, bp_cap=0.30))
+    # Every one stopped by buying power waits, each trade once (not again as its narrowed version).
+    assert over["waiting_total"] == len(over["too_big"]) > 0
+    assert len({(r["kind"], tuple(leg["strike"] for leg in r["legs"])) for r in over["waiting"]}) == len(
+        over["waiting"]
+    )
+    assert over["bp_used_pct"] == 0.35 and over["bp_cap_pct"] == 0.30 and over["bp_warn_over"] == 0.10
+    for r in over["waiting"]:
+        room = r["if_room"]
+        assert r["units"] == 0 and room["units"] >= 1
+        # Its room size stops at a cap on the trade, never at one on how full the book is.
+        assert room["binding"] not in candidates.ROOM_CAPS
+        bp = r["per_unit"]["buying_power"]
+        assert room["bp_after_pct"] == round((35_000.0 + room["units"] * bp) / 100_000.0, 4)
+
+
+def test_a_waiting_candidate_is_graded_by_the_buying_power_it_would_leave():
+    def graded(used, rules=RULES, warn=0.10):
+        out = _suggest({"AAA": _entry()}, _book(used=used, bp_cap=0.30), rules=rules)
+        assert out["waiting"]
+        for r in out["waiting"]:
+            after = r["if_room"]["bp_after_pct"]
+            expect = "ok" if after <= 0.30 else "over" if after <= 0.30 + warn else "far_over"
+            assert r["if_room"]["bp_level"] == expect, (after, r["if_room"])
+        return {r["if_room"]["bp_level"] for r in out["waiting"]}
+
+    # Just over the 30% cap, a small trade lands within ten points of it; far past it, nothing does.
+    assert "over" in graded(30_500.0)
+    assert graded(45_000.0) == {"far_over"}
+    # A wider warning band moves the line.
+    wide = copy.deepcopy(RULES)
+    wide["portfolio"]["candidates"]["bp_warn_over"] = 0.50
+    assert "far_over" not in graded(45_000.0, wide, 0.50)
+
+
+def test_a_book_over_its_theta_ceiling_waits_too_and_says_so():
+    full = _suggest({"AAA": _entry()}, _book(theta=300.0))
+    assert full["waiting"] and all(r["if_room"]["theta_over"] for r in full["waiting"])
+    assert {r["if_room"]["bp_level"] for r in full["waiting"]} == {"ok"}
+
+
+def test_a_candidate_stopped_by_its_own_size_does_not_wait():
+    # Per-trade risk and notional are about the trade, not the book: room would not change them.
+    small = _suggest({"AAA": _entry()}, _book(net_liq=8_000.0))
+    stopped = {r["binding"] for r in small["too_big"]}
+    assert stopped and not stopped & candidates.ROOM_CAPS
+    assert small["waiting_total"] == 0
+
+
 def test_notional_per_name_holds_a_cash_secured_put_to_a_quarter_of_net_liq():
     # $8,000 account: a 40-ish strike secures ~$4,000, over the 25% ($2,000) notional cap.
     sp = _rows(_suggest({"AAA": _entry()}, _book(net_liq=8_000.0)), "short_put")[0]

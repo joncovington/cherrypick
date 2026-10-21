@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ReactElement } from "react";
-import type { ManageCandidate, ManageCandidates, ManagePortfolio } from "@console/shared";
+import type { ManageCandidate, ManageCandidateRoom, ManageCandidates, ManagePortfolio } from "@console/shared";
 import { IncomeCard } from "../src/pages/Live/IncomeCard";
 import { BandDial, PortfolioCards } from "../src/pages/Live/PortfolioCards";
 import { BuyingPowerCard, LadderCard, RiskGraphCard, RiskMatrixCard, ScenarioCards } from "../src/pages/Live/ScenarioCards";
@@ -309,6 +309,21 @@ function candidate(over: Partial<ManageCandidate> = {}): ManageCandidate {
     earningsDate: null,
     earningsUnknown: true,
     alternative: null,
+    ifRoom: null,
+    ...over,
+  };
+}
+
+function room(over: Partial<ManageCandidateRoom> = {}): ManageCandidateRoom {
+  return {
+    units: 2,
+    binding: "per-trade risk",
+    bpAfterPct: 0.35,
+    bpCapPct: 0.3,
+    bpLevel: "over",
+    thetaAfterPct: 0.002,
+    thetaCeilingPct: 0.003,
+    thetaOver: false,
     ...over,
   };
 }
@@ -324,6 +339,11 @@ function income(over: Partial<ManageCandidates> = {}): ManageCandidates {
     fitsTotal: 1,
     tooBig: [],
     tooBigTotal: 0,
+    waiting: [],
+    waitingTotal: 0,
+    bpUsedPct: 0.25,
+    bpCapPct: 0.3,
+    bpWarnOver: 0.1,
     error: null,
     caps: { perTradeRiskPct: 0.03, notionalPerNamePct: 0.25, maxNameThetaShare: 0.25 },
     ...over,
@@ -389,6 +409,47 @@ describe("IncomeCard", () => {
     const bare = render(<IncomeCard c={income({ caps: null })} />);
     expect(bare).toContain("a short put&#x27;s strike of net liq (cash)");
     expect(bare).not.toMatch(/\d+%/);
+  });
+
+  it("lists trades waiting for room, sized as if there were room, with a chip graded by the buying power left", () => {
+    const amber = candidate({ underlying: "XLF", units: 0, binding: "buying power", ifRoom: room() });
+    const red = candidate({
+      underlying: "TLT",
+      kind: "put_spread",
+      units: 0,
+      binding: "theta ceiling",
+      ifRoom: room({ units: 1, bpAfterPct: 0.452, bpLevel: "far_over", thetaOver: true, thetaAfterPct: 0.0148 }),
+    });
+    const ownCap = candidate({ underlying: "AMZN", units: 0, binding: "per-trade risk" });
+    const html = render(
+      <IncomeCard
+        c={income({
+          fits: [],
+          fitsTotal: 0,
+          waiting: [amber, red],
+          waitingTotal: 2,
+          tooBig: [amber, red, ownCap],
+          tooBigTotal: 3,
+          bpUsedPct: 0.43,
+        })}
+      />,
+    );
+    expect(html).toContain("nothing fits today: 2 are waiting for room below");
+    expect(html).toContain("waiting for room: 2 stopped only by buying power or the theta ceiling");
+    expect(html).toContain("buying power used 43% · cap 30% at today&#x27;s VIX (amber within 10% of it, red past that)");
+    expect(html).toContain('class="chip chip-warn" title="over the cap">35%');
+    expect(html).toContain('class="chip chip-bad" title="far over the cap">45%');
+    expect(html).toContain("θ over");
+    expect(html).toContain("+$494.00"); // cash for the 2 contracts it would take, not the 0 it takes today
+    // The too-big list keeps only what a cap on the trade itself stops: a waiting row is not listed twice.
+    expect(html).toContain("1 more stopped by a cap on the trade itself");
+    expect(html).toContain("<strong>AMZN</strong>");
+    expect(html).not.toContain("<strong>XLF</strong>");
+  });
+
+  it("draws no waiting table from an evaluation without one", () => {
+    const html = render(<IncomeCard c={income()} />);
+    expect(html).not.toContain("waiting for room");
   });
 
   it("says nothing fits, or why there is no list, rather than drawing an empty table", () => {

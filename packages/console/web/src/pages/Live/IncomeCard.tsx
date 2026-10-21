@@ -1,4 +1,4 @@
-import type { ManageCandidate, ManageCandidates } from "@console/shared";
+import type { ManageBpLevel, ManageCandidate, ManageCandidates } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { fmtCash, fmtMoney } from "../../lib/format";
 
@@ -105,15 +105,113 @@ function FitsTable({ rows }: { rows: ManageCandidate[] }) {
   );
 }
 
+function pct(v: number | null, digits = 0): string {
+  return v === null ? "—" : `${(v * 100).toFixed(digits)}%`;
+}
+
+const BP_CHIP: Record<ManageBpLevel, string> = { ok: "chip chip-ok", over: "chip chip-warn", far_over: "chip chip-bad" };
+
+const BP_WORD: Record<ManageBpLevel, string> = { ok: "under the cap", over: "over the cap", far_over: "far over the cap" };
+
+/** Trades stopped only by how full the book is, sized as if there were room. The chip is where
+ *  taking one TODAY would leave buying power against the VIX-scaled cap, graded by the package. */
+function WaitingTable({ c }: { c: ManageCandidates }) {
+  if (c.waiting.length === 0) return null;
+  const warn = c.bpWarnOver === null ? "" : ` (amber within ${pct(c.bpWarnOver)} of it, red past that)`;
+  return (
+    <>
+      <div className="card-subhead">waiting for room: {c.waitingTotal} stopped only by buying power or the theta ceiling</div>
+      <p className="muted pf-caption" style={{ marginTop: 0 }}>
+        buying power used {pct(c.bpUsedPct)} · cap {pct(c.bpCapPct)} at today's VIX{warn}. Sized as if the book had room;
+        the chip is where taking it today would leave you. Close positions to make the room, or take one knowing it runs
+        the book past its cap.
+      </p>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>name</th>
+              <th>trade</th>
+              <th>legs</th>
+              <th title="contracts once there is room (spreads: one of each leg)">qty</th>
+              <th title="per-share net price at mid, and the natural fill (sell at the bid, buy at the ask)">price</th>
+              <th title="signed cash flow, whole position: a credit received is +">cash</th>
+              <th title="a spread's max loss; a short put's loss at the name's 1st-percentile move over the holding period">risk</th>
+              <th title="buying power the position ties up">buying power</th>
+              <th title="buying power used after taking it today, against the VIX-scaled cap">BP after</th>
+              <th title="theta, whole position, dollars a day">θ / day</th>
+              <th>earnings</th>
+            </tr>
+          </thead>
+          <tbody>
+            {c.waiting.map((w, i) => {
+              const room = w.ifRoom;
+              const n = room?.units ?? 0;
+              const level = room?.bpLevel ?? null;
+              return (
+                <tr key={`${w.underlying}-${w.kind}-${i}`}>
+                  <td>{w.underlying}</td>
+                  <td>
+                    {KIND[w.kind] ?? w.kind}
+                    {narrowed(w) ? <span className="muted"> · {narrowed(w)}</span> : null}
+                  </td>
+                  <td className="num">
+                    {w.expiry} {legs(w)}
+                  </td>
+                  <td className="num">{n}</td>
+                  <td className="num" title={`natural ${price(w.perUnit.natural)}`}>
+                    {price(w.perUnit.credit)}
+                  </td>
+                  <td className="num pnl-pos">{fmtCash(times(n, w.perUnit.cash))}</td>
+                  <td className="num">{risk(w, n)}</td>
+                  <td className="num">{fmtMoney(times(n, w.perUnit.buyingPower))}</td>
+                  <td>
+                    {level ? (
+                      <span className={BP_CHIP[level]} title={BP_WORD[level]}>
+                        {pct(room?.bpAfterPct ?? null)}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                    {room?.thetaOver ? (
+                      <span
+                        className="chip chip-warn"
+                        title={`book theta after it ${pct(room.thetaAfterPct, 2)} of net liq, over the ${pct(room.thetaCeilingPct, 1)} ceiling`}
+                      >
+                        θ over
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className="num">{fmtCash(times(n, w.perUnit.theta))}</td>
+                  <td>{w.earningsUnknown ? <span className="muted">unknown</span> : w.earningsDate ?? "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {c.waitingTotal > c.waiting.length && (
+        <p className="muted pf-caption">
+          the best {c.waiting.length} of {c.waitingTotal} waiting, by theta per dollar of buying power
+        </p>
+      )}
+    </>
+  );
+}
+
 function TooBig({ rows, total }: { rows: ManageCandidate[]; total: number }) {
-  if (rows.length === 0) return null;
+  // A row waiting for room is in the table above; this list keeps what a cap on the trade itself stops.
+  const own = rows.filter((r) => r.ifRoom === null);
+  if (own.length === 0) return null;
   return (
     <details className="pf-too-big">
       <summary>
-        {total} that do not fit at even one contract{total > rows.length ? ` (the best ${rows.length} shown)` : ""}
+        {own.length === rows.length
+          ? `${total} that do not fit at even one contract${total > rows.length ? ` (the best ${rows.length} shown)` : ""}`
+          : `${own.length} more stopped by a cap on the trade itself${total > rows.length ? " (of the best shown)" : ""}`}
       </summary>
       <ul>
-        {rows.map((c, i) => (
+        {own.map((c, i) => (
           <li key={`${c.underlying}-${c.kind}-${i}`}>
             <strong>{c.underlying}</strong> {KIND[c.kind] ?? c.kind} {legs(c)} · stopped by <em>{c.binding ?? "—"}</em>
             <span className="muted">
@@ -153,11 +251,16 @@ export function IncomeCard({ c }: { c: ManageCandidates | null }) {
           {c.fits.length > 0 ? (
             <FitsTable rows={c.fits} />
           ) : (
-            <p className="muted">nothing fits today: every candidate is stopped by a cap below</p>
+            <p className="muted">
+              {c.waitingTotal > 0
+                ? `nothing fits today: ${c.waitingTotal} are waiting for room below`
+                : "nothing fits today: every candidate is stopped by a cap below"}
+            </p>
           )}
           {c.fitsTotal > c.fits.length && (
             <p className="muted pf-caption">the best {c.fits.length} of {c.fitsTotal} that fit, by theta per dollar of buying power</p>
           )}
+          <WaitingTable c={c} />
           <TooBig rows={c.tooBig} total={c.tooBigTotal} />
         </>
       )}
