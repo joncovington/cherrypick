@@ -285,7 +285,9 @@ For each underlying that holds a short put, shares, or a covered call:
   `working_orders`, from the broker tool's `get_working_orders`).
 - **Suggested action**, from `manage`'s fixed vocabulary: `TAKE_PROFIT` when the mark is at or
   under the buy-to-close price; `ROLL_OR_CLOSE` when tested, with the net-zero and premium-gambit
-  candidates priced and each passed through `check-roll`; after an assignment, the next leg named
+  candidates priced and each passed through `check-roll` (on the nearest of the next five expiries
+  that prices them, from snapshot v14's `roll_out_chains`; before v14, the income reading's cycle
+  monthly alone); after an assignment, the next leg named
   from the Skate screen's call band. Each rule gets a confidence and a README row, as `manage`
   requires.
 - **Console**: a wheel tab beside Live → positions (built 2026-10-20: `pages/Live/WheelCards.tsx`,
@@ -346,9 +348,13 @@ Jan 2027) has the shape but was entered as a diagonal, and stays one. What it ad
   wheel view links a wheel. Since 2026-10-20 the evaluation also joins the two into one trade when the
   link reconciles (`grouped_by: "pmcc link"`), recognised or not, so the short is no longer judged
   as a naked call.
-- **Roll candidates** come from what the snapshot quotes (the income reading's cycle monthly and
-  covered-call expiry, and any roll chain), usually one or two expiries, not five; `check-roll`
-  rejects any debit, so a candidate inside the $0.10 allowance says so.
+- **Roll candidates** come from what the snapshot quotes. Until snapshot v14 that was the income
+  reading's cycle monthly and covered-call expiry and any roll chain, usually one or two expiries, not
+  five. Since v14 (2026-10-20) the snapshot reads the next five listed expiries after each PMCC short
+  and before its long, quoted that session around the short's strike (`roll_out_chains`; the wheel's
+  covered calls and short puts get the same, within 60 days of the short), capped at 30 broker reads;
+  an older snapshot is read as before. `check-roll` rejects any debit, so a candidate inside the $0.10
+  allowance says so.
 - **Precedence.** The PMCC rules rank by action with the diagonal rules: a close or stop outranks them;
   `roll.diagonal_short`'s credit roll replaces them when it fires. On every stored snapshot (10-13 to
   10-20, 110 trade evaluations) no recommendation changed: TLT is the account's only call diagonal and

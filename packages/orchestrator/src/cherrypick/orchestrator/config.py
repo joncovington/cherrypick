@@ -445,6 +445,7 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     The ruleset itself is manage's own config (~/.cherrypick/config/manage.json), not this block.
     """
     mg = cfg.get("manage", {}) or {}
+    ro = mg.get("roll_out") if isinstance(mg.get("roll_out"), dict) else {}
     return {
         "enabled": bool(mg.get("enabled", False)),
         # ET. 10:00 leaves the open's first half hour to settle the marks the rules are judged on.
@@ -458,7 +459,25 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # Post no more often than this (minutes; 0 = every run), so runs can be frequent for the
         # console while Discord hears hourly. The day's first run always posts; a failure always does.
         "notify_every_minutes": max(0, int(mg.get("notify_every_minutes", 0) or 0)),
+        # The quoted expiries the snapshot reads past each covered call, PMCC short and short put
+        # (managesnap.roll_out_chains), and the cap on the broker reads that costs.
+        "roll_out": {k: _int_or(ro.get(k), v) for k, v in ROLL_OUT_DEFAULTS.items()},
     }
+
+
+# `expiries`: how many quoted expiries past a short; `max_days`: how far past it a covered call's or
+# short put's may lie (a PMCC's stop before its long instead); `max_short_days`: shorts further out
+# than this are not rolled yet and get none; `max_calls` and `max_seconds`: the most broker reads the
+# step may make, and how long it may take, before the rest are recorded as skipped.
+ROLL_OUT_DEFAULTS = {"expiries": 5, "max_days": 60, "max_short_days": 60, "max_calls": 30, "max_seconds": 300}
+
+
+def _int_or(value: Any, default: int) -> int:
+    try:
+        out = int(value)
+    except (TypeError, ValueError):
+        return default
+    return out if out >= 0 else default
 
 
 def morning_settings(cfg: dict[str, Any]) -> dict[str, Any]:

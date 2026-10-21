@@ -11,7 +11,9 @@ position at a time, with the rules re-derived each time.
 **It is advice, and read-only.** It evaluates a snapshot file and writes only into
 `~/.cherrypick/data/manage`. It has no broker credentials and no network: the snapshot is taken by
 the orchestrator's `manage` verb (`orchestrator/managesnap.py`: positions and balances, market metrics, trade history,
-the XSP hedge chain, the quoted chain of each expiry holding a short strangle, the broker's greeks
+the XSP hedge chain, the quoted chain of each expiry holding a short strangle, the next quoted
+expiries after each covered call, PMCC short and short put (`roll_out_chains`, v14, capped; `pmcc.py`
+and `wheel.py` price their rolls there first and fall back to the income reading), the broker's greeks
 for each option leg held and the day's orders, all read-only; and from local files the income reading
 and the held names' skate bands, copied as the band file states them, which `wheel.py` moves to
 today's price, and each long call's entry-day close with the name's dividends and splits from the

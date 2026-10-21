@@ -37,6 +37,7 @@ def _fake(monkeypatch, answers):
     monkeypatch.setattr(managesnap, "history_db", lambda: Path("no-such-history.db"))
     # Nor the real home's stream cache.
     monkeypatch.setattr(managesnap, "_cached_greeks", lambda syms: {})
+    monkeypatch.setattr(managesnap, "_cached_listing", lambda name: [])
     monkeypatch.setattr(cfgmod, "enabled_modules", lambda cfg: {"meic": {"path": "."}})
     monkeypatch.setattr(cfgmod, "module_root", lambda mcfg, name: ".")
     monkeypatch.setattr(cfgmod, "broker_tool", lambda mcfg, name: ["-m", "cherrypick.meic.tt"])
@@ -52,7 +53,7 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 13
+    assert snap["snapshot_version"] == 14
     assert snap["underlying_history"] == {} and snap["underlying_history_error"] is None  # no long call
     assert snap["roll_chains"] == {}  # no short strangle held, no chain read
     assert not any("get_option_chain" in c[0] and "GLD" in c[0] for c in calls)
@@ -731,3 +732,230 @@ def test_a_name_only_the_history_store_holds_is_resolved(monkeypatch, tmp_path):
     assert error is None
     assert got["XYZ"]["closes"] == {"2026-09-25": 50.0} and got["XYZ"]["dividends"] == [["2026-09-01", 0.5]]
     assert got["BRK/B"]["store_symbol"] == "BRK.B" and got["BRK/B"]["closes"] == {"2026-09-25": 480.0}
+
+
+# --------------------------------------------------------------------------- roll-out chains (v14)
+def _leg(occ, right, qty, exp, strike):
+    return {"symbol": occ, "right": right, "quantity": qty, "expiration": exp, "strike": strike}
+
+
+ROLL_OUT_HELD = {
+    "ok": True,
+    "broker_module": "meic",
+    "accounts": [
+        {
+            "account": "****1234",
+            "underlyings": [
+                # A short put with no long put on the name: rolled out within 60 days of its expiry.
+                {"underlying": "SOFI", "legs": [_leg("SOFI  261120P00016000", "P", -2, "2026-11-20", 16.0)]},
+                # A PMCC's shape: rolled out before the long's expiry.
+                {
+                    "underlying": "QQQ",
+                    "legs": [
+                        _leg("QQQ   270617C00400000", "C", 1, "2027-06-17", 400.0),
+                        _leg("QQQ   261106C00520000", "C", -1, "2026-11-06", 520.0),
+                    ],
+                },
+                # A covered call: 100 shares behind one short call.
+                {
+                    "underlying": "KO",
+                    "legs": [
+                        {"symbol": "KO", "right": None, "quantity": 100, "instrument_type": "Equity"},
+                        _leg("KO    261120C00070000", "C", -1, "2026-11-20", 70.0),
+                    ],
+                },
+                # None of these: a naked call, a put spread, and a PMCC short too far out to roll yet.
+                {"underlying": "XLE", "legs": [_leg("XLE   261120C00095000", "C", -1, "2026-11-20", 95.0)]},
+                {
+                    "underlying": "IWM",
+                    "legs": [
+                        _leg("IWM   261218P00250000", "P", -1, "2026-12-18", 250.0),
+                        _leg("IWM   261218P00240000", "P", 1, "2026-12-18", 240.0),
+                    ],
+                },
+                {
+                    "underlying": "TLT",
+                    "legs": [
+                        _leg("TLT   290119C00080000", "C", 1, "2029-01-19", 80.0),
+                        _leg("TLT   270115C00085000", "C", -1, "2027-01-15", 85.0),
+                    ],
+                },
+            ],
+        }
+    ],
+}
+
+LISTED = {
+    "SOFI": [
+        "2026-10-30",
+        "2026-11-20",
+        "2026-11-27",
+        "2026-12-04",
+        "2026-12-18",
+        "2027-01-15",
+        "2027-01-22",
+    ],
+    "QQQ": [
+        "2026-11-06",
+        "2026-11-13",
+        "2026-11-20",
+        "2026-11-27",
+        "2026-12-04",
+        "2026-12-11",
+        "2026-12-18",
+        "2027-06-17",
+    ],  # fmt: skip
+    "KO": ["2026-11-20", "2026-12-18", "2027-01-15", "2027-02-19"],
+}
+
+
+def _roll_out_chain(failing=()):
+    """A fake chain read: a listing (no --expiration) from LISTED, or one quoted slice with a put and
+    a call at the centre strike. An expiry in `failing` answers an error."""
+
+    def chain(argv):
+        name = argv[argv.index("--symbol") + 1]
+        if "--expiration" not in argv:
+            if name not in LISTED:
+                return {"ok": False, "error": f"no listing for {name}"}
+            return {"ok": True, "chain": {e: [] for e in LISTED[name]}}
+        exp = argv[argv.index("--expiration") + 1]
+        if (name, exp) in failing:
+            return {"ok": False, "error": "HTTP 504"}
+        k = argv[argv.index("--around_price") + 1]
+        rows = [
+            {"symbol": f"{name} {exp} C", "option_type": "C", "strike_price": k, "bid": 1.0, "ask": 1.2,
+             "mid": 1.1, "delta": 0.35, "iv": 0.3},
+            {"symbol": f"{name} {exp} P", "option_type": "P", "strike_price": k, "bid": 0.9, "ask": 1.0,
+             "mid": 0.95, "delta": -0.4, "iv": 0.3},
+        ]  # fmt: skip
+        return {"ok": True, "quotes_complete": True, "chain": {exp: rows}}
+
+    return chain
+
+
+def _roll_out_build(monkeypatch, cfg=None, failing=(), listing=None):
+    calls = _fake(
+        monkeypatch,
+        {
+            "get_market_overview": {"ok": True, "metrics": [{"symbol": "QQQ", "last": 600.0}]},
+            "get_transactions": {"ok": True, "transactions": {}},
+            "get_option_chain": listing or _roll_out_chain(failing),
+        },
+    )
+    monkeypatch.setattr(managesnap.positions_mod, "run", lambda cfg: ROLL_OUT_HELD)
+    monkeypatch.setattr(managesnap.clock, "today_iso", lambda: "2026-10-20")
+    snap = managesnap.build(cfg or {})
+    reads = [
+        (
+            c[0][c[0].index("--symbol") + 1],
+            c[0][c[0].index("--expiration") + 1] if "--expiration" in c[0] else None,
+        )
+        for c in calls
+        if "get_option_chain" in c[0] and "XSP" not in c[0]
+    ]
+    return snap, reads, calls
+
+
+def test_each_short_gets_the_next_listed_expiries_within_its_bound(monkeypatch):
+    snap, reads, calls = _roll_out_build(monkeypatch)
+    ro = snap["roll_out_chains"]
+    assert sorted({(a["underlying"], a["right"]) for a in ro["anchors"]}) == [
+        ("KO", "C"),
+        ("QQQ", "C"),
+        ("SOFI", "P"),
+    ]
+    slices = sorted(r for r in reads if r[1])
+    # The short put: every listed expiry after its own and within 60 days of it (four, under the five).
+    sofi = [e for n, e in slices if n == "SOFI"]
+    assert sofi == ["2026-11-27", "2026-12-04", "2026-12-18", "2027-01-15"]
+    # The PMCC: the next five after the short, all before the long.
+    assert [e for n, e in slices if n == "QQQ"] == [
+        "2026-11-13",
+        "2026-11-20",
+        "2026-11-27",
+        "2026-12-04",
+        "2026-12-11",
+    ]
+    # The covered call: monthly-only, so two inside 60 days of the short.
+    assert [e for n, e in slices if n == "KO"] == ["2026-12-18", "2027-01-15"]
+    assert not {n for n, _ in reads} & {"XLE", "IWM", "TLT"}
+    # One listing per name, one read per expiry, and every read counted.
+    assert sorted(n for n, e in reads if e is None) == ["KO", "QQQ", "SOFI"]
+    assert ro["calls"] == len(reads) == 3 + 4 + 5 + 2 and ro["skipped"] == []
+    # Each read centred on the short's strike, as wide as a strangle's, and kept to the short's right.
+    for argv, _ in calls:
+        if "get_option_chain" in argv and "--expiration" in argv and "QQQ" in argv:
+            assert argv[argv.index("--around_price") + 1] == "520.0"
+            assert argv[argv.index("--strike_count") + 1] == str(managesnap.ROLL_STRIKES)
+            assert "--include_quotes" in argv and "--include_greeks" in argv
+    got = ro["chains"]["SOFI|P|2026-12-18"]
+    assert got["error"] is None and got["centre"] == 16.0
+    assert [(o["strike"], o["right"], o["mid"], o["broker_delta"]) for o in got["options"]] == [
+        (16.0, "P", 0.95, -0.4)
+    ]
+
+
+def test_a_pmcc_s_rolls_stop_before_its_long(monkeypatch):
+    held = {
+        "accounts": [
+            {
+                "underlyings": [
+                    {
+                        "underlying": "QQQ",
+                        "legs": [
+                            _leg("QQQ   261204C00500000", "C", 1, "2026-12-04", 500.0),
+                            _leg("QQQ   261106C00520000", "C", -1, "2026-11-06", 520.0),
+                        ],
+                    }
+                ]
+            }
+        ]
+    }
+    (anchor,) = managesnap.roll_out_anchors(held, date(2026, 10, 20), 60)
+    assert anchor["before"] == "2026-12-04"
+    monkeypatch.setattr(managesnap, "_cached_listing", lambda name: LISTED[name])
+    calls = []
+
+    def answer(cfg, prefer, argv, timeout=35):
+        calls.append(argv)
+        return {"ok": True, "chain": {argv[argv.index("--expiration") + 1]: []}}, None
+
+    monkeypatch.setattr(managesnap, "_first_answer", answer)
+    ro = managesnap.roll_out_chains(
+        {}, held, date(2026, 10, 20), None, dict(managesnap.cfgmod.ROLL_OUT_DEFAULTS)
+    )
+    # The listing came from the stream cache: no listing read, and nothing on or after the long's expiry.
+    assert all("--expiration" in a for a in calls)
+    assert [a[a.index("--expiration") + 1] for a in calls] == ["2026-11-13", "2026-11-20", "2026-11-27"]
+    assert ro["listings"]["QQQ"]["source"] == "stream cache" and ro["calls"] == 3
+
+
+def test_the_broker_reads_are_capped_and_what_the_cap_cuts_is_said(monkeypatch):
+    snap, reads, _ = _roll_out_build(monkeypatch, {"manage": {"roll_out": {"max_calls": 4}}})
+    ro = snap["roll_out_chains"]
+    assert ro["calls"] == len(reads) == 4
+    # QQQ's short expires first, so it is read first: its listing and three of its five expiries.
+    assert reads == [("QQQ", None), ("QQQ", "2026-11-13"), ("QQQ", "2026-11-20"), ("QQQ", "2026-11-27")]
+    cut = {(s["underlying"], s.get("expiration")) for s in ro["skipped"]}
+    assert ("QQQ", "2026-12-04") in cut and ("SOFI", None) in cut and ("KO", None) in cut
+    assert all("over the cap of 4" in s["why"] for s in ro["skipped"])
+
+
+def test_a_failed_or_timed_out_roll_out_read_is_recorded_not_fatal(monkeypatch):
+    snap, _, _ = _roll_out_build(monkeypatch, failing={("SOFI", "2026-12-04")})
+    ro = snap["roll_out_chains"]
+    assert "HTTP 504" in ro["chains"]["SOFI|P|2026-12-04"]["error"]
+    assert ro["chains"]["SOFI|P|2026-12-04"]["options"] == []
+    assert ro["chains"]["SOFI|P|2026-12-18"]["error"] is None  # the next one is still read
+
+    def slow(argv):
+        if "--expiration" not in argv:
+            raise subprocess.TimeoutExpired(["tt"], 35)
+        return _roll_out_chain()(argv)
+
+    snap, reads, _ = _roll_out_build(monkeypatch, listing=slow)
+    ro = snap["roll_out_chains"]
+    assert snap["positions"]["ok"] and ro["chains"] == {}
+    assert "timed out" in ro["listings"]["SOFI"]["error"]
+    assert all(a["wanted"] == [] and "no listed expiry" in a["why"] for a in ro["anchors"])

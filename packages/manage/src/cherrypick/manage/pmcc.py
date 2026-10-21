@@ -44,8 +44,10 @@ the money (N(d2)), and an earnings report inside its life.
 **Roll candidates** (for a failed width check or an exposed short): on each quoted call expiry later
 than the short and before the long, the next `roll.expiries` of them, the strike with the most
 premium whose delta is at most `roll.max_delta` and whose roll costs no more than `roll.max_debit` a
-share, and that keeps the width check passing. Priced from the snapshot's quotes (the income reading's
-cycle monthly and covered-call expiry, and any quoted roll chain); none priced is said, never modelled.
+share, and that keeps the width check passing. Priced from the snapshot's quotes: the roll-out chains
+read for the short (v14: the next expiries after it and before the long, quoted that session), then
+the income reading's cycle monthly and covered-call expiry and any quoted roll chain, which are all an
+older snapshot has; none priced is said, never modelled.
 
 Pure: positions, history rows and snapshot fields in, the view out. Advice only.
 """
@@ -279,11 +281,18 @@ def _entry_delta(
 
 
 # --------------------------------------------------------------------------- roll candidates
-def _quoted_expiries(underlying: str, income: dict[str, Any] | None, roll_chains: dict[str, Any] | None):
+def _quoted_expiries(
+    underlying: str,
+    income: dict[str, Any] | None,
+    roll_chains: dict[str, Any] | None,
+    roll_out: dict[str, Any] | None = None,
+):
     """{expiry: [two-sided call quotes with mids]} from every quoted chain the snapshot carries for
-    the name: the income reading's cycle monthly and covered-call expiry, and any roll chain."""
+    the name: the roll-out chains read for its short (v14), first, since they are the session's own
+    quotes; then the income reading's cycle monthly and covered-call expiry, and any roll chain. A
+    strike quoted by two sources keeps the first."""
     out: dict[str, list] = defaultdict(list)
-    sources = []
+    sources = [(c["expiration"], c["options"]) for c in _wheel.roll_out_for(roll_out, underlying, "C")]
     entry = ((income or {}).get("symbols") or {}).get(underlying) if not (income or {}).get("error") else None
     if entry:
         sources.append((entry.get("expiry"), entry.get("options")))
@@ -586,9 +595,12 @@ def judge(
         "rolls": None,
     }
     if recognized and reconciled and (width_view["passes"] is False or exposure["exposed"]):
-        quotes = _quoted_expiries(underlying, snapshot.get("income"), snapshot.get("roll_chains"))
+        roll_out = snapshot.get("roll_out_chains")
+        quotes = _quoted_expiries(underlying, snapshot.get("income"), snapshot.get("roll_chains"), roll_out)
         view["rolls"] = roll_candidates(view, quotes, session, rate, cfg["roll"])
         view["rolls"]["quoted_at"] = (snapshot.get("income") or {}).get("taken_at")
+        if _wheel.roll_out_for(roll_out, underlying, "C"):
+            view["rolls"]["chains_taken_at"] = roll_out.get("taken_at")
     return view
 
 

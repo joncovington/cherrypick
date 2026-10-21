@@ -1457,7 +1457,11 @@ def _wheel_rules(
             if hit and not off("wheel.take_profit"):
                 taking.append((leg, row, price, source))
             if row["tested"] and not off("wheel.tested"):
-                cands = _wheel.roll_candidates(row, ctx.get("income"))
+                cands = _wheel.roll_candidates(
+                    row,
+                    ctx.get("income"),
+                    _wheel.roll_out_for(ctx.get("roll_out"), cycle["underlying"], row["right"]),
+                )
                 shares = cycle["shares"] if row["right"] == "C" else 0.0
                 for kind in ("net_zero", "premium_gambit"):
                     if cands.get(kind):
@@ -1496,7 +1500,13 @@ def _wheel_rules(
                     f"the {row['leg']} is tested ({row['spot']:g} at or through the strike): "
                     "roll out in time or close. "
                     + (
-                        f"Rolls to {cands['expiration']} at the previous afternoon's quotes -- "
+                        f"Rolls to {cands['expiration']} at "
+                        + (
+                            "this session's quotes"
+                            if cands.get("source")
+                            else "the previous afternoon's quotes"
+                        )
+                        + " -- "
                         + _roll_text("net-zero", cands.get("net_zero"), cands.get("net_zero_why"))
                         + "; "
                         + _roll_text(
@@ -2007,6 +2017,7 @@ def _wheel_context(
         "cycles": found,
         "income": {**entry, "taken_at": income.get("taken_at")} if entry else None,
         "bands": snapshot.get("skate_bands"),
+        "roll_out": snapshot.get("roll_out_chains"),
     }
 
 

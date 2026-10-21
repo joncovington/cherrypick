@@ -92,6 +92,21 @@ close), and today's from the same dividends over today's price. The store's raw 
 used as Dolt states it, not reconciled with the broker's. A close the store does not hold yet (a long
 bought today: bars land overnight) is simply absent, and manage says the delta at entry is unknown. A
 missing or unreadable store is `underlying_history: null` with `underlying_history_error`.
+
+Version 14 carries `roll_out_chains`: the expiries a short would be rolled OUT to. Until it, a PMCC's
+roll candidates (manage's `pmcc.width` / `pmcc.assignment`) and the wheel's tested-short rolls
+(`wheel.tested`) were priced only from what the snapshot happened to quote, in practice the income
+reading's one cycle monthly and a strangle's own expiry; a roll to next week or the month after had
+no price. Now each short a roll out in time starts from (`roll_out_anchors`: a covered call, a PMCC's
+short, a short put on a name holding no long put, within `max_short_days` of expiry) gets the next
+`expiries` listed expiries after it -- before the long's expiry for a PMCC, within `max_days` of the
+short's otherwise -- each read like `roll_chains` (`_chain_slice`: quotes and the broker's greeks,
+ROLL_STRIKES strikes a side) but centred on the short's strike, where a roll's strikes start, and kept
+to the short's right. The listing comes from the streamer's `stream_expirations` where it holds the
+name (the broker tool answers a listing from the cache's nearest expiry alone when it holds that), the
+broker's otherwise. The step is capped (`manage.roll_out` in the orchestrator config: `max_calls`
+reads, `max_seconds`), and what the cap cuts is listed in `skipped`; a failed read is an entry with
+`error`, never fatal. A snapshot without the field is read exactly as before.
 """
 
 from __future__ import annotations
@@ -110,7 +125,7 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 13
+SNAPSHOT_VERSION = 14
 # Greeks move far more slowly than a bid; the cache's are used up to this old, the feed's otherwise.
 GREEKS_MAX_AGE_SECONDS = 900.0
 # Monday reads Friday's afternoon reading; anything older is a stale book of quotes.
@@ -133,6 +148,9 @@ HEDGE_STRIKES = 60
 # Strikes either side of spot a short strangle's expiry is quoted at: an untested short rolls toward
 # the money, so the window is centred there, and 40 a side reaches a 30-delta strike on a $1 ladder.
 ROLL_STRIKES = 40
+# The streamer's listing of a name's expirations is used up to this old (it is refetched with the
+# chain); past it, or for a name the streamer does not carry, the broker is asked.
+LISTING_MAX_AGE_SECONDS = 3 * 86400
 # How far back a chain is rebuilt. A LEAPS-backed position can roll for a year; anything older than
 # this is reported as an incomplete chain rather than guessed.
 HISTORY_DAYS = 400
@@ -389,6 +407,30 @@ def short_pairs(positions: dict[str, Any]) -> list[tuple[str, str]]:
     return sorted(out)
 
 
+def _chain_slice(
+    cfg: dict[str, Any], prefer: str | None, underlying: str, expiry: str, centre: float
+) -> tuple[list[dict], Any, str | None]:
+    """One expiry of `underlying`, quoted with the broker's greeks, ROLL_STRIKES strikes either side of
+    `centre`: (option rows, the tool's quotes_complete, an error string or None). One read."""
+    argv = [
+        "get_option_chain",
+        "--symbol",
+        underlying,
+        "--expiration",
+        expiry,
+        "--include_quotes",
+        "--include_greeks",
+        "--strike_count",
+        str(ROLL_STRIKES),
+        "--around_price",
+        str(centre),
+    ]
+    payload, error = _first_answer(cfg, prefer, argv, timeout=60)
+    rows = (payload.get("chain") or {}).get(expiry) or []
+    options = [o for o in (_option_row(r) for r in rows) if o is not None]
+    return options, payload.get("quotes_complete"), error
+
+
 def roll_chains(
     cfg: dict[str, Any], positions: dict[str, Any], metrics: dict[str, dict], prefer: str | None
 ) -> dict[str, dict[str, Any]]:
@@ -404,28 +446,194 @@ def roll_chains(
                 "error": f"no {underlying} price to centre the chain on",
             }
             continue
-        argv = [
-            "get_option_chain",
-            "--symbol",
-            underlying,
-            "--expiration",
-            expiry,
-            "--include_quotes",
-            "--include_greeks",
-            "--strike_count",
-            str(ROLL_STRIKES),
-            "--around_price",
-            str(spot),
-        ]
-        payload, error = _first_answer(cfg, prefer, argv, timeout=60)
-        rows = (payload.get("chain") or {}).get(expiry) or []
-        options = [o for o in (_option_row(r) for r in rows) if o is not None]
+        options, complete, error = _chain_slice(cfg, prefer, underlying, expiry, spot)
         out[f"{underlying}|{expiry}"] = {
             **entry,
-            "quotes_complete": payload.get("quotes_complete"),
+            "quotes_complete": complete,
             "options": options,
             "error": error or (None if options else f"no quoted {underlying} strikes for {expiry}"),
         }
+    return out
+
+
+def _qty(leg: dict[str, Any]) -> float:
+    try:
+        return float(leg.get("quantity") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def roll_out_anchors(positions: dict[str, Any], session: date, max_short_days: int) -> list[dict[str, Any]]:
+    """The shorts a roll out in time starts from, nearest expiry first: each short call covered by
+    shares (a covered call) or by the name's one long call expiring later (a PMCC's shape: one long
+    and one short call of the same size, the short first), and each short put on a name holding no long
+    put (a short put; a put spread's short is rolled with its wing). Only shorts within
+    `max_short_days` of expiry: one further out is not rolled yet. A PMCC's anchor carries the long's
+    expiry, which its rolls must stay before."""
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, float]] = set()
+    for account in positions.get("accounts") or []:
+        for u in account.get("underlyings") or []:
+            name = str(u.get("underlying") or "").upper()
+            legs = [leg for leg in u.get("legs") or [] if _qty(leg)]
+            options = [leg for leg in legs if leg.get("right") in ("C", "P") and leg.get("expiration")]
+            shares = sum(_qty(leg) for leg in legs if leg.get("right") not in ("C", "P"))
+            calls = [leg for leg in options if leg["right"] == "C"]
+            long_calls = [leg for leg in calls if _qty(leg) > 0]
+            short_calls = [leg for leg in calls if _qty(leg) < 0]
+            short_puts = [leg for leg in options if leg["right"] == "P" and _qty(leg) < 0]
+            long_puts = [leg for leg in options if leg["right"] == "P" and _qty(leg) > 0]
+            picked: list[tuple[dict, str | None]] = []
+            written = -sum(_qty(leg) for leg in short_calls)
+            if short_calls and not long_calls and shares >= 100 * written - 1e-9:
+                picked += [(leg, None) for leg in short_calls]
+            elif len(long_calls) == 1 and len(short_calls) == 1:
+                lo, sh = long_calls[0], short_calls[0]
+                lexp, sexp = str(lo["expiration"])[:10], str(sh["expiration"])[:10]
+                if abs(_qty(lo) + _qty(sh)) < 1e-9 and sexp < lexp:
+                    picked.append((sh, lexp))
+            if short_puts and not long_puts:
+                picked += [(leg, None) for leg in short_puts]
+            for leg, before in picked:
+                exp = str(leg["expiration"])[:10]
+                try:
+                    days = (date.fromisoformat(exp) - session).days
+                    strike = float(leg["strike"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                key = (name, leg["right"], exp, strike)
+                if not 0 <= days <= max_short_days or key in seen:
+                    continue
+                seen.add(key)
+                out.append(
+                    {
+                        "underlying": name,
+                        "right": leg["right"],
+                        "expiration": exp,
+                        "strike": strike,
+                        "before": before,
+                    }
+                )
+    return sorted(out, key=lambda a: (a["expiration"], a["underlying"], a["right"], a["strike"]))
+
+
+def _cached_listing(underlying: str) -> list[str]:
+    """The expirations the streamer last listed for `underlying`, when it did so within
+    LISTING_MAX_AGE_SECONDS; empty otherwise. A file read, so a name the streamer carries costs no
+    listing call."""
+    path = streamcache.cache_path()
+    if not path.exists():
+        return []
+    try:
+        conn = connect_ro(path)
+    except Exception:  # noqa: BLE001 -- an unreadable cache means ask the broker instead
+        return []
+    try:
+        listed, fetched_at = streamcache.listed_expirations(conn, underlying)
+    except Exception:  # noqa: BLE001
+        return []
+    finally:
+        conn.close()
+    if not listed or fetched_at is None or time.time() - float(fetched_at) > LISTING_MAX_AGE_SECONDS:
+        return []
+    return listed
+
+
+def _broker_listing(cfg: dict[str, Any], prefer: str | None, underlying: str) -> tuple[list[str], str | None]:
+    """The broker's listed expirations for `underlying`, through the tool's chain read with no quotes.
+    The tool answers a listing from the stream cache's nearest expiry when it holds one, which is why
+    `_cached_listing` is read first."""
+    payload, error = _first_answer(
+        cfg, prefer, ["get_option_chain", "--symbol", underlying, "--strike_count", "0"]
+    )
+    return sorted(str(e)[:10] for e in (payload.get("chain") or {})), error
+
+
+def roll_out_chains(
+    cfg: dict[str, Any],
+    positions: dict[str, Any],
+    session: date,
+    prefer: str | None,
+    settings: dict[str, int],
+) -> dict[str, Any]:
+    """For each `roll_out_anchors` short, the next `expiries` listed expiries after it (before a PMCC's
+    long; within `max_days` of the short otherwise), each quoted ROLL_STRIKES strikes either side of
+    the short's strike and kept to the short's right. One listing per name (none when the stream cache
+    lists it) and one read per expiry, at most `max_calls` reads in `max_seconds`; what that cuts is in
+    `skipped`. A failed read is recorded on its entry, never fatal."""
+    n, max_days = int(settings["expiries"]), int(settings["max_days"])
+    max_calls, max_seconds = int(settings["max_calls"]), float(settings["max_seconds"])
+    out: dict[str, Any] = {
+        "expiries": n,
+        "max_days": max_days,
+        "max_calls": max_calls,
+        "taken_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "anchors": [],
+        "listings": {},
+        "chains": {},
+        "skipped": [],
+        "calls": 0,
+    }
+    started = time.monotonic()
+    listings: dict[str, list[str]] = {}
+
+    def budget_left() -> str | None:
+        if out["calls"] >= max_calls:
+            return f"over the cap of {max_calls} broker reads"
+        if time.monotonic() - started > max_seconds:
+            return f"over the {max_seconds:g}s the step may take"
+        return None
+
+    for anchor in roll_out_anchors(positions, session, int(settings["max_short_days"])):
+        name, right, sexp = anchor["underlying"], anchor["right"], anchor["expiration"]
+        record = {**anchor, "wanted": [], "read": []}
+        out["anchors"].append(record)
+        if name not in listings:
+            listed = _cached_listing(name)
+            source, error = "stream cache", None
+            if not listed:
+                why = budget_left()
+                if why:
+                    out["skipped"].append({"underlying": name, "what": "listing", "why": why})
+                    listings[name] = []
+                    out["listings"][name] = {"source": None, "count": 0, "error": why}
+                    record["why"] = why
+                    continue
+                out["calls"] += 1
+                listed, error = _broker_listing(cfg, prefer, name)
+                source = "broker"
+            listings[name] = listed
+            out["listings"][name] = {"source": source, "count": len(listed), "error": error}
+        limit = anchor["before"]
+        last = (date.fromisoformat(sexp) + timedelta(days=max_days)).isoformat()
+        wanted = [e for e in listings[name] if e > sexp and (e < limit if limit else e <= last)][:n]
+        record["wanted"] = wanted
+        if not wanted:
+            record["why"] = f"no listed expiry after {sexp}" + (
+                f" and before the long's {limit}" if limit else f" within {max_days} days of it"
+            )
+        for expiry in wanted:
+            key = f"{name}|{right}|{expiry}"
+            if key in out["chains"]:
+                record["read"].append(expiry)  # another short on the name wanted it first
+                continue
+            why = budget_left()
+            if why:
+                out["skipped"].append({"underlying": name, "right": right, "expiration": expiry, "why": why})
+                continue
+            out["calls"] += 1
+            options, complete, error = _chain_slice(cfg, prefer, name, expiry, anchor["strike"])
+            mine = [o for o in options if o["right"] == right]
+            out["chains"][key] = {
+                "underlying": name,
+                "right": right,
+                "expiration": expiry,
+                "centre": anchor["strike"],
+                "quotes_complete": complete,
+                "options": mine,
+                "error": error or (None if mine else f"no quoted {name} {right} strikes for {expiry}"),
+            }
+            record["read"].append(expiry)
     return out
 
 
@@ -698,6 +906,13 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
     greeks, greeks_error = broker_greeks(cfg, positions, prefer) if ok else ({}, None)
     orders, orders_error = working_orders(cfg, prefer) if ok else ([], None)
     chains = roll_chains(cfg, positions, metrics, prefer) if ok else {}
+    roll_out = (
+        roll_out_chains(
+            cfg, positions, date.fromisoformat(session), prefer, cfgmod.manage_settings(cfg)["roll_out"]
+        )
+        if ok
+        else None
+    )
     bands, bands_error = skate_bands(date.fromisoformat(session), symbols)
     underlying, underlying_error = underlying_history(date.fromisoformat(session), positions, history)
     return {
@@ -716,6 +931,7 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "working_orders": orders,
         "working_orders_error": orders_error,
         "roll_chains": chains,
+        "roll_out_chains": roll_out,
         "income": income_reading(date.fromisoformat(session)),
         "skate_bands": bands,
         "skate_bands_error": bands_error,
