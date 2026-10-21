@@ -35,7 +35,13 @@ export interface ScreenerLeg {
 export interface ScreenerTrade {
   side: "listed" | "cycle";
   expiry: string;
+  /** Days from the reading's own day (the session after the list) to the trade's expiry. */
   dte: number | null;
+  /** The share price in the afternoon income reading of the reading's day; null with none. The list's
+   *  own price is the evening before, and can be well away from it. */
+  spot: number | null;
+  /** The trade's short strike is already in the money at `spot`; null with no spot. */
+  shortInTheMoney: boolean | null;
   mid: number;
   working: number;
   natural: number;
@@ -91,6 +97,9 @@ export interface ScreenerRow {
    *  when that is, else (unread, or no liquid trade) the later of the two. */
   earningsExpiry: string | null;
   earnings: EarningsInCycle;
+  /** The day earnings are judged from: the reading's day the trade is priced on (the list day with no
+   *  reading). A before-the-open report on that day is already behind the trade. */
+  earningsFrom: string;
   /** When the liquidity readings were taken (regular hours, the next session); null when none. */
   readingAt: string | null;
   listedLegs: ScreenerLeg[];
@@ -115,5 +124,9 @@ export interface ScreenerPayload {
   pricesAt: string | null;
   /** Whether our rule scored this day (its broker chain was recorded). */
   scored: boolean;
+  /** The New York day of the regular-hours reading the trades are priced from; null with none. */
+  tradeDay: string | null;
+  /** When the afternoon income reading that supplies each trade's spot was taken; null with none. */
+  spotAt: string | null;
   rows: ScreenerRow[];
 }
