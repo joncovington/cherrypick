@@ -31,7 +31,7 @@ const REPLY = {
     bwb: { configured: true, enabled: true, missing: [] },
     earnings: { configured: true, enabled: false, missing: ["dolt"] },
   },
-  services: { "gex-recorder": false, "meic-sidecar": false },
+  services: { "gex-recorder": false },
   features: { advisor: true, review_narrative: true, morning_narrative: false, technicals: true },
 };
 

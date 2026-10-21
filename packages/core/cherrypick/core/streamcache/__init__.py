@@ -43,8 +43,9 @@ def cache_path(config: dict | None = None) -> Path:
     return _home.data_dir("marketdata") / CACHE_FILE
 
 
-# The schema every consumer shares. orb_ranges/stream_rest_cache are used only by MEIC's daemon today
-# but are kept here so MEIC can adopt this DDL verbatim when it migrates onto the core engine.
+# The schema every consumer shares. orb_ranges is written by packages/streamer's opening-range tracker
+# (`streamer/orb.py`) and read by MEIC. (A `stream_rest_cache` table was created here for MEIC's REST
+# sidecar until that was removed on 2026-10-18; an existing cache keeps the empty table, harmlessly.)
 # `stream_trades` carries two clocks and they are not interchangeable. `updated_at` is when this
 # process RECEIVED the event; `event_at` is when the EXCHANGE printed the trade (nullable — an event
 # without a usable time records nothing rather than borrowing the other). They agree on a live tape
@@ -93,11 +94,6 @@ CREATE TABLE IF NOT EXISTS stream_oi (
     symbol        TEXT PRIMARY KEY,
     open_interest INTEGER,
     updated_at    REAL NOT NULL
-);
-CREATE TABLE IF NOT EXISTS stream_rest_cache (
-    key         TEXT PRIMARY KEY,
-    data_json   TEXT NOT NULL,
-    updated_at  REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS stream_status (
     id                  INTEGER PRIMARY KEY CHECK (id = 1),
