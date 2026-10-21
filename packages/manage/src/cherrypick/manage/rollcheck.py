@@ -93,6 +93,22 @@ def _max_loss(
     }
 
 
+def _put_downside(legs: list[dict[str, Any]], spot: float, session: date, pr: dict) -> float | None:
+    """What the trade's put legs alone can lose from today's model value, or None with no puts.
+
+    The budget's figure for a roll on a name whose shares are held: the shares' own fall is the
+    holding's risk, not the roll's, but a short put's is the roll's, and its original cost is not kept
+    apart from the calls', so it is measured from today (as `risk.oversize`'s downside is)."""
+    puts = [leg for leg in legs if leg["quantity"] and leg.get("right") == "P"]
+    if not puts:
+        return None
+    expiries = sorted(leg["expiration"] for leg in puts)
+    horizon = max((date.fromisoformat(expiries[0]) - session).days, 0) / 365.0
+    rate = float(pr["rate"])
+    now = sum(pricing.leg_value_at(leg, spot, leg["years"], rate) for leg in puts)
+    return now - pricing.payoff_profile(puts, spot, horizon, pr)["min_value"]
+
+
 def check(
     trade: dict[str, Any],
     closes: list[dict[str, Any]],
@@ -213,14 +229,19 @@ def check(
             f"what the trade can lose grows from ${risk_before['max_loss']:,.0f} "
             f"to ${risk_after['max_loss']:,.0f}"
         )
-    # Shares behind a covered call carry their own risk, the holding's and not the roll's, so the budget
-    # is judged on option-only trades.
-    if net_liq and not shares and not risk_after["unbounded"]:
+    # Shares behind a covered call carry their own risk, the holding's and not the roll's, so with shares
+    # held the budget is judged on the short puts alone (none: nothing to judge); without, on the whole.
+    at_risk = (
+        (risk_after["max_loss"] if not risk_after["unbounded"] else None)
+        if not shares
+        else _put_downside(after, spot, session, pr)
+    )
+    if net_liq and at_risk is not None:
         budget = float(rules["risk"]["max_risk_pct"]) * net_liq
-        if risk_after["max_loss"] > budget * float(rules["risk"]["oversize_multiple"]):
+        if at_risk > budget * float(rules["risk"]["oversize_multiple"]):
             problems.append(
-                f"${risk_after['max_loss']:,.0f} at risk is {risk_after['max_loss'] / budget:.1f}x the "
-                f"${budget:,.0f} per-trade budget"
+                f"${at_risk:,.0f} at risk is {at_risk / budget:.1f}x the ${budget:,.0f} per-trade budget"
+                + (" (the short puts alone; the shares are the holding's risk)" if shares else "")
             )
 
     # ---- earnings inside the new shorts' life

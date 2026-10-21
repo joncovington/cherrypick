@@ -11,6 +11,12 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Fixed: `check-roll` skipped the per-trade budget for any trade whose shares are held.** #473
+  rightly stopped counting a covered call's shares against the roll, but dropped the budget for a
+  short put rolled on the same name too. With shares held it now judges the short puts alone,
+  measured from today's model value (as `risk.oversize` measures downside), and says so; a
+  covered-call-only roll still has nothing to judge.
+
 - **Added: the manage snapshot carries the held names' skate bands.** Snapshot v12's `skate_bands`
   is the newest skate band file at most three trading sessions behind the session, cut to the names
   the account holds and to what manage reads: the band day's close, each row's side, expiry and
