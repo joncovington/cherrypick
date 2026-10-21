@@ -323,6 +323,13 @@ def _bp_cap(book: dict[str, Any], cfg: dict[str, Any]) -> float:
     return float(cfg["max_buying_power_pct"]) if cap is None else float(cap)
 
 
+def _band_theta(reading: dict[str, Any]) -> float:
+    """The theta the band reads -- without the legs about to expire -- for the book or one name's
+    row; the whole figure on a reading written before the two were split."""
+    held = reading.get("theta_ex_front")
+    return float(held if held is not None else reading.get("theta") or 0.0)
+
+
 def if_room(
     u: dict[str, Any],
     book: dict[str, Any],
@@ -351,7 +358,7 @@ def if_room(
     else:
         level = "far_over"
     theta_hi = ((book.get("bands") or {}).get("theta") or {}).get("high")
-    theta_after = ((book.get("theta") or 0.0) + units * u["theta"]) / net_liq
+    theta_after = (_band_theta(book) + units * u["theta"]) / net_liq
     return {
         "units": units,
         "binding": binding,
@@ -384,10 +391,10 @@ def size(
     bp_cap = _bp_cap(book, cfg)
     band = (book.get("bands") or {}).get("delta") or {}
     theta_hi = ((book.get("bands") or {}).get("theta") or {}).get("high")
-    theta = book.get("theta") or 0.0
+    theta = _band_theta(book)
     bwd = book.get("bwd")
     row = next((x for x in book.get("underlyings") or [] if x["underlying"] == underlying), None)
-    name_theta = (row or {}).get("theta") or 0.0
+    name_theta = _band_theta(row or {})
     # One name's share of the theta the account may CARRY (the band's ceiling in dollars), not of
     # what it carries now: against the book as it is, the first trade in an empty book is 100% of it.
     name_theta_cap = (

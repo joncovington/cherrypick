@@ -11,6 +11,17 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed: manage's theta band leaves out the legs about to expire** (`portfolio.theta.front_dte`,
+  default 2). The band, the concentration rule's theta share and the candidates' theta ceiling and
+  name cap read theta without the option legs two days or less from expiry; the whole book's is
+  stated beside it, in the band (`raw_value`), the rule's reason and the Live → portfolio theta card.
+  On 10-20 one leg expiring the next day carried 99% of the book's theta, so the band read five times
+  over its ceiling, the concentration rule named that name at 81%, and every waiting candidate was
+  marked over the ceiling; without it the book was under the floor. Re-evaluated over every stored
+  snapshot (10-13 to 10-20): 10-20's theta REVIEW turns from over the ceiling to under the floor and
+  its concentration share from 81% to 26%; 10-14's floor REVIEW (a long leg expiring that week
+  dragging theta down) gives way to a concentration REVIEW at 26%; nothing else changes. The delta
+  band, scaled by theta, still reads the whole book's.
 - **Fixed: manage's payoff figures are whole cents.** The modelled extremes and the P&L read from
   them (max loss and gain from open, left to win and lose) carried float noise from summing
   Black-Scholes legs (`-300.00000000000364`), which every reader had to round for itself. They are

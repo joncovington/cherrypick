@@ -30,6 +30,8 @@ function reading(over: Partial<ManagePortfolio> = {}): ManagePortfolio {
     bwdDollarsPer1pct: 44.63,
     theta: 43.68,
     thetaPctNetLiq: 0.00306,
+    thetaExFront: 43.68,
+    frontDte: 2,
     vega30: -8.87,
     breakeven: { kind: "short_gamma", points: 15.22, pct: 0.01994 },
     expectedMovePct: 0.01026,
@@ -149,6 +151,14 @@ describe("PortfolioCards", () => {
     expect(html).toContain("portfolio.theta");
     expect(html).toContain("SPY −10%");
     expect(html).toContain("Traditional IRA");
+  });
+
+  it("states the theta the band reads beside the whole book's, and only the whole on an older reading", () => {
+    const split = render(<PortfolioCards p={reading({ theta: 213.02, thetaExFront: 1.63, frontDte: 2 })} />);
+    expect(split).toContain("$1.63 a day without legs 2 days or less from expiry, $213.02 with them");
+    const old = render(<PortfolioCards p={reading({ thetaExFront: null, frontDte: null })} />);
+    expect(old).toContain("$43.68 a day");
+    expect(old).not.toContain("with them");
   });
 
   it("states each guidance driver in its own unit, and a concentration driver as both shares", () => {

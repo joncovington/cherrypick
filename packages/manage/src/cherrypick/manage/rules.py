@@ -273,8 +273,18 @@ DEFAULT_RULES: dict[str, Any] = {
     "portfolio": {
         "enabled": True,
         # Theta per calendar day as a share of net liq. Above the ceiling the book is selling more
-        # gamma than the band allows; the floor only informs (theta is not edge).
-        "theta": {"enabled": True, "min_pct_nlv": 0.001, "max_pct_nlv": 0.003, "confidence": 40},
+        # gamma than the band allows; the floor only informs (theta is not edge). The band, the
+        # concentration rule and the candidates' theta cap read theta WITHOUT the option legs
+        # `front_dte` days or less from expiry: on 2026-10-20 one leg expiring the next day carried
+        # 99% of the book's theta, so the band read five times over its ceiling one day and under its
+        # floor the next. The raw figure is still stated beside it.
+        "theta": {
+            "enabled": True,
+            "min_pct_nlv": 0.001,
+            "max_pct_nlv": 0.003,
+            "front_dte": 2,
+            "confidence": 40,
+        },
         # Beta-weighted delta band in benchmark shares: -short_per_theta x theta to +long_per_theta x
         # theta (leaning slightly long). With no theta to scale by, +/- the BWD whose 1% move costs
         # `fallback_pct_nlv_per_1pct` of net liq.

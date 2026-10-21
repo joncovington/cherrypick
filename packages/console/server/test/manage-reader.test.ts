@@ -135,6 +135,8 @@ describe("readManage", () => {
       bwd_dollars_per_1pct: 44.63,
       theta: 43.68,
       theta_pct_net_liq: 0.00306,
+      front_dte: 2,
+      theta_ex_front: 40.1,
       vega_30: -8.87,
       breakeven: { kind: "short_gamma", points: 15.22, pct: 0.01994 },
       expected_move_pct: 0.01026,
@@ -241,6 +243,7 @@ describe("readManage", () => {
 
     const p = readManage(config, "2026-10-19").accounts[0]!.portfolio!;
     expect(p.bwd).toBe(5.85);
+    expect([p.theta, p.thetaExFront, p.frontDte]).toEqual([43.68, 40.1, 2]);
     expect(p.accountKind).toEqual({ marginOrCash: "Cash", typeName: "Traditional IRA" });
     expect(p.bands?.delta).toEqual({ low: -21.84, high: 32.76, basis: "theta", value: 5.85, inside: true });
     expect(p.bands?.theta.inside).toBe(false);

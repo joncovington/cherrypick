@@ -554,6 +554,10 @@ export interface ManagePortfolio {
   bwdDollarsPer1pct: number | null;
   theta: number | null;
   thetaPctNetLiq: number | null;
+  /** Theta without the option legs `frontDte` days or less from expiry: what the band, concentration
+   *  and the candidates read. Null on an evaluation from before the split (the band then read `theta`). */
+  thetaExFront: number | null;
+  frontDte: number | null;
   vega30: number | null;
   breakeven: { kind: "short_gamma" | "long_gamma"; points: number | null; pct: number | null } | null;
   expectedMovePct: number | null;

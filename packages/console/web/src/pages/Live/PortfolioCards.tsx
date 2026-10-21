@@ -163,8 +163,10 @@ function ThetaCard({ p }: { p: ManagePortfolio }) {
         <p className="muted">no band recorded</p>
       )}
       <p className="muted pf-caption">
-        {fmtMoney(p.theta)} a day · band {pctOf(band?.low ?? null)}–{pctOf(band?.high ?? null)} · theta is paid for by gamma, so
-        more is not more edge
+        {p.thetaExFront !== null && p.frontDte !== null
+          ? `${fmtMoney(p.thetaExFront)} a day without legs ${p.frontDte} days or less from expiry, ${fmtMoney(p.theta)} with them`
+          : `${fmtMoney(p.theta)} a day`}{" "}
+        · band {pctOf(band?.low ?? null)}–{pctOf(band?.high ?? null)} · theta is paid for by gamma, so more is not more edge
       </p>
     </Card>
   );

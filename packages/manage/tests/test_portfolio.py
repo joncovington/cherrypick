@@ -167,6 +167,39 @@ def test_theta_above_its_ceiling_fires_and_inside_the_band_does_not():
     )
 
 
+def test_legs_about_to_expire_are_left_out_of_the_theta_band():
+    # A short at-the-money SPY put expiring tomorrow carries a day's theta far over the ceiling; the
+    # band reads the 30-day shorts on XYZ alone, which are inside it. The whole book is still stated.
+    trades = [
+        _trade("SPY", 500.0, [_leg(-1, "P", 500.0, dte=1)]),
+        _trade("XYZ", 50.0, [_leg(-5, "P", 50.0, dte=30, iv=0.30)]),
+    ]
+    r = _read(trades, _metrics(XYZ=(1.0, 0.9)))
+    band = r["bands"]["theta"]
+    assert band["raw_value"] > band["high"] and band["low"] <= band["value"] <= band["high"]
+    assert band["inside"] is True and band["front_dte"] == 2
+    assert r["theta_ex_front"] == pytest.approx(
+        next(u for u in r["underlyings"] if u["underlying"] == "XYZ")["theta"], abs=0.01
+    )
+    assert "portfolio.theta" not in _rules_fired(r)
+    # The expiring name is no theta concentration: its share is of the theta not about to vanish.
+    spy = next(u for u in r["underlyings"] if u["underlying"] == "SPY")
+    assert spy["theta_ex_front"] == 0.0 and spy["theta_share"] == 0.0
+
+
+def test_the_theta_rule_states_both_figures_when_expiring_legs_move_it():
+    # Under the floor without the expiring leg; the reason says so and gives the whole book's too.
+    trades = [
+        _trade("SPY", 500.0, [_leg(-1, "P", 500.0, dte=1)]),
+        _trade("XYZ", 50.0, [_leg(-1, "P", 40.0, dte=45, iv=0.30)]),
+    ]
+    r = _read(trades, _metrics(XYZ=(1.0, 0.9)))
+    assert r["bands"]["theta"]["raw_value"] > r["bands"]["theta"]["high"]  # over the ceiling with it
+    fired = next(g for g in r["guidance"] if g["rule"] == "portfolio.theta")
+    assert "without the legs 2 days or less from expiry" in fired["reason"]
+    assert f"(${r['theta']:,.2f} with them)" in fired["reason"] and "floor" in fired["reason"]
+
+
 def test_delta_outside_its_band_names_the_trades_pushing_it_out():
     trades = [
         _trade("XYZ", 50.0, [_leg(300)]),
