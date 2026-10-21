@@ -41,12 +41,12 @@ surfaces, flags and bug-level fixes that land when ready.
 | 1 | Theta band | **Read without the expiring legs.** The band, the concentration rule and the candidates' theta cap read theta without legs two days or less from expiry; the raw figure is shown beside it. The band still fires its REVIEW and still caps candidates, on the figure that is not about to vanish. Done (`portfolio.theta.front_dte`, default 2). The delta band, scaled by theta, reads the same figure and is floored at the net-liq band, so thin theta never narrows it below the no-theta band. |
 | 2 | Spread construction | **Short by delta, side by direction.** The short at a target delta, starting at 0.30; a side is offered only when a direction read supports it (board count on that side; call spreads only on a short setup). The delta is set by a study over 0.20 / 0.25 / 0.30 on the local history before it lands, judged by edge after costs. |
 | 3 | Ranking and display | **Show the odds, rank by cost drag.** Each candidate shows P(loss) (≈ credit ÷ width), P(max loss) (≈ the long's delta), break-even and round-trip cost; ranked by lowest round-trip cost as a share of max loss. No drift assumption is built in. |
-| 4 | Earnings on screener lists | **Earnings in the trade fails `passes`**, as manage's candidates already refuse it. The row stays listed and says why; an unknown date is marked, not failed. |
+| 4 | Earnings on screener lists | **Earnings in the trade fails `passes`**, as manage's candidates already refuse it. The row stays listed and says why; an unknown date is marked, not failed. Found already done (2026-10-21): the own-list tab hides a trade with earnings in it by default ("No earnings in the trade", escaped by `?earnings=all`), and an unknown date stays shown, marked; the review's count read the raw list file, not the tab. `passes` stays the liquidity verdict it is. No change. |
 | 5 | Account fit on screener lists | **Badge and a "fits the account" filter**, on by default: cash-securable within buying power for a short put, shares held for a covered call. The full screen stays underneath. |
 | 6 | Credit-spreads tab | **Our own list**, built with the #2 rule over our universe and chains, as the short-put and covered-call tabs already are. Lands with or after #2. |
 | 7 | Earnings exposure | **A portfolio card and a band**: downside summed by report date, and a REVIEW when total earnings downside passes a configurable share of net liq (default 10%). |
 | 8 | Expiry concentration | **A REVIEW over a share**: one expiry's downside past a configurable share of net liq (default 20%) fires a REVIEW, and candidates prefer another expiry while it is over. |
-| 9 | Leveraged and inverse ETFs | **Badged**, not excluded, on the lists and candidates. |
+| 9 | Leveraged and inverse ETFs | **Badged**, not excluded, on the lists and candidates. Done: from the declared list skate already leaves out (`technicals/leveraged_funds.json`: leveraged, inverse, volatility); each list row carries `leveraged`, and manage's candidates are badged from the session's own list rows. |
 | 10 | A candidate on a name already held | **Stands alone, badged** when the name already has a position on the *same expiry*. |
 | 11 | Retired loops on Live → today | **Collapsed** to one "off" line when the module is disabled and nothing is open or overdue; expanded again otherwise. Done (`LiveTodayLoop.retired`; any open, working, held, orphaned or overdue item, an arm record, or an unreadable ledger keeps the full row). |
 | 12 | Snapshot older than the code | **A banner and a watchdog WARN**, no extra broker read. First agreed as a re-take on deploy, then changed (2026-10-21) on finding manage already snapshots every 30 minutes from 10:00 to 16:35 ET, so only a merge after the day's last run leaves a stale snapshot, and only until 10:00. The watchdog's `manage.snapshot_version` WARNs while the newest snapshot is older than the installed `SNAPSHOT_VERSION`; the console's manage tabs show that finding verbatim. Done. |
@@ -64,7 +64,7 @@ so no ledger restarts; the boundary is for anyone comparing suggestions across i
 2. #1 theta band (done).
 3. #11 retired loops (done).
 4. #12 stale snapshot banner and WARN (done).
-5. #4, #5, #9 on the screener lists.
+5. #4 (found done), #9 (done), #5 on the screener lists.
 6. #7, #8 earnings and expiry exposure.
 7. #10 same-expiry badge.
 8. The spread delta study, then #2 + #3 together, then #6.

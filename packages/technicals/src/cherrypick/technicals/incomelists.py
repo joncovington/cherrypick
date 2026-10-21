@@ -112,7 +112,16 @@ def earnings_state(entry: dict, session: str, expiry: str, kind: str | None) -> 
     return "clear" if er > expiry else "unknown"
 
 
-def row(sym: str, entry: dict, o: dict, expiry: str, dte: int, session: str, kind: str | None) -> dict:
+def row(
+    sym: str,
+    entry: dict,
+    o: dict,
+    expiry: str,
+    dte: int,
+    session: str,
+    kind: str | None,
+    leveraged: str | None = None,
+) -> dict:
     spot = float(entry["spot"])
     work = legbars.working_premium(o)
     basis = o["strike"] if o["right"] == "P" else spot
@@ -146,13 +155,21 @@ def row(sym: str, entry: dict, o: dict, expiry: str, dte: int, session: str, kin
         # A call written across an ex-date can be assigned early for the dividend: flagged, not modelled.
         "ex_dividend_in_trade": bool(ex and session <= ex <= expiry) if o["right"] == "C" else None,
         "iv_index": entry.get("iv_index"),
+        # `leveraged`, `inverse` or `volatility` from the declared fund list skate leaves out
+        # (`leveraged_funds.json`): a daily-reset fund decays and gaps in ways its delta does not
+        # price, so the row says so. Badged, never dropped (income review plan, item 9).
+        "leveraged": leveraged,
     }
 
 
-def build_lists(doc: dict, kinds: dict[str, str] | None = None) -> dict[str, Any]:
-    """{"lists": {list: [rows by symbol]}, "dropped": {list: {reason: count}}} from one income reading."""
+def build_lists(
+    doc: dict, kinds: dict[str, str] | None = None, leveraged: dict[str, str] | None = None
+) -> dict[str, Any]:
+    """{"lists": {list: [rows by symbol]}, "dropped": {list: {reason: count}}} from one income reading.
+    `leveraged` is {symbol: kind} for the declared leveraged, inverse and volatility funds."""
     session = str(doc.get("session") or "")
     kinds = kinds or {}
+    leveraged = leveraged or {}
     lists: dict[str, list] = {name: [] for name in LISTS}
     dropped: dict[str, dict[str, int]] = {name: {} for name in LISTS}
 
@@ -166,6 +183,7 @@ def build_lists(doc: dict, kinds: dict[str, str] | None = None) -> dict[str, Any
                 drop(name, "no chain")
             continue
         kind = kinds.get(sym)
+        lev = leveraged.get(sym) or leveraged.get(sym.replace(".", "/"))
         puts = priced(
             [o for o in entry.get("options") or [] if o.get("right") == "P"], spot, entry.get("dte")
         )
@@ -173,7 +191,7 @@ def build_lists(doc: dict, kinds: dict[str, str] | None = None) -> dict[str, Any
         if p is False:
             drop("short-puts", "no strike within the delta tolerance")
         elif p:
-            lists["short-puts"].append(row(sym, entry, p, entry["expiry"], entry["dte"], session, kind))
+            lists["short-puts"].append(row(sym, entry, p, entry["expiry"], entry["dte"], session, kind, lev))
         else:
             drop("short-puts", "no priced put out of the money")
         cc = entry.get("cc")
@@ -185,7 +203,7 @@ def build_lists(doc: dict, kinds: dict[str, str] | None = None) -> dict[str, Any
         if c is False:
             drop("covered-calls", "no strike within the delta tolerance")
         elif c:
-            r = row(sym, entry, c, cc["expiry"], cc["dte"], session, kind)
+            r = row(sym, entry, c, cc["expiry"], cc["dte"], session, kind, lev)
             r["window"] = cc.get("window")
             lists["covered-calls"].append(r)
         else:
@@ -221,7 +239,10 @@ def build(day: str | None = None, source: Path | None = None) -> dict[str, Any]:
         }
     doc = json.loads(path.read_text(encoding="utf-8"))
     session = str(doc.get("session") or path.stem[:10])
-    built = build_lists(doc, _kinds(session))
+    from .skate import leveraged_funds
+
+    lev = {s: str(f.get("kind") or "leveraged") for s, f in leveraged_funds().items()}
+    built = build_lists(doc, _kinds(session), lev)
     out = {
         "version": LIST_VERSION,
         "session": session,

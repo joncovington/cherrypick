@@ -750,7 +750,7 @@ function candidateCaps(rules: Record<string, unknown>, basis: string | null): Ma
 }
 
 /** The portfolio reading, passed through. Absent on an evaluation written before it existed. */
-function portfolio(v: unknown, rules: Record<string, unknown>): ManagePortfolio | null {
+function portfolio(v: unknown, rules: Record<string, unknown>, lev: Leveraged = NO_LEVERAGED): ManagePortfolio | null {
   const p = rec(v);
   if (Object.keys(p).length === 0) return null;
   const kind = rec(p["account_type"]);
@@ -820,7 +820,7 @@ function portfolio(v: unknown, rules: Record<string, unknown>): ManagePortfolio 
     vix: num(p["vix"]),
     scenarios: scenarios(p["scenarios"]),
     ladder: ladder(p["ladder"]),
-    candidates: candidates(p["candidates"], rules),
+    candidates: candidates(p["candidates"], rules, lev),
     brokerCheck: brokerCheck(p["broker_check"]),
   };
 }
@@ -850,7 +850,7 @@ function brokerCheck(v: unknown): ManageBrokerCheck | null {
   };
 }
 
-function candidate(v: unknown): ManageCandidate {
+function candidate(v: unknown, lev: Leveraged = NO_LEVERAGED): ManageCandidate {
   const c = rec(v);
   const pu = rec(c["per_unit"]);
   return {
@@ -885,7 +885,8 @@ function candidate(v: unknown): ManageCandidate {
     thetaPerBp: num(c["theta_per_bp"]),
     earningsDate: str(c["earnings_date"]),
     earningsUnknown: c["earnings_unknown"] === true,
-    alternative: c["alternative"] ? candidate(c["alternative"]) : null,
+    alternative: c["alternative"] ? candidate(c["alternative"], lev) : null,
+    leveraged: lev.get(str(c["underlying"]) ?? "") ?? null,
     ifRoom: c["if_room"] ? candidateRoom(c["if_room"]) : null,
   };
 }
@@ -907,7 +908,7 @@ function candidateRoom(v: unknown): ManageCandidateRoom {
   };
 }
 
-function candidates(v: unknown, rules: Record<string, unknown>): ManageCandidates | null {
+function candidates(v: unknown, rules: Record<string, unknown>, lev: Leveraged = NO_LEVERAGED): ManageCandidates | null {
   if (v === null || v === undefined) return null;
   const c = rec(v);
   const excluded: Record<string, number> = {};
@@ -921,11 +922,11 @@ function candidates(v: unknown, rules: Record<string, unknown>): ManageCandidate
     accountBasis: str(c["account_basis"]),
     names: num(c["names"]),
     excluded,
-    fits: arr(c["fits"]).map(candidate),
+    fits: arr(c["fits"]).map((x) => candidate(x, lev)),
     fitsTotal: num(c["fits_total"]) ?? 0,
-    tooBig: arr(c["too_big"]).map(candidate),
+    tooBig: arr(c["too_big"]).map((x) => candidate(x, lev)),
     tooBigTotal: num(c["too_big_total"]) ?? 0,
-    waiting: arr(c["waiting"]).map(candidate),
+    waiting: arr(c["waiting"]).map((x) => candidate(x, lev)),
     waitingTotal: num(c["waiting_total"]) ?? 0,
     bpUsedPct: num(c["bp_used_pct"]),
     bpCapPct: num(c["bp_cap_pct"]),
@@ -980,7 +981,7 @@ function ladder(v: unknown): ManageLadder | null {
   };
 }
 
-function account(v: unknown, rules: Record<string, unknown>): ManageAccount {
+function account(v: unknown, rules: Record<string, unknown>, lev: Leveraged = NO_LEVERAGED): ManageAccount {
   const a = rec(v);
   const counts: Partial<Record<ManageAction, number>> = {};
   for (const [k, n] of Object.entries(rec(a["counts"]))) {
@@ -1000,7 +1001,7 @@ function account(v: unknown, rules: Record<string, unknown>): ManageAccount {
       const e = rec(raw);
       return { underlying: str(e["underlying"]) ?? "?", legs: num(e["legs"]) ?? 0, reason: str(e["reason"]) ?? "" };
     }),
-    portfolio: portfolio(a["portfolio"], rules),
+    portfolio: portfolio(a["portfolio"], rules, lev),
     wheel: wheel(a["wheel"]),
     pmcc: pmcc(a["pmcc"]),
   };
@@ -1013,6 +1014,26 @@ function snapshotStale(config: ConsoleConfig): string | null {
   const findings = arr(rec(readJson(config.paths.watchdogLast))["findings"]);
   const f = findings.map(rec).find((x) => x["key"] === "manage.snapshot_version");
   return f && f["status"] === "WARN" ? str(f["message"]) : null;
+}
+
+/** {symbol: leveraged | inverse | volatility}: the badge technicals' income lists carry from the
+ *  declared fund list (`leveraged_funds.json`), for the session's own lists. A candidate is badged
+ *  from the same declaration the Screeners tabs show, never a second list. Empty when the session
+ *  has no lists, or they were built before the badge. */
+type Leveraged = ReadonlyMap<string, string>;
+const NO_LEVERAGED: Leveraged = new Map();
+
+function leveragedFor(config: ConsoleConfig, session: string): Leveraged {
+  const doc = rec(readJson(path.join(config.paths.technicalsDir ?? "", "income-lists", `${session}.json`)));
+  const out = new Map<string, string>();
+  for (const rows of Object.values(rec(doc["lists"]))) {
+    for (const r of arr(rows).map(rec)) {
+      const sym = str(r["symbol"]);
+      const kind = str(r["leveraged"]);
+      if (sym !== null && kind !== null) out.set(sym, kind);
+    }
+  }
+  return out;
 }
 
 export function readManage(config: ConsoleConfig, session?: string): ManagePayload {
@@ -1053,7 +1074,7 @@ export function readManage(config: ConsoleConfig, session?: string): ManagePaylo
     rulesSource: str(doc["rules_source"]),
     ruleWarnings: strs(doc["rule_warnings"]),
     rules: Object.keys(rec(doc["rules"])).length ? rec(doc["rules"]) : null,
-    accounts: arr(doc["accounts"]).map((a) => account(a, rec(doc["rules"]))),
+    accounts: arr(doc["accounts"]).map((a) => account(a, rec(doc["rules"]), leveragedFor(config, wanted))),
     snapshotStale: newest ? snapshotStale(config) : null,
   };
 }

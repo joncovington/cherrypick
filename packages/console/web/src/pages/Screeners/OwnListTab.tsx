@@ -233,6 +233,14 @@ export function OwnListTab({ list }: { list: IncomeList }) {
                   <td>
                     {r.symbol}
                     {r.type && r.type !== "Stock" ? <span className="muted"> · {r.type === "Exchange Traded Fund" ? "fund" : r.type}</span> : null}
+                    {r.leveraged ? (
+                      <span
+                        className="chip"
+                        title="A daily-reset fund (the declared leveraged, inverse and volatility list): it decays and gaps in ways its delta does not price"
+                      >
+                        {r.leveraged}
+                      </span>
+                    ) : null}
                   </td>
                   <td className="num">{money(r.spot)}</td>
                   <td>

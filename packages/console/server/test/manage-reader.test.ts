@@ -381,6 +381,26 @@ describe("readManage", () => {
     expect(bare.candidates!.caps).toBeNull();
   });
 
+  it("badges a candidate from the session's own income lists, and none without them", () => {
+    const doc = evalDoc("2026-10-19");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    const cand = (u: string) => ({ underlying: u, kind: "put_spread", legs: [], units: 0, per_unit: {} });
+    acct["portfolio"] = { benchmark: "SPY", candidates: { fits: [], too_big: [], waiting: [cand("TSLL"), cand("SLV")] } };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    const tech = path.join(tmp, "technicals");
+    config = { paths: { manageDir: path.join(tmp, "manage"), technicalsDir: tech } } as unknown as ConsoleConfig;
+    const none = readManage(config).accounts[0]!.portfolio!.candidates!.waiting;
+    expect(none.map((c) => c.leveraged)).toEqual([null, null]);
+    fs.mkdirSync(path.join(tech, "income-lists"), { recursive: true });
+    const lists = { "short-puts": [{ symbol: "TSLL", leveraged: "leveraged" }, { symbol: "SLV", leveraged: null }], "covered-calls": [] };
+    fs.writeFileSync(path.join(tech, "income-lists", "2026-10-19.json"), JSON.stringify({ lists }));
+    const badged = readManage(config).accounts[0]!.portfolio!.candidates!.waiting;
+    expect(badged.map((c) => [c.underlying, c.leveraged])).toEqual([
+      ["TSLL", "leveraged"],
+      ["SLV", null],
+    ]);
+  });
+
   it("an evaluation written before the wheel view has no wheel, never an empty one", () => {
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-14.json"), JSON.stringify(evalDoc("2026-10-14")));
     const a = readManage(config).accounts[0]!;
