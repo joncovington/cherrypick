@@ -23,6 +23,14 @@ beyond the latest release.
   alone, and SPY, QQQ, IWM, TLT and the sector funds are judged apart, under `reference`
   (`liquidity.reference_tradable`), as the income run already reads them. The 32 that pass the same
   test tonight are now banded, quoted and scored like any other fund.
+- **Added: manage's wheel rules.** On a wheel cycle that reconciles, `wheel.take_profit` (confidence
+  80) buys a short back once its mark is at or under its buy-to-close (the resting order's price, else
+  $0.03, $0.05 on a wide market); `wheel.tested` (50) says roll or close when the price reaches the
+  strike, with the net-zero and premium-gambit rolls priced on the snapshot's quoted monthly and each
+  judged by `check-roll`; `wheel.next_leg` (50) names the covered call at the skate call band once an
+  assignment has delivered shares (from snapshot v12's bands), and names no strike when they are missing. They rank
+  with every other rule by action, so a stop or close still outranks the wheel's roll. An unreconciled
+  cycle gets only a review saying so. `check-roll` now counts shares held behind a covered call.
 - **Changed: the stock universe and the report's sectors no longer depend on the vendor.** The
   universe harvest adds every stock with a median of at least 10,000 option contracts a day at
   OCC over the last 20 sessions (101 new candidates on 2026-10-19; membership is still decided by

@@ -191,11 +191,13 @@ def evaluate_trade(
     chain: dict[str, Any] | None = None,
     seen: dict[str, Any] | None = None,
     roll_chains: dict[str, Any] | None = None,
+    wheel_ctx: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """`chain`, when the broker history reconciled one, sets the basis: the chain's net cash across its
     opening order and every roll, not the open legs' average prices. `seen` is the earnings trades the
     previous evaluation found (`earnings_trade`). `roll_chains` is the snapshot's quoted chains, keyed
-    "<UNDERLYING>|<expiry>", that a strangle's untested side is rolled along."""
+    "<UNDERLYING>|<expiry>", that a strangle's untested side is rolled along. `wheel_ctx` is the wheel
+    cycles holding this trade's legs (`_wheel_context`), which the wheel rules read."""
     metrics = metrics or {}
     spot = _f(metrics.get("last"))
     pr = rules["pricing"]
@@ -234,6 +236,7 @@ def evaluate_trade(
         "long_vertical": None,
         "fly_off": None,
         "untested_roll": None,
+        "wheel": None,
         "fired": [],
         "exit_levels": {},
     }
@@ -885,6 +888,10 @@ def evaluate_trade(
                 )
             )
 
+    # ---- a wheel cycle's shorts and shares (wheel.py): ranked with every other rule by action
+    if wheel_ctx:
+        fired += _wheel_rules(trade, legs, wheel_ctx, session, net_liq, metrics, rules, off)
+
     # ---- an earnings trade holds through the report and closes after the call
     et = trade["earnings_trade"]
     if et and not off("earnings_trade"):
@@ -921,7 +928,7 @@ def evaluate_trade(
 # The rule families an earnings trade's report outranks: closing, taking profit and rolling wait for
 # the call. Safety (expiry and assignment, ex-dividend), sizing and unpriced legs never wait, except
 # the expiry close when the trade comes off after the call before its legs expire.
-HELD_FOR_EARNINGS = {"credit", "debit", "directional", "legs", "roll"}
+HELD_FOR_EARNINGS = {"credit", "debit", "directional", "legs", "roll", "wheel"}
 
 # A report before the open: the broker spells it BTO, most calendars BMO.
 BEFORE_OPEN = {"BTO", "BMO"}
@@ -1296,6 +1303,240 @@ def _naked_put_roll(
     }
 
 
+def _wheel_check(
+    trade: dict[str, Any],
+    leg: dict[str, Any],
+    roll: dict[str, Any],
+    expiration: str,
+    session: date,
+    net_liq: float | None,
+    metrics: dict[str, Any],
+    rules: dict[str, Any],
+    shares: float,
+) -> dict[str, Any]:
+    """One wheel roll candidate as check-roll judges it, and the order a person would enter."""
+    from cherrypick.manage import rollcheck as _rollcheck  # rollcheck reads this module's helpers
+
+    q = leg["quantity"]
+    new = roll["open"]
+    text = [
+        f"BTC {abs(q):g} {leg['expiration']} {leg['strike']:g}{leg['right']} @ {roll['close_price']:.2f}",
+        f"STO {abs(q):g} {expiration} {new['strike']:g}{leg['right']} @ {new['mid']:.2f} "
+        f"(quoted {new['bid']:.2f}/{new['ask']:.2f})",
+    ]
+    out = {**roll, "expiration": expiration, "legs": text, "check": None, "check_error": None}
+    if not trade.get("spot"):
+        out["check_error"] = "no price for the underlying"
+        return out
+    try:
+        out["check"] = _rollcheck.check(
+            trade,
+            [
+                {
+                    **{k: leg[k] for k in ("expiration", "strike", "right")},
+                    "quantity": q,
+                    "price": roll["close_price"],
+                }
+            ],
+            [
+                {
+                    "quantity": q,
+                    "expiration": expiration,
+                    "strike": new["strike"],
+                    "right": leg["right"],
+                    "price": new["mid"],
+                }
+            ],
+            session=session,
+            spot=trade["spot"],
+            rules=rules,
+            net_liq=net_liq,
+            earnings_date=metrics.get("earnings_date"),
+            shares=shares,
+        )
+    except ValueError as exc:
+        out["check_error"] = str(exc)
+    return out
+
+
+def _roll_text(kind: str, r: dict[str, Any] | None, why: str | None) -> str:
+    if not r:
+        return f"{kind}: none ({why or 'not priced'})"
+    verdict = (r.get("check") or {}).get("verdict") or f"unchecked ({r.get('check_error')})"
+    return f"{kind}: {'; '.join(r['legs'])}, {r['net']:+.2f} a share, check-roll {verdict}"
+
+
+def _wheel_rules(
+    trade: dict[str, Any],
+    legs: list[dict[str, Any]],
+    ctx: dict[str, Any],
+    session: date,
+    net_liq: float | None,
+    metrics: dict[str, Any],
+    rules: dict[str, Any],
+    off,
+) -> list[dict[str, Any]]:
+    """The wheel rules on one trade: buy a short back at its buy-to-close price, roll or close a tested
+    short, and name the covered call once an assignment has delivered shares.
+
+    They fire into the trade's own list and are ranked with every other rule by action (PRIORITY), so
+    a stop, a breached-strike close or the expiry close still outranks the wheel's roll, and a credit
+    roll (roll.naked_put) is still offered in a close's place. A cycle that does not reconcile gets no
+    wheel rule at all, only a review saying so: its money and quantities are not to be acted on.
+    """
+    wr = rules["wheel"]
+    by_symbol = {_leg_symbol(leg): leg for leg in legs}
+    fired: list[dict[str, Any]] = []
+    notes: list[dict[str, Any]] = []
+    for item in ctx["cycles"]:
+        cycle = item["cycle"]
+        note: dict[str, Any] = {
+            "underlying": cycle["underlying"],
+            "start": cycle["start"],
+            "status": cycle["status"],
+        }
+        notes.append(note)
+        if not cycle["reconciled"]:
+            note["problems"] = cycle["problems"]
+            fired.append(
+                _fire(
+                    "wheel_data",
+                    REVIEW,
+                    None,
+                    f"the wheel cycle from {cycle['start']} does not reconcile ("
+                    + "; ".join(cycle["problems"][:3])
+                    + "): no wheel rule judged; check it by hand",
+                )
+            )
+            continue
+        note.update(take_profit=[], rolls=[], next_leg=None)
+        taking, tested = [], []
+        for row in item["today"]:
+            leg = by_symbol.get(row["symbol"])
+            if leg is None or leg["quantity"] >= 0:
+                continue
+            tp = wr["take_profit"]
+            price, source = row.get("btc_price"), "the resting buy-to-close"
+            if price is None:
+                wide = bool(row.get("wide"))
+                price = float(tp["btc_price_illiquid"] if wide else tp["btc_price"])
+                source = "the default for a wide market" if wide else "the default"
+            hit = row["mid"] is not None and row["mid"] <= price + 1e-9
+            note["take_profit"].append(
+                {"leg": row["leg"], "mid": row["mid"], "btc_price": price, "source": source, "hit": hit}
+            )
+            if hit and not off("wheel.take_profit"):
+                taking.append((leg, row, price, source))
+            if row["tested"] and not off("wheel.tested"):
+                cands = _wheel.roll_candidates(row, ctx.get("income"))
+                shares = cycle["shares"] if row["right"] == "C" else 0.0
+                for kind in ("net_zero", "premium_gambit"):
+                    if cands.get(kind):
+                        cands[kind] = _wheel_check(
+                            trade,
+                            leg,
+                            cands[kind],
+                            cands["expiration"],
+                            session,
+                            net_liq,
+                            metrics,
+                            rules,
+                            shares,
+                        )
+                note["rolls"].append({"leg": row["leg"], **cands})
+                tested.append((leg, row, cands))
+        if taking:
+            fired.append(
+                _fire(
+                    "wheel.take_profit",
+                    TAKE_PROFIT,
+                    wr["take_profit"]["confidence"],
+                    "; ".join(
+                        f"the {row['leg']} is marked {row['mid']:.2f}, at or under its {price:.2f} "
+                        f"buy-to-close ({source}): buy it back, nothing is left to earn"
+                        for _, row, price, source in taking
+                    ),
+                    [leg["label"] for leg, *_ in taking],
+                )
+            )
+            trade.setdefault("leg_orders", {})["wheel.take_profit"] = _order([leg for leg, *_ in taking])
+        if tested:
+            parts = []
+            for _, row, cands in tested:
+                parts.append(
+                    f"the {row['leg']} is tested ({row['spot']:g} at or through the strike): "
+                    "roll out in time or close. "
+                    + (
+                        f"Rolls to {cands['expiration']} at the previous afternoon's quotes -- "
+                        + _roll_text("net-zero", cands.get("net_zero"), cands.get("net_zero_why"))
+                        + "; "
+                        + _roll_text(
+                            "premium gambit", cands.get("premium_gambit"), cands.get("premium_gambit_why")
+                        )
+                        if cands.get("expiration")
+                        else f"No roll priced: {cands.get('why')}"
+                    )
+                )
+            fired.append(
+                _fire(
+                    "wheel.tested",
+                    ROLL_OR_CLOSE,
+                    wr["tested"]["confidence"],
+                    " | ".join(parts),
+                    [leg["label"] for leg, *_ in tested],
+                )
+            )
+            trade.setdefault("leg_orders", {})["wheel.tested"] = _order([leg for leg, *_ in tested])
+        if item["holds_shares"] and cycle["assignments"] >= 1 and not off("wheel.next_leg"):
+            written = sum(
+                -o["quantity"]
+                for o in cycle["open_options"]
+                if o["quantity"] < 0 and (_wheel.occ(o["symbol"]) or {}).get("right") == "C"
+            )
+            free = cycle["shares"] - pricing.MULTIPLIER * written
+            if free >= pricing.MULTIPLIER:
+                nl = _wheel.next_leg(
+                    cycle,
+                    ctx.get("bands"),
+                    ctx.get("income"),
+                    trade["spot"],
+                    session,
+                    str(wr["next_leg"]["band"]),
+                )
+                nl["contracts"] = int(free // pricing.MULTIPLIER)
+                note["next_leg"] = nl
+                if nl["strike"] is not None:
+                    q = nl["quote"]
+                    what = (
+                        f"sell {nl['contracts']} {nl['expiration']} {nl['strike']:g}C, the first quoted "
+                        f"strike at or above the {nl['band_kind']} call band ({nl['band']:.2f}), "
+                        f"{q['mid']:.2f} at the previous afternoon's mid"
+                    )
+                elif nl["band"] is not None:
+                    what = (
+                        f"sell {nl['contracts']} {nl['expiration']} call(s) at the first listed strike at or "
+                        f"above the {nl['band_kind']} call band ({nl['band']:.2f}); "
+                        "no quote for that expiry in the snapshot"
+                    )
+                else:
+                    what = f"the covered call's strike comes from the skate call band: {nl['why']}"
+                if nl.get("below_wheel_basis"):
+                    what += (
+                        f"; it sits under the {cycle['wheel_basis']:.2f} wheel basis, "
+                        "so a call-away there loses"
+                    )
+                fired.append(
+                    _fire(
+                        "wheel.next_leg",
+                        REVIEW,
+                        wr["next_leg"]["confidence"],
+                        f"{free:g} shares delivered by assignment are not written against: {what}",
+                    )
+                )
+    trade["wheel"] = notes
+    return fired
+
+
 def _price_levels(trade: dict[str, Any], legs: list[dict[str, Any]]) -> None:
     """Each exit level's close value as the net price a person would enter (per unit of the trade)."""
     if not legs or not all(leg["right"] for leg in legs):
@@ -1560,18 +1801,62 @@ def _wheel_view(
         )
     except Exception as exc:  # noqa: BLE001 -- the wheel view is a reading; the evaluation is the product
         return {"cycles": [], "error": f"wheel view failed: {type(exc).__name__}: {exc}"[:300]}
+    view["error"] = None
+    _link_wheel(view, trades)
+    return view
+
+
+def _wheel_symbols(cycle: dict[str, Any]) -> list[str]:
+    """The position symbols a running cycle holds: its open options, and its shares by ticker."""
+    if cycle.get("end") is not None:
+        return []
+    return [o["symbol"] for o in cycle["open_options"]] + ([cycle["underlying"]] if cycle["shares"] else [])
+
+
+def _leg_symbol(leg: dict[str, Any]) -> str:
+    sym = " ".join(str(leg.get("symbol") or "").split())
+    return sym if leg.get("right") else sym.upper()
+
+
+def _link_wheel(view: dict[str, Any], trades: list[dict[str, Any]]) -> None:
+    """Name, on each cycle, the evaluated trades that hold its legs."""
     held_by: dict[str, set[str]] = {}
     for t in trades:
         for leg in t["legs"]:
-            sym = " ".join(str(leg.get("symbol") or "").split())
-            held_by.setdefault(sym if leg.get("right") else sym.upper(), set()).add(t.get("trade_id"))
+            held_by.setdefault(_leg_symbol(leg), set()).add(t.get("trade_id"))
+    for cycle in view.get("cycles") or []:
+        cycle["trade_ids"] = sorted({tid for s in _wheel_symbols(cycle) for tid in held_by.get(s, ()) if tid})
+
+
+def _wheel_context(
+    view: dict[str, Any] | None, group: list[dict[str, Any]], snapshot: dict[str, Any], underlying: str
+) -> dict[str, Any] | None:
+    """What the wheel rules need for one trade: each running cycle holding any of its legs, the
+    cycle's day-check rows for the shorts in this trade, and whether the trade holds its shares."""
+    if not view or not view.get("cycles"):
+        return None
+    mine = {_leg_symbol(leg) for leg in group}
+    found = []
     for cycle in view["cycles"]:
-        syms = [o["symbol"] for o in cycle["open_options"]] + (
-            [cycle["underlying"]] if cycle["shares"] else []
+        held = set(_wheel_symbols(cycle)) & mine
+        if not held:
+            continue
+        found.append(
+            {
+                "cycle": cycle,
+                "today": [row for row in cycle.get("today") or [] if row["symbol"] in held],
+                "holds_shares": cycle["underlying"] in held,
+            }
         )
-        cycle["trade_ids"] = sorted({tid for s in syms for tid in held_by.get(s, ()) if tid})
-    view["error"] = None
-    return view
+    if not found:
+        return None
+    income = snapshot.get("income") or {}
+    entry = (income.get("symbols") or {}).get(underlying) if not income.get("error") else None
+    return {
+        "cycles": found,
+        "income": {**entry, "taken_at": income.get("taken_at")} if entry else None,
+        "bands": snapshot.get("skate_bands"),
+    }
 
 
 # --------------------------------------------------------------------------- the whole snapshot
@@ -1593,6 +1878,18 @@ def evaluate(
         net_liq = _f(balances.get("net_liquidating_value"))
         trades = []
         excluded = []
+        # The wheel view first: its cycles are a pure reading of the history, and the wheel rules judge
+        # each trade holding a cycle's legs alongside every other rule.
+        wheel_view = _wheel_view(
+            account,
+            len(positions.get("accounts") or []),
+            history,
+            history_ok,
+            session,
+            metrics,
+            snapshot,
+            trades,
+        )
         for u in account.get("underlyings") or []:
             legs, dropped = _without_excluded(u, session, rules)
             if dropped:
@@ -1617,6 +1914,7 @@ def evaluate(
                     chain,
                     snapshot.get("earnings_trades_seen"),
                     snapshot.get("roll_chains"),
+                    _wheel_context(wheel_view, group, snapshot, u["underlying"]),
                 )
                 trade["trade_id"] = u["underlying"] if len(groups) == 1 else f"{u['underlying']}#{i + 1}"
                 trades.append(trade)
@@ -1645,16 +1943,7 @@ def evaluate(
             # The broker tool's day list is for its designated account, the one manage evaluates.
             snapshot.get("working_orders"),
         )
-        wheel_view = _wheel_view(
-            account,
-            len(positions.get("accounts") or []),
-            history,
-            history_ok,
-            session,
-            metrics,
-            snapshot,
-            trades,
-        )
+        _link_wheel(wheel_view, trades)
         accounts.append(
             {
                 "account": account.get("account"),

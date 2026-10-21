@@ -52,8 +52,9 @@ def _key(leg: dict[str, Any]) -> tuple:
     return (leg["expiration"], float(leg["strike"]), leg["right"])
 
 
-def _net_short_runs(legs: list[dict[str, Any]]) -> list[str]:
-    """Strike ranges where the trade is short more contracts of a right than it owns (any expiry)."""
+def _net_short_runs(legs: list[dict[str, Any]], shares: float = 0.0) -> list[str]:
+    """Strike ranges where the trade is short more contracts of a right than it owns (any expiry).
+    Shares held cover calls, 100 to a contract, at every strike."""
     out = []
     for right in ("C", "P"):
         by_strike: dict[float, float] = {}
@@ -61,7 +62,7 @@ def _net_short_runs(legs: list[dict[str, Any]]) -> list[str]:
             if leg["right"] == right and leg["quantity"]:
                 by_strike[leg["strike"]] = by_strike.get(leg["strike"], 0.0) + leg["quantity"]
         strikes = sorted(by_strike) if right == "C" else sorted(by_strike, reverse=True)
-        running, start = 0.0, None
+        running, start = (shares / pricing.MULTIPLIER if right == "C" else 0.0), None
         for k in strikes:
             running += by_strike[k]
             if running < 0 and start is None:
@@ -74,10 +75,18 @@ def _net_short_runs(legs: list[dict[str, Any]]) -> list[str]:
     return out
 
 
-def _max_loss(legs: list[dict[str, Any]], spot: float, cost: float, session: date, pr: dict) -> dict:
+def _max_loss(
+    legs: list[dict[str, Any]], spot: float, cost: float, session: date, pr: dict, shares: float = 0.0
+) -> dict:
     expiries = sorted(leg["expiration"] for leg in legs if leg["quantity"])
     horizon = max((date.fromisoformat(expiries[0]) - session).days, 0) / 365.0
-    prof = pricing.payoff_profile([leg for leg in legs if leg["quantity"]], spot, horizon, pr)
+    held = [leg for leg in legs if leg["quantity"]]
+    if shares:
+        # The shares are valued from today's price, so `cost` (the options' basis) still measures the
+        # change: a covered call's loss is bounded by the shares falling to the grid's floor.
+        held.append({"quantity": shares, "right": None, "years": 0.0})
+        cost += shares * spot
+    prof = pricing.payoff_profile(held, spot, horizon, pr)
     return {
         "max_loss": -(prof["min_value"] - cost),
         "unbounded": prof["unbounded_low"] or prof["unbounded_high"],
@@ -94,6 +103,7 @@ def check(
     rules: dict[str, Any],
     net_liq: float | None = None,
     earnings_date: str | None = None,
+    shares: float = 0.0,
 ) -> dict[str, Any]:
     pr = rules["pricing"]
     rate = float(pr["rate"])
@@ -167,7 +177,7 @@ def check(
         )
 
     # ---- coverage
-    runs_before, runs_after = _net_short_runs(before), _net_short_runs(after)
+    runs_before, runs_after = _net_short_runs(before, shares), _net_short_runs(after, shares)
     naked_puts_before = any("uncovered" in r and " P " in r for r in runs_before)
     for run in runs_after:
         if "uncovered" not in run:
@@ -194,8 +204,8 @@ def check(
             )
 
     # ---- risk before and after
-    risk_before = _max_loss(before, spot, cost_before, session, pr)
-    risk_after = _max_loss(after, spot, cost_after, session, pr)
+    risk_before = _max_loss(before, spot, cost_before, session, pr, shares)
+    risk_after = _max_loss(after, spot, cost_after, session, pr, shares)
     if risk_after["unbounded"]:
         problems.append("after the roll the modelled loss is unbounded")
     elif risk_after["max_loss"] > risk_before["max_loss"] * 1.10 + 1:
@@ -203,7 +213,9 @@ def check(
             f"what the trade can lose grows from ${risk_before['max_loss']:,.0f} "
             f"to ${risk_after['max_loss']:,.0f}"
         )
-    if net_liq and not risk_after["unbounded"]:
+    # Shares behind a covered call carry their own risk, the holding's and not the roll's, so the budget
+    # is judged on option-only trades.
+    if net_liq and not shares and not risk_after["unbounded"]:
         budget = float(rules["risk"]["max_risk_pct"]) * net_liq
         if risk_after["max_loss"] > budget * float(rules["risk"]["oversize_multiple"]):
             problems.append(

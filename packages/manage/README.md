@@ -128,6 +128,9 @@ presenter who cuts losers rather than the one who repairs them, and checked agai
 | `legs.long_vertical` | a butterfly's (broken-wing, broken-heart) long spread worth 90% of its width: sell it, keeping the short spread; never inside the expiry window, where the whole trade closes | close legs | 50 | the tastylive Options Strategy Guide (2023): "we sell out of it to retain that value and either hold the credit spread, or manipulate the trade into something else like an iron condor" | No outside test. What is left is a short spread, and the explanation says what it costs to buy back and how wide it is |
 | `roll.fly_off` | a broken-wing butterfly opened for a net credit: buy the wing that makes it a plain butterfly, sell the wide one, when that costs no more than the credit; not inside the expiry window | review | 55 | the strategy guide: "our initial goal with BWBs is to remove risk by rolling into a symmetrical butterfly … for a debit less than the initial credit received" | No outside test. The new wing is modelled at an IV read between the body's and the old wing's, so the debit is an estimate: re-quote, and check the strike is listed |
 | `roll.untested_side` | **off by default since 2026-10-20** (the same local study; `"roll": {"untested_side": {"enabled": true}}` turns it on). A short strangle or straddle tested (one short at 0.40 delta or more, the other under 0.30): roll the untested short toward the money, same expiry, to the listed strike nearest 0.30 delta, for at least 0.10 a share at the quoted mids. It never passes the tested strike (a strangle may become a straddle, no more): **an inverted strangle always ranks below closing or rolling out in time without the inversion** (your rule, 2026-10-19), so an inverting roll, which is every in-expiry roll of a straddle's untested side, is never proposed. It is recorded as `untested_roll.inversion`, ranked last | review; roll for credit in place of the short-leg buy-back when that names the untested leg | 50 | the strategy guide: "we can roll the other untested side closer to the tested side to pick up additional credit and reduce the delta" | No outside test. It is repair, which this ruleset otherwise avoids, so it never replaces a stop or a close. Strikes and mids are the snapshot's `roll_chains` (v11): one quoted chain read per expiry holding a short put and call. On a naked strangle the risk-budget review (60) heads the recommendation and the roll is named beside it |
+| `wheel.take_profit` | a wheel cycle's short marked at or under its buy-to-close: the resting order's price, else $0.03 ($0.05 on a wide market). Buys back the short alone, never the shares | take profit | 80 | the skate method (Passarelli, Ep73): a GTC buy-to-close at $0.03, $0.05 if illiquid, placed right after the fill | None tested; mechanically there is nothing left to earn at a few cents, as with `legs.short_take_profit` |
+| `wheel.tested` | a wheel cycle's short at or through its strike: roll out in time or close. Priced: the **net-zero** roll (buy back at the mid, sell on the quoted monthly the strike furthest out whose mid pays for it; a put's strike capped at old strike + original premium − buy-back) and the **premium gambit** (the buy-back rests at the original sale price, the same strike sold on the monthly). Each judged by `check-roll`; neither moves toward the money | roll or close | 50 | the skate method: losers are rolled "99% of the time"; the strike cap is thetagang's | Mixed: rolling tested short puts beat holding them in tastylive's studies; repairing defined-risk spreads did not. Repair, which this ruleset otherwise avoids, so a close outranks it |
+| `wheel.next_leg` | shares delivered by an assignment and not yet written against: the covered call at the skate call band (`band`: fixed or by_expiry) moved to today's price, on the quoted monthly, the first quoted strike at or above it; flagged when under the wheel basis. Without bands in the snapshot it names no strike and says so | review | 50 | the skate method: calls at or above the upper band | The 2026-10-18 study: the band matches delta on average and does not beat it |
 | `ex_dividend` | ITM short call over a declared ex-date with time value < the dividend | review | 80 | vendor | Confirmed by option theory; in practice often not exercised |
 | `risk.oversize` | modelled downside > 3× (2% of net liq) | review | 60 | vendor's 2%-per-trade rule | Direction supported (fractional Kelly); the numbers are convention |
 | `directional.take_profit` | a `directional` trade (net premium under ¼ of its modelled max loss) at half its modelled max gain, capped at 1× its risk | take profit | 65 | our rule, 2026-10-13: a percentage of a small premium measures nothing | No outside test |
@@ -170,8 +173,7 @@ a report. When the roll is not taken, the explanation says which condition stopp
 Each evaluation also follows every wheel on the account (`wheel.py`, [docs/skate-plan.md](../../docs/skate-plan.md)
 step 5): a cash-secured put, the shares it delivered, the calls written against them, until the shares
 are called away or sold. It is written into the evaluation as the account's `wheel`, one entry per
-cycle, and names the evaluated trades holding its legs. It decides nothing yet; the rules that read it
-come next.
+cycle, and names the evaluated trades holding its legs. The `wheel.*` rules in the table above read it.
 
 - **Linking.** Orders are linked through the contracts they open and close, as the order chains are.
   A chain is a wheel leg when every option in it is one right sold to open or bought to close, so a
@@ -197,7 +199,24 @@ come next.
 - **Today's check**, for each short option a running cycle holds: tested or not (the price at or
   through the strike), extrinsic value left at the mid, any buy-to-close resting on the day's working
   orders (snapshot v10), and the strike against the skate screen's band for its expiry, moved to
-  today's price. The snapshot does not carry the bands yet, so that column is null and says why.
+  today's price (snapshot v12's `skate_bands`; null, saying why, when the snapshot has none).
+
+**The wheel rules and the trade's other rules.** A wheel rule fires into the list of the trade that
+holds the cycle's short (or, for the next leg, its shares) and is ranked like every other rule, by
+action: close, then take profit, then roll-or-close, then review. So a stop, the breached-strike close
+or the expiry close still outranks the wheel's roll, and a naked put's credit roll is still offered in a
+close's place; the wheel's rolls stay on the trade (`wheel[].rolls`) for a person to read. A wheel roll
+never moves a strike toward the money, so it can never invert against the other side of the wheel.
+`wheel.take_profit` agrees with the credit take-profit when both fire. The wheel rules wait for an
+earnings trade's call like the credit rules. **An unreconciled cycle gets no wheel rule at all**, only a
+review (`wheel_data`, no confidence) saying it does not reconcile and why.
+
+**Rolls are priced on the snapshot's quoted chain**: the previous afternoon's income reading, which
+lists every tradable name's strikes and two-sided quotes on the cycle monthly. A short expiring on or
+after that monthly, or a name the reading does not cover, gets no roll, and the rule says so. Both
+rolls go through `check-roll`, which now counts shares held behind a covered call (the command counts
+the name's shares itself): coverage, and a covered call's risk as the shares falling, with the per-trade
+budget judged only on option-only trades.
 
 ## The account as one book
 

@@ -127,6 +127,27 @@
       "confidence": 50
     }
   },
+  "wheel": {
+    "_comment": "Rules on a wheel cycle's shorts and shares (the evaluation's wheel view). Only on a cycle that reconciles; an unreconciled one gets a review saying so and nothing else. They rank with every other rule by action: a close or stop outranks the wheel's roll.",
+    "take_profit": {
+      "_comment": "Buy the short back when its mark is at or under the resting buy-to-close's price, else btc_price (btc_price_illiquid when its market is wide).",
+      "enabled": true,
+      "btc_price": 0.03,
+      "btc_price_illiquid": 0.05,
+      "confidence": 80
+    },
+    "tested": {
+      "_comment": "A short at or through its strike: roll or close. The net-zero and premium-gambit rolls out in time are priced on the snapshot's quoted chain and each judged by check-roll.",
+      "enabled": true,
+      "confidence": 50
+    },
+    "next_leg": {
+      "_comment": "Shares an assignment delivered and not yet written against: name the covered call at the skate call band (band: fixed or by_expiry). No strike without the band.",
+      "enabled": true,
+      "band": "fixed",
+      "confidence": 50
+    }
+  },
   "expiry": {
     "_comment": "Physically-settled legs are closed at or inside close_by_dte; roots listed as cash-settled settle instead.",
     "enabled": true,
@@ -269,6 +290,6 @@
       "show_too_big": 10
     }
   },
-  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.time_exit, legs.short_take_profit, legs.long_vertical, roll.naked_put, roll.diagonal_short, roll.fly_off, roll.untested_side, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power",
+  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.time_exit, legs.short_take_profit, legs.long_vertical, roll.naked_put, roll.diagonal_short, roll.fly_off, roll.untested_side, wheel.take_profit, wheel.tested, wheel.next_leg, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power",
   "positions": {}
 }
