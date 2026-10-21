@@ -262,6 +262,9 @@ const EMPTY_MEIC_TOTALS: MeicTradeTotals = {
   slippage: 0,
   slippageTrades: 0,
   net: 0,
+  feesTrades: 0,
+  feesRecorded: 0,
+  netRecorded: 0,
   credit: 0,
   byArm: [],
 };
@@ -302,16 +305,9 @@ export function meicTradeCash(r: Record<string, unknown>): Pick<
   const gross = num(r["pnl"]);
   const total = num(r["fees"]);
   const settlementFees = num(r["settlement_fees"]);
-  // From the two sides when the row has them, rounded per side exactly as the write path rounds
-  // each side's P&L -- otherwise the rounded `net_credit` leaves a worthless expiry a cent off $0.
   const put = num(r["put_credit"]);
   const call = num(r["call_credit"]);
-  const entryCash =
-    put !== null && call !== null
-      ? round2(round2(put * mult * qty) + round2(call * mult * qty))
-      : credit !== null
-        ? round2(credit * mult * qty)
-        : null;
+  const entryCash = meicEntryCash(credit, put, call, mult, qty);
   const closed = gross !== null;
   return {
     entryCash,
@@ -321,8 +317,31 @@ export function meicTradeCash(r: Record<string, unknown>): Pick<
     fees: total !== null && settlementFees !== null ? round2(total - settlementFees) : total,
     settlementFees: closed ? settlementFees : null,
     slippage: num(r["slippage_dollars"]),
-    net: closed ? round2(gross - (total ?? 0)) : null,
+    // A row that never recorded its fees has no known net: n/r, never gross less a $0 fee.
+    net: closed && total !== null ? round2(gross - total) : null,
   };
+}
+
+/**
+ * Half a cent a share: the most a `net_credit` rounded to the cent can sit from its two sides'
+ * sum. Beyond it the sides and the net describe different fills.
+ */
+const SIDE_SUM_TOLERANCE = 0.0051;
+
+/**
+ * Entry cash for one IC. From the two sides when they sum to the row's `net_credit`, rounded per
+ * side exactly as the write path rounds each side's P&L -- otherwise the rounded `net_credit`
+ * leaves a worthless expiry a cent off $0. When they do not, the net credit is the entry: it is the
+ * fill the row's gross was booked against. Since 2026-10-12 the live loop
+ * (`live_loop.entry_fill_credits`) writes sides that sum to the fill exactly, from the broker's legs
+ * or split in proportion; earlier live rows kept the sides modelled at quote time, and the 2026-10-14
+ * ledger corrections moved `net_credit` to the confirmed fill without touching them (row 7: sides
+ * 0.14 + 0.215, fill 0.43, gross (0.43 − 0.39) × 100 = $4.00).
+ */
+export function meicEntryCash(credit: number | null, put: number | null, call: number | null, mult: number, qty: number): number | null {
+  const sidesAgree = put !== null && call !== null && (credit === null || Math.abs(put + call - credit) <= SIDE_SUM_TOLERANCE);
+  if (sidesAgree) return round2(round2(put * mult * qty) + round2(call * mult * qty));
+  return credit !== null ? round2(credit * mult * qty) : null;
 }
 
 /**
@@ -397,11 +416,17 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
     // Settlement is summed over the rows that recorded it, and COUNTed, so a scope holding any row
     // that never recorded it reads n/r rather than a partial sum dressed as the total (101 paper
     // rows, mostly the `book` era, predate the column). The fee total keeps the unrecorded rows'
-    // settlement inside `fees`, the standard's rule for a split never recorded.
+    // settlement inside `fees`, the standard's rule for a split never recorded. Fees themselves are
+    // COUNTed the same way: a row that never recorded its fees (live row 6, 2026-06-29) has no known
+    // net, so a scope holding one reads fees and net n/r, with the recorded share beside them.
+    const settle = meicCol(db, "settlement_fees");
     const sums = `COUNT(*) AS trades, COUNT(DISTINCT trade_date) AS sessions,
                   COALESCE(SUM(pnl), 0) AS gross, COALESCE(SUM(fees), 0) AS fees,
-                  COALESCE(SUM(${meicCol(db, "settlement_fees")}), 0) AS settlement,
-                  COUNT(${meicCol(db, "settlement_fees")}) AS settlement_trades,
+                  COUNT(fees) AS fees_trades,
+                  COALESCE(SUM(CASE WHEN fees IS NOT NULL THEN ${settle} END), 0) AS fees_rows_settlement,
+                  COALESCE(SUM(CASE WHEN fees IS NOT NULL THEN pnl - fees END), 0) AS net_recorded,
+                  COALESCE(SUM(${settle}), 0) AS settlement,
+                  COUNT(${settle}) AS settlement_trades,
                   COALESCE(SUM(${meicCol(db, "slippage_dollars")}), 0) AS slippage,
                   COUNT(${meicCol(db, "slippage_dollars")}) AS slippage_trades,
                   COALESCE(SUM(net_credit * ${mult}), 0) AS credit`;
@@ -409,16 +434,22 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
       const trades = Number(r["trades"] ?? 0);
       const gross = Number(r["gross"] ?? 0);
       const fees = Number(r["fees"] ?? 0);
+      const feesTrades = Number(r["fees_trades"] ?? 0);
+      const feesRecorded = round2(fees - Number(r["fees_rows_settlement"] ?? 0));
+      const netRecorded = round2(Number(r["net_recorded"] ?? 0));
       const recorded = round2(Number(r["settlement"] ?? 0));
       const settlementTrades = Number(r["settlement_trades"] ?? 0);
       return {
         trades,
         gross: round2(gross),
-        fees: round2(fees - recorded),
+        fees: sumIfAllRecorded(feesRecorded, feesTrades, trades),
         settlementFees: sumIfAllRecorded(recorded, settlementTrades, trades),
         settlementRecorded: recorded,
         settlementTrades,
-        net: round2(gross - fees),
+        net: sumIfAllRecorded(netRecorded, feesTrades, trades),
+        feesTrades,
+        feesRecorded,
+        netRecorded,
         credit: round2(Number(r["credit"] ?? 0)),
       };
     };
@@ -433,7 +464,7 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
       )
       .all(...f.params)
       .map((r) => ({ arm: str(r["arm"]) ?? "—", ...shape(r) }))
-      .sort((a, b) => b.net - a.net);
+      .sort((a, b) => b.netRecorded - a.netRecorded);
     return {
       ...shape(all),
       sessions: Number(all["sessions"] ?? 0),

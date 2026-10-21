@@ -169,11 +169,14 @@ export const HISTORY_COLUMNS: ColumnDef<MeicTradeRow>[] = [
     title: "trading fees: commissions and exchange fees",
     kind: "money",
     className: "muted",
-    render: (r) => (
-      <span title={r.settlementFees === null ? "the fee total: its settlement share was not recorded" : undefined}>
-        {fmtMoney(r.fees)}
-      </span>
-    ),
+    render: (r) =>
+      r.fees === null && r.gross !== null ? (
+        <span title="this trade's fees were never recorded: not $0, unknown">n/r</span>
+      ) : (
+        <span title={r.settlementFees === null ? "the fee total: its settlement share was not recorded" : undefined}>
+          {fmtMoney(r.fees)}
+        </span>
+      ),
   },
   {
     id: "settle",
@@ -193,8 +196,39 @@ export const HISTORY_COLUMNS: ColumnDef<MeicTradeRow>[] = [
     className: "muted",
     render: (r) => fmtMoney(r.slippage),
   },
-  { id: "net", header: "net", title: "gross − fees − settlement", kind: "money", pinned: true, sortValue: (r) => r.net, render: (r) => <PnlCell v={r.net} /> },
+  {
+    id: "net",
+    header: "net",
+    title: "gross − fees − settlement",
+    kind: "money",
+    pinned: true,
+    sortValue: (r) => r.net,
+    render: (r) =>
+      r.net === null && r.gross !== null ? (
+        <span className="muted" title="fees were never recorded on this trade, so its net is unknown">
+          n/r
+        </span>
+      ) : (
+        <PnlCell v={r.net} />
+      ),
+  },
 ];
+
+/**
+ * The totals chip's net and fees: the figure when every trade recorded its fees, else n/r with the
+ * recorded share and how many trades it covers -- never a partial sum dressed as the total.
+ */
+export function feesNetWords(t: { trades: number; fees: number | null; net: number | null; feesTrades: number; feesRecorded: number; netRecorded: number }): {
+  net: string | null;
+  fees: string;
+} {
+  if (t.net !== null && t.fees !== null) return { net: null, fees: fmtMoney(t.fees) };
+  const cover = `${t.feesTrades.toLocaleString()} of ${t.trades.toLocaleString()}`;
+  return {
+    net: `n/r (${fmtMoney(t.netRecorded)} over the ${cover} trades that recorded fees)`,
+    fees: `n/r (${fmtMoney(t.feesRecorded)} on ${cover})`,
+  };
+}
 
 export function MeicHistoryTable({
   mode,
@@ -289,6 +323,9 @@ export function MeicHistoryTable({
                 className="chip"
                 title={
                   "Over every row matching these filters — not just this page. Gross − fees − settlement = net. " +
+                  (t.net === null
+                    ? `Fees were recorded on ${t.feesTrades.toLocaleString()} of these ${t.trades.toLocaleString()} trades; a trade that never recorded them has no known net, so the totals' fees and net are n/r. `
+                    : "") +
                   (t.settlementFees === null
                     ? `Settlement was recorded on ${t.settlementTrades.toLocaleString()} of these ${t.trades.toLocaleString()} trades ` +
                       `(${fmtMoney(t.settlementRecorded)}); the rest is inside fees. `
@@ -299,8 +336,8 @@ export function MeicHistoryTable({
                     : ".")
                 }
               >
-                net <PnlCell v={t.net} /> · {t.trades.toLocaleString()} trades · {t.sessions.toLocaleString()} session
-                {t.sessions === 1 ? "" : "s"} · gross {fmtMoney(t.gross)} · fees {fmtMoney(t.fees)} · settlement{" "}
+                net {feesNetWords(t).net ?? <PnlCell v={t.net} />} · {t.trades.toLocaleString()} trades · {t.sessions.toLocaleString()} session
+                {t.sessions === 1 ? "" : "s"} · gross {fmtMoney(t.gross)} · fees {feesNetWords(t).fees} · settlement{" "}
                 {t.settlementFees === null
                   ? `n/r (recorded on ${t.settlementTrades.toLocaleString()} of ${t.trades.toLocaleString()})`
                   : fmtMoney(t.settlementFees)}{" "}

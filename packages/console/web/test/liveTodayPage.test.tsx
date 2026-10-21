@@ -25,9 +25,9 @@ function loop(id: LiveTodayLoop["loop"], over: Partial<LiveTodayLoop> = {}): Liv
     worstCase: null,
     worstCaseBasis: "",
     entriesToday: 0,
-    today: { trades: 0, gross: 0, fees: 0, settlementFees: 0, settlementRecorded: 0, settlementTrades: 0, net: 0, basis: "" },
+    today: { trades: 0, gross: 0, fees: 0, settlementFees: 0, settlementRecorded: 0, settlementTrades: 0, net: 0, feesTrades: 0, netRecorded: 0, basis: "" },
     mark: null,
-    breaker: { limit: null, figure: null, tripped: null, basis: "" },
+    breaker: { limit: null, figure: null, figureKind: "net", tripped: null, basis: "" },
     orphans: { at: null, count: 0 },
     held: 0,
     brokerHealth: null,
@@ -45,7 +45,7 @@ function payload(over: Partial<LiveTodayPayload> = {}): LiveTodayPayload {
     halted: false,
     loops: [loop("flies"), loop("meic"), loop("bwb")],
     attention: [],
-    suite: { loops: 3, armed: [], net: 0, gross: 0, fees: 0, settlementFees: 0, trades: 0, summed: ["flies", "meic", "bwb"], excluded: [] },
+    suite: { loops: 3, armed: [], net: 0, gross: 0, fees: 0, settlementFees: 0, trades: 0, summed: ["flies", "meic", "bwb"], excluded: [], feesUnrecorded: [] },
     ...over,
   };
 }
@@ -83,17 +83,52 @@ describe("LiveTodayView", () => {
 
   it("shows settlement never recorded as n/r, and an unsummed suite total as n/r", () => {
     const flies = loop("flies", {
-      today: { trades: 2, gross: 80, fees: 11, settlementFees: null, settlementRecorded: 5, settlementTrades: 1, net: 64, basis: "" },
+      today: { trades: 2, gross: 80, fees: 11, settlementFees: null, settlementRecorded: 5, settlementTrades: 1, net: 64, feesTrades: 2, netRecorded: 64, basis: "" },
     });
     const html = render(
       payload({
         loops: [flies, loop("meic"), loop("bwb", { ledger: "failed", ledgerError: "boom", today: null })],
-        suite: { loops: 3, armed: [], net: null, gross: null, fees: null, settlementFees: null, trades: null, summed: [], excluded: [{ loop: "bwb", reason: "the live ledger could not be read" }] },
+        suite: { loops: 3, armed: [], net: null, gross: null, fees: null, settlementFees: null, trades: null, summed: [], excluded: [{ loop: "bwb", reason: "the live ledger could not be read" }], feesUnrecorded: [] },
       }),
     );
     expect(html).toContain("n/r (1 of 2)");
     expect(html).toContain("read failed");
     expect(html).toMatch(/net today · all loops[\s\S]*?n\/r/);
+  });
+
+  it("reads a trade's unrecorded fees as n/r, never gross less $0, and says why the suite net is n/r", () => {
+    // Live row 6 (2026-06-29): gross −$2.00, fees never recorded.
+    const meic = loop("meic", {
+      today: { trades: 2, gross: 2, fees: null, settlementFees: 0, settlementRecorded: 0, settlementTrades: 2, net: null, feesTrades: 1, netRecorded: -0.96, basis: "" },
+    });
+    const html = render(
+      payload({
+        loops: [loop("flies"), meic],
+        suite: { loops: 2, armed: [], net: null, gross: 2, fees: null, settlementFees: 0, trades: 2, summed: ["flies", "meic"], excluded: [], feesUnrecorded: ["meic"] },
+      }),
+    );
+    expect(html).toContain("n/r (1 of 2)");
+    expect(html).toContain("its net is unknown; -$0.96 over the other 1");
+    expect(html).toContain("fees were never recorded on a trade resolved today in meic");
+  });
+
+  it("labels MEIC's breaker figure gross, and a net breaker without a label", () => {
+    const html = render(
+      payload({
+        loops: [
+          loop("flies", { breaker: { limit: 500, figure: -40, figureKind: "net", tripped: false, basis: "" } }),
+          loop("meic", { breaker: { limit: 300, figure: 4, figureKind: "gross", tripped: false, basis: "" } }),
+        ],
+      }),
+    );
+    expect(html).toContain("ok · $4.00 gross of −$300.00");
+    expect(html).toContain("ok · -$40.00 of −$500.00");
+  });
+
+  it("names MEIC's missing supervisor job rather than a missing loop record", () => {
+    const html = render(payload({ loops: [loop("meic"), loop("bwb")] }));
+    expect(html).toContain("no meic-live job");
+    expect(html).toContain("no loop record");
   });
 });
 

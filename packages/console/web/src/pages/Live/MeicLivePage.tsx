@@ -5,7 +5,7 @@ import { TileGrid } from "../../components/performance/TileGrid";
 import { HistoryTable } from "../../components/table/HistoryTable";
 import { fmtCash, fmtPrice } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
-import { HISTORY_COLUMNS } from "../Meic/MeicTables";
+import { HISTORY_COLUMNS, feesNetWords } from "../Meic/MeicTables";
 
 /**
  * MEIC's live loop, read-only (2026-10-15): the flies Live tab's arming strip and trade tables, cut
@@ -215,13 +215,16 @@ export function MeicLivePage() {
               className="chip"
               title={
                 "Over every resolved live row. Gross − fees − settlement = net. " +
+                (t.net === null
+                  ? `Fees were recorded on ${t.feesTrades} of these ${t.trades} trades; a trade that never recorded them has no known net, so the totals' fees and net are n/r. `
+                  : "") +
                 (t.settlementFees === null
                   ? `Settlement was recorded on ${t.settlementTrades} of these ${t.trades} trades (${fmtMoney(t.settlementRecorded)}); the rest is inside fees.`
                   : "")
               }
             >
-              net <PnlCell v={t.net} /> · {t.trades} trades · {t.sessions} session{t.sessions === 1 ? "" : "s"} · gross {fmtMoney(t.gross)} · fees{" "}
-              {fmtMoney(t.fees)} · settlement{" "}
+              net {feesNetWords(t).net ?? <PnlCell v={t.net} />} · {t.trades} trades · {t.sessions} session{t.sessions === 1 ? "" : "s"} · gross{" "}
+              {fmtMoney(t.gross)} · fees {feesNetWords(t).fees} · settlement{" "}
               {t.settlementFees === null ? `n/r (recorded on ${t.settlementTrades} of ${t.trades})` : fmtMoney(t.settlementFees)}
             </span>
           )
