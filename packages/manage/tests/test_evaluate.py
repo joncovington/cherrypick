@@ -36,6 +36,24 @@ def fired(trade):
     return {f["rule"]: f["action"] for f in trade["fired"]}
 
 
+# --------------------------------------------------------------------------- a leg's IV
+def test_a_wide_quote_takes_the_brokers_iv_and_a_tight_one_its_own():
+    # 2026-10-21 before the open: NFLX's 70C was bid 0.01 ask 1.50, and the IV solved off that mid
+    # sat 55 points under its spread partner's; the broker's surface had the two within 15.
+    rules = _rules.effective(None)[0]
+    wide = leg(-1, "C", 105, "2026-11-20", 2.00, 1.50) | {"wide": True}
+    tight = leg(1, "C", 110, "2026-11-20", 1.00, 0.60)
+    broker = {wide["symbol"]: {"iv": 0.42}, tight["symbol"]: {"iv": 0.99}}
+    t = ev.evaluate_trade("XYZ", [wide, tight], {"last": 100.0}, SESSION, 1e5, rules, broker_greeks=broker)
+    legs = {x["symbol"]: x for x in t["legs"]}
+    assert legs[wide["symbol"]]["iv"] == 0.42 and legs[wide["symbol"]]["iv_source"] == "broker"
+    # A tight quote keeps the IV solved from its own mid, whatever the broker says.
+    assert legs[tight["symbol"]]["iv_source"] == "mid" and legs[tight["symbol"]]["iv"] != pytest.approx(0.99)
+    # No broker IV for a wide leg: its own mid, as before.
+    alone = ev.evaluate_trade("XYZ", [wide], {"last": 100.0}, SESSION, 1e5, rules)
+    assert alone["legs"][0]["iv_source"] == "mid" and alone["legs"][0]["iv"] != pytest.approx(0.42)
+
+
 # --------------------------------------------------------------------------- credit trades
 def test_credit_take_profit_at_half_the_credit():
     t = run([leg(-1, "P", 95, "2026-11-20", 2.00, 0.95), leg(1, "P", 90, "2026-11-20", 0.80, 0.35)])

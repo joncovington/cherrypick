@@ -305,8 +305,26 @@ export function BrokerCheckCard({ p }: { p: ManagePortfolio }) {
       <p className="muted pf-caption">
         {c.legsCompared} legs on both models, same betas · the broker's greeks are American-exercise with dividends, ours
         Black-Scholes at each leg's own IV
+        {c.legsOnBrokerIv ? ` (the broker's IV on ${c.legsOnBrokerIv} with a wide quote)` : ""}
         {c.legsLeftOut.length ? ` · left out of both (one model only): ${c.legsLeftOut.join(", ")}` : ""}
       </p>
+      {c.expiring && (
+        <>
+          <div className="card-subhead">expiring today, not in the figures above</div>
+          <TileGrid count={6}>
+            <Tile label="delta, ours" value={sh(c.expiring.bwdOurs)} />
+            <Tile label="delta, broker's greeks" value={sh(c.expiring.bwdBroker)} />
+            <Tile label="delta gap" value={sh(c.expiring.bwdGap)} title="ours less the broker's" />
+            <Tile label="theta, ours" value={fmtCash(c.expiring.thetaOurs)} />
+            <Tile label="theta, broker's greeks" value={fmtCash(c.expiring.thetaBroker)} />
+            <Tile label="theta gap" value={fmtCash(c.expiring.thetaGap)} title="ours less the broker's, a day" />
+          </TileGrid>
+          <p className="muted pf-caption">
+            {c.expiring.legs.join(", ")} · ours takes a leg expiring today at its moneyness, its remaining extrinsic as
+            the day's theta; the broker's prices a day left at the quote's IV
+          </p>
+        </>
+      )}
     </Card>
   );
 }

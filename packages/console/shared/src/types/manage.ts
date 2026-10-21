@@ -539,6 +539,18 @@ export interface ManageBrokerCheck {
   thetaBroker: number | null;
   thetaGap: number | null;
   underlyings: Array<{ underlying: string; legs: number; bwdGap: number | null; thetaGap: number | null }>;
+  /** Legs priced on the broker's IV (a wide quote); null on an evaluation from before the count. */
+  legsOnBrokerIv: number | null;
+  /** Legs expiring today, summed apart and out of every figure above; null when there are none. */
+  expiring: {
+    legs: string[];
+    bwdOurs: number | null;
+    bwdBroker: number | null;
+    bwdGap: number | null;
+    thetaOurs: number | null;
+    thetaBroker: number | null;
+    thetaGap: number | null;
+  } | null;
 }
 
 /** The account read as one book (packages/manage `portfolio.py`). Every figure is modelled. */

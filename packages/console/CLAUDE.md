@@ -700,7 +700,8 @@ header (its caveats qualify both) and the same six-tile account strip. The portf
 dials for beta-weighted delta and theta against their bands, the break-even move, the stress line,
 per-name delta and theta, the guidance, a sized XSP hedge, and (from 2026-10-19) the check against the
 broker's model: manage's `broker_check`, our delta and theta beside the same sums on the broker's own
-greeks with the gap, untoned because neither side is the right answer. **Every band and every in/out flag is
+greeks with the gap, untoned because neither side is the right answer; legs expiring today are
+manage's own `expiring` line beneath it, never in its totals. **Every band and every in/out flag is
 the reading's `bands`**: the dial draws manage's band and takes amber only from its `inside` flag,
 never from where the needle sits (`web/test/managePortfolioCards.test.tsx` shows a needle inside its
 band drawn as outside when the flag says so). Long and short delta carry no tone. An evaluation

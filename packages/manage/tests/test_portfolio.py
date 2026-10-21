@@ -484,6 +484,41 @@ def test_a_leg_only_one_model_prices_is_left_out_of_both_and_named():
     assert check["theta_broker"] == pytest.approx(10.0)
 
 
+def test_legs_expiring_today_are_their_own_line_and_out_of_the_totals():
+    # 2026-10-21: a short call expiring that day carried most of the theta gap (ours at moneyness,
+    # the broker's a whole day at the quote's IV), so it is summed apart.
+    later = _leg(-1, "P", 240.0)
+    today = _leg(-2, "C", 260.0, dte=0, mid=1.45, extrinsic=1.45) | {
+        "symbol": "C260-today",
+        "label": "-2 today 260C",
+    }
+    broker = {
+        later["symbol"]: {"delta": 0.30, "theta": -0.10},
+        today["symbol"]: {"delta": 0.45, "theta": -4.5},
+    }
+    check = _checked([_trade("XYZ", 250.0, [later, today])], broker)["broker_check"]
+    alone = _checked([_trade("XYZ", 250.0, [later])], {later["symbol"]: broker[later["symbol"]]})[
+        "broker_check"
+    ]
+    for key in ("bwd_ours", "bwd_broker", "theta_ours", "theta_broker"):
+        assert check[key] == pytest.approx(alone[key])
+    assert check["legs_compared"] == 1 and check["underlyings"][0]["legs"] == 1
+    exp = check["expiring"]
+    assert exp["legs"] == ["-2 today 260C"]
+    # Ours: out of the money, so delta 0 and the 1.45 extrinsic as the day's theta, short 2 x 100.
+    assert exp["bwd_ours"] == pytest.approx(0.0) and exp["theta_ours"] == pytest.approx(290.0)
+    # Broker: -2 x 100 x 0.45 = -90 shares, x beta 2 x 250 / 500 = -90 BWD; theta +900.
+    assert exp["bwd_broker"] == pytest.approx(-90.0) and exp["theta_broker"] == pytest.approx(900.0)
+    assert exp["theta_gap"] == pytest.approx(-610.0) and exp["bwd_gap"] == pytest.approx(90.0)
+    assert alone["expiring"] is None
+
+
+def test_the_check_counts_the_legs_priced_on_the_brokers_iv():
+    a, b = _leg(-1, "P", 240.0) | {"iv_source": "broker"}, _leg(1, "P", 230.0) | {"iv_source": "mid"}
+    broker = {a["symbol"]: {"delta": 0.3, "theta": -0.1}, b["symbol"]: {"delta": -0.2, "theta": -0.05}}
+    assert _checked([_trade("XYZ", 250.0, [a, b])], broker)["broker_check"]["legs_on_broker_iv"] == 1
+
+
 def test_an_older_snapshot_has_no_broker_check():
     check = _checked([_trade("XYZ", 250.0, [_leg(-1, "P", 240.0)])], None)["broker_check"]
     assert check["available"] is False
