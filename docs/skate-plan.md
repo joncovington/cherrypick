@@ -11,7 +11,7 @@ were decided by the user on 2026-10-18 (see "Decisions").
 | 3, the score and the console's Skate tab | the score built (`skate.score`, in the quote file); the tab built 2026-10-19; the income tabs' leveraged badge not started |
 | 4, the forward record | built: `skate_record.py`, recording from 2026-10-20; the tab section built 2026-10-20 |
 | 5, the wheel view (`manage`, Live → positions) | cycle linking, accounting and the day's check built (`manage/wheel.py`, 2026-10-20); the bands in the snapshot (v12) and its rules (`wheel.take_profit`, `wheel.tested`, `wheel.next_leg`) built 2026-10-20; the console's Live → wheel tab built 2026-10-20 |
-| 6, the PMCC view (`manage`, beside the wheel view) | recognition, linking, accounting, the day's check and the rules (`pmcc.width`, `pmcc.assignment`, `pmcc.roll_long`) built (`manage/pmcc.py`, 2026-10-20), with the long's entry-day close in the snapshot (v13's `underlying_history`); the tab not started |
+| 6, the PMCC view (`manage`, beside the wheel view) | recognition, linking, accounting, the day's check and the rules (`pmcc.width`, `pmcc.assignment`, `pmcc.roll_long`) built (`manage/pmcc.py`, 2026-10-20), with the long's entry-day close in the snapshot (v13's `underlying_history`); the console's Live → pmcc tab built 2026-10-20 |
 
 A screen for short options sold where the seller does not want assignment: covered calls above
 the stock's recent range and cash-secured puts below it, on our own options-tradable names. The
@@ -326,7 +326,8 @@ Jan 2027) has the shape but was entered as a diagonal, and stays one. What it ad
   check or an assignment-exposed short (with roll candidates chosen as in the table above), and a
   `REVIEW` when the long needs rolling (90–120 days left or under ~0.70 delta, both config). Each with a
   confidence and a README row.
-- **Console**: a PMCC tab beside the wheel tab, same columns where they mean the same thing.
+- **Console**: a PMCC tab beside the wheel tab, same columns where they mean the same thing (built
+  2026-10-20: `pages/Live/PmccCards.tsx`, one card per PMCC, read through `readers/manage.ts`).
 
 **As built (2026-10-20, all but the tab):**
 

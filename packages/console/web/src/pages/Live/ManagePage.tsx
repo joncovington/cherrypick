@@ -8,6 +8,7 @@ import { Tile } from "../Flies/PerformanceTab";
 import { ActionChip, DetailCard, Kv, Money, tone } from "./manageParts";
 import { PortfolioCards } from "./PortfolioCards";
 import { ScenarioCards } from "./ScenarioCards";
+import { PmccCards } from "./PmccCards";
 import { WheelCards } from "./WheelCards";
 
 /**
@@ -513,14 +514,20 @@ export function WheelPage() {
   return <EvaluationPage view="wheel" />;
 }
 
-const VIEW_TITLE = { positions: "position evaluation", portfolio: "portfolio", wheel: "wheel" } as const;
+/** Live → pmcc (2026-10-20): each PMCC on the account, from the same evaluation. */
+export function PmccPage() {
+  return <EvaluationPage view="pmcc" />;
+}
+
+const VIEW_TITLE = { positions: "position evaluation", portfolio: "portfolio", wheel: "wheel", pmcc: "pmcc" } as const;
 
 /**
- * The three tabs read one evaluation file (2026-10-18: split from the single `manage` tab, whose dozen
- * account cards had buried the action list; 2026-10-20: the wheel). Each keeps the evaluation header,
- * because its caveats -- missing order chains, missing earnings dates, an unapplied rule -- qualify all.
+ * The four tabs read one evaluation file (2026-10-18: split from the single `manage` tab, whose dozen
+ * account cards had buried the action list; 2026-10-20: the wheel, then the PMCCs). Each keeps the
+ * evaluation header, because its caveats -- missing order chains, missing earnings dates, an
+ * unapplied rule -- qualify all.
  */
-function EvaluationPage({ view }: { view: "positions" | "portfolio" | "wheel" }) {
+function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
   const title = VIEW_TITLE[view];
   const [session, setSession] = useState<string | undefined>(undefined);
   const { data, isLoading, isError, dataUpdatedAt } = useManage(session);
@@ -582,8 +589,10 @@ function EvaluationPage({ view }: { view: "positions" | "portfolio" | "wheel" })
           <PositionsAccount key={a.account ?? "?"} a={a} loading={isLoading} oversize={oversizeMultiple(data?.rules)} />
         ) : view === "portfolio" ? (
           <PortfolioAccount key={a.account ?? "?"} a={a} oversize={oversizeMultiple(data?.rules)} />
-        ) : (
+        ) : view === "wheel" ? (
           <WheelCards key={a.account ?? "?"} a={a} />
+        ) : (
+          <PmccCards key={a.account ?? "?"} a={a} />
         ),
       )}
       {view === "positions" && (

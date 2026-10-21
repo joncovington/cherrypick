@@ -20,7 +20,16 @@ beyond the latest release.
   a short more than 60 days out, an unreconciled link, or a group with other legs keeps the chains'
   grouping, and a join that fails leaves them as they were. On every stored snapshot (10-13 to 10-20)
   no trade's grouping or recommendation changes: the account holds no such split.
-
+- **Added: the console's PMCC tab.** Live → pmcc sits beside the wheel tab and reads the same
+  evaluation: one card per name whose calls have a PMCC's shape, with the long (delta at entry, or
+  "unknown" and why; today's delta, extrinsic share, days left, whether to roll it), the width check
+  and the P&L if assigned gross and net of fees, the long's net cost after premiums, the short's band,
+  assignment exposure, chance of finishing in the money and any earnings in its life, every short sold
+  against the long, the skate yield as a comparison figure, and the PMCC rules that fired with their
+  rolls and check-roll verdicts. An unreconciled PMCC lists why and gets no rule; an account with none
+  says how one is recognised. The width check and the exposure are manage's flags, never worked out on
+  the page. This is the real account's PMCCs, not the paper pmcc module, and the tab stays even though
+  that module's live switch reads off.
 - **Added: manage's PMCC view and its rules** (docs/skate-plan.md step 6). Each evaluation now
   carries the account's `pmcc` view: every name whose calls are a PMCC's shape (one long bought with
   180 days or more left, one short of the same size at or above its strike with 60 or fewer), and

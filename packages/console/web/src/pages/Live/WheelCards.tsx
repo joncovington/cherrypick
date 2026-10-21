@@ -10,7 +10,22 @@ import type {
 } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
-import { ActionChip, DetailCard, Kv, Money } from "./manageParts";
+import {
+  ActionChip,
+  DetailCard,
+  Kv,
+  Money,
+  StatusChip,
+  TestedChip,
+  VERDICT_CHIP,
+  bandText,
+  beyondText,
+  feesPaid,
+  px,
+  share,
+  strike,
+  yesNo,
+} from "./manageParts";
 
 /**
  * Live → wheel: each wheel cycle packages/manage follows on the account (`wheel.py`, docs/skate-plan.md
@@ -24,42 +39,6 @@ import { ActionChip, DetailCard, Kv, Money } from "./manageParts";
  */
 
 const UNKNOWN_BASIS = "unknown, shares predate the history";
-
-/** A per-share price, labelled as one. */
-function share(v: number | null): string {
-  return v === null ? "—" : `${v.toFixed(2)} a share`;
-}
-
-function px(v: number | null): string {
-  return v === null ? "—" : v.toFixed(2);
-}
-
-function strike(v: number | null): string {
-  return v === null ? "—" : String(v);
-}
-
-/** Fees as a cost: manage writes them as the broker does (negative); shown positive, subtracted once. */
-function feesPaid(v: number | null): string {
-  return v === null ? "—" : fmtMoney(Math.abs(v));
-}
-
-const STATUS_CHIP: Record<string, string> = { open: "chip", complete: "chip chip-hold", unreconciled: "chip chip-warn" };
-
-function StatusChip({ status }: { status: string }) {
-  return <span className={STATUS_CHIP[status] ?? "chip"}>{status}</span>;
-}
-
-/** Manage's `tested` flag. Null is "no price for the underlying", never "not tested". */
-export function TestedChip({ tested }: { tested: boolean | null }) {
-  if (tested === null) return <span className="chip muted">no price</span>;
-  return tested ? <span className="chip chip-warn">tested</span> : <span className="chip">not tested</span>;
-}
-
-function yesNo(v: boolean | null, yes: string, no: string): string {
-  return v === null ? "—" : v ? yes : no;
-}
-
-const VERDICT_CHIP: Record<string, string> = { ok: "chip", risky: "chip chip-warn", reject: "chip chip-bad" };
 
 /* ------------------------------------------------------------------ the cycle's facts */
 
@@ -147,23 +126,6 @@ function CycleYield({ c }: { c: ManageWheelCycle }) {
 }
 
 /* ------------------------------------------------------------------ today's check */
-
-function bandText(r: ManageWheelCheck): string {
-  if (r.band === null) return `band not in the snapshot${r.bandMissing ? ` (${r.bandMissing})` : ""}`;
-  const parts = [];
-  if (r.band.fixed !== null) parts.push(`fixed ${px(r.band.fixed)}`);
-  if (r.band.byExpiry !== null) parts.push(`by expiry ${px(r.band.byExpiry)}`);
-  return parts.length ? parts.join(" · ") : "band not in the snapshot";
-}
-
-function beyondText(r: ManageWheelCheck): string {
-  const b = r.beyondBand;
-  if (b === null) return "—";
-  const out = [];
-  if (b.fixed !== null) out.push(`fixed: ${b.fixed ? "beyond" : "inside"}`);
-  if (b.byExpiry !== null) out.push(`by expiry: ${b.byExpiry ? "beyond" : "inside"}`);
-  return out.length ? out.join(" · ") : "—";
-}
 
 function TodayCheck({ rows }: { rows: ManageWheelCheck[] }) {
   return (

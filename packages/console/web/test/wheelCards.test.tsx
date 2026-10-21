@@ -128,6 +128,7 @@ function trade(over: Partial<ManageTrade> = {}): ManageTrade {
     profile: null,
     earningsTrade: null,
     heldForEarnings: [],
+    pmcc: null,
     wheel: [
       {
         underlying: "XYZ",
@@ -179,6 +180,7 @@ function account(w: ManageWheel | null, trades: ManageTrade[] = [trade()]): Mana
     excluded: [],
     portfolio: null,
     wheel: w,
+    pmcc: null,
   };
 }
 

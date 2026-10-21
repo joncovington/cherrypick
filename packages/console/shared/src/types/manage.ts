@@ -124,6 +124,151 @@ export interface ManageTrade {
   /** The wheel rules' notes, one per wheel cycle holding this trade's legs (`trade.wheel`); null on a
    *  trade no cycle holds, and on an evaluation written before the wheel rules (2026-10-20). */
   wheel: ManageWheelNote[] | null;
+  /** The PMCC rules' summary of the PMCC whose short this trade holds (`trade.pmcc`), or the error
+   *  that stopped them; null on any other trade and on an evaluation written before the PMCC view. */
+  pmcc: ManagePmccNote | null;
+}
+
+/* ------------------------------------------------------------------ the PMCC view (pmcc.py) */
+
+/** What the PMCC rules read, as the trade holding the short carries it. */
+export interface ManagePmccNote {
+  underlying: string | null;
+  long: string | null;
+  short: string | null;
+  recognized: boolean | null;
+  recognizedBy: string | null;
+  reconciled: boolean | null;
+  widthPasses: boolean | null;
+  pnlIfAssigned: number | null;
+  assignmentExposed: boolean | null;
+  rollLong: string[];
+  error: string | null;
+}
+
+/** The long call standing in for the shares. Prices per share. */
+export interface ManagePmccLong {
+  symbol: string;
+  leg: string;
+  strike: number | null;
+  expiration: string | null;
+  dte: number | null;
+  quantity: number | null;
+  mid: number | null;
+  opened: string | null;
+  daysAtEntry: number | null;
+  deltaAtEntry: number | null;
+  /** Why the delta at entry is unknown, when it is. */
+  deltaAtEntryWhy: string | null;
+  entryFills: Array<{ date: string | null; price: number | null; close: number | null; divYield: number | null; iv: number | null; delta: number | null }>;
+  delta: number | null;
+  intrinsic: number | null;
+  extrinsic: number | null;
+  /** Extrinsic as a fraction of the long's mid. */
+  extrinsicShare: number | null;
+  /** Why manage says roll the long (days left, delta floor); empty when it does not. */
+  roll: string[];
+  rollDeltaUnknown: boolean | null;
+}
+
+/** The short call written against the long. Prices per share. */
+export interface ManagePmccShort {
+  symbol: string;
+  leg: string;
+  strike: number | null;
+  expiration: string | null;
+  dte: number | null;
+  quantity: number | null;
+  mid: number | null;
+  openPrice: number | null;
+  tested: boolean | null;
+  intrinsic: number | null;
+  extrinsic: number | null;
+  /** N(d2): the chance of finishing in the money. */
+  probItm: number | null;
+  band: ManageWheelBand | null;
+  bandMissing: string | null;
+  beyondBand: { fixed: boolean | null; byExpiry: boolean | null } | null;
+  assignment: {
+    nearZero: boolean | null;
+    dividend: boolean | null;
+    exposed: boolean | null;
+    why: string | null;
+    exDividendDate: string | null;
+    dividendAmount: number | null;
+  };
+  earnings: { date: string | null; inside: boolean | null; why: string | null };
+}
+
+/** The strategy's width check, as manage judged it. Money is whole-position dollars. */
+export interface ManagePmccWidth {
+  /** Short strike less long strike, per share. */
+  width: number | null;
+  netCost: number | null;
+  netCostPerShare: number | null;
+  /** "linked orders", or "open_legs" when the orders do not reconcile. */
+  basis: string | null;
+  passes: boolean | null;
+  pnlIfAssigned: number | null;
+  pnlIfAssignedNet: number | null;
+  assumes: string | null;
+}
+
+/** One call sold against the long, with its cash (signed, + received) and how it ended. */
+export interface ManagePmccShortSold {
+  symbol: string;
+  leg: string;
+  sold: string | null;
+  soldPrice: number | null;
+  cash: number | null;
+  fees: number | null;
+  status: string | null;
+}
+
+/** One roll of the short, priced on a quoted expiry and judged by check-roll. Prices per share. */
+export interface ManagePmccRoll {
+  expiration: string | null;
+  open: ManageWheelQuote | null;
+  delta: number | null;
+  closePrice: number | null;
+  /** Per share, signed: + a net credit. */
+  net: number | null;
+  legs: string[];
+  check: ManageWheelRollCheck | null;
+  checkError: string | null;
+}
+
+/** One name whose calls have a PMCC's shape, recognised or not (`account.pmcc.positions[]`). */
+export interface ManagePmccPosition {
+  underlying: string;
+  recognized: boolean | null;
+  recognizedBy: string | null;
+  intent: string | null;
+  reconciled: boolean | null;
+  problems: string[];
+  spot: number | null;
+  long: ManagePmccLong;
+  short: ManagePmccShort;
+  width: ManagePmccWidth;
+  shorts: ManagePmccShortSold[];
+  orders: string[];
+  netCash: number | null;
+  fees: number | null;
+  longCost: number | null;
+  premiums: number | null;
+  skateYield: { value: number | null; capped: boolean | null; basis: string | null } | null;
+  /** Priced only for a recognised, reconciled PMCC whose width fails or whose short is exposed. */
+  rolls: { candidates: ManagePmccRoll[]; why: string | null; quotedExpiries: string[]; quotedAt: string | null } | null;
+  tradeIds: string[];
+}
+
+/** The account's PMCC view (`account.pmcc`). */
+export interface ManagePmcc {
+  positions: ManagePmccPosition[];
+  underlyingHistoryError: string | null;
+  bandsMissing: string | null;
+  /** Why the account has no view (not the designated account, no history, the view failed). */
+  error: string | null;
 }
 
 /* ------------------------------------------------------------------ the wheel view (wheel.py) */
@@ -541,6 +686,8 @@ export interface ManageAccount {
   portfolio: ManagePortfolio | null;
   /** The wheel view; null on an evaluation written before it existed (no `wheel` key). */
   wheel: ManageWheel | null;
+  /** The PMCC view; null on an evaluation written before it existed (no `pmcc` key). */
+  pmcc: ManagePmcc | null;
 }
 
 export interface ManagePayload {
