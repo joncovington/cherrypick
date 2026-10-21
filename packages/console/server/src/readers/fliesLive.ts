@@ -35,6 +35,7 @@ import { onPeakRiskOver, peakRiskSessions } from "./fliesPeakRisk.js";
 import { readFliesAnalytics, readFliesJournal, readFliesLoopStatus, readFliesPerformance } from "./flies.js";
 import { readLockStatus, sessionDateEt } from "../services/liveLock.js";
 import { readBrokerAccount } from "../services/brokerBridge.js";
+import { moduleIds } from "./system.js";
 
 const ET = "America/New_York";
 const RTH_OPEN_MIN = 9 * 60 + 30;
@@ -69,17 +70,32 @@ export function periodBounds(session: string): Record<"today" | "week" | "month"
  *  derivation; `server/test/flies-live-reader.test.ts` pins it against fixture rows. One step
  *  past it: a voided row (still `settled`, marked only by `void_reason`) is left out, as on every
  *  other console total -- the paper control figure beside each tile once carried 2026-10-08's. */
-function settledNet(db: Database.Database, bounds: [string, string], arm: string | null): Omit<LivePeriod, "paperNet" | "onRisk"> {
-  const armClause = (hasColumn(db, "fly_positions", "void_reason") ? " AND void_reason IS NULL" : "") + (arm !== null ? " AND arm = ?" : "");
-  const params: Array<string> = [bounds[0], bounds[1], ...(arm !== null ? [arm] : [])];
+function settledWhere(db: Database.Database, bounds: [string, string], arm: string | null, days: string[] | null): { sql: string; params: string[] } {
+  const voidClause = hasColumn(db, "fly_positions", "void_reason") ? " AND void_reason IS NULL" : "";
+  const armClause = arm !== null ? " AND arm = ?" : "";
+  const dayClause = days !== null ? ` AND trade_date IN (${days.map(() => "?").join(",") || "NULL"})` : "";
+  return {
+    sql: `status = 'settled' AND trade_date >= ? AND trade_date <= ?${voidClause}${armClause}${dayClause}`,
+    params: [bounds[0], bounds[1], ...(arm !== null ? [arm] : []), ...(days ?? [])],
+  };
+}
+
+/** `days`, where given, narrows the period to those sessions: the paper side of a live tile. */
+function settledNet(
+  db: Database.Database,
+  bounds: [string, string],
+  arm: string | null,
+  days: string[] | null = null,
+): Omit<LivePeriod, "paperNet" | "paperSessions" | "onRisk"> {
+  const w = settledWhere(db, bounds, arm, days);
   const row = db
     .prepare<string[], Record<string, unknown>>(
       `SELECT COALESCE(SUM(COALESCE(gross_pnl, 0) - COALESCE(fees, 0)), 0) AS net,
               COUNT(*) AS trades, COUNT(DISTINCT trade_date) AS sessions
          FROM fly_positions
-        WHERE status = 'settled' AND trade_date >= ? AND trade_date <= ?${armClause}`,
+        WHERE ${w.sql}`,
     )
-    .get(...params);
+    .get(...w.params);
   return {
     net: Number(row?.["net"] ?? 0),
     trades: Number(row?.["trades"] ?? 0),
@@ -87,14 +103,25 @@ function settledNet(db: Database.Database, bounds: [string, string], arm: string
   };
 }
 
+/** The sessions a settled-net figure covers -- what its paper comparison is restricted to. */
+function settledDays(db: Database.Database, bounds: [string, string], arm: string | null): string[] {
+  const w = settledWhere(db, bounds, arm, null);
+  return db
+    .prepare<string[], Record<string, unknown>>(`SELECT DISTINCT trade_date AS d FROM fly_positions WHERE ${w.sql} ORDER BY d`)
+    .all(...w.params)
+    .map((r) => String(r["d"]));
+}
+
 // --------------------------------------------------------------------------- which session
 function hasTable(db: Database.Database, name: string): boolean {
   return db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name) !== undefined;
 }
 
-/** Has `day`'s session opened? Evidence, not a calendar -- the same rule `sessionPeakWorst` holds
- *  its figure by: a `fly_snapshots` row dated `day` at or past 09:30 ET in either ledger (the paper
- *  loop runs every session; the live loop only when armed), or any live position dated `day`. */
+/** Has `day`'s session opened? Evidence, not a calendar: a `fly_snapshots` row dated `day` at or
+ *  past 09:30 ET in either ledger (the paper loop runs every session; the live loop only when
+ *  armed), or any live position dated `day`. The ONE "has the next session opened" rule for the
+ *  live tab: `sessionPeakWorst` kept a second, paper-only one until 2026-10-21, and the two
+ *  disagreed whenever the pilot sat out a session the paper loop ran. */
 function sessionOpened(liveDb: string, paperDb: string, day: string): boolean {
   const snapshotAfterOpen = (db: Database.Database): boolean =>
     hasTable(db, "fly_snapshots") &&
@@ -139,6 +166,10 @@ export function resolveLiveSession(
 // tile and the performance slide: one peak, whichever page reads it.
 
 // --------------------------------------------------------------------------- the day's rows
+/** The day's positions, open or settled. Cancelled rows (an entry that never filled) and voided ones
+ *  (still `settled`, marked only by `void_reason`) are in neither the open nor the history table --
+ *  the money layout -- so they are not here, nor in any count taken from here. Until 2026-10-21 only
+ *  a literal `status = 'voided'` was left out, a status flies never writes. */
 export function positionsFor(db: Database.Database, session: string): LivePosition[] {
   const hasMarks = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='fly_live_marks'").get() !== undefined;
   const markFor = hasMarks
@@ -151,7 +182,9 @@ export function positionsFor(db: Database.Database, session: string): LivePositi
     .prepare<[string], Record<string, unknown>>(
       `SELECT position_id, kind, side, center, wing_width, quantity, net, fees, floor_dollars, risk_free,
               status, entry_time, entry_fill_status, completion_fill_status, completed_at, pnl
-         FROM fly_positions WHERE trade_date = ? AND status != 'voided' ORDER BY entry_time`,
+         FROM fly_positions
+        WHERE trade_date = ? AND status NOT IN ('voided', 'cancelled')${hasColumn(db, "fly_positions", "void_reason") ? " AND void_reason IS NULL" : ""}
+        ORDER BY entry_time`,
     )
     .all(session)
     .map((r) => {
@@ -366,31 +399,38 @@ export function readFliesLive(config: ConsoleConfig, session: string | null = nu
   const bounds = periodBounds(day);
   const fliesModule = lock.modules.find((m) => m.id === "flies");
 
-  const empty = (): Omit<LivePeriod, "paperNet" | "onRisk"> => ({ net: 0, trades: 0, sessions: 0 });
+  const PERIODS = ["today", "week", "month", "year"] as const;
+  type PeriodKey = (typeof PERIODS)[number];
+  const empty = (): Omit<LivePeriod, "paperNet" | "paperSessions" | "onRisk"> => ({ net: 0, trades: 0, sessions: 0 });
   const ledger = readOnlyDb(liveDb, (db) => ({
     risk: peakRiskSessions(db, { arm: armName }),
-    periods: {
-      today: settledNet(db, bounds.today, armName),
-      week: settledNet(db, bounds.week, armName),
-      month: settledNet(db, bounds.month, armName),
-      year: settledNet(db, bounds.year, armName),
-    },
+    periods: Object.fromEntries(PERIODS.map((k) => [k, settledNet(db, bounds[k], armName)])) as Record<PeriodKey, ReturnType<typeof empty>>,
+    days: Object.fromEntries(PERIODS.map((k) => [k, settledDays(db, bounds[k], armName)])) as Record<PeriodKey, string[]>,
     positions: positionsFor(db, day),
     marks: markSeries(db, day),
     gaps: gapsFor(db, day),
   }));
-  const paper = withReadOnlyDb(paperDb, null as null | Record<string, number>, (db) => ({
-    today: settledNet(db, bounds.today, "control").net,
-    week: settledNet(db, bounds.week, "control").net,
-    month: settledNet(db, bounds.month, "control").net,
-    year: settledNet(db, bounds.year, "control").net,
-  }));
-
   const value = ledger.status === "ok" ? ledger.value : null;
+  // Like for like: the paper control over the sessions the live figure covers, never the calendar
+  // period. Until 2026-10-21 the year tile set 21 live sessions beside 62 paper ones under "the same
+  // period". With no live ledger there is nothing to match, so no paper figure either.
+  const paper =
+    value === null
+      ? null
+      : withReadOnlyDb(paperDb, null as null | Record<PeriodKey, { net: number; sessions: number }>, (db) =>
+          Object.fromEntries(
+            PERIODS.map((k) => {
+              const s = settledNet(db, bounds[k], "control", value.days[k]);
+              return [k, { net: s.net, sessions: s.sessions }];
+            }),
+          ) as Record<PeriodKey, { net: number; sessions: number }>,
+        );
+
   const risk = value?.risk ?? [];
-  const period = (k: "today" | "week" | "month" | "year"): LivePeriod => ({
+  const period = (k: PeriodKey): LivePeriod => ({
     ...(value?.periods[k] ?? empty()),
-    paperNet: paper?.[k] ?? null,
+    paperNet: paper?.[k].net ?? null,
+    paperSessions: paper?.[k].sessions ?? null,
     onRisk: onPeakRiskOver(risk, bounds[k]),
   });
   const performance = livePerformance(config, armName, risk);
@@ -412,12 +452,21 @@ export function readFliesLive(config: ConsoleConfig, session: string | null = nu
       : [];
 
   const broker = readBrokerAccount();
-  const latestMargin = marks.openMargin.length > 0 ? marks.openMargin[marks.openMargin.length - 1]!.v : Math.abs(analytics.today.maxPossibleLoss);
+  const open = positions.filter((p) => p.status === "open").length;
+  const pending = positions.filter((p) => p.entryFillStatus === "pending" || p.completionFillStatus === "pending").length;
+  // The loop's last tick is the book just before the bell; once nothing is open or working it is
+  // not exposure any more, and reading it as such put a settled book at "$890.33 / $1000 used".
+  const latestMargin =
+    open + pending > 0 && marks.openMargin.length > 0
+      ? marks.openMargin[marks.openMargin.length - 1]!.v
+      : Math.abs(analytics.today.maxPossibleLoss);
+  const moduleEnabled = moduleIds(config).find((m) => m.id === "flies")?.enabled ?? null;
 
   return {
     generatedAt: new Date().toISOString(),
     session: day,
     sessionBasis: resolved.basis,
+    moduleEnabled,
     ledger: ledger.status,
     ledgerError: ledger.status === "failed" ? ledger.error : null,
     arm: {
@@ -433,8 +482,8 @@ export function readFliesLive(config: ConsoleConfig, session: string | null = nu
     periods: { today: period("today"), week: period("week"), month: period("month"), year: period("year") },
     today: {
       positions: positions.length,
-      open: positions.filter((p) => p.status === "open").length,
-      pending: positions.filter((p) => p.entryFillStatus === "pending" || p.completionFillStatus === "pending").length,
+      open,
+      pending,
       completionPct: analytics.today.completionPct,
       fees: analytics.today.fees,
       maxPossibleLoss: analytics.today.maxPossibleLoss,

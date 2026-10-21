@@ -4,7 +4,7 @@ import { Card, DataCard, sortRows, useSort } from "../../components/DataTable";
 import { EquityUnderwater } from "../../components/EquityUnderwater";
 import { MetricTiles } from "../../components/performance/MetricTiles";
 import { TileGrid } from "../../components/performance/TileGrid";
-import { fmtMoney } from "../../lib/format";
+import { fmtMoney, fmtPrice } from "../../lib/format";
 import {
   CompletionCard,
   CompletionTrend,
@@ -61,13 +61,35 @@ function onRiskTitle(o: LiveOnRisk): string {
   );
 }
 
-function PeriodTile({ label, p }: { label: string; p: LivePeriod }) {
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+/** "now" only while the page reads today's running session; any other session is named, or a
+ *  retired module's last mark from days ago reads as live. */
+export function markTileLabel(d: Pick<LiveFliesPayload, "session" | "sessionBasis">): string {
+  return d.sessionBasis === "today" ? "now · mark (mid)" : `${d.session} · last mark (mid)`;
+}
+
+/** The paper side is the control arm over the sessions the live figure covers, never the calendar
+ *  period -- the paper loop ran sessions the pilot sat out. */
+export function periodTitle(p: LivePeriod, arm: string | null): string {
+  const live = `live settled net, ${arm !== null ? `the ${arm} arm only` : "every arm"}: ${plural(p.sessions, "session")}, ${plural(p.trades, "structure")}`;
+  const paper =
+    p.paperNet === null
+      ? "paper control: n/a"
+      : `paper control over the same ${plural(p.sessions, "session")} live traded: ${fmtMoney(p.paperNet)} (it settled on ${p.paperSessions ?? 0} of them)`;
+  return `${live}\n${paper}\n\n${onRiskTitle(p.onRisk)}`;
+}
+
+function PeriodTile({ label, p, arm }: { label: string; p: LivePeriod; arm: string | null }) {
   return (
-    <div className="stat-tile" title={`settled net over ${p.sessions} session${p.sessions === 1 ? "" : "s"}, ${p.trades} structure${p.trades === 1 ? "" : "s"}; paper control the same period: ${p.paperNet === null ? "n/a" : fmtMoney(p.paperNet)}\n\n${onRiskTitle(p.onRisk)}`}>
+    <div className="stat-tile" title={periodTitle(p, arm)}>
       <span className="stat-label">{label} · settled</span>
       <span className={`stat-value ${tone(p.trades > 0 ? p.net : null)}`}>{p.trades > 0 ? fmtMoney(p.net) : "—"}</span>
       <span className="muted" style={{ display: "block", fontSize: 11 }}>
-        {p.trades} live · paper {p.paperNet === null ? "—" : fmtMoney(p.paperNet)}
+        {p.trades} live{arm !== null ? ` ${arm}` : ""} · {plural(p.sessions, "session")} · paper{" "}
+        {p.paperNet === null || p.sessions === 0 ? "—" : `${fmtMoney(p.paperNet)} same sessions`}
       </span>
       <span className="muted" style={{ display: "block", fontSize: 11 }}>
         <span className={tone(p.onRisk.ratio)}>{fmtReturn(p.onRisk.ratio)}</span> on session peak risk
@@ -219,6 +241,9 @@ export function LivePage() {
   // Before today's open the server hands back the last session the pilot settled; every "today"
   // on the page is that session, so the tile says which day it is.
   const lastCompleted = d?.sessionBasis === "last_completed";
+  // Any session that is not today's running one: nothing on it is "now".
+  const pastSession = d !== undefined && d.sessionBasis !== "today";
+  const moduleOff = d?.moduleEnabled === false;
   // The feed is the whole day's journal, already in hand, so it pages client-side. Back to the
   // first page when the session changes -- an offset into yesterday's feed points nowhere today.
   const activity = usePage([d?.session], ACTIVITY_PAGE_SIZES[0]);
@@ -239,7 +264,20 @@ export function LivePage() {
           {d.ledger === "absent" ? "no live ledger on this machine yet — the pilot has not traded here" : `live ledger read failed: ${d.ledgerError ?? "unknown"}`}
         </p>
       )}
-      {lastCompleted && (
+      {moduleOff && (
+        <p style={{ margin: 0 }}>
+          <span className="chip muted">module off</span> Flies is switched off in the suite config (
+          <code>modules.flies.enabled</code> is false): its loops, paper and live, are not scheduled, so this tab
+          reads history.
+          {lastCompleted && (
+            <>
+              {" "}
+              Showing <strong>{d.session}</strong>, the last session the pilot settled.
+            </>
+          )}
+        </p>
+      )}
+      {lastCompleted && !moduleOff && (
         <p className="muted" style={{ margin: 0 }}>
           Showing <strong>{d.session}</strong>, the last session the pilot settled — today's session has not opened yet.
         </p>
@@ -248,12 +286,19 @@ export function LivePage() {
         <div className="stats-grid">
           {d && (
             <>
-              <PeriodTile label={lastCompleted ? `session ${d.session.slice(5)}` : "today"} p={d.periods.today} />
-              <PeriodTile label="week" p={d.periods.week} />
-              <PeriodTile label="month" p={d.periods.month} />
-              <PeriodTile label="year" p={d.periods.year} />
-              <div className="stat-tile" title="the latest tick's summed mid mark across open positions — a mid, not a fill">
-                <span className="stat-label">now · mark (mid)</span>
+              <PeriodTile label={pastSession ? `session ${d.session.slice(5)}` : "today"} p={d.periods.today} arm={d.arm.arm} />
+              <PeriodTile label="week" p={d.periods.week} arm={d.arm.arm} />
+              <PeriodTile label="month" p={d.periods.month} arm={d.arm.arm} />
+              <PeriodTile label="year" p={d.periods.year} arm={d.arm.arm} />
+              <div
+                className="stat-tile"
+                title={
+                  pastSession
+                    ? `the last tick of ${d.session}: the summed mid mark across what was open then — a mid, not a fill, and not now`
+                    : "the latest tick's summed mid mark across open positions — a mid, not a fill"
+                }
+              >
+                <span className="stat-label">{markTileLabel(d)}</span>
                 <span className={`stat-value ${tone(d.today.markPnl)}`}>{signed(d.today.markPnl)}</span>
                 <span className="muted" style={{ display: "block", fontSize: 11 }}>
                   {d.today.markedAt !== null ? `at ${hhmmOf(d.today.markedAt)}` : "no mark yet"}
@@ -263,13 +308,13 @@ export function LivePage() {
               {heldPeak !== null ? (
                 // Settled: the last tick's exposure is the book just before the bell, which beside
                 // "0 open" reads as risk still on. The session's peak is what the day carried.
-                <div className="stat-tile" title="the book is settled: the largest worst case at expiry it carried during the session, from the loop's own per-tick exposure — shown until the next session opens">
+                <div className="stat-tile" title="nothing open or working: the largest worst case at expiry the book carried during the session, from the loop's own per-tick exposure — shown while the page reads this session">
                   <span className="stat-label">worst case at expiry · session peak / cap</span>
                   <span className={`stat-value ${bp && bp.cap && -heldPeak.worst > bp.cap ? "pnl-neg" : ""}`}>
                     {`${fmtMoney(-heldPeak.worst)} / ${bp?.cap == null ? "no cap" : fmtMoney(bp.cap)}`}
                   </span>
                   <span className="muted" style={{ display: "block", fontSize: 11 }}>
-                    at {hhmmOf(heldPeak.at)} · settled · until the next open ·{" "}
+                    {pastSession ? `${d.session} ` : ""}at {hhmmOf(heldPeak.at)} · nothing open ·{" "}
                     {d.today.completionPct !== null ? `${d.today.completionPct.toFixed(0)}% complete` : "no completions"}
                   </span>
                 </div>
@@ -329,7 +374,7 @@ export function LivePage() {
               <td>{hhmmOf(p.entryTime)}</td>
               <td>{structure(p)}</td>
               <td>{fillState(p)}</td>
-              <td>{p.netCredit.toFixed(2)}</td>
+              <td>{fmtPrice(p.netCredit)}</td>
               <td className={tone(p.floorDollars)}>{p.floorDollars !== null ? fmtMoney(p.floorDollars) : "—"}</td>
               <td className={tone(p.mark?.markPnl)} title={p.mark ? `mid ${p.mark.structureMid.toFixed(2)} at ${hhmmOf(p.mark.at)}` : "no usable mark"}>
                 {p.mark ? fmtMoney(p.mark.markPnl) : "—"}

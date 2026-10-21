@@ -212,8 +212,8 @@ function readFliesToday(config: ConsoleConfig, session: string, minute: number):
   const working = positions.filter(
     (p) => p.status === "open" && (p.entryFillStatus === "pending" || p.completionFillStatus === "pending"),
   ).length;
-  // The analytics' position count is the one that leaves voided rows out (`positionsFor` keeps a
-  // voided row, which stays `settled`); less the entries still working, it is today's fills.
+  // The analytics' position count leaves voided and cancelled rows out (as `positionsFor` does
+  // since 2026-10-21); less the entries still working, it is today's fills.
   const analytics = readFliesAnalytics(config, "live", { arm: null, date: session, symbol: null, era: "ALL" });
   const log = readFliesTradeLog(config, "live", {
     ...NO_TRADE_LOG_QUERY,
