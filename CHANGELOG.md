@@ -11,6 +11,11 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: an income candidate on a name already held on its expiry is badged.** The two settle
+  together, and with an opposite side they make one structure no rule judged (a put spread under a
+  held call spread is a short strangle). Each candidate carries `held_same_expiry` (any held option
+  leg on that name and date), shown as "held · same expiry" on Live → portfolio's income card; its
+  sizing is unchanged. On 10-20 it marks the SPY and IWM call spreads on 2026-12-18.
 - **Added: manage adds up earnings and expiry exposure.** Each trade passed its own rules while,
   between them, the ones spanning an earnings report and the ones expiring on one date each held
   about a quarter of net liq. `portfolio.earnings_exposure` is a REVIEW when what the trades with a

@@ -618,6 +618,9 @@ export interface ManageCandidate {
   /** `leveraged`, `inverse` or `volatility` when the underlying is a declared daily-reset fund (from the
    *  session's income lists); null otherwise. */
   leveraged: string | null;
+  /** The account already holds an option on this name with this expiry (they settle together, and
+   *  can make one structure no rule judged). False on an evaluation from before the badge. */
+  heldSameExpiry: boolean;
 }
 
 /** `ok`: under the VIX-scaled buying-power cap; `over`: within `bpWarnOver` of it; `far_over`: past that. */

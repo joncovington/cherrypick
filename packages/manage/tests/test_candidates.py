@@ -475,6 +475,26 @@ def test_a_margin_account_needs_far_less_than_the_strike_and_no_reading_is_no_ve
     assert {f["fits"] for f in unknown.values()} == {None}
 
 
+def test_a_candidate_on_a_name_already_held_on_its_expiry_is_badged_and_still_sized():
+    # AAA holds a call spread on the cycle monthly the candidates use (2026-12-03); BBB holds one a
+    # month earlier. Only AAA's candidates carry the badge, and the badge changes no size.
+    def spread(und, exp):
+        legs = [
+            {"quantity": -1.0, "right": "C", "strike": 60.0, "expiration": exp},
+            {"quantity": 1.0, "right": "C", "strike": 65.0, "expiration": exp},
+        ]
+        return {"underlying": und, "legs": legs}
+
+    held = [spread("AAA", "2026-12-03"), spread("BBB", "2026-11-05")]
+    out = _suggest({"AAA": _entry(), "BBB": _entry()}, trades=held)
+    rows = out["fits"] + out["too_big"]
+    assert {r["underlying"] for r in rows if r["held_same_expiry"]} == {"AAA"}
+    assert all(r["held_same_expiry"] is False for r in rows if r["underlying"] == "BBB")
+    bare = _suggest({"AAA": _entry(), "BBB": _entry()})
+    units = lambda o: sorted((r["underlying"], r["kind"], r["units"]) for r in o["fits"])  # noqa: E731
+    assert units(bare) == units(out)
+
+
 def test_the_screen_fit_is_judged_even_with_earnings_in_the_trade_and_counts_free_shares():
     # The lists show earnings themselves; the fit is only whether the account can carry it.
     earn = _entry(earnings_date="2026-11-05")

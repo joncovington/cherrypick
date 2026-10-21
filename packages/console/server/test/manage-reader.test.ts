@@ -388,6 +388,27 @@ describe("readManage", () => {
     expect(bare.candidates!.caps).toBeNull();
   });
 
+  it("passes the same-expiry badge through, false on an older evaluation", () => {
+    const doc = evalDoc("2026-10-19");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    const cand = (u: string, held?: boolean) => ({
+      underlying: u,
+      kind: "put_spread",
+      legs: [],
+      units: 1,
+      per_unit: {},
+      ...(held === undefined ? {} : { held_same_expiry: held }),
+    });
+    acct["portfolio"] = { benchmark: "SPY", candidates: { fits: [cand("NKE", true), cand("SLV", false), cand("OLD")], too_big: [] } };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    const fits = readManage(config).accounts[0]!.portfolio!.candidates!.fits;
+    expect(fits.map((c) => [c.underlying, c.heldSameExpiry])).toEqual([
+      ["NKE", true],
+      ["SLV", false],
+      ["OLD", false],
+    ]);
+  });
+
   it("badges a candidate from the session's own income lists, and none without them", () => {
     const doc = evalDoc("2026-10-19");
     const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;

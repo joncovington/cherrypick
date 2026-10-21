@@ -887,6 +887,7 @@ function candidate(v: unknown, lev: Leveraged = NO_LEVERAGED): ManageCandidate {
     earningsUnknown: c["earnings_unknown"] === true,
     alternative: c["alternative"] ? candidate(c["alternative"], lev) : null,
     leveraged: lev.get(str(c["underlying"]) ?? "") ?? null,
+    heldSameExpiry: c["held_same_expiry"] === true,
     ifRoom: c["if_room"] ? candidateRoom(c["if_room"]) : null,
   };
 }

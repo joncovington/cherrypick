@@ -333,6 +333,7 @@ function candidate(over: Partial<ManageCandidate> = {}): ManageCandidate {
     alternative: null,
     ifRoom: null,
     leveraged: null,
+    heldSameExpiry: false,
     ...over,
   };
 }
@@ -378,6 +379,12 @@ describe("IncomeCard", () => {
     const html = render(<IncomeCard c={income({ fits: [candidate({ underlying: "TSLL", leveraged: "leveraged" }), candidate()] })} />);
     expect(html).toMatch(/TSLL<span class="chip"[^>]*>leveraged</);
     expect(html.match(/>leveraged</g)?.length).toBe(1);
+  });
+
+  it("badges a candidate on a name already held on the same expiry", () => {
+    const html = render(<IncomeCard c={income({ fits: [candidate({ underlying: "NKE", heldSameExpiry: true }), candidate()] })} />);
+    expect(html).toMatch(/NKE<span class="chip"[^>]*>held · same expiry</);
+    expect(html.match(/held · same expiry</g)?.length).toBe(1);
   });
 
   it("shows each fit's whole position in the suite's money layout, in the package's order", () => {
