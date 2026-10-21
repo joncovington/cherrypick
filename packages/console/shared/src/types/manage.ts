@@ -709,4 +709,8 @@ export interface ManagePayload {
   /** The effective ruleset the session was judged on, verbatim. */
   rules: Record<string, unknown> | null;
   accounts: ManageAccount[];
+  /** The watchdog's `manage.snapshot_version` WARN, verbatim, while the newest snapshot is older than
+   *  the installed code (views needing the newer fields read empty until the next run); null when it
+   *  is current, unchecked, or the session shown is not the newest. */
+  snapshotStale: string | null;
 }

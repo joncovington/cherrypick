@@ -49,7 +49,7 @@ surfaces, flags and bug-level fixes that land when ready.
 | 9 | Leveraged and inverse ETFs | **Badged**, not excluded, on the lists and candidates. |
 | 10 | A candidate on a name already held | **Stands alone, badged** when the name already has a position on the *same expiry*. |
 | 11 | Retired loops on Live → today | **Collapsed** to one "off" line when the module is disabled and nothing is open or overdue; expanded again otherwise. Done (`LiveTodayLoop.retired`; any open, working, held, orphaned or overdue item, an arm record, or an unreadable ledger keeps the full row). |
-| 12 | Snapshot older than the code | **Re-taken on deploy**: when the code's `SNAPSHOT_VERSION` is newer than the latest snapshot's, the supervisor takes one fresh read-only snapshot and re-evaluates. Once per version; the read places nothing. |
+| 12 | Snapshot older than the code | **A banner and a watchdog WARN**, no extra broker read. First agreed as a re-take on deploy, then changed (2026-10-21) on finding manage already snapshots every 30 minutes from 10:00 to 16:35 ET, so only a merge after the day's last run leaves a stale snapshot, and only until 10:00. The watchdog's `manage.snapshot_version` WARNs while the newest snapshot is older than the installed `SNAPSHOT_VERSION`; the console's manage tabs show that finding verbatim. Done. |
 | 13–14 | Payoff profile figures | **Rounded to cents** where manage computes them. The review read them as value at expiry rather than P&L, but that was the raw `min_value`/`max_value` fields; the positions card already shows P&L from the opening cash (max loss from open, left to win, left to lose). Done. |
 
 ## The boundary for #2 and #3
@@ -63,7 +63,7 @@ so no ledger restarts; the boundary is for anyone comparing suggestions across i
 1. #13–14 profile figures (done).
 2. #1 theta band (done).
 3. #11 retired loops (done).
-4. #12 snapshot re-take on deploy.
+4. #12 stale snapshot banner and WARN (done).
 5. #4, #5, #9 on the screener lists.
 6. #7, #8 earnings and expiry exposure.
 7. #10 same-expiry badge.

@@ -90,6 +90,21 @@ describe("readManage", () => {
     expect(out.accounts).toEqual([]);
   });
 
+  it("carries the watchdog's stale-snapshot WARN on the newest session only", () => {
+    for (const s of ["2026-10-19", "2026-10-20"]) {
+      fs.writeFileSync(path.join(tmp, "manage", `eval-${s}.json`), JSON.stringify(evalDoc(s)));
+    }
+    const wd = path.join(tmp, "watchdog.last.json");
+    config = { paths: { manageDir: path.join(tmp, "manage"), watchdogLast: wd } } as unknown as ConsoleConfig;
+    expect(readManage(config).snapshotStale).toBeNull(); // no watchdog run yet
+    const message = "the 2026-10-20 snapshot is v11 and the installed code takes v14: views read empty";
+    fs.writeFileSync(wd, JSON.stringify({ findings: [{ key: "manage.snapshot_version", status: "WARN", message }] }));
+    expect(readManage(config).snapshotStale).toBe(message);
+    expect(readManage(config, "2026-10-19").snapshotStale).toBeNull();
+    fs.writeFileSync(wd, JSON.stringify({ findings: [{ key: "manage.snapshot_version", status: "OK", message: "current" }] }));
+    expect(readManage(config).snapshotStale).toBeNull();
+  });
+
   it("defaults to the latest session and passes the package's verdicts through", () => {
     for (const s of ["2026-10-13", "2026-10-14"]) {
       fs.writeFileSync(path.join(tmp, "manage", `eval-${s}.json`), JSON.stringify(evalDoc(s)));
