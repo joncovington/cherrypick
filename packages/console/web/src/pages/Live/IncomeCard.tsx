@@ -42,6 +42,14 @@ function Name({ c }: { c: ManageCandidate }) {
           {c.leveraged}
         </span>
       ) : null}
+      {c.heldSameExpiry ? (
+        <span
+          className="chip"
+          title="The account already holds an option on this name with this expiry: they settle together, and an opposite side makes one structure (a strangle, an iron fly) no rule judged"
+        >
+          held · same expiry
+        </span>
+      ) : null}
     </>
   );
 }

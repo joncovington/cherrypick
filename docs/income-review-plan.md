@@ -47,7 +47,7 @@ surfaces, flags and bug-level fixes that land when ready.
 | 7 | Earnings exposure | **A portfolio card and a band**: downside summed by report date, and a REVIEW when total earnings downside passes a configurable share of net liq (default 10%). Done (`portfolio.earnings_exposure`; the ladder's earnings line gains `by_date`). |
 | 8 | Expiry concentration | **A REVIEW over a share**: one expiry's downside past a configurable share of net liq (default 20%) fires a REVIEW, and candidates prefer another expiry while it is over. Done (`portfolio.expiry_concentration`). The income reading carries one cycle monthly per name, so there is no other expiry to prefer: a candidate on an expiry already over its share waits instead (a room cap, `expiry concentration`). |
 | 9 | Leveraged and inverse ETFs | **Badged**, not excluded, on the lists and candidates. Done: from the declared list skate already leaves out (`technicals/leveraged_funds.json`: leveraged, inverse, volatility); each list row carries `leveraged`, and manage's candidates are badged from the session's own list rows. |
-| 10 | A candidate on a name already held | **Stands alone, badged** when the name already has a position on the *same expiry*. |
+| 10 | A candidate on a name already held | **Stands alone, badged** when the name already has a position on the *same expiry*. Done (`held_same_expiry`, any held option leg on that name and date; sizing unchanged). |
 | 11 | Retired loops on Live → today | **Collapsed** to one "off" line when the module is disabled and nothing is open or overdue; expanded again otherwise. Done (`LiveTodayLoop.retired`; any open, working, held, orphaned or overdue item, an arm record, or an unreadable ledger keeps the full row). |
 | 12 | Snapshot older than the code | **A banner and a watchdog WARN**, no extra broker read. First agreed as a re-take on deploy, then changed (2026-10-21) on finding manage already snapshots every 30 minutes from 10:00 to 16:35 ET, so only a merge after the day's last run leaves a stale snapshot, and only until 10:00. The watchdog's `manage.snapshot_version` WARNs while the newest snapshot is older than the installed `SNAPSHOT_VERSION`; the console's manage tabs show that finding verbatim. Done. |
 | 13–14 | Payoff profile figures | **Rounded to cents** where manage computes them. The review read them as value at expiry rather than P&L, but that was the raw `min_value`/`max_value` fields; the positions card already shows P&L from the opening cash (max loss from open, left to win, left to lose). Done. |
@@ -58,6 +58,24 @@ surfaces, flags and bug-level fixes that land when ready.
 the delta study, and the boundary is written once in the changelog. Nothing trades the candidate list,
 so no ledger restarts; the boundary is for anyone comparing suggestions across it.
 
+## The study (2026-10-21), and what it holds back
+
+Run offline over the licensed end-of-day chains the credit-spread selection test fetched, so its
+figures stay local and are not given here:
+
+- **The declared selection test** (edge-hypotheses item 14) gave **no verdict** for its put and call
+  selectors: too few trades per half, because a 0.40-delta short rarely admits the declared 35-40%
+  credit at the working price at any width. The board selector was not run (no historical board).
+- **The delta comparison** for #2 found **no short delta with edge after costs** -- 0.20, 0.25, 0.30
+  and the first out-of-the-money strike manage uses today, on either side, each negative in both
+  halves of the deciding window. The first out-of-the-money strike was the worst, and it is also the
+  one with the lowest cost drag, so ranking by cost drag (#3) would favour the strikes that lose most.
+
+So **#2, the cost-drag ranking in #3, and #6 are held for a decision**, not landed: no direction
+selector passed (the condition for a side rule and for our own list), no delta earned its place, and
+the ranking #3 chose is contradicted. The odds #3 would show (P(loss), P(max loss), break-even, cost)
+do not depend on the study.
+
 ## Order
 
 1. #13–14 profile figures (done).
@@ -66,7 +84,7 @@ so no ledger restarts; the boundary is for anyone comparing suggestions across i
 4. #12 stale snapshot banner and WARN (done).
 5. #4 (found done), #9 (done), #5 (done) on the screener lists.
 6. #7, #8 earnings and expiry exposure (done).
-7. #10 same-expiry badge.
-8. The spread delta study, then #2 + #3 together, then #6.
+7. #10 same-expiry badge (done).
+8. The spread delta study (done, 2026-10-21: no edge); #2, #3's ranking and #6 held for a decision.
 
 Each is its own PR from its own worktree.

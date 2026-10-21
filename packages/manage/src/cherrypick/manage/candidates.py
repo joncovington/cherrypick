@@ -656,6 +656,20 @@ def suggest(
             full = _portfolio.expiry_over(book, rules, view.get("expiry"))
             _build(view, options, kinds, sym, held, written, scale, full)
 
+    # A name already holding an option on the candidate's own expiry (income review plan, item 10):
+    # the two settle together, and with an opposite side they can make one structure no rule judged
+    # (a put spread under a held call spread is a short strangle). Badged; each candidate still stands
+    # alone in its sizing.
+    held_expiries: dict[str, set[str]] = {}
+    for t in trades:
+        for leg in t.get("legs") or []:
+            if leg.get("right") in ("C", "P") and leg.get("expiration"):
+                held_expiries.setdefault(t["underlying"], set()).add(str(leg["expiration"]))
+    for r in (*fits, *too_big, *waiting):
+        for row in (r, r.get("alternative")):
+            if row:
+                row["held_same_expiry"] = row.get("expiry") in held_expiries.get(row["underlying"], ())
+
     def rank(r: dict) -> float:
         return r["theta_per_bp"] if r["theta_per_bp"] is not None else -math.inf
 
