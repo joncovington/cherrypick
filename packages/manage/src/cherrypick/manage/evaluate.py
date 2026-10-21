@@ -2010,6 +2010,50 @@ def _wheel_context(
     }
 
 
+def _alone(groups: list[tuple[list[dict[str, Any]], Any]], symbol: str) -> int | None:
+    """The index of the group holding exactly `symbol` and nothing else, or None."""
+    return next((i for i, (g, _) in enumerate(groups) if {_leg_symbol(leg) for leg in g} == {symbol}), None)
+
+
+def _join_pmcc(
+    groups: list[tuple[list[dict[str, Any]], dict[str, Any] | None]],
+    view: dict[str, Any] | None,
+    underlying: str,
+    history: list[dict[str, Any]] | None,
+    rules: dict[str, Any],
+) -> tuple[list[tuple[list[dict[str, Any]], dict[str, Any] | None]], set[int]]:
+    """Join a long call and the short call it covers into one trade when the order chains keep them
+    apart, and return which groups were joined.
+
+    A short call sold in an order of its own (after the last one expired) is a chain of its own, so
+    `group_trades` makes it a naked call beside a lone long call. The rule is the narrowest that
+    mends that: the two are joined only when the PMCC view has linked them and they RECONCILE (the
+    view's shape: one long, one short of the same size at or above its strike within 60 days, no
+    shares; its orders replaying to exactly those two legs), recognised as a PMCC or not, since
+    coverage is a fact about the legs and not about intent; and only when each sits alone in its own
+    group, so no other trade's legs move. The joined trade's basis is every order the view linked,
+    the expired shorts' premiums included, as the view's own net cost counts them. Anything else (a
+    short further out, an unreconciled link, a group holding other legs) keeps the chains' grouping.
+    """
+    if rules.get("trade_grouping") != "order_chain" or not view or view.get("error") or not history:
+        return groups, set()
+    joined: set[int] = set()
+    for entry in view.get("positions") or []:
+        if entry["underlying"].upper() != underlying.upper() or not entry["reconciled"]:
+            continue
+        long_sym, short_sym = entry["long"]["symbol"], entry["short"]["symbol"]
+        gl, gs = _alone(groups, long_sym), _alone(groups, short_sym)
+        if gl is None or gs is None or gl == gs:
+            continue
+        chain = _chains.from_orders(entry["orders"], history, [long_sym, short_sym])
+        merged = (groups[gl][0] + groups[gs][0], chain)
+        keep, drop = min(gl, gs), max(gl, gs)
+        groups = [merged if i == keep else g for i, g in enumerate(groups) if i != drop]
+        joined = {i if i < drop else i - 1 for i in joined} | {keep}
+        entry["grouping"] = "joined: the long and its short were two order chains"
+    return groups, joined
+
+
 def _pmcc_view(
     account: dict[str, Any],
     n_accounts: int,
@@ -2051,8 +2095,8 @@ def _pmcc_context(view: dict[str, Any] | None, group: list[dict[str, Any]], acco
 
 
 def _link_pmcc(view: dict[str, Any], trades: list[dict[str, Any]]) -> None:
-    """Name, on each PMCC, the evaluated trades holding its long and its short (two, when the short was
-    sold in an order of its own and the evaluation's order chains keep it apart)."""
+    """Name, on each PMCC, the evaluated trades holding its long and its short: one trade, unless the
+    link did not reconcile and the chains kept them apart."""
     held_by: dict[str, set[str]] = {}
     for t in trades:
         for leg in t["legs"]:
@@ -2117,6 +2161,13 @@ def evaluate(
             if not legs:
                 continue
             groups = group_trades(legs, rules.get("trade_grouping"), history.get(u["underlying"]), history_ok)
+            joined: set[int] = set()
+            try:
+                groups, joined = _join_pmcc(
+                    groups, pmcc_view, u["underlying"], history.get(u["underlying"]), rules
+                )
+            except Exception as exc:  # noqa: BLE001 -- a failed join leaves the chains' own grouping
+                pmcc_view["grouping_error"] = f"PMCC grouping failed: {type(exc).__name__}: {exc}"[:300]
             for i, (group, chain) in enumerate(groups):
                 trade = evaluate_trade(
                     u["underlying"],
@@ -2132,6 +2183,8 @@ def evaluate(
                     _pmcc_context(pmcc_view, group, account),
                 )
                 trade["trade_id"] = u["underlying"] if len(groups) == 1 else f"{u['underlying']}#{i + 1}"
+                # How the legs became one trade: the broker's chains, unless the PMCC link joined two.
+                trade["grouped_by"] = "pmcc link" if i in joined else None
                 trades.append(trade)
         trades.sort(key=lambda t: (PRIORITY.get(t["recommendation"]["action"], 9), -abs(t["pnl_gross"] or 0)))
         counts: dict[str, int] = {}

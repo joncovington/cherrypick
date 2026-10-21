@@ -342,8 +342,9 @@ Jan 2027) has the shape but was entered as a diagonal, and stays one. What it ad
   trailing yield): a diagonal, as the plan said.
 - **Linking.** A short sold after the last one expired is an order chain of its own, so the view
   links the long's chain with every short-call-only chain on the name since it was bought, as the
-  wheel view links a wheel, and the evaluation still judges that short as its own trade; the PMCC
-  rules fire into it and the view names both trades.
+  wheel view links a wheel. Since 2026-10-20 the evaluation also joins the two into one trade when the
+  link reconciles (`grouped_by: "pmcc link"`), recognised or not, so the short is no longer judged
+  as a naked call.
 - **Roll candidates** come from what the snapshot quotes (the income reading's cycle monthly and
   covered-call expiry, and any roll chain), usually one or two expiries, not five; `check-roll`
   rejects any debit, so a candidate inside the $0.10 allowance says so.

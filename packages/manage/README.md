@@ -34,6 +34,16 @@ history is missing, starts after the position did, or the broker moved a leg wit
 trade falls back to grouping by expiry (a diagonal stays whole) and is priced from its open legs, and
 the page says so. A net credit is a **credit trade**, a net debit a **debit trade**.
 
+One exception joins two chains. A short call sold in an order of its own, after the last one sold
+against a long call expired, is a chain of its own, and alone it reads as a naked call. When the PMCC
+view links that short to the long call it is sold against, and the link reconciles (the PMCC shape:
+one long, one short of the same size at or above its strike within 60 days, no shares; its orders
+replaying to exactly those two legs), the two are one trade (`grouped_by: "pmcc link"`), whether or
+not the trade is recognised as a PMCC: coverage is a fact about the legs. Its basis is every order the
+link found, the earlier shorts' premiums included. Only a group holding the long or the short alone
+is moved; a short further out, an unreconciled link or a group with other legs keeps the chains'
+grouping.
+
 Every rule that fires names an action. The trade's recommendation is the most decisive one (close,
 then take profit, then roll-or-close, then close legs, then review) at that rule's confidence, less 10
 points for each fired rule pointing the other way (rolling against closing). A trade where nothing
@@ -389,9 +399,9 @@ before sending.
 - **Earnings dates are the broker's expected dates**, which can move.
 - **SPX 0DTE is left out** (`exclude.zero_dte_underlyings`): it is the flies live loop's own book,
   managed by that loop and cash-settled at the close.
-- **A PMCC whose short was sold in an order of its own is two trades.** The evaluation groups legs by
-  order chain, so the long and that short are judged apart (the short as a naked call, with its own
-  rules); the PMCC view links them and its rules fire into the short's trade, naming both.
+- **A diagonal whose separately sold short is more than 60 days out is two trades.** The join above
+  follows the PMCC view's shape, so a longer-dated short sold in its own order is still judged as a
+  naked call beside a lone long call.
 - **A PMCC between shorts is not shown.** With no short open the long is a long call and the view
   drops it until the next short is sold.
 - **Thesis is not knowable.** `credit.breached` is a mechanical stand-in for "the reason for the trade

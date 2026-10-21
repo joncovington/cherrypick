@@ -36,6 +36,8 @@ of that day, not today's.
   positions endpoint's per-leg average price drops a roll's credit. A chain counts only when replaying
   its orders reproduces today's quantities; otherwise the trade falls back to `expiry_chain` (split by
   expiry, a diagonal's short kept with its long) priced from the open legs, labelled `open_legs`.
+  The one join: a short call alone in its chain and the long call the PMCC view links it to, when that
+  link reconciles, are one trade (`grouped_by: "pmcc link"`), its basis every linked order.
 - **Credit or debit is decided by the net open cost**, never by the strategy's name.
 - **`None` is not zero.** An unpriced leg makes the trade `REVIEW` with no rule judged; a field with
   no input is null.

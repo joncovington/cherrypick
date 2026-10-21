@@ -83,6 +83,45 @@ def _merge_fills(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _order_rows(ordered: list[Any], by_order: dict[Any, list[dict]]) -> list[dict[str, Any]]:
+    rows = []
+    for i, o in enumerate(ordered):
+        legs_in = by_order[o]
+        fills = _merge_fills(legs_in)
+        rows.append(
+            {
+                "order_id": o,
+                "executed_at": str(legs_in[0].get("executed_at")),
+                "role": _role(legs_in, i == 0),
+                "net": sum(_f(r.get("value")) for r in legs_in),
+                "fees": sum(_f(r.get(k)) for r in legs_in for k in FEE_FIELDS),
+                "unit": math.gcd(*[int(f["quantity"]) or 1 for f in fills]),
+                "legs": fills,
+            }
+        )
+    return rows
+
+
+def from_orders(order_ids: list[Any], history: list[dict[str, Any]], symbols: list[str]) -> dict[str, Any]:
+    """A chain made of the given orders, in `build`'s layout, for orders some other reading has linked
+    and reconciled (the PMCC view's: a long call and every short call sold against it, whatever
+    orders they were sold in). `reconciled` is the caller's word, not checked again here."""
+    wanted = set(order_ids)
+    by_order: dict[Any, list[dict]] = defaultdict(list)
+    for r in history:
+        if r.get("transaction_type") == "Trade" and r.get("order_id") in wanted:
+            by_order[r["order_id"]].append(r)
+    ordered = sorted(by_order, key=lambda o: (min(str(r.get("executed_at")) for r in by_order[o]), str(o)))
+    rows = _order_rows(ordered, by_order)
+    return {
+        "symbols": sorted(symbols),
+        "orders": rows,
+        "cash": sum(r["net"] for r in rows),
+        "fees": sum(r["fees"] for r in rows),
+        "reconciled": True,
+    }
+
+
 def build(legs: list[dict[str, Any]], history: list[dict[str, Any]]) -> dict[str, Any]:
     """{"chains": [...], "unchained": [leg symbols no reconciled chain explains]}.
 
@@ -158,21 +197,7 @@ def build(legs: list[dict[str, Any]], history: list[dict[str, Any]]) -> dict[str
         reconciled = all(abs(replay.get(s, 0.0) - held[s]) < 1e-9 for s in symbols) and all(
             abs(q) < 1e-9 for s, q in replay.items() if s not in symbols
         )
-        rows = []
-        for i, o in enumerate(ordered):
-            legs_in = by_order[o]
-            fills = _merge_fills(legs_in)
-            rows.append(
-                {
-                    "order_id": o,
-                    "executed_at": str(legs_in[0].get("executed_at")),
-                    "role": _role(legs_in, i == 0),
-                    "net": sum(_f(r.get("value")) for r in legs_in),
-                    "fees": sum(_f(r.get(k)) for r in legs_in for k in FEE_FIELDS),
-                    "unit": math.gcd(*[int(f["quantity"]) or 1 for f in fills]),
-                    "legs": fills,
-                }
-            )
+        rows = _order_rows(ordered, by_order)
         chains.append(
             {
                 "symbols": sorted(symbols),
