@@ -84,6 +84,29 @@ def test_a_same_strike_roll_out_in_time_for_a_credit_is_ok():
     assert out["shape_after"] == "naked put"
 
 
+def _budget_problem(out):
+    return [p for p in out["problems"] if "per-trade budget" in p]
+
+
+def test_a_put_roll_on_a_name_whose_shares_are_held_is_still_judged_by_the_budget():
+    # $10,000 net liq: a 2% budget, flagged past 3x ($600). A 16 put can lose ~$1,400 from here.
+    t = run([leg(-1, "P", 16, "2026-11-20", 1.01, 1.445)], spot=15.225)
+    roll = (["-1 2026-11-20 16P @1.45"], ["-1 2026-12-18 16P @1.80"])
+    alone = check(t, *roll, spot=15.225, net_liq=10_000)
+    held = check(t, *roll, spot=15.225, net_liq=10_000, shares=100)
+    assert _budget_problem(alone)
+    (p,) = _budget_problem(held)
+    assert "the short puts alone" in p  # the shares' own fall is not counted against the roll
+
+
+def test_a_covered_call_roll_is_not_judged_by_the_budget():
+    t = run([leg(-1, "C", 16, "2026-11-20", 0.40, 0.30)], spot=15.225)
+    out = check(
+        t, ["-1 2026-11-20 16C @0.30"], ["-1 2026-12-18 16C @0.55"], spot=15.225, net_liq=1_000, shares=100
+    )
+    assert not _budget_problem(out)
+
+
 def test_closing_a_leg_the_trade_does_not_hold_is_an_error():
     t = run([leg(-1, "P", 16, "2026-11-20", 1.01, 1.445)], spot=15.225)
     with pytest.raises(ValueError):
