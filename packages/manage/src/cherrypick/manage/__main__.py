@@ -53,15 +53,20 @@ def earnings_trades_seen(session: str, folder: Path | None = None) -> dict:
     `evaluate.earnings_trade` keys them (underlying and short expiry), with their report. Carried
     into the snapshot so a trade is still known as one the day after its report, when the broker may
     already show next quarter's date; a trade whose short has expired is dropped. Stored in the
-    snapshot, so `reevaluate` reads the same record and gives the same answer twice."""
+    snapshot, so `reevaluate` reads the same record and gives the same answer twice. An evaluation
+    with no trades (a day the broker could not be read) or one that cannot be read is passed over, so
+    one failed day does not make every earnings trade forget its report."""
     folder = _paths.data_dir() if folder is None else folder
-    earlier = sorted(p for p in folder.glob("eval-*.json") if p.stem[5:] < session)
-    if not earlier:
-        return {}
-    try:
-        doc = json.loads(earlier[-1].read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+    earlier = sorted((p for p in folder.glob("eval-*.json") if p.stem[5:] < session), reverse=True)
+    doc: dict = {}
+    for path in earlier:
+        try:
+            found = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if any(account.get("trades") for account in found.get("accounts") or []):
+            doc = found
+            break
     seen = {}
     for account in doc.get("accounts") or []:
         for t in account.get("trades") or []:

@@ -148,6 +148,17 @@ def _earnings_hold(t: dict[str, Any]) -> str:
 
 
 def explain(t: dict[str, Any]) -> str:
+    et = t.get("earnings_trade") or {}
+    if not et.get("kept"):
+        return _explain(t)
+    return _explain(t) + (
+        f" It was put on for the {_day(et.get('report'))} report, which is out. It is losing, but it has "
+        "a leg in a later expiry that can recover, so it is not closed for being an earnings trade; "
+        "the ordinary rules manage it from here."
+    )
+
+
+def _explain(t: dict[str, Any]) -> str:
     rec = t.get("recommendation") or {}
     action, rule = rec.get("action"), rec.get("rule")
     if action == "HOLD" and rule == "earnings_trade":
