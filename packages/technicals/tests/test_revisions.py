@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import json
 import sqlite3
+import urllib.error
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -201,6 +204,57 @@ def test_the_collector_reads_an_empty_or_unknown_symbol_as_no_history():
     m = _script()
     assert m.parse({"quoteSummary": {"result": None, "error": None}}) == []
     assert m.parse({"quoteSummary": {"result": [{}]}}) == []
+
+
+class _Opener:
+    """Answers each symbol from a script of outcomes, one per call: an exception to raise or a doc."""
+
+    def __init__(self, outcomes):
+        self.outcomes = outcomes
+
+    def open(self, url, timeout):
+        sym = url.split("/quoteSummary/")[1].split("?")[0]
+        outcome = self.outcomes[sym].pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return io.BytesIO(json.dumps(outcome).encode())
+
+
+def _main_with(monkeypatch, tmp_path, outcomes):
+    m = _script()
+    opener = _Opener(outcomes)
+    monkeypatch.setattr(m, "session", lambda: (opener, "crumb"))
+    monkeypatch.setattr(m, "PAUSE_S", 0)
+    monkeypatch.setattr(m.paths, "analyst_revisions", lambda: tmp_path / "r.db")
+    code = m.main(["--symbols", *outcomes])
+    return code, opener
+
+
+def test_a_symbol_that_fails_once_is_retried_and_the_run_succeeds(monkeypatch, tmp_path, capsys):
+    code, opener = _main_with(
+        monkeypatch,
+        tmp_path,
+        {"NKE": [TimeoutError("The read operation timed out"), HISTORY], "SPY": [HISTORY]},
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert code == 0 and report["failed"] == [] and report["fetched"] == 2
+    assert report["retried"] == ["NKE: TimeoutError: The read operation timed out"]
+    assert opener.outcomes == {"NKE": [], "SPY": []}  # NKE asked twice, SPY once
+
+
+def test_a_symbol_that_fails_twice_still_fails_the_run(monkeypatch, tmp_path, capsys):
+    code, _ = _main_with(monkeypatch, tmp_path, {"NKE": [TimeoutError("t"), TimeoutError("t")]})
+    assert code == 1 and json.loads(capsys.readouterr().out)["failed"] == ["NKE: TimeoutError: t"]
+
+
+def test_a_429_stops_the_run_and_nothing_is_retried(monkeypatch, tmp_path, capsys):
+    limited = urllib.error.HTTPError("u", 429, "Too Many Requests", None, None)
+    code, opener = _main_with(
+        monkeypatch, tmp_path, {"NKE": [TimeoutError("t"), HISTORY], "SPY": [limited, HISTORY]}
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert code == 1 and report["stopped"] == "429 at SPY" and report["retried"] == []
+    assert opener.outcomes == {"NKE": [HISTORY], "SPY": [HISTORY]}  # neither asked again
 
 
 def test_load_reads_what_the_collector_wrote(tmp_path):
