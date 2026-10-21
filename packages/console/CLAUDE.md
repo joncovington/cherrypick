@@ -713,7 +713,10 @@ layout. Risk is the figure the per-trade cap was applied to: a short put's stres
 strike. The card always says the prices are a day old and to re-quote before sending. Its "waiting
 for room" table is manage's `waiting` list: each row at its `if_room` size, with a chip coloured by
 manage's own `bp_level` (ok / over / far over, never graded here) and a theta-over chip; the too-big
-list leaves out a row already shown as waiting.
+list leaves out a row already shown as waiting. An "ex earnings buying power" checkbox swaps in
+manage's `ex_earnings` list, the same candidates sized with the earnings trades' buying power freed;
+the card never re-sizes a row itself. It is absent where manage wrote no such list, and disabled with
+manage's reason where manage refused one.
 
 **The Live page's `wheel` tab** (2026-10-20, `pages/Live/WheelCards.tsx`) is the third view of the
 same evaluation: the account's `wheel` (packages/manage `wheel.py`, docs/skate-plan.md step 5), one

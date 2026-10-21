@@ -370,6 +370,7 @@ function income(over: Partial<ManageCandidates> = {}): ManageCandidates {
     bpWarnOver: 0.1,
     error: null,
     caps: { perTradeRiskPct: 0.03, notionalPerNamePct: 0.25, maxNameThetaShare: 0.25 },
+    exEarnings: null,
     ...over,
   };
 }
@@ -481,6 +482,23 @@ describe("IncomeCard", () => {
     expect(html).toContain("1 more stopped by a cap on the trade itself");
     expect(html).toContain("<strong>AMZN</strong>");
     expect(html).not.toContain("<strong>XLF</strong>");
+  });
+
+  it("offers the ex-earnings toggle only where manage wrote a list, disabled with its reason when refused", () => {
+    expect(render(<IncomeCard c={income()} />)).not.toContain("ex earnings buying power");
+    const list = income({ bpUsedPct: 0.2 });
+    const on = render(
+      <IncomeCard c={income({ exEarnings: { trades: ["NFLX", "UAL"], unpriced: [], dollars: 595, error: null, list } })} />,
+    );
+    expect(on).toContain("ex earnings buying power");
+    expect(on).not.toMatch(/<input[^>]*disabled/);
+    // Off by default: the whole book's list, not the freed one.
+    expect(on).not.toContain("treated as free");
+    const refused = render(
+      <IncomeCard c={income({ exEarnings: { trades: ["TSLA"], unpriced: ["TSLA"], dollars: null, error: "no bounded max loss", list: null } })} />,
+    );
+    expect(refused).toMatch(/<input[^>]*disabled/);
+    expect(refused).toContain("no bounded max loss");
   });
 
   it("draws no waiting table from an evaluation without one", () => {

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ManageBpLevel, ManageCandidate, ManageCandidates } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { fmtCash, fmtMoney } from "../../lib/format";
@@ -261,13 +262,34 @@ function TooBig({ rows, total }: { rows: ManageCandidate[]; total: number }) {
   );
 }
 
-export function IncomeCard({ c }: { c: ManageCandidates | null }) {
-  if (!c) return null;
+/** The checkbox that swaps in manage's ex-earnings list: the same candidates sized as if the earnings
+ *  trades' buying power were already free. Shown only where manage wrote one; a refused one is
+ *  disabled with manage's reason. */
+function ExEarningsToggle({ c, on, set }: { c: ManageCandidates; on: boolean; set: (v: boolean) => void }) {
+  const ex = c.exEarnings;
+  if (!ex) return null;
+  const title = ex.list
+    ? `size as if the buying power of ${ex.trades.join(", ")} (${fmtMoney(ex.dollars)}, each one's defined-risk max loss) were free: they close after the call. Their theta and delta still count.`
+    : (ex.error ?? "no ex-earnings list");
+  return (
+    <label className="muted lbl" title={title}>
+      <input type="checkbox" checked={on && ex.list !== null} disabled={ex.list === null} onChange={(e) => set(e.target.checked)} />{" "}
+      ex earnings buying power
+    </label>
+  );
+}
+
+export function IncomeCard({ c: whole }: { c: ManageCandidates | null }) {
+  const [exOn, setExOn] = useState(false);
+  if (!whole) return null;
+  const ex = whole.exEarnings;
+  // Every figure below is one list's: the whole book's, or manage's ex-earnings one.
+  const c = exOn && ex?.list ? ex.list : whole;
   const excluded = Object.entries(c.excluded)
     .map(([why, n]) => `${n} ${why}`)
     .join(", ");
   return (
-    <Card title="income trades, sized to the account">
+    <Card title="income trades, sized to the account" controls={<ExEarningsToggle c={whole} on={exOn} set={setExOn} />}>
       {c.error ? (
         <p className="muted">{c.error}</p>
       ) : (
@@ -276,6 +298,7 @@ export function IncomeCard({ c }: { c: ManageCandidates | null }) {
             from our own universe ({c.names ?? "—"} tradable names) on the cycle monthly, priced at mid from the {c.sourceSession ?? "—"}{" "}
             afternoon quotes: re-quote before sending · sized for {BASIS[c.accountBasis ?? ""] ?? "an account of unknown kind"}
             {excluded ? ` · left out: ${excluded}` : ""}
+            {c !== whole && ex ? ` · ex earnings: ${fmtMoney(ex.dollars)} of buying power treated as free (${ex.trades.join(", ")})` : ""}
           </p>
           {c.fits.length > 0 ? (
             <FitsTable rows={c.fits} />

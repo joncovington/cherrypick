@@ -409,6 +409,31 @@ describe("readManage", () => {
     ]);
   });
 
+  it("passes the ex-earnings list through as its own list, and a refused one with no list", () => {
+    const doc = evalDoc("2026-10-19");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    const cand = (u: string, units: number) => ({ underlying: u, kind: "put_spread", legs: [], units, per_unit: {} });
+    const ex = { trades: ["NFLX", "UAL"], unpriced: [], dollars: 595, error: null, fits: [cand("SLV", 2)], too_big: [], waiting: [], bp_used_pct: 0.39 };
+    acct["portfolio"] = { benchmark: "SPY", candidates: { fits: [], too_big: [], waiting: [cand("SLV", 0)], bp_used_pct: 0.43, ex_earnings: ex } };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    const c = readManage(config).accounts[0]!.portfolio!.candidates!;
+    expect(c.bpUsedPct).toBe(0.43);
+    expect(c.exEarnings).toMatchObject({ trades: ["NFLX", "UAL"], dollars: 595, error: null });
+    expect(c.exEarnings!.list!.bpUsedPct).toBe(0.39);
+    expect(c.exEarnings!.list!.fits.map((r) => [r.underlying, r.units])).toEqual([["SLV", 2]]);
+    expect(c.exEarnings!.list!.exEarnings).toBeNull();
+
+    const refused = { trades: ["TSLA"], unpriced: ["TSLA"], dollars: null, error: "cannot free it" };
+    acct["portfolio"] = { benchmark: "SPY", candidates: { fits: [], too_big: [], ex_earnings: refused } };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    const r = readManage(config).accounts[0]!.portfolio!.candidates!.exEarnings!;
+    expect(r).toMatchObject({ unpriced: ["TSLA"], dollars: null, error: "cannot free it", list: null });
+
+    acct["portfolio"] = { benchmark: "SPY", candidates: { fits: [], too_big: [] } };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
+    expect(readManage(config).accounts[0]!.portfolio!.candidates!.exEarnings).toBeNull();
+  });
+
   it("badges a candidate from the session's own income lists, and none without them", () => {
     const doc = evalDoc("2026-10-19");
     const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;

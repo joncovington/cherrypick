@@ -424,6 +424,15 @@ the account: buying power used after it, graded against the VIX-scaled cap as `o
 It is the queue that opens as positions close, never a recommendation to run past a cap. A trade
 that waits is listed once; its narrowed version waits only when it does not.
 
+**Ex earnings** (2026-10-21). When the account holds earnings trades (`earnings_trade`: put on a few
+days before a report and closed after the call), the list is sized a second time as if their buying
+power were already free, as `ex_earnings` beside the trades set aside and the dollars freed. The
+broker states buying power only for the whole account, so each trade's is its defined-risk max loss
+from open (a credit spread's width less its credit, a debit trade's debit; modelled at the nearest
+expiry for a diagonal). One earnings trade with no bounded loss refuses the whole list, rather than
+freeing part of it. Only buying power is freed: their theta and delta still count. The console's
+income card switches between the two lists with a checkbox.
+
 ## Known limits
 
 - **Marks are mids** and the payoff model is Black-Scholes at today's IV per leg, with no dividends.
