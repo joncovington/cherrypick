@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ManageBpLevel, ManageCandidate, ManageCandidates } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { fmtCash, fmtMoney } from "../../lib/format";
@@ -50,6 +51,14 @@ function Name({ c }: { c: ManageCandidate }) {
           held · same expiry
         </span>
       ) : null}
+      {c.earningsUnknown ? (
+        <span
+          className="chip chip-warn"
+          title="No earnings date was found for this name, so nothing checked that a report falls outside the trade. Check before sending."
+        >
+          earnings unknown
+        </span>
+      ) : null}
     </>
   );
 }
@@ -93,7 +102,6 @@ function FitsTable({ rows }: { rows: ManageCandidate[] }) {
             <th title="buying power the position ties up">buying power</th>
             <th title="theta, whole position, dollars a day">θ / day</th>
             <th title="beta-weighted delta the position adds, in SPY shares">Δ SPY sh</th>
-            <th>earnings</th>
             <th title="the cap the next contract would break">next stops at</th>
           </tr>
         </thead>
@@ -119,7 +127,6 @@ function FitsTable({ rows }: { rows: ManageCandidate[] }) {
               <td className="num">{fmtMoney(times(c.units, c.perUnit.buyingPower))}</td>
               <td className="num">{fmtCash(times(c.units, c.perUnit.theta))}</td>
               <td className="num">{c.perUnit.bwd === null ? "—" : (c.units * c.perUnit.bwd).toFixed(1)}</td>
-              <td>{c.earningsUnknown ? <span className="muted">unknown</span> : c.earningsDate ?? "—"}</td>
               <td className="muted">{c.binding ?? "max contracts"}</td>
             </tr>
           ))}
@@ -164,7 +171,6 @@ function WaitingTable({ c }: { c: ManageCandidates }) {
               <th title="buying power the position ties up">buying power</th>
               <th title="buying power used after taking it today, against the VIX-scaled cap">BP after</th>
               <th title="theta, whole position, dollars a day">θ / day</th>
-              <th>earnings</th>
             </tr>
           </thead>
           <tbody>
@@ -209,7 +215,6 @@ function WaitingTable({ c }: { c: ManageCandidates }) {
                     ) : null}
                   </td>
                   <td className="num">{fmtCash(times(n, w.perUnit.theta))}</td>
-                  <td>{w.earningsUnknown ? <span className="muted">unknown</span> : w.earningsDate ?? "—"}</td>
                 </tr>
               );
             })}
@@ -261,13 +266,34 @@ function TooBig({ rows, total }: { rows: ManageCandidate[]; total: number }) {
   );
 }
 
-export function IncomeCard({ c }: { c: ManageCandidates | null }) {
-  if (!c) return null;
+/** The checkbox that swaps in manage's ex-earnings list: the same candidates sized as if the earnings
+ *  trades' buying power were already free. Shown only where manage wrote one; a refused one is
+ *  disabled with manage's reason. */
+function ExEarningsToggle({ c, on, set }: { c: ManageCandidates; on: boolean; set: (v: boolean) => void }) {
+  const ex = c.exEarnings;
+  if (!ex) return null;
+  const title = ex.list
+    ? `size as if the buying power of ${ex.trades.join(", ")} (${fmtMoney(ex.dollars)}, each one's defined-risk max loss) were free: they close after the call. Their theta and delta still count.`
+    : (ex.error ?? "no ex-earnings list");
+  return (
+    <label className="muted lbl" title={title}>
+      <input type="checkbox" checked={on && ex.list !== null} disabled={ex.list === null} onChange={(e) => set(e.target.checked)} />{" "}
+      ex earnings buying power
+    </label>
+  );
+}
+
+export function IncomeCard({ c: whole }: { c: ManageCandidates | null }) {
+  const [exOn, setExOn] = useState(false);
+  if (!whole) return null;
+  const ex = whole.exEarnings;
+  // Every figure below is one list's: the whole book's, or manage's ex-earnings one.
+  const c = exOn && ex?.list ? ex.list : whole;
   const excluded = Object.entries(c.excluded)
     .map(([why, n]) => `${n} ${why}`)
     .join(", ");
   return (
-    <Card title="income trades, sized to the account">
+    <Card title="income trades, sized to the account" controls={<ExEarningsToggle c={whole} on={exOn} set={setExOn} />}>
       {c.error ? (
         <p className="muted">{c.error}</p>
       ) : (
@@ -276,6 +302,7 @@ export function IncomeCard({ c }: { c: ManageCandidates | null }) {
             from our own universe ({c.names ?? "—"} tradable names) on the cycle monthly, priced at mid from the {c.sourceSession ?? "—"}{" "}
             afternoon quotes: re-quote before sending · sized for {BASIS[c.accountBasis ?? ""] ?? "an account of unknown kind"}
             {excluded ? ` · left out: ${excluded}` : ""}
+            {c !== whole && ex ? ` · ex earnings: ${fmtMoney(ex.dollars)} of buying power treated as free (${ex.trades.join(", ")})` : ""}
           </p>
           {c.fits.length > 0 ? (
             <FitsTable rows={c.fits} />

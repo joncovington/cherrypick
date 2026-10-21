@@ -17,6 +17,7 @@ import type {
   ManageCandidate,
   ManageCandidateRoom,
   ManageCandidates,
+  ManageExEarnings,
   ManageChainOrder,
   ManageHedges,
   ManageLadder,
@@ -934,6 +935,21 @@ function candidates(v: unknown, rules: Record<string, unknown>, lev: Leveraged =
     bpWarnOver: num(c["bp_warn_over"]),
     error: str(c["error"]),
     caps: candidateCaps(rules, str(c["account_basis"])),
+    exEarnings: exEarnings(c["ex_earnings"], rules, lev),
+  };
+}
+
+function exEarnings(v: unknown, rules: Record<string, unknown>, lev: Leveraged): ManageExEarnings | null {
+  if (v === null || v === undefined) return null;
+  const e = rec(v);
+  const error = str(e["error"]);
+  return {
+    trades: arr(e["trades"]).map((x) => String(x)),
+    unpriced: arr(e["unpriced"]).map((x) => String(x)),
+    dollars: num(e["dollars"]),
+    error,
+    // Manage writes the list's own fields beside the totals; a refused one has none.
+    list: error === null && "fits" in e ? { ...candidates({ ...e, ex_earnings: null }, rules, lev)!, exEarnings: null } : null,
   };
 }
 

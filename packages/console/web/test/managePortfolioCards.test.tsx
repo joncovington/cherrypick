@@ -328,8 +328,8 @@ function candidate(over: Partial<ManageCandidate> = {}): ManageCandidate {
     binding: "per-trade risk",
     perUnit: { credit: 2.47, natural: 2.3, cash: 247, maxLoss: 253, buyingPower: 253, stressLoss: 253, theta: 0.93, bwd: 1.5 },
     thetaPerBp: 0.0037,
-    earningsDate: null,
-    earningsUnknown: true,
+    earningsDate: "2026-12-04",
+    earningsUnknown: false,
     alternative: null,
     ifRoom: null,
     leveraged: null,
@@ -370,6 +370,7 @@ function income(over: Partial<ManageCandidates> = {}): ManageCandidates {
     bpWarnOver: 0.1,
     error: null,
     caps: { perTradeRiskPct: 0.03, notionalPerNamePct: 0.25, maxNameThetaShare: 0.25 },
+    exEarnings: null,
     ...over,
   };
 }
@@ -388,7 +389,8 @@ describe("IncomeCard", () => {
   });
 
   it("shows each fit's whole position in the suite's money layout, in the package's order", () => {
-    const html = render(<IncomeCard c={income({ fits: [candidate(), candidate({ underlying: "AAL", kind: "short_put" })] })} />);
+    const unknown = candidate({ underlying: "AAL", kind: "short_put", earningsDate: null, earningsUnknown: true });
+    const html = render(<IncomeCard c={income({ fits: [candidate(), unknown] })} />);
     expect(html.indexOf("AAPL")).toBeLessThan(html.indexOf("AAL"));
     expect(html).toContain("2.47 cr"); // the per-share net price, marked
     expect(html).toContain("+$494.00"); // cash: 2 contracts x $247 received
@@ -396,7 +398,13 @@ describe("IncomeCard", () => {
     expect(html).toContain("per-trade risk");
     expect(html).toContain("re-quote before sending");
     expect(html).toContain("120 earnings inside the trade");
-    expect(html).toContain("unknown"); // an earnings date nobody knows is said so, never blank
+    // An earnings date nobody knows is a chip on the name; a known one (after expiry, or the trade
+    // would have been dropped) is not shown at all.
+    expect(html).toMatch(/AAL<span class="chip chip-warn"[^>]*>earnings unknown</);
+    expect(html.match(/earnings unknown</g)?.length).toBe(1);
+    const known = render(<IncomeCard c={income({ fits: [candidate()] })} />);
+    expect(known).not.toContain("earnings unknown");
+    expect(known).not.toContain("2026-12-04");
   });
 
   it("names a narrowed trade and what stopped the one that did not fit", () => {
@@ -481,6 +489,23 @@ describe("IncomeCard", () => {
     expect(html).toContain("1 more stopped by a cap on the trade itself");
     expect(html).toContain("<strong>AMZN</strong>");
     expect(html).not.toContain("<strong>XLF</strong>");
+  });
+
+  it("offers the ex-earnings toggle only where manage wrote a list, disabled with its reason when refused", () => {
+    expect(render(<IncomeCard c={income()} />)).not.toContain("ex earnings buying power");
+    const list = income({ bpUsedPct: 0.2 });
+    const on = render(
+      <IncomeCard c={income({ exEarnings: { trades: ["NFLX", "UAL"], unpriced: [], dollars: 595, error: null, list } })} />,
+    );
+    expect(on).toContain("ex earnings buying power");
+    expect(on).not.toMatch(/<input[^>]*disabled/);
+    // Off by default: the whole book's list, not the freed one.
+    expect(on).not.toContain("treated as free");
+    const refused = render(
+      <IncomeCard c={income({ exEarnings: { trades: ["TSLA"], unpriced: ["TSLA"], dollars: null, error: "no bounded max loss", list: null } })} />,
+    );
+    expect(refused).toMatch(/<input[^>]*disabled/);
+    expect(refused).toContain("no bounded max loss");
   });
 
   it("draws no waiting table from an evaluation without one", () => {

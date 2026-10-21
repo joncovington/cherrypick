@@ -543,6 +543,29 @@ def screen_fit(
     return {"short_put": puts, "covered_call": int(uncovered_shares(held, written) // 100)}
 
 
+def earnings_bp(trades: list[dict[str, Any]]) -> dict[str, Any]:
+    """The buying power the account's earnings trades (`earnings_trade`: held for a report and closed
+    after the call, so a few days at most) tie up, for sizing as if it were already free.
+
+    The broker states buying power for the account only, so a trade's is its defined-risk max loss
+    from open (`profile.max_loss_from_open`): a credit spread's width less its credit, a debit trade's
+    debit -- what a cash account, an IRA or Reg T holds against a defined-risk position. Modelled at
+    the nearest expiry where the trade is a diagonal. A trade with no bounded max loss is `unpriced`,
+    and the total is then None, never a partial sum."""
+    ids, unpriced, total = [], [], 0.0
+    for t in trades:
+        if not t.get("earnings_trade"):
+            continue
+        ids.append(t.get("trade_id"))
+        p = t.get("profile") or {}
+        loss = p.get("max_loss_from_open")
+        if loss is None or p.get("unbounded_low") or p.get("unbounded_high"):
+            unpriced.append(t.get("trade_id"))
+        else:
+            total += max(-float(loss), 0.0)
+    return {"trades": ids, "unpriced": unpriced, "dollars": None if unpriced else round(total, 2)}
+
+
 def suggest(
     income: dict[str, Any] | None,
     book: dict[str, Any],
@@ -553,6 +576,7 @@ def suggest(
     benchmark_spot: float | None,
     orders: list[dict[str, Any]] | None = None,
     available_bp: float | None = None,
+    ex_earnings: bool = True,
 ) -> dict[str, Any] | None:
     cfg = rules["portfolio"]["candidates"]
     if cfg.get("enabled") is False:
@@ -678,7 +702,7 @@ def suggest(
     waiting.sort(key=rank, reverse=True)
     net_liq = book.get("net_liq")
     used = book.get("buying_power_used")
-    return {
+    out = {
         "source_session": income.get("session"),
         "taken_at": income.get("taken_at"),
         "complete": income.get("complete"),
@@ -699,4 +723,32 @@ def suggest(
         "available_bp": available_bp,
         "screen_fit": fit,
         "error": None,
+        "ex_earnings": None,
     }
+    if ex_earnings:
+        # The same list sized as if the earnings trades' buying power were already free (they close
+        # after the call). Only buying power is freed: their theta and delta still count.
+        eb = earnings_bp(trades)
+        if eb["trades"]:
+            if eb["dollars"] is None or used is None:
+                why = (
+                    "an earnings trade has no bounded max loss" if eb["unpriced"] else "no buying power used"
+                )
+                out["ex_earnings"] = {**eb, "error": f"cannot free the earnings trades' buying power: {why}"}
+            else:
+                freed = {**book, "buying_power_used": max(used - eb["dollars"], 0.0)}
+                sub = suggest(
+                    income,
+                    freed,
+                    trades,
+                    session,
+                    rules,
+                    account_type,
+                    benchmark_spot,
+                    orders,
+                    ex_earnings=False,
+                )
+                for k in ("screen_fit", "available_bp", "ex_earnings"):
+                    sub.pop(k, None)
+                out["ex_earnings"] = {**eb, **sub}
+    return out

@@ -311,6 +311,45 @@ def test_buying_power_is_held_under_the_vix_cap_and_past_it_nothing_fits():
     assert not over["fits"] and {r["binding"] for r in over["too_big"]} == {"buying power"}
 
 
+def _earnings_trade(tid, max_loss, unbounded=False):
+    return {
+        "trade_id": tid,
+        "underlying": tid,
+        "legs": [],
+        "earnings_trade": {"report": "2026-10-20", "passed": False},
+        "profile": {"max_loss_from_open": max_loss, "unbounded_low": unbounded, "unbounded_high": False},
+    }
+
+
+def test_ex_earnings_sizes_the_list_as_if_the_earnings_trades_buying_power_were_free():
+    # 35% used, 10% of it two earnings spreads: past the 30% cap, but under it once they are set aside.
+    trades = [
+        _earnings_trade("NFLX", -6_000.0),
+        _earnings_trade("UAL", -4_000.0),
+        {"trade_id": "SPY", "legs": []},
+    ]
+    out = _suggest({"AAA": _entry()}, _book(used=35_000.0, bp_cap=0.30), trades=trades)
+    assert not out["fits"]
+    ex = out["ex_earnings"]
+    assert ex["trades"] == ["NFLX", "UAL"] and ex["dollars"] == 10_000.0 and ex["unpriced"] == []
+    assert ex["bp_used_pct"] == 0.25 and ex["fits"] and ex["error"] is None
+    assert "screen_fit" not in ex and "ex_earnings" not in ex
+    # Nothing else differs: the same list against the book with that buying power gone.
+    same = _suggest({"AAA": _entry()}, _book(used=25_000.0, bp_cap=0.30))
+    assert ex["fits"] == same["fits"] and ex["waiting"] == same["waiting"]
+
+
+def test_ex_earnings_is_refused_not_partial_when_an_earnings_trade_has_no_bounded_loss():
+    trades = [_earnings_trade("NFLX", -6_000.0), _earnings_trade("TSLA", None, unbounded=True)]
+    ex = _suggest({"AAA": _entry()}, _book(used=35_000.0, bp_cap=0.30), trades=trades)["ex_earnings"]
+    assert ex["dollars"] is None and ex["unpriced"] == ["TSLA"] and "fits" not in ex
+    assert "no bounded max loss" in ex["error"]
+
+
+def test_no_earnings_trade_is_no_ex_earnings_list():
+    assert _suggest({"AAA": _entry()}, _book(used=35_000.0, bp_cap=0.30))["ex_earnings"] is None
+
+
 def test_a_candidate_stopped_by_buying_power_waits_sized_as_if_there_were_room():
     over = _suggest({"AAA": _entry()}, _book(used=35_000.0, bp_cap=0.30))
     # Every one stopped by buying power waits, each trade once (not again as its narrowed version).

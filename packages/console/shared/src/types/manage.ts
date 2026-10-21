@@ -664,6 +664,20 @@ export interface ManageCandidates {
     notionalPerNamePct: number | null;
     maxNameThetaShare: number | null;
   } | null;
+  /** The same list sized as if the earnings trades' buying power were already free (they close after
+   *  the call). Null when the account holds no earnings trade, and on an evaluation from before it. */
+  exEarnings: ManageExEarnings | null;
+}
+
+export interface ManageExEarnings {
+  /** The earnings trades set aside, by trade id. */
+  trades: string[];
+  /** Earnings trades with no bounded max loss; any one makes `dollars` null and `list` absent. */
+  unpriced: string[];
+  /** Their buying power: each one's defined-risk max loss from open (modelled for a diagonal). */
+  dollars: number | null;
+  error: string | null;
+  list: ManageCandidates | null;
 }
 
 /** The book repriced across benchmark moves (packages/manage `portfolio.scenarios`). */
