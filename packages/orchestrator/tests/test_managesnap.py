@@ -33,6 +33,7 @@ def _fake(monkeypatch, answers):
     # Never the real home's income readings.
     monkeypatch.setattr(managesnap, "income_dir", lambda: Path("no-such-income-dir"))
     monkeypatch.setattr(managesnap, "earnings_times_dir", lambda: Path("no-such-times-dir"))
+    monkeypatch.setattr(managesnap, "skate_dir", lambda: Path("no-such-skate-dir"))
     # Nor the real home's stream cache.
     monkeypatch.setattr(managesnap, "_cached_greeks", lambda syms: {})
     monkeypatch.setattr(cfgmod, "enabled_modules", lambda cfg: {"meic": {"path": "."}})
@@ -50,7 +51,7 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 11
+    assert snap["snapshot_version"] == 12
     assert snap["roll_chains"] == {}  # no short strangle held, no chain read
     assert not any("get_option_chain" in c[0] and "GLD" in c[0] for c in calls)
     assert snap["transactions"] == {"GLD": [{"order_id": 1}]}
@@ -426,3 +427,173 @@ def test_an_orders_read_that_fails_is_recorded_not_fatal(monkeypatch):
     _fake(monkeypatch, {"get_working_orders": {"ok": False, "error": "HTTP 502"}})
     snap = managesnap.build({})
     assert snap["working_orders"] == [] and "HTTP 502" in snap["working_orders_error"]
+
+
+# --------------------------------------------------------------------------- skate bands (v12)
+def _band(level, skate=(0.5, 0.9), recent=(0.4, 0.8)):
+    return {
+        "haircut": 0.75,
+        "band": level,
+        "n": 2900,
+        "n_recent": 740,
+        "skate": list(skate),
+        "skate_recent": list(recent),
+    }
+
+
+def _skate_row(side, expiry, fixed, by_expiry):
+    return {
+        "side": side,
+        "expiry": expiry,
+        "days": 32,
+        "sessions": 23,
+        "range": 4.2,
+        "same_band": False,
+        "bands": {"fixed": _band(fixed), "by_expiry": _band(by_expiry)},
+    }
+
+
+def _skate_name(spot, *rows):
+    return {"spot": spot, "fund": False, "earnings": "2026-11-05", "div_yield": 0.01, "rows": list(rows)}
+
+
+def _skate_file(folder, day, names):
+    folder.mkdir(parents=True, exist_ok=True)
+    doc = {
+        "day": day,
+        "built_at": f"{day}T06:46:00-0400",
+        "earnings_reading": {},
+        "config": {"haircut": 0.75, "history_from": "2015-01-01", "recent_years": 3, "soft": {"skate": 0.84}},
+        "offsets": [0.0, 0.01],
+        "universe": 900,
+        "skipped": {"earnings date unknown": ["ZZZ"]},
+        "names": names,
+    }
+    (folder / f"{day}.json").write_text(json.dumps(doc), encoding="utf-8")
+
+
+XYZ_BANDS = _skate_name(
+    50.0, _skate_row("P", "2026-11-20", 47.0, 48.5), _skate_row("C", "2026-11-20", 53.0, 52.5)
+)
+
+
+def test_the_snapshot_carries_only_the_held_names_bands_and_only_what_manage_reads(tmp_path):
+    _skate_file(tmp_path, "2026-10-15", {"XYZ": _skate_name(1.0)})  # older: not read
+    _skate_file(tmp_path, "2026-10-16", {"XYZ": XYZ_BANDS, "AAPL": XYZ_BANDS, "BRK.B": XYZ_BANDS})
+    _skate_file(tmp_path, "2026-10-20", {"XYZ": _skate_name(2.0)})  # after the session: not yet
+    got, error = managesnap.skate_bands(date(2026, 10, 19), ["BRK/B", "QQQ", "XYZ"], tmp_path)
+    assert error is None
+    assert got["day"] == "2026-10-16" and got["sessions_behind"] == 1
+    assert got["offsets"] == [0.0, 0.01]
+    assert got["config"] == {"history_from": "2015-01-01", "recent_years": 3, "soft": {"skate": 0.84}}
+    # AAPL is not held; BRK.B is the file's spelling of the broker's BRK/B; QQQ is held and unbanded.
+    assert set(got["names"]) == {"BRK/B", "XYZ"} and got["not_banded"] == ["QQQ"]
+    xyz = got["names"]["XYZ"]
+    assert set(xyz) == {"spot", "rows"} and xyz["spot"] == 50.0
+    put = xyz["rows"][0]
+    assert put == {
+        "side": "P",
+        "expiry": "2026-11-20",
+        "days": 32,
+        "sessions": 23,
+        "bands": {"fixed": _band(47.0), "by_expiry": _band(48.5)},
+    }
+
+
+def test_a_missing_band_file_is_recorded_not_fatal(monkeypatch, tmp_path):
+    got, error = managesnap.skate_bands(date(2026, 10, 19), ["XYZ"], tmp_path / "none")
+    assert got is None and "no skate band file" in error
+    _fake(monkeypatch, {})
+    snap = managesnap.build({})
+    assert snap["skate_bands"] is None and "no skate band file" in snap["skate_bands_error"]
+
+
+def test_a_stale_band_file_is_refused(tmp_path):
+    # Wednesday 10-14 is three sessions behind Monday 10-19 (Thu, Fri, Mon): still read.
+    _skate_file(tmp_path, "2026-10-14", {"XYZ": XYZ_BANDS})
+    got, error = managesnap.skate_bands(date(2026, 10, 19), ["XYZ"], tmp_path)
+    assert error is None and got["sessions_behind"] == 3
+    # The same file on Tuesday 10-20 is four behind: refused, and said why.
+    got, error = managesnap.skate_bands(date(2026, 10, 20), ["XYZ"], tmp_path)
+    assert got is None and "4 sessions old" in error
+
+
+def test_an_unreadable_band_file_is_recorded_not_fatal(tmp_path):
+    tmp_path.joinpath("2026-10-16.json").write_text("{not json", encoding="utf-8")
+    got, error = managesnap.skate_bands(date(2026, 10, 19), ["XYZ"], tmp_path)
+    assert got is None and "unreadable" in error
+
+
+def test_build_copies_the_held_names_bands(monkeypatch, tmp_path):
+    _fake(monkeypatch, {"get_market_overview": {"ok": True, "metrics": [{"symbol": "GLD", "last": 381.65}]}})
+    _skate_file(tmp_path, "2026-10-16", {"GLD": XYZ_BANDS, "AAPL": XYZ_BANDS})
+    monkeypatch.setattr(managesnap, "skate_dir", lambda: tmp_path)
+    monkeypatch.setattr(managesnap.clock, "today_iso", lambda: "2026-10-19")
+    snap = managesnap.build({})
+    assert snap["skate_bands_error"] is None and set(snap["skate_bands"]["names"]) == {"GLD"}
+
+
+def test_the_wheel_check_reads_the_copied_band_moved_to_todays_price(tmp_path):
+    """The contract with manage: what the snapshot copies is what the wheel view's band check reads.
+    The band file is Friday's at a 50.00 close; on Monday XYZ is at 51.00, so every band moves up a
+    dollar (manage moves it, `wheel._band`). A short put at 47.50 is past the moved 48.00 fixed band
+    (it would sit inside the unmoved 47.00); one at 48.50 is inside it and past the 49.50 by-expiry band."""
+    import pytest
+
+    wheel = pytest.importorskip("cherrypick.manage.wheel")
+    _skate_file(tmp_path, "2026-10-16", {"XYZ": XYZ_BANDS})
+    bands, error = managesnap.skate_bands(date(2026, 10, 19), ["XYZ"], tmp_path)
+    assert error is None
+
+    def short_put(strike):
+        sym = f"XYZ   261120P{int(strike * 1000):08d}"
+        row = {
+            "id": f"1-{sym}",
+            "order_id": 1,
+            "executed_at": "2026-10-15T15:00:00Z",
+            "transaction_type": "Trade",
+            "transaction_sub_type": "Sell to Open",
+            "action": "Sell to Open",
+            "instrument_type": "Equity Option",
+            "symbol": sym,
+            "underlying_symbol": "XYZ",
+            "quantity": "1",
+            "price": "1.0",
+            "value": "100.0",
+            "commission": "-1.0",
+            "clearing_fees": "-0.1",
+            "regulatory_fees": "0.0",
+            "proprietary_index_option_fees": "0.0",
+        }
+        leg = {
+            "symbol": sym,
+            "underlying": "XYZ",
+            "instrument_type": "Equity Option",
+            "quantity": -1,
+            "expiration": "2026-11-20",
+            "right": "P",
+            "strike": strike,
+            "open_price": 1.0,
+            "mid": 0.8,
+            "priced": True,
+        }
+        view = wheel.build(
+            [{"underlying": "XYZ", "legs": [leg]}],
+            {"XYZ": [row]},
+            date(2026, 10, 19),
+            {"XYZ": {"last": 51.0}},
+            [],
+            bands,
+        )
+        (cycle,) = view["cycles"]
+        (today,) = cycle["today"]
+        return today
+
+    outside = short_put(47.5)
+    assert outside["band_missing"] is None
+    assert outside["band"]["fixed"] == pytest.approx(48.0) and outside["band"]["by_expiry"] == pytest.approx(
+        49.5
+    )
+    assert outside["beyond_band"] == {"fixed": True, "by_expiry": True}
+    inside = short_put(48.5)
+    assert inside["beyond_band"] == {"fixed": False, "by_expiry": True}

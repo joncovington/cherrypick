@@ -274,7 +274,12 @@ For each underlying that holds a short put, shares, or a covered call:
   complete when it is flat and credits exceed debits. Assignment is matched as in the table above;
   an unmatched delivery is flagged, never filled in.
 - **Today's check**: strike against today's range band (the orchestrator copies the held names'
-  bands from step 1 into the snapshot, so `reevaluate` still gets the same answer twice), tested or
+  bands from step 1 into the snapshot, so `reevaluate` still gets the same answer twice; built
+  2026-10-20 as snapshot v12's `skate_bands`: the newest band file at most three sessions behind,
+  cut to the held names, each row's bands with their skate curves and the file's `offsets`, so the
+  skate rate at any strike can be read from the snapshot alone. The copy is the band day's; manage
+  moves it to today's price in `wheel._band`, as the screen's `shift_for` does. A missing or stale
+  file is `skate_bands: null` with `skate_bands_error`), tested or
   not, extrinsic value left, and whether a buy-to-close is resting. That needs a **fourth read-only
   broker call**, open orders, in `orchestrator/managesnap.py` (built 2026-10-19: snapshot v10's
   `working_orders`, from the broker tool's `get_working_orders`).

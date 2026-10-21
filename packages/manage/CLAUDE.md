@@ -12,9 +12,9 @@ position at a time, with the rules re-derived each time.
 `~/.cherrypick/data/manage`. It has no broker credentials and no network: the snapshot is taken by
 the orchestrator's `manage` verb (`orchestrator/managesnap.py`: positions and balances, market metrics, trade history,
 the XSP hedge chain, the quoted chain of each expiry holding a short strangle, the broker's greeks
-for each option leg held and the day's orders, all
-read-only), which then
-runs this package by subprocess. Nothing here places, closes, rolls or sizes an order, and no loop may
+for each option leg held and the day's orders, all read-only; and from local files the income reading
+and the held names' skate bands, copied as the band file states them, which `wheel.py` moves to
+today's price), which then runs this package by subprocess. Nothing here places, closes, rolls or sizes an order, and no loop may
 import it. The closing order an evaluation lists is what a person would enter, priced at mid.
 
 ## The artifact is the product
