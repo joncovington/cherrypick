@@ -11,6 +11,29 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: manage's PMCC view and its rules** (docs/skate-plan.md step 6). Each evaluation now
+  carries the account's `pmcc` view: every name whose calls are a PMCC's shape (one long bought with
+  180 days or more left, one short of the same size at or above its strike with 60 or fewer), and
+  whether it is one. It is a PMCC only when the long was entered at 0.80 delta or more, solved from
+  its opening fill and that day's close with the dividend yield carried, or when `manage.json` says
+  `positions.<SYMBOL>.intent: "pmcc"`; `"diagonal"` keeps it out. A delta at entry the snapshot
+  cannot solve is unknown and recognises nothing. The view links every short sold against the long,
+  rolls and separate orders alike, from the trade history, and shows the long's net cost after
+  every premium, the width check with the P&L if assigned in dollars, the long's delta at entry and
+  today, its extrinsic share and days left, the short against today's call band, its early-assignment
+  exposure and any earnings in its life, and the skate yield on the long's cost as a comparison
+  figure. Three rules fire on a recognised PMCC whose orders reconcile: `pmcc.width` and
+  `pmcc.assignment` (roll or close, 65, with roll candidates priced from the snapshot's quotes and
+  judged by check-roll) and `pmcc.roll_long` (review, 45). They rank with the diagonal rules by
+  action, so a stop still closes and the diagonal's credit roll is offered in their place; an
+  unreconciled PMCC gets a review and nothing else. On every stored snapshot (10-13 to 10-20) no
+  trade's recommendation changes: the account's only call diagonal, TLT, has its short 87+ days out
+  and was entered at 0.45 delta, so it stays a diagonal.
+- **Added: the manage snapshot carries the long calls' entry-day closes.** Snapshot v13's
+  `underlying_history`, for each name holding a long call: the close on each day the history shows
+  it bought, and the dividends and splits around those days, read-only from the technicals
+  history store (every tradable name, not only the market report's). A close not landed yet is absent and manage says the delta at entry is unknown;
+  a missing store is `null` with `underlying_history_error`.
 - **Added: the console's wheel tab.** Live → wheel sits beside positions and portfolio and reads the
   same evaluation: one card per wheel cycle manage follows, with its status (an unreconciled cycle
   lists why and gets no wheel rule), days in the cycle, net cash and net premium, tax and wheel basis

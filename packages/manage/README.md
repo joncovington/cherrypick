@@ -131,6 +131,9 @@ presenter who cuts losers rather than the one who repairs them, and checked agai
 | `wheel.take_profit` | a wheel cycle's short marked at or under its buy-to-close: the resting order's price, else $0.03 ($0.05 on a wide market). Buys back the short alone, never the shares | take profit | 80 | the skate method (Passarelli, Ep73): a GTC buy-to-close at $0.03, $0.05 if illiquid, placed right after the fill | None tested; mechanically there is nothing left to earn at a few cents, as with `legs.short_take_profit` |
 | `wheel.tested` | a wheel cycle's short at or through its strike: roll out in time or close. Priced: the **net-zero** roll (buy back at the mid, sell on the quoted monthly the strike furthest out whose mid pays for it; a put's strike capped at old strike + original premium − buy-back) and the **premium gambit** (the buy-back rests at the original sale price, the same strike sold on the monthly). Each judged by `check-roll`; neither moves toward the money | roll or close | 50 | the skate method: losers are rolled "99% of the time"; the strike cap is thetagang's | Mixed: rolling tested short puts beat holding them in tastylive's studies; repairing defined-risk spreads did not. Repair, which this ruleset otherwise avoids, so a close outranks it |
 | `wheel.next_leg` | shares delivered by an assignment and not yet written against: the covered call at the skate call band (`band`: fixed or by_expiry) moved to today's price, on the quoted monthly, the first quoted strike at or above it; flagged when under the wheel basis. Without bands in the snapshot it names no strike and says so | review | 50 | the skate method: calls at or above the upper band | The 2026-10-18 study: the band matches delta on average and does not beat it |
+| `pmcc.width` | a recognised PMCC whose short strike less its long strike does not exceed the long's net cost per share after every premium collected. Shows the P&L if assigned in dollars, and the short's roll candidates: one per quoted expiry after the short and before the long (the next five the snapshot quotes), the most premium at 0.40 delta or less, a roll costing no more than $0.10 a share, keeping the width; each judged by `check-roll` | roll or close | 65 | the PMCC method's own entry check, kept while held; candidates as trading_skills' `ib-pmcc-advisor` chooses them | Option arithmetic: assigned with the long exercised, the trade is worth the width, so a net cost past it loses. Selling the long instead keeps its time value, which softens it; the check assumes none is left. Our pmcc study found the short calls' edge rests on the IV assumption, so rolling is routine, not a rescue |
+| `pmcc.assignment` | a recognised PMCC's short in the money with less time value than the next dividend before an ex-date inside its life, or under $0.05 at any time (the pmcc package's near-zero flag); never on a cash-settled root. Rolls priced as above | roll or close | 65 | the pmcc package's assignment-exposed region; TheOptionPremium's PMCC dividend rule | Confirmed by option theory (a call holder exercises early when the dividend exceeds the time value given up); in practice often not exercised. An assignment against a long call leaves the account short the shares until the long is exercised or sold |
+| `pmcc.roll_long` | a recognised PMCC's long at 120 days left or fewer, or under 0.70 delta today (solved with the dividend yield) | review | 45 | coveredcallcalculator.net and TheOptionPremium: roll the long at 90-120 days, or when its delta falls toward 0.70 | None tested. Retail practitioner guides; the long's decay accelerates in its last months |
 | `ex_dividend` | ITM short call over a declared ex-date with time value < the dividend | review | 80 | vendor | Confirmed by option theory; in practice often not exercised |
 | `risk.oversize` | modelled downside > 3× (2% of net liq) | review | 60 | vendor's 2%-per-trade rule | Direction supported (fractional Kelly); the numbers are convention |
 | `directional.take_profit` | a `directional` trade (net premium under ¼ of its modelled max loss) at half its modelled max gain, capped at 1× its risk | take profit | 65 | our rule, 2026-10-13: a percentage of a small premium measures nothing | No outside test |
@@ -219,6 +222,55 @@ after that monthly, or a name the reading does not cover, gets no roll, and the 
 rolls go through `check-roll`, which now counts shares held behind a covered call (the command counts
 the name's shares itself): coverage, and a covered call's risk as the shares falling, with the per-trade
 budget judged only on option-only trades.
+
+## The PMCC view
+
+Each evaluation also reads every poor man's covered call on the account (`pmcc.py`,
+[docs/skate-plan.md](../../docs/skate-plan.md) step 6): a covered call written against a long call in
+place of the shares. It is written into the evaluation as the account's `pmcc`, one entry per name
+whose calls have a PMCC's shape, recognised or not, naming the trades holding its legs. The `pmcc.*`
+rules in the table above read it.
+
+- **Shape.** One long call bought with at least 180 days left (judged on the day it was bought: it is
+  rolled at 90-120 days left, and a bar on today's days would drop it before then), one short call of
+  the same size at or above its strike with 60 days or fewer, no shares. The 10-16 TLT diagonal
+  (short Jan 2027) is not one: its short is too far out.
+- **Recognition.** Shape alone does not make a PMCC. The long must have been entered at 0.80 delta or
+  more, solved from its opening fill and that day's close (snapshot v13's `underlying_history`, from
+  the technicals history store) with the dividend yield carried: the dividends gone ex in the year
+  before, over the close. Without the yield a long-dated call on a high-yield fund reads as all
+  intrinsic, a delta of 1. A delta the snapshot cannot solve (no close for the day yet, a split since,
+  a fill no volatility prices) is **unknown**, and an unknown delta recognises nothing.
+  `positions.<SYMBOL>.intent: "pmcc"` recognises a PMCC whatever its delta; `"diagonal"` keeps one out.
+  Anything not recognised keeps its diagonal rules and nothing else.
+- **Linking.** A short sold after the last one expired is an order chain of its own, so the view links
+  the long and its shorts as the wheel view links a wheel: the long's chain, and every chain on the
+  name made only of calls sold to open and bought back, expiring before the long, opened since it was
+  bought. They must replay to today's long and short. History that starts after the long was bought,
+  an assignment or exercise, or a contract the history never opened makes the PMCC **unreconciled**:
+  its money is shown as far as the rows go (the width check on the open legs' prices, labelled so),
+  and it gets only a review saying why (`pmcc_data`, no confidence).
+- **Money.** The broker's cash from the history rows, fees apart. The long's net cost is every linked
+  order's cash, so each premium lowers it; the width check and the P&L if assigned (short strike -
+  long strike - net cost per share, x 100 x contracts) are read from it, gross and net of fees. Every
+  short sold against the long is listed with its cash and how it ended. The skate yield is a
+  comparison figure: the shorts' P&L to date (the open one at its mark) over the long's own cost,
+  x 365 / days since it was bought; none under a week, flagged past 500%.
+- **Today.** The long: delta at entry and today, extrinsic as a share of its price, days left, and the
+  roll flag. The short: tested or not, against today's skate call band moved to today's price ("band
+  not in the snapshot" without one), early-assignment exposure, its chance of finishing in the money
+  (N(d2)), and an earnings report inside its life ("no report date" for a name without one, never
+  "clear").
+
+**The PMCC rules and the diagonal rules.** A recognised PMCC is still a diagonal, and every diagonal
+rule still judges it. The PMCC rules fire into the trade holding the short and rank by action like
+every other rule: a stop, the breached-strike close or the expiry close outranks their roll-or-close
+(and counts it as a conflict); `roll.diagonal_short`, when its own conditions hold (a credit, the long's
+breakeven cleared, the long outliving the new short), is offered in their place as it is for any close,
+and lists them under `replaces`; `ex_dividend` and `debit.diagonal_width` stay reviews beside them. They
+do not wait for an earnings trade's call: a width failure and an assignment are what the waiting is
+meant to protect against. A roll candidate costing a debit (allowed to $0.10) comes back `reject` from
+`check-roll`, which never rolls for a debit; the candidate says so and a person decides.
 
 ## The account as one book
 
@@ -337,6 +389,11 @@ before sending.
 - **Earnings dates are the broker's expected dates**, which can move.
 - **SPX 0DTE is left out** (`exclude.zero_dte_underlyings`): it is the flies live loop's own book,
   managed by that loop and cash-settled at the close.
+- **A PMCC whose short was sold in an order of its own is two trades.** The evaluation groups legs by
+  order chain, so the long and that short are judged apart (the short as a naked call, with its own
+  rules); the PMCC view links them and its rules fire into the short's trade, naming both.
+- **A PMCC between shorts is not shown.** With no short open the long is a long call and the view
+  drops it until the next short is sold.
 - **Thesis is not knowable.** `credit.breached` is a mechanical stand-in for "the reason for the trade
   is gone". Use `positions.<SYMBOL>.intent` and `disable` to mark a hedge or a position you mean to be
   assigned on.

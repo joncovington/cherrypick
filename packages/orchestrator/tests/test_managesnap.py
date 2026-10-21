@@ -34,6 +34,7 @@ def _fake(monkeypatch, answers):
     monkeypatch.setattr(managesnap, "income_dir", lambda: Path("no-such-income-dir"))
     monkeypatch.setattr(managesnap, "earnings_times_dir", lambda: Path("no-such-times-dir"))
     monkeypatch.setattr(managesnap, "skate_dir", lambda: Path("no-such-skate-dir"))
+    monkeypatch.setattr(managesnap, "history_db", lambda: Path("no-such-history.db"))
     # Nor the real home's stream cache.
     monkeypatch.setattr(managesnap, "_cached_greeks", lambda syms: {})
     monkeypatch.setattr(cfgmod, "enabled_modules", lambda cfg: {"meic": {"path": "."}})
@@ -51,7 +52,8 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 12
+    assert snap["snapshot_version"] == 13
+    assert snap["underlying_history"] == {} and snap["underlying_history_error"] is None  # no long call
     assert snap["roll_chains"] == {}  # no short strangle held, no chain read
     assert not any("get_option_chain" in c[0] and "GLD" in c[0] for c in calls)
     assert snap["transactions"] == {"GLD": [{"order_id": 1}]}
@@ -597,3 +599,135 @@ def test_the_wheel_check_reads_the_copied_band_moved_to_todays_price(tmp_path):
     assert outside["beyond_band"] == {"fixed": True, "by_expiry": True}
     inside = short_put(48.5)
     assert inside["beyond_band"] == {"fixed": False, "by_expiry": True}
+
+
+# --------------------------------------------------------------------------- underlying history (v13)
+def _store(path, bars=(), dividends=(), splits=()):
+    import sqlite3
+
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        "CREATE TABLE bars (symbol TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL, volume REAL);"
+        "CREATE TABLE dividends (symbol TEXT, ex_date TEXT, amount REAL);"
+        "CREATE TABLE splits (symbol TEXT, ex_date TEXT, to_factor REAL, for_factor REAL);"
+    )
+    conn.executemany("INSERT INTO bars VALUES (?, ?, 0, 0, 0, ?, 0)", bars)
+    conn.executemany("INSERT INTO dividends VALUES (?, ?, ?)", dividends)
+    conn.executemany("INSERT INTO splits VALUES (?, ?, 2, 1)", splits)
+    conn.commit()
+    conn.close()
+    return path
+
+
+LONG = "XYZ   290119C00040000"
+SHORT = "XYZ   261120C00050000"
+HELD = {
+    "accounts": [
+        {
+            "underlyings": [
+                {
+                    "underlying": "XYZ",
+                    "legs": [
+                        {"symbol": LONG, "right": "C", "quantity": 1.0},
+                        {"symbol": SHORT, "right": "C", "quantity": -1.0},
+                    ],
+                },
+                {
+                    "underlying": "ABC",
+                    "legs": [{"symbol": "ABC   261120P00010000", "right": "P", "quantity": 1.0}],
+                },
+            ]
+        }
+    ]
+}
+OPENED = {
+    "XYZ": [
+        {"action": "Buy to Open", "symbol": LONG, "executed_at": "2026-09-25T19:50:00Z"},
+        # The short was once held long (bought 09-24, sold), then sold to open: it is no long call now.
+        {"action": "Buy to Open", "symbol": SHORT, "executed_at": "2026-09-24T15:00:00Z"},
+        {"action": "Sell to Close", "symbol": SHORT, "executed_at": "2026-09-24T16:00:00Z"},
+        {"action": "Sell to Open", "symbol": SHORT, "executed_at": "2026-09-26T15:00:00Z"},
+        {"action": "Buy to Open", "symbol": "XYZ   261016C00045000", "executed_at": "2026-09-01T15:00:00Z"},
+    ]
+}
+
+
+def test_the_long_call_s_entry_close_dividends_and_splits_are_copied(tmp_path):
+    db = _store(
+        tmp_path / "history.db",
+        bars=[
+            ("XYZ", "2026-09-01", 47.0),
+            ("XYZ", "2026-09-24", 49.0),
+            ("XYZ", "2026-09-25", 50.0),
+            ("XYZ", "2026-09-26", 50.5),
+            ("XYZ", "2026-10-19", 52.0),
+        ],
+        dividends=[
+            ("XYZ", "2025-09-01", 0.40),  # more than a year before the entry: not copied
+            ("XYZ", "2025-12-01", 0.50),
+            ("XYZ", "2026-09-01", 0.50),
+            ("ABC", "2026-09-01", 9.99),
+        ],
+        splits=[("XYZ", "2020-01-02"), ("XYZ", "2026-10-01")],
+    )
+    got, error = managesnap.underlying_history(date(2026, 10, 19), HELD, OPENED, db)
+    assert error is None
+    # Only the held long call's opening day: not the short's, and not a call no longer held.
+    assert got == {
+        "XYZ": {
+            "store_symbol": "XYZ",
+            "through": "2026-10-19",
+            "closes": {"2026-09-25": 50.0},
+            "dividends": [["2025-12-01", 0.5], ["2026-09-01", 0.5]],
+            "splits": ["2026-10-01"],
+        }
+    }
+
+
+def test_a_long_bought_before_the_store_s_last_bar_has_no_close_and_says_nothing_else(tmp_path):
+    db = _store(tmp_path / "history.db", bars=[("XYZ", "2026-09-24", 49.0)])
+    got, error = managesnap.underlying_history(date(2026, 10, 19), HELD, OPENED, db)
+    assert error is None and got["XYZ"]["closes"] == {} and got["XYZ"]["dividends"] == []
+
+
+def test_a_missing_store_is_recorded_not_fatal(tmp_path):
+    got, error = managesnap.underlying_history(date(2026, 10, 19), HELD, OPENED, tmp_path / "none.db")
+    assert got is None and "no history store" in error
+    # No long call held: nothing is wanted, so nothing is read and nothing is wrong.
+    got, error = managesnap.underlying_history(
+        date(2026, 10, 19), {"accounts": []}, OPENED, tmp_path / "none.db"
+    )
+    assert got == {} and error is None
+
+
+def test_a_name_only_the_history_store_holds_is_resolved(monkeypatch, tmp_path):
+    """The end-of-day store holds only the market report's names; the history store holds every
+    tradable one. With both on disk under the technicals home, a name only the history store has (as
+    IVV, FXI and BRK.B were on 2026-10-19) still gets its close, and BRK/B finds the store's BRK.B."""
+    monkeypatch.setenv("TECHNICALS_DATA_DIR", str(tmp_path))
+    _store(tmp_path / "eod.db", bars=[("SPY", "2026-09-25", 650.0)])
+    _store(
+        tmp_path / "history.db",
+        bars=[("XYZ", "2026-09-25", 50.0), ("BRK.B", "2026-09-25", 480.0)],
+        dividends=[("XYZ", "2026-09-01", 0.50)],
+    )
+    brk = "BRK/B 290119C00400000"
+    held = {
+        "accounts": [
+            {
+                "underlyings": [
+                    *HELD["accounts"][0]["underlyings"],
+                    {"underlying": "BRK/B", "legs": [{"symbol": brk, "right": "C", "quantity": 1.0}]},
+                ]
+            }
+        ]
+    }
+    opened = {
+        **OPENED,
+        "BRK/B": [{"action": "Buy to Open", "symbol": brk, "executed_at": "2026-09-25T15:00:00Z"}],
+    }
+    assert managesnap.history_db() == tmp_path / "history.db"
+    got, error = managesnap.underlying_history(date(2026, 10, 19), held, opened)
+    assert error is None
+    assert got["XYZ"]["closes"] == {"2026-09-25": 50.0} and got["XYZ"]["dividends"] == [["2026-09-01", 0.5]]
+    assert got["BRK/B"]["store_symbol"] == "BRK.B" and got["BRK/B"]["closes"] == {"2026-09-25": 480.0}

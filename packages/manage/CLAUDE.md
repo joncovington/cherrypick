@@ -14,7 +14,9 @@ the orchestrator's `manage` verb (`orchestrator/managesnap.py`: positions and ba
 the XSP hedge chain, the quoted chain of each expiry holding a short strangle, the broker's greeks
 for each option leg held and the day's orders, all read-only; and from local files the income reading
 and the held names' skate bands, copied as the band file states them, which `wheel.py` moves to
-today's price), which then runs this package by subprocess. Nothing here places, closes, rolls or sizes an order, and no loop may
+today's price, and each long call's entry-day close with the name's dividends and splits from the
+technicals history store, which `pmcc.py` solves the long's delta at entry from), which then runs
+this package by subprocess. Nothing here places, closes, rolls or sizes an order, and no loop may
 import it. The closing order an evaluation lists is what a person would enter, priced at mid.
 
 ## The artifact is the product
@@ -43,6 +45,10 @@ of that day, not today's.
   row and a share row match (side, contracts x 100, at the strike, within days, each share row once);
   a running cycle that does not replay to today's positions is `unreconciled`; shares older than the
   history have `basis_known: false`, never the positions' open price.
+- **A PMCC is recognised, never assumed** (`pmcc.py`). The shape is a call diagonal; it is a PMCC only
+  when the long's delta at entry (its fill and that day's close, dividend yield carried) clears the
+  floor, or `positions.<SYMBOL>.intent` says `"pmcc"`. A delta that cannot be solved is unknown and
+  recognises nothing; a PMCC whose linked orders do not replay to today's legs gets a review only.
 - **P&L is a mark.** Gross always; net of the chain's recorded fees where a chain reconciled, and null (never gross relabelled) where it did not.
 - **The ruleset is data.** Thresholds and confidences live in `rules.DEFAULT_RULES` and the operator's
   `~/.cherrypick/config/manage.json`; an override key the default lacks is reported, never applied.
