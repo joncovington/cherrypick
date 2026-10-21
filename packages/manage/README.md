@@ -199,7 +199,7 @@ cycle, and names the evaluated trades holding its legs. The `wheel.*` rules in t
 - **Today's check**, for each short option a running cycle holds: tested or not (the price at or
   through the strike), extrinsic value left at the mid, any buy-to-close resting on the day's working
   orders (snapshot v10), and the strike against the skate screen's band for its expiry, moved to
-  today's price. The snapshot does not carry the bands yet, so that column is null and says why.
+  today's price (snapshot v12's `skate_bands`; null, saying why, when the snapshot has none).
 
 **The wheel rules and the trade's other rules.** A wheel rule fires into the list of the trade that
 holds the cycle's short (or, for the next leg, its shares) and is ranked like every other rule, by
