@@ -3075,6 +3075,23 @@ def test_ic_legs_and_settlement_read_per_side_wings():
     assert paper.settlement_itm_strikes(585, 595, 7, 579, put_open=True, call_open=True) == 1
 
 
+def test_side_wing_treats_a_recorded_zero_as_a_width_not_a_missing_value():
+    """`or wing_width` read a 0 per-side width as absent and substituted the scalar -- the wrong
+    side's wing. Tested with `is None`, a recorded 0 stays a width. NULL (a pre-migration row) is
+    what still takes the scalar, and nothing else does."""
+    assert paper.side_wing({"put_wing": 0, "wing_width": 30}, "put") == 0
+    assert paper.side_wing({"call_wing": 0, "wing_width": 30}, "call") == 0
+    assert paper.side_wing({"put_wing": None, "wing_width": 30}, "put") == 30
+    assert paper.side_wing({"wing_width": 30}, "call") == 30  # column absent entirely
+    # And through the legs: a 0 put wing places the put long ON the short, not at the scalar 30.
+    assert paper.ic_legs({"put_strike": 585, "call_strike": 595, "wing_width": 30, "put_wing": 0}) == [
+        (paper._EXPIRY, "P", 585.0, -1),
+        (paper._EXPIRY, "P", 585.0, 1),
+        (paper._EXPIRY, "C", 595.0, -1),
+        (paper._EXPIRY, "C", 625.0, 1),
+    ]
+
+
 def test_expire_settlement_charges_the_per_side_long(tmp_path):
     # End-to-end through the ledger: an equalize row settling at 7675 has its put long (7705-25
     # = 7680) ITM -- $10 of settlement fees, where the scalar 35 wing (long 7670) would have

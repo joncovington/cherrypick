@@ -519,6 +519,19 @@ def union_short_deltas_for_symbol(
 _EXPIRY = "0dte"
 
 
+def side_wing(trade: dict, side: str) -> float | None:
+    """One side's wing width: its own `put_wing`/`call_wing` when the row carries one, else the
+    scalar `wing_width`.
+
+    An `equalize_credit` pair sizes its two wings independently, so the narrower side's long is NOT
+    at the scalar. Tested with `is None`, not truthiness: a recorded 0 is a width (a degenerate
+    wing), not a missing value, and `or width` would silently substitute the other side's scalar for
+    it. Every pre-migration row is NULL here and takes the scalar, which is what it was written with.
+    """
+    own = trade.get("put_wing" if side == "put" else "call_wing")
+    return own if own is not None else trade.get("wing_width")
+
+
 def ic_legs(trade: dict) -> list[tuple[str, str, float, int]]:
     """One open IC as individual contracts, in `cherrypick.core.entry`'s ``(expiry, right, strike,
     sign)`` shape: short put, long put, short call, long call.
@@ -537,12 +550,11 @@ def ic_legs(trade: dict) -> list[tuple[str, str, float, int]]:
     malformed historical row must not take the session down.
     """
     legs: list[tuple[str, str, float, int]] = []
-    width = trade.get("wing_width")
     # Per-side widths on an `equalize_credit` row (each wing sized independently); every other
     # row — including everything written before the columns existed — has them equal to the
     # scalar, so the fallback keeps one arithmetic for the whole book.
-    put_wing = trade.get("put_wing") or width
-    call_wing = trade.get("call_wing") or width
+    put_wing = side_wing(trade, "put")
+    call_wing = side_wing(trade, "call")
     put_strike, call_strike = trade.get("put_strike"), trade.get("call_strike")
     if put_strike is not None:
         legs.append((_EXPIRY, "P", float(put_strike), -1))
@@ -1189,10 +1201,9 @@ def synthetic_entry_fill(
         # Per-side wing widths (additive 2026-10-20): equal to `wing_width` on every single-width
         # trade, differing only on an `equalize_credit` pair, where each wing was sized
         # independently. Rows from before this column pair read `wing_width` as always; readers
-        # that need one side's own width fall back with
-        # `trade.get("put_wing") or trade.get("wing_width")`.
-        "put_wing": float(chosen.get("put_wing") or chosen["wing_width"]),
-        "call_wing": float(chosen.get("call_wing") or chosen["wing_width"]),
+        # that need one side's own width go through `paper.side_wing`, which falls back on NULL.
+        "put_wing": float(side_wing(chosen, "put")),
+        "call_wing": float(side_wing(chosen, "call")),
         "put_symbol": sp.get("streamer_symbol"),
         "call_symbol": sc.get("streamer_symbol"),
         "long_put_symbol": lp.get("streamer_symbol"),
@@ -1493,13 +1504,13 @@ def evaluate_open_trade(
         put_settle = _settlement_value(
             trade.get("put_strike"),
             underlying_price,
-            trade.get("put_wing") or trade.get("wing_width"),
+            side_wing(trade, "put"),
             "put",
         )
         call_settle = _settlement_value(
             trade.get("call_strike"),
             underlying_price,
-            trade.get("call_wing") or trade.get("wing_width"),
+            side_wing(trade, "call"),
             "call",
         )
         return {
@@ -1547,7 +1558,7 @@ def evaluate_open_trade(
                 put_pin = _pin_penalty(
                     trade.get("put_strike"),
                     underlying_price,
-                    trade.get("put_wing") or trade.get("wing_width"),
+                    side_wing(trade, "put"),
                     params,
                 )
                 put_exit = round(put_exit + friction + put_pin, 4)
@@ -1557,7 +1568,7 @@ def evaluate_open_trade(
                 call_pin = _pin_penalty(
                     trade.get("call_strike"),
                     underlying_price,
-                    trade.get("call_wing") or trade.get("wing_width"),
+                    side_wing(trade, "call"),
                     params,
                 )
                 call_exit = round(call_exit + friction + call_pin, 4)
@@ -1576,13 +1587,13 @@ def evaluate_open_trade(
         put_settle = _settlement_value(
             trade.get("put_strike"),
             underlying_price,
-            trade.get("put_wing") or trade.get("wing_width"),
+            side_wing(trade, "put"),
             "put",
         )
         call_settle = _settlement_value(
             trade.get("call_strike"),
             underlying_price,
-            trade.get("call_wing") or trade.get("wing_width"),
+            side_wing(trade, "call"),
             "call",
         )
         return {
@@ -1827,13 +1838,13 @@ def _settle_stopped_trades(
         put_settle = _settlement_value(
             trade.get("put_strike"),
             underlying_price,
-            trade.get("put_wing") or trade.get("wing_width"),
+            side_wing(trade, "put"),
             "put",
         )
         call_settle = _settlement_value(
             trade.get("call_strike"),
             underlying_price,
-            trade.get("call_wing") or trade.get("wing_width"),
+            side_wing(trade, "call"),
             "call",
         )
         _update_trade(
