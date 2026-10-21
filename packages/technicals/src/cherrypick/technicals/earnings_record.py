@@ -26,6 +26,7 @@ a fixed input fixes the record.
 from __future__ import annotations
 
 import json
+import statistics
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -184,6 +185,12 @@ def build(today: date, cfg: dict | None = None, closes_fn=None) -> dict:
             "em_move_pct": r.get("em_move_pct"),
             "sd_move": r.get("sd_move"),
             "sd_move_pct": r.get("sd_move_pct"),
+            # The expiry that expected move was priced on, and how far past the reaction day it lies:
+            # over a week, it prices a fortnight's or a month's move against a one-day reaction.
+            "event_expiry": r.get("event_expiry"),
+            "event_expiry_days": earnings_calendar.expiry_days_past(r["event_expiry"], react)
+            if r.get("event_expiry")
+            else None,
             "move_over_em": round(abs(move) / em, 3) if move is not None and em else None,
             "inside_em": (abs(move) <= em) if move is not None and em else None,
             "direction_right": None,
@@ -246,14 +253,36 @@ def _spread(greeks: Path, sym: str, report: str, r: dict) -> dict | None:
     return out
 
 
+def _against_em(rows: list[dict]) -> dict:
+    """How often the one-day move stayed inside the expected move, and the median |move| / expected."""
+    return {
+        "n": len(rows),
+        "inside_em": round(sum(1 for r in rows if r["inside_em"]) / len(rows), 3) if rows else None,
+        "median_move_over_em": round(statistics.median(r["move_over_em"] for r in rows), 4) if rows else None,
+    }
+
+
 def summary(rows: list[dict]) -> dict:
-    moved = [r for r in rows if r["move_over_em"] is not None]
+    compared = [r for r in rows if r["move_over_em"] is not None]
+    # The same, over only the moves priced on an expiry within a week of the reaction: a later expiry
+    # prices a fortnight's or a month's move, which biases the whole set toward "inside".
+    week = [
+        r
+        for r in compared
+        if r.get("event_expiry_days") is not None
+        and r["event_expiry_days"] <= earnings_calendar.EARNINGS_WEEK_DAYS
+    ]
     strong = [r for r in rows if r["direction_right"] is not None]
+    every = _against_em(compared)
     out = {
         "announcements": len(rows),
-        "measured": len(moved),
-        "inside_em": round(sum(1 for r in moved if r["inside_em"]) / len(moved), 3) if moved else None,
-        "median_move_over_em": sorted(r["move_over_em"] for r in moved)[len(moved) // 2] if moved else None,
+        # Every announcement whose one-day move is measured; `compared` of them also had an expected
+        # move to judge it against. (`measured` meant the second until 2026-10-21.)
+        "measured_moves": sum(1 for r in rows if r["move"] is not None),
+        "compared": every["n"],
+        "inside_em": every["inside_em"],
+        "median_move_over_em": every["median_move_over_em"],
+        "earnings_week": {"max_days": earnings_calendar.EARNINGS_WEEK_DAYS, **_against_em(week)},
         "strong_reads": len(strong),
         "direction_right": round(sum(1 for r in strong if r["direction_right"]) / len(strong), 3)
         if strong

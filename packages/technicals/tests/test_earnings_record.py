@@ -107,6 +107,56 @@ def test_the_record_scores_the_move_the_direction_and_the_spread():
     assert out["summary"]["spreads_react"]["n"] == 1 and out["summary"]["direction_right"] == 1.0
 
 
+def _scored(sym, move, em, expiry_days=2):
+    return {
+        "move": move,
+        "move_over_em": None if em is None else round(abs(move) / em, 3),
+        "inside_em": None if em is None else abs(move) <= em,
+        "event_expiry_days": expiry_days,
+        "direction_right": None,
+        "spread": None,
+        "symbol": sym,
+    }
+
+
+def test_the_summary_counts_every_measured_move_and_says_how_many_had_an_expected_move():
+    rows = [
+        _scored("A", 1.0, 2.0),
+        _scored("B", 3.0, 2.0),
+        _scored("C", 1.0, None),  # measured, but no expected move to compare it with
+        dict(_scored("D", 1.0, None), move=None),  # not measured
+    ]
+    s = earnings_record.summary(rows)
+    assert (s["announcements"], s["measured_moves"], s["compared"]) == (4, 3, 2)
+    assert "measured" not in s  # the old word counted only the compared ones
+
+
+def test_the_median_of_an_even_count_is_the_mean_of_the_middle_two():
+    # 0.5 and 1.5: the median is 1.0, not the upper middle 1.5.
+    s = earnings_record.summary([_scored("A", 1.0, 2.0), _scored("B", 3.0, 2.0)])
+    assert s["median_move_over_em"] == 1.0
+
+
+def test_the_summary_is_also_stated_over_moves_priced_within_a_week_of_the_reaction():
+    rows = [
+        _scored("WEEK", 3.0, 2.0, expiry_days=2),  # outside a one-week move
+        _scored("MONTH", 3.0, 6.0, expiry_days=28),  # inside, but against a month's move
+        _scored("EDGE", 1.0, 2.0, expiry_days=7),  # a week to the day still counts
+    ]
+    s = earnings_record.summary(rows)
+    assert (s["compared"], s["inside_em"]) == (3, 0.667)
+    wk = s["earnings_week"]
+    assert (wk["max_days"], wk["n"], wk["inside_em"], wk["median_move_over_em"]) == (7, 2, 0.5, 1.0)
+
+
+def test_a_record_row_carries_its_event_expiry_and_how_far_past_the_reaction_it_is():
+    cal_dir = earnings_calendar.out_dir()
+    _write(cal_dir / "2026-10-19.json", {"rows": [dict(ROW, event_expiry="2026-11-20")]})
+    closes = {("NFLX", "2026-10-20"): 70.0, ("NFLX", "2026-10-21"): 63.0}
+    [r] = earnings_record.build(date(2026, 10, 23), closes_fn=lambda wanted: closes)["rows"]
+    assert (r["event_expiry"], r["event_expiry_days"]) == ("2026-11-20", 30)
+
+
 def test_an_announcement_not_yet_reacted_or_without_an_entry_session_records_no_trade():
     cal_dir = earnings_calendar.out_dir()
     unknown = dict(ROW, symbol="UNK", timing=None, entry_session=None)

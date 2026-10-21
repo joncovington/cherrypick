@@ -12,7 +12,11 @@
  * Joined to it, as the income tabs join their leg readings: the suggested spread on listed strikes,
  * quoted in regular hours and judged against the leg bars by `fetch_screener_greeks.py measure`
  * (`market-report/screener-greeks/earnings-legs/<date>/<HHMM>.json`) -- the latest reading taken OF
- * this calendar (`calendar_day`), not merely the newest file.
+ * this calendar (`calendar_day`), not merely the newest file. That reading is taken the session
+ * AFTER the calendar, so for a name reporting before that open it is a post-announcement price: such
+ * a row shows the entry session's last reading instead, the one the forward record enters on, or,
+ * with none, the later reading marked `afterReport` (2026-10-21; NEE showed a 14:30 read taken hours
+ * after its report).
  */
 
 import fs from "node:fs";
@@ -38,6 +42,12 @@ function rec(v: unknown): Record<string, unknown> {
 
 function bool(v: unknown): boolean | null {
   return typeof v === "boolean" ? v : null;
+}
+
+/** Calendar days from one ISO date to another. */
+function daysBetween(from: string, to: string): number | null {
+  const d = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
+  return Number.isFinite(d) ? Math.round(d) : null;
 }
 
 export function earningsCalendarDir(config: ConsoleConfig): string {
@@ -81,19 +91,58 @@ function tradeLeg(v: unknown): EarningsTradeLeg | null {
   };
 }
 
+function legsDir(config: ConsoleConfig): string {
+  return path.join(marketReportDir(config), "screener-greeks", "earnings-legs");
+}
+
+/** One reading file's spreads, keyed `symbol|report date`. `afterReport` is settled per row later. */
+function readingRows(doc: Record<string, unknown>, takenOn: string): Map<string, EarningsTrade> {
+  const at = str(doc["measured_at"]);
+  const out = new Map<string, EarningsTrade>();
+  for (const raw of Array.isArray(doc["rows"]) ? doc["rows"] : []) {
+    const r = rec(raw);
+    const symbol = str(r["symbol"]);
+    const expiry = str(r["expiry"]);
+    const width = num(r["width"]);
+    const legs = Array.isArray(r["legs"]) ? r["legs"].map(tradeLeg).filter((l): l is EarningsTradeLeg => l !== null) : [];
+    if (symbol === null || expiry === null || width === null || legs.length !== 2) continue;
+    out.set(`${symbol}|${str(r["date"]) ?? ""}`, {
+      readingAt: at,
+      takenOn,
+      afterReport: null,
+      kind: r["kind"] === "debit" ? "debit" : "credit",
+      right: r["right"] === "C" ? "C" : "P",
+      expiry,
+      width,
+      legs,
+      mid: num(r["mid"]),
+      natural: num(r["natural"]),
+      shareOfWidth: num(r["share_of_width"]),
+      maxLoss: num(r["max_loss"]),
+      passes: bool(r["passes"]),
+    });
+  }
+  return out;
+}
+
+function bySymbol(rows: Map<string, EarningsTrade>): Map<string, EarningsTrade> {
+  return new Map([...rows].map(([k, t]) => [k.slice(0, k.indexOf("|")), t]));
+}
+
 /** The latest earnings-legs reading taken of calendar `day`, by symbol. Readings sit under the date
- *  they were TAKEN (a session after the calendar), naming the calendar day they read. */
+ *  they were TAKEN (a session after the calendar), naming the calendar day they read -- so for a name
+ *  reporting before the next open, this reading comes after the announcement (see `entryReading`). */
 export function readTrades(config: ConsoleConfig, day: string): Map<string, EarningsTrade> {
-  const dir = path.join(marketReportDir(config), "screener-greeks", "earnings-legs");
-  const files: string[] = [];
+  const dir = legsDir(config);
+  const files: [string, string][] = [];
   try {
     for (const d of fs.readdirSync(dir).filter((n) => DAY.test(n) && n >= day)) {
-      for (const f of fs.readdirSync(path.join(dir, d)).filter((n) => n.endsWith(".json"))) files.push(path.join(dir, d, f));
+      for (const f of fs.readdirSync(path.join(dir, d)).filter((n) => n.endsWith(".json"))) files.push([path.join(dir, d, f), d]);
     }
   } catch {
     return new Map();
   }
-  for (const file of files.sort().reverse()) {
+  for (const [file, takenOn] of files.sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0))) {
     let doc: Record<string, unknown>;
     try {
       doc = rec(JSON.parse(fs.readFileSync(file, "utf-8")));
@@ -101,32 +150,44 @@ export function readTrades(config: ConsoleConfig, day: string): Map<string, Earn
       continue;
     }
     if (doc["calendar_day"] !== day) continue;
-    const at = str(doc["measured_at"]);
-    const out = new Map<string, EarningsTrade>();
-    for (const raw of Array.isArray(doc["rows"]) ? doc["rows"] : []) {
-      const r = rec(raw);
-      const symbol = str(r["symbol"]);
-      const expiry = str(r["expiry"]);
-      const width = num(r["width"]);
-      const legs = Array.isArray(r["legs"]) ? r["legs"].map(tradeLeg).filter((l): l is EarningsTradeLeg => l !== null) : [];
-      if (symbol === null || expiry === null || width === null || legs.length !== 2) continue;
-      out.set(symbol, {
-        readingAt: at,
-        kind: r["kind"] === "debit" ? "debit" : "credit",
-        right: r["right"] === "C" ? "C" : "P",
-        expiry,
-        width,
-        legs,
-        mid: num(r["mid"]),
-        natural: num(r["natural"]),
-        shareOfWidth: num(r["share_of_width"]),
-        maxLoss: num(r["max_loss"]),
-        passes: bool(r["passes"]),
-      });
-    }
-    return out;
+    return bySymbol(readingRows(doc, takenOn));
   }
   return new Map();
+}
+
+/** The last reading taken ON the entry session, keyed `symbol|report date`, whichever calendar it
+ *  read: the reading the forward record enters a spread on (`earnings_record._spread`), so the last
+ *  one before the announcement. */
+export function entryReading(config: ConsoleConfig, session: string): Map<string, EarningsTrade> {
+  if (!DAY.test(session)) return new Map();
+  let names: string[];
+  try {
+    names = fs.readdirSync(path.join(legsDir(config), session)).filter((n) => n.endsWith(".json"));
+  } catch {
+    return new Map();
+  }
+  const last = names.sort().at(-1);
+  if (last === undefined) return new Map();
+  try {
+    return readingRows(rec(JSON.parse(fs.readFileSync(path.join(legsDir(config), session, last), "utf-8"))), session);
+  } catch {
+    return new Map();
+  }
+}
+
+/** The reading to show beside a row: the calendar's own, unless it was taken after the announcement
+ *  (a session past the entry session -- a before-the-open name on the next morning), when the entry
+ *  session's last reading stands in, as the record enters on; with none, the later one, marked. */
+export function entryTrade(
+  r: Pick<EarningsCalendarRow, "symbol" | "date" | "entrySession">,
+  own: EarningsTrade | undefined,
+  atEntry: (session: string) => Map<string, EarningsTrade>,
+): EarningsTrade | null {
+  if (own === undefined) return null;
+  if (r.entrySession === null) return own; // time of day unknown: afterReport stays null
+  if (own.takenOn <= r.entrySession) return { ...own, afterReport: false };
+  const before = atEntry(r.entrySession).get(`${r.symbol}|${r.date}`);
+  return before ? { ...before, afterReport: false } : { ...own, afterReport: true };
 }
 
 /** The evening's listed strikes for calendar `day` (`fetch_screener_greeks.py strikes`, written to
@@ -168,6 +229,7 @@ function row(v: unknown): EarningsCalendarRow | null {
   if (symbol === null || date === null || reactionDay === null) return null;
   const edge = str(r["edge"]);
   const region = r["region"];
+  const eventExpiry = str(r["event_expiry"]);
   return {
     symbol,
     company: str(r["company"]),
@@ -194,7 +256,9 @@ function row(v: unknown): EarningsCalendarRow | null {
     optionable: bool(r["optionable"]),
     sector: str(r["sector"]),
     price: num(r["price"]),
-    eventExpiry: str(r["event_expiry"]),
+    eventExpiry,
+    // The file's from 2026-10-21; an older calendar's is the same date difference.
+    eventExpiryDays: num(r["event_expiry_days"]) ?? (eventExpiry === null ? null : daysBetween(reactionDay, eventExpiry)),
     eventIv: num(r["event_iv"]),
     sdMove: num(r["sd_move"]),
     sdMovePct: num(r["sd_move_pct"]),
@@ -226,8 +290,15 @@ export function readEarningsCalendar(config: ConsoleConfig, wanted?: string | nu
   const inputs = rec(doc["inputs"]);
   const trades = readTrades(config, day);
   const listed = readListedStrikes(config, day);
+  const entries = new Map<string, Map<string, EarningsTrade>>();
+  const atEntry = (session: string) => {
+    let m = entries.get(session);
+    if (m === undefined) entries.set(session, (m = entryReading(config, session)));
+    return m;
+  };
   const rows = (Array.isArray(doc["rows"]) ? doc["rows"].map(row).filter((r): r is EarningsCalendarRow => r !== null) : []).map(
-    (r) => (r.suggestion ? { ...r, trade: trades.get(r.symbol) ?? null, listed: listed.get(r.symbol) ?? null } : r),
+    (r) =>
+      r.suggestion ? { ...r, trade: entryTrade(r, trades.get(r.symbol), atEntry), listed: listed.get(r.symbol) ?? null } : r,
   );
   return {
     day,

@@ -42,9 +42,13 @@ export interface SkateLeg {
   delta: number | null;
   /** The model's chance of finishing out of the money, 1 - N(d2) for a call, 1 - N(-d2) for a put. */
   impliedSkate: number | null;
-  /** Share of past days on which the band, at this offset, held to expiry: 11 years, and the last 3. */
+  /** Share of past days on which the band, at this offset, held to expiry: over the name's whole
+   *  history since 2015 (as little as a year for a young name), and over the last 3 years. */
   skate: number | null;
   skateRecent: number | null;
+  /** How many past windows those rates stand on (about 252 a year); null on a run older than these fields. */
+  historyWindows: number | null;
+  historyWindowsRecent: number | null;
   /** History minus implied, in rate units (0.05 = five points). */
   gap: number | null;
   /** Skate yield, annualised simple: premium ÷ capital × 365 ÷ days, on the bid and on the mid. */
@@ -52,6 +56,14 @@ export interface SkateLeg {
   yieldMid: number | null;
   /** Dollars per contract per day, on the bid. */
   perDayBid: number | null;
+  /** Per contract, dollars: the fee to open one short contract (commission and pass-throughs), the
+   *  bid premium less it, and the yield on that net. Null on a run older than these fields. The ranking and
+   *  the forward record stay on the gross. */
+  feeOpen: number | null;
+  netPremiumBid: number | null;
+  netYieldBid: number | null;
+  /** The chance of finishing PAST the strike, per cycle and over a month of cycles (the file's
+   *  `tested_*` keys); not the forward record's "tested", which is touched but skated. */
   testedPerCycle: number | null;
   testedPerMonth: number | null;
   /** The hard filters (open interest, the spread): a leg that fails is never shown. */

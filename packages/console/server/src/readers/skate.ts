@@ -100,6 +100,11 @@ function leg(v: unknown): SkateLeg | null {
     yieldBid: num(l["yield_bid"]),
     yieldMid: num(l["yield_mid"]),
     perDayBid: num(l["per_day_bid"]),
+    historyWindows: num(l["history_windows"]),
+    historyWindowsRecent: num(l["history_windows_recent"]),
+    feeOpen: num(l["fee_open"]),
+    netPremiumBid: num(l["net_premium_bid"]),
+    netYieldBid: num(l["net_yield_bid"]),
     testedPerCycle: num(l["tested_per_cycle"]),
     testedPerMonth: num(l["tested_per_month"]),
     // Only an explicit true passes: a leg with no verdict is not shown as passing.

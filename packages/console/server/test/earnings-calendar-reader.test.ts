@@ -195,6 +195,72 @@ describe("readEarningsCalendar", () => {
     expect(rows["META"]!.trade).toBeNull();
   });
 
+  it("never shows a reading taken after a before-the-open announcement as the entry read", () => {
+    // NEE on the 2026-10-20 calendar: reports before the 10-21 open, so its entry session is 10-20.
+    // The calendar's own reading is taken 10-21 at 14:30, hours after the report.
+    write("2026-10-20", {
+      session: "2026-10-20",
+      inputs: {},
+      rows: [
+        { ...NFLX, symbol: "NEE", date: "2026-10-21", timing: "bmo", entry_session: "2026-10-20", reaction_day: "2026-10-21" },
+        { ...NFLX, symbol: "LATE", date: "2026-10-21", timing: "bmo", entry_session: "2026-10-20", reaction_day: "2026-10-21" },
+        { ...NFLX, symbol: "AMC", date: "2026-10-21", timing: "amc", entry_session: "2026-10-21", reaction_day: "2026-10-22" },
+        { ...NFLX, symbol: "UNK", date: "2026-10-22", timing: null, entry_session: null, reaction_day: "2026-10-23" },
+      ],
+    });
+    const spread = (symbol: string, mid: number) => ({
+      symbol,
+      date: "2026-10-21",
+      kind: "credit",
+      right: "C",
+      expiry: "2026-12-18",
+      width: 2.5,
+      legs: [
+        { role: "long", strike: 82.5, quote: { bid: 1.44, ask: 1.54 } },
+        { role: "short", strike: 80, quote: { bid: 2.5, ask: 2.6 } },
+      ],
+      mid,
+    });
+    const legsFile = (taken: string, hhmm: string, calendarDay: string, rows: unknown[]) => {
+      const p = path.join(tmp, "market-report", "screener-greeks", "earnings-legs", taken, `${hhmm}.json`);
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, JSON.stringify({ measured_at: `${taken}T${hhmm.slice(0, 2)}:${hhmm.slice(2)}:00Z`, calendar_day: calendarDay, rows }));
+    };
+    // The 10-19 calendar's readings, taken on 10-20 -- the entry session -- list NEE (not LATE).
+    legsFile("2026-10-20", "1130", "2026-10-19", [spread("NEE", 1.0)]);
+    legsFile("2026-10-20", "1430", "2026-10-19", [spread("NEE", 1.06)]);
+    // The 10-20 calendar's own, taken on 10-21: after NEE's and LATE's reports, before AMC's.
+    legsFile("2026-10-21", "1430", "2026-10-20", [
+      spread("NEE", 2.17),
+      spread("LATE", 3.0),
+      spread("AMC", 1.5),
+      { ...spread("UNK", 0.9), date: "2026-10-22" },
+    ]);
+    const rows = Object.fromEntries(readEarningsCalendar(config, "2026-10-20").rows.map((r) => [r.symbol, r]));
+    // NEE: the entry session's last reading stands in, as the forward record enters on it.
+    expect(rows["NEE"]!.trade).toMatchObject({ mid: 1.06, takenOn: "2026-10-20", afterReport: false });
+    // LATE: no reading before the report, so the later one, marked.
+    expect(rows["LATE"]!.trade).toMatchObject({ mid: 3.0, takenOn: "2026-10-21", afterReport: true });
+    // After the close: a reading taken on the report day is before it.
+    expect(rows["AMC"]!.trade).toMatchObject({ mid: 1.5, afterReport: false });
+    // Unknown time of day: cannot say.
+    expect(rows["UNK"]!.trade).toMatchObject({ mid: 0.9, afterReport: null });
+  });
+
+  it("states how far past the reaction the event expiry is, from the file or from an older file's dates", () => {
+    write("2026-10-20", {
+      session: "2026-10-20",
+      inputs: {},
+      rows: [
+        { ...NFLX, symbol: "OLD" }, // no event_expiry_days: 10-21 to 10-23
+        { ...NFLX, symbol: "FIX", reaction_day: "2026-10-23", event_expiry: "2026-11-20", event_expiry_days: 28 },
+      ],
+    });
+    const rows = Object.fromEntries(readEarningsCalendar(config, "2026-10-20").rows.map((r) => [r.symbol, r]));
+    expect(rows["OLD"]!.eventExpiryDays).toBe(2);
+    expect(rows["FIX"]!.eventExpiryDays).toBe(28);
+  });
+
   it("an absent folder is no calendar, not an error", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
     expect(readEarningsCalendar(config)).toMatchObject({ day: null, days: [], rows: [] });
