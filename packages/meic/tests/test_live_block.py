@@ -150,6 +150,37 @@ def test_a_bad_live_arm_does_not_crash_a_paper_shadow(monkeypatch):
     assert shadow["max_open_bp_dollars"] == 500 and shadow["min_iv_rank"] == 0.3
 
 
+def test_a_live_arm_with_equalize_credit_is_refused_by_readiness(monkeypatch):
+    """`equalize_credit` is paper-only until the pair shape has been tried with real orders
+    (2026-10-20). A live arm that sets it would order per-side legs whose widths differ -- a shape the
+    live order path has never carried -- so readiness refuses it, exactly like a follows_live arm."""
+    registry = {
+        **REGISTRY,
+        "equalized": {"equalize_credit": True, "wing_widths_by_symbol": {"SPX": [25, 35]}},
+    }
+    monkeypatch.setattr(paper, "load_profiles", lambda: registry)
+    cfg = {**_cfg(arm="equalized", symbol="SPX", gate0_confirmed="me"), "enable_live_trading": True}
+    unmet = live_loop.readiness(cfg, designated="1234")
+    assert any("equalize_credit is paper-only" in u for u in unmet), unmet
+
+
+def test_equalize_credit_at_the_top_level_is_refused_without_a_live_arm():
+    """The no-arm path still checks the top level: a `live` block that turns `equalize_credit` on
+    (or a top-level default) must not slip live into the pair shape by omission of `live.arm`."""
+    cfg = {**TOP, "equalize_credit": True}
+    assert "equalize_credit is paper-only" in (paper.live_arm_problem(cfg, REGISTRY) or "")
+
+
+def test_equalize_credit_on_a_paper_arm_is_not_refused(monkeypatch):
+    """The guard above, shown not to fire on an arm that opts in for paper: the flag is legitimate on
+    a registry arm, so only the live seam refuses it."""
+    registry = {**REGISTRY, "paper-equalized": {"equalize_credit": True}}
+    monkeypatch.setattr(paper, "load_profiles", lambda: registry)
+    # No `live.arm`, and the machine's top level does not carry the flag -- so live is unaffected and
+    # the paper arm is free to trade the pair shape.
+    assert paper.live_arm_problem({**TOP, "live": {}}, registry) is None
+
+
 # --------------------------------------------------------------------------- warnings
 
 

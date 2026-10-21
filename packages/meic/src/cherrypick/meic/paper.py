@@ -120,7 +120,15 @@ def close_fees_one_side(symbol: str, quantity: int = 1) -> float:
 
 
 def settlement_itm_strikes(
-    put_strike, call_strike, wing_width, underlying, *, put_open: bool, call_open: bool
+    put_strike,
+    call_strike,
+    wing_width,
+    underlying,
+    *,
+    put_open: bool,
+    call_open: bool,
+    put_wing: float | None = None,
+    call_wing: float | None = None,
 ) -> int | None:
     """How many of an IC's option symbols settle IN THE MONEY at `underlying`, counting only the
     sides still held to settlement. None when the count cannot be known (a strike, the width or the
@@ -131,18 +139,23 @@ def settlement_itm_strikes(
     transactions). A put side's short (K) and long (K - wing) are ITM below each strike, a call
     side's short (K) and long (K + wing) above; at exactly the strike a leg has no intrinsic value
     and settles for nothing.
+
+    `put_wing`/`call_wing` override the scalar width for one side -- an `equalize_credit` row
+    sized its two wings independently, and each side's long settles against ITS OWN width.
     """
+    put_wing = wing_width if put_wing is None else put_wing
+    call_wing = wing_width if call_wing is None else call_wing
     if underlying is None or wing_width is None:
         return None
     count = 0
     if put_open:
         if put_strike is None:
             return None
-        count += int(underlying < put_strike) + int(underlying < put_strike - wing_width)
+        count += int(underlying < put_strike) + int(underlying < put_strike - put_wing)
     if call_open:
         if call_strike is None:
             return None
-        count += int(underlying > call_strike) + int(underlying > call_strike + wing_width)
+        count += int(underlying > call_strike) + int(underlying > call_strike + call_wing)
     return count
 
 
@@ -169,6 +182,8 @@ def stop_fees():
             underlying,
             put_open=side == "put",
             call_open=side == "call",
+            put_wing=row.get("put_wing"),
+            call_wing=row.get("call_wing"),
         )
         return None if n is None else expire_fees(n)
 
@@ -338,6 +353,16 @@ def _live_resolution(config: dict, registry: dict | None) -> tuple[dict, str | N
         params["entry_window_end"] = min(
             str(live["entry_window_end"]), str(params.get("entry_window_end", "14:30"))
         )
+    # `equalize_credit` is refused on the live path until it has been tried with real orders
+    # (2026-10-20). The engine shares `evaluate_entry`, so a live arm that opts in would order the
+    # pair shape through the order path this flag has never exercised -- per-side legs whose widths
+    # differ, where every prior live fill was one scalar width. Paper-only for now; a live arm that
+    # sets it (or a live block that turns it on) is refused here, the same way a follows_live arm is.
+    if problem is None and params.get("equalize_credit"):
+        problem = (
+            "equalize_credit is paper-only until the pair shape has been tried with live orders; "
+            "the live arm must not set it"
+        )
     return params, problem
 
 
@@ -348,9 +373,9 @@ def live_params(config: dict, registry: dict | None = None) -> dict:
 
 
 def live_arm_problem(config: dict, registry: dict | None = None) -> str | None:
-    """Why `live.arm` cannot be traded, or None. Only reads the registry when an arm is named."""
-    if not live_arm_name(config):
-        return None
+    """Why `live` cannot be traded, or None. Reads the registry when an arm is named; with no arm the
+    top level is still checked, so a live-only opt-in that needs no arm (a `live` block that turns
+    `equalize_credit` on, say) is refused rather than slipping through on the no-arm path."""
     return _live_resolution(config, registry)[1]
 
 
@@ -494,6 +519,19 @@ def union_short_deltas_for_symbol(
 _EXPIRY = "0dte"
 
 
+def side_wing(trade: dict, side: str) -> float | None:
+    """One side's wing width: its own `put_wing`/`call_wing` when the row carries one, else the
+    scalar `wing_width`.
+
+    An `equalize_credit` pair sizes its two wings independently, so the narrower side's long is NOT
+    at the scalar. Tested with `is None`, not truthiness: a recorded 0 is a width (a degenerate
+    wing), not a missing value, and `or width` would silently substitute the other side's scalar for
+    it. Every pre-migration row is NULL here and takes the scalar, which is what it was written with.
+    """
+    own = trade.get("put_wing" if side == "put" else "call_wing")
+    return own if own is not None else trade.get("wing_width")
+
+
 def ic_legs(trade: dict) -> list[tuple[str, str, float, int]]:
     """One open IC as individual contracts, in `cherrypick.core.entry`'s ``(expiry, right, strike,
     sign)`` shape: short put, long put, short call, long call.
@@ -501,26 +539,31 @@ def ic_legs(trade: dict) -> list[tuple[str, str, float, int]]:
     **The long strikes are derived, not stored.** `put_strike`/`call_strike` are the SHORT strikes;
     the longs exist in the ledger only inside `long_put_symbol`/`long_call_symbol`, as DXLink
     streamer symbols (`.XSP260917P650` -- the chain's `streamer_symbol`, never OCC).
-    They are recoverable exactly -- an IC's wings sit `wing_width` outside its shorts by construction
-    -- and deriving them in ONE place is the point of this function: the same arithmetic spread
-    across the entry gate, the payoff read, and the console would be three chances to disagree about
-    which contracts a trade holds.
+    They are recoverable exactly -- an IC's wings sit one wing width outside its shorts by
+    construction (`put_wing`/`call_wing` when they differ on an `equalize_credit` row, else the
+    scalar `wing_width`) -- and deriving them in ONE place is the point of this function: the same
+    arithmetic spread across the entry gate, the payoff read, and the console would be three
+    chances to disagree about which contracts a trade holds.
 
     A row missing `wing_width` yields its shorts alone rather than raising. That is deliberately
     permissive in one direction only: the shorts are the legs most likely to collide anyway, and a
     malformed historical row must not take the session down.
     """
     legs: list[tuple[str, str, float, int]] = []
-    width = trade.get("wing_width")
+    # Per-side widths on an `equalize_credit` row (each wing sized independently); every other
+    # row — including everything written before the columns existed — has them equal to the
+    # scalar, so the fallback keeps one arithmetic for the whole book.
+    put_wing = side_wing(trade, "put")
+    call_wing = side_wing(trade, "call")
     put_strike, call_strike = trade.get("put_strike"), trade.get("call_strike")
     if put_strike is not None:
         legs.append((_EXPIRY, "P", float(put_strike), -1))
-        if width is not None:
-            legs.append((_EXPIRY, "P", float(put_strike) - float(width), 1))
+        if put_wing is not None:
+            legs.append((_EXPIRY, "P", float(put_strike) - float(put_wing), 1))
     if call_strike is not None:
         legs.append((_EXPIRY, "C", float(call_strike), -1))
-        if width is not None:
-            legs.append((_EXPIRY, "C", float(call_strike) + float(width), 1))
+        if call_wing is not None:
+            legs.append((_EXPIRY, "C", float(call_strike) + float(call_wing), 1))
     return legs
 
 
@@ -561,9 +604,25 @@ def _select_candidates(candidates: list, params: dict, symbol: str) -> list:
     elif any(c.get("short_delta") is not None for c in candidates):
         candidates = [c for c in candidates if c.get("is_default_delta")]
 
+    # Equalization menu visibility (2026-10-20, `equalize_credit`): pair candidates -- two wing
+    # widths on one candidate -- exist only for profiles that opted in. Every other profile sees
+    # exactly the menu it saw before pairs existed, which is the comparability guarantee keeping
+    # its book's candidate selection byte-identical to its own history.
+    if not params.get("equalize_credit"):
+        candidates = [c for c in candidates if not c.get("is_pair")]
+
     allowed = _profile_widths_for_symbol(params, symbol)
     if allowed is not None:
-        candidates = [c for c in candidates if c["wing_width"] in allowed]
+
+        def _within_shortlist(c):
+            # A pair must have BOTH wings inside the profile's shortlist: pairs are built over the
+            # union of every profile's widths, so checking only `wing_width` (the wider wing) would
+            # admit a pair whose other wing came from some other profile's list.
+            if c.get("is_pair"):
+                return c["put_wing"] in allowed and c["call_wing"] in allowed
+            return c["wing_width"] in allowed
+
+        candidates = [c for c in candidates if _within_shortlist(c)]
     sel = _wing_selection_for_symbol(params, symbol)
     if sel == "narrowest":
         return sorted(candidates, key=lambda c: c["wing_width"])
@@ -1003,6 +1062,15 @@ def evaluate_entry(
     bp_cap = params.get("max_open_bp_dollars")
     open_bp = sum(ic_buying_power(ic) for ic in open_ics) if bp_cap else 0.0
 
+    # `equalize_credit` (2026-10-20): scan the WHOLE clearing menu and enter the most
+    # credit-balanced candidate -- the two side credits matched by sizing each wing independently
+    # -- instead of taking the first (widest-first) candidate that clears every gate. Every hard
+    # stop above still runs per candidate; only the acceptance rule changes. Ties keep the wider
+    # candidate: the scan runs widest-first and only a strictly smaller imbalance replaces the
+    # incumbent.
+    equalize = bool(params.get("equalize_credit"))
+    best_balanced = None
+
     for cand in candidates:
         sp, lp, sc, lc = cand["short_put"], cand["long_put"], cand["short_call"], cand["long_call"]
         wing_width = cand["wing_width"]
@@ -1082,7 +1150,14 @@ def evaluate_entry(
         # Worst-case natural bid retained for reference/back-compat (dashboards, diagnostics).
         chosen["ic_natural_bid"] = round((sp["bid"] + sc["bid"]) - (lp["ask"] + lc["ask"]), 4)
         chosen["open_fee"] = fee
-        return True, "entered", chosen
+        if not equalize:
+            return True, "entered", chosen
+        imbalance = abs(put_credit - call_credit)
+        if best_balanced is None or imbalance < best_balanced[0] - 1e-9:
+            best_balanced = (imbalance, chosen)
+
+    if best_balanced is not None:
+        return True, "entered", best_balanced[1]
 
     return False, last_reason, None
 
@@ -1123,6 +1198,12 @@ def synthetic_entry_fill(
         "put_strike": sp["strike"],
         "call_strike": sc["strike"],
         "wing_width": chosen["wing_width"],
+        # Per-side wing widths (additive 2026-10-20): equal to `wing_width` on every single-width
+        # trade, differing only on an `equalize_credit` pair, where each wing was sized
+        # independently. Rows from before this column pair read `wing_width` as always; readers
+        # that need one side's own width go through `paper.side_wing`, which falls back on NULL.
+        "put_wing": float(side_wing(chosen, "put")),
+        "call_wing": float(side_wing(chosen, "call")),
         "put_symbol": sp.get("streamer_symbol"),
         "call_symbol": sc.get("streamer_symbol"),
         "long_put_symbol": lp.get("streamer_symbol"),
@@ -1178,7 +1259,11 @@ def synthetic_entry_fill(
         "put_credit_fraction": _regime.put_credit_fraction(chosen["put_credit"], chosen["net_credit"]),
         "minutes_to_close": _regime.minutes_to_close(snapshot.get("now_et")),
         "ai_entry_reasoning": f"paper/{execution_mode}/{profile_name}: deterministic entry, "
-        f"widest clearing candidate ({chosen['wing_width']}-wide)",
+        + (
+            f"most credit-balanced clearing candidate ({chosen['put_wing']}/{chosen['call_wing']}-wide)"
+            if chosen.get("is_pair")
+            else f"widest clearing candidate ({chosen['wing_width']}-wide)"
+        ),
         "stop_trigger_original": params["stop_trigger_ratio"],
         "stop_limit_original": params.get("stop_limit_ratio", 1.02),
         "stop_trigger_current": params["stop_trigger_ratio"],
@@ -1417,10 +1502,16 @@ def evaluate_open_trade(
         # ultimately owed. Nothing recorded this before, so "would these have recovered?" could only
         # ever be argued. Cash-settled only — this branch is the 'left to expire' path.
         put_settle = _settlement_value(
-            trade.get("put_strike"), underlying_price, trade.get("wing_width"), "put"
+            trade.get("put_strike"),
+            underlying_price,
+            side_wing(trade, "put"),
+            "put",
         )
         call_settle = _settlement_value(
-            trade.get("call_strike"), underlying_price, trade.get("wing_width"), "call"
+            trade.get("call_strike"),
+            underlying_price,
+            side_wing(trade, "call"),
+            "call",
         )
         return {
             "action": "expire",
@@ -1465,14 +1556,20 @@ def evaluate_open_trade(
             friction = params.get("physical_settlement_exit_friction", 0.05)
             if put_open:
                 put_pin = _pin_penalty(
-                    trade.get("put_strike"), underlying_price, trade.get("wing_width"), params
+                    trade.get("put_strike"),
+                    underlying_price,
+                    side_wing(trade, "put"),
+                    params,
                 )
                 put_exit = round(put_exit + friction + put_pin, 4)
                 friction_applied = True
                 pin_applied = pin_applied or put_pin > 0
             if call_open:
                 call_pin = _pin_penalty(
-                    trade.get("call_strike"), underlying_price, trade.get("wing_width"), params
+                    trade.get("call_strike"),
+                    underlying_price,
+                    side_wing(trade, "call"),
+                    params,
                 )
                 call_exit = round(call_exit + friction + call_pin, 4)
                 friction_applied = True
@@ -1488,10 +1585,16 @@ def evaluate_open_trade(
         # approximation for an early-session event close (FOMC/expiry, hours before expiration) --
         # still the best available reading of "what was this worth when the position closed".
         put_settle = _settlement_value(
-            trade.get("put_strike"), underlying_price, trade.get("wing_width"), "put"
+            trade.get("put_strike"),
+            underlying_price,
+            side_wing(trade, "put"),
+            "put",
         )
         call_settle = _settlement_value(
-            trade.get("call_strike"), underlying_price, trade.get("wing_width"), "call"
+            trade.get("call_strike"),
+            underlying_price,
+            side_wing(trade, "call"),
+            "call",
         )
         return {
             "action": "force_close",
@@ -1733,10 +1836,16 @@ def _settle_stopped_trades(
         return
     for trade in result.get("open_trades", []):
         put_settle = _settlement_value(
-            trade.get("put_strike"), underlying_price, trade.get("wing_width"), "put"
+            trade.get("put_strike"),
+            underlying_price,
+            side_wing(trade, "put"),
+            "put",
         )
         call_settle = _settlement_value(
-            trade.get("call_strike"), underlying_price, trade.get("wing_width"), "call"
+            trade.get("call_strike"),
+            underlying_price,
+            side_wing(trade, "call"),
+            "call",
         )
         _update_trade(
             trade["ic_order_id"],
@@ -2133,6 +2242,8 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
             decision.get("settle_underlying"),
             put_open=bool(decision["put_open"]),
             call_open=bool(decision["call_open"]),
+            put_wing=trade.get("put_wing"),
+            call_wing=trade.get("call_wing"),
         )
         settlement_fee = expire_fees(itm_strikes or 0)
         delta_pnl = 0

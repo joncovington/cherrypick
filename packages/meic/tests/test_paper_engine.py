@@ -2938,3 +2938,230 @@ def test_bp_cap_refuses_when_nothing_fits():
         paper._ATTEMPT_OUTCOMES["max_open_bp_reached"]
         == paper._ATTEMPT_OUTCOMES["max_concurrent_ics_reached"]
     )
+
+
+# ── Equalization menu (equalize_credit: per-side wing widths) ────────────────
+#
+# `equalize_credit` balances the two side credits by sizing each wing independently -- delta
+# still pins the shorts, width tunes each side's credit. The builder emits off-diagonal width
+# PAIRS (tagged `is_pair`, `wing_width` = the wider wing); `_select_candidates` shows them only
+# to profiles that opted in; `evaluate_entry` enters the most credit-balanced clearing
+# candidate instead of the widest-first one. Every profile without the flag must see exactly
+# the menu it saw before pairs existed.
+
+EQUALIZE = {
+    "symbols": ["XSP"],
+    "wing_widths_by_symbol": {"XSP": [4, 5]},
+    # XSP ships narrowest-first; pin widest so ordering assertions here are about THIS rule.
+    "wing_selection_by_symbol": {"XSP": "widest"},
+    "late_entry_bias_enabled": False,
+    "equalize_credit": True,
+}
+NO_FLAG = {k: v for k, v in EQUALIZE.items() if k != "equalize_credit"}
+
+# Deliberately lopsided quotes: put side rich (~0.825 credit), call side poor (~0.055).
+LOPSIDED = {"sp_bid": 1.00, "sp_ask": 1.10, "sc_bid": 0.20, "sc_ask": 0.30}
+
+
+def _pair(wp, wc, sp_strike, sc_strike, lp=(0.15, 0.25), lc=(0.12, 0.22), **prices):
+    """A width-pair candidate the way `candidates_from_chain` builds one."""
+    c = _candidate(max(wp, wc), sp_strike, sc_strike, **prices)
+    c["long_put"] = _leg(sp_strike - wp, -0.05, lp[0], lp[1], f"LP{wp}")
+    c["long_call"] = _leg(sc_strike + wc, 0.05, lc[0], lc[1], f"LC{wc}")
+    c["put_wing"], c["call_wing"], c["is_pair"] = wp, wc, True
+    return c
+
+
+def test_select_candidates_hides_pairs_from_profiles_without_the_flag():
+    # The comparability guarantee: a menu carrying pairs selects exactly the singles-only menu,
+    # same objects, same order, for any profile that has not opted in.
+    c5, c4, pair = _candidate(5, 583, 598), _candidate(4, 583, 598), _pair(5, 4, 583, 598)
+    menu = [c5, pair, c4]
+    assert paper._select_candidates(menu, _params(NO_FLAG), "XSP") == [c5, c4]
+    # An opted-in profile sees the pairs too (widest-first by the WIDER wing).
+    sel = paper._select_candidates(menu, _params(EQUALIZE), "XSP")
+    assert len(sel) == 3 and pair in sel
+    assert [c["wing_width"] for c in sel] == [5, 5, 4]
+
+
+def test_select_candidates_requires_both_pair_wings_in_the_shortlist():
+    # Pairs are built over the union of every profile's widths, so a pair whose OTHER wing came
+    # from some other profile's list must not slip through on its wider wing alone.
+    sneaky = _pair(3, 5, 583, 598)  # max 5 is in [4,5]; put wing 3 is not
+    sel = paper._select_candidates([sneaky, _candidate(4, 583, 598)], _params(EQUALIZE), "XSP")
+    assert [c["wing_width"] for c in sel] == [4]
+
+
+def test_evaluate_entry_without_the_flag_still_takes_the_widest():
+    # Widest-first is untouched when pairs sit in the shared menu: the pair is invisible, the
+    # widest single clears first, lopsidedness and all.
+    snap = _base_snapshot(
+        now_et="13:00",
+        candidates=[
+            _candidate(4, 583, 598),
+            _pair(5, 4, 583, 598, **LOPSIDED),
+            _candidate(5, 583, 598, **LOPSIDED),
+        ],
+    )
+    entered, reason, chosen = paper.evaluate_entry(snap, _params(NO_FLAG), [])
+    assert entered is True and reason == "entered"
+    assert chosen["wing_width"] == 5 and not chosen.get("is_pair")
+
+
+def test_evaluate_entry_equalize_enters_the_most_balanced_clearing_candidate():
+    # The 5-wide single is first under widest-first and clears every gate, but its side credits
+    # are 0.825 vs 0.055. The opted-in profile scans past it to the balanced 4-wide.
+    snap = _base_snapshot(
+        now_et="13:00",
+        candidates=[
+            _pair(5, 4, 583, 598, **LOPSIDED),
+            _candidate(5, 583, 598, **LOPSIDED),
+            _candidate(4, 583, 598),
+        ],
+    )
+    entered, reason, chosen = paper.evaluate_entry(snap, _params(EQUALIZE), [])
+    assert entered is True and reason == "entered"
+    assert chosen["wing_width"] == 4
+    assert chosen["put_credit"] == pytest.approx(0.375, abs=1e-4)
+    assert chosen["call_credit"] == pytest.approx(0.355, abs=1e-4)
+
+
+def test_evaluate_entry_equalize_can_pick_a_pair():
+    # Here the balanced candidate IS a pair (put wing 4, call wing 5): the chosen dict must carry
+    # the per-side widths through, which is what the fill row and every settle path read.
+    snap = _base_snapshot(
+        now_et="13:00",
+        candidates=[_candidate(5, 583, 598, **LOPSIDED), _pair(4, 5, 583, 598)],
+    )
+    entered, reason, chosen = paper.evaluate_entry(snap, _params(EQUALIZE), [])
+    assert entered is True and reason == "entered"
+    assert chosen["is_pair"] and (chosen["put_wing"], chosen["call_wing"]) == (4, 5)
+    assert chosen["wing_width"] == 5  # the wider wing stays the scalar every reader knows
+    row = paper.synthetic_entry_fill(snap, "x", chosen, _params(EQUALIZE), "paper")
+    assert (row["put_wing"], row["call_wing"], row["wing_width"]) == (4.0, 5.0, 5)
+    assert "most credit-balanced clearing candidate (4/5-wide)" in row["ai_entry_reasoning"]
+
+
+def test_single_width_fill_rows_record_wings_equal_to_the_scalar():
+    snap = _base_snapshot(now_et="13:00")
+    _, _, chosen = paper.evaluate_entry(snap, _params(CONSERVATIVE), [])
+    row = paper.synthetic_entry_fill(snap, "conservative", chosen, _params(CONSERVATIVE), "paper")
+    assert row["put_wing"] == row["call_wing"] == row["wing_width"]
+
+
+def test_ic_legs_and_settlement_read_per_side_wings():
+    # Legs: each long sits ITS OWN wing outside its short (4 below the put, 7 above the call --
+    # not the scalar 7).
+    legs = paper.ic_legs(
+        {"put_strike": 585, "call_strike": 595, "wing_width": 7, "put_wing": 4, "call_wing": 7}
+    )
+    assert legs[-3:] == [
+        (paper._EXPIRY, "P", 581.0, 1),
+        (paper._EXPIRY, "C", 595, -1),
+        (paper._EXPIRY, "C", 602.0, 1),
+    ]
+    # A row from before the columns (NULL per-side) derives BOTH wings from the scalar, as
+    # always -- its history must keep reading the way it was written.
+    assert paper.ic_legs({"put_strike": 585, "call_strike": 595, "wing_width": 7}) == [
+        (paper._EXPIRY, "P", 585.0, -1),
+        (paper._EXPIRY, "P", 578.0, 1),
+        (paper._EXPIRY, "C", 595.0, -1),
+        (paper._EXPIRY, "C", 602.0, 1),
+    ]
+    # Settlement counts the per-side long: at 579 both put strikes are ITM with a 4-wide put
+    # wing (long at 581), but only the short would be with the scalar 7 (long at 578).
+    n = paper.settlement_itm_strikes(585, 595, 7, 579, put_open=True, call_open=True, put_wing=4, call_wing=7)
+    assert n == 2
+    assert paper.settlement_itm_strikes(585, 595, 7, 579, put_open=True, call_open=True) == 1
+
+
+def test_side_wing_treats_a_recorded_zero_as_a_width_not_a_missing_value():
+    """`or wing_width` read a 0 per-side width as absent and substituted the scalar -- the wrong
+    side's wing. Tested with `is None`, a recorded 0 stays a width. NULL (a pre-migration row) is
+    what still takes the scalar, and nothing else does."""
+    assert paper.side_wing({"put_wing": 0, "wing_width": 30}, "put") == 0
+    assert paper.side_wing({"call_wing": 0, "wing_width": 30}, "call") == 0
+    assert paper.side_wing({"put_wing": None, "wing_width": 30}, "put") == 30
+    assert paper.side_wing({"wing_width": 30}, "call") == 30  # column absent entirely
+    # And through the legs: a 0 put wing places the put long ON the short, not at the scalar 30.
+    assert paper.ic_legs({"put_strike": 585, "call_strike": 595, "wing_width": 30, "put_wing": 0}) == [
+        (paper._EXPIRY, "P", 585.0, -1),
+        (paper._EXPIRY, "P", 585.0, 1),
+        (paper._EXPIRY, "C", 595.0, -1),
+        (paper._EXPIRY, "C", 625.0, 1),
+    ]
+
+
+def test_expire_settlement_charges_the_per_side_long(tmp_path):
+    # End-to-end through the ledger: an equalize row settling at 7675 has its put long (7705-25
+    # = 7680) ITM -- $10 of settlement fees, where the scalar 35 wing (long 7670) would have
+    # counted one strike and charged $5.
+    db_path = _init_db(tmp_path)
+    subprocess.run(
+        [
+            sys.executable,
+            *_DBPY,
+            "--db",
+            db_path,
+            "save_trade",
+            "--data",
+            json.dumps(
+                {
+                    "ic_order_id": "EQ1",
+                    "trade_date": "2026-10-20",
+                    "symbol": "SPX",
+                    "status": "open",
+                    "net_credit": 3.7,
+                    "put_credit": 1.85,
+                    "call_credit": 1.85,
+                    "put_strike": 7705,
+                    "call_strike": 7775,
+                    "wing_width": 35,
+                    "put_wing": 25,
+                    "call_wing": 35,
+                }
+            ),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    trade = _row(db_path, "EQ1")
+    assert (trade["put_wing"], trade["call_wing"]) == (25.0, 35.0)  # schema + insert round-trip
+    paper._apply_exit_decision(
+        trade,
+        {
+            "action": "expire",
+            "put_open": True,
+            "call_open": False,
+            "put_exit_price": 25.0,
+            "call_exit_price": None,
+            "settle_underlying": 7675.0,
+        },
+        "SPX",
+        db_path,
+    )
+    settled = _row(db_path, "EQ1")
+    assert settled["settlement_fees"] == pytest.approx(10.0)  # 2 ITM strikes x $5
+
+
+def test_candidates_from_chain_builds_tagged_width_pairs():
+    from cherrypick.meic import paper_loop
+
+    rows = []
+    for k, delta in ((585, 0.16), (580, 0.10), (575, 0.06)):
+        rows.append({"strike_price": str(k), "option_type": "P", "streamer_symbol": f".XP{k}",
+                     "bid": 0.5, "ask": 0.6, "delta": delta})  # fmt: skip
+    for k, delta in ((595, 0.16), (600, 0.10), (605, 0.06)):
+        rows.append({"strike_price": str(k), "option_type": "C", "streamer_symbol": f".XC{k}",
+                     "bid": 0.5, "ask": 0.6, "delta": delta})  # fmt: skip
+    cands, _quotes, err = paper_loop.candidates_from_chain(rows, 590.0, [5, 10], [0.16], 0.16)
+    assert err is None
+    singles = [c for c in cands if not c.get("is_pair")]
+    pairs = [c for c in cands if c.get("is_pair")]
+    assert [c["wing_width"] for c in singles] == [5, 10]  # unchanged: one candidate per width
+    assert all("put_wing" not in c for c in singles)  # singles keep their exact historic shape
+    # Off-diagonal pairs only -- (5,5)/(10,10) are the singles, not repeated.
+    assert {(c["put_wing"], c["call_wing"]) for c in pairs} == {(5, 10), (10, 5)}
+    p510 = next(c for c in pairs if (c["put_wing"], c["call_wing"]) == (5, 10))
+    assert p510["wing_width"] == 10  # wider wing is the scalar
+    assert p510["long_put"]["strike"] == 580 and p510["long_call"]["strike"] == 605

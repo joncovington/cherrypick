@@ -220,6 +220,21 @@ def test_the_check_rewinds_paper_rows_to_the_instant():
     assert mid["put_max_cost"] is None and mid["fees"] == 4.0
 
 
+def test_the_check_key_separates_two_trades_that_differ_only_in_one_wing():
+    """`_key` is the identity the check matches paper's rows against the replay's. An `equalize_credit`
+    pair and its single-width sibling share arm and both short strikes and differ only in one wing, so
+    a width-only key collides them -- two different condors read as one and a real divergence is lost.
+    Every pre-migration row (no per-side columns) still keys on the scalar."""
+    base = {"arm": "be-hourly-1x", "put_strike": 7450.0, "call_strike": 7520.0, "wing_width": 35.0}
+    pair = {**base, "put_wing": 35.0, "call_wing": 25.0}
+    sibling = {**base, "put_wing": None, "call_wing": None}  # scalar 35 both sides
+
+    assert replay_check._key(pair) != replay_check._key(sibling)
+    # A pre-migration row keys exactly as it did before the per-side columns existed.
+    legacy = {"arm": "x", "put_strike": 7450.0, "call_strike": 7520.0, "wing_width": 10.0}
+    assert replay_check._key(legacy) == replay_check._key({**legacy, "put_wing": 10.0, "call_wing": 10.0})
+
+
 def test_the_cli_emits_one_json_document(tmp_path, capsys):
     _cboe({"VIX": VIX_ROWS})
     history = _history(tmp_path / "h.db", until="09:35")

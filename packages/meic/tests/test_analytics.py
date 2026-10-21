@@ -1046,6 +1046,35 @@ def test_settlement_audit_bounds_how_much_the_answer_depends_on_the_price(conn):
     assert row["pnl_swing_1pt"] == 0.0  # ...so a point of error changes nothing here
 
 
+def test_settlement_audit_caps_each_side_at_its_own_wing_on_an_equalized_pair(conn):
+    """An `equalize_credit` pair sizes its two wings independently (`put_wing`/`call_wing`), with
+    `wing_width` holding the WIDER of the two. The audit must cap each side at its OWN wing: capping
+    the narrower side at the wider one overstates its loss whenever price settles between the two
+    longs, and on the call side that is a real band (25/35 pair, settlement 30 past the short)."""
+    # 25-wide call wing, 35-wide put wing; spot settles 30 past the short call, inside the call's
+    # 25-point wing and short of the call long at +35. Call intrinsic is 30, capped at 25 (not 35).
+    _insert(
+        conn,
+        ic_order_id="1",
+        exit_reason="expired_settlement",
+        settle_underlying=7550.0,
+        put_strike=7450.0,
+        call_strike=7520.0,
+        wing_width=35.0,
+        put_wing=35.0,
+        call_wing=25.0,
+        net_credit=1.80,
+        put_credit=0.90,
+        call_credit=0.90,
+        pnl=(0.90 - 0.0) * 100 + (0.90 - 25.0) * 100,
+    )
+
+    out = analytics.settlement_audit(conn)
+
+    assert out["mismatched"] == [], "the narrower side was capped at the wider wing"
+    assert out["reproduced"] == 1
+
+
 def test_headline_reports_open_capital_at_risk(conn):
     """Same formula core.ledgers._meic_closed's _capital() uses for closed trades -- (wing width -
     credit) x multiplier x quantity -- applied to still-open rows instead. Closed trades and
