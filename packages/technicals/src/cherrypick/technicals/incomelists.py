@@ -24,7 +24,9 @@ and the annual figure is simple (x 365 / days). The liquidity verdict is the rea
 (see `cherrypick.core.incomerules`), and the list is ordered by symbol, never by yield: a yield
 ranking would read as a ranking by edge. Earnings are judged against each trade's own expiry:
 `in-trade` when the next report falls between the session and expiry, `clear` when it falls after,
-`unknown` when a company has no date, `none` for a fund.
+`unknown` when a company has no date (or only a past one), `none` for a fund. A report before the
+open on the session day is past by the afternoon quote, so it is not in the trade. A covered call's
+ex-dividend date is carried with its state the same way: `in-trade`, `after`, `past` or `unknown`.
 
     python -m cherrypick.technicals income-lists [--day YYYY-MM-DD] [--source FILE]
 
@@ -100,16 +102,37 @@ def within(o: dict | None, target: float) -> dict | None | bool:
     return o if abs(abs(o["delta"]) - target) <= incomerules.DELTA_TOLERANCE + 1e-9 else False
 
 
+# A report before the open: the broker spells it BTO, most calendars BMO (as `cherrypick.manage`
+# spells it; mirrored, since technicals does not depend on manage).
+BEFORE_OPEN = {"BTO", "BMO"}
+
+
 def earnings_state(entry: dict, session: str, expiry: str, kind: str | None) -> str:
-    """in-trade / clear / unknown / none (see the module note)."""
+    """in-trade / clear / unknown / none (see the module note). The chain is quoted in the afternoon,
+    so a report before the open on the session day has already happened: it is the report just made,
+    not one in the trade (`unknown`, as any past date is, until the next is posted). An untimed report
+    that day stays in the trade, the safe reading."""
     if kind in securities.NO_EARNINGS:
         return "none"
     er = entry.get("earnings_date")
     if not er:
         return "unknown"
+    if er == session and str(entry.get("earnings_time") or "").upper() in BEFORE_OPEN:
+        return "unknown"
     if session <= er <= expiry:
         return "in-trade"
     return "clear" if er > expiry else "unknown"
+
+
+def ex_dividend_state(ex: str | None, session: str, expiry: str) -> str:
+    """in-trade (between the session and expiry), after (past expiry), past (before the session: the
+    broker's date is the last one, the next not posted) or unknown (no date). Only `after` is clear of
+    the trade, and only for that expiry."""
+    if not ex:
+        return "unknown"
+    if ex < session:
+        return "past"
+    return "in-trade" if ex <= expiry else "after"
 
 
 def row(
@@ -154,6 +177,9 @@ def row(
         "earnings_estimated": entry.get("earnings_estimated"),
         # A call written across an ex-date can be assigned early for the dividend: flagged, not modelled.
         "ex_dividend_in_trade": bool(ex and session <= ex <= expiry) if o["right"] == "C" else None,
+        # The date and its state, so a past or missing date never reads as clear (calls only).
+        "ex_dividend": ex_dividend_state(ex, session, expiry) if o["right"] == "C" else None,
+        "ex_dividend_date": ex if o["right"] == "C" else None,
         "iv_index": entry.get("iv_index"),
         # `leveraged`, `inverse` or `volatility` from the declared fund list skate leaves out
         # (`leveraged_funds.json`): a daily-reset fund decays and gaps in ways its delta does not

@@ -27,7 +27,9 @@ export function MeicSession({ mode, scope }: { mode: TradingMode; scope: MeicSco
   const open = entered !== undefined && t !== undefined ? entered - t.trades : undefined;
   // Every cost the ledger charged (gross − net holds whether or not settlement was split out), and
   // fee drag as the suite defines it: trading fees alone ÷ premium collected.
-  const costs = t !== undefined ? t.gross - t.net : undefined;
+  // A trade that never recorded its fees leaves both n/r (`net` null), never gross less $0.
+  const costs = t !== undefined && t.net !== null ? t.gross - t.net : undefined;
+  const feesNr = t !== undefined && t.net === null ? `fees not recorded on ${t.trades - t.feesTrades} of ${t.trades} trades` : null;
   const dragPct = t !== undefined ? feeDragPct(t.fees, t.credit) : null;
 
   const armRows = attempts.data?.arms ?? [];
@@ -43,11 +45,17 @@ export function MeicSession({ mode, scope }: { mode: TradingMode; scope: MeicSco
     <div className="grid-12">
       <StatTile
         label="net on this session"
-        value={t !== undefined ? fmtMoney(t.net) : null}
-        tone={t !== undefined && t.net >= 0 ? "pos" : "neg"}
+        value={t !== undefined ? (t.net === null ? "n/r" : fmtMoney(t.net)) : null}
+        tone={t === undefined || t.net === null ? "dim" : t.net >= 0 ? "pos" : "neg"}
         to="/meic/history"
         toLabel="the closed trades behind this net"
-        foot={t === undefined ? "—" : `after fees and settlement · gross ${fmtMoney(t.gross)}`}
+        foot={
+          t === undefined
+            ? "—"
+            : feesNr !== null
+              ? `${feesNr} · net ${fmtMoney(t.netRecorded)} over the other ${t.feesTrades} · gross ${fmtMoney(t.gross)}`
+              : `after fees and settlement · gross ${fmtMoney(t.gross)}`
+        }
       />
       <StatTile
         label="positions"
@@ -62,7 +70,7 @@ export function MeicSession({ mode, scope }: { mode: TradingMode; scope: MeicSco
       />
       <StatTile
         label="costs"
-        value={costs !== undefined ? fmtMoney(costs) : null}
+        value={costs !== undefined ? fmtMoney(costs) : t !== undefined ? "n/r" : null}
         tone="dim"
         to="/meic/exits"
         toLabel="fee drag across the era"
@@ -70,7 +78,7 @@ export function MeicSession({ mode, scope }: { mode: TradingMode; scope: MeicSco
         foot={
           t === undefined
             ? "—"
-            : `fees ${fmtMoney(t.fees)} · settlement ${t.settlementFees === null ? "n/r" : fmtMoney(t.settlementFees)}${dragPct !== null ? ` · fee drag ${dragPct.toFixed(1)}%` : ""}`
+            : `fees ${t.fees === null ? `n/r (${fmtMoney(t.feesRecorded)} on ${t.feesTrades} of ${t.trades})` : fmtMoney(t.fees)} · settlement ${t.settlementFees === null ? "n/r" : fmtMoney(t.settlementFees)}${dragPct !== null ? ` · fee drag ${dragPct.toFixed(1)}%` : ""}`
         }
       />
       <StatTile

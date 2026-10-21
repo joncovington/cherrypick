@@ -100,6 +100,40 @@ def test_a_call_across_an_ex_date_is_flagged():
     assert out["lists"]["short-puts"][0]["ex_dividend_in_trade"] is None
 
 
+def test_the_ex_date_is_carried_with_a_state_never_a_bare_false():
+    # in-trade, after the expiry, already past (the next one not posted), or no date at all: four
+    # different things a bare False used to collapse into one blank.
+    cases = {
+        "2026-11-10": "in-trade",
+        "2026-12-15": "after",
+        "2026-08-17": "past",
+        None: "unknown",
+    }
+    for ex, state in cases.items():
+        call = incomelists.build_lists(_doc({"AAA": _entry(ex_dividend_date=ex)}))["lists"]["covered-calls"][
+            0
+        ]
+        assert (call["ex_dividend"], call["ex_dividend_date"]) == (state, ex)
+    put = incomelists.build_lists(_doc({"AAA": _entry(ex_dividend_date="2026-11-10")}))["lists"][
+        "short-puts"
+    ][0]
+    assert put["ex_dividend"] is None  # a put is never assigned for the dividend
+
+
+def test_a_report_before_the_open_on_the_session_day_is_already_out_of_the_trade():
+    # The chain is quoted at 14:45 ET: a before-the-open report that morning has happened.
+    for spelling in ("BTO", "BMO", "bmo"):
+        e = _entry(earnings_date=SESSION, earnings_time=spelling)
+        assert incomelists.build_lists(_doc({"AAA": e}))["lists"]["short-puts"][0]["earnings"] == "unknown"
+    # After the close, or untimed, it is still ahead of the trade: in it, conservatively.
+    for spelling in ("AMC", None):
+        e = _entry(earnings_date=SESSION, earnings_time=spelling)
+        assert incomelists.build_lists(_doc({"AAA": e}))["lists"]["short-puts"][0]["earnings"] == "in-trade"
+    # A before-the-open report on a LATER day is still in the trade.
+    e = _entry(earnings_date="2026-10-28", earnings_time="BTO")
+    assert incomelists.build_lists(_doc({"AAA": e}))["lists"]["short-puts"][0]["earnings"] == "in-trade"
+
+
 def test_rows_are_by_symbol_and_what_cannot_be_built_is_counted():
     symbols = {
         "ZZZ": _entry(),

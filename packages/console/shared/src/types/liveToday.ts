@@ -32,14 +32,19 @@ export interface LiveTodayMoney {
   /** Positions resolved today (settled / closed / stopped / expired / force-closed). */
   trades: number;
   gross: number;
-  /** Trading fees, settlement excluded where it was recorded apart. */
-  fees: number;
+  /** Trading fees, settlement excluded where it was recorded apart; null (n/r) when any of today's
+   *  rows never recorded its fees -- never a partial sum. */
+  fees: number | null;
   /** null (n/r) when any of today's rows never recorded settlement apart -- never a partial sum. */
   settlementFees: number | null;
   /** Settlement over the rows that recorded it, so gross − fees − this = net always holds. */
   settlementRecorded: number;
   settlementTrades: number;
-  net: number;
+  /** null (n/r) when any of today's rows never recorded its fees. */
+  net: number | null;
+  /** Rows that recorded their fees, of `trades`; `netRecorded` covers only these. */
+  feesTrades: number;
+  netRecorded: number;
   /** What "today" means for this loop's resolved rows, in a sentence. */
   basis: string;
 }
@@ -58,7 +63,8 @@ export interface LiveTodayLoop {
   ledger: "ok" | "absent" | "failed";
   ledgerError: string | null;
   arm: LiveTodayArm;
-  /** The loop's last recorded iteration, where it records one (MEIC's live loop does not). */
+  /** The loop's last recorded iteration, where it records one. MEIC's live loop writes none, so its
+   *  state is the supervisor's `meic-live` job (one tick per run); null where neither exists. */
   loopState: { state: "live" | "idle" | "no-data"; lastAt: string | null; ageSeconds: number | null } | null;
   /** Positions holding risk now (entries filled, not resolved), any session. */
   open: number;
@@ -75,8 +81,9 @@ export interface LiveTodayLoop {
   today: LiveTodayMoney | null;
   /** The loop's own intraday mark over what is open, where it records one. Never totalled: each loop marks differently. */
   mark: { value: number | null; at: string | null; basis: string } | null;
-  /** The loop's daily-loss breaker, mirrored from its own `daily_loss_tripped`. */
-  breaker: { limit: number | null; figure: number | null; tripped: boolean | null; basis: string };
+  /** The loop's daily-loss breaker, mirrored from its own `daily_loss_tripped`. `figureKind` says
+   *  whether that rule sums net or gross P&L: MEIC's sums the ledger's `pnl`, which is gross. */
+  breaker: { limit: number | null; figure: number | null; figureKind: "net" | "gross"; tripped: boolean | null; basis: string };
   orphans: { at: string | null; count: number };
   /** Held submissions: unresolved (no broker answer) + unrecorded (filled, not in the ledger). */
   held: number;
@@ -119,6 +126,8 @@ export interface LiveTodaySuite {
   summed: LiveLoopId[];
   /** Loops left out of the totals, and why. */
   excluded: Array<{ loop: LiveLoopId; reason: string }>;
+  /** Summed loops with a row resolved today whose fees were never recorded: net and fees are n/r. */
+  feesUnrecorded: LiveLoopId[];
 }
 
 export interface LiveTodayPayload {

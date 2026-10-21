@@ -907,7 +907,7 @@ net — each money header's `title` stating its definition.
 | Module | Derivation | Test | Notes |
 |---|---|---|---|
 | flies | `readers/flies.ts` `tradeCash`/`bookCash` | `flies-trade-standard` | slippage inside gross |
-| meic | `readers/meic.ts` `meicTradeCash`, `pages/Meic/MeicTables.tsx` | `meic-trade-standard` | entry summed from the two side credits, rounded per side as the write path does |
+| meic | `readers/meic.ts` `meicTradeCash`, `pages/Meic/MeicTables.tsx` | `meic-trade-standard` | entry summed from the two side credits, rounded per side as the write path does, when they sum to `net_credit` (within half a cent); otherwise `net_credit`, the fill the gross was booked on. A row with fees never recorded has net n/r, and totals over it read fees and net n/r with the recorded share |
 | bwb | `readers/bwb.ts` `bwbTradeCash` | `bwb-trade-standard` | slippage charged inside `fees`; each part subtracted once; a broker-reconciled row takes none out |
 | earnings | `readers/earnings.ts` `earningsTradeCash` | `earnings-trade-standard` | `entry_cost`/`exit_cost` carry slippage and (exit) settlement fee; history is closed trades across both books |
 | calendars, pmcc, curve | `readers/positionCash.ts`, `components/TradeMoney.tsx` | `position-trade-standard` (via curve), `pmcc-`/`calendars-trade-standard` on fixtures from each module's `db.connect` | exit kinds add `assigned`; calendars' history is per week and arm, net null until every position (shares included) has closed, totals over finished weeks only |

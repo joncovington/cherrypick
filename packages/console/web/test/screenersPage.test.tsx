@@ -36,6 +36,7 @@ function row(over: Partial<ScreenerRow>): ScreenerRow {
     cycleExpiry: "2026-11-20",
     earningsExpiry: "2026-11-13",
     earnings: "clear",
+    earningsFrom: "2026-10-15",
     readingAt: "2026-10-15T18:30:00Z",
     listedQuote: null,
     listedLegs: [{ role: "short", right: "P", expiry: "2026-11-13", strike: 98, bid: 1.9, ask: 2.1, openInterest: 500, volume: 50, passes: true, quiet: false }],
@@ -53,6 +54,8 @@ function row(over: Partial<ScreenerRow>): ScreenerRow {
       workingAnnualisedPct: 23.72,
       naturalAnnualisedPct: 23.12,
       workingCreditPct: null,
+      spot: 100,
+      shortInTheMoney: false,
     },
     ...over,
   };
@@ -73,6 +76,8 @@ let payload: ScreenerPayload = {
   createdAt: "10/14/2026 03:49 PM",
   pricesAt: "10/14/2026 05:16 PM",
   scored: true,
+  tradeDay: "2026-10-15",
+  spotAt: "2026-10-15T18:45:00Z",
   rows: ROWS,
 };
 
@@ -83,11 +88,11 @@ vi.mock("../src/lib/api", async (importOriginal) => ({
 
 const { ScreenerTab } = await import("../src/pages/Screeners/ScreenersPage");
 
-function render(url: string): string {
+function render(url: string, list: "short-puts" | "credit-spreads" = "short-puts"): string {
   return renderToString(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter initialEntries={[url]}>
-        <ScreenerTab list="short-puts" />
+        <ScreenerTab list={list} />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -176,5 +181,63 @@ describe("the screener page", () => {
     payload = { ...payload, scored: false };
     expect(render("/screeners/short-puts")).toContain("Our rule has not scored this list yet");
     payload = { ...payload, scored: true };
+  });
+
+  it("says it is the vendor's list, that it freezes, and that it has no tested edge", () => {
+    for (const list of ["short-puts", "credit-spreads"] as const) {
+      const html = render(`/screeners/${list}`, list);
+      expect(html).toContain(">the vendor's list<");
+      expect(html).toContain("No tested edge.");
+      expect(html).toContain("ends on 2026-10-24");
+    }
+    expect(render("/screeners/credit-spreads", "credit-spreads")).toContain("credit-spread studies found none with edge after costs");
+  });
+
+  describe("a credit spread's trade", () => {
+    const spread = (over: Partial<ScreenerRow>, trade: Partial<NonNullable<ScreenerRow["trade"]>>): ScreenerRow => {
+      const base = row({ width: 10, creditPct: 34, strikes: [205, 215], right: "C", direction: "bearish", ours: [205, 215], ...over });
+      return { ...base, trade: { ...base.trade!, workingAnnualisedPct: null, naturalAnnualisedPct: null, ...trade } };
+    };
+    const show = (rows: ScreenerRow[]) => {
+      const saved = payload;
+      payload = { ...payload, list: "credit-spreads", rows };
+      const html = render("/screeners/credit-spreads?trade=all&earnings=all&names=all", "credit-spreads");
+      payload = saved;
+      return html;
+    };
+
+    it("is red under a third of the width, exactly: 33.12% is under it (a 33.1 line let it through)", () => {
+      const html = show([
+        spread({ symbol: "VST" }, { working: 3.312, workingCreditPct: 33.12 }),
+        spread({ symbol: "TOP" }, { working: 3.34, workingCreditPct: 33.4 }),
+      ]);
+      expect(html).toMatch(/<td class="num pnl-neg"[^>]*>33\.1%</);
+      expect(html).toMatch(/<td class="num" title[^>]*>33\.4%</);
+    });
+
+    it("labels a credit cr and a negative working price db", () => {
+      const html = show([
+        spread({ symbol: "CRD" }, { working: 3.4, workingCreditPct: 34 }),
+        spread({ symbol: "HYG" }, { working: -0.05, workingCreditPct: -10 }),
+      ]);
+      expect(html).toMatch(/>3\.40 cr</);
+      expect(html).toMatch(/>0\.05 db</);
+      expect(html).not.toContain("-0.05");
+    });
+
+    it("marks a short already in the money at the reading's spot", () => {
+      const html = show([
+        spread({ symbol: "COF", price: 201.47 }, { working: 5.38, workingCreditPct: 53.8, spot: 208.38, shortInTheMoney: true }),
+        spread({ symbol: "OTM" }, { working: 3.4, workingCreditPct: 34, spot: 190, shortInTheMoney: false }),
+      ]);
+      expect(html).toMatch(/in the money at 208\.38[^"]*"[^>]*>ITM</);
+      expect(html.match(/>ITM</g)?.length).toBe(1);
+    });
+
+    it("says our rule found no long rather than a bare dash", () => {
+      const html = show([spread({ symbol: "ZS", strikes: [215, 190], ours: [215, null], right: "P", direction: "bullish" }, { workingCreditPct: 34 })]);
+      expect(html).toContain(">215 / no pick<");
+      expect(html).not.toContain("215 / —");
+    });
   });
 });

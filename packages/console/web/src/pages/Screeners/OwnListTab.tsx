@@ -93,6 +93,76 @@ function LiquidCell({ r }: { r: IncomeListRow }) {
   );
 }
 
+/** The covered call's ex-dividend date and its state, the way the Earnings cell reads its date. A list
+ *  built before the state was recorded carries only the in-trade flag: a flagged row reads in trade,
+ *  anything else unknown -- a false there never meant clear. */
+function ExDividendCell({ r }: { r: IncomeListRow }) {
+  const when = r.exDividendDate ? shortDate(r.exDividendDate) : "";
+  const state = r.exDividend ?? (r.exDividendInTrade ? "in-trade" : "unknown");
+  if (state === "in-trade") {
+    return (
+      <td title="An ex-dividend date before this call's expiry: a call in the money then can be assigned early for the dividend">
+        {when ? `in trade · ${when}` : "in trade"}
+      </td>
+    );
+  }
+  if (state === "after") {
+    return (
+      <td className="muted" title="The next ex-dividend date falls after this call's expiry">
+        {`after · ${when}`}
+      </td>
+    );
+  }
+  if (state === "past") {
+    return (
+      <td className="muted" title="The broker's date is the last ex-dividend date; the next is not posted yet, so the call is never called clear">
+        {`past · ${when}`}
+      </td>
+    );
+  }
+  return (
+    <td className="muted" title="No ex-dividend date is known, so the call is never called clear">
+      unknown
+    </td>
+  );
+}
+
+export interface OwnListFilters {
+  allTrades: boolean;
+  allEarnings: boolean;
+  allFit: boolean;
+  /** Whole-contract dollars; 0 is off. */
+  minPremium: number;
+  /** Upper-cased symbol search; "" is off. */
+  q: string;
+}
+
+/**
+ * The rows shown, and why each hidden row is hidden. The counts are layered in the order the filters
+ * sit on the page -- liquid trade, earnings, fit, premium, then the symbol search -- so a row failing
+ * several is counted once, under the first, and the parts always add up to all less shown.
+ */
+export function applyFilters(all: IncomeListRow[], f: OwnListFilters) {
+  const tradeOk = (r: IncomeListRow) => f.allTrades || r.passes !== false;
+  const earningsOk = (r: IncomeListRow) => f.allEarnings || r.earnings !== "in-trade";
+  // An unjudged row (no evaluation for the session, or a strike manage did not price) stays shown.
+  const fitOk = (r: IncomeListRow) => f.allFit || r.fit !== false;
+  // An unquoted row has no premium to compare, so it stays shown, marked, as it does under the others.
+  const premiumOk = (r: IncomeListRow) => f.minPremium === 0 || r.premium === null || r.premium >= f.minPremium;
+  const matches = (r: IncomeListRow) => f.q === "" || r.symbol.includes(f.q);
+  const hidden = { thin: 0, inTrade: 0, unfit: 0, small: 0, unmatched: 0 };
+  const shown: IncomeListRow[] = [];
+  for (const r of all) {
+    if (!tradeOk(r)) hidden.thin += 1;
+    else if (!earningsOk(r)) hidden.inTrade += 1;
+    else if (!fitOk(r)) hidden.unfit += 1;
+    else if (!premiumOk(r)) hidden.small += 1;
+    else if (!matches(r)) hidden.unmatched += 1;
+    else shown.push(r);
+  }
+  return { shown, hidden };
+}
+
 const SORTS: Record<string, (r: IncomeListRow) => number | string | null> = {
   symbol: (r) => r.symbol,
   price: (r) => r.spot,
@@ -125,20 +195,12 @@ export function OwnListTab({ list }: { list: IncomeList }) {
   };
 
   const all = data?.rows ?? [];
-  const tradeOk = (r: IncomeListRow) => allTrades || r.passes !== false;
-  const earningsOk = (r: IncomeListRow) => allEarnings || r.earnings !== "in-trade";
-  // An unjudged row (no evaluation for the session, or a strike manage did not price) stays shown.
-  const fitOk = (r: IncomeListRow) => allFit || r.fit !== false;
   const minPremium = premiumFloor(params.get("premium"));
-  // An unquoted row has no premium to compare, so it stays shown, marked, as it does under the others.
-  const premiumOk = (r: IncomeListRow) => minPremium === 0 || r.premium === null || r.premium >= minPremium;
-  const shown = all.filter(
-    (r) => tradeOk(r) && earningsOk(r) && fitOk(r) && premiumOk(r) && (q === "" || r.symbol.includes(q)),
-  );
-  const thin = all.filter((r) => r.passes === false && earningsOk(r) && fitOk(r) && premiumOk(r)).length;
-  const inTrade = all.filter((r) => r.earnings === "in-trade" && tradeOk(r) && fitOk(r) && premiumOk(r)).length;
-  const unfit = all.filter((r) => r.fit === false && tradeOk(r) && earningsOk(r) && premiumOk(r)).length;
-  const small = all.filter((r) => !premiumOk(r) && tradeOk(r) && earningsOk(r) && fitOk(r)).length;
+  const { shown, hidden } = applyFilters(all, { allTrades, allEarnings, allFit, minPremium, q });
+  const { thin, inTrade, unfit, small, unmatched } = hidden;
+  // Covered calls: manage judges a call unfit only for want of an uncovered 100-share lot, so when
+  // every row is unfit the account holds none, and the empty list should say that plainly.
+  const noLotHeld = list === "covered-calls" && all.length > 0 && all.every((r) => r.fit === false);
   const sorted = sortRows(shown, sort, SORTS);
   const { page, setOffset, setLimit } = usePage(
     [list, data?.day, allTrades, allEarnings, allFit, minPremium, q, sort.key, sort.dir],
@@ -236,12 +298,23 @@ export function OwnListTab({ list }: { list: IncomeList }) {
         />
         <span className="chip" style={{ whiteSpace: "normal" }}>
           {shown.length} of {all.length} names
-          {!allTrades && thin > 0 ? ` · ${thin} thin hidden` : ""}
-          {!allEarnings && inTrade > 0 ? ` · ${inTrade} with earnings in the trade hidden` : ""}
-          {!allFit && unfit > 0 ? ` · ${unfit} that do not fit the account hidden` : ""}
-          {small > 0 ? ` · ${small} under $${minPremium.toLocaleString()} hidden` : ""}
+          {thin > 0 ? ` · ${thin} thin hidden` : ""}
+          {inTrade > 0 ? ` · ${inTrade} ${thin > 0 ? "more " : ""}with earnings in the trade hidden` : ""}
+          {unfit > 0 ? ` · ${unfit} ${thin + inTrade > 0 ? "more " : ""}that do not fit the account hidden` : ""}
+          {small > 0 ? ` · ${small} ${thin + inTrade + unfit > 0 ? "more " : ""}under $${minPremium.toLocaleString()} hidden` : ""}
+          {unmatched > 0 ? ` · ${unmatched} not matching “${q}”` : ""}
         </span>
       </div>
+      {thin + inTrade + unfit + small > 1 && [thin, inTrade, unfit, small].filter((n) => n > 0).length > 1 && (
+        <p className="muted" style={{ margin: "0 0 8px" }}>
+          Each hidden name is counted once, under the first filter it fails, in the order the filters sit.
+        </p>
+      )}
+      {noLotHeld && !allFit && (
+        <p className="muted" style={{ margin: "0 0 8px" }}>
+          The account holds no uncovered 100-share lot, so no call fits — turn off <em>Fits the account</em> to see the list.
+        </p>
+      )}
 
       {data?.chainComplete === false && (
         <p className="muted" style={{ margin: "0 0 8px" }}>
@@ -281,7 +354,11 @@ export function OwnListTab({ list }: { list: IncomeList }) {
                 <SortTh label="Annual" k="annual" sort={sort} className="num" title="Return × 365 ÷ days, simple. Yield, not edge." />
                 <SortTh label="Distance" k="distance" sort={sort} className="num" title="Strike against the share price" />
                 <SortTh label="Earnings" k="earnings" sort={sort} title="The next announcement, against this trade's own expiry" />
-                {calls && <th title="An ex-dividend date before expiry: a call in the money then can be assigned early for the dividend">Ex-div</th>}
+                {calls && (
+                  <th title="The broker's ex-dividend date against this call's expiry: in trade (a call in the money then can be assigned early for the dividend), after, past (the next is not posted) or unknown">
+                    Ex-div
+                  </th>
+                )}
                 <th title="The reading's own verdict against the leg bars">Liquid</th>
               </tr>
             </thead>
@@ -325,7 +402,7 @@ export function OwnListTab({ list }: { list: IncomeList }) {
                   <td className="num">{pct(r.annualFraction)}</td>
                   <td className="num">{signedPct(r.distanceFraction)}</td>
                   <EarningsCell r={r} />
-                  {calls && <td>{r.exDividendInTrade ? "in trade" : <span className="muted">—</span>}</td>}
+                  {calls && <ExDividendCell r={r} />}
                   <LiquidCell r={r} />
                 </tr>
               ))}
@@ -336,7 +413,9 @@ export function OwnListTab({ list }: { list: IncomeList }) {
       {shown.length > PAGE_SIZES[0] && (
         <Pager offset={page.offset} limit={page.limit} total={shown.length} pageSizes={PAGE_SIZES} onOffset={setOffset} onLimit={setLimit} />
       )}
-      {data && data.day !== null && all.length > 0 && shown.length === 0 && <p className="muted">Nothing matches these filters.</p>}
+      {data && data.day !== null && all.length > 0 && shown.length === 0 && !(noLotHeld && !allFit) && (
+        <p className="muted">Nothing matches these filters.</p>
+      )}
 
       <p className="muted" style={{ marginTop: 8 }}>
         The names are our options-tradable universe (weekly options and $100M a day in the stock) and the funds that pass

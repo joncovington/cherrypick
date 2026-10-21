@@ -155,6 +155,72 @@ describe("readScreener", () => {
     expect(rows["LST"]).toMatchObject({ earningsExpiry: "2026-11-27", earnings: "in-cycle" });
   });
 
+  it("judges earnings, days and spot from the reading's day, a before-the-open report that day behind the trade", () => {
+    // The 10-20 list, read at 14:30 ET on 10-21 (COF reported 10-20; PM 10-21 before the open).
+    // Judged from the list day, both read in cycle.
+    const cs = (symbol: string, earningsDate: string, sell = 200, buy = 190, type = "Put") => ({
+      symbol,
+      type,
+      price: 201.47,
+      strike: { sell, buy },
+      expiry: "11/27/2026",
+      earningsDate,
+      premium: { value: 3.4, width: 10, percentage: "34%" },
+    });
+    write("market-report/vendor-screeners/2026-10-20/credit-spreads.json", {
+      body: {
+        creditSpreads: [
+          cs("COF", "10/20/2026 (1) PM", 205, 215, "Call"),
+          cs("PM", "10/21/2026 (1) AM"),
+          cs("UNT", "10/21/2026 (1) AM"),
+          cs("AMC", "10/21/2026 (1) PM"),
+        ],
+      },
+    });
+    write("market-report/iv/tastytrade.json", {
+      days: {
+        "2026-10-20": {
+          COF: { earnings_date: "2026-10-20", earnings_time: null },
+          PM: { earnings_date: "2026-10-21", earnings_time: "BTO" },
+          UNT: { earnings_date: "2026-10-21", earnings_time: null },
+          AMC: { earnings_date: "2026-10-21", earnings_time: "AMC" },
+        },
+      },
+    });
+    const vendorLegs = (sym: string, right: string, sell: number, buy: number) => ({
+      list: "credit-spreads",
+      symbol: sym,
+      vendor: [
+        { role: "short", right, expiry: "2026-11-27", strike: sell, quote: { bid: 1, ask: 1.1 }, passes: true },
+        { role: "long", right, expiry: "2026-11-27", strike: buy, quote: { bid: 0.5, ask: 0.6 }, passes: true },
+      ],
+      monthly: [],
+      recommendation: "vendor",
+      vendor_prices: { mid: 5.5, working: 5.38, natural: 4.9, cost: 0.6 },
+    });
+    write("market-report/screener-greeks/legs/2026-10-21/1430.json", {
+      list_date: "2026-10-20",
+      measured_at: "2026-10-21T18:30:11Z",
+      rows: [vendorLegs("COF", "C", 205, 215), vendorLegs("PM", "P", 200, 190)],
+    });
+    write("market-report/screener-greeks/income/2026-10-21.json", {
+      taken_at: "2026-10-21T18:45:00Z",
+      symbols: { COF: { spot: 208.375 }, PM: { spot: 201 } },
+    });
+    const p = readScreener(config, "credit-spreads", "2026-10-20");
+    expect(p.tradeDay).toBe("2026-10-21");
+    expect(p.spotAt).toBe("2026-10-21T18:45:00Z");
+    const rows = Object.fromEntries(p.rows.map((r) => [r.symbol, r]));
+    expect(rows["COF"]!.earnings).not.toBe("in-cycle"); // reported the day before the reading
+    expect(rows["PM"]!.earnings).not.toBe("in-cycle"); // before the open on the reading's day
+    expect(rows["UNT"]!.earnings).toBe("in-cycle"); // untimed on the reading's day: kept in, the safe way
+    expect(rows["AMC"]!.earnings).toBe("in-cycle"); // after the close: still ahead
+    expect(rows["PM"]!.earningsFrom).toBe("2026-10-21");
+    // Days to expiry from the reading's day (37), not the list day (38).
+    expect(rows["COF"]!.trade).toMatchObject({ dte: 37, spot: 208.375, shortInTheMoney: true });
+    expect(rows["PM"]!.trade).toMatchObject({ shortInTheMoney: false });
+  });
+
   it("an empty home is an empty list, not an error", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
     expect(readScreener(config, "credit-spreads")).toMatchObject({ day: null, days: [], rows: [] });
@@ -166,23 +232,23 @@ describe("the trade's price", () => {
   const cycle = [{ role: "short" as const, right: "P" as const, expiry: "2026-12-18", strike: 98, bid: 1, ask: 1.1, openInterest: 500, volume: 5, passes: true, quiet: true }];
 
   it("prices the side the reading recommends, annualised on the share price as the list does", () => {
-    const listed = tradePrice({ recommendation: "vendor", vendor_prices: prices, monthly_prices: { ...prices, working: 9 } }, "2026-11-13", 30, cycle, "2026-10-14", 100, null)!;
+    const listed = tradePrice({ recommendation: "vendor", vendor_prices: prices, monthly_prices: { ...prices, working: 9 } }, "2026-11-13", cycle, "2026-10-14", 100, null)!;
     expect(listed).toMatchObject({ side: "listed", expiry: "2026-11-13", dte: 30, working: 1.95, workingCreditPct: null });
     expect(listed.workingAnnualisedPct).toBeCloseTo((1.95 / 100) * (365 / 30) * 100, 6);
-    const monthly = tradePrice({ recommendation: "monthly", vendor_prices: prices, monthly_prices: { ...prices, working: 2.5 } }, "2026-11-13", 30, cycle, "2026-10-14", 100, null)!;
+    const monthly = tradePrice({ recommendation: "monthly", vendor_prices: prices, monthly_prices: { ...prices, working: 2.5 } }, "2026-11-13", cycle, "2026-10-14", 100, null)!;
     expect(monthly).toMatchObject({ side: "cycle", expiry: "2026-12-18", dte: 65, working: 2.5 });
   });
 
   it("states a spread's working credit against its width, not an annual return", () => {
-    const t = tradePrice({ recommendation: "vendor", vendor_prices: { mid: 2, working: 1.8, natural: 1.6, cost: 0.4 } }, "2026-11-27", 45, null, "2026-10-14", 380, 5)!;
+    const t = tradePrice({ recommendation: "vendor", vendor_prices: { mid: 2, working: 1.8, natural: 1.6, cost: 0.4 } }, "2026-11-27", null, "2026-10-14", 380, 5)!;
     expect(t.workingCreditPct).toBeCloseTo(36, 6);
     expect(t.workingAnnualisedPct).toBeNull();
   });
 
   it("prices nothing without a reading, a recommendation or a priced side", () => {
-    expect(tradePrice(undefined, "2026-11-13", 30, cycle, "2026-10-14", 100, null)).toBeNull();
-    expect(tradePrice({ recommendation: "none" }, "2026-11-13", 30, cycle, "2026-10-14", 100, null)).toBeNull();
-    expect(tradePrice({ recommendation: "monthly", monthly_prices: null }, "2026-11-13", 30, cycle, "2026-10-14", 100, null)).toBeNull();
+    expect(tradePrice(undefined, "2026-11-13", cycle, "2026-10-14", 100, null)).toBeNull();
+    expect(tradePrice({ recommendation: "none" }, "2026-11-13", cycle, "2026-10-14", 100, null)).toBeNull();
+    expect(tradePrice({ recommendation: "monthly", monthly_prices: null }, "2026-11-13", cycle, "2026-10-14", 100, null)).toBeNull();
   });
 
   it("flags a listed quote that cannot back its mid", () => {
