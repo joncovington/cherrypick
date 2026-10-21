@@ -353,6 +353,16 @@ def _live_resolution(config: dict, registry: dict | None) -> tuple[dict, str | N
         params["entry_window_end"] = min(
             str(live["entry_window_end"]), str(params.get("entry_window_end", "14:30"))
         )
+    # `equalize_credit` is refused on the live path until it has been tried with real orders
+    # (2026-10-20). The engine shares `evaluate_entry`, so a live arm that opts in would order the
+    # pair shape through the order path this flag has never exercised -- per-side legs whose widths
+    # differ, where every prior live fill was one scalar width. Paper-only for now; a live arm that
+    # sets it (or a live block that turns it on) is refused here, the same way a follows_live arm is.
+    if problem is None and params.get("equalize_credit"):
+        problem = (
+            "equalize_credit is paper-only until the pair shape has been tried with live orders; "
+            "the live arm must not set it"
+        )
     return params, problem
 
 
@@ -363,9 +373,9 @@ def live_params(config: dict, registry: dict | None = None) -> dict:
 
 
 def live_arm_problem(config: dict, registry: dict | None = None) -> str | None:
-    """Why `live.arm` cannot be traded, or None. Only reads the registry when an arm is named."""
-    if not live_arm_name(config):
-        return None
+    """Why `live` cannot be traded, or None. Reads the registry when an arm is named; with no arm the
+    top level is still checked, so a live-only opt-in that needs no arm (a `live` block that turns
+    `equalize_credit` on, say) is refused rather than slipping through on the no-arm path."""
     return _live_resolution(config, registry)[1]
 
 

@@ -1291,7 +1291,7 @@ export function readMeicAnalytics(
 export interface MeicForestArm {
   arm: string;
   /** One entry per open IC, so a nested condor reads as nested rather than as one lumpy line. */
-  positions: Array<{ icOrderId: string; putStrike: number; callStrike: number; wingWidth: number; netCredit: number; quantity: number }>;
+  positions: Array<{ icOrderId: string; putStrike: number; callStrike: number; wingWidth: number; putWing: number | null; callWing: number | null; netCredit: number; quantity: number }>;
   /** The arm's aggregate curve: P&L at expiry across the price grid. */
   prices: number[];
   pnl: number[];
@@ -1387,13 +1387,19 @@ function icLegs(row: {
   putStrike: number;
   callStrike: number;
   wingWidth: number;
+  // Per-side widths: an `equalize_credit` pair sizes its two wings independently, so the narrower
+  // side's long is NOT at the scalar. Absent or NULL (every other row) falls back to the scalar.
+  putWing?: number | null;
+  callWing?: number | null;
   netCredit: number;
 }): Leg[] {
+  const putWing = row.putWing ?? row.wingWidth;
+  const callWing = row.callWing ?? row.wingWidth;
   return [
     { kind: "put", quantity: -1, price: row.netCredit, strike: row.putStrike },
-    { kind: "put", quantity: 1, price: 0, strike: row.putStrike - row.wingWidth },
+    { kind: "put", quantity: 1, price: 0, strike: row.putStrike - putWing },
     { kind: "call", quantity: -1, price: 0, strike: row.callStrike },
-    { kind: "call", quantity: 1, price: 0, strike: row.callStrike + row.wingWidth },
+    { kind: "call", quantity: 1, price: 0, strike: row.callStrike + callWing },
   ];
 }
 
@@ -1460,6 +1466,8 @@ export function readMeicForest(
     const allRows = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT ic_order_id, ${armColumnOf(db, "ic_trades")} AS arm, symbol, put_strike, call_strike, wing_width,
+                ${hasColumn(db, "ic_trades", "put_wing") ? "put_wing" : "NULL AS put_wing"},
+                ${hasColumn(db, "ic_trades", "call_wing") ? "call_wing" : "NULL AS call_wing"},
                 net_credit, quantity, status, underlying_price_entry,
                 ${hasColumn(db, "ic_trades", "settle_underlying") ? "settle_underlying" : "NULL AS settle_underlying"},
                 pnl, COALESCE(fees, 0) AS fees
@@ -1513,6 +1521,10 @@ export function readMeicForest(
             putStrike: num(r["put_strike"]) ?? 0,
             callStrike: num(r["call_strike"]) ?? 0,
             wingWidth: num(r["wing_width"]) ?? 0,
+            // Per-side widths on an `equalize_credit` pair; null on every other row, where the
+            // readers fall back to `wingWidth`.
+            putWing: num(r["put_wing"]),
+            callWing: num(r["call_wing"]),
             netCredit: num(r["net_credit"]) ?? 0,
             quantity: num(r["quantity"]) ?? 1,
           }));
@@ -1560,15 +1572,19 @@ export function readMeicForest(
       if (status === "open") continue;
       const arm = str(r["arm"]) ?? "?";
       const w = num(r["wing_width"]) ?? 0;
+      // Per-side widths on an `equalize_credit` pair, else the scalar. A released long sits at the
+      // wing the trade was actually built with.
+      const putWing = num(r["put_wing"]) ?? w;
+      const callWing = num(r["call_wing"]) ?? w;
       const p = num(r["put_strike"]);
       const c = num(r["call_strike"]);
       if (p !== null) {
         pushReleased(arm, p, "P");
-        if (w) pushReleased(arm, p - w, "P");
+        if (putWing) pushReleased(arm, p - putWing, "P");
       }
       if (c !== null) {
         pushReleased(arm, c, "C");
-        if (w) pushReleased(arm, c + w, "C");
+        if (callWing) pushReleased(arm, c + callWing, "C");
       }
     }
 

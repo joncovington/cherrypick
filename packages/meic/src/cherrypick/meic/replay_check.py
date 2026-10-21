@@ -82,7 +82,20 @@ def as_of(row: dict, t: float) -> dict | None:
 
 
 def _key(row: dict) -> tuple:
-    return (row["arm"], float(row["put_strike"]), float(row["call_strike"]), float(row["wing_width"]))
+    """The identity two entries must share to be the same condor: arm, both short strikes, and the
+    wing on each side. Per-side widths (`equalize_credit` pairs) fall back to the scalar when NULL,
+    so a pre-migration row keys on `wing_width` exactly as before -- and a pair never collides with
+    its single-width sibling, which differ only in one wing."""
+    w = float(row["wing_width"])
+    put_wing = row.get("put_wing")
+    call_wing = row.get("call_wing")
+    return (
+        row["arm"],
+        float(row["put_strike"]),
+        float(row["call_strike"]),
+        w if put_wing is None else float(put_wing),
+        w if call_wing is None else float(call_wing),
+    )
 
 
 class _Template:

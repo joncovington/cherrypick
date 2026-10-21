@@ -1196,6 +1196,13 @@ def gex_gate_counterfactual(
     }
 
 
+def _ic_columns(conn) -> set:
+    """The ledger's `ic_trades` column names. A CLI handle opens READ-ONLY and never migrates, so
+    this audit can meet a ledger written before `put_wing`/`call_wing` existed -- those read as NULL
+    (the scalar fallback), which is the same answer the writer's convention gives for them."""
+    return {r[1] for r in conn.execute("PRAGMA table_info(ic_trades)")}
+
+
 def _side_settle_value(strike, underlying, wing_width, side) -> float:
     """`paper._settlement_value`, restated here so the audit is INDEPENDENT of the writer.
 
@@ -1237,25 +1244,28 @@ def settlement_audit(conn, start=None, end=None, symbol=None, era="ALL") -> dict
       number, which is the question a reader actually has.
     """
     where, params = _period_clause(start, end, None, symbol, era)
+    cols = _ic_columns(conn)
+    wing_cols = ", ".join(c if c in cols else f"NULL AS {c}" for c in ("put_wing", "call_wing"))
     rows = [
         dict(r)
         for r in conn.execute(
             "SELECT id, trade_date, symbol, arm, exit_reason, put_strike, call_strike,"
-            " wing_width, quantity, net_credit, put_credit, call_credit, settle_underlying, pnl,"
-            f" put_stop_cost, call_stop_cost FROM ic_trades WHERE {where}",
+            f" wing_width, {wing_cols}, quantity, net_credit, put_credit, call_credit,"
+            f" settle_underlying, pnl, put_stop_cost, call_stop_cost FROM ic_trades WHERE {where}",
             params,
         )
     ]
 
     def modelled(row, underlying):
         total = 0.0
-        for side, strike, cost, credit in (
-            ("put", row["put_strike"], row["put_stop_cost"], row["put_credit"]),
-            ("call", row["call_strike"], row["call_stop_cost"], row["call_credit"]),
+        # Per-side width on an `equalize_credit` pair, else the scalar. Capping the narrower side at
+        # the wider wing would overstate its loss when price settles between the two longs.
+        for side, strike, cost, credit, wing in (
+            ("put", row["put_strike"], row["put_stop_cost"], row["put_credit"], row["put_wing"]),
+            ("call", row["call_strike"], row["call_stop_cost"], row["call_credit"], row["call_wing"]),
         ):
-            paid = (
-                cost if cost is not None else _side_settle_value(strike, underlying, row["wing_width"], side)
-            )
+            side_wing = wing if wing is not None else row["wing_width"]
+            paid = cost if cost is not None else _side_settle_value(strike, underlying, side_wing, side)
             total += ((credit or 0.0) - paid) * 100 * (row["quantity"] or 1)
         return total
 
