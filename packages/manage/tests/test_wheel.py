@@ -455,3 +455,15 @@ def test_no_history_means_no_wheel_view():
     snap["transactions_error"] = "HTTP 503"
     (a,) = ev.evaluate(snap, _rules.effective(None)[0])["accounts"]
     assert a["wheel"]["cycles"] == [] and a["wheel"]["error"]
+
+
+def test_a_wheel_view_that_fails_costs_the_view_never_the_evaluation(monkeypatch):
+    def boom(*_a, **_k):
+        raise KeyError("a history row layout never seen")
+
+    monkeypatch.setattr(ev._wheel, "build", boom)
+    legs = [share_leg(100, 51.0, 50.0), opt_leg(CALL52, -1, 0.50, 0.80)]
+    acct = {"account": "****1234", "designated": True, "underlyings": [{"underlying": "XYZ", "legs": legs}]}
+    (a,) = ev.evaluate(_snapshot([acct], PLAIN[:4]), _rules.effective(None)[0])["accounts"]
+    assert a["trades"] and a["wheel"]["cycles"] == []
+    assert "wheel view failed" in a["wheel"]["error"]

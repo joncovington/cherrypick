@@ -1546,14 +1546,20 @@ def _wheel_view(
         return {"cycles": [], "error": "the trade history is the designated account's"}
     if not history_ok:
         return {"cycles": [], "error": "no trade history in this snapshot"}
-    view = _wheel.build(
-        account.get("underlyings") or [],
-        history,
-        session,
-        metrics,
-        snapshot.get("working_orders"),
-        snapshot.get("skate_bands"),
-    )
+    # The view reads history rows this account has never produced (no assignment has been seen on it),
+    # so a layout it does not expect is a missing view, never a missing evaluation: every trade's
+    # action is judged without it.
+    try:
+        view = _wheel.build(
+            account.get("underlyings") or [],
+            history,
+            session,
+            metrics,
+            snapshot.get("working_orders"),
+            snapshot.get("skate_bands"),
+        )
+    except Exception as exc:  # noqa: BLE001 -- the wheel view is a reading; the evaluation is the product
+        return {"cycles": [], "error": f"wheel view failed: {type(exc).__name__}: {exc}"[:300]}
     held_by: dict[str, set[str]] = {}
     for t in trades:
         for leg in t["legs"]:
