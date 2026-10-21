@@ -71,5 +71,5 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python run.py manage` (orchestrator) | Take the broker snapshot and evaluate it — what the 10:00 ET `manage-eval` job (and each `manage.also_at` run) runs. |
 | `python -m cherrypick.manage evaluate --snapshot PATH [--rules PATH]` | Evaluate one snapshot file and store both. |
 | `python -m cherrypick.manage reevaluate [--session YYYY-MM-DD] [--rules PATH]` | Re-run a stored snapshot (latest by default) under the current or a trial ruleset. |
-| `python -m cherrypick.manage check-roll --trade ID --close LEG ... --open LEG ... [--session YYYY-MM-DD] [--rules PATH]` | Judge a proposed roll of one trade against the latest snapshot before sending it: credit, shape change, shorts moving into the long's expiry, net-short coverage, breakeven, max loss and earnings. Verdict reject / risky / ok. |
+| `python -m cherrypick.manage check-roll --trade ID --close LEG ... --open LEG ... [--session YYYY-MM-DD] [--rules PATH]` | Judge a proposed roll of one trade against the latest snapshot before sending it: credit, shape change, shorts moving into the long's expiry, net-short coverage (shares held on the name cover its calls), breakeven, max loss and earnings. Verdict reject / risky / ok. |
 | `python -m cherrypick.manage rules [--rules PATH]` | Print the effective ruleset and any override that could not be applied. |

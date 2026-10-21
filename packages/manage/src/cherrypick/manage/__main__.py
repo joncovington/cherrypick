@@ -119,6 +119,14 @@ def cmd_check_roll(args) -> dict:
         for trade in account["trades"]:
             if str(trade.get("trade_id", "")).upper() == wanted:
                 metrics = (snapshot.get("metrics") or {}).get(trade["underlying"]) or {}
+                # Shares held on the name cover its calls, whichever trade the shares were grouped in.
+                shares = sum(
+                    leg["quantity"]
+                    for t in account["trades"]
+                    if t["underlying"] == trade["underlying"]
+                    for leg in t["legs"]
+                    if not leg.get("right") and leg["quantity"] > 0
+                )
                 verdict = _rollcheck.check(
                     trade,
                     [_rollcheck.parse_leg(x) for x in args.close],
@@ -128,6 +136,7 @@ def cmd_check_roll(args) -> dict:
                     rules=rules,
                     net_liq=account.get("net_liq"),
                     earnings_date=metrics.get("earnings_date"),
+                    shares=shares,
                 )
                 return {"ok": True, "session": result["session"], "trade": trade["trade_id"], **verdict}
     ids = [t.get("trade_id") for a in result["accounts"] for t in a["trades"]]

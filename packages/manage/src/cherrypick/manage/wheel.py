@@ -102,7 +102,7 @@ def _sym(value: Any) -> str:
     return " ".join(str(value or "").split())
 
 
-def _occ(symbol: str) -> dict[str, Any] | None:
+def occ(symbol: str) -> dict[str, Any] | None:
     """'SOFI 261120P00016000' -> {expiration, right, strike}; None for anything that is not an option."""
     parts = symbol.split()
     if len(parts) != 2 or len(parts[1]) != 15 or parts[1][6] not in "CP":
@@ -143,7 +143,7 @@ def _fees(row: dict[str, Any]) -> float:
 
 
 def _is_option(row: dict[str, Any]) -> bool:
-    return _occ(_sym(row.get("symbol"))) is not None
+    return occ(_sym(row.get("symbol"))) is not None
 
 
 def _is_share(row: dict[str, Any], underlying: str) -> bool:
@@ -161,7 +161,7 @@ def _share_side(option_row: dict[str, Any]) -> int:
     sub = str(option_row.get("transaction_sub_type") or "")
     if sub not in SHARE_MOVING:
         return 0
-    right = (_occ(_sym(option_row.get("symbol"))) or {}).get("right")
+    right = (occ(_sym(option_row.get("symbol"))) or {}).get("right")
     if sub == "Assignment":  # the short side: a put buys the shares, a call delivers them
         return 1 if right == "P" else -1
     return 1 if right == "C" else -1  # exercised long: a call buys, a put sells
@@ -190,7 +190,7 @@ def match_deliveries(
         side = _share_side(opt)
         if not side:
             continue
-        leg = _occ(_sym(opt.get("symbol"))) or {}
+        leg = occ(_sym(opt.get("symbol"))) or {}
         contracts = abs(_num(opt.get("quantity")) or 0.0)
         when = _day(opt)
         best, gap = None, None
@@ -250,7 +250,7 @@ def _components(trades: list[dict[str, Any]]) -> tuple[dict[Any, int], dict[int,
     short_only: dict[int, bool] = defaultdict(lambda: True)
     for r in trades:
         c = comp_of[r["order_id"]]
-        rights[c].add((_occ(_sym(r.get("symbol"))) or {}).get("right"))
+        rights[c].add((occ(_sym(r.get("symbol"))) or {}).get("right"))
         if str(r.get("action") or "") not in SHORT_SIDE:
             short_only[c] = False
     wheel = {c: short_only[c] and len(rights[c]) == 1 for c in set(comp_of.values())}
@@ -288,7 +288,7 @@ class _Cycle:
     def capital(self) -> float | None:
         puts = 0.0
         for sym, q in self.positions.items():
-            leg = _occ(sym)
+            leg = occ(sym)
             if leg and leg["right"] == "P" and q < 0:
                 puts += leg["strike"] * MULTIPLIER * -q
         stock = _sum(lot["shares"] * lot["price"] if lot["price"] is not None else None for lot in self.lots)
@@ -365,7 +365,7 @@ class _Cycle:
 
 
 def _label(symbol: str) -> str:
-    leg = _occ(symbol)
+    leg = occ(symbol)
     return f"{leg['expiration']} {leg['strike']:g}{leg['right']}" if leg else symbol
 
 
@@ -376,7 +376,7 @@ def _row_text(row: dict[str, Any], underlying: str) -> str:
     sym = _sym(row.get("symbol"))
     qty = abs(_num(row.get("quantity")) or 0.0)
     action = str(row.get("action") or "")
-    what = _label(sym) if _occ(sym) else f"{underlying} shares"
+    what = _label(sym) if occ(sym) else f"{underlying} shares"
     price = _num(row.get("price"))
     sub = str(row.get("transaction_sub_type") or "")
     head = (
@@ -477,7 +477,7 @@ def _name(
                 continue
             if c not in decided:
                 decided.add(c)
-                right = (_occ(_sym(legs[0].get("symbol"))) or {}).get("right")
+                right = (occ(_sym(legs[0].get("symbol"))) or {}).get("right")
                 if right == "C" and shares_now <= EPS:
                     excluded.add(c)  # a call sold with no shares behind it is not a wheel leg
                     outside.append(
@@ -485,7 +485,7 @@ def _name(
                     )
                     continue
             opens_put = any(
-                r.get("action") == "Sell to Open" and (_occ(_sym(r.get("symbol"))) or {}).get("right") == "P"
+                r.get("action") == "Sell to Open" and (occ(_sym(r.get("symbol"))) or {}).get("right") == "P"
                 for r in legs
             )
             if cur is None:
@@ -588,15 +588,15 @@ def _name(
 
     # ---- the running cycle against today's positions
     running = cycles[-1] if cycles and cycles[-1].end is None else None
-    longs = any(q > 0 for s, q in held.items() if _occ(s))
+    longs = any(q > 0 for s, q in held.items() if occ(s))
     unexplained = [
         s
         for s, q in held.items()
-        if _occ(s)
+        if occ(s)
         and q < 0
         and wheel_option(s) is None
         and not longs
-        and (_occ(s)["right"] == "P" or held_shares > EPS)
+        and (occ(s)["right"] == "P" or held_shares > EPS)
     ]
     if unexplained and running is None:
         running = _Cycle(underlying, session)
@@ -662,7 +662,7 @@ def _accounting(cy: _Cycle, held_legs: dict[str, dict], session: date) -> dict[s
             breakeven = {"price": wheel_basis, "basis": "wheel basis"}
     else:
         puts = [
-            (_occ(s), -q) for s, q in cy.positions.items() if q < -EPS and (_occ(s) or {}).get("right") == "P"
+            (occ(s), -q) for s, q in cy.positions.items() if q < -EPS and (occ(s) or {}).get("right") == "P"
         ]
         contracts = sum(q for _, q in puts)
         if contracts and total_in is not None:
@@ -778,7 +778,7 @@ def check(
     """Each short option the cycle holds, judged against today: band, tested, extrinsic, resting close."""
     out = []
     for o in cycle["open_options"]:
-        leg = _occ(o["symbol"])
+        leg = occ(o["symbol"])
         if not leg or o["quantity"] >= 0:
             continue
         raw = held_legs.get(o["symbol"]) or {}
@@ -809,6 +809,10 @@ def check(
                 "quantity": o["quantity"],
                 "spot": spot,
                 "mid": mid,
+                # The price it was sold at (the positions' own average for this contract), and whether
+                # its market is wide: the plan's buy-to-close is $0.05 there, $0.03 otherwise.
+                "open_price": _num(raw.get("open_price")),
+                "wide": raw.get("wide"),
                 "tested": None if spot is None else (spot >= strike if right == "C" else spot <= strike),
                 "intrinsic": intrinsic,
                 "extrinsic": extrinsic,
@@ -846,7 +850,7 @@ def build(
         name = str(u.get("underlying") or "").upper()
         for leg in u.get("legs") or []:
             sym = _sym(leg.get("symbol"))
-            legs_by_name.setdefault(name, {})[sym.upper() if not _occ(sym) else sym] = leg
+            legs_by_name.setdefault(name, {})[sym.upper() if not occ(sym) else sym] = leg
     cycles, flagged, outside = [], [], {}
     for name in sorted(set(history) | set(legs_by_name)):
         held_legs = legs_by_name.get(name, {})
@@ -870,3 +874,122 @@ def build(
         "bands_day": (bands or {}).get("day"),
         "bands_missing": None if bands else "the snapshot carries no skate bands",
     }
+
+
+# --------------------------------------------------------------------------- what the rules propose
+def _quoted(income_entry: dict[str, Any] | None, right: str) -> list[dict[str, Any]]:
+    """The income reading's two-sided quotes for one right on its expiry, with mids."""
+    out = []
+    for o in (income_entry or {}).get("options") or []:
+        bid, ask, k = _num(o.get("bid")), _num(o.get("ask")), _num(o.get("strike"))
+        if o.get("right") != right or k is None or bid is None or ask is None or ask <= 0 or bid < 0:
+            continue
+        out.append({"strike": k, "bid": bid, "ask": ask, "mid": (bid + ask) / 2.0})
+    return out
+
+
+def _further(k: float, strike: float, right: str) -> bool:
+    """`k` is at `strike` or further from the money: never a roll toward it."""
+    return k >= strike - EPS if right == "C" else k <= strike + EPS
+
+
+def roll_candidates(today: dict[str, Any], income_entry: dict[str, Any] | None) -> dict[str, Any]:
+    """The tested short's two rolls out in time, on the snapshot's quoted chain (the previous
+    afternoon's income reading: listed strikes, two-sided quotes, the cycle monthly).
+
+    - net-zero: buy the short back at today's mid and sell, on the later expiry, the strike furthest
+      from the money whose mid still pays for the buy-back. A put's new strike is also capped at the
+      old strike + its original premium - the buy-back (a roll may not pay for itself with risk).
+    - premium gambit: the buy-back rests at the price the short was sold for (it fills only if the
+      stock comes back), and the same strike, or the next one further out, is sold on the later expiry.
+
+    Neither ever moves the strike toward the money, so a roll never closes on the other side of a
+    wheel. Each is None, with why, when the chain cannot price it.
+    """
+    right, strike = today["right"], today["strike"]
+    out: dict[str, Any] = {"net_zero": None, "premium_gambit": None, "why": None, "expiration": None}
+    expiry = (income_entry or {}).get("expiry")
+    if not income_entry or not expiry:
+        out["why"] = "the snapshot's income reading quotes no chain for the name"
+        return out
+    if str(expiry) <= today["expiration"]:
+        out["why"] = f"the quoted chain's expiry ({expiry}) is not later than the short's"
+        return out
+    out["expiration"] = expiry
+    out["quoted_at"] = income_entry.get("taken_at")
+    quotes = [q for q in _quoted(income_entry, right) if _further(q["strike"], strike, right)]
+    if not quotes:
+        out["why"] = f"no quoted {right} at or beyond the {strike:g} strike on {expiry}"
+        out["net_zero_why"] = out["premium_gambit_why"] = out["why"]
+        return out
+    far = (lambda q: q["strike"]) if right == "P" else (lambda q: -q["strike"])
+    buyback, sold = today["mid"], today["open_price"]
+    if buyback is not None:
+        cap = strike + (sold - buyback) if right == "P" and sold is not None else None
+        pays = [q for q in quotes if q["mid"] >= buyback - EPS and (cap is None or q["strike"] <= cap + EPS)]
+        if pays:
+            q = min(pays, key=far)
+            out["net_zero"] = {"close_price": buyback, "open": q, "net": q["mid"] - buyback}
+        else:
+            edge = min(strike, cap) if cap is not None else strike
+            out["net_zero_why"] = (
+                f"no quoted {right} at or beyond {edge:g} on {expiry} pays the {buyback:.2f} buy-back"
+            )
+    else:
+        out["net_zero_why"] = "the short has no mark to buy it back at"
+    if sold is not None:
+        q = max(quotes, key=far)  # the nearest to the old strike, from the far side
+        out["premium_gambit"] = {"close_price": sold, "open": q, "net": q["mid"] - sold}
+    else:
+        out["premium_gambit_why"] = "the price the short was sold at is unknown"
+    return out
+
+
+def next_leg(
+    cycle: dict[str, Any],
+    bands: dict[str, Any] | None,
+    income_entry: dict[str, Any] | None,
+    spot: float | None,
+    session: date,
+    which: str,
+) -> dict[str, Any]:
+    """After an assignment, the covered call the skate screen would name: the call band (`which`:
+    fixed or by_expiry) moved to today's price, on the quoted chain's expiry where the band has it,
+    else the latest band row 30-60 days out, snapped to the first quoted strike at or above it.
+    Without bands it names nothing and says so."""
+    out: dict[str, Any] = {"strike": None, "band": None, "expiration": None, "why": None, "quote": None}
+    name = ((bands or {}).get("names") or {}).get(cycle["underlying"])
+    if not bands:
+        out["why"] = "band not in the snapshot"
+        return out
+    if not name:
+        out["why"] = "no call band for the name in the snapshot"
+        return out
+    rows = [r for r in name.get("rows") or [] if r.get("side") == "C"]
+    want = (income_entry or {}).get("expiry")
+    row = next((r for r in rows if r.get("expiry") == want), None)
+    if row is None:
+        window = [
+            r for r in rows if 30 <= (date.fromisoformat(str(r.get("expiry"))[:10]) - session).days <= 60
+        ]
+        row = max(window, key=lambda r: r["expiry"], default=None)
+    if row is None:
+        out["why"] = "no call band 30-60 days out"
+        return out
+    band, why = _band(bands, cycle["underlying"], "C", row["expiry"], spot)
+    level = (band or {}).get(which)
+    if level is None:
+        out["why"] = why or f"no {which} band"
+        return out
+    out.update(band=level, expiration=row["expiry"], band_kind=which)
+    if want == row["expiry"]:
+        above = [q for q in _quoted(income_entry, "C") if q["strike"] >= level - EPS]
+        if above:
+            q = min(above, key=lambda q: q["strike"])
+            out.update(strike=q["strike"], quote=q)
+    if out["strike"] is None:
+        out["why"] = "no quoted strike on that expiry: the first listed strike at or above the band"
+    basis = cycle.get("wheel_basis")
+    edge = out["strike"] if out["strike"] is not None else level
+    out["below_wheel_basis"] = None if basis is None else edge < basis
+    return out

@@ -176,6 +176,22 @@ DEFAULT_RULES: dict[str, Any] = {
             "confidence": 50,
         },
     },
+    # The wheel (wheel.py, docs/skate-plan.md step 5): rules on the short options and shares of a wheel
+    # cycle that reconciles. They rank with every other rule by action (a close or a stop still
+    # outranks a roll); an unreconciled cycle gets none of them, only a review saying so.
+    "wheel": {
+        # A short whose mark is at or under its buy-to-close: the resting order's price where one is
+        # working, else `btc_price` ($0.05 `btc_price_illiquid` on a wide market). The skate method's
+        # exit: a GTC buy-to-close at $0.03 placed right after the fill.
+        "take_profit": {"enabled": True, "btc_price": 0.03, "btc_price_illiquid": 0.05, "confidence": 80},
+        # A short at or through its strike: roll or close, with the net-zero and premium-gambit rolls
+        # out in time priced on the snapshot's quoted chain and each judged by check-roll. Repair, which
+        # this ruleset otherwise avoids, so it never outranks a close.
+        "tested": {"enabled": True, "confidence": 50},
+        # Shares delivered by an assignment and not yet written against: name the covered call at the
+        # skate call band (`band`: "fixed" or "by_expiry"). Never a strike without the band.
+        "next_leg": {"enabled": True, "band": "fixed", "confidence": 50},
+    },
     "expiry": {
         "enabled": True,
         # Physically-settled legs are closed at or inside this many calendar days to expiry.
@@ -331,6 +347,9 @@ RULE_IDS = (
     "roll.diagonal_short",
     "roll.fly_off",
     "roll.untested_side",
+    "wheel.take_profit",
+    "wheel.tested",
+    "wheel.next_leg",
     "directional.take_profit",
     "directional.stop",
     "ex_dividend",
