@@ -368,9 +368,15 @@ mid is not a fill. Nothing is placed.
   at intrinsic);
 - an **expiry ladder**: per expiry, the trades whose nearest short expires then, what they can still
   lose and the theta of the legs expiring then; and the share of theta and downside in trades with
-  earnings before their nearest short expires (72% of theta on 2026-10-18).
+  earnings before their nearest short expires (72% of theta on 2026-10-18), with that downside by
+  report date.
 
 Every figure is modelled repricing, not a forecast.
+
+Two rules read the ladder (2026-10-21): `portfolio.earnings_exposure` is a REVIEW when the trades
+spanning a report can still lose more than `max_pct_nlv` of net liq between them (10%), naming each
+report date; `portfolio.expiry_concentration` is one when a single expiry's trades can (20%), and a
+new income candidate on that expiry waits.
 
 **Income trades, sized to the account** (`candidates.py`). The snapshot carries the previous
 afternoon's income reading (`fetch_screener_greeks.py income`). It covers every name the liquidity
@@ -410,7 +416,8 @@ per-trade cap and still takes a third of the width. Priced at mid from a day-old
 before sending.
 
 **Waiting for room** (2026-10-20). A trade stopped only by how full the book already is -- buying
-power or the theta ceiling (`ROOM_CAPS`), not a cap on the trade itself -- is also listed as
+power, the theta ceiling, or (from 2026-10-21) an expiry whose trades already hold more downside than
+`portfolio.expiry_concentration` allows (`ROOM_CAPS`), not a cap on the trade itself -- is also listed as
 `waiting`, sized as if the book had room (`if_room`). Each carries where taking it today would leave
 the account: buying power used after it, graded against the VIX-scaled cap as `ok`, `over` (within
 `bp_warn_over`, 10 points, of it) or `far_over`, and the book's theta after it against the ceiling.

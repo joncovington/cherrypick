@@ -44,8 +44,8 @@ surfaces, flags and bug-level fixes that land when ready.
 | 4 | Earnings on screener lists | **Earnings in the trade fails `passes`**, as manage's candidates already refuse it. The row stays listed and says why; an unknown date is marked, not failed. Found already done (2026-10-21): the own-list tab hides a trade with earnings in it by default ("No earnings in the trade", escaped by `?earnings=all`), and an unknown date stays shown, marked; the review's count read the raw list file, not the tab. `passes` stays the liquidity verdict it is. No change. |
 | 5 | Account fit on screener lists | **Badge and a "fits the account" filter**, on by default: cash-securable within buying power for a short put, shares held for a covered call. The full screen stays underneath. Done: manage judges each list trade against the account (`candidates.screen_fit`: a put's buying power at every strike within the lists' delta tolerance, cash-secured or Reg T, against the buying power available; the calls the uncovered shares allow) and the console looks the row up. An unjudged row stays shown. |
 | 6 | Credit-spreads tab | **Our own list**, built with the #2 rule over our universe and chains, as the short-put and covered-call tabs already are. Lands with or after #2. |
-| 7 | Earnings exposure | **A portfolio card and a band**: downside summed by report date, and a REVIEW when total earnings downside passes a configurable share of net liq (default 10%). |
-| 8 | Expiry concentration | **A REVIEW over a share**: one expiry's downside past a configurable share of net liq (default 20%) fires a REVIEW, and candidates prefer another expiry while it is over. |
+| 7 | Earnings exposure | **A portfolio card and a band**: downside summed by report date, and a REVIEW when total earnings downside passes a configurable share of net liq (default 10%). Done (`portfolio.earnings_exposure`; the ladder's earnings line gains `by_date`). |
+| 8 | Expiry concentration | **A REVIEW over a share**: one expiry's downside past a configurable share of net liq (default 20%) fires a REVIEW, and candidates prefer another expiry while it is over. Done (`portfolio.expiry_concentration`). The income reading carries one cycle monthly per name, so there is no other expiry to prefer: a candidate on an expiry already over its share waits instead (a room cap, `expiry concentration`). |
 | 9 | Leveraged and inverse ETFs | **Badged**, not excluded, on the lists and candidates. Done: from the declared list skate already leaves out (`technicals/leveraged_funds.json`: leveraged, inverse, volatility); each list row carries `leveraged`, and manage's candidates are badged from the session's own list rows. |
 | 10 | A candidate on a name already held | **Stands alone, badged** when the name already has a position on the *same expiry*. |
 | 11 | Retired loops on Live → today | **Collapsed** to one "off" line when the module is disabled and nothing is open or overdue; expanded again otherwise. Done (`LiveTodayLoop.retired`; any open, working, held, orphaned or overdue item, an arm record, or an unreadable ledger keeps the full row). |
@@ -65,7 +65,7 @@ so no ledger restarts; the boundary is for anyone comparing suggestions across i
 3. #11 retired loops (done).
 4. #12 stale snapshot banner and WARN (done).
 5. #4 (found done), #9 (done), #5 (done) on the screener lists.
-6. #7, #8 earnings and expiry exposure.
+6. #7, #8 earnings and expiry exposure (done).
 7. #10 same-expiry badge.
 8. The spread delta study, then #2 + #3 together, then #6.
 

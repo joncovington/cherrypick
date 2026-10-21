@@ -11,6 +11,15 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: manage adds up earnings and expiry exposure.** Each trade passed its own rules while,
+  between them, the ones spanning an earnings report and the ones expiring on one date each held
+  about a quarter of net liq. `portfolio.earnings_exposure` is a REVIEW when what the trades with a
+  report before their short expires can still lose passes `max_pct_nlv` of net liq (10%), naming each
+  report date and its trades; the expiry ladder's earnings line gains that breakdown (`by_date`,
+  shown on Live → portfolio). `portfolio.expiry_concentration` is a REVIEW when one expiry's trades can
+  (20%), and a new income candidate on that expiry waits (a room cap). Re-evaluated over every stored
+  snapshot (10-13 to 10-20): both fire every session (10-20: $3,400, 24%, over five report dates;
+  2026-11-20 $3,886, 27%); no candidate changes, every one being on a later expiry.
 - **Added: the income lists say whether each trade fits the account.** manage judges every Screeners
   short put and covered call against the account it evaluates (`candidates.screen_fit`): a put's
   buying power -- cash-secured, or Reg T on margin -- at each strike within the lists' delta

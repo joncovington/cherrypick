@@ -977,7 +977,16 @@ function ladder(v: unknown): ManageLadder | null {
         theta: num(x["theta"]),
       };
     }),
-    earnings: { trades: strs(e["trades"]), theta: num(e["theta"]), thetaShare: num(e["theta_share"]), downside: num(e["downside"]) },
+    earnings: {
+      trades: strs(e["trades"]),
+      theta: num(e["theta"]),
+      thetaShare: num(e["theta_share"]),
+      downside: num(e["downside"]),
+      byDate: arr(e["by_date"]).map((raw) => {
+        const d = rec(raw);
+        return { date: str(d["date"]) ?? "?", trades: strs(d["trades"]), downside: num(d["downside"]) };
+      }),
+    },
   };
 }
 

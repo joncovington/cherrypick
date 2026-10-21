@@ -301,6 +301,14 @@ DEFAULT_RULES: dict[str, Any] = {
         "breakeven": {"enabled": True, "min_multiple_of_expected_move": 1.0, "confidence": 40},
         # One underlying over this share of the book's gross theta or gross beta-weighted delta.
         "concentration": {"enabled": True, "max_share": 0.25, "confidence": 40},
+        # What the trades with an earnings report before their nearest short expires can still lose,
+        # summed, over this share of net liq. Each trade passes its own rules; on 2026-10-20 eight of
+        # sixteen spanned a report, about a quarter of net liq between them, and no rule added it up.
+        "earnings_exposure": {"enabled": True, "max_pct_nlv": 0.10, "confidence": 40},
+        # What the trades whose nearest short expires on one date can still lose, over this share of
+        # net liq: one expiry carries every gap and pin on that day at once (over a quarter of net liq
+        # on 2026-11-20 as read on 2026-10-20). A new candidate on an expiry already over it waits.
+        "expiry_concentration": {"enabled": True, "max_pct_nlv": 0.20, "confidence": 40},
         # When the broker's beta and its three-month correlation disagree enough to doubt the beta.
         "beta_doubt": {"min_abs_corr": 0.3, "near_zero_beta": 0.1},
         # Benchmark shocks the stress line reprices the book at, each underlying moved by beta x shock.

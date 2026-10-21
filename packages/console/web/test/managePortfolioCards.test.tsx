@@ -71,7 +71,16 @@ function reading(over: Partial<ManagePortfolio> = {}): ManagePortfolio {
         { expiration: "2026-10-23", trades: ["RTX", "NFLX", "UAL", "CLF"], downside: -1064, downsideUnknown: 0, theta: 15.16 },
         { expiration: "2026-11-20", trades: ["META", "GOOGL"], downside: -6837, downsideUnknown: 1, theta: 77.27 },
       ],
-      earnings: { trades: ["RTX", "META"], theta: 35, thetaShare: 0.724, downside: -4292.5 },
+      earnings: {
+        trades: ["RTX", "META"],
+        theta: 35,
+        thetaShare: 0.724,
+        downside: -4292.5,
+        byDate: [
+          { date: "2026-10-21", trades: ["RTX"], downside: -1292.5 },
+          { date: "2026-10-28", trades: ["META"], downside: -3000 },
+        ],
+      },
     },
     guidance: [
       { rule: "portfolio.theta", confidence: 40, reason: "above the ceiling", drivers: [{ underlying: "GOOGL", figures: [{ kind: "theta", value: 9.06 }] }] },
@@ -290,6 +299,9 @@ describe("ScenarioCards", () => {
     expect(html).toContain("2026-11-20 · 2 trades");
     expect(html).toContain("(+1 not modelled)");
     expect(html).toContain("72% of theta");
+    expect(html).toContain("by report date:");
+    expect(html).toContain("(RTX)");
+    expect(html).toContain("(META)");
     expect(render(<LadderCard ladder={null} />)).toBe("");
   });
 

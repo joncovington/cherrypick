@@ -308,6 +308,8 @@ const GUIDANCE_TOPIC: Record<string, string> = {
   "portfolio.breakeven": "break-even",
   "portfolio.buying_power": "buying power",
   "portfolio.concentration": "concentration",
+  "portfolio.earnings_exposure": "earnings",
+  "portfolio.expiry_concentration": "one expiry",
 };
 
 function guidanceTopic(rule: string): string {
