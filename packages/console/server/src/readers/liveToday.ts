@@ -50,6 +50,10 @@ import { readBwb, readBwbHistory } from "./bwb.js";
 import { LIVE_BOOKS } from "./liveBooks.js";
 import { readLockStatus, readModuleGate } from "../services/liveLock.js";
 import { MAX_PAGE } from "./paging.js";
+import { moduleIds } from "./system.js";
+
+/** One loop as its own reader builds it; `readLiveToday` adds the module switch and `retired`. */
+type LoopRead = Omit<LiveTodayLoop, "moduleEnabled" | "retired">;
 
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
@@ -147,7 +151,7 @@ function fliesOverdue(db: Database.Database, session: string): LiveTodayOverdue[
     .map((r) => ({ session: str(r["trade_date"]) ?? "", positions: Number(r["n"] ?? 0), pendingEntries: Number(r["pend"] ?? 0) }));
 }
 
-function readFliesToday(config: ConsoleConfig, session: string, minute: number): LiveTodayLoop {
+function readFliesToday(config: ConsoleConfig, session: string, minute: number): LoopRead {
   const dbPath = path.join(config.paths.fliesDir, "live_trades.db");
   const dir = path.dirname(dbPath);
   const fliesCfg = readJson(config.paths.fliesConfig);
@@ -250,7 +254,7 @@ function meicBreakerFigure(dbPath: string, session: string): number | null {
   return r.status === "ok" ? r.value : null;
 }
 
-function readMeicToday(config: ConsoleConfig, now: Date): LiveTodayLoop {
+function readMeicToday(config: ConsoleConfig, now: Date): LoopRead {
   const p = readMeicLive(config, now);
   const session = p.session;
   const meicCfg = readJson(path.join(config.paths.cherrypick, "config", "meic.json"));
@@ -319,7 +323,7 @@ function readMeicToday(config: ConsoleConfig, now: Date): LiveTodayLoop {
 }
 
 // --------------------------------------------------------------------------- bwb
-function readBwbToday(config: ConsoleConfig, session: string, minute: number): LiveTodayLoop {
+function readBwbToday(config: ConsoleConfig, session: string, minute: number): LoopRead {
   const dbPath = path.join(config.paths.bwbDir, "live_trades.db");
   const dir = path.dirname(dbPath);
   const bwbCfg = readJson(path.join(config.paths.cherrypick, "config", "bwb.json"));
@@ -467,9 +471,30 @@ export function suiteOf(loops: LiveTodayLoop[]): LiveTodaySuite {
   };
 }
 
+/** Whether a loop is off and holds nothing, so the tab can fold it to one line (`LiveTodayLoop.retired`).
+ *  An unreadable ledger is never folded: a loop that cannot say it holds nothing is not shown as off. */
+export function isRetired(l: Omit<LiveTodayLoop, "retired">): boolean {
+  return (
+    l.moduleEnabled === false &&
+    l.ledger !== "failed" &&
+    !l.arm.armed &&
+    l.open === 0 &&
+    l.working === 0 &&
+    l.held === 0 &&
+    l.orphans.count === 0 &&
+    l.overdue.length === 0
+  );
+}
+
 export function readLiveToday(config: ConsoleConfig, now: Date = new Date()): LiveTodayPayload {
   const { session, minute } = etParts(now);
-  const loops = [readFliesToday(config, session, minute), readMeicToday(config, now), readBwbToday(config, session, minute)];
+  const enabled = new Map(moduleIds(config).map((m) => [m.id, m.enabled]));
+  const loops = [readFliesToday(config, session, minute), readMeicToday(config, now), readBwbToday(config, session, minute)].map(
+    (l): LiveTodayLoop => {
+      const withSwitch = { ...l, moduleEnabled: enabled.get(l.loop) ?? null };
+      return { ...withSwitch, retired: isRetired(withSwitch) };
+    },
+  );
   return {
     generatedAt: now.toISOString(),
     session,

@@ -273,7 +273,8 @@ export function readSystemSupervisor(config: ConsoleConfig): SystemSupervisorPay
 
 // --------------------------------------------------------------------------- modules
 
-function moduleIds(config: ConsoleConfig): Array<{ id: string; enabled: boolean; kind: string | null }> {
+/** The orchestrator config's modules, each with its `enabled` switch (anything but `true` is off). */
+export function moduleIds(config: ConsoleConfig): Array<{ id: string; enabled: boolean; kind: string | null }> {
   const cfg = readJson(config.paths.orchestratorConfig) ?? {};
   const raw = cfg["modules"];
   const out: Array<{ id: string; enabled: boolean; kind: string | null }> = [];

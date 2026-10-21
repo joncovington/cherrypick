@@ -11,6 +11,12 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed: Live → today folds a retired loop to one line.** A loop whose module is switched off in
+  the orchestrator config (`modules.<name>.enabled`, missing read as off, as the orchestrator reads
+  it) and that holds nothing -- not armed, nothing open or working, no held, orphaned or overdue
+  item, a readable ledger -- shows as "off — module disabled, nothing open or working" with its link,
+  instead of a full row reading "idle since" its last session every day. Anything it holds brings the
+  full row back. The payload gains `moduleEnabled` and `retired` per loop.
 - **Changed: manage's theta band leaves out the legs about to expire** (`portfolio.theta.front_dte`,
   default 2). The band, the concentration rule's theta share and the candidates' theta ceiling and
   name cap read theta without the option legs two days or less from expiry; the whole book's is
