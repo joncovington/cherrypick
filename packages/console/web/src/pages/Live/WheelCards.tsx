@@ -20,6 +20,7 @@ import {
   VERDICT_CHIP,
   bandText,
   beyondText,
+  etStamp,
   feesPaid,
   px,
   share,
@@ -137,7 +138,7 @@ function TodayCheck({ rows }: { rows: ManageWheelCheck[] }) {
             <tr>
               <th>short</th>
               <th>dte</th>
-              <th>price</th>
+              <th>underlying</th>
               <th>mid (a share)</th>
               <th>tested</th>
               <th>intrinsic (a share)</th>
@@ -215,13 +216,28 @@ function RollLine({ kind, r, why }: { kind: string; r: ManageWheelRoll | null; w
   );
 }
 
+/** Whose quotes a roll is priced on, from manage's own `source` and stamp: this session's roll-out
+ *  chains, or the income reading (taken on an afternoon, which may be this one or the one before). */
+export function rollQuotes(r: ManageWheelRolls): string {
+  const when = etStamp(r.quotedAt);
+  if (r.source === "roll-out chains") {
+    const looked = r.considered.filter((c) => c.expiration !== null);
+    const tried =
+      looked.length > 1
+        ? ` (looked at ${looked.map((c) => `${c.expiration}${c.netZero ? "" : ", no net-zero"}`).join("; ")})`
+        : "";
+    return `this session's roll-out chains${when ? `, read ${when}` : ""}${tried}`;
+  }
+  return `the income reading${when ? `, taken ${when}` : ""}`;
+}
+
 function Rolls({ r }: { r: ManageWheelRolls }) {
   return (
     <>
       <p className="md-subhead">
         rolls for the {r.leg}
         {r.expiration ? ` to ${r.expiration}` : ""}
-        {r.quotedAt ? <span className="muted"> · quoted {r.quotedAt}, the previous afternoon</span> : null}
+        {r.expiration ? <span className="muted"> · priced on {rollQuotes(r)}</span> : null}
       </p>
       {r.expiration === null ? (
         <p className="md-note">no roll priced: {r.why ?? "no quoted chain"}</p>
@@ -252,7 +268,7 @@ function NoteDetail({ n }: { n: ManageWheelNote }) {
           <p className="md-subhead">next leg</p>
           <p className="md-note">
             {n.nextLeg.strike !== null
-              ? `sell ${n.nextLeg.contracts ?? "?"} ${n.nextLeg.expiration ?? "?"} ${strike(n.nextLeg.strike)}C at ${px(n.nextLeg.quote?.mid ?? null)} a share (the previous afternoon's mid), the first quoted strike at or above the ${n.nextLeg.bandKind ?? "?"} call band ${px(n.nextLeg.band)}`
+              ? `sell ${n.nextLeg.contracts ?? "?"} ${n.nextLeg.expiration ?? "?"} ${strike(n.nextLeg.strike)}C at ${px(n.nextLeg.quote?.mid ?? null)} a share (the income reading's mid${etStamp(n.nextLeg.quotedAt) ? `, taken ${etStamp(n.nextLeg.quotedAt)}` : ""}), the first quoted strike at or above the ${n.nextLeg.bandKind ?? "?"} call band ${px(n.nextLeg.band)}`
               : n.nextLeg.band !== null
                 ? `the ${n.nextLeg.bandKind ?? "?"} call band is ${px(n.nextLeg.band)} on ${n.nextLeg.expiration ?? "?"}: ${n.nextLeg.why ?? "no quote"}`
                 : `no covered call named: ${n.nextLeg.why ?? "no band"}`}
@@ -378,6 +394,7 @@ export function WheelCards({ a }: { a: ManageAccount }) {
     );
   }
   const flagged = w.flagged;
+  const outside = Object.entries(w.outside).filter(([, rows]) => rows.length > 0);
   return (
     <>
       {w.cycles.length === 0 ? (
@@ -405,6 +422,21 @@ export function WheelCards({ a }: { a: ManageAccount }) {
               <li key={i}>
                 {f.underlying} · {f.date ?? "?"} · {f.kind}
                 {f.row ? `: ${f.row}` : ""}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+      {outside.length > 0 && (
+        <Card title="history outside any cycle">
+          <p className="muted" style={{ marginTop: 0 }}>
+            rows manage read for a name that belong to no wheel cycle (a call sold with no shares behind it, say), listed as
+            it wrote them
+          </p>
+          <ul style={{ margin: 0 }}>
+            {outside.map(([name, rows]) => (
+              <li key={name}>
+                {name}: {rows.join(" · ")}
               </li>
             ))}
           </ul>

@@ -551,11 +551,12 @@ def judge(
         "earnings": earnings,
     }
 
-    # ---- the shorts' P&L to date, on the long's own cost
+    # ---- the shorts' P&L to date, net of their fees (signed negative, as the broker writes them),
+    # on the long's own cost. "P&L" is net across the suite; the wheel's yield is net too.
     open_short = next((s for s in shorts if s["symbol"] == short_sym), None)
     short_pnl = None
     if premiums is not None and smid is not None and open_short is not None:
-        short_pnl = premiums - smid * MULTIPLIER * qty
+        short_pnl = premiums - smid * MULTIPLIER * qty + sum(s["fees"] for s in shorts)
     days = None if long_view["opened"] is None else (session - date.fromisoformat(long_view["opened"])).days
     long_cost = None if long_cash is None else -long_cash
     yld = None
@@ -590,7 +591,8 @@ def judge(
         "skate_yield": {
             "value": yld,
             "capped": yld is not None and abs(yld) > _wheel.YIELD_CAP,
-            "basis": "comparison figure: the shorts' P&L to date / the long's cost x 365 / days held",
+            "basis": "comparison figure: the shorts' net P&L to date (their fees subtracted) / the long's "
+            "cost x 365 / days held",
         },
         "rolls": None,
     }

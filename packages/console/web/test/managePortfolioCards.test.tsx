@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ReactElement } from "react";
 import type { ManageCandidate, ManageCandidateRoom, ManageCandidates, ManagePortfolio } from "@console/shared";
-import { IncomeCard } from "../src/pages/Live/IncomeCard";
-import { BandDial, PortfolioCards } from "../src/pages/Live/PortfolioCards";
+import { IncomeCard, netPrice } from "../src/pages/Live/IncomeCard";
+import { BandDial, PortfolioCards, placesApart } from "../src/pages/Live/PortfolioCards";
 import { BuyingPowerCard, LadderCard, RiskGraphCard, RiskMatrixCard, ScenarioCards } from "../src/pages/Live/ScenarioCards";
 
 /**
@@ -490,7 +490,7 @@ describe("IncomeCard", () => {
       <IncomeCard c={income({ fits: [candidate({ alternativeTo: "call_spread" }), fromPut], tooBig: [wide], tooBigTotal: 1 })} />,
     );
     expect(html).toContain("narrowed to fit"); // a spread narrowed from its own wider self
-    expect(html).toContain("narrowed from the short put");
+    expect(html).toContain("the short put, with a long bought under it to fit");
     expect(html).toContain("stopped by <em>per-trade risk</em>");
     expect(html).toContain("narrowed to −345C / +350C: fits 1");
   });
@@ -548,7 +548,7 @@ describe("IncomeCard", () => {
       />,
     );
     expect(html).toContain("nothing fits today: 2 are waiting for room below");
-    expect(html).toContain("waiting for room: 2 stopped only by buying power or the theta ceiling");
+    expect(html).toContain("waiting for room: 2 stopped only by buying power, the theta ceiling or the expiry&#x27;s concentration");
     expect(html).toContain("buying power used 43% · cap 30% at today&#x27;s VIX (amber within 10% of it, red past that)");
     expect(html).toContain('class="chip chip-warn" title="over the cap">35%');
     expect(html).toContain('class="chip chip-bad" title="far over the cap">45%');
@@ -603,5 +603,70 @@ describe("risk matrix tone", () => {
     const html = render(<RiskMatrixCard p={flat} />);
     expect(html).not.toContain("var(--pos)");
     expect(html).not.toContain("var(--neg)");
+  });
+});
+
+describe("a reading and its bounds never print alike", () => {
+  it("shows a theta just outside its ceiling to the places that tell them apart (2026-10-21: 0.304% read 0.30%)", () => {
+    const p = reading({ thetaPctNetLiq: 0.00304, bands: { ...reading().bands!, theta: { low: 0.001, high: 0.003, value: 0.00304, inside: false } } });
+    const html = render(<PortfolioCards p={p} />);
+    expect(html).toContain("0.304");
+    expect(html).toContain("band 0.100%–0.300%");
+    expect(html).toContain("outside band");
+    // Two places where two already differ.
+    expect(render(<PortfolioCards p={reading()} />)).toContain("band 0.10%–0.30%");
+  });
+
+  it("adds places only until the value and a bound it does not equal differ", () => {
+    expect(placesApart(0.304, [0.1, 0.3])).toBe(3);
+    expect(placesApart(0.31, [0.1, 0.3])).toBe(2);
+    expect(placesApart(0.3, [0.1, 0.3])).toBe(2); // equal to the bound: nothing to tell apart
+    expect(placesApart(null, [0.1, 0.3])).toBe(2);
+    expect(placesApart(32.76001, [-21.84, 32.76], 1)).toBe(5);
+  });
+});
+
+describe("income candidates' price and cash agree", () => {
+  it("shows the per-share price the cash is, to the half cent (AGNC 0.095 beside +$9.50)", () => {
+    const agnc = candidate({
+      underlying: "AGNC",
+      kind: "put_spread",
+      units: 1,
+      legs: [
+        { strike: 8, right: "P", quantity: -1, bid: 0.12, ask: 0.16, delta: -0.2 },
+        { strike: 7, right: "P", quantity: 1, bid: 0.02, ask: 0.06, delta: -0.08 },
+      ],
+      perUnit: { credit: 0.1, natural: 0.06, cash: 9.5, maxLoss: 90.5, buyingPower: 90.5, stressLoss: 90.5, theta: 0.12, bwd: 0.21 },
+    });
+    const html = render(<IncomeCard c={income({ fits: [agnc] })} />);
+    expect(html).toContain("0.095 cr");
+    expect(html).not.toContain(">0.10 cr<");
+    expect(html).toContain("+$9.50");
+    expect(netPrice(candidate())).toBe("2.47 cr"); // a whole cent keeps two places
+  });
+
+  it("says widened, not narrowed, where an older evaluation offered a wider spread as the one that fits", () => {
+    const narrow = candidate({
+      kind: "put_spread",
+      units: 0,
+      binding: "buying power",
+      legs: [
+        { strike: 12, right: "P", quantity: -1, bid: 0.38, ask: 0.42, delta: -0.2 },
+        { strike: 11, right: "P", quantity: 1, bid: 0.2, ask: 0.24, delta: -0.1 },
+      ],
+      alternative: candidate({
+        kind: "put_spread",
+        alternativeTo: "put_spread",
+        units: 0,
+        binding: "buying power",
+        legs: [
+          { strike: 12, right: "P", quantity: -1, bid: 0.38, ask: 0.42, delta: -0.2 },
+          { strike: 8, right: "P", quantity: 1, bid: 0.04, ask: 0.08, delta: -0.03 },
+        ],
+      }),
+    });
+    const html = render(<IncomeCard c={income({ tooBig: [narrow], tooBigTotal: 1 })} />);
+    expect(html).toContain("widened to −12P / +8P");
+    expect(html).not.toContain("narrowed to −12P");
   });
 });

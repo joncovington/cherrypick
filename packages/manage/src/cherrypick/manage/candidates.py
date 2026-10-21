@@ -219,12 +219,21 @@ def structures(
 
 
 def fitted_spread(
-    options: list[dict], short: dict, max_loss_cap: float, min_credit_share: float, was: str
+    options: list[dict],
+    short: dict,
+    max_loss_cap: float,
+    min_credit_share: float,
+    was: str,
+    narrower_than: float | None = None,
 ) -> dict | None:
     """The nearest version that fits: a credit spread on `short`'s strike whose long is the WIDEST
     listed strike beyond it that keeps one unit's max loss under `max_loss_cap` and the credit at
     least `min_credit_share` of the width. A short put or a spread the rule built too wide for the
-    account becomes this; None when no listed long fits."""
+    account becomes this; None when no listed long fits.
+
+    For a spread, `narrower_than` is its own width and the version offered is strictly narrower: a
+    spread already under the per-trade cap (stopped by how full the book is) would otherwise be
+    "fitted" to a WIDER one that risks more, which is not a smaller version of anything."""
     right = short["right"]
     beyond = [
         o
@@ -235,6 +244,8 @@ def fitted_spread(
     best = None
     for o in sorted(beyond, key=lambda o: abs(o["strike"] - short["strike"])):
         width = abs(o["strike"] - short["strike"])
+        if narrower_than is not None and width >= narrower_than - 1e-9:
+            break
         credit = short["mid"] - o["mid"]
         working = credit - ((short["ask"] - short["bid"]) + (o["ask"] - o["bid"])) / 4.0
         if working < min_credit_share * width or (width - credit) * MULTIPLIER > max_loss_cap:
@@ -690,7 +701,11 @@ def suggest(
                 # per-trade cap. Offered in the fits list itself when it sizes to a unit or more.
                 cap = float(cfg["per_trade_risk_pct"]) * (book.get("net_liq") or 0.0)
                 min_share = float(cfg["spread_min_credit"])
-                alt = fitted_spread(options, s["legs"][0][0], cap, min_share, s["kind"])
+                legs_ = s["legs"]
+                own_width = (
+                    abs(legs_[0][0]["strike"] - legs_[1][0]["strike"]) if s["kind"] != "short_put" else None
+                )
+                alt = fitted_spread(options, legs_[0][0], cap, min_share, s["kind"], own_width)
                 same = alt and s["kind"] != "short_put" and alt["legs"][1][0] is s["legs"][1][0]
                 if alt and not same and liquid(alt["legs"], bars):
                     alt["min_credit_share"] = min_share

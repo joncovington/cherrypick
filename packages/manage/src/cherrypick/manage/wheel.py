@@ -924,7 +924,8 @@ def roll_candidates(
     expiries after the short, quoted that session. The roll goes to the NEAREST of them on which the
     net-zero roll is priced, else the nearest on which anything at or beyond the strike is quoted; the
     expiries looked at are listed in `considered`. Without them (or when none quotes a strike at or
-    beyond the short's) the roll is priced, as before v14, on the previous afternoon's income reading:
+    beyond the short's) the roll is priced, as before v14, on the income reading (an afternoon's quotes,
+    its own `taken_at`; the previous afternoon's for a run before the reading is taken):
     listed strikes, two-sided quotes, the cycle monthly.
 
     Neither ever moves the strike toward the money, so a roll never closes on the other side of a
@@ -1031,7 +1032,8 @@ def next_leg(
         above = [q for q in _quoted(income_entry, "C") if q["strike"] >= level - EPS]
         if above:
             q = min(above, key=lambda q: q["strike"])
-            out.update(strike=q["strike"], quote=q)
+            # When the income reading was taken, so a surface can say whose quote this is.
+            out.update(strike=q["strike"], quote=q, quoted_at=(income_entry or {}).get("taken_at"))
     if out["strike"] is None:
         out["why"] = "no quoted strike on that expiry: the first listed strike at or above the band"
     basis = cycle.get("wheel_basis")

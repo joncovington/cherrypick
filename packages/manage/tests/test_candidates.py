@@ -501,6 +501,20 @@ def test_a_spread_too_wide_for_the_account_is_offered_narrowed_on_the_same_short
     assert alt in out["fits"]
 
 
+def test_a_spread_stopped_by_the_book_is_never_offered_wider():
+    # A full book stops the rule's spread by buying power, not by its own risk: the per-trade cap
+    # ($3,000 here) would allow a far wider spread, and offering that as "the version that fits"
+    # once turned 8/7 into 8/6 and 12/11 into 12/8 (2026-10-21).
+    out = _suggest({"AAA": _entry()}, _book(net_liq=100_000.0, used=50_000.0, bp_cap=0.50))
+    spreads = [r for r in out["too_big"] if r["kind"] == "put_spread" and r["alternative_to"] is None]
+    assert spreads and all(r["binding"] == "buying power" for r in spreads)
+    for r in spreads:
+        alt = r.get("alternative")
+        if alt is not None:
+            width = abs(r["legs"][0]["strike"] - r["legs"][1]["strike"])
+            assert abs(alt["legs"][0]["strike"] - alt["legs"][1]["strike"]) < width
+
+
 def test_the_list_is_by_symbol_never_a_ranking():
     # No structure here has a tested edge, so the order says nothing about which is better.
     out = _suggest(

@@ -33,6 +33,12 @@ export interface ManageLeg {
   capture: number | null;
   delta: number | null;
   iv: number | null;
+  /** Where the IV came from (packages/manage `_legs`, 2026-10-21): solved from the leg's own `mid`,
+   *  the `broker`'s (a wide quote, and only where it reprices inside it), or `unpriceable` (no vol
+   *  prices the mid under the no-dividend model, so the leg is unmodelled). Null: no IV was solved. */
+  ivSource: "mid" | "broker" | "unpriceable" | null;
+  /** The snapshot's flag for a wide market on this leg; null on an evaluation that did not carry it. */
+  wide: boolean | null;
 }
 
 export interface ManageOrder {
@@ -258,8 +264,24 @@ export interface ManagePmccPosition {
   premiums: number | null;
   skateYield: { value: number | null; capped: boolean | null; basis: string | null } | null;
   /** Priced only for a recognised, reconciled PMCC whose width fails or whose short is exposed. */
-  rolls: { candidates: ManagePmccRoll[]; why: string | null; quotedExpiries: string[]; quotedAt: string | null } | null;
+  rolls: {
+    candidates: ManagePmccRoll[];
+    why: string | null;
+    quotedExpiries: string[];
+    /** When the income reading was taken (its quotes price any expiry the roll-out chains lack). */
+    quotedAt: string | null;
+    /** When this session's roll-out chains were read, where the snapshot has them for the name; the
+     *  candidates are priced on them first. Null: every candidate is on the income reading. */
+    chainsTakenAt: string | null;
+  } | null;
   tradeIds: string[];
+}
+
+/** The ruleset's PMCC recognition limits (`pmcc.recognize`), from the evaluation's own rules. */
+export interface ManagePmccRecognize {
+  entryMinDelta: number | null;
+  minLongDays: number | null;
+  maxShortDays: number | null;
 }
 
 /** The account's PMCC view (`account.pmcc`). */
@@ -269,6 +291,8 @@ export interface ManagePmcc {
   bandsMissing: string | null;
   /** Why the account has no view (not the designated account, no history, the view failed). */
   error: string | null;
+  /** Null where the evaluation embeds no ruleset: the empty state then names no number. */
+  recognize: ManagePmccRecognize | null;
 }
 
 /* ------------------------------------------------------------------ the wheel view (wheel.py) */
@@ -311,7 +335,12 @@ export interface ManageWheelRoll {
 export interface ManageWheelRolls {
   leg: string;
   expiration: string | null;
+  /** When the quotes the roll is priced on were taken: the roll-out chains' read, or the income reading's. */
   quotedAt: string | null;
+  /** `roll-out chains` when priced on this session's chains for the name; null on the income reading. */
+  source: string | null;
+  /** The roll-out expiries looked at, nearest first, and whether each priced the net-zero roll. */
+  considered: Array<{ expiration: string | null; netZero: boolean | null }>;
   why: string | null;
   netZero: ManageWheelRoll | null;
   netZeroWhy: string | null;
@@ -327,6 +356,8 @@ export interface ManageWheelNextLeg {
   expiration: string | null;
   why: string | null;
   quote: ManageWheelQuote | null;
+  /** When the income reading that quotes it was taken; null on an evaluation before 2026-10-21. */
+  quotedAt: string | null;
   contracts: number | null;
   belowWheelBasis: boolean | null;
 }

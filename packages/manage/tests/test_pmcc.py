@@ -223,8 +223,10 @@ def test_the_width_check_and_the_p_and_l_if_assigned():
 def test_skate_yield_is_a_comparison_figure_on_the_long_s_cost():
     v = view_of(evaluate(snapshot(history(), legs(short_mid=0.60))))
     days = (date.fromisoformat(SESSION) - date.fromisoformat(ENTRY)).days
-    assert v["skate_yield"]["value"] == pytest.approx((270.0 - 60.0) / (DEEP * 100) * 365 / days)
-    assert "comparison figure" in v["skate_yield"]["basis"]
+    # Net of the shorts' fees (two orders at $1.10), as "P&L" is everywhere: it was gross until 2026-10-21.
+    assert sum(s["fees"] for s in v["shorts"]) == pytest.approx(-2.2)
+    assert v["skate_yield"]["value"] == pytest.approx((270.0 - 60.0 - 2.2) / (DEEP * 100) * 365 / days)
+    assert "comparison figure" in v["skate_yield"]["basis"] and "net" in v["skate_yield"]["basis"]
 
 
 # --------------------------------------------------------------------------- pmcc.width

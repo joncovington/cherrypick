@@ -3,9 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import type { ManageAccount, ManageLevel, ManagePayload, ManageTrade } from "@console/shared";
 import { Card, DataCard, sortRows, useSort, type SortHeader } from "../../components/DataTable";
 import { TileGrid } from "../../components/performance/TileGrid";
+import { useOverview } from "../../lib/api";
+import { parseSuiteTs } from "../../lib/etTime";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
-import { ActionChip, DetailCard, Kv, Money, tone } from "./manageParts";
+import { ActionChip, DetailCard, Kv, Money, ageText, etStamp, tone } from "./manageParts";
 import { PortfolioCards } from "./PortfolioCards";
 import { ScenarioCards } from "./ScenarioCards";
 import { PmccCards } from "./PmccCards";
@@ -25,7 +27,8 @@ export function useManage(session: string | undefined) {
       if (!res.ok) throw new Error(`manage: HTTP ${res.status}`);
       return (await res.json()) as ManagePayload;
     },
-    // One evaluation a day; polling hard would only re-read the same file.
+    // Manage re-evaluates every 30 minutes, 10:00-16:35 ET; a minute's poll sees each run and keeps
+    // the snapshot's age current, and polling harder would only re-read the same file.
     refetchInterval: 60_000,
   });
 }
@@ -295,7 +298,9 @@ function TradeDetail({ t }: { t: ManageTrade }) {
               <td>{px(l.mid)}</td>
               <td className={tone(l.capture)}>{pct(l.capture)}</td>
               <td>{l.delta === null ? "—" : l.delta.toFixed(2)}</td>
-              <td>{l.iv === null ? "—" : `${(l.iv * 100).toFixed(0)}%`}</td>
+              <td>
+                <IvCell l={l} />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -303,6 +308,43 @@ function TradeDetail({ t }: { t: ManageTrade }) {
       </div>
     </div>
   );
+}
+
+const IV_TITLE = {
+  broker:
+    "the broker's IV: this leg's quote is wide, so an IV solved from its mid would be the midpoint of a market nobody quoted seriously; the broker's is used because it reprices the leg inside its quote",
+  wide: "a wide quote, solved from its own mid anyway: the broker had no IV for it, or none that reprices it inside the quote",
+  unpriceable:
+    "no volatility prices this mid under the model, which carries no dividend (the mid sits under the model's least possible value), so the leg is left unmodelled: no delta, theta or stress figure is taken from it",
+} as const;
+
+/** A leg's IV with where it came from (packages/manage `_legs`): a broker IV beside a mid IV is
+ *  marked, and a leg no IV prices says so rather than showing a blank. */
+export function IvCell({ l }: { l: ManageTrade["legs"][number] }) {
+  if (l.ivSource === "unpriceable") {
+    return (
+      <span className="muted" title={IV_TITLE.unpriceable}>
+        — unpriceable
+      </span>
+    );
+  }
+  if (l.iv === null) return <>—</>;
+  const v = `${(l.iv * 100).toFixed(0)}%`;
+  if (l.ivSource === "broker") {
+    return (
+      <span title={IV_TITLE.broker}>
+        {v} <span className="muted">broker</span>
+      </span>
+    );
+  }
+  if (l.wide === true) {
+    return (
+      <span title={IV_TITLE.wide}>
+        {v} <span className="muted">wide</span>
+      </span>
+    );
+  }
+  return <>{v}</>;
 }
 
 /** Actions that ask a person to do nothing today: a hold waits on its levels, a settling trade on the print. */
@@ -521,6 +563,36 @@ export function PmccPage() {
 
 const VIEW_TITLE = { positions: "position evaluation", portfolio: "portfolio", wheel: "wheel", pmcc: "pmcc" } as const;
 
+/** What each tab's money is, for the header: the tabs do not share one P&L figure. */
+const VIEW_MONEY: Record<keyof typeof VIEW_TITLE, string> = {
+  positions: "table P&L is gross (net of fees is in each trade's chain)",
+  portfolio: "mark P&L is gross; the stress and income figures are modelled",
+  wheel: "a cycle's P&L net is after fees; its option and stock P&L are gross",
+  pmcc: "P&L if assigned is shown gross and net of fees; the skate yield is net",
+};
+
+/** Manage snapshots every 30 minutes, 10:00-16:35 ET (`manage.also_at`); past this the newest is late. */
+export const LATE_AFTER_MIN = 45;
+
+/**
+ * Minutes the newest snapshot has gone without a successor, when that is late: on a trading day
+ * (the watchdog's word; unknown is not taken as a holiday), a weekday in ET, between 10:45 and 17:20
+ * ET (the first run's slot plus the allowance, to the last run's plus the allowance), and more than
+ * LATE_AFTER_MIN old. Null otherwise. Presentation only: nothing here asks for a run.
+ */
+export function snapshotLate(snapMs: number | null, nowMs: number, tradingDay: boolean | null): number | null {
+  if (snapMs === null || tradingDay === false) return null;
+  const wall = new Date(nowMs).toLocaleString("sv-SE", { timeZone: "America/New_York" });
+  const [day, clock] = wall.split(" ");
+  const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
+  if (weekday === 0 || weekday === 6 || clock === undefined) return null;
+  const [h, m] = clock.split(":").map(Number);
+  const minute = (h ?? 0) * 60 + (m ?? 0);
+  if (minute < 10 * 60 + LATE_AFTER_MIN || minute > 16 * 60 + 35 + LATE_AFTER_MIN) return null;
+  const age = Math.floor((nowMs - snapMs) / 60_000);
+  return age > LATE_AFTER_MIN ? age : null;
+}
+
 /**
  * The four tabs read one evaluation file (2026-10-18: split from the single `manage` tab, whose dozen
  * account cards had buried the action list; 2026-10-20: the wheel, then the PMCCs). Each keeps the
@@ -530,8 +602,13 @@ const VIEW_TITLE = { positions: "position evaluation", portfolio: "portfolio", w
 function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
   const title = VIEW_TITLE[view];
   const [session, setSession] = useState<string | undefined>(undefined);
-  const { data, isLoading, isError, dataUpdatedAt } = useManage(session);
+  const { data, isLoading, isError } = useManage(session);
+  const tradingDay = useOverview().data?.watchdog?.isTradingDay ?? null;
   const sessions = data?.sessions ?? [];
+  const snapMs = parseSuiteTs(data?.snapshotGeneratedAt ?? null);
+  const nowMs = Date.now();
+  const newest = data?.session !== null && data?.session !== undefined && data.session === sessions[sessions.length - 1];
+  const late = newest ? snapshotLate(snapMs, nowMs, tradingDay) : null;
   const picker =
     sessions.length > 1 ? (
       <select
@@ -552,7 +629,8 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
     return (
       <Card title={title} isError={isError}>
         <p className="muted">
-          No evaluation has been written yet. It runs at 10:00 ET on trading days once <code>manage.enabled</code> is true in
+          No evaluation has been written yet. It runs every 30 minutes from 10:00 to 16:35 ET on trading days once{" "}
+          <code>manage.enabled</code> is true in
           the orchestrator config (then re-run <code>install</code>), or by hand with <code>run.py manage</code>. The ruleset
           is <code>~/.cherrypick/config/manage.json</code>.
         </p>
@@ -562,12 +640,24 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
 
   return (
     <div className="view-fade" style={{ display: "grid", gap: "1rem" }}>
-      <Card title={title} updatedAt={dataUpdatedAt} isError={isError} controls={picker}>
+      {/* The card's "as of" is the snapshot's time, not the browser's last poll: the poll re-reads
+          the same file every minute, and its clock said nothing about how old the marks were. */}
+      <Card title={title} updatedAt={snapMs ?? undefined} isError={isError} controls={picker}>
         <p className="muted" style={{ margin: 0 }}>
-          {data?.session ?? "…"} · snapshot {data?.snapshotGeneratedAt ?? "—"} · ruleset {data?.ruleset ?? "—"} (
-          {data?.rulesSource ?? "shipped default"}) · advice only: marks are mids, table P&L is gross (net of fees is in each trade's chain), and nothing here
-          places an order
+          {data?.session ?? "…"} · snapshot {etStamp(data?.snapshotGeneratedAt ?? null) ?? data?.snapshotGeneratedAt ?? "—"}
+          {snapMs !== null && newest ? `, ${ageText(nowMs - snapMs)} old` : ""} · ruleset {data?.ruleset ?? "—"} (
+          {data?.rulesSource ?? "shipped default"}) · advice only: marks are mids, {VIEW_MONEY[view]}, and nothing here places
+          an order
         </p>
+        {late !== null && (
+          <p
+            className="pnl-neg"
+            title="manage snapshots every 30 minutes, 10:00-16:35 ET; this only reads the file's time, and asks for no run"
+          >
+            the newest snapshot is {ageText(late * 60_000)} old: a 30-minute run looks to have been missed, so every mark,
+            greek and verdict here is older than the schedule says
+          </p>
+        )}
         {data?.error && <p className="pnl-neg">evaluation error: {data.error}</p>}
         {data?.snapshotStale && (
           <p className="pnl-neg" title="the watchdog's manage.snapshot_version check; no broker read is made to fix it">

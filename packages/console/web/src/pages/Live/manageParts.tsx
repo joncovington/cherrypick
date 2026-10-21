@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { ManageWheelBand } from "@console/shared";
+import { parseSuiteTs } from "../../lib/etTime";
 import { fmtMoney } from "../../lib/format";
 
 /**
@@ -117,9 +118,20 @@ interface BandedShort {
 
 const NO_BAND = "band not in the snapshot";
 
-/** The band's levels, or "band not in the snapshot" with manage's reason when it gave a different one. */
+/** Manage's reasons for a missing band, in this table's words. "Not in the snapshot" is kept for
+ *  the case it means -- no band file at all; a file without this name or expiry says that instead. */
+const BAND_MISSING: Record<string, string> = {
+  "no band for the name in the snapshot": "no band for this name",
+  "no band for this expiry": "no band for this expiry",
+};
+
+/** The band's levels, or why there are none: no band file in the snapshot, or a file with no row
+ *  for this name or expiry (manage's reason, never folded into "not in the snapshot"). */
 export function bandText(r: BandedShort): string {
-  if (r.band === null) return r.bandMissing && r.bandMissing !== NO_BAND ? `${NO_BAND} (${r.bandMissing})` : NO_BAND;
+  if (r.band === null) {
+    if (!r.bandMissing || r.bandMissing === NO_BAND) return NO_BAND;
+    return BAND_MISSING[r.bandMissing] ?? r.bandMissing;
+  }
   const parts = [];
   if (r.band.fixed !== null) parts.push(`fixed ${px(r.band.fixed)}`);
   if (r.band.byExpiry !== null) parts.push(`by expiry ${px(r.band.byExpiry)}`);
@@ -134,6 +146,22 @@ export function beyondText(r: BandedShort): string {
   if (b.fixed !== null) out.push(`fixed: ${b.fixed ? "beyond" : "inside"}`);
   if (b.byExpiry !== null) out.push(`by expiry: ${b.byExpiry ? "beyond" : "inside"}`);
   return out.length ? out.join(" · ") : "—";
+}
+
+/** A suite timestamp on the session's clock, `2026-10-21 16:35 ET`, whatever offset it was written
+ *  in (the snapshot carries the host's, e.g. -0600; the income reading UTC). Null in, null out. */
+export function etStamp(ts: string | null | undefined): string | null {
+  const ms = parseSuiteTs(ts ?? null);
+  if (ms === null) return null;
+  return `${new Date(ms).toLocaleString("sv-SE", { timeZone: "America/New_York" }).slice(0, 16)} ET`;
+}
+
+/** How long ago, in the unit a person reads: `12 min`, `3 h 05 min`, `2 days`. */
+export function ageText(ms: number): string {
+  const min = Math.max(0, Math.floor(ms / 60_000));
+  if (min < 60) return `${min} min`;
+  if (min < 48 * 60) return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, "0")} min`;
+  return `${Math.floor(min / 1440)} days`;
 }
 
 /** check-roll's verdict chip. */

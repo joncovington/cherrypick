@@ -1593,9 +1593,11 @@ def _wheel_rules(
                     + (
                         f"Rolls to {cands['expiration']} at "
                         + (
-                            "this session's quotes"
+                            "this session's roll-out chains"
                             if cands.get("source")
-                            else "the previous afternoon's quotes"
+                            # The income reading is taken in the afternoon; which afternoon it was
+                            # is its own `quoted_at`, never assumed to be the day before.
+                            else "the income reading's quotes"
                         )
                         + " -- "
                         + _roll_text("net-zero", cands.get("net_zero"), cands.get("net_zero_why"))
@@ -1640,7 +1642,7 @@ def _wheel_rules(
                     what = (
                         f"sell {nl['contracts']} {nl['expiration']} {nl['strike']:g}C, the first quoted "
                         f"strike at or above the {nl['band_kind']} call band ({nl['band']:.2f}), "
-                        f"{q['mid']:.2f} at the previous afternoon's mid"
+                        f"{q['mid']:.2f} at the income reading's mid"
                     )
                 elif nl["band"] is not None:
                     what = (
