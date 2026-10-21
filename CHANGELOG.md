@@ -11,6 +11,16 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Fixed: a PMCC whose short was sold in its own order was judged as a naked call.** A short call
+  sold after the last one expired is an order chain of its own, so manage made it a trade beside a
+  lone long call: the short got the credit rules and an unbounded-loss review, as an uncovered call
+  would on an IRA. When the PMCC view links that short to the long and the link reconciles, the two
+  are now one trade (`grouped_by: "pmcc link"`), recognised as a PMCC or not, its basis every linked
+  order, the expired shorts' premiums included. Only a group holding the long or the short alone moves;
+  a short more than 60 days out, an unreconciled link, or a group with other legs keeps the chains'
+  grouping, and a join that fails leaves them as they were. On every stored snapshot (10-13 to 10-20)
+  no trade's grouping or recommendation changes: the account holds no such split.
+
 - **Added: manage's PMCC view and its rules** (docs/skate-plan.md step 6). Each evaluation now
   carries the account's `pmcc` view: every name whose calls are a PMCC's shape (one long bought with
   180 days or more left, one short of the same size at or above its strike with 60 or fewer), and

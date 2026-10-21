@@ -205,8 +205,8 @@ def test_a_short_sold_in_its_own_order_is_linked_and_its_premium_counted():
     assert v["long_cost"] == pytest.approx(DEEP * 100)
     assert v["width"]["net_cost"] == pytest.approx(DEEP * 100 - 270.0)
     assert v["fees"] == pytest.approx(-1.1 * 3)
-    # The evaluation's order chains keep the November short apart; the view names both trades.
-    assert len(v["trade_ids"]) == 2
+    # The order chains keep the November short apart; the link joins it to the long (test_pmcc_grouping).
+    assert v["trade_ids"] == ["XYZ"]
     assert trade_of(a, SHORT)["pmcc"]["recognized"] is True
 
 
