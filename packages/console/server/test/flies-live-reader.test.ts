@@ -129,7 +129,7 @@ describe("the live payload", () => {
     const first = readFliesLive(config, "2026-09-17");
     expect(first.ledger).toBe("absent");
     expect(first.periods.today).toEqual({
-      net: 0, trades: 0, sessions: 0, paperNet: null,
+      net: 0, trades: 0, sessions: 0, paperNet: null, paperSessions: null,
       onRisk: { net: 0, peakRisk: 0, ratio: null, sessions: 0, of: 0, replayed: 0, booked: 0 },
     });
     expect(first.buyingPower.cap).toBe(1000);
@@ -200,6 +200,73 @@ describe("the live payload", () => {
     const a = out.positions.find((p) => p.positionId === "A")!;
     expect(a.mark).toEqual({ at: "2026-09-17T10:32:00-04:00", structureMid: -2.0, markPnl: -103.44, restingLimit: 0.9 });
     expect(a.entryFillStatus).toBe("filled");
+  });
+});
+
+describe("a retired pilot read days later (2026-10-21)", () => {
+  // The real shape: flies switched off after 2026-10-16's live session, the paper loop running one
+  // more session (10-19) before it stopped too.
+  function build(enabled: boolean | undefined) {
+    const modules = enabled === undefined ? {} : { flies: { enabled } };
+    fs.writeFileSync(path.join(tmp, "config.json"), JSON.stringify({ modules }));
+    const live = new Database(path.join(tmp, "flies", "live_trades.db"));
+    live.exec(DDL);
+    pos(live, "A", "2026-10-16", { gross_pnl: 30, fees: 6.89, entry_fill_status: "filled" }); // +23.11
+    pos(live, "X", "2026-10-16", { status: "cancelled", entry_fill_status: "cancelled", net: 2.85, floor_dollars: -228.44, gross_pnl: null, pnl: null });
+    pos(live, "V", "2026-10-16", { void_reason: "outage", gross_pnl: 500, fees: 0 }); // still `settled`, as flies leaves it
+    pos(live, "G", "2026-10-16", { arm: "gex", gross_pnl: 20, fees: 5 }); // another arm: not the tile's
+    pos(live, "B", "2026-10-14", { gross_pnl: -100, fees: 10 }); // -110
+    const mk = live.prepare("INSERT INTO fly_live_marks (iteration_ts, trade_date, position_id, mark_pnl, open_margin) VALUES (?,?,?,?,?)");
+    mk.run("2026-10-16T11:06:52-04:00", "2026-10-16", "X", 1.56, 950);
+    mk.run("2026-10-16T15:59:02-04:00", "2026-10-16", "A", 12, 890.33);
+    live.close();
+    const paper = new Database(path.join(tmp, "flies", "paper_trades.db"));
+    paper.exec(DDL);
+    pos(paper, "P1", "2026-10-16", { gross_pnl: 110, fees: 10 }); // +100: a session live traded
+    pos(paper, "P2", "2026-07-20", { gross_pnl: 510, fees: 10 }); // +500: live had not started
+    pos(paper, "P3", "2026-10-19", { gross_pnl: 60, fees: 10 }); // +50: live sat it out
+    paper.prepare("INSERT INTO fly_snapshots (iteration_ts, trade_date, symbol, status) VALUES (?,?,?,?)").run(
+      "2026-10-19T09:30:00-04:00", "2026-10-19", "SPX", "ok",
+    );
+    paper.close();
+  }
+
+  it("shows the last settled session's peak, never the last tick's margin as open exposure", () => {
+    // Shown to fail before 2026-10-21: the peak was nulled by the paper 10-19 open while the page
+    // still served 10-16, and buyingPower.open was the 15:59 tick's 890.33.
+    build(false);
+    const out = readFliesLive(config, null);
+    expect(out.sessionBasis).toBe("last_completed");
+    expect(out.session).toBe("2026-10-16");
+    expect([out.today.open, out.today.pending]).toEqual([0, 0]);
+    expect(out.today.sessionPeakWorst).toEqual({ worst: -950, at: "2026-10-16T11:06:52-04:00" });
+    expect(out.buyingPower.open).toBe(0);
+  });
+
+  it("leaves cancelled and voided rows out of the positions and their count", () => {
+    // Shown to fail before 2026-10-21: only status 'voided' (never written) was filtered.
+    build(false);
+    const out = readFliesLive(config, "2026-10-16");
+    expect(out.positions.map((p) => p.positionId).sort()).toEqual(["A", "G"]);
+    expect(out.today.positions).toBe(2);
+  });
+
+  it("compares paper over the sessions live traded, not the calendar period", () => {
+    // Shown to fail before 2026-10-21: the year tile's paper side was +650 over three paper sessions
+    // beside two live ones.
+    build(false);
+    const y = readFliesLive(config, "2026-10-16").periods.year;
+    expect(y).toMatchObject({ trades: 2, sessions: 2, paperNet: 100, paperSessions: 1 });
+    expect(y.net).toBeCloseTo(23.11 - 110, 6);
+  });
+
+  it("carries the module's switch from the suite config, as the today tab reads it", () => {
+    build(false);
+    expect(readFliesLive(config, "2026-10-16").moduleEnabled).toBe(false);
+    fs.writeFileSync(path.join(tmp, "config.json"), JSON.stringify({ modules: { flies: { enabled: true } } }));
+    expect(readFliesLive(config, "2026-10-16").moduleEnabled).toBe(true);
+    fs.writeFileSync(path.join(tmp, "config.json"), JSON.stringify({ modules: {} }));
+    expect(readFliesLive(config, "2026-10-16").moduleEnabled).toBeNull();
   });
 });
 
