@@ -39,7 +39,7 @@ surfaces, flags and bug-level fixes that land when ready.
 
 | # | Item | Decision |
 |---|---|---|
-| 1 | Theta band | **Show both, gate on neither.** The portfolio card shows raw theta and theta without legs two days or less from expiry, side by side. Theta no longer blocks a candidate (out of the room caps) and the band no longer fires a REVIEW; it informs. Concentration reads the same ex-front-week figure. |
+| 1 | Theta band | **Read without the expiring legs.** The band, the concentration rule and the candidates' theta cap read theta without legs two days or less from expiry; the raw figure is shown beside it. The band still fires its REVIEW and still caps candidates, on the figure that is not about to vanish. |
 | 2 | Spread construction | **Short by delta, side by direction.** The short at a target delta, starting at 0.30; a side is offered only when a direction read supports it (board count on that side; call spreads only on a short setup). The delta is set by a study over 0.20 / 0.25 / 0.30 on the local history before it lands, judged by edge after costs. |
 | 3 | Ranking and display | **Show the odds, rank by cost drag.** Each candidate shows P(loss) (≈ credit ÷ width), P(max loss) (≈ the long's delta), break-even and round-trip cost; ranked by lowest round-trip cost as a share of max loss. No drift assumption is built in. |
 | 4 | Earnings on screener lists | **Earnings in the trade fails `passes`**, as manage's candidates already refuse it. The row stays listed and says why; an unknown date is marked, not failed. |
