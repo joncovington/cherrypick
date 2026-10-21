@@ -793,8 +793,11 @@ of the credit helps. Declared here before any of it is run.*
 - **Result (2026-10-21), figures kept locally per the licence:**
   - **Hold to expiry fails at every delta.** The signal's own net was negative in the first half and
     it did not beat its random-date baselines in either. The least-bad cell was the 0.20-delta short.
-  - **Close at 50% else at 21 days:** not decided on the declared model yet: the 200-trade real-mark
-    check's fetch was held up, and is being completed. On the unvalidated model it fails as well.
+  - **Close at 50% else at 21 days:** the 200-trade real-mark check ran (2026-10-21). The model
+    passed the declared tolerances at 0.40 delta only; it understated how often 50% is reached by
+    a few points more than allowed at 0.20 and 0.30, while getting the net close. So **0.40 fails**
+    on the model, and **0.20 and 0.30 are not decidable from it**, as declared. The 200 trades priced
+    on real marks lose at all three deltas, so a full real-mark fetch is not worth running for them.
   - The metals row and the user's own traded names (a row added after declaration, reported only)
     show nothing that changes this.
   - **Departures from the text, written down before any option data was fetched:** the entries are
