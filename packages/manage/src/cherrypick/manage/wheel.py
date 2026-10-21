@@ -893,9 +893,26 @@ def _further(k: float, strike: float, right: str) -> bool:
     return k >= strike - EPS if right == "C" else k <= strike + EPS
 
 
-def roll_candidates(today: dict[str, Any], income_entry: dict[str, Any] | None) -> dict[str, Any]:
-    """The tested short's two rolls out in time, on the snapshot's quoted chain (the previous
-    afternoon's income reading: listed strikes, two-sided quotes, the cycle monthly).
+def roll_out_for(roll_out: dict[str, Any] | None, underlying: str, right: str) -> list[dict[str, Any]]:
+    """The snapshot's roll-out chains (v14 `roll_out_chains`) for one name and right that quote
+    anything, nearest expiry first; empty for a snapshot without them."""
+    chains = (roll_out or {}).get("chains") if isinstance(roll_out, dict) else None
+    out = [
+        {**c, "taken_at": roll_out.get("taken_at")}
+        for c in (chains or {}).values()
+        if isinstance(c, dict)
+        and str(c.get("underlying") or "").upper() == underlying.upper()
+        and c.get("right") == right
+        and c.get("expiration")
+        and c.get("options")
+    ]
+    return sorted(out, key=lambda c: str(c["expiration"]))
+
+
+def roll_candidates(
+    today: dict[str, Any], income_entry: dict[str, Any] | None, chains: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """The tested short's two rolls out in time, on the snapshot's quoted chains.
 
     - net-zero: buy the short back at today's mid and sell, on the later expiry, the strike furthest
       from the money whose mid still pays for the buy-back. A put's new strike is also capped at the
@@ -903,9 +920,37 @@ def roll_candidates(today: dict[str, Any], income_entry: dict[str, Any] | None) 
     - premium gambit: the buy-back rests at the price the short was sold for (it fills only if the
       stock comes back), and the same strike, or the next one further out, is sold on the later expiry.
 
+    `chains` are the roll-out chains read for this name and right (v14, `roll_out_for`): the next
+    expiries after the short, quoted that session. The roll goes to the NEAREST of them on which the
+    net-zero roll is priced, else the nearest on which anything at or beyond the strike is quoted; the
+    expiries looked at are listed in `considered`. Without them (or when none quotes a strike at or
+    beyond the short's) the roll is priced, as before v14, on the previous afternoon's income reading:
+    listed strikes, two-sided quotes, the cycle monthly.
+
     Neither ever moves the strike toward the money, so a roll never closes on the other side of a
     wheel. Each is None, with why, when the chain cannot price it.
     """
+    later = [c for c in chains or [] if str(c["expiration"]) > today["expiration"]]
+    tried = []
+    for c in later:
+        entry = {"expiry": c["expiration"], "options": c["options"], "taken_at": c.get("taken_at")}
+        got = _roll_on(today, entry)
+        tried.append(got)
+        if got.get("net_zero"):
+            break
+    usable = [t for t in tried if t.get("net_zero") or t.get("premium_gambit")]
+    if usable:
+        pick = next((t for t in usable if t.get("net_zero")), usable[0])
+        pick["source"] = "roll-out chains"
+        pick["considered"] = [
+            {"expiration": t["expiration"], "net_zero": bool(t.get("net_zero"))} for t in tried
+        ]
+        return pick
+    return _roll_on(today, income_entry)
+
+
+def _roll_on(today: dict[str, Any], income_entry: dict[str, Any] | None) -> dict[str, Any]:
+    """Both rolls on one quoted expiry (`income_entry`: its `expiry`, `options` and `taken_at`)."""
     right, strike = today["right"], today["strike"]
     out: dict[str, Any] = {"net_zero": None, "premium_gambit": None, "why": None, "expiration": None}
     expiry = (income_entry or {}).get("expiry")
