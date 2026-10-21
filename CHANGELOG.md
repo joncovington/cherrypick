@@ -16,6 +16,11 @@ beyond the latest release.
   into the licensed store, resumably, with a refusal recorded and retried and a lost session
   stopping the run; `chains-status` shows what it holds. Event-driven because the subscription's
   tier serves single-stock chains from 2016 at about a second a request, with no whole-market file.
+- **Added: skate's "both sides" marker** (plan step 3): each scored row's `both_sides`, per band, is
+  true when the name's call and put best picks both pass every soft threshold. A test now checks the
+  monthly test odds at a short expiry, where the exponent matters (at 35 days it is 1, so the old test
+  could not see a wrong one); and three stale comments name the right mode, the right listing range
+  and the right offset grid.
 - **Changed: manage's credit stop at lower confidence, and the untested-side roll off by default.**
   After a declared local study of short-strangle management on licensed history (its plan and
   results stay under `~/.cherrypick`, by the data licence), `credit.stop` reports at confidence 50

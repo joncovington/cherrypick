@@ -202,7 +202,9 @@ The skate run scores its own quotes with pure functions from technicals (`skate.
 - per name-side, the best expiry by premium per day on the bid among legs that pass the hard
   filters, its ratio to the monthly, and per-cycle and per-month test odds;
 - all of the above for both bands, fixed and by expiry;
-- a "both sides" marker where the call and the put both pass.
+- a "both sides" marker where the call and the put both pass (as built 2026-10-20:
+  `skate.mark_both_sides`, each row's `both_sides` per band, true when both sides' best picks pass
+  every soft threshold; the tab does not show it yet).
 
 Console: a **Skate** slide in `ScreenersLightbox.tsx`, `/api/screeners/skate?day=`, a reader in
 `server/src/readers/skate.ts` with its own types, calls and puts views.
