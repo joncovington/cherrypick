@@ -7,8 +7,10 @@ import { fmtCash, fmtMoney } from "../../lib/format";
  * Income trades from our own universe, sized to the account (packages/manage `candidates.py`): the
  * ones that fit, with their quantity and the cap the next unit would break, and the ones that do not,
  * with the cap that stopped them and the narrowed version where one fits. Every figure is the
- * package's, in its order (theta per dollar of buying power): a ranking the server made is not
- * re-sorted here. Money follows the suite layout: a credit received is +, whole-position dollars,
+ * package's, in its order: by symbol from 2026-10-22, since no structure has a tested edge and a
+ * ranking would read as one. Each spread shows its odds (chance of a loss, of the max loss, the
+ * break-even, what getting in costs), the reward-against-risk read the studies left the user with.
+ * Money follows the suite layout: a credit received is +, whole-position dollars,
  * the one per-share figure is the net price and says so. Priced at mid from the previous afternoon's
  * quotes, and the card says to re-quote before sending.
  */
@@ -81,6 +83,20 @@ function risk(c: ManageCandidate, n: number): string {
   return c.kind === "covered_call" ? "covered" : fmtMoney(times(n, c.perUnit.stressLoss));
 }
 
+/** A spread's odds in one cell: chance of any loss · of the max loss · break-even · entry cost. */
+function Odds({ c }: { c: ManageCandidate }) {
+  const o = c.odds;
+  if (!o) return <td className="muted">—</td>;
+  return (
+    <td
+      className="num"
+      title={`chance of any loss ${pct(o.pLoss)} (its break-even, from the legs' deltas) · of the max loss ${pct(o.pMaxLoss)} (about the long's delta) · break-even ${o.breakEven ?? "—"} · getting in costs ${fmtMoney(o.entryCost)} over the mid (working price and opening fees), ${pct(o.entryCostShare)} of the credit`}
+    >
+      {pct(o.pLoss)} / {pct(o.pMaxLoss)} · b/e {o.breakEven ?? "—"} · cost {pct(o.entryCostShare)}
+    </td>
+  );
+}
+
 function narrowed(c: ManageCandidate): string | null {
   if (!c.alternativeTo) return null;
   return c.alternativeTo === c.kind ? "narrowed to fit" : `narrowed from the ${KIND[c.alternativeTo] ?? c.alternativeTo}`;
@@ -99,6 +115,7 @@ function FitsTable({ rows }: { rows: ManageCandidate[] }) {
             <th title="per-share net price at mid, and the natural fill (sell at the bid, buy at the ask)">price</th>
             <th title="signed cash flow, whole position: a credit received is +">cash</th>
             <th title="a spread's max loss; a short put's loss at the name's 1st-percentile move over the holding period">risk</th>
+            <th title="a spread's chance of any loss / of the max loss, its break-even, and what getting in costs as a share of the credit">odds</th>
             <th title="buying power the position ties up">buying power</th>
             <th title="theta, whole position, dollars a day">θ / day</th>
             <th title="beta-weighted delta the position adds, in SPY shares">Δ SPY sh</th>
@@ -124,6 +141,7 @@ function FitsTable({ rows }: { rows: ManageCandidate[] }) {
               </td>
               <td className="num pnl-pos">{fmtCash(times(c.units, c.perUnit.cash))}</td>
               <td className="num">{risk(c, c.units)}</td>
+              <Odds c={c} />
               <td className="num">{fmtMoney(times(c.units, c.perUnit.buyingPower))}</td>
               <td className="num">{fmtCash(times(c.units, c.perUnit.theta))}</td>
               <td className="num">{c.perUnit.bwd === null ? "—" : (c.units * c.perUnit.bwd).toFixed(1)}</td>
@@ -168,6 +186,7 @@ function WaitingTable({ c }: { c: ManageCandidates }) {
               <th title="per-share net price at mid, and the natural fill (sell at the bid, buy at the ask)">price</th>
               <th title="signed cash flow, whole position: a credit received is +">cash</th>
               <th title="a spread's max loss; a short put's loss at the name's 1st-percentile move over the holding period">risk</th>
+              <th title="a spread's chance of any loss / of the max loss, its break-even, and what getting in costs as a share of the credit">odds</th>
               <th title="buying power the position ties up">buying power</th>
               <th title="buying power used after taking it today, against the VIX-scaled cap">BP after</th>
               <th title="theta, whole position, dollars a day">θ / day</th>
@@ -196,6 +215,7 @@ function WaitingTable({ c }: { c: ManageCandidates }) {
                   </td>
                   <td className="num pnl-pos">{fmtCash(times(n, w.perUnit.cash))}</td>
                   <td className="num">{risk(w, n)}</td>
+                  <Odds c={w} />
                   <td className="num">{fmtMoney(times(n, w.perUnit.buyingPower))}</td>
                   <td>
                     {level ? (
@@ -223,7 +243,7 @@ function WaitingTable({ c }: { c: ManageCandidates }) {
       </div>
       {c.waitingTotal > c.waiting.length && (
         <p className="muted pf-caption">
-          the best {c.waiting.length} of {c.waitingTotal} waiting, by theta per dollar of buying power
+          the first {c.waiting.length} of {c.waitingTotal} waiting, by symbol
         </p>
       )}
     </>
@@ -238,8 +258,8 @@ function TooBig({ rows, total }: { rows: ManageCandidate[]; total: number }) {
     <details className="pf-too-big">
       <summary>
         {own.length === rows.length
-          ? `${total} that do not fit at even one contract${total > rows.length ? ` (the best ${rows.length} shown)` : ""}`
-          : `${own.length} more stopped by a cap on the trade itself${total > rows.length ? " (of the best shown)" : ""}`}
+          ? `${total} that do not fit at even one contract${total > rows.length ? ` (the first ${rows.length} by symbol shown)` : ""}`
+          : `${own.length} more stopped by a cap on the trade itself${total > rows.length ? " (of the first shown by symbol)" : ""}`}
       </summary>
       <ul>
         {own.map((c, i) => (
@@ -304,6 +324,12 @@ export function IncomeCard({ c: whole }: { c: ManageCandidates | null }) {
             {excluded ? ` · left out: ${excluded}` : ""}
             {c !== whole && ex ? ` · ex earnings: ${fmtMoney(ex.dollars)} of buying power treated as free (${ex.trades.join(", ")})` : ""}
           </p>
+          <p className="muted pf-caption" style={{ marginTop: 0 }}>
+            <strong>No tested edge.</strong> The 2026-10 credit-spread studies found no short strike, direction signal or exit
+            that earns after costs; a put spread short near 0.20 delta, long near 0.10, held to expiry was the least bad, and
+            closing at half the credit did worse than holding. Listed by symbol, never ranked. Call spreads are off: short
+            delta comes from the hedge when the book needs it.
+          </p>
           {c.fits.length > 0 ? (
             <FitsTable rows={c.fits} />
           ) : (
@@ -314,7 +340,7 @@ export function IncomeCard({ c: whole }: { c: ManageCandidates | null }) {
             </p>
           )}
           {c.fitsTotal > c.fits.length && (
-            <p className="muted pf-caption">the best {c.fits.length} of {c.fitsTotal} that fit, by theta per dollar of buying power</p>
+            <p className="muted pf-caption">the first {c.fits.length} of {c.fitsTotal} that fit, by symbol</p>
           )}
           <WaitingTable c={c} />
           <TooBig rows={c.tooBig} total={c.tooBigTotal} />

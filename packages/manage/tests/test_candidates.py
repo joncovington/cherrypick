@@ -119,14 +119,29 @@ def test_the_structures_follow_the_screener_rules():
     e = _entry()
     opts = candidates.priced_options(e, SESSION, 0.04)
     built = {s["kind"]: s for s in candidates.structures(e, opts, CFG, 0.0)}
-    assert set(built) == {"short_put", "put_spread", "call_spread"}  # no covered call without shares
+    # No covered call without shares, and no call spread unless switched on (2026-10-22).
+    assert set(built) == {"short_put", "put_spread"}
     ((sp, _),) = built["short_put"]["legs"]
     assert abs(sp["delta"]) == pytest.approx(0.16, abs=0.04)
     short, long_ = (o for o, _ in built["put_spread"]["legs"])
-    assert short["strike"] == 50.0 and long_["strike"] < 50.0  # short the first strike out of the money
-    assert abs(long_["delta"]) == pytest.approx(0.25, abs=0.04)
-    short, long_ = (o for o, _ in built["call_spread"]["legs"])
-    assert short["strike"] == 50.0 and long_["strike"] > 50.0
+    # The short nearest 0.20 delta out of the money, the long nearest 0.10 beyond it: the least-bad
+    # cell of the credit-spread studies, never the first strike out of the money (which tested worst).
+    assert short["strike"] < 50.0 and abs(short["delta"]) == pytest.approx(0.20, abs=0.04)
+    assert long_["strike"] < short["strike"] and abs(long_["delta"]) == pytest.approx(0.10, abs=0.04)
+    on = {**CFG, "call_spreads": True}
+    calls = {s["kind"]: s for s in candidates.structures(e, opts, on, 0.0)}["call_spread"]
+    short, long_ = (o for o, _ in calls["legs"])
+    assert short["strike"] > 50.0 and abs(short["delta"]) == pytest.approx(0.20, abs=0.04)
+    assert long_["strike"] > short["strike"]
+
+
+def test_a_ruleset_from_before_the_short_delta_keeps_the_first_strike_out_of_the_money():
+    e = _entry()
+    opts = candidates.priced_options(e, SESSION, 0.04)
+    old = {k: v for k, v in CFG.items() if k not in ("spread_short_delta", "call_spreads")}
+    built = {s["kind"]: s for s in candidates.structures(e, opts, {**old, "spread_long_delta": 0.25}, 0.0)}
+    assert {"put_spread", "call_spread"} <= set(built)
+    assert built["put_spread"]["legs"][0][0]["strike"] == 50.0  # at the money counted, as before
 
 
 def test_a_covered_call_only_on_held_shares_and_never_more_than_they_cover():
@@ -228,14 +243,14 @@ def test_an_illiquid_option_excludes_a_short_put_but_a_spread_is_judged_as_one_o
     # model's prices costs a few cents to trade as a spread, well under a tenth of its credit.
     out = _suggest({"AAA": _entry(passes=False)})
     assert out["excluded"]["a leg is illiquid or unquoted"] == 1 and not _rows(out, "short_put")
-    assert _rows(out, "put_spread") and _rows(out, "call_spread")
+    assert _rows(out, "put_spread")
 
 
 def test_a_spread_that_costs_too_much_to_trade_is_excluded():
-    # 60 cents wide a leg: mid less natural is 60 cents on a credit of about a dollar.
+    # 60 cents wide a leg: mid less natural is 60 cents, more than the spread's credit.
     out = _suggest({"AAA": _entry(spread=0.60)})
     assert not _rows(out, "put_spread") and not _rows(out, "call_spread")
-    assert out["excluded"]["a leg is illiquid or unquoted"] >= 2
+    assert out["excluded"]["a leg is illiquid or unquoted"] >= 1
 
 
 def test_a_spread_without_open_interest_on_a_leg_is_excluded():
@@ -256,15 +271,31 @@ def test_the_credit_floor_is_tested_at_the_working_price_not_the_mid():
     rules["portfolio"]["candidates"]["spread_min_credit"] = (pu["credit"] - 0.005) / width
     out = _suggest({"AAA": _entry()}, rules=rules)
     assert not [r for r in _rows(out, "put_spread") if not r["alternative_to"]]
-    assert out["excluded"]["credit under a third of the width"] >= 1
+    assert out["excluded"]["credit under the floor"] >= 1
 
 
-def test_a_spread_under_a_third_of_its_width_is_not_offered():
+def test_a_spread_under_a_configured_floor_is_not_offered_and_by_default_there_is_none():
     rules = copy.deepcopy(RULES)
     rules["portfolio"]["candidates"]["spread_min_credit"] = 0.99
     out = _suggest({"AAA": _entry()}, rules=rules)
-    assert out["excluded"]["credit under a third of the width"] == 2
+    assert out["excluded"]["credit under the floor"] == 1
     assert not _rows(out, "put_spread") and not _rows(out, "call_spread")
+    assert RULES["portfolio"]["candidates"]["spread_min_credit"] == 0.0
+    assert "credit under the floor" not in _suggest({"AAA": _entry()})["excluded"]
+
+
+def test_each_spread_states_its_odds_and_what_getting_in_costs():
+    row = next(r for r in _rows(_suggest({"AAA": _entry()}), "put_spread") if not r["alternative_to"])
+    odds, pu = row["odds"], row["per_unit"]
+    short, long_ = row["legs"]
+    # Between the short's and the long's chance of finishing in the money, the long's for max loss.
+    assert abs(long_["delta"]) <= odds["p_loss"] <= abs(short["delta"])
+    assert odds["p_max_loss"] == pytest.approx(abs(long_["delta"]), abs=1e-3)
+    assert odds["break_even"] == pytest.approx(short["strike"] - pu["working"], abs=0.01)
+    concession = (pu["credit"] - pu["working"]) * 100
+    assert odds["entry_cost"] > concession  # plus the opening fees
+    assert odds["entry_cost_share"] == pytest.approx(odds["entry_cost"] / pu["cash"], abs=1e-3)
+    assert _rows(_suggest({"AAA": _entry()}), "short_put")[0]["odds"] is None
 
 
 # --------------------------------------------------------------------------- per unit
@@ -459,23 +490,24 @@ def test_delta_band_blocks_a_trade_that_pushes_the_book_further_out():
 
 # --------------------------------------------------------------------------- what does not fit
 def test_a_spread_too_wide_for_the_account_is_offered_narrowed_on_the_same_short():
-    # $4,000: per-trade cap $120. The rule's spread (long at 0.25 delta, a few points wide) is over it.
-    out = _suggest({"AAA": _entry(strikes=[x / 2 for x in range(70, 131)])}, _book(net_liq=4_000.0))
+    # $2,000 at the 3% cap: $60. The rule's spread (0.20 short, 0.10 long, a few points wide) is over it.
+    out = _suggest({"AAA": _entry(strikes=[x / 2 for x in range(70, 131)])}, _book(net_liq=2_000.0))
     wide = next(r for r in out["too_big"] if r["kind"] == "put_spread" and r["alternative_to"] is None)
-    assert wide["binding"] == "per-trade risk" and wide["per_unit"]["max_loss"] > 120.0
+    assert wide["binding"] == "per-trade risk" and wide["per_unit"]["max_loss"] > 60.0
     alt = wide["alternative"]
     assert alt["alternative_to"] == "put_spread" and alt["units"] >= 1
     assert alt["legs"][0]["strike"] == wide["legs"][0]["strike"]  # the same short
-    assert alt["per_unit"]["max_loss"] <= 120.0 and alt["per_unit"]["credit"] >= 0.331 * (
-        alt["legs"][0]["strike"] - alt["legs"][1]["strike"]
-    )
+    assert alt["per_unit"]["max_loss"] <= 60.0 and alt["per_unit"]["credit"] > 0
     assert alt in out["fits"]
 
 
-def test_the_list_ranks_by_theta_per_dollar_of_buying_power():
-    out = _suggest({"AAA": _entry(), "BBB": _entry(iv=0.60)}, _book(net_liq=200_000.0))
-    ranks = [r["theta_per_bp"] for r in out["fits"]]
-    assert ranks == sorted(ranks, reverse=True)
+def test_the_list_is_by_symbol_never_a_ranking():
+    # No structure here has a tested edge, so the order says nothing about which is better.
+    out = _suggest(
+        {"ZZZ": _entry(iv=0.60), "AAA": _entry(), "MMM": _entry(iv=0.45)}, _book(net_liq=200_000.0)
+    )
+    names = [r["underlying"] for r in out["fits"]]
+    assert names == sorted(names) and {"AAA", "MMM", "ZZZ"} <= set(names)
 
 
 def test_the_switch_and_a_missing_reading():

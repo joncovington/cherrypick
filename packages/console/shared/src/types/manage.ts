@@ -621,6 +621,16 @@ export interface ManageCandidate {
   /** The account already holds an option on this name with this expiry (they settle together, and
    *  can make one structure no rule judged). False on an evaluation from before the badge. */
   heldSameExpiry: boolean;
+  /** A credit spread's odds at entry (`candidates.spread_odds`): the chance of any loss and of the max
+   *  loss, read from the legs' deltas, the break-even, and what getting in costs over the mid. Null
+   *  for anything but a spread, and on an evaluation from before 2026-10-22. */
+  odds: {
+    pLoss: number | null;
+    pMaxLoss: number | null;
+    breakEven: number | null;
+    entryCost: number | null;
+    entryCostShare: number | null;
+  } | null;
 }
 
 /** `ok`: under the VIX-scaled buying-power cap; `over`: within `bpWarnOver` of it; `far_over`: past that. */

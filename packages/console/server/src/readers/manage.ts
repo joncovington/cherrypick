@@ -889,6 +889,15 @@ function candidate(v: unknown, lev: Leveraged = NO_LEVERAGED): ManageCandidate {
     alternative: c["alternative"] ? candidate(c["alternative"], lev) : null,
     leveraged: lev.get(str(c["underlying"]) ?? "") ?? null,
     heldSameExpiry: c["held_same_expiry"] === true,
+    odds: c["odds"]
+      ? {
+          pLoss: num(rec(c["odds"])["p_loss"]),
+          pMaxLoss: num(rec(c["odds"])["p_max_loss"]),
+          breakEven: num(rec(c["odds"])["break_even"]),
+          entryCost: num(rec(c["odds"])["entry_cost"]),
+          entryCostShare: num(rec(c["odds"])["entry_cost_share"]),
+        }
+      : null,
     ifRoom: c["if_room"] ? candidateRoom(c["if_room"]) : null,
   };
 }

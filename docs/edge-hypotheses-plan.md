@@ -790,6 +790,20 @@ of the credit helps. Declared here before any of it is run.*
   and its two baselines, and the 200 sampled trades' daily chains, are a new fetch into the same store
   (`fetch-chains`), run only while no other session holds the ThetaData login. Results under
   `~/.cherrypick`, never in this repo.
+- **Result (2026-10-21), figures kept locally per the licence:**
+  - **Hold to expiry fails at every delta.** The signal's own net was negative in the first half and
+    it did not beat its random-date baselines in either. The least-bad cell was the 0.20-delta short.
+  - **Close at 50% else at 21 days:** not decided on the declared model yet: the 200-trade real-mark
+    check's fetch was held up, and is being completed. On the unvalidated model it fails as well.
+  - The metals row and the user's own traded names (a row added after declaration, reported only)
+    show nothing that changes this.
+  - **Departures from the text, written down before any option data was fetched:** the entries are
+    item 14's planner re-run with the 45-60-day window and its first two seeded baselines (read
+    literally, item 14's 30-45-day trades left too few with a 45-60-day monthly to reach a verdict);
+    the model's daily IV comes from the local Dolt volatility history, since `history.db`'s IV table
+    is empty, which leaves 2016-19 and funds unmodelled.
+  - **Decided:** manage's put spreads use the least-bad unconditioned cell, as declared
+    (`docs/income-review-plan.md`, item 2).
 
 ### 16. Put credit spreads on the funds the user trades: precious metals and bitcoin
 
@@ -832,6 +846,16 @@ of it is run.*
 - **Data:** a new fetch into item 14's store (`fetch-chains`): every entry session's chain and every
   later session's chain for each trade's expiry, about 70 monthly expiries a fund. Run only while no
   other session holds the ThetaData login. Results under `~/.cherrypick`, never in this repo.
+- **Result (2026-10-21), figures kept locally per the licence:**
+  - **GLD, SLV, GDX, GDXJ, SIL and SILJ fail in every cell.** GLD came closest, its return sitting
+    in one half (the 2024-25 gold rally), which is drift, not a repeatable edge.
+  - **BITO: no verdict** (too few trades in its second half, after entries whose parity forward
+    strayed from the close were dropped). IBIT reported only.
+  - **Closing at half the credit did worse than holding on every fund,** by far the most on SIL and
+    SILJ, where buying back across wide quotes is dear.
+  - **SILJ's entry quotes almost never clear the leg bars;** SIL never makes the tradable universe.
+  - **Decided:** each fund keeps "no tested edge" at its least-bad cell; manage's single rule (0.20
+    short, 0.10 long, held) covers them, and the live leg bars already mark SILJ thin.
 
 ## Not worth revisiting
 

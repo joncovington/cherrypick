@@ -385,8 +385,13 @@ the name's stress move. From it manage builds the screener rules' structures:
 
 - a short put near 0.16 delta (from 2026-10-19; it was the vendor's 0.40, which the short-put delta
   study found to be market exposure, not premium);
-- put and call credit spreads, short the first strike out of the money and long near 0.25 delta, at
-  a credit of at least a third of the width;
+- a put credit spread, short near 0.20 delta and long near 0.10, held to expiry, with no floor on the
+  credit (from 2026-10-22). The credit-spread studies (edge-hypotheses items 14-16) found no short
+  strike, direction signal or exit with an edge after costs; this was the least bad, and the first
+  strike out of the money it replaced was the worst. Each carries its odds -- the chance of any loss
+  and of the max loss from the legs' deltas, the break-even, and what getting in costs over the mid
+  -- and says it has no tested edge. Call spreads are off (`call_spreads`): they sell against equity
+  drift, and short delta comes from the hedge (`hedge.py`) when the book needs it;
 - a covered call near 0.16 delta, on its own expiry -- the monthly 30-45 days out (the covered-call
   study's least-bad window), else the cycle monthly -- on shares the account holds and has not
   already written against.
@@ -411,11 +416,12 @@ that clears every cap, all scaled by net liq:
 | one name's theta | under 25% of the theta the account may carry |
 
 Buying power follows the account kind: cash or an IRA secures a put at its strike, Reg T margin takes
-its formula, and portfolio margin is not modelled. The list is ranked by theta per dollar of buying
-power. A trade that does not fit is shown with the cap that stopped it. A short put or spread the rule
-built too wide is offered narrowed: the same short, and the widest long that keeps one unit under the
-per-trade cap and still takes a third of the width. Priced at mid from a day-old reading: re-quote
-before sending.
+its formula, and portfolio margin is not modelled. The list is by symbol (from 2026-10-22): with no
+tested edge, a ranking would read as one, and the theta-per-buying-power order before it favoured the
+near-the-money spreads most likely to lose. A trade that does not fit is shown with the cap that
+stopped it. A short put or spread the rule built too wide is offered narrowed: the same short, and the
+widest long that keeps one unit under the per-trade cap (and over `spread_min_credit`, 0 by default).
+Priced at mid from a day-old reading: re-quote before sending.
 
 **Waiting for room** (2026-10-20). A trade stopped only by how full the book already is -- buying
 power, the theta ceiling, or (from 2026-10-21) an expiry whose trades already hold more downside than

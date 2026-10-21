@@ -39,11 +39,11 @@ surfaces, flags and bug-level fixes that land when ready.
 | # | Item | Decision |
 |---|---|---|
 | 1 | Theta band | **Read without the expiring legs.** The band, the concentration rule and the candidates' theta cap read theta without legs two days or less from expiry; the raw figure is shown beside it. The band still fires its REVIEW and still caps candidates, on the figure that is not about to vanish. Done (`portfolio.theta.front_dte`, default 2). The delta band, scaled by theta, reads the same figure and is floored at the net-liq band, so thin theta never narrows it below the no-theta band. |
-| 2 | Spread construction | **Short by delta, side by direction.** The short at a target delta, starting at 0.30; a side is offered only when a direction read supports it (board count on that side; call spreads only on a short setup). The delta is set by a study over 0.20 / 0.25 / 0.30 on the local history before it lands, judged by edge after costs. |
-| 3 | Ranking and display | **Show the odds, rank by cost drag.** Each candidate shows P(loss) (≈ credit ÷ width), P(max loss) (≈ the long's delta), break-even and round-trip cost; ranked by lowest round-trip cost as a share of max loss. No drift assumption is built in. |
+| 2 | Spread construction | **Short by delta, side by direction.** The short at a target delta, starting at 0.30; a side is offered only when a direction read supports it (board count on that side; call spreads only on a short setup). The delta is set by a study over 0.20 / 0.25 / 0.30 on the local history before it lands, judged by edge after costs. **Decided 2026-10-22 after the studies (below):** no direction signal passed, so there is no side rule; put spreads only, short near 0.20 delta and long near 0.10, held to expiry, with no credit floor -- the least-bad cell -- each saying it has no tested edge. Call spreads are off (`call_spreads`); short delta comes from the hedge. Done. |
+| 3 | Ranking and display | **Show the odds, rank by cost drag.** Each candidate shows P(loss) (≈ credit ÷ width), P(max loss) (≈ the long's delta), break-even and round-trip cost; ranked by lowest round-trip cost as a share of max loss. No drift assumption is built in. **Decided 2026-10-22:** the odds are shown (`odds`, P(loss) read from the legs' deltas at the break-even); the cost-drag ranking is dropped, since the lowest cost drag sat at the strikes that lost most, and the list is by symbol. Done. |
 | 4 | Earnings on screener lists | **Earnings in the trade fails `passes`**, as manage's candidates already refuse it. The row stays listed and says why; an unknown date is marked, not failed. Found already done (2026-10-21): the own-list tab hides a trade with earnings in it by default ("No earnings in the trade", escaped by `?earnings=all`), and an unknown date stays shown, marked; the review's count read the raw list file, not the tab. `passes` stays the liquidity verdict it is. No change. |
 | 5 | Account fit on screener lists | **Badge and a "fits the account" filter**, on by default: cash-securable within buying power for a short put, shares held for a covered call. The full screen stays underneath. Done: manage judges each list trade against the account (`candidates.screen_fit`: a put's buying power at every strike within the lists' delta tolerance, cash-secured or Reg T, against the buying power available; the calls the uncovered shares allow) and the console looks the row up. An unjudged row stays shown. |
-| 6 | Credit-spreads tab | **Our own list**, built with the #2 rule over our universe and chains, as the short-put and covered-call tabs already are. Lands with or after #2. |
+| 6 | Credit-spreads tab | **Our own list**, built with the #2 rule over our universe and chains, as the short-put and covered-call tabs already are. Lands with or after #2. **Not built (2026-10-22):** with no selector passing, our own list would be a list of trades that lose after costs. Manage's put-spread candidates, sized to the account, are where spreads appear; the vendor's tab freezes after 10-24. |
 | 7 | Earnings exposure | **A portfolio card and a band**: downside summed by report date, and a REVIEW when total earnings downside passes a configurable share of net liq (default 10%). Done (`portfolio.earnings_exposure`; the ladder's earnings line gains `by_date`). |
 | 8 | Expiry concentration | **A REVIEW over a share**: one expiry's downside past a configurable share of net liq (default 20%) fires a REVIEW, and candidates prefer another expiry while it is over. Done (`portfolio.expiry_concentration`). The income reading carries one cycle monthly per name, so there is no other expiry to prefer: a candidate on an expiry already over its share waits instead (a room cap, `expiry concentration`). |
 | 9 | Leveraged and inverse ETFs | **Badged**, not excluded, on the lists and candidates. Done: from the declared list skate already leaves out (`technicals/leveraged_funds.json`: leveraged, inverse, volatility); each list row carries `leveraged`, and manage's candidates are badged from the session's own list rows. |
@@ -76,6 +76,19 @@ selector passed (the condition for a side rule and for our own list), no delta e
 the ranking #3 chose is contradicted. The odds #3 would show (P(loss), P(max loss), break-even, cost)
 do not depend on the study.
 
+**Two more studies followed (2026-10-21; edge-hypotheses items 15 and 16, declared first):**
+
+- **Item 15**, `mr-300m` -- the one directional signal that passed its historical confirmation --
+  on bullish put spreads on single names, shorts at 0.20, 0.30 and 0.40 delta, held or closed at
+  half the credit: **no cell passes.** It did not beat its random-date baselines.
+- **Item 16**, put spreads with no signal on the funds the user trades (GLD, SLV, GDX, GDXJ, SIL,
+  SILJ; BITO for bitcoin, IBIT reported): **no cell passes on any fund.** Closing at half the credit
+  did worse than holding on every fund. SILJ's entry quotes almost never clear the leg bars, and SIL
+  never makes the tradable universe.
+
+**Decided (2026-10-22):** #2 and #3 land as above, at one boundary; #6 is not built. SILJ's thin
+chain needs no special case: the live leg bars already mark it thin, and the lists hide it by default.
+
 ## Order
 
 1. #13–14 profile figures (done).
@@ -85,6 +98,7 @@ do not depend on the study.
 5. #4 (found done), #9 (done), #5 (done) on the screener lists.
 6. #7, #8 earnings and expiry exposure (done).
 7. #10 same-expiry badge (done).
-8. The spread delta study (done, 2026-10-21: no edge); #2, #3's ranking and #6 held for a decision.
+8. The spread delta study (done, 2026-10-21: no edge), then items 15 and 16 (done: no edge); #2 and
+   #3 landed together 2026-10-22 as the least-bad put spread with its odds, by symbol; #6 not built.
 
 Each is its own PR from its own worktree.

@@ -13,10 +13,14 @@ The structures, the Screeners lists' rules from 2026-10-19 (before, the vendor's
 measured as worse), on the user's cycle monthly:
 
 - a **short put** at the strike nearest `short_put_delta` (0.16);
-- a **put or call credit spread**: short the first strike out of the money, long the strike nearest
-  `spread_long_delta` (0.25) beyond it, offered only at a credit of `spread_min_credit` (a third) of
-  the width at the WORKING price (halfway from the mid to the natural fill; from 2026-10-19 -- over
-  seven sessions of cycle-monthly spreads 78% cleared a third at the mid and 62% at the natural);
+- a **put credit spread**: short the out-of-the-money strike nearest `spread_short_delta` (0.20), long
+  the strike nearest `spread_long_delta` (0.10) beyond it, held to expiry; a **call credit spread**
+  the same way only with `call_spreads` on (off by default). From 2026-10-22: the credit-spread
+  studies (edge-hypotheses items 14-16) found no short delta, direction signal or exit with an edge
+  after costs, and this was the least-bad cell; the first strike out of the money manage used before
+  tested worst, and closing at half the credit tested worse than holding. So each spread carries its
+  odds (`odds`) and says it has no tested edge. `spread_min_credit` (0 by default) is a floor on the
+  working credit as a share of the width; a third, before, admitted only near-the-money shorts;
 - a **covered call** at the strike nearest `covered_call_delta` (0.16), on its OWN expiry: the
   reading's `cc` block (the monthly 30-45 days out, else the cycle monthly), only on a name the account
   holds at least 100 shares of, never more contracts than the shares cover. Shares already written
@@ -55,11 +59,11 @@ by the morning: re-quote before sending.
 
 from __future__ import annotations
 
-import math
 import re
 from datetime import date
 from typing import Any
 
+from cherrypick.core import fees as _fees
 from cherrypick.core import legbars
 
 from cherrypick.manage import portfolio as _portfolio
@@ -177,14 +181,23 @@ def structures(
     for right in ("P", "C"):
         if ("put_spread" if right == "P" else "call_spread") not in kinds:
             continue
-        otm = [
-            o
-            for o in options
-            if o["right"] == right and (o["strike"] <= spot if right == "P" else o["strike"] >= spot)
-        ]
-        if not otm:
+        if right == "C" and not cfg.get("call_spreads", True):
             continue
-        short = max(otm, key=lambda o: o["strike"]) if right == "P" else min(otm, key=lambda o: o["strike"])
+        out_of_money = (lambda o: o["strike"] < spot) if right == "P" else (lambda o: o["strike"] > spot)
+        target = cfg.get("spread_short_delta")
+        if target is None:  # a ruleset from before 2026-10-22: the first strike out of the money
+            # (the at-the-money strike counted, as it always did)
+            at_or_out = (lambda o: o["strike"] <= spot) if right == "P" else (lambda o: o["strike"] >= spot)
+            otm = [o for o in options if o["right"] == right and at_or_out(o)]
+            if not otm:
+                continue
+            short = (
+                max(otm, key=lambda o: o["strike"]) if right == "P" else min(otm, key=lambda o: o["strike"])
+            )
+        else:
+            short = near_enough(_nearest(options, right, float(target), out_of_money), float(target))
+            if short is None:
+                continue
         k_short = short["strike"]
         beyond = (
             (lambda o, k=k_short: o["strike"] < k) if right == "P" else (lambda o, k=k_short: o["strike"] > k)
@@ -443,6 +456,38 @@ def size(
     return n, None
 
 
+def spread_odds(s: dict[str, Any], u: dict[str, Any], underlying: str) -> dict[str, Any] | None:
+    """A credit spread's odds at entry, to judge the reward against the risk -- none of it an edge:
+    - `p_loss`: the chance it finishes past its break-even, read from the legs' deltas (a delta is
+      about the chance an option finishes in the money), the break-even's interpolated between the
+      short's and the long's;
+    - `p_max_loss`: about the long's delta, the chance both legs finish in the money;
+    - `break_even`: the short strike less (a put) or plus (a call) the working credit;
+    - `entry_cost`: what getting in costs over the mid, whole-position dollars -- the working price's
+      concession plus the opening fees -- and `entry_cost_share` of the credit at the mid. Held to
+      expiry there is nothing more to pay unless a leg settles in the money ($5 a leg).
+    None for anything but a two-leg credit spread."""
+    if s["kind"] not in ("put_spread", "call_spread") or len(s["legs"]) != 2:
+        return None
+    (short, _), (long_, _) = s["legs"]
+    ks, kl = float(short["strike"]), float(long_["strike"])
+    ds, dl = abs(float(short["delta"])), abs(float(long_["delta"]))
+    working = u["working"]
+    be = ks - working if s["kind"] == "put_spread" else ks + working
+    width = abs(ks - kl)
+    frac = min(max((abs(ks - be)) / width, 0.0), 1.0) if width else 0.0
+    p_loss = ds + (dl - ds) * frac
+    cost = (u["credit"] - working) * MULTIPLIER + _fees.ic_open_fee(underlying, 1, legs=2, sell_legs=1)
+    credit_cash = u["credit"] * MULTIPLIER
+    return {
+        "p_loss": round(p_loss, 3),
+        "p_max_loss": round(dl, 3),
+        "break_even": round(be, 2),
+        "entry_cost": round(cost, 2),
+        "entry_cost_share": round(cost / credit_cash, 3) if credit_cash > 0 else None,
+    }
+
+
 def _describe(
     s: dict[str, Any],
     u: dict[str, Any],
@@ -452,6 +497,7 @@ def _describe(
     binding: str | None,
 ) -> dict[str, Any]:
     return {
+        "odds": spread_odds(s, u, underlying),
         "underlying": underlying,
         "kind": s["kind"],
         "alternative_to": s.get("alternative_to"),
@@ -630,7 +676,7 @@ def suggest(
             s["min_credit_share"] = float(cfg["spread_min_credit"])
             u = unit(s, entry, basis, scale)
             if u is None:
-                drop("credit under a third of the width")
+                drop("credit under the floor")
                 continue
             max_units = int(s.get("max_units", cfg["max_units"]))
             units, binding = size(u, book, sym, cfg, basis, max_units, expiry_full=full)
@@ -697,12 +743,15 @@ def suggest(
             if row:
                 row["held_same_expiry"] = row.get("expiry") in held_expiries.get(row["underlying"], ())
 
-    def rank(r: dict) -> float:
-        return r["theta_per_bp"] if r["theta_per_bp"] is not None else -math.inf
+    # By symbol, then structure (2026-10-22). No structure here has a tested edge, so any ranking
+    # would read as one; theta per dollar of buying power, the order before, favoured the
+    # near-the-money spreads most likely to lose.
+    def order(r: dict) -> tuple[str, str, str]:
+        return (r["underlying"], r["kind"], str(r.get("alternative_to") or ""))
 
-    fits.sort(key=rank, reverse=True)
-    too_big.sort(key=rank, reverse=True)
-    waiting.sort(key=rank, reverse=True)
+    fits.sort(key=order)
+    too_big.sort(key=order)
+    waiting.sort(key=order)
     net_liq = book.get("net_liq")
     used = book.get("buying_power_used")
     out = {
