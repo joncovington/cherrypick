@@ -321,6 +321,132 @@ describe("readManage", () => {
     expect(bare.candidates!.caps).toBeNull();
   });
 
+  it("an evaluation written before the wheel view has no wheel, never an empty one", () => {
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-14.json"), JSON.stringify(evalDoc("2026-10-14")));
+    const a = readManage(config).accounts[0]!;
+    expect(a.wheel).toBeNull();
+    expect(a.trades[0]!.wheel).toBeNull();
+  });
+
+  it("passes the wheel cycles and the wheel rules' notes through, keeping every null null", () => {
+    // A cycle as packages/manage's evaluator writes it (test_wheel_rules: a put sold alone, tested).
+    const doc = evalDoc("2026-10-20");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    acct["wheel"] = {
+      cycles: [
+        {
+          underlying: "XYZ", status: "open", reconciled: true, problems: [], flat: false, start: "2026-10-01",
+          start_known: true, end: null, days: 12, assignments: 0, called_away: 0, shares: 0.0, basis_known: true,
+          lots: [], open_options: [{ symbol: "XYZ 261120P00050000", leg: "2026-11-20 50P", quantity: -1.0 }],
+          credits: 100.0, debits: 0, net_cash: 100.0, fees: -1.1, net_premium: 100.0, dividends: 0.0,
+          tax_basis: null, wheel_basis: null, breakeven: { price: 49.011, basis: "put strike less net cash" },
+          option_pnl: { realised: 0.0, unrealised: -20.0 }, stock_pnl: { realised: 0.0, unrealised: 0.0 },
+          pnl_net: -21.1,
+          skate_yield: { value: -0.128, capped: false, capital: 5000.0, basis: "comparison figure: net P&L / time-weighted capital x 365 / days" },
+          events: [{ date: "2026-10-01", what: "open", legs: ["STO 1 2026-11-20 50P @ 1.00"], cash: 100.0, fees: -1.1 }],
+          today: [
+            {
+              leg: "2026-11-20 50P", symbol: "XYZ 261120P00050000", right: "P", strike: 50.0, expiration: "2026-11-20",
+              dte: 38, quantity: -1.0, spot: 50.0, mid: 1.2, open_price: 1.0, wide: null, tested: true,
+              intrinsic: 0.0, extrinsic: 1.2, extrinsic_dollars: 120.0, band: null,
+              band_missing: "no band for the name in the snapshot", beyond_band: null,
+              resting_btc: [{ order_id: 9, status: "Live", price: 0.1, quantity: 1, time_in_force: "GTC", legs: 1 }],
+              btc_price: 0.1, mark_at_or_under_btc: false,
+            },
+          ],
+          trade_ids: ["KO"],
+        },
+        {
+          underlying: "ABC", status: "unreconciled", reconciled: false,
+          problems: ["the history starts after the cycle did"], start: "2026-09-01", start_known: false, end: null,
+          days: null, shares: 100, basis_known: false, lots: [{ date: null, shares: 100, price: null, source: "before the history" }],
+          open_options: [], credits: null, debits: null, net_cash: null, fees: 0, net_premium: null, dividends: null,
+          tax_basis: null, wheel_basis: null, breakeven: null,
+          option_pnl: { realised: null, unrealised: null }, stock_pnl: { realised: null, unrealised: null },
+          pnl_net: null, skate_yield: { value: null, capped: false, capital: null, basis: "comparison figure" },
+          events: [], today: [], trade_ids: [],
+        },
+      ],
+      flagged: [{ underlying: "ABC", date: "2026-09-03", kind: "share delivery", row: "Receive Deliver 100 ABC" }],
+      outside: { ABC: ["2026-08-01: STO 1 ABC (no cycle running)"] },
+      bands_day: null,
+      bands_missing: "the snapshot carries no skate bands",
+      error: null,
+    };
+    const ko = (acct["trades"] as Array<Record<string, unknown>>)[0]!;
+    ko["wheel"] = [
+      {
+        underlying: "XYZ", start: "2026-10-01", status: "open",
+        take_profit: [{ leg: "2026-11-20 50P", mid: 1.2, btc_price: 0.03, source: "the default", hit: false }],
+        rolls: [
+          {
+            leg: "2026-11-20 50P", expiration: "2026-12-18", quoted_at: "2026-10-12T18:45:00Z", why: null,
+            net_zero: {
+              close_price: 1.2, open: { strike: 47.0, bid: 1.7, ask: 1.9, mid: 1.8 }, net: 0.6, expiration: "2026-12-18",
+              legs: ["BTC 1 2026-11-20 50P @ 1.20", "STO 1 2026-12-18 47P @ 1.80 (quoted 1.70/1.90)"],
+              check: { verdict: "ok", credit: 60, max_loss_before: 4850, max_loss_after: null, problems: [], notes: ["n"], after: ["-1 2026-12-18 47P"] },
+              check_error: null,
+            },
+            premium_gambit: null,
+            premium_gambit_why: "the price the short was sold at is unknown",
+          },
+        ],
+        next_leg: null,
+      },
+    ];
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-20.json"), JSON.stringify(doc));
+    const a = readManage(config).accounts[0]!;
+    const w = a.wheel!;
+    expect(w.error).toBeNull();
+    expect(w.bandsMissing).toBe("the snapshot carries no skate bands");
+    expect(w.flagged).toEqual([{ underlying: "ABC", date: "2026-09-03", kind: "share delivery", row: "Receive Deliver 100 ABC" }]);
+    expect(w.outside).toEqual({ ABC: ["2026-08-01: STO 1 ABC (no cycle running)"] });
+    const [xyz, abc] = w.cycles;
+    expect(xyz).toMatchObject({
+      underlying: "XYZ", status: "open", netCash: 100, fees: -1.1, netPremium: 100, pnlNet: -21.1, days: 12,
+      breakeven: { price: 49.011, basis: "put strike less net cash" }, tradeIds: ["KO"], basisKnown: true,
+    });
+    expect(xyz!.optionPnl).toEqual({ realised: 0, unrealised: -20 });
+    expect(xyz!.today[0]).toMatchObject({ tested: true, extrinsicDollars: 120, btcPrice: 0.1, markAtOrUnderBtc: false });
+    expect(xyz!.today[0]!.restingBtc[0]!.orderId).toBe("9");
+    // Nulls stay null: no basis with no shares, no band, an unset `wide` is not false.
+    expect(xyz!.taxBasis).toBeNull();
+    expect(xyz!.wheelBasis).toBeNull();
+    expect(xyz!.today[0]!.band).toBeNull();
+    expect(xyz!.today[0]!.beyondBand).toBeNull();
+    expect(xyz!.today[0]!.wide).toBeNull();
+    expect(abc).toMatchObject({ status: "unreconciled", reconciled: false, basisKnown: false, startKnown: false });
+    expect(abc!.problems).toEqual(["the history starts after the cycle did"]);
+    expect(abc!.credits).toBeNull();
+    expect(abc!.days).toBeNull();
+    expect(abc!.breakeven).toBeNull();
+    expect(abc!.stockPnl).toEqual({ realised: null, unrealised: null });
+    expect(abc!.pnlNet).toBeNull();
+    expect(abc!.skateYield!.value).toBeNull();
+    expect(abc!.lots[0]).toEqual({ date: null, shares: 100, price: null, source: "before the history" });
+    // The trade's wheel notes: the rolls with their check-roll verdicts.
+    const note = a.trades[0]!.wheel![0]!;
+    expect(note.takeProfit![0]).toEqual({ leg: "2026-11-20 50P", mid: 1.2, btcPrice: 0.03, source: "the default", hit: false });
+    const roll = note.rolls![0]!;
+    expect(roll.netZero!.check).toMatchObject({ verdict: "ok", credit: 60, maxLossBefore: 4850, maxLossAfter: null });
+    expect(roll.netZero!.open).toEqual({ strike: 47, bid: 1.7, ask: 1.9, mid: 1.8 });
+    expect(roll.premiumGambit).toBeNull();
+    expect(roll.premiumGambitWhy).toBe("the price the short was sold at is unknown");
+    expect(roll.netZeroWhy).toBeNull();
+    expect(note.nextLeg).toBeNull();
+    expect(a.trades[1]!.wheel).toBeNull();
+  });
+
+  it("an account with no wheel view says why", () => {
+    const doc = evalDoc("2026-10-20");
+    (doc["accounts"] as Array<Record<string, unknown>>)[0]!["wheel"] = { cycles: [], error: "no trade history in this snapshot" };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-20.json"), JSON.stringify(doc));
+    const w = readManage(config).accounts[0]!.wheel!;
+    expect(w.cycles).toEqual([]);
+    expect(w.error).toBe("no trade history in this snapshot");
+    expect(w.bandsMissing).toBeNull();
+  });
+
   it("reads an older session when asked", () => {
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-13.json"), JSON.stringify(evalDoc("2026-10-13")));
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-14.json"), "{not json");

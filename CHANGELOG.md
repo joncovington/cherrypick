@@ -11,12 +11,20 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: the console's wheel tab.** Live → wheel sits beside positions and portfolio and reads the
+  same evaluation: one card per wheel cycle manage follows, with its status (an unreconciled cycle
+  lists why and gets no wheel rule), days in the cycle, net cash and net premium, tax and wheel basis
+  (shares older than the history read "unknown", never a number), breakeven, option and stock P&L
+  apart and realised and unrealised apart, net P&L, the skate yield as a comparison figure, today's
+  check on each open short, and the wheel rules fired on its trades with the roll candidates and
+  their check-roll verdicts. Tested, at-or-under-the-buy-to-close and beyond-the-band are manage's
+  flags, never worked out on the page. An account with no wheel running says so, and why when the
+  view could not be built.
 - **Fixed: `check-roll` skipped the per-trade budget for any trade whose shares are held.** #473
   rightly stopped counting a covered call's shares against the roll, but dropped the budget for a
   short put rolled on the same name too. With shares held it now judges the short puts alone,
   measured from today's model value (as `risk.oversize` measures downside), and says so; a
   covered-call-only roll still has nothing to judge.
-
 - **Added: the manage snapshot carries the held names' skate bands.** Snapshot v12's `skate_bands`
   is the newest skate band file at most three trading sessions behind the session, cut to the names
   the account holds and to what manage reads: the band day's close, each row's side, expiry and

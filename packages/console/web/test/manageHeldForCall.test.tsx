@@ -58,6 +58,7 @@ function trade(over: Partial<ManageTrade>): ManageTrade {
     profile: null,
     earningsTrade: null,
     heldForEarnings: [],
+    wheel: null,
     ...over,
   };
 }

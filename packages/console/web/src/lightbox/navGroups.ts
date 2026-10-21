@@ -295,11 +295,13 @@ export type GexSlideId = (typeof GEX_SLIDES)[number]["id"];
 // `today` (2026-10-15): every live loop on one page, first. Then the account-wide views from the
 // manage evaluation (2026-10-18: `manage` split into `positions`, each trade's action, and
 // `portfolio`, the account as one book), then each live loop's tab, named for its module (flies'
-// was `today` until the summary took the name back the same day).
+// was `today` until the summary took the name back the same day). `wheel` (2026-10-20) is the third
+// account-wide view: each wheel cycle the evaluation follows.
 export const LIVE_SLIDES = [
   { id: "today", label: "today" },
   { id: "positions", label: "positions" },
   { id: "portfolio", label: "portfolio" },
+  { id: "wheel", label: "wheel" },
   { id: "flies", label: "flies" },
   { id: "meic", label: "meic" },
 ] as const satisfies readonly NavSlide[];

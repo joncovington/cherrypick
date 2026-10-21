@@ -617,8 +617,8 @@ of the last evening pass, tomorrow's artifact, the queue and the last concluded.
 experiments tab opens with the cross-module roll-up. Module slides are read-only; kill/dismiss stay on
 the Advisor page only.
 
-**Live** (`/live`, `lightbox/manifests/LiveLightbox.tsx`, `pages/Live/`) — five tabs: `today` (where
-`/live` lands), the account-wide `positions` and `portfolio`, and one per live loop with a page of its
+**Live** (`/live`, `lightbox/manifests/LiveLightbox.tsx`, `pages/Live/`) — six tabs: `today` (where
+`/live` lands), the account-wide `positions`, `portfolio` and `wheel`, and one per live loop with a page of its
 own (`flies`, `meic`; each hidden when that module's live switch is off and the loop is idle, see *What is off*). The
 `flies` tab is the pilot's day over `GET /api/live/flies` (`routes/live.ts` → `readers/fliesLive.ts`), composing existing readers
 (`services/liveLock`, `readFliesLoopStatus`, `readFliesJournal`, `readFliesAnalytics`) plus settled
@@ -711,6 +711,23 @@ weighting manage used, and a card manage wrote no reading for is not drawn. `Inc
 manage's sized income trades in the package's own ranking (never re-sorted here), money in the suite's
 layout. Risk is the figure the per-trade cap was applied to: a short put's stress loss, never its
 strike. The card always says the prices are a day old and to re-quote before sending.
+
+**The Live page's `wheel` tab** (2026-10-20, `pages/Live/WheelCards.tsx`) is the third view of the
+same evaluation: the account's `wheel` (packages/manage `wheel.py`, docs/skate-plan.md step 5), one
+card per cycle. Like its siblings it never leaves the rail (there is no manage switch in the features
+reply; the shared header says when no evaluation exists). The reader passes `wheel` and each trade's
+`wheel` notes through with every null kept null; an evaluation written before the view has
+`wheel: null` and the tab says so, and an account with no cycle states "no wheel running" with the
+view's `error` when it has one. A card shows status (an unreconciled cycle lists its problems and
+gets **no wheel rule**, only "check it by hand"), days, the money in the suite's layout (signed cash,
+fees a cost shown once, the bases and breakeven per share and labelled so), option and stock P&L
+apart, realised and unrealised apart, `pnl_net`, the skate yield as a comparison figure, today's
+check per open short, and the `wheel.*` rules fired on the trades in `trade_ids` with their roll
+candidates and check-roll verdicts. **`basis_known: false` reads "unknown, shares predate the
+history", never a number. "Tested", "at or under the buy-to-close" and "beyond the band" are
+manage's flags**, never worked out from a price and a strike: `web/test/wheelCards.test.tsx` gives a
+flag that disagrees with the arithmetic both ways and was shown to fail against a re-derived chip.
+The shared pieces of the three tabs (action chip, detail card, rows) are in `manageParts.tsx`.
 
 **There is no Overview page** (removed 2026-10-16): `/` redirects to `/live`, whose `today` tab is
 the every-loop summary. The morning phase chip moved to the status bar and the alert-daemon chip to
