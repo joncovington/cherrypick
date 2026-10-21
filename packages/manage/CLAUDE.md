@@ -15,7 +15,7 @@ the XSP hedge chain, the quoted chain of each expiry holding a short strangle, t
 for each option leg held and the day's orders, all read-only; and from local files the income reading
 and the held names' skate bands, copied as the band file states them, which `wheel.py` moves to
 today's price, and each long call's entry-day close with the name's dividends and splits from the
-technicals end-of-day store, which `pmcc.py` solves the long's delta at entry from), which then runs
+technicals history store, which `pmcc.py` solves the long's delta at entry from), which then runs
 this package by subprocess. Nothing here places, closes, rolls or sizes an order, and no loop may
 import it. The closing order an evaluation lists is what a person would enter, priced at mid.
 

@@ -335,7 +335,7 @@ Jan 2027) has the shape but was entered as a diagonal, and stays one. What it ad
   the purchase predates the history).
 - **The entry-day close comes from the snapshot.** Snapshot v13's `underlying_history` copies, for each
   name holding a long call, the close on each day the history shows it bought, and the dividends and
-  splits around those days, from the technicals end-of-day store. The yield is the dividends gone ex
+  splits around those days, from the technicals history store (`history.db`, every tradable name; `eod.db` holds only the report's). The yield is the dividends gone ex
   in the year to the day over the close; today's, the same over today's price. A close not landed yet,
   a split since, or a fill no volatility prices leaves the delta at entry **unknown**, which does not
   recognise. TLT's long, solved this way, was entered at 0.45 delta (79.32 close, 6.22 fill, ~4.9%

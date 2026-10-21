@@ -32,7 +32,7 @@ beyond the latest release.
 - **Added: the manage snapshot carries the long calls' entry-day closes.** Snapshot v13's
   `underlying_history`, for each name holding a long call: the close on each day the history shows
   it bought, and the dividends and splits around those days, read-only from the technicals
-  end-of-day store. A close not landed yet is absent and manage says the delta at entry is unknown;
+  history store (every tradable name, not only the market report's). A close not landed yet is absent and manage says the delta at entry is unknown;
   a missing store is `null` with `underlying_history_error`.
 - **Added: the console's wheel tab.** Live → wheel sits beside positions and portfolio and reads the
   same evaluation: one card per wheel cycle manage follows, with its status (an unreconciled cycle

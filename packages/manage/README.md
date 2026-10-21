@@ -237,7 +237,7 @@ rules in the table above read it.
   (short Jan 2027) is not one: its short is too far out.
 - **Recognition.** Shape alone does not make a PMCC. The long must have been entered at 0.80 delta or
   more, solved from its opening fill and that day's close (snapshot v13's `underlying_history`, from
-  the technicals end-of-day store) with the dividend yield carried: the dividends gone ex in the year
+  the technicals history store) with the dividend yield carried: the dividends gone ex in the year
   before, over the close. Without the yield a long-dated call on a high-yield fund reads as all
   intrinsic, a delta of 1. A delta the snapshot cannot solve (no close for the day yet, a split since,
   a fill no volatility prices) is **unknown**, and an unknown delta recognises nothing.

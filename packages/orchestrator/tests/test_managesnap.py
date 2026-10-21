@@ -34,7 +34,7 @@ def _fake(monkeypatch, answers):
     monkeypatch.setattr(managesnap, "income_dir", lambda: Path("no-such-income-dir"))
     monkeypatch.setattr(managesnap, "earnings_times_dir", lambda: Path("no-such-times-dir"))
     monkeypatch.setattr(managesnap, "skate_dir", lambda: Path("no-such-skate-dir"))
-    monkeypatch.setattr(managesnap, "eod_db", lambda: Path("no-such-eod.db"))
+    monkeypatch.setattr(managesnap, "history_db", lambda: Path("no-such-history.db"))
     # Nor the real home's stream cache.
     monkeypatch.setattr(managesnap, "_cached_greeks", lambda syms: {})
     monkeypatch.setattr(cfgmod, "enabled_modules", lambda cfg: {"meic": {"path": "."}})
@@ -602,7 +602,7 @@ def test_the_wheel_check_reads_the_copied_band_moved_to_todays_price(tmp_path):
 
 
 # --------------------------------------------------------------------------- underlying history (v13)
-def _eod(path, bars=(), dividends=(), splits=()):
+def _store(path, bars=(), dividends=(), splits=()):
     import sqlite3
 
     conn = sqlite3.connect(path)
@@ -653,8 +653,8 @@ OPENED = {
 
 
 def test_the_long_call_s_entry_close_dividends_and_splits_are_copied(tmp_path):
-    db = _eod(
-        tmp_path / "eod.db",
+    db = _store(
+        tmp_path / "history.db",
         bars=[
             ("XYZ", "2026-09-01", 47.0),
             ("XYZ", "2026-09-24", 49.0),
@@ -685,16 +685,49 @@ def test_the_long_call_s_entry_close_dividends_and_splits_are_copied(tmp_path):
 
 
 def test_a_long_bought_before_the_store_s_last_bar_has_no_close_and_says_nothing_else(tmp_path):
-    db = _eod(tmp_path / "eod.db", bars=[("XYZ", "2026-09-24", 49.0)])
+    db = _store(tmp_path / "history.db", bars=[("XYZ", "2026-09-24", 49.0)])
     got, error = managesnap.underlying_history(date(2026, 10, 19), HELD, OPENED, db)
     assert error is None and got["XYZ"]["closes"] == {} and got["XYZ"]["dividends"] == []
 
 
 def test_a_missing_store_is_recorded_not_fatal(tmp_path):
     got, error = managesnap.underlying_history(date(2026, 10, 19), HELD, OPENED, tmp_path / "none.db")
-    assert got is None and "no end-of-day store" in error
+    assert got is None and "no history store" in error
     # No long call held: nothing is wanted, so nothing is read and nothing is wrong.
     got, error = managesnap.underlying_history(
         date(2026, 10, 19), {"accounts": []}, OPENED, tmp_path / "none.db"
     )
     assert got == {} and error is None
+
+
+def test_a_name_only_the_history_store_holds_is_resolved(monkeypatch, tmp_path):
+    """The end-of-day store holds only the market report's names; the history store holds every
+    tradable one. With both on disk under the technicals home, a name only the history store has (as
+    IVV, FXI and BRK.B were on 2026-10-19) still gets its close, and BRK/B finds the store's BRK.B."""
+    monkeypatch.setenv("TECHNICALS_DATA_DIR", str(tmp_path))
+    _store(tmp_path / "eod.db", bars=[("SPY", "2026-09-25", 650.0)])
+    _store(
+        tmp_path / "history.db",
+        bars=[("XYZ", "2026-09-25", 50.0), ("BRK.B", "2026-09-25", 480.0)],
+        dividends=[("XYZ", "2026-09-01", 0.50)],
+    )
+    brk = "BRK/B 290119C00400000"
+    held = {
+        "accounts": [
+            {
+                "underlyings": [
+                    *HELD["accounts"][0]["underlyings"],
+                    {"underlying": "BRK/B", "legs": [{"symbol": brk, "right": "C", "quantity": 1.0}]},
+                ]
+            }
+        ]
+    }
+    opened = {
+        **OPENED,
+        "BRK/B": [{"action": "Buy to Open", "symbol": brk, "executed_at": "2026-09-25T15:00:00Z"}],
+    }
+    assert managesnap.history_db() == tmp_path / "history.db"
+    got, error = managesnap.underlying_history(date(2026, 10, 19), held, opened)
+    assert error is None
+    assert got["XYZ"]["closes"] == {"2026-09-25": 50.0} and got["XYZ"]["dividends"] == [["2026-09-01", 0.5]]
+    assert got["BRK/B"]["store_symbol"] == "BRK.B" and got["BRK/B"]["closes"] == {"2026-09-25": 480.0}

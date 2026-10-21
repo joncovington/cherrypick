@@ -82,7 +82,10 @@ stale or unreadable file is `skate_bands: null` with `skate_bands_error` saying 
 
 Version 13 carries `underlying_history` for each name holding a long call: the underlying's close on
 every day the history shows that call bought to open, and its dividends and splits around those days,
-read-only from the technicals end-of-day store (`technicals/eod.db`, Dolt's raw bars as last landed).
+read-only from the technicals history store (`technicals/history.db`, Dolt's raw daily bars for every
+tradable name from 2015, topped up daily). Not the end-of-day store `eod.db`: that holds only the
+market report's names, and on 2026-10-19 52 of 458 tradable names had no bars there (IVV, FXI, BRK.B
+among them), the reason the income stress reading moved to the history store too (#440).
 manage's PMCC view (docs/skate-plan.md step 6) solves the long's delta at entry from its opening fill
 and that day's close, carrying the dividend yield (the dividends gone ex in the year before, over the
 close), and today's from the same dividends over today's price. The store's raw dividend table is
@@ -527,11 +530,16 @@ def skate_bands(session: date, symbols: list[str], folder=None) -> tuple[dict[st
     }, None
 
 
-def eod_db():
+def history_db():
     from cherrypick.core import home
 
-    # technicals' own end-of-day store (`technicals.paths.eod_db`), override included.
-    return home.data_dir("technicals", env="TECHNICALS_DATA_DIR") / "eod.db"
+    # technicals' history store (`technicals.paths.history_db`), override included.
+    return home.data_dir("technicals", env="TECHNICALS_DATA_DIR") / "history.db"
+
+
+def _store_spellings(name: str) -> tuple[str, ...]:
+    """The broker's spelling first (BRK/B), then the store's (BRK.B), as `technicals.skate._spellings`."""
+    return tuple(dict.fromkeys((name, name.replace("/", "."), name.replace(".", "/"))))
 
 
 def _long_call_openings(positions: dict[str, Any], history: dict[str, list]) -> dict[str, set[str]]:
@@ -561,15 +569,16 @@ def underlying_history(
 ) -> tuple[dict[str, Any] | None, str | None]:
     """For each name holding a long call: its close on each day a held long call was bought to open,
     its dividends from a year before the earliest of those days to the session, and its splits since
-    that day. Read-only; the store's own spelling (BRK.B) is tried after the broker's (BRK/B)."""
+    that day, from the history store. Read-only; the store's own spelling (BRK.B) is tried after the
+    broker's (BRK/B)."""
     from cherrypick.core.db import connect_ro
 
     wanted = _long_call_openings(positions, history)
     if not wanted:
         return {}, None
-    path = eod_db() if db is None else db
+    path = history_db() if db is None else db
     if not path.exists():
-        return None, f"no end-of-day store at {path.name} (python -m cherrypick.technicals land)"
+        return None, f"no history store at {path.name} (python -m cherrypick.technicals history land)"
     try:
         conn = connect_ro(path)
     except Exception as exc:  # noqa: BLE001 -- a missing input, never a missing snapshot
@@ -579,7 +588,7 @@ def underlying_history(
         for name, days in sorted(wanted.items()):
             first = min(days)
             since = (date.fromisoformat(first) - timedelta(days=366)).isoformat()
-            for store_sym in dict.fromkeys((name, name.replace("/", "."))):
+            for store_sym in _store_spellings(name):
                 closes = {
                     r["date"]: r["close"]
                     for r in conn.execute(
