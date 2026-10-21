@@ -30,6 +30,14 @@ import type {
   ManageOrder,
   ManagePayload,
   ManageTrade,
+  ManageWheel,
+  ManageWheelCheck,
+  ManageWheelCycle,
+  ManageWheelNextLeg,
+  ManageWheelNote,
+  ManageWheelQuote,
+  ManageWheelRoll,
+  ManageWheelRolls,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num } from "./db.js";
@@ -239,6 +247,210 @@ function trade(v: unknown): ManageTrade {
         }
       : null,
     heldForEarnings: arr(t["held_for_earnings"]).map(fired),
+    wheel: Array.isArray(t["wheel"]) ? t["wheel"].map(wheelNote) : null,
+  };
+}
+
+/* ------------------------------------------------------------------ the wheel view (wheel.py) */
+
+/** A boolean flag manage set, or null where it set none: never a guessed false. */
+function flag(v: unknown): boolean | null {
+  return typeof v === "boolean" ? v : null;
+}
+
+/** An id the broker may write as a number or a string. */
+function ident(v: unknown): string | null {
+  return typeof v === "number" && Number.isFinite(v) ? String(v) : str(v);
+}
+
+function quote(v: unknown): ManageWheelQuote | null {
+  if (v === null || v === undefined) return null;
+  const q = rec(v);
+  return { strike: num(q["strike"]), bid: num(q["bid"]), ask: num(q["ask"]), mid: num(q["mid"]) };
+}
+
+function wheelRoll(v: unknown): ManageWheelRoll | null {
+  if (v === null || v === undefined) return null;
+  const r = rec(v);
+  const c = r["check"] === null || r["check"] === undefined ? null : rec(r["check"]);
+  return {
+    closePrice: num(r["close_price"]),
+    open: quote(r["open"]),
+    net: num(r["net"]),
+    expiration: str(r["expiration"]),
+    legs: strs(r["legs"]),
+    check: c
+      ? {
+          verdict: str(c["verdict"]),
+          credit: num(c["credit"]),
+          maxLossBefore: num(c["max_loss_before"]),
+          maxLossAfter: num(c["max_loss_after"]),
+          shapeBefore: str(c["shape_before"]),
+          shapeAfter: str(c["shape_after"]),
+          problems: strs(c["problems"]),
+          notes: strs(c["notes"]),
+          after: strs(c["after"]),
+        }
+      : null,
+    checkError: str(r["check_error"]),
+  };
+}
+
+function wheelRolls(v: unknown): ManageWheelRolls {
+  const r = rec(v);
+  return {
+    leg: str(r["leg"]) ?? "?",
+    expiration: str(r["expiration"]),
+    quotedAt: str(r["quoted_at"]),
+    why: str(r["why"]),
+    netZero: wheelRoll(r["net_zero"]),
+    netZeroWhy: str(r["net_zero_why"]),
+    premiumGambit: wheelRoll(r["premium_gambit"]),
+    premiumGambitWhy: str(r["premium_gambit_why"]),
+  };
+}
+
+function nextLeg(v: unknown): ManageWheelNextLeg | null {
+  if (v === null || v === undefined) return null;
+  const n = rec(v);
+  return {
+    strike: num(n["strike"]),
+    band: num(n["band"]),
+    bandKind: str(n["band_kind"]),
+    expiration: str(n["expiration"]),
+    why: str(n["why"]),
+    quote: quote(n["quote"]),
+    contracts: num(n["contracts"]),
+    belowWheelBasis: flag(n["below_wheel_basis"]),
+  };
+}
+
+function wheelNote(v: unknown): ManageWheelNote {
+  const n = rec(v);
+  return {
+    underlying: str(n["underlying"]) ?? "?",
+    start: str(n["start"]),
+    status: str(n["status"]),
+    problems: Array.isArray(n["problems"]) ? strs(n["problems"]) : null,
+    takeProfit: Array.isArray(n["take_profit"])
+      ? n["take_profit"].map((raw) => {
+          const t = rec(raw);
+          return { leg: str(t["leg"]) ?? "?", mid: num(t["mid"]), btcPrice: num(t["btc_price"]), source: str(t["source"]), hit: flag(t["hit"]) };
+        })
+      : null,
+    rolls: Array.isArray(n["rolls"]) ? n["rolls"].map(wheelRolls) : null,
+    nextLeg: nextLeg(n["next_leg"]),
+  };
+}
+
+function wheelCheck(v: unknown): ManageWheelCheck {
+  const c = rec(v);
+  const band = c["band"] === null || c["band"] === undefined ? null : rec(c["band"]);
+  const beyond = c["beyond_band"] === null || c["beyond_band"] === undefined ? null : rec(c["beyond_band"]);
+  return {
+    leg: str(c["leg"]) ?? str(c["symbol"]) ?? "?",
+    symbol: str(c["symbol"]) ?? "?",
+    right: str(c["right"]),
+    strike: num(c["strike"]),
+    expiration: str(c["expiration"]),
+    dte: num(c["dte"]),
+    quantity: num(c["quantity"]),
+    spot: num(c["spot"]),
+    mid: num(c["mid"]),
+    openPrice: num(c["open_price"]),
+    wide: flag(c["wide"]),
+    tested: flag(c["tested"]),
+    intrinsic: num(c["intrinsic"]),
+    extrinsic: num(c["extrinsic"]),
+    extrinsicDollars: num(c["extrinsic_dollars"]),
+    band: band ? { day: str(band["day"]), shift: num(band["shift"]), fixed: num(band["fixed"]), byExpiry: num(band["by_expiry"]) } : null,
+    bandMissing: str(c["band_missing"]),
+    beyondBand: beyond ? { fixed: flag(beyond["fixed"]), byExpiry: flag(beyond["by_expiry"]) } : null,
+    restingBtc: arr(c["resting_btc"]).map((raw) => {
+      const r = rec(raw);
+      return {
+        orderId: ident(r["order_id"]),
+        status: str(r["status"]),
+        price: num(r["price"]),
+        quantity: num(r["quantity"]),
+        timeInForce: str(r["time_in_force"]),
+        legs: num(r["legs"]),
+      };
+    }),
+    btcPrice: num(c["btc_price"]),
+    markAtOrUnderBtc: flag(c["mark_at_or_under_btc"]),
+  };
+}
+
+function pnlPair(v: unknown): { realised: number | null; unrealised: number | null } {
+  const p = rec(v);
+  return { realised: num(p["realised"]), unrealised: num(p["unrealised"]) };
+}
+
+function wheelCycle(v: unknown): ManageWheelCycle {
+  const c = rec(v);
+  const be = c["breakeven"] === null || c["breakeven"] === undefined ? null : rec(c["breakeven"]);
+  const y = c["skate_yield"] === null || c["skate_yield"] === undefined ? null : rec(c["skate_yield"]);
+  return {
+    underlying: str(c["underlying"]) ?? "?",
+    status: str(c["status"]) ?? "?",
+    reconciled: flag(c["reconciled"]),
+    problems: strs(c["problems"]),
+    flat: flag(c["flat"]),
+    start: str(c["start"]),
+    startKnown: flag(c["start_known"]),
+    end: str(c["end"]),
+    days: num(c["days"]),
+    assignments: num(c["assignments"]),
+    calledAway: num(c["called_away"]),
+    shares: num(c["shares"]),
+    basisKnown: flag(c["basis_known"]),
+    lots: arr(c["lots"]).map((raw) => {
+      const l = rec(raw);
+      return { date: str(l["date"]), shares: num(l["shares"]), price: num(l["price"]), source: str(l["source"]) };
+    }),
+    openOptions: arr(c["open_options"]).map((raw) => {
+      const o = rec(raw);
+      return { symbol: str(o["symbol"]) ?? "?", leg: str(o["leg"]) ?? str(o["symbol"]) ?? "?", quantity: num(o["quantity"]) };
+    }),
+    credits: num(c["credits"]),
+    debits: num(c["debits"]),
+    netCash: num(c["net_cash"]),
+    fees: num(c["fees"]),
+    netPremium: num(c["net_premium"]),
+    dividends: num(c["dividends"]),
+    taxBasis: num(c["tax_basis"]),
+    wheelBasis: num(c["wheel_basis"]),
+    breakeven: be ? { price: num(be["price"]), basis: str(be["basis"]) } : null,
+    optionPnl: pnlPair(c["option_pnl"]),
+    stockPnl: pnlPair(c["stock_pnl"]),
+    pnlNet: num(c["pnl_net"]),
+    skateYield: y ? { value: num(y["value"]), capped: flag(y["capped"]), capital: num(y["capital"]), basis: str(y["basis"]) } : null,
+    events: arr(c["events"]).map((raw) => {
+      const e = rec(raw);
+      return { date: str(e["date"]), what: str(e["what"]) ?? "?", legs: strs(e["legs"]), cash: num(e["cash"]), fees: num(e["fees"]) };
+    }),
+    today: arr(c["today"]).map(wheelCheck),
+    tradeIds: strs(c["trade_ids"]),
+  };
+}
+
+/** The account's wheel view, passed through. Null when the evaluation carries no `wheel` key. */
+function wheel(v: unknown): ManageWheel | null {
+  if (v === null || v === undefined) return null;
+  const w = rec(v);
+  const outside: Record<string, string[]> = {};
+  for (const [k, rows] of Object.entries(rec(w["outside"]))) outside[k] = strs(rows);
+  return {
+    cycles: arr(w["cycles"]).map(wheelCycle),
+    flagged: arr(w["flagged"]).map((raw) => {
+      const f = rec(raw);
+      return { underlying: str(f["underlying"]) ?? "?", date: str(f["date"]), kind: str(f["kind"]) ?? "?", row: str(f["row"]) };
+    }),
+    outside,
+    bandsDay: str(w["bands_day"]),
+    bandsMissing: str(w["bands_missing"]),
+    error: str(w["error"]),
   };
 }
 
@@ -573,6 +785,7 @@ function account(v: unknown, rules: Record<string, unknown>): ManageAccount {
       return { underlying: str(e["underlying"]) ?? "?", legs: num(e["legs"]) ?? 0, reason: str(e["reason"]) ?? "" };
     }),
     portfolio: portfolio(a["portfolio"], rules),
+    wheel: wheel(a["wheel"]),
   };
 }
 

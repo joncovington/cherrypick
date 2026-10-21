@@ -121,6 +121,176 @@ export interface ManageTrade {
   earningsTrade: { report: string; timeOfDay: string | null; leadDays: number | null; passed: boolean } | null;
   /** Before the call, the rules that would have acted and are waiting for it. */
   heldForEarnings: ManageFired[];
+  /** The wheel rules' notes, one per wheel cycle holding this trade's legs (`trade.wheel`); null on a
+   *  trade no cycle holds, and on an evaluation written before the wheel rules (2026-10-20). */
+  wheel: ManageWheelNote[] | null;
+}
+
+/* ------------------------------------------------------------------ the wheel view (wheel.py) */
+
+/** One quoted strike on the roll's later expiry, per share. */
+export interface ManageWheelQuote {
+  strike: number | null;
+  bid: number | null;
+  ask: number | null;
+  mid: number | null;
+}
+
+/** check-roll's verdict on one wheel roll (packages/manage `rollcheck.check`). */
+export interface ManageWheelRollCheck {
+  verdict: string | null;
+  /** Whole-position dollars, signed: + received. */
+  credit: number | null;
+  maxLossBefore: number | null;
+  maxLossAfter: number | null;
+  shapeBefore: string | null;
+  shapeAfter: string | null;
+  problems: string[];
+  notes: string[];
+  after: string[];
+}
+
+/** One priced roll: buy the short back at `closePrice`, sell `open` on `expiration`. Prices per share. */
+export interface ManageWheelRoll {
+  closePrice: number | null;
+  open: ManageWheelQuote | null;
+  /** Per share, signed: + a net credit. */
+  net: number | null;
+  expiration: string | null;
+  legs: string[];
+  check: ManageWheelRollCheck | null;
+  checkError: string | null;
+}
+
+/** A tested short's two rolls out in time, each null with why when the chain cannot price it. */
+export interface ManageWheelRolls {
+  leg: string;
+  expiration: string | null;
+  quotedAt: string | null;
+  why: string | null;
+  netZero: ManageWheelRoll | null;
+  netZeroWhy: string | null;
+  premiumGambit: ManageWheelRoll | null;
+  premiumGambitWhy: string | null;
+}
+
+/** After an assignment, the covered call the skate call band names. */
+export interface ManageWheelNextLeg {
+  strike: number | null;
+  band: number | null;
+  bandKind: string | null;
+  expiration: string | null;
+  why: string | null;
+  quote: ManageWheelQuote | null;
+  contracts: number | null;
+  belowWheelBasis: boolean | null;
+}
+
+/** What the wheel rules read for one cycle on one trade. An unreconciled cycle carries `problems`
+ *  and no take profit, rolls or next leg: no wheel rule judged it. */
+export interface ManageWheelNote {
+  underlying: string;
+  start: string | null;
+  status: string | null;
+  problems: string[] | null;
+  takeProfit: Array<{ leg: string; mid: number | null; btcPrice: number | null; source: string | null; hit: boolean | null }> | null;
+  rolls: ManageWheelRolls[] | null;
+  nextLeg: ManageWheelNextLeg | null;
+}
+
+/** The skate band for a short's expiry, moved to today's price. Levels are per share. */
+export interface ManageWheelBand {
+  day: string | null;
+  shift: number | null;
+  fixed: number | null;
+  byExpiry: number | null;
+}
+
+export interface ManageWheelResting {
+  orderId: string | null;
+  status: string | null;
+  price: number | null;
+  quantity: number | null;
+  timeInForce: string | null;
+  legs: number | null;
+}
+
+/** Today's check of one short a running cycle holds. `tested` is manage's flag, never re-derived. */
+export interface ManageWheelCheck {
+  leg: string;
+  symbol: string;
+  right: string | null;
+  strike: number | null;
+  expiration: string | null;
+  dte: number | null;
+  quantity: number | null;
+  spot: number | null;
+  mid: number | null;
+  openPrice: number | null;
+  wide: boolean | null;
+  tested: boolean | null;
+  intrinsic: number | null;
+  extrinsic: number | null;
+  /** Whole-position dollars of extrinsic value left. */
+  extrinsicDollars: number | null;
+  band: ManageWheelBand | null;
+  bandMissing: string | null;
+  beyondBand: { fixed: boolean | null; byExpiry: boolean | null } | null;
+  restingBtc: ManageWheelResting[];
+  btcPrice: number | null;
+  markAtOrUnderBtc: boolean | null;
+}
+
+/** One wheel cycle (packages/manage `wheel._accounting`). Cash is whole-position dollars, signed (+
+ *  received); bases and breakeven are per share; fees are signed as the broker writes them (−). */
+export interface ManageWheelCycle {
+  underlying: string;
+  status: "open" | "complete" | "unreconciled" | string;
+  reconciled: boolean | null;
+  problems: string[];
+  flat: boolean | null;
+  start: string | null;
+  /** False when shares predate the history: the cycle began earlier than `start`. */
+  startKnown: boolean | null;
+  end: string | null;
+  days: number | null;
+  assignments: number | null;
+  calledAway: number | null;
+  shares: number | null;
+  /** False when shares predate the history: no tax basis, no wheel basis, no stock P&L. */
+  basisKnown: boolean | null;
+  lots: Array<{ date: string | null; shares: number | null; price: number | null; source: string | null }>;
+  openOptions: Array<{ symbol: string; leg: string; quantity: number | null }>;
+  credits: number | null;
+  debits: number | null;
+  netCash: number | null;
+  fees: number | null;
+  netPremium: number | null;
+  dividends: number | null;
+  taxBasis: number | null;
+  wheelBasis: number | null;
+  breakeven: { price: number | null; basis: string | null } | null;
+  optionPnl: { realised: number | null; unrealised: number | null };
+  stockPnl: { realised: number | null; unrealised: number | null };
+  pnlNet: number | null;
+  skateYield: { value: number | null; capped: boolean | null; capital: number | null; basis: string | null } | null;
+  events: Array<{ date: string | null; what: string; legs: string[]; cash: number | null; fees: number | null }>;
+  today: ManageWheelCheck[];
+  /** The evaluated trades holding this cycle's legs (a finished cycle holds none). */
+  tradeIds: string[];
+}
+
+/** The account's wheel view (`account.wheel`). */
+export interface ManageWheel {
+  cycles: ManageWheelCycle[];
+  /** Deliveries no option explains, and assignments with no share row. */
+  flagged: Array<{ underlying: string; date: string | null; kind: string; row: string | null }>;
+  /** Per name, history rows that moved outside any cycle. */
+  outside: Record<string, string[]>;
+  bandsDay: string | null;
+  bandsMissing: string | null;
+  /** Why the account has no view (not the designated account, no history, the view failed). */
+  error: string | null;
 }
 
 /**
@@ -344,6 +514,8 @@ export interface ManageAccount {
   excluded: Array<{ underlying: string; legs: number; reason: string }>;
   /** Null on an evaluation written before the portfolio reading existed (before 2026-10-18). */
   portfolio: ManagePortfolio | null;
+  /** The wheel view; null on an evaluation written before it existed (no `wheel` key). */
+  wheel: ManageWheel | null;
 }
 
 export interface ManagePayload {

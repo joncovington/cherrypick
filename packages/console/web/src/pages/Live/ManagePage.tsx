@@ -5,8 +5,10 @@ import { Card, DataCard, sortRows, useSort, type SortHeader } from "../../compon
 import { TileGrid } from "../../components/performance/TileGrid";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
+import { ActionChip, DetailCard, Kv, Money, tone } from "./manageParts";
 import { PortfolioCards } from "./PortfolioCards";
 import { ScenarioCards } from "./ScenarioCards";
+import { WheelCards } from "./WheelCards";
 
 /**
  * The daily position evaluation (packages/manage), read-only. Every trade in the live account judged
@@ -34,33 +36,6 @@ function px(v: number | null): string {
   return v === null ? "—" : v.toFixed(2);
 }
 
-const ACTION_LABEL: Record<string, string> = {
-  CLOSE: "close",
-  TAKE_PROFIT: "take profit",
-  ROLL_OR_CLOSE: "roll or close",
-  ROLL_FOR_CREDIT: "roll for credit",
-  CLOSE_LEGS: "close legs",
-  REVIEW: "review",
-  SETTLES: "settles",
-  HOLD: "hold",
-};
-
-// An action's chip colour: hold is blue, review amber, anything that exits or changes the trade red.
-// SETTLES stays plain: nothing to do but let it expire.
-const ACTION_CHIP: Record<string, string> = {
-  HOLD: "chip-hold",
-  REVIEW: "chip-warn",
-  CLOSE: "chip-bad",
-  TAKE_PROFIT: "chip-bad",
-  ROLL_OR_CLOSE: "chip-bad",
-  ROLL_FOR_CREDIT: "chip-bad",
-  CLOSE_LEGS: "chip-bad",
-};
-
-function ActionChip({ action }: { action: string }) {
-  return <span className={`chip ${ACTION_CHIP[action] ?? ""}`}>{ACTION_LABEL[action] ?? action}</span>;
-}
-
 /** An earnings trade's chip: amber while it holds for the call, red once the report is out and it closes. */
 function EarningsChip({ et, label }: { et: NonNullable<ManageTrade["earningsTrade"]>; label: string }) {
   const report = `${et.report}${et.timeOfDay ? ` ${et.timeOfDay}` : ""}`;
@@ -76,11 +51,6 @@ function EarningsChip({ et, label }: { et: NonNullable<ManageTrade["earningsTrad
       {label}
     </span>
   );
-}
-
-function tone(v: number | null | undefined): string {
-  if (v === null || v === undefined) return "muted";
-  return v >= 0 ? "pnl-pos" : "pnl-neg";
 }
 
 function pct(v: number | null): string {
@@ -127,37 +97,6 @@ const ACTION_PRIORITY: Record<string, number> = {
 };
 
 const HELD_TITLE = "an earnings trade: its take profit and stop wait for the call, and it closes after it";
-
-/** One card in an expanded trade's row: a small caps title, an optional chip, and its body. */
-function DetailCard({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="md-card">
-      <header>
-        <h4>{title}</h4>
-        {aside}
-      </header>
-      {children}
-    </section>
-  );
-}
-
-/** Label / value rows. A value is a node so a figure can carry its tone. */
-function Kv({ rows }: { rows: Array<[string, ReactNode]> }) {
-  return (
-    <dl className="md-kv">
-      {rows.map(([k, v]) => (
-        <div key={k}>
-          <dt>{k}</dt>
-          <dd>{v}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-function Money({ v }: { v: number | null }) {
-  return <span className={tone(v)}>{fmtMoney(v)}</span>;
-}
 
 /**
  * The expanded trade: the plain-English verdict as a lead, then the facts behind it as a row of
@@ -569,13 +508,20 @@ export function PortfolioPage() {
   return <EvaluationPage view="portfolio" />;
 }
 
+/** Live → wheel (2026-10-20): each wheel cycle on the account, from the same evaluation. */
+export function WheelPage() {
+  return <EvaluationPage view="wheel" />;
+}
+
+const VIEW_TITLE = { positions: "position evaluation", portfolio: "portfolio", wheel: "wheel" } as const;
+
 /**
- * Both tabs read one evaluation file (2026-10-18: split from the single `manage` tab, whose dozen
- * account cards had buried the action list). Each keeps the evaluation header, because its caveats
- * -- missing order chains, missing earnings dates, an unapplied rule -- qualify both.
+ * The three tabs read one evaluation file (2026-10-18: split from the single `manage` tab, whose dozen
+ * account cards had buried the action list; 2026-10-20: the wheel). Each keeps the evaluation header,
+ * because its caveats -- missing order chains, missing earnings dates, an unapplied rule -- qualify all.
  */
-function EvaluationPage({ view }: { view: "positions" | "portfolio" }) {
-  const title = view === "positions" ? "position evaluation" : "portfolio";
+function EvaluationPage({ view }: { view: "positions" | "portfolio" | "wheel" }) {
+  const title = VIEW_TITLE[view];
   const [session, setSession] = useState<string | undefined>(undefined);
   const { data, isLoading, isError, dataUpdatedAt } = useManage(session);
   const sessions = data?.sessions ?? [];
@@ -634,8 +580,10 @@ function EvaluationPage({ view }: { view: "positions" | "portfolio" }) {
       {(data?.accounts ?? []).map((a) =>
         view === "positions" ? (
           <PositionsAccount key={a.account ?? "?"} a={a} loading={isLoading} oversize={oversizeMultiple(data?.rules)} />
-        ) : (
+        ) : view === "portfolio" ? (
           <PortfolioAccount key={a.account ?? "?"} a={a} oversize={oversizeMultiple(data?.rules)} />
+        ) : (
+          <WheelCards key={a.account ?? "?"} a={a} />
         ),
       )}
       {view === "positions" && (

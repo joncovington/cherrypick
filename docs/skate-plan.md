@@ -10,7 +10,7 @@ were decided by the user on 2026-10-18 (see "Decisions").
 | 2, regular-hours quotes (`fetch_screener_greeks.py skate`, jobs `report-skate-quotes-1/2`) | built |
 | 3, the score and the console's Skate tab | the score built (`skate.score`, in the quote file); the tab built 2026-10-19; the income tabs' leveraged badge not started |
 | 4, the forward record | built: `skate_record.py`, recording from 2026-10-20; the tab section built 2026-10-20 |
-| 5, the wheel view (`manage`, Live → positions) | cycle linking, accounting and the day's check built (`manage/wheel.py`, 2026-10-20); the bands in the snapshot (v12) and its rules (`wheel.take_profit`, `wheel.tested`, `wheel.next_leg`) built 2026-10-20; the tab not started |
+| 5, the wheel view (`manage`, Live → positions) | cycle linking, accounting and the day's check built (`manage/wheel.py`, 2026-10-20); the bands in the snapshot (v12) and its rules (`wheel.take_profit`, `wheel.tested`, `wheel.next_leg`) built 2026-10-20; the console's Live → wheel tab built 2026-10-20 |
 | 6, the PMCC view (`manage`, beside the wheel view) | not started |
 
 A screen for short options sold where the seller does not want assignment: covered calls above
@@ -288,7 +288,8 @@ For each underlying that holds a short put, shares, or a covered call:
   candidates priced and each passed through `check-roll`; after an assignment, the next leg named
   from the Skate screen's call band. Each rule gets a confidence and a README row, as `manage`
   requires.
-- **Console**: a wheel tab beside Live → positions.
+- **Console**: a wheel tab beside Live → positions (built 2026-10-20: `pages/Live/WheelCards.tsx`,
+  one card per cycle, read through `readers/manage.ts`).
 
 The real account is an IRA, so only cash-secured puts and covered calls arise; margin accounts are
 supported by `manage` and need nothing extra here.
