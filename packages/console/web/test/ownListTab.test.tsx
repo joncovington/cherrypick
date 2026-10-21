@@ -35,6 +35,7 @@ function row(over: Partial<IncomeListRow>): IncomeListRow {
     earningsDate: "2027-01-28",
     earningsEstimated: false,
     exDividendInTrade: null,
+    leveraged: null,
     ...over,
   };
 }
@@ -87,6 +88,14 @@ describe("our short-put list", () => {
     expect(html).toContain("2 of 4 names");
     const everything = render("/screeners/short-puts?trade=all&earnings=all");
     for (const s of ["KEEP", "THIN", "ERNS", "UNKN"]) expect(everything).toContain(s);
+  });
+
+  it("badges a declared daily-reset fund and keeps it listed", () => {
+    payload = base([row({ symbol: "TQQQ", type: "Exchange Traded Fund", leveraged: "leveraged" }), row({ symbol: "AAA" })]);
+    const html = render();
+    expect(html).toContain("TQQQ");
+    expect(html).toMatch(/class="chip"[^>]*>leveraged</);
+    expect(html.match(/>leveraged</g)?.length).toBe(1); // AAA carries no badge
   });
 
   it("keeps the builder's symbol order, never a yield order", () => {

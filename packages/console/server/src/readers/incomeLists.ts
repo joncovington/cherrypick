@@ -78,6 +78,7 @@ function toRow(v: unknown): IncomeListRow | null {
     earningsDate: str(r["earnings_date"]),
     earningsEstimated: bool(r["earnings_estimated"]),
     exDividendInTrade: bool(r["ex_dividend_in_trade"]),
+    leveraged: str(r["leveraged"]),
   };
 }
 

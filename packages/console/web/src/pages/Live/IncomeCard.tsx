@@ -32,6 +32,20 @@ function capPct(v: number | null | undefined): string {
   return v === null || v === undefined ? "" : ` ${Math.round(v * 1000) / 10}%`;
 }
 
+/** The underlying, badged when it is a declared daily-reset fund (the Screeners tabs' own badge). */
+function Name({ c }: { c: ManageCandidate }) {
+  return (
+    <>
+      {c.underlying}
+      {c.leveraged ? (
+        <span className="chip" title="A daily-reset fund: it decays and gaps in ways its delta does not price">
+          {c.leveraged}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 function legs(c: ManageCandidate): string {
   return c.legs.map((l) => `${l.quantity > 0 ? "+" : "−"}${l.strike}${l.right}`).join(" / ");
 }
@@ -78,7 +92,9 @@ function FitsTable({ rows }: { rows: ManageCandidate[] }) {
         <tbody>
           {rows.map((c, i) => (
             <tr key={`${c.underlying}-${c.kind}-${i}`}>
-              <td>{c.underlying}</td>
+              <td>
+                <Name c={c} />
+              </td>
               <td>
                 {KIND[c.kind] ?? c.kind}
                 {narrowed(c) ? <span className="muted"> · {narrowed(c)}</span> : null}
@@ -150,7 +166,9 @@ function WaitingTable({ c }: { c: ManageCandidates }) {
               const level = room?.bpLevel ?? null;
               return (
                 <tr key={`${w.underlying}-${w.kind}-${i}`}>
-                  <td>{w.underlying}</td>
+                  <td>
+                    <Name c={w} />
+                  </td>
                   <td>
                     {KIND[w.kind] ?? w.kind}
                     {narrowed(w) ? <span className="muted"> · {narrowed(w)}</span> : null}
@@ -213,7 +231,10 @@ function TooBig({ rows, total }: { rows: ManageCandidate[]; total: number }) {
       <ul>
         {own.map((c, i) => (
           <li key={`${c.underlying}-${c.kind}-${i}`}>
-            <strong>{c.underlying}</strong> {KIND[c.kind] ?? c.kind} {legs(c)} · stopped by <em>{c.binding ?? "—"}</em>
+            <strong>
+              <Name c={c} />
+            </strong>{" "}
+            {KIND[c.kind] ?? c.kind} {legs(c)} · stopped by <em>{c.binding ?? "—"}</em>
             <span className="muted">
               {" "}
               (one ties up {fmtMoney(c.perUnit.buyingPower)}, risks {risk(c, 1)})

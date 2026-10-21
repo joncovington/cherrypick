@@ -615,6 +615,9 @@ export interface ManageCandidate {
   /** A waiting candidate's size once the book has room (buying power and the theta ceiling set
    *  aside), and where taking it today would leave the account. Null on every other row. */
   ifRoom: ManageCandidateRoom | null;
+  /** `leveraged`, `inverse` or `volatility` when the underlying is a declared daily-reset fund (from the
+   *  session's income lists); null otherwise. */
+  leveraged: string | null;
 }
 
 /** `ok`: under the VIX-scaled buying-power cap; `over`: within `bpWarnOver` of it; `far_over`: past that. */

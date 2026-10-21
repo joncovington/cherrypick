@@ -11,6 +11,11 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: daily-reset funds are badged on the income lists and manage's candidates.** Each short-put
+  and covered-call row carries `leveraged` (`leveraged`, `inverse` or `volatility`) from the declared
+  fund list skate already leaves out (`technicals/leveraged_funds.json`, 492 funds), and the
+  Screeners tabs and the Live → portfolio income card show it beside the symbol. Badged, never
+  dropped: TQQQ, TSLL, KORU and TMF were on the lists unmarked. A list built before it reads none.
 - **Added: a manage snapshot older than the code says so.** The watchdog's `manage.snapshot_version`
   WARNs while the newest stored snapshot was taken by an older `SNAPSHOT_VERSION` than is installed,
   and the console's manage tabs carry that finding as a banner. On 10-20 a v11 snapshot under v14

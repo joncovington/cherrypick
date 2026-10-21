@@ -45,6 +45,9 @@ export interface IncomeListRow {
   earningsEstimated: boolean | null;
   /** Covered calls only: an ex-dividend date between today and expiry (early assignment, flagged). */
   exDividendInTrade: boolean | null;
+  /** `leveraged`, `inverse` or `volatility` for a declared daily-reset fund; null otherwise, and on a
+   *  list built before the badge existed. */
+  leveraged: string | null;
 }
 
 export interface IncomeListPayload {

@@ -320,6 +320,7 @@ function candidate(over: Partial<ManageCandidate> = {}): ManageCandidate {
     earningsUnknown: true,
     alternative: null,
     ifRoom: null,
+    leveraged: null,
     ...over,
   };
 }
@@ -361,6 +362,12 @@ function income(over: Partial<ManageCandidates> = {}): ManageCandidates {
 }
 
 describe("IncomeCard", () => {
+  it("badges a candidate on a declared daily-reset fund", () => {
+    const html = render(<IncomeCard c={income({ fits: [candidate({ underlying: "TSLL", leveraged: "leveraged" }), candidate()] })} />);
+    expect(html).toMatch(/TSLL<span class="chip"[^>]*>leveraged</);
+    expect(html.match(/>leveraged</g)?.length).toBe(1);
+  });
+
   it("shows each fit's whole position in the suite's money layout, in the package's order", () => {
     const html = render(<IncomeCard c={income({ fits: [candidate(), candidate({ underlying: "AAL", kind: "short_put" })] })} />);
     expect(html.indexOf("AAPL")).toBeLessThan(html.indexOf("AAL"));

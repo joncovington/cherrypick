@@ -115,6 +115,21 @@ def test_rows_are_by_symbol_and_what_cannot_be_built_is_counted():
     assert out["dropped"]["covered-calls"] == {"no chain": 1, "reading has no covered-call expiry": 1}
 
 
+def test_a_declared_leveraged_fund_is_badged_on_both_lists_and_never_dropped():
+    out = incomelists.build_lists(_doc({"TQQQ": _entry(), "AAA": _entry()}), leveraged={"TQQQ": "leveraged"})
+    for name in ("short-puts", "covered-calls"):
+        by = {r["symbol"]: r for r in out["lists"][name]}
+        assert by["TQQQ"]["leveraged"] == "leveraged" and by["AAA"]["leveraged"] is None
+
+
+def test_the_badge_reads_the_list_skate_leaves_these_funds_out_by():
+    from cherrypick.technicals import skate
+
+    lev = skate.leveraged_funds()
+    assert {"TQQQ", "TSLL", "KORU", "TMF", "UVXY"} <= set(lev)
+    assert all(f.get("kind") in ("leveraged", "inverse", "volatility") for f in lev.values())
+
+
 def test_the_leg_verdict_is_the_readings_own():
     out = incomelists.build_lists(_doc({"AAA": _entry(options=_chain(passes=False))}))
     assert out["lists"]["short-puts"][0]["passes"] is False

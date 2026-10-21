@@ -93,6 +93,15 @@ describe("readIncomeList", () => {
     expect(readIncomeList(config, "covered-calls", null).rows[0]).toMatchObject({ window: "30-45", strike: 110 });
   });
 
+  it("passes a fund's leveraged badge through, and a list built before it reads none", () => {
+    write("2026-10-20.json", doc("2026-10-20", [{ ...ROW, symbol: "TQQQ", leveraged: "leveraged" }, ROW]));
+    const rows = readIncomeList(config, "short-puts", null).rows;
+    expect(rows.map((r) => [r.symbol, r.leveraged])).toEqual([
+      ["TQQQ", "leveraged"],
+      ["AAA", null],
+    ]);
+  });
+
   it("an older day is reachable; an unknown day falls back to the newest", () => {
     write("2026-10-19.json", doc("2026-10-19", [{ ...ROW, symbol: "OLD" }]));
     write("2026-10-20.json", doc("2026-10-20", [ROW]));
