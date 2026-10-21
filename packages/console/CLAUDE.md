@@ -704,7 +704,10 @@ greeks with the gap, untoned because neither side is the right answer. **Every b
 the reading's `bands`**: the dial draws manage's band and takes amber only from its `inside` flag,
 never from where the needle sits (`web/test/managePortfolioCards.test.tsx` shows a needle inside its
 band drawn as outside when the flag says so). Long and short delta carry no tone. An evaluation
-written before the reading has `portfolio: null` and draws no cards. `ScenarioCards.tsx` adds a
+written before the reading has `portfolio: null` and draws no cards. Both tabs' header shows manage's
+`pre_open` as a red line (a snapshot taken before 09:30 ET reads yesterday's close and leaves today's
+expiring legs unpriced). The contribution cards sum the names past their twelve into one "others"
+row, so the rows add up to the book. `ScenarioCards.tsx` adds a
 buying-power dial (the cap is manage's, set by VIX), the expiry ladder with the earnings exposure,
 the risk graph and the risk matrix. Every figure is manage's repricing; the matrix states which IV
 weighting manage used, and a card manage wrote no reading for is not drawn. `IncomeCard.tsx` lists

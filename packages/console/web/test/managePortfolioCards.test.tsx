@@ -209,6 +209,17 @@ describe("PortfolioCards", () => {
     expect(delta).toContain("FXI ⚠");
   });
 
+  it("sums the names past the cut into one row, so the rows add up to the book", () => {
+    const base = reading();
+    const extra = Array.from({ length: 14 }, (_, i) => ({ ...base.underlyings[0]!, underlying: `N${i}`, bwd: 14 - i, betaDoubt: null }));
+    const html = render(<PortfolioCards p={reading({ underlyings: extra })} />);
+    const delta = html.slice(html.indexOf("where the delta comes from"), html.indexOf("where the theta comes from"));
+    // Twelve names shown (14 down to 3), the last two (2 and 1) as one row of +3.
+    expect(delta).toContain("2 others");
+    expect(delta).toContain("+3.0 sh");
+    expect(delta).not.toContain(">N13<");
+  });
+
   it("shows a hedge only when the reading carries one, with its natural price beside the mid", () => {
     expect(render(<PortfolioCards p={reading()} />)).not.toContain("a hedge, sized");
     const hedged = reading({
@@ -303,6 +314,14 @@ describe("ScenarioCards", () => {
     expect(html).toContain("(RTX)");
     expect(html).toContain("(META)");
     expect(render(<LadderCard ladder={null} />)).toBe("");
+  });
+
+  it("names a date carrying only long legs of trades filed elsewhere, rather than 0 trades", () => {
+    const l = reading().ladder!;
+    const lone = { expiration: "2029-01-19", trades: [], downside: 0, downsideUnknown: 0, theta: -0.77 };
+    const html = render(<LadderCard ladder={{ ...l, expiries: [...l.expiries, lone] }} />);
+    expect(html).toContain("2029-01-19 · long legs only");
+    expect(html).not.toContain("0 trades");
   });
 
   it("draws nothing it has no reading for", () => {

@@ -740,4 +740,7 @@ export interface ManagePayload {
    *  the installed code (views needing the newer fields read empty until the next run); null when it
    *  is current, unchecked, or the session shown is not the newest. */
   snapshotStale: string | null;
+  /** Set when the snapshot was taken before 09:30 New York time on its own session (manage's
+   *  `pre_open`): spot and marks are the last session's, and today's expiring legs are unpriced. */
+  preOpen: { takenAt: string | null; expiringUnpriced: string[] } | null;
 }

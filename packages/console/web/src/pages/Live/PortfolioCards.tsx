@@ -236,18 +236,28 @@ function StressCard({ p }: { p: ManagePortfolio }) {
   );
 }
 
+const CONTRIBUTION_ROWS = 12;
+
 function ContributionCard({ p, figure }: { p: ManagePortfolio; figure: "bwd" | "theta" }) {
-  const rows = [...p.underlyings]
+  const sorted = [...p.underlyings]
     .filter((u) => u[figure] !== null)
-    .sort((a, b) => Math.abs(b[figure] ?? 0) - Math.abs(a[figure] ?? 0))
-    .slice(0, 12)
-    .map((u) => ({
-      label: u.betaDoubt && figure === "bwd" ? `${u.underlying} ⚠` : u.underlying,
-      value: u[figure],
-      title: `${u.underlying}: beta ${u.beta === null ? "—" : u.beta.toFixed(2)} · ${pctOf(figure === "bwd" ? u.bwdShare : u.thetaShare, 0)} of the book's gross ${
-        figure === "bwd" ? "delta" : "theta"
-      }${u.betaDoubt ? ` · ${u.betaDoubt}` : ""}`,
-    }));
+    .sort((a, b) => Math.abs(b[figure] ?? 0) - Math.abs(a[figure] ?? 0));
+  const rows = sorted.slice(0, CONTRIBUTION_ROWS).map((u) => ({
+    label: u.betaDoubt && figure === "bwd" ? `${u.underlying} ⚠` : u.underlying,
+    value: u[figure],
+    title: `${u.underlying}: beta ${u.beta === null ? "—" : u.beta.toFixed(2)} · ${pctOf(figure === "bwd" ? u.bwdShare : u.thetaShare, 0)} of the book's gross ${
+      figure === "bwd" ? "delta" : "theta without the legs about to expire"
+    }${u.betaDoubt ? ` · ${u.betaDoubt}` : ""}`,
+  }));
+  // The names past the cut, summed, so the rows add up to the book's figure.
+  const rest = sorted.slice(CONTRIBUTION_ROWS);
+  if (rest.length > 0) {
+    rows.push({
+      label: `${rest.length} other${rest.length === 1 ? "" : "s"}`,
+      value: rest.reduce((s, u) => s + (u[figure] ?? 0), 0),
+      title: rest.map((u) => u.underlying).join(", "),
+    });
+  }
   return (
     <Card title={figure === "bwd" ? "where the delta comes from" : "where the theta comes from"}>
       <DivergingBars
@@ -327,7 +337,8 @@ function driverFigure(f: ManageGuidanceFigure, benchmark: string | null): string
     case "bwd_share":
       return `${pctOf(f.value, 0)} of delta`;
     case "theta_share":
-      return `${pctOf(f.value, 0)} of theta`;
+      // The band's theta: without the legs about to expire, so it is not the theta card's share.
+      return `${pctOf(f.value, 0)} of theta past the expiring legs`;
   }
 }
 
