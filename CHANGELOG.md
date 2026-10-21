@@ -11,6 +11,17 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Fixed: a covered short call more than 60 days out was still judged as a naked call.** The PMCC
+  link's join reaches 60 days, so a longer-dated short sold in its own order stayed a trade of its own
+  beside a lone long call. Now, when a name's groups hold exactly one long call alone and one short
+  call alone, both reconciled order chains, the long expiring on or after the short at or below its
+  strike in at least its quantity, and no shares on the name, the two are one trade
+  (`grouped_by: "covered call"`), its basis the two chains. Ambiguous pairs, partial cover, an
+  unreconciled chain and shares (the wheel's case) keep the chains' grouping; a long or short call
+  with nothing to pair with stays as it was, and a join that fails is listed in the account's
+  `grouping_errors`. On every stored snapshot (10-13 to 10-20) no trade's grouping or recommendation
+  changes.
+
 - **Fixed: a PMCC whose short was sold in its own order was judged as a naked call.** A short call
   sold after the last one expired is an order chain of its own, so manage made it a trade beside a
   lone long call: the short got the credit rules and an unbounded-loss review, as an uncovered call

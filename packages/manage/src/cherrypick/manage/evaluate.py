@@ -2046,12 +2046,74 @@ def _join_pmcc(
         if gl is None or gs is None or gl == gs:
             continue
         chain = _chains.from_orders(entry["orders"], history, [long_sym, short_sym])
+        chain["grouped_by"] = "pmcc link"
         merged = (groups[gl][0] + groups[gs][0], chain)
         keep, drop = min(gl, gs), max(gl, gs)
         groups = [merged if i == keep else g for i, g in enumerate(groups) if i != drop]
         joined = {i if i < drop else i - 1 for i in joined} | {keep}
         entry["grouping"] = "joined: the long and its short were two order chains"
     return groups, joined
+
+
+def _join_covered(
+    groups: list[tuple[list[dict[str, Any]], dict[str, Any] | None]],
+    history: list[dict[str, Any]] | None,
+    rules: dict[str, Any],
+) -> list[tuple[list[dict[str, Any]], dict[str, Any] | None]]:
+    """Join a short call that a long call on the name covers into one trade with it, whatever the
+    short's days left: the case the PMCC link (`_join_pmcc`, 60 days at most) leaves split, a short
+    sold in an order of its own against a long call it is not linked to.
+
+    The rule, as narrow as the PMCC link's: on `order_chain` grouping, among the name's groups, there
+    is exactly one holding a single long call and nothing else and exactly one holding a single short
+    call and nothing else; both are reconciled order chains (a fallback group, priced from its open
+    legs, never moves); the long expires on or after the short, at or below its strike, in at least its
+    quantity; and the name holds no shares (shares covering a call are the wheel's). Then the two are
+    one trade (`grouped_by: "covered call"`), its basis the two chains' orders together. Unlike the
+    PMCC link, the shorts that expired earlier in orders of their own are not in that basis: nothing
+    linked them. Anything ambiguous (two lone longs or shorts that could pair), uncovered or partly
+    covered keeps the chains' grouping.
+    """
+    if rules.get("trade_grouping") != "order_chain" or not history:
+        return groups
+    if any(leg.get("right") not in ("C", "P") for g, _ in groups for leg in g):
+        return groups
+
+    def lone(sign: int) -> list[int]:
+        return [
+            i
+            for i, (g, chain) in enumerate(groups)
+            if len(g) == 1
+            and g[0].get("right") == "C"
+            and (_f(g[0].get("quantity")) or 0.0) * sign > 0
+            and chain is not None
+            and chain.get("reconciled")
+        ]
+
+    longs, shorts = lone(1), lone(-1)
+    if len(longs) != 1 or len(shorts) != 1:
+        return groups
+    (gl,), (gs,) = longs, shorts
+    long, short = groups[gl][0][0], groups[gs][0][0]
+    lk, sk = _f(long.get("strike")), _f(short.get("strike"))
+    le, se = str(long.get("expiration") or ""), str(short.get("expiration") or "")
+    covers = (
+        lk is not None
+        and sk is not None
+        and le
+        and se
+        and le >= se
+        and lk <= sk
+        and _f(long.get("quantity")) >= -_f(short.get("quantity"))
+    )
+    if not covers:
+        return groups
+    orders = [o["order_id"] for _, c in (groups[gl], groups[gs]) for o in c["orders"]]
+    chain = _chains.from_orders(orders, history, [_leg_symbol(long), _leg_symbol(short)])
+    chain["grouped_by"] = "covered call"
+    keep, drop = min(gl, gs), max(gl, gs)
+    merged = (groups[gl][0] + groups[gs][0], chain)
+    return [merged if i == keep else g for i, g in enumerate(groups) if i != drop]
 
 
 def _pmcc_view(
@@ -2126,6 +2188,7 @@ def evaluate(
         net_liq = _f(balances.get("net_liquidating_value"))
         trades = []
         excluded = []
+        grouping_errors: list[str] = []
         # The wheel view first: its cycles are a pure reading of the history, and the wheel rules judge
         # each trade holding a cycle's legs alongside every other rule.
         wheel_view = _wheel_view(
@@ -2161,13 +2224,18 @@ def evaluate(
             if not legs:
                 continue
             groups = group_trades(legs, rules.get("trade_grouping"), history.get(u["underlying"]), history_ok)
-            joined: set[int] = set()
             try:
-                groups, joined = _join_pmcc(
+                groups, _ = _join_pmcc(
                     groups, pmcc_view, u["underlying"], history.get(u["underlying"]), rules
                 )
             except Exception as exc:  # noqa: BLE001 -- a failed join leaves the chains' own grouping
                 pmcc_view["grouping_error"] = f"PMCC grouping failed: {type(exc).__name__}: {exc}"[:300]
+            try:
+                groups = _join_covered(groups, history.get(u["underlying"]), rules)
+            except Exception as exc:  # noqa: BLE001 -- a failed join leaves the chains' own grouping
+                grouping_errors.append(
+                    f"{u['underlying']}: covered-call grouping failed: {type(exc).__name__}: {exc}"[:300]
+                )
             for i, (group, chain) in enumerate(groups):
                 trade = evaluate_trade(
                     u["underlying"],
@@ -2183,8 +2251,8 @@ def evaluate(
                     _pmcc_context(pmcc_view, group, account),
                 )
                 trade["trade_id"] = u["underlying"] if len(groups) == 1 else f"{u['underlying']}#{i + 1}"
-                # How the legs became one trade: the broker's chains, unless the PMCC link joined two.
-                trade["grouped_by"] = "pmcc link" if i in joined else None
+                # How the legs became one trade: the broker's chains, unless a join made two into one.
+                trade["grouped_by"] = (chain or {}).get("grouped_by")
                 trades.append(trade)
         trades.sort(key=lambda t: (PRIORITY.get(t["recommendation"]["action"], 9), -abs(t["pnl_gross"] or 0)))
         counts: dict[str, int] = {}
@@ -2218,6 +2286,7 @@ def evaluate(
                 "account": account.get("account"),
                 "wheel": wheel_view,
                 "pmcc": pmcc_view,
+                "grouping_errors": grouping_errors,
                 "designated": account.get("designated"),
                 "error": account.get("error"),
                 "net_liq": net_liq,
