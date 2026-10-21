@@ -328,8 +328,8 @@ function candidate(over: Partial<ManageCandidate> = {}): ManageCandidate {
     binding: "per-trade risk",
     perUnit: { credit: 2.47, natural: 2.3, cash: 247, maxLoss: 253, buyingPower: 253, stressLoss: 253, theta: 0.93, bwd: 1.5 },
     thetaPerBp: 0.0037,
-    earningsDate: null,
-    earningsUnknown: true,
+    earningsDate: "2026-12-04",
+    earningsUnknown: false,
     alternative: null,
     ifRoom: null,
     leveraged: null,
@@ -389,7 +389,8 @@ describe("IncomeCard", () => {
   });
 
   it("shows each fit's whole position in the suite's money layout, in the package's order", () => {
-    const html = render(<IncomeCard c={income({ fits: [candidate(), candidate({ underlying: "AAL", kind: "short_put" })] })} />);
+    const unknown = candidate({ underlying: "AAL", kind: "short_put", earningsDate: null, earningsUnknown: true });
+    const html = render(<IncomeCard c={income({ fits: [candidate(), unknown] })} />);
     expect(html.indexOf("AAPL")).toBeLessThan(html.indexOf("AAL"));
     expect(html).toContain("2.47 cr"); // the per-share net price, marked
     expect(html).toContain("+$494.00"); // cash: 2 contracts x $247 received
@@ -397,7 +398,13 @@ describe("IncomeCard", () => {
     expect(html).toContain("per-trade risk");
     expect(html).toContain("re-quote before sending");
     expect(html).toContain("120 earnings inside the trade");
-    expect(html).toContain("unknown"); // an earnings date nobody knows is said so, never blank
+    // An earnings date nobody knows is a chip on the name; a known one (after expiry, or the trade
+    // would have been dropped) is not shown at all.
+    expect(html).toMatch(/AAL<span class="chip chip-warn"[^>]*>earnings unknown</);
+    expect(html.match(/earnings unknown</g)?.length).toBe(1);
+    const known = render(<IncomeCard c={income({ fits: [candidate()] })} />);
+    expect(known).not.toContain("earnings unknown");
+    expect(known).not.toContain("2026-12-04");
   });
 
   it("names a narrowed trade and what stopped the one that did not fit", () => {

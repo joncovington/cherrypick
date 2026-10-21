@@ -51,6 +51,14 @@ function Name({ c }: { c: ManageCandidate }) {
           held · same expiry
         </span>
       ) : null}
+      {c.earningsUnknown ? (
+        <span
+          className="chip chip-warn"
+          title="No earnings date was found for this name, so nothing checked that a report falls outside the trade. Check before sending."
+        >
+          earnings unknown
+        </span>
+      ) : null}
     </>
   );
 }
@@ -94,7 +102,6 @@ function FitsTable({ rows }: { rows: ManageCandidate[] }) {
             <th title="buying power the position ties up">buying power</th>
             <th title="theta, whole position, dollars a day">θ / day</th>
             <th title="beta-weighted delta the position adds, in SPY shares">Δ SPY sh</th>
-            <th>earnings</th>
             <th title="the cap the next contract would break">next stops at</th>
           </tr>
         </thead>
@@ -120,7 +127,6 @@ function FitsTable({ rows }: { rows: ManageCandidate[] }) {
               <td className="num">{fmtMoney(times(c.units, c.perUnit.buyingPower))}</td>
               <td className="num">{fmtCash(times(c.units, c.perUnit.theta))}</td>
               <td className="num">{c.perUnit.bwd === null ? "—" : (c.units * c.perUnit.bwd).toFixed(1)}</td>
-              <td>{c.earningsUnknown ? <span className="muted">unknown</span> : c.earningsDate ?? "—"}</td>
               <td className="muted">{c.binding ?? "max contracts"}</td>
             </tr>
           ))}
@@ -165,7 +171,6 @@ function WaitingTable({ c }: { c: ManageCandidates }) {
               <th title="buying power the position ties up">buying power</th>
               <th title="buying power used after taking it today, against the VIX-scaled cap">BP after</th>
               <th title="theta, whole position, dollars a day">θ / day</th>
-              <th>earnings</th>
             </tr>
           </thead>
           <tbody>
@@ -210,7 +215,6 @@ function WaitingTable({ c }: { c: ManageCandidates }) {
                     ) : null}
                   </td>
                   <td className="num">{fmtCash(times(n, w.perUnit.theta))}</td>
-                  <td>{w.earningsUnknown ? <span className="muted">unknown</span> : w.earningsDate ?? "—"}</td>
                 </tr>
               );
             })}
