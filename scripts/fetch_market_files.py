@@ -412,6 +412,35 @@ def _warn(title: str, message: str) -> None:
     _common.warn("market_files", title, message)
 
 
+INCOMPLETE = "Market files incomplete"
+
+
+def _alert_path() -> Path:
+    return files.store_dir() / "alert.json"
+
+
+def _note_outcome(problems: list[str]) -> None:
+    """Warn on an incomplete run and remember it; on the next clean run, say it recovered (as the
+    watchdog's findings do) and forget it. FRED answered one evening's three tries (2026-10-21) with
+    an empty body; the next morning's run fetched it, and the last word in the channel was still the
+    warning."""
+    path = _alert_path()
+    if problems:
+        _warn(INCOMPLETE, "\n".join(problems))
+        try:
+            path.write_text(json.dumps({"warned_at": datetime.now(UTC).isoformat()}), encoding="utf-8")
+        except OSError:
+            pass
+        return
+    if not path.exists():
+        return
+    _common.notify("INFO", "market_files", f"Recovered: {INCOMPLETE}", "every source fetched on this run")
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
 def cmd_fetch(_args) -> int:
     today = datetime.now(files.ET).date()
     report: dict = {"cboe": {}, "treasury": {}, "calendar": {}, "problems": []}
@@ -431,8 +460,7 @@ def cmd_fetch(_args) -> int:
     fetch_occ(report, today)
     report["ok"] = not report["problems"]
     print(json.dumps(report, indent=1))
-    if report["problems"]:
-        _warn("Market files incomplete", "\n".join(report["problems"]))
+    _note_outcome(report["problems"])
     return 0 if report["ok"] else 1
 
 

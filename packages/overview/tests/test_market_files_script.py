@@ -133,3 +133,22 @@ def test_umich_fetch_folds_the_next_release_and_refuses_a_page_without_one(tmp_p
     assert report["calendar"]["umich_next"] == "2026-10-09T10:00"
     assert doc["coverage"] == [["2026-10-02", "2026-10-09"]]
     assert report["problems"] == ["UMich: no next-release note on the page; kept the old dates"]
+
+
+def test_a_clean_run_after_a_warning_says_it_recovered_once(monkeypatch, tmp_path):
+    # 2026-10-21: FRED's empty body warned three times that evening; the next morning's clean run
+    # said nothing, so the warning stayed the last word in the channel.
+    from cherrypick.overview import files
+
+    fmf = _module()
+    monkeypatch.setattr(files, "store_dir", lambda: tmp_path)
+    sent = []
+    monkeypatch.setattr(fmf._common, "notify", lambda level, source, title, msg: sent.append((level, title)))
+    fmf._note_outcome([])
+    assert sent == []  # nothing to recover from
+    fmf._note_outcome(["FRED: Expecting value: line 1 column 1 (char 0)"])
+    assert sent == [("WARNING", "Market files incomplete")]
+    fmf._note_outcome([])
+    assert sent[-1] == ("INFO", "Recovered: Market files incomplete")
+    fmf._note_outcome([])
+    assert len(sent) == 2  # said once, then forgotten
