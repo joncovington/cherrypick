@@ -56,11 +56,16 @@ def warn(source: str, title: str, message: str) -> None:
     """Print a WARNING to stderr, then best-effort send it through the orchestrator's notifier as
     `source`. A missing orchestrator or notify config costs the message, never the run."""
     print(f"WARNING: {title}\n{message}", file=sys.stderr)
+    notify("WARNING", source, title, message)
+
+
+def notify(level: str, source: str, title: str, message: str) -> None:
+    """Best-effort send through the orchestrator's notifier; a missing config costs the message."""
     try:
         from cherrypick.notify.notifier import Notifier
         from cherrypick.orchestrator import config as cfgmod
 
-        Notifier(cfgmod.load_config().get("notify")).notify("WARNING", source, title, message)
+        Notifier(cfgmod.load_config().get("notify")).notify(level, source, title, message)
     except Exception:  # noqa: BLE001
         pass
 
