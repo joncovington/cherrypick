@@ -63,7 +63,9 @@ def db_path(settings: dict) -> Path:
 def connect(settings: dict) -> sqlite3.Connection:
     """The chain store, created inside the marked vendor directory."""
     paths.ensure_vendor_dir(settings)
-    conn = sqlite3.connect(db_path(settings))
+    # another study reading the store, or a second fetch writing it, holds the lock for a moment;
+    # sqlite's 5 s default ended a 1,500-path run mid-write (2026-10-23)
+    conn = sqlite3.connect(db_path(settings), timeout=300)
     conn.executescript(SCHEMA)
     return conn
 
