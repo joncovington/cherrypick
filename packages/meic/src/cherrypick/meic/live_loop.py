@@ -1225,8 +1225,15 @@ def _build_snapshot(cfg: dict, symbol: str):
     if price is None:
         return None, "no price"
     widths = paper._profile_widths_for_symbol(params, symbol) or []
+    # The arm's own short-delta band too (2026-10-23): `_select_candidates` hands an arm with a
+    # `short_delta_target` only candidates built at it, so a menu priced at the VIX-banded default
+    # alone was empty whenever the two differed (pm-200's 0.16 against 0.14 at VIX 20).
+    deltas = [delta_target]
+    arm_delta = params.get("short_delta_target")
+    if arm_delta is not None and abs(arm_delta - delta_target) >= 1e-6:
+        deltas.append(arm_delta)
     candidates, leg_quotes, cand_err = _pl._build_candidates(
-        symbol, price, widths, [delta_target], delta_target, today
+        symbol, price, widths, deltas, delta_target, today
     )
     if cand_err and not candidates:
         return None, cand_err
