@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ManageBpLevel, ManageCandidate, ManageCandidates } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
+import { PremiumSlider, useMinPremium } from "../../components/PremiumSlider";
 import { fmtCash, fmtMoney } from "../../lib/format";
 
 /**
@@ -391,17 +392,51 @@ function ExEarningsToggle({ c, on, set }: { c: ManageCandidates; on: boolean; se
   );
 }
 
+/** A candidate at or over the premium floor: one contract's credit, the cash column's per-unit figure.
+ *  An unpriced one has nothing to compare, so it stays, as on the Screeners lists. */
+const premiumOk = (floor: number) => (r: ManageCandidate) => floor === 0 || r.perUnit.cash === null || r.perUnit.cash >= floor;
+
 export function IncomeCard({ c: whole }: { c: ManageCandidates | null }) {
   const [exOn, setExOn] = useState(false);
+  const minPremium = useMinPremium("live-income");
   if (!whole) return null;
   const ex = whole.exEarnings;
-  // Every figure below is one list's: the whole book's, or manage's ex-earnings one.
-  const c = exOn && ex?.list ? ex.list : whole;
+  // Every figure below is one list's: the whole book's, or manage's ex-earnings one, cut to the floor.
+  // The totals are manage's and count past the rows it wrote, so a cut list states only what it shows.
+  const listed = exOn && ex?.list ? ex.list : whole;
+  const ok = premiumOk(minPremium);
+  const cut = (rows: ManageCandidate[]) => rows.filter(ok);
+  const c: ManageCandidates =
+    minPremium === 0
+      ? listed
+      : {
+          ...listed,
+          fits: cut(listed.fits),
+          fitsTotal: cut(listed.fits).length,
+          waiting: cut(listed.waiting),
+          waitingTotal: cut(listed.waiting).length,
+          tooBig: cut(listed.tooBig),
+          tooBigTotal: cut(listed.tooBig).length,
+        };
+  const hidden = listed.fits.length + listed.waiting.length + listed.tooBig.length - c.fits.length - c.waiting.length - c.tooBig.length;
   const excluded = Object.entries(c.excluded)
     .map(([why, n]) => `${n} ${why}`)
     .join(", ");
   return (
-    <Card title="income trades, sized to the account" controls={<ExEarningsToggle c={whole} on={exOn} set={setExOn} />}>
+    <Card
+      title="income trades, sized to the account"
+      controls={
+        <>
+          <PremiumSlider
+            list="live-income"
+            value={minPremium}
+            title="Hide a trade whose credit for one contract is under this. An unpriced one stays shown. Remembered for next time."
+          />
+          {hidden > 0 && <span className="chip">{hidden} under ${minPremium.toLocaleString()} hidden</span>}
+          <ExEarningsToggle c={whole} on={exOn} set={setExOn} />
+        </>
+      }
+    >
       {c.error ? (
         <p className="muted">{c.error}</p>
       ) : (
@@ -410,7 +445,7 @@ export function IncomeCard({ c: whole }: { c: ManageCandidates | null }) {
             from our own universe ({c.names ?? "—"} tradable names) on the cycle monthly, priced at mid from the {c.sourceSession ?? "—"}{" "}
             afternoon quotes: re-quote before sending · sized for {BASIS[c.accountBasis ?? ""] ?? "an account of unknown kind"}
             {excluded ? ` · left out: ${excluded}` : ""}
-            {c !== whole && ex ? ` · ex earnings: ${fmtMoney(ex.dollars)} of buying power treated as free (${ex.trades.join(", ")})` : ""}
+            {listed !== whole && ex ? ` · ex earnings: ${fmtMoney(ex.dollars)} of buying power treated as free (${ex.trades.join(", ")})` : ""}
           </p>
           <p className="muted pf-caption" style={{ marginTop: 0 }}>
             <strong>No tested edge.</strong> The 2026-10 credit-spread studies found no short strike, direction signal or exit

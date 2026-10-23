@@ -4,6 +4,7 @@ import type { IncomeList, IncomeListRow } from "@console/shared";
 import { SortTh, sortRows, useSort } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
 import { useIncomeList } from "../../lib/api";
+import { PremiumSlider, useMinPremium } from "../../components/PremiumSlider";
 
 /**
  * Our own short-put and covered-call lists (2026-10-19): one row a name from the suite's universe,
@@ -44,17 +45,6 @@ function signedPct(v: number): string {
 function shortDate(iso: string | null): string {
   if (iso === null || iso === "") return "—";
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-}
-
-/** The premium slider's stops, whole-contract dollars. 0 is off. Stepped, because most rows' premiums
- *  are tens of dollars and a straight scale to the largest would leave them a few pixels. */
-const PREMIUM_STEPS: readonly number[] = [0, 10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000];
-
-/** `?premium=` read back onto a stop: anything else (a hand-typed 60, junk) is the nearest stop below. */
-function premiumFloor(raw: string | null): number {
-  const v = Number(raw);
-  if (!raw || !Number.isFinite(v) || v <= 0) return 0;
-  return [...PREMIUM_STEPS].reverse().find((s) => s <= v) ?? 0;
 }
 
 function Flag({ on, onChange, children, title }: { on: boolean; onChange: (on: boolean) => void; children: ReactNode; title: string }) {
@@ -195,7 +185,7 @@ export function OwnListTab({ list }: { list: IncomeList }) {
   };
 
   const all = data?.rows ?? [];
-  const minPremium = premiumFloor(params.get("premium"));
+  const minPremium = useMinPremium(list, params.get("premium"));
   const { shown, hidden } = applyFilters(all, { allTrades, allEarnings, allFit, minPremium, q });
   const { thin, inTrade, unfit, small, unmatched } = hidden;
   // Covered calls: manage judges a call unfit only for want of an uncovered 100-share lot, so when
@@ -270,25 +260,12 @@ export function OwnListTab({ list }: { list: IncomeList }) {
             Fits the account
           </Flag>
         )}
-        <label
-          className="chip"
-          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-          title="Hide a trade whose working premium, for the whole contract, is under this. Steps rather than a straight scale, so the small premiums where most rows sit get room. An unquoted option stays shown."
-        >
-          Premium ≥ {minPremium === 0 ? "any" : `$${minPremium.toLocaleString()}`}
-          <input
-            type="range"
-            aria-label="Minimum premium per contract"
-            min={0}
-            max={PREMIUM_STEPS.length - 1}
-            step={1}
-            value={PREMIUM_STEPS.indexOf(minPremium)}
-            onChange={(e) => {
-              const v = PREMIUM_STEPS[Number(e.target.value)] ?? 0;
-              set("premium", v === 0 ? null : String(v));
-            }}
-          />
-        </label>
+        <PremiumSlider
+          list={list}
+          value={minPremium}
+          onChange={(v) => set("premium", v === 0 ? null : String(v))}
+          title="Hide a trade whose working premium, for the whole contract, is under this. Steps rather than a straight scale, so the small premiums where most rows sit get room. An unquoted option stays shown. Remembered for next time."
+        />
         <input
           className="chip review-session-select"
           value={params.get("q") ?? ""}

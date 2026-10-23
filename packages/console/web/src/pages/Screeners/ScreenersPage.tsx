@@ -297,7 +297,6 @@ const SORTS: Record<string, (r: ScreenerRow) => number | string | null> = {
   raw: (r) => r.rawReturnPct,
   ann: (r) => r.annualisedPct,
   dist: (r) => r.distancePct,
-  width: (r) => r.width,
   creditPct: (r) => r.creditPct,
   earnings: (r) => r.earningsDate,
   tradePrice: (r) => r.trade?.working ?? null,
@@ -434,7 +433,6 @@ export function ScreenerTab({ list }: { list: ScreenerList }) {
                 <SortTh label={spread ? "Credit" : "Mid"} k="mid" sort={sort} className="num" title="Per share" />
                 {spread ? (
                   <>
-                    <SortTh label="Width" k="width" sort={sort} className="num" />
                     <SortTh label="Credit %" k="creditPct" sort={sort} className="num" title="Credit as a share of the width; the list's floor is a third" />
                   </>
                 ) : (
@@ -484,7 +482,6 @@ export function ScreenerTab({ list }: { list: ScreenerList }) {
                   <td className="num">{money(r.mid)}</td>
                   {spread ? (
                     <>
-                      <td className="num">{money(r.width)}</td>
                       <td className="num">{pct(r.creditPct)}</td>
                     </>
                   ) : (

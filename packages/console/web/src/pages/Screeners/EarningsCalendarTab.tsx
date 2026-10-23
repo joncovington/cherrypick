@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { EARNINGS_WEEK_DAYS, type EarningsCalendarRow, type EarningsSuggestion, type EarningsTrade, type EarningsTradeLeg } from "@console/shared";
 import { useEarningsCalendar } from "../../lib/api";
+import { PremiumSlider, useMinPremium } from "../../components/PremiumSlider";
 import { ExpiryNote } from "./ExpiryNote";
 
 /**
@@ -338,6 +339,9 @@ export function EarningsCalendarTab() {
   const allTrades = params.get("trade") === "all";
   const sector = params.get("sector");
   const q = (params.get("q") ?? "").trim().toUpperCase();
+  const minPremium = useMinPremium("earnings-calendar", params.get("premium"));
+  // One spread's price at mid, whole contract, credit or debit. A spread with no price yet stays shown.
+  const premiumOk = (r: EarningsCalendarRow) => minPremium === 0 || r.trade?.mid == null || r.trade.mid * 100 >= minPremium;
 
   const all = data?.rows ?? [];
   const latest = data?.days[0] ?? null;
@@ -352,6 +356,7 @@ export function EarningsCalendarTab() {
     (allRegions || r.region === "US") &&
     // A spread read as thin is hidden; one not read yet stays, its targets shown.
     (allTrades || r.trade?.passes !== false) &&
+    premiumOk(r) &&
     (sector === null || r.sector === sector) &&
     (q === "" || r.symbol.includes(q));
   const filtered = all.filter(passes);
@@ -462,6 +467,12 @@ export function EarningsCalendarTab() {
         >
           Liquid trade
         </Flag>
+        <PremiumSlider
+          list="earnings-calendar"
+          value={minPremium}
+          onChange={(v) => set("premium", v === 0 ? null : String(v))}
+          title="Hide a name whose spread, read in regular hours, prices under this at mid for one whole spread (credit or debit). A spread with no price yet stays shown. Remembered for next time."
+        />
         <select className="chip review-session-select" aria-label="Sector" value={sector ?? ""} onChange={(e) => set("sector", e.target.value || null)}>
           <option value="">all sectors</option>
           {sectors.map((s) => (
