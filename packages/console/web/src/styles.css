@@ -4418,8 +4418,20 @@ select.text-input {
 /* win-rate rings */
 .ts-rings {
   position: relative;
+  display: block;
   width: 140px;
   margin: 4px auto 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.ts-rings:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 50%;
 }
 .ts-rings svg {
   display: block;
@@ -4440,7 +4452,8 @@ select.text-input {
   justify-content: center;
   gap: 2px;
 }
-.ts-rings-center .ts-pos {
+.ts-rings-center .ts-pos,
+.ts-rings-center .ts-neg {
   font-family: var(--num-face);
   font-size: 22px;
   font-weight: 700;

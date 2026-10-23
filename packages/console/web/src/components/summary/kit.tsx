@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 
 /**
@@ -115,23 +115,35 @@ function Ring({ r, fraction, className }: { r: number; fraction: number; classNa
   );
 }
 
-/** Two concentric rings: outer = sessions with positive net, inner = settled trades that won. */
+/**
+ * Two concentric rings: outer = sessions with positive net, inner = settled trades that won. The
+ * centre reads one of them; a click flips it. Trades by default -- the per-trade rate is the one
+ * every other surface quotes, and a session's sign can hide a losing trade behind a winning one.
+ */
 export function WinRateArcs({ daysWon, days, wins, trades, tradeNoun = "trades" }: { daysWon: number; days: number; wins: number; trades: number; tradeNoun?: string }) {
+  const [showSessions, setShowSessions] = useState(false);
   if (trades === 0 && days === 0) return <TsEmpty what="win rate" />;
   const dayPct = days > 0 ? (daysWon / days) * 100 : 0;
   const tradePct = trades > 0 ? (wins / trades) * 100 : 0;
+  const centrePct = showSessions ? dayPct : tradePct;
   return (
     <TsCard title="win rate">
-      <div className="ts-rings">
+      <button
+        type="button"
+        className="ts-rings"
+        onClick={() => setShowSessions((s) => !s)}
+        title={`showing ${showSessions ? "sessions" : tradeNoun} — click for ${showSessions ? tradeNoun : "sessions"}`}
+        aria-pressed={showSessions}
+      >
         <svg viewBox="0 0 140 140" role="img" aria-label={`sessions ${dayPct.toFixed(1)}%, ${tradeNoun} ${tradePct.toFixed(1)}%`}>
           <Ring r={54} fraction={dayPct / 100} className="ts-ring-days" />
           <Ring r={36} fraction={tradePct / 100} className="ts-ring-entries" />
         </svg>
-        <div className="ts-rings-center">
-          <span className={dayPct >= 50 ? "ts-pos" : "ts-neg"}>{dayPct.toFixed(0)}%</span>
-          <span className="ts-muted">sessions</span>
-        </div>
-      </div>
+        <span className="ts-rings-center">
+          <span className={centrePct >= 50 ? "ts-pos" : "ts-neg"}>{centrePct.toFixed(0)}%</span>
+          <span className="ts-muted">{showSessions ? "sessions" : tradeNoun}</span>
+        </span>
+      </button>
       <dl className="ts-legend">
         <div>
           <span className="ts-swatch ts-ring-days" /> sessions {daysWon}/{days}
