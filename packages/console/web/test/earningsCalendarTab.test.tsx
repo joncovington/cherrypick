@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { EarningsCalendarPayload, EarningsCalendarRow } from "@console/shared";
+import type { EarningsCalendarPayload, EarningsCalendarRow, EarningsTrade } from "@console/shared";
 
 /**
  * The earnings tab: what its defaults keep (the vendor's view: strong reads, very liquid, optionable,
@@ -242,6 +242,36 @@ describe("the earnings tab", () => {
     expect(html.match(/>after the report</g)?.length).toBe(1);
     expect(html).toContain("AFTER the announcement");
     payload.rows = saved;
+  });
+
+  it("hides a spread priced under the premium floor, keeps an unpriced one, and is off by default", () => {
+    const trade = (mid: number | null): EarningsTrade => ({
+      readingAt: "14:30",
+      takenOn: "2026-10-15",
+      afterReport: false,
+      kind: "credit",
+      right: "P",
+      expiry: "2026-11-20",
+      width: 5,
+      legs: [],
+      mid,
+      natural: mid,
+      shareOfWidth: null,
+      maxLoss: null,
+      passes: true,
+    });
+    const saved = payload.rows;
+    payload.rows = [row({ symbol: "BIGP", trade: trade(1.2) }), row({ symbol: "SMLP", trade: trade(0.15) }), row({ symbol: "NOPX", trade: trade(null) })];
+    try {
+      const off = render("/screeners/earnings?day=2026-10-15");
+      expect(symbols(off)).toEqual(["BIGP", "SMLP", "NOPX"]);
+      expect(off).toContain("Premium ≥ any");
+      const html = render("/screeners/earnings?day=2026-10-15&premium=25");
+      expect(symbols(html)).toEqual(["BIGP", "NOPX"]);
+      expect(html).toContain("Premium ≥ $25");
+    } finally {
+      payload.rows = saved;
+    }
   });
 
   it("always says the suggested spread has no edge", () => {

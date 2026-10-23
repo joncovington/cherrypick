@@ -6,6 +6,7 @@ import { IncomeCard, netPrice } from "../src/pages/Live/IncomeCard";
 import { BandDial, PortfolioCards, placesApart } from "../src/pages/Live/PortfolioCards";
 import { BuyingPowerCard, LadderCard, RiskGraphCard, RiskMatrixCard, ScenarioCards } from "../src/pages/Live/ScenarioCards";
 import { aligned, inView, tables } from "./viewTables";
+import { writePref } from "../src/lib/prefs";
 
 /**
  * The portfolio cards draw packages/manage's reading and decide nothing. The guards: in-band or
@@ -721,6 +722,22 @@ describe("the portfolio tab, simple and detail", () => {
     for (const h of ["Δ SPY sh", "next stops at"]) {
       expect(simple[0]!.headers).not.toContain(h);
       expect(detail[0]!.headers).toContain(h);
+    }
+  });
+
+  it("hides a candidate under the remembered premium floor and says how many", () => {
+    const small = candidate({ underlying: "SMLP", perUnit: { ...candidate().perUnit, cash: 18 } });
+    const c = income({ fits: [candidate({ underlying: "BIGP" }), small] });
+    expect(render(<IncomeCard c={c} />)).toContain("SMLP");
+    writePref("minPremium.live-income", 25);
+    try {
+      const html = render(<IncomeCard c={c} />);
+      expect(html).toContain("BIGP");
+      expect(html).not.toContain("SMLP");
+      expect(html).toContain("1 under $25 hidden");
+      expect(html).toContain("Premium ≥ $25");
+    } finally {
+      writePref("minPremium.live-income", 0);
     }
   });
 
