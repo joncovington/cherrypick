@@ -1070,6 +1070,7 @@ def evaluate_entry(
     # incumbent.
     equalize = bool(params.get("equalize_credit"))
     best_balanced = None
+    declined = None
 
     for cand in candidates:
         sp, lp, sc, lc = cand["short_put"], cand["long_put"], cand["short_call"], cand["long_call"]
@@ -1153,21 +1154,35 @@ def evaluate_entry(
         if not equalize:
             return True, "entered", chosen
         imbalance = abs(put_credit - call_credit)
+        # `equalize_max_imbalance_pct` (2026-10-20): optional ceiling on the residual side
+        # imbalance, as a fraction of the net credit. Judged per candidate HERE rather than
+        # once against the winner after the scan: the scan keeps the smallest ABSOLUTE gap,
+        # so a small gap on a thin candidate can lose to a larger gap on a richer one that is
+        # better balanced as a share. Filtering here asks "is anything on the menu balanced
+        # enough" instead of "is the smallest-absolute-gap pick balanced enough". Absent
+        # (the default) keeps best-available behavior. The last candidate over the cap stays
+        # tracked so a decline can still record what it declined (see below).
+        cap_pct = params.get("equalize_max_imbalance_pct")
+        if cap_pct is not None:
+            try:
+                cap_pct = float(cap_pct)
+            except (TypeError, ValueError):
+                cap_pct = None  # a string like "0.10" would raise on every tick otherwise
+            if cap_pct is not None and imbalance > cap_pct * chosen["net_credit"] + 1e-9:
+                declined = (imbalance, chosen)
+                continue
         if best_balanced is None or imbalance < best_balanced[0] - 1e-9:
             best_balanced = (imbalance, chosen)
 
     if best_balanced is not None:
-        # `equalize_max_imbalance_pct` (2026-10-20): optional ceiling on the residual side
-        # imbalance, as a fraction of the net credit. The scan enters the best-balanced candidate
-        # on offer; the cap asks whether "best-balanced" is balanced ENOUGH. Absent (the default)
-        # keeps best-available behavior. Over the cap the tick declines as `equalize_imbalance`
-        # instead of entering a lopsided pair -- the decline returns before any entry bookkeeping,
-        # so the cadence stagger is untouched and the next tick simply re-scans the menu.
-        cap_pct = params.get("equalize_max_imbalance_pct")
-        gap, best = best_balanced
-        if cap_pct is not None and gap > cap_pct * best["net_credit"] + 1e-9:
-            return False, "equalize_imbalance", None
-        return True, "entered", best
+        return True, "entered", best_balanced[1]
+
+    # Every clearing candidate sat over the cap (the scan still found one -- it just refused
+    # it), or nothing cleared. Distinguish the two: an over-cap refusal keeps the would-be
+    # winner on the attempts row, so the refused legs and credit are re-runnable from the
+    # ledger rather than only from a description.
+    if declined is not None:
+        return False, "equalize_imbalance", declined[1]
 
     return False, last_reason, None
 

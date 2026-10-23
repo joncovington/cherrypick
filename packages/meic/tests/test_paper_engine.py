@@ -3162,11 +3162,43 @@ LOPSIDED_MENU = [
 def test_equalize_imbalance_cap_declines_a_lopsided_best_available():
     snap = _base_snapshot(now_et="13:00", candidates=LOPSIDED_MENU)
     entered, reason, chosen = paper.evaluate_entry(snap, _params(LOPSIDED_EQUALIZE), [])
-    assert entered is False and reason == "equalize_imbalance" and chosen is None
+    assert entered is False and reason == "equalize_imbalance"
+    # The refusal records WHAT it refused: the would-be winner rides on the decline return, so
+    # its legs and credit reach the attempts row and the paired contrast with the base arm is
+    # re-runnable from the ledger rather than only from a description.
+    assert chosen is not None
+    assert chosen["put_credit"] == pytest.approx(0.825, abs=1e-4)
     # The decline is a refusal, not a fallback: with the cap absent the same tick enters the
     # lopsided best-available -- this is exactly the behavior the cap exists to trade away.
     entered, reason, chosen = paper.evaluate_entry(snap, _params(EQUALIZE), [])
     assert entered is True and reason == "entered"
+
+
+# The review counterexample (PR #503): the scan keeps the smallest ABSOLUTE gap, so the
+# minimum-gap winner can sit over the cap while a richer candidate on the same menu is under
+# it -- A: gap 0.21 on 1.45 net (14.5%), B: gap 0.32 on 3.88 (8.25%). Judging only the winner
+# declined the whole tick though an acceptable trade was on the menu.
+MENU_CAP = {**EQUALIZE, "equalize_max_imbalance_pct": 0.10}
+A_OVER = dict(sp_bid=1.005, sp_ask=1.105, sc_bid=0.765, sc_ask=0.865)
+B_UNDER = dict(sp_bid=2.275, sp_ask=2.375, sc_bid=1.925, sc_ask=2.025)
+
+
+def test_equalize_imbalance_cap_filters_the_menu_before_picking():
+    # Under the cap the tick takes the best-balanced candidate that CLEARS the cap, not the
+    # scan's smallest-absolute-gap winner judged on its own: B enters, though A won the scan.
+    snap = _base_snapshot(
+        now_et="13:00",
+        candidates=[_candidate(5, 583, 598, **A_OVER), _candidate(5, 583, 598, **B_UNDER)],
+    )
+    entered, reason, chosen = paper.evaluate_entry(snap, _params(MENU_CAP), [])
+    assert entered is True and reason == "entered"
+    assert chosen["put_credit"] == pytest.approx(2.1, abs=1e-3)
+    assert chosen["net_credit"] == pytest.approx(3.88, abs=1e-3)
+    # The cap absent keeps the scan's own winner (the wider-credit A side is irrelevant without
+    # the key): the filter exists only when the cap is set.
+    entered, reason, chosen = paper.evaluate_entry(snap, _params(EQUALIZE), [])
+    assert entered is True and reason == "entered"
+    assert chosen["put_credit"] == pytest.approx(0.83, abs=1e-3)
 
 
 def test_equalize_imbalance_cap_enters_when_the_pick_is_under_it():
@@ -3189,14 +3221,40 @@ def test_equalize_imbalance_cap_absent_key_leaves_the_pick_untouched():
     assert chosen["put_credit"] == pytest.approx(0.825, abs=1e-4)  # the lopsided 5-wide, as before
 
 
-def test_equalize_imbalance_cap_decline_is_counted_as_a_no_candidate_attempt():
-    # The read side: an over-cap decline must be countable per tick. It lands in the attempts
-    # ledger as outcome `no_candidate` with the reason preserved, and -- like every other
-    # no-candidate tick -- leaves the cadence stagger alone.
-    assert paper._ATTEMPT_OUTCOMES["equalize_imbalance"] == "no_candidate"
+def test_equalize_imbalance_cap_decline_reaches_the_ledger_with_the_refused_candidate(tmp_path):
+    # The read side: an over-cap decline must be countable AND re-runnable. Through the real
+    # recorder it lands as outcome `no_candidate` with the reason preserved in `block_detail`,
+    # the refused legs on `proposed_legs` and the declined credit in `would_be_credit` -- the
+    # ledger behaviour the old membership check on _ATTEMPT_OUTCOMES only described. Like every
+    # other no-candidate tick it leaves the cadence stagger alone.
     snap = _base_snapshot(now_et="13:00", candidates=LOPSIDED_MENU)
-    entered, reason, _ = paper.evaluate_entry(snap, _params(LOPSIDED_EQUALIZE), [])
+    db_path = _init_db(tmp_path)
+    entered, reason, chosen = paper.evaluate_entry(snap, _params(LOPSIDED_EQUALIZE), [])
     assert (entered, reason) == (False, "equalize_imbalance")
+    assert chosen is not None
+    paper._record_entry_attempt(
+        db_path,
+        snapshot=snap,
+        profile="be-hourly-1x-cap",
+        symbol=snap["symbol"],
+        reason=reason,
+        entered=False,
+        chosen=chosen,
+    )
+    import sqlite3
+
+    outcome, detail, legs, put_k, call_k, credit = (
+        sqlite3.connect(db_path)
+        .execute(
+            "SELECT outcome, block_detail, proposed_legs, put_strike, call_strike, would_be_credit "
+            "FROM entry_attempts"
+        )
+        .fetchone()
+    )
+    assert outcome == "no_candidate" and detail == "equalize_imbalance"
+    assert legs is not None and len(json.loads(legs)) == 4
+    assert (put_k, call_k) == (583, 598)
+    assert credit == pytest.approx(0.88, abs=1e-4)  # 0.825 put + 0.055 call at the working price
 
 
 def test_candidates_from_chain_builds_tagged_width_pairs():
