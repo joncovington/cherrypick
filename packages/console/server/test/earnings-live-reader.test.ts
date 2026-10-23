@@ -33,6 +33,21 @@ beforeAll(() => {
      VALUES ('t-two', 1789003600, '2026-10-19', 1.3, 230, 'stream', 1)`,
   ).run();
   db.close();
+  // The live ledger's reduced schema (earnings_trades.db): no marks/events/loop tables and no
+  // status, close-attempt or excursion columns.
+  const live = new Database(path.join(tmp, "earnings", "earnings_trades.db"));
+  live.exec(
+    `CREATE TABLE trades (order_id TEXT PRIMARY KEY, strategy TEXT, symbol TEXT, expiration TEXT,
+       entry_credit REAL, exit_debit REAL, pnl REAL, opened_at REAL, closed_at REAL, arm TEXT,
+       quantity INTEGER, capital_at_risk REAL, entry_cost REAL, exit_cost REAL)`,
+  );
+  live
+    .prepare(
+      `INSERT INTO trades (order_id, strategy, symbol, expiration, entry_credit, opened_at, quantity, capital_at_risk)
+       VALUES ('l-one', 'iron_fly', 'NFLX', '2026-10-23', 2.1, 1789000000, 1, 390)`,
+    )
+    .run();
+  live.close();
   config = { paths: { earningsDir: path.join(tmp, "earnings") } } as unknown as ConsoleConfig;
 });
 
@@ -46,5 +61,16 @@ describe("earnings live positions", () => {
     expect(p.mark?.exitCash).toBe(-130);
     // The row adds up: entry + to-close = the unrealised gross the module recorded.
     expect(p.entryCash! + p.mark!.exitCash!).toBe(p.mark!.unrealizedPnl);
+  });
+
+  it("follow the mode: live reads the live ledger, not paper", () => {
+    const live = readEarningsLive(config, "live");
+    expect(live.positions.map((p) => p.orderId)).toEqual(["l-one"]);
+    const p = live.positions[0]!;
+    expect(p.status).toBeNull();
+    expect(p.mark).toBeNull();
+    expect(live.loop).toBeNull();
+    expect(live.openCapital).toBe(390);
+    expect(readEarningsLive(config, "paper").positions.map((x) => x.orderId)).toEqual(["t-two"]);
   });
 });

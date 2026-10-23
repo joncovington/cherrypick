@@ -529,7 +529,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     return readVerdict(since, q["flagged"] === "1");
   });
   // Open positions as the managed loop sees them: latest mark, and whether the loop is alive.
-  app.get("/api/earnings/live", async () => readEarningsLive(config));
+  app.get("/api/earnings/live", async (req) => readEarningsLive(config, parseMode(req.query)));
   app.get("/api/gex", async (req) => readGex(config, parsePage(req.query)));
   app.get("/api/gex/symbols", async () => ({ symbols: gexSymbols(config) }));
   app.get("/api/gex/profile/:symbol", async (req, reply) => {
