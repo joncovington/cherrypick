@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { setVerdictCaller } from "../src/services/verdictBridge.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +8,9 @@ import type { ConsoleConfig } from "../src/config.js";
 import { ARM_COLUMNS, closePooledDbs } from "../src/readers/db.js";
 import { readEarnings } from "../src/readers/earnings.js";
 import { readExitReasons } from "../src/readers/exitReasons.js";
+
+// readEarnings marks flagged rows from the module's verdict subprocess; never spawn it here.
+setVerdictCaller(() => ({ ok: false, verdict: null, error: "stubbed" }));
 
 /**
  * The console's readers of an earnings ledger, run against the same rows under each name the arm

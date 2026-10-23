@@ -7,6 +7,7 @@ import { suiteEra, withReadOnlyDb, num, str, armColumnOf, hasColumn, type Databa
 import { pageArray, FIRST_PAGE, type PageRequest, type SortAccessors } from "./paging.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { isoStamp, sessionDate } from "../services/report.js";
+import { readFlaggedOrders } from "../services/verdictBridge.js";
 
 /**
  * The era bound for earnings' multi-session surfaces.
@@ -28,6 +29,17 @@ function onOrAfter(stamp: unknown, since: string | null): boolean {
   if (since === null) return true;
   const session = sessionDate(stamp);
   return session === null || session >= since;
+}
+
+/**
+ * SQL that keeps the control arms and drops the advised twins (`advised:<experiment>:<strategy>`).
+ * A twin opens beside its control with identical legs, so summing both per strategy counted every
+ * paired trade twice -- iron_fly read −$6,489 where its control alone was −$2,851 (2026-10-23).
+ * Twins are judged only against their control, as paired differences, on the strategies page.
+ */
+function controlArmsOnly(db: DatabaseHandle): string {
+  const arm = armColumnOf(db, "trades");
+  return `(${arm} IS NULL OR substr(${arm}, 1, 8) <> 'advised:')`;
 }
 
 function round2(v: number): number {
@@ -127,6 +139,7 @@ function readTrades(dbPath: string, mode: TradingMode, since: string | null): Ea
         openedAt: isoStamp(r["opened_at"]),
         closedAt: isoStamp(r["closed_at"]),
         arm: str(r["arm"]),
+        flag: null,
       })),
   );
 }
@@ -300,7 +313,7 @@ export function readEarningsDetail(
       .prepare<[], Record<string, unknown>>(
         `SELECT strategy, symbol, opened_at, closed_at, entry_iv, exit_iv, entry_context, capital_at_risk,
                 pnl - COALESCE(entry_cost, 0) - COALESCE(exit_cost, 0) AS net
-           FROM trades WHERE closed_at IS NOT NULL AND pnl IS NOT NULL ORDER BY closed_at`,
+           FROM trades WHERE closed_at IS NOT NULL AND pnl IS NOT NULL AND ${controlArmsOnly(db)} ORDER BY closed_at`,
       )
       .all()
       .filter((r) => onOrAfter(r["opened_at"], since));
@@ -483,7 +496,7 @@ export function readEarningsAnalytics(
       .prepare<[], Record<string, unknown>>(
         `SELECT opened_at, closed_at, strategy,
                 pnl - COALESCE(entry_cost, 0) - COALESCE(exit_cost, 0) AS net
-           FROM trades WHERE closed_at IS NOT NULL AND pnl IS NOT NULL`,
+           FROM trades WHERE closed_at IS NOT NULL AND pnl IS NOT NULL AND ${controlArmsOnly(db)}`,
       )
       .all()
       // Era-bounded on the ENTRY stamp; open positions below stay unbounded because "open" is
@@ -624,9 +637,12 @@ export function readEarnings(
   const since = eraSince(config, era);
   const liveDb = path.join(config.paths.earningsDir, "earnings_trades.db");
   const paperDb = path.join(config.paths.earningsDir, "paper_trades.db");
-  const trades = [...readTrades(liveDb, "live", since), ...readTrades(paperDb, "paper", since)].sort((a, b) =>
-    (b.openedAt ?? "").localeCompare(a.openedAt ?? ""),
-  );
+  // The flag comes from the verdict's own rule list (the module's derivation), never re-derived here.
+  const flags = readFlaggedOrders();
+  const trades = [
+    ...readTrades(liveDb, "live", since),
+    ...readTrades(paperDb, "paper", since).map((t) => ({ ...t, flag: flags.get(t.orderId) ?? null })),
+  ].sort((a, b) => (b.openedAt ?? "").localeCompare(a.openedAt ?? ""));
   const reviews = [...readReviews(liveDb, "live", since), ...readReviews(paperDb, "paper", since)].sort((a, b) =>
     b.scanDate.localeCompare(a.scanDate),
   );

@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { setVerdictCaller } from "../src/services/verdictBridge.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -11,6 +12,9 @@ import { readEarnings, EARNINGS_HISTORY_SORTS } from "../src/readers/earnings.js
 import { FIRST_PAGE } from "../src/readers/paging.js";
 import { registerSecurity } from "../src/security.js";
 import { registerModuleRoutes } from "../src/routes/modules.js";
+
+// readEarnings marks flagged rows from the module's verdict subprocess; never spawn it here.
+setVerdictCaller(() => ({ ok: false, verdict: null, error: "stubbed" }));
 
 /**
  * The server-sorted history tables (2026-10-16): MEIC's trade log, the flies trade log and the

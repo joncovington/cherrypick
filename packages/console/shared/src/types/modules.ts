@@ -222,6 +222,10 @@ export interface EarningsTradeRow {
   /** The book the row belongs to (`strat_test:<strategy>` or an advised twin); the ledger column is
    *  `arm`, once `profile`, resolved per file by `armColumnOf`. */
   arm: string | null;
+  /** The earnings verdict's flag rule when this row records a defect rather than a decision
+   *  (`verdict.FLAG_RULES`: `entry_tick_close`, `stranded_expiry`), else null. The verdict leaves a
+   *  flagged row out of every strategy figure by default; the history still shows it, marked. */
+  flag: string | null;
 }
 
 /** Totals over every closed trade the history holds — never the rendered page. */

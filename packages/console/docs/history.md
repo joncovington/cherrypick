@@ -225,3 +225,21 @@ flies' stranded verticals shared the spot line's amber, the regime grid's thin-c
 longer fail, and a theme switch could reload before its own pref had saved. The contributed
 `core.metrics summary` verb and the docs survey did not come with it; the survey landed on its own
 as #290.
+
+## Earnings: eleven tabs to eight, and a verdict board (2026-10-23)
+
+The earnings page answered "does this strategy work" three ways that disagreed. `strategies`
+summed the advised twins into their controls (a twin repeats its control's trade, so iron_fly
+read −$6,489 where its control alone was −$2,851), and it called any arm with 30 trades
+"significant", but a trade count is not significance. `performance` overlapped its break labels.
+`analysis` was the generic slide. All three were replaced by one `strategies` page drawn from the module's own
+`strategy_report --json` (`cherrypick.earnings.verdict`). Its centre is an edge chart: net ÷ capital at risk
+per arm with a 90% interval that resamples earnings events, not trades, then where the money goes
+(gross, costs, cost drag, net by exit reason, net without the worst three events, stops that were
+green first), and a drill-down per arm under `?arm=` (not a third path segment: the router's
+`:module/:slide` is the page grammar). Rows the module's dated rule list marks as defects are left
+out by default and marked in the history. `screening` absorbed `upcoming` and the rejection funnel.
+The old ids redirect. Dropped outright: the duplicated comparison table, Sharpe per trade, IV crush
+(50 to 58 points for six of seven structures, so it separated almost nothing), the count-only regime heatmap and the
+rolling-window tabs. The session tiles count control arms only. `summary` stays, as the module's
+simple-view page.

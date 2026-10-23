@@ -160,18 +160,23 @@ export type BwbSlideId = (typeof BWB_SLIDES)[number]["id"];
  * entry side), `decisions` the management log, `strategies` the comparison beside the old
  * `detail`, and `screening` the entry reviews that sat under the trade log. `history` is the closed
  * trades in the suite's standard layout; the old `trades` id reaches it.
+ *
+ * 2026-10-23, eleven tabs to eight. `strategies` is the verdict board (the module's
+ * `strategy_report --json`: net ÷ capital at risk with an event-clustered interval, where the money
+ * goes, a drill-down per arm under `?arm=`), and it absorbed `performance` and `analysis`, which
+ * answered the same question three ways that disagreed. `screening` absorbed `upcoming` and the
+ * rejection funnel that sat on the strategies page: the forward scan, the screen's verdicts and
+ * why it refused, in one place. The old ids reach their new homes. `summary` stays: it is the
+ * module's simple-view page, a suite pattern (console CLAUDE.md, "A summary slide is a module's own").
  */
 export const EARNINGS_SLIDES = [
   { id: "session", label: "session" },
   { id: "summary", label: "summary" },
-  { id: "upcoming", label: "upcoming" },
   { id: "positions", label: "positions" },
   { id: "history", label: "history" },
   { id: "decisions", label: "decisions" },
   { id: "screening", label: "screening" },
   { id: "strategies", label: "strategies" },
-  { id: "performance", label: "performance" },
-  { id: "analysis", label: "analysis" },
   { id: "advisor", label: "advisor" },
 ] as const satisfies readonly NavSlide[];
 
@@ -454,14 +459,22 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   earnings: {
     slides: EARNINGS_SLIDES,
-    simple: ["summary", "session", "upcoming", "performance", "positions"],
+    simple: ["summary", "session", "strategies", "positions"],
     groups: [
-      { label: "today", ids: ["session", "summary", "upcoming"] },
+      { label: "today", ids: ["session", "summary"] },
       { label: "tables", ids: ["positions", "history"] },
-      { label: "evidence", ids: ["decisions", "screening", "strategies"] },
-      { label: "study", ids: ["performance", "analysis", "advisor"] },
+      { label: "evidence", ids: ["decisions", "screening"] },
+      { label: "study", ids: ["strategies", "advisor"] },
     ],
-    legacy: { now: "session", overview: "session", detail: "strategies", trades: "history" },
+    legacy: {
+      now: "session",
+      overview: "session",
+      detail: "strategies",
+      trades: "history",
+      performance: "strategies",
+      analysis: "strategies",
+      upcoming: "screening",
+    },
   },
   curve: {
     slides: CURVE_SLIDES,
