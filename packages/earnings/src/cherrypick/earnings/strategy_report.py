@@ -8,11 +8,19 @@ Usage:
     python strategy_report.py
     python strategy_report.py --since 2026-07-01
     python strategy_report.py --profile strat_test --strategy iron_fly
+    python strategy_report.py --json [--since YYYY-MM-DD] [--include-flagged]
+
+`--json` prints the verdict model (verdict.py) the console's strategies page renders -- every arm,
+twins as paired differences, flagged rows excluded unless asked for. It ignores --profile and
+--strategy: the verdict is the whole book or it is not comparable across arms.
 """
 
 import argparse
+import json
+import sqlite3
+import sys
 
-from cherrypick.earnings import scanner
+from cherrypick.earnings import scanner, verdict
 from cherrypick.earnings import strategy_metrics as sm
 
 STRATEGY_NAMES = [
@@ -97,6 +105,37 @@ def print_strategy_block(name: str, trades: list[dict], capital_basis: float | N
     print()
 
 
+def _read_breaks() -> list[dict]:
+    """The ledger's measurement_breaks, oldest first (empty when the table is absent)."""
+    if not sm.DB_PATH.exists():
+        return []
+    conn = sqlite3.connect(f"file:{sm.DB_PATH}?mode=ro", uri=True)
+    try:
+        rows = conn.execute(
+            "SELECT break_date, key, note FROM measurement_breaks ORDER BY break_date, id"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+    return [{"date": d, "key": k, "note": n} for d, k, n in rows]
+
+
+def verdict_payload(since: str | None, include_flagged: bool) -> dict:
+    # Imported here: the harness is heavy, and only the verdict needs its dated tables.
+    from cherrypick.earnings.strat_test_harness import STRAT_TEST_RETIRED, STRAT_TEST_STARTS
+
+    trades = sm.load_closed_trades() if sm.DB_PATH.exists() else []
+    return verdict.build(
+        trades,
+        since=since,
+        include_flagged=include_flagged,
+        breaks=_read_breaks(),
+        retired=dict(STRAT_TEST_RETIRED),
+        started=dict(STRAT_TEST_STARTS),
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -115,9 +154,18 @@ def main() -> None:
     )
     parser.add_argument("--strategy", default=None, help="limit to one strategy")
     parser.add_argument("--since", default=None, help="YYYY-MM-DD, only trades opened on/after this date")
+    parser.add_argument("--json", action="store_true", help="print the verdict model (verdict.py) as JSON")
+    parser.add_argument(
+        "--include-flagged",
+        action="store_true",
+        help="with --json: keep rows verdict.FLAG_RULES marks as recording a defect",
+    )
     args = parser.parse_args()
 
     sm.DB_PATH = sm.db_path_for_mode(args.mode, args.db)
+    if args.json:
+        json.dump(verdict_payload(args.since, args.include_flagged), sys.stdout)
+        return
     profile = args.profile or ("strat_test" if args.mode == "paper" else "default")
 
     config = scanner._load_config()
