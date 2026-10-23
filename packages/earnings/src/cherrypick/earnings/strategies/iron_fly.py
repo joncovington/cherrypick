@@ -360,7 +360,7 @@ def evaluate_position(position: dict, quotes: dict, config: dict, *, now=None) -
 
     # PROFIT TARGET / STOP LOSS: Primary exit mechanisms (post-IV-crush capture)
     legs = json.loads(position["legs_json"])
-    exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
+    exit_debit = scanner.compute_generic_exit_debit(legs, quotes, scanner.exit_basis(position))
     if exit_debit is None:
         return {"action": "hold"}
     return scanner.evaluate_credit_spread_exit(position["entry_credit"], exit_debit, _strategy_config(config))

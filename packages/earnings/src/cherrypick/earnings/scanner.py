@@ -23,9 +23,11 @@ import threading
 import time
 from datetime import date as _date
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from cherrypick.core import calendar as _calendar
 from cherrypick.core import structures
+from cherrypick.core.livepositions import parse_occ
 
 from cherrypick.earnings import paths as _paths
 
@@ -1499,16 +1501,72 @@ def fetch_quotes_by_symbol(underlying_symbol: str, expiration, option_symbols: l
     return {e["symbol"]: e for e in entries if e["symbol"] in wanted}
 
 
-def compute_generic_exit_debit(legs: list[dict], quotes: dict) -> float | None:
+# Exits are priced at mid for positions ENTERED on or after this session (the 2026-10-26
+# `exit_fill_basis` break), the same basis as entries, with the slippage haircut charged as a cost
+# on both sides. Older positions run off on the natural side they were opened under, so no trade
+# is measured half under one fill model and half under the other.
+MID_EXIT_FROM = "2026-10-26"
+
+_ET = ZoneInfo("America/New_York")
+
+
+def exit_basis(trade: dict) -> str:
+    """ "mid" for a position entered on/after MID_EXIT_FROM, else "natural" (a row with no entry
+    stamp is an old one)."""
+    opened = trade.get("opened_at")
+    if opened is None:
+        return "natural"
+    if isinstance(opened, str):
+        session = opened[:10]
+    else:
+        session = datetime.fromtimestamp(float(opened), _ET).date().isoformat()
+    return "mid" if session >= MID_EXIT_FROM else "natural"
+
+
+def exit_debit_bounds(legs: list[dict]) -> tuple[float, float] | None:
+    """The range a single-expiration structure's exit debit can take, from its payoff at expiry:
+    `(-max value, -min value)` per share, in exit_debit's sign convention. None for a structure
+    spanning expirations (a calendar) or with unbounded payoff, where no clamp is defined.
+
+    The payoff is piecewise linear in the underlying with kinks only at strikes, so its extremes
+    lie at 0, at a strike, or at infinity -- and only a non-zero slope past the top strike makes
+    it unbounded."""
+    parsed = []
+    for leg in legs:
+        p = parse_occ(leg["symbol"])
+        if p is None:
+            return None
+        sign = 1 if leg["action"] == "Buy to Open" else -1
+        parsed.append((p[1], p[2], p[3], sign * leg.get("quantity", 1)))
+    if len({p[0] for p in parsed}) != 1:
+        return None
+    top_slope = sum(q for _, right, _, q in parsed if right == "C")
+    if top_slope != 0:
+        return None
+
+    def value(s: float) -> float:
+        return sum(q * (max(s - k, 0.0) if right == "C" else max(k - s, 0.0)) for _, right, k, q in parsed)
+
+    values = [value(0.0)] + [value(k) for _, _, k, _ in parsed]
+    return -max(values), -min(values)
+
+
+def compute_generic_exit_debit(legs: list[dict], quotes: dict, basis: str = "natural") -> float | None:
     """Signed exit debit for closing an arbitrary multi-leg single-expiration
     position, given its original entry legs (`{symbol, action, quantity}`,
     e.g. parsed from `trades.legs_json`) and live quotes keyed by exact
-    option symbol (see fetch_quotes_by_symbol). Entry-`"Sell to Open"` legs
-    are bought back at ask, entry-`"Buy to Open"` legs are sold at bid --
-    the same conservative same-side-of-spread convention iron_fly's close
-    already used, generalized to any leg count/shape (iron_condor's two
-    distinct short strikes, expected_move_butterfly's asymmetric strikes
-    with a x2 short quantity) instead of duplicated per strategy.
+    option symbol (see fetch_quotes_by_symbol), generalized to any leg
+    count/shape (iron_condor's two distinct short strikes,
+    expected_move_butterfly's asymmetric strikes with a x2 short quantity)
+    instead of duplicated per strategy.
+
+    `basis` (`exit_basis(trade)`) picks the fill:
+      - "natural": entry-`"Sell to Open"` legs are bought back at ask, entry-`"Buy to Open"` legs
+        sold at bid, conceding the spread inside the price (costs.natural_exit_costs then charges
+        no haircut).
+      - "mid": every leg at its mid, as entries are priced, with the haircut charged as a cost;
+        clamped to the structure's payoff range (`exit_debit_bounds`), because a mark off a wide
+        or one-sided book can otherwise price a spread above its width.
 
     Same sign convention as entry_credit: positive means it costs money to
     close, negative means closing nets a credit -- `pnl = (entry_credit -
@@ -1524,7 +1582,12 @@ def compute_generic_exit_debit(legs: list[dict], quotes: dict) -> float | None:
         if q is None:
             return None
         qty = leg.get("quantity", 1)
-        if leg["action"] == "Sell to Open":
+        if basis == "mid":
+            if q.get("bid") is None or q.get("ask") is None:
+                return None
+            mid = (q["bid"] + q["ask"]) / 2.0
+            total += qty * mid if leg["action"] == "Sell to Open" else -qty * mid
+        elif leg["action"] == "Sell to Open":
             if q.get("ask") is None:
                 return None
             total += qty * q["ask"]
@@ -1532,6 +1595,10 @@ def compute_generic_exit_debit(legs: list[dict], quotes: dict) -> float | None:
             if q.get("bid") is None:
                 return None
             total -= qty * q["bid"]
+    if basis == "mid":
+        bounds = exit_debit_bounds(legs)
+        if bounds is not None:
+            total = min(max(total, bounds[0]), bounds[1])
     return total
 
 

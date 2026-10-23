@@ -305,8 +305,14 @@ def _entry_context(criteria: dict, composite_score) -> dict:
 # deleted `strategies.<name>` block would raise rather than disable; dated so it can merge before the
 # boundary and bind on it. The 20-session review in the config's own note set the rule: fewer than 5
 # entries, or losing, retires the calendars. Through 10-12 atm_calendar ran 56 trades at 21% won for
-# -$6,349, double_calendar 35 at 14% for -$3,660.
-STRAT_TEST_RETIRED = {"atm_calendar": "2026-10-15", "double_calendar": "2026-10-15"}
+# -$6,349, double_calendar 35 at 14% for -$3,660. broken_wing_butterfly retires at the 2026-10-26
+# boundary (results review of 2026-10-23): its costs are about 54% of the premium it collects, against
+# 3-9% for every other structure, and it lost net in every era (50 control trades, -$2,334).
+STRAT_TEST_RETIRED = {
+    "atm_calendar": "2026-10-15",
+    "double_calendar": "2026-10-15",
+    "broken_wing_butterfly": "2026-10-26",
+}
 
 
 def strategy_retired(strategy_name: str, session: str) -> bool:
@@ -1014,12 +1020,13 @@ def cmd_run_closes(args) -> dict:
                     if decision.get("action") == "close_all":
                         exit_reason = decision.get("reason") or "close_all"
 
-            exit_debit = scanner.compute_generic_exit_debit(legs, full_quotes)
+            exit_debit = scanner.compute_generic_exit_debit(legs, full_quotes, scanner.exit_basis(trade))
             if exit_debit is None:
                 _skip(trade, "exit_debit_unavailable")
                 continue
 
-            exit_costs = costs.natural_exit_costs(
+            exit_costs = costs.exit_costs(
+                scanner.exit_basis(trade),
                 {"order": {"legs": legs}},
                 [leg_quotes[s] for s in leg_symbols],
                 quantity,

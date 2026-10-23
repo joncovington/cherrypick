@@ -392,6 +392,61 @@ def test_compute_generic_exit_debit_none_when_required_side_missing():
     assert scanner.compute_generic_exit_debit(legs, quotes) is None
 
 
+# --- exit fill basis (the 2026-10-26 `exit_fill_basis` break) ---------------------------------
+
+# ACN 2026-09-30's iron condor: 12.5-wide wings, closed on the natural side at 13.65 -- more than
+# the structure can ever be worth.
+_IC = [
+    {"symbol": "ACN   261002C00265000", "action": "Sell to Open", "quantity": 1},
+    {"symbol": "ACN   261002C00277500", "action": "Buy to Open", "quantity": 1},
+    {"symbol": "ACN   261002P00235000", "action": "Sell to Open", "quantity": 1},
+    {"symbol": "ACN   261002P00222500", "action": "Buy to Open", "quantity": 1},
+]
+
+
+def test_the_exit_basis_follows_the_entry_session():
+    assert scanner.exit_basis({"opened_at": "2026-10-23T15:35:00"}) == "natural"
+    assert scanner.exit_basis({"opened_at": "2026-10-26T15:35:00"}) == "mid"
+    # 2026-10-26 15:35 ET as epoch seconds; 19:35 UTC, the same ET session
+    assert scanner.exit_basis({"opened_at": 1793043300.0}) == "mid"
+    assert scanner.exit_basis({}) == "natural"
+
+
+def test_a_mid_exit_prices_every_leg_at_mid():
+    quotes = {"SC": _quote(1.0, 1.2), "LC": _quote(0.3, 0.4)}
+    legs = [
+        {"symbol": "SC", "action": "Sell to Open", "quantity": 1},
+        {"symbol": "LC", "action": "Buy to Open", "quantity": 1},
+    ]
+    assert scanner.compute_generic_exit_debit(legs, quotes, "mid") == pytest.approx(1.1 - 0.35)
+
+
+def test_the_payoff_bounds_of_an_iron_condor_are_zero_to_its_wing_width():
+    assert scanner.exit_debit_bounds(_IC) == pytest.approx((0.0, 12.5))
+
+
+def test_a_mid_exit_is_clamped_to_the_wing_width_and_a_natural_one_is_not():
+    # a one-sided book after a gap: the call spread's long wing bid collapsed
+    quotes = {
+        _IC[0]["symbol"]: _quote(12.0, 16.0),
+        _IC[1]["symbol"]: _quote(0.0, 2.0),
+        _IC[2]["symbol"]: _quote(0.0, 0.10),
+        _IC[3]["symbol"]: _quote(0.0, 0.05),
+    }
+    assert scanner.compute_generic_exit_debit(_IC, quotes, "mid") == pytest.approx(12.5)
+    assert scanner.compute_generic_exit_debit(_IC, quotes) == pytest.approx(16.10)
+
+
+def test_a_calendar_or_an_unbounded_structure_has_no_clamp():
+    calendar = [
+        {"symbol": "ACN   261002C00250000", "action": "Sell to Open", "quantity": 1},
+        {"symbol": "ACN   261009C00250000", "action": "Buy to Open", "quantity": 1},
+    ]
+    naked = [{"symbol": "ACN   261002C00250000", "action": "Sell to Open", "quantity": 1}]
+    assert scanner.exit_debit_bounds(calendar) is None
+    assert scanner.exit_debit_bounds(naked) is None
+
+
 # --- evaluate_credit_spread_exit / evaluate_debit_spread_exit -------------------
 
 

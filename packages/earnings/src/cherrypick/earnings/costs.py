@@ -19,7 +19,7 @@ from cherrypick.core.fees import (
     apply_exit_costs,
 )
 
-__all__ = ["DEFAULT_COSTS", "apply_entry_costs", "apply_exit_costs", "natural_exit_costs"]
+__all__ = ["DEFAULT_COSTS", "apply_entry_costs", "apply_exit_costs", "exit_costs", "natural_exit_costs"]
 
 
 def natural_exit_costs(order: dict, leg_quotes: list[dict], quantity: int, config: dict) -> dict:
@@ -30,3 +30,12 @@ def natural_exit_costs(order: dict, leg_quotes: list[dict], quantity: int, confi
     ledger records "none charged", not "not recorded"."""
     out = apply_exit_costs(order, leg_quotes, quantity, config)
     return {**out, "slippage": 0.0, "total_cost": round(out["total_cost"] - out["slippage"], 2)}
+
+
+def exit_costs(basis: str, order: dict, leg_quotes: list[dict], quantity: int, config: dict) -> dict:
+    """The exit's cost stack for its fill basis (`scanner.exit_basis`): a mid fill concedes nothing in
+    its price, so it takes the haircut as a cost, the same as an entry; a natural-side fill already
+    conceded it, so it takes fees only."""
+    if basis == "mid":
+        return apply_exit_costs(order, leg_quotes, quantity, config)
+    return natural_exit_costs(order, leg_quotes, quantity, config)

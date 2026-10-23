@@ -373,7 +373,7 @@ def evaluate_position(
     # PROFIT TARGET / STOP LOSS: Use credit-spread exit logic
     # Close when position reaches 10% profit (conservative post-IV-crush target)
     # or stops at 2.0x credit loss (trader-tested threshold)
-    exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
+    exit_debit = scanner.compute_generic_exit_debit(legs, quotes, scanner.exit_basis(position))
     if exit_debit is None:
         return {"action": "hold"}
     return scanner.evaluate_credit_spread_exit(position["entry_credit"], exit_debit, cfg)
