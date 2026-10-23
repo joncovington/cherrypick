@@ -106,6 +106,48 @@ def test_a_null_cap_leaves_sizing_to_buying_power(tmp_path):
     assert _place_one(db_path, cfg)["entry"]["reason"] != "max_structures_per_day_reached"
 
 
+def _attempts(db_path):
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    try:
+        return conn.execute(
+            "SELECT trade_date, arm, outcome, block_detail, ic_order_id FROM entry_attempts ORDER BY id"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def test_every_live_tick_journals_its_entry_decision(tmp_path):
+    """An armed day with no trade yet must still be a session in the live ledger (2026-10-23):
+    the console resolves "latest session" from these rows, and with none it named the last
+    trade's day under today."""
+    db_path = _init_db(tmp_path)
+    cfg = _config()
+    placed = _place_one(db_path, cfg)
+    _place_one(db_path, cfg)
+    rows = _attempts(db_path)
+    assert [r[2] for r in rows] == ["filled", "gate_blocked"]
+    assert all(r[0] == DAY for r in rows)
+    assert rows[0][4] == placed["entry"]["ic_order_id"]
+    assert rows[1][3] == "max_structures_per_day_reached"
+
+
+def test_a_blocked_tick_journals_why(tmp_path):
+    db_path = _init_db(tmp_path)
+    broker = FakeBroker(working=[{"order_id": "STRAY", "underlying_symbol": "XSP"}])
+    live_loop.run_once(_config(), _entry_snapshot(), db_path, broker, live=True, **QUIET)
+    assert [(r[2], r[3]) for r in _attempts(db_path)] == [
+        ("gate_blocked", "entry_blocked: orphaned_orders (1)")
+    ]
+
+
+def test_a_dry_run_tick_journals_nothing(tmp_path):
+    db_path = _init_db(tmp_path)
+    live_loop.run_once(_config(), _entry_snapshot(), db_path, FakeBroker(), live=False, **QUIET)
+    assert _attempts(db_path) == []
+
+
 def test_an_unreadable_ledger_spends_the_whole_budget(tmp_path):
     assert live_loop.entries_today(str(tmp_path / "missing.db"), "XSP", DAY) >= 10**6
 
