@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { PremiumSlider, useMinPremium } from "../../components/PremiumSlider";
 import type { SkateBand, SkateConfig, SkatePayload, SkateSide } from "@console/shared";
 import { SortTh, sortRows, useSort } from "../../components/DataTable";
 import { useSkate } from "../../lib/api";
@@ -357,7 +358,11 @@ export function SkateTab() {
   const latest = data?.days[0] ?? null;
 
   const all = data?.rows ?? [];
-  const views = skateViews(all, side.side, band, passingOnly).filter((v) => q === "" || v.row.symbol.includes(q));
+  const minPremium = useMinPremium("skate", params.get("premium"));
+  const matched = skateViews(all, side.side, band, passingOnly).filter((v) => q === "" || v.row.symbol.includes(q));
+  // The Premium column's figure: one contract at the bid, gross. A pick with no bid stays shown.
+  const views = matched.filter((v) => minPremium === 0 || v.pick.quote.bid === null || v.pick.quote.bid * 100 >= minPremium);
+  const small = matched.length - views.length;
   const counts = skateCounts(all, side.side, band);
   const measured = etStamp(data?.measuredAt ?? null);
 
@@ -424,6 +429,12 @@ export function SkateTab() {
         >
           Passing only
         </Flag>
+        <PremiumSlider
+          list="skate"
+          value={minPremium}
+          onChange={(v) => set("premium", v === 0 ? null : String(v))}
+          title="Hide a pick whose premium for one contract at the bid, before costs, is under this. A pick with no bid stays shown. Remembered for next time."
+        />
         <input
           className="chip review-session-select"
           value={params.get("q") ?? ""}
@@ -433,7 +444,7 @@ export function SkateTab() {
         />
         {data?.status === "ok" && (
           <span className="chip" style={{ whiteSpace: "normal" }}>
-            {views.length} shown · {counts.read} {side.label.toLowerCase()} read · {counts.read - counts.tradable} with no pick passing the hard
+            {views.length} shown{small > 0 ? ` · ${small} under $${minPremium.toLocaleString()} hidden` : ""} · {counts.read} {side.label.toLowerCase()} read · {counts.read - counts.tradable} with no pick passing the hard
             filters hidden · {counts.passing} of {counts.tradable} pass the soft thresholds
           </span>
         )}

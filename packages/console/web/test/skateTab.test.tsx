@@ -182,6 +182,21 @@ describe("the skate tab", () => {
     expect(html).toContain("No forward record written yet");
   });
 
+  it("hides a pick under the premium floor at the bid, keeps one with no bid, and is off by default", () => {
+    const rows = [
+      row("BIGP", band({}), band(null)),
+      row("SMLP", band({ quote: { bid: 0.2, ask: 0.25, volume: 40, openInterest: 900 } }), band(null)),
+      row("NOBID", band({ quote: { bid: null, ask: 0.3, volume: 40, openInterest: 900 } }), band(null)),
+    ];
+    const off = render("/screeners/skate", { ...base, rows });
+    expect(symbols(off)).toEqual(expect.arrayContaining(["BIGP", "SMLP", "NOBID"]));
+    expect(off).toContain("Premium ≥ any");
+    const html = render("/screeners/skate?premium=25", { ...base, rows });
+    expect(symbols(html)).toEqual(expect.arrayContaining(["BIGP", "NOBID"]));
+    expect(symbols(html)).not.toContain("SMLP");
+    expect(html).toContain("1 under $25 hidden");
+  });
+
   it("shows the fee beside the gross premium, and marks a premium that does not cover it", () => {
     const html = render("/screeners/skate");
     expect(html).toContain("Premium, gross");
