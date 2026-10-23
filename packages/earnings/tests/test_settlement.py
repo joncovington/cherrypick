@@ -363,5 +363,7 @@ def test_a_calendars_live_back_month_still_pays_the_closing_stack(monkeypatch):
         trade(CALENDAR, strategy="double_calendar"), snap, "front_expiry", {}, at("13:00")
     )
     assert seen["legs"] == [occ(BACK, "C", 195), occ(BACK, "P", 185)]
-    assert saved["exit_cost"] == pytest.approx(1.0)  # the back month's stack; the OTM front is free
+    assert saved["exit_cost"] == pytest.approx(
+        0.8
+    )  # the back month's fees, its haircut not charged twice; the OTM front is free
     assert saved["settlement_fees"] == 0  # settled worthless: recorded, and zero

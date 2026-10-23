@@ -379,7 +379,7 @@ def close_position(trade: dict, snap: dict, reason: str, config: dict, now: date
     traded = [leg for leg in legs if leg["symbol"] not in settled]
     leg_quotes = [snap["quotes"][leg["symbol"]] for leg in traded]
     exit_costs = (
-        costs.apply_exit_costs({"order": {"legs": traded}}, leg_quotes, quantity, config)
+        costs.natural_exit_costs({"order": {"legs": traded}}, leg_quotes, quantity, config)
         if traded
         else {"total_cost": 0.0, "slippage": 0.0}
     )
