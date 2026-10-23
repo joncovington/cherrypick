@@ -64,7 +64,8 @@ import { readRegimeCuts } from "../readers/regimeCuts.js";
 import { isAgentSession, readFliesAgent, readFliesAgentPack } from "../readers/fliesAgent.js";
 import { readOpeningRange } from "../readers/openingRange.js";
 import { readCalendarsPolicies } from "../services/calendarsBridge.js";
-import { readEarnings, readSymbolWatch, readEarningsAnalytics, readEarningsDetail } from "../readers/earnings.js";
+import { readEarnings, readSymbolWatch, readEarningsAnalytics } from "../readers/earnings.js";
+import { readVerdict } from "../services/verdictBridge.js";
 import { readEarningsLive } from "../readers/earningsLive.js";
 import { readScreenMetrics } from "../services/screenBridge.js";
 import { readGex } from "../readers/gex.js";
@@ -520,9 +521,13 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/earnings/analytics", async (req) =>
     readEarningsAnalytics(config, parseMode(req.query), parseEarningsEra(req.query)),
   );
-  app.get("/api/earnings/detail", async (req) =>
-    readEarningsDetail(config, parseMode(req.query), parseEarningsEra(req.query)),
-  );
+  // The strategy verdict, from the module's own derivation (verdictBridge.ts). Era-default like
+  // every other earnings surface; `flagged=1` keeps the rows the verdict's rule list excludes.
+  app.get("/api/earnings/verdict", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const since = q["era"] === "ALL" ? null : suiteEra(config.paths.orchestratorConfig).from;
+    return readVerdict(since, q["flagged"] === "1");
+  });
   // Open positions as the managed loop sees them: latest mark, and whether the loop is alive.
   app.get("/api/earnings/live", async () => readEarningsLive(config));
   app.get("/api/gex", async (req) => readGex(config, parsePage(req.query)));

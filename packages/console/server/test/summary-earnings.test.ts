@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { setVerdictCaller } from "../src/services/verdictBridge.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -6,6 +7,9 @@ import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../src/config.js";
 import { readEarnings } from "../src/readers/earnings.js";
 import { readEarningsSummary } from "../src/readers/summary/earnings.js";
+
+// readEarnings marks flagged rows from the module's verdict subprocess; never spawn it here.
+setVerdictCaller(() => ({ ok: false, verdict: null, error: "stubbed" }));
 
 /**
  * Earnings' simplified-view summary on a fixture ledger (earnings' own generated schema): the hero

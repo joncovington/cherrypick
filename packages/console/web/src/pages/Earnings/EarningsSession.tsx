@@ -62,14 +62,14 @@ export function EarningsSession({
         value={a?.kpis.expectancy != null ? fmtMoney(a.kpis.expectancy) : null}
         tone={(a?.kpis.expectancy ?? 0) >= 0 ? "pos" : "neg"}
         to="/earnings/strategies"
-        toLabel="the cross-strategy comparison"
+        toLabel="the strategy verdict"
         foot={a === undefined ? "—" : `net of costs · ${String(a.kpis.strategiesActive)} strategies active`}
       />
       <StatTile
         label="recommended ahead"
         value={recommended === null ? null : String(recommended)}
         tone="dim"
-        to="/earnings/upcoming"
+        to="/earnings/screening"
         toLabel="the forward earnings scan"
         foot="symbols the forward scan tiers as recommended"
       />
@@ -94,8 +94,8 @@ export function EarningsSession({
         span={4}
         h={304}
         to="/earnings/strategies"
-        toLabel="per-strategy detail"
-        foot="net of costs · this era"
+        toLabel="the strategy verdict"
+        foot="net of costs · this era · control arms only"
       >
         <DivergingBars
           rows={(a?.strategies ?? []).map((s) => ({ label: s.strategy, value: s.net, title: `${s.strategy}: ${String(s.trades)} trades` }))}

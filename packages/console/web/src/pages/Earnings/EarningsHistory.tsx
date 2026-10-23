@@ -29,6 +29,13 @@ const COLUMNS: ColumnDef<EarningsTradeRow>[] = [
   { id: "how", header: "how", kind: "describe", className: "muted", render: (r) => r.exitKind ?? "—" },
   { id: "reason", header: "exit reason", kind: "describe", className: "muted", render: (r) => r.exitReason ?? "—" },
   {
+    id: "flag",
+    header: "flagged",
+    title: "a row the strategy verdict leaves out because it records a defect, not a decision (verdict.FLAG_RULES)",
+    kind: "describe",
+    render: (r) => (r.flag === null ? "" : <span className="chip chip-warn">{r.flag.replaceAll("_", " ")}</span>),
+  },
+  {
     id: "entry",
     header: "entry",
     title: "opening cash flow, whole position: + received, − paid",

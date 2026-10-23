@@ -143,7 +143,8 @@ alone):
   failure count on the collapsed head; keep the signal on the head.
 - **Where a module classifies its own data, ask it — don't re-derive.** `services/screenBridge.ts`
   reads earnings screening metrics via `python -m cherrypick.earnings.screen_report --json`, memoised
-  ~2 min. A histogram built here off `scan_log` once named gates that never blocked a candidate alone:
+  ~2 min; `services/verdictBridge.ts` reads the strategy verdict (`strategy_report --json`) the
+  same way, and earnings' history takes its `flagged` column from it. A histogram built here off `scan_log` once named gates that never blocked a candidate alone:
   `scan_log` pools four reason vocabularies and has no sole-blocker column, which `screen_metrics`
   already solves.
 - **Mirror a query, bridge a derivation.** A query can be checked against its source by reading both;
