@@ -1071,6 +1071,7 @@ def evaluate_entry(
     equalize = bool(params.get("equalize_credit"))
     best_balanced = None
     declined = None
+    declined_share = None
 
     for cand in candidates:
         sp, lp, sc, lc = cand["short_put"], cand["long_put"], cand["short_call"], cand["long_call"]
@@ -1160,16 +1161,36 @@ def evaluate_entry(
         # so a small gap on a thin candidate can lose to a larger gap on a richer one that is
         # better balanced as a share. Filtering here asks "is anything on the menu balanced
         # enough" instead of "is the smallest-absolute-gap pick balanced enough". Absent
-        # (the default) keeps best-available behavior. The last candidate over the cap stays
-        # tracked so a decline can still record what it declined (see below).
+        # (the default) keeps best-available behavior. A candidate over the cap stays tracked
+        # -- the best-balanced one among them -- so a decline can still record what it declined
+        # (see below).
         cap_pct = params.get("equalize_max_imbalance_pct")
         if cap_pct is not None:
             try:
                 cap_pct = float(cap_pct)
             except (TypeError, ValueError):
                 cap_pct = None  # a string like "0.10" would raise on every tick otherwise
+                logging.getLogger(__name__).warning(
+                    "equalize_max_imbalance_pct is present but not a number; the cap is OFF"
+                )
+            if cap_pct is not None and cap_pct < 0:
+                # Negative shares have no meaning, and the naive comparison would read a
+                # negative cap as declining everything (imbalance >= 0 > cap * net). Silent
+                # refusal-everything is the worst failure shape this key has, so it is OFF
+                # instead, loudly.
+                logging.getLogger(__name__).warning(
+                    "equalize_max_imbalance_pct is negative (%r), which declines every tick; the cap is OFF",
+                    cap_pct,
+                )
+                cap_pct = None
             if cap_pct is not None and imbalance > cap_pct * chosen["net_credit"] + 1e-9:
-                declined = (imbalance, chosen)
+                # Over the cap. Track the best-balanced REFUSAL, not the last one scanned: the
+                # attempt row should describe the strongest trade this arm turned away, and a
+                # replay of the refusals judges that one. First over-cap candidate on a thin
+                # menu is the common case and is kept as-is.
+                share = imbalance / chosen["net_credit"]
+                if declined is None or share < declined_share:
+                    declined, declined_share = (imbalance, chosen), share
                 continue
         if best_balanced is None or imbalance < best_balanced[0] - 1e-9:
             best_balanced = (imbalance, chosen)
@@ -1178,9 +1199,9 @@ def evaluate_entry(
         return True, "entered", best_balanced[1]
 
     # Every clearing candidate sat over the cap (the scan still found one -- it just refused
-    # it), or nothing cleared. Distinguish the two: an over-cap refusal keeps the would-be
-    # winner on the attempts row, so the refused legs and credit are re-runnable from the
-    # ledger rather than only from a description.
+    # it), or nothing cleared. Distinguish the two: an over-cap refusal keeps the best-balanced
+    # refused candidate on the attempts row, so the refused legs and credit are re-runnable
+    # from the ledger rather than only from a description.
     if declined is not None:
         return False, "equalize_imbalance", declined[1]
 
