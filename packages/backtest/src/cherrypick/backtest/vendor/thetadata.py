@@ -94,6 +94,8 @@ def release_session(path: Path | None = None) -> None:
 RETRY_DELAYS = (2.0, 5.0, 15.0)
 #: The vendor refuses an end-of-day range over this many days ("max 365 days allowed").
 MAX_RANGE_DAYS = 365
+#: Calendar days per request when fetching an expiry's daily path (`eod_chain_range`).
+PATH_CHUNK_DAYS = 7
 _TRANSIENT = ("RESOURCE_EXHAUSTED", "UNAVAILABLE", "DEADLINE_EXCEEDED", "429", "OS_LIMIT", "SERVER_STARTING")
 #: The vendor drops a request it has not answered in 60 s with this, every time, for sub-minute
 #: history before 2026 (measured 2026-10-17: 15 s, 30 s and tick, even ten minutes of two strikes).
@@ -271,6 +273,59 @@ class ThetaDataClient:
         for r in df.itertuples(index=False):
             out.append(
                 {
+                    "strike": float(r.strike),
+                    "right": str(r.right).upper(),
+                    "bid": _num(getattr(r, "bid", None)),
+                    "ask": _num(getattr(r, "ask", None)),
+                    "close": _num(getattr(r, "close", None)),
+                    "volume": _num(getattr(r, "volume", None)),
+                    "bid_size": _num(getattr(r, "bid_size", None)),
+                    "ask_size": _num(getattr(r, "ask_size", None)),
+                }
+            )
+        return out
+
+    def eod_chain_range(self, root: str, start: str, through: str, expiration: str) -> list[dict]:
+        """One expiry's whole chain at every session's close in [start, through] (under
+        `MAX_RANGE_DAYS`), each row carrying its ``session``: the daily path a held contract is
+        marked on. The session is the report's own date (``created``), never the last trade's,
+        which for an untraded strike is an earlier day.
+
+        Asked for `PATH_CHUNK_DAYS` at a time: a whole chain over two months is more than the vendor
+        answers before it drops the stream at 60 s (SPY, 2026-10-23). A chunk the vendor holds
+        nothing for (before the expiry was listed) is skipped; the whole range holding nothing is
+        the vendor's `no_data`."""
+        lo, hi = date.fromisoformat(start), date.fromisoformat(through)
+        if (hi - lo).days >= MAX_RANGE_DAYS:
+            raise ValueError(f"an end-of-day range is under {MAX_RANGE_DAYS} days: {start}..{through}")
+        frames, empty = [], None
+        while lo <= hi:
+            top = min(lo + timedelta(days=PATH_CHUNK_DAYS - 1), hi)
+            try:
+                frames.append(
+                    self._call(
+                        "option_history_eod",
+                        start_date=lo,
+                        end_date=top,
+                        symbol=root,
+                        expiration=date.fromisoformat(expiration),
+                    )
+                )
+            except VendorRefusal as refusal:
+                if refusal.reason != "no_data":
+                    raise
+                empty = refusal
+            lo = top + timedelta(days=1)
+        if not frames and empty is not None:
+            raise empty
+        out = []
+        for r in (row for df in frames for row in df.itertuples(index=False)):
+            stamp = getattr(r, "created", None)
+            if stamp is None:
+                continue
+            out.append(
+                {
+                    "session": stamp.date().isoformat(),
                     "strike": float(r.strike),
                     "right": str(r.right).upper(),
                     "bid": _num(getattr(r, "bid", None)),
