@@ -190,7 +190,12 @@ def test_a_daily_path_is_asked_for_in_chunks_and_dated_by_the_report_not_the_las
     week-sized chunks; a chunk before the expiry was listed holds nothing and is skipped."""
     from datetime import date, datetime
 
-    import pandas as pd
+    class Frame:  # the slice of a DataFrame the client uses; CI has no pandas
+        def __init__(self, rows):
+            self.rows = rows
+
+        def itertuples(self, index=False):
+            return (types.SimpleNamespace(**r) for r in self.rows)
 
     asked = []
 
@@ -199,7 +204,7 @@ def test_a_daily_path_is_asked_for_in_chunks_and_dated_by_the_report_not_the_las
         if kw["start_date"] == date(2024, 1, 1):
             raise VendorRefusal("no_data", "No data found")
         day = datetime.combine(kw["end_date"], datetime.min.time())
-        return pd.DataFrame(
+        return Frame(
             [{"created": day, "last_trade": datetime(2023, 12, 1), "strike": 100.0, "right": "put",
               "bid": 1.0, "ask": 1.2, "close": float("nan"), "volume": 0, "bid_size": 1, "ask_size": 1}]
         )  # fmt: skip
