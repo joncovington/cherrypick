@@ -1,4 +1,5 @@
 import type { ArmMoneyRow, EntryOutcomes } from "./costs.js";
+import type { SummaryShape } from "./summary.js";
 import type { TradingMode } from "./status.js";
 
 /**
@@ -1594,6 +1595,8 @@ export interface MeicSummarySlice {
     openTrades: number;
     /** Capital at risk over open rows: the module's own formula, mirrored (readMeicOpenExposure). */
     openRisk: number;
+    /** Per-trade nets' shape (summary.ts). Optional so an older server's payload still renders. */
+    shape?: SummaryShape;
   };
   /** Net kept of premium sold, clamped −50..+50 for the gauge needle; `captureRawPct` unclamped
    *  for the label. Null when no premium was collected. */

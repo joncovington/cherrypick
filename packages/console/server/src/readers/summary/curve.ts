@@ -10,6 +10,7 @@ import {
   breakdownOf,
   emptySlice,
   heroOf,
+  worstNet,
   inWindow,
   scopeTrades,
   sessionNeighbours,
@@ -205,6 +206,15 @@ export function readCurveSummary(config: ConsoleConfig, q: SummaryQuery): Module
         withMaxLoss.length === 0
           ? "n/r: no settled trade recorded its max loss"
           : `net ÷ max loss at entry (width − credit, whole position), ${withMaxLoss.length}/${trades.length} trades`,
+      dollars:
+        withMaxLoss.length === 0
+          ? null
+          : {
+              amount: Math.round(withMaxLoss.reduce((s, t) => s + t.net, 0) * 100) / 100,
+              of: Math.round(atRisk * 100) / 100,
+              ofLabel: "max loss at entry",
+              worst: worstNet(withMaxLoss),
+            },
     },
   ];
 

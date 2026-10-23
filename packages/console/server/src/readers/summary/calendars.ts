@@ -9,6 +9,7 @@ import {
   breakdownOf,
   emptySlice,
   heroOf,
+  worstNet,
   inWindow,
   scopeTrades,
   sessionNeighbours,
@@ -272,6 +273,10 @@ export function readCalendarsSummary(config: ConsoleConfig, q: SummaryQuery): Mo
           : trades.length === 0
             ? "no finished double calendars in this window"
             : `n/r: ${debitRecorded.length}/${trades.length} rows recorded their debit`,
+      dollars:
+        debitPaid === null || debitPaid === 0
+          ? null
+          : { amount: hero.net, of: debitPaid, ofLabel: "debit paid", worst: worstNet(trades) },
     },
   ];
 

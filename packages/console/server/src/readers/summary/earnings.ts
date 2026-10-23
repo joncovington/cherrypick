@@ -11,6 +11,7 @@ import {
   breakdownOf,
   emptySlice,
   heroOf,
+  worstNet,
   inWindow,
   scopeTrades,
   sessionNeighbours,
@@ -186,6 +187,15 @@ export function readEarningsSummary(config: ConsoleConfig, q: SummaryQuery): Mod
         capital > 0
           ? `net ÷ summed max loss ($${Math.round(capital).toLocaleString("en-US")}); ${atRisk.length}/${trades.length} trades recorded a max loss`
           : "n/r: no trade in the window recorded its max loss",
+      dollars:
+        capital > 0
+          ? {
+              amount: Math.round(riskNet * 100) / 100,
+              of: Math.round(capital * 100) / 100,
+              ofLabel: "capital at risk",
+              worst: worstNet(atRisk),
+            }
+          : null,
     },
   ];
 
