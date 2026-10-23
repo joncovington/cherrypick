@@ -86,6 +86,16 @@ The HTML `strategy_dashboard.py` and its suite-dashboard card (`strategy_section
 on 2026-08-12, when the console became the suite's one read surface; the console's Earnings page
 carries the charts.
 
+`--json` prints the **verdict model** (`verdict.py`) instead, and the console's Earnings →
+strategies page draws it rather than computing its own figures. It answers "is there an edge after
+costs, and how sure are we" for each control arm: net ÷ capital at risk with a 90% interval from a
+fixed-seed bootstrap that resamples **earnings events**, not trades. Every strategy opens on the same
+name the same night, so ten trades on one report are one draw. The 30/100 sample targets above are
+milestones for collecting data, not significance: an arm with 66 trades can still sit at t = 0.2. Rows
+that record a defect rather than a decision are excluded by a dated rule list (`FLAG_RULES`: the
+entry-tick closes 2026-09-16..10-15 and the stranded-expiry cohort opened 2026-08-25..27);
+`--include-flagged` keeps them.
+
 **Live vs paper (`--mode`)**: the report defaults to `--mode paper` (this whole program is a
 paper test, and `enable_live_trading` is off). `--mode live` points it at
 `earnings_trades.db` instead of `paper_trades.db` (both in the cherrypick data home) — useful once live trading is
