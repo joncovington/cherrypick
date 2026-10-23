@@ -47,7 +47,7 @@ function round2(v: number): number {
 }
 
 /** A `trades` column, or NULL where the ledger lacks it (the live ledger's reduced schema). */
-function tradeCol(db: DatabaseHandle, name: string): string {
+export function tradeCol(db: DatabaseHandle, name: string): string {
   return hasColumn(db, "trades", name) ? name : "NULL";
 }
 

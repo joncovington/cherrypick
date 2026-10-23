@@ -1,3 +1,4 @@
+import type { TradingMode } from "@console/shared";
 import { useEarningsLive, type EarningsEvent, type EarningsOpenPosition } from "../../lib/api";
 import { DataCard, PnlCell, fmtMoney, sortRows, useSort, type SortHeader } from "../../components/DataTable";
 import { fmtCash, fmtPrice } from "../../lib/format";
@@ -23,10 +24,12 @@ function ago(stamp: string | null): string {
 
 /** A loop that ticks every minute is stale the moment it stops, so this leads with when it last ran
  *  rather than with what it found. */
-function LoopBar() {
-  const { data } = useEarningsLive();
+function LoopBar({ mode }: { mode: TradingMode }) {
+  const { data } = useEarningsLive(mode);
   const loop = data?.loop;
   if (!loop) {
+    // The live ledger has no loop_iterations table, so live never has a tick to show.
+    if (mode === "live") return <span className="chip">live ledger: no marks or loop ticks recorded</span>;
     return <span className="chip">loop: no ticks yet today (it records a row only in session)</span>;
   }
   return (
@@ -80,8 +83,8 @@ const POSITION_SORTS = {
   unrealised: (p: EarningsOpenPosition) => p.mark?.unrealizedPnl ?? null,
 };
 
-export function EarningsLiveCard() {
-  const { data, isLoading, isError } = useEarningsLive();
+export function EarningsLiveCard({ mode }: { mode: TradingMode }) {
+  const { data, isLoading, isError } = useEarningsLive(mode);
   const sort = useSort();
   const positions = sortRows(data?.positions ?? [], sort, POSITION_SORTS);
 
@@ -89,8 +92,8 @@ export function EarningsLiveCard() {
     <DataCard
       title={
         positions.length
-          ? `Open positions — ${fmtMoney(data?.openCapital ?? 0)} at risk`
-          : "Open positions"
+          ? `Open positions — ${mode} book, ${fmtMoney(data?.openCapital ?? 0)} at risk`
+          : `Open positions — ${mode} book`
       }
       headers={POSITION_HEADERS}
       sort={sort}
@@ -99,7 +102,7 @@ export function EarningsLiveCard() {
       rowCount={positions.length}
       numFrom={3}
       empty="Nothing carrying risk. The 15:45 ET scan opens entries; a winner may then be held up to three sessions, a loser closes on the first morning."
-      controls={<LoopBar />}
+      controls={<LoopBar mode={mode} />}
     >
       {positions.map((p) => (
         <tr key={p.orderId}>

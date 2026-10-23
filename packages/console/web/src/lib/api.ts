@@ -902,10 +902,10 @@ export interface EarningsLivePayload {
 
 /** Open earnings positions and the managed loop's own vital signs. Polled at the loop's own
  *  cadence — a faster poll would only redraw the same minute's marks. */
-export function useEarningsLive() {
+export function useEarningsLive(mode: TradingMode = "paper") {
   return useQuery<EarningsLivePayload>({
-    queryKey: ["earnings-live"],
-    queryFn: () => getJson<EarningsLivePayload>("/api/earnings/live"),
+    queryKey: ["earnings-live", mode],
+    queryFn: () => getJson<EarningsLivePayload>(`/api/earnings/live?mode=${mode}`),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });

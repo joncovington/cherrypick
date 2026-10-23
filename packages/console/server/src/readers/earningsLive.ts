@@ -10,10 +10,11 @@
  * writes to it, and a missing table degrades to an empty list rather than failing the page.
  */
 import path from "node:path";
+import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, num, str } from "./db.js";
 import { isoStamp } from "../services/report.js";
-import { perShare } from "./earnings.js";
+import { perShare, tradeCol } from "./earnings.js";
 
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
@@ -97,8 +98,12 @@ function tableExists(db: import("better-sqlite3").Database, name: string): boole
   );
 }
 
-export function readEarningsLive(config: ConsoleConfig): EarningsLivePayload {
-  const dbPath = path.join(config.paths.earningsDir, "paper_trades.db");
+/** `mode` picks the ledger, as every other earnings reader does. The live ledger's reduced schema
+ *  has no marks, events or loop tables and no status/close-attempt/excursion columns, so those read
+ *  as absent rather than failing the query. */
+export function readEarningsLive(config: ConsoleConfig, mode: TradingMode = "paper"): EarningsLivePayload {
+  const file = mode === "live" ? "earnings_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.earningsDir, file);
   const empty: EarningsLivePayload = {
     positions: [],
     events: [],
@@ -115,7 +120,9 @@ export function readEarningsLive(config: ConsoleConfig): EarningsLivePayload {
     const rows = db
       .prepare<[], Record<string, unknown>>(
         `SELECT order_id, symbol, strategy, expiration, entry_credit, quantity, capital_at_risk,
-                opened_at, status, close_attempts, max_unrealized_pnl, min_unrealized_pnl
+                opened_at, ${tradeCol(db, "status")} AS status, ${tradeCol(db, "close_attempts")} AS close_attempts,
+                ${tradeCol(db, "max_unrealized_pnl")} AS max_unrealized_pnl,
+                ${tradeCol(db, "min_unrealized_pnl")} AS min_unrealized_pnl
            FROM trades WHERE closed_at IS NULL ORDER BY opened_at DESC`,
       )
       .all();

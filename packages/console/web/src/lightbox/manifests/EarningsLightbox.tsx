@@ -213,7 +213,7 @@ export function EarningsLightbox({ slide }: { slide: string }) {
       label: EARNINGS_LABEL.positions,
       render: () => (
         <div className="cards cards-wide">
-          <EarningsLiveCard />
+          <EarningsLiveCard mode={mode} />
           <DataCard
             title={`Open positions — ${mode} book, entry side`}
             headers={["strategy", "sym", "exp", "qty", "price", "entry", "entry cost", "max loss"]}
