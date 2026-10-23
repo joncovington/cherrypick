@@ -712,7 +712,14 @@ band drawn as outside when the flag says so). Long and short delta carry no tone
 written before the reading has `portfolio: null` and draws no cards. Both tabs' header shows manage's
 `pre_open` as a red line (a snapshot taken before 09:30 ET reads yesterday's close and leaves today's
 expiring legs unpriced). The contribution cards sum the names past their twelve into one "others"
-row, so the rows add up to the book. `ScenarioCards.tsx` adds a
+row, so the rows add up to the book. **Live marks** (2026-10-22, `readers/manageLive.ts`,
+`/api/manage/live`, `pages/Live/LiveMarks.tsx`) re-price the NEWEST evaluation's legs from the stream
+cache every five seconds: per-trade live P&L and capture on the evaluation's own basis, fees and
+capture denominator, an "at TP" / "at stop" chip against the evaluation's own levels, and the book's
+delta and theta from the streamed greeks with the evaluation's betas. Display only: no verdict is
+re-judged and no in/out-of-band flag is drawn for a live figure (that stays the evaluation's). A trade
+or book figure with any quote over 120 s old reads a dash, never part-marked. A past session shows
+none. `ScenarioCards.tsx` adds a
 buying-power dial (the cap is manage's, set by VIX), the expiry ladder with the earnings exposure,
 the risk graph and the risk matrix. Every figure is manage's repricing; the matrix states which IV
 weighting manage used, and a card manage wrote no reading for is not drawn. `IncomeCard.tsx` lists

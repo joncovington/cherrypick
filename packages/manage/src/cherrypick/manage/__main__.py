@@ -24,6 +24,7 @@ from cherrypick.core.jsonio import write_json_atomic
 from cherrypick.manage import evaluate as _evaluate
 from cherrypick.manage import paths as _paths
 from cherrypick.manage import rules as _rules
+from cherrypick.manage import stream_request as _stream_request
 
 
 def _run(snapshot: dict, rules_path: str | None) -> dict:
@@ -34,6 +35,11 @@ def _run(snapshot: dict, rules_path: str | None) -> dict:
     write_json_atomic(_paths.snapshot_path(session), snapshot)
     target = _paths.eval_path(session)
     write_json_atomic(target, result)
+    # The held legs, declared to the streamer so the console can mark them live until the next run.
+    # Only from the newest evaluation: re-running a past session must not bring its positions back.
+    newest = max((p.stem[5:] for p in target.parent.glob("eval-*.json")), default=session)
+    if session >= newest:
+        _stream_request.register(result)
     counts: dict[str, int] = {}
     for account in result["accounts"]:
         for action, n in account["counts"].items():
