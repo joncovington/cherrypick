@@ -1,4 +1,4 @@
-import type { ModuleSummarySlice, SummaryArmRow, SummaryBreakdown, SummaryCost, SummaryHero, TradingMode } from "@console/shared";
+import type { ModuleSummarySlice, SummaryArmRow, SummaryBreakdown, SummaryCost, SummaryHero, SummaryShape, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../../config.js";
 
 /**
@@ -134,6 +134,24 @@ export function inWindow(session: string, w: { from: string | null; to: string |
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
+/** The per-trade nets' shape (SummaryShape): median, the average win and loss, the worst trade. A
+ *  side with no trade is null, never zero. Shared with MEIC's own summary read. */
+export function shapeOf(nets: readonly number[]): SummaryShape {
+  if (nets.length === 0) return { median: null, avgWin: null, avgLoss: null, worst: null };
+  const sorted = [...nets].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  const wins = nets.filter((n) => n > 0);
+  const losses = nets.filter((n) => n < 0);
+  const avg = (xs: number[]) => (xs.length > 0 ? round2(xs.reduce((s, x) => s + x, 0) / xs.length) : null);
+  return { median: round2(median), avgWin: avg(wins), avgLoss: avg(losses), worst: round2(sorted[0]!) };
+}
+
+/** A gauge's worst-trade figure: the window's single worst net. */
+export function worstNet(trades: readonly { net: number }[]): number | null {
+  return trades.length > 0 ? round2(Math.min(...trades.map((t) => t.net))) : null;
+}
+
 /** Sum a cost line, n/r when any row did not record it. */
 function sumRecorded(values: Array<number | null>): number | null {
   if (values.some((v) => v === null)) return null;
@@ -170,6 +188,7 @@ export function heroOf(trades: readonly SummaryTrade[], chargesSlippage: boolean
     daysWon: dayNets.filter((n) => n > 0).length,
     daysLost: dayNets.filter((n) => n < 0).length,
     open,
+    shape: shapeOf(trades.map((t) => t.net)),
     basis: null,
   };
 }
@@ -242,7 +261,7 @@ export function emptySlice(module: string, mode: TradingMode, unit: string, w: {
     window: w,
     session: { day: null, prev: null, next: null },
     unit,
-    hero: { net: 0, gross: 0, costs: [], trades: 0, wins: 0, sessions: 0, daysWon: 0, daysLost: 0, open: 0, basis: null },
+    hero: { net: 0, gross: 0, costs: [], trades: 0, wins: 0, sessions: 0, daysWon: 0, daysLost: 0, open: 0, basis: null, shape: shapeOf([]) },
     tiles: [],
     gauges: [],
     breakdowns: [],

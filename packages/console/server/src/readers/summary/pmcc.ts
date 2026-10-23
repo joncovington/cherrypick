@@ -10,6 +10,7 @@ import {
   breakdownOf,
   emptySlice,
   heroOf,
+  worstNet,
   inWindow,
   scopeClauses,
   scopeTrades,
@@ -230,6 +231,10 @@ export function readPmccSummary(config: ConsoleConfig, q: SummaryQuery): ModuleS
         costed.length === trades.length
           ? "net ÷ what the long calls cost at entry, over the positions closed in the window"
           : `net ÷ long cost, over the ${costed.length}/${trades.length} positions whose long-call entry price was recorded`,
+      dollars:
+        costed.length > 0 && longCost > 0
+          ? { amount: costedNet, of: longCost, ofLabel: "long calls bought", worst: worstNet(costed) }
+          : null,
     },
   ];
   if (activity.shortMarks > 0) {

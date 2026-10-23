@@ -26,6 +26,19 @@ export interface SummaryCost {
   note?: string;
 }
 
+/**
+ * The shape of the window's per-trade nets, for the cards' second faces: a total says how much, this
+ * says how it was made (555 small wins and one large one read alike as a total). Null = no trade on
+ * that side (no loss: no average loss, and no win ÷ loss ratio).
+ */
+export interface SummaryShape {
+  median: number | null;
+  avgWin: number | null;
+  avgLoss: number | null;
+  /** The single worst trade's net (a loss when any lost). */
+  worst: number | null;
+}
+
 export interface SummaryHero {
   net: number;
   gross: number;
@@ -42,6 +55,8 @@ export interface SummaryHero {
   open: number;
   /** Optional premium line under the hero ("premium collected", "debit paid", "cash deployed"). */
   basis?: { label: string; amount: number } | null;
+  /** Optional so a page served by an older server still renders (its second faces say n/r). */
+  shape?: SummaryShape;
 }
 
 export interface SummaryTile {
@@ -62,6 +77,13 @@ export interface SummaryGauge {
   min: number;
   max: number;
   caption: string;
+  /**
+   * The gauge's dollar face: the numerator and denominator its percentage divides, so a click shows
+   * "$91.7k of $95.5k premium sold" rather than 96%. Absent where the gauge is not a money ratio
+   * (flies' completion rate). `worst` rides on the return gauges: the capital at risk beside the
+   * worst single trade against it.
+   */
+  dollars?: { amount: number; of: number | null; ofLabel: string; worst?: number | null } | null;
 }
 
 export interface SummaryBreakdownRow {
