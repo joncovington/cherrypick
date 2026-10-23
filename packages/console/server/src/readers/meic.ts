@@ -2,10 +2,10 @@ import { hasRange, rangeClauses } from "./dateRange.js";
 import { concededArmMoney, entryOutcomes } from "./armCosts.js";
 import { feeDragPct, sumIfAllRecorded, type ArmCostsPayload } from "@console/shared";
 import path from "node:path";
-import type { MeicDivergence, MeicPayload, MeicTradeRow, MeicTradeTotals, MeicSummaryRow, MeicSummarySlice, Paged, TradingMode } from "@console/shared";
+import type { LiveTodayLoop, MeicDivergence, MeicPayload, MeicTradeRow, MeicTradeTotals, MeicSummaryRow, MeicSummarySlice, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
-import { readOnlyDb, withReadOnlyDb, withReadSnapshot, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
+import { readJson, readOnlyDb, withReadOnlyDb, withReadSnapshot, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest, type SortAccessors } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
@@ -601,7 +601,39 @@ export interface MeicLoopStatus {
   sessionQuality: string | null;
 }
 
+/**
+ * The supervisor's `meic-live` job as the loop's state: MEIC's live loop records no iterations of
+ * its own, and the job is one tick a run (every 60 s while that day's arm record is valid). "live"
+ * when a tick is running or one finished within two minutes, as flies reads its last iteration;
+ * null when the supervisor's registry names no such job.
+ */
+export function meicLoopState(config: ConsoleConfig, now: Date): LiveTodayLoop["loopState"] {
+  const reg = readJson(path.join(config.paths.cherrypick, "state", "supervisor-jobs.json"));
+  const jobs = reg?.["jobs"];
+  const job = typeof jobs === "object" && jobs !== null ? (jobs as Record<string, unknown>)["meic-live"] : undefined;
+  if (typeof job !== "object" || job === null) return null;
+  const row = job as Record<string, unknown>;
+  const running = num(row["running_pid"]) !== null;
+  const lastAt = str(row["last_exit_at"]) ?? str(row["last_start"]);
+  if (lastAt === null && !running) return { state: "no-data", lastAt: null, ageSeconds: null };
+  const t = lastAt === null ? Number.NaN : Date.parse(lastAt);
+  const ageSeconds = Number.isNaN(t) ? null : Math.max(0, (now.getTime() - t) / 1000);
+  return { state: running || (ageSeconds !== null && ageSeconds < 120) ? "live" : "idle", lastAt, ageSeconds };
+}
+
 export function readMeicLoopStatus(config: ConsoleConfig, mode: TradingMode, scope: MeicScopeFilter = NO_SCOPE): MeicLoopStatus {
+  // Live: the loop chip is the supervisor's `meic-live` job, the same read Live → today shows
+  // (2026-10-23). The live tick writes no loop_log rows, so the newest one (07-08) drew an armed,
+  // ticking loop as "idle · 2563h ago". The per-tick context fields stay null: no row carries them.
+  if (mode === "live") {
+    const job = meicLoopState(config, new Date());
+    if (job !== null) {
+      return {
+        state: job.state, lastLoopAt: job.lastAt, ageSeconds: job.ageSeconds, action: null,
+        ivRank: null, underlyingPrice: null, sessionQuality: null,
+      };
+    }
+  }
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
   const empty: MeicLoopStatus = {

@@ -49,6 +49,7 @@ import { NO_TRADE_LOG_QUERY, readFliesAnalytics, readFliesLoopStatus, readFliesT
 import { markSeries, positionsFor } from "./fliesLive.js";
 import { DEFAULT_DISARM, etParts, minutesOf, readBrokerHealth, readHeld, readMeicLive, readOrphans, totalsOf } from "./meicLive.js";
 import { readBwb, readBwbHistory } from "./bwb.js";
+import { meicLoopState } from "./meic.js";
 import { LIVE_BOOKS } from "./liveBooks.js";
 import { readLockStatus, readModuleGate } from "../services/liveLock.js";
 import { MAX_PAGE } from "./paging.js";
@@ -260,25 +261,9 @@ function readFliesToday(config: ConsoleConfig, session: string, minute: number):
 }
 
 // --------------------------------------------------------------------------- meic
-/**
- * The supervisor's `meic-live` job as the loop's state: MEIC's live loop records no iterations of
- * its own, and the job is one tick a run (every 60 s while that day's arm record is valid). "live"
- * when a tick is running or one finished within two minutes, as flies reads its last iteration;
- * null when the supervisor's registry names no such job.
- */
-export function meicLoopState(config: ConsoleConfig, now: Date): LiveTodayLoop["loopState"] {
-  const reg = readJson(path.join(config.paths.cherrypick, "state", "supervisor-jobs.json"));
-  const jobs = reg?.["jobs"];
-  const job = typeof jobs === "object" && jobs !== null ? (jobs as Record<string, unknown>)["meic-live"] : undefined;
-  if (typeof job !== "object" || job === null) return null;
-  const row = job as Record<string, unknown>;
-  const running = num(row["running_pid"]) !== null;
-  const lastAt = str(row["last_exit_at"]) ?? str(row["last_start"]);
-  if (lastAt === null && !running) return { state: "no-data", lastAt: null, ageSeconds: null };
-  const t = lastAt === null ? Number.NaN : Date.parse(lastAt);
-  const ageSeconds = Number.isNaN(t) ? null : Math.max(0, (now.getTime() - t) / 1000);
-  return { state: running || (ageSeconds !== null && ageSeconds < 120) ? "live" : "idle", lastAt, ageSeconds };
-}
+// `meicLoopState` lives in meic.ts (2026-10-23), where the session page's loop chip reads it too;
+// re-exported here for the callers that knew it from this file.
+export { meicLoopState };
 
 /** MEIC `live_loop.daily_loss_tripped`'s input: today's `pnl` over every status, open ICs included. */
 function meicBreakerFigure(dbPath: string, session: string): number | null {
