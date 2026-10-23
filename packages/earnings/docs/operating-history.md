@@ -112,3 +112,22 @@ for the time-spread plan (docs/time-spread-screen-plan.md, step 0), which exclud
   wrong.
 - **The rows stay in the ledger.** A reader should drop `closed_at − opened_at < 600` when reading
   these strategies across that window.
+
+## Exit slippage charged twice (to 2026-10-23)
+
+Exits are priced on the natural side (`scanner.compute_generic_exit_debit`: shorts bought at the
+ask, longs sold at the bid), so the close's gross `pnl` already concedes half of every leg's
+spread. Both close paths (`paper_loop.close_position`, `strat_test_harness.run_closes`) also charged
+the core slippage haircut into `exit_cost`, taking the spread twice. Entries price at mid, so
+theirs was right. Found in the 2026-10-23 results review.
+
+- **Size:** 291 closed rows, $3,680.74 of `exit_cost`, about a third of it on the two retired
+  calendars.
+- **The fix:** `costs.natural_exit_costs` charges an exit its fees and records `exit_slippage` 0.
+- **The backfill:** `scripts/earnings_backfill_exit_slippage.py` (dry run by default) subtracts each
+  row's own `exit_slippage` from its `exit_cost`. The 40 rows from before slippage was recorded
+  keep their unknown haircut, which cannot be separated out.
+- **Why it lands at once:** it is a recording fix, not a measurement change. Exit decisions, `pnl`
+  and `exit_debit` are untouched; only the cost side, and so net, moves.
+- **Still asymmetric:** a natural-side exit concedes about four times the haircut an entry
+  does. Exits move to mid plus the same haircut from 2026-10-26, a declared measurement break.

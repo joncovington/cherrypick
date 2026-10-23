@@ -141,3 +141,11 @@ def test_slippage_never_decreases_as_spreads_widen(legs, widen):
     s0 = costs.apply_entry_costs(order, base, 1, CONFIG)["slippage"]
     s1 = costs.apply_entry_costs(order, wider, 1, CONFIG)["slippage"]
     assert s1 >= s0 - 0.01
+
+
+def test_a_natural_side_exit_is_charged_fees_but_not_the_spread_again():
+    # The fill already bought shorts at the ask and sold longs at the bid; the haircut would take
+    # the spread twice (every exit until 2026-10-23).
+    result = costs.natural_exit_costs(TWO_LEG_ORDER, TWO_LEG_QUOTES, quantity=5, config=CONFIG)
+    assert result["slippage"] == 0.0
+    assert result["total_cost"] == pytest.approx(1.40)  # pass-through only; close commission is 0

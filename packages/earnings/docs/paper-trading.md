@@ -81,7 +81,10 @@ that size would actually risk.
 
 Every paper trade also records `entry_cost`/`exit_cost` from `cherrypick/earnings/costs.py`'s tastytrade fee
 model (commission, clearing, regulatory pass-throughs, and a slippage haircut off the quoted
-bid-ask width) — kept separate from the raw `pnl` column, which always stays gross. Cost-adjusted
+bid-ask width) — kept separate from the raw `pnl` column, which always stays gross. The haircut is
+charged on entries only: entries price at mid, but exits price on the natural side (shorts at the
+ask, longs at the bid), which already concedes the spread inside `pnl`, so `costs.natural_exit_costs`
+records an exit's fees with `exit_slippage` 0 (docs/operating-history.md, 2026-10-23). Cost-adjusted
 expectancy is computed downstream by `strategy_metrics.py`, not baked into `pnl` itself. See
 `CLAUDE.md`'s Database section and `docs/strategy-testing-plan.md` for why this separation
 matters.

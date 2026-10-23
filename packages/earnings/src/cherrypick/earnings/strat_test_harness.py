@@ -1019,7 +1019,7 @@ def cmd_run_closes(args) -> dict:
                 _skip(trade, "exit_debit_unavailable")
                 continue
 
-            exit_costs = costs.apply_exit_costs(
+            exit_costs = costs.natural_exit_costs(
                 {"order": {"legs": legs}},
                 [leg_quotes[s] for s in leg_symbols],
                 quantity,
