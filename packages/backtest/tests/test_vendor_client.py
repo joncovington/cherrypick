@@ -183,3 +183,42 @@ def test_a_stalled_call_reconnects_on_the_same_session_and_is_retried(monkeypatc
     assert fresh.reused is first, "a reconnect reuses the session: no second login"
     assert isinstance(fresh.stub, td._DeadlineStub), "and keeps the deadline"
     assert lines == ["retry option_list_expirations in 2s (stalled; reconnecting)"]
+
+
+def test_a_daily_path_is_asked_for_in_chunks_and_dated_by_the_report_not_the_last_trade(monkeypatch):
+    """A whole chain over two months is dropped by the vendor at 60 s, so the range goes in
+    week-sized chunks; a chunk before the expiry was listed holds nothing and is skipped."""
+    from datetime import date, datetime
+
+    import pandas as pd
+
+    asked = []
+
+    def call(method, **kw):
+        asked.append((kw["start_date"], kw["end_date"]))
+        if kw["start_date"] == date(2024, 1, 1):
+            raise VendorRefusal("no_data", "No data found")
+        day = datetime.combine(kw["end_date"], datetime.min.time())
+        return pd.DataFrame(
+            [{"created": day, "last_trade": datetime(2023, 12, 1), "strike": 100.0, "right": "put",
+              "bid": 1.0, "ask": 1.2, "close": float("nan"), "volume": 0, "bid_size": 1, "ask_size": 1}]
+        )  # fmt: skip
+
+    client = td.ThetaDataClient.__new__(td.ThetaDataClient)
+    monkeypatch.setattr(client, "_call", call, raising=False)
+    rows = client.eod_chain_range("SPY", "2024-01-01", "2024-01-20", "2024-02-16")
+    assert asked == [(date(2024, 1, 1), date(2024, 1, 7)), (date(2024, 1, 8), date(2024, 1, 14)),
+                     (date(2024, 1, 15), date(2024, 1, 20))]  # fmt: skip
+    assert [r["session"] for r in rows] == ["2024-01-14", "2024-01-20"]
+    assert rows[0]["right"] == "PUT" and rows[0]["close"] is None
+
+
+def test_a_daily_path_with_nothing_anywhere_is_the_vendors_no_data(monkeypatch):
+    def call(method, **kw):
+        raise VendorRefusal("no_data", "No data found")
+
+    client = td.ThetaDataClient.__new__(td.ThetaDataClient)
+    monkeypatch.setattr(client, "_call", call, raising=False)
+    with pytest.raises(VendorRefusal) as refused:
+        client.eod_chain_range("SPY", "2024-01-01", "2024-01-20", "2024-02-16")
+    assert refused.value.reason == "no_data"

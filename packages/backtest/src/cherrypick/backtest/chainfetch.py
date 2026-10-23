@@ -48,6 +48,11 @@ CREATE TABLE IF NOT EXISTS eod_chain_requests (
     symbol TEXT NOT NULL, session TEXT NOT NULL, expiration TEXT NOT NULL,
     status TEXT NOT NULL, rows INTEGER NOT NULL DEFAULT 0, detail TEXT, fetched_at REAL NOT NULL,
     PRIMARY KEY (symbol, session, expiration));
+CREATE TABLE IF NOT EXISTS eod_chain_paths (
+    symbol TEXT NOT NULL, expiration TEXT NOT NULL, start TEXT NOT NULL, through TEXT NOT NULL,
+    status TEXT NOT NULL, sessions INTEGER NOT NULL DEFAULT 0, rows INTEGER NOT NULL DEFAULT 0,
+    detail TEXT, fetched_at REAL NOT NULL,
+    PRIMARY KEY (symbol, expiration, start, through));
 """
 
 
@@ -196,6 +201,158 @@ def fetch_chains(
                 if done_n and done_n % 500 == 0:
                     rate = done_n / max(1e-9, time.monotonic() - started)
                     log(f"chains {done_n}/{len(todo)} ({rate:.2f}/s), {report['refused']} refused")
+                if report.get("aborted"):
+                    break
+        report["seconds"] = round(time.monotonic() - started, 1)
+        return report
+    finally:
+        conn.close()
+
+
+def read_path_requests(path: Path) -> list[tuple[str, str, str, str]]:
+    """(SYMBOL, expiration, start, through) in file order, each once. The file is
+    ``{"requests": [{"symbol", "expiration", "start", "through"}, ...]}`` (a bare list also reads)."""
+    doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    items = doc["requests"] if isinstance(doc, dict) else doc
+    seen: dict[tuple[str, str, str, str], None] = {}
+    for it in items:
+        key = (str(it["symbol"]).upper(), str(it["expiration"])[:10], str(it["start"])[:10],
+               str(it["through"])[:10])  # fmt: skip
+        if key[2] > key[3]:
+            raise ValueError(f"path request starts after it ends: {key}")
+        seen.setdefault(key, None)
+    return list(seen)
+
+
+def write_path(conn: sqlite3.Connection, key: tuple[str, str, str, str], rows: list[dict]) -> tuple[int, int]:
+    """One expiry's daily path: each session's rows replace that session's chain and record it
+    complete (so a single-session reader sees it), and the path itself is recorded, all in one
+    transaction. Returns (sessions, rows)."""
+    sym, exp, start, through = key
+    by_day: dict[str, list[dict]] = {}
+    for r in rows:
+        if start <= r["session"] <= through:
+            by_day.setdefault(r["session"], []).append(r)
+    with conn:
+        for day, day_rows in sorted(by_day.items()):
+            conn.execute(
+                "DELETE FROM eod_chain_quotes WHERE symbol = ? AND session = ? AND expiration = ?",
+                (sym, day, exp),
+            )
+            conn.executemany(
+                "INSERT OR REPLACE INTO eod_chain_quotes "
+                "(symbol, session, expiration, strike, right, bid, ask, close, volume, bid_size, ask_size) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (sym, day, exp, r["strike"], r["right"], r.get("bid"), r.get("ask"), r.get("close"),
+                     r.get("volume"), r.get("bid_size"), r.get("ask_size"))
+                    for r in day_rows
+                ],
+            )  # fmt: skip
+            _record(conn, (sym, day, exp), COMPLETE, len(day_rows), None)
+        n = sum(len(v) for v in by_day.values())
+        _record_path(conn, key, COMPLETE if n else EMPTY, len(by_day), n, None)
+    return len(by_day), n
+
+
+def _record_path(conn, key, status: str, sessions: int, rows: int, detail: str | None) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO eod_chain_paths "
+        "(symbol, expiration, start, through, status, sessions, rows, detail, fetched_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (*key, status, sessions, rows, detail, time.time()),
+    )
+
+
+def fetch_paths(
+    settings: dict,
+    client,
+    requests: list[tuple[str, str, str, str]],
+    *,
+    workers: int = 1,
+    refetch: bool = False,
+    limit: int | None = None,
+    log=print,
+) -> dict[str, Any]:
+    """The daily path of each expiry over [start, through], one vendor range call per request (the
+    vendor caps a range at a year): what a replay needs to mark a held contract every session, not
+    only on the day it was opened. Resumable and stopped by a fatal refusal, like `fetch_chains`."""
+    conn = connect(settings)
+    try:
+        done: set = set()
+        if not refetch:
+            done = set(
+                conn.execute(
+                    "SELECT symbol, expiration, start, through FROM eod_chain_paths WHERE status IN (?, ?)",
+                    (COMPLETE, EMPTY),
+                )
+            )
+        todo = [k for k in requests if k not in done]
+        report: dict[str, Any] = {
+            "asked": len(requests),
+            "already": len(requests) - len(todo),
+            "todo": len(todo) if limit is None else min(limit, len(todo)),
+            "complete": 0,
+            "empty": 0,
+            "refused": 0,
+            "sessions": 0,
+            "rows": 0,
+        }
+        if limit is not None:
+            todo = todo[:limit]
+        started = time.monotonic()
+        pending = iter(todo)
+        with ThreadPoolExecutor(max(1, workers)) as ex:
+            running = {}
+
+            def submit_next() -> bool:
+                key = next(pending, None)
+                if key is None:
+                    return False
+                sym, exp, start, through = key
+                running[ex.submit(client.eod_chain_range, vendor_root(sym), start, through, exp)] = key
+                return True
+
+            for _ in range(max(1, workers)):
+                if not submit_next():
+                    break
+            while running:
+                finished, _ = wait(running, return_when=FIRST_COMPLETED)
+                for fut in finished:
+                    key = running.pop(fut)
+                    try:
+                        rows = fut.result()
+                    except VendorRefusal as refusal:
+                        if refusal.reason == NO_DATA:
+                            write_path(conn, key, [])
+                            report["empty"] += 1
+                        else:
+                            with conn:
+                                _record_path(
+                                    conn, key, REFUSED, 0, 0, f"{refusal.reason}: {refusal.detail}"[:300]
+                                )
+                            report["refused"] += 1
+                        if refusal.reason in FATAL:
+                            report["aborted"] = f"{refusal.reason}: {refusal.detail}"[:300]
+                            for other in running:
+                                other.cancel()
+                            running.clear()
+                            break
+                    except Exception as exc:  # noqa: BLE001 -- one request's failure is that request's
+                        with conn:
+                            _record_path(conn, key, REFUSED, 0, 0, f"{type(exc).__name__}: {exc}"[:300])
+                        report["refused"] += 1
+                    else:
+                        days, n = write_path(conn, key, rows)
+                        report["complete" if n else "empty"] += 1
+                        report["sessions"] += days
+                        report["rows"] += n
+                    if not report.get("aborted"):
+                        submit_next()
+                done_n = report["complete"] + report["empty"] + report["refused"]
+                if done_n and done_n % 50 == 0:
+                    rate = done_n / max(1e-9, time.monotonic() - started)
+                    log(f"paths {done_n}/{len(todo)} ({rate:.3f}/s), {report['refused']} refused")
                 if report.get("aborted"):
                     break
         report["seconds"] = round(time.monotonic() - started, 1)

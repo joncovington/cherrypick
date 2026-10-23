@@ -154,3 +154,68 @@ def test_the_vendor_is_asked_in_its_own_spelling_and_the_store_keeps_the_studys(
     with _db(s) as c:
         assert c.execute("SELECT symbol FROM eod_chain_requests").fetchone()[0] == "BRK.B"
     assert chainfetch.vendor_root("BRK.B") == "BRKB" and chainfetch.vendor_root("AAPL") == "AAPL"
+
+
+class FakePaths:
+    """A range call answering three sessions, one of them outside the asked range."""
+
+    def __init__(self, refuse=(), fatal_at=None):
+        self.refuse, self.fatal_at, self.calls = set(refuse), fatal_at, []
+        self.lock = threading.Lock()
+
+    def eod_chain_range(self, root, start, through, expiration):
+        with self.lock:
+            self.calls.append((root, start, through, expiration))
+            if self.fatal_at is not None and len(self.calls) > self.fatal_at:
+                raise VendorRefusal("unauthenticated", "another login took the session")
+        if root in self.refuse:
+            raise VendorRefusal("permission_denied", "not on this tier")
+        return [dict(r, session=day) for day in ("2024-02-01", "2024-02-02", "2024-02-05") for r in _rows(2)]
+
+
+PATHS = [
+    ("AAPL", "2024-03-15", "2024-02-02", "2024-03-15"),
+    ("MSFT", "2024-03-15", "2024-02-02", "2024-03-15"),
+]
+
+
+def test_a_path_writes_each_session_in_range_as_its_own_complete_chain(tmp_path):
+    s = _settings(tmp_path)
+    fake = FakePaths()
+    out = chainfetch.fetch_paths(s, fake, PATHS[:1], log=lambda m: None)
+    assert (out["complete"], out["sessions"], out["rows"]) == (1, 2, 8)
+    assert fake.calls == [("AAPL", "2024-02-02", "2024-03-15", "2024-03-15")]
+    with _db(s) as c:
+        days = [d for (d,) in c.execute("SELECT session FROM eod_chain_requests ORDER BY session")]
+        assert days == ["2024-02-02", "2024-02-05"]  # 02-01 is before the asked start
+        assert c.execute("SELECT status, sessions FROM eod_chain_paths").fetchone() == ("complete", 2)
+    # a single-session request already covered by the path is not fetched again
+    again = FakeChains()
+    chainfetch.fetch_chains(s, again, [("AAPL", "2024-02-05", "2024-03-15")], log=lambda m: None)
+    assert again.calls == []
+
+
+def test_paths_resume_retry_refusals_and_stop_on_a_fatal_one(tmp_path):
+    s = _settings(tmp_path)
+    out = chainfetch.fetch_paths(s, FakePaths(refuse={"MSFT"}), PATHS, log=lambda m: None)
+    assert (out["complete"], out["refused"]) == (1, 1)
+    again = FakePaths()
+    out = chainfetch.fetch_paths(s, again, PATHS, log=lambda m: None)
+    assert [c[0] for c in again.calls] == ["MSFT"] and out["already"] == 1
+    many = [(f"N{k:03d}", "2024-03-15", "2024-02-02", "2024-03-15") for k in range(10)]
+    out = chainfetch.fetch_paths(s, FakePaths(fatal_at=2), many, workers=1, log=lambda m: None)
+    assert "unauthenticated" in out["aborted"] and out["complete"] == 2
+
+
+def test_the_path_request_file_reads_each_once_and_refuses_a_backwards_range(tmp_path):
+    f = tmp_path / "paths.json"
+    item = {"symbol": "spy", "expiration": "2024-03-15", "start": "2024-01-10", "through": "2024-03-15"}
+    f.write_text(json.dumps({"requests": [item, item]}), encoding="utf-8")
+    assert chainfetch.read_path_requests(f) == [("SPY", "2024-03-15", "2024-01-10", "2024-03-15")]
+    f.write_text(json.dumps([dict(item, start="2024-04-01")]), encoding="utf-8")
+    try:
+        chainfetch.read_path_requests(f)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a range ending before it starts must be refused")
