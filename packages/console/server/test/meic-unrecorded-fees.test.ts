@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../src/config.js";
-import { NO_TRADE_QUERY, meicEntryCash, meicTradeCash, readMeic } from "../src/readers/meic.js";
+import { NO_TRADE_QUERY, meicEntryCash, meicTradeCash, readMeic, readMeicLoopStatus } from "../src/readers/meic.js";
 import { totalsOf } from "../src/readers/meicLive.js";
 import { meicLoopState } from "../src/readers/liveToday.js";
 
@@ -156,5 +156,25 @@ describe("the today tab's MEIC loop state", () => {
   it("says no iterations when the job has never run", () => {
     write({ "meic-live": { running_pid: null, last_start: null, last_exit_at: null } });
     expect(meicLoopState(cfg, now)?.state).toBe("no-data");
+  });
+
+  // The session page's loop chip (2026-10-23): an armed, ticking live loop read "idle · 2563h ago"
+  // off the live ledger's last loop_log row, which the live tick never writes.
+  it("is what the session page's live loop chip shows, not the ledger's stale loop_log", () => {
+    const meicDir = path.join(home, "meic");
+    fs.mkdirSync(meicDir, { recursive: true });
+    const db = new Database(path.join(meicDir, "meic_trades.db"));
+    db.exec(SCHEMA);
+    db.prepare("INSERT INTO loop_log (loop_time, loop_date, action, created_at) VALUES (?, ?, ?, ?)").run(
+      "2026-07-08T15:00:00", "2026-07-08", "gate_block", "2026-07-08T15:00:00",
+    );
+    db.close();
+    const liveCfg = { paths: { cherrypick: home, meicDir } } as unknown as ConsoleConfig;
+    write({ "meic-live": { running_pid: 4242, last_start: new Date().toISOString(), last_exit_at: null } });
+    const chip = readMeicLoopStatus(liveCfg, "live");
+    expect(chip.state).toBe("live");
+    expect(chip.action).toBeNull();
+    write({ watchdog: {} });
+    expect(readMeicLoopStatus(liveCfg, "live").state).toBe("idle");
   });
 });
