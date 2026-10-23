@@ -336,7 +336,7 @@ def evaluate_position(
     if days_to_front_expiration <= cfg.get("exit_days_before_front_expiration", 5):
         return {"action": "close_all", "reason": "time_exit"}
 
-    exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
+    exit_debit = scanner.compute_generic_exit_debit(legs, quotes, scanner.exit_basis(position))
     if exit_debit is None:
         return {"action": "hold"}
 

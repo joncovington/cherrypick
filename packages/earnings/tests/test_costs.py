@@ -149,3 +149,10 @@ def test_a_natural_side_exit_is_charged_fees_but_not_the_spread_again():
     result = costs.natural_exit_costs(TWO_LEG_ORDER, TWO_LEG_QUOTES, quantity=5, config=CONFIG)
     assert result["slippage"] == 0.0
     assert result["total_cost"] == pytest.approx(1.40)  # pass-through only; close commission is 0
+
+
+def test_the_exit_cost_follows_the_fill_basis():
+    mid = costs.exit_costs("mid", TWO_LEG_ORDER, TWO_LEG_QUOTES, quantity=5, config=CONFIG)
+    natural = costs.exit_costs("natural", TWO_LEG_ORDER, TWO_LEG_QUOTES, quantity=5, config=CONFIG)
+    assert mid["slippage"] == pytest.approx(87.5)  # a mid fill concedes nothing in its price
+    assert natural["slippage"] == 0.0

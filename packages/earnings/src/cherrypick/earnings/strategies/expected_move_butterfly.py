@@ -287,7 +287,7 @@ def evaluate_position(
     `is_first_check_of_day` is accepted for the harness's managed-close call and unused."""
     cfg = _strategy_config(config)
     legs = json.loads(position["legs_json"])
-    exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
+    exit_debit = scanner.compute_generic_exit_debit(legs, quotes, scanner.exit_basis(position))
     if exit_debit is None:
         return {"action": "hold"}
     quantity = position.get("quantity") or 1

@@ -356,7 +356,7 @@ def mark_position(trade: dict, config: dict, now: datetime) -> tuple[dict, int |
     }
     if snap.get("ok"):
         legs = provider.legs_from_trade(trade)
-        exit_debit = scanner.compute_generic_exit_debit(legs, snap["quotes"])
+        exit_debit = scanner.compute_generic_exit_debit(legs, snap["quotes"], scanner.exit_basis(trade))
         if exit_debit is not None:
             spec["exit_debit"] = exit_debit
             spec["unrealized_pnl"] = management.unrealized_pnl(trade, exit_debit)
@@ -367,7 +367,7 @@ def mark_position(trade: dict, config: dict, now: datetime) -> tuple[dict, int |
 def close_position(trade: dict, snap: dict, reason: str, config: dict, now: datetime) -> dict:
     """Record a close at the confirmed price, and stop the producer holding its legs."""
     legs = provider.legs_from_trade(trade)
-    exit_debit = scanner.compute_generic_exit_debit(legs, snap["quotes"])
+    exit_debit = scanner.compute_generic_exit_debit(legs, snap["quotes"], scanner.exit_basis(trade))
     if exit_debit is None:
         return {"ok": False, "error": "exit_debit_unavailable"}
 
@@ -379,7 +379,7 @@ def close_position(trade: dict, snap: dict, reason: str, config: dict, now: date
     traded = [leg for leg in legs if leg["symbol"] not in settled]
     leg_quotes = [snap["quotes"][leg["symbol"]] for leg in traded]
     exit_costs = (
-        costs.natural_exit_costs({"order": {"legs": traded}}, leg_quotes, quantity, config)
+        costs.exit_costs(scanner.exit_basis(trade), {"order": {"legs": traded}}, leg_quotes, quantity, config)
         if traded
         else {"total_cost": 0.0, "slippage": 0.0}
     )
@@ -859,7 +859,11 @@ def cmd_settle_expired(args) -> dict:
             rest_snapshot=_rest_snapshot,
         )
         legs = provider.legs_from_trade(trade)
-        debit = scanner.compute_generic_exit_debit(legs, snap["quotes"]) if snap.get("ok") else None
+        debit = (
+            scanner.compute_generic_exit_debit(legs, snap["quotes"], scanner.exit_basis(trade))
+            if snap.get("ok")
+            else None
+        )
         if debit is None:
             refused.append(
                 {

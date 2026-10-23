@@ -131,3 +131,46 @@ theirs was right. Found in the 2026-10-23 results review.
   and `exit_debit` are untouched; only the cost side, and so net, moves.
 - **Still asymmetric:** a natural-side exit concedes about four times the haircut an entry
   does. Exits move to mid plus the same haircut from 2026-10-26, a declared measurement break.
+
+## The 2026-10-26 boundary (declared 2026-10-23)
+
+Two measurement-affecting changes from the 2026-10-23 results review, merged early and dated in
+code so they bind together on this session. Journal: one `exit_fill_basis` break and one
+`strat_test_strategies` break, recorded with `paper_loop record-break` on the day.
+
+- **Exits at mid (`exit_fill_basis`).** A position *entered* on or after 2026-10-26
+  (`scanner.MID_EXIT_FROM`) is marked and closed at each leg's mid, the same basis as its entry.
+  The 12.5% haircut is charged as a cost on both sides (`costs.exit_costs`), and the mark is
+  clamped to the structure's payoff range (`scanner.exit_debit_bounds`). Older positions run off
+  on the natural side, so no trade is measured under both models.
+  - Why: under the natural model, an exit conceded about four times what an entry did.
+    Recorded exits went past the structure's maximum value: the ACN 2026-09-30 condor closed at
+    13.65 on 12.50 wings. Stops fired on the far touch of a wide book.
+  - Expect from the boundary: profit targets reached sooner, stops later, and gross nearer mid.
+    Never pool across it.
+- **`broken_wing_butterfly` retired from `strat_test`** (`STRAT_TEST_RETIRED`). Its costs ran about
+  54% of the premium it collected, against 3–9% for every other structure, and it lost net in every
+  era: 50 control trades, −$2,334. It stays registered; its open rows run off.
+- **Considered and not adopted: a per-event cap.** Every strategy opens on every viable name, so
+  one event can land in four or more arms (ACN 2026-09-30 cost about $4.9k across six rows).
+  Capping it would decide which arm gets the event and starve the rest, which breaks forced
+  sampling. The arms are correlated, not biased. The read side handles that with confidence
+  intervals clustered by event, and the live path already takes one strategy per symbol
+  (`rank_strategies`).
+
+### Declared test: `term_structure` as an entry covariate
+
+Across 2026-08-25..10-22, `term_structure` was the only one of 11 recorded entry covariates that
+separated outcomes. On iron_fly, iron_condor and directional_credit_spread, a more inverted front
+month did better: Spearman ρ ≈ −0.29 against net ÷ capital at risk, n = 71 events with
+strategies averaged per event. It was one of 11 tested, so this is a hypothesis, not a gate. It
+is declared now and scored once:
+
+- **Sample:** the first 70 earnings events entered from 2026-10-26 by those three arms. That is
+  about seven weeks at the current rate.
+- **Measure:** Spearman ρ of `entry_context.term_structure` against net ÷ capital at risk,
+  averaged per event, and the net ÷ capital-at-risk gap between the most and least inverted
+  thirds.
+- **Pass:** ρ ≤ −0.20 **and** the most-inverted third's mean beats the least-inverted third's.
+  Both must hold. A pass proposes a `symbol_screen` gate, which is its own boundary. A fail
+  closes it, and the covariate stays recorded.

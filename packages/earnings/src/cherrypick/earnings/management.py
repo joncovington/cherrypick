@@ -329,7 +329,7 @@ def evaluate(
     if action != "hold":
         return Decision(action, verdict.get("reason") or action, {"from": "strategy"})
 
-    exit_debit = scanner.compute_generic_exit_debit(legs, quotes)
+    exit_debit = scanner.compute_generic_exit_debit(legs, quotes, scanner.exit_basis(trade))
     if exit_debit is None:
         return Decision("hold", "unpriceable", {})
     pnl = unrealized_pnl(trade, exit_debit)
