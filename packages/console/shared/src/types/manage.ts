@@ -797,3 +797,47 @@ export interface ManagePayload {
    *  `pre_open`): spot and marks are the last session's, and today's expiring legs are unpriced. */
   preOpen: { takenAt: string | null; expiringUnpriced: string[] } | null;
 }
+
+/* ------------------------------------------------------------------ live marks (2026-10-22) */
+
+/** One trade re-marked from the stream cache: the newest evaluation's legs and basis, today's mids.
+ *  Display only: the evaluation stays the record, and no verdict is re-judged here. Every figure is
+ *  null unless EVERY leg has a fresh quote, so a part-marked trade never reads as a whole one. */
+export interface ManageLiveTrade {
+  tradeId: string;
+  value: number | null;
+  pnlGross: number | null;
+  /** Gross less the evaluation's recorded fees; null where the evaluation had no fee record. */
+  pnlNet: number | null;
+  /** On the evaluation's own basis (credit kept, return on debit, or share of the risk taken). */
+  capture: number | null;
+  /** The live value is at or past the evaluation's take-profit / stop level. */
+  atTakeProfit: boolean;
+  atStop: boolean;
+  legsQuoted: number;
+  legsTotal: number;
+}
+
+/** One account's book greeks from the streamed greeks, beta-weighted with the evaluation's betas. */
+export interface ManageLiveAccount {
+  account: string | null;
+  /** Beta-weighted delta in benchmark shares; null unless every option leg has fresh greeks. */
+  bwd: number | null;
+  /** Dollars a day, whole book. */
+  theta: number | null;
+  legsWithGreeks: number;
+  legsTotal: number;
+}
+
+export interface ManageLivePayload {
+  /** The evaluation re-marked, always the newest; null when none is written. */
+  session: string | null;
+  /** The oldest quote used, epoch ms; null when nothing was fresh. */
+  oldestQuoteAt: number | null;
+  /** A quote older than this is not used, seconds. */
+  maxAgeSeconds: number;
+  trades: ManageLiveTrade[];
+  accounts: ManageLiveAccount[];
+  /** Each held underlying's (and the benchmark's) streamed price. */
+  spots: Record<string, number>;
+}

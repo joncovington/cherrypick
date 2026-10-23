@@ -13,6 +13,16 @@ import { PortfolioCards } from "./PortfolioCards";
 import { ScenarioCards } from "./ScenarioCards";
 import { PmccCards } from "./PmccCards";
 import { WheelCards } from "./WheelCards";
+import {
+  LiveCaptureCell,
+  LiveGreeksCard,
+  LiveMarksContext,
+  LivePnlCell,
+  LiveStatus,
+  liveMarks,
+  useLiveMarks,
+  useManageLive,
+} from "./LiveMarks";
 
 /**
  * The daily position evaluation (packages/manage), read-only. Every trade in the live account judged
@@ -440,6 +450,7 @@ function PortfolioAccount({ a, oversize }: { a: ManageAccount; oversize: number 
   return (
     <>
       <AccountTiles a={a} oversize={oversize} />
+      <LiveGreeksCard a={a} />
       {a.portfolio ? (
         <PortfolioCards p={a.portfolio} scenarios={<ScenarioCards p={a.portfolio} />} />
       ) : (
@@ -537,6 +548,20 @@ function tradeColumns(
         </td>
       ),
     },
+    {
+      key: "livePnl",
+      label: "live P&L",
+      sort: "livePnl",
+      title: "re-marked from the stream every few seconds, on the evaluation's basis and fees; a dash until every leg has a fresh quote",
+      td: (t) => <LivePnlCell id={t.tradeId} />,
+    },
+    {
+      key: "liveCapture",
+      label: "live capture",
+      sort: "liveCapture",
+      title: "capture / return on the live mark; 'at TP' / 'at stop' when it reaches the evaluation's level (the next evaluation judges it)",
+      td: (t) => <LiveCaptureCell id={t.tradeId} />,
+    },
     { key: "dte", label: "short dte", sort: "dte", td: (t) => <td style={RIGHT}>{t.nearestShortDte ?? "—"}</td> },
     {
       key: "earnings",
@@ -613,8 +638,12 @@ export function TradesCard({
   const [open, setOpen] = useState<string | null>(null);
   const sort = useSort();
   const cols = useColumns(tradeColumns(variant, open, setOpen));
+  const live = useLiveMarks();
+  const liveOf = (t: ManageTrade) => live?.trades.get(t.tradeId);
   // Each trade's detail row is rendered inside its own Fragment, so it follows its trade through a sort.
   const rows = sortRows(trades, sort, {
+    livePnl: (t) => liveOf(t)?.pnlNet ?? liveOf(t)?.pnlGross ?? null,
+    liveCapture: (t) => liveOf(t)?.capture ?? null,
     trade: (t) => t.tradeId,
     action: (t) => ACTION_PRIORITY[t.action] ?? 9,
     conf: (t) => t.confidence,
@@ -721,6 +750,9 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
   const nowMs = Date.now();
   const newest = data?.session !== null && data?.session !== undefined && data.session === sessions[sessions.length - 1];
   const late = newest ? snapshotLate(snapMs, nowMs, tradingDay) : null;
+  // Live marks only beside the newest evaluation, and only on the views that show marks or greeks.
+  const wantLive = newest && (view === "positions" || view === "portfolio");
+  const live = liveMarks(useManageLive(wantLive).data);
   const picker =
     sessions.length > 1 ? (
       <select
@@ -751,6 +783,7 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
   }
 
   return (
+    <LiveMarksContext.Provider value={wantLive && live?.payload.session === data?.session ? live : null}>
     <div className="view-fade" style={{ display: "grid", gap: "1rem" }}>
       {/* The card's "as of" is the snapshot's time, not the browser's last poll: the poll re-reads
           the same file every minute, and its clock said nothing about how old the marks were. */}
@@ -770,6 +803,7 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
             greek and verdict here is older than the schedule says
           </p>
         )}
+        <LiveStatus />
         {data?.error && <p className="pnl-neg">evaluation error: {data.error}</p>}
         {data?.snapshotStale && (
           <p className="pnl-neg" title="the watchdog's manage.snapshot_version check; no broker read is made to fix it">
@@ -820,5 +854,6 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
         </Card>
       )}
     </div>
+    </LiveMarksContext.Provider>
   );
 }
