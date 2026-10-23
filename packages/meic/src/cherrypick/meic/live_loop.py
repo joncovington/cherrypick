@@ -776,14 +776,14 @@ def _manage_entry(
         last_entry_min=last_entry_min,
     )
     if not entered:
-        return {"entry": "skipped", "reason": reason}
+        return {"entry": "skipped", "reason": reason, "_chosen": chosen}
 
     quantity = int(params.get("quantity", 1))
     try:
         spec = live_orders.entry_spec(chosen, quantity)
     except ValueError as exc:
         log(f"CRITICAL: could not build entry order: {exc}")
-        return {"entry": "skipped", "reason": f"order_build_failed: {exc}"}
+        return {"entry": "skipped", "reason": f"order_build_failed: {exc}", "_chosen": chosen}
 
     # flies and bwb trade SPX in this account too (2026-10-15): a leg opposite one they hold or have
     # working would net at the broker into a position neither ledger describes. Refused, not repaired;
@@ -791,12 +791,16 @@ def _manage_entry(
     clash = _livepos.cross_module_conflict("meic", symbol, spec)
     if clash is not None:
         log(f"entry refused: {_livepos.describe(clash)} sits opposite another live loop's leg")
-        return {"entry": "skipped", "reason": f"cross_module_sign_conflict: {_livepos.describe(clash)}"}
+        return {
+            "entry": "skipped",
+            "reason": f"cross_module_sign_conflict: {_livepos.describe(clash)}",
+            "_chosen": chosen,
+        }
 
     result = broker.place(spec, live=live)
     log(f"entry order ({'LIVE' if live else 'dry-run'}): {json.dumps(result, default=str)[:300]}")
     if not result.get("ok"):
-        return {"entry": "skipped", "reason": f"broker_rejected: {result.get('error')}"}
+        return {"entry": "skipped", "reason": f"broker_rejected: {result.get('error')}", "_chosen": chosen}
 
     if not live:
         # A dry-run preflight opened nothing -- the live ledger must stay untouched.
@@ -830,6 +834,7 @@ def _manage_entry(
         "net_credit": row["net_credit"],
         "order_id": order_id,
         "save_result": save_result,
+        "_chosen": chosen,
     }
 
 
@@ -1147,7 +1152,36 @@ def run_once(
                 expected_legs(config, db_path, include_pending=True)["legs"],
                 now_iso=_pl._now_et().isoformat(timespec="seconds"),
             )
+    chosen = entry.pop("_chosen", None)
+    if live:
+        _record_attempt(config, snapshot, db_path, symbol, entry, chosen)
     return {"symbol": symbol, "live": live, "orphans": orphans, **fills, **manage, "entry": entry}
+
+
+def _record_attempt(config: dict, snapshot: dict, db_path: str, symbol: str, entry: dict, chosen) -> None:
+    """One `entry_attempts` row per live tick, so the live ledger says what the loop decided today.
+
+    Before this (2026-10-23) the live tick journalled nothing until an IC was placed: an armed day
+    with no trade yet left the ledger's newest date at the last trade, and every console page that
+    resolves "latest session" from the journals showed that old session under today. Paper's own
+    writer, so the schema and outcome taxonomy are one; best effort and never fatal, as there.
+    Live ticks only -- a dry run must leave the live ledger untouched. `filled` here means admitted
+    and submitted (paper's meaning); the broker's word on the fill is the ic_trades row's.
+    """
+    if "blocked" in entry:
+        reason = "entry_blocked: " + ", ".join(entry["blocked"])
+    else:
+        reason = str(entry.get("reason") or entry.get("entry") or "")
+    paper._record_entry_attempt(
+        db_path,
+        snapshot=snapshot,
+        profile=(config.get("live") or {}).get("arm") or EXECUTION_MODE,
+        symbol=symbol,
+        reason=reason,
+        entered=entry.get("entry") == "placed",
+        chosen=chosen,
+        ic_order_id=entry.get("ic_order_id"),
+    )
 
 
 def make_broker(config: dict, designated: str | None) -> _execution.Broker:
