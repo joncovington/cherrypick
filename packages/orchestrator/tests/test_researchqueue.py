@@ -88,12 +88,35 @@ def test_a_script_must_be_committed_under_scripts_and_take_only_string_arguments
 def test_a_refused_row_is_never_added(files, tmp_path):
     db = tmp_path / "q.db"
     with pytest.raises(rq.Refused):
-        rq.add("shell", {}, path=db)
+        rq.add("item17", "shell", {}, path=db)
     assert rq.rows(db) == []
-    out = rq.add("fetch-chains", {"requests": str(files["req"])}, label="item 17", path=db)
-    assert out["needs"] == "thetadata"
+    out = rq.add("item17", "fetch-chains", {"requests": str(files["req"])}, path=db)
+    assert out["needs"] == "thetadata" and out["name"] == "item17/fetch-chains"
     (row,) = rq.rows(db)
-    assert (row["kind"], row["status"], row["label"]) == ("fetch-chains", "queued", "item 17")
+    assert (row["study"], row["step"], row["kind"], row["status"]) == (
+        "item17",
+        "fetch-chains",
+        "fetch-chains",
+        "queued",
+    )
+
+
+def test_a_name_is_two_slugs_and_one_live_row_per_name(files, tmp_path):
+    db = tmp_path / "q.db"
+    req = {"requests": str(files["req"])}
+    for bad_study in ("Item 17", "item_17", "item17/", "-item17", ""):
+        with pytest.raises(rq.Refused, match="slug"):
+            rq.add(bad_study, "fetch-chains", req, path=db)
+    with pytest.raises(rq.Refused, match="slug"):
+        rq.add("item17", "fetch-chains", req, step="Fetch Chains", path=db)
+    rq.add("item17", "fetch-chains", req, path=db)
+    with pytest.raises(rq.Refused, match="already queued as task 1"):
+        rq.add("item17", "fetch-chains", req, path=db)
+    rq.add("item17", "fetch-chains", req, step="fetch-chains-2016", path=db)  # another step is another row
+    assert rq.cancel(1, db)["ok"]
+    rq.add("item17", "fetch-chains", req, path=db)  # a cancelled row is not live: the name is free again
+    assert [r["study"] for r in rq.rows(db, study="item17")] == ["item17"] * 3
+    assert rq.rows(db, study="flow-tags") == []
 
 
 # --- when a task may start ----------------------------------------------------------------------
@@ -196,27 +219,81 @@ def test_one_run_takes_the_oldest_ready_row_and_notifies(files, tmp_path, monkey
     monkeypatch.setattr(rq, "session_held", lambda state_dir=None: False)
     monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
     db = tmp_path / "q.db"
-    rq.add("fetch-chains", {"requests": str(files["req"])}, label="first", path=db)
-    rq.add("fetch-chains", {"requests": str(files["req"])}, label="second", path=db)
+    rq.add("item17", "fetch-chains", {"requests": str(files["req"])}, step="first", path=db)
+    rq.add("item17", "fetch-chains", {"requests": str(files["req"])}, step="second", path=db)
     result, spawned, sent = _run(db, "2026-10-24T20:00")
     assert result["ran"] == 1 and result["status"] == "done"
     assert spawned[0][-2:] == ["--stop-by", "2026-10-26T18:30"]
-    assert sent == [("INFO", "Research task done: first")]
-    statuses = {r["label"]: r["status"] for r in rq.rows(db)}
+    assert sent == [("INFO", "Research task done: item17/first")]
+    statuses = {r["step"]: r["status"] for r in rq.rows(db)}
     assert statuses == {"first": "done", "second": "queued"}
+
+
+def test_a_finished_fetch_points_to_its_counts_its_input_and_its_log(files, tmp_path, monkeypatch):
+    monkeypatch.setattr(rq, "session_held", lambda state_dir=None: False)
+    monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
+    db = tmp_path / "q.db"
+    rq.add("item17", "fetch-chains", {"requests": str(files["req"])}, path=db)
+    _run(db, "2026-10-24T20:00", out='{\n "complete": 2,\n "refused": 1,\n "stopped": false\n}\n')
+    result = json.loads(rq.rows(db)[0]["result"])
+    assert result["report"] == {"complete": 2, "refused": 1, "stopped": False}
+    assert result["input"] == str(files["req"]) and "eod_chains.db" in result["store"]
+    assert result["log"].endswith("1.log")
+
+
+def test_a_script_must_write_its_declared_output_to_be_done(files, tmp_path, monkeypatch):
+    monkeypatch.setattr(rq, "session_held", lambda state_dir=None: False)
+    monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
+    monkeypatch.setattr(rq, "repo_root", lambda: files["root"])
+    db = tmp_path / "q.db"
+    report = tmp_path / "out" / "item17-report.md"
+    script = {"path": "scripts/study.py"}
+    rq.add(
+        "item17",
+        "script",
+        script,
+        step="study",
+        output=str(report),
+        path=db,
+        root=files["root"],
+        tracked=_tracked,
+    )
+    monkeypatch.setattr(rq, "git_tracked", _tracked)
+    _, _, sent = _run(db, "2026-10-26T10:00", out="")
+    row = rq.rows(db)[0]
+    assert row["status"] == "failed" and "was not written" in row["note"]
+    assert sent == [("WARNING", "Research task failed: item17/study")]
+    # Written this time: done, and the row points at it.
+    report.parent.mkdir()
+    report.write_text("verdict", encoding="utf-8")
+    rq.add(
+        "item17",
+        "script",
+        script,
+        step="study",
+        output=str(report),
+        path=db,
+        root=files["root"],
+        tracked=_tracked,
+    )
+    _, _, sent = _run(db, "2026-10-26T10:00", out="")
+    row = rq.rows(db)[0]
+    assert row["status"] == "done"
+    assert json.loads(row["result"])["output"] == str(report) and json.loads(row["result"])["output_exists"]
+    assert sent[0][1] == "Research task done: item17/study"
 
 
 def test_a_failure_notifies_and_a_stopped_fetch_goes_back_to_the_queue(files, tmp_path, monkeypatch):
     monkeypatch.setattr(rq, "session_held", lambda state_dir=None: False)
     monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
     db = tmp_path / "q.db"
-    rq.add("fetch-chains", {"requests": str(files["req"])}, label="bad", path=db)
+    rq.add("item17", "fetch-chains", {"requests": str(files["req"])}, step="bad", path=db)
     _, _, sent = _run(db, "2026-10-26T10:00", code=1, out="")
-    assert sent == [("WARNING", "Research task failed: bad")]
-    rq.add("fetch-chains", {"requests": str(files["req"])}, label="long", path=db)
+    assert sent == [("WARNING", "Research task failed: item17/bad")]
+    rq.add("item17", "fetch-chains", {"requests": str(files["req"])}, step="long", path=db)
     _, _, sent = _run(db, "2026-10-26T10:00", out='{\n "stopped": true\n}\n')
     assert sent == []  # stopped for the window: no news, it resumes
-    long_row = next(r for r in rq.rows(db) if r["label"] == "long")
+    long_row = next(r for r in rq.rows(db) if r["step"] == "long")
     assert long_row["status"] == "queued" and long_row["runs"] == 1 and "resumes" in long_row["note"]
 
 
@@ -227,7 +304,7 @@ def test_nothing_starts_in_the_window_and_an_orphaned_running_row_is_queued_agai
     monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
     monkeypatch.setattr(rq, "pid_alive", lambda pid: False)
     db = tmp_path / "q.db"
-    rq.add("fetch-chains", {"requests": str(files["req"])}, path=db)
+    rq.add("item17", "fetch-chains", {"requests": str(files["req"])}, path=db)
     result, spawned, _ = _run(db, "2026-10-26T19:00")
     assert result["ran"] is None and spawned == [] and "window" in result["waiting"][1]
     with rq.connect(db) as conn:
@@ -239,7 +316,7 @@ def test_nothing_starts_in_the_window_and_an_orphaned_running_row_is_queued_agai
 
 def test_only_a_queued_row_is_cancelled(files, tmp_path):
     db = tmp_path / "q.db"
-    rq.add("fetch-chains", {"requests": str(files["req"])}, path=db)
+    rq.add("item17", "fetch-chains", {"requests": str(files["req"])}, path=db)
     assert rq.cancel(1, db)["status"] == "cancelled"
     assert rq.cancel(1, db)["ok"] is False
     assert rq.cancel(7, db)["ok"] is False

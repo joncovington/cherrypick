@@ -1,4 +1,4 @@
-import type { BridgedResult, ResearchQueue, ResearchTask, ResearchTaskStatus } from "@console/shared";
+import type { BridgedResult, ResearchQueue, ResearchTask, ResearchTaskResult, ResearchTaskStatus } from "@console/shared";
 import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
@@ -41,16 +41,38 @@ function n(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
+function toResult(v: unknown): ResearchTaskResult | null {
+  const r = rec(v);
+  const log = s(r["log"]);
+  if (log === null) return null;
+  const report: Record<string, number | boolean> = {};
+  for (const [k, x] of Object.entries(rec(r["report"]))) if (typeof x === "number" || typeof x === "boolean") report[k] = x;
+  return {
+    log,
+    report: Object.keys(report).length > 0 ? report : null,
+    input: s(r["input"]),
+    store: s(r["store"]),
+    output: s(r["output"]),
+    outputExists: typeof r["output_exists"] === "boolean" ? r["output_exists"] : null,
+  };
+}
+
 function toTask(v: unknown): ResearchTask | null {
   const r = rec(v);
   const id = n(r["id"]);
   const kind = s(r["kind"]);
+  const study = s(r["study"]);
+  const step = s(r["step"]);
   const status = s(r["status"]) as ResearchTaskStatus | null;
-  if (id === null || kind === null || status === null || !STATUSES.includes(status)) return null;
+  if (id === null || kind === null || study === null || step === null || status === null || !STATUSES.includes(status)) return null;
   return {
     id,
+    study,
+    step,
+    name: `${study}/${step}`,
     kind,
-    label: s(r["label"]),
+    output: s(r["output"]),
+    result: toResult(r["result"]),
     args: rec(r["args"]),
     needs: s(r["needs"]) ?? "",
     notBefore: s(r["not_before"]),

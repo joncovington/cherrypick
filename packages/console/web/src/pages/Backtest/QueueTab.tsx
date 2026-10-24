@@ -8,6 +8,8 @@ import { useBridged } from "../../lib/bridged";
  * job runs one at a time, read through `/api/backtest/queue` (`services/researchQueueBridge.ts`, the
  * orchestrator's `queue-list`). Read-only: rows are added with `run.py queue-add` and cancelled with
  * `run.py queue-cancel`. Why a queued row waits is the orchestrator's own reason, shown as given.
+ * Rows are grouped by study (the category; a row's name is `study/step`), and a finished row shows
+ * what it produced: a fetch's counts and input, a script's declared conclusion, its log.
  */
 
 const STATUS_CHIP: Record<ResearchTask["status"], string> = {
@@ -38,6 +40,27 @@ export function argsLine(args: Record<string, unknown>): string {
     .join(" · ");
 }
 
+function fileName(p: string): string {
+  return p.split(/[\\/]/).pop() ?? p;
+}
+
+/** What a finished row produced: a fetch's counts, and the file it points to -- a script's declared
+ *  conclusion (marked when missing), else the fetch's input -- then its log, each by name. */
+export function resultLine(t: ResearchTask): string {
+  const r = t.result;
+  if (r === null) return t.output ? `will write ${fileName(t.output)}` : "—";
+  const parts: string[] = [];
+  if (r.report) {
+    const keys = ["complete", "empty", "refused", "rows"] as const;
+    const counts = keys.filter((k) => typeof r.report?.[k] === "number").map((k) => `${String(r.report?.[k])} ${k}`);
+    if (counts.length > 0) parts.push(counts.join(", "));
+  }
+  if (r.output) parts.push(r.outputExists === false ? `${fileName(r.output)} (missing)` : fileName(r.output));
+  else if (r.input) parts.push(`from ${fileName(r.input)}`);
+  parts.push(fileName(r.log));
+  return parts.join(" · ");
+}
+
 function StateCell({ t }: { t: ResearchTask }) {
   const detail = t.status === "queued" ? (t.waits === "ready" ? "ready: starts at the next tick" : t.waits) : t.note;
   return (
@@ -47,6 +70,17 @@ function StateCell({ t }: { t: ResearchTask }) {
     </td>
   );
 }
+
+/** The rows grouped by study (the category), studies in name order, each study's rows newest first. */
+export function byStudy(tasks: ResearchTask[]): Array<[string, ResearchTask[]]> {
+  const groups = new Map<string, ResearchTask[]>();
+  for (const t of tasks) groups.set(t.study, [...(groups.get(t.study) ?? []), t]);
+  return [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([s, ts]) => [s, [...ts].sort((x, y) => y.id - x.id)] as [string, ResearchTask[]]);
+}
+
+const COLUMNS = 11;
 
 export function QueueTable({ q }: { q: ResearchQueue }) {
   if (q.tasks.length === 0) {
@@ -58,10 +92,11 @@ export function QueueTable({ q }: { q: ResearchQueue }) {
         <thead>
           <tr>
             <th className="num">#</th>
-            <th>Task</th>
+            <th title="The step within its study: the row's name is study/step">Step</th>
             <th>Kind</th>
             <th title="What the task was given: a file is shown by its name">Arguments</th>
             <th>State</th>
+            <th title="What a finished row produced: its counts and the file it points to, then its log">Result</th>
             <th className="num" title="How many times it has started: a fetch stopped for the nightly window resumes as a new run">
               Runs
             </th>
@@ -72,11 +107,17 @@ export function QueueTable({ q }: { q: ResearchQueue }) {
           </tr>
         </thead>
         <tbody>
-          {q.tasks.map((t) => (
+          {byStudy(q.tasks).map(([study, rows]) => [
+            <tr key={`study-${study}`} className="row-group">
+              <th colSpan={COLUMNS} scope="rowgroup">
+                {study} <span className="muted">· {rows.length} task{rows.length === 1 ? "" : "s"}</span>
+              </th>
+            </tr>,
+            ...rows.map((t) => (
             <tr key={t.id}>
               <td className="num">{t.id}</td>
-              <td>
-                {t.label ?? "—"}
+              <td title={t.name}>
+                {t.step}
                 {t.needs.includes("thetadata") ? (
                   <span className="chip" title="Needs the vendor account's one ThetaData session">
                     ThetaData
@@ -88,13 +129,15 @@ export function QueueTable({ q }: { q: ResearchQueue }) {
               <td>{t.kind}</td>
               <td className="muted">{argsLine(t.args)}</td>
               <StateCell t={t} />
+              <td className={t.result?.outputExists === false ? "pnl-neg" : undefined}>{resultLine(t)}</td>
               <td className="num">{t.runs}</td>
               <td>{stamp(t.createdAt)}</td>
               <td>{stamp(t.startedAt)}</td>
               <td>{stamp(t.finishedAt)}</td>
               <td className={t.exitCode !== null && t.exitCode !== 0 ? "num pnl-neg" : "num"}>{t.exitCode ?? "—"}</td>
             </tr>
-          ))}
+            )),
+          ])}
         </tbody>
       </table>
     </div>
@@ -125,7 +168,8 @@ export function BacktestQueueTab() {
       <p className="muted" style={{ marginTop: 8 }}>
         The supervisor runs one task at a time, oldest ready first: an allow-listed fetch (fetch-chains, fetch-flow) or a
         script checked into <code>scripts/</code>. A fetch stopped by the nightly window resumes after it. Add one with{" "}
-        <code>run.py queue-add --task &lt;kind&gt; --task-args &apos;&#123;…&#125;&apos;</code>; cancel a queued one with{" "}
+        <code>run.py queue-add --study &lt;study&gt; [--step &lt;step&gt;] --task &lt;kind&gt; --task-args &apos;&#123;…&#125;&apos;</code>; a
+        task is named study/step, and a study is its category. Cancel a queued one with{" "}
         <code>run.py queue-cancel --task-id N</code>. Read-only here.
       </p>
     </Card>

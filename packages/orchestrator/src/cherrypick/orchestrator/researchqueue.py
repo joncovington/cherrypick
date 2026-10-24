@@ -22,9 +22,16 @@ unreviewed code run by it. A kind builds its own argv from the row's arguments:
   sooner;
 - `not_before` holds a row back until then.
 
+**Names** (2026-10-24): a row is `study/step`, both lowercase slugs checked on the way in. The study
+is its category (`item17`, `flow-tags`); the step is what it does there (`plan`, `fetch-chains`,
+`study`), defaulting to the kind. There is one live row per name, so the same fetch is never queued
+twice, and never a free-text label.
+
 **Outcomes** (`status`): `done`, `failed` (a non-zero exit), `stopped` (its own stop-by passed), or
-back to `queued` (a fetch stopped by a blackout, to resume after it). Each finish and each failure is
-one notification. The task's output goes to `logs/research-queue/<id>.log`.
+back to `queued` (a fetch stopped by a blackout, to resume after it). A finished row's `result`
+points to what it produced (`result_of`): a fetch's counts and the request or plan file it worked
+through; a script's declared `output`, which must exist (exit 0 without it is `failed`); always its
+log, `logs/research-queue/<id>.log`. Each finish and each failure is one notification.
 
 Deterministic, no AI. This module reads and writes only its own table and log files, and drives the
 fetches and scripts by subprocess -- it imports no other package.
@@ -33,6 +40,7 @@ fetches and scripts by subprocess -- it imports no other package.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import subprocess
 import sys
@@ -54,12 +62,20 @@ THETADATA = "thetadata"
 SESSION_LOCK = "thetadata-session.lock"  # the backtest package's (vendor/thetadata.py SESSION_LOCK)
 STATUSES = ("queued", "running", "done", "failed", "stopped", "cancelled")
 
+# A row's name is `study/step`, both slugs: the study is its category (item17, flow-tags), the step
+# what it does there (plan, fetch-chains, study). One live row per name; a free-text label never.
+SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+LIVE = ("queued", "running")
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    study TEXT NOT NULL,
+    step TEXT NOT NULL,
     kind TEXT NOT NULL,
     args TEXT NOT NULL,
-    label TEXT,
+    output TEXT,
+    result TEXT,
     needs TEXT NOT NULL DEFAULT '',
     not_before TEXT,
     stop_by TEXT,
@@ -152,7 +168,7 @@ def build_argv(
     python: str,
     stop_by: str | None = None,
     root: Path | None = None,
-    tracked: Callable[[Path, Path], bool] = git_tracked,
+    tracked: Callable[[Path, Path], bool] | None = None,
 ) -> list[str]:
     """The task's command, built by its kind from its arguments; `Refused` for anything else."""
     if kind == "fetch-chains":
@@ -162,7 +178,7 @@ def build_argv(
         argv = [python, "-m", "cherrypick.backtest", "fetch-flow"]
         argv += ["--plan", _file_arg(args, "plan"), "--workers", _workers(args, 3)]
     elif kind == "script":
-        return [python, *_tracked_script(args, root or repo_root(), tracked)]
+        return [python, *_tracked_script(args, root or repo_root(), tracked or git_tracked)]
     else:
         raise Refused(f"unknown kind {kind!r}; allowed: {', '.join(KINDS)}")
     if stop_by:
@@ -311,36 +327,90 @@ def _now_iso() -> str:
     return datetime.now(ET).strftime("%Y-%m-%dT%H:%M:%S")
 
 
+def name(row: dict) -> str:
+    """A row's one display name: `study/step`."""
+    return f"{row['study']}/{row['step']}"
+
+
 def add(
+    study: str,
     kind: str,
     args: dict,
     *,
-    label: str | None = None,
+    step: str | None = None,
+    output: str | None = None,
     not_before: str | None = None,
     stop_by: str | None = None,
     path: Path | None = None,
     root: Path | None = None,
-    tracked: Callable[[Path, Path], bool] = git_tracked,
+    tracked: Callable[[Path, Path], bool] | None = None,
 ) -> dict:
-    """Queue one task. Its kind and arguments are checked now (`build_argv`), so a row the runner
-    would refuse is never added."""
+    """Queue one task, named `study/step` (step defaults to the kind). Everything is checked now, so
+    a row the runner would refuse is never added: the kind and arguments (`build_argv`), both names
+    as slugs, the times, a script's declared `output` (where its conclusion will be), and that no
+    other live row has the same name."""
+    step = step or kind
+    for what, v in (("study", study), ("step", step)):
+        if not isinstance(v, str) or not SLUG.match(v):
+            raise Refused(
+                f"{what} {v!r} must be a lowercase slug (letters, digits, single dashes), e.g. item17"
+            )
     build_argv(kind, args, sys.executable, root=root, tracked=tracked)
     for v in (not_before, stop_by):
         if v is not None:
             datetime.fromisoformat(v)  # ValueError on a malformed time
+    if output is not None and not output.strip():
+        output = None
     needs = ",".join(KINDS[kind][0])
     with connect(path) as conn:
+        live = conn.execute(
+            "SELECT id, status FROM tasks WHERE study = ? AND step = ? AND status IN (?, ?)",
+            (study, step, *LIVE),
+        ).fetchone()
+        if live is not None:
+            raise Refused(f"{study}/{step} is already {live['status']} as task {live['id']}")
         cur = conn.execute(
-            "INSERT INTO tasks (kind, args, label, needs, not_before, stop_by, created_at)"
-            " VALUES (?,?,?,?,?,?,?)",
-            (kind, json.dumps(args), label, needs, not_before, stop_by, _now_iso()),
+            "INSERT INTO tasks (study, step, kind, args, output, needs, not_before, stop_by, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
+            (study, step, kind, json.dumps(args), output, needs, not_before, stop_by, _now_iso()),
         )
-        return {"id": cur.lastrowid, "kind": kind, "needs": needs or None, "status": "queued"}
+        return {
+            "id": cur.lastrowid,
+            "name": f"{study}/{step}",
+            "kind": kind,
+            "needs": needs or None,
+            "status": "queued",
+        }
 
 
-def rows(path: Path | None = None, *, limit: int = 100) -> list[dict]:
+def result_of(row: dict, report: dict, log: Path) -> dict:
+    """What a finished row points to: where its conclusion or fetched data is. A fetch: its report's
+    counts and the request or plan file it worked through (the store is the backtest package's). A
+    script: its declared output, and whether it exists now. Always the log."""
+    args = json.loads(row["args"]) if isinstance(row.get("args"), str) else (row.get("args") or {})
+    out: dict[str, Any] = {"log": str(log)}
+    keys = ("asked", "already", "todo", "complete", "empty", "refused", "rows", "seconds", "stopped")
+    counts = {k: report[k] for k in keys if k in report}
+    if counts:
+        out["report"] = counts
+    if row["kind"] in ("fetch-chains", "fetch-flow"):
+        out["input"] = args.get("requests") or args.get("plan")
+        out["store"] = "backtest " + ("eod_chains.db" if row["kind"] == "fetch-chains" else "flow store")
+    if row.get("output"):
+        out["output"] = row["output"]
+        out["output_exists"] = Path(row["output"]).expanduser().exists()
+    return out
+
+
+def rows(path: Path | None = None, *, study: str | None = None, limit: int = 200) -> list[dict]:
+    """The rows, newest first; one study's only with `study`."""
     with connect(path) as conn:
-        out = conn.execute("SELECT * FROM tasks ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        if study:
+            out = conn.execute(
+                "SELECT * FROM tasks WHERE study = ? ORDER BY id DESC LIMIT ?", (study, limit)
+            ).fetchall()
+        else:
+            out = conn.execute("SELECT * FROM tasks ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     return [dict(r) for r in out]
 
 
@@ -435,7 +505,7 @@ def run_next(
                     "UPDATE tasks SET status = 'failed', finished_at = ?, note = ? WHERE id = ?",
                     (_now_iso(), f"refused: {exc}", pick["id"]),
                 )
-                notify("WARNING", f"Research task {pick['id']} refused", str(exc))
+                notify("WARNING", f"Research task refused: {name(pick)}", str(exc))
                 return {"ok": False, "ran": pick["id"], "refused": str(exc)}
             log = log_dir() / f"{pick['id']}.log"
             log.parent.mkdir(parents=True, exist_ok=True)
@@ -460,23 +530,30 @@ def run_next(
         fh.close()
         report = last_json(out or "")
         status = outcome(pick, proc.returncode, report, now())
+        result = result_of(pick, report, log)
+        note = "stopped for the backtest-fetch window; resumes after it" if status == "queued" else None
+        # A script that exits 0 without writing the conclusion it declared has not concluded.
+        if status == "done" and result.get("output_exists") is False:
+            status, note = "failed", f"exited 0 but its declared output {pick['output']} was not written"
         with conn:
             conn.execute(
-                "UPDATE tasks SET status = ?, finished_at = ?, pid = NULL, exit_code = ?, note = ?"
-                " WHERE id = ?",
+                "UPDATE tasks SET status = ?, finished_at = ?, pid = NULL, exit_code = ?, note = ?,"
+                " result = ? WHERE id = ?",
                 (
                     status,
                     _now_iso() if status != "queued" else None,
                     proc.returncode,
-                    "stopped for the backtest-fetch window; resumes after it" if status == "queued" else None,
+                    note,
+                    json.dumps(result),
                     pick["id"],
                 ),
             )
-        name = pick["label"] or f"{pick['kind']} #{pick['id']}"
+        title = name(pick)
         if status == "failed":
-            notify("WARNING", f"Research task failed: {name}", f"exit {proc.returncode}; log {log}")
+            notify("WARNING", f"Research task failed: {title}", note or f"exit {proc.returncode}; log {log}")
         elif status in ("done", "stopped"):
-            notify("INFO", f"Research task {status}: {name}", _summary(report) or f"log {log}")
+            where = result.get("output") or result.get("input") or str(log)
+            notify("INFO", f"Research task {status}: {title}", f"{_summary(report) or 'finished'}; {where}")
         return {
             "ok": status != "failed",
             "ran": pick["id"],

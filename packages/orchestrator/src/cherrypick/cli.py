@@ -81,10 +81,12 @@ Subcommands:
                        --url is the bot token, --chat-id the chat; either omitted is prompted.
   secrets-status       Show which push-channel secrets are configured (secret-free).
   secrets-delete       Remove a stored secret (--channel).
-  queue-add            Queue a research task (orchestrator/researchqueue.py): --task fetch-chains|
-                       fetch-flow|script, --task-args JSON, --label, --not-before / --stop-by (ET,
-                       YYYY-MM-DDTHH:MM). Allow-listed kinds only; the supervisor runs it.
-  queue-list           The research queue's rows, newest first, and why a queued one waits.
+  queue-add            Queue a research task (orchestrator/researchqueue.py), named --study/--step
+                       (slugs; step defaults to the kind): --task fetch-chains|fetch-flow|script,
+                       --task-args JSON, --output (a script's conclusion file), --not-before /
+                       --stop-by (ET, YYYY-MM-DDTHH:MM). Allow-listed kinds only.
+  queue-list           The research queue's rows, newest first (--study narrows), why a queued one
+                       waits, and where a finished one's result is.
   queue-cancel         Cancel a queued task (--task-id).
   queue-run            Run the oldest ready task to its end (the supervisor's research-queue job).
 """
@@ -1629,9 +1631,11 @@ def cmd_queue_add(args) -> None:
         if not isinstance(task_args, dict):
             raise ValueError("--task-args must be a JSON object")
         out = rq.add(
+            args.study or "",
             args.task or "",
             task_args,
-            label=args.label,
+            step=args.step,
+            output=args.output,
             not_before=args.not_before,
             stop_by=args.stop_by,
         )
@@ -1641,7 +1645,7 @@ def cmd_queue_add(args) -> None:
     _emit({"ok": True, **out})
 
 
-def cmd_queue_list(cfg) -> None:
+def cmd_queue_list(cfg, args) -> None:
     """The queue's rows, newest first, each queued one with why it waits now."""
     from datetime import datetime
 
@@ -1653,10 +1657,12 @@ def cmd_queue_list(cfg) -> None:
     held = rq.session_held()
     window = rq.blackout(cfg)
     out = []
-    for r in rq.rows():
+    for r in rq.rows(study=args.study):
         if r["status"] == "queued":
             r["waits"] = rq.ready(r, now, cal.is_trading_day, held, window) or "ready"
+        r["name"] = rq.name(r)
         r["args"] = json.loads(r["args"])
+        r["result"] = json.loads(r["result"]) if r.get("result") else None
         out.append(r)
     _emit({"ok": True, "session_held": held, "blackout": list(window), "tasks": out})
 
@@ -2305,7 +2311,17 @@ def build_parser() -> argparse.ArgumentParser:
         help='For queue-add: the kind\'s arguments as JSON, e.g. {"requests": "<file>", "workers": 3} '
         'or {"path": "scripts/x.py", "args": ["--item", "17"]}',
     )
-    parser.add_argument("--label", default=None, help="For queue-add: a name the list and notifications show")
+    parser.add_argument(
+        "--study",
+        default=None,
+        help="For queue-add: the study a task belongs to, a slug (item17); queue-list narrows to it",
+    )
+    parser.add_argument(
+        "--step", default=None, help="For queue-add: what the task does there, a slug (default: the kind)"
+    )
+    parser.add_argument(
+        "--output", default=None, help="For queue-add: the file a script's conclusion is written to"
+    )
     parser.add_argument(
         "--not-before", default=None, help="For queue-add: start no earlier (ET, YYYY-MM-DDTHH:MM)"
     )
@@ -2414,7 +2430,7 @@ def main() -> None:
         "secrets-delete": lambda: cmd_secrets_delete(args.channel),
         "settings": lambda: cmd_settings(cfg, args),
         "queue-add": lambda: cmd_queue_add(args),
-        "queue-list": lambda: cmd_queue_list(cfg),
+        "queue-list": lambda: cmd_queue_list(cfg, args),
         "queue-cancel": lambda: cmd_queue_cancel(args),
         "queue-run": lambda: cmd_queue_run(cfg),
     }

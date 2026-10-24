@@ -7,11 +7,34 @@
 
 export type ResearchTaskStatus = "queued" | "running" | "done" | "failed" | "stopped" | "cancelled";
 
+/** Where a finished row's product is (`researchqueue.result_of`). */
+export interface ResearchTaskResult {
+  log: string;
+  /** A fetch's counts as its report gave them (complete, empty, refused, rows, seconds, stopped...). */
+  report: Record<string, number | boolean> | null;
+  /** A fetch: the request or plan file it worked through. */
+  input: string | null;
+  /** A fetch: the store it wrote to. */
+  store: string | null;
+  /** A script: the conclusion file it declared, and whether it exists. */
+  output: string | null;
+  outputExists: boolean | null;
+}
+
 export interface ResearchTask {
   id: number;
+  /** The category: the study the row belongs to, a slug (item17, flow-tags). */
+  study: string;
+  /** What it does there, a slug (plan, fetch-chains, study). */
+  step: string;
+  /** `study/step`: the one display name. */
+  name: string;
   /** The allow-listed kind: fetch-chains, fetch-flow or script. */
   kind: string;
-  label: string | null;
+  /** A script's declared conclusion file. */
+  output: string | null;
+  /** Set once the row finishes (or stops for the window). */
+  result: ResearchTaskResult | null;
   /** The kind's arguments as queued (file paths, workers, a script's path and arguments). */
   args: Record<string, unknown>;
   /** "thetadata" for a task that needs the vendor session; "" for none. */

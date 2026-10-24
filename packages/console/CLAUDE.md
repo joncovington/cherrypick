@@ -565,7 +565,10 @@ fingerprint, refused sessions), `queue` (2026-10-24; `pages/Backtest/QueueTab.ts
 `GET /api/backtest/queue` → `services/researchQueueBridge.ts` → `python -m cherrypick.cli queue-list`,
 behind the same gate): the research tasks the supervisor runs, read-only. Each row's state and why a
 queued row waits are the orchestrator's words, shown verbatim, and a file argument is shown by its name
-only. Rows are added on the command line (`run.py queue-add`), never from here. Every tab opens with the licensed-data note. Run money is net of fees,
+only. Rows are grouped by study (the category; a row is named `study/step`), and a finished row's
+Result is what it points to: a fetch's counts and input, a script's declared conclusion (red when
+missing), and its log, each by name. Rows are added on the command line (`run.py queue-add`), never
+from here. Every tab opens with the licensed-data note. Run money is net of fees,
 signed, whole-position dollars; fees are shown as a cost, already out of net, never subtracted again.
 Detail view only (`SIMPLE_HIDDEN_PAGES`); shortcut `g b`.
 

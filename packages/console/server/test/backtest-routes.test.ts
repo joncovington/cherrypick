@@ -56,8 +56,11 @@ const QUEUE = {
   tasks: [
     {
       id: 2,
+      study: "item17",
+      step: "fetch-chains",
       kind: "fetch-chains",
-      label: "item 17",
+      output: null,
+      result: { log: "C:/logs/2.log", report: { complete: 40, refused: 1, stopped: true }, input: "C:/x/item17/requests.json", store: "backtest eod_chains.db" },
       args: { requests: "C:/x/item17/requests.json", workers: 3 },
       needs: "thetadata",
       not_before: null,
@@ -72,7 +75,8 @@ const QUEUE = {
       note: null,
       waits: "the ThetaData session is held by another process",
     },
-    { id: 1, kind: "shell", status: "nonsense" }, // an unknown status is dropped, never shown as one it is not
+    { id: 1, study: "x", step: "y", kind: "shell", status: "nonsense" }, // an unknown status is dropped, never shown as one it is not
+    { id: 0, kind: "fetch-chains", status: "done" }, // a row without its name is dropped too
   ],
 };
 
@@ -128,7 +132,7 @@ describe("the gate is closed", () => {
       // The unknown-API body, so a closed gate reads as no route at all.
       expect(a.json()).toEqual({ error: "not found" });
       expect(a.body).not.toContain("SPX");
-      expect(c.body).not.toContain("item 17");
+      expect(c.body).not.toContain("item17");
       expect(spawned).toEqual([]);
       expect(queueSpawns).toBe(0);
     });
@@ -189,12 +193,22 @@ describe("the gate is open", () => {
     expect(body.data.tasks).toHaveLength(1);
     expect(body.data.tasks[0]).toMatchObject({
       id: 2,
+      study: "item17",
+      step: "fetch-chains",
+      name: "item17/fetch-chains",
       kind: "fetch-chains",
-      label: "item 17",
       needs: "thetadata",
       status: "queued",
       runs: 0,
       waits: "the ThetaData session is held by another process",
+    });
+    expect(body.data.tasks[0].result).toEqual({
+      log: "C:/logs/2.log",
+      report: { complete: 40, refused: 1, stopped: true },
+      input: "C:/x/item17/requests.json",
+      store: "backtest eod_chains.db",
+      output: null,
+      outputExists: null,
     });
     const failed = { ok: false, json: null, error: "research queue read unavailable — exit 2" };
     resetResearchQueueCache();

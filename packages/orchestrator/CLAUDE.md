@@ -38,7 +38,7 @@ python run.py archive            # monthly rotation of finished months' reports 
 python run.py backup             # nightly suite backup (the suite-backup job, 01:30 ET): ONE verified zip, rewritten; a bad night never replaces it (--dry-run / --list / --verify / --restore-to DIR)
 python run.py settings           # local config editor + secrets manager on loopback:8804; --organize [target] [--apply] reorders configs instead
 python run.py migrate-home       # dry-run move of config into ~/.cherrypick (--apply to perform)
-python run.py queue-add --task fetch-chains --task-args '{"requests": "<file>"}' --label "item 17"  # queue a research task (researchqueue.py); queue-list / queue-cancel --task-id N; the research-queue job runs it
+python run.py queue-add --study item17 --task fetch-chains --task-args '{"requests": "<file>"}'  # queue a research task named study/step (slugs; step defaults to the kind; --output for a script's conclusion); queue-list [--study] / queue-cancel --task-id N; the research-queue job runs it
 python -m pytest                 # default lane `-m "not live" -q`; markers unit, live, windows
 python -m pytest tests/test_report.py::test_report_unifies_pnl_net_of_costs_across_modules  # one test
 ruff check . ; ruff format .     # line-length 110

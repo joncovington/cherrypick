@@ -16,8 +16,11 @@ beyond the latest release.
   fetch no longer dies with the session that started it. Only allow-listed kinds run: the
   resumable ThetaData fetches (`fetch-chains`, which gains `--stop-by`, and `fetch-flow`) and
   scripts checked into `scripts/`. A ThetaData task waits for a free vendor session and keeps clear
-  of the nightly `backtest-fetch` window, stopping before it and resuming after. One notification
-  per finished or failed task. The Backtest page has a read-only `queue` tab.
+  of the nightly `backtest-fetch` window, stopping before it and resuming after. Each row is named
+  `study/step` (slugs; the study is its category, one live row per name), and a finished row points
+  to what it produced: a fetch's counts and input, a script's declared conclusion (which must
+  exist), and its log. One notification per finished or failed task. The Backtest page has a
+  read-only `queue` tab, grouped by study.
 
 - **Added (2026-10-24): our own credit-spread list**, replacing the vendor's tab, which froze with its
   subscription. The four chart setups' fresh entries become spreads on the 30-45 day monthly: a long
