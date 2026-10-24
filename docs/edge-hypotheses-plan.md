@@ -741,6 +741,14 @@ reproduced (the best rule found picked 10-15% of its slots right).*
   - **Not a clean test:** a post-hoc version of this structure (the same search with no delta band)
     was already looked at in the 2026-10-21 sensitivity run, and it failed. Whatever A' and C' show
     is read with that in mind, and the result says so.
+- **Result (2026-10-24), figures kept locally per the licence:**
+  - **B fails.** It has over 100 paired trades in each half, but trails its random-date baselines
+    and loses money outright in both. Nearly all its trades are put spreads; the call side alone is
+    too thin to read.
+  - **A' and C' fail.** Each beats its baselines in one half only, and loses money outright in the
+    second half: a better loser, not a list. They were never a clean test anyway (see above).
+  - No selector survives, so neither the credit-spread tab nor manage's spreads get a side rule from
+    item 14.
 
 ### 15. Which strike and exit for a bullish put spread on `mr-300m`
 
