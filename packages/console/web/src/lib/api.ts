@@ -32,8 +32,7 @@ import type {
   SkateRecordPayload,
   IncomeList,
   IncomeListPayload,
-  ScreenerList,
-  ScreenerPayload,
+  CreditSpreadPayload,
   PmccPayload,
   PmccCycleRow,
   PmccHistory,
@@ -239,21 +238,21 @@ export function useTechnicalsChart(symbol?: string) {
   });
 }
 
-/** One income screener list, joined with our rule's picks, the leg readings and earnings. */
-export function useScreener(list: ScreenerList, day: string | null) {
-  return useQuery<ScreenerPayload>({
-    queryKey: ["screener", list, day ?? "latest"],
-    queryFn: () => getJson<ScreenerPayload>(`/api/screeners/${list}${day ? `?day=${day}` : ""}`),
-    // A list is saved once an evening; its readings land twice the next session.
-    refetchInterval: 300_000,
-  });
-}
 
 export function useIncomeList(list: IncomeList, day: string | null) {
   return useQuery<IncomeListPayload>({
     queryKey: ["income-list", list, day],
     queryFn: () => getJson<IncomeListPayload>(`/api/screeners/own/${list}${day ? `?day=${encodeURIComponent(day)}` : ""}`),
     // Built once a session, after the afternoon chains.
+    refetchInterval: 300_000,
+  });
+}
+
+/** Our credit-spread list (income-lists version 2), from the same file as the two above. */
+export function useCreditSpreadList(day: string | null) {
+  return useQuery<CreditSpreadPayload>({
+    queryKey: ["income-list", "credit-spreads", day],
+    queryFn: () => getJson<CreditSpreadPayload>(`/api/screeners/own/credit-spreads${day ? `?day=${encodeURIComponent(day)}` : ""}`),
     refetchInterval: 300_000,
   });
 }

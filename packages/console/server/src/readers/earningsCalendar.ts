@@ -31,7 +31,7 @@ import type {
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num, str } from "./db.js";
-import { marketReportDir } from "./screeners.js";
+import { marketReportDir } from "./marketReport.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const EDGES = new Set<EarningsEdge>(["sb", "bn", "bp", "bi", "mx", "br", "bd", "brn", "sbe"]);

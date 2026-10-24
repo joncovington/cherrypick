@@ -83,3 +83,89 @@ export interface IncomeListPayload {
   /** What `fit` was judged against: manage's evaluation of the same session; null with none. */
   fitBasis: { session: string; availableBp: number | null; basis: string | null } | null;
 }
+
+/**
+ * Our own credit-spread list (`technicals` `creditspreads.py`, income-lists version 2, 2026-10-24):
+ * the chart setups' fresh entries as spreads on the 30-45 day monthly. UNTESTED -- item 17 of
+ * docs/edge-hypotheses-plan.md will judge it. Prices are per share at the working price, a credit +.
+ */
+
+/** One spread: the short against one long. Every money figure per share. */
+export interface CreditSpreadPrice {
+  long: number;
+  longDelta: number;
+  width: number;
+  /** Working credit: halfway between the mid and the natural fill. */
+  credit: number;
+  creditMid: number;
+  /** credit ÷ width, a fraction. */
+  creditWidth: number | null;
+  /** width − credit. */
+  maxLoss: number;
+  /** credit ÷ max loss, a fraction. */
+  creditMaxLoss: number | null;
+  /** The leg bars' verdict on the spread as one order; null when unjudged. */
+  passes: boolean | null;
+}
+
+/** A width the table declares: n listed strikes beyond the short, or a share of the 1-SD move. */
+export interface CreditSpreadWidth {
+  unit: "strikes" | "move";
+  size: number;
+  /** Null when the chain does not reach that width, or it does not price. */
+  price: CreditSpreadPrice | null;
+}
+
+export interface CreditSpreadSignal {
+  setup: string;
+  /** The close the setup entered on. */
+  date: string;
+  /** Sessions since that close; 0 is the last. */
+  ago: number;
+}
+
+export interface CreditSpreadRow {
+  symbol: string;
+  type: string | null;
+  spread: "put" | "call";
+  setups: string[];
+  signals: CreditSpreadSignal[];
+  /** The name signals both sides at once. */
+  conflict: boolean;
+  spot: number;
+  expiry: string;
+  dte: number;
+  /** One standard deviation to expiry, in dollars; null without a vol. */
+  move: number | null;
+  short: { strike: number; delta: number; iv: number; bid: number | null; ask: number | null };
+  /** The user's rule: the widest long giving 35-40% of the width; null when none does. */
+  pick: CreditSpreadPrice | null;
+  widths: CreditSpreadWidth[];
+  earnings: IncomeEarnings;
+  earningsDate: string | null;
+  earningsEstimated: boolean | null;
+  /** Call spreads only; null for a put spread. */
+  exDividend: IncomeExDividend | null;
+  exDividendDate: string | null;
+  leveraged: string | null;
+}
+
+export interface CreditSpreadPayload {
+  day: string | null;
+  days: string[];
+  builtAt: string | null;
+  chainTakenAt: string | null;
+  chainComplete: boolean | null;
+  chainProblem: string | null;
+  names: number;
+  dropped: Record<string, number>;
+  /** False for a session built before the list existed (version 1) or without the history store. */
+  built: boolean;
+  rule: {
+    shortDelta: number | null;
+    creditShare: [number, number] | null;
+    recentSessions: number | null;
+    tested: string | null;
+  };
+  rows: CreditSpreadRow[];
+}

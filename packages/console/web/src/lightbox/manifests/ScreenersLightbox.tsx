@@ -1,22 +1,27 @@
 import { EarningsCalendarTab } from "../../pages/Screeners/EarningsCalendarTab";
 import { EarningsRecordTab } from "../../pages/Screeners/EarningsRecordTab";
-import { IncomeTab } from "../../pages/Screeners/IncomeTab";
+import { CreditSpreadTab } from "../../pages/Screeners/CreditSpreadTab";
 import { NeedsDolt } from "../../pages/Screeners/NeedsDolt";
-import { ScreenerTab } from "../../pages/Screeners/ScreenersPage";
+import { OwnListTab } from "../../pages/Screeners/OwnListTab";
 import { SignalBoardTab } from "../../pages/Screeners/SignalBoardTab";
 import { SkateTab } from "../../pages/Screeners/SkateTab";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
 /**
- * The income screener lists (2026-10-16): one tab per list; the earnings calendar (2026-10-17); the signal board (2026-10-17); and
+ * Our income lists (short puts and covered calls 2026-10-19, credit spreads 2026-10-24): one tab per list; the earnings calendar (2026-10-17); the signal board (2026-10-17); and
  * the skate screen (2026-10-19). This manifest holds the page list and nothing else.
  */
 const slides: SlideDef[] = [
-  // Ours by default, the vendor's saved days behind a toggle (2026-10-19). Credit spreads stay the vendor's.
-  { id: "short-puts", label: "short puts", render: () => <IncomeTab list="short-puts" /> },
-  { id: "covered-calls", label: "covered calls", render: () => <IncomeTab list="covered-calls" /> },
-  { id: "credit-spreads", label: "credit spreads", render: () => <ScreenerTab list="credit-spreads" /> },
+  // Our own lists only: the vendor's subscription ended 2026-10-24, and its saved days are no longer shown.
+  { id: "short-puts", label: "short puts", render: () => <OwnListTab list="short-puts" /> },
+  { id: "covered-calls", label: "covered calls", render: () => <OwnListTab list="covered-calls" /> },
+  // The setups are read from the history store, which Dolt fills.
+  { id: "credit-spreads", label: "credit spreads", render: () => (
+      <NeedsDolt slide="credit-spreads" label="credit spreads">
+        <CreditSpreadTab />
+      </NeedsDolt>
+    ) },
   { id: "earnings", label: "earnings", render: () => (
       <NeedsDolt slide="earnings" label="earnings">
         <EarningsCalendarTab />
