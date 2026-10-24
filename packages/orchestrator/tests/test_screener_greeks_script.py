@@ -197,6 +197,45 @@ def test_the_covered_call_has_its_own_30_to_45_day_monthly():
     assert (plan["cc"]["expiry"], plan["cc"]["window"], plan["cc"]["legs"]) == ("2026-12-18", "cycle", None)
 
 
+def test_the_spread_strikes_are_every_listed_strike_out_to_their_reach():
+    """Never thinned: a spread's legs are neighbouring strikes."""
+    listed = [float(k) for k in range(50, 151)]
+    # 30% over 40 days: 1.5 SD is ~14.9%, so puts reach ~86.2 and calls ~116.
+    puts = fsg.spread_strikes(listed, 100.0, "P", 0.30, 40, most=100)
+    calls = fsg.spread_strikes(listed, 100.0, "C", 0.30, 40, most=100)
+    assert puts == [float(k) for k in range(87, 101)]
+    assert calls == [float(k) for k in range(100, 117)]
+    # The cap keeps the nearest; no vol reaches INCOME_REACH of the price.
+    assert fsg.spread_strikes(listed, 100.0, "P", 0.30, 40, most=3) == [98.0, 99.0, 100.0]
+    assert min(fsg.spread_strikes(listed, 100.0, "P", None, 40, most=100)) == 100.0 * (1 - fsg.INCOME_REACH)
+
+
+def test_the_credit_spreads_have_the_30_to_45_day_monthly_both_sides_and_share_legs():
+    strikes = [(float(k), f"C{k}", f"P{k}") for k in range(80, 121)]
+    near, cycle = _exp("2026-11-20", 33, strikes), _exp("2026-12-18", 50, strikes)
+    plan = fsg.income_plan([near, cycle], 100.5, _is_monthly, iv=0.30)
+    cs = plan["cs"]
+    assert (cs["expiry"], cs["dte"]) == ("2026-11-20", 33)
+    rights = {leg["right"] for leg in cs["legs"]}
+    assert rights == {"P", "C"}
+    puts = sorted(leg["strike"] for leg in cs["legs"] if leg["right"] == "P")
+    assert puts == [float(k) for k in range(int(puts[0]), 101)]  # contiguous to the money
+    # A call the covered call already plans is that same leg, so it is quoted once.
+    cc = {leg["option"]: leg for leg in plan["cc"]["legs"]}
+    shared = [leg for leg in cs["legs"] if leg["option"] in cc]
+    assert shared and all(leg is cc[leg["option"]] for leg in shared)
+    # The cycle itself 30-45 days out: the spreads share the cycle's legs.
+    plan = fsg.income_plan(
+        [_exp("2026-11-20", 40, strikes), _exp("2027-01-15", 68, strikes)], 100.5, _is_monthly, iv=0.30
+    )
+    cyc = {leg["option"]: leg for leg in plan["legs"]}
+    assert plan["cs"]["expiry"] == "2026-11-20"
+    assert all(leg is cyc[leg["option"]] for leg in plan["cs"]["legs"] if leg["option"] in cyc)
+    # No monthly 30-45 days out: no spreads, never the cycle instead.
+    plan = fsg.income_plan([_exp("2026-11-20", 28, strikes), cycle], 100.5, _is_monthly, iv=0.30)
+    assert plan["cs"] is None
+
+
 def test_each_name_reads_its_own_latest_metrics_not_only_the_newest_days():
     """A night's fetch files names under several days; the newest day alone lost AGQ's IV and
     earnings dates on 2026-10-19. A reading older than ten days is no reading."""
