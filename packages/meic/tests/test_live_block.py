@@ -164,6 +164,20 @@ def test_a_live_arm_with_equalize_credit_is_refused_by_readiness(monkeypatch):
     assert any("equalize_credit is paper-only" in u for u in unmet), unmet
 
 
+@pytest.mark.parametrize("arm", sorted(paper.LIVE_REFUSED_ARMS))
+def test_a_named_refused_arm_is_refused_even_without_equalize_credit(monkeypatch, arm):
+    """The name block holds on its own: the arm is given a clean, otherwise-valid definition (no
+    `equalize_credit`), so only the name can trip it."""
+    registry = {**REGISTRY, arm: dict(REGISTRY["control"])}
+    monkeypatch.setattr(paper, "load_profiles", lambda: registry)
+    cfg = {**_cfg(arm=arm, symbol="SPX", gate0_confirmed="me"), "enable_live_trading": True}
+    unmet = live_loop.readiness(cfg, designated="1234")
+    assert any("is refused for live" in u for u in unmet), unmet
+    # the same definition under another name passes, so the refusal above is the name's
+    registry["renamed"] = registry[arm]
+    assert live_loop.readiness({**cfg, "live": {**cfg["live"], "arm": "renamed"}}, designated="1234") == []
+
+
 def test_equalize_credit_at_the_top_level_is_refused_without_a_live_arm():
     """The no-arm path still checks the top level: a `live` block that turns `equalize_credit` on
     (or a top-level default) must not slip live into the pair shape by omission of `live.arm`."""

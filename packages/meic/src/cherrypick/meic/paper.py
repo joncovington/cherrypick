@@ -308,6 +308,15 @@ LIVE_OVERRIDE_KEYS = (
 )
 FOLLOWS_LIVE_KEY = "follows_live"
 
+# Arms refused as `live.arm` by name, for good (2026-10-23): an operator decision after the
+# design-window backtest (results stay local under the vendor licence). The `equalize_credit`
+# refusal below also catches these today, but that one is meant to lift once the pair shape has had
+# live orders; this one does not lift with it. A name comes off only by a human decision noted here.
+LIVE_REFUSED_ARMS = {
+    "eq-hourly-cap10": "operator decision after the design-window backtest (2026-10-23)",
+    "eq-hourly-cap10f": "operator decision after the design-window backtest (2026-10-23)",
+}
+
 
 def live_arm_name(config: dict) -> str | None:
     return str((config.get("live") or {}).get("arm") or "").strip() or None
@@ -321,7 +330,9 @@ def _live_resolution(config: dict, registry: dict | None) -> tuple[dict, str | N
     arm = live_arm_name(config)
     profile: dict = {}
     problem = None
-    if arm:
+    if arm and arm in LIVE_REFUSED_ARMS:
+        problem = f"live.arm {arm!r} is refused for live: {LIVE_REFUSED_ARMS[arm]}"
+    elif arm:
         registry = load_profiles() if registry is None else registry
         found = registry.get(arm)
         if not isinstance(found, dict) or arm.startswith("_"):
