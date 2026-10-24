@@ -1,4 +1,4 @@
-"""Plan item 14's (or 17's) trades: which credit spreads each selector and baselines take, the chains to fetch.
+"""Plan item 14's (or 17's) trades: the credit spreads each selector and baselines take, the chains to fetch.
 
     python scripts/credit_spread_plan.py [--item 14|17] [--workers 14] [--out DIR] [--limit-names N]
 
