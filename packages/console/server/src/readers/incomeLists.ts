@@ -6,7 +6,17 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type { IncomeEarnings, IncomeExDividend, IncomeList, IncomeListPayload, IncomeListRow } from "@console/shared";
+import type {
+  CreditSpreadPayload,
+  CreditSpreadPrice,
+  CreditSpreadRow,
+  CreditSpreadWidth,
+  IncomeEarnings,
+  IncomeExDividend,
+  IncomeList,
+  IncomeListPayload,
+  IncomeListRow,
+} from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num, str } from "./db.js";
 
@@ -157,5 +167,137 @@ export function readIncomeList(config: ConsoleConfig, list: IncomeList, dayParam
     targetDelta: num(rule[list === "short-puts" ? "short_put_delta" : "covered_call_delta"]),
     rows: judged === null ? rows : rows.map((r) => ({ ...r, fit: fitOf(list, r, judged.fit) })),
     fitBasis: judged?.basis ?? null,
+  };
+}
+
+// --- our credit-spread list (income-lists version 2, 2026-10-24) -------------------------------
+
+export const CREDIT_SPREADS = "credit-spreads";
+
+function toPrice(v: unknown): CreditSpreadPrice | null {
+  const p = rec(v);
+  const long = num(p["long"]);
+  const width = num(p["width"]);
+  const credit = num(p["credit"]);
+  if (long === null || width === null || credit === null) return null;
+  return {
+    long,
+    longDelta: num(p["long_delta"]) ?? 0,
+    width,
+    credit,
+    creditMid: num(p["credit_mid"]) ?? credit,
+    creditWidth: num(p["credit_width"]),
+    maxLoss: num(p["max_loss"]) ?? width - credit,
+    creditMaxLoss: num(p["credit_max_loss"]),
+    passes: bool(p["passes"]),
+  };
+}
+
+function toWidth(v: unknown): CreditSpreadWidth | null {
+  const w = rec(v);
+  const unit = str(w["unit"]);
+  const size = num(w["size"]);
+  if ((unit !== "strikes" && unit !== "move") || size === null) return null;
+  // The builder writes a width's figures flat beside its unit; one the chain does not reach has none.
+  return { unit, size, price: toPrice(w) };
+}
+
+function toSpread(v: unknown): CreditSpreadRow | null {
+  const r = rec(v);
+  const symbol = str(r["symbol"]);
+  const spot = num(r["spot"]);
+  const spread = str(r["spread"]);
+  const short = rec(r["short"]);
+  const shortStrike = num(short["strike"]);
+  if (symbol === null || spot === null || (spread !== "put" && spread !== "call") || shortStrike === null) return null;
+  const earnings = str(r["earnings"]) as IncomeEarnings | null;
+  const ex = str(r["ex_dividend"]) as IncomeExDividend | null;
+  const signals = (Array.isArray(r["signals"]) ? r["signals"] : [])
+    .map((s) => rec(s))
+    .flatMap((s) => {
+      const setup = str(s["setup"]);
+      const date = str(s["date"]);
+      return setup === null || date === null ? [] : [{ setup, date, ago: num(s["ago"]) ?? 0 }];
+    });
+  return {
+    symbol,
+    type: str(r["type"]),
+    spread,
+    setups: (Array.isArray(r["setups"]) ? r["setups"] : []).map(str).filter((s): s is string => s !== null),
+    signals,
+    conflict: r["conflict"] === true,
+    spot,
+    expiry: str(r["expiry"]) ?? "",
+    dte: num(r["dte"]) ?? 0,
+    move: num(r["move"]),
+    short: {
+      strike: shortStrike,
+      delta: num(short["delta"]) ?? 0,
+      iv: num(short["iv"]) ?? 0,
+      bid: num(short["bid"]),
+      ask: num(short["ask"]),
+    },
+    pick: toPrice(r["pick"]),
+    widths: (Array.isArray(r["widths"]) ? r["widths"] : []).map(toWidth).filter((w): w is CreditSpreadWidth => w !== null),
+    // An unknown spelling is unknown, never clear.
+    earnings: earnings !== null && EARNINGS.includes(earnings) ? earnings : "unknown",
+    earningsDate: str(r["earnings_date"]),
+    earningsEstimated: bool(r["earnings_estimated"]),
+    exDividend: spread === "call" ? (ex !== null && EX_DIVIDEND.includes(ex) ? ex : "unknown") : null,
+    exDividendDate: str(r["ex_dividend_date"]),
+    leveraged: str(r["leveraged"]),
+  };
+}
+
+/** The credit-spread list for `dayParam` (else the newest session). A session built before the list
+ *  existed, or without the history store, has no `credit-spreads` key: `built` false, never an empty
+ *  list that would read as "no signals today". */
+export function readCreditSpreadList(config: ConsoleConfig, dayParam: string | null): CreditSpreadPayload {
+  const dir = path.join(config.paths.technicalsDir, "income-lists");
+  const all = days(dir);
+  const day = dayParam !== null && DAY.test(dayParam) && all.includes(dayParam) ? dayParam : (all[0] ?? null);
+  const empty: CreditSpreadPayload = {
+    day: null,
+    days: all,
+    builtAt: null,
+    chainTakenAt: null,
+    chainComplete: null,
+    chainProblem: null,
+    names: 0,
+    dropped: {},
+    built: false,
+    rule: { shortDelta: null, creditShare: null, recentSessions: null, tested: null },
+    rows: [],
+  };
+  if (day === null) return empty;
+  const doc = readJson(path.join(dir, `${day}.json`));
+  if (doc === null) return { ...empty, day };
+  const lists = rec(doc["lists"]);
+  const rule = rec(rec(doc["rule"])["credit_spreads"]);
+  const share = Array.isArray(rule["credit_share"]) ? (rule["credit_share"] as unknown[]).map(num) : [];
+  const [lo, hi] = [share[0] ?? null, share[1] ?? null];
+  const dropped: Record<string, number> = {};
+  for (const [k, v] of Object.entries(rec(rec(doc["dropped"])[CREDIT_SPREADS]))) {
+    const n = num(v);
+    if (n !== null) dropped[k] = n;
+  }
+  const raw = lists[CREDIT_SPREADS];
+  return {
+    day,
+    days: all,
+    builtAt: str(doc["built_at"]),
+    chainTakenAt: str(doc["chain_taken_at"]),
+    chainComplete: bool(doc["chain_complete"]),
+    chainProblem: str(doc["chain_problem"]),
+    names: num(doc["names"]) ?? 0,
+    dropped,
+    built: Array.isArray(raw),
+    rule: {
+      shortDelta: num(rule["short_delta"]),
+      creditShare: share.length === 2 && lo !== null && hi !== null ? [lo, hi] : null,
+      recentSessions: num(rule["recent_sessions"]),
+      tested: str(rule["tested"]),
+    },
+    rows: (Array.isArray(raw) ? raw : []).map(toSpread).filter((r): r is CreditSpreadRow => r !== null),
   };
 }

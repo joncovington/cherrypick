@@ -57,7 +57,8 @@ function Flag({ on, onChange, children, title }: { on: boolean; onChange: (on: b
   );
 }
 
-function EarningsCell({ r }: { r: IncomeListRow }) {
+/** The next announcement against the trade's own expiry; shared with the credit-spread tab. */
+export function EarningsCell({ r }: { r: Pick<IncomeListRow, "earnings" | "earningsDate" | "earningsEstimated"> }) {
   if (r.earnings === "none") return <td className="muted">fund</td>;
   const when = r.earningsDate ? `${shortDate(r.earningsDate)}${r.earningsEstimated ? " (est.)" : ""}` : "";
   if (r.earnings === "in-trade") return <td title="The next announcement falls before this trade's expiry">{`in trade · ${when}`}</td>;
