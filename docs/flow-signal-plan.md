@@ -2,7 +2,8 @@
 
 *Drafted 2026-10-17. A build plan and a declared test. Step 1, the ThetaData flow fetch
 (`backtest fetch-flow`, `flow.py`, `flowfetch.py`), was built the same evening; the declared test and
-the broker's nightly feed are not yet run or built.*
+the broker's nightly feed are not yet run or built. 2026-10-24: the fetched sessions declared,
+the plan file and parallel fetch added, and a second family of tests declared.*
 
 ## The question
 
@@ -151,6 +152,60 @@ carrying it.
 least $5 and whose 50-session median dollar volume, up to the session before, was at least $100M
 (the options-tradable test's stock bar; the technicals study's `universe.membership` rule at that
 bar). Not today's tradable list, which would test 2022 on 2026's survivors.
+
+## The sessions fetched, declared 2026-10-24
+
+The timed sample (five names, one session) took a median 14 s a name-day and 60–80 s for the
+largest. The universe above holds 531–788 names a session (1,056 over the window), so the whole
+design window is about 70 days of fetching, past the week the build allows. Thinned on a fixed rule,
+chosen before any outcome was read:
+
+- **every 5th design session**, counted from the window's first (157 sessions, 96,445 name-days);
+- **plus the 10 sessions before each report's reaction day**, for the earnings test below, on the
+  sessions the name passes the universe bar (7,377 reports; 153,577 name-days in all).
+
+`scripts/flow_fetch_plan.py` writes that list from the local stores; `backtest fetch-flow --plan`
+reads it, several requests at a time on the one session, and `--stop-by` keeps it clear of the
+nightly fetch's login. The tag test above reads the grid sessions only; with a 5-session outcome
+they do not overlap.
+
+## A second family, declared 2026-10-24
+
+A vendor education session (2026-10-23) stated rules our tags do not have. They are tested here as
+their own family, counted apart from the nine above, and declared before the fetch ran at scale.
+None is tuned; each threshold is the one stated, or where none was stated, set here.
+
+**Order filters**, each applied to a first-family tag at the same cut. A filtered tag is compared
+with the same matched baseline, and with the unfiltered tag:
+
+| Filter | Tags | Rule |
+|---|---|---|
+| F1 days to expiry | all three | the contract's expiry is at least 7 calendar days after the session |
+| F2 not deep in the money | all three | the strike is no more than 10% in the money against the session's close |
+| F3 committed capital | put selling | strike × contracts × 100 at least $10M, in place of the premium cut |
+| F4 no straddle | all three | dropped when an order of the other right at the same strike and expiry, the same side and size within 10%, starts within 60 s of it: a volatility bet, no direction |
+| F5 protection beside a sale | put buying | not tagged on a session the name also carries a large opened put sale |
+| F6 repeat | all three | needs a second large opened order of the same tag in the name within the previous 10 sessions |
+
+The vendor's call-to-put premium ratio (2:1) is not tested: the stored histogram does not split by
+right or side, and adding it would change the fetch after it started. Funds are outside the
+universe already, so its "index puts are protection" rule needs no test.
+
+**Trials:** F1, F2, F4 and F6 on three tags at three cuts (36), F5 on one tag at three cuts (3), F3
+once (it replaces the cut): **40**, deflated as one family, apart from the first. **Pass** as above,
+and a filter must also beat its unfiltered tag, or it adds nothing.
+
+**The earnings test.** The vendor's claim: over 63 reports, a large bet in the 10 sessions before a
+report pointed the right way 53% of the time for bullish orders and 64% for bearish. Declared:
+
+- **Events:** each design-window report whose name has at least one large opened order
+  (first-family rules, $100,000 cut) in the 10 sessions before its reaction day. The sign is the
+  net of bullish minus bearish premium over those orders; a tie is dropped.
+- **Outcome:** the reaction day's close against the last pre-report close, minus SPY's, signed.
+- **The comparison:** the events' hit rate against 50%, with a bootstrap interval over reports, and
+  the mean signed excess against zero.
+- **Two trials** (bullish, bearish). **Pass:** the hit-rate interval excludes 50% and the mean signed
+  excess is above zero after an assumed 1% round-trip cost on the move. Then once on the holdout.
 
 ## The build, in pull requests
 
