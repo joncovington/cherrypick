@@ -11,6 +11,12 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added (2026-10-24): our own credit-spread list**, replacing the vendor's tab, which froze with its
+  subscription. The four chart setups' fresh entries become spreads on the 30-45 day monthly: a long
+  setup is a put spread, its mirror a call spread. The short is nearest 0.40 delta and the long is the
+  widest giving 35-40% of the width, with a per-row width table. It is **untested**: item 17 of
+  `docs/edge-hypotheses-plan.md` will judge it. The income fetch quotes the new expiry both sides
+  (`cs`).
 - **Changed (boundary, 2026-10-22): manage's spread candidates are the least-bad put spread, with its
   odds, listed by symbol.** Four declared studies over licensed end-of-day chains (edge-hypotheses
   items 14-16: a selection signal, the short delta, `mr-300m` on single names, and the funds the user

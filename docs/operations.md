@@ -110,7 +110,7 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `suite-backup` | daily **01:30** | `run.py backup` | on | one zip at `backup.dest`; `doctor` warns past 36 h |
 | `config-backup` | every `config_backup.interval_minutes` (15) | `run.py config-backup` | **off** (opt in) | commits the config files the home repo's allow-list tracks and pushes to its remote; `doctor` warns when on but not set up or failing |
 | `log-archive` | monthly, day 1 @ **03:30** | `run.py archive` | on | catchup 7 days (idempotent, finished months only) |
-| `technicals-income-lists` | daily **15:10**, trading days | `-m cherrypick.technicals income-lists` | on (no `dolt` needed; off with `market_report.income`) | our own short-put and covered-call lists for the Screeners page |
+| `technicals-income-lists` | daily **15:10**, trading days | `-m cherrypick.technicals income-lists` | on (no `dolt` needed; off with `market_report.income`) | our own short-put, covered-call and credit-spread lists for the Screeners page (credit spreads need the history store) |
 | `report-income-chains` | daily **14:45**, trading days | `scripts/fetch_screener_greeks.py income` | on (`market_report.income`) | every tradable name's cycle-monthly chain and the covered call's 30-45 day monthly, for our income lists and manage's candidates |
 
 Research and screener collectors (the other `technicals-*` jobs, `report-screener-*`,
