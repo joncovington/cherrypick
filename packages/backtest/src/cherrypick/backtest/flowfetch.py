@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -170,55 +171,112 @@ def record_refusal(conn, symbol: str, session: str, refusal: VendorRefusal) -> N
         )
 
 
+def _vendor_day(client, sym: str, session: str) -> tuple[list[dict], dict, dict | None, float]:
+    """One name-day's three vendor calls, timed. Runs on a worker thread: it touches no store."""
+    t = time.monotonic()
+    nxt = _cal.next_trading_day(date.fromisoformat(session)).isoformat()
+    prints = client.trades(sym, session)
+    before = client.open_interest_all(sym, session)
+    try:
+        after = client.open_interest_all(sym, nxt) if nxt <= date.today().isoformat() else None
+    except VendorRefusal as r:
+        if r.reason != "no_data":
+            raise
+        after = None
+    return prints, before, after, time.monotonic() - t
+
+
+def read_plan(path: Path) -> list[tuple[str, str]]:
+    """A plan file's (session, symbol) pairs in fetch order: {"sessions": {session: [symbols]}}."""
+    body = json.loads(Path(path).read_text(encoding="utf-8"))
+    return [(d, s.upper()) for d in sorted(body["sessions"]) for s in body["sessions"][d]]
+
+
 def fetch(
     settings: dict, client, symbols: list[str], start: str, end: str, *, refetch=False, log=print
 ) -> dict:
     """Every (symbol, session) in the span not already complete. Sessions in order, symbols within
     each, so a stopped fetch leaves whole early sessions rather than whole early names."""
-    conn = connect(settings)
     days = sessions(start, end)
+    report = fetch_plan(settings, client, [(d, s) for d in days for s in symbols], refetch=refetch, log=log)
+    return {**report, "sessions": len(days), "symbols": len(symbols)}
+
+
+def fetch_plan(
+    settings: dict,
+    client,
+    plan: list[tuple[str, str]],
+    *,
+    workers: int = 1,
+    refetch: bool = False,
+    stop=None,
+    log=print,
+) -> dict:
+    """Every (session, symbol) of `plan` not already complete, in its order, `workers` vendor calls
+    at a time on the account's one session. The store is written on this thread only. `stop()`,
+    when given, is asked before each new request: true lets the running ones finish and ends the
+    fetch (`stopped` in the report), so it can stand clear of the nightly fetch's login."""
+    conn = connect(settings)
     counts = {"complete": 0, "awaiting_oi": 0, "refused": 0, "skipped": 0}
-    seconds = []
+    seconds: list[float] = []
+    stopped = False
     try:
-        for session in days:
-            nxt = _cal.next_trading_day(date.fromisoformat(session)).isoformat()
-            for sym in symbols:
-                if not refetch and status(conn, sym, session) == "complete":
-                    counts["skipped"] += 1
-                    continue
-                t = time.monotonic()
-                try:
-                    prints = client.trades(sym, session)
-                    before = client.open_interest_all(sym, session)
+        todo = []
+        for session, sym in plan:
+            if not refetch and status(conn, sym, session) == "complete":
+                counts["skipped"] += 1
+            else:
+                todo.append((session, sym))
+        pending = iter(todo)
+        with ThreadPoolExecutor(max(1, workers)) as ex:
+            running = {}
+
+            def submit_next() -> bool:
+                nonlocal stopped
+                if stop is not None and stop():
+                    stopped = True
+                    return False
+                key = next(pending, None)
+                if key is None:
+                    return False
+                running[ex.submit(_vendor_day, client, key[1], key[0])] = key
+                return True
+
+            for _ in range(max(1, workers)):
+                if not submit_next():
+                    break
+            fatal = None
+            while running:
+                finished, _ = wait(running, return_when=FIRST_COMPLETED)
+                for fut in finished:
+                    session, sym = running.pop(fut)
                     try:
-                        after = (
-                            client.open_interest_all(sym, nxt) if nxt <= date.today().isoformat() else None
-                        )
-                    except VendorRefusal as r:
-                        if r.reason != "no_data":
-                            raise
-                        after = None
-                except VendorRefusal as refusal:
-                    if refusal.reason in FATAL:
-                        log(f"stopping: {refusal}")
-                        raise
-                    record_refusal(conn, sym, session, refusal)
-                    counts["refused"] += 1
-                    log(f"{sym} {session}: refused ({refusal.reason})")
-                    continue
-                took = time.monotonic() - t
-                rec = build_day(prints, before, after)
-                write_day(conn, sym, session, rec, took)
-                counts[rec["status"]] += 1
-                seconds.append(took)
-                kept = len(rec["kept"])
-                log(f"{sym} {session}: {rec['status']}, {rec['orders']} orders, {kept} kept, {took:.1f}s")
+                        prints, before, after, took = fut.result()
+                    except VendorRefusal as refusal:
+                        if refusal.reason in FATAL:
+                            fatal = fatal or refusal
+                            continue
+                        record_refusal(conn, sym, session, refusal)
+                        counts["refused"] += 1
+                        log(f"{sym} {session}: refused ({refusal.reason})")
+                    else:
+                        rec = build_day(prints, before, after)
+                        write_day(conn, sym, session, rec, took)
+                        counts[rec["status"]] += 1
+                        seconds.append(took)
+                        n, kept = rec["orders"], len(rec["kept"])
+                        log(f"{sym} {session}: {rec['status']}, {n} orders, {kept} kept, {took:.1f}s")
+                    if fatal is None:
+                        submit_next()
+            if fatal is not None:
+                log(f"stopping: {fatal}")
+                raise fatal
     finally:
         conn.close()
     return {
         **counts,
-        "sessions": len(days),
-        "symbols": len(symbols),
+        "planned": len(plan),
+        "stopped": stopped,
         "vendor_seconds_median": sorted(seconds)[len(seconds) // 2] if seconds else None,
         "vendor_seconds_total": round(sum(seconds), 1),
     }

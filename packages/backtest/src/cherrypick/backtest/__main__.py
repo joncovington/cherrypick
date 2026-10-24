@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 
 from . import credential, licensing, paths, purge, settings
 
@@ -220,23 +221,35 @@ def cmd_fetch_flow(args) -> int:
     if refusal:
         print(f"fetch-flow refused: {refusal}", file=sys.stderr)
         return 2
-    symbols = [x.strip().upper() for x in args.symbols.split(",") if x.strip()]
-    if not symbols:
-        print("fetch-flow: give --symbols A,B,...", file=sys.stderr)
+    symbols = [x.strip().upper() for x in (args.symbols or "").split(",") if x.strip()]
+    if bool(args.plan) == bool(symbols) or (symbols and not (args.start and args.end)):
+        print("fetch-flow: give --plan FILE, or --symbols A,B,... with --from and --to", file=sys.stderr)
         return 2
+    stop = None
+    if args.stop_by:
+        from zoneinfo import ZoneInfo
+
+        et = ZoneInfo("America/New_York")
+        deadline = datetime.fromisoformat(args.stop_by).replace(tzinfo=et)
+        stop = lambda: datetime.now(et) >= deadline  # noqa: E731
     try:
         client = client_for(s)
     except VendorRefusal as exc:
         print(f"fetch-flow refused: {exc}", file=sys.stderr)
         return 2
     try:
-        report = flowfetch.fetch(
+        plan = (
+            flowfetch.read_plan(args.plan)
+            if args.plan
+            else [(d, sym) for d in flowfetch.sessions(args.start, args.end) for sym in symbols]
+        )
+        report = flowfetch.fetch_plan(
             s,
             client,
-            symbols,
-            args.start,
-            args.end,
+            plan,
+            workers=args.workers,
             refetch=args.refetch,
+            stop=stop,
             log=lambda m: print(m, file=sys.stderr),
         )
     except VendorRefusal as exc:
@@ -444,9 +457,14 @@ def main(argv: list[str] | None = None) -> int:
     cs = sub.add_parser("chains-status", help="what the end-of-day chain store holds")
     cs.set_defaults(fn=cmd_chains_status)
     ff = sub.add_parser("fetch-flow", help="large options orders per name and session (a network verb)")
-    ff.add_argument("--symbols", required=True, help="comma-separated stock symbols")
-    ff.add_argument("--from", dest="start", required=True)
-    ff.add_argument("--to", dest="end", required=True)
+    ff.add_argument("--symbols", help="comma-separated stock symbols (with --from/--to)")
+    ff.add_argument("--from", dest="start")
+    ff.add_argument("--to", dest="end")
+    ff.add_argument(
+        "--plan", help="a plan file, {sessions: {session: [symbols]}} (scripts/flow_fetch_plan.py)"
+    )
+    ff.add_argument("--workers", type=int, default=1, help="concurrent requests on the one session")
+    ff.add_argument("--stop-by", help="ET wall clock, YYYY-MM-DDTHH:MM: start no request after it")
     ff.add_argument("--refetch", action="store_true", help="re-fetch days already complete")
     ff.set_defaults(fn=cmd_fetch_flow)
     sub.add_parser("flow-coverage", help="the flow store's days by status").set_defaults(fn=cmd_flow_coverage)

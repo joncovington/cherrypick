@@ -109,6 +109,44 @@ def test_a_lost_session_stops_the_fetch():
         flowfetch.fetch(_settings(), FakeClient(fatal=True), ["AAPL", "MSFT"], DAY, DAY, log=lambda m: None)
 
 
+def test_a_plan_runs_on_several_workers_and_every_pair_is_written(tmp_path):
+    s = _settings()
+    names = ["AAPL", "MSFT", "NVDA", "AMD", "KO"]
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps({"sessions": {DAY: names}}), encoding="utf-8")
+    plan = flowfetch.read_plan(path)
+    assert plan == [(DAY, n) for n in names]
+    out = flowfetch.fetch_plan(s, FakeClient(), plan, workers=3, log=lambda m: None)
+    assert (out["complete"], out["planned"], out["stopped"]) == (5, 5, False)
+    conn = flowfetch.connect(s)
+    assert all(flowfetch.status(conn, n, DAY) == "complete" for n in names)
+
+
+def test_a_stop_starts_no_new_request():
+    s = _settings()
+    client = FakeClient()
+    out = flowfetch.fetch_plan(
+        s, client, [(DAY, "AAPL"), (DAY, "MSFT")], stop=lambda: True, log=lambda m: None
+    )
+    assert out["stopped"] and client.calls == []
+    asked = []
+    out = flowfetch.fetch_plan(
+        s,
+        client,
+        [(DAY, "AAPL"), (DAY, "MSFT")],
+        stop=lambda: asked.append(1) or len(asked) > 1,
+        log=lambda m: None,
+    )
+    assert out["stopped"] and out["complete"] == 1  # the first ran, the second never started
+
+
+def test_a_lost_session_stops_a_parallel_fetch():
+    with pytest.raises(VendorRefusal):
+        flowfetch.fetch_plan(
+            _settings(), FakeClient(fatal=True), [(DAY, "AAPL"), (DAY, "MSFT")], workers=2, log=lambda m: None
+        )
+
+
 def test_the_store_sits_in_the_marked_licensed_directory():
     from cherrypick.backtest import paths
 
