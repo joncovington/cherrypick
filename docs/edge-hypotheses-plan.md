@@ -942,6 +942,24 @@ does. Declared here before any of it is run.*
   `mr-300m` passed, on $300M names, and failed as a put spread in item 15), so the prior is low; the
   $100M universe takes in thinner chains than item 14's, which the leg-bar share reports;
   breakouts are rare, so their setup-sides may end as no verdict.
+- **The plan** (2026-10-24, local data only, before any option data was read):
+  `scripts/credit_spread_plan.py --item 17`, item 14's planner with item 17's spec. Its exclusions,
+  baselines and request file are item 14's; re-run for item 14, it reproduces item 14's plan byte for
+  byte. Seed 20261024. The universe is every name that ever traded $100M a day, less the declared
+  leveraged, inverse and volatility funds.
+  - **Deciding-era trades** (2020-01-22 to the design window's end), before the five baselines each:
+
+    | Setup | Put spread (long) | Call spread (short mirror) |
+    |---|---|---|
+    | Trend following | 2,088 | 1,175 |
+    | Pullback | 2,934 | 1,604 |
+    | Mean reversion | 3,192 | 3,452 |
+    | Breakout | 233 | 172 |
+
+  - **Fetch:** 97,402 distinct chain requests, 12,500 of them already in the store from items 14-16
+    and B. That leaves 84,902 to fetch, 67,345 of them deciding-era; the request file puts those
+    first. At item 14's pace (about 3 a second with 3 workers) that is 7-9 hours.
+  - 50 trades are short of five baselines (thin years).
 
 ## Not worth revisiting
 

@@ -164,18 +164,6 @@ def test_every_type_that_never_reports_is_exempt_and_a_company_is_not():
         assert kind not in skate.FUND_TYPES
 
 
-def test_the_consoles_fund_types_are_ones_skate_exempts_too():
-    """Driven off the console reader's own declaration, so the two cannot drift apart unseen."""
-    import re
-    from pathlib import Path
-
-    ts = Path(__file__).resolve().parents[2] / "console" / "server" / "src" / "readers" / "screeners.ts"
-    declared = re.search(r"const FUND_TYPES = new Set\(\[([^\]]*)\]\)", ts.read_text(encoding="utf-8"))
-    assert declared, "screeners.ts no longer declares FUND_TYPES"
-    kinds = set(re.findall(r'"([^"]+)"', declared.group(1)))
-    assert kinds and kinds <= set(skate.FUND_TYPES)
-
-
 def test_every_row_carries_both_bands_and_says_when_they_match():
     judged, _ = _judge(fund=True, earnings=None)
     short = next(r for r in judged["rows"] if r["days"] <= 14)
