@@ -48,6 +48,8 @@ against the same leg bars, and the spread priced at mid and at the natural fill.
 the cycle monthly, the strikes out of the money on both sides, quoted in regular hours with each leg
 judged by the same bars; with each name's earnings dates, IV, HV, beta and stress move. Written to
 `screener-greeks/income/<date>.json` for manage to size against the account. Needs no vendor list.
+Beside it (`cs`, 2026-10-24), the credit-spread list's chain: the 30-45 day monthly, both sides,
+every strike out to 1.5 standard deviations, unthinned, since a spread's legs are neighbours.
 """
 
 from __future__ import annotations
@@ -540,7 +542,11 @@ def apply_bars(rows: list[dict], bars: dict | None) -> None:
 def judge_income(doc: dict, bars: dict | None) -> None:
     """Each quoted option of an `income` reading against the bars, in place."""
     for entry in (doc.get("symbols") or {}).values():
-        for o in [*(entry.get("options") or []), *((entry.get("cc") or {}).get("options") or [])]:
+        for o in [
+            *(entry.get("options") or []),
+            *((entry.get("cc") or {}).get("options") or []),
+            *((entry.get("cs") or {}).get("options") or []),
+        ]:
             q = {k: o.get(k) for k in ("bid", "ask", "volume", "open_interest")}
             quoted = o.get("bid") is not None or o.get("ask") is not None
             o["passes"] = leg_passes(q, bars) if bars and quoted else None
@@ -1115,6 +1121,13 @@ CC_STRIKES = 8
 CC_NEAR = 2
 INCOME_STRIKES = CAND_STRIKES
 INCOME_NEAR = CAND_NEAR
+# The credit-spread list's chain (2026-10-24; docs/edge-hypotheses-plan.md, item 17): the covered
+# call's 30-45 day monthly, both sides, every listed strike out of the money from the first out to
+# CS_REACH_SD standard deviations -- a 0.40-delta short plus the widest width the list prices (0.75 of
+# the move, or five strikes). Never thinned: a spread's legs are neighbouring strikes, and evenly
+# thinned strikes drop the very ones it is built from. At most CS_MOST a side, the nearest kept.
+CS_REACH_SD = 1.5
+CS_MOST = 24
 # The history a stress move is read from: five years of sessions, and at least a year of windows.
 STRESS_SESSIONS = 1260
 STRESS_MIN_WINDOWS = 250
@@ -1186,6 +1199,39 @@ def aimed_strikes(listed: list[float], spot: float, right: str, iv: float | None
     return sorted(otm, key=lambda k: (abs(k - target), k))[:AIM_STRIKES]
 
 
+def spread_strikes(
+    listed: list[float], spot: float, right: str, iv: float | None, dte: int, most: int = CS_MOST
+) -> list[float]:
+    """The listed strikes out of the money on one side, from the first out to CS_REACH_SD standard
+    deviations at `iv` over `dte` days (INCOME_REACH of the price without a vol), every one of them,
+    the nearest `most` kept."""
+    if iv and iv > 0 and dte > 0:
+        sd = CS_REACH_SD * iv * math.sqrt(dte / 365.0)
+        lo, hi = spot * math.exp(-sd), spot * math.exp(sd)
+    else:
+        lo, hi = spot * (1 - INCOME_REACH), spot * (1 + INCOME_REACH)
+    if right == "P":
+        otm = sorted((k for k in listed if lo <= k <= spot), reverse=True)
+    else:
+        otm = sorted(k for k in listed if spot <= k <= hi)
+    return sorted(otm[:most])
+
+
+def _spread_legs(expiry: dict, spot: float, iv: float | None, shared: list[dict]) -> list[dict]:
+    """Both sides' spread strikes on `expiry`; a leg already planned (`shared`, the same option) is
+    that leg itself, so it is quoted once and its quote lands in both."""
+    by_strike = {float(k): (call, put) for k, call, put in expiry["strikes"]}
+    planned = {leg["option"]: leg for leg in shared}
+    legs = []
+    for right in "PC":
+        for k in spread_strikes(list(by_strike), spot, right, iv, int(expiry.get("dte") or 0)):
+            call, put = by_strike[k]
+            option = put if right == "P" else call
+            if option:
+                legs.append(planned.get(option) or {"strike": k, "right": right, "option": option})
+    return legs
+
+
 def _plan_legs(
     expiry: dict,
     spot: float,
@@ -1212,8 +1258,10 @@ def income_plan(listing: list[dict], spot: float | None, is_monthly, iv: float |
     """The cycle monthly and the out-of-the-money strikes either side of `spot` to quote, reaching
     further on a volatile name (`income_reach`), and the covered call's own expiry (`cc`): the
     30-45 day monthly's calls, or -- when that is the cycle monthly, or there is none -- the cycle's
-    calls (`legs` None: nothing more to quote). None when the cycle lists no monthly or there is no
-    price to centre on."""
+    calls (`legs` None: nothing more to quote). The credit spreads' (`cs`) are that 30-45 day
+    monthly's strikes both sides, unthinned (`spread_strikes`), or None when there is no such
+    monthly -- never the cycle instead. None when the cycle lists no monthly or there is no price to
+    centre on."""
     cyc = cycle_expiry(listing, is_monthly)
     if cyc is None or not spot:
         return None
@@ -1235,7 +1283,22 @@ def income_plan(listing: list[dict], spot: float | None, is_monthly, iv: float |
             "window": "30-45",
             "legs": _plan_legs(ce, spot, "C", cc_reach, CC_STRIKES, CC_NEAR, iv),
         }
-    return {"expiry": cyc["expiration"], "dte": cyc["dte"], "reach": round(reach, 4), "legs": legs, "cc": cc}
+    cs = None
+    if ce is not None:
+        on_cycle = ce["expiration"] == cyc["expiration"]
+        cs = {
+            "expiry": ce["expiration"],
+            "dte": ce["dte"],
+            "legs": _spread_legs(ce, spot, iv, legs if on_cycle else cc["legs"] or []),
+        }
+    return {
+        "expiry": cyc["expiration"],
+        "dte": cyc["dte"],
+        "reach": round(reach, 4),
+        "legs": legs,
+        "cc": cc,
+        "cs": cs,
+    }
 
 
 def income_rows(legs: list[dict]) -> list[dict]:
@@ -1361,7 +1424,14 @@ async def _income_quotes(
         plan = income_plan(cache.get(sym) or [], spots.get(sym), ub.is_monthly, (ivs or {}).get(sym))
         if plan:
             plans[sym] = plan
-    legs = [leg for p in plans.values() for leg in (*p["legs"], *(p["cc"]["legs"] or []))]
+    # A leg the spreads share with the cycle or the covered call is one object: quoted once.
+    legs = list(
+        {
+            id(leg): leg
+            for p in plans.values()
+            for leg in (*p["legs"], *(p["cc"]["legs"] or []), *((p.get("cs") or {}).get("legs") or []))
+        }.values()
+    )
     await _quote_options(session, ub, legs)
     return spots, plans, problem
 
@@ -1444,6 +1514,15 @@ def cmd_income(args) -> int:
                 if cc["legs"] is None
                 else income_rows(cc["legs"]),
             },
+            # The credit spreads' 30-45 day monthly, both sides; None when there is no such monthly.
+            cs=None
+            if plan["cs"] is None
+            else {
+                "expiry": plan["cs"]["expiry"],
+                "dte": plan["cs"]["dte"],
+                "stress": stress_move(closes, holding_sessions(plan["cs"]["dte"])),
+                "options": income_rows(plan["cs"]["legs"]),
+            },
         )
         symbols[sym] = entry
     # A trial (a --limit run) never stands in for the day's file, which manage would read as complete.
@@ -1461,6 +1540,7 @@ def cmd_income(args) -> int:
                 "reach": {"min": INCOME_REACH, "sd": INCOME_REACH_SD, "max": INCOME_REACH_MAX},
                 "strikes": INCOME_STRIKES,
                 "covered_call": {"window": COVERED_CALL_RANGE, "else": "cycle", "strikes": CC_STRIKES},
+                "credit_spread": {"window": COVERED_CALL_RANGE, "reach_sd": CS_REACH_SD, "most": CS_MOST},
                 "aimed": {"sd": AIM_SD, "strikes": AIM_STRIKES},
                 "stress_sessions": STRESS_SESSIONS,
             },
@@ -1468,11 +1548,19 @@ def cmd_income(args) -> int:
             "symbols": symbols,
         },
     )
-    # The covered call's options, less the cycle calls it reuses (the same rows, not copies).
-    quoted = [o for s in symbols.values() for o in s.get("options") or []]
-    seen = {id(o) for o in quoted}
-    cc_rows = [o for s in symbols.values() for o in (s.get("cc") or {}).get("options") or []]
-    quoted += [o for o in cc_rows if id(o) not in seen]
+    # Each option once, wherever it is filed: the covered call reuses the cycle's calls, and the
+    # spreads share strikes with both.
+    quoted = list(
+        {
+            o["option"]: o
+            for s in symbols.values()
+            for o in (
+                *(s.get("options") or []),
+                *((s.get("cc") or {}).get("options") or []),
+                *((s.get("cs") or {}).get("options") or []),
+            )
+        }.values()
+    )
     print(
         json.dumps(
             {
