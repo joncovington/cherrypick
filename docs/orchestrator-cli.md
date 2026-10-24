@@ -103,6 +103,21 @@ job that owns settlement. The paper modules' own scheduled-task helpers were rem
 2026-10-08; flies', bwb's and MEIC's live `--install-task` only writes the day's arm record, and refuses
 without a running supervisor.
 
+## The research queue (`orchestrator/researchqueue.py`, 2026-10-24)
+
+Long research tasks are rows that the supervisor's `research-queue` job runs one at a time, so a
+many-hour fetch survives the session that queued it. A row is named `study/step` (lowercase slugs;
+the study is its category, one live row per name) and runs only an allow-listed kind. A ThetaData
+task waits for a free vendor session and keeps clear of the nightly `backtest-fetch` window, stopping
+before it and resuming after. A finished row points to what it produced.
+
+| Command | What it does | Flags |
+|---|---|---|
+| `queue-add` | Queue one task. Its kind, arguments, names and times are all checked now, so a row the runner would refuse is never added. Kinds: `fetch-chains` (`{"requests": file, "workers": 1-4}`), `fetch-flow` (`{"plan": file, "workers": 1-4}`), `script` (`{"path": "scripts/x.py", "args": [strings]}`, a file git knows). | `--study` (required), `--step` (default: the kind), `--task`, `--task-args <json>`, `--output <file>` (a script's conclusion, which must exist when it finishes), `--not-before` / `--stop-by` (ET, `YYYY-MM-DDTHH:MM`) |
+| `queue-list` | The rows, newest first: each queued one with why it waits, each finished one with its result (a fetch's counts and input, a script's output, the log). Also on the console's Backtest → queue tab. | `--study` |
+| `queue-cancel` | Cancel a queued row; a running one is left to its process. | `--task-id` |
+| `queue-run` | Recover rows left running by a dead process, then run the oldest ready row to its end: the `research-queue` job, every 300 s (`research_queue.*`). | — |
+
 ## Global flags
 
 `--date YYYY-MM-DD` (report) · `--eod` (report — scope to one

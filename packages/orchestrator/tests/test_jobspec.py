@@ -331,6 +331,7 @@ def test_derive_full_suite_job_table():
         "market-files",
         "market-files-retry",
         "backtest-fetch",
+        "research-queue",
         "technicals-land",
         "technicals-dividends",
         "technicals-index-bars",

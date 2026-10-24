@@ -378,12 +378,14 @@ export const ADVISOR_SLIDES = [{ id: "advisor", label: "advisor" }] as const sat
 /**
  * Backtest (2026-10-17): `packages/backtest`'s replays over licensed vendor history. Shown only
  * while the suite says `backtest: true` (it fails closed, `visibility.ts`). `data` is the licence
- * clock and the stores, `validation` the vendor against the recorder, `runs` the replays.
+ * clock and the stores, `validation` the vendor against the recorder, `runs` the replays, `queue`
+ * the research tasks the supervisor runs (2026-10-24).
  */
 export const BACKTEST_SLIDES = [
   { id: "data", label: "data" },
   { id: "validation", label: "validation" },
   { id: "runs", label: "runs" },
+  { id: "queue", label: "queue" },
 ] as const satisfies readonly NavSlide[];
 
 /**

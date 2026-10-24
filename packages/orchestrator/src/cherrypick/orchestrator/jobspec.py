@@ -1161,6 +1161,22 @@ def derive_jobs(
             enabled_reason="" if bt["fetch"] else "disabled in config (backtest.fetch)",
         ),
     )
+    rqs = cfgmod.research_queue_settings(cfg)
+    add(
+        "research-queue",
+        lambda: JobSpec(
+            id="research-queue",
+            # Long research tasks from rows (orchestrator/researchqueue.py): each tick runs the oldest
+            # ready row to its end, so a fetch of many hours runs inside this job, and the overlap
+            # guard keeps a second tick from starting another. Allow-listed kinds only; a ThetaData
+            # task keeps clear of backtest-fetch's window and of a held session.
+            argv=_run_py(pythonw, launcher, "queue-run"),
+            kind=KIND_INTERVAL,
+            interval_seconds=rqs["interval_seconds"],
+            enabled=rqs["enabled"],
+            enabled_reason="" if rqs["enabled"] else "disabled in config (research_queue.enabled)",
+        ),
+    )
     tc = cfgmod.technicals_settings(cfg)
     # The Dolt-reading jobs need Dolt set up (`enabled` folds in capabilities.dolt) and a server
     # to read (`config.dolt_read`: earnings on, or a server kept for technicals), which no longer

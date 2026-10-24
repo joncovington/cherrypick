@@ -81,6 +81,14 @@ Subcommands:
                        --url is the bot token, --chat-id the chat; either omitted is prompted.
   secrets-status       Show which push-channel secrets are configured (secret-free).
   secrets-delete       Remove a stored secret (--channel).
+  queue-add            Queue a research task (orchestrator/researchqueue.py), named --study/--step
+                       (slugs; step defaults to the kind): --task fetch-chains|fetch-flow|script,
+                       --task-args JSON, --output (a script's conclusion file), --not-before /
+                       --stop-by (ET, YYYY-MM-DDTHH:MM). Allow-listed kinds only.
+  queue-list           The research queue's rows, newest first (--study narrows), why a queued one
+                       waits, and where a finished one's result is.
+  queue-cancel         Cancel a queued task (--task-id).
+  queue-run            Run the oldest ready task to its end (the supervisor's research-queue job).
 """
 
 from __future__ import annotations
@@ -1614,6 +1622,73 @@ def cmd_notify_desk(cfg) -> None:
     _emit(desk_notifier.run(cfg))
 
 
+def cmd_queue_add(args) -> None:
+    """Queue one research task (orchestrator/researchqueue.py). Refused rows are never added."""
+    from cherrypick.orchestrator import researchqueue as rq
+
+    try:
+        task_args = json.loads(args.task_args)
+        if not isinstance(task_args, dict):
+            raise ValueError("--task-args must be a JSON object")
+        out = rq.add(
+            args.study or "",
+            args.task or "",
+            task_args,
+            step=args.step,
+            output=args.output,
+            not_before=args.not_before,
+            stop_by=args.stop_by,
+        )
+    except (rq.Refused, ValueError) as exc:
+        _emit({"ok": False, "error": str(exc)})
+        sys.exit(2)
+    _emit({"ok": True, **out})
+
+
+def cmd_queue_list(cfg, args) -> None:
+    """The queue's rows, newest first, each queued one with why it waits now."""
+    from datetime import datetime
+
+    from cherrypick.core import calendar as cal
+
+    from cherrypick.orchestrator import researchqueue as rq
+
+    now = datetime.now(rq.ET)
+    held = rq.session_held()
+    window = rq.blackout(cfg)
+    out = []
+    for r in rq.rows(study=args.study):
+        if r["status"] == "queued":
+            r["waits"] = rq.ready(r, now, cal.is_trading_day, held, window) or "ready"
+        r["name"] = rq.name(r)
+        r["args"] = json.loads(r["args"])
+        r["result"] = json.loads(r["result"]) if r.get("result") else None
+        out.append(r)
+    _emit({"ok": True, "session_held": held, "blackout": list(window), "tasks": out})
+
+
+def cmd_queue_cancel(args) -> None:
+    from cherrypick.orchestrator import researchqueue as rq
+
+    if args.task_id is None:
+        _emit({"ok": False, "error": "queue-cancel needs --task-id"})
+        sys.exit(2)
+    out = rq.cancel(args.task_id)
+    _emit(out)
+    if not out["ok"]:
+        sys.exit(1)
+
+
+def cmd_queue_run(cfg) -> None:
+    """The supervisor's research-queue job: run the oldest ready task to its end."""
+    from cherrypick.orchestrator import researchqueue as rq
+
+    out = rq.run_next(cfg)
+    _emit(out)
+    if not out.get("ok", True):
+        sys.exit(1)
+
+
 def cmd_power_watch(cfg) -> None:
     """Notify every channel while this machine is on battery (orchestrator/powerwatch.py)."""
     from cherrypick.orchestrator import powerwatch
@@ -1998,6 +2073,10 @@ def build_parser() -> argparse.ArgumentParser:
             "secrets-status",
             "secrets-delete",
             "settings",
+            "queue-add",
+            "queue-list",
+            "queue-cancel",
+            "queue-run",
         ],
     )
     parser.add_argument(
@@ -2225,6 +2304,31 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="For stop: every daemon and every job still running (after `uninstall`; refused before)",
     )
+    parser.add_argument("--task", default=None, help="For queue-add: fetch-chains, fetch-flow or script")
+    parser.add_argument(
+        "--task-args",
+        default="{}",
+        help='For queue-add: the kind\'s arguments as JSON, e.g. {"requests": "<file>", "workers": 3} '
+        'or {"path": "scripts/x.py", "args": ["--item", "17"]}',
+    )
+    parser.add_argument(
+        "--study",
+        default=None,
+        help="For queue-add: the study a task belongs to, a slug (item17); queue-list narrows to it",
+    )
+    parser.add_argument(
+        "--step", default=None, help="For queue-add: what the task does there, a slug (default: the kind)"
+    )
+    parser.add_argument(
+        "--output", default=None, help="For queue-add: the file a script's conclusion is written to"
+    )
+    parser.add_argument(
+        "--not-before", default=None, help="For queue-add: start no earlier (ET, YYYY-MM-DDTHH:MM)"
+    )
+    parser.add_argument(
+        "--stop-by", default=None, help="For queue-add: stop a fetch by then (ET, YYYY-MM-DDTHH:MM)"
+    )
+    parser.add_argument("--task-id", type=int, default=None, help="For queue-cancel: the row to cancel")
     return parser
 
 
@@ -2325,6 +2429,10 @@ def main() -> None:
         "secrets-status": lambda: cmd_secrets_status(),
         "secrets-delete": lambda: cmd_secrets_delete(args.channel),
         "settings": lambda: cmd_settings(cfg, args),
+        "queue-add": lambda: cmd_queue_add(args),
+        "queue-list": lambda: cmd_queue_list(cfg, args),
+        "queue-cancel": lambda: cmd_queue_cancel(args),
+        "queue-run": lambda: cmd_queue_run(cfg),
     }
     dispatch[args.command]()
 

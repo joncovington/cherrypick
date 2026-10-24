@@ -103,6 +103,21 @@ def test_a_fatal_refusal_stops_the_run_instead_of_marking_everything_refused(tmp
         assert c.execute("SELECT COUNT(*) FROM eod_chain_requests").fetchone()[0] == 3
 
 
+def test_a_stop_starts_nothing_more_keeps_what_finished_and_a_rerun_resumes(tmp_path):
+    s = _settings(tmp_path)
+    many = [(f"N{k:03d}", "2024-02-02", "2024-03-15") for k in range(10)]
+    asked = {"n": 0}
+
+    def stop() -> bool:
+        asked["n"] += 1
+        return asked["n"] > 4  # four requests start, then the deadline passes
+
+    out = chainfetch.fetch_chains(s, FakeChains(), many, workers=1, stop=stop, log=lambda m: None)
+    assert out["stopped"] is True and out["complete"] == 4
+    again = chainfetch.fetch_chains(s, FakeChains(), many, workers=1, log=lambda m: None)
+    assert again["stopped"] is False and again["already"] == 4 and again["complete"] == 6
+
+
 def test_the_request_file_keeps_its_order_and_reads_each_request_once(tmp_path):
     f = tmp_path / "req.json"
     items = [{"symbol": "aapl", "session": "2024-02-02", "expiration": "2024-03-15"}] * 2

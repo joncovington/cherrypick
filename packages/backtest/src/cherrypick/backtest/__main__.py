@@ -177,6 +177,18 @@ def cmd_fetch_vix(args) -> int:
     return 0
 
 
+def _stop_by(text: str | None):
+    """`--stop-by` (ET wall clock, YYYY-MM-DDTHH:MM) as a callable the fetch asks before each new
+    request; None without one."""
+    if not text:
+        return None
+    from zoneinfo import ZoneInfo
+
+    et = ZoneInfo("America/New_York")
+    deadline = datetime.fromisoformat(text).replace(tzinfo=et)
+    return lambda: datetime.now(et) >= deadline
+
+
 def cmd_fetch_chains(args) -> int:
     """End-of-day chains for a study's list of (name, session, expiry) requests (chainfetch.py): a
     network verb, refused on the same terms as `fetch`."""
@@ -198,7 +210,7 @@ def cmd_fetch_chains(args) -> int:
         return 2
     report = chainfetch.fetch_chains(
         s, client, requests, workers=args.workers, refetch=args.refetch, limit=args.limit,
-        log=lambda m: print(m, file=sys.stderr),
+        stop=_stop_by(args.stop_by), log=lambda m: print(m, file=sys.stderr),
     )  # fmt: skip
     _emit(report)
     return 1 if report.get("aborted") else 0
@@ -225,13 +237,7 @@ def cmd_fetch_flow(args) -> int:
     if bool(args.plan) == bool(symbols) or (symbols and not (args.start and args.end)):
         print("fetch-flow: give --plan FILE, or --symbols A,B,... with --from and --to", file=sys.stderr)
         return 2
-    stop = None
-    if args.stop_by:
-        from zoneinfo import ZoneInfo
-
-        et = ZoneInfo("America/New_York")
-        deadline = datetime.fromisoformat(args.stop_by).replace(tzinfo=et)
-        stop = lambda: datetime.now(et) >= deadline  # noqa: E731
+    stop = _stop_by(args.stop_by)
     try:
         client = client_for(s)
     except VendorRefusal as exc:
@@ -453,6 +459,7 @@ def main(argv: list[str] | None = None) -> int:
     fc.add_argument("--workers", type=int, default=3, help="concurrent requests on the one session")
     fc.add_argument("--limit", type=int, help="fetch at most this many requests this run")
     fc.add_argument("--refetch", action="store_true", help="replace requests already complete or empty")
+    fc.add_argument("--stop-by", help="ET wall clock, YYYY-MM-DDTHH:MM: start no request after it")
     fc.set_defaults(fn=cmd_fetch_chains)
     cs = sub.add_parser("chains-status", help="what the end-of-day chain store holds")
     cs.set_defaults(fn=cmd_chains_status)
