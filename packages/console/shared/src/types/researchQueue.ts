@@ -1,0 +1,40 @@
+/**
+ * The research queue (`run.py queue-list`; packages/orchestrator `researchqueue.py`, 2026-10-24): long
+ * research tasks the supervisor runs one at a time from rows. Read-only here: rows are added with
+ * `run.py queue-add`, and every rule (what may run, when it may start, why a row waits) is the
+ * orchestrator's. The console renames the reply and decides nothing.
+ */
+
+export type ResearchTaskStatus = "queued" | "running" | "done" | "failed" | "stopped" | "cancelled";
+
+export interface ResearchTask {
+  id: number;
+  /** The allow-listed kind: fetch-chains, fetch-flow or script. */
+  kind: string;
+  label: string | null;
+  /** The kind's arguments as queued (file paths, workers, a script's path and arguments). */
+  args: Record<string, unknown>;
+  /** "thetadata" for a task that needs the vendor session; "" for none. */
+  needs: string;
+  /** ET wall clock, YYYY-MM-DDTHH:MM(:SS); null when unset. */
+  notBefore: string | null;
+  stopBy: string | null;
+  status: ResearchTaskStatus;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  /** How many times it has started (a fetch stopped for the nightly window resumes as a new run). */
+  runs: number;
+  exitCode: number | null;
+  note: string | null;
+  /** A queued row only: "ready", or why it waits now. */
+  waits: string | null;
+}
+
+export interface ResearchQueue {
+  /** Whether a live process holds the ThetaData session lock right now. */
+  sessionHeld: boolean;
+  /** The nightly backtest-fetch window ("HH:MM" ET) no ThetaData task runs inside, on trading days. */
+  blackout: [string, string] | null;
+  tasks: ResearchTask[];
+}

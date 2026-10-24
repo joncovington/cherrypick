@@ -129,9 +129,12 @@ def fetch_chains(
     workers: int = 1,
     refetch: bool = False,
     limit: int | None = None,
+    stop=None,
     log=print,
 ) -> dict[str, Any]:
-    """Fetch every request not already complete or empty (all of them with `refetch`)."""
+    """Fetch every request not already complete or empty (all of them with `refetch`). `stop`, if
+    given, is asked before each new request: once it says so, nothing more is started, the requests
+    in flight finish and are kept, and the report says `stopped` -- a re-run resumes from there."""
     conn = connect(settings)
     try:
         done = set() if refetch else _done(conn)
@@ -146,6 +149,7 @@ def fetch_chains(
             "empty": 0,
             "refused": 0,
             "rows": 0,
+            "stopped": False,
         }
         started = time.monotonic()
         pending = iter(todo)
@@ -153,6 +157,9 @@ def fetch_chains(
             running = {}
 
             def submit_next() -> bool:
+                if stop is not None and stop():
+                    report["stopped"] = True
+                    return False
                 key = next(pending, None)
                 if key is None:
                     return False

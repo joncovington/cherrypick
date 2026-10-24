@@ -1,4 +1,5 @@
 import { BacktestDataTab, BacktestRunsTab, BacktestValidationTab } from "../../pages/Backtest/BacktestPage";
+import { BacktestQueueTab } from "../../pages/Backtest/QueueTab";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
@@ -12,6 +13,7 @@ const slides: SlideDef[] = [
   { id: "data", label: "data", render: () => <BacktestDataTab /> },
   { id: "validation", label: "validation", render: () => <BacktestValidationTab /> },
   { id: "runs", label: "runs", render: () => <BacktestRunsTab /> },
+  { id: "queue", label: "queue", render: () => <BacktestQueueTab /> },
 ];
 
 export function BacktestLightbox({ slide }: { slide: string }) {

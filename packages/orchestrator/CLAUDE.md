@@ -38,6 +38,7 @@ python run.py archive            # monthly rotation of finished months' reports 
 python run.py backup             # nightly suite backup (the suite-backup job, 01:30 ET): ONE verified zip, rewritten; a bad night never replaces it (--dry-run / --list / --verify / --restore-to DIR)
 python run.py settings           # local config editor + secrets manager on loopback:8804; --organize [target] [--apply] reorders configs instead
 python run.py migrate-home       # dry-run move of config into ~/.cherrypick (--apply to perform)
+python run.py queue-add --task fetch-chains --task-args '{"requests": "<file>"}' --label "item 17"  # queue a research task (researchqueue.py); queue-list / queue-cancel --task-id N; the research-queue job runs it
 python -m pytest                 # default lane `-m "not live" -q`; markers unit, live, windows
 python -m pytest tests/test_report.py::test_report_unifies_pnl_net_of_costs_across_modules  # one test
 ruff check . ; ruff format .     # line-length 110
@@ -191,6 +192,12 @@ filename; override with `paper.sla_state_prefix`.
 
 ## Invariants (do not violate — the reasons are load-bearing)
 
+- **A research-queue row never names a command** (`researchqueue.py`, 2026-10-24). The supervisor is a
+  service with the broker credentials in reach, so a row is an allow-listed kind (`KINDS`) whose argv
+  the kind builds: a resumable backtest fetch, or a `scripts/` file git knows, with string arguments
+  and no shell. Widening `KINDS` is a reviewed code change, never a config or a row. A ThetaData task
+  keeps clear of `backtest-fetch`'s window and of a held session (`test_researchqueue.py`; both
+  guards were shown to fail).
 - **The reliability path is deterministic and local.** The watchdog → notify path uses only the stdlib
   and the OS shell — no MCP, HTTP client or AI — so the thing that watches for a stall cannot stall the
   same way. Any network-touching notifier gets its own scheduled job, never a call from the watchdog

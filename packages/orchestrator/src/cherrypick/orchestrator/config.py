@@ -758,6 +758,20 @@ def quikoptions_post_problem(q: dict[str, Any]) -> str | None:
     return None
 
 
+def research_queue_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """The research queue (`research-queue`, orchestrator/researchqueue.py). On by default: with no
+    rows it does nothing, and every row is an allow-listed kind. `interval_seconds` is how often the
+    supervisor looks for a ready row. The ThetaData blackout follows `backtest.fetch_at`: from
+    `blackout_before_minutes` before it to `blackout_after_minutes` after, on trading days."""
+    q = cfg.get("research_queue", {}) or {}
+    return {
+        "enabled": bool(q.get("enabled", True)),
+        "interval_seconds": int(q.get("interval_seconds", 300)),
+        "blackout_before_minutes": int(q.get("blackout_before_minutes", 15)),
+        "blackout_after_minutes": int(q.get("blackout_after_minutes", 105)),
+    }
+
+
 def backtest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """The nightly vendor fetch for packages/backtest (`backtest-fetch`). OFF by default: it needs a
     vendor subscription, its key in the keyring and the package's own config, none of which a fresh
