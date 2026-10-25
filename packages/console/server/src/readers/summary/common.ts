@@ -87,6 +87,9 @@ export interface SummaryTrade {
   slippage: number | null;
   /** The history reader's own net for the row. */
   net: number;
+  /** The session the trade was entered, where the reader knows it (multi-day books). Lets B2's
+   *  overlap flag see positions held at the same time, not only ones closed the same day. */
+  entry?: string | null;
 }
 
 /**
@@ -239,12 +242,34 @@ export function rOf<T extends SummaryTrade>(
 }
 
 /** B2: how many sessions closed more than one trade, or null when none did. */
-export function overlapOf(trades: readonly SummaryTrade[]): { sessions: number; of: number; maxPerSession: number } | null {
+export function overlapOf(
+  trades: readonly SummaryTrade[],
+): { sessions: number; of: number; maxPerSession: number; heldTogether: number | null } | null {
   const per = new Map<string, number>();
   for (const t of trades) per.set(t.session, (per.get(t.session) ?? 0) + 1);
   const counts = [...per.values()];
   const multi = counts.filter((c) => c > 1).length;
-  return multi === 0 ? null : { sessions: multi, of: per.size, maxPerSession: Math.max(...counts) };
+  const held = heldTogether(trades);
+  if (multi === 0 && !held) return null;
+  return { sessions: multi, of: per.size, maxPerSession: Math.max(0, ...counts), heldTogether: held };
+}
+
+/** Trades whose [entry, close] span overlaps another trade's in the same arm (each arm is its own
+ *  portfolio). Null when no trade carries an entry session -- not zero: it was not measured. */
+export function heldTogether(trades: readonly SummaryTrade[]): number | null {
+  const spans = trades.filter((t) => t.entry).map((t) => ({ arm: t.arm, a: t.entry!.slice(0, 10), b: t.session }));
+  if (spans.length === 0) return null;
+  const byArm = new Map<string, { a: string; b: string }[]>();
+  for (const s of spans) byArm.set(s.arm, [...(byArm.get(s.arm) ?? []), s]);
+  let n = 0;
+  for (const list of byArm.values()) {
+    list.sort((x, y) => x.a.localeCompare(y.a));
+    for (let i = 0; i < list.length; i++) {
+      const me = list[i]!;
+      if (list.some((o, j) => j !== i && o.a <= me.b && me.a <= o.b)) n += 1;
+    }
+  }
+  return n;
 }
 
 export function heroOf<T extends SummaryTrade>(
