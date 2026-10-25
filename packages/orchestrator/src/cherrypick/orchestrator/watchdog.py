@@ -2492,6 +2492,27 @@ def _check_holds() -> list[Finding]:
     return [Finding("holds", OK, "Stopped on purpose", listed)]
 
 
+def _check_kill_latches() -> list[Finding]:
+    """A live arm its written kill criteria blocked (B1, `core.killcriteria`). CRITICAL for as long as
+    the latch stands: the arm opens nothing until a person reviews it and clears the latch."""
+    from cherrypick.core import killcriteria as _kill
+
+    findings = []
+    for path in sorted((core_home.state_dir() / "kill").glob("*.json")):
+        held = _kill.latched(path.stem) or {}
+        findings.append(
+            Finding(
+                f"kill.{path.stem}",
+                CRITICAL,
+                f"{path.stem} live arm {held.get('arm', '?')} blocked by its kill criteria",
+                f"{'; '.join(held.get('reasons') or [])} (since {held.get('at', '?')}). Entries only; "
+                "nothing was closed. Review, then "
+                f"`python -m cherrypick.core.killcriteria clear --module {path.stem}`.",
+            )
+        )
+    return findings
+
+
 def _check_services(cfg: dict[str, Any]) -> list[Finding]:
     """Keep the generic background services (e.g. the gex spot-trail recorder) alive: check each one's
     `status_argv` and, if down and `auto_restart`, relaunch it detached. Benign, non-trading remediation
@@ -3038,6 +3059,7 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     # Keep generic background services (e.g. the gex spot-trail recorder) alive.
     findings += _check_services(cfg)
     findings += _check_holds()
+    findings += _check_kill_latches()
     findings += _check_live_positions(in_session)
     findings += _check_fixed_time_jobs(now)
     findings += _check_notify_delivery(cfg)

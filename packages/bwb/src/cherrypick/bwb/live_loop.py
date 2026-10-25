@@ -41,6 +41,8 @@ from datetime import datetime
 from cherrypick.core import calendar as _cal
 from cherrypick.core import execution as _execution
 from cherrypick.core import home as _home
+from cherrypick.core import killcriteria as _kill
+from cherrypick.core import ledgers as _ledgers
 from cherrypick.core import live as _live
 from cherrypick.core import livepositions as _livepos
 from cherrypick.core import logs as _logs
@@ -707,6 +709,12 @@ def _try_live_entry(
     tripped, marked = mark_drawdown_tripped(conn, live_cfg.get("mark_drawdown_halt_dollars"))
     if tripped:
         return refuse("mark_drawdown_halt", f"open marked loss {marked:.2f}")
+    # The arm's written kill criteria (B1): reduce, then block and latch. Entries only, as above.
+    kill = _kill.gate("bwb", arm, _ledgers.READERS["bwb_132"](conn), live_cfg.get("kill"))
+    if kill["state"] == _kill.BLOCKED:
+        return refuse(
+            _kill.LATCHED if _kill.LATCHED in kill["reasons"] else "kill_criteria", "; ".join(kill["reasons"])
+        )
 
     # The term-structure gate (2026-10-09), live only: enter only while VIX9D sits below VIX. The
     # same reading is stored on the row, so the gate and the record can never disagree.
@@ -747,7 +755,9 @@ def _try_live_entry(
     if not planned.get("ok"):
         return refuse(planned["reason"], json.dumps(planned.get("detail")) if planned.get("detail") else None)
     plan = planned["plan"]
-    quantity = int(params.get("quantity", 1))
+    quantity = _kill.sized(int(params.get("quantity", 1)), kill, live_cfg.get("kill"))
+    if kill["state"] == _kill.REDUCED:
+        log(f"[{arm}] kill criteria reduce this entry to {quantity}: {'; '.join(kill['reasons'])}")
     concession = float(live_cfg.get("entry_concession", DEFAULT_CONCESSION))
     min_net = float(live_cfg.get("min_net_credit_dollars", DEFAULT_MIN_NET))
 

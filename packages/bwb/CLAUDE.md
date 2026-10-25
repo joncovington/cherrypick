@@ -190,6 +190,13 @@ Built to test whether the paper result survives a fill without disturbing the pa
   per-expiration worst-case margin caps from expiry payoffs, RESERVING an unfired position's future
   add-on whenever the arm can fire; the settled-net breaker; and the mark-drawdown breaker, which
   blocks the NEXT entry only, never an exit.
+- **Kill criteria** (`live.kill`, B1 of `docs/trading-book-review-plan.md`, 2026-10-24): the arm's
+  frozen, dated condition for being wrong, read through `core.killcriteria.gate` after the breakers.
+  Past the 95th-percentile drawdown or losing streak of its bootstrapped evidence an entry is halved
+  (at least one); past the 99th it is refused (`kill_criteria`) and the block LATCHES
+  (`state/kill/bwb.json`, a watchdog CRITICAL) until a person clears it. Entries only. Under 100 tested
+  trades the block is a hand-written `hand_limit_dollars` and the arm trades at one. A missing block
+  refuses every entry and latches nothing. Guarded from the settings surface.
 - **The term-structure gate** (`live.vix9d_vix_max`, 2026-10-09; null = off): a live entry is refused
   `regime_inverted` when VIX9D/VIX at the entry tick is at or above the bar, and `regime_unmeasured`
   when either print is missing or stale. Missing data blocks an entry and never allows one. The

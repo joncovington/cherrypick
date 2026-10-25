@@ -115,6 +115,7 @@
     "symbol": null,
     "gate0_confirmed": "",
     "daily_loss_halt_dollars": 200,
+    "kill": null,
     "arm": null,
     "max_open_bp_dollars": null,
     "wing_widths_by_symbol": null,
