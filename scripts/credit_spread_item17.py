@@ -896,7 +896,6 @@ def load_plan(path: Path) -> list[dict]:
 
 def main(argv: list[str] | None = None) -> int:
     from cherrypick.backtest import chainfetch, settings
-    from cherrypick.technicals import paths as tpaths
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--start", default=DECLARED_START)
@@ -915,6 +914,9 @@ def main(argv: list[str] | None = None) -> int:
     if why:
         print(why, file=sys.stderr)
         return 2
+    # Imported after the licence guard: a refused run needs nothing but the backtest package.
+    from cherrypick.technicals import paths as tpaths
+
     history_db = args.history_db or tpaths.history_db()
     plan_path = args.plan or home.data_dir("backtest") / "results" / "research" / "item17" / "trades.json"
     trades = load_plan(plan_path)
