@@ -430,6 +430,26 @@ def result_of(row: dict, report: dict, log: Path) -> dict:
     return out
 
 
+def fetch_progress(row: dict, *, python: str | None = None, timeout: float = 60.0) -> dict | None:
+    """A chain fetch row's progress through its request file, from the backtest package's own
+    `chain-progress` verb (by subprocess: this package never imports a module). Counts, rate and ETA
+    only. None for any other kind, or when the read fails -- a meter is never a reason to fail a list."""
+    if row.get("kind") != "fetch-chains":
+        return None
+    args = json.loads(row["args"]) if isinstance(row.get("args"), str) else (row.get("args") or {})
+    req = args.get("requests")
+    if not req:
+        return None
+    try:
+        res = subprocess.run(
+            [python or sys.executable, "-m", "cherrypick.backtest", "chain-progress", "--requests", str(req)],
+            capture_output=True, text=True, timeout=timeout, creationflags=CREATE_NO_WINDOW,
+        )  # fmt: skip
+        return json.loads(res.stdout) if res.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
 def rows(path: Path | None = None, *, study: str | None = None, limit: int = 200) -> list[dict]:
     """The rows, newest first; one study's only with `study`."""
     with connect(path) as conn:

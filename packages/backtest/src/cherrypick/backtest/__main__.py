@@ -190,6 +190,18 @@ def _stop_by(text: str | None):
     return lambda: datetime.now(et) >= deadline
 
 
+def cmd_chain_progress(args) -> int:
+    """How far the chain store has got through a request list (chainfetch.progress): counts, rate and
+    ETA, never a price. Read-only; works for any run, queued or not."""
+    from pathlib import Path
+
+    from . import chainfetch
+
+    report = chainfetch.progress(settings.load(args.config), chainfetch.read_requests(Path(args.requests)))
+    print(json.dumps(report))
+    return 0
+
+
 def cmd_fetch_chains(args) -> int:
     """End-of-day chains for a study's list of (name, session, expiry) requests (chainfetch.py): a
     network verb, refused on the same terms as `fetch`."""
@@ -489,6 +501,9 @@ def main(argv: list[str] | None = None) -> int:
     fc.add_argument("--refetch", action="store_true", help="replace requests already complete or empty")
     fc.add_argument("--stop-by", help="ET wall clock, YYYY-MM-DDTHH:MM: start no request after it")
     fc.set_defaults(fn=cmd_fetch_chains)
+    cp = sub.add_parser("chain-progress", help="how far the chain store is through a request list")
+    cp.add_argument("--requests", required=True)
+    cp.set_defaults(fn=cmd_chain_progress)
     fp = sub.add_parser(
         "fetch-chain-paths",
         help="each expiry's chain at every session's close in a range, one vendor call per 7-day chunk "

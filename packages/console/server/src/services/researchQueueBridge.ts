@@ -1,4 +1,11 @@
-import type { BridgedResult, ResearchQueue, ResearchTask, ResearchTaskResult, ResearchTaskStatus } from "@console/shared";
+import type {
+  BridgedResult,
+  ResearchProgress,
+  ResearchQueue,
+  ResearchTask,
+  ResearchTaskResult,
+  ResearchTaskStatus,
+} from "@console/shared";
 import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
@@ -57,6 +64,23 @@ function toResult(v: unknown): ResearchTaskResult | null {
   };
 }
 
+export function toProgress(v: unknown): ResearchProgress | null {
+  const r = rec(v);
+  const total = n(r["total"]);
+  const answered = n(r["answered"]);
+  if (total === null || answered === null) return null;
+  const byStatus: Record<string, number> = {};
+  for (const [k, x] of Object.entries(rec(r["by_status"]))) if (typeof x === "number") byStatus[k] = x;
+  return {
+    total,
+    answered,
+    byStatus,
+    ratePerMin: n(r["rate_per_min"]),
+    etaMinutes: n(r["eta_minutes"]),
+    lastAnswerAgeS: n(r["last_answer_age_s"]),
+  };
+}
+
 function toTask(v: unknown): ResearchTask | null {
   const r = rec(v);
   const id = n(r["id"]);
@@ -85,6 +109,7 @@ function toTask(v: unknown): ResearchTask | null {
     exitCode: n(r["exit_code"]),
     note: s(r["note"]),
     waits: s(r["waits"]),
+    progress: toProgress(r["progress"]),
   };
 }
 

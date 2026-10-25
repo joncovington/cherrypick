@@ -52,6 +52,19 @@ export interface ResearchTask {
   note: string | null;
   /** A queued row only: "ready", or why it waits now. */
   waits: string | null;
+  /** A chain fetch's meter through its request file (backtest `chain-progress`), whoever runs it; null
+   *  for other kinds or a finished row. Counts, rate and ETA only. */
+  progress: ResearchProgress | null;
+}
+
+export interface ResearchProgress {
+  total: number;
+  answered: number;
+  byStatus: Record<string, number>;
+  ratePerMin: number | null;
+  etaMinutes: number | null;
+  /** Seconds since the store last recorded an answer for this list: a stalled run shows here. */
+  lastAnswerAgeS: number | null;
 }
 
 export interface ResearchQueue {
