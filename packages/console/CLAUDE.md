@@ -1003,3 +1003,11 @@ position, top-N previews of a server ranking (Flow's today cards), and capture l
 Suite guardrails apply (root CLAUDE.md). Package-specific: **loopback-only serving**; the console
 **computes no verdicts** — it renders what the modules decided, and where it mirrors a module's queries
 it says so and is checked against them.
+
+**The book-review read surfaces (2026-10-24).** Live → `execution` (B10) renders the orchestrator's
+`execution --json` through `services/executionBridge.ts`: each live arm's week, fill rate, slippage
+against the mid at submit, overrides, and the gap to its paper mirror. Backtest → `slices` (B5)
+reads the `technicals slices` JSON under `data/technicals/slices/` (`readers/slices.ts`), behind the
+backtest gate because a report may come from a licensed replay; greyed cells stay greyed and the page
+says a cell is never a gate. Both rename and render; every rule is the Python side's.
+

@@ -3,6 +3,7 @@ import { PmccPage, PortfolioPage, PositionsPage, WheelPage } from "../../pages/L
 import { MeicLivePage, useLiveMeic } from "../../pages/Live/MeicLivePage";
 import { LiveTodayPage, suiteBadgeText, useLiveToday } from "../../pages/Live/LiveTodayPage";
 import { LoopPill } from "../../components/ScopeBar";
+import { ExecutionTab } from "../../pages/Live/ExecutionTab";
 import { AlertDaemonChip } from "../../components/AlertDaemonChip";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
@@ -45,10 +46,12 @@ const slides: SlideDef[] = [
   { id: "flies", label: "flies", render: () => <LivePage /> },
   // MEIC's live loop: arming, halt, orphans, held submissions, open ICs and resolved history.
   { id: "meic", label: "meic", render: () => <MeicLivePage /> },
+  // B10: each live arm's fills against the model and its overrides, by week, beside its P&L.
+  { id: "execution", label: "execution", render: () => <ExecutionTab /> },
 ];
 
 /** The tabs that read the whole account, not one loop: they wear the suite's badge. */
-const ACCOUNT_WIDE = new Set(["today", "positions", "portfolio", "wheel", "pmcc"]);
+const ACCOUNT_WIDE = new Set(["today", "positions", "portfolio", "wheel", "pmcc", "execution"]);
 
 /** The flies header badge. A switched-off module says so first: "not armed" on a retired module
  *  reads as a pilot waiting for today's arm. A halt or a live arm record still outranks it. */

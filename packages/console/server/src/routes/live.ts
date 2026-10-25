@@ -3,6 +3,7 @@ import type { ConsoleConfig } from "../config.js";
 import { readFliesLive } from "../readers/fliesLive.js";
 import { readMeicLive } from "../readers/meicLive.js";
 import { readLiveToday } from "../readers/liveToday.js";
+import { readExecution } from "../services/executionBridge.js";
 
 /**
  * The Live page's endpoint (2026-09-17). Read-only: the flies live pilot's day, composed in
@@ -24,4 +25,6 @@ export function registerLiveRoutes(app: FastifyInstance, config: ConsoleConfig):
   // Every live loop's day on one payload (the Live page's today tab), composed from the per-loop
   // readers above plus bwb's (`readers/liveToday.ts`). Nothing here touches an order.
   app.get("/api/live/today", async () => readLiveToday(config));
+  // B10: each live arm's execution record by week (orchestrator `execution --json`). Read-only.
+  app.get("/api/live/execution", async () => readExecution());
 }
