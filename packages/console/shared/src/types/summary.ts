@@ -58,6 +58,12 @@ export interface SummaryShape {
    *  Null below 3 trades or with no spread. */
   skewness?: number | null;
   skew?: "left" | "right" | null;
+  /** Results in R (docs/trading-book-review-plan.md B3): net over the trade's defined max loss at
+   *  entry, averaged over the trades whose risk was recorded (`rN` of them). Null where the module
+   *  has no defined risk (an undefined-risk structure has no R) or recorded none. */
+  meanR?: number | null;
+  rN?: number;
+  rCi95?: [number, number] | null;
 }
 
 export interface SummaryHero {

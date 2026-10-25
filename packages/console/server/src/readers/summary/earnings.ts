@@ -133,7 +133,7 @@ export function readEarningsSummary(config: ConsoleConfig, q: SummaryQuery): Mod
   const trades = scopeTrades(settled.filter((t) => inWindow(t.session, window)), q);
   // Open now and already open by the window's end; none of their money is in the hero.
   const open = extras.value.openedSessions.filter((s) => window.to === null || s === null || s <= window.to).length;
-  const hero = heroOf(trades, true, open);
+  const hero = heroOf(trades, true, open, (t) => extras.value.byOrder.get(t.orderId)?.capitalAtRisk);
 
   // --- tiles ---
   const nets = trades.map((t) => t.net);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
-import { NetHero, WinRateArcs, intervalLine, skewNote, type TradeShape } from "../src/components/summary/kit";
+import { NetHero, WinRateArcs, intervalLine, rLine, skewNote, type TradeShape } from "../src/components/summary/kit";
 
 /**
  * A win rate is never shown alone (B2; Goodhart: a premium seller can win 85% of its trades and lose
@@ -66,5 +66,14 @@ describe("the net card's interval line and skew note", () => {
     const html = render(<NetHero net={-130} trades={20} shape={losingSeller} />);
     expect(html).toContain("total over 20 trades");
     expect(html).not.toContain("95%");
+  });
+});
+
+describe("results in R (B3)", () => {
+  it("states mean R with its interval and how many trades carried a risk", () => {
+    const shape = { ...losingSeller, meanR: -0.065, rN: 18, rCi95: [-0.25, 0.12] as [number, number] };
+    expect(rLine(shape, 20)).toBe("-0.07R per trade (95% -0.25R to 0.12R) over 18 of 20");
+    expect(rLine({ ...shape, rN: 20 }, 20)).toBe("-0.07R per trade (95% -0.25R to 0.12R)");
+    expect(rLine(losingSeller, 20)).toBeNull();
   });
 });

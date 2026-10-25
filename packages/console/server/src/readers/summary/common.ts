@@ -218,7 +218,32 @@ function sumRecorded(values: Array<number | null>): number | null {
  * cost (it then gets its own line) or carries it inside gross (no line). Net is the rows' own
  * nets summed, so the hero equals the history table's totals for the same window.
  */
-export function heroOf(trades: readonly SummaryTrade[], chargesSlippage: boolean, open: number): SummaryHero {
+/** Mean R and its interval over the trades `riskOf` gives a positive max loss for (B3). */
+export function rOf<T extends SummaryTrade>(
+  trades: readonly T[],
+  riskOf: (t: T) => number | null | undefined,
+): { meanR: number | null; rN: number; rCi95: [number, number] | null } {
+  const rs: number[] = [];
+  for (const t of trades) {
+    const risk = riskOf(t);
+    if (risk != null && risk > 0) rs.push(t.net / risk);
+  }
+  // Its own arithmetic, not shapeOf's: that rounds to cents, and R lives below one.
+  const r4 = (v: number) => Math.round(v * 10000) / 10000;
+  const n = rs.length;
+  if (n === 0) return { meanR: null, rN: 0, rCi95: null };
+  const mean = rs.reduce((a, b) => a + b, 0) / n;
+  const sd = n >= 2 ? Math.sqrt(rs.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)) : 0;
+  const half = sd > 0 ? (t95(n - 1) * sd) / Math.sqrt(n) : null;
+  return { meanR: r4(mean), rN: n, rCi95: half === null ? null : [r4(mean - half), r4(mean + half)] };
+}
+
+export function heroOf<T extends SummaryTrade>(
+  trades: readonly T[],
+  chargesSlippage: boolean,
+  open: number,
+  riskOf?: (t: T) => number | null | undefined,
+): SummaryHero {
   const costs: SummaryCost[] = [
     { label: "fees", amount: sumRecorded(trades.map((t) => t.fees)) },
     {
@@ -243,7 +268,7 @@ export function heroOf(trades: readonly SummaryTrade[], chargesSlippage: boolean
     daysWon: dayNets.filter((n) => n > 0).length,
     daysLost: dayNets.filter((n) => n < 0).length,
     open,
-    shape: shapeOf(trades.map((t) => t.net)),
+    shape: { ...shapeOf(trades.map((t) => t.net)), ...(riskOf ? rOf(trades, riskOf) : {}) },
     basis: null,
   };
 }

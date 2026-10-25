@@ -23,7 +23,7 @@ its PR), `dropped` (with why).
 |---|---|---|---|---|
 | B1 | Ch. 1, 3, 7 | Written kill criteria for every live arm, enforced as entries-blocked; thresholds from a bootstrap of the arm's evidence, frozen when armed; a graduated response (normal, reduced size, blocked) from 50-trade windows measured in standard errors of the window mean, against a live-cost baseline | built for meic + bwb; earnings, window-SE trigger open | No: blocks or reduces live entries only, paper unchanged |
 | B2 | Ch. 1, 6, 14 | Confidence intervals and t on the console's expectancy and win-rate figures, with the median, spread and worst trade beside the mean and a skew flag in both directions; a win rate never shown without expectancy beside it | built (summary cards); overlap flag open | No: a read surface |
-| B3 | Ch. 1 | Results in R per trade (1R = max loss for a defined-risk structure) in every module's history | proposed | No: a presentation and recording change |
+| B3 | Ch. 1 | Results in R per trade (1R = max loss for a defined-risk structure) in every module's history | built: `core.ledgers` `r_multiple`, console mean R | No: a presentation and recording change |
 | B4 | Ch. 1, 2 | Entry context recorded on every trade row (SPX against its 50-day **and 200-day**, ATR %, relative volume, sector, entry time; holding period at exit) | proposed | No: recording only, new columns |
 | B5 | Ch. 2 | A slice report per arm (by setup, market condition, entry time, holding period) with n and an interval on every cell; a cell that looks good becomes a declared hypothesis, never a filter | proposed | No: a read surface |
 | B6 | Ch. 2, 7 | Facts and interpretations kept apart wherever a person decides a trade (desk tickets, manual notes): free text in its own field, never read by a calculation; plus an invalidation condition and a short pre-mortem written at entry | proposed | No: recording only |
@@ -125,7 +125,7 @@ its PR), `dropped` (with why).
   face value.
 - A read-surface change only; the figures come from the existing ledgers.
 
-**B3. Results in R.** *(proposed)*
+**B3. Results in R.** *(built 2026-10-24: derived on read in `core.ledgers` as `r_multiple`, so every row already written has it with no backfill; the console's summary states mean R. bwb's capital now comes from its widths, correcting the overstated pre-2026-09-18 `entry_max_loss`.)*
 - Every module's trade history gains `r_multiple`: net P&L divided by the trade's maximum loss at
   entry (the defined-risk structures' natural 1R). An undefined-risk structure says so and has no R.
 - Recorded where the max loss is known at entry, derived for older rows where it can be recovered
