@@ -295,3 +295,10 @@ access through `db.py` / `db_paper.py`, which apply idempotent `ALTER TABLE ADD 
    - `double_calendar`/`atm_calendar` open in session: **300–600s** (3b/3d); market closed: **wake at
      next open**.
    - Overnight-hold positions between the open and `close_window_start`: **60–120s** (3c).
+
+**Kill criteria on live orders (B1, 2026-10-25).** `tt.py execute_trade --live` checks `live.kill`
+(`tt.kill_refusal`, `core.killcriteria`) before any order with an opening leg; a closing order is never
+held back. Missing criteria refuse; an unreadable live ledger refuses; a block latches
+(`state/kill/earnings.json`, a watchdog CRITICAL) until a person clears it. Under a hand-written
+`hand_limit_dollars` an order carries one contract a leg. Guarded from the settings surface.
+

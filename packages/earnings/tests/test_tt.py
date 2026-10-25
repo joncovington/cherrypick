@@ -4,7 +4,15 @@ import sys
 import types
 from datetime import date
 
+import pytest
+
 from cherrypick.earnings import tt
+
+
+@pytest.fixture(autouse=True)
+def _no_kill_gate(monkeypatch):
+    """The order flow is under test here; the kill criteria gate has its own (test_kill_criteria.py)."""
+    monkeypatch.setattr(tt, "kill_refusal", lambda *a, **k: None)
 
 
 class _FakeWatchlist:
