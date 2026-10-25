@@ -64,6 +64,10 @@ export interface SummaryShape {
   meanR?: number | null;
   rN?: number;
   rCi95?: [number, number] | null;
+  /** B2's overlap flag: sessions that closed more than one trade, and the most in one. Trades that
+   *  share a session share a tape, so the interval (which treats them as independent) reads narrower
+   *  than it is. Counted by closing session only: a multi-day overlap is not seen here. */
+  overlap?: { sessions: number; of: number; maxPerSession: number } | null;
 }
 
 export interface SummaryHero {

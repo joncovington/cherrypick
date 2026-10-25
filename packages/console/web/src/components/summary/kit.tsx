@@ -194,6 +194,10 @@ export interface TradeShape {
   meanR?: number | null;
   rN?: number;
   rCi95?: [number, number] | null;
+  /** B2's overlap flag: sessions that closed more than one trade, and the most in one. Trades that
+   *  share a session share a tape, so the interval (which treats them as independent) reads narrower
+   *  than it is. Counted by closing session only: a multi-day overlap is not seen here. */
+  overlap?: { sessions: number; of: number; maxPerSession: number } | null;
 }
 
 /** "0.12R (95% -0.05R to 0.29R) over 40 of 42", or null with no R (B3). */
@@ -203,6 +207,13 @@ export function rLine(shape: TradeShape | null | undefined, trades: number): str
   const ci = shape.rCi95 ? ` (95% ${r(shape.rCi95[0])} to ${r(shape.rCi95[1])})` : "";
   const of = shape.rN != null && shape.rN < trades ? ` over ${shape.rN} of ${trades}` : "";
   return `${r(shape.meanR)} per trade${ci}${of}`;
+}
+
+/** B2: the overlap note, or null when no session closed more than one trade. */
+export function overlapNote(shape: TradeShape | null | undefined): string | null {
+  const o = shape?.overlap;
+  if (!o) return null;
+  return `${o.sessions} of ${o.of} sessions closed several trades (up to ${o.maxPerSession}): the interval treats them as independent, so it reads narrower than it is`;
 }
 
 /** Under this many trades a figure is an early estimate, whatever its interval says. */
@@ -237,6 +248,7 @@ export function NetHero({ net, trades, shape }: { net: number; trades: number; s
   const interval = intervalLine(shape);
   const skew = skewNote(shape);
   const rl = rLine(shape, trades);
+  const ov = overlapNote(shape);
   return (
     <button type="button" className="ts-flip ts-flip-left" onClick={next} aria-pressed={perTrade} title={`showing ${perTrade ? "net per trade" : "total net"} — click for ${perTrade ? "the total" : "net per trade"}`}>
       <span className={`ts-hero ${shown >= 0 ? "ts-pos" : "ts-neg"}`}>{fmtUsd(shown)}</span>
@@ -245,9 +257,9 @@ export function NetHero({ net, trades, shape }: { net: number; trades: number; s
           ? `per trade over ${trades} · median ${fmt(shape?.median)} · avg win ${fmt(shape?.avgWin)} · avg loss ${fmt(shape?.avgLoss)} · worst ${fmt(shape?.worst)}`
           : `total over ${trades} trade${trades === 1 ? "" : "s"} · click for per trade`}
       </span>
-      {perTrade && (interval || rl || trades < EARLY_TRADES || skew) && (
+      {perTrade && (interval || rl || trades < EARLY_TRADES || skew || ov) && (
         <span className="ts-muted ts-hero-sub">
-          {[interval, rl, trades < EARLY_TRADES ? `under ${EARLY_TRADES} trades: an early estimate` : null, skew]
+          {[interval, rl, trades < EARLY_TRADES ? `under ${EARLY_TRADES} trades: an early estimate` : null, skew, ov]
             .filter(Boolean)
             .join(" · ")}
         </span>

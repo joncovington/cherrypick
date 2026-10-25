@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
-import { NetHero, WinRateArcs, intervalLine, rLine, skewNote, type TradeShape } from "../src/components/summary/kit";
+import { NetHero, WinRateArcs, intervalLine, overlapNote, rLine, skewNote, type TradeShape } from "../src/components/summary/kit";
 
 /**
  * A win rate is never shown alone (B2; Goodhart: a premium seller can win 85% of its trades and lose
@@ -75,5 +75,14 @@ describe("results in R (B3)", () => {
     expect(rLine(shape, 20)).toBe("-0.07R per trade (95% -0.25R to 0.12R) over 18 of 20");
     expect(rLine({ ...shape, rN: 20 }, 20)).toBe("-0.07R per trade (95% -0.25R to 0.12R)");
     expect(rLine(losingSeller, 20)).toBeNull();
+  });
+});
+
+describe("the overlap note (B2)", () => {
+  it("says the interval reads narrow when sessions closed several trades", () => {
+    expect(overlapNote({ ...losingSeller, overlap: { sessions: 4, of: 10, maxPerSession: 6 } })).toBe(
+      "4 of 10 sessions closed several trades (up to 6): the interval treats them as independent, so it reads narrower than it is",
+    );
+    expect(overlapNote(losingSeller)).toBeNull();
   });
 });
