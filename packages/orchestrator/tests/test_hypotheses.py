@@ -102,3 +102,15 @@ def test_retest_plan_fills_the_year_and_skips_recorded_ones():
     assert row["args"]["args"] == ["--start", "2026-01-01", "--end", "2026-12-31"]
     assert row["output"].endswith("item1-2026.json")
     assert plan["needs_recipe"] == ["item2"] and plan["already_recorded"] == ["item4"]
+
+
+def test_home_fills_a_real_path_and_the_repo_recipes_name_tracked_scripts(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    plan = hy.retest_plan(hy.load(), 2026)
+    studies = {r["study"]: r for r in plan["queue"]}
+    assert {"item1", "item5"} <= set(studies)
+    out = studies["item1"]["output"]
+    assert out.startswith(tmp_path.as_posix()) and out.endswith("item1-retest-2026.json")
+    assert "~" not in " ".join(studies["item1"]["args"]["args"])
+    for r in plan["queue"]:
+        assert (hy.repo_root() / r["args"]["path"]).is_file()

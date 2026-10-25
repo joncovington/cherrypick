@@ -19,7 +19,21 @@
       "rivals": [],
       "pointer": "docs/edge-hypotheses-plan.md#1-post-earnings-drift-through-a-put-credit-spread",
       "results": null,
-      "retest": null,
+      "retest": {
+        "kind": "script",
+        "args": {
+          "path": "scripts/pead_history.py",
+          "args": [
+            "--start",
+            "{start}",
+            "--end",
+            "{end}",
+            "--json",
+            "{home}/data/research/item1-retest-{year}.json"
+          ]
+        },
+        "output": "{home}/data/research/item1-retest-{year}.json"
+      },
       "retests": []
     },
     {
@@ -103,7 +117,19 @@
       "rivals": [],
       "pointer": "docs/edge-hypotheses-plan.md#5-the-dynamic-pmcc-short-delta",
       "results": null,
-      "retest": null,
+      "retest": {
+        "kind": "script",
+        "args": {
+          "path": "scripts/ema_trend_signal_history.py",
+          "args": [
+            "--start",
+            "{start}",
+            "--json",
+            "{home}/data/research/item5-retest-{year}.json"
+          ]
+        },
+        "output": "{home}/data/research/item5-retest-{year}.json"
+      },
       "retests": []
     },
     {

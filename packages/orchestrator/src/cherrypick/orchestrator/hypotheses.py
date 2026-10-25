@@ -22,6 +22,8 @@ import json
 import re
 from pathlib import Path
 
+from cherrypick.core import home as core_home
+
 from .researchqueue import repo_root
 
 STATUSES = ("observation", "declared", "running", "passed", "failed", "no_verdict")
@@ -131,6 +133,7 @@ def _fill(value, year: int):
             value.replace("{year}", str(year))
             .replace("{start}", f"{year}-01-01")
             .replace("{end}", f"{year}-12-31")
+            .replace("{home}", core_home.home().as_posix())
         )
     if isinstance(value, list):
         return [_fill(v, year) for v in value]
@@ -141,7 +144,8 @@ def _fill(value, year: int):
 
 def retest_plan(reg: dict, year: int) -> dict:
     """B14: queue rows for every re-testable hypothesis with a recipe; the rest listed as needing one.
-    A recipe's strings may carry {year}, {start} and {end}."""
+    A recipe's strings may carry {year}, {start}, {end} and {home} (the cherrypick home, so a
+    script is handed a real path)."""
     rows, missing, done = [], [], []
     for r in reg.get("hypotheses", []):
         if r.get("status") not in RETESTABLE:
