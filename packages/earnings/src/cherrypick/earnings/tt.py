@@ -44,6 +44,8 @@ from typing import Any
 from cherrypick.core import broker as _broker
 from cherrypick.core import dxfeed as _dx
 from cherrypick.core import execution as _execution
+from cherrypick.core import killcriteria as _kill
+from cherrypick.core import ledgers as _ledgers
 from cherrypick.core.broker import cli as _broker_cli
 from cherrypick.core.redact import mask_account
 
@@ -426,6 +428,44 @@ def _build_order(spec: dict):
     return _broker.build_order(spec)
 
 
+def _opens(spec: dict) -> bool:
+    """Whether any leg opens a position. A closing order is never held back by the kill criteria."""
+    return any("open" in str(leg.get("action", "")).lower() for leg in spec.get("legs") or [])
+
+
+def kill_refusal(spec: dict, config: dict, db_path=None) -> str | None:
+    """B1 for earnings: the live arm's written kill criteria (`live.kill`), checked before a live
+    order that opens anything. A block latches (`state/kill/earnings.json`) until a person clears
+    it; an unreadable ledger fails closed. Under a hand-written limit the order may carry one
+    contract a leg (earnings' structures are 1:1). None lets the order through."""
+    import sqlite3
+
+    if not _opens(spec):
+        return None
+    criteria = (config.get("live") or {}).get("kill")
+    path = db_path or _paths.live_db_path()
+    records: list[dict] = []
+    if os.path.exists(path):
+        try:
+            con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            con.row_factory = sqlite3.Row
+            try:
+                records = [{**r, "arm": "live"} for r in _ledgers.READERS["earnings"](con)]
+            finally:
+                con.close()
+        except sqlite3.Error as exc:
+            return f"kill criteria: live ledger unreadable ({exc})"
+    verdict = _kill.gate("earnings", "live", records, criteria)
+    if verdict["state"] == _kill.BLOCKED:
+        return "kill criteria: " + "; ".join(verdict["reasons"])
+    if isinstance(criteria, dict) and criteria.get("hand_limit_dollars") is not None:
+        if any(int(leg.get("quantity") or 1) > 1 for leg in spec.get("legs") or []):
+            return (
+                "kill criteria: under a hand-written limit a live earnings order carries one contract a leg"
+            )
+    return None
+
+
 async def cmd_execute_trade(args) -> dict:
     live = getattr(args, "live", False)
     if live and not _live_trading_enabled():
@@ -434,6 +474,10 @@ async def cmd_execute_trade(args) -> dict:
             "error": "Live trading is disabled. Set enable_live_trading=true in config.json.",
         }
     spec = json.loads(args.order)
+    if live:
+        refusal = kill_refusal(spec, _load_config())
+        if refusal:
+            return {"ok": False, "error": refusal}
     # The submission's own identity (2026-09-17): tastytrade does not deduplicate retries, and this
     # is a one-shot command a human re-runs on an error. Sent as the order's external identifier
     # and reported back, so a timeout after the broker accepted is recovered below by reading

@@ -49,6 +49,7 @@ GUARDED: dict[str, dict[str, str]] = {
     },
     "earnings": {
         "/enable_live_trading": "hand-edit after the live-trading plan's gates; never from this surface",
+        "/live/kill": "the frozen kill criteria (B1) — derived, dated and written by hand, never here",
     },
     # flies carried only the switch, the attestation and the two loss caps until 2026-09-23, while
     # bwb — whose live block is the same shape — guarded its arm selector, its margin cap and its
