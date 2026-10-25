@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from cherrypick.core import environment
+
 from . import indicators
 
 #: The underlying whose bars stand for an option root's.
@@ -82,7 +84,12 @@ def name_context(bars, day: str) -> dict:
 
 def market_context(spx_bars, day: str) -> dict:
     prior = _prior(spx_bars, day)
-    return {"spx_vs_50d": _vs_sma(prior, 50), "spx_vs_200d": _vs_sma(prior, 200)}
+    return {
+        "spx_vs_50d": _vs_sma(prior, 50),
+        "spx_vs_200d": _vs_sma(prior, 200),
+        # The suite's one environment label (core.environment, B8), from the same prior closes.
+        "environment": environment.classify([b.close for b in prior]),
+    }
 
 
 def context(record: dict, bars_of, sector_of: dict[str, str]) -> dict:
@@ -98,7 +105,8 @@ def context(record: dict, bars_of, sector_of: dict[str, str]) -> dict:
         **holding(record),
     }
     if day is None:
-        return {**out, "spx_vs_50d": None, "spx_vs_200d": None, "atr_pct": None, "rel_volume": None}
+        return {**out, "spx_vs_50d": None, "spx_vs_200d": None, "environment": None, "atr_pct": None,
+                "rel_volume": None}  # fmt: skip
     return {**out, **market_context(bars_of(MARKET), day), **name_context(bars_of(base) if base else [], day)}
 
 

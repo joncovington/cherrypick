@@ -472,4 +472,5 @@ gross, and ranking by net is the user's decision.
 **Entry context (B4, 2026-10-24).** `entrycontext` tags a ledger's closed trades with SPX against
 its 50/200-day, the name's ATR %, relative volume, sector, entry time and holding period, always
 as of the close BEFORE the entry session (a test breaks it to `<=` and fails). It reads; nothing
-trades on it.
+trades on it. The `environment` column is `core.environment`'s label (B8), never a
+per-study regime.
