@@ -141,6 +141,7 @@
     "addon_cancel_after_minutes": null,
     "reprice_after_minutes": 2,
     "mark_drawdown_halt_dollars": null,
+    "kill": null,
     "daily_loss_halt_dollars": null,
     "account_deploy_limit_pct": null,
     "fill_watch_seconds": 30,

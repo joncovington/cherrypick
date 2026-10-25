@@ -21,7 +21,7 @@ its PR), `dropped` (with why).
 
 | Item | From | What | Status | Measurement-affecting? |
 |---|---|---|---|---|
-| B1 | Ch. 1, 3, 7 | Written kill criteria for every live arm, enforced as entries-blocked; thresholds from a bootstrap of the arm's evidence, frozen when armed; a graduated response (normal, reduced size, blocked) from 50-trade windows measured in standard errors of the window mean, against a live-cost baseline | proposed | No: blocks or reduces live entries only, paper unchanged |
+| B1 | Ch. 1, 3, 7 | Written kill criteria for every live arm, enforced as entries-blocked; thresholds from a bootstrap of the arm's evidence, frozen when armed; a graduated response (normal, reduced size, blocked) from 50-trade windows measured in standard errors of the window mean, against a live-cost baseline | built for meic + bwb; earnings, window-SE trigger open | No: blocks or reduces live entries only, paper unchanged |
 | B2 | Ch. 1, 6, 14 | Confidence intervals and t on the console's expectancy and win-rate figures, with the median, spread and worst trade beside the mean and a skew flag in both directions; a win rate never shown without expectancy beside it | built (summary cards); overlap flag open | No: a read surface |
 | B3 | Ch. 1 | Results in R per trade (1R = max loss for a defined-risk structure) in every module's history | proposed | No: a presentation and recording change |
 | B4 | Ch. 1, 2 | Entry context recorded on every trade row (SPX against its 50-day **and 200-day**, ATR %, relative volume, sector, entry time; holding period at exit) | proposed | No: recording only, new columns |
@@ -105,7 +105,8 @@ its PR), `dropped` (with why).
 
 ### Action items
 
-**B1. Written kill criteria for every live arm.** *(proposed)*
+**B1. Written kill criteria for every live arm.** *(built 2026-10-24 for meic and bwb: `core.killcriteria`; earnings and the 50-trade-window trigger are still open)*
+- **As built:** a stationary bootstrap (a week of sessions per block) of the arm's tested trades over a 100-trade horizon; the 95th percentile of drawdown or losing streak halves the entry, the 99th refuses and latches until a person clears it; under 100 trades a hand-written dollar limit at size one; missing criteria refuse. `python -m cherrypick.core.killcriteria derive` prints the block to write by hand, and the watchdog reports a latch as CRITICAL.
 - **What:** each live loop (meic, flies, bwb, earnings) states in its config, dated and before it
   trades, the condition that declares its arm invalid. The default is drawdown beyond 1.5 times the
   worst in the arm's evidence; a rolling-expectancy trigger is reported, not enforced, given its

@@ -16,6 +16,7 @@ from datetime import datetime
 
 import pytest
 from cherrypick.core import execution as _execution
+from cherrypick.core import killcriteria as _kill
 from cherrypick.core import live as _live
 from cherrypick.core import streamcache
 from conftest import occ, streamer_sym
@@ -162,8 +163,18 @@ def live_config(config):
             "fill_watch_seconds": 0,
             "settle_time": "16:20",
             "disarm_time": "17:00",
+            "kill": KILL,
         },
     }
+
+
+KILL = {
+    "written": "2026-09-01",
+    "drawdown_reduce": 5000,
+    "drawdown_block": 9000,
+    "streak_reduce": 40,
+    "streak_block": 50,
+}
 
 
 @pytest.fixture
@@ -494,6 +505,34 @@ def test_the_mark_drawdown_breaker_blocks_the_next_entry_and_touches_no_position
     assert out["entry"]["reason"] == "mark_drawdown_halt"
     assert _row(conn, pid)["status"] == "open" and not broker.cancelled
     assert len(broker.placed) == 1
+
+
+def test_an_arm_without_written_kill_criteria_cannot_enter(live_config, conn, cache, planned):
+    cfg = {**live_config, "live": {k: v for k, v in live_config["live"].items() if k != "kill"}}
+    broker = FakeBroker()
+    out = _tick(cfg, conn, broker, cache)
+    assert out["entry"]["reason"] == "kill_criteria" and not broker.placed
+    assert _kill.latched("bwb") is None  # writing the criteria is the fix; nothing to clear
+
+
+def test_a_latched_kill_blocks_entries_until_a_person_clears_it(live_config, conn, cache, planned):
+    _kill.latch("bwb", "control", {"state": "blocked", "reasons": ["drawdown 9100.00 >= 9000.00"]})
+    broker = FakeBroker()
+    out = _tick(live_config, conn, broker, cache)
+    assert out["entry"]["reason"] == _kill.LATCHED and not broker.placed
+    _kill.clear("bwb")
+    assert _tick(live_config, conn, broker, cache)["entry"]["entry"] == "placed"
+
+
+def test_a_reduced_verdict_halves_the_entry(live_config, conn, cache, planned):
+    cfg = {
+        **live_config,
+        "defaults": {**(live_config.get("defaults") or {}), "quantity": 4},
+        "live": {**live_config["live"], "kill": {**KILL, "streak_reduce": 0}},
+    }
+    broker = FakeBroker()
+    assert _tick(cfg, conn, broker, cache)["entry"]["entry"] == "placed"
+    assert [leg["quantity"] for leg in broker.placed[0]["legs"]] == [2, 4, 2]
 
 
 def test_the_settled_net_breaker_reads_the_live_ledger(conn, live_config):
