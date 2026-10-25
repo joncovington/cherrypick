@@ -61,12 +61,44 @@ export function resultLine(t: ResearchTask): string {
   return parts.join(" · ");
 }
 
+/** "1h 51m" / "12m" / "done". */
+export function etaText(minutes: number | null): string {
+  if (minutes === null) return "no recent answers";
+  if (minutes <= 0) return "done";
+  const h = Math.floor(minutes / 60);
+  return h > 0 ? `${h}h ${minutes % 60}m` : `${minutes}m`;
+}
+
+/** "62,202 of 97,402 (63.9%) · 233/min · ~2h 31m left" -- and "stalled" when nothing has been
+ *  answered for 10 minutes while the row is not finished. */
+export function progressLine(p: NonNullable<ResearchTask["progress"]>): string {
+  const pct = p.total > 0 ? (p.answered / p.total) * 100 : 0;
+  const parts = [`${p.answered.toLocaleString("en-US")} of ${p.total.toLocaleString("en-US")} (${pct.toFixed(1)}%)`];
+  if (p.ratePerMin !== null) parts.push(`${Math.round(p.ratePerMin)}/min`, `~${etaText(p.etaMinutes)} left`);
+  else if (p.answered < p.total) parts.push(p.lastAnswerAgeS !== null && p.lastAnswerAgeS > 600 ? "stalled" : "not started");
+  return parts.join(" · ");
+}
+
+function Meter({ p }: { p: NonNullable<ResearchTask["progress"]> }) {
+  const frac = p.total > 0 ? Math.min(1, p.answered / p.total) : 0;
+  const by = Object.entries(p.byStatus).map(([k, v]) => `${v.toLocaleString("en-US")} ${k}`).join(", ");
+  return (
+    <div className="queue-meter" title={by}>
+      <div className="queue-meter-bar" role="progressbar" aria-valuemin={0} aria-valuemax={p.total} aria-valuenow={p.answered}>
+        <div className="queue-meter-fill" style={{ width: `${(frac * 100).toFixed(1)}%` }} />
+      </div>
+      <span className="muted">{progressLine(p)}</span>
+    </div>
+  );
+}
+
 function StateCell({ t }: { t: ResearchTask }) {
   const detail = t.status === "queued" ? (t.waits === "ready" ? "ready: starts at the next tick" : t.waits) : t.note;
   return (
     <td>
       <span className={STATUS_CHIP[t.status]}>{t.status}</span>
       {detail ? <span className="muted"> {detail}</span> : null}
+      {t.progress ? <Meter p={t.progress} /> : null}
     </td>
   );
 }

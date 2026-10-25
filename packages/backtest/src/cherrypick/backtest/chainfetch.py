@@ -371,6 +371,52 @@ def fetch_paths(
         conn.close()
 
 
+def progress(
+    settings: dict,
+    requests: list[tuple[str, str, str]],
+    *,
+    now: float | None = None,
+    window_seconds: float = 600.0,
+) -> dict[str, Any]:
+    """How far the store has got through one request list: answered (any status) of total, by
+    status, and the answer rate over the last `window_seconds` with the ETA it implies. Counts only,
+    never a price. A fetch run holds no state of its own, so this reads the store it writes -- the
+    same answer whoever started the run."""
+    import time
+
+    now = time.time() if now is None else now
+    wanted = set(requests)
+    out: dict[str, Any] = {"total": len(wanted), "answered": 0, "by_status": {}, "rate_per_min": None,
+                           "eta_minutes": None, "last_answer_age_s": None}  # fmt: skip
+    path = db_path(settings)
+    if not path.exists() or not wanted:
+        return out
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        recent, last = 0, None
+        for sym, sess, exp, st, at in conn.execute(
+            "SELECT symbol, session, expiration, status, fetched_at FROM eod_chain_requests"
+        ):
+            if (sym, sess, exp) not in wanted:
+                continue
+            out["answered"] += 1
+            out["by_status"][st] = out["by_status"].get(st, 0) + 1
+            if isinstance(at, (int, float)):
+                last = at if last is None else max(last, at)
+                if at >= now - window_seconds:
+                    recent += 1
+    finally:
+        conn.close()
+    if last is not None:
+        out["last_answer_age_s"] = round(now - last)
+    left = out["total"] - out["answered"]
+    if recent:
+        rate = recent / (window_seconds / 60)
+        out["rate_per_min"] = round(rate, 1)
+        out["eta_minutes"] = round(left / rate) if left else 0
+    return out
+
+
 def status(settings: dict) -> dict[str, Any]:
     """What the chain store holds: requests by status, rows, names and sessions."""
     path = db_path(settings)

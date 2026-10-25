@@ -1671,6 +1671,9 @@ def cmd_queue_list(cfg, args) -> None:
             after = status_of.get(r.get("after")) if r.get("after") else None
             r["waits"] = rq.ready(r, now, cal.is_trading_day, held, window, after) or "ready"
         r["name"] = rq.name(r)
+        # A chain fetch's meter, for a row not yet finished: counts through its request file, whoever
+        # is running it (the queue, or a run started by hand on the same file).
+        r["progress"] = rq.fetch_progress(r) if r["status"] in ("queued", "running", "stopped") else None
         r["args"] = json.loads(r["args"])
         r["result"] = json.loads(r["result"]) if r.get("result") else None
         out.append(r)
