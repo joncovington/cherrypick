@@ -8,11 +8,13 @@ runs at a time, and nothing printed carries a full account number.
 
 import json
 import os
+import re
+from pathlib import Path
 
 import pytest
 from conftest import write_config
 
-from cherrypick.desk import cli, journal, pin
+from cherrypick.desk import cli, journal, pin, ticket
 from cherrypick.desk import config as cfgmod
 
 pytestmark = pytest.mark.unit
@@ -374,3 +376,39 @@ def test_pin_clear_needs_the_current_pin(pin_set, tty):
 def test_a_path_shaped_ticket_id_is_refused(desk_on, pin_set, broker):
     out = cli.cmd_confirm(_Args(ticket="../../x", code="ABCDEF"))
     assert out["ok"] is False and "not a ticket id" in out["error"]
+
+
+# --------------------------------------------------------------------------- B6: the thesis
+SRC = Path(cli.__file__).parent
+
+
+def _propose_with(thesis):
+    return cli.cmd_propose(_Args(order=json.dumps(FLY), account_number=None, thesis=thesis))
+
+
+def test_the_thesis_is_journalled_beside_the_ticket(desk_on, pin_set, broker):
+    out = _propose_with("  IV crush after the print; pin near 600  ")
+    assert out["ok"], out
+    [t] = [e for e in journal.read_all() if e["event"] == "thesis"]
+    assert t["ticket_id"] == out["ticket_id"] and t["thesis"] == "IV crush after the print; pin near 600"
+
+
+def test_the_thesis_never_touches_the_order_or_the_caps(desk_on, pin_set, broker):
+    a = _propose_with("one story")
+    b = _propose_with("a different story")
+    rec = [e for e in journal.read_all() if e["event"] == "proposed"]
+    assert rec[0]["fingerprint"] == rec[1]["fingerprint"]  # same order, same seal, whatever the story
+    assert journal.today_totals(cli._today()) == (0, 0.0)  # a thesis is not an attempt
+    assert a["ok"] and b["ok"]
+
+
+def test_no_thesis_writes_no_line(desk_on, pin_set, broker):
+    assert _propose_with(None)["ok"]
+    assert not [e for e in journal.read_all() if e["event"] == "thesis"]
+
+
+def test_only_the_write_path_names_the_thesis():
+    # A static guard: policy, order, ticket and the journal's arithmetic never read it.
+    readers = [p.name for p in SRC.glob("*.py") if re.search(r"\bthesis\b", p.read_text(encoding="utf-8"))]
+    assert readers == ["cli.py"]
+    assert "thesis" not in ticket.canonical(FLY, None)
