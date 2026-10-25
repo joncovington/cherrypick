@@ -1,6 +1,10 @@
 {
   "live_header": "===== Live Gate & Capital (guarded) =====",
   "enable_live_trading": false,
+  "live": {
+    "_kill_note": "B1 (2026-10-25): the live arm's frozen kill criteria, written by hand and dated. tt.py refuses every live opening order while it is null; see the module CLAUDE.md.",
+    "kill": null
+  },
   "account_deploy_limit_pct": 0,
   "_account_deploy_limit_pct_note": "Account-level deploy cap (via cherrypit.risk). 0 = OFF (default). A positive value (e.g. 50) blocks a LIVE execute_trade whose buying power would push total deployed BP above that percent of account capacity (used + available derivative buying power). Fail-closed: if account state can't be read, the live order is blocked. Enforced only on live submits; a dry-run reports the governor verdict without blocking. Does not affect paper trading.",
 
