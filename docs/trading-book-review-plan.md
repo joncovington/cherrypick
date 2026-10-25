@@ -34,7 +34,7 @@ its PR), `dropped` (with why).
 | B11 | Ch. 6 | A survivorship audit of the research data's residual paths: how a trade across a delisting or acquisition settles, how often a delisted name's option chain comes back empty, and which inputs still hold today's names only | audited: declared limits written; counts fixed | No: an audit; findings become fixes or declared limits |
 | B12 | Ch. 6 | A minimum detectable effect in every declaration: the smallest edge the planned sample could detect, computed from the spread of R, so "no verdict" says what it rules out; rule changes compared paired on the same trades | built: declaration template + `core.robustness` | No: tightens future declarations only |
 | B13 | Ch. 9, 11 | A robustness report beside every passing result: the parameter neighbourhood (a plateau, not a peak), costs at 1.5× and 2×, and a bootstrap of the drawdown, with a declared cost stress the result must survive; plus the largest size at which the bootstrapped 99th-percentile drawdown stays inside a declared share of the account | built: declaration template + `core.robustness` | No: tightens future declarations only |
-| B14 | Ch. 10 | A yearly re-test: every declared result, passed or failed, re-run unchanged on the newest year of data and recorded beside the original, so decay (or a late pass) is measured rather than assumed | built: `cherrypick retests --year`; recipes for items 1, 4, 5, 8 | No: research tooling; results stay local |
+| B14 | Ch. 10 | A yearly re-test: every declared result, passed or failed, re-run unchanged on the newest year of data and recorded beside the original, so decay (or a late pass) is measured rather than assumed | built: `cherrypick retests --year`; recipes for items 1, 4, 5, 8, 12 | No: research tooling; results stay local |
 
 ---
 
@@ -998,7 +998,7 @@ plus an explicit tail scenario for short-premium arms.
 **B1** covers "decay versus noise" for live arms. For research, the chapter's "review even when it is
 working" becomes:
 
-**B14. A yearly re-test of every declared result.** *(built 2026-10-24: `cherrypick retests --year Y` plans and, with `--apply`, queues the rows. Recipes exist for items 1 (`pead_history.py`), 5 (`ema_trend_signal_history.py`), and 4 and 8 (`box_touch_history.py`, given a `--start`/`--end` window; its licensed output stays under the backtest data dir). Item 6 reads a bwb backtest run's rows, so it needs that run first; items 9, 10 and 12 ran without a script in the repo, so they need one before any re-test)*
+**B14. A yearly re-test of every declared result.** *(built 2026-10-24: `cherrypick retests --year Y` plans and, with `--apply`, queues the rows. Recipes exist for items 1 (`pead_history.py`), 5 (`ema_trend_signal_history.py`), and 4 and 8 (`box_touch_history.py`, given a `--start`/`--end` window; its licensed output stays under the backtest data dir). Item 12 has its study committed (`gex_levels_history.py`, 2026-10-25), and its recipe reads the holdout on purpose (`--allow-holdout`): it is closed, so a re-test may. Item 6 has no re-test, by decision (`retest_note`). Items 9 and 10 have no re-test either, by the same decision)*
 - **What:** once a year, re-run each declared test unchanged on the newest year of data (the holdout as
   it is opened, then each later year), and record the result beside the original, passed or failed.
 - **Why:** it measures decay instead of assuming it. A passing edge that fades shows up in its own
