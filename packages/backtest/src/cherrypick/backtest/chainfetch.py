@@ -276,9 +276,10 @@ def fetch_paths(
     limit: int | None = None,
     log=print,
 ) -> dict[str, Any]:
-    """The daily path of each expiry over [start, through], one vendor range call per request (the
-    vendor caps a range at a year): what a replay needs to mark a held contract every session, not
-    only on the day it was opened. Resumable and stopped by a fatal refusal, like `fetch_chains`."""
+    """The daily path of each expiry over [start, through], one vendor call per 7-day chunk of the
+    range (`eod_chain_range`; a request spans under a year): what a replay needs to mark a held
+    contract every session, not only on the day it was opened. Resumable and stopped by a fatal
+    refusal, like `fetch_chains`."""
     conn = connect(settings)
     try:
         done: set = set()

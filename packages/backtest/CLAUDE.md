@@ -185,7 +185,9 @@ and MEIC runners with their statistics, and the flow fetch (below); its test is 
 - **Daily paths** (`fetch-chain-paths`, 2026-10-23): a request names an expiry and a date range, and
   every session's close in that range lands as its own complete session-chain, so a replay can mark
   a held contract each day. The vendor drops a two-month whole-chain range at 60 s, so the client
-  asks a week at a time. Paths are recorded in `eod_chain_paths`, resumable the same way.
+  asks a week at a time. An empty week before the expiry was listed is skipped; an empty week
+  after one that answered refuses the path (`path_gap`), so it is retried rather than stored with a
+  hole. Paths are recorded in `eod_chain_paths`, resumable the same way.
 The console's Backtest page reads `python -m cherrypick.backtest read overview|run` (`readout.py`)
 and is **fail-closed**: shown only when the orchestrator's `features.backtest` is true
 (`orchestrator/backtestgate.py`: the operator's config enabled, the licence active, the key in the

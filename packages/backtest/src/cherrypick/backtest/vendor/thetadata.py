@@ -154,6 +154,11 @@ def _classify(exc: Exception) -> tuple[str, str]:
     return "vendor_error", f"{type(exc).__name__}: {text[:240]}"
 
 
+def _has_weekday(lo: date, hi: date) -> bool:
+    """Whether [lo, hi] holds a Monday-to-Friday day, i.e. could have held a session."""
+    return any((lo + timedelta(days=k)).weekday() < 5 for k in range(min((hi - lo).days + 1, 7)))
+
+
 def _transient(exc: Exception) -> bool:
     text = str(exc)
     return STREAM_REMOVED not in text and "UNAUTHENTICATED" not in text and any(t in text for t in _TRANSIENT)
@@ -292,36 +297,48 @@ class ThetaDataClient:
         which for an untraded strike is an earlier day.
 
         Asked for `PATH_CHUNK_DAYS` at a time: a whole chain over two months is more than the vendor
-        answers before it drops the stream at 60 s (SPY, 2026-10-23). A chunk the vendor holds
-        nothing for (before the expiry was listed) is skipped; the whole range holding nothing is
-        the vendor's `no_data`."""
+        answers before it drops the stream at 60 s (SPY, 2026-10-23). Nothing is asked for after
+        the expiry, when nothing trades. A chunk the vendor holds nothing for BEFORE any chunk has
+        answered is skipped (the expiry was not listed yet); the whole range holding nothing is the
+        vendor's `no_data`. A chunk holding nothing AFTER one has answered is a hole in the path:
+        it is refused as `path_gap` (not `no_data`, which would record the path permanently
+        empty), so the path is recorded refused and retried on a later run. A weekend-only tail is
+        not a hole, since it held no session. A reply with rows but no ``created`` column is
+        refused as `bad_response`: no row could be dated, and returning none would record the path
+        empty for good. A single row missing its stamp is skipped."""
         lo, hi = date.fromisoformat(start), date.fromisoformat(through)
         if (hi - lo).days >= MAX_RANGE_DAYS:
             raise ValueError(f"an end-of-day range is under {MAX_RANGE_DAYS} days: {start}..{through}")
+        expiry = date.fromisoformat(expiration)
+        hi = min(hi, expiry)
         frames, empty = [], None
         while lo <= hi:
             top = min(lo + timedelta(days=PATH_CHUNK_DAYS - 1), hi)
             try:
-                frames.append(
-                    self._call(
-                        "option_history_eod",
-                        start_date=lo,
-                        end_date=top,
-                        symbol=root,
-                        expiration=date.fromisoformat(expiration),
-                    )
+                df = self._call(
+                    "option_history_eod", start_date=lo, end_date=top, symbol=root, expiration=expiry
                 )
             except VendorRefusal as refusal:
                 if refusal.reason != "no_data":
                     raise
+                if frames and _has_weekday(lo, top):
+                    raise VendorRefusal(
+                        "path_gap",
+                        f"nothing for {lo}..{top} after earlier chunks answered ({refusal.detail})"[:240],
+                    ) from None
                 empty = refusal
+            else:
+                rows = list(df.itertuples(index=False))
+                if rows and not hasattr(rows[0], "created"):
+                    raise VendorRefusal("bad_response", f"rows for {lo}..{top} carry no created column")
+                frames.append(rows)
             lo = top + timedelta(days=1)
         if not frames and empty is not None:
             raise empty
         out = []
-        for r in (row for df in frames for row in df.itertuples(index=False)):
+        for r in (row for rows in frames for row in rows):
             stamp = getattr(r, "created", None)
-            if stamp is None:
+            if stamp is None or stamp != stamp:  # no report date on this row (None, or pandas' NaT)
                 continue
             out.append(
                 {

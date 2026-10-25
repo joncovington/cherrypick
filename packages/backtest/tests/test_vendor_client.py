@@ -218,6 +218,90 @@ def test_a_daily_path_is_asked_for_in_chunks_and_dated_by_the_report_not_the_las
     assert rows[0]["right"] == "PUT" and rows[0]["close"] is None
 
 
+class _Frame:  # the slice of a DataFrame the client uses; CI has no pandas
+    def __init__(self, rows):
+        self.rows = rows
+
+    def itertuples(self, index=False):
+        return (types.SimpleNamespace(**r) for r in self.rows)
+
+
+def _path_client(monkeypatch, answer):
+    """A client whose vendor answers each chunk with `answer(start_date, end_date)`."""
+    asked = []
+
+    def call(method, **kw):
+        asked.append((kw["start_date"], kw["end_date"]))
+        return answer(kw["start_date"], kw["end_date"])
+
+    client = td.ThetaDataClient.__new__(td.ThetaDataClient)
+    monkeypatch.setattr(client, "_call", call, raising=False)
+    return client, asked
+
+
+def _one_row(end):
+    from datetime import datetime
+
+    day = datetime.combine(end, datetime.min.time())
+    return _Frame([{"created": day, "strike": 100.0, "right": "call", "bid": 1.0, "ask": 1.1}])
+
+
+def test_a_chunk_with_nothing_after_one_that_answered_refuses_the_path(monkeypatch):
+    """A hole in the middle of a path is not the expiry being unlisted: the path is refused (and so
+    retried on a later run), never stored complete with a week missing, and never as `no_data`,
+    which would record it permanently empty."""
+    from datetime import date
+
+    def answer(lo, hi):
+        if lo == date(2024, 1, 8):
+            raise VendorRefusal("no_data", "No data found")
+        return _one_row(hi)
+
+    client, _ = _path_client(monkeypatch, answer)
+    with pytest.raises(VendorRefusal) as refused:
+        client.eod_chain_range("SPY", "2024-01-01", "2024-01-20", "2024-02-16")
+    assert refused.value.reason == "path_gap"
+
+
+def test_a_weekend_tail_with_nothing_is_not_a_hole_and_the_range_stops_at_the_expiry(monkeypatch):
+    from datetime import date
+
+    def answer(lo, hi):
+        if lo == date(2024, 1, 13):
+            raise VendorRefusal("no_data", "No data found")
+        return _one_row(date(2024, 1, 12))
+
+    client, asked = _path_client(monkeypatch, answer)
+    # 01-06 (Sat) .. 01-12 (Fri), then a Saturday-Sunday tail with no session in it
+    rows = client.eod_chain_range("SPY", "2024-01-06", "2024-01-14", "2024-02-16")
+    assert asked == [(date(2024, 1, 6), date(2024, 1, 12)), (date(2024, 1, 13), date(2024, 1, 14))]
+    assert [r["session"] for r in rows] == ["2024-01-12"]
+    # nothing is asked for after the expiry, so a `through` past it is not a hole either
+    client, asked = _path_client(monkeypatch, answer)
+    client.eod_chain_range("SPY", "2024-01-08", "2024-01-31", "2024-01-12")
+    assert asked == [(date(2024, 1, 8), date(2024, 1, 12))]
+
+
+def test_a_reply_with_rows_but_no_created_column_is_refused_not_stored_empty(monkeypatch):
+    client, _ = _path_client(monkeypatch, lambda lo, hi: _Frame([{"strike": 100.0, "right": "call"}]))
+    with pytest.raises(VendorRefusal) as refused:
+        client.eod_chain_range("SPY", "2024-01-01", "2024-01-20", "2024-02-16")
+    assert refused.value.reason == "bad_response"
+
+
+def test_a_row_without_its_report_date_is_skipped(monkeypatch):
+    from datetime import datetime
+
+    def answer(lo, hi):
+        day = datetime.combine(hi, datetime.min.time())
+        return _Frame([{"created": day, "strike": 100.0, "right": "call"},
+                       {"created": None, "strike": 101.0, "right": "call"}])  # fmt: skip
+
+    client, _ = _path_client(monkeypatch, answer)
+    rows = client.eod_chain_range("SPY", "2024-01-01", "2024-01-07", "2024-02-16")
+    assert [r["strike"] for r in rows] == [100.0]
+
+
 def test_a_daily_path_with_nothing_anywhere_is_the_vendors_no_data(monkeypatch):
     def call(method, **kw):
         raise VendorRefusal("no_data", "No data found")

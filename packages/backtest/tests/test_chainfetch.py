@@ -207,6 +207,22 @@ def test_paths_resume_retry_refusals_and_stop_on_a_fatal_one(tmp_path):
     assert "unauthenticated" in out["aborted"] and out["complete"] == 2
 
 
+def test_a_path_with_a_hole_is_recorded_refused_and_retried_not_empty(tmp_path):
+    class Holed(FakePaths):
+        def eod_chain_range(self, root, start, through, expiration):
+            self.calls.append(root)
+            raise VendorRefusal("path_gap", "nothing for one week after earlier weeks answered")
+
+    s = _settings(tmp_path)
+    out = chainfetch.fetch_paths(s, Holed(), PATHS[:1], log=lambda m: None)
+    assert (out["complete"], out["empty"], out["refused"]) == (0, 0, 1)
+    with _db(s) as c:
+        assert c.execute("SELECT status FROM eod_chain_paths").fetchone() == ("refused",)
+    again = FakePaths()
+    out = chainfetch.fetch_paths(s, again, PATHS[:1], log=lambda m: None)
+    assert len(again.calls) == 1 and out["complete"] == 1
+
+
 def test_the_path_request_file_reads_each_once_and_refuses_a_backwards_range(tmp_path):
     f = tmp_path / "paths.json"
     item = {"symbol": "spy", "expiration": "2024-03-15", "start": "2024-01-10", "through": "2024-03-15"}

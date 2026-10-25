@@ -470,7 +470,9 @@ def main(argv: list[str] | None = None) -> int:
     fc.add_argument("--refetch", action="store_true", help="replace requests already complete or empty")
     fc.set_defaults(fn=cmd_fetch_chains)
     fp = sub.add_parser(
-        "fetch-chain-paths", help="each expiry's chain at every session's close in a range (a network verb)"
+        "fetch-chain-paths",
+        help="each expiry's chain at every session's close in a range, one vendor call per 7-day chunk "
+        "(a network verb)",
     )
     fp.add_argument(
         "--requests", required=True, help='JSON: {"requests": [{"symbol","expiration","start","through"}]}'
