@@ -139,9 +139,9 @@ def res(ret: float) -> dict:
             "costs": 1.5, "slippage": 2.5, "liquid": True}  # fmt: skip
 
 
-def row(tid, kind, of, setup, sym, entry, expiry, rets: dict) -> dict:
-    return {"id": tid, "kind": kind, "of": of, "setup": setup, "side": "put", "symbol": sym,
-            "entry": entry, "expiry": expiry, "stale": False,
+def row(tid, kind, of, setup, sym, entry, expiry, rets: dict, side="put") -> dict:
+    return {"id": tid, "kind": kind, "of": of, "setup": setup, "side": side, "symbol": sym,
+            "entry": entry, "expiry": expiry, "settle_flag": None,
             "cells": {c: res(r) for c, r in rets.items()}}  # fmt: skip
 
 
@@ -163,24 +163,113 @@ def sessions(n: int, first: str, last: str):
     return [(a + timedelta(days=int(i * step))).isoformat() for i in range(n)]
 
 
-def build(n_per_half: int, effect: float, *, seed=1, setup="trend", symbols=1, prefer=None):
+def build(
+    n_per_half: int, effect: float, *, seed=1, setup="trend", symbols=1, prefer=None, halves=("H1", "H2"),
+    h1_last="2022-09-01", hold=40,
+):  # fmt: skip
     """Signal trades in both halves, each with five baselines. `effect` lifts the signal's ret in
-    d20/s1 (or, with `prefer`, in each symbol's preferred cell)."""
+    d20/s1 (or, with `prefer`, in each symbol's preferred cell), in the halves named by `halves`."""
     rng = random.Random(seed)
+    side = "call" if setup.endswith("-short") else "put"
     cells = [c for c, _, _ in cs.CELLS["steps"]]
     rows = []
-    for half, (a, b) in {"H1": ("2020-02-01", "2022-09-01"), "H2": ("2022-11-01", "2025-05-01")}.items():
+    for half, (a, b) in {"H1": ("2020-02-01", h1_last), "H2": ("2022-11-01", "2025-05-01")}.items():
+        lift = effect if half in halves else 0.0
         for i, entry in enumerate(sessions(n_per_half, a, b)):
             sym = f"S{i % symbols}"
             good = prefer(sym) if prefer else "d20/s1"
-            expiry = (date.fromisoformat(entry) + timedelta(days=40)).isoformat()
+            expiry = (date.fromisoformat(entry) + timedelta(days=hold)).isoformat()
             tid = f"{setup}:{sym}:{half}:{i}"
-            rets = {c: rng.gauss(-0.02, 0.05) + (effect if c == good else 0.0) for c in cells}
-            rows.append(row(tid, "trade", None, setup, sym, entry, expiry, rets))
+            rets = {c: rng.gauss(-0.02, 0.05) + (lift if c == good else 0.0) for c in cells}
+            rows.append(row(tid, "trade", None, setup, sym, entry, expiry, rets, side))
             for k in range(5):
                 brets = {c: rng.gauss(-0.02, 0.05) for c in cells}
-                rows.append(row(f"{tid}#b{k}", "baseline", tid, setup, sym, entry, expiry, brets))
+                rows.append(row(f"{tid}#b{k}", "baseline", tid, setup, sym, entry, expiry, brets, side))
     return rows
+
+
+def test_an_effect_in_one_direction_only_fails():
+    # d20/s1 is the best cell in both halves, but beats its baselines only in H2: in H1 the
+    # baselines carry the same lift, so the excess there is zero.
+    rows = build(130, 0.10, seed=7)
+    mid = cs.midpoint(START, END)
+    for r in rows:
+        if r["kind"] == "baseline" and r["entry"] < mid:
+            r["cells"]["d20/s1"]["ret"] += 0.10
+    t = cs.analyse(rows, START, END)["tests"]["trend|put|steps|pooled"]
+    h1_to_h2, h2_to_h1 = t["directions"]
+    assert h1_to_h2["pooled_cell"] == h2_to_h1["pooled_cell"] == "d20/s1"
+    assert h1_to_h2["t"] > 2 and not (h2_to_h1["t"] is not None and h2_to_h1["t"] > 2)
+    assert t["verdict"] == "fail"
+
+
+def test_the_pick_never_sees_the_score_half():
+    rows = build(130, 0.10, seed=8)
+    before = cs.analyse(rows, START, END)["tests"]["trend|put|steps|pooled"]["directions"][0]
+    for r in rows:  # make another cell dazzling, but only in the score half of H1 -> H2
+        if r["entry"] >= "2022-11-01" and r["kind"] == "trade":
+            r["cells"]["d40/s5"]["ret"] = 5.0
+    after = cs.analyse(rows, START, END)["tests"]["trend|put|steps|pooled"]["directions"][0]
+    assert before["pooled_cell"] == after["pooled_cell"] == "d20/s1"
+    assert before["pooled_cell_n"] == after["pooled_cell_n"] == 130
+
+
+def test_the_pick_half_is_purged_at_the_boundary():
+    # H1 entries run to 2022-10-09 and hold 60 days: the last ones expire after H2's first entry.
+    rows = build(130, 0.10, seed=9, h1_last="2022-10-09", hold=60)
+    d = cs.analyse(rows, START, END)["tests"]["trend|put|steps|pooled"]["directions"]
+    mid = cs.midpoint(START, END)
+    first_h2 = min(r["entry"] for r in rows if r["entry"] >= mid)
+    want = sum(1 for r in rows if r["kind"] == "trade" and r["entry"] < mid and r["expiry"] >= first_h2)
+    assert want > 0 and d[0]["purged_at_boundary"] == want
+    assert d[0]["pooled_cell_n"] == 130 - want and d[0]["n"] == 130  # score half untouched
+    last_h1 = max(r["expiry"] for r in rows if r["kind"] == "trade" and r["entry"] < mid)
+    want2 = sum(
+        1 for r in rows if r["kind"] == "trade" and r["entry"] >= "2022-11-01" and r["entry"] <= last_h1
+    )
+    assert d[1]["purged_at_boundary"] == want2
+
+
+def test_p_is_students_t_on_cluster_count_and_stricter_than_normal():
+    import math
+
+    assert cs.p_one(2.1, 6) == pytest.approx(1 - cs.core_stats.t_cdf(2.1, 5))
+    assert cs.p_one(2.1, 6) > 0.5 * math.erfc(2.1 / math.sqrt(2))
+    assert cs.p_one(2.1, 100000) == pytest.approx(0.5 * math.erfc(2.1 / math.sqrt(2)), rel=1e-3)
+    assert cs.p_one(None, 10) == 1.0 and cs.p_one(3.0, 1) == 1.0
+
+
+def test_scored_rows_record_their_priced_baselines():
+    rows = build(130, 0.10, seed=10)
+    for r in rows:
+        if r["kind"] == "baseline" and r["id"].endswith("#b0"):
+            del r["cells"]["d20/s1"]
+    d = cs.analyse(rows, START, END)["tests"]["trend|put|steps|pooled"]["directions"][0]
+    assert d["baselines_priced"] == {4: 130}
+    assert all(x["baselines_priced"] == 4 for x in d["rows"])
+
+
+def test_a_call_side_setup_runs_through_the_tests():
+    out = cs.analyse(build(130, 0.10, seed=11, setup="reversion-short"), START, END)
+    assert out["tests"]["reversion-short|call|steps|pooled"]["verdict"] == "pass"
+    assert out["tests"]["trend|put|steps|pooled"]["verdict"] == "no verdict"
+
+
+def test_least_bad_names_the_best_worse_half():
+    out = cs.analyse(build(130, 0.10, seed=12), START, END)
+    lb = cs.least_bad(out["tests"])
+    assert lb["test"].startswith("trend|put|steps") and lb["cells"] == ["d20/s1", "d20/s1"]
+    assert cs.least_bad({}) is None
+
+
+def test_holm_runs_on_run_tests_own_32_with_no_verdicts_at_p_1():
+    tests = cs.analyse(build(130, 0.10, seed=13), START, END)["tests"]
+    assert len(tests) == 32
+    nv = [v for v in tests.values() if v["verdict"] == "no verdict"]
+    assert len(nv) == 30 and all(v["p"] == 1.0 for v in nv)
+    holm = cs.core_stats.holm({k: v["p"] for k, v in tests.items()}, alpha=0.05)
+    assert {k: v["holm_ok"] for k, v in tests.items()} == holm
+    assert sum(holm.values()) == 2  # pooled and per-symbol on the one priced setup-side
 
 
 def test_the_pass_rule_fires_on_a_built_in_effect():
@@ -260,45 +349,99 @@ def test_cluster_t_counts_expiries_not_trades():
 
 
 # ------------------------------------------------------------------------------- the store path
-def test_price_name_reads_synthetic_stores_and_counts_drops(tmp_path):
+EXPIRY = "2021-04-16"
+
+
+def stores(tmp_path, sym: str, bars, *, splits=(), chains=(), empty=()):
+    """A synthetic history.db and eod_chains.db for one symbol. `chains`: (entry, forward) pairs."""
     import sqlite3
 
     from cherrypick.backtest import chainfetch
 
-    hist = tmp_path / "history.db"
+    hist = tmp_path / f"{sym}-history.db"
     h = sqlite3.connect(hist)
     h.executescript(
         "CREATE TABLE bars (symbol TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL, volume REAL);"
         "CREATE TABLE splits (symbol TEXT, ex_date TEXT, to_factor REAL, for_factor REAL);"
         "CREATE TABLE dividends (symbol TEXT, ex_date TEXT, amount REAL);"
     )
-    entry, expiry = "2021-03-10", "2021-04-16"
-    h.executemany("INSERT INTO bars VALUES ('XYZ', ?, 0, 0, 0, ?, 0)", [(entry, 100.0), (expiry, 92.0)])
+    h.executemany("INSERT INTO bars VALUES (?, ?, 0, 0, 0, ?, 0)", [(sym, d, c) for d, c in bars])
+    h.executemany("INSERT INTO splits VALUES (?, ?, 2, 1)", [(sym, d) for d in splits])
     h.commit()
     h.close()
-    chains = tmp_path / "eod_chains.db"
-    c = sqlite3.connect(chains)
+    db = tmp_path / f"{sym}-eod_chains.db"
+    c = sqlite3.connect(db)
     c.executescript(chainfetch.SCHEMA)
-    rows = chain_rows(100.0, 0.30, 37, [float(k) for k in range(60, 141)])
-    chainfetch.write_chain(c, ("XYZ", entry, expiry), [
-        {"strike": k, "right": r, "bid": b, "ask": a} for k, r, b, a in rows])  # fmt: skip
-    chainfetch.write_chain(c, ("XYZ", "2021-03-11", "2021-04-16"), [])
+    for entry, fwd in chains:
+        days = (date.fromisoformat(EXPIRY) - date.fromisoformat(entry)).days
+        rows = chain_rows(fwd, 0.30, days, [float(k) for k in range(50, 161)])
+        chainfetch.write_chain(c, (sym, entry, EXPIRY), [
+            {"strike": k, "right": r, "bid": b, "ask": a} for k, r, b, a in rows])  # fmt: skip
+    for entry in empty:
+        chainfetch.write_chain(c, (sym, entry, EXPIRY), [])
     c.close()
-    t = {"kind": "trade", "of": None, "setup": "trend", "side": "put", "symbol": "XYZ", "expiry": expiry}
-    trades = [
-        {**t, "id": "a", "entry": entry},
-        {**t, "id": "b", "entry": "2021-03-11"},  # an empty chain
-        {**t, "id": "c", "entry": "2021-03-12"},  # never fetched
-    ]
-    job = {"symbol": "XYZ", "trades": trades, "chains_db": str(chains), "history_db": str(hist),
-           "start": START, "end": END, "reports": {"XYZ": []}, "quarters": {}}  # fmt: skip
-    out = cs.price_name(job)
-    assert [p["id"] for p in out["priced"]] == ["a"]
+    return hist, db
+
+
+def run_name(hist, db, sym, entries, *, end=END, expiry=EXPIRY):
+    t = {"kind": "trade", "of": None, "setup": "trend", "side": "put", "symbol": sym, "expiry": expiry}
+    trades = [{**t, "id": e, "entry": e} for e in entries]
+    job = {"symbol": sym, "trades": trades, "chains_db": str(db), "history_db": str(hist),
+           "start": START, "end": end, "reports": {sym: []}, "quarters": {}}  # fmt: skip
+    return cs.price_name(job)
+
+
+def test_price_name_reads_synthetic_stores_and_counts_drops(tmp_path):
+    entry = "2021-03-10"
+    hist, db = stores(
+        tmp_path, "XYZ", [(entry, 100.0), (EXPIRY, 92.0)], chains=[(entry, 100.0)], empty=["2021-03-11"]
+    )
+    out = run_name(hist, db, "XYZ", [entry, "2021-03-11", "2021-03-12"])
+    assert [p["id"] for p in out["priced"]] == [entry]
+    assert out["priced"][0]["settle_flag"] is None
     cell = out["priced"][0]["cells"]["d30/s1"]
     assert cell["net"] < cell["credit"] * 100  # settled below the short at 92
     assert out["empty"] == {"trend/trade: empty chain": 1}
     assert out["drops"]["trend/trade: no chain in the store"] == 1
     assert any("45-60" in k for k in out["drops"])  # no 45-60 chain held: reported-only drop
+
+
+def test_price_name_drops_a_split_a_stray_forward_and_out_of_window_trades(tmp_path):
+    a, b = "2021-03-10", "2021-03-12"
+    hist, db = stores(
+        tmp_path, "XYZ", [(a, 100.0), (b, 100.0), (EXPIRY, 100.0)], splits=["2021-03-20"],
+        chains=[(a, 100.0), (b, 100.0)],
+    )  # fmt: skip
+    out = run_name(hist, db, "XYZ", [a])
+    assert out["drops"]["trend/trade: excluded: split inside the trade"] == 1 and not out["priced"]
+    hist, db = stores(tmp_path, "FWD", [(a, 100.0), (EXPIRY, 100.0)], chains=[(a, 110.0)])
+    out = run_name(hist, db, "FWD", [a])
+    assert out["drops"]["trend/trade: parity forward more than 5% from the close"] == 1
+    hist, db = stores(tmp_path, "WIN", [(a, 100.0), (EXPIRY, 100.0)], chains=[(a, 100.0)])
+    assert run_name(hist, db, "WIN", [a], end="2021-04-01")["drops"] == {"trend/trade: after the window": 1}
+    out = run_name(hist, db, "WIN", [a], expiry="2021-05-21")
+    assert out["drops"] == {"trend/trade: expiry not the declared monthly": 1}
+
+
+def test_price_name_flags_an_earlier_expiry_bar_and_ended_data(tmp_path):
+    a = "2021-03-10"
+    hist, db = stores(tmp_path, "GAP", [(a, 100.0), ("2021-04-14", 100.0)], chains=[(a, 100.0)])
+    out = run_name(hist, db, "GAP", [a])
+    assert out["priced"][0]["settle_flag"] == cs.FILLED_EARLIER
+    assert out["drops"][f"trend/trade: flagged, kept: {cs.FILLED_EARLIER}"] == 1
+    hist, db = stores(tmp_path, "END", [(a, 100.0), ("2021-04-05", 100.0)], chains=[(a, 100.0)])
+    out = run_name(hist, db, "END", [a])
+    assert out["priced"][0]["settle_flag"] == cs.DATA_ENDED and out["priced"][0]["cells"]
+
+
+def test_leg_bars_are_judged_per_leg():
+    tight = {"bid": 1.00, "ask": 1.05}
+    wide = {"bid": 0.10, "ask": 0.30}
+    assert cs.leg_clears(tight) and not cs.leg_clears(wide) and not cs.leg_clears({"bid": 0, "ask": 0.05})
+    short = {"strike": 95.0, "right": "P", **tight}
+    long_ = {"strike": 90.0, "right": "P", **wide}
+    prices = cs.legbars.structure_prices([(short, -1), (long_, 1)])
+    assert not cs.settle("XYZ", short, long_, prices, 100.0)["liquid"]
 
 
 # ------------------------------------------------------------------------------------- licence

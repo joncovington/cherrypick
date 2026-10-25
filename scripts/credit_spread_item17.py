@@ -29,7 +29,8 @@ store, and runs the declared pass test once. No AI, no network, no broker: a pur
   for each leg that finishes in the money.
 - Settlement at intrinsic from the expiry session's raw close, capped at the width. A name with no bar
   within four days of expiry (its data ended) settles at its last close before expiry, flagged and
-  counted (the template's declared limit).
+  counted (the template's declared limit); one filled from an earlier bar within four days is kept
+  and flagged too.
 - Net = (credit - value) x 100 - fees - settlement. Max loss = (width - credit) x 100 + entry fee.
   ret = net / max loss.
 
@@ -37,7 +38,9 @@ store, and runs the declared pass test once. No AI, no network, no broker: a pur
 one half and is scored in the other, both ways. diff = the trade's ret - the mean ret of its baselines
 priced in the same cell; passes when, in both directions, the one-sided t of mean diff (standard
 errors clustered by expiry date) is above 2 and the rule's own mean net in dollars is positive, and
-it survives Holm across the 32 (each test's p is its larger direction's, a no-verdict test p = 1).
+it survives Holm across the 32 at alpha 0.05 (each test's p is its larger direction's, a no-verdict
+test p = 1). One-sided p: Student's t, df = clusters - 1. The pick half is purged at the boundary:
+its trades whose holding period overlaps the score half's are dropped from the pick and counted.
 Fewer than 100 scored trades in a direction is no verdict. The per-symbol pick earns its place only
 if it passes and also beats the pooled pick on the same trades, paired t above 2 in both directions.
 
@@ -253,8 +256,18 @@ def settle(symbol: str, short: dict, long_: dict, prices: dict, s_exp: float) ->
         "max_loss": max_loss,
         "costs": fee_open + settlement,
         "slippage": (prices["mid"] - credit) * 100,
-        "liquid": legbars._tight(prices["cost"], abs(prices["mid"]), legbars.LEG_BARS),
+        "liquid": all(leg_clears(q) for q in (short, long_)),
     }
+
+
+def leg_clears(q: dict) -> bool:
+    """One leg against the leg bars on its entry quote: two-sided and within 10% of its mid or a
+    nickel. The store holds no open interest, so `legbars.leg_passes` (which also needs 100 open)
+    would fail every leg; the OI bar is the declared gap, labelled in the report."""
+    if not legbars.two_sided(q):
+        return False
+    bid, ask = q["bid"], q["ask"]
+    return legbars._tight(ask - bid, (ask + bid) / 2, legbars.LEG_BARS)
 
 
 def price_cells(chain: Chain, right: str, symbol: str, s_exp: float) -> dict[str, dict | str]:
@@ -300,16 +313,23 @@ def price_cells(chain: Chain, right: str, symbol: str, s_exp: float) -> dict[str
 
 
 # ------------------------------------------------------------------------------- per-name pricing
-def _close_at(ds: list[str], cs: list[float], day: str, *, exact: bool) -> tuple[float | None, bool]:
-    """(close, settled_at_last_close). Exact: that day's bar or None. Otherwise the last bar on or
-    before `day`; flagged when it is more than SETTLE_LOOKBACK_DAYS before (the name's data ended)."""
+FILLED_EARLIER = "expiry close from an earlier bar within 4 days"
+DATA_ENDED = "settled at the last close (data ends before expiry)"
+
+
+def _close_at(ds: list[str], cs: list[float], day: str, *, exact: bool) -> tuple[float | None, str | None]:
+    """(close, flag). Exact: that day's bar or None. Otherwise the last bar on or before `day`,
+    flagged FILLED_EARLIER when it is an earlier bar within SETTLE_LOOKBACK_DAYS, DATA_ENDED when it
+    is further back (the name's data ended). Both are kept and counted, never dropped."""
     i = bisect.bisect_right(ds, day) - 1
     if i < 0:
-        return None, False
+        return None, None
     if exact:
-        return (cs[i], False) if ds[i] == day else (None, False)
-    stale = (date.fromisoformat(day) - date.fromisoformat(ds[i])).days > SETTLE_LOOKBACK_DAYS
-    return cs[i], stale
+        return (cs[i], None) if ds[i] == day else (None, None)
+    if ds[i] == day:
+        return cs[i], None
+    gap = (date.fromisoformat(day) - date.fromisoformat(ds[i])).days
+    return cs[i], (DATA_ENDED if gap > SETTLE_LOOKBACK_DAYS else FILLED_EARLIER)
 
 
 def _any_in(sorted_days: list[str], lo: str, hi: str) -> bool:
@@ -414,8 +434,8 @@ def price_name(job: dict) -> dict:
             else:
                 res[cid] = _compact(r)
         if extra:
-            drops[f"{tag}: settled at the last close (data ends before expiry; kept, flagged)"] += 1
-        priced.append({**_ident(t), "stale": bool(extra), "cells": res})
+            drops[f"{tag}: flagged, kept: {extra}"] += 1
+        priced.append({**_ident(t), "settle_flag": extra, "cells": res})
         if t["kind"] == "trade":
             far = _far_trade(t, job, splits, exdiv, cells_for)
             if isinstance(far, str):
@@ -446,7 +466,7 @@ def _far_trade(t, job, splits, exdiv, cells_for):
         return extra
     return {
         **_ident({**t, "expiry": exp}),
-        "stale": bool(extra),
+        "settle_flag": extra,
         "cells": {k: _compact(v) for k, v in cells.items() if not isinstance(v, str)},
     }
 
@@ -473,9 +493,15 @@ def cluster_t(values: list[float], clusters: list[str]) -> float | None:
     return m / math.sqrt(var) if var > 0 else None
 
 
-def p_one(t: float | None) -> float:
-    """One-sided normal tail of t; 1 when there is no t."""
-    return 1.0 if t is None else 0.5 * math.erfc(t / math.sqrt(2))
+P_RULE = "one-sided p: Student's t, df = clusters - 1"
+
+
+def p_one(t: float | None, clusters: int) -> float:
+    """One-sided upper tail of Student's t at `clusters` - 1 degrees of freedom (the expiry clusters
+    behind the t); 1 when there is no t or fewer than two clusters."""
+    if t is None or clusters < 2:
+        return 1.0
+    return 1.0 - core_stats.t_cdf(t, clusters - 1)
 
 
 def summarise(rows: list[dict]) -> dict:
@@ -494,7 +520,8 @@ def summarise(rows: list[dict]) -> dict:
         "worst_net": min(nets),
         "cost_drag": sum(r["costs"] for r in rows) / sum(credits) if sum(credits) > 0 else None,
         "slippage_per_trade": statistics.fmean(r["slippage"] for r in rows),
-        "leg_bar_share": sum(1 for r in rows if r["liquid"]) / len(rows),
+        # Per leg on the entry quotes; the store holds no open interest, so the OI bar is not applied.
+        "legs_clear_spread_two_sided_bars_oi_not_held": sum(1 for r in rows if r["liquid"]) / len(rows),
     }
 
 
@@ -517,44 +544,70 @@ def paired_diff(trade: dict, baselines: list[dict], cell: str) -> float | None:
     return own["ret"] - statistics.fmean(bs_)
 
 
-def best_cell(trades: list[dict], cells: list[str], min_n: int = 1) -> str | None:
-    """The cell with the highest mean ret over `trades` (each counted where priced), among cells
-    holding at least `min_n` of them; ties go to the cell declared first."""
-    best, score = None, None
+def best_cell(trades: list[dict], cells: list[str], min_n: int = 1) -> tuple[str | None, int]:
+    """(cell, n): the cell with the highest mean ret over `trades` (each counted where priced), among
+    cells holding at least `min_n` of them, and how many trades its mean rests on. Ties go to the
+    cell declared first. No floor beyond `min_n`: the declaration picks the best mean."""
+    best, score, n = None, None, 0
     for c in cells:
         xs = [t["cells"][c]["ret"] for t in trades if c in t["cells"]]
-        if len(xs) < min_n:
+        if len(xs) < min_n or not xs:
             continue
         m = statistics.fmean(xs)
         if score is None or m > score + EPS:
-            best, score = c, m
-    return best
+            best, score, n = c, m, len(xs)
+    return best, n
 
 
-def assign_cells(pick: list[dict], cells: list[str], rule: str) -> tuple[str | None, dict[str, str]]:
-    """(pooled cell, {symbol: cell}) picked on `pick`. Per symbol: the best cell on that symbol's own
-    trades where a cell holds at least MIN_SYMBOL_TRADES of them, else the pooled cell."""
-    pooled = best_cell(pick, cells)
-    by_sym: dict[str, str] = {}
+def assign_cells(pick: list[dict], cells: list[str], rule: str) -> tuple[str | None, int, dict[str, tuple]]:
+    """(pooled cell, its n, {symbol: (cell, n)}) picked on `pick`. Per symbol: the best cell on that
+    symbol's own trades where a cell holds at least MIN_SYMBOL_TRADES of them, else the pooled cell."""
+    pooled, pooled_n = best_cell(pick, cells)
+    by_sym: dict[str, tuple] = {}
     if rule == "per_symbol" and pooled is not None:
         groups: dict[str, list[dict]] = defaultdict(list)
         for t in pick:
             groups[t["symbol"]].append(t)
         for s, ts in groups.items():
-            c = best_cell(ts, cells, MIN_SYMBOL_TRADES)
+            c, n = best_cell(ts, cells, MIN_SYMBOL_TRADES)
             if c is not None:
-                by_sym[s] = c
-    return pooled, by_sym
+                by_sym[s] = (c, n)
+    return pooled, pooled_n, by_sym
+
+
+def purge(pick: list[dict], score: list[dict], pick_half: str) -> tuple[list[dict], int]:
+    """Drop the pick half's trades whose holding period overlaps the score half's, so no pick-half
+    outcome is decided by prices the score half also trades on. Picking in H1: a trade whose expiry
+    is on or after the first score-half entry. Picking in H2 (the score half earlier): a trade whose
+    entry is on or before the last score-half expiry. The score half is never touched."""
+    if not score:
+        return pick, 0
+    if pick_half == "H1":
+        first = min(t["entry"] for t in score)
+        kept = [t for t in pick if t["expiry"] < first]
+    else:
+        last = max(t["expiry"] for t in score)
+        kept = [t for t in pick if t["entry"] > last]
+    return kept, len(pick) - len(kept)
 
 
 def score_direction(trades, base_of, cells, rule, pick_half, score_half) -> dict:
-    """One direction of one rule: pick on `pick_half`, score on `score_half`."""
-    pick = [t for t in trades if t["half"] == pick_half]
+    """One direction of one rule: pick on `pick_half` (purged at the boundary), score on `score_half`."""
     score = [t for t in trades if t["half"] == score_half]
-    pooled, by_sym = assign_cells(pick, cells, rule)
-    out = {"pick_half": pick_half, "score_half": score_half, "pooled_cell": pooled}
+    pick, purged = purge([t for t in trades if t["half"] == pick_half], score, pick_half)
+    pooled, pooled_n, sym_cells = assign_cells(pick, cells, rule)
+    by_sym = {s: c for s, (c, _) in sym_cells.items()}
+    out = {
+        "pick_half": pick_half,
+        "score_half": score_half,
+        "purged_at_boundary": purged,
+        "pooled_cell": pooled,
+        "pooled_cell_n": pooled_n,
+    }
     if rule == "per_symbol":
         out["symbols_with_own_cell"] = len(by_sym)
+        out["per_symbol_picks"] = {s: {"cell": c, "n": n} for s, (c, n) in sorted(sym_cells.items())}
+        out["per_symbol_pick_counts"] = dict(Counter(c for c, _ in sym_cells.values()))
     rows, unscored = [], Counter()
     for t in score:
         cell = by_sym.get(t["symbol"], pooled)
@@ -577,6 +630,7 @@ def score_direction(trades, base_of, cells, rule, pick_half, score_half) -> dict
                 "expiry": t["expiry"],
                 "cell": cell,
                 "diff": d,
+                "baselines_priced": sum(1 for b in base_of.get(t["id"], []) if cell in b["cells"]),
                 "net": r["net"],
                 "ret": r["ret"],
                 "costs": r["costs"] + r["slippage"],
@@ -600,12 +654,18 @@ def score_direction(trades, base_of, cells, rule, pick_half, score_half) -> dict
 def direction_stats(rows: list[dict]) -> dict:
     n = len(rows)
     if not n:
-        return {"n": 0, "mean_diff": None, "t": None, "own_mean_net": None, "own_mean_ret": None}
+        return {"n": 0, "clusters": 0, "mean_diff": None, "t": None, "p": 1.0, "own_mean_net": None,
+                "own_mean_ret": None, "baselines_priced": {}}  # fmt: skip
     diffs = [r["diff"] for r in rows]
+    t = cluster_t(diffs, [r["expiry"] for r in rows])
+    g = len({r["expiry"] for r in rows})
     return {
         "n": n,
+        "clusters": g,
         "mean_diff": statistics.fmean(diffs),
-        "t": cluster_t(diffs, [r["expiry"] for r in rows]),
+        "t": t,
+        "p": p_one(t, g),
+        "baselines_priced": dict(sorted(Counter(r["baselines_priced"] for r in rows).items())),
         "own_mean_net": statistics.fmean(r["net"] for r in rows),
         "own_mean_ret": statistics.fmean(r["ret"] for r in rows),
     }
@@ -619,7 +679,7 @@ def judge(dirs: list[dict]) -> dict:
     ts = [d["t"] for d in dirs]
     t_ok = all(t is not None and t > T_BAR for t in ts)
     own_ok = all(d["own_mean_net"] > 0 for d in dirs)
-    return {"verdict": None, "t_ok": t_ok, "own_ok": own_ok, "p": max(p_one(t) for t in ts)}
+    return {"verdict": None, "t_ok": t_ok, "own_ok": own_ok, "p": max(d["p"] for d in dirs)}
 
 
 def apply_holm(tests: dict[str, dict]) -> None:
@@ -809,6 +869,7 @@ def _strip_rows(tests: dict) -> dict:
 
 def print_table(rep: dict) -> None:
     print(f"window {rep['window'][0]} .. {rep['window'][1]}, halves split at {rep['midpoint']}")
+    print(f"{P_RULE}; Holm across the 32 at alpha {ALPHA}; pick halves purged at the boundary")
     print(f"{'setup':18s} {'side':4s} {'family':5s} {'rule':10s} {'n H1>H2':>8s} {'n H2>H1':>8s} "
           f"{'t':>6s} {'t':>6s} {'own$':>8s} {'own$':>8s}  verdict")  # fmt: skip
     for v in rep["tests"].values():
@@ -891,6 +952,10 @@ def main(argv: list[str] | None = None) -> int:
         p["half"] = period(p["entry"], args.start, mid)
     out = {
         "licence": "ThetaData-derived. Local only; never into the repo, a PR, an issue or an artifact.",
+        "p_value": P_RULE,
+        "holm": f"Holm across the 32 tests at alpha {ALPHA}; a no-verdict test counts p = 1",
+        "purge": "pick-half trades overlapping the score half are dropped (purged_at_boundary, each way)",
+        "leg_bars": "legs clear the spread/two-sided bars; OI not held",
         "item": 17,
         "window": [args.start, args.end],
         "midpoint": mid,
