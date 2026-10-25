@@ -101,8 +101,22 @@ def _observed(d: date) -> date:
 
 
 # --------------------------------------------------------------------------- NYSE holidays
+# Closures no rule produces: national days of mourning and the storm. Without them a history reader
+# takes the day for a session (2025-01-08's next-day open interest was asked of the 9th, which has
+# none). Only past ones belong here; a new one is added when the exchange announces it.
+UNSCHEDULED_CLOSURES = frozenset(
+    {
+        date(2012, 10, 29),  # Hurricane Sandy
+        date(2012, 10, 30),  # Hurricane Sandy
+        date(2018, 12, 5),  # President George H. W. Bush, day of mourning
+        date(2025, 1, 9),  # President Jimmy Carter, day of mourning
+    }
+)
+
+
 def nyse_holidays(year: int) -> set[date]:
-    """The set of NYSE holidays observed within ``year`` (computed from the standard rules)."""
+    """The set of NYSE holidays observed within ``year`` (computed from the standard rules, plus
+    the unscheduled closures)."""
     hols: set[date] = set()
 
     # New Year's Day. Sunday -> Monday; a Saturday New Year is observed on the *prior* Dec 31, which
@@ -121,6 +135,7 @@ def nyse_holidays(year: int) -> set[date]:
     hols.add(nth_weekday(year, 9, MON, 1))  # Labor Day — 1st Monday of September
     hols.add(nth_weekday(year, 11, THU, 4))  # Thanksgiving — 4th Thursday of November
     hols.add(_observed(date(year, 12, 25)))  # Christmas Day
+    hols.update(d for d in UNSCHEDULED_CLOSURES if d.year == year)
     return hols
 
 
