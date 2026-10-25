@@ -726,8 +726,6 @@ reproduced (the best rule found picked 10-15% of its slots right).*
     no second one.
   - **The universe** is single-name stocks only, as on the live board (it reads no fund).
 - **Amendment (2026-10-23): A' and C', a new hypothesis, fixed before any B trade was priced.**
-  The historical board had been built once before this was written, for its signal counts only; no
-  trade was priced from it.
   *Source: the user, 2026-10-23, after the declared run starved A and C of trades.* The same
   selectors (A: `mr-300m` put spreads; C: the short pullback and fading strength as call spreads),
   the same trades and five matched baselines from `trades.json`, the same expiry, fills, costs,
