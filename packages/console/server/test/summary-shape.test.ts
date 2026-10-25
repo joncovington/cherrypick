@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { heroOf, rOf, shapeOf, t95, wilson95, worstNet, type SummaryTrade } from "../src/readers/summary/common.js";
+import { heroOf, overlapOf, rOf, shapeOf, t95, wilson95, worstNet, type SummaryTrade } from "../src/readers/summary/common.js";
 
 /**
  * The cards' second faces read the per-trade shape: median, average win and loss, the worst trade.
@@ -86,5 +86,15 @@ describe("rOf", () => {
   it("rides on the hero only when the module has a risk", () => {
     expect(heroOf([trade(10)], false, 0).shape?.meanR).toBeUndefined();
     expect(heroOf([trade(10)], false, 0, () => 100).shape).toMatchObject({ meanR: 0.1, rN: 1, rCi95: null });
+  });
+});
+
+/** B2's overlap flag: sessions that closed several trades make the interval read narrower than it is. */
+describe("overlapOf", () => {
+  const at = (session: string): SummaryTrade => ({ session, arm: "a", gross: 1, fees: 0, settlement: 0, slippage: null, net: 1 });
+  it("counts the sessions with more than one trade, or nothing when none had", () => {
+    expect(overlapOf([at("d1"), at("d2")])).toBeNull();
+    expect(overlapOf([at("d1"), at("d1"), at("d1"), at("d2")])).toEqual({ sessions: 1, of: 2, maxPerSession: 3 });
+    expect(heroOf([at("d1"), at("d1")], false, 0).shape?.overlap).toEqual({ sessions: 1, of: 1, maxPerSession: 2 });
   });
 });

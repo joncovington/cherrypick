@@ -238,6 +238,15 @@ export function rOf<T extends SummaryTrade>(
   return { meanR: r4(mean), rN: n, rCi95: half === null ? null : [r4(mean - half), r4(mean + half)] };
 }
 
+/** B2: how many sessions closed more than one trade, or null when none did. */
+export function overlapOf(trades: readonly SummaryTrade[]): { sessions: number; of: number; maxPerSession: number } | null {
+  const per = new Map<string, number>();
+  for (const t of trades) per.set(t.session, (per.get(t.session) ?? 0) + 1);
+  const counts = [...per.values()];
+  const multi = counts.filter((c) => c > 1).length;
+  return multi === 0 ? null : { sessions: multi, of: per.size, maxPerSession: Math.max(...counts) };
+}
+
 export function heroOf<T extends SummaryTrade>(
   trades: readonly T[],
   chargesSlippage: boolean,
@@ -268,7 +277,7 @@ export function heroOf<T extends SummaryTrade>(
     daysWon: dayNets.filter((n) => n > 0).length,
     daysLost: dayNets.filter((n) => n < 0).length,
     open,
-    shape: { ...shapeOf(trades.map((t) => t.net)), ...(riskOf ? rOf(trades, riskOf) : {}) },
+    shape: { ...shapeOf(trades.map((t) => t.net)), ...(riskOf ? rOf(trades, riskOf) : {}), overlap: overlapOf(trades) },
     basis: null,
   };
 }
