@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     needs TEXT NOT NULL DEFAULT '',
     not_before TEXT,
     stop_by TEXT,
+    after TEXT,
     status TEXT NOT NULL DEFAULT 'queued',
     created_at TEXT NOT NULL,
     started_at TEXT,
@@ -259,8 +260,16 @@ def ready(
     is_trading_day: Callable[[date], bool],
     session_held: bool,
     window: tuple[str, str] = BLACKOUT,
+    after_status: str | None = None,
 ) -> str | None:
-    """None when the row may start now, else why not (a short reason the list shows)."""
+    """None when the row may start now, else why not (a short reason the list shows). A row with an
+    `after` prerequisite waits until that row is `done`; one whose prerequisite failed, stopped, was
+    cancelled or does not exist is HELD, never run on what the prerequisite left behind -- a study
+    run once on a partial store would spend its declared test."""
+    if row.get("after") and after_status != "done":
+        if after_status in ("queued", "running"):
+            return f"waits for {row['after']} ({after_status})"
+        return f"held: {row['after']} is {after_status or 'missing'}; review, then cancel and re-queue"
     t = now.astimezone(ET)
     if row.get("not_before") and t < datetime.fromisoformat(row["not_before"]).replace(tzinfo=ET):
         return f"held until {row['not_before']} ET"
@@ -320,7 +329,22 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(p, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    # `after` (2026-10-25): a row that waits for another row's success. Added to an older queue here.
+    if "after" not in {r[1] for r in conn.execute("PRAGMA table_info(tasks)")}:
+        conn.execute("ALTER TABLE tasks ADD COLUMN after TEXT")
     return conn
+
+
+def prereq_status(conn, after: str | None) -> str | None:
+    """The status of the newest row named `after` (study/step): None when a row has no prerequisite,
+    "missing" when none by that name exists."""
+    if not after:
+        return None
+    study, _, step = after.partition("/")
+    r = conn.execute(
+        "SELECT status FROM tasks WHERE study = ? AND step = ? ORDER BY id DESC LIMIT 1", (study, step)
+    ).fetchone()
+    return r["status"] if r else "missing"
 
 
 def _now_iso() -> str:
@@ -341,6 +365,7 @@ def add(
     output: str | None = None,
     not_before: str | None = None,
     stop_by: str | None = None,
+    after: str | None = None,
     path: Path | None = None,
     root: Path | None = None,
     tracked: Callable[[Path, Path], bool] | None = None,
@@ -369,10 +394,13 @@ def add(
         ).fetchone()
         if live is not None:
             raise Refused(f"{study}/{step} is already {live['status']} as task {live['id']}")
+        if after is not None and prereq_status(conn, after) in (None, "missing"):
+            raise Refused(f"--after {after!r} names no row (study/step)")
         cur = conn.execute(
-            "INSERT INTO tasks (study, step, kind, args, output, needs, not_before, stop_by, created_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?)",
-            (study, step, kind, json.dumps(args), output, needs, not_before, stop_by, _now_iso()),
+            "INSERT INTO tasks (study, step, kind, args, output, needs, not_before, stop_by, after,"
+            " created_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (study, step, kind, json.dumps(args), output, needs, not_before, stop_by, after, _now_iso()),
         )
         return {
             "id": cur.lastrowid,
@@ -490,7 +518,7 @@ def run_next(
             pick = None
             for r in conn.execute("SELECT * FROM tasks WHERE status = 'queued' ORDER BY id").fetchall():
                 row = dict(r)
-                why = ready(row, now(), is_trading_day, held, window)
+                why = ready(row, now(), is_trading_day, held, window, prereq_status(conn, row.get("after")))
                 if why is None:
                     pick = row
                     break
