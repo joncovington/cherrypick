@@ -311,6 +311,8 @@ export const LIVE_SLIDES = [
   { id: "pmcc", label: "pmcc" },
   { id: "flies", label: "flies" },
   { id: "meic", label: "meic" },
+  // B10 (2026-10-24): each live arm's fills and overrides by week, account-wide.
+  { id: "execution", label: "execution" },
 ] as const satisfies readonly NavSlide[];
 
 export const REPORTS_SLIDES = [
@@ -386,6 +388,7 @@ export const BACKTEST_SLIDES = [
   { id: "validation", label: "validation" },
   { id: "runs", label: "runs" },
   { id: "queue", label: "queue" },
+  { id: "slices", label: "slices" },
 ] as const satisfies readonly NavSlide[];
 
 /**
