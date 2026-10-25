@@ -468,3 +468,8 @@ gross, and ranking by net is the user's decision.
 | `python -m cherrypick.technicals study round4 [--workers N]` | Round 4: the relative-strength breakout, with and without volume, on the $20M-$300M slice; writes `study/round4-<stamp>.json`. |
 | `python -m cherrypick.technicals study round5 [--workers N]` | Round 5: the 1-10 score inside the fundamentals label, against the same label and trigger at the other scores; writes `study/round5-<stamp>.json`. |
 | `python -m cherrypick.technicals report [--session D]` | Write one session's report readings and per-name chart files. |
+
+**Entry context (B4, 2026-10-24).** `entrycontext` tags a ledger's closed trades with SPX against
+its 50/200-day, the name's ATR %, relative volume, sector, entry time and holding period, always
+as of the close BEFORE the entry session (a test breaks it to `<=` and fails). It reads; nothing
+trades on it.

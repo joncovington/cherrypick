@@ -35,6 +35,27 @@ def cmd_land(args) -> int:
     return 0 if report.get("ok") else 1
 
 
+def cmd_entry_context(args) -> int:
+    """Every closed trade in a ledger with its B4 entry context (entrycontext.py): local data only."""
+    from cherrypick.core import killcriteria
+
+    from . import entrycontext, fundamentals
+
+    records = killcriteria.evidence_records(Path(args.db), args.schema)
+    if args.arm:
+        records = [r for r in records if r.get("arm") == args.arm]
+    conn = store.connect()
+    sectors = {s: v[0] for s, v in fundamentals.sector_sources().items()}
+    rows = entrycontext.annotate(records, lambda s: store.adjusted_bars(conn, s), sectors)
+    text = json.dumps(rows, indent=1, default=str)
+    if args.out:
+        args.out.write_text(text, encoding="utf-8")
+        print(f"{len(rows)} rows -> {args.out}")
+    else:
+        print(text)
+    return 0
+
+
 def cmd_liquidity(_args) -> int:
     """Tonight's liquidity verdicts (liquidity.py): local data only."""
     from . import liquidity
@@ -660,6 +681,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser(
         "liquidity", help="judge every name liquid or not (local data); the illiquid are skipped and hidden"
     ).set_defaults(fn=cmd_liquidity)
+    ec = sub.add_parser("entry-context", help="every closed trade in a ledger, with its entry context (B4)")
+    ec.add_argument("--db", required=True, help="a module's ledger, or a replay's directory of them")
+    ec.add_argument("--schema", required=True, help="its trade schema (meic_ic, bwb_132, ...)")
+    ec.add_argument("--arm", help="one arm only")
+    ec.add_argument("--out", type=Path, help="write the rows as JSON here instead of printing")
+    ec.set_defaults(fn=cmd_entry_context)
     se = sub.add_parser(
         "securities",
         help="the public security list (local files), and which list -- it or the vendor's -- is current",
