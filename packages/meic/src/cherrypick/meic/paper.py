@@ -17,6 +17,7 @@ import argparse
 import contextlib
 import json
 import logging
+import math
 import os
 import sqlite3
 import sys
@@ -1085,6 +1086,14 @@ def evaluate_entry(
             logging.getLogger(__name__).warning(
                 "equalize_max_imbalance_pct is present but not a number; the cap is OFF"
             )
+        if cap_pct is not None and not math.isfinite(cap_pct):
+            # float() accepts "nan" and "inf". A NaN cap fails every comparison, so it would pass
+            # every candidate while the operator believes a cap is on; an infinite one is a cap
+            # that can never bind. Either is OFF, loudly, like a negative value.
+            logging.getLogger(__name__).warning(
+                "equalize_max_imbalance_pct is not finite (%r); the cap is OFF", cap_pct
+            )
+            cap_pct = None
         if cap_pct is not None and cap_pct < 0:
             # Negative shares have no meaning, and the naive comparison would read a
             # negative cap as declining everything (imbalance >= 0 > cap * net). Silent
