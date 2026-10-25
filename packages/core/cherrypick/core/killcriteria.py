@@ -229,11 +229,29 @@ def gate(module: str, arm: str, records: list[dict], criteria) -> dict:
     return verdict
 
 
+def history_path() -> Path:
+    return _home.state_dir() / "kill" / "history.jsonl"
+
+
 def clear(module: str) -> bool:
+    """Lift a latched block, and append the clearing to `history.jsonl`: a re-arm after a block is a
+    human override, and the execution record (B10) flags it."""
     p = latch_path(module)
     if not p.exists():
         return False
+    held = latched(module) or {}
     p.unlink()
+    event = {
+        "event": "cleared",
+        "module": module,
+        "arm": held.get("arm"),
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "reasons": held.get("reasons"),
+    }
+    h = history_path()
+    h.parent.mkdir(parents=True, exist_ok=True)
+    with h.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(event) + "\n")
     return True
 
 

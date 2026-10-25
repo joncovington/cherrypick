@@ -112,6 +112,7 @@ from cherrypick.orchestrator import (
     connect,
     desk_notifier,
     doctor,
+    execution,
     init,
     logrotate,
     migrate,
@@ -1819,6 +1820,15 @@ def cmd_migrate_home(cfg, apply: bool) -> None:
         print("Re-run with --apply to perform the migration.")
 
 
+def cmd_execution(cfg, args) -> None:
+    """B10: each live arm's execution record, weekly beside its P&L (read-only, files only)."""
+    result = execution.run(cfg)
+    if args.json:
+        _emit(result)
+        return
+    print(execution.format_report(result))
+
+
 def cmd_calibrate(cfg) -> None:
     _emit(calibrate.run(cfg))
 
@@ -2042,6 +2052,7 @@ def build_parser() -> argparse.ArgumentParser:
             "account",
             "migrate-home",
             "calibrate",
+            "execution",
             "run-earnings-entry",
             "run-earnings-exit",
             "run-earnings-symbol-watch",
@@ -2135,7 +2146,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--json",
         action="store_true",
-        help="For positions: emit the structured result instead of the text report",
+        help="For positions/execution: emit the structured result instead of the text report",
     )
     parser.add_argument("--module", default=None, help="For connect/account: which module to target")
     parser.add_argument(
@@ -2398,6 +2409,7 @@ def main() -> None:
         "account": lambda: cmd_account(cfg, args),
         "migrate-home": lambda: cmd_migrate_home(cfg, args.apply),
         "calibrate": lambda: cmd_calibrate(cfg),
+        "execution": lambda: cmd_execution(cfg, args),
         "notify-trades": lambda: cmd_notify_trades(cfg, dry_run=args.dry_run),
         "notify-desk": lambda: cmd_notify_desk(cfg),
         "notify-status": lambda: cmd_notify_status(cfg, force=args.force, close=args.close),
