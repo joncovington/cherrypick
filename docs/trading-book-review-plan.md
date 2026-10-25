@@ -25,7 +25,7 @@ its PR), `dropped` (with why).
 | B2 | Ch. 1, 6, 14 | Confidence intervals and t on the console's expectancy and win-rate figures, with the median, spread and worst trade beside the mean and a skew flag in both directions; a win rate never shown without expectancy beside it | built (summary cards); overlap flag open | No: a read surface |
 | B3 | Ch. 1 | Results in R per trade (1R = max loss for a defined-risk structure) in every module's history | built: `core.ledgers` `r_multiple`, console mean R | No: a presentation and recording change |
 | B4 | Ch. 1, 2 | Entry context recorded on every trade row (SPX against its 50-day **and 200-day**, ATR %, relative volume, sector, entry time; holding period at exit) | built: `technicals.entrycontext`, derived on read | No: recording only, new columns |
-| B5 | Ch. 2 | A slice report per arm (by setup, market condition, entry time, holding period) with n and an interval on every cell; a cell that looks good becomes a declared hypothesis, never a filter | proposed | No: a read surface |
+| B5 | Ch. 2 | A slice report per arm (by setup, market condition, entry time, holding period) with n and an interval on every cell; a cell that looks good becomes a declared hypothesis, never a filter | built: `core.slices`, `technicals slices`; console view open | No: a read surface |
 | B6 | Ch. 2, 7 | Facts and interpretations kept apart wherever a person decides a trade (desk tickets, manual notes): free text in its own field, never read by a calculation; plus an invalidation condition and a short pre-mortem written at entry | proposed | No: recording only |
 | B7 | Ch. 3, 7, 8 | A hypothesis register: one row per hypothesis with its four parts, mechanism, **rival explanations and the check that rules each out**, rejection rule, status and result pointer, checked for near-duplicates of rejected ideas before a new one is declared; every rule change logged with the evidence behind it and re-read after its first 100 trades | built: `docs/hypotheses.json`, `cherrypick hypotheses` | No: research tooling |
 | B8 | Ch. 4 | One declared market-environment classifier (uptrend, sideways, downtrend) in `cherrypick.core`, used by every study report and by B4/B5, so "which environment" means the same thing everywhere | built: `core.environment`, on B4's rows | No: a shared definition; studies report by it, nothing trades on it |
@@ -214,7 +214,7 @@ its PR), `dropped` (with why).
 
 **B4** is extended (above): SPX against its 200-day as well, and the holding period at exit.
 
-**B5. A slice report per arm, with guardrails.** *(proposed)*
+**B5. A slice report per arm, with guardrails.** *(built 2026-10-24: `core.slices` with fixed bins, and `python -m cherrypick.technicals slices --db <ledger> --schema <s> --arm <a> [--month YYYY-MM]`, written under `data/technicals/slices/`. In the technicals package rather than `review`, which depends on core only while B4's context reads the end-of-day store. Intervals treat trades in one session as independent, and the report says so. A console view is still to come.)*
 - **What:** a monthly table for each arm of average R (or net share of max loss) broken down by
   setup, market condition (B4's tags), entry time and holding period. Every cell shows its n and a
   95% interval, and cells under 30 trades are greyed rather than ranked.
