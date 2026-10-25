@@ -324,6 +324,13 @@ def cmd_propose(args) -> dict:
         fingerprint=record["fingerprint"],
         **described,
     )
+    # B6 (docs/trading-book-review-plan.md): the person's interpretation, kept apart from the facts.
+    # Its own journal line, outside the sealed order, so it can never change the fingerprint, a gate
+    # or a cap; nothing that computes reads it (tests/test_thesis.py pins that). A thesis that recurs
+    # is a candidate row for docs/hypotheses.json, never a rule.
+    thesis = (getattr(args, "thesis", None) or "").strip()
+    if thesis:
+        journal.record("thesis", ticket_id=record["ticket_id"], thesis=_redact_text(thesis)[:2000])
     return {
         "ok": True,
         "disclaimer": DISCLAIMER,
@@ -684,6 +691,12 @@ def build_parser() -> argparse.ArgumentParser:
         sp = sub.add_parser(name)
         sp.add_argument("--order", required=True, help="JSON order spec, or '-' to read stdin")
         sp.add_argument("--account_number", default=None)
+        if name == "propose":
+            sp.add_argument(
+                "--thesis",
+                default=None,
+                help="why you are placing it, in your words; journalled beside the ticket, read by nothing",
+            )
         sp.set_defaults(func=fn)
 
     sp = sub.add_parser("confirm", help="prompts for the PIN on the terminal")

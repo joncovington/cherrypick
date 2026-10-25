@@ -10,6 +10,7 @@ import {
   breakdownOf,
   emptySlice,
   heroOf,
+  worstNet,
   inWindow,
   scopeTrades,
   sessionNeighbours,
@@ -127,6 +128,7 @@ function readLedger(db: DatabaseHandle, w: Window): LedgerRead {
       slippage: money.slippage,
       net: money.netPnl,
       entrySession: str(r["entry_session"]) ?? session,
+      entry: str(r["entry_session"]),
       entryRegime: str(r["entry_regime"]),
       exitReason: str(r["exit_reason"]),
       exitKind: money.exitKind,
@@ -187,7 +189,7 @@ export function readCurveSummary(config: ConsoleConfig, q: SummaryQuery): Module
   if (read === null) return missing();
 
   const trades = scopeTrades(read.trades, q);
-  const hero = heroOf(trades, true, read.open);
+  const hero = heroOf(trades, true, read.open, (t) => t.maxLoss);
   const premiumRows = trades.filter((t) => t.premium !== null);
   const premium = round2(premiumRows.reduce((s, t) => s + (t.premium ?? 0), 0));
   hero.basis = trades.length > 0 ? { label: "premium collected", amount: premium } : null;
@@ -205,6 +207,15 @@ export function readCurveSummary(config: ConsoleConfig, q: SummaryQuery): Module
         withMaxLoss.length === 0
           ? "n/r: no settled trade recorded its max loss"
           : `net ÷ max loss at entry (width − credit, whole position), ${withMaxLoss.length}/${trades.length} trades`,
+      dollars:
+        withMaxLoss.length === 0
+          ? null
+          : {
+              amount: Math.round(withMaxLoss.reduce((s, t) => s + t.net, 0) * 100) / 100,
+              of: Math.round(atRisk * 100) / 100,
+              ofLabel: "max loss at entry",
+              worst: worstNet(withMaxLoss),
+            },
     },
   ];
 

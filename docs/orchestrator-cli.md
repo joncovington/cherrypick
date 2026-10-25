@@ -71,6 +71,9 @@ All commands are **read-only or paper-only** except the narrow onboarding pair (
 |---|---|---|
 | `report` | Unified cross-module paper P&L: totals + per-profile breakdown, **gross and net** of costs. | `--eod` (today ET), `--date YYYY-MM-DD` (one session; default all-time) |
 | `calibrate` | Per-profile calibration readings + advisory promotion recommendations (never changes risk settings). | — |
+| `execution` | Each live arm's execution record by week (B10): fills against the mid at submit, fill rate, time to fill, human overrides (a cleared kill block, an in-session config commit, a manual close), and the gap to its paper mirror split into missed / fill / costs / other. Read-only. | `--json` |
+| `hypotheses` | Check `docs/hypotheses.json` (B7): every row well formed, every pointer a real heading; list logged rule changes due a re-read after 100 trades; `--similar` lists rejected look-alikes of a proposal. Exits 1 on a problem. | `--similar <json>` |
+| `retests` | B14: the year's re-test rows, every declared/passed/failed hypothesis with a recipe re-run unchanged as `<study>/retest-<year>`; rows without a recipe are listed. A dry run unless `--apply`, which queues them. | `--year`, `--apply` |
 | `review` | Suite end-of-day review (`packages/review`): build one session's cross-module fact set and render it. `--final` marks the session final and re-runs reconciliation; without it the pass is provisional. Read-only over every module's ledger. What the two daily supervisor jobs run. | `--final` |
 | `morning` | Build the pre-open morning fact pack (`packages/overview`): index/vol/sector readings from the stream cache, gamma flip and walls from the suite's own GEX history, and the mechanical GREEN/YELLOW/RED phase. What the daily morning-factpack job runs; a pure stream-cache + GEX consumer writing only into its own home, so a bad pass costs a report, never a trade. The session it describes is overview's own contract (today's ET trading day, resolved internally). | — |
 | `manage` | Daily position evaluation (`packages/manage`): take a read-only snapshot of the real broker account (priced positions and balances, plus each underlying's earnings and ex-dividend dates) and judge every trade against the ruleset in `~/.cherrypick/config/manage.json`. Writes `data/manage/eval-<day>.json` for the console's Live → positions and Live → portfolio tabs and posts the trades needing action, one line each (or that none does). What the `manage-eval` job (10:00 ET, off until `manage.enabled`) and each `manage.also_at` run execute. Advice only: places no order. | — |
@@ -102,6 +105,21 @@ The module paper loops are supervisor jobs too: MEIC as a 60 s `--once` spawn
 job that owns settlement. The paper modules' own scheduled-task helpers were removed on
 2026-10-08; flies', bwb's and MEIC's live `--install-task` only writes the day's arm record, and refuses
 without a running supervisor.
+
+## The research queue (`orchestrator/researchqueue.py`, 2026-10-24)
+
+Long research tasks are rows that the supervisor's `research-queue` job runs one at a time, so a
+many-hour fetch survives the session that queued it. A row is named `study/step` (lowercase slugs;
+the study is its category, one live row per name) and runs only an allow-listed kind. A ThetaData
+task waits for a free vendor session and keeps clear of the nightly `backtest-fetch` window, stopping
+before it and resuming after. A finished row points to what it produced.
+
+| Command | What it does | Flags |
+|---|---|---|
+| `queue-add` | Queue one task. Its kind, arguments, names and times are all checked now, so a row the runner would refuse is never added. Kinds: `fetch-chains` (`{"requests": file, "workers": 1-4}`), `fetch-flow` (`{"plan": file, "workers": 1-4}`), `script` (`{"path": "scripts/x.py", "args": [strings]}`, a file git knows). | `--study` (required), `--step` (default: the kind), `--task`, `--task-args <json>`, `--output <file>` (a script's conclusion, which must exist when it finishes), `--not-before` / `--stop-by` (ET, `YYYY-MM-DDTHH:MM`), `--after <study/step>` (wait for that row to finish `done`; held, never run, if it fails or is cancelled) |
+| `queue-list` | The rows, newest first: each queued one with why it waits, each finished one with its result (a fetch's counts and input, a script's output, the log). Also on the console's Backtest → queue tab. | `--study` |
+| `queue-cancel` | Cancel a queued row; a running one is left to its process. | `--task-id` |
+| `queue-run` | Recover rows left running by a dead process, then run the oldest ready row to its end: the `research-queue` job, every 300 s (`research_queue.*`). | — |
 
 ## Global flags
 

@@ -35,7 +35,7 @@ import type { MeicSummarySlice } from "@console/shared";
 import type { TradingMode } from "@console/shared";
 import type { MeicScope } from "./MeicTables";
 import { SortTh, sortRows, useSort } from "../../components/DataTable";
-import { RANGES, type Range, fmtUsd, sessionLabel, TsCard, TsEmpty, Gauge, WinRateArcs as KitWinRateArcs } from "../../components/summary/kit";
+import { RANGES, type Range, fmtUsd, sessionLabel, TsCard, TsEmpty, Gauge, NetHero, FaceSwitch, useFace, WinRateArcs as KitWinRateArcs } from "../../components/summary/kit";
 
 export interface MeicSummaryProps {
   /** The page's mode (the PaperLiveBadge toggle) and scope, from the manifest header. Defaults
@@ -62,7 +62,7 @@ function NetCard({ s }: { s: MeicSummarySlice }) {
   const label = s.window.label === "day" && s.window.from !== null ? sessionLabel(s.window.from) : s.window.label;
   return (
     <TsCard title="net p&l" aside={<span className="ts-muted">{label}</span>}>
-      <div className={`ts-hero ${hero.net >= 0 ? "ts-pos" : "ts-neg"}`}>{fmtUsd(hero.net)}</div>
+      <NetHero net={hero.net} trades={hero.trades} shape={hero.shape} />
       <dl className="ts-kv">
         <div><dt>gross captured</dt><dd className="ts-pos">{fmtUsd(hero.gross)}</dd></div>
         <div><dt>fees</dt><dd className="ts-neg">−{fmtUsd(hero.fees).slice(1)}</dd></div>
@@ -89,7 +89,16 @@ function NetCard({ s }: { s: MeicSummarySlice }) {
  * ------------------------------------------------------------------------- */
 
 function CaptureGauge({ s }: { s: MeicSummarySlice }) {
-  return <Gauge title="premium capture" rawPct={s.captureRawPct} min={-50} max={50} caption="of premium sold kept after fees" />;
+  return (
+    <Gauge
+      title="premium capture"
+      rawPct={s.captureRawPct}
+      min={-50}
+      max={50}
+      caption="of premium sold kept after fees"
+      dollars={s.hero.credit > 0 ? { amount: s.hero.net, of: s.hero.credit, ofLabel: "premium sold" } : null}
+    />
+  );
 }
 
 function ReturnOnRiskGauge({ s }: { s: MeicSummarySlice }) {
@@ -104,13 +113,18 @@ function ReturnOnRiskGauge({ s }: { s: MeicSummarySlice }) {
       min={-100}
       max={100}
       caption={`of ${r.capitalAtRisk === null ? "—" : fmtUsd(r.capitalAtRisk).replace("+$", "$")} capital at risk · ${r.coverage ?? "n/r"} settled rows`}
+      dollars={
+        r.capitalAtRisk === null
+          ? null
+          : { amount: s.hero.net, of: r.capitalAtRisk, ofLabel: "capital at risk", worst: s.hero.shape?.worst ?? null }
+      }
     />
   );
 }
 
 function WinRateArcs({ s }: { s: MeicSummarySlice }) {
   const { hero } = s;
-  return <KitWinRateArcs daysWon={hero.daysWon} days={hero.daysWon + hero.daysLost} wins={hero.wins} trades={hero.trades} />;
+  return <KitWinRateArcs daysWon={hero.daysWon} days={hero.daysWon + hero.daysLost} wins={hero.wins} trades={hero.trades} avgWin={hero.shape?.avgWin ?? null} avgLoss={hero.shape?.avgLoss ?? null} shape={hero.shape ?? null} />;
 }
 
 /* ---------------------------------------------------------------------------
@@ -170,21 +184,35 @@ function BySide({ s }: { s: MeicSummarySlice }) {
  * colour carries sign, never a verdict, and nobody distinguishes 83% from 87% of green.
  * ------------------------------------------------------------------------- */
 
+/** The MEIC breakdowns' faces: per trade by default (an edge question), total (what the bucket
+ *  contributed). A total is the payload's own (entry time) or avg × trades (weekday, wing, delta),
+ *  presentation arithmetic over figures the payload carries. */
+const PER_FACES = ["per trade", "total"] as const;
+
 function ByEntryTime({ s }: { s: MeicSummarySlice }) {
+  const [face, , setFace] = useFace("breakdown:by entry time", PER_FACES);
   const rows = s.entryTime;
   if (rows.length === 0) return <TsEmpty what="by entry time" />;
-  const maxAvg = Math.max(...rows.map((b) => Math.abs(b.avg ?? 0)), 1);
+  const valueOf = (b: (typeof rows)[number]) => (face === "total" ? b.net : (b.avg ?? 0));
+  const maxAvg = Math.max(...rows.map((b) => Math.abs(valueOf(b))), 1);
   const maxCount = Math.max(...rows.map((b) => b.count), 1);
   return (
-    <TsCard title="by entry time" aside={<span className="ts-muted">per trade · entries beneath</span>}>
+    <TsCard
+      title="by entry time"
+      aside={
+        <span className="ts-muted">
+          entries beneath <FaceSwitch faces={PER_FACES} face={face} onFace={setFace} />
+        </span>
+      }
+    >
       <div className="ts-times">
         {rows.map((b) => {
-          const avg = b.avg ?? 0;
+          const avg = valueOf(b);
           const h = `${((Math.abs(avg) / maxAvg) * 100).toFixed(1)}%`;
           const evidence = `${((b.count / maxCount) * 100).toFixed(1)}%`;
           const tip = [
             b.label + (b.offSession ? " (off-session)" : ""),
-            `avg ${fmtUsd(avg)}/trade`,
+            `avg ${fmtUsd(b.avg ?? 0)}/trade`,
             `${b.count} ${b.count === 1 ? "entry" : "entries"}`,
             b.winPct === null ? "nothing settled" : `win ${b.winPct.toFixed(1)}%`,
             `total ${fmtUsd(b.net)}`,
@@ -333,18 +361,28 @@ function Evaluations({ s }: { s: MeicSummarySlice }) {
  * ------------------------------------------------------------------------- */
 
 function ByWeekday({ s, windowLabel }: { s: MeicSummarySlice; windowLabel: string }) {
+  const [face, , setFace] = useFace("breakdown:by weekday", PER_FACES);
   const rows = s.weekday;
   if (rows.length === 0) return <TsEmpty what="by weekday" />;
-  const max = Math.max(...rows.map((r) => Math.abs(r.avgNet ?? 0)), 1);
+  const valueOf = (r: (typeof rows)[number]) => (face === "total" ? (r.avgNet ?? 0) * r.trades : (r.avgNet ?? 0));
+  const max = Math.max(...rows.map((r) => Math.abs(valueOf(r))), 1);
   return (
-    <TsCard title="by weekday" aside={<span className="ts-muted">{windowLabel}</span>}>
+    <TsCard
+      title="by weekday"
+      aside={
+        <span className="ts-muted">
+          {windowLabel} <FaceSwitch faces={PER_FACES} face={face} onFace={setFace} />
+        </span>
+      }
+    >
       <div className="ts-week">
         {rows.map((r) => {
-          const v = r.avgNet ?? 0;
+          const v = valueOf(r);
           const h = `${((Math.abs(v) / max) * 100).toFixed(1)}%`;
           const tip = [
             r.bucket,
-            `avg ${fmtUsd(v)}/trade`,
+            `avg ${fmtUsd(r.avgNet ?? 0)}/trade`,
+            `total ${fmtUsd((r.avgNet ?? 0) * r.trades)}`,
             `${r.trades} ${r.trades === 1 ? "trade" : "trades"}`,
             r.winPct === null ? "nothing settled" : `win ${r.winPct.toFixed(1)}%`,
           ].join(" · ");
@@ -391,27 +429,42 @@ function SignalBreakdown({
   rows: MeicSummarySlice["delta"];
   windowLabel: string;
 }) {
+  const [face, , setFace] = useFace(`breakdown:${title}`, PER_FACES);
   if (rows.length === 0) return <TsEmpty what={title} />;
-  const max = Math.max(...rows.map((r) => r.trades), 1);
+  const valueOf = (r: (typeof rows)[number]) => (r.avgNet === null ? null : face === "total" ? r.avgNet * r.trades : r.avgNet);
+  const max = Math.max(...rows.map((r) => Math.abs(valueOf(r) ?? 0)), 1);
   return (
-    <TsCard title={title} aside={<span className="ts-muted">{windowLabel}</span>}>
-      {rows.map((r) => (
-        <div className="ts-side" key={r.bucket} title={`avg net per trade ${r.avgNet === null ? "n/r" : fmtUsd(r.avgNet)}`}>
-          <div className="ts-side-head">
-            <span className="ts-num">{r.bucket}</span>
-            <span className="ts-num ts-muted">{r.trades} trades</span>
+    <TsCard
+      title={title}
+      aside={
+        <span className="ts-muted">
+          {windowLabel} <FaceSwitch faces={PER_FACES} face={face} onFace={setFace} />
+        </span>
+      }
+    >
+      {rows.map((r) => {
+        const v = valueOf(r);
+        return (
+          <div className="ts-side" key={r.bucket} title={`avg net per trade ${r.avgNet === null ? "n/r" : fmtUsd(r.avgNet)}`}>
+            <div className="ts-side-head">
+              <span className="ts-num">{r.bucket}</span>
+              <span className={`ts-num ${v === null ? "ts-muted" : v >= 0 ? "ts-pos" : "ts-neg"}`}>
+                {v === null ? "n/r" : `${fmtUsd(v)}${face === "per trade" ? "/trade" : ""}`}
+              </span>
+            </div>
+            <div className="ts-hbar">
+              <div
+                className={`ts-hbar-fill ${v === null ? "ts-neutral" : v >= 0 ? "ts-pos" : "ts-neg"}`}
+                style={{ width: `${((Math.abs(v ?? 0) / max) * 100).toFixed(1)}%` }}
+              />
+            </div>
+            <div className="ts-side-sub">
+              {r.trades} trades · win {r.winPct === null ? "n/r" : `${r.winPct.toFixed(1)}%`}
+              {face === "total" && r.avgNet !== null ? ` · avg ${fmtUsd(r.avgNet)}/trade` : ""}
+            </div>
           </div>
-          <div className="ts-hbar">
-            <div
-              className={`ts-hbar-fill ${r.avgNet === null ? "ts-neutral" : r.avgNet >= 0 ? "ts-pos" : "ts-neg"}`}
-              style={{ width: `${((r.trades / max) * 100).toFixed(1)}%` }}
-            />
-          </div>
-          <div className="ts-side-sub">
-            win {r.winPct === null ? "n/r" : `${r.winPct.toFixed(1)}%`} · avg net {r.avgNet === null ? "n/r" : fmtUsd(r.avgNet)}/trade
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </TsCard>
   );
 }

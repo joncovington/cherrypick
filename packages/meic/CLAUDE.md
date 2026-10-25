@@ -200,6 +200,11 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
   slow tick from overlapping the next. `live.daily_loss_halt_dollars` and the halt flag block NEW ICs
   only: fills are still confirmed and open ICs still stopped and force-closed. The breaker sums
   today's `ic_trades.pnl`, which is gross (before fees), so it trips on gross, not net.
+  `live.kill` (B1, 2026-10-24) is the arm's frozen kill criteria, read over the live ledger's net
+  through `core.killcriteria.gate`: reduced halves the order's quantity (at least one), blocked
+  refuses new ICs and latches (`state/kill/meic.json`, a watchdog CRITICAL) until a person clears it;
+  missing or malformed criteria refuse. Derived from the arm's replay with
+  `python -m cherrypick.core.killcriteria derive --db <run dir> --schema meic_ic --arm <arm>`.
   `live.use_order_alert_daemon` makes the supervisor keep `cherrypick.meic.alert_daemon` up until
   `disarm_time`; it records order alerts in `live_alerts.db` and starts a tick when an order the
   ledger knows stops working, so a fill is confirmed in seconds rather than at the next minute.

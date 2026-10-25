@@ -17,7 +17,7 @@ from pathlib import Path
 from cherrypick.core import home as _home
 
 from . import land as _land
-from . import store, vendor_check
+from . import paths, store, vendor_check
 
 PKG_ROOT = Path(__file__).resolve().parents[3]
 
@@ -33,6 +33,48 @@ def cmd_land(args) -> int:
         report["missing"] = missing[:20] + [f"... {len(missing) - 20} more"]
     print(json.dumps(report, indent=1))
     return 0 if report.get("ok") else 1
+
+
+def cmd_entry_context(args) -> int:
+    """Every closed trade in a ledger with its B4 entry context (entrycontext.py): local data only."""
+    rows = _context_rows(args.db, args.schema, args.arm)
+    text = json.dumps(rows, indent=1, default=str)
+    if args.out:
+        args.out.write_text(text, encoding="utf-8")
+        print(f"{len(rows)} rows -> {args.out}")
+    else:
+        print(text)
+    return 0
+
+
+def _context_rows(db: str, schema: str, arm: str | None) -> list[dict]:
+    from cherrypick.core import killcriteria
+
+    from . import entrycontext, fundamentals
+
+    records = killcriteria.evidence_records(Path(db), schema)
+    if arm:
+        records = [r for r in records if r.get("arm") == arm]
+    conn = store.connect()
+    sectors = {s: v[0] for s, v in fundamentals.sector_sources().items()}
+    return entrycontext.annotate(records, lambda s: store.adjusted_bars(conn, s), sectors)
+
+
+def cmd_slices(args) -> int:
+    """B5: one arm's in-sample slice report, for a month (`--month`) or all of it; local data only.
+    Written under `data/technicals/slices/` unless `--out` says otherwise."""
+    from cherrypick.core import slices
+
+    rows = _context_rows(args.db, args.schema, args.arm)
+    if args.month:
+        rows = [r for r in rows if str(r.get("session") or "").startswith(args.month)]
+    label = f"{args.schema}/{args.arm or 'all'}/{args.month or 'all'}"
+    report = slices.report(rows, label=label)
+    out = args.out or (paths.data_dir() / "slices" / f"{label.replace('/', '_')}.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(report, indent=1), encoding="utf-8")
+    print(f"{report['trades']} trades, {report['cells']} cells ({report['ranked_cells']} ranked) -> {out}")
+    return 0
 
 
 def cmd_liquidity(_args) -> int:
@@ -660,6 +702,19 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser(
         "liquidity", help="judge every name liquid or not (local data); the illiquid are skipped and hidden"
     ).set_defaults(fn=cmd_liquidity)
+    ec = sub.add_parser("entry-context", help="every closed trade in a ledger, with its entry context (B4)")
+    ec.add_argument("--db", required=True, help="a module's ledger, or a replay's directory of them")
+    ec.add_argument("--schema", required=True, help="its trade schema (meic_ic, bwb_132, ...)")
+    ec.add_argument("--arm", help="one arm only")
+    ec.add_argument("--out", type=Path, help="write the rows as JSON here instead of printing")
+    ec.set_defaults(fn=cmd_entry_context)
+    sl = sub.add_parser("slices", help="one arm's in-sample slice report by setup and condition (B5)")
+    sl.add_argument("--db", required=True, help="a module's ledger, or a replay's directory of them")
+    sl.add_argument("--schema", required=True)
+    sl.add_argument("--arm")
+    sl.add_argument("--month", help="YYYY-MM: that month's closed trades only")
+    sl.add_argument("--out", type=Path)
+    sl.set_defaults(fn=cmd_slices)
     se = sub.add_parser(
         "securities",
         help="the public security list (local files), and which list -- it or the vendor's -- is current",

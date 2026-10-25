@@ -10,6 +10,7 @@ import {
   breakdownOf,
   emptySlice,
   heroOf,
+  worstNet,
   inWindow,
   scopeTrades,
   sessionNeighbours,
@@ -216,6 +217,10 @@ export function readContangoSummary(config: ConsoleConfig, q: SummaryQuery): Mod
             caption: deployedComplete
               ? `net ÷ cash deployed (each stint's purchase), ${trades.length} stints`
               : `n/r: ${trades.length - deployedRows.length}/${trades.length} stints recorded no purchase`,
+            dollars:
+              deployedComplete && deployed > 0
+                ? { amount: hero.net, of: deployed, ofLabel: "cash deployed", worst: worstNet(trades) }
+                : null,
           },
         ];
 

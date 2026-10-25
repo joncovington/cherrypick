@@ -90,7 +90,7 @@ export function liveLoopsInUse(d: LiveTodayPayload | undefined): LiveInUse {
 }
 
 /** The Live tabs that read the whole account, not one live loop: always shown. */
-export const LIVE_ACCOUNT_WIDE: ReadonlySet<string> = new Set(["today", "positions", "portfolio", "wheel", "pmcc"]);
+export const LIVE_ACCOUNT_WIDE: ReadonlySet<string> = new Set(["today", "positions", "portfolio", "wheel", "pmcc", "execution"]);
 
 /** Whether one tab of a visible page is shown: each module's advisor tab, the technicals chart, and
  *  each live loop's Live tab. Every tab of a fail-closed page follows the page.
@@ -153,7 +153,8 @@ export function offReason(id: string, f: Features): OffReason | null {
  * "no data today" -- the confusion that started this (a fresh install with no Dolt saw empty
  * screeners and was told it needed a vendor).
  */
-export const SCREENERS_NEED_DOLT: ReadonlySet<string> = new Set(["earnings", "earnings-record", "board", "skate"]);
+// credit-spreads (2026-10-24): its setups are walked over the history store, which Dolt fills.
+export const SCREENERS_NEED_DOLT: ReadonlySet<string> = new Set(["earnings", "earnings-record", "board", "skate", "credit-spreads"]);
 
 /** Why a Dolt-backed Screeners tab has nothing to show, or null when it does (or when that is
  *  unknown: loading or a failed bridge shows the tab, as every rule here does). */

@@ -16,6 +16,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from cherrypick.core import killcriteria as _kill
+
 from cherrypick.meic import live_loop, live_orders, paper
 
 DAY = "2026-07-08"  # ordinary Wednesday -- not a quarterly/FOMC/witching day (verified)
@@ -259,9 +261,19 @@ def _config(tmp_path=None, **live_over):
         "symbol": "XSP",
         "gate0_confirmed": "owner 2026-08-01",
         "daily_loss_halt_dollars": 200,
+        "kill": KILL,
         **live_over,
     }
     return cfg
+
+
+KILL = {
+    "written": "2026-08-01",
+    "drawdown_reduce": 5000,
+    "drawdown_block": 9000,
+    "streak_reduce": 40,
+    "streak_block": 50,
+}
 
 
 def _entry_snapshot(symbol="XSP", **over):
@@ -867,6 +879,47 @@ def test_a_stop_without_usable_leg_fills_is_booked_at_its_price_and_says_so(tmp_
 
 
 # --------------------------------------------------------------------------- quantity (2026-10-12)
+def test_an_arm_without_written_kill_criteria_opens_nothing(tmp_path):
+    db_path = _init_db(tmp_path)
+    broker = FakeBroker()
+    out = live_loop.run_once(
+        _config(kill=None), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None
+    )
+    assert out["entry"]["blocked"] == [f"kill_criteria: {_kill.UNWRITTEN}"] and not broker.placed
+
+
+def test_a_latched_kill_blocks_entries_until_cleared(tmp_path):
+    db_path = _init_db(tmp_path)
+    _kill.latch("meic", "live", {"state": "blocked", "reasons": ["losing streak 50 >= 50"]})
+    try:
+        broker = FakeBroker()
+        out = live_loop.run_once(
+            _config(), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None
+        )
+        assert _kill.LATCHED in out["entry"]["blocked"][0] and not broker.placed
+    finally:
+        _kill.clear("meic")
+    out = live_loop.run_once(
+        _config(), _entry_snapshot(), db_path, FakeBroker(), live=True, log=lambda *_: None
+    )
+    assert out["entry"]["entry"] == "placed"
+
+
+def test_a_reduced_verdict_halves_the_order_and_a_hand_limit_trades_one(tmp_path):
+    broker = FakeBroker()
+    cfg = {**_config(kill={**KILL, "streak_reduce": 0}), "quantity": 4}
+    live_loop.run_once(
+        cfg, _entry_snapshot(), _init_db(tmp_path / "a"), broker, live=True, log=lambda *_: None
+    )
+    assert [leg["quantity"] for leg in broker.placed[0]["spec"]["legs"]] == [2, 2, 2, 2]
+    broker = FakeBroker()
+    cfg = {**_config(kill={"written": "2026-08-01", "hand_limit_dollars": 300}), "quantity": 4}
+    live_loop.run_once(
+        cfg, _entry_snapshot(), _init_db(tmp_path / "b"), broker, live=True, log=lambda *_: None
+    )
+    assert [leg["quantity"] for leg in broker.placed[0]["spec"]["legs"]] == [1, 1, 1, 1]
+
+
 def test_a_live_entry_records_the_quantity_its_order_carried(tmp_path):
     """Shown to fail before 2026-10-12: the order went out at `quantity: 2` and the row said 1, so
     the ledger held half the position -- its capital, fees, slippage, P&L and the position export

@@ -103,6 +103,7 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `manage-eval` | daily **10:00** (`manage.at`), trading days | `run.py manage` | off (`manage.enabled`) | the read-only snapshot of the real account and its evaluation, for Live → positions and Live → portfolio; posts the trades needing action |
 | `manage-eval-HHMM` | daily at each `manage.also_at` time, trading days | `run.py manage` | off (`manage.enabled`) | the same evaluation again, rewriting the day's file; catches up for an hour |
 | `backtest-fetch` | daily **18:45** (`backtest.fetch_at`), trading days | `-m cherrypick.backtest fetch` | off (`backtest.fetch`) | the licensed vendor's recent sessions into the backtest store; holds the vendor account's one session while it runs |
+| `research-queue` | every **300 s** (`research_queue.interval_seconds`) | `run.py queue-run` | on (`research_queue.enabled`) | runs the oldest ready research task (rows added with `run.py queue-add`) to its end: allow-listed kinds only (`fetch-chains`, `fetch-flow`, a committed `scripts/` file); a ThetaData task waits for a free session and keeps clear of 18:30-20:30 ET on trading days (around `backtest.fetch_at`), stopping there and resuming after; notifies on finish and failure |
 | `live-positions` | every **300 s**, 09:31–16:10, trading days | `run.py live-positions` | on | broker positions against the live ledgers; asks the broker only while a live module is armed or holds a leg |
 | `live-fill-alerts` | every **15 s** while a live module is armed | `run.py live-fill-alerts` | on | one LIVE alert per filled order, ahead of the ledger's own confirmation |
 | `settle-overdue-live` | **hourly** | `run.py settle-overdue-live` | on | settles a past live session at that session's official close, through each module's own `live_loop --settle-overdue` |
@@ -110,7 +111,7 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `suite-backup` | daily **01:30** | `run.py backup` | on | one zip at `backup.dest`; `doctor` warns past 36 h |
 | `config-backup` | every `config_backup.interval_minutes` (15) | `run.py config-backup` | **off** (opt in) | commits the config files the home repo's allow-list tracks and pushes to its remote; `doctor` warns when on but not set up or failing |
 | `log-archive` | monthly, day 1 @ **03:30** | `run.py archive` | on | catchup 7 days (idempotent, finished months only) |
-| `technicals-income-lists` | daily **15:10**, trading days | `-m cherrypick.technicals income-lists` | on (no `dolt` needed; off with `market_report.income`) | our own short-put and covered-call lists for the Screeners page |
+| `technicals-income-lists` | daily **15:10**, trading days | `-m cherrypick.technicals income-lists` | on (no `dolt` needed; off with `market_report.income`) | our own short-put, covered-call and credit-spread lists for the Screeners page (credit spreads need the history store) |
 | `report-income-chains` | daily **14:45**, trading days | `scripts/fetch_screener_greeks.py income` | on (`market_report.income`) | every tradable name's cycle-monthly chain and the covered call's 30-45 day monthly, for our income lists and manage's candidates |
 
 Research and screener collectors (the other `technicals-*` jobs, `report-screener-*`,

@@ -142,3 +142,8 @@ reviewed*, not *a human reviewed it*. Never restructure the docs to imply otherw
 
 The deterministic-over-AI preference applies sharply here: a ticket must mean exactly what it says.
 Scratch work goes in a gitignored `.tmp/`, never the repo root.
+
+**A thesis is journalled, never read (B6, 2026-10-24).** `propose --thesis` writes the person's
+reason as a separate `thesis` journal line keyed by ticket, redacted and capped at 2,000 characters.
+It is outside the sealed order, so it cannot move the fingerprint, a policy gate or a daily cap, and
+a test fails if any module but `cli.py` names it.

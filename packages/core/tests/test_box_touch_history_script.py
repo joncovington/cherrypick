@@ -112,3 +112,11 @@ def test_the_fade_and_trend_tests_need_the_interval_above_half():
     v = bt.verdict(_rep(0.5, 0.5))
     assert v["fade"]["pass"] is True  # 70% on 500 outcomes, interval well above 50%
     assert v["trend"]["pass"] is False  # exactly half
+
+
+def test_a_year_window_keeps_only_its_sessions():
+    """B14: the re-test runs the declared test unchanged on one year's sessions."""
+    m = _module()
+    days = [{"date": d} for d in ("2025-12-31", "2026-01-02", "2026-06-30", "2027-01-04")]
+    assert [x["date"] for x in m.in_window(days, "2026-01-01", "2026-12-31")] == ["2026-01-02", "2026-06-30"]
+    assert len(m.in_window(days, None, None)) == 4

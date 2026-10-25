@@ -143,3 +143,13 @@ def test_the_pass_test_fails_a_drift_confined_to_one_half():
     v = ph.verdict(rows)
     assert v["checks"]["both_halves"] is False
     assert v["pass"] is False
+
+
+def test_events_that_lose_a_horizon_to_the_data_end_are_counted():
+    m = _module()
+    rows = [
+        {f"fwd_{h}": 0.01 for h in m.HORIZONS},
+        {**{f"fwd_{h}": 0.01 for h in m.HORIZONS}, "fwd_30": None},
+    ]
+    lost = m.lost_to_data_end(rows)
+    assert lost["fwd_30"] == 1 and lost["fwd_5"] == 0

@@ -197,6 +197,14 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   for a call), rows by symbol. **No edge**: the rule is the least-bad of two studies that found none.
   The fetch always quotes the two listed strikes nearest one standard deviation out (`aimed_strikes`),
   so thinning cannot skip the 16-delta strike.
+- **Our credit-spread list** (`creditspreads.py`, in the same `income-lists` file from version 2,
+  2026-10-24): the four chart setups' open positions entered on one of the last 5 closes, walked over
+  the history store as item 17's study walks them, a long setup a put spread and its mirror a call
+  spread, on the income chains' `cs` block (the 30-45 day monthly, both sides, unthinned). The short
+  is nearest 0.40 delta within 0.05; the pick is the user's rule, the widest long giving 35-40% of the
+  width at the working price, null when none does (often). Every row carries the width table item 17
+  will score (1/2/3/5 strikes, 0.25/0.5/0.75 of the move). **Untested**: the rule says so until item 17
+  runs. No history store, no list (never an empty one).
 - **The security list** (`securities.py`, `securities`, 2026-10-17): every listed symbol's type
   (Nasdaq Trader's directory), options (any OCC volume in 20 sessions) and a liquidity rank that is
   **ours**: 2 at 200 contracts and $100M of stock a day, 1 at 2,000 and $300M. The dollar volume
@@ -444,7 +452,7 @@ gross, and ranking by net is the user's decision.
 | `python -m cherrypick.technicals securities [--session D]` | The public security list from local files, `securities/current.json` naming the list readers use, and the public list scored against the vendor's of that day where one is saved. |
 | `python -m cherrypick.technicals score-bearing` | The bearing lookup fitted on earlier security lists, scored on the latest. |
 | `python -m cherrypick.technicals seed-universe [--write]` | Where the income lists' universe comes from tonight (the security list's rank 1-2 optionable names, or the shipped seed when none is built); `--write` regenerates `seed_universe.json` from the newest PUBLIC list -- tickers only, never the vendor's list, never a figure. |
-| `python -m cherrypick.technicals income-lists [--day D] [--source FILE]` | Our own short-put and covered-call lists from the newest afternoon income chains: the strike nearest 16 delta within 0.05 (`cherrypick.core.incomerules`), at the working price, earnings against each trade's expiry; `income-lists/<session>.json` (`.trial.json` with `--source`). |
+| `python -m cherrypick.technicals income-lists [--day D] [--source FILE]` | Our own short-put and covered-call lists from the newest afternoon income chains: the strike nearest 16 delta within 0.05 (`cherrypick.core.incomerules`), at the working price, earnings against each trade's expiry; from version 2 also the untested credit-spread list (`creditspreads.py`); `income-lists/<session>.json` (`.trial.json` with `--source`). |
 | `python -m cherrypick.technicals score-screeners [--rescore]` | The income screens' expiry, strike and return rules vs every saved list with its broker chain; one file per session in `screeners/`, totals printed. |
 | `python -m cherrypick.technicals skate [--day YYYY-MM-DD]` | The skate screen's fixed and by-expiry range bands for every options-tradable name, side and weekly expiry to 63 days, with each band's skate curve over history; `skate/<day>.json`. |
 | `python -m cherrypick.technicals earnings-record [--today D] [--dry-run]` | The earnings calendar's forward record: each past announcement's move against the expected move (0.85 × straddle) the calendar showed the session before, whether a strong read called it, and the suggested spread's money on its marks; `earnings-calendar/record.json`, rebuilt whole. Reads the local Dolt. |
@@ -460,3 +468,13 @@ gross, and ranking by net is the user's decision.
 | `python -m cherrypick.technicals study round4 [--workers N]` | Round 4: the relative-strength breakout, with and without volume, on the $20M-$300M slice; writes `study/round4-<stamp>.json`. |
 | `python -m cherrypick.technicals study round5 [--workers N]` | Round 5: the 1-10 score inside the fundamentals label, against the same label and trigger at the other scores; writes `study/round5-<stamp>.json`. |
 | `python -m cherrypick.technicals report [--session D]` | Write one session's report readings and per-name chart files. |
+
+**Entry context (B4, 2026-10-24).** `entrycontext` tags a ledger's closed trades with SPX against
+its 50/200-day, the name's ATR %, relative volume, sector, entry time and holding period, always
+as of the close BEFORE the entry session (a test breaks it to `<=` and fails). It reads; nothing
+trades on it. The `environment` column is `core.environment`'s label (B8), never a
+per-study regime.
+
+**Slice report (B5, 2026-10-24).** `slices` runs `core.slices` over an arm's trades with this
+package's entry context: mean R per cell, n, interval, cells under 30 greyed. In-sample description
+only; a cell is never a gate, and a good one is declared in `docs/hypotheses.json` and tested.

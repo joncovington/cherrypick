@@ -26,6 +26,50 @@ export interface SummaryCost {
   note?: string;
 }
 
+/**
+ * The shape of the window's per-trade nets, for the cards' second faces: a total says how much, this
+ * says how it was made (555 small wins and one large one read alike as a total). Null = no trade on
+ * that side (no loss: no average loss, and no win ÷ loss ratio).
+ */
+export interface SummaryShape {
+  median: number | null;
+  avgWin: number | null;
+  avgLoss: number | null;
+  /** The single worst trade's net (a loss when any lost). */
+  worst: number | null;
+  /*
+   * How sure the window's figures are (2026-10-24; docs/trading-book-review-plan.md, B2): a figure
+   * shown without its uncertainty lets a short sample read as proof. All optional, so a page served by
+   * an older server still renders and simply shows no interval.
+   */
+  /** Settled trades the shape is read from. */
+  n?: number;
+  /** Net per trade (the mean), its sample standard deviation, and the 95% interval of the mean
+   *  (Student's t below 30 trades). Null with too few trades to say. */
+  mean?: number | null;
+  sd?: number | null;
+  ci95?: [number, number] | null;
+  /** mean ÷ (sd ÷ √n). It assumes independent trades; positions open at once make it read high. */
+  t?: number | null;
+  /** The win rate's 95% interval (Wilson), as fractions. */
+  winRateCi95?: [number, number] | null;
+  /** The per-trade nets' skewness, and a flag past ±1: "left" = rare large losses carry the risk
+   *  (premium selling's shape, the median above the mean); "right" = rare large wins carry the result.
+   *  Null below 3 trades or with no spread. */
+  skewness?: number | null;
+  skew?: "left" | "right" | null;
+  /** Results in R (docs/trading-book-review-plan.md B3): net over the trade's defined max loss at
+   *  entry, averaged over the trades whose risk was recorded (`rN` of them). Null where the module
+   *  has no defined risk (an undefined-risk structure has no R) or recorded none. */
+  meanR?: number | null;
+  rN?: number;
+  rCi95?: [number, number] | null;
+  /** B2's overlap flag: sessions that closed more than one trade, and the most in one. Trades that
+   *  share a session share a tape, so the interval (which treats them as independent) reads narrower
+   *  than it is. Counted by closing session only: a multi-day overlap is not seen here. */
+  overlap?: { sessions: number; of: number; maxPerSession: number; heldTogether?: number | null } | null;
+}
+
 export interface SummaryHero {
   net: number;
   gross: number;
@@ -42,6 +86,8 @@ export interface SummaryHero {
   open: number;
   /** Optional premium line under the hero ("premium collected", "debit paid", "cash deployed"). */
   basis?: { label: string; amount: number } | null;
+  /** Optional so a page served by an older server still renders (its second faces say n/r). */
+  shape?: SummaryShape;
 }
 
 export interface SummaryTile {
@@ -62,6 +108,13 @@ export interface SummaryGauge {
   min: number;
   max: number;
   caption: string;
+  /**
+   * The gauge's dollar face: the numerator and denominator its percentage divides, so a click shows
+   * "$91.7k of $95.5k premium sold" rather than 96%. Absent where the gauge is not a money ratio
+   * (flies' completion rate). `worst` rides on the return gauges: the capital at risk beside the
+   * worst single trade against it.
+   */
+  dollars?: { amount: number; of: number | null; ofLabel: string; worst?: number | null } | null;
 }
 
 export interface SummaryBreakdownRow {

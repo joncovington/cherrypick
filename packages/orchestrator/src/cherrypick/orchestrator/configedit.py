@@ -45,9 +45,11 @@ GUARDED: dict[str, dict[str, str]] = {
         "/live/wing_widths_by_symbol": "live structure size — hand-edit deliberately, never from here",
         "/live/max_structures_per_day": "live entry budget — hand-edit deliberately, never from here",
         "/live/daily_loss_halt_dollars": "live loss halt — hand-edit deliberately, not from this surface",
+        "/live/kill": "the frozen kill criteria (B1) — derived, dated and written by hand, never here",
     },
     "earnings": {
         "/enable_live_trading": "hand-edit after the live-trading plan's gates; never from this surface",
+        "/live/kill": "the frozen kill criteria (B1) — derived, dated and written by hand, never here",
     },
     # flies carried only the switch, the attestation and the two loss caps until 2026-09-23, while
     # bwb — whose live block is the same shape — guarded its arm selector, its margin cap and its
@@ -89,6 +91,7 @@ GUARDED: dict[str, dict[str, str]] = {
         "/live/mark_drawdown_halt_dollars": "live entry breaker — hand-edit deliberately, never from here",
         "/live/vix9d_vix_max": "live term-structure entry gate — a journaled live break, by hand",
         "/live/daily_loss_halt_dollars": "live loss halt — hand-edit deliberately, not from this surface",
+        "/live/kill": "the frozen kill criteria (B1) — derived, dated and written by hand, never here",
         "/live/account_deploy_limit_pct": "live risk cap — hand-edit deliberately, not from this surface",
     },
 }

@@ -28,9 +28,13 @@ ranking would read as a ranking by edge. Earnings are judged against each trade'
 open on the session day is past by the afternoon quote, so it is not in the trade. A covered call's
 ex-dividend date is carried with its state the same way: `in-trade`, `after`, `past` or `unknown`.
 
+**Credit spreads** (2026-10-24, version 2): the chart setups' fresh entries as spreads on the 30-45
+day monthly, untested -- see `creditspreads.py`. The signals are walked over the history store, so a
+reading with no `cs` block, or a build without the store, has no credit-spread list.
+
     python -m cherrypick.technicals income-lists [--day YYYY-MM-DD] [--source FILE]
 
-Network-free: it reads the chain file and the security list, and writes
+Network-free: it reads the chain file, the security list and the history store, and writes
 `income-lists/<session>.json` under this package's data dir (a `--source` run writes `.trial.json`).
 """
 
@@ -47,7 +51,9 @@ from cherrypick.core import jsonio as _jsonio
 from . import paths, securities
 
 LISTS = ("short-puts", "covered-calls")
-LIST_VERSION = 1
+CREDIT_SPREADS = "credit-spreads"
+# 2: the credit-spread list (2026-10-24).
+LIST_VERSION = 2
 
 
 def income_dir() -> Path:
@@ -189,15 +195,23 @@ def row(
 
 
 def build_lists(
-    doc: dict, kinds: dict[str, str] | None = None, leveraged: dict[str, str] | None = None
+    doc: dict,
+    kinds: dict[str, str] | None = None,
+    leveraged: dict[str, str] | None = None,
+    signals: dict[str, list[dict]] | None = None,
 ) -> dict[str, Any]:
     """{"lists": {list: [rows by symbol]}, "dropped": {list: {reason: count}}} from one income reading.
-    `leveraged` is {symbol: kind} for the declared leveraged, inverse and volatility funds."""
+    `leveraged` is {symbol: kind} for the declared leveraged, inverse and volatility funds. `signals`
+    is each name's fresh setup entries (`creditspreads.fresh_entries`); None builds no credit-spread
+    list at all, an empty one an empty list."""
+    from . import creditspreads
+
     session = str(doc.get("session") or "")
     kinds = kinds or {}
     leveraged = leveraged or {}
-    lists: dict[str, list] = {name: [] for name in LISTS}
-    dropped: dict[str, dict[str, int]] = {name: {} for name in LISTS}
+    names = (*LISTS, CREDIT_SPREADS) if signals is not None else LISTS
+    lists: dict[str, list] = {name: [] for name in names}
+    dropped: dict[str, dict[str, int]] = {name: {} for name in names}
 
     def drop(name: str, why: str) -> None:
         dropped[name][why] = dropped[name].get(why, 0) + 1
@@ -205,11 +219,32 @@ def build_lists(
     for sym, entry in sorted((doc.get("symbols") or {}).items()):
         spot = entry.get("spot")
         if entry.get("error") or not spot:
-            for name in LISTS:
+            for name in names:
                 drop(name, "no chain")
             continue
         kind = kinds.get(sym)
         lev = leveraged.get(sym) or leveraged.get(sym.replace(".", "/"))
+        if signals is not None:
+            fresh = signals.get(sym) or []
+            cs = entry.get("cs")
+            if not fresh:
+                drop(CREDIT_SPREADS, "no fresh setup entry")
+            elif not cs:
+                drop(CREDIT_SPREADS, "no 30-45 day monthly")
+            else:
+                rows, why = creditspreads.build_rows(
+                    sym,
+                    entry,
+                    fresh,
+                    priced(cs.get("options") or [], spot, cs.get("dte")),
+                    session,
+                    kind,
+                    doc.get("bars"),
+                    lev,
+                )
+                lists[CREDIT_SPREADS].extend(rows)
+                for w in why:
+                    drop(CREDIT_SPREADS, w)
         puts = priced(
             [o for o in entry.get("options") or [] if o.get("right") == "P"], spot, entry.get("dte")
         )
@@ -247,6 +282,31 @@ def _kinds(day: str) -> dict[str, str]:
     return {str(r["symbol"]).replace("/", "."): r.get("type") for r in rows if r.get("symbol")}
 
 
+def setup_signals(names: list[str], session: str) -> dict[str, list[dict]] | None:
+    """Each name's fresh setup entries, walked over the history store as the item-17 study walks
+    them (`study.load`, `setups.run`); None when there is no store, so no list rather than an empty
+    one. A name the store does not hold has no entries."""
+    from . import creditspreads, setups, store, study
+
+    path = paths.history_db()
+    if not path.exists():
+        return None
+    conn = store.connect(path)
+    try:
+        out: dict[str, list[dict]] = {}
+        for sym in names:
+            nm = study.load(conn, sym, session)
+            if nm is None:
+                continue
+            runs = {sid: setups.run(sid, nm.readings) for sid in creditspreads.SPREAD_SIDE}
+            fresh = creditspreads.fresh_entries(runs, nm.dates)
+            if fresh:
+                out[sym] = fresh
+        return out
+    finally:
+        conn.close()
+
+
 def latest_reading(day: str | None = None) -> Path | None:
     """The newest day's income file (never a trial or provisional one) on or before `day`."""
     day = day or date.today().isoformat()
@@ -268,7 +328,10 @@ def build(day: str | None = None, source: Path | None = None) -> dict[str, Any]:
     from .skate import leveraged_funds
 
     lev = {s: str(f.get("kind") or "leveraged") for s, f in leveraged_funds().items()}
-    built = build_lists(doc, _kinds(session), lev)
+    from . import creditspreads
+
+    signals = setup_signals(sorted(doc.get("symbols") or {}), session)
+    built = build_lists(doc, _kinds(session), lev, signals)
     out = {
         "version": LIST_VERSION,
         "session": session,
@@ -285,6 +348,7 @@ def build(day: str | None = None, source: Path | None = None) -> dict[str, Any]:
             "price": "working (mid less a quarter of the width)",
             "chains": doc.get("rule"),
             "bars": doc.get("bars"),
+            "credit_spreads": creditspreads.rule(),
         },
         "names": len(doc.get("symbols") or {}),
         **built,

@@ -65,7 +65,7 @@ registerLiveRoutes(app, config);
 registerFliesEvidenceRoutes(app, config);
 registerSystemRoutes(app, config);
 registerCompareRoutes(app, config);
-registerBacktestRoutes(app);
+registerBacktestRoutes(app, config);
 registerConfigRoutes(app, config);
 registerBwbSystemEvidenceRoutes(app, config);
 // `ok` still means "the server is up", unchanged — a watchdog reading it must not start failing

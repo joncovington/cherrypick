@@ -68,6 +68,8 @@ from datetime import datetime
 from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import execution as _execution  # noqa: E402
 from cherrypick.core import home as _home  # noqa: E402
+from cherrypick.core import killcriteria as _kill  # noqa: E402
+from cherrypick.core import ledgers as _ledgers  # noqa: E402
 from cherrypick.core import live as _live  # noqa: E402
 from cherrypick.core import livepositions as _livepos  # noqa: E402
 from cherrypick.core import looplock as _looplock  # noqa: E402
@@ -149,6 +151,23 @@ def daily_loss_tripped(db_path: str, day: str, limit_dollars: float | None) -> b
         # breaker only ever blocks new entries -- closes go through regardless.
         return True
     return float(row[0] or 0.0) <= -abs(limit_dollars)
+
+
+def kill_verdict(config: dict, db_path: str) -> dict:
+    """`core.killcriteria.gate` over the live ledger's closed ICs. An unreadable ledger fails CLOSED,
+    as the daily-loss breaker does: it cannot show the arm is inside its criteria."""
+    import sqlite3
+
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        con.row_factory = sqlite3.Row
+        try:
+            records = _ledgers.READERS["meic_ic"](con)
+        finally:
+            con.close()
+    except sqlite3.Error as exc:
+        return {"state": _kill.BLOCKED, "reasons": [f"live ledger unreadable: {exc}"]}
+    return _kill.gate("meic", EXECUTION_MODE, records, _live_cfg(config).get("kill"))
 
 
 def entry_blockers(config: dict, db_path: str, day: str, *, halt_present: bool) -> list[str]:
@@ -1135,6 +1154,17 @@ def run_once(
         block.append("orphan_sweep_failed")
     elif orphans:
         block.append(f"orphaned_orders ({orphans})")
+    # The arm's written kill criteria (B1): reduce, then block and latch. Entries only.
+    kill = kill_verdict(config, db_path)
+    if kill["state"] == _kill.BLOCKED:
+        block.append("kill_criteria: " + "; ".join(kill["reasons"]))
+    else:
+        params = {
+            **params,
+            "quantity": _kill.sized(int(params.get("quantity", 1)), kill, _live_cfg(config).get("kill")),
+        }
+        if kill["state"] == _kill.REDUCED:
+            log(f"kill criteria reduce entries to {params['quantity']}: {'; '.join(kill['reasons'])}")
     if block:
         # The halt flag, the daily-loss breaker or the sweep: no new IC. Everything above has run.
         log(f"new entries blocked ({', '.join(block)}) -- open ICs still managed")
@@ -1225,8 +1255,15 @@ def _build_snapshot(cfg: dict, symbol: str):
     if price is None:
         return None, "no price"
     widths = paper._profile_widths_for_symbol(params, symbol) or []
+    # The arm's own short-delta band too (2026-10-23): `_select_candidates` hands an arm with a
+    # `short_delta_target` only candidates built at it, so a menu priced at the VIX-banded default
+    # alone was empty whenever the two differed (pm-200's 0.16 against 0.14 at VIX 20).
+    deltas = [delta_target]
+    arm_delta = params.get("short_delta_target")
+    if arm_delta is not None and abs(arm_delta - delta_target) >= 1e-6:
+        deltas.append(arm_delta)
     candidates, leg_quotes, cand_err = _pl._build_candidates(
-        symbol, price, widths, [delta_target], delta_target, today
+        symbol, price, widths, deltas, delta_target, today
     )
     if cand_err and not candidates:
         return None, cand_err

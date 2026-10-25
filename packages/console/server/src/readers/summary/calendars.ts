@@ -9,6 +9,7 @@ import {
   breakdownOf,
   emptySlice,
   heroOf,
+  worstNet,
   inWindow,
   scopeTrades,
   sessionNeighbours,
@@ -187,7 +188,7 @@ export function readCalendarsSummary(config: ConsoleConfig, q: SummaryQuery): Mo
   const inScope = all.filter((r) => inWindow(r.weekOf, window));
   const open = inScope.filter((r) => !finished(r)).length;
 
-  const hero = heroOf(trades, true, open);
+  const hero = heroOf(trades, true, open, (t) => t.debitPaid);
   const debitRecorded = trades.filter((t) => t.debitPaid !== null);
   const debitPaid =
     trades.length > 0 && debitRecorded.length === trades.length
@@ -272,6 +273,10 @@ export function readCalendarsSummary(config: ConsoleConfig, q: SummaryQuery): Mo
           : trades.length === 0
             ? "no finished double calendars in this window"
             : `n/r: ${debitRecorded.length}/${trades.length} rows recorded their debit`,
+      dollars:
+        debitPaid === null || debitPaid === 0
+          ? null
+          : { amount: hero.net, of: debitPaid, ofLabel: "debit paid", worst: worstNet(trades) },
     },
   ];
 

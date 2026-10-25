@@ -390,31 +390,27 @@ the setups watchlist:
 board. Then the income lists: short puts, covered calls and credit spreads, one tab each. The fidelity
 tab was retired on 2026-10-19; its final rates are in `packages/technicals/CLAUDE.md`.
 
-- **Short puts and covered calls are OURS by default** (2026-10-19; `pages/Screeners/IncomeTab.tsx`,
-  `OwnListTab.tsx`, `readers/incomeLists.ts`, `GET /api/screeners/own/:list[?day=]`), the vendor's
-  saved days one click away (`?source=vendor`, the tables below). They are `technicals income-lists`'
-  file renamed: our options-tradable universe, the strike nearest 16 delta (put on the cycle monthly,
-  call on the monthly 30-45 days out), at the working price; the reader and page decide nothing.
-  **The rows are in symbol order and are never ranked by yield**, and the standing "No tested edge"
-  note above the table is never removed while the list shows: the rule is the least-bad cell of two
-  studies that found no edge (`cherrypick.core.incomerules`). Defaults hide a thin option and a trade
-  with earnings inside it, each with its escape; an unknown or past date stays shown, marked. Credit
-  spreads stay the vendor's: their selection is not reproduced.
-
-- The income lists (`pages/Screeners/ScreenersPage.tsx`, `readers/screeners.ts`,
-  `GET /api/screeners/:list[?day=]`) are one row a name.
-  The reader JOINS other packages' files and re-derives no rule: our strike is `score-screeners`'
-  `picks`, each leg's verdict and the listed-or-cycle recommendation are `fetch_screener_greeks.py`'s
-  (`rebar` re-applies the bars to saved readings), the tradable verdict is `technicals liquidity`'s
-  (spelled `tradable`/`illiquid`). It works out only the user's calendar: the cycle monthly (45-60
-  days, else 30-60) and whether an announcement falls before the TRADE's expiry -- the listed one when
-  it is the trade, the cycle monthly when that is, the later of the two until a reading says which
-  (a listed weekly spanning a report is never "clear" because the monthly ends first). A date that
-  does not reach it is `unknown`, never clear. A reading is matched by the list DAY it read
-  (`list_date`), not the date it was taken. Defaults: tradable names, no earnings in the trade, a
-  liquid trade (the listed option or the cycle monthly passes every leg's bars; an unread row stays
-  shown, marked), each with its escape. The source is never named, and which names make each list is
-  not reproduced; the page says so.
+- **The income lists are OURS only** (2026-10-24). The vendor's subscription ended, so its saved days
+  are no longer shown, there is no source toggle, and the vendor reader and its route are gone. Its
+  files stay on disk under `~/.cherrypick`. All three tabs read `technicals income-lists`' file through
+  `readers/incomeLists.ts` (`GET /api/screeners/own/:list[?day=]`); the reader and page decide nothing.
+- **Short puts and covered calls** (2026-10-19; `OwnListTab.tsx`): our options-tradable universe, the
+  strike nearest 16 delta (put on the cycle monthly, call on the monthly 30-45 days out), at the
+  working price. **The rows are in symbol order and are never ranked by yield**, and the standing "No
+  tested edge" note above the table is never removed while the list shows: the rule is the least-bad
+  cell of two studies that found no edge (`cherrypick.core.incomerules`). Defaults hide a thin option
+  and a trade with earnings inside it, each with its escape; an unknown or past date stays shown,
+  marked.
+- **Credit spreads** (2026-10-24; `CreditSpreadTab.tsx`, `readCreditSpreadList`): the chart setups'
+  fresh entries as spreads, built by `technicals creditspreads.py`. A long setup is a put spread, its
+  mirror a call spread, on the 30-45 day monthly. The short is nearest 0.40 delta and the pick is the
+  widest long giving 35-40% of the width. **"Not yet tested"** heads the table for as long as the
+  builder's rule says so (item 17). A row with no 35-40% width stays, marked, and is hidden only by
+  the "With a 35-40% width" filter, never by "Liquid trade". Each row opens its width table (1/2/3/5
+  strikes, 0.25/0.5/0.75 of the move). Credits are per share (`cr`) and max loss is per contract. Rows
+  are by symbol. A session built before the list, or without the history store, says so (`built`
+  false) rather than showing an empty table. Behind `NeedsDolt` (`SCREENERS_NEED_DOLT`): the setups
+  come from the history store.
 
   **The earnings tab** (2026-10-17; `pages/Screeners/EarningsCalendarTab.tsx`,
   `readers/earningsCalendar.ts`, `GET /api/screeners/earnings[?day=]`) is the earnings calendar,
@@ -565,7 +561,14 @@ not a mirror: the unlock verdict, every check, the paired interval and `no_expos
 Tabs: `data` (licence clock, stores with refusals), `validation` (per cadence: the unlock verdict, the
 vendor-against-recorder checks, per-session quote and profile agreement), `runs` (the list; `?run=`
 reads one report: each arm's summary, the pairing with control, trials, fill model, code commit, data
-fingerprint, refused sessions). Every tab opens with the licensed-data note. Run money is net of fees,
+fingerprint, refused sessions), `queue` (2026-10-24; `pages/Backtest/QueueTab.tsx`,
+`GET /api/backtest/queue` → `services/researchQueueBridge.ts` → `python -m cherrypick.cli queue-list`,
+behind the same gate): the research tasks the supervisor runs, read-only. Each row's state and why a
+queued row waits are the orchestrator's words, shown verbatim, and a file argument is shown by its name
+only. Rows are grouped by study (the category; a row is named `study/step`), and a finished row's
+Result is what it points to: a fetch's counts and input, a script's declared conclusion (red when
+missing), and its log, each by name. Rows are added on the command line (`run.py queue-add`), never
+from here. Every tab opens with the licensed-data note. Run money is net of fees,
 signed, whole-position dollars; fees are shown as a cost, already out of net, never subtracted again.
 Detail view only (`SIMPLE_HIDDEN_PAGES`); shortcut `g b`.
 
@@ -601,6 +604,22 @@ never had. Era is read only by a reader with an era model (flies, via `eraClause
 header has no scope control passes none and keeps its own `?day=` arrows. Scope narrows the whole
 summary, the by-arm card included — deliberately unlike MEIC's comparison card, whose by-arm table
 never narrows.
+
+**A summary says how sure it is, and a win rate never stands alone** (`docs/trading-book-review-plan.md`
+B2). `shapeOf` gives the hero's shape n, mean, sample sd, a Student's t 95% interval of net per trade
+(t table under 30 trades, 1.96 from 30), t, the win rate's Wilson interval, and a skew flag both ways
+(adjusted skewness ≤ −1 left, ≥ 1 right). The net card's per-trade face shows the worst trade, the
+interval and t, an early-estimate note under 30 trades, and the skew note. The win-rate card always
+carries net per trade beside the rate and takes its tone from net per trade's sign, never from the
+rate passing 50% — an 85% premium seller that loses money reads red. Null where it cannot be said
+(one trade has no sd; no spread has no interval). Overlap is flagged (`overlapOf`): when sessions
+closed several trades, or (where a reader passes `entry`: bwb, curve) trades were held alongside another
+in their arm, the per-trade face says the interval reads narrower than it is. A reader without an entry
+session reports the same-session count only.
+The per-trade face also states mean R (B3) with its interval, where the module passes `heroOf` a
+risk: net over the defined max loss at entry -- bwb's worst case from its widths, curve's
+`entry_max_loss`, earnings' `capital_at_risk`, calendars' debit. contango (a fund) and flies (no
+per-trade risk) have none, and say nothing; pmcc's long cost is not its max loss, so it is left out.
 
 **The scope is SQL too, not only the settled roll-up.** `scopeTrades` narrows the rows a reader
 sums, but a reader also counts things straight from the ledger — an open-position count, the
@@ -987,3 +1006,11 @@ position, top-N previews of a server ranking (Flow's today cards), and capture l
 Suite guardrails apply (root CLAUDE.md). Package-specific: **loopback-only serving**; the console
 **computes no verdicts** — it renders what the modules decided, and where it mirrors a module's queries
 it says so and is checked against them.
+
+**The book-review read surfaces (2026-10-24).** Live → `execution` (B10) renders the orchestrator's
+`execution --json` through `services/executionBridge.ts`: each live arm's week, fill rate, slippage
+against the mid at submit, overrides, and the gap to its paper mirror. Backtest → `slices` (B5)
+reads the `technicals slices` JSON under `data/technicals/slices/` (`readers/slices.ts`), behind the
+backtest gate because a report may come from a licensed replay; greyed cells stay greyed and the page
+says a cell is never a gate. Both rename and render; every rule is the Python side's.
+

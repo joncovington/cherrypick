@@ -248,3 +248,14 @@ def test_peaks_skip_only_names_that_could_never_qualify(tmp_path):
     history.merge_peaks(conn, {"SMALL": 5e7})  # a later window's bigger day raises the peak
     history.merge_peaks(conn, {"ONCE": 1.0})  # and a smaller one never lowers it
     assert history.names_peaking_at_least(conn, universe.MIN_DOLLAR_VOLUME) == ["ONCE", "SMALL"]
+
+
+def test_an_unscored_position_is_counted_by_reason():
+    """B11: a position `score` cannot score is tallied, not lost -- open at the data's end on a name
+    not yet ended (including one whose bars stop short of ENDED_DAYS), or with no fill."""
+    opens = [10.0] * 10
+    nm = _name(opens)
+    t = setups.Trade(2)
+    assert study.score(nm, "trend", t) is None
+    assert study.unscored_reason(nm, t) == "open_at_end"
+    assert study.unscored_reason(nm, setups.Trade(9)) == "no_fill"

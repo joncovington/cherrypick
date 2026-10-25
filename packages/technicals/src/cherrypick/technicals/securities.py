@@ -73,8 +73,8 @@ COMMODITY = "Exchange Traded Commodity"
 OTHER_FUND = "Fund"
 INDEX = "Index"
 # Types that never report earnings, so an unknown report date says nothing about them. Every other
-# type is a company until shown otherwise ("unknown" is never "clear"). The console's screeners
-# reader keeps the same set (`FUND_TYPES` in server/src/readers/screeners.ts) less STRUCTURED.
+# type is a company until shown otherwise ("unknown" is never "clear"). The one copy: skate and the
+# income lists read it here. The console's own copy went with its vendor reader (2026-10-24).
 NO_EARNINGS = frozenset({FUND, COMMODITY, OTHER_FUND, INDEX, STRUCTURED})
 
 _PREFERRED = re.compile(r"\b(preferred|pfd)\b", re.I)

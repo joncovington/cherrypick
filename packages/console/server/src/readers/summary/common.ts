@@ -1,4 +1,4 @@
-import type { ModuleSummarySlice, SummaryArmRow, SummaryBreakdown, SummaryCost, SummaryHero, TradingMode } from "@console/shared";
+import type { ModuleSummarySlice, SummaryArmRow, SummaryBreakdown, SummaryCost, SummaryHero, SummaryShape, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../../config.js";
 
 /**
@@ -87,6 +87,9 @@ export interface SummaryTrade {
   slippage: number | null;
   /** The history reader's own net for the row. */
   net: number;
+  /** The session the trade was entered, where the reader knows it (multi-day books). Lets B2's
+   *  overlap flag see positions held at the same time, not only ones closed the same day. */
+  entry?: string | null;
 }
 
 /**
@@ -134,6 +137,79 @@ export function inWindow(session: string, w: { from: string | null; to: string |
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
+/** Two-sided 95% Student's t critical values for 1..29 degrees of freedom; 1.96 from 30 on. */
+const T95 = [
+  12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.16, 2.145, 2.131,
+  2.12, 2.11, 2.101, 2.093, 2.086, 2.08, 2.074, 2.069, 2.064, 2.06, 2.056, 2.052, 2.048, 2.045,
+];
+export function t95(df: number): number {
+  return df >= 1 && df <= T95.length ? T95[df - 1]! : 1.96;
+}
+
+/** The Wilson 95% interval of a proportion (fractions); null with no trials. */
+export function wilson95(successes: number, n: number): [number, number] | null {
+  if (n <= 0) return null;
+  const z = 1.96;
+  const p = successes / n;
+  const denom = 1 + (z * z) / n;
+  const centre = (p + (z * z) / (2 * n)) / denom;
+  const half = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / denom;
+  return [Math.max(0, centre - half), Math.min(1, centre + half)];
+}
+
+const round4 = (v: number) => Math.round(v * 10000) / 10000;
+
+/** The per-trade nets' shape (SummaryShape): median, the average win and loss, the worst trade, and
+ *  how sure the window's figures are -- net per trade with its 95% interval and t, the win rate's
+ *  interval, and a skew flag in both directions (B2). A side with no trade is null, never zero; a
+ *  figure the sample is too small for is null too. Shared with MEIC's own summary read. */
+export function shapeOf(nets: readonly number[]): SummaryShape {
+  const n = nets.length;
+  if (n === 0) {
+    return {
+      median: null, avgWin: null, avgLoss: null, worst: null,
+      n: 0, mean: null, sd: null, ci95: null, t: null, winRateCi95: null, skewness: null, skew: null,
+    }; // prettier-ignore
+  }
+  const sorted = [...nets].sort((a, b) => a - b);
+  const mid = Math.floor(n / 2);
+  const median = n % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  const wins = nets.filter((x) => x > 0);
+  const losses = nets.filter((x) => x < 0);
+  const avg = (xs: number[]) => (xs.length > 0 ? round2(xs.reduce((s, x) => s + x, 0) / xs.length) : null);
+  const mean = nets.reduce((s, x) => s + x, 0) / n;
+  const sd = n >= 2 ? Math.sqrt(nets.reduce((s, x) => s + (x - mean) ** 2, 0) / (n - 1)) : null;
+  const se = sd !== null && sd > 0 ? sd / Math.sqrt(n) : null;
+  const half = se !== null ? t95(n - 1) * se : null;
+  let skewness: number | null = null;
+  if (n >= 3 && sd !== null && sd > 0) {
+    const m3 = nets.reduce((s, x) => s + ((x - mean) / sd) ** 3, 0);
+    skewness = (n / ((n - 1) * (n - 2))) * m3; // adjusted Fisher-Pearson
+  }
+  return {
+    median: round2(median),
+    avgWin: avg(wins),
+    avgLoss: avg(losses),
+    worst: round2(sorted[0]!),
+    n,
+    mean: round2(mean),
+    sd: sd === null ? null : round2(sd),
+    ci95: half === null ? null : [round2(mean - half), round2(mean + half)],
+    t: se === null ? null : round2(mean / se),
+    winRateCi95: (() => {
+      const ci = wilson95(wins.length, n);
+      return ci === null ? null : [round4(ci[0]), round4(ci[1])];
+    })(),
+    skewness: skewness === null ? null : round2(skewness),
+    skew: skewness === null ? null : skewness <= -1 ? "left" : skewness >= 1 ? "right" : null,
+  };
+}
+
+/** A gauge's worst-trade figure: the window's single worst net. */
+export function worstNet(trades: readonly { net: number }[]): number | null {
+  return trades.length > 0 ? round2(Math.min(...trades.map((t) => t.net))) : null;
+}
+
 /** Sum a cost line, n/r when any row did not record it. */
 function sumRecorded(values: Array<number | null>): number | null {
   if (values.some((v) => v === null)) return null;
@@ -145,7 +221,63 @@ function sumRecorded(values: Array<number | null>): number | null {
  * cost (it then gets its own line) or carries it inside gross (no line). Net is the rows' own
  * nets summed, so the hero equals the history table's totals for the same window.
  */
-export function heroOf(trades: readonly SummaryTrade[], chargesSlippage: boolean, open: number): SummaryHero {
+/** Mean R and its interval over the trades `riskOf` gives a positive max loss for (B3). */
+export function rOf<T extends SummaryTrade>(
+  trades: readonly T[],
+  riskOf: (t: T) => number | null | undefined,
+): { meanR: number | null; rN: number; rCi95: [number, number] | null } {
+  const rs: number[] = [];
+  for (const t of trades) {
+    const risk = riskOf(t);
+    if (risk != null && risk > 0) rs.push(t.net / risk);
+  }
+  // Its own arithmetic, not shapeOf's: that rounds to cents, and R lives below one.
+  const r4 = (v: number) => Math.round(v * 10000) / 10000;
+  const n = rs.length;
+  if (n === 0) return { meanR: null, rN: 0, rCi95: null };
+  const mean = rs.reduce((a, b) => a + b, 0) / n;
+  const sd = n >= 2 ? Math.sqrt(rs.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)) : 0;
+  const half = sd > 0 ? (t95(n - 1) * sd) / Math.sqrt(n) : null;
+  return { meanR: r4(mean), rN: n, rCi95: half === null ? null : [r4(mean - half), r4(mean + half)] };
+}
+
+/** B2: how many sessions closed more than one trade, or null when none did. */
+export function overlapOf(
+  trades: readonly SummaryTrade[],
+): { sessions: number; of: number; maxPerSession: number; heldTogether: number | null } | null {
+  const per = new Map<string, number>();
+  for (const t of trades) per.set(t.session, (per.get(t.session) ?? 0) + 1);
+  const counts = [...per.values()];
+  const multi = counts.filter((c) => c > 1).length;
+  const held = heldTogether(trades);
+  if (multi === 0 && !held) return null;
+  return { sessions: multi, of: per.size, maxPerSession: Math.max(0, ...counts), heldTogether: held };
+}
+
+/** Trades whose [entry, close] span overlaps another trade's in the same arm (each arm is its own
+ *  portfolio). Null when no trade carries an entry session -- not zero: it was not measured. */
+export function heldTogether(trades: readonly SummaryTrade[]): number | null {
+  const spans = trades.filter((t) => t.entry).map((t) => ({ arm: t.arm, a: t.entry!.slice(0, 10), b: t.session }));
+  if (spans.length === 0) return null;
+  const byArm = new Map<string, { a: string; b: string }[]>();
+  for (const s of spans) byArm.set(s.arm, [...(byArm.get(s.arm) ?? []), s]);
+  let n = 0;
+  for (const list of byArm.values()) {
+    list.sort((x, y) => x.a.localeCompare(y.a));
+    for (let i = 0; i < list.length; i++) {
+      const me = list[i]!;
+      if (list.some((o, j) => j !== i && o.a <= me.b && me.a <= o.b)) n += 1;
+    }
+  }
+  return n;
+}
+
+export function heroOf<T extends SummaryTrade>(
+  trades: readonly T[],
+  chargesSlippage: boolean,
+  open: number,
+  riskOf?: (t: T) => number | null | undefined,
+): SummaryHero {
   const costs: SummaryCost[] = [
     { label: "fees", amount: sumRecorded(trades.map((t) => t.fees)) },
     {
@@ -170,6 +302,7 @@ export function heroOf(trades: readonly SummaryTrade[], chargesSlippage: boolean
     daysWon: dayNets.filter((n) => n > 0).length,
     daysLost: dayNets.filter((n) => n < 0).length,
     open,
+    shape: { ...shapeOf(trades.map((t) => t.net)), ...(riskOf ? rOf(trades, riskOf) : {}), overlap: overlapOf(trades) },
     basis: null,
   };
 }
@@ -242,7 +375,7 @@ export function emptySlice(module: string, mode: TradingMode, unit: string, w: {
     window: w,
     session: { day: null, prev: null, next: null },
     unit,
-    hero: { net: 0, gross: 0, costs: [], trades: 0, wins: 0, sessions: 0, daysWon: 0, daysLost: 0, open: 0, basis: null },
+    hero: { net: 0, gross: 0, costs: [], trades: 0, wins: 0, sessions: 0, daysWon: 0, daysLost: 0, open: 0, basis: null, shape: shapeOf([]) },
     tiles: [],
     gauges: [],
     breakdowns: [],

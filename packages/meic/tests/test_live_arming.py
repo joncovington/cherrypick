@@ -271,6 +271,35 @@ def test_meic_publishes_what_it_holds_and_has_working(tmp_path):
     assert legs[("XSP", DAY, "P", 583.0)] == -1 and legs[("XSP", DAY, "C", 598.0)] == -1
 
 
+def test_the_menu_carries_the_live_arms_own_delta_band(monkeypatch):
+    """2026-10-23: at VIX 20 the default band was 0.14 while live's arm asked for 0.16, the menu held
+    only 0.14 candidates, and `_select_candidates` left live nothing to enter all window. Shown to fail
+    by passing `[delta_target]` alone in `_build_snapshot`."""
+    cfg = _config()
+    cfg["short_delta_target"] = 0.16
+    pl = live_loop._pl
+    monkeypatch.setattr(pl, "_fetch_vix", lambda: 20.0)
+    monkeypatch.setattr(pl, "_delta_target", lambda *_: 0.14)
+    monkeypatch.setattr(pl, "_run_json", lambda *a, **k: {})
+    monkeypatch.setattr(pl, "_fetch_overview", lambda _s: (7635.0, 0.5, 0.5))
+    monkeypatch.setattr(pl, "_fetch_atr", lambda *_: None)
+    monkeypatch.setattr(pl, "_fetch_intraday_range_pct", lambda _s: None)
+
+    def menu(_symbol, _last, widths, delta_targets, default_delta, _today):
+        cands = [
+            {"wing_width": w, "short_delta": d, "is_default_delta": d == default_delta}
+            for d in delta_targets
+            for w in widths
+        ]
+        return cands, {}, None
+
+    monkeypatch.setattr(pl, "_build_candidates", menu)
+    snapshot, err = live_loop._build_snapshot(cfg, "SPX")
+    assert err is None
+    params = paper.live_params(cfg)
+    assert paper._select_candidates(snapshot["candidates"], params, "SPX")
+
+
 @pytest.fixture(autouse=True)
 def _clean_known_orders():
     yield

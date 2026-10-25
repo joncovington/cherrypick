@@ -56,6 +56,9 @@ _BENIGN_REASON = frozenset(
         # The leg-sign overlap scope: refused because a candidate leg would have netted out an
         # open one. Sits beside strike_overlap/short_pair_occupied, the other two scopes.
         "sign_rule_conflict",
+        # The equalize arms' imbalance cap (#503): the refused side would have left the condor
+        # lopsided past the cap. A designed pause, recorded with its candidate.
+        "equalize_imbalance",
         "late_entry_bias_wait",
         "max_concurrent_ics_reached",
         "quarterly_open_volatile_skip",

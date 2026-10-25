@@ -246,7 +246,7 @@ describe("a Dolt-backed screener tab", () => {
   const switchedOff = withOff({ features: { ...ALL_ON.features, technicals: false } });
 
   it("says it needs Dolt when the machine has none, and is never hidden", () => {
-    for (const slide of ["earnings", "earnings-record", "board", "skate"]) {
+    for (const slide of ["earnings", "earnings-record", "board", "skate", "credit-spreads"]) {
       expect(screenerOffReason(slide, noDolt)).toMatchObject({ needs: "dolt" });
       expect(isSlideVisible("screeners", slide, noDolt)).toBe(true);
     }

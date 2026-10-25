@@ -10,6 +10,7 @@ import {
   breakdownOf,
   emptySlice,
   heroOf,
+  worstNet,
   scopeTrades,
   sessionNeighbours,
   summaryWindow,
@@ -155,6 +156,7 @@ export function readBwbSummary(config: ConsoleConfig, q: SummaryQuery): ModuleSu
 
   const trades: BwbSummaryTrade[] = scopeTrades(rows.map((r): BwbSummaryTrade => ({
     session: (r.closedSession ?? r.entrySession).slice(0, 10),
+    entry: r.entrySession,
     arm: r.arm,
     gross: r.grossPnl ?? 0,
     fees: r.fees,
@@ -166,7 +168,9 @@ export function readBwbSummary(config: ConsoleConfig, q: SummaryQuery): ModuleSu
   })), q);
 
   const live = mode === "live";
-  const hero = heroOf(trades, !live, open);
+  const hero = heroOf(trades, !live, open, (t) =>
+    t.extra?.maxLossPerShare == null ? null : t.extra.maxLossPerShare * 100 * t.extra.quantity,
+  );
   const premium = round2(trades.reduce((s, t) => s + (t.row.entryCash ?? 0) + (t.row.addOnCash ?? 0), 0));
   hero.basis = trades.length > 0 ? { label: "premium collected (fly + add-on credits)", amount: premium } : null;
   const n = trades.length;
@@ -189,6 +193,8 @@ export function readBwbSummary(config: ConsoleConfig, q: SummaryQuery): ModuleSu
         rorRaw === null
           ? "n/r: no settled position in the window recorded its widths and credit"
           : `net ÷ $${capital.toLocaleString("en-US")} of the fly's worst case at entry (${capRows.length}/${n} positions); a fired add-on's extra risk is not in it`,
+      dollars:
+        rorRaw === null ? null : { amount: round2(netRaw), of: capital, ofLabel: "worst case at entry", worst: worstNet(trades) },
     },
   ];
 

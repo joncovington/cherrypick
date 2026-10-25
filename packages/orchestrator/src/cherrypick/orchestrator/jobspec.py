@@ -1161,6 +1161,22 @@ def derive_jobs(
             enabled_reason="" if bt["fetch"] else "disabled in config (backtest.fetch)",
         ),
     )
+    rqs = cfgmod.research_queue_settings(cfg)
+    add(
+        "research-queue",
+        lambda: JobSpec(
+            id="research-queue",
+            # Long research tasks from rows (orchestrator/researchqueue.py): each tick runs the oldest
+            # ready row to its end, so a fetch of many hours runs inside this job, and the overlap
+            # guard keeps a second tick from starting another. Allow-listed kinds only; a ThetaData
+            # task keeps clear of backtest-fetch's window and of a held session.
+            argv=_run_py(pythonw, launcher, "queue-run"),
+            kind=KIND_INTERVAL,
+            interval_seconds=rqs["interval_seconds"],
+            enabled=rqs["enabled"],
+            enabled_reason="" if rqs["enabled"] else "disabled in config (research_queue.enabled)",
+        ),
+    )
     tc = cfgmod.technicals_settings(cfg)
     # The Dolt-reading jobs need Dolt set up (`enabled` folds in capabilities.dolt) and a server
     # to read (`config.dolt_read`: earnings on, or a server kept for technicals), which no longer
@@ -1804,6 +1820,12 @@ def derive_jobs(
             enabled_reason=mr_reason,
         ),
     )
+    sg_reason = "" if mr["screener_greeks"] else "disabled in config (market_report.screener_greeks)"
+    # The two runs over the vendor's list rows follow the collector too: with it off no list is ever
+    # saved, and the late slot would fail every night (subscription ended 2026-10-24). The other
+    # fetch_screener_greeks modes read our own lists and stay on the screener_greeks switch alone.
+    rows_on = mr["screener_greeks"] and mr["collector"]
+    rows_reason = sg_reason or ("" if rows_on else "disabled in config (market_report.collector)")
     add(
         "report-screener-greeks",
         lambda: JobSpec(
@@ -1816,13 +1838,10 @@ def derive_jobs(
             at_et=mr["screener_greeks_at"],
             catchup_minutes=CATCHUP_MINUTES["report-screener-greeks"],
             trading_days_only=True,
-            enabled=mr["screener_greeks"],
-            enabled_reason=""
-            if mr["screener_greeks"]
-            else "disabled in config (market_report.screener_greeks)",
+            enabled=rows_on,
+            enabled_reason=rows_reason,
         ),
     )
-    sg_reason = "" if mr["screener_greeks"] else "disabled in config (market_report.screener_greeks)"
     add(
         "report-screener-greeks-late",
         lambda: JobSpec(
@@ -1835,8 +1854,8 @@ def derive_jobs(
             at_et=mr["screener_greeks_late_at"],
             catchup_minutes=CATCHUP_MINUTES["report-screener-greeks-late"],
             trading_days_only=True,
-            enabled=mr["screener_greeks"],
-            enabled_reason=sg_reason,
+            enabled=rows_on,
+            enabled_reason=rows_reason,
         ),
     )
     add(

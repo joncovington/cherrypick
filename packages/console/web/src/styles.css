@@ -4091,11 +4091,58 @@ select.text-input {
 
 /* hero */
 .ts-hero {
+  display: block;
   font-family: var(--num-face);
   font-variant-numeric: tabular-nums;
   font-size: 42px;
   font-weight: 700;
   margin: 6px 0 12px;
+}
+/* A card figure that flips face on click (kit.tsx useFace): reads as the figure, not a button. */
+.ts-flip {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.ts-flip-left {
+  text-align: left;
+}
+.ts-flip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+.ts-hero-sub {
+  display: block;
+  margin: -8px 0 10px;
+  font-size: 12px;
+}
+.ts-faces {
+  display: inline-flex;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px;
+}
+.ts-faces button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.ts-faces button.ts-face-on {
+  background: var(--accent);
+  color: #fff;
 }
 .ts-kv {
   margin: 0;
@@ -4418,8 +4465,20 @@ select.text-input {
 /* win-rate rings */
 .ts-rings {
   position: relative;
+  display: block;
   width: 140px;
   margin: 4px auto 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.ts-rings:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 50%;
 }
 .ts-rings svg {
   display: block;
@@ -4440,7 +4499,9 @@ select.text-input {
   justify-content: center;
   gap: 2px;
 }
-.ts-rings-center .ts-pos {
+.ts-rings-center .ts-pos,
+.ts-rings-center .ts-neg,
+.ts-rings-center .ts-plain {
   font-family: var(--num-face);
   font-size: 22px;
   font-weight: 700;
@@ -4818,4 +4879,9 @@ select.text-input {
 .cmp-status {
   font-size: 13px;
   white-space: pre-wrap;
+}
+
+/* The column a breakdown's current face draws its bar from. */
+.ts-table td.ts-strong {
+  font-weight: 700;
 }

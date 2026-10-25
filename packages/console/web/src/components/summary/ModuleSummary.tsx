@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import type { ModuleSummarySlice, SummaryBreakdown, SummaryTile, SummaryUnit, TradingMode } from "@console/shared";
 import { SortTh, sortRows, useSort } from "../DataTable";
-import { Gauge, RangeToolbar, TsCard, TsEmpty, WinRateArcs, fmtUsd, fmtUsdPlain, sessionLabel, useSummaryRange } from "./kit";
+import { FaceSwitch, Gauge, NetHero, RangeToolbar, TsCard, TsEmpty, WinRateArcs, fmtUsd, fmtUsdPlain, sessionLabel, useFace, useSummaryRange } from "./kit";
 
 /**
  * A module's simplified-view summary: the MEIC summary's pattern over `/api/summary/:module`.
@@ -58,7 +58,7 @@ function NetCard({ s, label }: { s: ModuleSummarySlice; label: string }) {
   const { hero } = s;
   return (
     <TsCard title="net p&l" aside={<span className="ts-muted">{label}</span>}>
-      <div className={`ts-hero ${hero.net >= 0 ? "ts-pos" : "ts-neg"}`}>{fmtUsd(hero.net)}</div>
+      <NetHero net={hero.net} trades={hero.trades} shape={hero.shape} />
       <dl className="ts-kv">
         <div>
           <dt>gross</dt>
@@ -111,11 +111,18 @@ function Tiles({ tiles }: { tiles: SummaryTile[] }) {
   );
 }
 
+/** A breakdown's two faces: the bar per trade (the default -- totals favour whichever bucket traded
+ *  most) or total (what each bucket contributed). Both columns stay in the table; the bar and the
+ *  emphasis follow the face. */
+const BREAKDOWN_FACES = ["per trade", "total"] as const;
+
 function Breakdown({ b }: { b: SummaryBreakdown }) {
+  const [face, , setFace] = useFace(`breakdown:${b.title}`, BREAKDOWN_FACES);
   if (b.rows.length === 0) return <TsEmpty what={b.title} />;
-  const max = Math.max(...b.rows.map((r) => Math.abs(r.net)), 1);
+  const barOf = (r: SummaryBreakdown["rows"][number]) => (face === "total" ? r.net : (r.avgNet ?? 0));
+  const max = Math.max(...b.rows.map((r) => Math.abs(barOf(r))), 1);
   return (
-    <TsCard title={b.title}>
+    <TsCard title={b.title} aside={<FaceSwitch faces={BREAKDOWN_FACES} face={face} onFace={setFace} />}>
       <div className="table-scroll">
       <table className="ts-table">
         <thead>
@@ -134,11 +141,11 @@ function Breakdown({ b }: { b: SummaryBreakdown }) {
               <td>{r.bucket}</td>
               <td className="num">{r.trades}</td>
               <td className="num">{r.winPct === null ? "n/r" : `${r.winPct.toFixed(0)}%`}</td>
-              <td className={`num ${r.avgNet === null ? "" : r.avgNet >= 0 ? "ts-pos" : "ts-neg"}`}>{r.avgNet === null ? "n/r" : fmtUsd(r.avgNet)}</td>
-              <td className={`num ${r.net >= 0 ? "ts-pos" : "ts-neg"}`}>{fmtUsd(r.net)}</td>
+              <td className={`num ${r.avgNet === null ? "" : r.avgNet >= 0 ? "ts-pos" : "ts-neg"}${face === "per trade" ? " ts-strong" : ""}`}>{r.avgNet === null ? "n/r" : fmtUsd(r.avgNet)}</td>
+              <td className={`num ${r.net >= 0 ? "ts-pos" : "ts-neg"}${face === "total" ? " ts-strong" : ""}`}>{fmtUsd(r.net)}</td>
               <td style={{ width: "22%" }}>
                 <div className="ts-hbar">
-                  <div className={`ts-hbar-fill ${r.net >= 0 ? "ts-pos" : "ts-neg"}`} style={{ width: `${((Math.abs(r.net) / max) * 100).toFixed(1)}%` }} />
+                  <div className={`ts-hbar-fill ${barOf(r) >= 0 ? "ts-pos" : "ts-neg"}`} style={{ width: `${((Math.abs(barOf(r)) / max) * 100).toFixed(1)}%` }} />
                 </div>
               </td>
             </tr>
@@ -152,15 +159,24 @@ function Breakdown({ b }: { b: SummaryBreakdown }) {
 
 function ByArm({ s, arm }: { s: ModuleSummarySlice; arm?: string | null }) {
   const sort = useSort();
+  const [face, , setFace] = useFace("breakdown:by arm", BREAKDOWN_FACES);
   if (s.arms.length === 0) return <TsEmpty what="by arm" />;
+  const shown = (a: ModuleSummarySlice["arms"][number]) => (face === "per trade" ? (a.trades > 0 ? a.net / a.trades : null) : a.net);
   const arms = sortRows(s.arms, sort, {
     arm: (a) => a.arm,
     n: (a) => a.trades,
     win: (a) => a.winPct,
-    net: (a) => a.net,
+    net: (a) => shown(a),
   });
   return (
-    <TsCard title="by arm" aside={<span className="ts-muted">{arm != null && arm !== "" ? `the ${arm} arm` : "every arm in the window"}</span>}>
+    <TsCard
+      title="by arm"
+      aside={
+        <span className="ts-muted">
+          {arm != null && arm !== "" ? `the ${arm} arm` : "every arm in the window"} <FaceSwitch faces={BREAKDOWN_FACES} face={face} onFace={setFace} />
+        </span>
+      }
+    >
       <div className="table-scroll">
       <table className="ts-table">
         <thead>
@@ -168,7 +184,7 @@ function ByArm({ s, arm }: { s: ModuleSummarySlice; arm?: string | null }) {
             <SortTh label="arm" k="arm" sort={sort} />
             <SortTh label="n" k="n" sort={sort} className="num" />
             <SortTh label="win" k="win" sort={sort} className="num" />
-            <SortTh label="net" k="net" sort={sort} className="num" />
+            <SortTh label={face === "per trade" ? "net / trade" : "net"} k="net" sort={sort} className="num" />
           </tr>
         </thead>
         <tbody>
@@ -180,7 +196,7 @@ function ByArm({ s, arm }: { s: ModuleSummarySlice; arm?: string | null }) {
               </td>
               <td className="num">{a.trades}</td>
               <td className="num">{a.winPct === null ? "n/r" : `${a.winPct.toFixed(0)}%`}</td>
-              <td className={`num ${a.net >= 0 ? "ts-pos" : "ts-neg"}`}>{fmtUsd(a.net)}</td>
+              <td className={`num ${a.net >= 0 ? "ts-pos" : "ts-neg"}`}>{shown(a) === null ? "n/r" : fmtUsd(shown(a)!)}</td>
             </tr>
           ))}
         </tbody>
@@ -256,9 +272,9 @@ export function ModuleSummary({
               <div className={`ts-row ${s.gauges.length >= 2 ? "ts-row-4" : s.gauges.length === 1 ? "ts-row-3" : "ts-row-2"}`}>
                 <NetCard s={s} label={label} />
                 {s.gauges.map((g) => (
-                  <Gauge key={g.title} title={g.title} rawPct={g.rawPct} min={g.min} max={g.max} caption={g.caption} />
+                  <Gauge key={g.title} title={g.title} rawPct={g.rawPct} min={g.min} max={g.max} caption={g.caption} dollars={g.dollars} />
                 ))}
-                <WinRateArcs daysWon={s.hero.daysWon} days={s.hero.daysWon + s.hero.daysLost} wins={s.hero.wins} trades={s.hero.trades} />
+                <WinRateArcs daysWon={s.hero.daysWon} days={s.hero.daysWon + s.hero.daysLost} wins={s.hero.wins} trades={s.hero.trades} avgWin={s.hero.shape?.avgWin ?? null} avgLoss={s.hero.shape?.avgLoss ?? null} shape={s.hero.shape ?? null} />
               </div>
               <div className="ts-row">
                 <Tiles tiles={s.tiles} />

@@ -34,6 +34,38 @@ risk) and the expected-move fly (fair at mid, ~18% costs) all fit that pattern. 
 built to test the **edge claim on its own**, before any management rule is layered on. Management is
 treated as variance and tail shaping unless a test shows otherwise.
 
+## Declaration template (from item 18 on, 2026-10-24)
+
+Every declaration from here on carries these lines, written before any look. Declarations already
+written are not re-judged. The arithmetic is `cherrypick.core.robustness`
+(`docs/trading-book-review-plan.md` B12, B13, B9).
+
+- **A register row** in [hypotheses.json](hypotheses.json) (B7), added with the declaration: the four
+  parts, the mechanism, the rival explanations each with the check that rules it out, and a pointer
+  here. Run `cherrypick hypotheses --similar '{"setup": ..., "structure": ...}'` first; a rejected
+  look-alike is named in the declaration, so a retest is said out loud. `cherrypick hypotheses`
+  fails on a malformed row. A `retest` recipe (the research queue's kind and args) lets B14 re-run it.
+- **Declared limits** (B11): how a position open at a name's last bar is settled (the last close; no
+  deal or recovery price), how many trades empty chains removed, and whether any input reflects
+  only today's state (the tradable list is hindsight; report it apart).
+- **Pass test**, as before: the statistic, the bar, and both time-halves.
+- **Minimum detectable effect** (B12): the smallest edge the planned sample detects at the pass bar,
+  from the spread of comparable past results (`planned_mde`). A no-verdict result then reads "no
+  edge larger than X". **Paired by default**: a rule change is compared on the same trades, and an
+  unpaired comparison says why.
+- **Name split** (B9), where the sample is large enough: the universe is split by `name_half` (a
+  fixed hash of the symbol), and a pass must hold in both name-halves as well as both time-halves.
+  The declaration says whether the split applies; a small universe says why it does not.
+- **Robustness report** (B13), reported beside a pass and never used to re-choose the setting:
+  - the declared parameter's neighbours (for example ±10-25%), flagged a plateau or a lone peak
+    (`neighbourhood`);
+  - the result at 1.5× and 2× costs, with the declared stress the pass must survive, 1.5× by default
+    (`cost_stress`);
+  - the bootstrap of its own trades' drawdown and losing streak (`drawdown_range`), the frozen B1
+    thresholds if it goes live;
+  - the largest size whose 99th-percentile drawdown stays inside a declared share of the account
+    (`max_size`).
+
 ## Data we already hold
 
 | Source | Coverage | Fit |
@@ -904,6 +936,107 @@ of it is run.*
   - **SILJ's entry quotes almost never clear the leg bars;** SIL never makes the tradable universe.
   - **Decided:** each fund keeps "no tested edge" at its least-bad cell; manage's single rule (0.20
     short, 0.10 long, held) covers them, and the live leg bars already mark SILJ thin.
+
+### 17. Our own credit-spread list: setup, side and width, per symbol
+
+*Source: the user (2026-10-24), when the vendor subscription ended and its credit-spread tab froze at
+the 2026-10-23 lists. The list is to come from the short-put screener's universe and the chart
+setups, on both sides, with the width analysed per symbol. Item 14 fixed the structure (a 0.40-delta
+short, the widest strike giving 35-40% of the width) and never crossed setup, side and width; this
+does. Declared here before any of it is run.*
+
+- **Question:** for which setup and side, short strike and width, does a credit spread pay after
+  costs, and does a width picked per symbol beat one width for every name? The answer is the
+  credit-spread tab's rule.
+- **Where the edge would live:** the **selection signal**, with width as payoff shaping. Items 14-16
+  found no edge in the premium alone, so a cell earns only if its setup moves the odds past the short
+  strike by more than the costs. A per-symbol width can only help if a name's own strike spacing,
+  skew or move size makes one width repeatably better there.
+- **Setups, each mapped to a side** (the rules exactly as [setups.md](../packages/technicals/docs/setups.md)
+  states them, parameters unchanged):
+  - **Trend following:** long → put spread; the short mirror → call spread.
+  - **Pullback in a trend:** long → put spread; the short mirror → call spread.
+  - **Mean reversion:** long → put spread; the short mirror → call spread.
+  - **Breakout:** long → put spread; the breakdown → call spread.
+  - Eight setup-sides. Entry is at the end of the session after the signal, on that session's quotes.
+- **Universe:** the short-put screener's rule, as of the session before entry: listed options and a
+  50-session median dollar volume of at least $100M on raw bars. Weekly listings have no history
+  here, so the weeklies half of the live rule is not applied. Funds and single names together, with
+  inverse and leveraged funds left out.
+- **Baseline:** five matched random entries per trade, as item 14 (the same name, a random session in
+  the same calendar year on which it was in the universe, the same structure, costs and exclusions).
+- **Structure:**
+  - **Expiry:** the latest standard monthly 30-45 days after entry; no trade when there is none.
+    45-60 days reported only.
+  - **Short:** the out-of-the-money strike nearest **0.20, 0.30 or 0.40** delta.
+  - **Width, in two units, each its own family:**
+    - **strike steps:** the long 1, 2, 3 or 5 listed strikes beyond the short;
+    - **expected move:** the long at the listed strike nearest the short plus (or minus) 0.25, 0.5 or
+      0.75 of the 1-SD move to expiry (the at-the-money IV × √(days/365) × the close).
+    - No trade when the long would be the short's own strike.
+  - **No credit-share floor.** Credit received is an output: credit ÷ width and credit ÷ max loss are
+    reported on every trade.
+  - Delta and IV as item 15 (Black-76 on a parity forward, r = 0, calendar days).
+- **Scoring exit:** **hold to expiry**, settled at intrinsic from the expiry close, capped at the
+  width. This is the scoring convention only: the live position decides the real exit, so the list
+  states no exit rule. Close-early variants are not run.
+- **Costs and exclusions:** item 14's. Fills at the working price (`legbars.structure_prices`),
+  `core.fees` per leg, $5 for each leg settled in the money. Excluded: an earnings report between
+  entry and expiry, a call spread across an ex-dividend date, a suspected unadjusted split. Early
+  assignment is not modelled, so call spreads are an upper bound.
+- **Window:** item 14's deciding window, 2020-01-22 to 2025-06-30, split at its midpoint into H1 and
+  H2. 2016-19 reported only.
+- **Two rules under test, per setup-side and width family:**
+  - **Pooled pick:** the (short, width) cell with the best mean net per trade as a share of max loss
+    in one half, scored in the other.
+  - **Per-symbol pick:** for each symbol, the cell that was best in one half on that symbol's own
+    trades (needs at least 8 of them; fewer falls back to the pooled pick), scored in the other.
+  - Each rule runs both ways (pick in H1, score in H2; pick in H2, score in H1), so every score is
+    out of sample.
+- **Passes if,** for a setup-side, width family and rule, **in both directions:**
+  - the mean of (trade's net − the mean of its five baselines' net), as a share of max loss, is
+    positive with a one-sided t above 2, clustered by expiry date;
+  - the rule's own mean net per trade is positive;
+  - it survives Holm across the 32 tests (8 setup-sides × 2 width families × 2 rules).
+  - Fewer than 100 scored trades in a direction is no verdict.
+  - **The per-symbol pick earns its place** only if it also beats the pooled pick on the same trades
+    (paired t above 2 in both directions). Otherwise the list uses the pooled width for every name.
+- **Reported, per setup-side and cell, pooled and by symbol:** trades; mean net as a share of max loss
+  and in dollars per unit; credit ÷ width and credit ÷ max loss; win rate; worst trade; cost drag
+  (round-trip costs ÷ credit); the share of entries whose legs clear the leg bars on the entry quote.
+  The per-symbol tables are descriptive and never a verdict on their own.
+- **Decides:** the credit-spread tab on the Screeners page (replacing the vendor's frozen one) and
+  manage's spread candidates.
+  - **A pass:** the tab lists names with a live passing setup, on its side, at the passing short and
+    width (per symbol where that rule earned it), with the credit received.
+  - **No pass:** the tab lists the least-bad setup-side and cell the report names, under a standing
+    "no tested edge" note, like the short-put list.
+- **Data:** the setups and bars from `history.db`, as of each session. Entry chains already in item
+  14's store (`eod_chains.db`) are reused; the rest are a new `fetch-chains` run, only while no other
+  session holds the ThetaData login and stopping before 18:45 ET on trading days (`backtest-fetch`).
+  Results under `~/.cherrypick`, never in this repo.
+- **Known limits, declared:** the setups lost as stock trades in their historical rounds (only
+  `mr-300m` passed, on $300M names, and failed as a put spread in item 15), so the prior is low; the
+  $100M universe takes in thinner chains than item 14's, which the leg-bar share reports;
+  breakouts are rare, so their setup-sides may end as no verdict.
+- **The plan** (2026-10-24, local data only, before any option data was read):
+  `scripts/credit_spread_plan.py --item 17`, item 14's planner with item 17's spec. Its exclusions,
+  baselines and request file are item 14's; re-run for item 14, it reproduces item 14's plan byte for
+  byte. Seed 20261024. The universe is every name that ever traded $100M a day, less the declared
+  leveraged, inverse and volatility funds.
+  - **Deciding-era trades** (2020-01-22 to the design window's end), before the five baselines each:
+
+    | Setup | Put spread (long) | Call spread (short mirror) |
+    |---|---|---|
+    | Trend following | 2,088 | 1,175 |
+    | Pullback | 2,934 | 1,604 |
+    | Mean reversion | 3,192 | 3,452 |
+    | Breakout | 233 | 172 |
+
+  - **Fetch:** 97,402 distinct chain requests, 12,500 of them already in the store from items 14-16
+    and B. That leaves 84,902 to fetch, 67,345 of them deciding-era; the request file puts those
+    first. At item 14's pace (about 3 a second with 3 workers) that is 7-9 hours.
+  - 50 trades are short of five baselines (thin years).
 
 ## Not worth revisiting
 

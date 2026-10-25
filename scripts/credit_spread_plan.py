@@ -1,6 +1,13 @@
-"""Plan item 14's trades: which credit spreads each selector and its baselines take, and the chains to fetch.
+"""Plan item 14's (or 17's) trades: the credit spreads each selector and baselines take, the chains to fetch.
 
-    python scripts/credit_spread_plan.py [--workers 14] [--out DIR] [--limit-names N]
+    python scripts/credit_spread_plan.py [--item 14|17] [--workers 14] [--out DIR] [--limit-names N]
+
+**Item 17** (`--item 17`, 2026-10-24; our own credit-spread list) is the same planner with its own
+declared spec (`ITEMS`): every one of the four chart setups and its short mirror as a selector of its
+own (a long setup a put spread, a mirror a call spread), the short-put screener's $100M universe
+rather than $300M, no index reference, the declared leveraged, inverse and volatility funds left out,
+and its own seed. Everything below -- entry, expiry, exclusions, baselines -- is shared, as item 17
+declares. The structure (short, widths) is the study's, not the plan's: a trade's chain carries them all.
 
 Step 2 of hypothesis 14 in docs/edge-hypotheses-plan.md (selecting credit spreads). It decides, from
 local data alone, every trade the declared test will price, and writes the end-of-day chain requests
@@ -69,6 +76,31 @@ REFERENCE = ("SPY", "QQQ", "IWM")
 REFERENCE_EVERY = 5
 BOARD_AT = 3  # selector B: a fresh count of 3 or more on one side (item 14, amended 2026-10-23)
 
+# Each item's declared spec. Item 14's is the constants above, unchanged, so its plan reproduces.
+_SETUPS17 = ("trend", "pullback", "reversion", "breakout")
+ITEMS: dict[int, dict] = {
+    14: {
+        "seed": SEED,
+        "floor": DOLLAR_FLOOR,
+        "selectors": SELECTORS,
+        "reference": REFERENCE,
+        "exclude_leveraged": False,
+        "out": "item14",
+    },
+    17: {
+        "seed": 20261024,
+        "floor": 100e6,
+        # One selector per setup-side, named by its setup id: 8 in all.
+        "selectors": {
+            **{s: ((s, "put"),) for s in _SETUPS17},
+            **{f"{s}-short": ((f"{s}-short", "call"),) for s in _SETUPS17},
+        },
+        "reference": (),
+        "exclude_leveraged": True,
+        "out": "item17",
+    },
+}
+
 
 def monthly(y: int, m: int) -> date:
     d = date(y, m, 15)
@@ -110,7 +142,9 @@ def report_in_trade(sym: str, entry: str, expiry: str, reports: dict, quarters: 
 _ctx: dict = {}
 
 
-def _init(design_end: str, reports: dict, quarters: dict, board_path: str | None = None) -> None:
+def _init(
+    design_end: str, reports: dict, quarters: dict, spec: dict | None = None, board_path: str | None = None
+) -> None:
     from cherrypick.technicals import paths, store
 
     conn = store.connect(paths.history_db())
@@ -122,6 +156,7 @@ def _init(design_end: str, reports: dict, quarters: dict, board_path: str | None
         design_end=design_end,
         reports=reports,
         quarters=quarters,
+        spec=spec or ITEMS[14],
     )
 
 
@@ -150,11 +185,12 @@ def _why_not(nm, j: int, side: str, exdates: list[str]) -> tuple[str | None, str
 
 
 def _eligible_session(nm, j: int) -> bool:
-    """In the universe at $300M a day the session before entry, and outside a corporate-action shadow."""
+    """In the universe at the item's floor ($300M a day for 14) the session before entry, and outside
+    a corporate-action shadow."""
     return (
         j >= 1
         and nm.member[j - 1]
-        and (nm.dollar_volume[j - 1] or 0.0) >= DOLLAR_FLOOR
+        and (nm.dollar_volume[j - 1] or 0.0) >= _ctx["spec"]["floor"]
         and not (nm.shadow and nm.shadow[j])
     )
 
@@ -177,18 +213,20 @@ def board_signals(nm, counts: dict[str, tuple[int, int]], allow) -> list[tuple[i
 def plan_name(sym: str) -> dict:
     from cherrypick.technicals import setups, study
 
+    spec = _ctx["spec"]
     nm = study.load(_ctx["conn"], sym, _ctx["data_end"])
     out = {"trades": [], "dropped": Counter(), "short": 0}
     if nm is None:
         return out
     exdates = _exdates(sym)
-    allow = lambda i: (nm.dollar_volume[i] or 0.0) >= DOLLAR_FLOOR  # noqa: E731
+    floor = spec["floor"]
+    allow = lambda i: (nm.dollar_volume[i] or 0.0) >= floor  # noqa: E731
     by_year: dict[str, list[int]] = {}
     for j in range(1, len(nm.dates)):
         if START <= nm.dates[j] <= _ctx["design_end"] and _eligible_session(nm, j):
             by_year.setdefault(nm.dates[j][:4], []).append(j)
     board = _ctx.get("board")
-    selectors = {"B": None} if board is not None else SELECTORS
+    selectors = {"B": None} if board is not None else spec["selectors"]
     for selector, specs in selectors.items():
         if selector == "B":
             counts = {
@@ -227,7 +265,7 @@ def plan_name(sym: str) -> dict:
             out["trades"].append(
                 _row(tid, "trade", None, selector, setup_id, side, sym, nm.dates[i], entry, exp)
             )
-            rng = random.Random(f"{SEED}:{tid}")
+            rng = random.Random(f"{spec['seed']}:{tid}")
             pool = [k for k in by_year.get(entry[:4], []) if k != j]
             rng.shuffle(pool)
             drawn = 0
@@ -254,7 +292,7 @@ def plan_name(sym: str) -> dict:
                 )
             if drawn < BASELINES:
                 out["short"] += 1
-    if sym in REFERENCE and board is None:
+    if sym in spec["reference"] and board is None:
         sessions = [j for j in range(1, len(nm.dates)) if START <= nm.dates[j] <= _ctx["design_end"]]
         for n, j in enumerate(sessions):
             if n % REFERENCE_EVERY:
@@ -325,6 +363,27 @@ def _board_names(path: Path, names: list[str]) -> list[str]:
     return sorted(set(names) & on_board)
 
 
+def universe_names(spec: dict, history_db: Path, leveraged: set[str] | None = None) -> list[str]:
+    """Every name that ever traded the item's floor a day (`peaks`), plus its reference funds, less
+    the declared leveraged, inverse and volatility funds when the item leaves them out (item 17; a
+    long setup on an inverse fund is a short)."""
+    c = sqlite3.connect(f"file:{history_db}?mode=ro", uri=True)
+    try:
+        rows = c.execute(
+            "SELECT symbol FROM peaks WHERE max_dollar_volume >= ? ORDER BY symbol", (spec["floor"],)
+        )
+        names = {r[0] for r in rows} | set(spec["reference"])
+    finally:
+        c.close()
+    if spec["exclude_leveraged"]:
+        if leveraged is None:
+            from cherrypick.technicals.skate import leveraged_funds
+
+            leveraged = {s.replace("/", ".") for s in leveraged_funds()}
+        names -= leveraged
+    return sorted(names)
+
+
 def _design_end() -> str:
     from cherrypick.backtest import settings
 
@@ -336,23 +395,22 @@ def main(argv: list[str] | None = None) -> int:
     from cherrypick.technicals import paths
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--item", type=int, choices=sorted(ITEMS), default=14)
     ap.add_argument("--workers", type=int, default=14)
-    ap.add_argument("--out", type=Path, default=home.data_dir("backtest") / "results" / "research" / "item14")
+    ap.add_argument("--out", type=Path, help="default: results/research/item<N> under the backtest data dir")
     ap.add_argument("--limit-names", type=int, help="plan only the first N names (a trial)")
     ap.add_argument("--board", type=Path, help="plan selector B only, from scripts/board_history.py's output")
     args = ap.parse_args(argv)
+    if args.board is not None and args.item != 14:
+        ap.error("--board is item 14's selector B")
+    spec = ITEMS[args.item]
+    out_dir = args.out or home.data_dir("backtest") / "results" / "research" / spec["out"]
 
     design_end = _design_end()
     reports, quarters = _earnings()
-    c = sqlite3.connect(f"file:{paths.history_db()}?mode=ro", uri=True)
-    names = [
-        r[0]
-        for r in c.execute(
-            "SELECT symbol FROM peaks WHERE max_dollar_volume >= ? ORDER BY symbol", (DOLLAR_FLOOR,)
-        )
-    ]
-    c.close()
-    names = sorted(set(names) | set(REFERENCE)) if args.board is None else _board_names(args.board, names)
+    names = universe_names(spec, paths.history_db())
+    if args.board is not None:
+        names = _board_names(args.board, names)
     if args.limit_names:
         names = names[: args.limit_names]
     chunks = [names[k :: args.workers] for k in range(args.workers)]
@@ -362,7 +420,7 @@ def main(argv: list[str] | None = None) -> int:
     with ProcessPoolExecutor(
         args.workers,
         initializer=_init,
-        initargs=(design_end, reports, quarters, str(args.board) if args.board else None),
+        initargs=(design_end, reports, quarters, spec, str(args.board) if args.board else None),
     ) as ex:
         for part in ex.map(_plan_many, chunks):
             for p in part:
@@ -375,9 +433,10 @@ def main(argv: list[str] | None = None) -> int:
         seen.setdefault((t["symbol"], t["entry"], t["expiry"]), None)
     requests = [{"symbol": s, "session": d, "expiration": e} for s, d, e in seen]
 
-    args.out.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     meta = {
-        "seed": SEED,
+        **({} if args.item == 14 else {"item": args.item, "floor": spec["floor"]}),
+        "seed": spec["seed"],
         "baselines": BASELINES,
         "start": START,
         "design_end": design_end,
@@ -385,13 +444,13 @@ def main(argv: list[str] | None = None) -> int:
         "names": len(names),
     }
     suffix = "-b" if args.board else ""
-    (args.out / f"trades{suffix}.json").write_text(json.dumps({**meta, "trades": trades}), encoding="utf-8")
-    (args.out / f"requests{suffix}.json").write_text(
+    (out_dir / f"trades{suffix}.json").write_text(json.dumps({**meta, "trades": trades}), encoding="utf-8")
+    (out_dir / f"requests{suffix}.json").write_text(
         json.dumps({**meta, "requests": requests}), encoding="utf-8"
     )
 
     summary = Counter((t["selector"], t["setup"], t["kind"], t["era"]) for t in trades)
-    print(json.dumps({**meta, "out": str(args.out)}, indent=1))
+    print(json.dumps({**meta, "out": str(out_dir)}, indent=1))
     for key in sorted(summary, key=str):
         print(f"  {key[0]} {str(key[1]):16s} {key[2]:9s} {key[3]:8s} {summary[key]:7d}")
     print(f"  trades short of {BASELINES} baselines: {short}")

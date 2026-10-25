@@ -69,6 +69,8 @@
   "_wing_widths_by_symbol_note": "Per-symbol IC wing-width candidate shortlist (points), scanned widest-first. Wing width is a dollar-denominated risk parameter, so it must be set per instrument rather than shared across price levels: 10 points is ~0.13% of SPX (~7500) but ~3.4% of IWM (~297). Values respect each symbol's strike increment and stay within max_wing_width. DEFAULT covers any symbol not listed.",
   "equalize_credit": false,
   "_equalize_credit_note": "Balance the two side credits by sizing each wing independently (delta still pins the short strikes): the engine also builds candidates whose put wing and call wing come separately from wing_widths_by_symbol, and enters the most credit-balanced candidate that clears every gate instead of the widest-first one. Off by default -- every profile without it sees exactly the candidate menu it saw before this key existed. wing_width keeps recording the WIDER wing (buying power, credit floors); put_wing/call_wing hold each side's own width on the ledger row. Paper-validated: the live loop shares evaluate_entry but this path has not been exercised with live orders.",
+  "equalize_max_imbalance_pct": null,
+  "_equalize_max_imbalance_pct_note": "Optional ceiling on the residual side imbalance of an equalize_credit pick, as a fraction of the net credit (0.10 = the two side credits may differ by at most 10% of net). The scan still enters the best-balanced candidate on offer; the cap asks whether best-balanced is balanced ENOUGH. Absent/null (the default) keeps best-available behavior EXACTLY as it was, so every profile without this key trades and records as before. Over the cap the tick declines as `equalize_imbalance` (entry_attempts outcome `no_candidate`, `block_detail` 'equalize_imbalance'), the decline never touches the entry cadence, and the next tick re-scans the menu. Ignored unless the profile also sets equalize_credit -- with no scan there is no pick to judge. Paper-only, like the equalizer itself.",
   "quantity": 1,
   "cash_settled_symbols": [
     "SPX",
@@ -113,6 +115,7 @@
     "symbol": null,
     "gate0_confirmed": "",
     "daily_loss_halt_dollars": 200,
+    "kill": null,
     "arm": null,
     "max_open_bp_dollars": null,
     "wing_widths_by_symbol": null,

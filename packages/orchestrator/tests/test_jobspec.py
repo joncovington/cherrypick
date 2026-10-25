@@ -331,6 +331,7 @@ def test_derive_full_suite_job_table():
         "market-files",
         "market-files-retry",
         "backtest-fetch",
+        "research-queue",
         "technicals-land",
         "technicals-dividends",
         "technicals-index-bars",
@@ -1144,6 +1145,19 @@ def test_screener_greeks_is_its_own_switch_and_runs_after_the_chart_capture():
     assert minutes(late.at_et) > minutes(job.at_et)
     assert minutes(late.at_et) + late.catchup_minutes < 24 * 60
     assert "report-screener-greeks-late" not in jobspec.RETRY_ON_FAILURE
+
+
+def test_screener_rows_runs_follow_the_collector():
+    """With the collector off no vendor list is saved, so the two runs over its rows stop (the late
+    one would fail every night); the modes over our own lists keep running."""
+    cfg = suite_cfg()
+    cfg["market_report"] = {"collector": False, "screener_greeks": True}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    for job_id in ("report-screener-greeks", "report-screener-greeks-late"):
+        assert not by_id[job_id].enabled
+        assert "market_report.collector" in by_id[job_id].enabled_reason
+    for job_id in ("report-screener-measure-1", "report-earnings-strikes", "report-income-chains"):
+        assert by_id[job_id].enabled
 
 
 # --------------------------------------------------------------------------- stock universe (2026-09-27)

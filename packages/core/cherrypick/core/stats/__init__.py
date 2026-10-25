@@ -124,15 +124,18 @@ def bootstrap_ci(
     return lo, hi
 
 
-def stationary_indices(n: int, mean_block: float, rng: random.Random) -> list[int]:
+def stationary_indices(
+    n: int, mean_block: float, rng: random.Random, *, length: int | None = None
+) -> list[int]:
     """One stationary-bootstrap resample (Politis & Romano 1994): blocks of geometric length with
     the given mean, wrapping circularly, so the resample keeps the series' short-range dependence.
     For a series whose neighbours are not independent (overlapping multi-session ranges); a
-    session-level comparison of two arms uses `bootstrap_ci`."""
+    session-level comparison of two arms uses `bootstrap_ci`. `length` (default `n`) is how many
+    indices to draw -- a kill threshold resamples to the horizon it will be judged over."""
     p = 1.0 / mean_block
     out = []
     j = rng.randrange(n)
-    for _ in range(n):
+    for _ in range(n if length is None else length):
         out.append(j)
         j = rng.randrange(n) if rng.random() < p else (j + 1) % n
     return out

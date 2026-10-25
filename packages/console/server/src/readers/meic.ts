@@ -9,7 +9,7 @@ import { readJson, readOnlyDb, withReadOnlyDb, withReadSnapshot, hasColumn, hasT
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest, type SortAccessors } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
-import { summaryWindow } from "./summary/common.js";
+import { shapeOf, summaryWindow } from "./summary/common.js";
 import { cachedQuote } from "./streamcache.js";
 import { equityCurve, periodKey, riskSummary, stdev } from "../analytics/riskMetrics.js";
 
@@ -1851,7 +1851,7 @@ export function readMeicSummary(
     mode,
     window: { from: null, to: null, label: "" },
     era: scope.era ?? CURRENT_ERA,
-    hero: { trades: 0, sessions: 0, gross: 0, fees: 0, settlement: 0, slippage: 0, net: 0, credit: 0, winPct: null, wins: 0, daysWon: 0, daysLost: 0, openTrades: 0, openRisk: 0 },
+    hero: { trades: 0, sessions: 0, gross: 0, fees: 0, settlement: 0, slippage: 0, net: 0, credit: 0, winPct: null, wins: 0, daysWon: 0, daysLost: 0, openTrades: 0, openRisk: 0, shape: shapeOf([]) },
     capturePct: null,
     captureRawPct: null,
     returnOnRisk: { capitalAtRisk: null, rorPct: null, rorRawPct: null, coverage: null },
@@ -1954,6 +1954,15 @@ export function readMeicSummary(
       daysLost,
       openTrades: Number(open["n"] ?? 0),
       openRisk: Math.round(Number(open["cap"] ?? 0) * 100) / 100,
+      // The cards' second faces: per-trade nets over the same settled rows the totals sum.
+      shape: shapeOf(
+        db
+          .prepare<string[], Record<string, unknown>>(
+            `SELECT pnl - COALESCE(fees, 0) AS net FROM ic_trades WHERE ${where} AND pnl IS NOT NULL`,
+          )
+          .all(...params)
+          .map((r) => Number(r["net"] ?? 0)),
+      ),
     };
 
     // -- Capture: net kept of premium sold, clamped to the gauge's domain.
