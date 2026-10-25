@@ -96,7 +96,21 @@
       "rivals": [],
       "pointer": "docs/edge-hypotheses-plan.md#4-an-intraday-direction-signal-trend-metf-against-reversion-the-expected-move-fade",
       "results": null,
-      "retest": null,
+      "retest": {
+        "kind": "script",
+        "args": {
+          "path": "scripts/box_touch_history.py",
+          "args": [
+            "--start",
+            "{start}",
+            "--end",
+            "{end}",
+            "--json",
+            "{home}/data/backtest/results/research/item4-retest-{year}.json"
+          ]
+        },
+        "output": "{home}/data/backtest/results/research/item4-retest-{year}.json"
+      },
       "retests": []
     },
     {
@@ -192,7 +206,21 @@
       "rivals": [],
       "pointer": "docs/edge-hypotheses-plan.md#8-chris-pulvers-daily-routine",
       "results": null,
-      "retest": null,
+      "retest": {
+        "kind": "script",
+        "args": {
+          "path": "scripts/box_touch_history.py",
+          "args": [
+            "--start",
+            "{start}",
+            "--end",
+            "{end}",
+            "--json",
+            "{home}/data/backtest/results/research/item8-retest-{year}.json"
+          ]
+        },
+        "output": "{home}/data/backtest/results/research/item8-retest-{year}.json"
+      },
       "retests": []
     },
     {
