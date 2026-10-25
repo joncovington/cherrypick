@@ -7,6 +7,7 @@ python -m cherrypick.backtest key import-env      # copy the vendor's env var in
 python -m cherrypick.backtest fetch --from 2026-10-13 --to 2026-10-16 [--dataset SPX] [--refetch]
 python -m cherrypick.backtest fetch-vix --from 2022-05-16 --to 2025-06-30   # VIX minutes, from VIX options
 python -m cherrypick.backtest fetch-chains --requests FILE [--workers 3] [--limit N]   # end-of-day chains
+python -m cherrypick.backtest fetch-chain-paths --requests FILE [--workers 3]   # each expiry's daily path
 python -m cherrypick.backtest chains-status        # what the end-of-day chain store holds
 python -m cherrypick.backtest coverage [--dataset SPX]
 python -m cherrypick.backtest derive-regimes [--dataset SPX]   # regime rows from stored profiles
@@ -211,6 +212,33 @@ def cmd_fetch_chains(args) -> int:
     report = chainfetch.fetch_chains(
         s, client, requests, workers=args.workers, refetch=args.refetch, limit=args.limit,
         stop=_stop_by(args.stop_by), log=lambda m: print(m, file=sys.stderr),
+    )  # fmt: skip
+    _emit(report)
+    return 1 if report.get("aborted") else 0
+
+
+def cmd_fetch_chain_paths(args) -> int:
+    """The daily path of each requested expiry (chainfetch.fetch_paths): a network verb, refused on
+    the same terms as `fetch`."""
+    from pathlib import Path
+
+    from . import chainfetch
+    from .vendor import VendorRefusal, client_for
+
+    s = settings.load(args.config)
+    refusal = _fetch_refusal(s)
+    if refusal:
+        print(f"fetch-chain-paths refused: {refusal}", file=sys.stderr)
+        return 2
+    requests = chainfetch.read_path_requests(Path(args.requests))
+    try:
+        client = client_for(s)
+    except VendorRefusal as exc:
+        print(f"fetch-chain-paths refused: {exc}", file=sys.stderr)
+        return 2
+    report = chainfetch.fetch_paths(
+        s, client, requests, workers=args.workers, refetch=args.refetch, limit=args.limit,
+        log=lambda m: print(m, file=sys.stderr),
     )  # fmt: skip
     _emit(report)
     return 1 if report.get("aborted") else 0
@@ -461,6 +489,18 @@ def main(argv: list[str] | None = None) -> int:
     fc.add_argument("--refetch", action="store_true", help="replace requests already complete or empty")
     fc.add_argument("--stop-by", help="ET wall clock, YYYY-MM-DDTHH:MM: start no request after it")
     fc.set_defaults(fn=cmd_fetch_chains)
+    fp = sub.add_parser(
+        "fetch-chain-paths",
+        help="each expiry's chain at every session's close in a range, one vendor call per 7-day chunk "
+        "(a network verb)",
+    )
+    fp.add_argument(
+        "--requests", required=True, help='JSON: {"requests": [{"symbol","expiration","start","through"}]}'
+    )
+    fp.add_argument("--workers", type=int, default=3, help="concurrent requests on the one session")
+    fp.add_argument("--limit", type=int, help="fetch at most this many paths this run")
+    fp.add_argument("--refetch", action="store_true", help="replace paths already complete or empty")
+    fp.set_defaults(fn=cmd_fetch_chain_paths)
     cs = sub.add_parser("chains-status", help="what the end-of-day chain store holds")
     cs.set_defaults(fn=cmd_chains_status)
     ff = sub.add_parser("fetch-flow", help="large options orders per name and session (a network verb)")

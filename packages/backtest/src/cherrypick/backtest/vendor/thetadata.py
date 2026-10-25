@@ -94,6 +94,8 @@ def release_session(path: Path | None = None) -> None:
 RETRY_DELAYS = (2.0, 5.0, 15.0)
 #: The vendor refuses an end-of-day range over this many days ("max 365 days allowed").
 MAX_RANGE_DAYS = 365
+#: Calendar days per request when fetching an expiry's daily path (`eod_chain_range`).
+PATH_CHUNK_DAYS = 7
 _TRANSIENT = ("RESOURCE_EXHAUSTED", "UNAVAILABLE", "DEADLINE_EXCEEDED", "429", "OS_LIMIT", "SERVER_STARTING")
 #: The vendor drops a request it has not answered in 60 s with this, every time, for sub-minute
 #: history before 2026 (measured 2026-10-17: 15 s, 30 s and tick, even ten minutes of two strikes).
@@ -150,6 +152,11 @@ def _classify(exc: Exception) -> tuple[str, str]:
             "the vendor dropped the request at 60 s (sub-minute history is not served for this date)",
         )
     return "vendor_error", f"{type(exc).__name__}: {text[:240]}"
+
+
+def _has_weekday(lo: date, hi: date) -> bool:
+    """Whether [lo, hi] holds a Monday-to-Friday day, i.e. could have held a session."""
+    return any((lo + timedelta(days=k)).weekday() < 5 for k in range(min((hi - lo).days + 1, 7)))
 
 
 def _transient(exc: Exception) -> bool:
@@ -271,6 +278,71 @@ class ThetaDataClient:
         for r in df.itertuples(index=False):
             out.append(
                 {
+                    "strike": float(r.strike),
+                    "right": str(r.right).upper(),
+                    "bid": _num(getattr(r, "bid", None)),
+                    "ask": _num(getattr(r, "ask", None)),
+                    "close": _num(getattr(r, "close", None)),
+                    "volume": _num(getattr(r, "volume", None)),
+                    "bid_size": _num(getattr(r, "bid_size", None)),
+                    "ask_size": _num(getattr(r, "ask_size", None)),
+                }
+            )
+        return out
+
+    def eod_chain_range(self, root: str, start: str, through: str, expiration: str) -> list[dict]:
+        """One expiry's whole chain at every session's close in [start, through] (under
+        `MAX_RANGE_DAYS`), each row carrying its ``session``: the daily path a held contract is
+        marked on. The session is the report's own date (``created``), never the last trade's,
+        which for an untraded strike is an earlier day.
+
+        Asked for `PATH_CHUNK_DAYS` at a time: a whole chain over two months is more than the vendor
+        answers before it drops the stream at 60 s (SPY, 2026-10-23). Nothing is asked for after
+        the expiry, when nothing trades. A chunk the vendor holds nothing for BEFORE any chunk has
+        answered is skipped (the expiry was not listed yet); the whole range holding nothing is the
+        vendor's `no_data`. A chunk holding nothing AFTER one has answered is a hole in the path:
+        it is refused as `path_gap` (not `no_data`, which would record the path permanently
+        empty), so the path is recorded refused and retried on a later run. A weekend-only tail is
+        not a hole, since it held no session. A reply with rows but no ``created`` column is
+        refused as `bad_response`: no row could be dated, and returning none would record the path
+        empty for good. A single row missing its stamp is skipped."""
+        lo, hi = date.fromisoformat(start), date.fromisoformat(through)
+        if (hi - lo).days >= MAX_RANGE_DAYS:
+            raise ValueError(f"an end-of-day range is under {MAX_RANGE_DAYS} days: {start}..{through}")
+        expiry = date.fromisoformat(expiration)
+        hi = min(hi, expiry)
+        frames, empty = [], None
+        while lo <= hi:
+            top = min(lo + timedelta(days=PATH_CHUNK_DAYS - 1), hi)
+            try:
+                df = self._call(
+                    "option_history_eod", start_date=lo, end_date=top, symbol=root, expiration=expiry
+                )
+            except VendorRefusal as refusal:
+                if refusal.reason != "no_data":
+                    raise
+                if frames and _has_weekday(lo, top):
+                    raise VendorRefusal(
+                        "path_gap",
+                        f"nothing for {lo}..{top} after earlier chunks answered ({refusal.detail})"[:240],
+                    ) from None
+                empty = refusal
+            else:
+                rows = list(df.itertuples(index=False))
+                if rows and not hasattr(rows[0], "created"):
+                    raise VendorRefusal("bad_response", f"rows for {lo}..{top} carry no created column")
+                frames.append(rows)
+            lo = top + timedelta(days=1)
+        if not frames and empty is not None:
+            raise empty
+        out = []
+        for r in (row for rows in frames for row in rows):
+            stamp = getattr(r, "created", None)
+            if stamp is None or stamp != stamp:  # no report date on this row (None, or pandas' NaT)
+                continue
+            out.append(
+                {
+                    "session": stamp.date().isoformat(),
                     "strike": float(r.strike),
                     "right": str(r.right).upper(),
                     "bid": _num(getattr(r, "bid", None)),
