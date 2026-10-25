@@ -165,7 +165,8 @@
       "pointer": "docs/edge-hypotheses-plan.md#6-a-down-day-entry-filter-for-the-put-bwb",
       "results": null,
       "retest": null,
-      "retests": []
+      "retests": [],
+      "retest_note": "No yearly re-test, by decision 2026-10-25: closed, and bwb's add-on study (2026-10-23) found no edge after costs, so a re-test is unlikely to change a decision."
     },
     {
       "id": 7,
@@ -242,7 +243,8 @@
       "pointer": "docs/edge-hypotheses-plan.md#9-the-145-pm-sandwich",
       "results": null,
       "retest": null,
-      "retests": []
+      "retests": [],
+      "retest_note": "No yearly re-test, by decision 2026-10-25: a copied bot with no named mechanism that failed every part of its declared test, and no script was committed for it."
     },
     {
       "id": 10,
@@ -263,7 +265,8 @@
       "pointer": "docs/edge-hypotheses-plan.md#10-the-flatfly-an-iron-fly-pinned-to-the-prior-close",
       "results": null,
       "retest": null,
-      "retests": []
+      "retests": [],
+      "retest_note": "No yearly re-test, by decision 2026-10-25: a copied bot with no named mechanism that failed every part of its declared test, and no script was committed for it."
     },
     {
       "id": 11,
@@ -304,7 +307,22 @@
       "rivals": [],
       "pointer": "docs/edge-hypotheses-plan.md#12-gex-levels-revisited-with-history",
       "results": null,
-      "retest": null,
+      "retest": {
+        "kind": "script",
+        "args": {
+          "path": "scripts/gex_levels_history.py",
+          "args": [
+            "--start",
+            "{start}",
+            "--end",
+            "{end}",
+            "--allow-holdout",
+            "--json",
+            "{home}/data/backtest/results/research/item12-retest-{year}.json"
+          ]
+        },
+        "output": "{home}/data/backtest/results/research/item12-retest-{year}.json"
+      },
       "retests": []
     },
     {
