@@ -613,8 +613,9 @@ interval and t, an early-estimate note under 30 trades, and the skew note. The w
 carries net per trade beside the rate and takes its tone from net per trade's sign, never from the
 rate passing 50% — an 85% premium seller that loses money reads red. Null where it cannot be said
 (one trade has no sd; no spread has no interval). Overlap is flagged (`overlapOf`): when sessions
-closed several trades the per-trade face says the interval reads narrower than it is. It counts by
-closing session, so a multi-day overlap is not seen.
+closed several trades, or (where a reader passes `entry`: bwb, curve) trades were held alongside another
+in their arm, the per-trade face says the interval reads narrower than it is. A reader without an entry
+session reports the same-session count only.
 The per-trade face also states mean R (B3) with its interval, where the module passes `heroOf` a
 risk: net over the defined max loss at entry -- bwb's worst case from its widths, curve's
 `entry_max_loss`, earnings' `capital_at_risk`, calendars' debit. contango (a fund) and flies (no

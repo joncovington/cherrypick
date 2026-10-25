@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { heroOf, overlapOf, rOf, shapeOf, t95, wilson95, worstNet, type SummaryTrade } from "../src/readers/summary/common.js";
+import { heldTogether, heroOf, overlapOf, rOf, shapeOf, t95, wilson95, worstNet, type SummaryTrade } from "../src/readers/summary/common.js";
 
 /**
  * The cards' second faces read the per-trade shape: median, average win and loss, the worst trade.
@@ -94,7 +94,21 @@ describe("overlapOf", () => {
   const at = (session: string): SummaryTrade => ({ session, arm: "a", gross: 1, fees: 0, settlement: 0, slippage: null, net: 1 });
   it("counts the sessions with more than one trade, or nothing when none had", () => {
     expect(overlapOf([at("d1"), at("d2")])).toBeNull();
-    expect(overlapOf([at("d1"), at("d1"), at("d1"), at("d2")])).toEqual({ sessions: 1, of: 2, maxPerSession: 3 });
-    expect(heroOf([at("d1"), at("d1")], false, 0).shape?.overlap).toEqual({ sessions: 1, of: 1, maxPerSession: 2 });
+    expect(overlapOf([at("d1"), at("d1"), at("d1"), at("d2")])).toEqual({ sessions: 1, of: 2, maxPerSession: 3, heldTogether: null });
+    expect(heroOf([at("d1"), at("d1")], false, 0).shape?.overlap).toEqual({ sessions: 1, of: 1, maxPerSession: 2, heldTogether: null });
+  });
+});
+
+describe("heldTogether (B2, multi-day)", () => {
+  const span = (arm: string, entry: string, session: string): SummaryTrade => ({ session, entry, arm, gross: 1, fees: 0, settlement: 0, slippage: null, net: 1 });
+  it("counts trades held alongside another in the same arm, never across arms", () => {
+    const ladder = [span("a", "2026-10-01", "2026-10-08"), span("a", "2026-10-05", "2026-10-15"), span("a", "2026-10-20", "2026-10-27")];
+    expect(heldTogether(ladder)).toBe(2);
+    expect(heldTogether([span("a", "2026-10-01", "2026-10-08"), span("b", "2026-10-02", "2026-10-09")])).toBe(0);
+    expect(overlapOf(ladder)).toMatchObject({ sessions: 0, heldTogether: 2 });
+  });
+  it("is null, not zero, when no trade carries an entry", () => {
+    const at = (session: string): SummaryTrade => ({ session, arm: "a", gross: 1, fees: 0, settlement: 0, slippage: null, net: 1 });
+    expect(heldTogether([at("d1")])).toBeNull();
   });
 });

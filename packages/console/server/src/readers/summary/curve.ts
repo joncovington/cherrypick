@@ -128,6 +128,7 @@ function readLedger(db: DatabaseHandle, w: Window): LedgerRead {
       slippage: money.slippage,
       net: money.netPnl,
       entrySession: str(r["entry_session"]) ?? session,
+      entry: str(r["entry_session"]),
       entryRegime: str(r["entry_regime"]),
       exitReason: str(r["exit_reason"]),
       exitKind: money.exitKind,

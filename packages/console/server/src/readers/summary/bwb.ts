@@ -156,6 +156,7 @@ export function readBwbSummary(config: ConsoleConfig, q: SummaryQuery): ModuleSu
 
   const trades: BwbSummaryTrade[] = scopeTrades(rows.map((r): BwbSummaryTrade => ({
     session: (r.closedSession ?? r.entrySession).slice(0, 10),
+    entry: r.entrySession,
     arm: r.arm,
     gross: r.grossPnl ?? 0,
     fees: r.fees,

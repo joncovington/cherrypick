@@ -86,3 +86,12 @@ describe("the overlap note (B2)", () => {
     expect(overlapNote(losingSeller)).toBeNull();
   });
 });
+
+describe("the multi-day overlap note", () => {
+  it("names trades held together", () => {
+    expect(overlapNote({ ...losingSeller, overlap: { sessions: 0, of: 5, maxPerSession: 1, heldTogether: 4 } })).toBe(
+      "4 trades were held alongside another in their arm: the interval treats them as independent, so it reads narrower than it is",
+    );
+  });
+});
+

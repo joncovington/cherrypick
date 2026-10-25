@@ -197,7 +197,7 @@ export interface TradeShape {
   /** B2's overlap flag: sessions that closed more than one trade, and the most in one. Trades that
    *  share a session share a tape, so the interval (which treats them as independent) reads narrower
    *  than it is. Counted by closing session only: a multi-day overlap is not seen here. */
-  overlap?: { sessions: number; of: number; maxPerSession: number } | null;
+  overlap?: { sessions: number; of: number; maxPerSession: number; heldTogether?: number | null } | null;
 }
 
 /** "0.12R (95% -0.05R to 0.29R) over 40 of 42", or null with no R (B3). */
@@ -213,7 +213,11 @@ export function rLine(shape: TradeShape | null | undefined, trades: number): str
 export function overlapNote(shape: TradeShape | null | undefined): string | null {
   const o = shape?.overlap;
   if (!o) return null;
-  return `${o.sessions} of ${o.of} sessions closed several trades (up to ${o.maxPerSession}): the interval treats them as independent, so it reads narrower than it is`;
+  const parts: string[] = [];
+  if (o.sessions > 0) parts.push(`${o.sessions} of ${o.of} sessions closed several trades (up to ${o.maxPerSession})`);
+  if (o.heldTogether) parts.push(`${o.heldTogether} trades were held alongside another in their arm`);
+  if (parts.length === 0) return null;
+  return `${parts.join("; ")}: the interval treats them as independent, so it reads narrower than it is`;
 }
 
 /** Under this many trades a figure is an early estimate, whatever its interval says. */

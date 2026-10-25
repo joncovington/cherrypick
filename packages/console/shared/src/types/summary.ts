@@ -67,7 +67,7 @@ export interface SummaryShape {
   /** B2's overlap flag: sessions that closed more than one trade, and the most in one. Trades that
    *  share a session share a tape, so the interval (which treats them as independent) reads narrower
    *  than it is. Counted by closing session only: a multi-day overlap is not seen here. */
-  overlap?: { sessions: number; of: number; maxPerSession: number } | null;
+  overlap?: { sessions: number; of: number; maxPerSession: number; heldTogether?: number | null } | null;
 }
 
 export interface SummaryHero {
