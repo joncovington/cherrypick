@@ -134,17 +134,72 @@ export function inWindow(session: string, w: { from: string | null; to: string |
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
-/** The per-trade nets' shape (SummaryShape): median, the average win and loss, the worst trade. A
- *  side with no trade is null, never zero. Shared with MEIC's own summary read. */
+/** Two-sided 95% Student's t critical values for 1..29 degrees of freedom; 1.96 from 30 on. */
+const T95 = [
+  12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.16, 2.145, 2.131,
+  2.12, 2.11, 2.101, 2.093, 2.086, 2.08, 2.074, 2.069, 2.064, 2.06, 2.056, 2.052, 2.048, 2.045,
+];
+export function t95(df: number): number {
+  return df >= 1 && df <= T95.length ? T95[df - 1]! : 1.96;
+}
+
+/** The Wilson 95% interval of a proportion (fractions); null with no trials. */
+export function wilson95(successes: number, n: number): [number, number] | null {
+  if (n <= 0) return null;
+  const z = 1.96;
+  const p = successes / n;
+  const denom = 1 + (z * z) / n;
+  const centre = (p + (z * z) / (2 * n)) / denom;
+  const half = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / denom;
+  return [Math.max(0, centre - half), Math.min(1, centre + half)];
+}
+
+const round4 = (v: number) => Math.round(v * 10000) / 10000;
+
+/** The per-trade nets' shape (SummaryShape): median, the average win and loss, the worst trade, and
+ *  how sure the window's figures are -- net per trade with its 95% interval and t, the win rate's
+ *  interval, and a skew flag in both directions (B2). A side with no trade is null, never zero; a
+ *  figure the sample is too small for is null too. Shared with MEIC's own summary read. */
 export function shapeOf(nets: readonly number[]): SummaryShape {
-  if (nets.length === 0) return { median: null, avgWin: null, avgLoss: null, worst: null };
+  const n = nets.length;
+  if (n === 0) {
+    return {
+      median: null, avgWin: null, avgLoss: null, worst: null,
+      n: 0, mean: null, sd: null, ci95: null, t: null, winRateCi95: null, skewness: null, skew: null,
+    }; // prettier-ignore
+  }
   const sorted = [...nets].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  const median = sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
-  const wins = nets.filter((n) => n > 0);
-  const losses = nets.filter((n) => n < 0);
+  const mid = Math.floor(n / 2);
+  const median = n % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  const wins = nets.filter((x) => x > 0);
+  const losses = nets.filter((x) => x < 0);
   const avg = (xs: number[]) => (xs.length > 0 ? round2(xs.reduce((s, x) => s + x, 0) / xs.length) : null);
-  return { median: round2(median), avgWin: avg(wins), avgLoss: avg(losses), worst: round2(sorted[0]!) };
+  const mean = nets.reduce((s, x) => s + x, 0) / n;
+  const sd = n >= 2 ? Math.sqrt(nets.reduce((s, x) => s + (x - mean) ** 2, 0) / (n - 1)) : null;
+  const se = sd !== null && sd > 0 ? sd / Math.sqrt(n) : null;
+  const half = se !== null ? t95(n - 1) * se : null;
+  let skewness: number | null = null;
+  if (n >= 3 && sd !== null && sd > 0) {
+    const m3 = nets.reduce((s, x) => s + ((x - mean) / sd) ** 3, 0);
+    skewness = (n / ((n - 1) * (n - 2))) * m3; // adjusted Fisher-Pearson
+  }
+  return {
+    median: round2(median),
+    avgWin: avg(wins),
+    avgLoss: avg(losses),
+    worst: round2(sorted[0]!),
+    n,
+    mean: round2(mean),
+    sd: sd === null ? null : round2(sd),
+    ci95: half === null ? null : [round2(mean - half), round2(mean + half)],
+    t: se === null ? null : round2(mean / se),
+    winRateCi95: (() => {
+      const ci = wilson95(wins.length, n);
+      return ci === null ? null : [round4(ci[0]), round4(ci[1])];
+    })(),
+    skewness: skewness === null ? null : round2(skewness),
+    skew: skewness === null ? null : skewness <= -1 ? "left" : skewness >= 1 ? "right" : null,
+  };
 }
 
 /** A gauge's worst-trade figure: the window's single worst net. */
