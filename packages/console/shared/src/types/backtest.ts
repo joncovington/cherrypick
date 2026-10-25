@@ -72,6 +72,9 @@ export interface BacktestValidation {
   unlocks_history: boolean;
   sessions_compared: number | null;
   vendor_at_least_recorder: Record<string, boolean>;
+  /** The unlock bar since 2026-10-25: each check's measure within tolerance of the recording's.
+   *  Empty on a report written before it. */
+  vendor_within_tolerance?: Record<string, boolean>;
   recorder: BacktestSideReading;
   vendor: BacktestSideReading;
   sessions: Record<string, { quotes?: BacktestQuoteAgreement; profile?: BacktestProfileAgreement }>;
@@ -93,11 +96,39 @@ export interface BacktestRunListing {
   refused: number;
 }
 
+/** One table of a store: rows and the span of its first date-like column. Counts only. */
+export interface BacktestStoreTable {
+  rows: number;
+  span: [string, string] | null;
+}
+
+export interface BacktestInventoryStore {
+  file: string;
+  holds?: string;
+  built_by?: string;
+  used_by?: string;
+  present?: boolean;
+  script?: string | null;
+  bytes?: number;
+  tables?: Record<string, BacktestStoreTable>;
+  error?: string;
+}
+
+export interface BacktestInventory {
+  dir?: string;
+  stores: BacktestInventoryStore[];
+  /** Files in the vendor directory nobody declared: a fault until stores.py lists them. */
+  undeclared: BacktestInventoryStore[];
+  error?: string;
+}
+
 export interface BacktestOverview {
   ok: true;
   license: BacktestLicense;
   windows: { design: [string, string]; holdout: [string, string] } & Record<string, [string, string]>;
   stores: BacktestStore[];
+  /** Every vendor store against the declared registry (backtest stores.py). */
+  inventory?: BacktestInventory;
   validation: BacktestValidation[];
   runs: BacktestRunListing[];
   trials: Record<string, number>;

@@ -77,6 +77,8 @@ def _validation(settings: dict) -> list[dict]:
                 "unlocks_history": bool(dec.get("unlocks_history")),
                 "sessions_compared": dec.get("sessions_compared"),
                 "vendor_at_least_recorder": dec.get("vendor_at_least_recorder") or {},
+                # The bar since 2026-10-25 (validate.SHARE_TOLERANCE): empty on an older report.
+                "vendor_within_tolerance": dec.get("vendor_within_tolerance") or {},
                 "recorder": {k: (dec.get("recorder") or {}).get(k) for k in ("measures", "checks")},
                 "vendor": {k: (dec.get("vendor") or {}).get(k) for k in ("measures", "checks")},
                 # From the 2026-10-17 amendment: the bar's basis, and the thinned recording when it is.
@@ -119,6 +121,15 @@ def _runs() -> tuple[list[dict], dict]:
     return runs, trials
 
 
+def _stores_inventory(settings: dict) -> dict:
+    from . import stores
+
+    try:
+        return stores.inventory(settings)
+    except Exception as exc:  # noqa: BLE001 -- the inventory never breaks the overview
+        return {"error": str(exc), "stores": [], "undeclared": []}
+
+
 def overview(settings: dict) -> dict:
     runs, trials = _runs()
     return {
@@ -126,6 +137,8 @@ def overview(settings: dict) -> dict:
         "license": licensing.status(settings),
         "windows": settings["windows"],
         "stores": _stores(settings),
+        # Every vendor store against the declared registry (stores.py): counts only, and any undeclared file.
+        "inventory": _stores_inventory(settings),
         "validation": _validation(settings),
         "runs": runs,
         "trials": trials,
