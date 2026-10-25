@@ -91,6 +91,14 @@ def test_weekend_observance_independence_day_2026():
     assert date(2026, 7, 4) not in cal.nyse_holidays(2026)
 
 
+def test_unscheduled_closures_are_not_sessions():
+    assert not cal.is_trading_day(date(2025, 1, 9))  # Carter day of mourning
+    assert cal.next_trading_day(date(2025, 1, 8)) == date(2025, 1, 10)
+    assert not cal.is_trading_day(date(2018, 12, 5))
+    assert not cal.is_trading_day(date(2012, 10, 29)) and not cal.is_trading_day(date(2012, 10, 30))
+    assert cal.is_trading_day(date(2012, 10, 31))
+
+
 def test_juneteenth_only_from_2022():
     assert date(2021, 6, 19) not in cal.nyse_holidays(2021)
     assert cal._observed(date(2023, 6, 19)) in cal.nyse_holidays(2023)
