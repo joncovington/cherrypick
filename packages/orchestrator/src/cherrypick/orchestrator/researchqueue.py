@@ -160,7 +160,13 @@ KINDS: dict[str, tuple[tuple[str, ...], bool]] = {
     "fetch-chains": ((THETADATA,), True),
     "fetch-flow": ((THETADATA,), True),
     "script": ((), False),
+    # A module's replay validated against the recording (backtest `validate`): local stores only, no
+    # vendor session. Its report is what unlocks that module's history runs (2026-10-25).
+    "validate": ((), False),
 }
+
+#: The modules `validate` knows (backtest `validate.CHECKS`), checked here so a typo never queues.
+VALIDATE_MODULES = ("flies", "meic")
 
 
 def build_argv(
@@ -180,6 +186,11 @@ def build_argv(
         argv += ["--plan", _file_arg(args, "plan"), "--workers", _workers(args, 3)]
     elif kind == "script":
         return [python, *_tracked_script(args, root or repo_root(), tracked or git_tracked)]
+    elif kind == "validate":
+        module = args.get("module")
+        if module not in VALIDATE_MODULES:
+            raise Refused(f"validate needs 'module', one of {', '.join(VALIDATE_MODULES)}")
+        return [python, "-m", "cherrypick.backtest", "validate", "--module", module]
     else:
         raise Refused(f"unknown kind {kind!r}; allowed: {', '.join(KINDS)}")
     if stop_by:
