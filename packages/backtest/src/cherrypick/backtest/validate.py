@@ -35,6 +35,15 @@ written compared a cadence with a cadence, and no 60 s store could ever pass it.
 
 The thresholds, the checks and `UNLOCK_SESSIONS` are unchanged.
 
+**Amended 2026-10-25, before MEIC's first validation run: the bar compares measures, not pass/fail.**
+Comparing each check's pass/fail let a vendor through on any check the recording also failed, however
+far behind it was (flies' entries and completions both read "at least as good" that way). Now every
+declared check's MEASURE must be within a declared tolerance of the recording's at the vendor's
+cadence (`SHARE_TOLERANCE`, `GAP_TOLERANCE_*`), whether the check passes or not; the pass/fail
+comparison is kept in the report for the record. The quote layer gains the same comparison at the
+vendor's own sample instants (`at_vendor_instants`): its share at every recorded quote mostly measured
+cadence. The quote layer is reported, not a bar.
+
 Results are derived from licensed data: they are written under the home's results directory and
 nowhere else (see CLAUDE.md).
 """
@@ -61,6 +70,15 @@ QUOTE_MATCH_SECONDS = 30.0
 PROFILE_MATCH_SECONDS = 360.0
 #: Sessions needed before history runs unlock: flies' own stage-2 minimum.
 UNLOCK_SESSIONS = 10
+#: The measure bar (declared 2026-10-25, before MEIC's first validation run): on every declared check
+#: the vendor-sourced replay's MEASURE may be worse than the recording's at the vendor's cadence by at
+#: most this much, whether or not the check passes. A share (entries, completions, episodes) by an
+#: absolute margin; a dollar gap by the larger of an absolute margin and a share of the recording's.
+#: Before it the bar compared pass/fail only, so a check both sides failed read "at least as good"
+#: however far behind the vendor was.
+SHARE_TOLERANCE = 0.05
+GAP_TOLERANCE_ABS = 0.02
+GAP_TOLERANCE_REL = 0.25
 #: A store is coarser than the recording when its median sample gap is this many times the recording's.
 COARSER_RATIO = 1.5
 
@@ -120,6 +138,44 @@ def quotes_layer(recorder_db: Path, vendor_db: Path, symbol: str, day: str) -> d
         "identical": round(identical / matched, 4) if matched else None,
         "mid_gap": _summary(mid_gaps),
         "spot_gap": _summary(spot_gaps),
+        "at_vendor_instants": _at_vendor_instants(rec, ven),
+    }
+
+
+def _at_vendor_instants(rec: list[dict], ven: list[dict]) -> dict:
+    """The quote comparison at the vendor's own sample instants (2026-10-25): for each vendor sample,
+    the recorded sample nearest it within QUOTE_MATCH_SECONDS, and every strike and side both quote.
+    The share above is taken at every RECORDED quote, so against a coarser vendor it mostly measures
+    cadence (a 15 s recording against 60 s samples matches about half); this measures the data."""
+    rec_ts = [s["ts"] for s in rec]
+    paired = shared = identical = 0
+    mid_gaps = []
+    for v in ven:
+        i = bisect.bisect_left(rec_ts, v["ts"])
+        best = min(
+            (j for j in (i - 1, i) if 0 <= j < len(rec_ts)),
+            key=lambda j: abs(rec_ts[j] - v["ts"]),
+            default=None,
+        )
+        if best is None or abs(rec_ts[best] - v["ts"]) > QUOTE_MATCH_SECONDS:
+            continue
+        paired += 1
+        r = rec[best]
+        for side in ("puts", "calls"):
+            for strike, vq in v[side].items():
+                rq = r[side].get(strike)
+                if rq is None:
+                    continue
+                shared += 1
+                if abs(vq["bid"] - rq["bid"]) < 1e-9 and abs(vq["ask"] - rq["ask"]) < 1e-9:
+                    identical += 1
+                mid_gaps.append(rq["mid"] - vq["mid"])
+    return {
+        "vendor_samples": len(ven),
+        "paired_samples": round(paired / len(ven), 4) if ven else None,
+        "shared_quotes": shared,
+        "identical": round(identical / shared, 4) if shared else None,
+        "mid_gap": _summary(mid_gaps),
     }
 
 
@@ -308,6 +364,26 @@ def _check(runner, db: Path, dates: list[str], command: tuple = ("replay-check",
     return reply.get("summary", reply)
 
 
+def _direction(thresholds: dict, check: str) -> str | None:
+    """'min' when higher is better for this check's measure, 'max' when lower is; from the module's
+    own threshold names (`<check>_min` / `<check>_max`)."""
+    if f"{check}_min" in thresholds:
+        return "min"
+    if f"{check}_max" in thresholds:
+        return "max"
+    return None
+
+
+def measure_within(check: str, direction: str | None, ref: float | None, ven: float | None) -> bool:
+    """The vendor's measure no worse than the reference's by more than the declared tolerance. A
+    measure the vendor lacks fails; one the reference lacks cannot be compared and fails too."""
+    if ref is None or ven is None or direction is None:
+        return False
+    is_share = not (check.startswith("credit") or check.startswith("max_cost"))
+    tol = SHARE_TOLERANCE if is_share else max(GAP_TOLERANCE_ABS, GAP_TOLERANCE_REL * abs(ref))
+    return ven >= ref - tol if direction == "min" else ven <= ref + tol
+
+
 def _sessions(summary: dict) -> int:
     return (summary.get("measures") or {}).get("sessions") or 0
 
@@ -353,11 +429,18 @@ def decisions_layer(
     ref, ven = out[basis], out["vendor"]
     checks_r, checks_v = ref.get("checks") or {}, ven.get("checks") or {}
     out["data_basis"] = basis
+    # The pass/fail comparison, kept for the record: it is no longer the bar (see SHARE_TOLERANCE).
     out["vendor_at_least_recorder"] = {k: bool(checks_v.get(k)) or not checks_r.get(k) for k in checks_r}
+    thresholds = ref.get("thresholds") or ven.get("thresholds") or {}
+    m_ref, m_ven = ref.get("measures") or {}, ven.get("measures") or {}
+    out["vendor_within_tolerance"] = {
+        k: measure_within(k, _direction(thresholds, k), m_ref.get(k), m_ven.get(k)) for k in checks_r
+    }
+    out["tolerance"] = {"share": SHARE_TOLERANCE, "gap_abs": GAP_TOLERANCE_ABS, "gap_rel": GAP_TOLERANCE_REL}
     sessions = min(_sessions(out["recorder"]), _sessions(ref), _sessions(ven))
     out["sessions_compared"] = sessions
     out["unlocks_history"] = (
-        bool(checks_r) and sessions >= UNLOCK_SESSIONS and all(out["vendor_at_least_recorder"].values())
+        bool(checks_r) and sessions >= UNLOCK_SESSIONS and all(out["vendor_within_tolerance"].values())
     )
     return out
 
