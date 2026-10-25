@@ -48,14 +48,26 @@ def test_a_missing_store_is_reported_not_raised(tmp_path):
     assert q == {"ok": False, "reason": "no vendor samples"}
 
 
-def _summary(sessions, **checks):
-    base = dict.fromkeys(
-        ("entries_matched", "extra_entry_episodes", "completions_matched", "early_completion_episodes",
-         "credit_abs_median", "credit_abs_p90"),
-        True,
-    )  # fmt: skip
+#: (passing measure, failing measure, threshold key) per check, in flies' own threshold names: a
+#: summary's measures agree with its pass/fail, as a real replay check's do.
+_MEASURES = {
+    "entries_matched": (0.95, 0.80, "entries_matched_min"),
+    "extra_entry_episodes": (0.05, 0.20, "extra_entry_episodes_max"),
+    "completions_matched": (0.90, 0.70, "completions_matched_min"),
+    "early_completion_episodes": (0.05, 0.20, "early_completion_episodes_max"),
+    "credit_abs_median": (0.05, 0.20, "credit_abs_median_max"),
+    "credit_abs_p90": (0.20, 0.50, "credit_abs_p90_max"),
+}
+
+
+def _summary(sessions, measures=None, **checks):
+    base = dict.fromkeys(_MEASURES, True)
     base.update(checks)
-    return {"summary": {"measures": {"sessions": sessions}, "checks": base, "passes": all(base.values())}}
+    m = {k: (good if base[k] else bad) for k, (good, bad, _) in _MEASURES.items()}
+    m.update(measures or {})
+    thresholds = {key: 0.0 for _, _, key in _MEASURES.values()}
+    return {"summary": {"measures": {"sessions": sessions, **m}, "checks": base, "thresholds": thresholds,
+                        "passes": all(base.values())}}  # fmt: skip
 
 
 def _runner(recorder, vendor, thinned=None):
@@ -189,3 +201,48 @@ def test_a_failed_check_run_never_unlocks(tmp_path):
         tmp_path / "recorder.db", tmp_path / "vendor.db", ["d"], runner=_runner(broken, broken)
     )
     assert out["unlocks_history"] is False
+
+
+def test_a_check_both_sides_fail_still_needs_the_vendor_close_on_its_measure(tmp_path):
+    """The 2026-10-25 measure bar. The recording at the vendor's cadence and the vendor both fail entry
+    matching; the pass/fail comparison read that as "at least as good" however far behind the vendor
+    was. Now the vendor's measure must be within the declared tolerance of the recording's."""
+    rec_db, ven_db, thin_db = tmp_path / "recorder.db", tmp_path / "vendor.db", tmp_path / "thinned.db"
+    at_60 = _summary(12, entries_matched=False, measures={"entries_matched": 0.85})
+    close = _summary(12, entries_matched=False, measures={"entries_matched": 0.82})
+    far = _summary(12, entries_matched=False, measures={"entries_matched": 0.40})
+    ok = validate.decisions_layer(rec_db, ven_db, ["d"], runner=_runner(_summary(12), close, thinned=at_60),
+                                  thinned_db=thin_db)  # fmt: skip
+    assert ok["unlocks_history"] is True
+    bad = validate.decisions_layer(rec_db, ven_db, ["d"], runner=_runner(_summary(12), far, thinned=at_60),
+                                   thinned_db=thin_db)  # fmt: skip
+    assert bad["vendor_at_least_recorder"]["entries_matched"] is True  # the old bar would have passed it
+    assert bad["vendor_within_tolerance"]["entries_matched"] is False
+    assert bad["unlocks_history"] is False
+
+
+def test_the_tolerance_reads_each_measure_in_its_own_direction():
+    assert validate.measure_within("entries_matched", "min", 0.90, 0.86)
+    assert not validate.measure_within("entries_matched", "min", 0.90, 0.84)
+    assert validate.measure_within("extra_entry_episodes", "max", 0.05, 0.09)
+    assert not validate.measure_within("extra_entry_episodes", "max", 0.05, 0.11)
+    # A dollar gap: the larger of 0.02 and a quarter of the recording's.
+    assert validate.measure_within("credit_abs_p90", "max", 0.40, 0.49)
+    assert not validate.measure_within("credit_abs_p90", "max", 0.40, 0.51)
+    assert validate.measure_within("credit_abs_median", "max", 0.04, 0.059)
+    assert not validate.measure_within("credit_abs_median", "max", None, 0.01)  # nothing to compare
+
+
+def test_quotes_are_also_compared_at_the_vendor_instants():
+    def sample(t):
+        return {
+            "ts": t,
+            "underlying_price": 100.0,
+            "puts": {100.0: {"bid": 1.0, "ask": 1.2, "mid": 1.1}},
+            "calls": {},
+        }
+
+    rec = [sample(t) for t in range(0, 120, 15)]
+    ven = [sample(t) for t in (0, 60)]
+    out = validate._at_vendor_instants(rec, ven)
+    assert out["paired_samples"] == 1.0 and out["shared_quotes"] == 2 and out["identical"] == 1.0
