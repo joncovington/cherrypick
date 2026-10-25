@@ -39,6 +39,11 @@ The advisor reads live facts (context a competent observer would want) but canno
 
 ## Experiments
 
+**Paused (2026-10-25).** `advisor.paused` admits new experiments `queued` and activates nothing new,
+while active ones run to their end. It stays on until the redesign in
+[docs/advisor-redesign-plan.md](../../docs/advisor-redesign-plan.md) lands: qualification on net, not
+win rate; an MDE at admission; the hypothesis register in the prompt; and multiplicity.
+
 **Paper arms are the real test.** A proposal's test is a next-session paper arm beside its control,
 scored through `cherrypick.core.profiles.group_by_tag` and `qualify_readings`. Default length is
 **15 sessions** because the promotion gate needs min 14 days and min sample 20; shorter is

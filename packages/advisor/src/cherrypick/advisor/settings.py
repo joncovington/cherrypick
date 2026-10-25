@@ -42,6 +42,10 @@ DEFAULTS: dict[str, Any] = {
     # successors starved at zero sessions behind them. Off restores the record-only behaviour,
     # where only `kill` (CLI / console) stops an experiment.
     "kill_on_verdict": True,
+    # Paused (2026-10-25, the trading-book review): new experiments are admitted QUEUED and nothing
+    # new activates, while the active ones keep being re-issued and scored to their end, so no
+    # running A/B sample is cut short. Off restores admission. A redesign is waiting on it.
+    "paused": False,
     # Backtest proposals (2026-10-17): a `backtest_spec` reply is queued for packages/backtest to run
     # over its design window, and design results come back into the pack. OFF by default: switching
     # it on changes what the model is shown and may propose, a measurement break for the advisor,
