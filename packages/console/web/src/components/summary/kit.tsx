@@ -191,6 +191,18 @@ export interface TradeShape {
   winRateCi95?: [number, number] | null;
   skewness?: number | null;
   skew?: "left" | "right" | null;
+  meanR?: number | null;
+  rN?: number;
+  rCi95?: [number, number] | null;
+}
+
+/** "0.12R (95% -0.05R to 0.29R) over 40 of 42", or null with no R (B3). */
+export function rLine(shape: TradeShape | null | undefined, trades: number): string | null {
+  if (shape?.meanR == null) return null;
+  const r = (v: number) => `${v.toFixed(2)}R`;
+  const ci = shape.rCi95 ? ` (95% ${r(shape.rCi95[0])} to ${r(shape.rCi95[1])})` : "";
+  const of = shape.rN != null && shape.rN < trades ? ` over ${shape.rN} of ${trades}` : "";
+  return `${r(shape.meanR)} per trade${ci}${of}`;
 }
 
 /** Under this many trades a figure is an early estimate, whatever its interval says. */
@@ -224,6 +236,7 @@ export function NetHero({ net, trades, shape }: { net: number; trades: number; s
   const fmt = (v: number | null | undefined) => (v == null ? "n/r" : fmtUsd(v));
   const interval = intervalLine(shape);
   const skew = skewNote(shape);
+  const rl = rLine(shape, trades);
   return (
     <button type="button" className="ts-flip ts-flip-left" onClick={next} aria-pressed={perTrade} title={`showing ${perTrade ? "net per trade" : "total net"} — click for ${perTrade ? "the total" : "net per trade"}`}>
       <span className={`ts-hero ${shown >= 0 ? "ts-pos" : "ts-neg"}`}>{fmtUsd(shown)}</span>
@@ -232,9 +245,9 @@ export function NetHero({ net, trades, shape }: { net: number; trades: number; s
           ? `per trade over ${trades} · median ${fmt(shape?.median)} · avg win ${fmt(shape?.avgWin)} · avg loss ${fmt(shape?.avgLoss)} · worst ${fmt(shape?.worst)}`
           : `total over ${trades} trade${trades === 1 ? "" : "s"} · click for per trade`}
       </span>
-      {perTrade && (interval || trades < EARLY_TRADES || skew) && (
+      {perTrade && (interval || rl || trades < EARLY_TRADES || skew) && (
         <span className="ts-muted ts-hero-sub">
-          {[interval, trades < EARLY_TRADES ? `under ${EARLY_TRADES} trades: an early estimate` : null, skew]
+          {[interval, rl, trades < EARLY_TRADES ? `under ${EARLY_TRADES} trades: an early estimate` : null, skew]
             .filter(Boolean)
             .join(" · ")}
         </span>

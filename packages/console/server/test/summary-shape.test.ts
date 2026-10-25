@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { heroOf, shapeOf, t95, wilson95, worstNet, type SummaryTrade } from "../src/readers/summary/common.js";
+import { heroOf, rOf, shapeOf, t95, wilson95, worstNet, type SummaryTrade } from "../src/readers/summary/common.js";
 
 /**
  * The cards' second faces read the per-trade shape: median, average win and loss, the worst trade.
@@ -69,5 +69,22 @@ describe("shapeOf, uncertainty", () => {
   it("says nothing it cannot: one trade has no spread, and no spread has no interval", () => {
     expect(shapeOf([7])).toMatchObject({ n: 1, mean: 7, sd: null, ci95: null, t: null, skew: null });
     expect(shapeOf([5, 5, 5])).toMatchObject({ sd: 0, ci95: null, t: null, skewness: null });
+  });
+});
+
+/** Results in R (B3): net over the trade's max loss, over the trades whose risk was recorded. */
+describe("rOf", () => {
+  const trade = (net: number): SummaryTrade => ({ session: "2026-10-23", arm: "a", gross: net, fees: 0, settlement: 0, slippage: null, net });
+  it("averages net over risk, skipping unrecorded or zero risk", () => {
+    const ts = [trade(100), trade(-200), trade(50), trade(10)];
+    const risk = new Map([[ts[0], 400], [ts[1], 400], [ts[2], 0]]);
+    const r = rOf(ts, (t) => risk.get(t) ?? null);
+    expect(r.rN).toBe(2);
+    expect(r.meanR).toBe(-0.125);
+  });
+
+  it("rides on the hero only when the module has a risk", () => {
+    expect(heroOf([trade(10)], false, 0).shape?.meanR).toBeUndefined();
+    expect(heroOf([trade(10)], false, 0, () => 100).shape).toMatchObject({ meanR: 0.1, rN: 1, rCi95: null });
   });
 });

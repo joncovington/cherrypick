@@ -868,8 +868,11 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
     curve's book tag; `strategy` is the schema constant, since every position starts as the same
     put-BWB structure (a fired add-on turns it into a 1-3-2, but the schema doesn't fork). `fees`
     is that module's TOTAL modeled cost (entry + add-on entry, each with its slippage, +
-    settlement), so net is one subtraction. Capital = the structure's worst-case max loss
-    (entry_max_loss, already the larger of the up/down loss) x100xqty."""
+    settlement), so net is one subtraction. Capital = the structure's worst-case max loss x100xqty,
+    from the recorded widths and credit (`engine.bwb_max_losses`: max(0, wide - narrow - credit)) --
+    the recorded `entry_max_loss` is overstated by the narrow width on every row before 2026-09-18,
+    which the console's reader already corrected for (2026-10-24). `entry_max_loss` only where the
+    widths were never recorded. A fired add-on's extra risk is in neither."""
     where, params = _session_where("closed_session", start, end)
     exp_col, has_exp = _experiment_select(conn, "bwb_positions")
     cols = _table_cols(conn, "bwb_positions")
@@ -879,7 +882,12 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
     )
     src_col = ", fees_source" if "fees_source" in cols else ""
     ent_col, has_ent = _entry_select(conn, "bwb_positions")
-    extra = _opt(cols, "settlement_fees") + _opt(cols, "entry_credit")
+    extra = (
+        _opt(cols, "settlement_fees")
+        + _opt(cols, "entry_credit")
+        + _opt(cols, "entry_narrow_width")
+        + _opt(cols, "entry_wide_width")
+    )
     rows = conn.execute(
         f"SELECT symbol, arm, gross_pnl, fees, entry_max_loss, quantity, closed_session{exp_col}"
         f"{ent_col}{slip_cols}{src_col}{extra}{_trade_select(conn, 'bwb_positions', 'bwb_132')} "
@@ -888,9 +896,15 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
     ).fetchall()
 
     def _capital(r):
-        if r["entry_max_loss"] is None:
+        narrow, wide = _get(r, "entry_narrow_width"), _get(r, "entry_wide_width")
+        credit = _get(r, "entry_credit")
+        if narrow is not None and wide is not None and credit is not None:
+            per_share = max(0.0, float(wide) - float(narrow) - float(credit))
+        elif r["entry_max_loss"] is not None:
+            per_share = float(r["entry_max_loss"])
+        else:
             return None
-        return round(float(r["entry_max_loss"]) * 100 * (r["quantity"] or 1), 2)
+        return round(per_share * 100 * (r["quantity"] or 1), 2)
 
     def _slip(r):
         # Paper fills are at mid and the modeled slippage is charged inside `fees` -- entry plus a
@@ -969,15 +983,49 @@ def _bwb_open(conn) -> list[dict]:
 ERA_SCHEMAS = frozenset({"pmcc"})
 
 
+# --------------------------------------------------------------------------- results in R (B3)
+# `docs/trading-book-review-plan.md` B3: every closed record carries `r_multiple`, net over the
+# trade's defined max loss at entry (`capital`), so modules compare on one scale. Derived here, on
+# read, from what every ledger already records -- so every row already written has it too, with no
+# backfill. A schema whose `capital` is not a defined max loss has no R: contango holds a fund (its
+# capital is the purchase, not a structure's worst case) and flies' per-trade rows carry no capital.
+R_SCHEMAS = frozenset({"meic_ic", "earnings", "dc_week", "pmcc", "curve_vx", "bwb_132"})
+
+
+def r_multiple(record: dict, schema: str) -> float | None:
+    """net / capital for a defined-risk schema with a positive capital and a net; else None."""
+    if canonical_schema(schema) not in R_SCHEMAS:
+        return None
+    net, cap = record.get("net_pnl"), record.get("capital")
+    if net is None or not cap or cap <= 0:
+        return None
+    return round(float(net) / float(cap), 4)
+
+
+def _with_r(schema: str, reader):
+    def read(conn, start: str | None = None, end: str | None = None) -> list[dict]:
+        rows = reader(conn, start, end)
+        for r in rows:
+            r["r_multiple"] = r_multiple(r, schema)
+        return rows
+
+    read.__doc__ = reader.__doc__
+    read.__name__ = reader.__name__
+    return read
+
+
 READERS = {
-    "meic_ic": _meic_closed,
-    "earnings": _earnings_closed,
-    "fly_book": _flies_closed,
-    "dc_week": _calendars_closed,
-    "pmcc": _pmcc_closed,
-    "curve_vx": _curve_closed,
-    "bwb_132": _bwb_closed,
-    "contango_etf": _contango_closed,
+    schema: _with_r(schema, reader)
+    for schema, reader in {
+        "meic_ic": _meic_closed,
+        "earnings": _earnings_closed,
+        "fly_book": _flies_closed,
+        "dc_week": _calendars_closed,
+        "pmcc": _pmcc_closed,
+        "curve_vx": _curve_closed,
+        "bwb_132": _bwb_closed,
+        "contango_etf": _contango_closed,
+    }.items()
 }
 
 

@@ -188,7 +188,7 @@ export function readCurveSummary(config: ConsoleConfig, q: SummaryQuery): Module
   if (read === null) return missing();
 
   const trades = scopeTrades(read.trades, q);
-  const hero = heroOf(trades, true, read.open);
+  const hero = heroOf(trades, true, read.open, (t) => t.maxLoss);
   const premiumRows = trades.filter((t) => t.premium !== null);
   const premium = round2(premiumRows.reduce((s, t) => s + (t.premium ?? 0), 0));
   hero.basis = trades.length > 0 ? { label: "premium collected", amount: premium } : null;
