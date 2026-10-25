@@ -1879,6 +1879,9 @@ def cmd_retests(args) -> None:
         sys.exit("retests needs --year")
     plan = hypotheses.retest_plan(hypotheses.load(), args.year)
     if args.apply:
+        for r in plan["queue"]:
+            if r["output"]:
+                Path(r["output"]).expanduser().parent.mkdir(parents=True, exist_ok=True)
         plan["queued"] = [
             researchqueue.add(r["study"], r["kind"], r["args"], step=r["step"], output=r["output"])["name"]
             for r in plan["queue"]
