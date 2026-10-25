@@ -26,7 +26,7 @@ its PR), `dropped` (with why).
 | B3 | Ch. 1 | Results in R per trade (1R = max loss for a defined-risk structure) in every module's history | built: `core.ledgers` `r_multiple`, console mean R | No: a presentation and recording change |
 | B4 | Ch. 1, 2 | Entry context recorded on every trade row (SPX against its 50-day **and 200-day**, ATR %, relative volume, sector, entry time; holding period at exit) | built: `technicals.entrycontext`, derived on read | No: recording only, new columns |
 | B5 | Ch. 2 | A slice report per arm (by setup, market condition, entry time, holding period) with n and an interval on every cell; a cell that looks good becomes a declared hypothesis, never a filter | built: `core.slices`, `technicals slices`; console view open | No: a read surface |
-| B6 | Ch. 2, 7 | Facts and interpretations kept apart wherever a person decides a trade (desk tickets, manual notes): free text in its own field, never read by a calculation; plus an invalidation condition and a short pre-mortem written at entry | proposed | No: recording only |
+| B6 | Ch. 2, 7 | Facts and interpretations kept apart wherever a person decides a trade (desk tickets, manual notes): free text in its own field, never read by a calculation; plus an invalidation condition and a short pre-mortem written at entry | built: `cherrypick-desk propose --thesis` | No: recording only |
 | B7 | Ch. 3, 7, 8 | A hypothesis register: one row per hypothesis with its four parts, mechanism, **rival explanations and the check that rules each out**, rejection rule, status and result pointer, checked for near-duplicates of rejected ideas before a new one is declared; every rule change logged with the evidence behind it and re-read after its first 100 trades | built: `docs/hypotheses.json`, `cherrypick hypotheses` | No: research tooling |
 | B8 | Ch. 4 | One declared market-environment classifier (uptrend, sideways, downtrend) in `cherrypick.core`, used by every study report and by B4/B5, so "which environment" means the same thing everywhere | built: `core.environment`, on B4's rows | No: a shared definition; studies report by it, nothing trades on it |
 | B9 | Ch. 4 | Replication across names as a standing second check in declared tests: the universe split by a fixed hash of the symbol, and a pass required in both name-halves as well as both time-halves | built: declaration template + `core.robustness` | No: tightens future declarations only |
@@ -225,7 +225,7 @@ its PR), `dropped` (with why).
 - **Where:** most naturally in `packages/review`'s fact set, read by the console. It depends on B4
   for the condition tags and on B3 for a common unit.
 
-**B6. Facts and interpretations kept apart where a person decides.** *(proposed)*
+**B6. Facts and interpretations kept apart where a person decides.** *(built 2026-10-24: `cherrypick-desk propose --thesis "..."` journals the text as its own `thesis` line beside the ticket, outside the sealed order. The open question is answered: desk stored no free text before; its only text was machine refusal reasons. A test pins that only the CLI's write path names it.)*
 - The automated loops have no interpretations to separate. The discretionary paths do: `desk`
   tickets and any manual notes on live trades.
 - **What:** a free-text `thesis` field on a desk ticket (and any manual trade note), stored beside
