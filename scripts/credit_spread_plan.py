@@ -74,6 +74,7 @@ REPORT_LAG_DAYS = (14, 60)
 SELECTORS = {"A": (("reversion", "put"),), "C": (("pullback-short", "call"), ("reversion-short", "call"))}
 REFERENCE = ("SPY", "QQQ", "IWM")
 REFERENCE_EVERY = 5
+BOARD_AT = 3  # selector B: a fresh count of 3 or more on one side (item 14, amended 2026-10-23)
 
 # Each item's declared spec. Item 14's is the constants above, unchanged, so its plan reproduces.
 _SETUPS17 = ("trend", "pullback", "reversion", "breakout")
@@ -141,10 +142,14 @@ def report_in_trade(sym: str, entry: str, expiry: str, reports: dict, quarters: 
 _ctx: dict = {}
 
 
-def _init(design_end: str, reports: dict, quarters: dict, spec: dict | None = None) -> None:
+def _init(
+    design_end: str, reports: dict, quarters: dict, spec: dict | None = None, board_path: str | None = None
+) -> None:
     from cherrypick.technicals import paths, store
 
     conn = store.connect(paths.history_db())
+    if board_path:
+        _ctx["board"] = sqlite3.connect(f"file:{Path(board_path).as_posix()}?mode=ro", uri=True)
     _ctx.update(
         conn=conn,
         data_end=conn.execute("SELECT MAX(date) FROM bars").fetchone()[0],
@@ -190,6 +195,21 @@ def _eligible_session(nm, j: int) -> bool:
     )
 
 
+def board_signals(nm, counts: dict[str, tuple[int, int]], allow) -> list[tuple[int, str]]:
+    """Selector B's signals on one name: (signal index, side) wherever its board count on a side
+    reaches BOARD_AT having been below it the session before, on a session the name is counted and
+    trading $300M a day. `counts` is {session: (bullish, bearish)} from `scripts/board_history.py`."""
+    out = []
+    for i in range(1, len(nm.dates)):
+        now, before = counts.get(nm.dates[i]), counts.get(nm.dates[i - 1], (0, 0))
+        if now is None or not allow(i) or not nm.member[i] or (nm.shadow and nm.shadow[i]):
+            continue
+        for k, side in ((0, "put"), (1, "call")):
+            if now[k] >= BOARD_AT and before[k] < BOARD_AT:
+                out.append((i, side))
+    return out
+
+
 def plan_name(sym: str) -> dict:
     from cherrypick.technicals import setups, study
 
@@ -205,52 +225,74 @@ def plan_name(sym: str) -> dict:
     for j in range(1, len(nm.dates)):
         if START <= nm.dates[j] <= _ctx["design_end"] and _eligible_session(nm, j):
             by_year.setdefault(nm.dates[j][:4], []).append(j)
-    for selector, specs in spec["selectors"].items():
-        for setup_id, side in specs:
-            for t in setups.run(setup_id, nm.readings, allow=allow):
-                i = t.entry
-                j = i + 1
-                if j >= len(nm.dates) or not (START <= nm.dates[j] <= _ctx["design_end"]):
-                    continue
-                if not study.counted(nm, setup_id, i):
-                    continue
-                exp, why = _why_not(nm, j, side, exdates)
-                if why:
-                    out["dropped"][f"{selector} {setup_id}: {why}"] += 1
-                    continue
-                tid = f"{selector}:{setup_id}:{sym}:{nm.dates[i]}"
-                entry = nm.dates[j]
-                out["trades"].append(
-                    _row(tid, "trade", None, selector, setup_id, side, sym, nm.dates[i], entry, exp)
+    board = _ctx.get("board")
+    selectors = {"B": None} if board is not None else spec["selectors"]
+    for selector, specs in selectors.items():
+        if selector == "B":
+            counts = {
+                d: (bu, be)
+                for d, bu, be in board.execute(
+                    "SELECT session, bullish, bearish FROM board WHERE symbol = ?", (sym,)
                 )
-                rng = random.Random(f"{spec['seed']}:{tid}")
-                pool = [k for k in by_year.get(entry[:4], []) if k != j]
-                rng.shuffle(pool)
-                drawn = 0
-                for k in pool:
-                    if drawn == BASELINES:
-                        break
-                    bexp, bwhy = _why_not(nm, k, side, exdates)
-                    if bwhy:
-                        continue
-                    drawn += 1
-                    out["trades"].append(
-                        _row(
-                            f"{tid}#b{drawn}",
-                            "baseline",
-                            tid,
-                            selector,
-                            setup_id,
-                            side,
-                            sym,
-                            None,
-                            nm.dates[k],
-                            bexp,
-                        )
+            }
+            signals = [("board", side, i) for i, side in board_signals(nm, counts, allow)]
+        else:
+            signals = [
+                (setup_id, side, t.entry)
+                for setup_id, side in specs
+                for t in setups.run(setup_id, nm.readings, allow=allow)
+            ]
+        open_until: dict[str, str] = {}
+        for setup_id, side, i in signals:
+            j = i + 1
+            if j >= len(nm.dates) or not (START <= nm.dates[j] <= _ctx["design_end"]):
+                continue
+            if selector != "B" and not study.counted(nm, setup_id, i):
+                continue
+            if selector == "B" and open_until.get(side, "") >= nm.dates[j]:
+                out["dropped"][f"B {side}: a B trade on that side still open"] += 1
+                continue
+            exp, why = _why_not(nm, j, side, exdates)
+            if why:
+                out["dropped"][f"{selector} {setup_id}: {why}"] += 1
+                continue
+            if selector == "B":
+                open_until[side] = exp
+            tid = f"{selector}:{setup_id}:{sym}:{nm.dates[i]}"
+            if selector == "B":
+                tid += f":{side}"
+            entry = nm.dates[j]
+            out["trades"].append(
+                _row(tid, "trade", None, selector, setup_id, side, sym, nm.dates[i], entry, exp)
+            )
+            rng = random.Random(f"{spec['seed']}:{tid}")
+            pool = [k for k in by_year.get(entry[:4], []) if k != j]
+            rng.shuffle(pool)
+            drawn = 0
+            for k in pool:
+                if drawn == BASELINES:
+                    break
+                bexp, bwhy = _why_not(nm, k, side, exdates)
+                if bwhy:
+                    continue
+                drawn += 1
+                out["trades"].append(
+                    _row(
+                        f"{tid}#b{drawn}",
+                        "baseline",
+                        tid,
+                        selector,
+                        setup_id,
+                        side,
+                        sym,
+                        None,
+                        nm.dates[k],
+                        bexp,
                     )
-                if drawn < BASELINES:
-                    out["short"] += 1
-    if sym in spec["reference"]:
+                )
+            if drawn < BASELINES:
+                out["short"] += 1
+    if sym in spec["reference"] and board is None:
         sessions = [j for j in range(1, len(nm.dates)) if START <= nm.dates[j] <= _ctx["design_end"]]
         for n, j in enumerate(sessions):
             if n % REFERENCE_EVERY:
@@ -311,6 +353,16 @@ def _earnings() -> tuple[dict, dict]:
     return {k: sorted(v) for k, v in reports.items()}, {k: sorted(v) for k, v in quarters.items()}
 
 
+def _board_names(path: Path, names: list[str]) -> list[str]:
+    """The $300M names the historical board read (single-name stocks only, as the live board)."""
+    b = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    try:
+        on_board = {s for (s,) in b.execute("SELECT DISTINCT symbol FROM board")}
+    finally:
+        b.close()
+    return sorted(set(names) & on_board)
+
+
 def universe_names(spec: dict, history_db: Path, leveraged: set[str] | None = None) -> list[str]:
     """Every name that ever traded the item's floor a day (`peaks`), plus its reference funds, less
     the declared leveraged, inverse and volatility funds when the item leaves them out (item 17; a
@@ -347,13 +399,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--workers", type=int, default=14)
     ap.add_argument("--out", type=Path, help="default: results/research/item<N> under the backtest data dir")
     ap.add_argument("--limit-names", type=int, help="plan only the first N names (a trial)")
+    ap.add_argument("--board", type=Path, help="plan selector B only, from scripts/board_history.py's output")
     args = ap.parse_args(argv)
+    if args.board is not None and args.item != 14:
+        ap.error("--board is item 14's selector B")
     spec = ITEMS[args.item]
     out_dir = args.out or home.data_dir("backtest") / "results" / "research" / spec["out"]
 
     design_end = _design_end()
     reports, quarters = _earnings()
     names = universe_names(spec, paths.history_db())
+    if args.board is not None:
+        names = _board_names(args.board, names)
     if args.limit_names:
         names = names[: args.limit_names]
     chunks = [names[k :: args.workers] for k in range(args.workers)]
@@ -361,7 +418,9 @@ def main(argv: list[str] | None = None) -> int:
     dropped: Counter = Counter()
     short = 0
     with ProcessPoolExecutor(
-        args.workers, initializer=_init, initargs=(design_end, reports, quarters, spec)
+        args.workers,
+        initializer=_init,
+        initargs=(design_end, reports, quarters, spec, str(args.board) if args.board else None),
     ) as ex:
         for part in ex.map(_plan_many, chunks):
             for p in part:
@@ -384,8 +443,11 @@ def main(argv: list[str] | None = None) -> int:
         "exact_earnings_from": EXACT_EARNINGS_FROM,
         "names": len(names),
     }
-    (out_dir / "trades.json").write_text(json.dumps({**meta, "trades": trades}), encoding="utf-8")
-    (out_dir / "requests.json").write_text(json.dumps({**meta, "requests": requests}), encoding="utf-8")
+    suffix = "-b" if args.board else ""
+    (out_dir / f"trades{suffix}.json").write_text(json.dumps({**meta, "trades": trades}), encoding="utf-8")
+    (out_dir / f"requests{suffix}.json").write_text(
+        json.dumps({**meta, "requests": requests}), encoding="utf-8"
+    )
 
     summary = Counter((t["selector"], t["setup"], t["kind"], t["era"]) for t in trades)
     print(json.dumps({**meta, "out": str(out_dir)}, indent=1))

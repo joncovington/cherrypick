@@ -745,6 +745,51 @@ reproduced (the best rule found picked 10-15% of its slots right).*
     0.30 delta and the first out-of-the-money strike, unconditioned, **no short delta had edge after
     costs**, on either side, in either half. The credit-share constraint is what starved this test;
     item 15 drops it.
+- **Selector B, as declared above (2026-10-23).** Its historical board is `scripts/board_history.py`:
+  the live board's six methods (`technicals/board.py`) replayed on every session from 2017-10-26, each
+  input cut at the session, with a look-ahead guard that re-reads a sample through the live
+  `board.tags_on` and refuses the build on any difference. B's trades are built exactly as written
+  above (the short nearest 0.40 delta, the widest long at 35-40%, else no trade), but its test is
+  not: the amendment below pools its put and call sides into one member of the Holm family (see
+  **Holm** there). Two details the text left open, fixed here before any B trade was priced:
+  - **A signal** is a session on which a name's count on one side reaches 3 or more having been
+    below 3 on that side the session before (a fresh reading, as a setup's entry is), on a name in
+    item 14's universe that session. A name with a B trade open on that side (entry to expiry) takes
+    no second one.
+  - **The universe** is single-name stocks only, as on the live board (it reads no fund).
+- **Amendment (2026-10-23): A' and C', a new hypothesis, fixed before any B trade was priced.**
+  *Source: the user, 2026-10-23, after the declared run starved A and C of trades.* The same
+  selectors (A: `mr-300m` put spreads; C: the short pullback and fading strength as call spreads),
+  the same trades and five matched baselines from `trades.json`, the same expiry, fills, costs,
+  exclusions, window, halves and pass rule. **Only the structure changes:**
+  - **Short:** among the two-sided out-of-the-money strikes whose delta is between **0.30 and 0.50**
+    in absolute value, taken in order of their distance from 0.40 (the nearer first; a tie goes to the
+    strike further out of the money), the first for which some listed long beyond it gives a working
+    credit of 35-40% of the width.
+  - **Long:** for that short, the widest such strike.
+  - **No trade** when no short in the band admits one; counted, as before.
+  - **Baselines** are priced under the same rule, so a trade and its baselines share one structure.
+  - **Holm:** A', B and C' are corrected together as one family of three (B's put and call sides
+    pooled into one selector, each side also reported). D stays the reference, not tested. This
+    replaces the family in the pass rule above (A, B-put, B-call and C), and it changes B's test:
+    its two sides were two members of that family and are now one, which changes both its
+    multiple-testing correction and its power (one test on the pooled trades, in which an edge on
+    one side can be diluted by the other). They are pooled to keep the family at three members; no
+    other reason was recorded when this was written.
+  - **The original A and C** stay on the record as the 2026-10-21 run's result (no verdict: too few
+    paired trades in each half). They are not members of this family, and A' and C' do not replace
+    that result.
+  - **Not a clean test:** a post-hoc version of this structure (the same search with no delta band)
+    was already looked at in the 2026-10-21 sensitivity run, and it failed. Whatever A' and C' show
+    is read with that in mind, and the result says so.
+- **Result (2026-10-24), figures kept locally per the licence:**
+  - **B fails.** It has over 100 paired trades in each half, but trails its random-date baselines
+    and loses money outright in both. Nearly all its trades are put spreads; the call side alone is
+    too thin to read.
+  - **A' and C' fail.** Each beats its baselines in one half only, and loses money outright in the
+    second half: a better loser, not a list. They were never a clean test anyway (see above).
+  - No selector survives, so neither the credit-spread tab nor manage's spreads get a side rule from
+    item 14.
 
 ### 15. Which strike and exit for a bullish put spread on `mr-300m`
 
