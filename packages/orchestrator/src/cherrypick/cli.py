@@ -2396,7 +2396,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="For stop: every daemon and every job still running (after `uninstall`; refused before)",
     )
-    parser.add_argument("--task", default=None, help="For queue-add: fetch-chains, fetch-flow or script")
+    parser.add_argument("--task", default=None, help="For queue-add: fetch-chains, fetch-flow, script or validate")
     parser.add_argument(
         "--task-args",
         default="{}",
