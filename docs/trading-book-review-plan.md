@@ -27,14 +27,14 @@ its PR), `dropped` (with why).
 | B4 | Ch. 1, 2 | Entry context recorded on every trade row (SPX against its 50-day **and 200-day**, ATR %, relative volume, sector, entry time; holding period at exit) | built: `technicals.entrycontext`, derived on read | No: recording only, new columns |
 | B5 | Ch. 2 | A slice report per arm (by setup, market condition, entry time, holding period) with n and an interval on every cell; a cell that looks good becomes a declared hypothesis, never a filter | proposed | No: a read surface |
 | B6 | Ch. 2, 7 | Facts and interpretations kept apart wherever a person decides a trade (desk tickets, manual notes): free text in its own field, never read by a calculation; plus an invalidation condition and a short pre-mortem written at entry | proposed | No: recording only |
-| B7 | Ch. 3, 7, 8 | A hypothesis register: one row per hypothesis with its four parts, mechanism, **rival explanations and the check that rules each out**, rejection rule, status and result pointer, checked for near-duplicates of rejected ideas before a new one is declared; every rule change logged with the evidence behind it and re-read after its first 100 trades | proposed | No: research tooling |
+| B7 | Ch. 3, 7, 8 | A hypothesis register: one row per hypothesis with its four parts, mechanism, **rival explanations and the check that rules each out**, rejection rule, status and result pointer, checked for near-duplicates of rejected ideas before a new one is declared; every rule change logged with the evidence behind it and re-read after its first 100 trades | built: `docs/hypotheses.json`, `cherrypick hypotheses` | No: research tooling |
 | B8 | Ch. 4 | One declared market-environment classifier (uptrend, sideways, downtrend) in `cherrypick.core`, used by every study report and by B4/B5, so "which environment" means the same thing everywhere | proposed | No: a shared definition; studies report by it, nothing trades on it |
 | B9 | Ch. 4 | Replication across names as a standing second check in declared tests: the universe split by a fixed hash of the symbol, and a pass required in both name-halves as well as both time-halves | built: declaration template + `core.robustness` | No: tightens future declarations only |
 | B10 | Ch. 5, 13 | An execution record per live arm: each live fill against the price its own model expected, and every human override (manual close, re-arm, sizing change, desk order beside an arm) flagged, read weekly beside P&L; plus a gap breakdown of paper against live (missed entries, fill slippage, costs, overrides) naming the biggest part | built: `cherrypick execution` (meic, bwb); desk orders unrecorded | No: recording and a read surface |
 | B11 | Ch. 6 | A survivorship audit of the research data's residual paths: how a trade across a delisting or acquisition settles, how often a delisted name's option chain comes back empty, and which inputs still hold today's names only | proposed | No: an audit; findings become fixes or declared limits |
 | B12 | Ch. 6 | A minimum detectable effect in every declaration: the smallest edge the planned sample could detect, computed from the spread of R, so "no verdict" says what it rules out; rule changes compared paired on the same trades | built: declaration template + `core.robustness` | No: tightens future declarations only |
 | B13 | Ch. 9, 11 | A robustness report beside every passing result: the parameter neighbourhood (a plateau, not a peak), costs at 1.5× and 2×, and a bootstrap of the drawdown, with a declared cost stress the result must survive; plus the largest size at which the bootstrapped 99th-percentile drawdown stays inside a declared share of the account | built: declaration template + `core.robustness` | No: tightens future declarations only |
-| B14 | Ch. 10 | A yearly re-test: every declared result, passed or failed, re-run unchanged on the newest year of data and recorded beside the original, so decay (or a late pass) is measured rather than assumed | proposed | No: research tooling; results stay local |
+| B14 | Ch. 10 | A yearly re-test: every declared result, passed or failed, re-run unchanged on the newest year of data and recorded beside the original, so decay (or a late pass) is measured rather than assumed | built: `cherrypick retests --year`; recipes still to write | No: research tooling; results stay local |
 
 ---
 
@@ -323,7 +323,7 @@ its PR), `dropped` (with why).
   trades) cannot be armed until it has some, or runs at its minimum size under a hand-written limit.
 - The same bands give the console its "outside the expected range" marker (B2).
 
-**B7. A hypothesis register.** *(proposed)*
+**B7. A hypothesis register.** *(built 2026-10-24: `docs/hypotheses.json`, seeded with items 1-17 as legacy rows that point to their prose; `cherrypick hypotheses` checks it, lists rule changes due a re-read, and finds rejected look-alikes. The rule-change log starts empty.)*
 - **Why:** [edge-hypotheses-plan.md](edge-hypotheses-plan.md) holds the declarations and results as
   prose. That suits a reader, but makes "has this been tried before, under what conditions?" a
   search, and the book's "review the failed ones before writing a new one" a matter of memory.
@@ -970,7 +970,7 @@ plus an explicit tail scenario for short-premium arms.
 **B1** covers "decay versus noise" for live arms. For research, the chapter's "review even when it is
 working" becomes:
 
-**B14. A yearly re-test of every declared result.** *(proposed)*
+**B14. A yearly re-test of every declared result.** *(built 2026-10-24: `cherrypick retests --year Y` plans and, with `--apply`, queues the rows. No legacy row has a re-test recipe yet, so each needs one written before its first re-test.)*
 - **What:** once a year, re-run each declared test unchanged on the newest year of data (the holdout as
   it is opened, then each later year), and record the result beside the original, passed or failed.
 - **Why:** it measures decay instead of assuming it. A passing edge that fades shows up in its own

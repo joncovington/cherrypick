@@ -113,6 +113,7 @@ from cherrypick.orchestrator import (
     desk_notifier,
     doctor,
     execution,
+    hypotheses,
     init,
     logrotate,
     migrate,
@@ -1829,6 +1830,62 @@ def cmd_execution(cfg, args) -> None:
     print(execution.format_report(result))
 
 
+def _trades_since(cfg):
+    """Closed paper trades of `arm` in `module` after `date`, for a rule change's re-read (B7)."""
+    import sqlite3
+
+    from cherrypick.core import ledgers
+
+    def count(module: str, arm: str, date: str) -> int | None:
+        mcfg = (cfg.get("modules") or {}).get(module) or {}
+        schema = ledgers.canonical_schema((mcfg.get("paper") or {}).get("trade_schema"))
+        path = cfgmod.paper_db_path(mcfg, module)
+        if schema not in ledgers.READERS or not path.exists():
+            return None
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        try:
+            return sum(
+                1
+                for r in ledgers.READERS[schema](conn)
+                if r.get("arm") == arm and (r.get("session") or "") > date
+            )
+        finally:
+            conn.close()
+
+    return count
+
+
+def cmd_hypotheses(cfg, args) -> None:
+    """B7: check the register, list rule changes due a re-read, and (--similar) rejected look-alikes."""
+    reg = hypotheses.load()
+    problems = hypotheses.check(reg)
+    out = {"ok": not problems, "problems": problems, "rereads": hypotheses.rereads(reg, _trades_since(cfg))}
+    if args.similar:
+        out["similar_rejected"] = [
+            {k: r.get(k) for k in ("id", "study", "title", "pointer")}
+            for r in hypotheses.similar(reg, json.loads(args.similar))
+        ]
+    _emit(out)
+    if problems:
+        sys.exit(1)
+
+
+def cmd_retests(args) -> None:
+    """B14: the year's re-test rows; --apply queues them (each `<study>/retest-<year>`)."""
+    from cherrypick.orchestrator import researchqueue
+
+    if not args.year:
+        sys.exit("retests needs --year")
+    plan = hypotheses.retest_plan(hypotheses.load(), args.year)
+    if args.apply:
+        plan["queued"] = [
+            researchqueue.add(r["study"], r["kind"], r["args"], step=r["step"], output=r["output"])["name"]
+            for r in plan["queue"]
+        ]
+    _emit(plan)
+
+
 def cmd_calibrate(cfg) -> None:
     _emit(calibrate.run(cfg))
 
@@ -2053,6 +2110,8 @@ def build_parser() -> argparse.ArgumentParser:
             "migrate-home",
             "calibrate",
             "execution",
+            "hypotheses",
+            "retests",
             "run-earnings-entry",
             "run-earnings-exit",
             "run-earnings-symbol-watch",
@@ -2149,6 +2208,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="For positions/execution: emit the structured result instead of the text report",
     )
     parser.add_argument("--module", default=None, help="For connect/account: which module to target")
+    parser.add_argument("--year", type=int, default=None, help="For retests: the year to re-run on")
+    parser.add_argument(
+        "--similar",
+        default=None,
+        help='For hypotheses: a proposal as JSON, e.g. {"setup": "down-day", "structure": "put-bwb"}',
+    )
     parser.add_argument(
         "--set",
         dest="set",
@@ -2218,7 +2283,9 @@ def build_parser() -> argparse.ArgumentParser:
         "Dry-run unless --apply.",
     )
     parser.add_argument(
-        "--apply", action="store_true", help="For migrate-home: perform the move (default is a dry run)"
+        "--apply",
+        action="store_true",
+        help="For migrate-home: perform the move; for retests: queue the rows (default is a dry run)",
     )
     parser.add_argument(
         "--month",
@@ -2410,6 +2477,8 @@ def main() -> None:
         "migrate-home": lambda: cmd_migrate_home(cfg, args.apply),
         "calibrate": lambda: cmd_calibrate(cfg),
         "execution": lambda: cmd_execution(cfg, args),
+        "hypotheses": lambda: cmd_hypotheses(cfg, args),
+        "retests": lambda: cmd_retests(args),
         "notify-trades": lambda: cmd_notify_trades(cfg, dry_run=args.dry_run),
         "notify-desk": lambda: cmd_notify_desk(cfg),
         "notify-status": lambda: cmd_notify_status(cfg, force=args.force, close=args.close),

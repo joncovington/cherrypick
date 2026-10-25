@@ -40,6 +40,11 @@ Every declaration from here on carries these lines, written before any look. Dec
 written are not re-judged. The arithmetic is `cherrypick.core.robustness`
 (`docs/trading-book-review-plan.md` B12, B13, B9).
 
+- **A register row** in [hypotheses.json](hypotheses.json) (B7), added with the declaration: the four
+  parts, the mechanism, the rival explanations each with the check that rules it out, and a pointer
+  here. Run `cherrypick hypotheses --similar '{"setup": ..., "structure": ...}'` first; a rejected
+  look-alike is named in the declaration, so a retest is said out loud. `cherrypick hypotheses`
+  fails on a malformed row. A `retest` recipe (the research queue's kind and args) lets B14 re-run it.
 - **Pass test**, as before: the statistic, the bar, and both time-halves.
 - **Minimum detectable effect** (B12): the smallest edge the planned sample detects at the pass bar,
   from the spread of comparable past results (`planned_mde`). A no-verdict result then reads "no
