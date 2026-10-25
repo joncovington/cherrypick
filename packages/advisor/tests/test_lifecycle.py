@@ -868,3 +868,25 @@ def test_a_named_experiments_verdict_reads_its_own_book(home, conn):
         bounds.advised_tag("earnings", "strat_test", "iron_fly", tag="advised:take")
         == "advised:take:iron_fly"
     )
+
+
+def _pause(home):
+    fakes.write_suite_config(
+        home,
+        {"enabled": True, "paused": True, "modules": {"meic": {"enabled": True}, "flies": {"enabled": False},
+                                                      "earnings": {"enabled": False}}},
+    )  # fmt: skip
+
+
+def test_paused_holds_new_experiments_queued_and_keeps_the_active_one_running(home, conn):
+    """2026-10-25: a pause stops new experiments without cutting a running A/B sample short."""
+    running = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}
+    )["experiment_id"]
+    _pause(home)
+    held = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.88})
+    assert held["ok"] and store.experiment(conn, held["experiment_id"])["status"] == "queued"
+    assert experiments.activate_queued(conn, "meic", session=SESSION) == []
+    assert store.experiment(conn, running)["status"] == "active"
+    enact.run(conn, SESSION)  # the active one is still issued; the held one still waits
+    assert store.experiment(conn, held["experiment_id"])["status"] == "queued"
