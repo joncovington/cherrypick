@@ -146,7 +146,7 @@ def retest_plan(reg: dict, year: int) -> dict:
     """B14: queue rows for every re-testable hypothesis with a recipe; the rest listed as needing one.
     A recipe's strings may carry {year}, {start}, {end} and {home} (the cherrypick home, so a
     script is handed a real path)."""
-    rows, missing, done = [], [], []
+    rows, missing, done, declined = [], [], [], []
     for r in reg.get("hypotheses", []):
         if r.get("status") not in RETESTABLE:
             continue
@@ -155,7 +155,8 @@ def retest_plan(reg: dict, year: int) -> dict:
             continue
         recipe = r.get("retest")
         if not recipe:
-            missing.append(r["study"])
+            # A row that says why it has none is a decision, not a gap.
+            (declined if r.get("retest_note") else missing).append(r["study"])
             continue
         rows.append({
             "study": r["study"],
@@ -164,4 +165,10 @@ def retest_plan(reg: dict, year: int) -> dict:
             "args": _fill(recipe["args"], year),
             "output": _fill(recipe.get("output"), year),
         })  # fmt: skip
-    return {"year": year, "queue": rows, "needs_recipe": missing, "already_recorded": done}
+    return {
+        "year": year,
+        "queue": rows,
+        "needs_recipe": missing,
+        "declined": declined,
+        "already_recorded": done,
+    }

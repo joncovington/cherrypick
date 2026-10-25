@@ -149,7 +149,8 @@ def admit_spec(
 
     cap = _cap(resolved)
     over_cap = _over_cap(conn, module, cap)
-    status = STATUS_QUEUED if over_cap else STATUS_ACTIVE
+    # Paused: held in the queue for review, never activated (`activate_queued` waits too).
+    status = STATUS_QUEUED if over_cap or resolved.get("paused") else STATUS_ACTIVE
     length = _settings.clamp_sessions(sessions, resolved)
 
     # Re-admitting the same reply (a `--force` re-run, or the CLI reached twice for one slot) must
@@ -433,7 +434,10 @@ def dismiss(conn, proposal_id: int) -> dict[str, Any]:
 def activate_queued(conn, module: str, *, session: str | None = None, cfg: dict | None = None) -> list[str]:
     """Fill free slots from the queue, oldest first. Returns the ids that became active. With no
     cap (the default) everything queued activates -- a queue only forms under a configured cap."""
-    cap = _cap(_settings.load(cfg))
+    resolved = _settings.load(cfg)
+    if resolved.get("paused"):
+        return []
+    cap = _cap(resolved)
     activated: list[str] = []
     for candidate in _store.experiments(conn, module=module, status=STATUS_QUEUED):
         if _over_cap(conn, module, cap):
