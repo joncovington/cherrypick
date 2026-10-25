@@ -1640,6 +1640,7 @@ def cmd_queue_add(args) -> None:
             output=args.output,
             not_before=args.not_before,
             stop_by=args.stop_by,
+            after=args.after,
         )
     except (rq.Refused, ValueError) as exc:
         _emit({"ok": False, "error": str(exc)})
@@ -1659,9 +1660,16 @@ def cmd_queue_list(cfg, args) -> None:
     held = rq.session_held()
     window = rq.blackout(cfg)
     out = []
+    with rq.connect() as conn:
+        status_of = {
+            r["after"]: rq.prereq_status(conn, r["after"])
+            for r in rq.rows(study=args.study)
+            if r.get("after")
+        }
     for r in rq.rows(study=args.study):
         if r["status"] == "queued":
-            r["waits"] = rq.ready(r, now, cal.is_trading_day, held, window) or "ready"
+            after = status_of.get(r.get("after")) if r.get("after") else None
+            r["waits"] = rq.ready(r, now, cal.is_trading_day, held, window, after) or "ready"
         r["name"] = rq.name(r)
         r["args"] = json.loads(r["args"])
         r["result"] = json.loads(r["result"]) if r.get("result") else None
@@ -2408,6 +2416,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--stop-by", default=None, help="For queue-add: stop a fetch by then (ET, YYYY-MM-DDTHH:MM)"
+    )
+    parser.add_argument(
+        "--after",
+        default=None,
+        help="For queue-add: wait for this row (study/step) to finish done; held if it fails",
     )
     parser.add_argument("--task-id", type=int, default=None, help="For queue-cancel: the row to cancel")
     return parser
