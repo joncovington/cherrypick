@@ -65,3 +65,15 @@ def test_weekly_reads_fill_rate_slippage_and_overrides_beside_net():
     [w] = ex.weekly(orders, [{"kind": "manual_close", "session": "2026-10-16"}], [_rec("2026-10-15", 31.0)])
     assert w["fill_rate"] == 0.5 and w["slip_dollars"] == 1.0 and w["net"] == 31.0
     assert not w["clean"]
+
+
+def test_the_window_trigger_is_graded_but_only_reported():
+    paper = [_rec("2026-01-01", 10.0)] * 200
+    too_few = ex.window_trigger([_rec("2026-10-15", -5.0)] * 10, paper)
+    assert too_few["would"] == "too_few" and too_few["n"] == 10
+    steady = [_rec(f"2026-10-{i:02d}", 10.0 + (1 if i % 2 else -1)) for i in range(1, 51)]
+    assert ex.window_trigger(steady, paper)["would"] == "normal"
+    bad = [_rec(f"2026-10-{i:02d}", -20.0 + (5 if i % 2 else -5)) for i in range(1, 51)]
+    out = ex.window_trigger(bad, paper)
+    assert out["would"] == "alarm" and out["z"] < -3 and out["baseline"] == 10.0
+    assert ex.window_trigger(bad, [])["would"] is None  # no baseline, no grade

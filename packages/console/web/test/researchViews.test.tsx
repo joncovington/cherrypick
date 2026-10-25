@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExecutionModule, ExecutionWeek, SliceCell } from "@console/shared";
-import { gapLine, overrideLine } from "../src/pages/Live/ExecutionTab";
+import { gapLine, overrideLine, windowLine } from "../src/pages/Live/ExecutionTab";
 import { fmtCi, fmtMean } from "../src/pages/Backtest/SlicesTab";
 
 const week = (over: Partial<ExecutionWeek>): ExecutionWeek => ({
@@ -32,6 +32,7 @@ describe("the execution tab's lines", () => {
       mirror: "live-shadow",
       weeks: [],
       gap: { since: "2026-10-15", sessions: 3, total: -133.17, parts: { missed: -172.48 }, largest: "missed" },
+      window: null,
     };
     expect(gapLine(m)).toBe("live − live-shadow since 2026-10-15 over 3 working sessions: -$133.17 (missed -$172.48); largest: missed");
     expect(gapLine({ ...m, gap: null })).toBeNull();
@@ -45,5 +46,18 @@ describe("the slices tab's figures", () => {
     expect(fmtMean({ ...c, mean: 12.5 }, "net $")).toBe("$12.50");
     expect(fmtCi(c, "R")).toBe("-0.100 to 0.200");
     expect(fmtCi({ ...c, ci95: null }, "R")).toBe("—");
+  });
+});
+
+describe("the window trigger line", () => {
+  const base: ExecutionModule = { module: "meic", ok: true, reason: null, mirror: "live-shadow", weeks: [], gap: null, window: null };
+  it("says it is reported only, and how far along it is", () => {
+    expect(windowLine({ ...base, window: { window: 50, n: 3, mean: 20, se: null, baseline: null, z: null, would: "too_few" } })).toBe(
+      "window trigger (reported, never enforced): 3 of 50 live trades so far",
+    );
+    expect(
+      windowLine({ ...base, window: { window: 50, n: 50, mean: -20, se: 1.4, baseline: 10, z: -21.2, would: "alarm" } }),
+    ).toContain("would read alarm");
+    expect(windowLine(base)).toBeNull();
   });
 });
