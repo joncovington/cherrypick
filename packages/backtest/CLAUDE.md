@@ -20,6 +20,13 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
   replays (flies' quote-history numbers are written into a plan doc; these never are). Tests use
   synthetic fixtures; a test over real sessions reads the local store and is skipped where it is
   absent, which is always the case in CI.
+- **Every store is declared, with the code that rebuilds it (2026-10-25).** A new file in the vendor
+  directory is added to `stores.STORES` in the same change that adds its fetch code, and that code is
+  committed (a package verb or a `scripts/` file; a test fails on a script that is not). The backup
+  skips licensed data and `purge` removes it, so a store survives only by being rebuildable. The Data
+  tab lists every declared store and flags any undeclared file. Two stores were built from session
+  scratch until this date (`addon_weeklies.db`, `SPY-monthly-1545.db`); their fetch code is now in
+  `scripts/`.
 - **The data must stay purgeable.** It lives in one directory carrying a marker file
   (`paths.LICENSED_MARKER`); `purge` removes only marked directories (dry run by default), and the
   nightly backup skips any marked directory (`orchestrator/backup.py` spells the same name; a test

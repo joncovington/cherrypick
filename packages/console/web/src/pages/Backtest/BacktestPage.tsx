@@ -1,6 +1,8 @@
 import type {
   BacktestArmReport,
   BacktestGapStats,
+  BacktestInventory,
+  BacktestInventoryStore,
   BacktestOverview,
   BacktestRunReport,
   BacktestSideReading,
@@ -183,10 +185,75 @@ export function BacktestDataTab() {
                 </div>
               )}
             </Card>
+            <StoreInventory inv={d.inventory} updatedAt={updatedAt} />
           </div>
         );
       }}
     </WithOverview>
+  );
+}
+
+/** "2.65 GB" / "31 MB". */
+export function fmtBytes(b: number | undefined): string {
+  if (b === undefined) return "—";
+  return b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` : `${Math.round(b / 1e6)} MB`;
+}
+
+/** The largest table's rows and span, the one line a store is read by. */
+export function mainTable(s: BacktestInventoryStore): string {
+  const t = Object.entries(s.tables ?? {}).sort(([, a], [, b]) => b.rows - a.rows)[0];
+  if (!t) return "—";
+  const [name, v] = t;
+  return `${name}: ${v.rows.toLocaleString("en-US")} rows${v.span ? ` · ${v.span[0]} to ${v.span[1]}` : ""}`;
+}
+
+function StoreInventory({ inv, updatedAt }: { inv: BacktestInventory | undefined; updatedAt: number }) {
+  if (!inv) return null;
+  return (
+    <Card title="every store, and the code that rebuilds it" updatedAt={updatedAt}>
+      <p className="muted" style={{ fontSize: 12 }}>
+        The vendor data is licensed: the backup skips it and <code>purge</code> removes it when the licence ends. What keeps a
+        store usable is that it can be rebuilt, so each one names its fetch code (<code>packages/backtest/stores.py</code>).
+      </p>
+      {inv.error ? <p className="pnl-neg">{inv.error}</p> : null}
+      {inv.undeclared.length > 0 ? (
+        <p className="pnl-neg">
+          Undeclared: {inv.undeclared.map((u) => u.file).join(", ")}. Add each to <code>stores.py</code> with the code that
+          builds it.
+        </p>
+      ) : null}
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>store</th>
+              <th>holds</th>
+              <th>largest table</th>
+              <th className="num">size</th>
+              <th>built by</th>
+              <th>used by</th>
+            </tr>
+          </thead>
+          <tbody>
+            {inv.stores.map((s) => (
+              <tr key={s.file}>
+                <td>
+                  {s.file}
+                  {s.present === false ? <span className="chip chip-warn"> missing</span> : null}
+                </td>
+                <td className="muted" style={{ fontSize: 12 }}>{s.holds}</td>
+                <td className="muted" style={{ fontSize: 12 }}>{s.present ? mainTable(s) : "—"}</td>
+                <td className="num">{fmtBytes(s.bytes)}</td>
+                <td style={{ fontSize: 12 }}>
+                  <code>{s.built_by}</code>
+                </td>
+                <td className="muted" style={{ fontSize: 12 }}>{s.used_by}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 
@@ -258,7 +325,8 @@ function ValidationCard({ v, updatedAt }: { v: BacktestValidation; updatedAt: nu
                 <th>check</th>
                 <th>recorder</th>
                 <th>vendor</th>
-                <th title="the vendor replay passes wherever the recorder replay passes">vendor ≥ recorder</th>
+                <th title="the bar since 2026-10-25: each check's measure within the declared tolerance of the recording's at the vendor's cadence">within tolerance</th>
+                <th title="the old pass/fail comparison, kept for the record: not the bar">pass ≥ pass</th>
               </tr>
             </thead>
             <tbody>
@@ -267,7 +335,8 @@ function ValidationCard({ v, updatedAt }: { v: BacktestValidation; updatedAt: nu
                   <td>{n}</td>
                   <td>{pass(v.recorder.checks?.[n])}</td>
                   <td>{pass(v.vendor.checks?.[n])}</td>
-                  <td>{pass(v.vendor_at_least_recorder[n])}</td>
+                  <td>{v.vendor_within_tolerance && n in v.vendor_within_tolerance ? pass(v.vendor_within_tolerance[n]) : "—"}</td>
+                  <td className="muted">{pass(v.vendor_at_least_recorder[n])}</td>
                 </tr>
               ))}
             </tbody>
