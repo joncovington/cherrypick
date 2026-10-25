@@ -34,6 +34,30 @@ risk) and the expected-move fly (fair at mid, ~18% costs) all fit that pattern. 
 built to test the **edge claim on its own**, before any management rule is layered on. Management is
 treated as variance and tail shaping unless a test shows otherwise.
 
+## Declaration template (from item 18 on, 2026-10-24)
+
+Every declaration from here on carries these lines, written before any look. Declarations already
+written are not re-judged. The arithmetic is `cherrypick.core.robustness`
+(`docs/trading-book-review-plan.md` B12, B13, B9).
+
+- **Pass test**, as before: the statistic, the bar, and both time-halves.
+- **Minimum detectable effect** (B12): the smallest edge the planned sample detects at the pass bar,
+  from the spread of comparable past results (`planned_mde`). A no-verdict result then reads "no
+  edge larger than X". **Paired by default**: a rule change is compared on the same trades, and an
+  unpaired comparison says why.
+- **Name split** (B9), where the sample is large enough: the universe is split by `name_half` (a
+  fixed hash of the symbol), and a pass must hold in both name-halves as well as both time-halves.
+  The declaration says whether the split applies; a small universe says why it does not.
+- **Robustness report** (B13), reported beside a pass and never used to re-choose the setting:
+  - the declared parameter's neighbours (for example ±10-25%), flagged a plateau or a lone peak
+    (`neighbourhood`);
+  - the result at 1.5× and 2× costs, with the declared stress the pass must survive, 1.5× by default
+    (`cost_stress`);
+  - the bootstrap of its own trades' drawdown and losing streak (`drawdown_range`), the frozen B1
+    thresholds if it goes live;
+  - the largest size whose 99th-percentile drawdown stays inside a declared share of the account
+    (`max_size`).
+
 ## Data we already hold
 
 | Source | Coverage | Fit |

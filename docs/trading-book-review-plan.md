@@ -29,11 +29,11 @@ its PR), `dropped` (with why).
 | B6 | Ch. 2, 7 | Facts and interpretations kept apart wherever a person decides a trade (desk tickets, manual notes): free text in its own field, never read by a calculation; plus an invalidation condition and a short pre-mortem written at entry | proposed | No: recording only |
 | B7 | Ch. 3, 7, 8 | A hypothesis register: one row per hypothesis with its four parts, mechanism, **rival explanations and the check that rules each out**, rejection rule, status and result pointer, checked for near-duplicates of rejected ideas before a new one is declared; every rule change logged with the evidence behind it and re-read after its first 100 trades | proposed | No: research tooling |
 | B8 | Ch. 4 | One declared market-environment classifier (uptrend, sideways, downtrend) in `cherrypick.core`, used by every study report and by B4/B5, so "which environment" means the same thing everywhere | proposed | No: a shared definition; studies report by it, nothing trades on it |
-| B9 | Ch. 4 | Replication across names as a standing second check in declared tests: the universe split by a fixed hash of the symbol, and a pass required in both name-halves as well as both time-halves | proposed | No: tightens future declarations only |
+| B9 | Ch. 4 | Replication across names as a standing second check in declared tests: the universe split by a fixed hash of the symbol, and a pass required in both name-halves as well as both time-halves | built: declaration template + `core.robustness` | No: tightens future declarations only |
 | B10 | Ch. 5, 13 | An execution record per live arm: each live fill against the price its own model expected, and every human override (manual close, re-arm, sizing change, desk order beside an arm) flagged, read weekly beside P&L; plus a gap breakdown of paper against live (missed entries, fill slippage, costs, overrides) naming the biggest part | proposed | No: recording and a read surface |
 | B11 | Ch. 6 | A survivorship audit of the research data's residual paths: how a trade across a delisting or acquisition settles, how often a delisted name's option chain comes back empty, and which inputs still hold today's names only | proposed | No: an audit; findings become fixes or declared limits |
-| B12 | Ch. 6 | A minimum detectable effect in every declaration: the smallest edge the planned sample could detect, computed from the spread of R, so "no verdict" says what it rules out; rule changes compared paired on the same trades | proposed | No: tightens future declarations only |
-| B13 | Ch. 9, 11 | A robustness report beside every passing result: the parameter neighbourhood (a plateau, not a peak), costs at 1.5× and 2×, and a bootstrap of the drawdown, with a declared cost stress the result must survive; plus the largest size at which the bootstrapped 99th-percentile drawdown stays inside a declared share of the account | proposed | No: tightens future declarations only |
+| B12 | Ch. 6 | A minimum detectable effect in every declaration: the smallest edge the planned sample could detect, computed from the spread of R, so "no verdict" says what it rules out; rule changes compared paired on the same trades | built: declaration template + `core.robustness` | No: tightens future declarations only |
+| B13 | Ch. 9, 11 | A robustness report beside every passing result: the parameter neighbourhood (a plateau, not a peak), costs at 1.5× and 2×, and a bootstrap of the drawdown, with a declared cost stress the result must survive; plus the largest size at which the bootstrapped 99th-percentile drawdown stays inside a declared share of the account | built: declaration template + `core.robustness` | No: tightens future declarations only |
 | B14 | Ch. 10 | A yearly re-test: every declared result, passed or failed, re-run unchanged on the newest year of data and recorded beside the original, so decay (or a late pass) is measured rather than assumed | proposed | No: research tooling; results stay local |
 
 ---
@@ -435,7 +435,7 @@ produces, from the strategy's own trades rather than a table that assumes indepe
 - **Report beside it:** how many sessions and trades each environment holds, so a thin downtrend
   cell reads as thin.
 
-**B9. Replication across names.** *(proposed)*
+**B9. Replication across names.** *(built 2026-10-24: the template in edge-hypotheses-plan.md, `core.robustness`)*
 - **What:** future declarations add a second, independent split. The universe is divided by a fixed
   hash of the symbol into two name-halves, and a pass requires the result to hold in both, as well as
   in both time-halves.
@@ -647,7 +647,7 @@ as clearly as a trend arm living on a few big winners.
     in item 14). Find any other input that does the same.
 - **Output:** each finding becomes a fix, or a declared limit carried into future declarations.
 
-**B12. A minimum detectable effect in every declaration.** *(proposed)*
+**B12. A minimum detectable effect in every declaration.** *(built 2026-10-24: the template in edge-hypotheses-plan.md, `core.robustness`)*
 - **What:** a declaration states the smallest effect its planned sample can detect at the pass bar,
   computed from the spread of R in comparable past results. A test that ends with no verdict then says
   what it has ruled out ("no edge larger than 0.08R"), rather than nothing.
@@ -898,7 +898,7 @@ No new item; the chapter mostly restates what the suite already does. **B7** is 
 **B1** is confirmed: its bootstrap is the chapter's Monte Carlo, done with replacement and in blocks,
 plus an explicit tail scenario for short-premium arms.
 
-**B13. A robustness report beside every passing result.** *(proposed)*
+**B13. A robustness report beside every passing result.** *(built 2026-10-24: the template in edge-hypotheses-plan.md, `core.robustness`)*
 - **Parameter neighbourhood:** the declared setting and its neighbours (for example the setups'
   lengths at ±10-25%), reported as description. A pass sits on a plateau; a lone peak is flagged.
   The setting itself is never re-chosen from this table.
