@@ -90,7 +90,7 @@ export function liveLoopsInUse(d: LiveTodayPayload | undefined): LiveInUse {
 }
 
 /** The Live tabs that read the whole account, not one live loop: always shown. */
-export const LIVE_ACCOUNT_WIDE: ReadonlySet<string> = new Set(["today", "positions", "portfolio", "wheel", "pmcc"]);
+export const LIVE_ACCOUNT_WIDE: ReadonlySet<string> = new Set(["today", "positions", "portfolio", "wheel", "pmcc", "execution"]);
 
 /** Whether one tab of a visible page is shown: each module's advisor tab, the technicals chart, and
  *  each live loop's Live tab. Every tab of a fail-closed page follows the page.
