@@ -223,6 +223,50 @@ def manual_closes(conn) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- the paper-live gap
+WINDOW = 50
+WATCH_Z, ALARM_Z = -2.0, -3.0
+
+
+def window_trigger(live: list[dict], paper: list[dict], *, window: int = WINDOW) -> dict:
+    """B1's rolling-expectancy trigger, REPORTED and never enforced (its noise is why): the last
+    `window` closed live trades' mean net, its standard error, and z against the paper mirror's mean
+    net per trade (the arm's expected baseline). `would` is what the trigger would say -- `normal`,
+    `watch` (z <= -2) or `alarm` (z <= -3) -- and nothing acts on it."""
+    nets = [
+        float(r["net_pnl"])
+        for r in sorted(live, key=lambda r: r.get("session") or "")
+        if r.get("net_pnl") is not None
+    ]
+    base = [float(r["net_pnl"]) for r in paper if r.get("net_pnl") is not None]
+    out = {
+        "window": window,
+        "n": len(nets[-window:]),
+        "mean": None,
+        "se": None,
+        "baseline": None,
+        "z": None,
+        "would": None,
+    }
+    if base:
+        out["baseline"] = round(sum(base) / len(base), 2)
+    last = nets[-window:]
+    if len(last) < window:
+        out["would"] = "too_few"
+        if last:
+            out["mean"] = round(sum(last) / len(last), 2)
+        return out
+    mean = sum(last) / window
+    sd = (sum((x - mean) ** 2 for x in last) / (window - 1)) ** 0.5
+    se = sd / window**0.5
+    out.update(mean=round(mean, 2), se=round(se, 2))
+    if out["baseline"] is None or se == 0:
+        return out
+    z = (mean - out["baseline"]) / se
+    out["z"] = round(z, 2)
+    out["would"] = "alarm" if z <= ALARM_Z else "watch" if z <= WATCH_Z else "normal"
+    return out
+
+
 def gap(live: list[dict], paper: list[dict], working: set[str]) -> dict:
     """Live net against its paper mirror over the sessions live was WORKING (`working`: it placed an
     order or journalled an entry decision) -- a session live was never armed is not a miss. `live`
@@ -359,6 +403,7 @@ def run(cfg: dict) -> dict:
             "mirror": mirror,
             "weeks": weekly(orders, overrides, live),
             "gap": gap(live, paper, working),
+            "window": window_trigger(live, paper),
         }
     return out
 
@@ -383,5 +428,14 @@ def format_report(result: dict) -> str:
             parts = "  ".join(f"{k} {v:+.2f}" for k, v in g["parts"].items())
             lines.append(
                 f"  live - paper since {g['since']}: {g['total']:+.2f}  ({parts}); largest: {g['largest']}"
+            )
+        wt = m.get("window") or {}
+        if wt.get("would") == "too_few":
+            lines.append(f"  window trigger (reported only): {wt['n']} of {wt['window']} trades, too few")
+        elif wt.get("z") is not None:
+            lines.append(
+                f"  window trigger (reported only): last {wt['window']} mean {wt['mean']:+.2f}"
+                f" (se {wt['se']:.2f})"
+                f" vs baseline {wt['baseline']:+.2f}, z {wt['z']:+.2f} -> would {wt['would']}"
             )
     return "\n".join(lines)

@@ -31,6 +31,7 @@ const EXEC = {
       },
     ],
     gap: { since: "2026-10-15", sessions: 3, total: -133.17, parts: { missed: -172.48, fill: -5.75 }, largest: "missed" },
+    window: { window: 50, n: 3, mean: 21.5, se: null, baseline: 12.0, z: null, would: "too_few" },
   },
   bwb: { ok: false, reason: "no live ledger" },
 };
@@ -43,6 +44,7 @@ describe("the execution record", () => {
     expect(meic).toMatchObject({ module: "meic", ok: true, mirror: "live-shadow" });
     expect(meic!.weeks[0]).toMatchObject({ fillRate: 1, slipDollars: -1.49, clean: false });
     expect(meic!.gap).toMatchObject({ total: -133.17, largest: "missed" });
+    expect(meic!.window).toMatchObject({ n: 3, would: "too_few", baseline: 12 });
     expect(bwb).toMatchObject({ module: "bwb", ok: false, reason: "no live ledger", weeks: [] });
   });
 

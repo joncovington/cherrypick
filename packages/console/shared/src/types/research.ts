@@ -35,6 +35,19 @@ export interface ExecutionModule {
   mirror: string | null;
   weeks: ExecutionWeek[];
   gap: ExecutionGap | null;
+  window: ExecutionWindow | null;
+}
+
+/** B1's rolling-expectancy trigger, reported only: the last `window` live trades against the paper
+ *  mirror's mean. `would` is normal / watch / alarm / too_few, or null with no baseline. */
+export interface ExecutionWindow {
+  window: number;
+  n: number;
+  mean: number | null;
+  se: number | null;
+  baseline: number | null;
+  z: number | null;
+  would: string | null;
 }
 
 export interface ExecutionRecord {

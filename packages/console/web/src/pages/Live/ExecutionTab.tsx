@@ -31,6 +31,14 @@ export function gapLine(m: ExecutionModule): string | null {
   return `live − ${m.mirror ?? "paper"} since ${g.since ?? "?"} over ${g.sessions} working session${g.sessions === 1 ? "" : "s"}: ${fmtUsd(g.total)} (${parts}); largest: ${g.largest ?? "none"}`;
 }
 
+export function windowLine(m: ExecutionModule): string | null {
+  const w = m.window;
+  if (w === null) return null;
+  if (w.would === "too_few") return `window trigger (reported, never enforced): ${w.n} of ${w.window} live trades so far`;
+  if (w.z === null || w.mean === null || w.baseline === null) return null;
+  return `window trigger (reported, never enforced): last ${w.window} mean ${fmtUsd(w.mean)} vs baseline ${fmtUsd(w.baseline)}, z ${w.z.toFixed(2)} — would read ${w.would ?? "?"}`;
+}
+
 function ModuleCard({ m }: { m: ExecutionModule }) {
   if (!m.ok) {
     return (
@@ -40,6 +48,7 @@ function ModuleCard({ m }: { m: ExecutionModule }) {
     );
   }
   const gap = gapLine(m);
+  const win = windowLine(m);
   return (
     <Card title={`${m.module} · paper mirror ${m.mirror ?? "?"}`}>
       <div className="table-scroll">
@@ -75,6 +84,7 @@ function ModuleCard({ m }: { m: ExecutionModule }) {
         </table>
       </div>
       {gap ? <p className="muted">{gap}</p> : null}
+      {win ? <p className={m.window?.would === "alarm" ? "pnl-neg" : "muted"}>{win}</p> : null}
     </Card>
   );
 }

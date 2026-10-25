@@ -1,4 +1,11 @@
-import type { BridgedResult, ExecutionGap, ExecutionModule, ExecutionRecord, ExecutionWeek } from "@console/shared";
+import type {
+  BridgedResult,
+  ExecutionGap,
+  ExecutionModule,
+  ExecutionRecord,
+  ExecutionWeek,
+  ExecutionWindow,
+} from "@console/shared";
 import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
@@ -62,6 +69,20 @@ function toGap(v: unknown): ExecutionGap | null {
   return { since: s(r["since"]), sessions: n(r["sessions"]) ?? 0, total: n(r["total"]), parts, largest: s(r["largest"]) };
 }
 
+function toWindow(v: unknown): ExecutionWindow | null {
+  const r = rec(v);
+  if (n(r["window"]) === null) return null;
+  return {
+    window: n(r["window"]) ?? 0,
+    n: n(r["n"]) ?? 0,
+    mean: n(r["mean"]),
+    se: n(r["se"]),
+    baseline: n(r["baseline"]),
+    z: n(r["z"]),
+    would: s(r["would"]),
+  };
+}
+
 export function shapeExecution(res: SpawnedJson): BridgedResult<ExecutionRecord> {
   if (!res.ok || res.json === null) return { ok: false, data: null, error: res.error ?? UNAVAILABLE };
   const modules: ExecutionModule[] = Object.entries(res.json).map(([module, v]) => {
@@ -73,6 +94,7 @@ export function shapeExecution(res: SpawnedJson): BridgedResult<ExecutionRecord>
       mirror: s(r["mirror"]),
       weeks: (Array.isArray(r["weeks"]) ? r["weeks"] : []).map(toWeek).filter((w): w is ExecutionWeek => w !== null),
       gap: toGap(r["gap"]),
+      window: toWindow(r["window"]),
     };
   });
   return { ok: true, data: { modules }, error: null };
