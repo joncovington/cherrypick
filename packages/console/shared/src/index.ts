@@ -46,3 +46,4 @@ export * from "./types/signalBoard.js";
 export * from "./types/skate.js";
 export * from "./types/backtest.js";
 export * from "./types/researchQueue.js";
+export * from "./types/research.js";

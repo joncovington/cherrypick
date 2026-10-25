@@ -9,6 +9,8 @@ import {
 import { backtestOn, getFeatures } from "../services/featuresBridge.js";
 import { readBacktestOverview, readBacktestRun } from "../services/backtestBridge.js";
 import { readResearchQueue } from "../services/researchQueueBridge.js";
+import type { ConsoleConfig } from "../config.js";
+import { readSlices } from "../readers/slices.js";
 
 /**
  * `GET /api/backtest/overview`, `GET /api/backtest/runs/:id` and `GET /api/backtest/queue` — the
@@ -29,7 +31,7 @@ function refuse(reply: FastifyReply): FastifyReply {
   return reply.code(404).send({ error: "not found" });
 }
 
-export function registerBacktestRoutes(app: FastifyInstance): void {
+export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleConfig): void {
   app.get("/api/backtest/overview", async (_req, reply): Promise<BridgedResult<BacktestOverview> | FastifyReply> => {
     if (!backtestOn(getFeatures())) return refuse(reply);
     return readBacktestOverview();
@@ -49,5 +51,12 @@ export function registerBacktestRoutes(app: FastifyInstance): void {
   app.get("/api/backtest/queue", async (_req, reply): Promise<BridgedResult<ResearchQueue> | FastifyReply> => {
     if (!backtestOn(getFeatures())) return refuse(reply);
     return readResearchQueue();
+  });
+
+  // B5's slice reports (`technicals slices` files). Behind the same gate: one may be built from a
+  // licensed replay.
+  app.get("/api/backtest/slices", async (_req, reply) => {
+    if (!backtestOn(getFeatures()) || config === undefined) return refuse(reply);
+    return readSlices(config);
   });
 }
