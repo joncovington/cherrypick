@@ -45,6 +45,9 @@ written are not re-judged. The arithmetic is `cherrypick.core.robustness`
   here. Run `cherrypick hypotheses --similar '{"setup": ..., "structure": ...}'` first; a rejected
   look-alike is named in the declaration, so a retest is said out loud. `cherrypick hypotheses`
   fails on a malformed row. A `retest` recipe (the research queue's kind and args) lets B14 re-run it.
+- **Declared limits** (B11): how a position open at a name's last bar is settled (the last close; no
+  deal or recovery price), how many trades empty chains removed, and whether any input reflects
+  only today's state (the tradable list is hindsight; report it apart).
 - **Pass test**, as before: the statistic, the bar, and both time-halves.
 - **Minimum detectable effect** (B12): the smallest edge the planned sample detects at the pass bar,
   from the spread of comparable past results (`planned_mde`). A no-verdict result then reads "no

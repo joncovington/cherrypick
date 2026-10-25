@@ -31,7 +31,7 @@ its PR), `dropped` (with why).
 | B8 | Ch. 4 | One declared market-environment classifier (uptrend, sideways, downtrend) in `cherrypick.core`, used by every study report and by B4/B5, so "which environment" means the same thing everywhere | built: `core.environment`, on B4's rows | No: a shared definition; studies report by it, nothing trades on it |
 | B9 | Ch. 4 | Replication across names as a standing second check in declared tests: the universe split by a fixed hash of the symbol, and a pass required in both name-halves as well as both time-halves | built: declaration template + `core.robustness` | No: tightens future declarations only |
 | B10 | Ch. 5, 13 | An execution record per live arm: each live fill against the price its own model expected, and every human override (manual close, re-arm, sizing change, desk order beside an arm) flagged, read weekly beside P&L; plus a gap breakdown of paper against live (missed entries, fill slippage, costs, overrides) naming the biggest part | built: `cherrypick execution` (meic, bwb); desk orders unrecorded | No: recording and a read surface |
-| B11 | Ch. 6 | A survivorship audit of the research data's residual paths: how a trade across a delisting or acquisition settles, how often a delisted name's option chain comes back empty, and which inputs still hold today's names only | proposed | No: an audit; findings become fixes or declared limits |
+| B11 | Ch. 6 | A survivorship audit of the research data's residual paths: how a trade across a delisting or acquisition settles, how often a delisted name's option chain comes back empty, and which inputs still hold today's names only | audited: declared limits written; two fixes open | No: an audit; findings become fixes or declared limits |
 | B12 | Ch. 6 | A minimum detectable effect in every declaration: the smallest edge the planned sample could detect, computed from the spread of R, so "no verdict" says what it rules out; rule changes compared paired on the same trades | built: declaration template + `core.robustness` | No: tightens future declarations only |
 | B13 | Ch. 9, 11 | A robustness report beside every passing result: the parameter neighbourhood (a plateau, not a peak), costs at 1.5× and 2×, and a bootstrap of the drawdown, with a declared cost stress the result must survive; plus the largest size at which the bootstrapped 99th-percentile drawdown stays inside a declared share of the account | built: declaration template + `core.robustness` | No: tightens future declarations only |
 | B14 | Ch. 10 | A yearly re-test: every declared result, passed or failed, re-run unchanged on the newest year of data and recorded beside the original, so decay (or a late pass) is measured rather than assumed | built: `cherrypick retests --year`; recipes still to write | No: research tooling; results stay local |
@@ -634,7 +634,7 @@ and the two dollar examples are legible; finer detail there may be missing.*
 skew flag in **both** directions. A short-premium arm whose median sits well above its mean is flagged
 as clearly as a trend arm living on a few big winners.
 
-**B11. A survivorship audit of the residual paths.** *(proposed)*
+**B11. A survivorship audit of the residual paths.** *(audited 2026-10-24; findings below)*
 - **Checked already (2026-10-24):** the history store keeps delisted names, and universes are built
   point-in-time from each session's own dollar volume.
 - **What is left to audit:**
@@ -646,6 +646,33 @@ as clearly as a trend arm living on a few big winners.
   - **Today-only inputs:** the board's sector map already holds today's names only (a declared limit
     in item 14). Find any other input that does the same.
 - **Output:** each finding becomes a fix, or a declared limit carried into future declarations.
+- **Findings (2026-10-24, code read; no figures):**
+  - *Delisting and acquisition.* The technicals study settles a position open at a name's last bar at
+    that close (`study.py`, `score`); no deal or recovery price is modelled. For a cash takeover the
+    close sits near the deal; after a bankruptcy it sits above the eventual zero, so longs read
+    slightly better than they were. `pead_history.py` leaves forward returns empty past a name's last
+    bar, so events of names that left (acquired or failed) drop out of the horizons they cannot reach,
+    a lean toward survivors. `emfly_history.py` and `earnings_navigator_history.py` drop such trades
+    with a counted reason (`expiry_after_bars`, `no_bar_on_date`), not split out as delisted.
+  - *Empty chains.* Not silent anywhere. ThetaData's end-of-day fetch records every empty request
+    and skips it on re-run; most empties are single sessions or expiries of names that otherwise
+    returned chains. Intraday sessions with no samples are recorded refused with a reason. Dolt
+    chains that are empty or thin are counted drops (`no_entry_chain`, `no_atm`, `no_fly`), which
+    lean against names whose chains thinned before they left. Nothing reads the end-of-day chain
+    store yet, so its first study must state how empties are handled.
+  - *Today-only inputs.* `study.tradable_today()` applies today's weeklies and liquidity label to
+    history; it is already labelled hindsight and kept out of the universe, and it reads optimistic.
+    `emfly_history.option_symbols` takes "optionable" from two sampled days a year (mild). No study
+    reads the sector map, `leveraged_funds.json`, `seed_universe.json` or the liquidity verdicts;
+    each needs a declared limit if one ever does.
+- **Declared limits** (carried into every declaration through the template in
+  `edge-hypotheses-plan.md`):
+  - Delisted or acquired positions settle at the last traded close; no deal or recovery price.
+  - Empty vendor chains are recorded and excluded, and the declaration says how many.
+  - A view built on today's tradable list is hindsight, and reported apart from the point-in-time one.
+- **Fixes still open:** count the study's trades left unscored because a name's bars stop short of
+  the ended threshold (today they vanish without a tally), and have `pead_history.py` report how
+  many events lost each horizon to the data's end.
 
 **B12. A minimum detectable effect in every declaration.** *(built 2026-10-24: the template in edge-hypotheses-plan.md, `core.robustness`)*
 - **What:** a declaration states the smallest effect its planned sample can detect at the pass bar,
