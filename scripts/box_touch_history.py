@@ -1,6 +1,7 @@
 """Does SPX revert after touching the edge of the day's expected-move box? And two intraday direction reads.
 
-    python scripts/box_touch_history.py [--history-db PATH] [--em-factor 0.85] [--json FILE]
+    python scripts/box_touch_history.py [--history-db PATH] [--em-factor 0.85] [--start D] [--end D]
+        [--json FILE]
 
 Step 2 of hypothesis 8 in docs/edge-hypotheses-plan.md (docs/pulver-daily-profit-play.md), with the
 direction tests of hypothesis 4 alongside, because they read the same sessions. Read-only.
@@ -407,12 +408,25 @@ def print_report(rep: dict) -> None:
     print("box checks:", json.dumps(rep["verdict"]["box"]["checks"]))
 
 
+def in_window(sessions: list[dict], start: str | None, end: str | None) -> list[dict]:
+    """The sessions dated within [start, end] (either open)."""
+    return [
+        x
+        for x in sessions
+        if (start is None or str(x["date"])[:10] >= start) and (end is None or str(x["date"])[:10] <= end)
+    ]
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--history-db", type=Path, default=DEFAULT_DB)
     ap.add_argument("--symbol", default="SPX")
     ap.add_argument("--em-factor", type=float, default=0.85)
     ap.add_argument("--cutoff", default="15:00")
+    # A window over the sessions, applied after loading so each keeps its true prior close: a yearly
+    # re-test (B14) re-runs the declared test unchanged on one year.
+    ap.add_argument("--start", default=None, help="first session to keep, YYYY-MM-DD")
+    ap.add_argument("--end", default=None, help="last session to keep, YYYY-MM-DD")
     ap.add_argument("--json", type=Path)
     args = ap.parse_args(argv)
     vendor = "backtest" in args.history_db.as_posix()
@@ -423,10 +437,17 @@ def main(argv=None) -> int:
         )
         return 2
     sessions, drops = load_sessions(args.history_db, args.symbol, args.em_factor)
+    sessions = in_window(sessions, args.start, args.end)
     print(f"loaded {len(sessions)} sessions; dropped {drops}", file=sys.stderr)
     rep = analyse(sessions, hhmm(args.cutoff))
     rep["drops"] = drops
-    rep["args"] = {"history_db": str(args.history_db), "em_factor": args.em_factor, "cutoff": args.cutoff}
+    rep["args"] = {
+        "history_db": str(args.history_db),
+        "em_factor": args.em_factor,
+        "cutoff": args.cutoff,
+        "start": args.start,
+        "end": args.end,
+    }
     print_report(rep)
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
