@@ -243,11 +243,23 @@ def _membership(symbols: list[str]) -> list[tuple[str, list[str]]]:
     return out
 
 
-def _real(symbols: list[str]) -> tuple[list[dict], dict[str, int]]:
-    """Pass B: every setup's positions in each name, with whether each counts; and per setup, the
-    in-universe positions left out for a suspected corporate action."""
+def unscored_reason(nm: Name, t: setups.Trade) -> str:
+    """Why `score` returned None, so the gap is counted (B11): `no_fill` (no next bar, no ATR, no
+    open to fill at) or `open_at_end` (still open at the data's end on a name not yet `ended`,
+    which includes one whose bars stop short of ENDED_DAYS -- before 2026-10-24 those vanished)."""
+    i, n = t.entry, len(nm.closes)
+    if i + 1 >= n or not nm.readings.atr14[i] or not nm.opens[i + 1]:
+        return "no_fill"
+    return "open_at_end"
+
+
+def _real(symbols: list[str]) -> tuple[list[dict], dict[str, int], dict[str, int]]:
+    """Pass B: every setup's positions in each name, with whether each counts; per setup, the
+    in-universe positions left out for a suspected corporate action; and per setup and reason, the
+    in-universe positions `score` could not score."""
     rows = []
     excluded: dict[str, int] = defaultdict(int)
+    unscored: dict[str, int] = defaultdict(int)
     for sym in symbols:
         nm = load(_conn, sym, _data_end)
         if nm is None:
@@ -261,6 +273,7 @@ def _real(symbols: list[str]) -> tuple[list[dict], dict[str, int]]:
                     continue
                 sc = score(nm, setup_id, t)
                 if sc is None:
+                    unscored[f"{setup_id}:{unscored_reason(nm, t)}"] += 1
                     continue
                 i = t.entry
                 rows.append(
@@ -277,7 +290,7 @@ def _real(symbols: list[str]) -> tuple[list[dict], dict[str, int]]:
                         **sc,
                     }
                 )
-    return rows, dict(excluded)
+    return rows, dict(excluded), dict(unscored)
 
 
 def _draws(work: list[tuple[str, list[tuple[int, str, str, str]]]]) -> dict[int, list[float]]:
@@ -362,11 +375,13 @@ def run(workers: int = 14, path=None, progress=print, tradable: set[str] | None 
                 by_date[d].append(sym)
         names = sorted(by_name)
         progress(f"pass B: positions in {len(names):,} names that ever qualify")
-        rows, excluded = [], defaultdict(int)
-        for part, ex in pool.map(_real, _chunks(names, workers * 8)):
+        rows, excluded, unscored = [], defaultdict(int), defaultdict(int)
+        for part, ex, un in pool.map(_real, _chunks(names, workers * 8)):
             rows.extend(part)
             for k, v in ex.items():
                 excluded[k] += v
+            for k, v in un.items():
+                unscored[k] += v
         rows.sort(key=lambda r: (r["symbol"], r["setup"], r["date"]))
         work = draw_plan(rows, by_date, by_name)
         progress(f"pass C: {sum(len(v) for v in work.values()):,} baseline draws in {len(work):,} names")
@@ -406,6 +421,7 @@ def run(workers: int = 14, path=None, progress=print, tradable: set[str] | None 
         },
         names_in_universe=len(by_name),
         excluded_for_corporate_actions=dict(excluded),
+        unscored=dict(sorted(unscored.items())),
     )
     return result
 

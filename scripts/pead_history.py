@@ -323,9 +323,16 @@ def groups(rows: list[dict]) -> dict[str, list[dict]]:
     return out
 
 
+def lost_to_data_end(rows: list[dict]) -> dict[str, int]:
+    """Events per horizon with no forward return because the name's bars end first (B11): names that
+    were acquired or failed leave the longer horizons, a lean toward survivors, so it is counted."""
+    return {f"fwd_{h}": sum(1 for r in rows if r.get(f"fwd_{h}") is None) for h in HORIZONS}
+
+
 def analyse(rows: list[dict]) -> dict:
     g = groups(rows)
     return {
+        "lost_to_data_end": lost_to_data_end(rows),
         "groups": {k: group_stats(v) for k, v in g.items()},
         "rule_by_year": by_year(g["rule"], f"abn_{HEAD_H}"),
         "gap_up_by_year": by_year(g["gap_up"], f"abn_{HEAD_H}"),
