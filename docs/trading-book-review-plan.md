@@ -31,7 +31,7 @@ its PR), `dropped` (with why).
 | B8 | Ch. 4 | One declared market-environment classifier (uptrend, sideways, downtrend) in `cherrypick.core`, used by every study report and by B4/B5, so "which environment" means the same thing everywhere | built: `core.environment`, on B4's rows | No: a shared definition; studies report by it, nothing trades on it |
 | B9 | Ch. 4 | Replication across names as a standing second check in declared tests: the universe split by a fixed hash of the symbol, and a pass required in both name-halves as well as both time-halves | built: declaration template + `core.robustness` | No: tightens future declarations only |
 | B10 | Ch. 5, 13 | An execution record per live arm: each live fill against the price its own model expected, and every human override (manual close, re-arm, sizing change, desk order beside an arm) flagged, read weekly beside P&L; plus a gap breakdown of paper against live (missed entries, fill slippage, costs, overrides) naming the biggest part | built: `cherrypick execution` (meic, bwb); desk orders unrecorded | No: recording and a read surface |
-| B11 | Ch. 6 | A survivorship audit of the research data's residual paths: how a trade across a delisting or acquisition settles, how often a delisted name's option chain comes back empty, and which inputs still hold today's names only | audited: declared limits written; two fixes open | No: an audit; findings become fixes or declared limits |
+| B11 | Ch. 6 | A survivorship audit of the research data's residual paths: how a trade across a delisting or acquisition settles, how often a delisted name's option chain comes back empty, and which inputs still hold today's names only | audited: declared limits written; counts fixed | No: an audit; findings become fixes or declared limits |
 | B12 | Ch. 6 | A minimum detectable effect in every declaration: the smallest edge the planned sample could detect, computed from the spread of R, so "no verdict" says what it rules out; rule changes compared paired on the same trades | built: declaration template + `core.robustness` | No: tightens future declarations only |
 | B13 | Ch. 9, 11 | A robustness report beside every passing result: the parameter neighbourhood (a plateau, not a peak), costs at 1.5× and 2×, and a bootstrap of the drawdown, with a declared cost stress the result must survive; plus the largest size at which the bootstrapped 99th-percentile drawdown stays inside a declared share of the account | built: declaration template + `core.robustness` | No: tightens future declarations only |
 | B14 | Ch. 10 | A yearly re-test: every declared result, passed or failed, re-run unchanged on the newest year of data and recorded beside the original, so decay (or a late pass) is measured rather than assumed | built: `cherrypick retests --year`; recipes still to write | No: research tooling; results stay local |
@@ -670,9 +670,10 @@ as clearly as a trend arm living on a few big winners.
   - Delisted or acquired positions settle at the last traded close; no deal or recovery price.
   - Empty vendor chains are recorded and excluded, and the declaration says how many.
   - A view built on today's tradable list is hindsight, and reported apart from the point-in-time one.
-- **Fixes still open:** count the study's trades left unscored because a name's bars stop short of
-  the ended threshold (today they vanish without a tally), and have `pead_history.py` report how
-  many events lost each horizon to the data's end.
+- **Fixes (landed 2026-10-24):** the technicals study's result carries `unscored`, per setup and
+  reason (`no_fill`, `open_at_end`), so positions on a name whose bars stop short of the ended
+  threshold are counted instead of vanishing; `pead_history.py`'s report carries
+  `lost_to_data_end`, the events per horizon with no forward return because the name's bars end.
 
 **B12. A minimum detectable effect in every declaration.** *(built 2026-10-24: the template in edge-hypotheses-plan.md, `core.robustness`)*
 - **What:** a declaration states the smallest effect its planned sample can detect at the pass bar,
