@@ -3167,12 +3167,9 @@ def test_equalize_imbalance_cap_declines_a_lopsided_best_available():
     # its legs and credit reach the attempts row and the paired contrast with the base arm is
     # re-runnable from the ledger rather than only from a description.
     assert chosen is not None
-    # The refusal records WHAT it refused: the best-balanced refused candidate rides on the
-    # decline return, so its legs and credit reach the attempts row and the paired contrast
-    # with the base arm is re-runnable from the ledger rather than only from a description.
     assert chosen["put_credit"] == pytest.approx(0.825, abs=1e-4)
     # The decline is a refusal, not a fallback: with the cap absent the same tick enters the
-    # lopsided best-available -- this is exactly the behavior the cap exists to trade away.
+    # lopsided best-available -- this is exactly the behaviour the cap exists to trade away.
     entered, reason, chosen = paper.evaluate_entry(snap, _params(EQUALIZE), [])
     assert entered is True and reason == "entered"
 
@@ -3287,17 +3284,33 @@ def test_equalize_imbalance_cap_decline_reaches_the_ledger_with_the_refused_cand
     assert credit == pytest.approx(0.88, abs=1e-4)  # 0.825 put + 0.055 call at the working price
 
 
-def test_equalize_imbalance_cap_rejects_a_negative_value():
+def test_equalize_imbalance_cap_rejects_a_negative_value(caplog):
     """A negative cap would decline every tick (imbalance >= 0 > cap * net), forever silent.
     The guard disarms it loudly -- WARNING-level log, cap OFF, tick trades the scan's own pick
     exactly as an absent key would. If a use for negative values ever appears (a porosity or
-    absolute-floor read), it consumes the gray zone and loosens this with its own test.
+    absolute-floor read), it consumes the grey zone and loosens this with its own test.
     """
     snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598, **LOPSIDED)])
-    entered, reason, chosen = paper.evaluate_entry(
-        snap, _params({**EQUALIZE, "equalize_max_imbalance_pct": -0.5}), []
-    )
+    with caplog.at_level("WARNING", logger="cherrypick.meic.paper"):
+        entered, reason, chosen = paper.evaluate_entry(
+            snap, _params({**EQUALIZE, "equalize_max_imbalance_pct": -0.5}), []
+        )
+    assert any("equalize_max_imbalance_pct is negative" in r.message for r in caplog.records)
     # Behaves exactly like the absent key: the lopsided best-available still enters.
+    assert (entered, reason) == (True, "entered") and chosen is not None
+
+
+@pytest.mark.parametrize("value", [float("nan"), "nan", float("inf"), "-inf"])
+def test_equalize_imbalance_cap_rejects_a_non_finite_value(caplog, value):
+    """float() reads "nan" and "inf". A NaN cap fails every comparison, so without the guard it
+    passed every candidate while the config read as capped; an infinite cap can never bind. Both
+    are OFF, loudly: the warning fires and the tick trades as if the key were absent."""
+    snap = _base_snapshot(now_et="13:00", candidates=[_candidate(5, 583, 598, **LOPSIDED)])
+    with caplog.at_level("WARNING", logger="cherrypick.meic.paper"):
+        entered, reason, chosen = paper.evaluate_entry(
+            snap, _params({**EQUALIZE, "equalize_max_imbalance_pct": value}), []
+        )
+    assert any("equalize_max_imbalance_pct is not finite" in r.message for r in caplog.records)
     assert (entered, reason) == (True, "entered") and chosen is not None
 
 
