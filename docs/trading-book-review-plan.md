@@ -24,7 +24,7 @@ its PR), `dropped` (with why).
 | B1 | Ch. 1, 3, 7 | Written kill criteria for every live arm, enforced as entries-blocked; thresholds from a bootstrap of the arm's evidence, frozen when armed; a graduated response (normal, reduced size, blocked) from 50-trade windows measured in standard errors of the window mean, against a live-cost baseline | built for meic + bwb; earnings, window-SE trigger open | No: blocks or reduces live entries only, paper unchanged |
 | B2 | Ch. 1, 6, 14 | Confidence intervals and t on the console's expectancy and win-rate figures, with the median, spread and worst trade beside the mean and a skew flag in both directions; a win rate never shown without expectancy beside it | built (summary cards); overlap flag open | No: a read surface |
 | B3 | Ch. 1 | Results in R per trade (1R = max loss for a defined-risk structure) in every module's history | built: `core.ledgers` `r_multiple`, console mean R | No: a presentation and recording change |
-| B4 | Ch. 1, 2 | Entry context recorded on every trade row (SPX against its 50-day **and 200-day**, ATR %, relative volume, sector, entry time; holding period at exit) | proposed | No: recording only, new columns |
+| B4 | Ch. 1, 2 | Entry context recorded on every trade row (SPX against its 50-day **and 200-day**, ATR %, relative volume, sector, entry time; holding period at exit) | built: `technicals.entrycontext`, derived on read | No: recording only, new columns |
 | B5 | Ch. 2 | A slice report per arm (by setup, market condition, entry time, holding period) with n and an interval on every cell; a cell that looks good becomes a declared hypothesis, never a filter | proposed | No: a read surface |
 | B6 | Ch. 2, 7 | Facts and interpretations kept apart wherever a person decides a trade (desk tickets, manual notes): free text in its own field, never read by a calculation; plus an invalidation condition and a short pre-mortem written at entry | proposed | No: recording only |
 | B7 | Ch. 3, 7, 8 | A hypothesis register: one row per hypothesis with its four parts, mechanism, **rival explanations and the check that rules each out**, rejection rule, status and result pointer, checked for near-duplicates of rejected ideas before a new one is declared; every rule change logged with the evidence behind it and re-read after its first 100 trades | proposed | No: research tooling |
@@ -132,7 +132,7 @@ its PR), `dropped` (with why).
   (a dry-run-by-default backfill, per the root CLAUDE.md's rule for recording missing components).
 - It makes modules comparable on one scale, and gives B2 its unit.
 
-**B4. Entry context on every trade row.** *(proposed)*
+**B4. Entry context on every trade row.** *(built 2026-10-24 as `cherrypick.technicals.entrycontext`: derived on read from the local end-of-day store, as of the close before entry, so every row already written has it and no module's schema or decisions change; `python -m cherrypick.technicals entry-context --db <ledger> --schema <schema>`. An index has no relative volume or sector.)*
 - At entry, record SPX against its 50-day average, the name's ATR as a percentage of price,
   relative volume against 20 days, the sector, and the entry time.
 - Lets "where do the losses cluster?" be answered from the ledgers rather than re-derived per study.
