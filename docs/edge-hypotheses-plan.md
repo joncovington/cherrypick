@@ -744,8 +744,8 @@ reproduced (the best rule found picked 10-15% of its slots right).*
     replaces the family in the pass rule above (A, B-put, B-call and C), and it changes B's test:
     its two sides were two members of that family and are now one, which changes both its
     multiple-testing correction and its power (one test on the pooled trades, in which an edge on
-    one side can be diluted by the other). They are pooled to keep the family at three members; no other
-    reason was recorded when this was written.
+    one side can be diluted by the other). They are pooled to keep the family at three members; no
+    other reason was recorded when this was written.
   - **The original A and C** stay on the record as the 2026-10-21 run's result (no verdict: too few
     paired trades in each half). They are not members of this family, and A' and C' do not replace
     that result.
