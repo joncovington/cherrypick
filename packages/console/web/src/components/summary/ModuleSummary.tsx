@@ -274,7 +274,7 @@ export function ModuleSummary({
                 {s.gauges.map((g) => (
                   <Gauge key={g.title} title={g.title} rawPct={g.rawPct} min={g.min} max={g.max} caption={g.caption} dollars={g.dollars} />
                 ))}
-                <WinRateArcs daysWon={s.hero.daysWon} days={s.hero.daysWon + s.hero.daysLost} wins={s.hero.wins} trades={s.hero.trades} avgWin={s.hero.shape?.avgWin ?? null} avgLoss={s.hero.shape?.avgLoss ?? null} />
+                <WinRateArcs daysWon={s.hero.daysWon} days={s.hero.daysWon + s.hero.daysLost} wins={s.hero.wins} trades={s.hero.trades} avgWin={s.hero.shape?.avgWin ?? null} avgLoss={s.hero.shape?.avgLoss ?? null} shape={s.hero.shape ?? null} />
               </div>
               <div className="ts-row">
                 <Tiles tiles={s.tiles} />

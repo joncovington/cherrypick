@@ -124,7 +124,7 @@ function ReturnOnRiskGauge({ s }: { s: MeicSummarySlice }) {
 
 function WinRateArcs({ s }: { s: MeicSummarySlice }) {
   const { hero } = s;
-  return <KitWinRateArcs daysWon={hero.daysWon} days={hero.daysWon + hero.daysLost} wins={hero.wins} trades={hero.trades} avgWin={hero.shape?.avgWin ?? null} avgLoss={hero.shape?.avgLoss ?? null} />;
+  return <KitWinRateArcs daysWon={hero.daysWon} days={hero.daysWon + hero.daysLost} wins={hero.wins} trades={hero.trades} avgWin={hero.shape?.avgWin ?? null} avgLoss={hero.shape?.avgLoss ?? null} shape={hero.shape ?? null} />;
 }
 
 /* ---------------------------------------------------------------------------

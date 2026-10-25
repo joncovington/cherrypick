@@ -176,32 +176,69 @@ export function Gauge({ title, rawPct, min, max, caption, dollars }: { title: st
   );
 }
 
-/** The window's per-trade shape (SummaryShape), as the cards read it. */
+/** The window's per-trade shape (SummaryShape), as the cards read it. The uncertainty fields are
+ *  optional: a page served by an older server has none, and shows no interval rather than a wrong one. */
 export interface TradeShape {
   median: number | null;
   avgWin: number | null;
   avgLoss: number | null;
   worst: number | null;
+  n?: number;
+  mean?: number | null;
+  sd?: number | null;
+  ci95?: [number, number] | null;
+  t?: number | null;
+  winRateCi95?: [number, number] | null;
+  skewness?: number | null;
+  skew?: "left" | "right" | null;
+}
+
+/** Under this many trades a figure is an early estimate, whatever its interval says. */
+export const EARLY_TRADES = 30;
+
+/** "95% −$12.40 to $31.10 · t 1.2", or null when the shape carries no interval. */
+export function intervalLine(shape?: TradeShape | null): string | null {
+  if (!shape?.ci95) return null;
+  const [lo, hi] = shape.ci95;
+  return `95% ${fmtUsd(lo)} to ${fmtUsd(hi)}${shape.t == null ? "" : ` · t ${shape.t.toFixed(1)}`}`;
+}
+
+/** What the shape's skew says about where the result comes from, or null when it says nothing. */
+export function skewNote(shape?: TradeShape | null): string | null {
+  if (shape?.skew === "left") return "rare large losses carry the risk: judge the worst trade, not the median";
+  if (shape?.skew === "right") return "a few large wins carry the result";
+  return null;
 }
 
 /**
  * The net card's hero figure: the window's total by default, a click for net per trade with the
  * median and the average win and loss beneath it. A total says how much; per trade says how it was
- * made -- 555 small wins and one large one read alike as a total.
+ * made -- 555 small wins and one large one read alike as a total. The per-trade face also says how
+ * sure it is: its 95% interval and t, an early-estimate warning under 30 trades, and what a strong
+ * skew means (B2).
  */
 export function NetHero({ net, trades, shape }: { net: number; trades: number; shape?: TradeShape | null }) {
   const [face, next] = useFace("net-hero", ["total", "per-trade"] as const);
   const perTrade = face === "per-trade" && trades > 0;
   const shown = perTrade ? net / trades : net;
   const fmt = (v: number | null | undefined) => (v == null ? "n/r" : fmtUsd(v));
+  const interval = intervalLine(shape);
+  const skew = skewNote(shape);
   return (
     <button type="button" className="ts-flip ts-flip-left" onClick={next} aria-pressed={perTrade} title={`showing ${perTrade ? "net per trade" : "total net"} — click for ${perTrade ? "the total" : "net per trade"}`}>
       <span className={`ts-hero ${shown >= 0 ? "ts-pos" : "ts-neg"}`}>{fmtUsd(shown)}</span>
       <span className="ts-muted ts-hero-sub">
         {perTrade
-          ? `per trade over ${trades} · median ${fmt(shape?.median)} · avg win ${fmt(shape?.avgWin)} · avg loss ${fmt(shape?.avgLoss)}`
+          ? `per trade over ${trades} · median ${fmt(shape?.median)} · avg win ${fmt(shape?.avgWin)} · avg loss ${fmt(shape?.avgLoss)} · worst ${fmt(shape?.worst)}`
           : `total over ${trades} trade${trades === 1 ? "" : "s"} · click for per trade`}
       </span>
+      {perTrade && (interval || trades < EARLY_TRADES || skew) && (
+        <span className="ts-muted ts-hero-sub">
+          {[interval, trades < EARLY_TRADES ? `under ${EARLY_TRADES} trades: an early estimate` : null, skew]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
+      )}
     </button>
   );
 }
@@ -233,6 +270,11 @@ function Ring({ r, fraction, className }: { r: number; fraction: number; classNa
  * one), then sessions, then the payoff ratio -- average win ÷ average loss, the number that makes
  * a win rate honest (80% wins at 1:6 loses money). The payoff face is offered only when the window
  * has both a win and a loss; it carries no tone, since a ratio has no sign.
+ *
+ * A win rate is never shown alone (B2; Goodhart: a premium seller can win 85% of its trades and lose
+ * money). The legend always carries net per trade with its interval beside the rate, and the rate's
+ * own interval. The centre takes its tone from net per trade, not from the rate passing 50%; with no
+ * net per trade it carries none.
  */
 export function WinRateArcs({
   daysWon,
@@ -242,6 +284,7 @@ export function WinRateArcs({
   tradeNoun = "trades",
   avgWin = null,
   avgLoss = null,
+  shape = null,
 }: {
   daysWon: number;
   days: number;
@@ -250,6 +293,7 @@ export function WinRateArcs({
   tradeNoun?: string;
   avgWin?: number | null;
   avgLoss?: number | null;
+  shape?: TradeShape | null;
 }) {
   const payoff = avgWin !== null && avgLoss !== null && avgLoss < 0 ? avgWin / Math.abs(avgLoss) : null;
   const faces = payoff === null ? (["trades", "sessions"] as const) : (["trades", "sessions", "payoff"] as const);
@@ -259,6 +303,10 @@ export function WinRateArcs({
   const tradePct = trades > 0 ? (wins / trades) * 100 : 0;
   const nextFace = faces[(faces.indexOf(face as never) + 1) % faces.length]!;
   const name = (f: string) => (f === "trades" ? tradeNoun : f === "sessions" ? "sessions" : "payoff");
+  const mean = shape?.mean ?? null;
+  const tone = mean === null ? "ts-plain" : mean >= 0 ? "ts-pos" : "ts-neg";
+  const interval = intervalLine(shape);
+  const rateCi = shape?.winRateCi95 ?? null;
   return (
     <TsCard title="win rate">
       <button type="button" className="ts-rings" onClick={next} title={`showing ${name(face)} — click for ${name(nextFace)}`}>
@@ -274,7 +322,7 @@ export function WinRateArcs({
             </>
           ) : (
             <>
-              <span className={(face === "sessions" ? dayPct : tradePct) >= 50 ? "ts-pos" : "ts-neg"}>
+              <span className={tone} title="coloured by net per trade, not by the rate">
                 {(face === "sessions" ? dayPct : tradePct).toFixed(0)}%
               </span>
               <span className="ts-muted">{name(face)}</span>
@@ -288,6 +336,16 @@ export function WinRateArcs({
         </div>
         <div>
           <span className="ts-swatch ts-ring-entries" /> {tradeNoun} {wins}/{trades}
+          {rateCi && (
+            <span className="ts-muted">
+              {" "}
+              (95% {(rateCi[0] * 100).toFixed(0)}–{(rateCi[1] * 100).toFixed(0)}%)
+            </span>
+          )}
+        </div>
+        <div className={mean === null ? "ts-muted" : mean >= 0 ? "ts-pos" : "ts-neg"} title="A win rate says nothing without what each trade nets: shown beside it, always">
+          net per trade {mean === null ? "n/r" : fmtUsd(mean)}
+          {interval && <span className="ts-muted"> · {interval}</span>}
         </div>
         {face === "payoff" && avgWin !== null && avgLoss !== null && (
           <div className="ts-muted">

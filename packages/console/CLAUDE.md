@@ -605,6 +605,15 @@ header has no scope control passes none and keeps its own `?day=` arrows. Scope 
 summary, the by-arm card included — deliberately unlike MEIC's comparison card, whose by-arm table
 never narrows.
 
+**A summary says how sure it is, and a win rate never stands alone** (`docs/trading-book-review-plan.md`
+B2). `shapeOf` gives the hero's shape n, mean, sample sd, a Student's t 95% interval of net per trade
+(t table under 30 trades, 1.96 from 30), t, the win rate's Wilson interval, and a skew flag both ways
+(adjusted skewness ≤ −1 left, ≥ 1 right). The net card's per-trade face shows the worst trade, the
+interval and t, an early-estimate note under 30 trades, and the skew note. The win-rate card always
+carries net per trade beside the rate and takes its tone from net per trade's sign, never from the
+rate passing 50% — an 85% premium seller that loses money reads red. Null where it cannot be said
+(one trade has no sd; no spread has no interval). Overlapping positions are not yet flagged.
+
 **The scope is SQL too, not only the settled roll-up.** `scopeTrades` narrows the rows a reader
 sums, but a reader also counts things straight from the ledger — an open-position count, the
 session list behind the day arrows, pmcc's shorts/rolls/exposure activity. Those go through the

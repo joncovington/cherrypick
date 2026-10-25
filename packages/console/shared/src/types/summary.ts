@@ -37,6 +37,27 @@ export interface SummaryShape {
   avgLoss: number | null;
   /** The single worst trade's net (a loss when any lost). */
   worst: number | null;
+  /*
+   * How sure the window's figures are (2026-10-24; docs/trading-book-review-plan.md, B2): a figure
+   * shown without its uncertainty lets a short sample read as proof. All optional, so a page served by
+   * an older server still renders and simply shows no interval.
+   */
+  /** Settled trades the shape is read from. */
+  n?: number;
+  /** Net per trade (the mean), its sample standard deviation, and the 95% interval of the mean
+   *  (Student's t below 30 trades). Null with too few trades to say. */
+  mean?: number | null;
+  sd?: number | null;
+  ci95?: [number, number] | null;
+  /** mean ÷ (sd ÷ √n). It assumes independent trades; positions open at once make it read high. */
+  t?: number | null;
+  /** The win rate's 95% interval (Wilson), as fractions. */
+  winRateCi95?: [number, number] | null;
+  /** The per-trade nets' skewness, and a flag past ±1: "left" = rare large losses carry the risk
+   *  (premium selling's shape, the median above the mean); "right" = rare large wins carry the result.
+   *  Null below 3 trades or with no spread. */
+  skewness?: number | null;
+  skew?: "left" | "right" | null;
 }
 
 export interface SummaryHero {

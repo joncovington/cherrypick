@@ -22,7 +22,7 @@ its PR), `dropped` (with why).
 | Item | From | What | Status | Measurement-affecting? |
 |---|---|---|---|---|
 | B1 | Ch. 1, 3, 7 | Written kill criteria for every live arm, enforced as entries-blocked; thresholds from a bootstrap of the arm's evidence, frozen when armed; a graduated response (normal, reduced size, blocked) from 50-trade windows measured in standard errors of the window mean, against a live-cost baseline | proposed | No: blocks or reduces live entries only, paper unchanged |
-| B2 | Ch. 1, 6, 14 | Confidence intervals and t on the console's expectancy and win-rate figures, with the median, spread and worst trade beside the mean and a skew flag in both directions; a win rate never shown without expectancy beside it | proposed | No: a read surface |
+| B2 | Ch. 1, 6, 14 | Confidence intervals and t on the console's expectancy and win-rate figures, with the median, spread and worst trade beside the mean and a skew flag in both directions; a win rate never shown without expectancy beside it | built (summary cards); overlap flag open | No: a read surface |
 | B3 | Ch. 1 | Results in R per trade (1R = max loss for a defined-risk structure) in every module's history | proposed | No: a presentation and recording change |
 | B4 | Ch. 1, 2 | Entry context recorded on every trade row (SPX against its 50-day **and 200-day**, ATR %, relative volume, sector, entry time; holding period at exit) | proposed | No: recording only, new columns |
 | B5 | Ch. 2 | A slice report per arm (by setup, market condition, entry time, holding period) with n and an interval on every cell; a cell that looks good becomes a declared hypothesis, never a filter | proposed | No: a read surface |
@@ -117,7 +117,7 @@ its PR), `dropped` (with why).
   paper history; earnings has little); and whether the threshold is written by hand or derived and
   then frozen.
 
-**B2. Intervals on the console.** *(proposed)*
+**B2. Intervals on the console.** *(built on the summary cards, 2026-10-24; the overlapping-trades flag is still open)*
 - Every per-arm expectancy and win rate on the console shows its 95% interval and n. Expectancy also
   shows its t, so a 20-trade arm cannot read as proof.
 - Overlapping trades are flagged where an arm holds several positions at once, so t is not taken at
