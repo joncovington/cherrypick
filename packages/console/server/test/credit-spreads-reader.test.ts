@@ -74,7 +74,7 @@ function doc(session: string, spreads: unknown[] | undefined) {
     },
     names: 488,
     lists: { "short-puts": [], "covered-calls": [], ...(spreads === undefined ? {} : { "credit-spreads": spreads }) },
-    dropped: { "credit-spreads": { "no fresh setup entry": 370, "no 30-45 day monthly": 3 } },
+    dropped: { "credit-spreads": { "no fresh setup entry": 370, "no 30-45 or 45-60 day monthly": 3 } },
   };
 }
 
@@ -95,7 +95,8 @@ describe("readCreditSpreadList", () => {
       tested: "not yet: item 17",
       selections: [], // a list built before selections names none
     });
-    expect(p.dropped).toEqual({ "no fresh setup entry": 370, "no 30-45 day monthly": 3 });
+    expect(p.dropped).toEqual({ "no fresh setup entry": 370, "no 30-45 or 45-60 day monthly": 3 });
+    expect(p.rows[0]!.window).toBe("30-45");
     const r = p.rows[0]!;
     expect(r).toMatchObject({ symbol: "AAA", spread: "put", setups: ["pullback"], dte: 31, move: 5.13 });
     expect(r.signals).toEqual([{ setup: "pullback", date: "2026-10-21", ago: 2 }]);

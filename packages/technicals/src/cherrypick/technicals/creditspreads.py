@@ -253,6 +253,8 @@ def build_rows(
                 "spot": round(spot, 4),
                 "expiry": cs["expiry"],
                 "dte": cs["dte"],
+                # "45-60" when no monthly fell 30-45 days out: outside the window item 17 studied.
+                "window": cs.get("window") or "30-45",
                 "move": None if move is None else round(move, 4),
                 "short": {
                     "strike": short["strike"],

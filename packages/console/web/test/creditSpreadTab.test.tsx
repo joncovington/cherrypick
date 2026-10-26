@@ -35,6 +35,7 @@ function row(over: Partial<CreditSpreadRow>): CreditSpreadRow {
     spot: 100,
     expiry: "2026-11-20",
     dte: 31,
+    window: "30-45",
     move: 5.13,
     short: { strike: 96, delta: -0.398, iv: 0.31, bid: 1.9, ask: 1.98 },
     pick: price(),
@@ -93,6 +94,13 @@ describe("our credit-spread list", () => {
     payload = base([]);
     expect(render()).toContain("No tested edge.");
     expect(render()).toContain("No setup entered on a recent close");
+  });
+
+  it("marks a row from the 45-60 day fallback, and only that row", () => {
+    payload = base([row({})]);
+    expect(render()).not.toContain(">45-60<");
+    payload = base([row({ window: "45-60", expiry: "2026-12-18", dte: 56 })]);
+    expect(render()).toContain(">45-60<");
   });
 
   it("shows the pick as a credit per share and its max loss per contract", () => {

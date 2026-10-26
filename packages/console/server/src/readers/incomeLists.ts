@@ -257,6 +257,7 @@ function toSpread(v: unknown): CreditSpreadRow | null {
       ask: num(short["ask"]),
     },
     pick: toPrice(r["pick"]),
+    window: r["window"] === "45-60" ? "45-60" : "30-45",
     selections: toSelections(r["selections"]),
     widths: (Array.isArray(r["widths"]) ? r["widths"] : []).map(toWidth).filter((w): w is CreditSpreadWidth => w !== null),
     // An unknown spelling is unknown, never clear.

@@ -230,7 +230,7 @@ def build_lists(
             if not fresh:
                 drop(CREDIT_SPREADS, "no fresh setup entry")
             elif not cs:
-                drop(CREDIT_SPREADS, "no 30-45 day monthly")
+                drop(CREDIT_SPREADS, "no 30-45 or 45-60 day monthly")
             else:
                 rows, why = creditspreads.build_rows(
                     sym,
