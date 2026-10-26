@@ -116,10 +116,20 @@ before it and resuming after. A finished row points to what it produced.
 
 | Command | What it does | Flags |
 |---|---|---|
-| `queue-add` | Queue one task. Its kind, arguments, names and times are all checked now, so a row the runner would refuse is never added. Kinds: `fetch-chains` (`{"requests": file, "workers": 1-4}`), `fetch-flow` (`{"plan": file, "workers": 1-4}`), `script` (`{"path": "scripts/x.py", "args": [strings]}`, a file git knows), `validate` (`{"module": "flies"|"meic"}`, backtest `validate`: local stores only). | `--study` (required), `--step` (default: the kind), `--task`, `--task-args <json>`, `--output <file>` (a script's conclusion, which must exist when it finishes), `--not-before` / `--stop-by` (ET, `YYYY-MM-DDTHH:MM`), `--after <study/step>` (wait for that row to finish `done`; held, never run, if it fails or is cancelled) |
+| `queue-add` | Queue one task. Its kind, arguments, names and times are all checked now, so a row the runner would refuse is never added. Kinds: `fetch-chains` (`{"requests": file, "workers": 1-4}`), `fetch-flow` (`{"plan": file, "workers": 1-4}`), `script` (`{"path": "scripts/x.py", "args": [strings]}`, a file git knows), `validate` (`{"module": "flies"|"meic"}`, backtest `validate`: local stores only). | `--study` (required), `--step` (default: the kind), `--task`, `--task-args <json>`, `--output <file>` (a script's conclusion, which must exist when it finishes), `--not-before` / `--stop-by` (ET, `YYYY-MM-DDTHH:MM`), `--after <study/step>` (wait for the newest row of that name to finish `done`; see below) |
 | `queue-list` | The rows, newest first: each queued one with why it waits, each finished one with its result (a fetch's counts and input, a script's output, the log). A chain fetch row carries `progress` (answered of total through its request file, by status, rate and ETA), read through `python -m cherrypick.backtest chain-progress`, whoever is running it. Also on the console's Backtest → queue tab, as a meter. | `--study` |
 | `queue-cancel` | Cancel a queued row; a running one is left to its process. | `--task-id` |
 | `queue-run` | Recover rows left running by a dead process, then run the oldest ready row to its end: the `research-queue` job, every 300 s (`research_queue.*`). | — |
+
+**`--after`** makes a row wait for the newest row of another name to finish `done`. A row whose
+prerequisite failed, stopped or was cancelled is **held**, never run on what that row left behind, and
+so is one whose `--after` chain comes back on itself (a cycle: A after B and B after A, or a row
+waiting on a chain that loops), which no finish could release. `queue-add` refuses a row naming itself
+or closing a cycle; one that forms anyway is held with a `cycle` reason, so cancel a row in it. A held
+row raises one WARNING notification when it is first held (`held_at` records it, so the 300 s job
+does not repeat it); `queue-list` and the console show the reason. To release a held row, **re-queue
+the prerequisite**: the new row is the newest of that name, so the held row waits for it and runs once
+it is done. There is no need to cancel and re-queue the held row itself.
 
 ## Global flags
 
