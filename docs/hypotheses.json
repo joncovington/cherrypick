@@ -469,6 +469,44 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 19,
+      "study": "item19",
+      "title": "The Time Warp: two OTM SPX flies bought at the close, sold the next session",
+      "status": "declared",
+      "legacy": false,
+      "setup": "close-to-next-session",
+      "side": "two-sided",
+      "structure": "long-butterfly-pair",
+      "window": "overnight",
+      "measure": "pair net per session in $ at one contract a side (and as a share of the debit), for two exit arms: the host's time-shrinking trail and a fixed 10:30 sale",
+      "expected": "a positive mean net per session after the suite's tastytrade costs",
+      "sample": "design 2022-05-16..2024-12-31 (~660 sessions); holdout 2025-01-02..2026-10-23 read once, only after a design pass; < 100 entered sessions = no verdict",
+      "rule": "per arm: one-sided t > 2 on session nets, Holm across the two arms, both design time-halves positive, positive at 1.5x costs; then holdout mean > 0 with t > 2",
+      "mechanism": "in a calm market next-day far wings are priced for a quiet session while much of the move comes overnight, so flies bought at 5% of width at the close are under-priced for the gap",
+      "rivals": [
+        {
+          "explanation": "market drift",
+          "check": "call and put sides reported apart, by B8 environment"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "both design time-halves must pass; results by VIX band"
+        },
+        {
+          "explanation": "the discretionary exit carries it",
+          "check": "a fixed 10:30 exit arm, Holm across both"
+        },
+        {
+          "explanation": "optimistic fills in wide wings",
+          "check": "verdict at the working price; mid and mid +/- $0.05 reported"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#19-the-time-warp-two-out-of-the-money-spx-flies-bought-at-the-close-sold-the-next-morning",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []

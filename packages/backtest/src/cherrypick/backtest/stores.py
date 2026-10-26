@@ -59,6 +59,12 @@ STORES: list[dict[str, str]] = [
         "built_by": "scripts/fetch_spy_monthly_1545.py",
         "used_by": "the strangle-management test (2026-10-20)",
     },
+    {
+        "file": "SPX-time-warp.db",
+        "holds": "SPXW next-expiry chains 15:45-15:55 ET each session, and that expiry's next session at 5 min",
+        "built_by": "scripts/fetch_spx_time_warp.py",
+        "used_by": "item 19, the Time Warp test (docs/edge-hypotheses-plan.md)",
+    },
 ]
 
 DATE_COLUMNS = ("trade_date", "session", "day", "date", "expiration")
