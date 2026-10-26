@@ -14,12 +14,22 @@ Read-only over every module's ledger; writes only into review's own home.
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import sys
 
 from cherrypick.review import facts as _facts
 from cherrypick.review import reconcile as _reconcile
 from cherrypick.review import render as _render
+
+
+def _iso_date(text: str) -> str:
+    """An ISO date, as typed. A session names a file (`eod-<session>.json`), so anything else --
+    notably a path fragment -- is refused at the argument rather than joined onto the data dir."""
+    try:
+        return _dt.date.fromisoformat(text).isoformat()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a YYYY-MM-DD date") from None
 
 
 def cmd_build(args) -> dict:
@@ -79,7 +89,10 @@ def main() -> None:
 
     p_build = sub.add_parser("build")
     p_build.add_argument(
-        "--session", default=None, help="YYYY-MM-DD (default: today, or the prior trading day with --final)"
+        "--session",
+        type=_iso_date,
+        default=None,
+        help="YYYY-MM-DD (default: today, or the prior trading day with --final)",
     )
     p_build.add_argument(
         "--final",
@@ -88,13 +101,13 @@ def main() -> None:
     )
 
     p_backfill = sub.add_parser("backfill")
-    p_backfill.add_argument("--since", default=None)
+    p_backfill.add_argument("--since", type=_iso_date, default=None)
 
     p_rec = sub.add_parser("reconcile")
-    p_rec.add_argument("--since", default=None)
+    p_rec.add_argument("--since", type=_iso_date, default=None)
 
     p_render = sub.add_parser("render")
-    p_render.add_argument("--session", default=None)
+    p_render.add_argument("--session", type=_iso_date, default=None)
 
     args = parser.parse_args()
     result = {"build": cmd_build, "backfill": cmd_backfill, "reconcile": cmd_reconcile, "render": cmd_render}[
