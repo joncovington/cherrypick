@@ -9,6 +9,7 @@ import type {
   BacktestValidation,
   BridgedResult,
 } from "@console/shared";
+import { isBacktestCapital } from "@console/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import type { ReactNode } from "react";
@@ -16,6 +17,7 @@ import { Card } from "../../components/DataTable";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { fmtGap, signTone, useBridged } from "../../lib/bridged";
 import { fmtCash, fmtCount, fmtNum } from "../../lib/format";
+import { RunCards } from "./RunCards";
 
 /**
  * The Backtest page (2026-10-17): `packages/backtest`'s replays over licensed vendor history, read
@@ -471,12 +473,16 @@ export function BacktestValidationTab() {
 
 // ------------------------------------------------------------------ runs
 
-function useRun(id: string | null) {
+function useRun(id: string | null, capital: number | null) {
   return useQuery<BridgedResult<BacktestRunReport>>({
-    queryKey: ["bridged", "backtest", "run", id],
+    // The default account (the run's peak risk) keeps the plain key; a chosen one is its own entry.
+    queryKey: capital === null ? ["bridged", "backtest", "run", id] : ["bridged", "backtest", "run", id, capital],
     enabled: id !== null,
+    // Keep the last account's cards on screen while another loads.
+    placeholderData: (prev) => prev,
     queryFn: async () => {
-      const res = await fetch(`/api/backtest/runs/${encodeURIComponent(id ?? "")}`);
+      const q = capital === null ? "" : `?capital=${String(capital)}`;
+      const res = await fetch(`/api/backtest/runs/${encodeURIComponent(id ?? "")}${q}`);
       if (!res.ok) throw new Error(`run ${id ?? ""}: HTTP ${String(res.status)}`);
       return (await res.json()) as BridgedResult<BacktestRunReport>;
     },
@@ -613,8 +619,21 @@ function PairingTable({ arms }: { arms: Array<[string, BacktestArmReport]> }) {
   );
 }
 
+/** The cards' account from the URL: whole dollars, or null for the run's peak risk. */
+function capitalParam(raw: string | null): number | null {
+  return raw !== null && isBacktestCapital(raw) ? Number(raw) : null;
+}
+
 function RunReport({ id }: { id: string }) {
-  const { data, isLoading, isError, error, dataUpdatedAt } = useRun(id);
+  const [params, setParams] = useSearchParams();
+  const capital = capitalParam(params.get("capital"));
+  const pickCapital = (c: number | null) => {
+    const next = new URLSearchParams(params);
+    if (c === null) next.delete("capital");
+    else next.set("capital", String(c));
+    setParams(next, { replace: true });
+  };
+  const { data, isLoading, isError, error, dataUpdatedAt } = useRun(id, capital);
   const r = data?.data ?? null;
   return (
     <Card title={`run ${id}`} updatedAt={dataUpdatedAt} isError={isError || (data !== undefined && !data.ok)}>
@@ -650,6 +669,8 @@ function RunReport({ id }: { id: string }) {
           <ArmsTable arms={Object.entries(r.arms)} />
           <div className="card-subhead">paired with control, by session</div>
           <PairingTable arms={Object.entries(r.arms)} />
+          <div className="card-subhead">run cards</div>
+          <RunCards cards={r.cards} capital={capital} onCapital={pickCapital} />
           <div className="card-subhead">refused sessions</div>
           {Object.keys(r.refused).length === 0 ? (
             <p className="muted">None.</p>

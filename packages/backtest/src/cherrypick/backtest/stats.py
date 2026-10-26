@@ -12,7 +12,8 @@ Sharpe). Nothing here annualises.
   the results store, every spec ever run, so the deflation cannot be argued down after the fact.
 - `min_track_record`: sessions needed before the observed Sharpe could exclude the benchmark.
 - `block_bootstrap_ci`: a stationary-bootstrap interval on the mean, so serially correlated sessions
-  are not treated as independent.
+  are not treated as independent; `block_bootstrap_diff_ci` the same for the change between two
+  stretches of one series (the run cards' edge trend).
 """
 
 from __future__ import annotations
@@ -122,6 +123,29 @@ def block_bootstrap_ci(
     lo = means[int((1 - level) / 2 * (resamples - 1))]
     hi = means[int((1 + level) / 2 * (resamples - 1))]
     return lo, hi
+
+
+def block_bootstrap_diff_ci(
+    first: Sequence[float],
+    second: Sequence[float],
+    *,
+    mean_block: float = 5.0,
+    resamples: int = 2000,
+    level: float = 0.95,
+    seed: int = 7,
+) -> tuple[float, float] | None:
+    """A stationary-bootstrap interval for mean(second) - mean(first), each half resampled on its own
+    (the halves are consecutive stretches of one series, not paired sessions)."""
+    if len(first) < 2 or len(second) < 2:
+        return None
+    rng = random.Random(seed)
+
+    def one(values: Sequence[float]) -> float:
+        picks = core_stats.stationary_indices(len(values), mean_block, rng)
+        return statistics.fmean(values[i] for i in picks)
+
+    diffs = sorted(one(second) - one(first) for _ in range(resamples))
+    return diffs[int((1 - level) / 2 * (resamples - 1))], diffs[int((1 + level) / 2 * (resamples - 1))]
 
 
 def summary(values: Sequence[float], *, trials: int, trial_sharpes: Sequence[float] | None = None) -> dict:

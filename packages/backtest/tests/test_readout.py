@@ -47,6 +47,7 @@ def test_a_run_report_is_read_by_id_and_a_bad_id_is_refused(capsys):
     runs = paths.results_dir() / "runs"
     runs.mkdir(parents=True)
     (runs / "20261017-120000-abcdef.json").write_text(json.dumps({"run_id": "x"}), encoding="utf-8")
-    assert readout.run_report("20261017-120000-abcdef") == {"ok": True, "report": {"run_id": "x"}}
+    out = readout.run_report("20261017-120000-abcdef")
+    assert out["ok"] and out["report"] == {"run_id": "x"}
     assert readout.run_report("../../etc/passwd")["ok"] is False
     assert cli.main(["read", "run", "--id", "nope"]) == 1

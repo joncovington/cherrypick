@@ -6,7 +6,8 @@ machine (127.0.0.1); nothing is published. The console hides the page unless the
 gate: it answers whoever asks on this machine, as every other read verb does.
 
 `overview` -> {ok, license, windows, stores, validation, runs, trials}
-`run --id X` -> {ok, report} (the run's own report, as written)
+`run --id X [--capital N]` -> {ok, report, cards} (the run's own report, as written, and its cards:
+cards.py, on the run's peak session risk as the account unless a capital is chosen)
 """
 
 from __future__ import annotations
@@ -145,8 +146,20 @@ def overview(settings: dict) -> dict:
     }
 
 
-def run_report(run_id: str) -> dict:
+def run_report(run_id: str, capital: float | None = None) -> dict:
     path = paths.results_dir() / "runs" / f"{run_id}.json"
     if not run_id.replace("-", "").isalnum() or not path.exists():
         return {"ok": False, "error": f"no run {run_id!r}"}
-    return {"ok": True, "report": json.loads(path.read_text(encoding="utf-8"))}
+    report = json.loads(path.read_text(encoding="utf-8"))
+    return {"ok": True, "report": report, "cards": _cards(run_id, report, capital)}
+
+
+def _cards(run_id: str, report: dict, capital: float | None) -> dict:
+    """The run's cards (cards.py). A failure here is the cards' own error, never the report's."""
+    from . import cards, runner
+
+    try:
+        mod = runner.MODULES[report.get("module") or runner.MODULE]
+        return {"ok": True, **cards.for_run(run_id, mod.schema, list(report.get("arms") or {}), capital)}
+    except Exception as exc:  # noqa: BLE001 -- the report still reads without its cards
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}

@@ -200,6 +200,14 @@ and is **fail-closed**: shown only when the orchestrator's `features.backtest` i
 (`orchestrator/backtestgate.py`: the operator's config enabled, the licence active, the key in the
 keyring, a complete session in the store), with its server routes refusing on their own.
 
+**The run cards** (`cards.py`, 2026-10-26): `read run` also returns each arm's path, drawdown
+periods, month and year rows, session and trade anatomy, exits (`core.ledgers`' `outcome`), an edge
+trend (first half against second, block-bootstrap interval) and an account read. They come from
+`session_results` and the ledgers a run keeps under `results/runs/<run_id>/`. They are views: no trial,
+nothing to the advisor. **The account is a lens, not a replay**: fixed lots, never compounded, so a
+chosen capital (`--capital`) changes percentages only. Absent, it is the run's peak session risk
+(MEIC's condors' max losses summed, flies' book peak risk); a schema with neither has no account.
+
 **The advisor's specs** (`run-advised`, `advised.py`): the advisor queues `backtest_spec` replies it
 admitted against flies' own advice bounds (off until `advisor.backtest_proposals`); this reads the
 queue by subprocess, turns each into a config-defined arm `advised:<name>-<id>` (the base arm's params

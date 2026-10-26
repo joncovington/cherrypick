@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import {
+  isBacktestCapital,
   isBacktestRunId,
   type BacktestOverview,
   type BacktestRunReport,
@@ -37,12 +38,18 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
     return readBacktestOverview();
   });
 
-  app.get<{ Params: { id: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { capital?: string } }>(
     "/api/backtest/runs/:id",
     async (req, reply): Promise<BridgedResult<BacktestRunReport> | FastifyReply> => {
       if (!backtestOn(getFeatures())) return refuse(reply);
       if (!isBacktestRunId(req.params.id)) return reply.code(400).send({ error: "not a run id" });
-      return readBacktestRun(req.params.id);
+      // The cards' account: whole dollars or nothing (the run's own peak risk). Anything else is a
+      // 400 and runs nothing.
+      const capital = req.query.capital;
+      if (capital !== undefined && !isBacktestCapital(capital)) {
+        return reply.code(400).send({ error: "capital must be whole dollars" });
+      }
+      return readBacktestRun(req.params.id, capital === undefined ? undefined : Number(capital));
     },
   );
 
