@@ -6,11 +6,11 @@ describe("the store inventory's lines", () => {
     const s = {
       file: "eod_chains.db",
       tables: {
-        eod_chain_requests: { rows: 182131, span: ["2014-02-07", "2026-10-22"] as [string, string] },
-        eod_chain_quotes: { rows: 19542835, span: ["2016-01-05", "2026-10-22"] as [string, string] },
+        eod_chain_requests: { rows: 12345, span: ["2020-01-02", "2024-12-31"] as [string, string] },
+        eod_chain_quotes: { rows: 1234567, span: ["2020-01-02", "2024-12-31"] as [string, string] },
       },
     };
-    expect(mainTable(s)).toBe("eod_chain_quotes: 19,542,835 rows · 2016-01-05 to 2026-10-22");
+    expect(mainTable(s)).toBe("eod_chain_quotes: 1,234,567 rows · 2020-01-02 to 2024-12-31");
     expect(mainTable({ file: "x" })).toBe("—");
   });
 

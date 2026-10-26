@@ -69,7 +69,7 @@ export function etaText(minutes: number | null): string {
   return h > 0 ? `${h}h ${minutes % 60}m` : `${minutes}m`;
 }
 
-/** "62,202 of 97,402 (63.9%) · 233/min · ~2h 31m left" -- and "stalled" when nothing has been
+/** "6,000 of 10,000 (60.0%) · 200/min · ~20m left" -- and "stalled" when nothing has been
  *  answered for 10 minutes while the row is not finished. */
 export function progressLine(p: NonNullable<ResearchTask["progress"]>): string {
   const pct = p.total > 0 ? (p.answered / p.total) * 100 : 0;
