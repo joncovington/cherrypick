@@ -50,10 +50,12 @@ name halves (B9), and for a passing test the B13 report (cost stress, neighbourh
 
 **Item 18** (`--item 18`; "### 18. Mean-reversion put spreads, tested once on the holdout"): the
 same pricing, one fixed cell (reversion puts, d20/em0.75) on 2025-07-01..2026-10-12, liquid entries
-and liquid baselines only. Passes when the excess has a clustered one-sided t above 2 AND the own mean
-net is positive in dollars AND as a share of max loss; under 100 scored trades is no verdict. Mid and
-mid - 0.05 fills, every entry, B9, B12 and (for a pass) B13 are reported beside it. Written to
-results/research/item18/study.json under the backtest data dir by default.
+and liquid baselines only. The excess is as declared, (trade net - mean baseline net) / the trade's
+max loss, not item 17's difference of per-trade returns. Passes when the excess has a clustered
+one-sided t above 2 AND the own mean net is positive in dollars AND as a share of max loss; under 100
+scored trades is no verdict. Mid and mid - 0.05 fills, every entry, B9, B12 and (for a pass) B13 are
+reported beside it. Written to results/research/item18/study.json under the backtest data dir by
+default.
 """
 
 from __future__ import annotations
@@ -548,7 +550,8 @@ def index_baselines(priced: list[dict]) -> dict[str, list[dict]]:
 
 def paired_diff(trade: dict, baselines: list[dict], cell: str) -> float | None:
     """The trade's ret less the mean ret of its baselines priced in the same cell; None when the trade
-    or every baseline is unpriced there."""
+    or every baseline is unpriced there. Each ret is on its own max loss: item 17's run used this, a
+    deviation from its declaration recorded after the fact, kept so the run reproduces (`excess18`)."""
     own = trade["cells"].get(cell)
     bs_ = [b["cells"][cell]["ret"] for b in baselines if cell in b["cells"]]
     if own is None or not bs_:
@@ -904,6 +907,13 @@ def reprice(r: dict, fill: str) -> dict | None:
     }
 
 
+def excess18(trade: dict, baselines: list[dict]) -> float:
+    """Item 18's measure as declared: (the trade's net - the mean net of its baselines) / the trade's
+    own max loss. Not item 17's `paired_diff`, which divides each baseline by its own max loss; item
+    17's one run used that, and keeps it so the run reproduces."""
+    return (trade["net"] - statistics.fmean(b["net"] for b in baselines)) / trade["max_loss"]
+
+
 def score18(priced: list[dict], cell: str, fill: str, liquid_only: bool, start: str) -> dict:
     """The declared measures for one cell and fill. A trade counts when priced in the cell (and, when
     `liquid_only`, its legs clear the bars); its baselines are held to the same bar, and one left
@@ -948,7 +958,7 @@ def score18(priced: list[dict], cell: str, fill: str, liquid_only: bool, start: 
                 "symbol": t["symbol"],
                 "entry": t["entry"],
                 "expiry": t["expiry"],
-                "diff": rr["ret"] - statistics.fmean(b["ret"] for b in bases),
+                "diff": excess18(rr, bases),
                 "baselines_priced": len(bases),
                 "net": rr["net"],
                 "ret": rr["ret"],

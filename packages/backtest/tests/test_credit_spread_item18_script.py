@@ -103,6 +103,22 @@ def test_fill_variants_order_their_measures_and_reprice_the_baselines_too():
     assert s["mid"]["mean_diff"] == pytest.approx(s["working"]["mean_diff"], rel=0.05)
 
 
+# ------------------------------------------------------------------------------ the declared excess
+def test_the_excess_is_net_difference_on_the_trades_own_max_loss_not_item_17s():
+    # Baselines on a wider structure: their max loss differs from the trade's, so the two measures part.
+    trade = res(1.0, 0.0, width=5.0)
+    bases = [res(1.0, 0.5, width=10.0), res(1.0, 0.3, width=10.0)]
+    assert bases[0]["max_loss"] != trade["max_loss"]
+    rows = build(1, lambda i, rng: trade, lambda i, k, rng: bases[k], bases=2)
+    s = cs.score18(rows, CELL, "working", True, START)
+    declared = (trade["net"] - (bases[0]["net"] + bases[1]["net"]) / 2) / trade["max_loss"]
+    assert s["rows"][0]["diff"] == pytest.approx(declared)
+    # Item 17's measure, kept for its one run, is the difference of per-trade returns: not the same.
+    item17 = cs.paired_diff(rows[0], rows[1:], CELL)
+    assert item17 == pytest.approx(trade["ret"] - (bases[0]["ret"] + bases[1]["ret"]) / 2)
+    assert abs(item17 - declared) > 0.01
+
+
 # ------------------------------------------------------------------------------- liquid filter
 def test_the_liquid_filter_drops_trades_and_baselines():
     def trade(i, rng):
