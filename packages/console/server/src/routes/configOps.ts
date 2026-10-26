@@ -27,6 +27,9 @@ import { getPrefs, setPref } from "../store/consoleDb.js";
 /** The literal that must be typed to clear the halt. Checked server-side, not just in the UI. */
 export const RESUME_CONFIRMATION = "RESUME LIVE";
 
+const MAX_PREF_KEY_CHARS = 64;
+const MAX_PREF_VALUE_CHARS = 16_384;
+
 const TARGETS = ["orchestrator", "meic", "flies", "gex", "earnings", "streamer", "meic-risk", "manage"] as const;
 
 /**
@@ -153,6 +156,14 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     const key = body["key"];
     if (typeof key !== "string" || key === "") {
       return reply.code(400).send({ error: "key required" });
+    }
+    // Keys are open-ended (per-table layouts), so bound them rather than allow-list: a buggy client
+    // must not be able to grow the prefs table without limit.
+    if (key.length > MAX_PREF_KEY_CHARS) {
+      return reply.code(400).send({ error: `key longer than ${MAX_PREF_KEY_CHARS} characters` });
+    }
+    if ((JSON.stringify(body["value"]) ?? "").length > MAX_PREF_VALUE_CHARS) {
+      return reply.code(413).send({ error: `value larger than ${MAX_PREF_VALUE_CHARS} characters` });
     }
     setPref(config, key, body["value"]);
     return { prefs: getPrefs(config) };

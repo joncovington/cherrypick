@@ -31,7 +31,7 @@ const UNAVAILABLE =
 
 function argvFor(op: AdvisorOp): string[] {
   return op.op === "kill"
-    ? ["-m", "cherrypick.advisor", "kill", op.experimentId]
+    ? ["-m", "cherrypick.advisor", "kill", "--", op.experimentId]
     : ["-m", "cherrypick.advisor", "dismiss", String(op.proposalId)];
 }
 

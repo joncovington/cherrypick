@@ -555,6 +555,15 @@ describe("the advisor's two write actions", () => {
     expect(seen).toEqual([]);
   });
 
+  it("rejects an experiment id that could be read as a CLI option", async () => {
+    fakeCli({ ok: true });
+    for (const id of ["--help", "-x", "exp 1", "exp;1"]) {
+      const res = await post(`/api/advisor/experiments/${encodeURIComponent(id)}/kill`);
+      expect(res.statusCode, id).toBe(400);
+    }
+    expect(seen).toEqual([]);
+  });
+
   it("needs the CSRF header like every other mutating surface", async () => {
     fakeCli({ ok: true });
     const res = await app.inject({
