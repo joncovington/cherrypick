@@ -435,31 +435,66 @@ def _opens(spec: dict) -> bool:
 
 def kill_refusal(spec: dict, config: dict, db_path=None) -> str | None:
     """B1 for earnings: the live arm's written kill criteria (`live.kill`), checked before a live
-    order that opens anything. A block latches (`state/kill/earnings.json`) until a person clears
-    it; an unreadable ledger fails closed. Under a hand-written limit the order may carry one
-    contract a leg (earnings' structures are 1:1). None lets the order through."""
+    order that opens anything. None lets the order through; every doubt refuses (2026-10-25):
+
+    - a block refuses, and latches (`state/kill/earnings.json`) until a person clears it;
+    - a live ledger that is missing or unreadable refuses: it cannot show the arm is inside its
+      criteria. A missing one is not read as an empty book -- `db.py init_db` creates the empty
+      ledger a genuine first trade starts from, so that trade still goes, one deliberate step later;
+    - a closed live trade since the criteria were written with no net refuses. `save_close` records
+      `pnl` and leaves `exit_cost` to the caller, so a live close can carry no net, and the verdict
+      skips a row with no net (n/r is not a zero) -- the loss would be invisible to the drawdown.
+      It does not latch: recording the row's `entry_cost` and `exit_cost` is the fix;
+    - an opening leg larger than the verdict allows (`core.killcriteria.sized`) refuses. A reduced
+      verdict halves an entry, and this command cannot see the entry's full size, so a reduced
+      order carries one contract a leg, as an order under a hand-written limit does (earnings'
+      structures are 1:1)."""
     import sqlite3
 
     if not _opens(spec):
         return None
     criteria = (config.get("live") or {}).get("kill")
     path = db_path or _paths.live_db_path()
-    records: list[dict] = []
-    if os.path.exists(path):
+    if not os.path.exists(path):
+        held = _kill.gate("earnings", "live", [], criteria)
+        prior = held["reasons"] if held["state"] == _kill.BLOCKED else []
+        missing = (
+            f"live ledger missing ({path}); run `python -m cherrypick.earnings.db init_db` to start an"
+            " empty one before the first live order"
+        )
+        return "kill criteria: " + "; ".join([*prior, missing])
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        con.row_factory = sqlite3.Row
         try:
-            con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-            con.row_factory = sqlite3.Row
-            try:
-                records = [{**r, "arm": "live"} for r in _ledgers.READERS["earnings"](con)]
-            finally:
-                con.close()
-        except sqlite3.Error as exc:
-            return f"kill criteria: live ledger unreadable ({exc})"
+            records = [{**r, "arm": "live"} for r in _ledgers.READERS["earnings"](con)]
+        finally:
+            con.close()
+    except Exception as exc:  # noqa: BLE001 -- any failure to read the book refuses, never allows
+        return f"kill criteria: live ledger unreadable ({exc})"
     verdict = _kill.gate("earnings", "live", records, criteria)
     if verdict["state"] == _kill.BLOCKED:
         return "kill criteria: " + "; ".join(verdict["reasons"])
-    if isinstance(criteria, dict) and criteria.get("hand_limit_dollars") is not None:
-        if any(int(leg.get("quantity") or 1) > 1 for leg in spec.get("legs") or []):
+    blind = _kill.unrecorded(records, "live", criteria)
+    if blind:
+        ids = ", ".join(str(r.get("position_id") or "?") for r in blind)
+        return (
+            f"kill criteria: {len(blind)} closed live trade(s) since the criteria were written have no net"
+            f" (pnl, entry_cost or exit_cost unrecorded: {ids}); record them before another opening order"
+        )
+    for leg in spec.get("legs") or []:
+        if "open" not in str(leg.get("action", "")).lower():
+            continue
+        try:
+            quantity = int(leg.get("quantity") or 1)
+        except (TypeError, ValueError):
+            return f"kill criteria: an opening leg's quantity is unreadable ({leg.get('quantity')!r})"
+        if quantity > _kill.sized(quantity, verdict, criteria):
+            if verdict["state"] == _kill.REDUCED:
+                return (
+                    "kill criteria: reduced (" + "; ".join(verdict["reasons"]) + "); a reduced live"
+                    " earnings order carries one contract a leg"
+                )
             return (
                 "kill criteria: under a hand-written limit a live earnings order carries one contract a leg"
             )

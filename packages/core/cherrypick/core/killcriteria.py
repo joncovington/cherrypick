@@ -173,16 +173,26 @@ def sized(quantity: int, verdict: dict, criteria) -> int:
     return max(1, int(quantity) // 2) if verdict.get("state") == REDUCED else int(quantity)
 
 
-def live_nets(records: list[dict], arm: str, criteria) -> list[float]:
-    """An arm's closed live nets (`core.ledgers` records) since its criteria were written, in session
-    order. A row with no net is skipped: n/r is not a zero."""
+def _since_written(records: list[dict], arm: str, criteria) -> list[dict]:
+    """An arm's closed records since its criteria were written, in session order (none when unwritten)."""
     since = _written(criteria) or "9999-99-99"
     rows = [r for r in records if r.get("arm") == arm and (r.get("session") or "") >= since]
+    return sorted(rows, key=lambda r: r.get("session") or "")
+
+
+def live_nets(records: list[dict], arm: str, criteria) -> list[float]:
+    """An arm's closed live nets (`core.ledgers` records) since its criteria were written, in session
+    order. A row with no net is skipped: n/r is not a zero (`unrecorded` names the skipped rows)."""
     return [
-        float(r["net_pnl"])
-        for r in sorted(rows, key=lambda r: r.get("session") or "")
-        if r.get("net_pnl") is not None
+        float(r["net_pnl"]) for r in _since_written(records, arm, criteria) if r.get("net_pnl") is not None
     ]
+
+
+def unrecorded(records: list[dict], arm: str, criteria) -> list[dict]:
+    """The closed rows `live_nets` skips: the arm's trades since its criteria were written that carry
+    no net. The verdict cannot see them, so it cannot show the arm is inside its criteria while any
+    remain; an entry path that can produce them refuses on them (earnings' `tt.kill_refusal`)."""
+    return [r for r in _since_written(records, arm, criteria) if r.get("net_pnl") is None]
 
 
 # --------------------------------------------------------------------------- the latch
