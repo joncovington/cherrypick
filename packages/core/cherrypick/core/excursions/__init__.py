@@ -46,9 +46,9 @@ trade that only ever lost has a best of 0 at entry. Pure reads, no clock, no net
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 
+from cherrypick.core import db as core_db
 from cherrypick.core import ledgers, quotehistory
 from cherrypick.core.clock import ET
 
@@ -98,11 +98,7 @@ def iso_et(value) -> str | None:
 _EPOCH = datetime.fromtimestamp(0, ET)
 
 
-def _cols(conn, table: str) -> set:
-    try:
-        return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
-    except sqlite3.Error:
-        return set()
+_cols = core_db.column_set
 
 
 def _sign(action) -> float:
