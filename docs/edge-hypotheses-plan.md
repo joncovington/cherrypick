@@ -174,6 +174,12 @@ These apply to the looks and, unchanged, to their re-tests. They're stricter tha
     largest-exposure strike. *Passes if* the interval's lower bound on the hit rate is above 50% in
     both halves, for the strike above spot and for the strike below spot taken separately. That
     rules out drift.
+    - *Found 2026-10-25, after the look:* as written, this test cannot pass. The strike above spot
+      is always above it, so "the close moves toward it" means "the close is above spot". The
+      strike below is always below, so moving toward it means "the close is below spot". The two
+      hit rates sum to at most 100%, so both can't be above 50%, and its fail says nothing about
+      pinning. The declaration stays as written. A pin test that could fire would be a new
+      hypothesis with its own declaration, and none is declared.
   - *(b) Barrier*, at 10:00. Count touches of the largest call wall above spot and the largest put
     wall below it, against the touches expected at the same distance in straddles, taken from the
     same half's days. *Passes if* observed ÷ expected is ≤ 0.85 with the interval's upper bound
@@ -237,6 +243,31 @@ Every look ran against the tests above, unchanged. 9, 10 and 12 used licensed ve
   - *(c) Regime:* fails.
 
   Reopen only with a new mechanism and a new declared test, not a new threshold.
+
+  **Reviewed 2026-10-25.** The committed script (`scripts/gex_levels_history.py`) reproduced this
+  verdict that morning. A review of it then found three faults, which are now fixed, and one test
+  that could never fire. What stands and what doesn't:
+  - *(a) Pin: invalidated, for both level types.* As declared it cannot pass on any data (see the
+    note under the declared tests), so its fail says nothing about pinning. It isn't redefined; a pin
+    test that could fire is a new hypothesis, and none is declared.
+  - *(b) Barrier, open interest: stands.* None of the fixes changes it. The put-wall fault was in
+    the gamma read only. Under the corrected snapshot rule (below), the open-interest walls are the
+    same strikes on every design-window day, and the same days are measured.
+  - *(b) Barrier, gamma: was invalid, re-run, still fails.* Its put wall was the strike below spot
+    with the *least* put exposure, not the most: `core.gex` stores put exposure as positive, and
+    its put wall is the largest. The read was re-run on the design halves only (never the holdout),
+    with core's rule and the corrected snapshot. Both walls are touched less often than expected in
+    both halves, but in neither half does either wall reach the declared bar (≤ 0.85 with the
+    interval's upper bound below 1). It fails in both halves.
+  - *(c) Regime: stands, not re-run.* It was read from the first profile at or *after* 10:00 (up to
+    15 minutes later), so its net-GEX sign could use prices after the decision. The script now
+    reads the latest profile at or before the decision minute, at most 15 minutes stale. The fail
+    is kept; the next re-test reads it with the fixed rule.
+  - *The holdout guard* let a window with `--start` and no `--end` read the holdout. An open end now
+    counts as reaching the store's last session. The 2026-10-25 run read the declared halves with
+    no window, so it wasn't affected.
+
+  So item 12 stays closed on (b) and (c). (a) was never a test of pinning.
 - **13, screener: closed** (figures under item 13).
 - **11** is still blocked on the next-day expiry fetch.
 
@@ -542,6 +573,9 @@ worth revisiting" on 2026-10-18.*
 - **Build only if:** a read beats its baseline in most years. Then a structure priced at that level
   (a credit spread beyond a barrier, or a fly at a pin) nets positive after costs. A passing read
   becomes a proposal for flies' `call_wall` rule or a new arm, landing at a boundary.
+- **Closed (2026-10-19), reviewed 2026-10-25:** the barrier and regime reads fail. The pin read, as
+  declared, could never pass, so it tested nothing. The gamma barrier read was re-run after a
+  put-wall fix and still fails. See "Results of the provisional looks" for what stands.
 
 ### 13. A screener for credit structures the model calls positive-expectancy
 

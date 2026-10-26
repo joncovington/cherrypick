@@ -9,14 +9,19 @@ can be re-run unchanged (B14). Read-only. Signal only: no option is priced here.
 
 **Sessions** are `box_touch_history.load_sessions`' (the open, the close, the 1-minute spot path and
 the 0DTE straddle's expected move), from the backtest store's SPX file by default. The GEX profile
-at a time is the store's `gex_profile_history` snapshot at or after it (within 15 minutes), built
-into per-strike exposure by `core.quotehistory.profile_surface` (`core.gex`, the one engine). Two
-level types are read: **gamma** (net exposure by strike) and **open interest** (call and put OI).
+at a time is the store's latest `gex_profile_history` snapshot at or before it (at most 15 minutes
+stale; never a later one, whose gamma is computed at a later spot), built into per-strike exposure
+by `core.quotehistory.profile_surface` (`core.gex`, the one engine). Two level types are read:
+**gamma** (net exposure by strike; the walls are `compute_gex`'s own rule, the largest call_gex
+above spot and the largest put_gex below it) and **open interest** (call and put OI).
 
 **The tests (unchanged from the declaration):**
 - *(a) Pin*, at 10:00, 12:00, 14:00: does the close move from spot toward the largest-exposure strike
   above spot, and toward the one below, taken separately? Passes if the Wilson lower bound on the
-  hit rate is above 50% in both halves, for both sides, at a time.
+  hit rate is above 50% in both halves, for both sides, at a time. **As written it cannot pass**:
+  toward the strike above is "the close is above spot", toward the one below is "the close is
+  below", so the two rates sum to at most 1 (2026-10-25, recorded in the plan). Its fail says
+  nothing about pinning.
 - *(b) Barrier*, at 10:00: touches of the largest call wall above spot and put wall below, against
   the touches expected at the same distance in straddles from the same half's days. Passes if
   observed / expected is <= 0.85 with the bootstrap upper bound below 1, for both walls of one level
@@ -29,7 +34,8 @@ level types are read: **gamma** (net exposure by strike) and **open interest** (
 `--end` (a yearly re-test), the window's own first and second halves by session count.
 
 **The holdout** (2025-07-01..2026-10-12) is never read unless `--allow-holdout` says so: a re-test
-of a closed item may read it, a provisional look may not.
+of a closed item may read it, a provisional look may not. A window with an open `--end` reads to the
+store's last session, so it counts as reaching the holdout unless its `--start` is after it.
 
 **A result is licensed vendor data**: with the default store it is written only under the backtest
 data dir, and never into the repo, a PR or an artifact.
@@ -107,8 +113,11 @@ def levels(rows: list[dict], spot: float) -> dict:
         out["gamma"] = {
             "pin_above": max(above, key=lambda s: abs(s["net_gex"]), default={}).get("strike"),
             "pin_below": max(below, key=lambda s: abs(s["net_gex"]), default={}).get("strike"),
-            "call_wall": max(above, key=lambda s: s["call_gex"], default={}).get("strike"),
-            "put_wall": min(below, key=lambda s: s["put_gex"], default={}).get("strike"),
+            # The walls are core's own (`compute_gex`: the largest call_gex, the largest put_gex;
+            # its put_gex is positive), read over the strikes on the wall's side of spot only. A
+            # strike's exposure is its own (`strike_gamma`), so splitting the rows changes no value.
+            "call_wall": _side_wall([r for r in rows if float(r["strike"]) > spot], spot, "call_wall"),
+            "put_wall": _side_wall([r for r in rows if float(r["strike"]) < spot], spot, "put_wall"),
         }
     oi_above = [r for r in rows if float(r["strike"]) > spot]
     oi_below = [r for r in rows if float(r["strike"]) < spot]
@@ -125,6 +134,12 @@ def levels(rows: list[dict], spot: float) -> dict:
     return out
 
 
+def _side_wall(rows: list[dict], spot: float, wall: str) -> float | None:
+    """`core.gex.compute_gex`'s `wall` ("call_wall" / "put_wall") over these rows, or None."""
+    surf = profile_surface(rows, spot) if rows else {}
+    return surf.get(wall) if surf.get("ok") else None
+
+
 def _strike(r) -> float | None:
     return None if r is None else float(r["strike"])
 
@@ -135,10 +150,13 @@ def spot_at(path: list[tuple[int, float]], minute: int) -> tuple[int, float] | N
 
 
 def snapshot_at(profiles: list[tuple[int, list[dict]]], minute: int) -> list[dict] | None:
+    """The latest profile at or before `minute`, no more than SNAPSHOT_WINDOW minutes stale. Never
+    a later one: its gamma is computed at a later spot, which is the future at the decision."""
+    best = None
     for m, rows in profiles:
-        if minute <= m <= minute + SNAPSHOT_WINDOW:
-            return rows
-    return None
+        if minute - SNAPSHOT_WINDOW <= m <= minute:
+            best = rows
+    return best
 
 
 def load_profiles(db: Path, symbol: str, day: str) -> list[tuple[int, list[dict]]]:
@@ -178,6 +196,11 @@ def day_record(s: dict, profiles: list[tuple[int, list[dict]]]) -> dict | None:
             for side in ("above", "below"):
                 k = (lv.get(lt) or {}).get(f"pin_{side}")
                 if k is not None and close != spot:
+                    # As declared. The strike above is always above spot and the one below always
+                    # below, so these two flags are complements whenever both are set: the "above"
+                    # and "below" rates sum to at most 1, and the declared pass (both above 50%)
+                    # cannot fire. Recorded in the plan; kept unchanged, since a redefined pin test
+                    # is a new hypothesis with its own declaration.
                     rec["pin"][f"{minute}:{lt}:{side}"] = (close - spot) * (k - spot) > 0
     at, rows = spot_at(path, BARRIER_TIME), snapshot_at(profiles, BARRIER_TIME)
     if at is None or rows is None:
@@ -291,7 +314,13 @@ def split_halves(days: list[dict], start: str | None, end: str | None) -> dict[s
 
 
 def touches_holdout(start: str | None, end: str | None) -> bool:
-    lo, hi = start or H1[0], end or H2[1]
+    """Whether the sessions `main` would read reach the holdout. With neither bound it reads the
+    declared halves, which end before it. With a window, an open bound is open: `in_window` keeps
+    every stored session past it, so an open end reaches the store's last session (a store holding
+    the holdout reads it) and an open start its first."""
+    if start is None and end is None:
+        return False
+    lo, hi = start or "", end or "9999-12-31"
     return lo <= HOLDOUT[1] and hi >= HOLDOUT[0]
 
 
@@ -308,7 +337,8 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     if touches_holdout(args.start, args.end) and not args.allow_holdout:
         print(
-            f"refused: the window touches the holdout {HOLDOUT[0]}..{HOLDOUT[1]}; pass --allow-holdout",
+            f"refused: the window touches the holdout {HOLDOUT[0]}..{HOLDOUT[1]} (an open --end reads "
+            "to the store's last session); pass --allow-holdout",
             file=sys.stderr,
         )
         return 2
