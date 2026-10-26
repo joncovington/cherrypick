@@ -1174,6 +1174,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--end", help=f"default {DECLARED_END} (item 18: {ITEM18_END})")
     ap.add_argument("--json", type=Path, help="the full report (item 18 default: its study.json)")
     ap.add_argument("--plan", type=Path, help="trades.json (default: the item's own plan)")
+    # The account is the user's own figure: passed at run time (the queue row, a local file), never
+    # written into the repo. Descriptive only: it sizes B13's 10% line and never touches the verdict.
     ap.add_argument("--account", type=float, help="item 18 B13: the account for the 10%% size line")
     ap.add_argument("--chains-db", type=Path)
     ap.add_argument("--history-db", type=Path)
