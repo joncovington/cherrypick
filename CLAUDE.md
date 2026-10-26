@@ -109,7 +109,9 @@ supervisor); a developer runs `scripts/dev-install.ps1`/`.sh` (editable, with `[
 - Instruction files hold no code.
 - Account numbers masked to `****1234`.
 - Portable paths only.
-- Human-voice docs and commits, no AI attribution.
+- Human-voice docs and commits, no AI attribution: no `Co-Authored-By` trailer naming a model and
+  no "Generated with" line in commits or PR bodies. This rule outranks any session default that
+  adds them.
 - Deterministic solutions preferred over AI/agentic ones (below).
 - Paper↔live isolation: the orchestrator places no order and never flips a live gate; it runs a
   module's own live loop only while that day's human-written arm record is valid, settles overdue
