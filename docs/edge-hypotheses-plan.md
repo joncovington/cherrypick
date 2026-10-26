@@ -1074,6 +1074,11 @@ does. Declared here before any of it is run.*
     and B. That leaves 84,902 to fetch, 67,345 of them deciding-era; the request file puts those
     first. At item 14's pace (about 3 a second with 3 workers) that is 7-9 hours.
   - 50 trades are short of five baselines (thin years).
+- **A deviation, recorded after the run (2026-10-25):** the pass test above declares the excess as
+  (the trade's net − the mean of its baselines' net) as a share of max loss, but the one run scored
+  each trade's net over its own max loss less the mean of each baseline's net over that baseline's
+  own max loss. The two differ only where a baseline's max loss differs from its trade's. The run and
+  its verdict stand as run, and the script keeps that measure for item 17 so the run reproduces.
 
 ### 18. Mean-reversion put spreads, tested once on the holdout
 
@@ -1115,6 +1120,9 @@ look has touched. The user approved the test on 2026-10-25. Declared here before
     two-sidedness only.
   - **Measured:** each trade's net minus the mean net of its matched baselines priced in the same
     cell, as a share of max loss. Also the cell's own mean net, in dollars and as a share of max loss.
+    The script computes this as declared, (trade net − mean baseline net) ÷ the trade's max loss,
+    and not with item 17's per-trade returns (the deviation noted under item 17), from 2026-10-25,
+    before the run.
   - **Expected:** a positive excess of the size item 17 measured for this cell (in its local result).
   - **Window and sample:** the holdout, **2025-07-01 to 2026-10-12** ("the re-test, on the most
     recent window", above), read **once**, about 15 monthly expiries. Liquid entries are a minority
