@@ -71,6 +71,10 @@ def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monk
 
     monkeypatch.setattr(db_paper, "DB_PATH", tmp_path / "paper_trades.db")
     db_paper.cmd_init_db(argparse.Namespace())
+    # The pricing is under test, not the calendar: broken_wing_butterfly retires from 2026-10-26
+    # (STRAT_TEST_RETIRED), and the entry scan reads today's date, so from that session on this test
+    # opened nothing and failed. Its retirement has its own tests.
+    monkeypatch.delitem(runner.STRAT_TEST_RETIRED, "broken_wing_butterfly")
 
     config = {"close_quote_retries": 0, "strategies": {"broken_wing_butterfly": {}}}
     monkeypatch.setattr(runner.rank_strategies, "_ensure_dolt_running", lambda: True)
