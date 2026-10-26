@@ -99,6 +99,17 @@ ITEMS: dict[int, dict] = {
         "exclude_leveraged": True,
         "out": "item17",
     },
+    # Item 18 (declared 2026-10-25): item 17's rules, the mean-reversion put alone, on the holdout --
+    # the one look it gets. `window` replaces START and the design end for this item only.
+    18: {
+        "seed": 20261026,
+        "floor": 100e6,
+        "selectors": {"reversion": (("reversion", "put"),)},
+        "reference": (),
+        "exclude_leveraged": True,
+        "out": "item18",
+        "window": ("2025-07-01", "2026-10-12"),
+    },
 }
 
 
@@ -157,6 +168,7 @@ def _init(
         reports=reports,
         quarters=quarters,
         spec=spec or ITEMS[14],
+        start=((spec or {}).get("window") or (START,))[0],
     )
 
 
@@ -223,7 +235,7 @@ def plan_name(sym: str) -> dict:
     allow = lambda i: (nm.dollar_volume[i] or 0.0) >= floor  # noqa: E731
     by_year: dict[str, list[int]] = {}
     for j in range(1, len(nm.dates)):
-        if START <= nm.dates[j] <= _ctx["design_end"] and _eligible_session(nm, j):
+        if _ctx["start"] <= nm.dates[j] <= _ctx["design_end"] and _eligible_session(nm, j):
             by_year.setdefault(nm.dates[j][:4], []).append(j)
     board = _ctx.get("board")
     selectors = {"B": None} if board is not None else spec["selectors"]
@@ -245,7 +257,7 @@ def plan_name(sym: str) -> dict:
         open_until: dict[str, str] = {}
         for setup_id, side, i in signals:
             j = i + 1
-            if j >= len(nm.dates) or not (START <= nm.dates[j] <= _ctx["design_end"]):
+            if j >= len(nm.dates) or not (_ctx["start"] <= nm.dates[j] <= _ctx["design_end"]):
                 continue
             if selector != "B" and not study.counted(nm, setup_id, i):
                 continue
@@ -293,7 +305,7 @@ def plan_name(sym: str) -> dict:
             if drawn < BASELINES:
                 out["short"] += 1
     if sym in spec["reference"] and board is None:
-        sessions = [j for j in range(1, len(nm.dates)) if START <= nm.dates[j] <= _ctx["design_end"]]
+        sessions = [j for j in range(1, len(nm.dates)) if _ctx["start"] <= nm.dates[j] <= _ctx["design_end"]]
         for n, j in enumerate(sessions):
             if n % REFERENCE_EVERY:
                 continue
@@ -406,7 +418,7 @@ def main(argv: list[str] | None = None) -> int:
     spec = ITEMS[args.item]
     out_dir = args.out or home.data_dir("backtest") / "results" / "research" / spec["out"]
 
-    design_end = _design_end()
+    design_end = spec["window"][1] if spec.get("window") else _design_end()
     reports, quarters = _earnings()
     names = universe_names(spec, paths.history_db())
     if args.board is not None:
@@ -438,7 +450,7 @@ def main(argv: list[str] | None = None) -> int:
         **({} if args.item == 14 else {"item": args.item, "floor": spec["floor"]}),
         "seed": spec["seed"],
         "baselines": BASELINES,
-        "start": START,
+        "start": spec["window"][0] if spec.get("window") else START,
         "design_end": design_end,
         "exact_earnings_from": EXACT_EARNINGS_FROM,
         "names": len(names),
