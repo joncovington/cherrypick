@@ -46,6 +46,13 @@ if it passes and also beats the pooled pick on the same trades, paired t above 2
 
 Descriptive and never part of the verdict: the planned MDE (B12), the verdict re-read on the two
 name halves (B9), and for a passing test the B13 report (cost stress, neighbourhood, drawdown range).
+
+**Item 18** (`--item 18`; "### 18. Mean-reversion put spreads, tested once on the holdout"): the
+same pricing, one fixed cell (reversion puts, d20/em0.75) on 2025-07-01..2026-10-12, liquid entries
+and liquid baselines only. Passes when the excess has a clustered one-sided t above 2 AND the own mean
+net is positive in dollars AND as a share of max loss; under 100 scored trades is no verdict. Mid and
+mid - 0.05 fills, every entry, B9, B12 and (for a pass) B13 are reported beside it. Written to
+results/research/item18/study.json under the backtest data dir by default.
 """
 
 from __future__ import annotations
@@ -257,6 +264,10 @@ def settle(symbol: str, short: dict, long_: dict, prices: dict, s_exp: float) ->
         "costs": fee_open + settlement,
         "slippage": (prices["mid"] - credit) * 100,
         "liquid": all(leg_clears(q) for q in (short, long_)),
+        # Kept so item 18 can re-price the same trade at another fill; item 17 never reads them.
+        "mid": prices["mid"],
+        "value": value,
+        "fee_open": fee_open,
     }
 
 
@@ -851,6 +862,237 @@ def least_bad(tests: dict) -> dict | None:
     }
 
 
+# ------------------------------------------------------------------------------------- item 18
+# docs/edge-hypotheses-plan.md, "### 18. Mean-reversion put spreads, tested once on the holdout":
+# item 17's d20/em0.75 cell for reversion put spreads, declared fixed, liquid entries only, read once.
+ITEM18_START = "2025-07-01"
+ITEM18_END = "2026-10-12"
+ITEM18_SETUP = "reversion"
+ITEM18_SIDE = "put"
+ITEM18_CELL = cell_id(0.20, "em", 0.75)
+ITEM18_NEIGHBOURS = tuple(cell_id(d, "em", f) for d in (0.20, 0.30) for f in (0.5, 0.75))
+FILLS = ("working", "mid", "mid-0.05")
+NICKEL = 0.05
+TOP_NAMES = 5
+ACCOUNT_SHARE = 0.10
+NOT_DONE_B8_B4 = (
+    "not reported: the priced rows hold no environment or ATR, and the band needs high/low bars "
+    "this script does not load (B8/B4 skipped as not cheap)"
+)
+
+
+def reprice(r: dict, fill: str) -> dict | None:
+    """One priced (trade, cell) result re-priced at `fill`: the working price (item 17's, the
+    verdict's), the mid, or the mid less a nickel a spread. Same settlement value and costs. None
+    when that credit is not inside (0, width)."""
+    credit = {"working": r["credit"], "mid": r["mid"], "mid-0.05": r["mid"] - NICKEL}[fill]
+    w = r["width"]
+    if credit <= 0 or credit >= w - EPS:
+        return None
+    net = (credit - r["value"]) * 100 - r["costs"]
+    max_loss = (w - credit) * 100 + r["fee_open"]
+    return {
+        "width": w,
+        "credit": credit,
+        "net": net,
+        "ret": net / max_loss,
+        "max_loss": max_loss,
+        "costs": r["costs"],
+        "slippage": (r["mid"] - credit) * 100,
+        "liquid": r["liquid"],
+    }
+
+
+def score18(priced: list[dict], cell: str, fill: str, liquid_only: bool, start: str) -> dict:
+    """The declared measures for one cell and fill. A trade counts when priced in the cell (and, when
+    `liquid_only`, its legs clear the bars); its baselines are held to the same bar, and one left
+    with none drops. Every drop is counted by reason."""
+    base_of = index_baselines(priced)
+    drops: Counter = Counter()
+    baseline_drops: Counter = Counter()
+    rows, own, base_res = [], [], []
+    for t in priced:
+        if t["kind"] != "trade" or t["setup"] != ITEM18_SETUP or t["entry"] < start:
+            continue
+        r = t["cells"].get(cell)
+        if r is None:
+            drops["not priced in the cell"] += 1
+            continue
+        if liquid_only and not r["liquid"]:
+            drops["entry legs do not clear the bars"] += 1
+            continue
+        rr = reprice(r, fill)
+        if rr is None:
+            drops["credit at this fill outside (0, width)"] += 1
+            continue
+        bases = []
+        for b in base_of.get(t["id"], []):
+            br = b["cells"].get(cell)
+            if br is None:
+                baseline_drops["not priced in the cell"] += 1
+            elif liquid_only and not br["liquid"]:
+                baseline_drops["legs do not clear the bars"] += 1
+            elif (bp := reprice(br, fill)) is None:
+                baseline_drops["credit at this fill outside (0, width)"] += 1
+            else:
+                bases.append(bp)
+        if not bases:
+            drops["no liquid baseline" if liquid_only else "no baseline priced"] += 1
+            continue
+        own.append(rr)
+        base_res.extend(bases)
+        rows.append(
+            {
+                "id": t["id"],
+                "symbol": t["symbol"],
+                "entry": t["entry"],
+                "expiry": t["expiry"],
+                "diff": rr["ret"] - statistics.fmean(b["ret"] for b in bases),
+                "baselines_priced": len(bases),
+                "net": rr["net"],
+                "ret": rr["ret"],
+                # item 17's B13 convention: the stressed cost is fees, settlement and slippage.
+                "costs": rr["costs"] + rr["slippage"],
+            }
+        )
+    return {
+        "cell": cell,
+        "fill": fill,
+        "liquid_only": liquid_only,
+        **direction_stats(rows),
+        "trade_summary": summarise(own),
+        "baseline_summary": summarise(base_res),
+        "drops": dict(sorted(drops.items())),
+        "baseline_drops": dict(sorted(baseline_drops.items())),
+        "rows": rows,
+    }
+
+
+def judge18(s: dict) -> dict:
+    """The declared rule, all three: excess t > 2 (clustered by expiry, Student's t p), own mean net
+    > 0 in dollars, own mean ret > 0. Under 100 scored trades is no verdict. One test, no Holm."""
+    if s["n"] < MIN_SCORED:
+        return {"verdict": "no verdict", "why": f"scored liquid trades {s['n']} < {MIN_SCORED}"}
+    bars = {
+        "excess_t_above_2": s["t"] is not None and s["t"] > T_BAR,
+        "own_mean_net_positive": s["own_mean_net"] > 0,
+        "own_mean_ret_positive": s["own_mean_ret"] > 0,
+    }
+    return {"verdict": "pass" if all(bars.values()) else "fail", "bars": bars}
+
+
+def clustered_mde(rows: list[dict]) -> dict | None:
+    """B12 from the scored diffs, the standard error clustered by expiry: the per-trade sd is the
+    clustered SE x sqrt(n), so the MDE carries the clustering's design effect."""
+    n = len(rows)
+    if n < 2:
+        return None
+    diffs = [r["diff"] for r in rows]
+    m = statistics.fmean(diffs)
+    g: dict[str, float] = defaultdict(float)
+    for r in rows:
+        g[r["expiry"]] += r["diff"] - m
+    se = math.sqrt(sum(v * v for v in g.values()) / (n * n))
+    sd_eff = se * math.sqrt(n)
+    mde = core_stats.minimum_detectable_effect(sd_eff, n, sided=1) if sd_eff > 0 else None
+    return {
+        "planned_n": n,
+        "clusters": len(g),
+        "sd_clustered_equivalent": sd_eff,
+        "mde": mde,
+        "unclustered": robustness.planned_mde(diffs, n),
+        "_note": "normal-approximation MDE; with few clusters the Student's t test needs more",
+    }
+
+
+def top_names_share(rows: list[dict], k: int = TOP_NAMES) -> dict:
+    """The share of the summed excess from the `k` names contributing most of it."""
+    by: dict[str, float] = defaultdict(float)
+    for r in rows:
+        by[r["symbol"]] += r["diff"]
+    total = sum(by.values())
+    top = sorted(by.items(), key=lambda kv: (-kv[1], kv[0]))[:k]
+    share = sum(v for _, v in top) / total if total > 0 else None
+    return {"names": len(by), "top": [s for s, _ in top], "share_of_excess": share}
+
+
+def b13_report18(test: dict, priced: list[dict], start: str, account: float | None) -> dict:
+    """Beside a pass only, never re-choosing: neighbours, cost stress (1.5x declared must-survive),
+    drawdown range, the largest size within 10% of the account."""
+    rows = sorted(test["rows"], key=lambda r: (r["entry"], r["id"]))
+    rep = robustness.report(
+        [r["net"] for r in rows],
+        [r["costs"] for r in rows],
+        sessions=len({r["entry"] for r in rows}),
+        account=account,
+        account_share=ACCOUNT_SHARE,
+    )
+    rep["max_size_note"] = (
+        f"largest size whose p99 drawdown stays within {ACCOUNT_SHARE:.0%} of the account"
+        if account
+        else "not computed: no --account given"
+    )
+    rep["neighbours"] = {}
+    for c in ITEM18_NEIGHBOURS:
+        s = score18(priced, c, "working", True, start)
+        rep["neighbours"][c] = {
+            k: s[k] for k in ("n", "clusters", "mean_diff", "t", "p", "own_mean_net", "own_mean_ret")
+        }
+    return rep
+
+
+def _strip18(s: dict) -> dict:
+    return {k: v for k, v in s.items() if k != "rows"}
+
+
+def analyse18(priced: list[dict], start: str, account: float | None = None) -> dict:
+    """Item 18's report from priced rows. Pure. The verdict is the liquid working-price test; every
+    other block is descriptive."""
+    for p in priced:
+        p["half"] = "test" if p["entry"] >= start else "reported"
+    test = score18(priced, ITEM18_CELL, "working", True, start)
+    verdict = judge18(test)
+    fills = {f: _strip18(score18(priced, ITEM18_CELL, f, True, start)) for f in FILLS if f != "working"}
+    every = {f: _strip18(score18(priced, ITEM18_CELL, f, False, start)) for f in FILLS}
+    halves = {}
+    syms = sorted({p["symbol"] for p in priced})
+    for i, names in enumerate(robustness.split_names(syms)):
+        keep = set(names)
+        sub = [p for p in priced if p["symbol"] in keep]
+        h = score18(sub, ITEM18_CELL, "working", True, start)
+        halves[f"name_half_{i}"] = {"names": len(names), **_strip18(h), "verdict": judge18(h)["verdict"]}
+    out = {
+        "cell": ITEM18_CELL,
+        "test": _strip18(test),
+        **verdict,
+        "descriptive": {
+            "_note": "Descriptive only; never part of the verdict.",
+            "liquid_other_fills": fills,
+            "every_entry_liquid_or_not": every,
+            "planned_mde_B12": clustered_mde(test["rows"]),
+            "name_halves_B9": halves,
+            "environment_B8_atr_band_B4": NOT_DONE_B8_B4,
+            "top_names_share": top_names_share(test["rows"]),
+        },
+        "rows": test["rows"],
+    }
+    if verdict["verdict"] == "pass":
+        out["descriptive"]["robustness_B13"] = b13_report18(test, priced, start, account)
+    return out
+
+
+def print18(rep: dict) -> None:
+    def f(x, fmt):
+        return format(x, fmt) if x is not None else "-"
+
+    t = rep["test"]
+    print(f"item 18, cell {rep['cell']}, liquid entries at the working price; {P_RULE}; one test, no Holm")
+    print(
+        f"n {t['n']}  clusters {t['clusters']}  excess {f(t['mean_diff'], '.4f')}  t {f(t['t'], '.2f')}  "
+        f"own$ {f(t['own_mean_net'], '.2f')}  own ret {f(t['own_mean_ret'], '.4f')}  verdict {rep['verdict']}"
+    )
+
+
 # ----------------------------------------------------------------------------------------- main
 def licence_refusal(chains_db: Path, out: Path | None) -> str | None:
     """A result from the licensed store is written only under the backtest data dir."""
@@ -894,20 +1136,57 @@ def load_plan(path: Path) -> list[dict]:
     return [t for t in doc["trades"] if t["kind"] in ("trade", "baseline")]
 
 
+def report18(priced, far, drops, empty, args, plan_path, chains_db, history_db, names: int) -> dict:
+    rep = analyse18(priced, args.start, args.account)
+    rep.pop("rows")
+    for p in far:
+        p["half"] = "test" if p["entry"] >= args.start else "reported"
+    far_cells = describe_far(far).get(f"{ITEM18_SETUP}|{ITEM18_SIDE}", {})
+    return {
+        "licence": "ThetaData-derived. Local only; never into the repo, a PR, an issue or an artifact.",
+        "p_value": P_RULE,
+        "holm": "none: one declared test",
+        "leg_bars": "legs clear the spread/two-sided bars; OI not held",
+        "fill": "the verdict at the working price; mid and mid - 0.05 are descriptive",
+        "item": 18,
+        "window": [args.start, args.end],
+        "seed": SEED,
+        "inputs": {"plan": str(plan_path), "chains_db": str(chains_db), "history_db": str(history_db)},
+        "names": names,
+        "trial": bool(args.limit_names),
+        **rep,
+        "reported_45_60": {
+            "_note": "not in the test; reported apart",
+            ITEM18_CELL: far_cells.get(ITEM18_CELL),
+        },
+        "drops": dict(sorted(drops.items())),
+        "empty_chains_B11": dict(sorted(empty.items())),
+        "priced_counts": dict(Counter(f"{p['setup']}/{p['kind']}/{p['half']}" for p in priced)),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     from cherrypick.backtest import chainfetch, settings
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--start", default=DECLARED_START)
-    ap.add_argument("--end", default=DECLARED_END)
-    ap.add_argument("--json", type=Path, help="the full report")
-    ap.add_argument("--plan", type=Path, help="trades.json (default: the item 17 plan)")
+    ap.add_argument("--item", type=int, choices=(17, 18), default=17)
+    ap.add_argument("--start", help=f"default {DECLARED_START} (item 18: {ITEM18_START})")
+    ap.add_argument("--end", help=f"default {DECLARED_END} (item 18: {ITEM18_END})")
+    ap.add_argument("--json", type=Path, help="the full report (item 18 default: its study.json)")
+    ap.add_argument("--plan", type=Path, help="trades.json (default: the item's own plan)")
+    ap.add_argument("--account", type=float, help="item 18 B13: the account for the 10%% size line")
     ap.add_argument("--chains-db", type=Path)
     ap.add_argument("--history-db", type=Path)
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--limit-names", type=int, help="price only the first N names (a trial, not the test)")
     ap.add_argument("--skip-45-60", action="store_true", help="skip the reported-only 45-60 day pricing")
     args = ap.parse_args(argv)
+    item18 = args.item == 18
+    args.start = args.start or (ITEM18_START if item18 else DECLARED_START)
+    args.end = args.end or (ITEM18_END if item18 else DECLARED_END)
+    out_dir = home.data_dir("backtest") / "results" / "research" / f"item{args.item}"
+    if item18 and args.json is None:
+        args.json = out_dir / "study.json"
 
     chains_db = args.chains_db or chainfetch.db_path(settings.load())
     why = licence_refusal(chains_db, args.json)
@@ -918,8 +1197,10 @@ def main(argv: list[str] | None = None) -> int:
     from cherrypick.technicals import paths as tpaths
 
     history_db = args.history_db or tpaths.history_db()
-    plan_path = args.plan or home.data_dir("backtest") / "results" / "research" / "item17" / "trades.json"
+    plan_path = args.plan or out_dir / "trades.json"
     trades = load_plan(plan_path)
+    if item18:
+        trades = [t for t in trades if t["setup"] == ITEM18_SETUP and t["side"] == ITEM18_SIDE]
     by_sym: dict[str, list[dict]] = defaultdict(list)
     for t in trades:
         by_sym[t["symbol"]].append(t)
@@ -948,6 +1229,12 @@ def main(argv: list[str] | None = None) -> int:
             drops.update(part["drops"])
             empty.update(part["empty"])
 
+    if item18:
+        out = report18(priced, far, drops, empty, args, plan_path, chains_db, history_db, len(names))
+        print18(out)
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps(out, default=str), encoding="utf-8")
+        return 0
     rep = analyse(priced, args.start, args.end)
     mid = rep["midpoint"]
     for p in far:
