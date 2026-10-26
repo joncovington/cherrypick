@@ -86,12 +86,12 @@ function render(url = "/screeners/credit-spreads"): string {
 }
 
 describe("our credit-spread list", () => {
-  it("always says it is untested, with rows and without", () => {
+  it("always says no edge was found, with rows and without", () => {
     payload = base([row({})]);
-    expect(render()).toContain("Not yet tested.");
-    expect(render()).toContain(">untested<");
+    expect(render()).toContain("No tested edge.");
+    expect(render()).toContain(">no tested edge<");
     payload = base([]);
-    expect(render()).toContain("Not yet tested.");
+    expect(render()).toContain("No tested edge.");
     expect(render()).toContain("No setup entered on a recent close");
   });
 

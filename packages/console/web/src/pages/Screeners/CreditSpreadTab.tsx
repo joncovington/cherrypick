@@ -13,9 +13,11 @@ import { EarningsCell } from "./OwnListTab";
  * giving 35-40% of the width at the working price. Every figure is the builder's; this formats and
  * filters, and ranks nothing -- rows are by symbol.
  *
- * UNTESTED: item 17 of docs/edge-hypotheses-plan.md will judge the setups, sides and widths, and the
- * note says so for as long as the builder's rule does. Each row opens its width table, the per-symbol
- * widths that test will score.
+ * NO TESTED EDGE: item 17 of docs/edge-hypotheses-plan.md (run 2026-10-25) found no setup, side, short
+ * or width that passed after costs. The tab reads the rows by a SELECTION (the user's choice the same
+ * day): the 35-40% credit rule (every row, the default) or one of the study's least-bad mean-reversion
+ * put cells (0.20 or 0.40 delta, 5 strikes), which keep only their rows and show their own short and
+ * spread (`rowsFor`). Each row still opens its width table.
  */
 
 const PAGE_SIZES = [50, 100, 200, 500] as const;
@@ -217,6 +219,20 @@ const SORTS: Record<string, (r: CreditSpreadRow) => number | string | null> = {
 
 const COLUMNS = 15;
 
+/** The default selection: the user's original rule, which reads every row. */
+export const DEFAULT_SELECTION = "credit-share";
+
+/** The rows as one selection reads them: the credit rule keeps every row as built; any other keeps
+ *  only the rows that selection lists, each carrying that selection's short and spread in place of the
+ *  row's, so every column, filter and sort reads the selected rule. */
+export function rowsFor(rows: CreditSpreadRow[], selection: string): CreditSpreadRow[] {
+  if (selection === DEFAULT_SELECTION) return rows;
+  return rows.flatMap((r) => {
+    const s = r.selections?.[selection];
+    return s ? [{ ...r, short: s.short, pick: s.price }] : [];
+  });
+}
+
 export function CreditSpreadTab() {
   const [params, setParams] = useSearchParams();
   const { data, isLoading, isError } = useCreditSpreadList(params.get("day"));
@@ -235,10 +251,13 @@ export function CreditSpreadTab() {
     setParams(next, { replace: true });
   };
 
-  const all = data?.rows ?? [];
+  const selections = data?.rule.selections ?? [];
+  const selection = selections.some((s) => s.id === params.get("selection")) ? (params.get("selection") as string) : DEFAULT_SELECTION;
+  const current = selections.find((s) => s.id === selection);
+  const all = rowsFor(data?.rows ?? [], selection);
   const { shown, hidden } = applyFilters(all, { side, allEarnings, allTrades, pickedOnly, q });
   const sorted = sortRows(shown, sort, SORTS);
-  const { page, setOffset, setLimit } = usePage([data?.day, side, allEarnings, allTrades, pickedOnly, q, sort.key, sort.dir], 100);
+  const { page, setOffset, setLimit } = usePage([data?.day, selection, side, allEarnings, allTrades, pickedOnly, q, sort.key, sort.dir], 100);
   const rows = sorted.slice(page.offset, page.offset + page.limit);
   const latest = data?.days[0] ?? null;
   const dropped = Object.entries(data?.dropped ?? {});
@@ -260,7 +279,7 @@ export function CreditSpreadTab() {
         <h2>Credit spreads</h2>
         <span className="chip">ours</span>
         <span className="chip chip-warn" title={data?.rule.tested ?? "item 17 of docs/edge-hypotheses-plan.md"}>
-          untested
+          no tested edge
         </span>
         {data?.day && (
           <span className="card-asof">
@@ -271,12 +290,28 @@ export function CreditSpreadTab() {
       </div>
 
       <p className="muted" style={{ margin: "0 0 10px" }}>
-        <strong>Not yet tested.</strong> These are the chart setups' fresh entries as spreads, by the rule you trade. Whether
-        any setup, side or width earns after costs is item 17 of the edge-hypotheses plan, declared and not yet run; our
-        earlier credit-spread studies found none with an edge. Read the rows as candidates, not as recommendations.
+        <strong>No tested edge.</strong> Item 17 of the edge-hypotheses plan tested every setup, side, short and width on
+        2020-2025 and none passed after costs. The selections below are rules to read the rows by, not recommendations: the
+        35-40% credit rule you trade, and the two mean-reversion put cells the study found least bad.
+        {current && current.id !== DEFAULT_SELECTION ? ` Showing: ${current.rule}.` : ""}
       </p>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
+        {selections.length > 0 && (
+          <div className="mode-toggle" role="group" aria-label="Selection" style={{ marginLeft: 0 }}>
+            {selections.map((sel) => (
+              <button
+                key={sel.id}
+                type="button"
+                title={sel.rule}
+                className={sel.id === selection ? "mode-btn active" : "mode-btn"}
+                onClick={() => set("selection", sel.id === DEFAULT_SELECTION ? null : sel.id)}
+              >
+                {sel.label}
+              </button>
+            ))}
+          </div>
+        )}
         {data && data.days.length > 0 && (
           <select
             className="chip review-session-select"

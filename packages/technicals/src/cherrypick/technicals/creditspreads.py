@@ -1,9 +1,9 @@
 """Our own credit-spread list: the chart setups' fresh entries as spreads, priced on the afternoon chain.
 
 The vendor's credit-spread tab froze with its subscription (2026-10-23 lists). This is its replacement,
-built to the user's stated trade (2026-10-24) and to be judged by item 17 of
-`docs/edge-hypotheses-plan.md`, which has **not been run**: until it is, every row is untested, and the
-file says so (`TESTED`).
+built to the user's stated trade (2026-10-24) and judged by item 17 of `docs/edge-hypotheses-plan.md`
+(run 2026-10-25): nothing passed, and the file says so (`TESTED`). Each row carries every `SELECTIONS`
+pick, the rules the tab offers (the 35-40% credit rule and the two least-bad mean-reversion put cells).
 
 - **Names:** the short-put list's universe, every name the afternoon income chains read.
 - **Signal:** a position one of the four chart setups holds (`setups.py`), entered on one of the last
@@ -49,7 +49,36 @@ SHORT_DELTA = 0.40
 CREDIT_SHARE = (0.35, 0.40)
 STEP_WIDTHS = (1, 2, 3, 5)
 MOVE_WIDTHS = (0.25, 0.5, 0.75)
-TESTED = "not yet: item 17 of docs/edge-hypotheses-plan.md"
+TESTED = "item 17 (2026-10-25): no setup, side, short or width passed; every selection is untested edge"
+
+#: The selections the tab offers (user, 2026-10-25), each a rule the rows can be read by. None passed
+#: item 17: `credit-share` is the user's original rule, and the two mean-reversion cells are the
+#: study's least-bad, picked in each half (H2 0.20 delta, H1 0.40 delta), 5 listed strikes wide. The
+#: mean-reversion put at 0.20 delta with an expected-move long is item 18's declared test, not this.
+SELECTIONS: dict[str, dict[str, Any]] = {
+    "credit-share": {
+        "label": "35-40% credit rule",
+        "setups": None,  # every setup, both sides
+        "short_delta": SHORT_DELTA,
+        "rule": "the widest long giving 35-40% of the width",
+    },
+    "reversion-d20-s5": {
+        "label": "mean-reversion puts, 0.20 delta, 5 strikes",
+        "setups": ("reversion",),
+        "side": "P",
+        "short_delta": 0.20,
+        "steps": 5,
+        "rule": "short nearest 0.20 delta, long 5 listed strikes beyond",
+    },
+    "reversion-d40-s5": {
+        "label": "mean-reversion puts, 0.40 delta, 5 strikes",
+        "setups": ("reversion",),
+        "side": "P",
+        "short_delta": 0.40,
+        "steps": 5,
+        "rule": "short nearest 0.40 delta, long 5 listed strikes beyond",
+    },
+}
 
 
 def fresh_entries(runs: dict[str, list[setups.Trade]], dates: list[str], recent: int = RECENT) -> list[dict]:
@@ -142,6 +171,48 @@ def pick_width(short: dict, pool: list[dict], bars: dict | None) -> dict | None:
     return best
 
 
+def _short_info(short: dict) -> dict:
+    return {
+        "strike": short["strike"],
+        "option": short.get("option"),
+        "delta": round(short["delta"], 4),
+        "iv": round(short["iv"], 4),
+        "bid": short.get("bid"),
+        "ask": short.get("ask"),
+    }
+
+
+def select(
+    name: str,
+    side: str,
+    row_setups: list[str],
+    priced: list[dict],
+    spot: float,
+    bars: dict | None,
+    credit_share_pick: dict | None,
+    short40: dict,
+) -> dict | None:
+    """One selection's pick for a row: {short, spread} or None when the row is not its kind or the chain
+    does not reach. `credit-share` reuses the row's own pick (its short is the row's)."""
+    from . import incomelists
+
+    sel = SELECTIONS[name]
+    if sel["setups"] is None:
+        return None if credit_share_pick is None else {"short": _short_info(short40), **credit_share_pick}
+    if side != sel["side"] or not any(x in sel["setups"] for x in row_setups):
+        return None
+    short = incomelists.within(
+        incomelists.nearest(priced, side, sel["short_delta"], spot), sel["short_delta"]
+    )
+    if not short:
+        return None
+    far = beyond(priced, short)
+    if len(far) < sel["steps"]:
+        return None
+    sp = spread(short, far[sel["steps"] - 1], bars)
+    return None if sp is None else {"short": _short_info(short), **sp}
+
+
 def build_rows(
     sym: str,
     entry: dict,
@@ -191,7 +262,20 @@ def build_rows(
                     "bid": short.get("bid"),
                     "ask": short.get("ask"),
                 },
-                "pick": pick_width(short, priced, bars),
+                "pick": (pick := pick_width(short, priced, bars)),
+                "selections": {
+                    name: select(
+                        name,
+                        side,
+                        [x["setup"] for x in signals if x["side"] == side],
+                        priced,
+                        spot,
+                        bars,
+                        pick,
+                        short,
+                    )
+                    for name in SELECTIONS
+                },  # fmt: skip
                 "widths": width_table(short, priced, move, bars),
                 "earnings": incomelists.earnings_state(entry, session, cs["expiry"], kind),
                 "earnings_date": entry.get("earnings_date"),
@@ -220,4 +304,5 @@ def rule() -> dict[str, Any]:
         "move_widths": MOVE_WIDTHS,
         "price": "working (halfway between the mid and the natural fill)",
         "tested": TESTED,
+        "selections": {k: {"label": v["label"], "rule": v["rule"]} for k, v in SELECTIONS.items()},
     }

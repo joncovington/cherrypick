@@ -10,6 +10,7 @@ import type {
   CreditSpreadPayload,
   CreditSpreadPrice,
   CreditSpreadRow,
+  CreditSpreadSelectionPick,
   CreditSpreadWidth,
   IncomeEarnings,
   IncomeExDividend,
@@ -202,6 +203,24 @@ function toWidth(v: unknown): CreditSpreadWidth | null {
   return { unit, size, price: toPrice(w) };
 }
 
+function toShort(v: unknown): CreditSpreadSelectionPick["short"] | null {
+  const s = rec(v);
+  const strike = num(s["strike"]);
+  if (strike === null) return null;
+  return { strike, delta: num(s["delta"]) ?? 0, iv: num(s["iv"]) ?? 0, bid: num(s["bid"]), ask: num(s["ask"]) };
+}
+
+function toSelections(v: unknown): Record<string, CreditSpreadSelectionPick | null> | undefined {
+  if (v === undefined || v === null) return undefined;
+  const out: Record<string, CreditSpreadSelectionPick | null> = {};
+  for (const [k, x] of Object.entries(rec(v))) {
+    const short = toShort(rec(x)["short"]);
+    const price = toPrice(x);
+    out[k] = short !== null && price !== null ? { short, price } : null;
+  }
+  return out;
+}
+
 function toSpread(v: unknown): CreditSpreadRow | null {
   const r = rec(v);
   const symbol = str(r["symbol"]);
@@ -238,6 +257,7 @@ function toSpread(v: unknown): CreditSpreadRow | null {
       ask: num(short["ask"]),
     },
     pick: toPrice(r["pick"]),
+    selections: toSelections(r["selections"]),
     widths: (Array.isArray(r["widths"]) ? r["widths"] : []).map(toWidth).filter((w): w is CreditSpreadWidth => w !== null),
     // An unknown spelling is unknown, never clear.
     earnings: earnings !== null && EARNINGS.includes(earnings) ? earnings : "unknown",
@@ -266,7 +286,7 @@ export function readCreditSpreadList(config: ConsoleConfig, dayParam: string | n
     names: 0,
     dropped: {},
     built: false,
-    rule: { shortDelta: null, creditShare: null, recentSessions: null, tested: null },
+    rule: { shortDelta: null, creditShare: null, recentSessions: null, tested: null, selections: [] },
     rows: [],
   };
   if (day === null) return empty;
@@ -297,6 +317,11 @@ export function readCreditSpreadList(config: ConsoleConfig, dayParam: string | n
       creditShare: share.length === 2 && lo !== null && hi !== null ? [lo, hi] : null,
       recentSessions: num(rule["recent_sessions"]),
       tested: str(rule["tested"]),
+      selections: Object.entries(rec(rule["selections"])).map(([id, s]) => ({
+        id,
+        label: str(rec(s)["label"]) ?? id,
+        rule: str(rec(s)["rule"]) ?? "",
+      })),
     },
     rows: (Array.isArray(raw) ? raw : []).map(toSpread).filter((r): r is CreditSpreadRow => r !== null),
   };

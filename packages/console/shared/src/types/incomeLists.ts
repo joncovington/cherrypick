@@ -140,6 +140,9 @@ export interface CreditSpreadRow {
   short: { strike: number; delta: number; iv: number; bid: number | null; ask: number | null };
   /** The user's rule: the widest long giving 35-40% of the width; null when none does. */
   pick: CreditSpreadPrice | null;
+  /** Each selection's pick for this row (2026-10-25): its own short and spread, or null when the row
+   *  is not that selection's kind or the chain does not reach. Absent on a list built before them. */
+  selections?: Record<string, CreditSpreadSelectionPick | null>;
   widths: CreditSpreadWidth[];
   earnings: IncomeEarnings;
   earningsDate: string | null;
@@ -148,6 +151,17 @@ export interface CreditSpreadRow {
   exDividend: IncomeExDividend | null;
   exDividendDate: string | null;
   leveraged: string | null;
+}
+
+export interface CreditSpreadSelectionPick {
+  short: { strike: number; delta: number; iv: number; bid: number | null; ask: number | null };
+  price: CreditSpreadPrice;
+}
+
+export interface CreditSpreadSelection {
+  id: string;
+  label: string;
+  rule: string;
 }
 
 export interface CreditSpreadPayload {
@@ -166,6 +180,8 @@ export interface CreditSpreadPayload {
     creditShare: [number, number] | null;
     recentSessions: number | null;
     tested: string | null;
+    /** The rules the tab can read the rows by, in the builder's order. */
+    selections: CreditSpreadSelection[];
   };
   rows: CreditSpreadRow[];
 }

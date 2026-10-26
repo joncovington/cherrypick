@@ -88,7 +88,13 @@ describe("readCreditSpreadList", () => {
     write("2026-10-23.json", doc("2026-10-23", [ROW]));
     const p = readCreditSpreadList(config, null);
     expect(p).toMatchObject({ day: "2026-10-23", built: true, names: 488 });
-    expect(p.rule).toEqual({ shortDelta: 0.4, creditShare: [0.35, 0.4], recentSessions: 5, tested: "not yet: item 17" });
+    expect(p.rule).toEqual({
+      shortDelta: 0.4,
+      creditShare: [0.35, 0.4],
+      recentSessions: 5,
+      tested: "not yet: item 17",
+      selections: [], // a list built before selections names none
+    });
     expect(p.dropped).toEqual({ "no fresh setup entry": 370, "no 30-45 day monthly": 3 });
     const r = p.rows[0]!;
     expect(r).toMatchObject({ symbol: "AAA", spread: "put", setups: ["pullback"], dte: 31, move: 5.13 });
@@ -147,3 +153,25 @@ describe("readCreditSpreadList", () => {
     expect(readCreditSpreadList(config, null)).toMatchObject({ day: null, days: [], built: false, rows: [] });
   });
 });
+
+describe("the credit-spread selections (2026-10-25)", () => {
+  it("names each selection and parses each row's own short and spread, null where it does not apply", () => {
+    const pick = { long: 83, long_option: "P83", width: 5, credit: 1.1, credit_mid: 1.15, credit_width: 0.22, max_loss: 3.9, credit_max_loss: 0.28, passes: true };
+    const row = {
+      ...ROW,
+      selections: {
+        "credit-share": null,
+        "reversion-d20-s5": { short: { strike: 88, delta: -0.2, iv: 0.3, bid: 1.2, ask: 1.3 }, ...pick },
+      },
+    };
+    const d = doc("2026-10-23", [row]);
+    d.rule.credit_spreads.selections = { "reversion-d20-s5": { label: "mean-reversion puts, 0.20 delta, 5 strikes", rule: "r" } };
+    write("2026-10-23.json", d);
+    const p = readCreditSpreadList(config, null);
+    expect(p.rule.selections).toEqual([{ id: "reversion-d20-s5", label: "mean-reversion puts, 0.20 delta, 5 strikes", rule: "r" }]);
+    const sel = p.rows[0]!.selections!;
+    expect(sel["credit-share"]).toBeNull();
+    expect(sel["reversion-d20-s5"]).toMatchObject({ short: { strike: 88, delta: -0.2 }, price: { long: 83, width: 5 } });
+  });
+});
+
