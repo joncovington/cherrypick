@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { etaText, progressLine } from "../src/pages/Backtest/QueueTab";
 
-const p = { total: 97402, answered: 62202, byStatus: { complete: 61617 }, ratePerMin: 232.7, etaMinutes: 151, lastAnswerAgeS: 1 };
+const p = { total: 10000, answered: 6000, byStatus: { complete: 5900 }, ratePerMin: 200.4, etaMinutes: 20, lastAnswerAgeS: 1 };
 
 describe("the queue's fetch meter", () => {
   it("states counts, share, rate and time left", () => {
-    expect(progressLine(p)).toBe("62,202 of 97,402 (63.9%) · 233/min · ~2h 31m left");
+    expect(progressLine(p)).toBe("6,000 of 10,000 (60.0%) · 200/min · ~20m left");
     expect(etaText(12)).toBe("12m");
     expect(etaText(0)).toBe("done");
   });
