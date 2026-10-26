@@ -454,3 +454,29 @@ def test_the_licence_guard_refuses_a_json_outside_the_backtest_dir(tmp_path, mon
     assert cs.licence_refusal(chains, data / "results" / "out.json") is None
     assert cs.main(["--chains-db", str(chains), "--json", str(tmp_path / "x.json")]) == 2
     assert cs.licence_refusal(tmp_path / "synthetic.db", tmp_path / "x.json") is None
+
+
+# ------------------------------------------------------------------------------------- holdout
+def test_an_end_past_the_design_window_is_refused_unless_allowed(tmp_path, monkeypatch, capsys):
+    from cherrypick.backtest import settings
+
+    # The design window is the settings' own, not a constant: a moved window moves the guard.
+    moved = settings.resolve(
+        {"windows": {"design": ["2022-05-16", "2025-01-31"], "holdout": ["2025-02-03", "2026-01-30"]}}
+    )
+    monkeypatch.setattr(settings, "load", lambda *a, **k: moved)
+    assert cs.holdout_refusal("2025-02-03", "2025-01-31", allowed=False)
+    assert cs.holdout_refusal("2025-02-03", "2025-01-31", allowed=True) is None
+    assert cs.holdout_refusal("2025-01-31", "2025-01-31", allowed=False) is None
+    # Each run below is stopped by one guard or the other before anything is read: the json path is
+    # outside the backtest dir, so a run past the holdout guard meets the licence guard.
+    data = tmp_path / "backtest"
+    data.mkdir()
+    monkeypatch.setattr(cs.home, "data_dir", lambda *a, **k: data)
+    base = ["--chains-db", str(data / "eod_chains.db"), "--json", str(tmp_path / "x.json")]
+    assert cs.main([*base, "--end", "2025-06-30"]) == 2
+    assert "pass --allow-holdout" in capsys.readouterr().err
+    assert cs.main([*base, "--end", "2025-06-30", "--allow-holdout"]) == 2
+    assert "licensed store" in capsys.readouterr().err
+    assert cs.main([*base, "--end", "2025-01-31"]) == 2
+    assert "licensed store" in capsys.readouterr().err

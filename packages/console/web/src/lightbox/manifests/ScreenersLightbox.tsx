@@ -12,7 +12,7 @@ import type { SlideDef } from "../types";
  * Our income lists (short puts and covered calls 2026-10-19, credit spreads 2026-10-24): one tab per list; the earnings calendar (2026-10-17); the signal board (2026-10-17); and
  * the skate screen (2026-10-19). This manifest holds the page list and nothing else.
  */
-const slides: SlideDef[] = [
+export const slides: SlideDef[] = [
   // Our own lists only: the vendor's subscription ended 2026-10-24, and its saved days are no longer shown.
   { id: "short-puts", label: "short puts", render: () => <OwnListTab list="short-puts" /> },
   { id: "covered-calls", label: "covered calls", render: () => <OwnListTab list="covered-calls" /> },

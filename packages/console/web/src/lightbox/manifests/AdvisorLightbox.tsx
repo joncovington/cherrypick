@@ -15,7 +15,7 @@ import type { SlideDef } from "../types";
  * deliberately keeps narrow. AdvisorPage's own internal TabStrip is untouched and still switches its
  * four views inside this one page.
  */
-const slides: SlideDef[] = [{ id: "advisor", label: "advisor", render: () => <AdvisorPage /> }];
+export const slides: SlideDef[] = [{ id: "advisor", label: "advisor", render: () => <AdvisorPage /> }];
 
 export function AdvisorLightbox({ slide }: { slide: string }) {
   return <ModuleFrame module="advisor" slide={slide} slides={slides} session={null} />;

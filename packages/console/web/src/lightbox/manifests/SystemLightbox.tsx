@@ -9,7 +9,7 @@ import type { SlideDef } from "../types";
  * the verdict at a glance and the rest are the detail behind it. No control path: restarting,
  * holding or arming anything stays with `run.py` and the arm commands.
  */
-const slides: SlideDef[] = [
+export const slides: SlideDef[] = [
   { id: "health", label: "health", render: () => <HealthTab /> },
   { id: "supervisor", label: "supervisor", render: () => <SupervisorTab /> },
   { id: "modules", label: "modules", render: () => <ModulesTab /> },

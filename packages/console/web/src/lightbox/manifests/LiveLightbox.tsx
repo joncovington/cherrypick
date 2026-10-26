@@ -5,6 +5,7 @@ import { LiveTodayPage, suiteBadgeText, useLiveToday } from "../../pages/Live/Li
 import { LoopPill } from "../../components/ScopeBar";
 import { ExecutionTab } from "../../pages/Live/ExecutionTab";
 import { AlertDaemonChip } from "../../components/AlertDaemonChip";
+import { LIVE_ACCOUNT_WIDE } from "../../lib/visibility";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 import type { LiveFliesPayload } from "@console/shared";
@@ -31,7 +32,7 @@ import type { LiveFliesPayload } from "@console/shared";
  * the same evaluation (each wheel cycle on the account), beside them and account-wide too; then `pmcc`,
  * the fourth (each PMCC on the account).
  */
-const slides: SlideDef[] = [
+export const slides: SlideDef[] = [
   // Every live loop on one page: what is armed, open and settled, and what needs a person.
   { id: "today", label: "today", render: () => <LiveTodayPage /> },
   // The daily position evaluation (packages/manage): every live trade against the ruleset.
@@ -50,8 +51,6 @@ const slides: SlideDef[] = [
   { id: "execution", label: "execution", render: () => <ExecutionTab /> },
 ];
 
-/** The tabs that read the whole account, not one loop: they wear the suite's badge. */
-const ACCOUNT_WIDE = new Set(["today", "positions", "portfolio", "wheel", "pmcc", "execution"]);
 
 /** The flies header badge. A switched-off module says so first: "not armed" on a retired module
  *  reads as a pilot waiting for today's arm. A halt or a live arm record still outranks it. */
@@ -129,7 +128,9 @@ function LivePill() {
 
 export function LiveLightbox({ slide }: { slide: string }) {
   const meic = slide === "meic";
-  const today = ACCOUNT_WIDE.has(slide);
+  // The tabs that read the whole account, not one loop, wear the suite's badge: the set the
+  // visibility rule always shows (`LIVE_ACCOUNT_WIDE`), so the two cannot drift apart.
+  const today = LIVE_ACCOUNT_WIDE.has(slide);
   return (
     <ModuleFrame
       module="live"

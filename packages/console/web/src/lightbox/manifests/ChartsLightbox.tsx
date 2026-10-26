@@ -10,7 +10,7 @@ import type { SlideDef } from "../types";
  * `chart` tab until 2026-10-01, and the setups watchlist over every technicals chart
  * (`/charts/setups`). This manifest holds the page list and nothing else.
  */
-const slides: SlideDef[] = [
+export const slides: SlideDef[] = [
   { id: "intraday", label: "intraday", render: () => <IntradayPage /> },
   { id: "technicals", label: "technicals", render: () => <ChartPage /> },
   { id: "setups", label: "setups", render: () => <SetupsPage /> },

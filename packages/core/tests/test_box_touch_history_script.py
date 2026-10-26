@@ -1,13 +1,15 @@
 """The box-touch study (scripts/box_touch_history.py): boxes, touches, placebos, the fade and trend
 reads, the resampled rates and the declared pass test.
 
-Synthetic paths only: no store. Each pass test is shown to FAIL on data built to fail it, because a
-check that cannot fire reads as coverage it is not.
+Synthetic paths and synthetic stores only. Each pass test is shown to FAIL on data built to fail it,
+because a check that cannot fire reads as coverage it is not.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -112,6 +114,67 @@ def test_the_fade_and_trend_tests_need_the_interval_above_half():
     v = bt.verdict(_rep(0.5, 0.5))
     assert v["fade"]["pass"] is True  # 70% on 500 outcomes, interval well above 50%
     assert v["trend"]["pass"] is False  # exactly half
+
+
+HOLDOUT = ("2025-07-01", "2026-10-12")
+
+
+def _store(tmp_path, days: list[str]) -> Path:
+    """A history db in the recorder's schema whose every session is a short path (dropped)."""
+    db = tmp_path / "history.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE gex_spot_history (symbol TEXT, trade_date TEXT, ts REAL, spot REAL)")
+    conn.execute("CREATE TABLE daily_closes (symbol TEXT, trade_date TEXT, close REAL)")
+    for d in days:
+        ts = datetime.fromisoformat(f"{d}T10:00").replace(tzinfo=bt.ET).timestamp()
+        conn.execute("INSERT INTO gex_spot_history VALUES ('SPX', ?, ?, 7000.0)", (d, ts))
+        conn.execute("INSERT INTO daily_closes VALUES ('SPX', ?, 7000.0)", (d,))
+    conn.commit()
+    conn.close()
+    return db
+
+
+def test_a_window_reads_up_to_its_end_and_from_the_session_before_its_start():
+    stored = ["2025-06-27", "2025-06-30", "2025-07-01", "2025-07-02", "2025-07-03"]
+    assert bt.days_to_read(stored, "2025-07-01", "2025-07-02") == ["2025-06-30", "2025-07-01", "2025-07-02"]
+    assert bt.days_to_read(stored, None, "2025-06-30") == ["2025-06-27", "2025-06-30"]
+    assert bt.days_to_read(stored, "2025-07-02", None) == ["2025-07-01", "2025-07-02", "2025-07-03"]
+    assert bt.days_to_read(stored, None, None) == stored
+
+
+def test_the_holdout_is_refused_on_what_is_read_unless_allowed(tmp_path, monkeypatch, capsys):
+    db = _store(tmp_path, ["2025-06-27", "2025-06-30", "2025-07-01", "2026-01-02", "2026-10-13"])
+    monkeypatch.setattr(bt, "holdout_window", lambda: HOLDOUT)
+    called = []
+    monkeypatch.setattr(bt, "load_sessions", lambda *a, **k: called.append(a) or ([], {}))
+    run = lambda *extra: bt.main(["--history-db", str(db), *extra])  # noqa: E731
+    # An open end reads to the store's last session: the bypass an argument-only check has.
+    assert run("--start", "2026-01-01") == 2
+    assert run() == 2
+    assert run("--start", "2026-01-01", "--end", "2026-12-31") == 2
+    # After the holdout, the session before the start is read for its close, and it is in it.
+    assert run("--start", "2026-10-13") == 2
+    assert "pass --allow-holdout" in capsys.readouterr().err
+    assert not called
+    assert run("--end", "2025-06-30") == 0
+    assert run("--start", "2026-01-01", "--allow-holdout") == 0
+    assert len(called) == 2
+
+
+def test_the_holdout_is_the_backtest_settings_window(monkeypatch):
+    settings = pytest.importorskip("cherrypick.backtest.settings")  # not installed in core's own CI
+    moved = settings.resolve(
+        {"windows": {"design": ["2022-05-16", "2025-01-31"], "holdout": ["2025-02-03", "2026-01-30"]}}
+    )
+    monkeypatch.setattr(settings, "load", lambda *a, **k: moved)
+    assert bt.holdout_window() == ("2025-02-03", "2026-01-30")
+
+
+def test_drops_count_only_the_window(tmp_path):
+    db = _store(tmp_path, ["2025-01-02", "2025-01-03", "2025-01-06", "2025-01-07"])
+    assert bt.load_sessions(db, "SPX", 0.85) == ([], {"short_path": 4})
+    assert bt.load_sessions(db, "SPX", 0.85, "2025-01-03", "2025-01-06") == ([], {"short_path": 2})
+    assert bt.load_sessions(db, "SPX", 0.85, None, "2025-01-02") == ([], {"short_path": 1})
 
 
 def test_a_year_window_keeps_only_its_sessions():

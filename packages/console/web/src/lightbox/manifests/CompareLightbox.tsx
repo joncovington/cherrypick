@@ -12,7 +12,7 @@ import type { SlideDef } from "../types";
  * `core.compare`. One tab; the scope, sort and open arm ride in the query string, which the frame
  * carries across.
  */
-const slides: SlideDef[] = [
+export const slides: SlideDef[] = [
   { id: "arms", label: "arms", render: () => <ComparePage /> },
   { id: "risk", label: "risk", render: () => <RiskTab /> },
   { id: "calendar", label: "calendar", render: () => <CalendarTab /> },

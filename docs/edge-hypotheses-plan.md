@@ -83,7 +83,10 @@ Five of the eight have been tested against their declared pass tests
 ([history-studies-2026-10-c.md](history-studies-2026-10-c.md)):
 - 1, post-earnings drift: closed;
 - 4 and 8, the box edge and the intraday direction reads: not being built (they ran on licensed
-  data, so the results are kept locally under `~/.cherrypick`, per the licence);
+  data, so the results are kept locally under `~/.cherrypick`, per the licence). Their yearly
+  re-test (B14) runs `scripts/box_touch_history.py` on one calendar year, and on one year the box
+  test's "positive in two-thirds of the years holding 20 or more touches" reduces to that single
+  year, so the re-test is not identical to the original test;
 - 5, the EMA signal: closed;
 - 6, the BWB down-day filter: closed.
 
@@ -783,8 +786,8 @@ reproduced (the best rule found picked 10-15% of its slots right).*
     was already looked at in the 2026-10-21 sensitivity run, and it failed. Whatever A' and C' show
     is read with that in mind, and the result says so.
 - **Result (2026-10-24), figures kept locally per the licence:**
-  - **B fails.** It has over 100 paired trades in each half, but trails its random-date baselines
-    and loses money outright in both. Nearly all its trades are put spreads; the call side alone is
+  - **B fails.** It meets the pass rule's floor (100 paired trades in each half), so it has a
+    verdict: it trails its random-date baselines and loses money outright in both halves. Nearly all its trades are put spreads; the call side alone is
     too thin to read.
   - **A' and C' fail.** Each beats its baselines in one half only, and loses money outright in the
     second half: a better loser, not a list. They were never a clean test anyway (see above).

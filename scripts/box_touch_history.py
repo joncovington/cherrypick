@@ -1,7 +1,7 @@
 """Does SPX revert after touching the edge of the day's expected-move box? And two intraday direction reads.
 
     python scripts/box_touch_history.py [--history-db PATH] [--em-factor 0.85] [--start D] [--end D]
-        [--json FILE]
+        [--allow-holdout] [--json FILE]
 
 Step 2 of hypothesis 8 in docs/edge-hypotheses-plan.md (docs/pulver-daily-profit-play.md), with the
 direction tests of hypothesis 4 alongside, because they read the same sessions. Read-only.
@@ -19,6 +19,11 @@ nobody trades against.
 file. **A result computed from that file is licensed vendor data: it is written only under
 `~/.cherrypick/data/backtest/results/` and never into the repo, a PR or an artifact.** The
 recorder's own `gex_history.db` works too (`--history-db`), and its results are ours.
+
+**The holdout** (the backtest settings' `windows.holdout`) is never read unless `--allow-holdout`
+says so: a re-test of a closed item may read it, a provisional look may not. The check is on the
+sessions the run would actually read (every stored session up to `--end`, else the store's last,
+from the one before `--start`), not on the arguments, so an open end cannot slip past it.
 
 **Per session:** the open is the first spot at or after 09:30 ET; the close is `daily_closes` for the
 day, else the last spot; the prior close is the previous session's. The expected move is the suite's
@@ -240,14 +245,48 @@ def boot_diff(a: list[list[bool]], b: list[list[bool]], seed: int = SEED, n: int
 # --------------------------------------------------------------------------- data
 
 
-def load_sessions(path: Path, symbol: str, em_factor: float) -> tuple[list[dict], dict]:
+def days_to_read(stored: list[str], start: str | None, end: str | None) -> list[str]:
+    """The stored sessions a run over [start, end] reads: every one up to `end` (else the store's
+    last), from the one before `start` (its close is the first session's prior close)."""
+    days = [d for d in stored if end is None or str(d)[:10] <= end]
+    if start is not None:
+        first = bisect.bisect_left([str(d)[:10] for d in days], start)
+        days = days[max(first - 1, 0) :]
+    return days
+
+
+def session_days(path: Path, symbol: str, start: str | None = None, end: str | None = None) -> list[str]:
     conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
-    days = [
+    stored = [
         d
         for (d,) in conn.execute(
             "SELECT DISTINCT trade_date FROM gex_spot_history WHERE symbol = ? ORDER BY trade_date", (symbol,)
         )
     ]
+    conn.close()
+    return days_to_read(stored, start, end)
+
+
+def holdout_window() -> tuple[str, str]:
+    """The backtest settings' holdout, [start, end] (imported here: a script, not core, may)."""
+    from cherrypick.backtest import settings
+
+    lo, hi = settings.load()["windows"]["holdout"]
+    return lo, hi
+
+
+def holdout_days(days: list[str], holdout: tuple[str, str]) -> list[str]:
+    """The sessions of `days` inside the holdout."""
+    return [d for d in days if holdout[0] <= str(d)[:10] <= holdout[1]]
+
+
+def load_sessions(
+    path: Path, symbol: str, em_factor: float, start: str | None = None, end: str | None = None
+) -> tuple[list[dict], dict]:
+    """The sessions dated in [start, end] (either open), and the drops among them. Sessions after `end`
+    are never read; the one before `start` is read for its close only, so it is never counted."""
+    days = session_days(path, symbol, start, end)
+    conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
     closes = dict(
         conn.execute("SELECT trade_date, close FROM daily_closes WHERE symbol = ? AND close > 0", (symbol,))
     )
@@ -260,6 +299,9 @@ def load_sessions(path: Path, symbol: str, em_factor: float) -> tuple[list[dict]
         ).fetchall()
         path = [(minute_of(ts), s) for ts, s in rows]
         path = [(m, s) for m, s in path if 9 * 60 + 30 <= m < 16 * 60]
+        if start is not None and str(d)[:10] < start:  # the session before the window: its close only
+            prev_close = closes.get(d, path[-1][1] if path else prev_close)
+            continue
         if len(path) < 60:
             drops["short_path"] += 1
             prev_close = closes.get(d, path[-1][1] if path else prev_close)
@@ -423,10 +465,13 @@ def main(argv=None) -> int:
     ap.add_argument("--symbol", default="SPX")
     ap.add_argument("--em-factor", type=float, default=0.85)
     ap.add_argument("--cutoff", default="15:00")
-    # A window over the sessions, applied after loading so each keeps its true prior close: a yearly
-    # re-test (B14) re-runs the declared test unchanged on one year.
+    # A window over the sessions, each keeping its true prior close (the session before the window is
+    # read for its close): a yearly re-test (B14) re-runs the declared test on one year.
     ap.add_argument("--start", default=None, help="first session to keep, YYYY-MM-DD")
     ap.add_argument("--end", default=None, help="last session to keep, YYYY-MM-DD")
+    ap.add_argument(
+        "--allow-holdout", action="store_true", help="a re-test of a closed item may read the holdout"
+    )
     ap.add_argument("--json", type=Path)
     args = ap.parse_args(argv)
     vendor = "backtest" in args.history_db.as_posix()
@@ -436,7 +481,17 @@ def main(argv=None) -> int:
             file=sys.stderr,
         )
         return 2
-    sessions, drops = load_sessions(args.history_db, args.symbol, args.em_factor)
+    if not args.allow_holdout:
+        holdout = holdout_window()
+        seen = holdout_days(session_days(args.history_db, args.symbol, args.start, args.end), holdout)
+        if seen:
+            print(
+                f"refused: the run would read {len(seen)} session(s) of the holdout "
+                f"{holdout[0]}..{holdout[1]} ({seen[0]}..{seen[-1]}); pass --allow-holdout",
+                file=sys.stderr,
+            )
+            return 2
+    sessions, drops = load_sessions(args.history_db, args.symbol, args.em_factor, args.start, args.end)
     sessions = in_window(sessions, args.start, args.end)
     print(f"loaded {len(sessions)} sessions; dropped {drops}", file=sys.stderr)
     rep = analyse(sessions, hhmm(args.cutoff))
@@ -447,6 +502,7 @@ def main(argv=None) -> int:
         "cutoff": args.cutoff,
         "start": args.start,
         "end": args.end,
+        "allow_holdout": args.allow_holdout,
     }
     print_report(rep)
     if args.json:
