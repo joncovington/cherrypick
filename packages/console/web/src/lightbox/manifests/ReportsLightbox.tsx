@@ -10,7 +10,7 @@ import type { SlideDef } from "../types";
  * `packages/review`) rendered by their own unchanged page components -- this manifest holds the
  * page list and nothing else. `/reports/eod` is the review; `/review` redirects there.
  */
-const slides: SlideDef[] = [
+export const slides: SlideDef[] = [
   { id: "morning", label: "morning", render: () => <MorningPage /> },
   { id: "eod", label: "eod", render: () => <ReviewPage /> },
 ];

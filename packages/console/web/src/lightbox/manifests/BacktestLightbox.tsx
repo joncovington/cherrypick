@@ -10,7 +10,7 @@ import type { SlideDef } from "../types";
  * closed); the server refuses the reads on its own otherwise. This manifest holds the page list and
  * nothing else.
  */
-const slides: SlideDef[] = [
+export const slides: SlideDef[] = [
   { id: "data", label: "data", render: () => <BacktestDataTab /> },
   { id: "validation", label: "validation", render: () => <BacktestValidationTab /> },
   { id: "runs", label: "runs", render: () => <BacktestRunsTab /> },

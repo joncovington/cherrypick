@@ -641,9 +641,13 @@ of the last evening pass, tomorrow's artifact, the queue and the last concluded.
 experiments tab opens with the cross-module roll-up. Module slides are read-only; kill/dismiss stay on
 the Advisor page only.
 
-**Live** (`/live`, `lightbox/manifests/LiveLightbox.tsx`, `pages/Live/`) — seven tabs: `today` (where
-`/live` lands), the account-wide `positions`, `portfolio`, `wheel` and `pmcc`, and one per live loop with a page of its
-own (`flies`, `meic`; each hidden when that module's live switch is off and the loop is idle, see *What is off*). The
+**Live** (`/live`, `lightbox/manifests/LiveLightbox.tsx`, `pages/Live/`) — eight tabs: `today` (where
+`/live` lands), the account-wide `positions`, `portfolio`, `wheel` and `pmcc`, one per live loop with a page of its
+own (`flies`, `meic`; each hidden when that module's live switch is off and the loop is idle, see *What is off*), and
+the account-wide `execution` (B10, below). The account-wide set is `LIVE_ACCOUNT_WIDE` in `lib/visibility.ts`, the one
+copy: those tabs are always shown and wear the suite badge. The simple view lists `today`, the four account views and
+`meic` (flies is retired); `execution` is detail-view only as it stands, because the simple list predates it, not by a
+recorded decision. `test/manifestSlides.test.ts` holds every manifest's tabs equal to its `navGroups.ts` declaration. The
 `flies` tab is the pilot's day over `GET /api/live/flies` (`routes/live.ts` → `readers/fliesLive.ts`), composing existing readers
 (`services/liveLock`, `readFliesLoopStatus`, `readFliesJournal`, `readFliesAnalytics`) plus settled
 net per period, the intraday series and the broker account. Rules, stated on the page:

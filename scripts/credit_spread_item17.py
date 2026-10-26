@@ -2,6 +2,7 @@
 
     python scripts/credit_spread_item17.py [--start 2020-01-22] [--end 2025-06-30] [--json OUT]
         [--plan TRADES_JSON] [--chains-db PATH] [--history-db PATH] [--workers N] [--limit-names N]
+        [--allow-holdout]
 
 The spec is docs/edge-hypotheses-plan.md, "### 17. Our own credit-spread list". This prices the
 trades `scripts/credit_spread_plan.py --item 17` decided (every signal trade of the eight setup-sides
@@ -1094,6 +1095,16 @@ def print18(rep: dict) -> None:
 
 
 # ----------------------------------------------------------------------------------------- main
+def holdout_refusal(end: str, design_end: str, allowed: bool) -> str | None:
+    """A window ending past the backtest design window reads the holdout: refused unless allowed."""
+    if end > design_end and not allowed:
+        return (
+            f"refused: --end {end} is past the design window's end {design_end}, into the holdout; "
+            "pass --allow-holdout"
+        )
+    return None
+
+
 def licence_refusal(chains_db: Path, out: Path | None) -> str | None:
     """A result from the licensed store is written only under the backtest data dir."""
     vendor = "backtest" in Path(chains_db).as_posix()
@@ -1182,6 +1193,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--limit-names", type=int, help="price only the first N names (a trial, not the test)")
     ap.add_argument("--skip-45-60", action="store_true", help="skip the reported-only 45-60 day pricing")
+    ap.add_argument(
+        "--allow-holdout", action="store_true", help="an --end past the design window reads the holdout"
+    )
     args = ap.parse_args(argv)
     item18 = args.item == 18
     args.start = args.start or (ITEM18_START if item18 else DECLARED_START)
@@ -1190,7 +1204,12 @@ def main(argv: list[str] | None = None) -> int:
     if item18 and args.json is None:
         args.json = out_dir / "study.json"
 
-    chains_db = args.chains_db or chainfetch.db_path(settings.load())
+    cfg = settings.load()
+    why = holdout_refusal(args.end, cfg["windows"]["design"][1], args.allow_holdout)
+    if why:
+        print(why, file=sys.stderr)
+        return 2
+    chains_db = args.chains_db or chainfetch.db_path(cfg)
     why = licence_refusal(chains_db, args.json)
     if why:
         print(why, file=sys.stderr)
@@ -1249,6 +1268,7 @@ def main(argv: list[str] | None = None) -> int:
         "leg_bars": "legs clear the spread/two-sided bars; OI not held",
         "item": 17,
         "window": [args.start, args.end],
+        "allow_holdout": args.allow_holdout,
         "midpoint": mid,
         "seed": SEED,
         "inputs": {"plan": str(plan_path), "chains_db": str(chains_db), "history_db": str(history_db)},

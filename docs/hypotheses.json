@@ -105,6 +105,7 @@
             "{start}",
             "--end",
             "{end}",
+            "--allow-holdout",
             "--json",
             "{home}/data/backtest/results/research/item4-retest-{year}.json"
           ]
@@ -216,6 +217,7 @@
             "{start}",
             "--end",
             "{end}",
+            "--allow-holdout",
             "--json",
             "{home}/data/backtest/results/research/item8-retest-{year}.json"
           ]
