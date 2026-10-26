@@ -44,7 +44,9 @@ DEFAULTS: dict[str, Any] = {
     "kill_on_verdict": True,
     # Paused (2026-10-25, the trading-book review): new experiments are admitted QUEUED and nothing
     # new activates, while the active ones keep being re-issued and scored to their end, so no
-    # running A/B sample is cut short. Off restores admission. A redesign is waiting on it.
+    # running A/B sample is cut short, and the model can neither tune nor kill one (a human kill
+    # still works). Off restores admission; what the pause queued stays held until an operator
+    # runs `activate <id>`. Any truthy value counts. A redesign is waiting on it.
     "paused": False,
     # Backtest proposals (2026-10-17): a `backtest_spec` reply is queued for packages/backtest to run
     # over its design window, and design results come back into the pack. OFF by default: switching
