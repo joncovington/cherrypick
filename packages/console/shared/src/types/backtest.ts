@@ -267,18 +267,37 @@ export interface BacktestArmCards {
   calendar: { months: Record<string, number>; years: BacktestYearRow[] };
   sessions: BacktestAnatomy;
   trades: BacktestAnatomy;
+  /** Null when no trade carries a credit (flies: a legged book has no single credit). */
+  premium: BacktestPremium | null;
   /** Null when the schema records no outcome. */
   exits: BacktestExitRow[] | null;
   /** Null under the minimum session count for a verdict. */
   edge_trend: BacktestEdgeTrend | null;
+  /** The most any one of this arm's sessions held at risk; null when its schema records none. */
+  peak_risk: number | null;
   account: BacktestAccountRead | null;
 }
 
-/** `cards.py`: every arm's cards on one account. `basis` says where the account came from. */
+/** Premium collected and kept, over the trades that carry a credit. Fractions, not percents. */
+export interface BacktestPremium {
+  n: number;
+  premium: number;
+  /** Trading fees, settlement apart. */
+  fees: number;
+  fees_not_recorded: number;
+  /** fees / premium collected. */
+  fee_drag: number | null;
+  /** net / the structures' own ceilings (`core.metrics.capture_rate`). */
+  capture_rate: number | null;
+  capture_n: number;
+}
+
+/** `cards.py`: every arm's cards. A chosen capital is one account for every arm; with none
+ *  (`basis: "peak_risk"`), each arm reads against its own peak session risk. */
 export interface BacktestRunCards {
   ok: boolean;
   error?: string;
-  account?: { capital: number | null; basis: "chosen" | "peak_risk" | null; peak_risk: number | null };
+  account?: { capital: number | null; basis: "chosen" | "peak_risk" };
   arms?: Record<string, BacktestArmCards>;
 }
 
