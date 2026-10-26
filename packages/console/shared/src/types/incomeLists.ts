@@ -140,6 +140,8 @@ export interface CreditSpreadRow {
   short: { strike: number; delta: number; iv: number; bid: number | null; ask: number | null };
   /** The user's rule: the widest long giving 35-40% of the width; null when none does. */
   pick: CreditSpreadPrice | null;
+  /** "45-60" when the list fell back past the studied 30-45 day window (2026-10-25). */
+  window: "30-45" | "45-60";
   /** Each selection's pick for this row (2026-10-25): its own short and spread, or null when the row
    *  is not that selection's kind or the chain does not reach. Absent on a list built before them. */
   selections?: Record<string, CreditSpreadSelectionPick | null>;

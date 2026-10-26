@@ -197,6 +197,26 @@ def test_the_covered_call_has_its_own_30_to_45_day_monthly():
     assert (plan["cc"]["expiry"], plan["cc"]["window"], plan["cc"]["legs"]) == ("2026-12-18", "cycle", None)
 
 
+def test_the_credit_spread_chain_falls_back_to_the_45_to_60_day_monthly():
+    """2026-10-25: monthlies are 28 or 35 days apart, so for about two weeks a cycle none falls 30-45
+    days out and the credit-spread list was empty. It now takes the monthly 45-60 days out, marked;
+    the covered call does not fall back."""
+    strikes = [(float(k), f"C{k}", f"P{k}") for k in range(80, 121, 1)]
+    near, dec = _exp("2026-11-20", 28, strikes), _exp("2026-12-18", 56, strikes)
+    plan = fsg.income_plan([near, dec], 101.0, _is_monthly)
+    assert (plan["cs"]["expiry"], plan["cs"]["window"]) == ("2026-12-18", "45-60")
+    assert {leg["right"] for leg in plan["cs"]["legs"]} == {"P", "C"}
+    assert plan["cc"]["window"] == "cycle"  # the covered call is unchanged
+    # A monthly 30-45 days out is still the one taken.
+    plan = fsg.income_plan([_exp("2026-11-20", 33, strikes), dec], 101.0, _is_monthly)
+    assert (plan["cs"]["expiry"], plan["cs"]["window"]) == ("2026-11-20", "30-45")
+    # Neither window holds a monthly: no chain, as before.
+    assert fsg.credit_spread_expiry([_exp("2026-11-20", 28), _exp("2026-12-18", 64)], _is_monthly) == (
+        None,
+        None,
+    )
+
+
 def test_the_spread_strikes_are_every_listed_strike_out_to_their_reach():
     """Never thinned: a spread's legs are neighbouring strikes."""
     listed = [float(k) for k in range(50, 151)]
@@ -231,9 +251,12 @@ def test_the_credit_spreads_have_the_30_to_45_day_monthly_both_sides_and_share_l
     cyc = {leg["option"]: leg for leg in plan["legs"]}
     assert plan["cs"]["expiry"] == "2026-11-20"
     assert all(leg is cyc[leg["option"]] for leg in plan["cs"]["legs"] if leg["option"] in cyc)
-    # No monthly 30-45 days out: no spreads, never the cycle instead.
+    # No monthly 30-45 days out: the 45-60 day monthly instead (2026-10-25), marked -- here the cycle
+    # itself, so the spreads share its legs. Before the fallback this row had no spreads at all.
     plan = fsg.income_plan([_exp("2026-11-20", 28, strikes), cycle], 100.5, _is_monthly, iv=0.30)
-    assert plan["cs"] is None
+    assert (plan["cs"]["expiry"], plan["cs"]["window"]) == ("2026-12-18", "45-60")
+    cyc = {leg["option"]: leg for leg in plan["legs"]}
+    assert all(leg is cyc[leg["option"]] for leg in plan["cs"]["legs"] if leg["option"] in cyc)
 
 
 def test_each_name_reads_its_own_latest_metrics_not_only_the_newest_days():

@@ -207,7 +207,7 @@ def test_earnings_inside_the_trade_are_flagged_never_dropped():
 def test_no_signal_no_monthly_and_no_store_each_say_so():
     out = _spreads({"AAA": _entry(), "BBB": _entry(cs=None)}, {"BBB": PUT_SIGNAL})
     assert out["lists"]["credit-spreads"] == []
-    assert out["dropped"]["credit-spreads"] == {"no fresh setup entry": 1, "no 30-45 day monthly": 1}
+    assert out["dropped"]["credit-spreads"] == {"no fresh setup entry": 1, "no 30-45 or 45-60 day monthly": 1}
     # No history store: no credit-spread list at all, never an empty one that reads as "no signals".
     out = incomelists.build_lists(_doc({"AAA": _entry()}))
     assert "credit-spreads" not in out["lists"]
@@ -241,3 +241,11 @@ def test_each_mean_reversion_selection_has_its_own_short_and_a_5_strike_long():
         assert sel["max_loss"] == pytest.approx(sel["width"] - sel["credit"])
     # The credit-share selection is the row's own pick, on the row's own short.
     assert row["selections"]["credit-share"]["long"] == row["pick"]["long"]
+
+
+def test_a_row_says_which_expiry_window_it_came_from():
+    (row,) = _spreads({"AAA": _entry()}, {"AAA": PUT_SIGNAL})["lists"]["credit-spreads"]
+    assert row["window"] == "30-45"  # a chain written before the fallback has no window: the studied one
+    late = _entry(cs={"expiry": "2026-12-18", "dte": 56, "window": "45-60", "options": _chain(dte=56)})
+    (row,) = _spreads({"AAA": late}, {"AAA": PUT_SIGNAL})["lists"]["credit-spreads"]
+    assert row["window"] == "45-60" and row["dte"] == 56

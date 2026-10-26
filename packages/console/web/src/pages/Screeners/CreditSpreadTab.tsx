@@ -454,6 +454,14 @@ export function CreditSpreadTab() {
                       <td className="num">{money(r.spot)}</td>
                       <td>
                         {shortDate(r.expiry)} <span className="muted">{r.dte}d</span>
+                        {r.window === "45-60" ? (
+                          <span
+                            className="chip chip-warn"
+                            title="No standard monthly fell 30-45 days out, so this is the 45-60 day monthly: outside the window item 17 studied"
+                          >
+                            45-60
+                          </span>
+                        ) : null}
                       </td>
                       <td className="num" title={`Δ ${r.short.delta.toFixed(2)}, IV ${pct(r.short.iv, 0)}, ${money(r.short.bid)} × ${money(r.short.ask)}`}>
                         {r.short.strike}

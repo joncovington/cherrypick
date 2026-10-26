@@ -1127,6 +1127,10 @@ INCOME_NEAR = CAND_NEAR
 # the move, or five strikes). Never thinned: a spread's legs are neighbouring strikes, and evenly
 # thinned strikes drop the very ones it is built from. At most CS_MOST a side, the nearest kept.
 CS_REACH_SD = 1.5
+# When no standard monthly falls 30-45 days out (monthlies are 28 or 35 days apart, so about two weeks
+# a cycle), the credit-spread list falls back to the monthly 45-60 days out (the user, 2026-10-25),
+# marked on each row as outside the window item 17 studied. The covered call does not fall back.
+CS_FALLBACK_RANGE = (45, 60)
 CS_MOST = 24
 # The history a stress move is read from: five years of sessions, and at least a year of windows.
 STRESS_SESSIONS = 1260
@@ -1160,6 +1164,17 @@ def income_reach(iv: float | None, dte: int) -> float:
     if not iv or iv <= 0 or dte <= 0:
         return INCOME_REACH
     return min(INCOME_REACH_MAX, max(INCOME_REACH, INCOME_REACH_SD * iv * math.sqrt(dte / 365.0)))
+
+
+def credit_spread_expiry(expirations: list[dict], is_monthly) -> tuple[dict | None, str | None]:
+    """(expiry, window) for the credit-spread chain: the covered call's 30-45 day monthly, else the
+    latest standard monthly inside CS_FALLBACK_RANGE ("45-60"), else (None, None)."""
+    ce = covered_call_expiry(expirations, is_monthly)
+    if ce is not None:
+        return ce, "30-45"
+    lo, hi = CS_FALLBACK_RANGE
+    inside = [e for e in expirations if is_monthly(e["expiration"]) and lo <= e["dte"] <= hi]
+    return (max(inside, key=lambda e: e["dte"]), "45-60") if inside else (None, None)
 
 
 def covered_call_expiry(expirations: list[dict], is_monthly) -> dict | None:
@@ -1259,9 +1274,9 @@ def income_plan(listing: list[dict], spot: float | None, is_monthly, iv: float |
     further on a volatile name (`income_reach`), and the covered call's own expiry (`cc`): the
     30-45 day monthly's calls, or -- when that is the cycle monthly, or there is none -- the cycle's
     calls (`legs` None: nothing more to quote). The credit spreads' (`cs`) are that 30-45 day
-    monthly's strikes both sides, unthinned (`spread_strikes`), or None when there is no such
-    monthly -- never the cycle instead. None when the cycle lists no monthly or there is no price to
-    centre on."""
+    monthly's strikes both sides, unthinned (`spread_strikes`); with no such monthly, the 45-60 day
+    monthly's, marked `window` "45-60" (2026-10-25: `credit_spread_expiry`), else None. None when
+    the cycle lists no monthly or there is no price to centre on."""
     cyc = cycle_expiry(listing, is_monthly)
     if cyc is None or not spot:
         return None
@@ -1284,12 +1299,15 @@ def income_plan(listing: list[dict], spot: float | None, is_monthly, iv: float |
             "legs": _plan_legs(ce, spot, "C", cc_reach, CC_STRIKES, CC_NEAR, iv),
         }
     cs = None
-    if ce is not None:
-        on_cycle = ce["expiration"] == cyc["expiration"]
+    se, window = credit_spread_expiry(listing, is_monthly)
+    if se is not None:
+        on_cycle = se["expiration"] == cyc["expiration"]
+        shared = legs if on_cycle else (cc["legs"] or [] if ce is not None and se is ce else [])
         cs = {
-            "expiry": ce["expiration"],
-            "dte": ce["dte"],
-            "legs": _spread_legs(ce, spot, iv, legs if on_cycle else cc["legs"] or []),
+            "expiry": se["expiration"],
+            "dte": se["dte"],
+            "window": window,
+            "legs": _spread_legs(se, spot, iv, shared),
         }
     return {
         "expiry": cyc["expiration"],
@@ -1520,6 +1538,7 @@ def cmd_income(args) -> int:
             else {
                 "expiry": plan["cs"]["expiry"],
                 "dte": plan["cs"]["dte"],
+                "window": plan["cs"].get("window", "30-45"),
                 "stress": stress_move(closes, holding_sessions(plan["cs"]["dte"])),
                 "options": income_rows(plan["cs"]["legs"]),
             },
