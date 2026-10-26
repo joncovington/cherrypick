@@ -203,7 +203,12 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
   `live.kill` (B1, 2026-10-24) is the arm's frozen kill criteria, read over the live ledger's net
   through `core.killcriteria.gate`: reduced halves the order's quantity (at least one), blocked
   refuses new ICs and latches (`state/kill/meic.json`, a watchdog CRITICAL) until a person clears it;
-  missing or malformed criteria refuse. Derived from the arm's replay with
+  missing or malformed criteria refuse. A closed live IC since the criteria's `written` date with
+  **no net** (`pnl` or `fees` NULL, as the 2026-06-29 stop was recorded) also refuses new ICs, from
+  2026-10-25: the verdict skips a row with no net, so its loss would pass the drawdown and streak
+  check. The refusal names the ICs, does not latch (recording their `pnl` and `fees` is the fix) and,
+  like every kill verdict, never holds back a fill confirmation, stop or force-close; earnings
+  refuses on the same rows. Derived from the arm's replay with
   `python -m cherrypick.core.killcriteria derive --db <run dir> --schema meic_ic --arm <arm>`.
   `live.use_order_alert_daemon` makes the supervisor keep `cherrypick.meic.alert_daemon` up until
   `disarm_time`; it records order alerts in `live_alerts.db` and starts a tick when an order the
