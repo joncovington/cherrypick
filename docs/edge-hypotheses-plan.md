@@ -1186,6 +1186,11 @@ look has touched. The user approved the test on 2026-10-25. Declared here before
     "tested", with the robustness report.
   - **A fail or no verdict:** closes the cell.
   - Either way the holdout is spent for this cell.
+- **Result (2026-10-26): no verdict; the cell is closed.** Too few holdout entries cleared the
+  liquidity bars to reach the 100-trade floor: the cell mostly selects strikes that cannot be
+  traded. The holdout is spent for this cell, and the selection stays on the credit-spread tab
+  under "no tested edge". Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item18/study.json`).
 - **Not tested here:** the call-side twin (mean reversion short → call spread). Its item 17 picks did
   not agree on a short, so there is no one cell to declare.
 
