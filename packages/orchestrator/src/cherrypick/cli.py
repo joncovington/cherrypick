@@ -1660,16 +1660,17 @@ def cmd_queue_list(cfg, args) -> None:
     held = rq.session_held()
     window = rq.blackout(cfg)
     out = []
+    tasks = rq.rows(study=args.study)
     with rq.connect() as conn:
+        # Per row, not per prerequisite name: whether a chain is a cycle depends on where it starts.
         status_of = {
-            r["after"]: rq.prereq_status(conn, r["after"])
-            for r in rq.rows(study=args.study)
-            if r.get("after")
+            r["id"]: rq.prereq_status(conn, r["after"], r["id"])
+            for r in tasks
+            if r["status"] == "queued" and r.get("after")
         }
-    for r in rq.rows(study=args.study):
+    for r in tasks:
         if r["status"] == "queued":
-            after = status_of.get(r.get("after")) if r.get("after") else None
-            r["waits"] = rq.ready(r, now, cal.is_trading_day, held, window, after) or "ready"
+            r["waits"] = rq.ready(r, now, cal.is_trading_day, held, window, status_of.get(r["id"])) or "ready"
         r["name"] = rq.name(r)
         # A chain fetch's meter, for a row not yet finished: counts through its request file, whoever
         # is running it (the queue, or a run started by hand on the same file).

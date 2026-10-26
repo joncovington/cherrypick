@@ -20,7 +20,11 @@ unreviewed code run by it. A kind builds its own argv from the row's arguments:
   backtest package's), and never starts inside `BLACKOUT` ET on a trading day, the nightly
   `backtest-fetch`'s window; its `--stop-by` is the next blackout start, or the row's own stop-by if
   sooner;
-- `not_before` holds a row back until then.
+- `not_before` holds a row back until then;
+- `after` makes a row wait for the newest row of another name to finish `done`. One whose
+  prerequisite failed, stopped or was cancelled is HELD, as is one whose `after` chain loops back on
+  itself (a cycle, which would otherwise wait forever); a held row raises one notification, once.
+  Re-queuing the prerequisite releases it: the new row is the newest by that name.
 
 **Names** (2026-10-24): a row is `study/step`, both lowercase slugs checked on the way in. The study
 is its category (`item17`, `flow-tags`); the step is what it does there (`plan`, `fetch-chains`,
@@ -80,6 +84,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     not_before TEXT,
     stop_by TEXT,
     after TEXT,
+    held_at TEXT,
     status TEXT NOT NULL DEFAULT 'queued',
     created_at TEXT NOT NULL,
     started_at TEXT,
@@ -265,6 +270,25 @@ def stop_by_for(
     return min(bounds).strftime("%Y-%m-%dT%H:%M") if bounds else None
 
 
+HELD = "held:"
+
+
+def after_reason(row: dict, after_status: str | None) -> str | None:
+    """Why a row's `after` prerequisite keeps it back, or None. One whose prerequisite failed,
+    stopped, was cancelled or does not exist is HELD, never run on what the prerequisite left behind
+    -- a study run once on a partial store would spend its declared test -- and so is one in a cycle
+    of `after` rows, which no finish could ever release. Re-queuing the prerequisite releases a held
+    row by itself: the new row is the newest by that name, and its status is the one read."""
+    after = row.get("after")
+    if not after or after_status == "done":
+        return None
+    if after_status == "cycle":
+        return f"{HELD} the --after chain from {after} comes back on itself (a cycle); cancel a row in it"
+    if after_status in ("queued", "running"):
+        return f"waits for {after} ({after_status})"
+    return f"{HELD} {after} is {after_status or 'missing'}; re-queue it and this row runs once it is done"
+
+
 def ready(
     row: dict,
     now: datetime,
@@ -274,13 +298,10 @@ def ready(
     after_status: str | None = None,
 ) -> str | None:
     """None when the row may start now, else why not (a short reason the list shows). A row with an
-    `after` prerequisite waits until that row is `done`; one whose prerequisite failed, stopped, was
-    cancelled or does not exist is HELD, never run on what the prerequisite left behind -- a study
-    run once on a partial store would spend its declared test."""
-    if row.get("after") and after_status != "done":
-        if after_status in ("queued", "running"):
-            return f"waits for {row['after']} ({after_status})"
-        return f"held: {row['after']} is {after_status or 'missing'}; review, then cancel and re-queue"
+    `after` prerequisite waits until that row is `done` (`after_status`, from `prereq_status`)."""
+    why = after_reason(row, after_status)
+    if why:
+        return why
     t = now.astimezone(ET)
     if row.get("not_before") and t < datetime.fromisoformat(row["not_before"]).replace(tzinfo=ET):
         return f"held until {row['not_before']} ET"
@@ -340,22 +361,60 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(p, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
-    # `after` (2026-10-25): a row that waits for another row's success. Added to an older queue here.
-    if "after" not in {r[1] for r in conn.execute("PRAGMA table_info(tasks)")}:
-        conn.execute("ALTER TABLE tasks ADD COLUMN after TEXT")
+    _migrate(conn)
     return conn
 
 
-def prereq_status(conn, after: str | None) -> str | None:
+# Columns added after the table first shipped, each added to an older queue on connect: `after`
+# (2026-10-25), a row that waits for another row's success; `held_at`, when a held row was notified.
+ADDED_COLUMNS = (("after", "TEXT"), ("held_at", "TEXT"))
+
+
+def _columns(conn: sqlite3.Connection) -> set[str]:
+    return {r[1] for r in conn.execute("PRAGMA table_info(tasks)")}
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add any missing column. Two processes (the supervisor's job and a `queue-list`) can both see
+    it missing and both add it; the second's duplicate-column error means it is there, so it passes."""
+    have = _columns(conn)
+    for col, typ in ADDED_COLUMNS:
+        if col in have:
+            continue
+        try:
+            conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} {typ}")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc).lower():
+                raise
+
+
+def _newest(conn, full_name: str):
+    study, _, step = full_name.partition("/")
+    return conn.execute(
+        "SELECT id, status, after FROM tasks WHERE study = ? AND step = ? ORDER BY id DESC LIMIT 1",
+        (study, step),
+    ).fetchone()
+
+
+def prereq_status(conn, after: str | None, row_id: int | None = None) -> str | None:
     """The status of the newest row named `after` (study/step): None when a row has no prerequisite,
-    "missing" when none by that name exists."""
+    "missing" when none by that name exists. Given the dependent row's id, "cycle" when the chain of
+    queued prerequisites -- each the newest row by its `after` name -- comes back to a row already on
+    it: `s/study --after s/study`, or A after B and B after A, would otherwise wait forever."""
     if not after:
         return None
-    study, _, step = after.partition("/")
-    r = conn.execute(
-        "SELECT status FROM tasks WHERE study = ? AND step = ? ORDER BY id DESC LIMIT 1", (study, step)
-    ).fetchone()
-    return r["status"] if r else "missing"
+    r = _newest(conn, after)
+    if r is None:
+        return "missing"
+    if row_id is not None:
+        seen = {row_id}
+        cur = r
+        while cur is not None and cur["status"] == "queued":
+            if cur["id"] in seen:
+                return "cycle"
+            seen.add(cur["id"])
+            cur = _newest(conn, cur["after"]) if cur["after"] else None
+    return r["status"]
 
 
 def _now_iso() -> str:
@@ -405,8 +464,19 @@ def add(
         ).fetchone()
         if live is not None:
             raise Refused(f"{study}/{step} is already {live['status']} as task {live['id']}")
-        if after is not None and prereq_status(conn, after) in (None, "missing"):
-            raise Refused(f"--after {after!r} names no row (study/step)")
+        if after is not None:
+            if after == f"{study}/{step}":
+                raise Refused(f"--after {after!r} is this row's own name: a row cannot wait for itself")
+            if prereq_status(conn, after) in (None, "missing"):
+                raise Refused(f"--after {after!r} names no row (study/step)")
+            # This row becomes the newest by its name, so a queued prerequisite chain that comes back
+            # to the name would wait on it forever.
+            cur, seen = _newest(conn, after), set()
+            while cur is not None and cur["status"] == "queued" and cur["after"] and cur["id"] not in seen:
+                if cur["after"] == f"{study}/{step}":
+                    raise Refused(f"--after {after!r} waits, through --after, on {study}/{step}: a cycle")
+                seen.add(cur["id"])
+                cur = _newest(conn, cur["after"])
         cur = conn.execute(
             "INSERT INTO tasks (study, step, kind, args, output, needs, not_before, stop_by, after,"
             " created_at)"
@@ -510,6 +580,25 @@ def recover(conn: sqlite3.Connection) -> list[int]:
     return back
 
 
+def mark_held(conn: sqlite3.Connection) -> list[tuple[dict, str]]:
+    """Stamp `held_at` on each queued row that is newly held by its prerequisite, and clear it on one
+    no longer held; the newly held rows with why. Every queued row is read, not only those ahead of
+    the one that runs, so a hold is noticed while another task runs."""
+    out = []
+    for r in conn.execute(
+        "SELECT id, study, step, after, held_at FROM tasks WHERE status = 'queued' AND after IS NOT NULL"
+    ).fetchall():
+        row = dict(r)
+        why = after_reason(row, prereq_status(conn, row["after"], row["id"]))
+        if why and why.startswith(HELD):
+            if not row["held_at"]:
+                conn.execute("UPDATE tasks SET held_at = ? WHERE id = ?", (_now_iso(), row["id"]))
+                out.append((row, why))
+        elif row["held_at"]:
+            conn.execute("UPDATE tasks SET held_at = NULL WHERE id = ?", (row["id"],))
+    return out
+
+
 def log_dir() -> Path:
     return _home.home() / "logs" / "research-queue"
 
@@ -542,6 +631,12 @@ def run_next(
     try:
         with conn:
             recovered = recover(conn)
+            newly_held = mark_held(conn)
+        # Each newly held row is one notification, sent after its mark is committed: never repeated
+        # every pass, and a row released (its prerequisite re-queued) and held again notifies again.
+        for row, why in newly_held:
+            notify("WARNING", f"Research task held: {name(row)}", why.removeprefix(HELD).strip())
+        with conn:
             if conn.execute("SELECT 1 FROM tasks WHERE status = 'running'").fetchone():
                 return {"ok": True, "ran": None, "why": "a task is running", "recovered": recovered}
             held = session_held()
@@ -549,7 +644,8 @@ def run_next(
             pick = None
             for r in conn.execute("SELECT * FROM tasks WHERE status = 'queued' ORDER BY id").fetchall():
                 row = dict(r)
-                why = ready(row, now(), is_trading_day, held, window, prereq_status(conn, row.get("after")))
+                after_status = prereq_status(conn, row.get("after"), row["id"])
+                why = ready(row, now(), is_trading_day, held, window, after_status)
                 if why is None:
                     pick = row
                     break
