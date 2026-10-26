@@ -86,6 +86,18 @@ def test_a_telemetry_write_never_raises(store, conn):
     assert list(conn.execute("SELECT * FROM t_marks")) == []
 
 
+def test_a_swallowed_telemetry_write_is_counted_and_logged_once(store, conn, caplog):
+    """The swallow stays, but a session that drops every mark can no longer do it silently."""
+    assert store.telemetry_failures() == {}
+    with caplog.at_level("WARNING", logger="cherrypick-ledgerstore"):
+        for _ in range(3):
+            store.record_mark(conn, position_id="p1", no_such_column=1)
+    assert store.telemetry_failures() == {"marks:OperationalError": 3}
+    assert len([r for r in caplog.records if "t_marks" in r.getMessage()]) == 1  # first of a kind only
+    store.record_mark(conn, position_id="p1", usable=1)  # a good write adds nothing
+    assert store.telemetry_failures() == {"marks:OperationalError": 3}
+
+
 def test_a_telemetry_write_still_works_when_it_is_valid(store, conn):
     store.record_mark(conn, position_id="p1", usable=1)
     assert len(list(conn.execute("SELECT * FROM t_marks"))) == 1

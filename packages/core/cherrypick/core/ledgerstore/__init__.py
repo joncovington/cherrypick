@@ -24,11 +24,14 @@ columns against the database file, and both halves of that comparison belong to 
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 
 from cherrypick.core.clock import now_iso
 
 __all__ = ["LedgerStore"]
+
+_log = logging.getLogger("cherrypick-ledgerstore")
 
 
 class LedgerStore:
@@ -38,6 +41,9 @@ class LedgerStore:
         self.prefix = prefix
         self._schema = schema
         self._added_columns = added_columns
+        # Telemetry writes that failed since this process started, by (table, error class). Read by
+        # `telemetry_failures`; the first of each kind is also logged.
+        self._telemetry_failed: dict[tuple[str, str], int] = {}
 
     def table(self, name: str) -> str:
         """`positions` -> `dc_positions`. Unprefixed names (measurement_breaks) pass through."""
@@ -127,6 +133,27 @@ class LedgerStore:
     # Telemetry may never cost a trade or a tick. A writer failing is reported by the caller's own
     # log line, never raised into the loop.
 
+    def _swallow(self, name: str, exc: Exception) -> None:
+        """Count a failed telemetry write and log the first of each (table, error) kind.
+
+        The write is still swallowed -- telemetry never costs a tick -- but a loop that drops every
+        mark for a session now says so once, and `telemetry_failures` reports the totals."""
+        key = (name, type(exc).__name__)
+        n = self._telemetry_failed.get(key, 0) + 1
+        self._telemetry_failed[key] = n
+        if n == 1:
+            _log.warning(
+                "telemetry write to %s%s failed (%s: %s); further failures are counted",
+                self.prefix,
+                name,
+                key[1],
+                exc,
+            )
+
+    def telemetry_failures(self) -> dict[str, int]:
+        """`{"<table>:<ErrorClass>": count}` of telemetry writes swallowed since this process started."""
+        return {f"{name}:{err}": n for (name, err), n in sorted(self._telemetry_failed.items())}
+
     def _insert(self, conn, table: str, fields: dict) -> None:
         cols = ", ".join(fields)
         marks = ", ".join("?" for _ in fields)
@@ -136,35 +163,35 @@ class LedgerStore:
     def record_mark(self, conn, **fields) -> None:
         try:
             self._insert(conn, self.table("marks"), fields)
-        except Exception:  # noqa: BLE001, S110 — see the section comment above
-            pass
+        except Exception as exc:  # noqa: BLE001
+            self._swallow("marks", exc)
 
     def record_management_event(self, conn, **fields) -> None:
         try:
             fields.setdefault("detail_json", None)
             self._insert(conn, self.table("management_events"), fields)
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception as exc:  # noqa: BLE001
+            self._swallow("management_events", exc)
 
     def record_entry_attempt(self, conn, **fields) -> None:
         try:
             fields.setdefault("ts", self.now())
             self._insert(conn, self.table("entry_attempts"), fields)
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception as exc:  # noqa: BLE001
+            self._swallow("entry_attempts", exc)
 
     def record_snapshot(self, conn, **fields) -> None:
         try:
             fields.setdefault("ts", self.now())
             self._insert(conn, self.table("snapshots"), fields)
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception as exc:  # noqa: BLE001
+            self._swallow("snapshots", exc)
 
     def record_iteration(self, conn, **fields) -> None:
         try:
             self._insert(conn, self.table("loop_iterations"), fields)
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception as exc:  # noqa: BLE001
+            self._swallow("loop_iterations", exc)
 
     def record_decision(self, conn, *, trade_date, arm, symbol, mode, reason, accepted, detail=None) -> None:
         """Collapsing journal write: a run of identical (date, arm, symbol, mode, reason) rows
@@ -189,8 +216,8 @@ class LedgerStore:
                     (trade_date, arm, symbol, mode, reason, int(bool(accepted)), ts, ts, detail),
                 )
             conn.commit()
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception as exc:  # noqa: BLE001
+            self._swallow("decisions", exc)
 
     def record_measurement_break(
         self, conn, *, break_date, key, old_value=None, new_value=None, note=None
