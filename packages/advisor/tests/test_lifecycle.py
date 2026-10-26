@@ -615,7 +615,9 @@ def test_an_experiment_that_never_advances_is_concluded_as_stalled(home, conn):
     assert queued["status"] == "queued"
     length = store.experiment(conn, active["experiment_id"])["expires_after_sessions"]
     long_ago = clock.previous_sessions(SESSION, 2 * length + 2)[0]
-    store.update_experiment(conn, active["experiment_id"], created_session=long_ago)
+    store.update_experiment(
+        conn, active["experiment_id"], created_session=long_ago, activated_session=long_ago
+    )
 
     concluded = experiments.expire_due(conn, SESSION)
     assert [c["experiment_id"] for c in concluded] == [active["experiment_id"]]
@@ -870,12 +872,21 @@ def test_a_named_experiments_verdict_reads_its_own_book(home, conn):
     )
 
 
-def _pause(home):
+def _pause(home, value=True, **extra):
     fakes.write_suite_config(
         home,
-        {"enabled": True, "paused": True, "modules": {"meic": {"enabled": True}, "flies": {"enabled": False},
-                                                      "earnings": {"enabled": False}}},
+        {"enabled": True, "paused": value, **extra,
+         "modules": {"meic": {"enabled": True}, "flies": {"enabled": False}, "earnings": {"enabled": False}}},
     )  # fmt: skip
+
+
+def _unpause(home, **extra):
+    _pause(home, False, **extra)
+
+
+def _created_detail(conn, experiment_id):
+    created = [e for e in store.events(conn, experiment_id) if e["event"] == "created"][0]
+    return json.loads(created["detail_json"])
 
 
 def test_paused_holds_new_experiments_queued_and_keeps_the_active_one_running(home, conn):
@@ -890,3 +901,228 @@ def test_paused_holds_new_experiments_queued_and_keeps_the_active_one_running(ho
     assert store.experiment(conn, running)["status"] == "active"
     enact.run(conn, SESSION)  # the active one is still issued; the held one still waits
     assert store.experiment(conn, held["experiment_id"])["status"] == "queued"
+
+
+# ------------------------------------------------------------- 2026-10-25: the pause's follow-ups
+
+
+def test_an_experiment_the_pause_queued_says_so(home, conn):
+    _pause(home)
+    held = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.88})
+    assert held["status"] == "queued" and held["reason"] == "paused"
+    assert _created_detail(conn, held["experiment_id"])["queued_because"] == "paused"
+    assert store.experiment(conn, held["experiment_id"])["held_because"] == "paused"
+
+
+def test_lifting_the_pause_activates_nothing_the_pause_queued(home, conn):
+    """Unpausing used to wait for a kill or an expiry and then, with no cap, start the whole backlog
+    at once. Now an experiment the pause queued waits for an operator, whatever ends or runs."""
+    running = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}
+    )["experiment_id"]
+    _pause(home)
+    held = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.88})
+    _unpause(home)
+
+    enact.run(conn, SESSION)  # the regular deep run
+    assert store.experiment(conn, held["experiment_id"])["status"] == "queued"
+    experiments.kill(conn, running, session=SESSION)  # and a slot freeing
+    assert store.experiment(conn, held["experiment_id"])["status"] == "queued"
+
+
+def test_an_operator_activates_a_held_experiment_and_tomorrows_artifact_carries_it(home, conn, capsys):
+    from cherrypick.advisor.__main__ import main
+
+    _pause(home)
+    held = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.88})[
+        "experiment_id"
+    ]
+    _unpause(home)
+
+    out = experiments.activate(conn, held, session=SESSION)
+
+    assert out["ok"] and out["status"] == "active" and out["activated"] == [held]
+    row = store.experiment(conn, held)
+    assert row["activated_session"] == SESSION and row["held_because"] is None
+    assert "released" in [e["event"] for e in store.events(conn, held)]
+    assert held in _stamped_experiment(home, "meic", FRIDAY)
+    # The CLI verb reaches the same path; a second activation is refused, it is no longer queued.
+    assert main(["activate", held]) == 1
+    assert "not queued" in json.loads(capsys.readouterr().out)["reason"]
+
+
+@pytest.mark.parametrize("value", [True, "yes"])
+def test_activation_is_refused_while_the_advisor_is_still_paused(home, conn, value):
+    _pause(home, value)
+    held = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.88})[
+        "experiment_id"
+    ]
+    out = experiments.activate(conn, held, session=SESSION)
+    assert out["ok"] is False and out["reason"].startswith("advisor_paused")
+    assert store.experiment(conn, held)["status"] == "queued"
+
+
+def test_a_released_experiment_over_the_cap_waits_its_turn(home, conn):
+    _cap(home, 1)
+    first = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})[
+        "experiment_id"
+    ]
+    _pause(home, max_experiments_per_module=1)
+    held = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.88})[
+        "experiment_id"
+    ]
+    _cap(home, 1)
+
+    out = experiments.activate(conn, held, session=SESSION)
+    assert out["status"] == "queued" and out["reason"] == "queued behind the per-module cap"
+    assert store.experiment(conn, held)["held_because"] is None
+    experiments.kill(conn, first, session=SESSION)
+    assert store.experiment(conn, held)["status"] == "active"
+
+
+def test_a_raised_cap_fills_at_the_regular_deep_run(home, conn):
+    """The queue used to move only when an experiment was killed or expired."""
+    _cap(home, 1)
+    experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})
+    waiting = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.88}
+    )["experiment_id"]
+    assert store.experiment(conn, waiting)["status"] == "queued"
+    _cap(home, 2)
+
+    assert experiments.expire_due(conn, SESSION) == []  # nothing ended
+    assert store.experiment(conn, waiting)["status"] == "active"
+    assert store.experiment(conn, waiting)["activated_session"] == SESSION
+
+
+def test_the_stall_clock_counts_from_activation_not_creation(home, conn):
+    """An experiment that waited out a long pause in the queue was concluded `stalled` at its first
+    deep run after activation, having run nothing, because the clock started at creation."""
+    _pause(home)
+    held = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.88})[
+        "experiment_id"
+    ]
+    length = store.experiment(conn, held)["expires_after_sessions"]
+    long_ago = clock.previous_sessions(SESSION, 2 * length + 2)[0]
+    store.update_experiment(conn, held, created_session=long_ago)  # the pause lasted that long
+    _unpause(home)
+    experiments.activate(conn, held, session=SESSION)
+
+    assert experiments.expire_due(conn, SESSION) == []
+    assert store.experiment(conn, held)["status"] == "active"
+
+
+def test_a_row_activated_before_the_column_existed_keeps_its_old_stall_clock(home, conn):
+    """Nothing already running changes: no `activated_session`, the clock is `created_session`."""
+    eid = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})[
+        "experiment_id"
+    ]
+    length = store.experiment(conn, eid)["expires_after_sessions"]
+    long_ago = clock.previous_sessions(SESSION, 2 * length + 2)[0]
+    store.update_experiment(conn, eid, created_session=long_ago, activated_session=None)
+
+    concluded = experiments.expire_due(conn, SESSION)
+    assert [c["experiment_id"] for c in concluded] == [eid] and concluded[0]["stalled"] is True
+
+
+def _tune(experiment_id, params):
+    return {
+        "kind": "tune",
+        "experiment_id": experiment_id,
+        "params": params,
+        "rationale": "tighter",
+        "raw": {"kind": "tune"},
+    }
+
+
+@pytest.mark.parametrize("value", [True, "yes"])
+def test_the_model_cannot_tune_a_running_experiment_while_paused(home, conn, value):
+    eid = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})[
+        "experiment_id"
+    ]
+    _pause(home, value)
+
+    out = experiments.admit_reply(
+        conn, session=SESSION, slot="deep", reply=_reply(_tune(eid, {"stop_trigger_ratio": 0.92}))
+    )
+
+    assert out["admitted"] == []
+    assert out["rejected"][0]["reason"].startswith("advisor_paused")
+    assert json.loads(store.experiment(conn, eid)["params_json"]) == {"stop_trigger_ratio": 0.9}
+    assert "tuned" not in [e["event"] for e in store.events(conn, eid)]
+
+
+@pytest.mark.parametrize("value", [True, "yes"])
+def test_a_model_kill_is_recorded_not_actioned_while_paused(home, conn, value):
+    eid = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})[
+        "experiment_id"
+    ]
+    _pause(home, value)
+
+    out = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(_verdict(eid, "kill")))
+
+    admitted = out["admitted"][0]
+    assert admitted["actioned"] is False and admitted["reason"] == "paused"
+    assert store.experiment(conn, eid)["status"] == "active"
+    assert json.loads(store.experiment(conn, eid)["verdict_json"])["recommendation"]["value"] == "kill"
+    verdict = [e for e in store.events(conn, eid) if e["event"] == "verdict"][-1]
+    assert json.loads(verdict["detail_json"])["not_actioned_because"] == "paused"
+
+
+def test_a_human_kill_still_stops_an_experiment_while_paused(home, conn, capsys):
+    from cherrypick.advisor.__main__ import main
+
+    eid = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})[
+        "experiment_id"
+    ]
+    _pause(home)
+    assert main(["kill", eid]) == 0
+    capsys.readouterr()
+    assert store.experiment(conn, eid)["status"] == "killed"
+
+
+def test_a_held_experiment_is_dropped_with_kill(home, conn):
+    _pause(home)
+    held = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.88})[
+        "experiment_id"
+    ]
+    assert experiments.kill(conn, held, session=SESSION)["status"] == "killed"
+    assert store.experiment(conn, held)["status"] == "killed"
+
+
+def test_the_migration_holds_what_the_pause_queued_before_the_column_existed(home, conn):
+    """Exact by the journal: before the pause, a queued experiment's `created` row named the cap.
+    Run only when the column is added, so a later release is never undone."""
+    cap_queued = "exp-legacy-cap"
+    pause_queued = "exp-legacy-pause"
+    for eid, because in ((cap_queued, "1 active experiment(s) already"), (pause_queued, None)):
+        store.insert_experiment(
+            conn,
+            {
+                "id": eid,
+                "module": "meic",
+                "base_profile": "control",
+                "params_json": "{}",
+                "status": "queued",
+                "created_session": SESSION,
+                "expires_after_sessions": 15,
+            },
+        )
+        store.journal(
+            conn, eid, "created", session=SESSION, detail={"status": "queued", "queued_because": because}
+        )
+    conn.execute("ALTER TABLE experiments DROP COLUMN held_because")
+    conn.commit()
+
+    reopened = store.connect()
+    try:
+        assert store.experiment(reopened, pause_queued)["held_because"] == "paused"
+        assert store.experiment(reopened, cap_queued)["held_because"] is None
+        store.update_experiment(reopened, pause_queued, held_because=None)  # an operator released it
+    finally:
+        reopened.close()
+    again = store.connect()
+    try:
+        assert store.experiment(again, pause_queued)["held_because"] is None
+    finally:
+        again.close()

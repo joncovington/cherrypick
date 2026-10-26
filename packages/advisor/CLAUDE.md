@@ -42,7 +42,18 @@ The advisor reads live facts (context a competent observer would want) but canno
 **Paused (2026-10-25).** `advisor.paused` admits new experiments `queued` and activates nothing new,
 while active ones run to their end. It stays on until the redesign in
 [docs/advisor-redesign-plan.md](../../docs/advisor-redesign-plan.md) lands: qualification on net, not
-win rate; an MDE at admission; the hypothesis register in the prompt; and multiplicity.
+win rate; an MDE at admission; the hypothesis register in the prompt; and multiplicity. Any truthy
+value counts as paused, a malformed one included. While paused:
+
+- **The model cannot change or end a running experiment.** A `tune` is rejected `advisor_paused`; a
+  model `kill` verdict is recorded and not actioned (journaled `not_actioned_because: paused`), as with
+  `kill_on_verdict` off. A human `kill` (CLI or console) still stops one.
+- **An experiment admitted while paused is held** (`held_because = 'paused'`; the `created` journal
+  row and the admission say `queued_because`/`reason` `paused`). **Lifting the pause activates none of
+  them.** Each waits for an operator: `activate <id>` releases it into the ordinary queue (refused while
+  still paused; the cap and FIFO apply, and it re-issues tomorrow's artifact as a kill does), and
+  `kill <id>` drops it. Rows the pause queued before the column existed were held by the migration,
+  read from their `created` journal row.
 
 **Paper arms are the real test.** A proposal's test is a next-session paper arm beside its control,
 scored through `cherrypick.core.profiles.group_by_tag` and `qualify_readings`. Default length is
@@ -72,7 +83,8 @@ raising.
 active experiment, each validated on its own, each naming its own book via the row's `tag` (fixed at
 admission, unique per module, `-2` suffixed on a duplicate name; a nameless experiment keeps the
 legacy `advised:<base>`). `max_experiments_per_module` is **null = unlimited**; set a number to cap,
-and over-cap specs are admitted `queued` and activate FIFO. The `enactment` table is keyed
+and over-cap specs are admitted `queued` and activate FIFO — on a kill, and at every deep run, so a
+raised cap fills that evening (before 2026-10-25, only when an experiment ended). The `enactment` table is keyed
 `(session, module, experiment_id)`, `''` for a module-session with no artifact. Before 2026-09-17 the
 cap was one per module by construction; the retag moved historical rows onto their experiment's tag.
 
@@ -90,7 +102,9 @@ plan their advised twin from the base book its tag names.
 
 **Calendar exit.** An active experiment concludes as `stalled` after twice its length in calendar
 sessions (verdict computed, `underpowered` on its face), and the queued one activates — otherwise a
-module that stopped recording decisions holds its slot forever.
+module that stopped recording decisions holds its slot forever. The clock starts at
+`activated_session` (2026-10-25), so time spent queued is not counted; a row activated before that
+column existed has none and keeps counting from `created_session`.
 
 ## A session counts when a loop applied it
 
@@ -163,7 +177,7 @@ arms, and matched it row for row). The pack carries these fields from the 2026-1
 boundary.
 
 **A `kill` recommendation is actioned; `keep` and `promote` are recorded** (`advisor.kill_on_verdict`,
-on by default; off restores record-only). Admitting a kill takes the same path as a human `kill`:
+on by default; off restores record-only; never actioned while paused, above). Admitting a kill takes the same path as a human `kill`:
 status `killed`, verdict stored with the model's block, the queue moves up, and the next session's
 artifact is **re-issued on the spot** for the successor — or **retracted** when nothing succeeds, so
 the loop runs baseline. Retraction touches only an artifact stamped with this advisor's tag. A CLI or
@@ -280,6 +294,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.advisor verdicts [--session D]` | Compute deterministic verdicts for expiring experiments. |
 | `python -m cherrypick.advisor status [--session D]` | Checkpoints, experiments, apply status per module. |
 | `python -m cherrypick.advisor kill <experiment_id>` | Stop an experiment now. Journaled; a queued experiment activates and the next artifact is re-issued for it (retracted when nothing is queued). A model `kill` verdict runs this same path. |
+| `python -m cherrypick.advisor activate <experiment_id>` | Release a queued experiment the pause held into the ordinary queue; it activates now if the cap allows, else FIFO. Refused while `advisor.paused` is on. The only way a held experiment runs. |
 | `python -m cherrypick.advisor dismiss <proposal_id>` | Mark a proposal dismissed. Fed back to the model so it stops re-proposing it. |
 | `python -m cherrypick.advisor backtest-requests [--status queued\|done\|refused]` | The admitted `backtest_spec` replies (queued by default), which packages/backtest's `run-advised` reads. |
 | `python -m cherrypick.advisor backtest-result --id ID --status done\|refused [--run-id R] --result-file PATH` | Record a spec's design-window result; written by `run-advised`, never by hand. |

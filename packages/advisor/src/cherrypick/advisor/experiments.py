@@ -42,6 +42,14 @@ STATUS_ACTIVE = "active"
 STATUS_EXPIRED = "expired"
 STATUS_KILLED = "killed"
 
+#: `held_because` for an experiment the pause queued: it waits for `activate <id>`, not the FIFO.
+HELD_PAUSED = "paused"
+
+
+def _paused(resolved: dict[str, Any]) -> bool:
+    """`advisor.paused`, failing safe: any truthy value counts, a malformed one included."""
+    return bool(resolved.get("paused"))
+
 
 def check_params(
     module: str,
@@ -149,8 +157,16 @@ def admit_spec(
 
     cap = _cap(resolved)
     over_cap = _over_cap(conn, module, cap)
-    # Paused: held in the queue for review, never activated (`activate_queued` waits too).
-    status = STATUS_QUEUED if over_cap or resolved.get("paused") else STATUS_ACTIVE
+    # Paused: held in the queue for review. Lifting the pause does not activate it: it waits for an
+    # operator's `activate <id>` (or `kill <id>`), so a backlog never starts at once (2026-10-25).
+    paused = _paused(resolved)
+    status = STATUS_QUEUED if over_cap or paused else STATUS_ACTIVE
+    if paused:
+        queued_because = HELD_PAUSED
+    elif over_cap:
+        queued_because = f"{cap} active experiment(s) already"
+    else:
+        queued_because = None
     length = _settings.clamp_sessions(sessions, resolved)
 
     # Re-admitting the same reply (a `--force` re-run, or the CLI reached twice for one slot) must
@@ -191,6 +207,8 @@ def admit_spec(
             "bounds_snapshot_json": json.dumps(checked["posture"]["bounds"]),
             "status": status,
             "created_session": session,
+            "activated_session": session if status == STATUS_ACTIVE else None,
+            "held_because": HELD_PAUSED if paused else None,
             "expires_after_sessions": length,
             "origin_proposal_id": proposal_id,
         },
@@ -205,19 +223,25 @@ def admit_spec(
             "sessions": length,
             "status": status,
             "tag": tag,
-            "queued_because": f"{cap} active experiment(s) already" if over_cap else None,
+            "queued_because": queued_because,
         },
     )
     if status == STATUS_ACTIVE:
         _store.journal(conn, experiment_id, "activated", session=session)
 
+    if paused:
+        reason = HELD_PAUSED
+    elif over_cap:
+        reason = "queued behind the per-module cap"
+    else:
+        reason = None
     return {
         "ok": True,
         "experiment_id": experiment_id,
         "tag": tag,
         "status": status,
         "sessions": length,
-        "reason": None if not over_cap else "queued behind the per-module cap",
+        "reason": reason,
     }
 
 
@@ -229,16 +253,25 @@ def tune(
     params: dict[str, Any],
     rationale: str = "",
     rationales: dict | None = None,
+    cfg: dict | None = None,
 ) -> dict[str, Any]:
     """Adjust an experiment the advisor owns. Anything else is refused.
 
     The advisor may only ever tune its OWN experiments — never a control arm, never a
     human-configured profile. That is structural (the only thing it can emit is an `advised:*`
     overlay) and it is checked here so the refusal is legible rather than merely impossible.
+
+    **Refused while paused (2026-10-25).** The pause lets running experiments finish as admitted;
+    a tune would change what one measures mid-sample.
     """
     experiment = _store.experiment(conn, experiment_id)
     if experiment is None or experiment["status"] != STATUS_ACTIVE:
         return {"ok": False, "reason": f"not_an_advisor_experiment: {experiment_id!r}"}
+    if _paused(_settings.load(cfg)):
+        return {
+            "ok": False,
+            "reason": "advisor_paused: a running experiment is not tuned while advisor.paused is on",
+        }
 
     module = experiment["module"]
     merged = {**json.loads(experiment["params_json"] or "{}"), **params}
@@ -286,16 +319,22 @@ def record_verdict_recommendation(
     each kill nightly and finally flagged it critical. The numbers under the kill are still computed
     here, never by the model; what changed is that its reading of them stops the experiment tonight
     and lets the queue move up, the same path a human `kill` takes.
+
+    **Not while paused (2026-10-25).** The pause lets running experiments finish, so a model kill
+    is recorded and not actioned, as with `kill_on_verdict` off. A human `kill` still stops one.
     """
     experiment = _store.experiment(conn, experiment_id)
     if experiment is None:
         return {"ok": False, "reason": f"not_an_advisor_experiment: {experiment_id!r}"}
 
-    if (
+    resolved = _settings.load(cfg)
+    actionable = (
         recommendation == "kill"
         and experiment["status"] == STATUS_ACTIVE
-        and bool(_settings.load(cfg).get("kill_on_verdict"))
-    ):
+        and bool(resolved.get("kill_on_verdict"))
+    )
+    held_by_pause = actionable and _paused(resolved)
+    if actionable and not held_by_pause:
         _store.journal(
             conn,
             experiment_id,
@@ -338,14 +377,14 @@ def record_verdict_recommendation(
         "session": session,
     }
     _store.update_experiment(conn, experiment_id, verdict_json=json.dumps(body))
-    _store.journal(
-        conn,
-        experiment_id,
-        "verdict",
-        session=session,
-        detail={"recommendation": recommendation, "rationale": rationale},
-    )
-    return {"ok": True, "experiment_id": experiment_id, "recommendation": recommendation}
+    detail: dict[str, Any] = {"recommendation": recommendation, "rationale": rationale}
+    if held_by_pause:
+        detail.update(actioned=False, not_actioned_because=HELD_PAUSED)
+    _store.journal(conn, experiment_id, "verdict", session=session, detail=detail)
+    out: dict[str, Any] = {"ok": True, "experiment_id": experiment_id, "recommendation": recommendation}
+    if held_by_pause:
+        out.update(actioned=False, reason=HELD_PAUSED)
+    return out
 
 
 def verdict_for(experiment: dict, *, rule: dict | None = None, cfg: dict | None = None) -> dict:
@@ -409,7 +448,7 @@ def kill(
     # still-active experiment carrying a kill verdict that `expire_due` would later overwrite.
     _store.update_experiment(conn, experiment_id, status=STATUS_KILLED, verdict_json=json.dumps(body))
     _store.journal(conn, experiment_id, "killed", session=session, detail={"reason": reason})
-    promoted = activate_queued(conn, experiment["module"], session=session)
+    promoted = activate_queued(conn, experiment["module"], session=session, cfg=cfg)
 
     # Local import: enact imports this module. The artifact step is enact's, and it stays there.
     from cherrypick.advisor import enact as _enact
@@ -433,19 +472,73 @@ def dismiss(conn, proposal_id: int) -> dict[str, Any]:
 
 def activate_queued(conn, module: str, *, session: str | None = None, cfg: dict | None = None) -> list[str]:
     """Fill free slots from the queue, oldest first. Returns the ids that became active. With no
-    cap (the default) everything queued activates -- a queue only forms under a configured cap."""
+    cap (the default) everything queued activates -- a queue only forms under a configured cap.
+
+    An experiment the pause queued (`held_because`) is skipped: lifting the pause activates none
+    of them, and each waits for an operator's `activate`. Runs on a kill, and at every deep run
+    (`expire_due`), so a raised cap fills without waiting for an experiment to end."""
     resolved = _settings.load(cfg)
-    if resolved.get("paused"):
+    if _paused(resolved):
         return []
     cap = _cap(resolved)
+    session = session or _clock.session_today()
     activated: list[str] = []
     for candidate in _store.experiments(conn, module=module, status=STATUS_QUEUED):
+        if candidate.get("held_because"):
+            continue
         if _over_cap(conn, module, cap):
             break
-        _store.update_experiment(conn, candidate["id"], status=STATUS_ACTIVE)
+        _store.update_experiment(conn, candidate["id"], status=STATUS_ACTIVE, activated_session=session)
         _store.journal(conn, candidate["id"], "activated", session=session, detail={"reason": "slot freed"})
         activated.append(candidate["id"])
     return activated
+
+
+def activate(
+    conn, experiment_id: str, *, session: str | None = None, cfg: dict | None = None
+) -> dict[str, Any]:
+    """An operator releases a queued experiment the pause held (2026-10-25).
+
+    Refused while the advisor is still paused. The release clears the hold, then the experiment
+    takes the ordinary path, `activate_queued`, so the module's cap and the FIFO still apply: over
+    the cap it stays queued, as any capped experiment does, and activates when a slot frees. On
+    activation the next session's artifact is re-issued, as a kill re-issues, so a release after
+    the 17:00 pass is not a session late. To drop a held experiment instead, `kill` it.
+    """
+    experiment = _store.experiment(conn, experiment_id)
+    if experiment is None:
+        return {"ok": False, "reason": f"no such experiment {experiment_id!r}"}
+    if experiment["status"] != STATUS_QUEUED:
+        return {"ok": False, "reason": f"not queued: {experiment_id!r} is {experiment['status']}"}
+    if _paused(_settings.load(cfg)):
+        return {"ok": False, "reason": "advisor_paused: lift advisor.paused before activating"}
+
+    session = session or _clock.session_today()
+    if experiment.get("held_because"):
+        _store.update_experiment(conn, experiment_id, held_because=None)
+        _store.journal(
+            conn,
+            experiment_id,
+            "released",
+            session=session,
+            detail={"held_because": experiment["held_because"], "by": "operator"},
+        )
+    promoted = activate_queued(conn, experiment["module"], session=session, cfg=cfg)
+    status = _store.experiment(conn, experiment_id)["status"]
+
+    reissued = None
+    if promoted:
+        from cherrypick.advisor import enact as _enact  # local: enact imports this module
+
+        reissued = _enact.reissue(conn, experiment["module"], session, cfg=cfg)
+    return {
+        "ok": True,
+        "experiment_id": experiment_id,
+        "status": status,
+        "activated": promoted,
+        "reissued": reissued,
+        "reason": None if status == STATUS_ACTIVE else "queued behind the per-module cap",
+    }
 
 
 def expire_due(
@@ -472,8 +565,11 @@ def expire_due(
         # forever and every queued experiment behind it queued forever -- the cap is one. After
         # twice its length in calendar sessions an experiment that has not run its course is
         # concluded as stalled: verdict computed like any other, `underpowered` on its face, and
-        # the queue moves up.
-        elapsed = _clock.sessions_between(experiment["created_session"], session, cap=2 * length + 1)
+        # the queue moves up. Counted from ACTIVATION (2026-10-25): from creation, an experiment
+        # that waited out a long pause in the queue was concluded at its first deep run, having run
+        # nothing. A row activated before `activated_session` existed keeps counting from creation.
+        started = experiment.get("activated_session") or experiment["created_session"]
+        elapsed = _clock.sessions_between(started, session, cap=2 * length + 1)
         stalled = not ran_its_course and elapsed > 2 * length
         if not ran_its_course and not stalled:
             continue
@@ -501,7 +597,11 @@ def expire_due(
                 "stalled": stalled,
             }
         )
-        activate_queued(conn, experiment["module"], session=session)
+    # The queue moves up at every deep run, not only when something concluded: a cap raised (or a
+    # pause lifted) fills free slots tonight. Held experiments still wait for an operator, and a
+    # paused advisor activates nothing (both inside `activate_queued`).
+    for module in sorted({e["module"] for e in _store.experiments(conn, status=STATUS_QUEUED)}):
+        activate_queued(conn, module, session=session, cfg=cfg)
     return concluded
 
 
@@ -615,6 +715,7 @@ def _apply(
             params=proposal["params"],
             rationale=proposal.get("rationale", ""),
             rationales=proposal.get("rationales"),
+            cfg=cfg,
         )
 
     if kind == "verdict":

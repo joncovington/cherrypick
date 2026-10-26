@@ -161,7 +161,37 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # unique per module. Stored rather than derived on every read because the ledgers, the
     # verdicts and the console all key on it, and a name edit must never silently re-key history.
     ("experiments", "tag", "ALTER TABLE experiments ADD COLUMN tag TEXT"),
+    # 2026-10-25: the session an experiment became ACTIVE. The calendar (stall) exit counts from it,
+    # so an experiment that waited out a pause in the queue is not concluded with nothing run. A row
+    # activated before this column existed reads NULL and keeps counting from `created_session`.
+    ("experiments", "activated_session", "ALTER TABLE experiments ADD COLUMN activated_session TEXT"),
+    # 2026-10-25: why a QUEUED experiment waits for an operator rather than the FIFO. Only
+    # 'paused' today: one queued while the advisor was paused activates by `activate <id>` alone,
+    # never because the pause was lifted. NULL is an ordinary queue place (the per-module cap).
+    ("experiments", "held_because", "ALTER TABLE experiments ADD COLUMN held_because TEXT"),
 )
+
+
+def _hold_paused_queue(conn: sqlite3.Connection) -> int:
+    """Hold every queued experiment the pause queued before `held_because` existed. Run once, in the
+    step that adds the column, so an operator's later release is never undone.
+
+    Exact by the journal: until the pause, a queued experiment was queued by the cap alone, and its
+    `created` row says so (`queued_because` is the cap text). A queued row whose `created` detail
+    carries no reason was queued by the pause."""
+    held = 0
+    for r in conn.execute("SELECT id FROM experiments WHERE status = 'queued'").fetchall():
+        created = conn.execute(
+            "SELECT detail_json FROM experiment_events WHERE experiment_id = ? AND event = 'created'"
+            " ORDER BY id LIMIT 1",
+            (r["id"],),
+        ).fetchone()
+        detail = read_json_text(created["detail_json"], {}) if created else {}
+        if not (detail or {}).get("queued_because"):
+            conn.execute("UPDATE experiments SET held_because = 'paused' WHERE id = ?", (r["id"],))
+            held += 1
+    conn.commit()
+    return held
 
 
 def _migrate_enactment(conn: sqlite3.Connection) -> None:
@@ -288,7 +318,9 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     checkpoint writes."""
     conn = _db.connect(path or _paths.db_path(), pragmas=("journal_mode=WAL", "foreign_keys=ON"))
     conn.executescript(_SCHEMA)
-    _db.apply_additive_migrations(conn, _MIGRATIONS)
+    added = _db.apply_additive_migrations(conn, _MIGRATIONS)
+    if "experiments.held_because" in added:
+        _hold_paused_queue(conn)
     _migrate_enactment(conn)
     backfill_tags(conn)
     conn.execute(
@@ -472,14 +504,16 @@ def next_experiment_id(conn: sqlite3.Connection, session: str, module: str) -> s
 def insert_experiment(conn: sqlite3.Connection, record: dict[str, Any]) -> str:
     conn.execute(
         "INSERT INTO experiments (id, module, base_profile, name, tag, hypothesis, success_metric,"
-        " params_json, bounds_snapshot_json, status, created_session, expires_after_sessions,"
-        " sessions_run, origin_proposal_id, verdict_json, created_at, updated_at)"
+        " params_json, bounds_snapshot_json, status, created_session, activated_session, held_because,"
+        " expires_after_sessions, sessions_run, origin_proposal_id, verdict_json, created_at, updated_at)"
         " VALUES (:id,:module,:base_profile,:name,:tag,:hypothesis,:success_metric,:params_json,"
-        " :bounds_snapshot_json,:status,:created_session,:expires_after_sessions,:sessions_run,"
-        " :origin_proposal_id,:verdict_json,:created_at,:updated_at)",
+        " :bounds_snapshot_json,:status,:created_session,:activated_session,:held_because,"
+        " :expires_after_sessions,:sessions_run,:origin_proposal_id,:verdict_json,:created_at,:updated_at)",
         {
             "verdict_json": None,
             "tag": None,
+            "activated_session": None,
+            "held_because": None,
             "sessions_run": 0,
             "name": None,
             "hypothesis": None,

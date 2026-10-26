@@ -10,7 +10,10 @@ process has four gaps. The user's decision (2026-10-25): **pause, then redesign 
 
 - **Paused** (`advisor.paused: true`): new experiments are admitted `queued` and nothing new
   activates; the active ones are re-issued and scored to their end, so no running sample is cut
-  short. Proposals made while paused wait in the queue for review.
+  short. Proposals made while paused wait in the queue for review, held: lifting the pause activates
+  none of them, and each runs only by an operator's `activate <id>` (or is dropped by `kill <id>`).
+  While paused the model cannot tune a running experiment or action a kill verdict; a human kill
+  still works. The stall clock counts from activation, so time spent queued is not counted.
 - **Length:** `advisor.experiment_sessions` was 10 in the deployed config, under the 14-session
   qualification floor, so every experiment admitted at the default was `underpowered` by
   construction. Set to 15, the package's documented default.

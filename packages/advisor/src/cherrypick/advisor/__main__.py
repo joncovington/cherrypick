@@ -10,6 +10,7 @@
     python -m cherrypick.advisor propose --module M --name N --param KEY=VALUE [--param ...]
                                          --hypothesis TEXT --success-metric TEXT [--sessions N]
     python -m cherrypick.advisor kill <experiment_id>
+    python -m cherrypick.advisor activate <experiment_id>
     python -m cherrypick.advisor dismiss <proposal_id>
 
 Every verb prints one JSON object on stdout and nothing else: the callers are
@@ -267,6 +268,14 @@ def cmd_kill(args) -> dict[str, Any]:
         conn.close()
 
 
+def cmd_activate(args) -> dict[str, Any]:
+    conn = _store.connect()
+    try:
+        return _experiments.activate(conn, args.experiment_id, session=_clock.session_today())
+    finally:
+        conn.close()
+
+
 def cmd_dismiss(args) -> dict[str, Any]:
     conn = _store.connect()
     try:
@@ -322,6 +331,8 @@ def cmd_status(args) -> dict[str, Any]:
             "params": json.loads(e["params_json"]),
             "sessions_run": e["sessions_run"],
             "expires_after_sessions": e["expires_after_sessions"],
+            "activated_session": e.get("activated_session"),
+            "held_because": e.get("held_because"),
         }
 
     return {
@@ -407,6 +418,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="journaled with the kill — a retired stream keeps its written verdict",
     )
     p_kill.set_defaults(func=cmd_kill)
+
+    p_activate = sub.add_parser(
+        "activate", help="release a queued experiment the pause held (refused while still paused)"
+    )
+    p_activate.add_argument("experiment_id")
+    p_activate.set_defaults(func=cmd_activate)
 
     p_dismiss = sub.add_parser("dismiss", help="mark a proposal dismissed by the user")
     p_dismiss.add_argument("proposal_id")
