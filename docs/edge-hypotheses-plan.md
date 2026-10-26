@@ -1090,11 +1090,16 @@ look has touched. The user approved the test on 2026-10-25. Declared here before
     - **and** its own mean net as a share of max loss is positive. This is stricter than item 17,
       where a positive dollar mean could hide a negative mean per unit of risk.
     - Fewer than 100 scored trades is no verdict. There is no Holm: it is one declared test.
-- **Minimum detectable effect (B12):** computed from item 17's spread for this cell, clustered by
-  expiry, and recorded in the local result beside it. With about 15 clusters and a liquid-only
-  sample, it is well above the effect item 17 measured. So this test passes only an edge much
-  stronger than item 17's. A fail rules out an edge that large, and says nothing about one of item
-  17's size. The low power is the accepted price of testing the trade as it would be placed.
+- **Minimum detectable effect (B12):** computed from item 18's own scored liquid trades, clustered
+  by expiry, and recorded in the local result beside the verdict. (Amended 2026-10-25, before the
+  run: item 17's result kept no per-trade rows, so its spread could not be rebuilt; the user accepted
+  the change. Descriptive only.) With about 15 clusters and a liquid-only sample, it is expected to
+  sit well above the effect item 17 measured. So this test passes only an edge much stronger than
+  item 17's. A fail rules out an edge that large, and says nothing about one of item 17's size. The
+  low power is the accepted price of testing the trade as it would be placed.
+- **Account for B13's size line:** the live account's net liquidation value, chosen by the user
+  before the run and passed at run time (`--account`, in the local queue row), so the account's
+  size stays out of this repo.
 - **Structure, unchanged from item 17:**
   - setup `reversion` long → put spread;
   - the latest standard monthly 30-45 days after entry;
