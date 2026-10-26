@@ -436,7 +436,7 @@
       "id": 18,
       "study": "item18",
       "title": "Mean-reversion put spreads, tested once on the holdout",
-      "status": "declared",
+      "status": "no_verdict",
       "legacy": false,
       "setup": "reversion",
       "side": "bullish",
