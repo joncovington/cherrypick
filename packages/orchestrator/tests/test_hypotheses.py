@@ -53,7 +53,7 @@ def test_similar_lists_only_rejected_matches_on_stated_tags():
     assert [r["study"] for r in hits] == ["item6"]
     assert hy.similar(reg, {}) == []
     # A declared (not rejected) look-alike is not listed.
-    assert hy.similar(reg, {"setup": "setup-side-width"}) == []
+    assert hy.similar(reg, {"setup": "reversion"}) == []  # item 18, declared
 
 
 def test_rule_changes_are_due_a_reread_after_100_trades():

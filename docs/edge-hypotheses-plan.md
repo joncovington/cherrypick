@@ -1038,6 +1038,107 @@ does. Declared here before any of it is run.*
     first. At item 14's pace (about 3 a second with 3 workers) that is 7-9 hours.
   - 50 trades are short of five baselines (thin years).
 
+### 18. Mean-reversion put spreads, tested once on the holdout
+
+*Source: item 17's one run (2026-10-25). It ran on licensed vendor history, so, as for items 4, 8, 9,
+10 and 12, only the verdict is recorded here; every figure is in the local result
+(`~/.cherrypick/data/backtest/results/research/item17/study.json`). Item 17 found no pass. One cell
+came closest: mean-reversion put spreads, short nearest 0.20 delta, long 0.75 of the expected move
+beyond. It met item 17's bars in both directions except Holm across its 32 tests, and it was chosen
+by looking at those 32. So this tests that ONE cell, declared before anything is fetched, on data no
+look has touched. The user approved the test on 2026-10-25. Declared here before any of it is run.*
+
+- **Question:** does that cell earn after costs over random entries, on sessions item 17 never saw,
+  **when only liquid strikes are traded**?
+- **Where the edge would live:** the **selection signal**, with the structure fixed. A mean-reversion
+  entry comes after a short-term drop in an uptrend. Put skew is then richer, and the name has
+  bounced more often than chance, so a far out-of-the-money short with a wide wing may collect more
+  than the move it is exposed to.
+- **What item 17's readout says about the rule (read before declaring; figures local only):** most
+  of the cell's excess over random came from the random entries losing, while the cell itself was
+  near breakeven per unit of risk. Its credit was a small share of the width. Its slippage, averaged
+  over every entry (most of them illiquid), was large next to its mean net. And only a minority of
+  its entries had legs that clear the bars. So the third bar below, the trade paying on its own
+  risk, is the one that matters, and the test is held to liquid strikes.
+- **Rival explanations, each with its check:**
+  - *Drift:* a rising market makes every short put look good. **Check:** the score is excess over
+    five matched random entries (same name, same calendar year, same structure and costs), which
+    take the same drift.
+  - *Winner's curse:* the best of 32 cells is lucky by construction. **Check:** one declared cell,
+    on the untouched holdout, with no re-choosing of short or width.
+  - *A few names carry it:* **Check:** the result in each name-half (B9) and the share of the excess
+    from the five largest names, both reported.
+  - *A calm year:* **Check:** results by B8 environment and by B4 ATR band, reported. A pass that
+    lives in one cell is noted as such.
+- **The four parts:**
+  - **The trades:** **liquid entries only**, those whose two legs clear the spread/two-sided bars
+    (`legbars`) on the entry quote. That is how the spread would actually be placed (the user,
+    2026-10-25: "the practical application would only use liquid strikes"). Each trade's baselines
+    are held to the same bar. The store holds no open interest, so the bar is spread and
+    two-sidedness only.
+  - **Measured:** each trade's net minus the mean net of its matched baselines priced in the same
+    cell, as a share of max loss. Also the cell's own mean net, in dollars and as a share of max loss.
+  - **Expected:** a positive excess of the size item 17 measured for this cell (in its local result).
+  - **Window and sample:** the holdout, **2025-07-01 to 2026-10-12** ("the re-test, on the most
+    recent window", above), read **once**, about 15 monthly expiries. Liquid entries are a minority
+    of the cell's entries, so the scored sample is expected to sit near the 100-trade floor, and a no
+    verdict is a likely outcome, accepted as one.
+  - **Pass-or-fail rule:** all three must hold:
+    - the excess has a one-sided t above 2, clustered by expiry date, p from Student's t with
+      clusters − 1 degrees of freedom;
+    - the cell's own mean net is positive in dollars;
+    - **and** its own mean net as a share of max loss is positive. This is stricter than item 17,
+      where a positive dollar mean could hide a negative mean per unit of risk.
+    - Fewer than 100 scored trades is no verdict. There is no Holm: it is one declared test.
+- **Minimum detectable effect (B12):** computed from item 17's spread for this cell, clustered by
+  expiry, and recorded in the local result beside it. With about 15 clusters and a liquid-only
+  sample, it is well above the effect item 17 measured. So this test passes only an edge much
+  stronger than item 17's. A fail rules out an edge that large, and says nothing about one of item
+  17's size. The low power is the accepted price of testing the trade as it would be placed.
+- **Structure, unchanged from item 17:**
+  - setup `reversion` long → put spread;
+  - the latest standard monthly 30-45 days after entry;
+  - the short nearest 0.20 delta;
+  - the long at the listed strike nearest the short minus 0.75 × the 1-SD move to expiry;
+  - hold to expiry at intrinsic capped at the width;
+  - item 14's costs and exclusions.
+  - Entries whose only monthly is 45-60 days out (the list's fallback) are **not** in the test. They
+    are reported apart.
+- **Fills:** the pass is judged at the working price (halfway between the mid and the natural fill),
+  item 17's convention and the conservative one. Beside it, as description, the same trades and their
+  baselines priced at **mid** and at **mid − $0.05** a spread, with slippage and cost drag for each.
+  These show how much of any result rests on filling near mid. The only fill evidence the suite holds
+  is its own SPX live fills (flies' entries filled at mid − $0.05 most of the time, and the misses
+  were the trades moving their way). So mid is optimistic, and no fill assumption here is measured
+  for these names.
+- **Every entry, liquid or not:** reported beside the test as description, never as the test. This
+  was decided on 2026-10-25, before anything in the holdout was fetched or read.
+- **Name split (B9):** reported, not a bar. The holdout is too short to require both name-halves.
+- **Robustness report beside a pass (B13), never used to re-choose:**
+  - the neighbours (shorts 0.20/0.30, longs 0.5/0.75 of the move);
+  - costs at 1.5× and 2×, with **1.5× declared as the stress the pass must survive**;
+  - the bootstrapped drawdown;
+  - the largest size inside a declared 10% of the account.
+- **Declared limits (B11):**
+  - delisted names settle at the last close;
+  - the empty chains are counted;
+  - no input reflects only today's state.
+- **Data:**
+  - the planner gains item 18 (item 17's rules, reversion only, the holdout window);
+  - a `fetch-chains` run for its requests;
+  - the item 17 study script restricted to this one cell and to liquid entries (a `--cells` option
+    and a liquid filter, so the pricing and statistics are the same code);
+  - all three queued, each `--after` the one before;
+  - the result written under the backtest data dir only.
+  - Its figures stay there; this plan records the verdict.
+- **Decides:**
+  - **A pass:** a proposal for the credit-spread tab to promote this selection from "least bad" to
+    "tested", with the robustness report.
+  - **A fail or no verdict:** closes the cell.
+  - Either way the holdout is spent for this cell.
+- **Not tested here:** the call-side twin (mean reversion short → call spread). Its item 17 picks did
+  not agree on a short, so there is no one cell to declare.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

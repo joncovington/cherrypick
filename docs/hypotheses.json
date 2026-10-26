@@ -413,7 +413,7 @@
       "id": 17,
       "study": "item17",
       "title": "Our own credit-spread list: setup, side and width, per symbol",
-      "status": "declared",
+      "status": "failed",
       "legacy": true,
       "setup": "setup-side-width",
       "side": "directional",
@@ -426,6 +426,44 @@
       "mechanism": null,
       "rivals": [],
       "pointer": "docs/edge-hypotheses-plan.md#17-our-own-credit-spread-list-setup-side-and-width-per-symbol",
+      "results": null,
+      "retest": null,
+      "retests": []
+    },
+    {
+      "id": 18,
+      "study": "item18",
+      "title": "Mean-reversion put spreads, tested once on the holdout",
+      "status": "declared",
+      "legacy": false,
+      "setup": "reversion",
+      "side": "bullish",
+      "structure": "put-credit-spread",
+      "window": "monthly",
+      "measure": "LIQUID entries only (legs clear the spread/two-sided bars on the entry quote; baselines held to the same bar): trade net minus the mean of its matched baselines, as a share of max loss; and the cell's own mean net ($ and share of max loss)",
+      "expected": "a positive excess of the size item 17 measured for this cell (figures in its local result only)",
+      "sample": "holdout 2025-07-01..2026-10-12, read once; ~15 monthly expiries; liquid entries only, near the 100-trade floor",
+      "rule": "one-sided clustered t > 2 (Student's t, clusters-1 df) AND own mean net > 0 in $ AND as a share of max loss; < 100 trades = no verdict; no Holm (one declared test)",
+      "mechanism": "after a short-term drop in an uptrend put skew is richer and the name has bounced more than chance, so a 0.20-delta short with a wide wing collects more than its exposure",
+      "rivals": [
+        {
+          "explanation": "market drift",
+          "check": "excess over five matched random entries, same name and year"
+        },
+        {
+          "explanation": "winner's curse from picking the best of 32",
+          "check": "one declared cell on the untouched holdout"
+        },
+        {
+          "explanation": "a few names carry it",
+          "check": "name halves (B9) and the five largest names' share, reported"
+        },
+        {
+          "explanation": "a calm holdout year",
+          "check": "B8 environment and B4 ATR band breakdowns, reported"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#18-mean-reversion-put-spreads-tested-once-on-the-holdout",
       "results": null,
       "retest": null,
       "retests": []
