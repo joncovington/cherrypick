@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { BacktestOverview, BacktestRunReport, BridgedResult } from "@console/shared";
+import type { BacktestArmCards, BacktestOverview, BacktestRunCards, BacktestRunReport, BridgedResult } from "@console/shared";
 import { BacktestDataTab, BacktestRunsTab, BacktestValidationTab } from "../src/pages/Backtest/BacktestPage";
 
 /**
@@ -184,6 +184,89 @@ describe("runs", () => {
     expect(html).toContain("<td>-$33.60</td>");
     // Interval ends are never toned.
     expect(html).toContain("<td>-$80.00 to +$40.00</td>");
+  });
+
+  it("reads the run's cards: the account, the drawdowns, the calendar and how trades ended", () => {
+    const arm: BacktestArmCards = {
+      equity: [
+        { session: "2024-01-02", net: 20, cum: 20, drawdown: 0 },
+        { session: "2024-02-01", net: -50, cum: -30, drawdown: 50 },
+      ],
+      max_drawdown: 50,
+      drawdowns: [
+        {
+          peak: "2024-01-02",
+          peak_cum: 20,
+          depth: 50,
+          depth_pct: 0.119,
+          trough: "2024-02-01",
+          recovered: null,
+          sessions_to_trough: 1,
+          sessions_to_recover: null,
+        },
+      ],
+      calendar: {
+        months: { "2024-01": 20, "2024-02": -50 },
+        years: [{ year: "2024", net: -30, sessions: 2, traded: 2, winning: 1, max_drawdown: 50 }],
+      },
+      sessions: { count: 2, wins: 1, losses: 1, win_rate: 0.5, avg_win: 20, avg_loss: -50, payoff_ratio: 0.4, best: 20, worst: -50 },
+      trades: { count: 2, wins: 1, losses: 1, win_rate: 0.5, avg_win: 20, avg_loss: -50, payoff_ratio: 0.4, best: 20, worst: -50, not_recorded: 0 },
+      exits: [
+        { outcome: "expired_settlement", count: 1, share: 0.5, win_rate: 1, avg_net: 20, total_net: 20 },
+        { outcome: "per_side_stop", count: 1, share: 0.5, win_rate: 0, avg_net: -50, total_net: -50 },
+      ],
+      edge_trend: null,
+      account: {
+        capital: 400,
+        ending: 370,
+        return: -0.075,
+        years: 0.08,
+        annual_return: -0.9,
+        max_drawdown: 0.119,
+        return_to_drawdown: -7.56,
+        ruined_on: null,
+      },
+    };
+    const cards: BacktestRunCards = {
+      ok: true,
+      account: { capital: 400, basis: "peak_risk", peak_risk: 400 },
+      arms: { control: arm, "range-high": { ...arm, account: null, exits: null } },
+    };
+    const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}`, (c) => {
+      seedOverview(c);
+      c.setQueryData(["bridged", "backtest", "run", RUN_ID], { ok: true, data: { ...REPORT, cards }, error: null });
+    });
+    expect(html).toContain("peak risk ($400)");
+    expect(html).toContain("the run&#x27;s peak session risk");
+    expect(html).toContain("-7.5%"); // the return, a fraction shown as a percentage
+    expect(html).toContain("11.9%"); // the drawdown as a share of peak equity
+    expect(html).toContain("not recovered");
+    expect(html).toContain("per_side_stop");
+    expect(html).toContain("1 / 2"); // a year's winning sessions over those that traded
+    expect(html).toContain("Too few sessions");
+    expect(html).not.toContain("ruined");
+    expect(html).toContain("+$20"); // a month cell, whole dollars
+
+    const ruined = { ...cards, arms: { control: { ...arm, account: { ...arm.account!, ruined_on: "2024-02-01" } } } };
+    const html2 = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}`, (c) => {
+      seedOverview(c);
+      c.setQueryData(["bridged", "backtest", "run", RUN_ID], { ok: true, data: { ...REPORT, cards: ruined }, error: null });
+    });
+    expect(html2).toContain("ruined 2024-02-01");
+    expect(html2).toContain("an account this size would have stopped there");
+  });
+
+  it("a chosen account is read from the URL and keys its own query", () => {
+    const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}&capital=50000`, (c) => {
+      seedOverview(c);
+      c.setQueryData(["bridged", "backtest", "run", RUN_ID, 50000], {
+        ok: true,
+        data: { ...REPORT, cards: { ok: false, error: "no session results" } },
+        error: null,
+      });
+    });
+    expect(html).toContain('aria-pressed="true">$50,000');
+    expect(html).toContain("Cards unavailable: no session results");
   });
 
   it("a run the module does not know is its error, not an empty report", () => {

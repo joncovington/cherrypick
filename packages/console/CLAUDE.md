@@ -561,7 +561,11 @@ not a mirror: the unlock verdict, every check, the paired interval and `no_expos
 Tabs: `data` (licence clock, stores with refusals), `validation` (per cadence: the unlock verdict, the
 vendor-against-recorder checks, per-session quote and profile agreement), `runs` (the list; `?run=`
 reads one report: each arm's summary, the pairing with control, trials, fill model, code commit, data
-fingerprint, refused sessions), `queue` (2026-10-24; `pages/Backtest/QueueTab.tsx`,
+fingerprint, refused sessions, and the run cards, 2026-10-26, `pages/Backtest/RunCards.tsx`: per arm
+the account, equity and drawdown, edge trend, deepest drawdowns, month-by-year grid, trades and how
+they ended, all the module's `cards.py`. `?capital=` (whole dollars, `BACKTEST_CAPITAL`, else a 400
+that spawns nothing) picks the account; absent, it is the run's peak session risk. The account changes
+percentages only, never a dollar), `queue` (2026-10-24; `pages/Backtest/QueueTab.tsx`,
 `GET /api/backtest/queue` → `services/researchQueueBridge.ts` → `python -m cherrypick.cli queue-list`,
 behind the same gate): the research tasks the supervisor runs, read-only. Each row's state and why a
 queued row waits are the orchestrator's words, shown verbatim, and a file argument is shown by its name

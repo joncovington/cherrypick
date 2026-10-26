@@ -179,6 +179,109 @@ export interface BacktestArmReport {
   [k: string]: unknown;
 }
 
+/** One session on an arm's path: its net, the running total, and dollars below the running peak. */
+export interface BacktestEquityPoint {
+  session: string;
+  net: number;
+  cum: number;
+  drawdown: number;
+}
+
+/** A drawdown from the peak it fell from to the session that regained it. `peak` null: the run's start. */
+export interface BacktestDrawdownPeriod {
+  peak: string | null;
+  peak_cum: number;
+  depth: number;
+  /** Depth as a share of peak equity on the cards' account; absent without one. */
+  depth_pct?: number | null;
+  trough: string;
+  recovered: string | null;
+  sessions_to_trough: number;
+  sessions_to_recover: number | null;
+}
+
+export interface BacktestYearRow {
+  year: string;
+  net: number;
+  sessions: number;
+  traded: number;
+  winning: number;
+  max_drawdown: number;
+}
+
+/** Wins and losses over the sessions that traded, or over trades. */
+export interface BacktestAnatomy {
+  count: number;
+  wins: number;
+  losses: number;
+  win_rate: number | null;
+  avg_win: number | null;
+  avg_loss: number | null;
+  payoff_ratio: number | null;
+  best: number | null;
+  worst: number | null;
+  best_session?: string | null;
+  worst_session?: string | null;
+  skew?: number | null;
+  /** Non-excess: a normal distribution reads 3. */
+  kurtosis?: number | null;
+  /** Trades whose net was never recorded, counted apart. */
+  not_recorded?: number;
+}
+
+export interface BacktestExitRow {
+  outcome: string;
+  count: number;
+  share: number;
+  win_rate: number | null;
+  avg_net: number | null;
+  total_net: number;
+}
+
+export interface BacktestEdgeTrend {
+  split: string;
+  mean_first: number;
+  mean_second: number;
+  change: number;
+  ci95: [number, number] | null;
+  verdict: "improving" | "decaying" | "within noise" | null;
+}
+
+/** The arm's dollars against the cards' account: fixed lots, never compounded. Fractions, not percents. */
+export interface BacktestAccountRead {
+  capital: number;
+  ending: number;
+  return: number;
+  years: number;
+  annual_return: number | null;
+  max_drawdown: number;
+  return_to_drawdown: number | null;
+  /** The first session the equity reached zero: the account would have stopped there. */
+  ruined_on?: string | null;
+}
+
+export interface BacktestArmCards {
+  equity: BacktestEquityPoint[];
+  max_drawdown: number;
+  drawdowns: BacktestDrawdownPeriod[];
+  calendar: { months: Record<string, number>; years: BacktestYearRow[] };
+  sessions: BacktestAnatomy;
+  trades: BacktestAnatomy;
+  /** Null when the schema records no outcome. */
+  exits: BacktestExitRow[] | null;
+  /** Null under the minimum session count for a verdict. */
+  edge_trend: BacktestEdgeTrend | null;
+  account: BacktestAccountRead | null;
+}
+
+/** `cards.py`: every arm's cards on one account. `basis` says where the account came from. */
+export interface BacktestRunCards {
+  ok: boolean;
+  error?: string;
+  account?: { capital: number | null; basis: "chosen" | "peak_risk" | null; peak_risk: number | null };
+  arms?: Record<string, BacktestArmCards>;
+}
+
 export interface BacktestRunReport {
   run_id: string;
   window: BacktestWindow | string;
@@ -192,6 +295,8 @@ export interface BacktestRunReport {
   trials_for_module: number | null;
   refused: Record<string, string>;
   arms: Record<string, BacktestArmReport>;
+  /** The run's cards, read beside the report (absent from an older backtest package). */
+  cards?: BacktestRunCards;
   [k: string]: unknown;
 }
 
@@ -201,4 +306,12 @@ export const BACKTEST_RUN_ID = /^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$/;
 
 export function isBacktestRunId(v: string): boolean {
   return BACKTEST_RUN_ID.test(v);
+}
+
+/** A chosen account for a run's cards: whole dollars, one to ten digits, no leading zero. Checked
+ *  on the server before it is handed to the subprocess. */
+export const BACKTEST_CAPITAL = /^[1-9][0-9]{0,9}$/;
+
+export function isBacktestCapital(v: string): boolean {
+  return BACKTEST_CAPITAL.test(v);
 }

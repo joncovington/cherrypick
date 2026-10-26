@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 
+from cherrypick.core import ledgers as core_ledgers
 from cherrypick.core import metrics as _metrics
 from cherrypick.core import regimecuts as _rc
 
@@ -2990,17 +2991,15 @@ def close_tag_result(conn, arm: str, start=None, end=None, symbol=None) -> dict:
 
 # How a tagged vertical actually ended, which is what decides whether closing it helped: a strand
 # that ran to a loss is what the close is for; one that completed into a fly, or expired out of the
-# money with its whole credit, is what the close gives up.
-OUTCOME_COMPLETED = "completed"
-OUTCOME_STRANDED = "stranded"
-OUTCOME_EXPIRED_OTM = "expired_otm"
+# money with its whole credit, is what the close gives up. The rule lives in core.ledgers, so the
+# backtest's exit breakdown reads a run's positions the same way.
+OUTCOME_COMPLETED = core_ledgers.FLY_COMPLETED
+OUTCOME_STRANDED = core_ledgers.FLY_STRANDED
+OUTCOME_EXPIRED_OTM = core_ledgers.FLY_EXPIRED_OTM
 
 
 def _tag_outcome(row) -> str:
-    if row["kind"] == "fly" or row["completed_at"] is not None:
-        return OUTCOME_COMPLETED
-    payoff = row["expiry_payoff"]
-    return OUTCOME_STRANDED if payoff is not None and float(payoff) < 0 else OUTCOME_EXPIRED_OTM
+    return core_ledgers.fly_outcome(row["kind"], row["completed_at"], row["expiry_payoff"])
 
 
 def _live_twin(live_conn, close: dict) -> str | None:

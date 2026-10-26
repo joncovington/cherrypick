@@ -171,6 +171,29 @@ describe("the gate is open", () => {
     expect(missing.json()).toEqual({ ok: false, data: null, error: "no run" });
   });
 
+  it("attaches the run's cards to its report, and hands a chosen capital to the module", async () => {
+    setBridgeCaller(() => features({ backtest: true }));
+    const cards = { ok: true, account: { capital: 900, basis: "peak_risk", peak_risk: 900 }, arms: {} };
+    stubBacktest(() => ({ ok: true, json: { ok: true, report: { run_id: RUN_ID, arms: {} }, cards }, error: null }));
+    const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}` });
+    expect(r.json().data).toEqual({ run_id: RUN_ID, arms: {}, cards });
+    await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}?capital=50000` });
+    expect(spawned).toEqual([
+      { kind: "run", id: RUN_ID },
+      { kind: "run", id: RUN_ID, capital: 50000 },
+    ]);
+  });
+
+  it("refuses a capital that is not whole dollars with 400 and spawns nothing", async () => {
+    setBridgeCaller(() => features({ backtest: true }));
+    stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
+    for (const bad of ["0", "-5", "1e6", "50000.5", "0050", "abc", "", "--id", "12345678901"]) {
+      const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}?capital=${encodeURIComponent(bad)}` });
+      expect(r.statusCode, bad).toBe(400);
+    }
+    expect(spawned).toEqual([]);
+  });
+
   it("refuses a malformed run id with 400 and spawns nothing", async () => {
     setBridgeCaller(() => features({ backtest: true }));
     stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));

@@ -18,6 +18,10 @@ plus, for the multi-day schemas (earnings, dc_week, pmcc, curve_vx, bwb_132, con
 `entry_session` -- the session the position was entered, where `session` is the one it closed
 (added 2026-10-12 for `core.compare`, which pairs those arms on the entry they share).
 
+`outcome` (added 2026-10-26, meic_ic and fly_book only) is how the trade ended, in the module's own
+words: MEIC's `exit_reason` as recorded, and for flies `fly_outcome` below (completed / stranded /
+expired_otm). None where the ledger predates the columns behind it.
+
 `arm` is the suite's word for one configured variant run as its own portfolio (root `CLAUDE.md`).
 This module is where the four source spellings become one: `risk_profile` (meic), `arm` (flies),
 `book` (calendars/pmcc/curve/bwb) and `profile` (earnings) all land here as `arm`. The columns
@@ -330,6 +334,7 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
     rows = conn.execute(
         f"SELECT symbol, {arm} AS arm, pnl, fees, exit_time{slip_col}{cap_cols}{mult_col}{exp_col}"
         f"{_opt(cols, 'settlement_fees')}{_opt(cols, 'entry_time')}{_opt(cols, 'ic_order_id')}"
+        f"{_opt(cols, 'exit_reason')}"
         f" FROM ic_trades WHERE exit_time IS NOT NULL{where}",
         params,
     ).fetchall()
@@ -384,6 +389,7 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
             "exit_time": r["exit_time"],
             # The condor's order id, which its filled entry attempt carries too (core.trace).
             "position_id": _get(r, "ic_order_id"),
+            "outcome": _get(r, "exit_reason"),
         }
         for r in rows
     ]
@@ -500,6 +506,8 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
     exp_col, has_exp = _experiment_select(conn, "fly_positions")
     extra = _opt(cols, "settlement_fees") + _opt(cols, "slippage_dollars")
     extra += "".join(_opt(cols, c) for c in _FLIES_TRADE_COLUMNS) + _opt(cols, "book_id")
+    has_outcome = set(_FLIES_OUTCOME_COLUMNS) <= cols
+    extra += "".join(f", {c}" for c in _FLIES_OUTCOME_COLUMNS) if has_outcome else ""
     rows = conn.execute(
         f"SELECT symbol, arm, entry_mode, gross_pnl, fees, trade_date{reason_col}{exp_col}{extra} "
         f"FROM fly_positions WHERE status = 'settled'{_flies_not_void(conn)}{where}",
@@ -556,6 +564,7 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
             # The position's book and that book's recorded session peak risk (above).
             "book_id": _get(r, "book_id"),
             "book_peak_risk": peaks.get(_get(r, "book_id")),
+            "outcome": fly_outcome(r["kind"], r["completed_at"], r["expiry_payoff"]) if has_outcome else None,
         }
         for r in rows
     ]
@@ -563,6 +572,22 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
 
 #: fly_positions columns behind the trade fields, each selected only where the ledger has it.
 _FLIES_TRADE_COLUMNS = ("position_id", "entry_time", "exit_time", "underlying_at_entry", "settlement_price")
+
+#: The columns `fly_outcome` reads, selected together or not at all.
+_FLIES_OUTCOME_COLUMNS = ("kind", "completed_at", "expiry_payoff")
+
+# How a flies position ended. A strand that ran to a loss is what flies' losses are made of; one that
+# completed into a fly, or expired out of the money with its whole credit, is not. flies.analytics
+# scores its closes with this same rule, so the backtest's exit breakdown and flies' own reads agree.
+FLY_COMPLETED = "completed"
+FLY_STRANDED = "stranded"
+FLY_EXPIRED_OTM = "expired_otm"
+
+
+def fly_outcome(kind, completed_at, expiry_payoff) -> str:
+    if kind == "fly" or completed_at is not None:
+        return FLY_COMPLETED
+    return FLY_STRANDED if expiry_payoff is not None and float(expiry_payoff) < 0 else FLY_EXPIRED_OTM
 
 
 CALENDARS_UNTAGGED = "unassigned"

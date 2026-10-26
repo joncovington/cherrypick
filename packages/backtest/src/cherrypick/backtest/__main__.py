@@ -446,7 +446,14 @@ def cmd_read(args) -> int:
     if args.what == "overview":
         _emit(readout.overview(settings.load(args.config)))
         return 0
-    out = readout.run_report(args.id or "")
+    from .cards import parse_capital
+
+    try:
+        capital = parse_capital(args.capital)
+    except ValueError as exc:
+        _emit({"ok": False, "error": str(exc)})
+        return 1
+    out = readout.run_report(args.id or "", capital)
     _emit(out)
     return 0 if out["ok"] else 1
 
@@ -559,6 +566,11 @@ def main(argv: list[str] | None = None) -> int:
     rd = sub.add_parser("read", help="the console's read surface: JSON, read-only")
     rd.add_argument("what", choices=("overview", "run"))
     rd.add_argument("--id", default=None, help="with `run`: the run id")
+    rd.add_argument(
+        "--capital",
+        default=None,
+        help="with `run`: the cards' account in dollars (default: peak session risk)",
+    )
     rd.set_defaults(fn=cmd_read)
     for sp in (f, fv, cv, dr, va, rn, ra):
         sp.add_argument(
