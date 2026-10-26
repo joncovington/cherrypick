@@ -61,7 +61,7 @@ STORES: list[dict[str, str]] = [
     },
     {
         "file": "SPX-time-warp.db",
-        "holds": "SPXW next-expiry chains 15:45-15:55 ET each session, and that expiry's next session at 5 min",
+        "holds": "SPXW next-expiry chains 15:45-15:55 ET , and that expiry's next session at 5 min",
         "built_by": "scripts/fetch_spx_time_warp.py",
         "used_by": "item 19, the Time Warp test (docs/edge-hypotheses-plan.md)",
     },
