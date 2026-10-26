@@ -213,5 +213,31 @@ def test_no_signal_no_monthly_and_no_store_each_say_so():
     assert "credit-spreads" not in out["lists"]
 
 
-def test_the_list_says_it_is_untested():
-    assert "not yet" in creditspreads.rule()["tested"]
+def test_the_list_says_no_selection_has_a_tested_edge():
+    assert "no setup, side, short or width passed" in creditspreads.rule()["tested"]
+    assert set(creditspreads.rule()["selections"]) == {"credit-share", "reversion-d20-s5", "reversion-d40-s5"}
+
+
+REVERSION_PUT = [{"setup": "reversion", "side": "P", "date": "2026-10-19", "ago": 0}]
+
+
+def test_a_mean_reversion_selection_lists_only_mean_reversion_puts():
+    (row,) = _spreads({"AAA": _entry()}, {"AAA": PUT_SIGNAL})["lists"]["credit-spreads"]  # pullback
+    assert row["selections"]["reversion-d20-s5"] is None and row["selections"]["reversion-d40-s5"] is None
+    assert row["selections"]["credit-share"] is not None  # the credit rule reads every setup
+    (call,) = _spreads({"AAA": _entry()}, {"AAA": CALL_SIGNAL})["lists"]["credit-spreads"]  # reversion-short
+    assert call["selections"]["reversion-d20-s5"] is None  # puts only
+
+
+def test_each_mean_reversion_selection_has_its_own_short_and_a_5_strike_long():
+    (row,) = _spreads({"AAA": _entry()}, {"AAA": REVERSION_PUT})["lists"]["credit-spreads"]
+    d20, d40 = row["selections"]["reversion-d20-s5"], row["selections"]["reversion-d40-s5"]
+    assert abs(d20["short"]["delta"]) == pytest.approx(0.20, abs=0.03)
+    assert abs(d40["short"]["delta"]) == pytest.approx(0.40, abs=0.03)
+    assert d20["short"]["strike"] < d40["short"]["strike"] < 100
+    for sel in (d20, d40):
+        assert sel["width"] == pytest.approx(5.0)  # five listed $1 strikes beyond the short
+        assert sel["long"] == sel["short"]["strike"] - 5
+        assert sel["max_loss"] == pytest.approx(sel["width"] - sel["credit"])
+    # The credit-share selection is the row's own pick, on the row's own short.
+    assert row["selections"]["credit-share"]["long"] == row["pick"]["long"]
