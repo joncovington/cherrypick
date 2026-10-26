@@ -1194,6 +1194,94 @@ look has touched. The user approved the test on 2026-10-25. Declared here before
 - **Not tested here:** the call-side twin (mean reversion short → call spread). Its item 17 picks did
   not agree on a short, so there is no one cell to declare.
 
+### 19. The Time Warp: two out-of-the-money SPX flies bought at the close, sold the next morning
+
+*Source: a public channel's live final-hour shows (reviewed 2026-10-26; transcripts kept in session
+scratch only). The host trades it every session and reports a winning run, with no ledger and no
+backtest. He expects a long-run win rate near half and says winners average a few times the debit.
+The user approved the test on 2026-10-26. Declared here before any of it is fetched or run; the
+two-session fetch smoke test read row counts only.*
+
+- **Question:** does buying the host's fly pair in the last minutes of a session, and selling it the
+  next session, earn after costs?
+- **Where the edge would live:** the **premium**, in one specific place. The claim is that in a calm
+  market the next day's wings are priced for a quiet session, while much of the move happens
+  overnight, so a pair of cheap out-of-the-money flies bought at the close is under-priced for the
+  gap. That is a claim that the overnight move is under-priced in far wings, not a signal.
+- **Look-alikes:** `cherrypick hypotheses --similar` finds no rejected row with this setup and
+  structure. The nearest evidence is flies' 0DTE record (retired 2026-10-19: lost on intraday
+  strands) and the 0DTE long-fly payoff studies, all intraday. None held overnight.
+- **Rival explanations, each with its check:**
+  - *Drift:* a rising market pays a call fly more often. **Check:** the pair is two-sided; the call
+    and put sides are reported apart, by B8 environment.
+  - *A calm span:* **Check:** both time-halves of the design window must pass, and results are
+    reported by VIX band.
+  - *The exit carries it:* a trail can look good on a lucky path. **Check:** a second arm sells at a
+    fixed 10:30 with no judgement, and both arms are Holm-adjusted.
+  - *Fills:* far wings are wide. **Check:** the verdict is at the working price; mid and
+    mid ± $0.05 a fly are reported beside it.
+- **The structure (all of it from the host's stated rules, nothing chosen by us):**
+  - SPX weekly options (SPXW), expiring the next trading day E; a Friday's E is the Monday.
+  - Two long butterflies, one of calls above spot and one of puts below, each long 1 / short 2 /
+    long 1 with wings `w` from the body. `w` by the prior session's VIX close: **20** below 17,
+    **30** from 17 to 32, **50** above 32 (his table; 30 is inside his 25-30 band).
+  - Entry at **15:50 ET** on session D, from D's 15:50 one-minute quote.
+  - Each fly's body is the strike **nearest spot whose fly costs at most 5% of `w`** at the working
+    price, walking out from spot one listed strike at a time. All four of its strikes must be quoted
+    two-sided. A side with no such body is not entered; a session with neither is skipped and counted.
+  - No stop, no adjustment. A fly not sold settles at E's official close (intrinsic).
+- **Two exit arms** (the second added by us as the rival check, declared now):
+  - **A, the trail (his).** On E's five-minute marks from 09:35, per fly: once its value is above its
+    debit, record the high-water mark `h`. Sell when value falls below
+    `debit + (1 - g) × (h - debit)`, with `g` = 0.75 before 12:00, 0.50 from 12:00 to 14:00, and
+    0.20 after 14:00. Otherwise it settles.
+  - **B, a fixed time.** Sell each fly at E's 10:30 mark, whatever it is worth.
+- **Costs:** the suite's tastytrade schedule (`cherrypick.core.fees`): $1.00 a contract to open,
+  clearing, ORF, the SPX exchange fee and TAF on every leg, no commission to close, and $5 per
+  in-the-money settlement symbol. About $10 a fly round trip.
+- **Measured:** the pair's net per session, in dollars, at one contract each side. Also as a share of
+  the pair's debit.
+- **Window and sample:**
+  - **Design:** 2022-05-16 to 2024-12-31, about 660 sessions. Read for the verdict.
+  - **Holdout:** 2025-01-02 to 2026-10-23, about 450 sessions, read **once**, and only if the design
+    passes, with the same rules unchanged.
+  - Fewer than 100 entered sessions in a window is no verdict.
+- **Pass-or-fail rule**, per arm, all must hold:
+  - mean pair net per session above zero with a one-sided t above 2, one session one observation;
+  - Holm across the two arms;
+  - each time-half of the design window positive;
+  - still positive at **1.5× costs**;
+  - then the holdout, with mean net above zero and a one-sided t above 2.
+- **Minimum detectable effect (B12):** from the design window's own spread of session nets,
+  recorded in the local result before the holdout is read. No comparable result exists to plan it
+  from: no suite study held a fly overnight.
+- **Declared limits (B11):**
+  - a fly still open at E's close settles at the SPX close in `SPX-60s.db`'s `daily_closes`, with
+    no recovery price. That close is the vendor's official index close from 2024-05-13 and its last
+    underlying print before then; the two are reported apart;
+  - sessions skipped for missing quotes or no affordable body are counted, by reason;
+  - the VIX band uses D−1's close from Cboe's published VIX history (the local market-files copy),
+    known at entry; nothing reflects only today's state.
+- **Name split (B9):** does not apply; one symbol.
+- **Robustness report beside a pass (B13), never used to re-choose:**
+  - neighbours: 4% and 6% of `w`; entry at 15:45 and 15:55; widths one band narrower and wider;
+  - costs at 1.5× and 2×;
+  - the bootstrapped drawdown and losing streak;
+  - the largest size inside a declared 10% of the account, with the account passed at run time.
+- **Data:** `scripts/fetch_spx_time_warp.py` writes `SPX-time-warp.db`, declared in
+  `stores.STORES`. It holds each session's 15:45-15:55 chain for the next expiry at one minute,
+  and that expiry's next session at five minutes. The study script reads only it and `SPX-60s.db`. Results go under the
+  backtest data directory only. Its figures stay there; this plan records the verdict.
+- **Decides:**
+  - **A pass:** a proposal for a paper arm of the trade beside the suite's loops, with the
+    robustness report.
+  - **A fail or no verdict:** closes this structure as specified.
+- **Not tested here:**
+  - his "Convex Stack" (one with-trend 4-5DTE fly, twice a week), declared as its own item after
+    this one;
+  - his late-day 0DTE broken-wing scalp, which depends on his chart levels. Its volume-profile rule
+    is not yet known well enough to code.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
