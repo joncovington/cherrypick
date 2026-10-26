@@ -155,7 +155,13 @@ def daily_loss_tripped(db_path: str, day: str, limit_dollars: float | None) -> b
 
 def kill_verdict(config: dict, db_path: str) -> dict:
     """`core.killcriteria.gate` over the live ledger's closed ICs. An unreadable ledger fails CLOSED,
-    as the daily-loss breaker does: it cannot show the arm is inside its criteria."""
+    as the daily-loss breaker does: it cannot show the arm is inside its criteria.
+
+    A closed live IC since the criteria were written with no net (`pnl` or `fees` NULL -- the
+    2026-06-29 stop was recorded that way) also blocks, from 2026-10-25: the verdict skips a row with
+    no net (n/r is not a zero), so its loss would be invisible to the drawdown and the streak. It
+    does not latch -- recording the row's `pnl` and `fees` is the fix -- and, like every kill verdict,
+    it stops new entries only. Earnings refuses on the same rows (`tt.kill_refusal`)."""
     import sqlite3
 
     try:
@@ -167,7 +173,22 @@ def kill_verdict(config: dict, db_path: str) -> dict:
             con.close()
     except sqlite3.Error as exc:
         return {"state": _kill.BLOCKED, "reasons": [f"live ledger unreadable: {exc}"]}
-    return _kill.gate("meic", EXECUTION_MODE, records, _live_cfg(config).get("kill"))
+    criteria = _live_cfg(config).get("kill")
+    verdict = _kill.gate("meic", EXECUTION_MODE, records, criteria)
+    if verdict["state"] == _kill.BLOCKED:
+        return verdict
+    blind = _kill.unrecorded(records, EXECUTION_MODE, criteria)
+    if blind:
+        ids = ", ".join(f"{r.get('position_id') or '?'} ({r.get('session') or '?'})" for r in blind)
+        return {
+            **verdict,
+            "state": _kill.BLOCKED,
+            "reasons": [
+                f"{len(blind)} closed live IC(s) since the criteria were written have no net (pnl or"
+                f" fees unrecorded: {ids}); record their pnl and fees in the live ledger before another entry"
+            ],
+        }
+    return verdict
 
 
 def entry_blockers(config: dict, db_path: str, day: str, *, halt_present: bool) -> list[str]:

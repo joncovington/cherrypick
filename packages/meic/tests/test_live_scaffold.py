@@ -905,6 +905,62 @@ def test_a_latched_kill_blocks_entries_until_cleared(tmp_path):
     assert out["entry"]["entry"] == "placed"
 
 
+def _unrecorded_close(db_path, day, ic_order_id="BLIND1"):
+    """A closed live IC with no `pnl` or `fees`, as the 2026-06-29 stop was recorded."""
+    paper._save_trade(
+        {
+            **_open_trade_row("XSP"),
+            "ic_order_id": ic_order_id,
+            "trade_date": day,
+            "entry_time": f"{day} 10:00:00",
+            "expiration": day,
+            "exit_time": f"{day} 11:00:00",
+            "status": "closed",
+        },
+        db_path,
+    )
+
+
+def test_an_unrecorded_live_close_since_the_criteria_blocks_entries_without_latching(tmp_path):
+    """2026-10-25: the verdict skips a closed row with no net, so its loss was invisible to the
+    drawdown and the streak. Shown to fail with the refusal removed from `kill_verdict`: the IC was
+    placed. Recording the row's costs is the fix, so nothing latches."""
+    db_path = _init_db(tmp_path)
+    _unrecorded_close(db_path, "2026-08-05")
+    broker = FakeBroker()
+    out = live_loop.run_once(_config(), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None)
+    reason = out["entry"]["blocked"][0]
+    assert reason.startswith("kill_criteria: 1 closed live IC") and "BLIND1 (2026-08-05)" in reason
+    assert "record their pnl and fees" in reason and not broker.placed
+    assert _kill.latched("meic") is None
+    paper._update_trade("BLIND1", {"pnl": -120.0, "fees": 4.48}, db_path)
+    out = live_loop.run_once(
+        _config(), _entry_snapshot(), db_path, FakeBroker(), live=True, log=lambda *_: None
+    )
+    assert out["entry"]["entry"] == "placed"
+
+
+def test_an_unrecorded_live_close_before_the_criteria_does_not_block(tmp_path):
+    db_path = _init_db(tmp_path)
+    _unrecorded_close(db_path, "2026-07-20")
+    broker = FakeBroker()
+    out = live_loop.run_once(_config(), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None)
+    assert out["entry"]["entry"] == "placed" and broker.placed
+
+
+def test_an_unrecorded_live_close_still_lets_an_open_ic_be_closed(tmp_path):
+    """Entries only: the refusal never holds back the management of an open IC."""
+    db_path = _init_db(tmp_path)
+    _unrecorded_close(db_path, "2026-08-05")
+    paper._save_trade(_open_trade_row(), db_path)
+    broker = FakeBroker()
+    snap = _entry_snapshot(symbol="QQQ", now_et="15:31", candidates=[])
+    summary = live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None)
+    assert summary["closing"] == 1 and any(p["live"] is True for p in broker.placed)
+    assert summary["entry"]["blocked"][0].startswith("kill_criteria: 1 closed live IC")
+    assert _kill.latched("meic") is None
+
+
 def test_a_reduced_verdict_halves_the_order_and_a_hand_limit_trades_one(tmp_path):
     broker = FakeBroker()
     cfg = {**_config(kill={**KILL, "streak_reduce": 0}), "quantity": 4}
