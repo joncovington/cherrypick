@@ -68,7 +68,7 @@ export function AccountPicker({
         className={capital === null ? "mode-btn active" : "mode-btn"}
         aria-pressed={capital === null}
         onClick={() => onPick(null)}
-        title="the most any one session of any arm held at risk: the money the strategy needed"
+        title="the most any one of this arm's sessions held at risk: the money it needed"
       >
         peak risk{peakRisk === null ? " (n/r)" : ` (${dollars(peakRisk)})`}
       </button>
@@ -170,6 +170,30 @@ function SessionTiles({ c }: { c: BacktestArmCards }) {
         label="skew / kurtosis"
         value={`${fmtNum(s.skew ?? null)} / ${fmtNum(s.kurtosis ?? null)}`}
         title="of per-session net; kurtosis is not excess, so a normal reads 3"
+      />
+    </TileGrid>
+  );
+}
+
+function PremiumTiles({ c }: { c: BacktestArmCards }) {
+  const p = c.premium;
+  if (p === null) return <p className="muted">No trade carries a single credit, so there is no premium to measure.</p>;
+  return (
+    <TileGrid count={4}>
+      <Tile label="premium collected" value={fmtCash(p.premium)} n={p.n} title="the credits received, whole-position dollars" />
+      <Tile
+        label="trading fees"
+        value={fmtCash(p.fees === 0 ? 0 : -p.fees)}
+        title={p.fees_not_recorded ? `settlement apart; ${String(p.fees_not_recorded)} trades without recorded fees` : "settlement apart"}
+      />
+      <Tile label="fee drag" value={pct(p.fee_drag)} title="trading fees / premium collected" />
+      <Tile
+        label="capture rate"
+        value={pct(p.capture_rate)}
+        tone={tone(p.capture_rate)}
+        n={p.capture_n}
+        afterFees
+        title="net / the structures' own ceilings: how much of the credit was kept"
       />
     </TileGrid>
   );
@@ -346,7 +370,7 @@ export function RunCards({
           </label>
         )}
         {/* Shown even when the cards failed, so a chosen account can always be undone. */}
-        <AccountPicker capital={capital} peakRisk={cards.account?.peak_risk ?? null} onPick={onCapital} />
+        <AccountPicker capital={capital} peakRisk={c?.peak_risk ?? null} onPick={onCapital} />
       </div>
       {!cards.ok ? (
         <p className="muted">Cards unavailable: {cards.error ?? "unknown error"}</p>
@@ -356,7 +380,9 @@ export function RunCards({
         <>
           <p className="muted" style={{ fontSize: 12 }}>
             Fixed lots, never compounded: the account restates the same dollars as percentages.
-            {cards.account?.basis === "peak_risk" ? " Account: the run's peak session risk." : null}
+            {cards.account?.basis === "chosen"
+              ? " One account for every arm, so arms read side by side."
+              : " Account: this arm's own peak session risk, so arms differ; pick an amount to compare them."}
           </p>
           <AccountTiles c={c} />
           <SessionTiles c={c} />
@@ -370,6 +396,7 @@ export function RunCards({
           <MonthGrid c={c} />
           <div className="card-subhead">trades</div>
           <TradeTiles c={c} />
+          <PremiumTiles c={c} />
           <div className="card-subhead">how trades ended</div>
           <ExitTable c={c} />
         </>

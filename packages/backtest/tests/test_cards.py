@@ -131,18 +131,35 @@ def test_session_risk_reads_flies_book_peaks_and_otherwise_sums_max_losses():
     assert cards.session_risk([{"capital": None}]) is None
 
 
-def test_the_account_defaults_to_peak_risk_a_chosen_capital_overrides_and_neither_means_none():
-    series = {"control": _series([10.0, -5.0])}
+def test_each_arm_defaults_to_its_own_peak_risk_and_a_chosen_capital_is_one_account_for_all():
+    series = {"control": _series([10.0, -5.0]), "narrow": _series([2.0, 1.0])}
     trades = {
-        "control": {"2024-01-01": [{"capital": 900.0, "net_pnl": 10.0}], "2024-01-02": [{"capital": 1000.0}]}
+        "control": {"2024-01-01": [{"capital": 9000.0}], "2024-01-02": [{"capital": 10000.0}]},
+        "narrow": {"2024-01-01": [{"capital": 400.0}, {"capital": 500.0}]},
     }
     out = cards.cards(series, trades)
-    assert out["account"] == {"capital": 1000.0, "basis": "peak_risk", "peak_risk": 1000.0}
-    assert out["arms"]["control"]["account"]["capital"] == 1000.0
+    assert out["account"] == {"capital": None, "basis": "peak_risk"}
+    assert out["arms"]["control"]["peak_risk"] == 10000.0
+    # The narrow arm reads against what IT needed, not the widest arm's peak.
+    assert out["arms"]["narrow"]["account"]["capital"] == 900.0
     chosen = cards.cards(series, trades, capital=50000.0)
-    assert chosen["account"]["basis"] == "chosen" and chosen["account"]["peak_risk"] == 1000.0
-    bare = cards.cards(series, {"control": {}})
-    assert bare["account"]["basis"] is None and bare["arms"]["control"]["account"] is None
+    assert chosen["account"] == {"capital": 50000.0, "basis": "chosen"}
+    assert {a["account"]["capital"] for a in chosen["arms"].values()} == {50000.0}
+    assert chosen["arms"]["narrow"]["peak_risk"] == 900.0
+    bare = cards.cards({"control": _series([1.0])}, {"control": {}})
+    assert bare["arms"]["control"]["account"] is None and bare["arms"]["control"]["peak_risk"] is None
+
+
+def test_premium_reads_fee_drag_and_capture_over_the_trades_that_carry_a_credit():
+    trades = [
+        {"entry_credit": 100.0, "max_profit": 100.0, "fees": 4.0, "net_pnl": 96.0},
+        {"entry_credit": 100.0, "max_profit": 100.0, "fees": 6.0, "net_pnl": -206.0},
+        {"entry_credit": None, "max_profit": None, "fees": 2.0, "net_pnl": 5.0},
+    ]
+    p = cards.premium(trades)
+    assert (p["n"], p["premium"], p["fees"], p["fee_drag"]) == (2, 200.0, 10.0, 0.05)
+    assert (p["capture_rate"], p["capture_n"]) == (-0.55, 2)
+    assert cards.premium([{"entry_credit": None, "net_pnl": 1.0}]) is None
 
 
 @pytest.mark.parametrize("raw", ["0", "-5", "nan", "inf", "lots"])
@@ -189,8 +206,10 @@ def test_a_run_is_read_back_with_its_cards():
     out = readout.run_report(RUN)
     assert out["ok"] and out["report"] == report
     c = out["cards"]
-    assert c["ok"] and c["account"] == {"capital": 400.0, "basis": "peak_risk", "peak_risk": 400.0}
+    assert c["ok"] and c["account"] == {"capital": None, "basis": "peak_risk"}
     arm = c["arms"]["control"]
+    assert arm["peak_risk"] == 400.0 and arm["account"]["capital"] == 400.0
+    assert arm["premium"]["premium"] == 200.0 and arm["premium"]["fee_drag"] == 0.01
     assert [e["outcome"] for e in arm["exits"]] == ["expired_settlement", "per_side_stop"]
     assert arm["max_drawdown"] == 50.0 and arm["account"]["max_drawdown"] == 0.119  # 50 / 420
     assert cli.main(["read", "run", "--id", RUN, "--capital", "-1"]) == 1

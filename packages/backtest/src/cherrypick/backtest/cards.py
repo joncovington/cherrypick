@@ -9,10 +9,10 @@ or records a trial: these are views of a run, served to the operator's own conso
 what it is whatever the account. Given a starting capital, the account cards restate the same
 dollars against it: equity = capital + cumulative net, never compounded (sizing as a share of
 equity would change which trades happen, which is a different replay and a different trial). The
-default capital is the run's own peak capital at risk: the most any one session of any arm held at
+default capital is each arm's own peak capital at risk: the most any one of its sessions held at
 risk (MEIC's condors' max losses summed, flies' recorded book peak risk), so a percentage reads as
-return on what the strategy needed. A schema that records neither has no default, and the account
-cards are absent until a capital is chosen.
+return on what that arm needed. A chosen capital is one account for every arm. A schema that records
+neither has no default, and the account cards are absent until a capital is chosen.
 
 Sessions are the unit throughout (`stats.py`'s rule): a drawdown's length is counted in sessions,
 and the one annualised figure is the account's simple annual return (return / years), named so.
@@ -27,6 +27,7 @@ from datetime import date
 from pathlib import Path
 
 from cherrypick.core import ledgers as core_ledgers
+from cherrypick.core import metrics as core_metrics
 
 from . import paths, stats
 
@@ -147,6 +148,28 @@ def trade_anatomy(trades: list[dict]) -> dict:
     return {**_anatomy(nets), "not_recorded": len(trades) - len(nets)}
 
 
+def premium(trades: list[dict]) -> dict | None:
+    """What the trades collected and kept, over those that carry a credit (`entry_credit`): premium
+    collected, trading fees, fee drag (fees / premium, settlement apart, the suite's definition) and
+    capture rate (`core.metrics.capture_rate`: net over the structures' own ceilings). None when no
+    trade carries a credit (flies: a legged book has no single credit to name)."""
+    credited = [t for t in trades if t.get("entry_credit") and t.get("net_pnl") is not None]
+    if not credited:
+        return None
+    collected = sum(t["entry_credit"] for t in credited)
+    fees = [t["fees"] for t in credited if t.get("fees") is not None]
+    capture = core_metrics.capture_rate(trades)
+    return {
+        "n": len(credited),
+        "premium": _r(collected),
+        "fees": _r(sum(fees)),
+        "fees_not_recorded": len(credited) - len(fees),
+        "fee_drag": _r(sum(fees) / collected, 4) if collected > 0 else None,
+        "capture_rate": capture["value"],
+        "capture_n": capture["n"],
+    }
+
+
 def exits(trades: list[dict]) -> list[dict] | None:
     """How trades ended (`outcome`, in the module's own words), each with its count, share, win rate,
     average and total net. None when the schema records no outcome at all."""
@@ -253,6 +276,7 @@ def arm_cards(series: list[dict], trades: list[dict], capital: float | None) -> 
         "calendar": calendar(series),
         "sessions": session_anatomy(series),
         "trades": trade_anatomy(trades),
+        "premium": premium(trades),
         "exits": exits(trades),
         "edge_trend": edge_trend(series),
         "account": acct,
@@ -264,30 +288,21 @@ def cards(
     trades_by_arm: dict[str, dict[str, list[dict]]],
     capital: float | None = None,
 ) -> dict:
-    """Every arm's cards on one account. `trades_by_arm` is {arm: {session: [trade, ...]}}. With no
-    capital chosen, the run's peak session risk is the account; with neither, no account cards."""
-    risks = [
-        r
-        for by_session in trades_by_arm.values()
-        for rows in by_session.values()
-        if (r := session_risk(rows)) is not None
-    ]
-    peak_risk = max(risks) if risks else None
-    used = capital if capital is not None else peak_risk
+    """Every arm's cards. `trades_by_arm` is {arm: {session: [trade, ...]}}. A chosen capital is one
+    account for every arm, so arms read side by side; with none, each arm reads against its own peak
+    session risk (an arm whose schema records none has no account cards). Not one shared peak: a
+    run's widest arm, MEIC's control sampling stream, would set every other arm's account."""
+    arms = {}
+    for arm, series in series_by_arm.items():
+        by_session = trades_by_arm.get(arm, {})
+        risks = [r for rows in by_session.values() if (r := session_risk(rows)) is not None]
+        peak_risk = max(risks) if risks else None
+        out = arm_cards(series, [t for rows in by_session.values() for t in rows], capital or peak_risk)
+        out["peak_risk"] = _r(peak_risk)
+        arms[arm] = out
     return {
-        "account": {
-            "capital": _r(used),
-            "basis": "chosen" if capital is not None else ("peak_risk" if peak_risk is not None else None),
-            "peak_risk": _r(peak_risk),
-        },
-        "arms": {
-            arm: arm_cards(
-                series,
-                [t for rows in trades_by_arm.get(arm, {}).values() for t in rows],
-                used,
-            )
-            for arm, series in series_by_arm.items()
-        },
+        "account": {"capital": _r(capital), "basis": "chosen" if capital is not None else "peak_risk"},
+        "arms": arms,
     }
 
 

@@ -216,6 +216,8 @@ describe("runs", () => {
         { outcome: "per_side_stop", count: 1, share: 0.5, win_rate: 0, avg_net: -50, total_net: -50 },
       ],
       edge_trend: null,
+      peak_risk: 400,
+      premium: { n: 2, premium: 200, fees: 2, fees_not_recorded: 0, fee_drag: 0.01, capture_rate: -0.15, capture_n: 2 },
       account: {
         capital: 400,
         ending: 370,
@@ -229,15 +231,17 @@ describe("runs", () => {
     };
     const cards: BacktestRunCards = {
       ok: true,
-      account: { capital: 400, basis: "peak_risk", peak_risk: 400 },
-      arms: { control: arm, "range-high": { ...arm, account: null, exits: null } },
+      account: { capital: null, basis: "peak_risk" },
+      arms: { control: arm, "range-high": { ...arm, account: null, exits: null, premium: null, peak_risk: null } },
     };
     const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}`, (c) => {
       seedOverview(c);
       c.setQueryData(["bridged", "backtest", "run", RUN_ID], { ok: true, data: { ...REPORT, cards }, error: null });
     });
     expect(html).toContain("peak risk ($400)");
-    expect(html).toContain("the run&#x27;s peak session risk");
+    expect(html).toContain("this arm&#x27;s own peak session risk");
+    expect(html).toContain("1.0%"); // fee drag
+    expect(html).toContain("-15.0%"); // capture rate
     expect(html).toContain("-7.5%"); // the return, a fraction shown as a percentage
     expect(html).toContain("11.9%"); // the drawdown as a share of peak equity
     expect(html).toContain("not recovered");
