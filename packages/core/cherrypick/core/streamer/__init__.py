@@ -59,8 +59,14 @@ _RECONNECT_MAX = 60.0
 # through one choke point — chunked, and spaced by a global minimum interval so that four event
 # types fired back to back cannot stack into one burst. A full 12k resubscribe costs a few seconds
 # against a 240s settling window, which is free.
-SUBSCRIBE_CHUNK = 200
-SUBSCRIBE_PACE_S = 0.15
+#
+# 2026-10-26: 200 per 0.15s (~1,300 symbols/s) was not slow enough. Monday's new weeklies and
+# pmcc's widened deep windows put ~6,000 window symbols on each connection; they went out in about
+# four seconds, and DXLink killed every connection ~11s in for the whole session (539 reconnects,
+# against about one a day before). 100 per 0.5s (200 symbols/s) spreads the same resubscribe over
+# ~30s, still well inside the settling window.
+SUBSCRIBE_CHUNK = 100
+SUBSCRIBE_PACE_S = 0.5
 _COMMIT_BATCH_INTERVAL_S = 0.5
 _COMMIT_BATCH_MAX_PENDING = 25
 # 2+4+8+16+32+60s ~= 2 minutes of retries for a single symbol's chain fetch before giving up and
