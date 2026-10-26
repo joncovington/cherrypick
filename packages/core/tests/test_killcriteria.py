@@ -87,6 +87,10 @@ def test_live_nets_counts_only_the_arm_since_written():
         {"arm": "control", "session": "2026-10-24", "net_pnl": 5.0},
     ]
     assert kc.live_nets(recs, "control", CRITERIA) == [5.0, -10.0]
+    # The row the nets skip is named, not lost; one before the criteria were written is not.
+    early = {"arm": "control", "session": "2026-10-01", "net_pnl": None}
+    assert kc.unrecorded([*recs, early], "control", CRITERIA) == [recs[3]]
+    assert kc.unrecorded(recs, "control", None) == []
 
 
 def test_a_block_latches_until_cleared():

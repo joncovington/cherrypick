@@ -298,7 +298,13 @@ access through `db.py` / `db_paper.py`, which apply idempotent `ALTER TABLE ADD 
 
 **Kill criteria on live orders (B1, 2026-10-25).** `tt.py execute_trade --live` checks `live.kill`
 (`tt.kill_refusal`, `core.killcriteria`) before any order with an opening leg; a closing order is never
-held back. Missing criteria refuse; an unreadable live ledger refuses; a block latches
+held back. Every doubt refuses: missing criteria; a live ledger that is unreadable or **missing**
+(never read as an empty book; `db.py init_db` starts the empty one a first live trade needs); and a
+closed live trade since the criteria's `written` date with **no net** — `save_close` takes `pnl`
+and leaves `exit_cost` to the caller, and the verdict skips a row with no net, so an unrecorded loss
+would pass the drawdown check. Record `entry_cost` (`save_trade`) and `exit_cost` (`save_close`) on
+every live trade; the refusal names the order ids and does not latch. A block latches
 (`state/kill/earnings.json`, a watchdog CRITICAL) until a person clears it. Under a hand-written
-`hand_limit_dollars` an order carries one contract a leg. Guarded from the settings surface.
+`hand_limit_dollars`, or a REDUCED verdict (which halves an entry, and `tt.py` cannot see the full
+size), an order carries one contract a leg. Guarded from the settings surface.
 
