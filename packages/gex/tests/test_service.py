@@ -209,6 +209,27 @@ def test_record_regimes_persists_a_compact_summary_row(tmp_path):
     assert row["spot"] is not None and row["expiration"]
 
 
+def test_a_failed_profile_write_leaves_no_regime_row_and_says_so_once(tmp_path, monkeypatch, caplog):
+    """The two inserts are one sample: a regime row without its profile rows is a half reading."""
+    import sqlite3
+
+    def boom(series):
+        raise RuntimeError("profile rows broke")
+
+    monkeypatch.setattr(service, "profile_rows", boom)
+    service._last_record_failure.clear()
+    cfg = _cfg(tmp_path)
+    with caplog.at_level("WARNING", logger="cherrypick-gex.recorder"):
+        assert service.record_regimes(cfg, now_et=IN_SESSION) == 0
+        assert service.record_regimes(cfg, now_et=IN_SESSION + timedelta(minutes=5)) == 0
+    conn = sqlite3.connect(cfg["history_db_path"])
+    assert conn.execute("SELECT COUNT(*) FROM gex_regime_history").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM gex_profile_history").fetchone()[0] == 0
+    conn.close()
+    failures = [r for r in caplog.records if "regime record for SPX failed" in r.getMessage()]
+    assert len(failures) == 1  # the same failure on the next tick is not logged again
+
+
 def test_record_regimes_records_flow_at_the_walls(tmp_path):
     """Calls traded at the call wall (610: 5), puts at the put wall (600: 20), and chain totals."""
     import sqlite3
