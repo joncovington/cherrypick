@@ -1276,6 +1276,11 @@ two-session fetch smoke test read row counts only.*
   - **A pass:** a proposal for a paper arm of the trade beside the suite's loops, with the
     robustness report.
   - **A fail or no verdict:** closes this structure as specified.
+- **Result (2026-10-27): fail, both arms; the structure is closed.** In the design window neither
+  the trail nor the 10:30 sale has a positive mean net after costs, and neither has a positive
+  time-half. The holdout was not read and stays unspent. The mid-price fills, reported only as
+  context, do not change this: none passes the rule either. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item19/study-2022-05-16-2024-12-31.json`).
 - **Not tested here:**
   - his "Convex Stack" (one with-trend 4-5DTE fly, twice a week), declared as its own item after
     this one;
