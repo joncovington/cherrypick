@@ -170,8 +170,12 @@ def by_hand(monkeypatch):
     monkeypatch.setattr(broker_cli, "_account", account)
     monkeypatch.setattr(broker_cli._broker, "build_order", lambda spec: spec)
     monkeypatch.setattr(broker_cli._broker, "place_order", place_order)
-    args = type("Args", (), {"live": True, "order": "{}"})()
-    return lambda: asyncio.run(broker_cli.cmd_execute_trade(args)), placed
+
+    def run(order: str = "{}"):
+        args = type("Args", (), {"live": True, "order": order})()
+        return asyncio.run(broker_cli.cmd_execute_trade(args))
+
+    return run, placed
 
 
 def test_execute_trade_live_refuses_on_an_unarmed_session(by_hand):
@@ -184,8 +188,85 @@ def test_execute_trade_live_refuses_on_an_unarmed_session(by_hand):
 def test_execute_trade_live_passes_the_gate_on_an_armed_session(by_hand):
     run, placed = by_hand
     _arm_for(_GATE_DAY)
-    assert run() == {"ok": True, "live": True}
+    out = run()
+    assert out["ok"] is True and out["live"] is True
     assert placed == [True]
+
+
+def _order(action: str) -> str:
+    import json
+
+    return json.dumps(
+        {"legs": [{"instrument_type": "Equity Option", "symbol": "X", "action": action, "quantity": 1}]}
+    )
+
+
+def _halt() -> None:
+    from cherrypick.core import home
+
+    path = home.halt_flag_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()
+
+
+def test_execute_trade_live_carries_its_own_identifier(by_hand):
+    run, placed = by_hand
+    _arm_for(_GATE_DAY)
+    out = run()
+    assert out["ok"] is True and out["external_identifier"].startswith("bwb-")
+    assert placed == [True]
+
+
+def test_a_halt_refuses_a_live_opening_and_lets_a_close_through(by_hand):
+    """The suite-wide halt stops new positions; it must never strand an open one without its exit."""
+    run, placed = by_hand
+    _arm_for(_GATE_DAY)
+    _halt()
+    out = run(_order("Sell to Open"))
+    assert out["ok"] is False and any("halt flag" in g for g in out["unmet_gates"])
+    assert placed == []
+    assert run(_order("Buy to Close"))["ok"] is True
+    assert placed == [True]
+
+
+def test_a_submit_that_raises_is_recovered_by_its_identifier_not_placed_again(by_hand, monkeypatch):
+    from cherrypick.bwb import broker_cli
+
+    run, placed = by_hand
+    _arm_for(_GATE_DAY)
+    seen = {}
+
+    async def timeout(account, session, order, *, live, deploy_limit_pct):
+        placed.append(live)
+        seen["ext"] = order["external_identifier"]
+        raise TimeoutError("read timed out")
+
+    async def recover(account, session, ext):
+        return {"order_id": 42, "external_identifier": ext} if ext == seen.get("ext") else None
+
+    monkeypatch.setattr(broker_cli._broker, "place_order", timeout)
+    monkeypatch.setattr(broker_cli._broker, "recover_by_identifier", recover)
+    out = run()
+    assert out["ok"] is True and out["recovered"] is True and out["order_id"] == "42"
+    assert out["external_identifier"] == seen["ext"] and placed == [True]
+
+
+def test_a_submit_that_raises_and_is_not_found_reports_the_error(by_hand, monkeypatch):
+    from cherrypick.bwb import broker_cli
+
+    run, placed = by_hand
+    _arm_for(_GATE_DAY)
+
+    async def timeout(account, session, order, *, live, deploy_limit_pct):
+        raise TimeoutError("read timed out")
+
+    async def recover(account, session, ext):
+        return None
+
+    monkeypatch.setattr(broker_cli._broker, "place_order", timeout)
+    monkeypatch.setattr(broker_cli._broker, "recover_by_identifier", recover)
+    out = run()
+    assert out["ok"] is False and "TimeoutError" in out["error"] and out["external_identifier"]
 
 
 # --------------------------------------------------------------------------- readers
