@@ -41,6 +41,8 @@ from cherrypick.core import broker as _broker
 from cherrypick.core import calendar as _cal
 from cherrypick.core import dxfeed as _dx
 from cherrypick.core import execution as _execution
+from cherrypick.core import home as _home
+from cherrypick.core import killcriteria as _kill
 from cherrypick.core import live as _live
 from cherrypick.core.broker import cli as _broker_cli
 
@@ -1056,6 +1058,35 @@ def _opens_position(spec: dict) -> bool:
     return any("to open" in str(leg.get("action", "")).lower() for leg in spec.get("legs") or [])
 
 
+def _manual_open_refusal(config: dict, spec: dict) -> str | None:
+    """Why a hand-placed live OPENING order is refused, or None (2026-10-27). The loop's entry rules,
+    applied to the manual door: the suite halt flag, today's arm record (`/live-meic-start`, read
+    exactly as the tick reads it) and the written kill criteria over the live ledger -- a BLOCKED
+    verdict refuses, any other caps each leg at what the loop would size to. Until this date the
+    only gates here were `enable_live_trading` and the quarter end, so a halted, unarmed or killed
+    arm could still be opened by hand. Closing orders never reach this."""
+    from cherrypick.meic import live_loop  # lazy: live_loop's imports are heavy and reach tt's helpers
+
+    if _home.halt_flag_path().exists():
+        return "halt flag present -- no new live position while the suite is halted (closes are unaffected)"
+    now = datetime.now(_ET)
+    reason = live_loop.should_disarm(config, now.hour * 60 + now.minute, now.date().isoformat())
+    if reason:
+        return f"not armed for this session: {reason} (arm with /live-meic-start)"
+    verdict = live_loop.kill_verdict(config, str(_paths.live_db_path()))
+    if verdict["state"] == _kill.BLOCKED:
+        return "kill criteria: " + "; ".join(verdict["reasons"])
+    # The size the loop would enter at (`kill.sized`, applied in every state but BLOCKED: halved when
+    # REDUCED, one under a hand-written limit). The manual door cannot resize an order, so it refuses
+    # one wider than that.
+    widest = max((int(leg.get("quantity") or 1) for leg in spec.get("legs") or []), default=1)
+    allowed = _kill.sized(widest, verdict, (config.get("live") or {}).get("kill"))
+    if allowed < widest:
+        why = "; ".join(verdict.get("reasons") or []) or "a hand-written limit"
+        return f"kill criteria allow a live meic order of {allowed} contract(s) a leg ({why})"
+    return None
+
+
 def _occ_legs(spec: dict) -> dict:
     """`spec` with every leg named by its OCC symbol (2026-10-12) -- the agent path's half of #231.
 
@@ -1099,6 +1130,10 @@ async def cmd_execute_trade(args) -> dict:
             "reason": _live.QUARTER_END_REASON,
             "error": "Quarter-end session: no new live entries today. Closing orders are unaffected.",
         }
+    if not dry_run and _opens_position(spec):
+        refusal = _manual_open_refusal(_load_config(), spec)
+        if refusal:
+            return {"ok": False, "reason": "manual_open_refused", "error": refusal}
     account = None
     try:
         account = await _trading_account(getattr(args, "account_number", None))

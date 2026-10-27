@@ -296,6 +296,9 @@ access through `db.py` / `db_paper.py`, which apply idempotent `ALTER TABLE ADD 
      next open**.
    - Overnight-hold positions between the open and `close_window_start`: **60–120s** (3c).
 
+**The suite halt on live orders (2026-10-27).** `tt.py execute_trade --live` refuses an order with an
+opening leg while the suite halt flag is present; a closing order is never held back.
+
 **Kill criteria on live orders (B1, 2026-10-25).** `tt.py execute_trade --live` checks `live.kill`
 (`tt.kill_refusal`, `core.killcriteria`) before any order with an opening leg; a closing order is never
 held back. Every doubt refuses: missing criteria; a live ledger that is unreadable or **missing**

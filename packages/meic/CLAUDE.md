@@ -47,8 +47,10 @@ decisions per symbol, one shared account-wide risk budget.
   ORB, no discretionary tightening, no working-order repricing beyond the stop rule.
 - **Interactive (agent-driven).** You execute the Loop Steps below for manual `/meic-start` sessions,
   through `tt execute_trade --live`. That path needs `enable_live_trading: true` and the designated
-  account, but not `live.symbol`, `live.gate0_confirmed` or the arm record. The orchestrator never
-  runs it.
+  account, but not `live.symbol` or `live.gate0_confirmed`. Since 2026-10-27 an **opening** order on
+  it also obeys the loop's entry rules (`tt._manual_open_refusal`): no halt flag, today's arm record
+  (`/live-meic-start`), and the written kill criteria (BLOCKED refuses; otherwise each leg is capped
+  at `kill.sized`). A closing order is never held back. The orchestrator never runs it.
 
 > ⚠️ **Think hard before adding a dependency to the loop path.** Entry/stop/logging decisions depend
 > only on `tt.py`, `db.py`, the streamer's cache and this file. Every added dependency is a new failure

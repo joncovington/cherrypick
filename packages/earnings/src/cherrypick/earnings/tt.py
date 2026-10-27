@@ -44,6 +44,7 @@ from typing import Any
 from cherrypick.core import broker as _broker
 from cherrypick.core import dxfeed as _dx
 from cherrypick.core import execution as _execution
+from cherrypick.core import home as _home
 from cherrypick.core import killcriteria as _kill
 from cherrypick.core import ledgers as _ledgers
 from cherrypick.core.broker import cli as _broker_cli
@@ -521,6 +522,12 @@ async def cmd_execute_trade(args) -> dict:
         refusal = kill_refusal(spec, _load_config())
         if refusal:
             return {"ok": False, "error": refusal}
+        # The suite-wide halt stops new positions on this door too (2026-10-27); a close goes through.
+        if _broker.opens_position(spec) and _home.halt_flag_path().exists():
+            return {
+                "ok": False,
+                "error": "halt flag present -- no new live position while the suite is halted (closes are unaffected)",
+            }
     # The submission's own identity (2026-09-17): tastytrade does not deduplicate retries, and this
     # is a one-shot command a human re-runs on an error. Sent as the order's external identifier
     # and reported back, so a timeout after the broker accepted is recovered below by reading
