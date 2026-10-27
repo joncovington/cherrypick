@@ -1278,9 +1278,14 @@ two-session fetch smoke test read row counts only.*
   - **A fail or no verdict:** closes this structure as specified.
 - **Result (2026-10-27): fail, both arms; the structure is closed.** In the design window neither
   the trail nor the 10:30 sale has a positive mean net after costs, and neither has a positive
-  time-half. The holdout was not read and stays unspent. The mid-price fills, reported only as
-  context, do not change this: none passes the rule either. Every figure is in the local result
+  time-half. The mid-price fills, reported only as context, do not change this: none passes the rule
+  either. Every figure is in the local result
   (`~/.cherrypick/data/backtest/results/research/item19/study-2022-05-16-2024-12-31.json`).
+- **Holdout read anyway (2026-10-27), at the user's request; exploratory, not a verdict.** The
+  declared rule reads the holdout only after a design pass, so this run cannot overturn the fail.
+  Run with the rules unchanged: both arms fail every check there too, the trail no better than the
+  10:30 sale. The holdout is now spent for this specification; a revised Time Warp needs a new one.
+  Local result: `.../item19/study-2025-01-01-2026-10-23.json`.
 - **Not tested here:**
   - his "Convex Stack" (one with-trend 4-5DTE fly, twice a week), declared as its own item after
     this one;
