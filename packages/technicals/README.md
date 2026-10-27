@@ -19,6 +19,10 @@ the `score-*` commands. The daily path needs no vendor data. `check-vendor` and 
 that collector is off by default and runs only with `market_report.collector` on and
 `market_report.vendor_dashboard_url` and `market_report.vendor_edition_title` set.
 
+The captures stopped on 2026-10-23, so the nightly check on the adjustment is now `check-adjust`:
+our adjusted closes against Yahoo's (fetched each evening by `scripts/fetch_yahoo_adjusted.py`),
+flagging any step in the ratio of the two -- a split, spin-off or dividend one side lacks.
+
 ```
 pip install -e packages/core
 pip install -e "packages/technicals[dev]"
@@ -27,6 +31,8 @@ python -m cherrypick.technicals status
 python -m cherrypick.technicals bars MSFT --last 5
 python -m cherrypick.technicals report
 python -m cherrypick.technicals check-vendor          # needs vendor captures (see above)
+python scripts/fetch_yahoo_adjusted.py                # network: a year of Yahoo's adjusted closes
+python -m cherrypick.technicals check-adjust          # our adjustment against them
 ```
 
 It needs the local `dolt sql-server` that the earnings module runs. The suite schedules it only when
