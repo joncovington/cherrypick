@@ -11,6 +11,25 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed (2026-10-27): live-path hardening, no measurement change.** Each change only adds a
+  refusal or a report:
+  - **The manual live door obeys the halt.** A hand-placed opening order through meic's or earnings'
+    `tt execute_trade --live` is refused while the suite is halted. meic's also needs today's arm
+    record (`/live-meic-start`) and passes its kill criteria, so **the interactive `/meic-start` live
+    path now needs arming**. bwb and flies apply the halt the same way. Closes always go through.
+  - **No double-placed manual orders:** bwb and flies manual orders carry an identifier. A submit
+    that times out is recovered from the broker rather than placed again.
+  - **bwb settles under the live tick's lock.**
+  - **desk's daily caps refuse** when the journal cannot be read cleanly.
+  - **meic reports an unreadable live ledger** instead of a clean day, and the watchdog raises it as
+    CRITICAL.
+  - **`tt.py` masks account numbers**, except in the three verbs the designation and reconcile flows
+    match on.
+  - **Narrative fence:** the narrative agents get an allow-list of tools (EOD none, morning
+    WebSearch).
+  - **EOD issue filter:** the EOD narrative withholds any recommendation carrying a figure, an
+    account or a licensed-data reference, instead of filing it in this public repo.
+
 - **Changed (2026-10-26): audit hardening, no measurement change.** From a read-only review of the
   suite:
   - **Console:** refuses a cross-site WebSocket, validates the advisor experiment id before it
