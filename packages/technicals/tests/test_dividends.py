@@ -94,6 +94,95 @@ def test_a_disputes_usual_payout_is_read_from_nearby_years():
     assert [(x["ex_date"], x["chose"]) for x in disputes] == [("2024-05-17", "tastytrade")]
 
 
+def test_yahoo_keeps_a_special_payout_the_usual_one_would_beat():
+    """CME 2026-03-10: tastytrade's 7.45 is the annual variable dividend with the regular 1.30, and
+    Yahoo states it; without Yahoo the usual 1.25-1.30 wins."""
+    dolt = _d(("2025-12-12", 1.25), ("2026-03-10", 1.30), ("2026-06-09", 1.30))
+    tasty = _d(("2025-12-12", 1.25), ("2026-03-10", 7.45), ("2026-06-09", 1.30))
+    out, disputes = dividends.reconcile(dolt, tasty, [], _d(("2026-03-10", 7.45)))
+    assert {x.ex_date: x.amount for x in out}["2026-03-10"] == 7.45
+    assert [(x["chose"], x.get("by")) for x in disputes] == [("tastytrade", "yahoo")]
+    alone, _ = dividends.reconcile(dolt, tasty)
+    assert {x.ex_date: x.amount for x in alone}["2026-03-10"] == 1.30
+
+
+def test_yahoo_decides_a_disagreement_inside_the_outlier_band():
+    """HON: tastytrade states twice Dolt's 1.19; Yahoo's 1.19 decides, where rule 3 kept 2.38."""
+    out, disputes = dividends.reconcile(
+        _d(("2025-11-14", 1.19)), _d(("2025-11-14", 2.38)), [], _d(("2025-11-14", 1.19))
+    )
+    assert out == [Dividend("2025-11-14", 1.19)] and disputes[0]["chose"] == "dolt"
+
+
+def test_yahoo_does_not_touch_a_modest_disagreement():
+    """CHT: Yahoo's 1.653 is Dolt's, but a gap under THIRD_RATIO is a currency conversion and stays
+    tastytrade's, as the vendor's bars had it."""
+    out, disputes = dividends.reconcile(
+        _d(("2026-07-09", 1.65252)), _d(("2026-07-09", 1.611233)), [], _d(("2026-07-09", 1.653))
+    )
+    assert out == [Dividend("2026-07-09", 1.611233)] and disputes == []
+
+
+def test_yahoo_matching_neither_side_leaves_the_old_rules():
+    dolt = _d(("2024-05-17", 0.939), ("2025-05-19", 10.84))
+    tasty = _d(("2024-05-17", 9.2875), ("2025-05-19", 11.0111))
+    with_yahoo, _ = dividends.reconcile(dolt, tasty, [], _d(("2024-05-17", 5.0)))
+    assert with_yahoo == dividends.reconcile(dolt, tasty)[0]
+
+
+def test_one_payout_listed_in_parts_is_one_event():
+    """GFI 2026-03-13: tastytrade's 0.28211 and 1.159787 are Dolt's 1.44189, paid once."""
+    tasty = _d(("2026-03-13", 0.28211), ("2026-03-13", 1.159787))
+    out, _ = dividends.reconcile(_d(("2026-03-13", 1.44189)), tasty, [], _d(("2026-03-13", 1.442)))
+    assert [(x.ex_date, round(x.amount, 5)) for x in out] == [("2026-03-13", 1.44190)]
+
+
+def test_parts_that_do_not_sum_to_the_other_source_stay_apart():
+    """AMKR 2024-12-04: one of tastytrade's two entries is Dolt's whole amount."""
+    tasty = _d(("2024-12-04", 0.08269), ("2024-12-04", 0.40546))
+    assert dividends.merge_parts(tasty, _d(("2024-12-04", 0.08269))) == tasty
+
+
+def test_the_store_breaks_ties_with_yahoo_on_its_own_dates_basis():
+    """Yahoo states HON's 1.19 as 1.248, restated through the 2026-06-29 spin-off it lists as a
+    1907:2000 split; the store puts it back on its own date's basis before comparing."""
+    from cherrypick.technicals import adjust_check
+
+    conn = store.connect()
+    store.upsert_dividends(conn, [("HON", "2025-11-14", 1.19)])
+    path = paths.tastytrade_dividends()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc = {"symbols": {"HON": {"fetched_at": "x", "dividends": [["2025-11-14", 2.38]]}}}
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    y = adjust_check.connect_yahoo()
+    y.execute(
+        "INSERT INTO series (symbol, fetched_at, fetched_on, dividends, splits) VALUES (?, ?, ?, ?, ?)",
+        (
+            "HON",
+            "x",
+            "2026-10-27",
+            json.dumps([["2025-11-14", 1.248034]]),
+            json.dumps([["2026-06-29", 1907, 2000]]),
+        ),
+    )
+    y.commit()
+    y.close()
+    assert [round(x.amount, 4) for x in store.yahoo_dividends("HON")] == [1.19]
+    assert store.dividends(conn, "HON")[0] == [Dividend("2025-11-14", 1.19)]
+
+
+def test_an_excluded_name_gets_no_yahoo_tiebreak(monkeypatch):
+    monkeypatch.setattr(store, "yahoo_dividends", lambda s: _d(("2026-04-24", 0.124)))
+    conn = store.connect()
+    store.upsert_dividends(conn, [("PBR", "2026-04-24", 0.12409)])
+    path = paths.tastytrade_dividends()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc = {"symbols": {"PBR": {"fetched_at": "x", "dividends": [["2026-04-24", 0.26031]]}}}
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    assert "PBR" in dividends.THIRD_EXCLUDED
+    assert store.dividends(conn, "PBR")[0] == [Dividend("2026-04-24", 0.26031)]
+
+
 def test_the_store_restates_by_the_symbols_own_splits():
     conn = store.connect()
     store.upsert_bars(

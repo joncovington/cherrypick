@@ -135,12 +135,46 @@ def tastytrade_dividends(symbol: str) -> list[_adjust.Dividend]:
     return [_adjust.Dividend(d, float(a)) for d, a in rows]
 
 
+_YAHOO: dict = {"mtime": None, "symbols": {}}
+
+
+def yahoo_dividends(symbol: str) -> list[_adjust.Dividend]:
+    """Yahoo's dividends for `symbol` from scripts/fetch_yahoo_adjusted.py's file, about a year of
+    them, each restated onto its own date's share basis: Yahoo states an amount on today's, through
+    its own split list, spin-offs included (HON's 1.19 of 2025-11-14 reads 1.248 there). Re-read only
+    when the file changes; empty when the file or the symbol is absent."""
+    path = paths.yahoo_adjusted()
+    try:
+        stamp = (str(path), path.stat().st_mtime)
+        if stamp != _YAHOO["mtime"]:
+            ro = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+            try:
+                rows = ro.execute("SELECT symbol, dividends, splits FROM series").fetchall()
+            finally:
+                ro.close()
+            _YAHOO.update(
+                mtime=stamp, symbols={s: (json.loads(d or "[]"), json.loads(sp or "[]")) for s, d, sp in rows}
+            )
+    except (OSError, sqlite3.Error, ValueError):
+        return []
+    divs, splits_ = _YAHOO["symbols"].get(symbol, ([], []))
+    out = []
+    for ex, amount in divs:
+        f = 1.0
+        for day, num, den in splits_:
+            if day > ex and num > 0 and den > 0:
+                f *= num / den
+        out.append(_adjust.Dividend(ex, float(amount) * f))
+    return out
+
+
 def dividends(
     conn, symbol: str, splits_: list[_adjust.Split] | None = None
 ) -> tuple[list[_adjust.Dividend], list[dict]]:
-    """The dividends adjusted bars use: Dolt's reconciled with tastytrade's (`dividends.reconcile`).
-    `splits_` is the symbol's deduplicated splits, all of them; read here when not given."""
-    from .dividends import reconcile
+    """The dividends adjusted bars use: Dolt's reconciled with tastytrade's, Yahoo's breaking a large
+    disagreement (`dividends.reconcile`). `splits_` is the symbol's deduplicated splits, all of them;
+    read here when not given."""
+    from .dividends import THIRD_EXCLUDED, reconcile
 
     dolt = [
         _adjust.Dividend(r["ex_date"], r["amount"])
@@ -148,7 +182,8 @@ def dividends(
     ]
     if splits_ is None:
         splits_ = _adjust.dedupe_splits(raw_bars(conn, symbol), splits(conn, symbol))
-    return reconcile(dolt, tastytrade_dividends(symbol), splits_)
+    third = [] if symbol in THIRD_EXCLUDED else yahoo_dividends(symbol)
+    return reconcile(dolt, tastytrade_dividends(symbol), splits_, third)
 
 
 _PUBLIC_SPLITS: dict = {"mtime": None, "symbols": {}}
