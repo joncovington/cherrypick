@@ -300,6 +300,22 @@ def test_a_past_sessions_open_live_book_is_critical_armed_or_not(monkeypatch, tm
     ]
 
 
+def test_an_unreadable_live_ledger_is_critical_armed_or_not(monkeypatch, tmp_path):
+    """meic's status read a locked or corrupt ledger as empty until 2026-10-27; now it says so."""
+    _setup(
+        monkeypatch,
+        tmp_path,
+        status_obj={"armed_for": None, "ledger_unreadable": "live ledger unreadable: DatabaseError: x"},
+        registered=False,
+    )
+    found = [f for f in wd._check_live("meic", _mcfg(), _AFTER_CLOSE, False) if f.key == "meic.live_ledger"]
+    assert found and found[0].status == CRITICAL and "DatabaseError" in found[0].message
+    _setup(monkeypatch, tmp_path, status_obj={"armed_for": None, "ledger_unreadable": None}, registered=False)
+    assert not [
+        f for f in wd._check_live("meic", _mcfg(), _AFTER_CLOSE, False) if f.key == "meic.live_ledger"
+    ]
+
+
 def test_a_stale_arm_record_nothing_obeys_is_removed_not_halted(monkeypatch, tmp_path):
     # 2026-10-08: the machine was off at 17:00, so no tick deleted the arm record; the watchdog then
     # re-set the suite halt on every pass for a record the supervisor no longer acted on.

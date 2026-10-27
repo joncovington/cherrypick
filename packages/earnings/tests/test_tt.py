@@ -266,6 +266,40 @@ def test_cmd_execute_trade_live_submits_order(monkeypatch):
     assert "fill" not in result, "--wait 0 reports the placement only"
 
 
+def test_a_halt_refuses_a_live_open_and_lets_a_close_through(monkeypatch):
+    """The suite halt stops new positions on the manual door too (2026-10-27); a close goes through."""
+    from cherrypick.core import home
+
+    reached = []
+
+    async def _fake_get_account(account_number=None):
+        reached.append(True)
+        raise RuntimeError("stop at the account")
+
+    monkeypatch.setattr(tt, "_get_account", _fake_get_account)
+    monkeypatch.setattr(tt, "_live_trading_enabled", lambda: True)
+    monkeypatch.setattr(tt, "kill_refusal", lambda spec, config, db_path=None: None)
+    flag = home.halt_flag_path()
+    flag.parent.mkdir(parents=True, exist_ok=True)
+    flag.touch()
+
+    def run(action):
+        spec = {
+            "legs": [
+                {"symbol": "AAPL_C", "instrument_type": "Equity Option", "action": action, "quantity": 1}
+            ]
+        }
+        args = type(
+            "Args", (), {"live": True, "order": json.dumps(spec), "account_number": None, "wait": 0}
+        )()
+        return asyncio.run(tt.cmd_execute_trade(args))
+
+    out = run("Sell to Open")
+    assert out["ok"] is False and "halt flag" in out["error"] and reached == []
+    run("Buy to Close")
+    assert reached == [True]
+
+
 def test_cmd_execute_trade_live_waits_for_and_reports_the_actual_fill(monkeypatch):
     """Shown to fail on the pre-2026-09-17 command, which returned the placement and left the
     human to record whatever price they typed. The fill block carries the ACTUAL price."""
@@ -558,3 +592,17 @@ def test_a_live_submit_that_times_out_after_acceptance_is_recovered_not_reported
     result = asyncio.run(tt.cmd_execute_trade(args))
     assert result["ok"] is True and result["recovered"] is True and result["order_id"] == "99"
     assert result["external_identifier"].startswith("earnings-") and "timed out" in result["error"]
+
+
+def test_an_order_verbs_output_masks_the_account(monkeypatch, capsys):
+    """The order result carried the full account number to stdout; only the designation reads keep it."""
+
+    async def placed(args):
+        return {"ok": True, "account_number": "5WT01234"}
+
+    monkeypatch.setattr(tt, "cmd_execute_trade", placed)
+    monkeypatch.setattr(sys, "argv", ["tt", "execute_trade", "--order", "{}"])
+    tt.main()
+    out = capsys.readouterr().out
+    assert "5WT01234" not in out and "****1234" in out
+    assert tt.FULL_ACCOUNT_VERBS == {"list_accounts", "get_account_info", "get_positions"}

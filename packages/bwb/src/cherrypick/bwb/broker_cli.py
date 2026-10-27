@@ -25,14 +25,17 @@ import argparse
 import asyncio
 import json
 import sys
+import uuid
 
 from cherrypick.core import broker as _broker
+from cherrypick.core import home as _home
 from cherrypick.core.broker import cli as _broker_cli
 
 from cherrypick.bwb import clock
 from cherrypick.bwb import credentials as creds
 from cherrypick.bwb.cli import load_config
 
+_MODULE = "bwb"
 _READ = object()  # "read it yourself": the keyring for the account, the ET clock for the day
 
 
@@ -82,18 +85,53 @@ async def cmd_list_accounts(_args) -> dict:
     return await _broker_cli.list_accounts(creds)
 
 
+HALT_GATE = "halt flag present -- no new live position while the suite is halted (closes are unaffected)"
+
+
 async def cmd_execute_trade(args) -> dict:
     config = load_config()
+    spec = json.loads(args.order)
     if args.live:
         unmet = live_gates(config)
+        # The suite-wide halt stops OPENINGS here, as it does in the loop. Not in `live_gates`: the
+        # loop re-checks those on every submit, closes included, and a halt must never strand an
+        # open position without its exit (2026-10-27).
+        if _broker.opens_position(spec) and _home.halt_flag_path().exists():
+            unmet.append(HALT_GATE)
         if unmet:
             return {"ok": False, "error": "live submission gated", "unmet_gates": unmet}
-    spec = json.loads(args.order)
+    # The submission's own identity (2026-10-27, the meic/earnings 2026-09-17 fix): tastytrade does
+    # not deduplicate retries, and this is a one-shot command a human re-runs on an error. A submit
+    # that raises is recovered by reading today's orders for the identifier -- never re-placed.
+    ext = str(spec.get("external_identifier") or f"{_MODULE}-{uuid.uuid4().hex}")
+    spec["external_identifier"] = ext
     session = creds.get_session()
-    account = await _account(session)
-    order = _broker.build_order(spec)
-    limit = (config.get("live") or {}).get("account_deploy_limit_pct") or None
-    return await _broker.place_order(account, session, order, live=bool(args.live), deploy_limit_pct=limit)
+    account = None
+    try:
+        account = await _account(session)
+        order = _broker.build_order(spec)
+        limit = (config.get("live") or {}).get("account_deploy_limit_pct") or None
+        result = await _broker.place_order(
+            account, session, order, live=bool(args.live), deploy_limit_pct=limit
+        )
+    except Exception as exc:
+        if args.live and account is not None:
+            found = await _broker.recover_by_identifier(account, session, ext)
+            if found is not None:
+                return {
+                    "ok": True,
+                    "dry_run": False,
+                    "recovered": True,
+                    "order_id": str(found["order_id"]),
+                    "external_identifier": ext,
+                    "response": found,
+                    "error": f"submit raised {type(exc).__name__}: {exc}; order found at the broker by its identifier",
+                }
+        out = _broker_cli.error_result(exc)
+        out["external_identifier"] = ext
+        return out
+    result["external_identifier"] = ext
+    return result
 
 
 async def cmd_order_status(args) -> dict:

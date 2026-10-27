@@ -5,12 +5,14 @@ Same fence as `eod_narrative.py`, for the same reasons: `packages/*` is what the
 import, so a script the scheduler runs cannot be imported by a loop, no package acquires an API key
 or a network dependency, and deleting this file costs a note and nothing else.
 
-One deliberate deviation from the EOD fence: **WebSearch and WebFetch stay allowed.** The calendar
-no longer needs them -- since fact version 4 the pack carries the week's releases and earnings with
+One deliberate deviation from the EOD fence: **WebSearch is allowed, and nothing else.** The calendar
+no longer needs it -- since fact version 4 the pack carries the week's releases and earnings with
 their implied moves -- but the prose over the movers and the risk monitor does: the headline file
-gives titles, not reasons. The fence still holds where it matters — the agent gets no Bash, no
-Edit, no Write, so it can read the web but can only ever *return prose*; the script, never the
-agent, puts anything on disk. Numbers about the market itself must still come from the inputs.
+gives titles, not reasons. Since 2026-10-27 the fence is an allow-list (`_common.tool_fence`): no
+Read/Glob/Grep, no WebFetch, no MCP server and no skill, so a crafted headline or search result has
+nothing to read on this machine and no way to send it anywhere. The agent can only ever *return
+prose*; the script, never the agent, puts anything on disk. Numbers about the market itself must
+still come from the inputs.
 
 Three inputs, all read-only, all written by deterministic jobs before this runs: the fact pack
 (`packages/overview`), the technicals report for the last session before it (`packages/technicals`:
@@ -56,9 +58,8 @@ TECHNICALS = _HOME / "data" / "technicals"
 HEADLINES = _HOME / "data" / "market-report" / "headlines"
 MAX_HEADLINES = 60
 
-# No acting tools. WebSearch/WebFetch are deliberately absent from this list -- see the module
-# docstring -- which is the one difference from eod_narrative.py's fence.
-DISALLOWED = ["Bash", "Edit", "Write", "NotebookEdit", "Task"]
+# The one tool the agent gets -- see the module docstring; the one difference from eod_narrative.py.
+TOOLS = ["WebSearch"]
 TIMEOUT_SECONDS = 600
 TREND_SESSIONS = 5
 
@@ -185,7 +186,7 @@ def _headlines(session: str) -> dict | None:
 
 
 def _run_claude(payload: str) -> tuple[str | None, str | None]:
-    return _common.run_claude(payload, prompt=PROMPT, disallowed=DISALLOWED, timeout=TIMEOUT_SECONDS)
+    return _common.run_claude(payload, prompt=PROMPT, tools=TOOLS, timeout=TIMEOUT_SECONDS)
 
 
 def main() -> int:

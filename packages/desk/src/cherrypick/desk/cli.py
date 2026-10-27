@@ -233,10 +233,20 @@ def _pin_gate(phase: str, **context: Any) -> dict | None:
 
 
 # --------------------------------------------------------------------------- commands
+def _tally(day: str) -> tuple[int, float, str | None]:
+    """(orders, worst case committed, refusal). An unreadable journal is a refusal, never a zero:
+    the caps cannot be shown to have room when the day's spend cannot be read."""
+    try:
+        orders, risk = journal.today_totals(day)
+    except journal.JournalUnreadable as exc:
+        return 0, 0.0, f"daily caps cannot be checked -- {exc}; repair the journal line before trading"
+    return orders, risk, None
+
+
 def cmd_status(args) -> dict:
     cfg = cfgmod.resolve(cfgmod.load())
     day = _today()
-    orders_today, risk_today = journal.today_totals(day)
+    orders_today, risk_today, tally_problem = _tally(day)
     locked = pin.locked_until()
     return {
         "ok": True,
@@ -257,6 +267,7 @@ def cmd_status(args) -> dict:
         "session_date": day,
         "orders_today": orders_today,
         "risk_committed_today": round(risk_today, 2),
+        "tally_problem": tally_problem,
         "config_path": str(cfgmod.config_path()),
         "journal_path": str(cfgmod.journal_path()),
     }
@@ -278,7 +289,9 @@ def cmd_propose(args) -> dict:
     if not pin.is_set():
         refusals.append("no desk PIN configured — run `cherrypick-desk pin-set`")
     account = _resolve_account(cfg, args.account_number)
-    orders_today, risk_today = journal.today_totals(_today())
+    orders_today, risk_today, tally_problem = _tally(_today())
+    if tally_problem:
+        refusals.append(tally_problem)
     refusals += policy.evaluate(
         risk,
         cfg=cfg,
@@ -426,8 +439,9 @@ def _confirm_claimed(cfg: dict, record: dict, code: str) -> dict:
         # Re-run every gate against CURRENT state, inside the lock. The proposal's verdict is not
         # carried forward: the halt flag may have appeared, the config may have changed, the daily
         # tally may have moved.
-        orders_today, risk_today = journal.today_totals(_today())
-        refusals = policy.evaluate(
+        orders_today, risk_today, tally_problem = _tally(_today())
+        refusals = [tally_problem] if tally_problem else []
+        refusals += policy.evaluate(
             risk,
             cfg=cfg,
             halt_present=_halt_present(),

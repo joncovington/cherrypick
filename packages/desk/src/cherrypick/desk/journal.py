@@ -86,25 +86,40 @@ def record_strict(event: str, **fields: Any) -> dict:
     return entry
 
 
-def read_all(path: Path | None = None) -> list[dict]:
-    """Every journal entry, oldest first. Unparseable lines are skipped, not fatal."""
+class JournalUnreadable(JournalError):
+    """The journal could not be read cleanly, so the day's tally is unknown."""
+
+
+def read_all(path: Path | None = None, *, strict: bool = False) -> list[dict]:
+    """Every journal entry, oldest first.
+
+    Lenient by default (a display): unparseable lines are skipped and an unreadable file reads as
+    empty. `strict=True` is for the daily caps, where both of those would undercount what was spent:
+    it raises `JournalUnreadable` naming the file or the line instead (2026-10-27)."""
     p = path or cfgmod.journal_path()
     if not p.exists():
         return []
     out = []
     try:
-        for line in p.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(entry, dict):
-                out.append(entry)
-    except OSError:
+        text = p.read_text(encoding="utf-8")
+    except OSError as exc:
+        if strict:
+            raise JournalUnreadable(f"journal unreadable: {type(exc).__name__}: {exc}") from exc
         return []
+    for n, line in enumerate(text.splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError as exc:
+            if strict:
+                raise JournalUnreadable(f"journal line {n} does not parse ({p})") from exc
+            continue
+        if isinstance(entry, dict):
+            out.append(entry)
+        elif strict:
+            raise JournalUnreadable(f"journal line {n} is not an entry ({p})")
     return out
 
 
@@ -130,16 +145,20 @@ def today_totals(day: str, path: Path | None = None) -> tuple[int, float]:
     day, counted once per ticket. Failures count on purpose: a submit that raised may still have
     reached the broker, and a cap that only counted confirmed fills would let a flapping connection
     place the day's budget twice. Refused and merely proposed orders cost nothing.
+
+    Fails closed (2026-10-27): a journal that cannot be read cleanly, or an attempt whose
+    `max_loss` is not a number, raises `JournalUnreadable` rather than count as nothing spent --
+    a line that does not parse cannot be shown to be from another day.
     """
     tickets: dict[str, float] = {}
-    for n, entry in enumerate(read_all(path)):
+    for n, entry in enumerate(read_all(path, strict=True)):
         if entry.get("event") not in ATTEMPT_EVENTS or session_date_of(entry) != day:
             continue
         key = str(entry.get("ticket_id") or entry.get("order_id") or f"line-{n}")
         value = entry.get("max_loss")
         try:
             loss = float(value) if value is not None else 0.0
-        except (TypeError, ValueError):
-            loss = 0.0
+        except (TypeError, ValueError) as exc:
+            raise JournalUnreadable(f"journal entry for {key} has an unreadable max_loss {value!r}") from exc
         tickets[key] = max(tickets.get(key, 0.0), loss)
     return len(tickets), sum(tickets.values())

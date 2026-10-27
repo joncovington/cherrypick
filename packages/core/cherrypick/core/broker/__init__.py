@@ -524,6 +524,28 @@ async def orders_today(account: Any, session: Any) -> list[dict]:
     ]
 
 
+async def recover_by_identifier(account: Any, session: Any, external_identifier: str) -> dict | None:
+    """Today's order carrying `external_identifier`, terminal ones included, or None.
+
+    The read after a submit that raised: tastytrade does not deduplicate retries, so an order the
+    broker accepted in the seconds before a timeout must be FOUND, never re-placed. A recovery that
+    itself fails returns None, so the caller reports the original error and never a phantom success."""
+    try:
+        for o in await orders_today(account, session):
+            if o.get("external_identifier") == external_identifier and o.get("order_id") is not None:
+                return o
+    except Exception:  # noqa: BLE001 -- a failed recovery reports the original error
+        return None
+    return None
+
+
+def opens_position(spec: dict) -> bool:
+    """Whether an order spec opens anything: any leg whose action is "... to open" (the human action
+    strings `build_order` maps). Openings are what a halt, a kill verdict or an unarmed day refuse;
+    a closing order must always get through."""
+    return any("to open" in str(leg.get("action", "")).lower() for leg in spec.get("legs") or [])
+
+
 async def working_orders(account: Any, session: Any) -> list[dict]:
     """Every order still resting (unfilled, not cancelled/rejected/expired) on the account, as
     [{order_id, status, underlying_symbol}].

@@ -403,7 +403,14 @@ def read_orphans() -> list[dict]:
 # --------------------------------------------------------------------------- status
 
 
+class LedgerUnreadable(RuntimeError):
+    """The live ledger exists but could not be read: not the same thing as holding nothing."""
+
+
 def _ledger_rows(db_path: str, where: str, params: tuple) -> list[dict]:
+    """`ic_trades` rows matching `where`. A ledger that does not exist yet holds nothing; one that
+    exists and cannot be read raises `LedgerUnreadable` (2026-10-27). Until then it read as empty,
+    so a locked or corrupt ledger told the watchdog the day was settled and nothing was overdue."""
     import sqlite3
 
     if not os.path.exists(db_path):
@@ -415,8 +422,8 @@ def _ledger_rows(db_path: str, where: str, params: tuple) -> list[dict]:
             return [dict(r) for r in con.execute(f"SELECT * FROM ic_trades WHERE {where}", params)]
         finally:
             con.close()
-    except sqlite3.Error:
-        return []
+    except sqlite3.Error as exc:
+        raise LedgerUnreadable(f"live ledger unreadable: {type(exc).__name__}: {exc}") from exc
 
 
 def overdue_settlement(db_path: str, today: str) -> list[dict]:
@@ -478,15 +485,22 @@ def settle_overdue(config: dict, db_path: str, today: str, *, close_fn=None, log
 
     close_fn = close_fn or _settlement.dated_index_close
     done, left = [], []
-    for item in overdue_settlement(db_path, today):
+    try:
+        overdue = overdue_settlement(db_path, today)
+    except LedgerUnreadable as exc:
+        return {"ok": False, "error": str(exc), "settled": [], "left": []}
+    for item in overdue:
         session = item["session"]
         if item["pending_entries"]:
             left.append({"session": session, "reason": "pending_entries", "count": item["pending_entries"]})
         if not item["positions"]:
             continue
-        held = _ledger_rows(
-            db_path, "trade_date = ? AND status IN ('open', 'partial', 'partial_entry')", (session,)
-        )
+        try:
+            held = _ledger_rows(
+                db_path, "trade_date = ? AND status IN ('open', 'partial', 'partial_entry')", (session,)
+            )
+        except LedgerUnreadable as exc:
+            return {"ok": False, "error": str(exc), "settled": done, "left": left}
         for symbol in sorted({t["symbol"] for t in held}):
             price = close_fn(symbol, session)
             if price is None:
@@ -507,10 +521,17 @@ def run_status(config: dict, *, designated: str | None) -> dict:
     live = _live_cfg(config)
     symbol = live.get("symbol")
     params = paper.live_params(config)
-    open_rows = _ledger_rows(
-        db_path, "trade_date = ? AND status IN ('open', 'partial', 'partial_entry')", (today,)
-    )
-    pending = _ledger_rows(db_path, "status = 'pending'", ())
+    unreadable = None
+    try:
+        open_rows = _ledger_rows(
+            db_path, "trade_date = ? AND status IN ('open', 'partial', 'partial_entry')", (today,)
+        )
+        pending = _ledger_rows(db_path, "status = 'pending'", ())
+        overdue = overdue_settlement(db_path, today)
+    except LedgerUnreadable as exc:
+        # Never a clean day: the watchdog reads `ledger_unreadable` as CRITICAL, and `session_settled`
+        # stays False so nothing downstream reads the book as flat.
+        unreadable, open_rows, pending, overdue = str(exc), [], [], []
     return {
         "ok": True,
         "date": today,
@@ -528,15 +549,18 @@ def run_status(config: dict, *, designated: str | None) -> dict:
         "max_structures_per_day": max_structures_per_day(config),
         "entries_today": entries_today(db_path, symbol, today) if symbol else 0,
         "per_side_stop_management": params.get("per_side_stop_management"),
-        "open_positions": len(open_rows),
+        "open_positions": None if unreadable else len(open_rows),
         "pending_orders": [t["ic_order_id"] for t in pending],
-        "session_settled": not open_rows and not [t for t in pending if t["trade_date"] == today],
+        "session_settled": False
+        if unreadable
+        else not open_rows and not [t for t in pending if t["trade_date"] == today],
+        "ledger_unreadable": unreadable,
         "halt_flag": os.path.exists(halt_flag_path()),
         "breaker_tripped": daily_loss_tripped(db_path, today, live.get("daily_loss_halt_dollars")),
         "orphaned_orders": read_orphans(),
         "broker_held": _execution.read_hold(_hold_path()),
         "broker_health": _execution.read_broker_health(os.path.join(_data_dir(), _execution.HEALTH_FILENAME)),
-        "overdue_settlement": overdue_settlement(db_path, today),
+        "overdue_settlement": overdue,
         "supervisor_fresh": _live.supervisor_heartbeat_fresh(),
         "live_db": db_path,
     }
@@ -1430,9 +1454,12 @@ def main(argv=None) -> int:
                 return out(settle_overdue(cfg, db_path, _pl._now_et().strftime("%Y-%m-%d"), log=_quiet))
             if not args.date or args.price is None:
                 return out({"ok": False, "error": "--settle needs --date and --price (the official print)"})
-            held = _ledger_rows(
-                db_path, "trade_date = ? AND status IN ('open', 'partial', 'partial_entry')", (args.date,)
-            )
+            try:
+                held = _ledger_rows(
+                    db_path, "trade_date = ? AND status IN ('open', 'partial', 'partial_entry')", (args.date,)
+                )
+            except LedgerUnreadable as exc:
+                return out({"ok": False, "error": str(exc)})
             symbols = [args.symbol.upper()] if args.symbol else sorted({t["symbol"] for t in held})
             settled = [
                 {

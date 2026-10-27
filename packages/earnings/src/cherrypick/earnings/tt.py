@@ -44,10 +44,11 @@ from typing import Any
 from cherrypick.core import broker as _broker
 from cherrypick.core import dxfeed as _dx
 from cherrypick.core import execution as _execution
+from cherrypick.core import home as _home
 from cherrypick.core import killcriteria as _kill
 from cherrypick.core import ledgers as _ledgers
 from cherrypick.core.broker import cli as _broker_cli
-from cherrypick.core.redact import mask_account
+from cherrypick.core.redact import mask_account, redact_accounts
 
 from cherrypick.earnings import credentials as _creds
 from cherrypick.earnings import paths as _paths
@@ -70,8 +71,16 @@ def _live_trading_enabled() -> bool:
     return bool(_load_config().get("enable_live_trading", False))
 
 
-def _out(data: Any) -> None:
-    print(json.dumps(data, default=str))
+# The verbs whose output carries FULL account numbers on purpose: the orchestrator's designation
+# flow (`list_accounts`, `get_account_info`) and its reconcile read (`get_positions`) match on them.
+# Every other verb's output is masked to `****1234` (2026-10-27): an order verb's result carried the
+# full number to stdout, which an agent session reads and a terminal scrollback keeps.
+FULL_ACCOUNT_VERBS = frozenset({"list_accounts", "get_account_info", "get_positions"})
+
+
+def _out(data: Any, *, command: str | None = None) -> None:
+    text = json.dumps(data, default=str)
+    print(text if command in FULL_ACCOUNT_VERBS else redact_accounts(text))
 
 
 _error = _broker_cli.error_result
@@ -513,6 +522,12 @@ async def cmd_execute_trade(args) -> dict:
         refusal = kill_refusal(spec, _load_config())
         if refusal:
             return {"ok": False, "error": refusal}
+        # The suite-wide halt stops new positions on this door too (2026-10-27); a close goes through.
+        if _broker.opens_position(spec) and _home.halt_flag_path().exists():
+            return {
+                "ok": False,
+                "error": "halt flag present -- no new live position while the suite is halted (closes are unaffected)",
+            }
     # The submission's own identity (2026-09-17): tastytrade does not deduplicate retries, and this
     # is a one-shot command a human re-runs on an error. Sent as the order's external identifier
     # and reported back, so a timeout after the broker accepted is recovered below by reading
@@ -721,7 +736,7 @@ def main() -> None:
         result = asyncio.run(handler(args))
     else:
         result = handler(args)
-    _out(result)
+    _out(result, command=args.command)
 
 
 if __name__ == "__main__":

@@ -2087,6 +2087,21 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
             )
         )
 
+    # (c6) the live ledger exists but cannot be read (2026-10-27). meic's status used to read that as
+    # an empty ledger -- settled, nothing open, nothing overdue -- so this is the one finding that
+    # says the others above are blind. Not gated on arming, like (c5).
+    unreadable = (status or {}).get("ledger_unreadable")
+    if unreadable:
+        findings.append(
+            Finding(
+                f"{name}.live_ledger",
+                CRITICAL,
+                f"{label} LIVE ledger unreadable",
+                f"{unreadable}. Settlement, overdue and open-position checks cannot see the book until "
+                "it reads; check for a lock held by another process before anything else.",
+            )
+        )
+
     # (c4) the broker unreachable while armed and in session (2026-10-08). The seam swallows every
     # broker failure and the tick exits 0, so neither the supervisor nor the freshness check above
     # can see an expired login, a dead network or a broker outage -- only this record can.

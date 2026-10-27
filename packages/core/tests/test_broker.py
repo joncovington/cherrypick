@@ -768,3 +768,35 @@ def test_wait_for_order_alerts_with_no_order_ids_reports_every_order_on_the_acco
     streamer_cls = lambda session: FakeAlertStreamer(session, orders=orders)  # noqa: E731
     out = _run(broker.wait_for_order_alerts("sess", "acct", set(), 1.0, streamer_cls=streamer_cls))
     assert [o["order_id"] for o in out] == [11, 99]
+
+
+class _TodayAccount:
+    def __init__(self, orders=None, fail=False):
+        self._orders, self._fail = orders or [], fail
+
+    async def get_live_orders(self, session):
+        if self._fail:
+            raise RuntimeError("orders endpoint down")
+        return self._orders
+
+
+def test_recover_by_identifier_finds_todays_order_terminal_ones_included():
+    filled = SimpleNamespace(
+        id=7, status="Filled", external_identifier="bwb-abc", underlying_symbol="SPX", terminal_at="t"
+    )
+    other = SimpleNamespace(
+        id=8, status="Live", external_identifier="bwb-zzz", underlying_symbol="SPX", terminal_at=None
+    )
+    acct = _TodayAccount([other, filled])
+    assert _run(broker.recover_by_identifier(acct, "s", "bwb-abc"))["order_id"] == 7
+    assert _run(broker.recover_by_identifier(acct, "s", "bwb-none")) is None
+
+
+def test_a_recovery_that_fails_reports_nothing_never_a_phantom_success():
+    assert _run(broker.recover_by_identifier(_TodayAccount(fail=True), "s", "bwb-abc")) is None
+
+
+def test_opens_position_reads_the_leg_actions():
+    assert broker.opens_position({"legs": [{"action": "Sell to Open"}, {"action": "Buy to Close"}]})
+    assert not broker.opens_position({"legs": [{"action": "Buy to Close"}, {"action": "Sell to Close"}]})
+    assert not broker.opens_position({})

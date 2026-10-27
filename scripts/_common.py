@@ -20,17 +20,35 @@ from pathlib import Path
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
-def run_claude(
-    payload: str, *, prompt: str, disallowed: list[str], timeout: int
-) -> tuple[str | None, str | None]:
-    """`claude -p <prompt>` over `payload` on stdin, tools in `disallowed` refused. Returns
-    (text, None) or (None, why); never raises -- a narrative is never worth raising over."""
+def tool_fence(allowed: list[str]) -> list[str]:
+    """The CLI arguments that leave the agent exactly `allowed` built-in tools and nothing else.
+
+    An ALLOW-list (2026-10-27). A deny-list of acting tools still left Read, Glob and Grep -- the whole
+    of `~/.cherrypick` -- plus WebFetch and every MCP server in the user's own settings, to an agent
+    whose input includes fetched headlines. `--strict-mcp-config` with an empty server list drops
+    every MCP server, `--disable-slash-commands` drops skills, and `--tools` names the built-ins: an
+    empty value is none at all. `--tools` goes last: an empty argument is the one a Windows .cmd shim
+    could mangle, and at the end of argv a dropped value cannot swallow the flag after it. Same fence
+    as `advisor_checkpoint.TOOL_FENCE`, which is this with nothing allowed."""
+    return [
+        "--strict-mcp-config",
+        "--mcp-config",
+        '{"mcpServers": {}}',
+        "--disable-slash-commands",
+        "--tools",
+        ",".join(allowed),
+    ]
+
+
+def run_claude(payload: str, *, prompt: str, tools: list[str], timeout: int) -> tuple[str | None, str | None]:
+    """`claude -p <prompt>` over `payload` on stdin, with only `tools` available (`tool_fence`).
+    Returns (text, None) or (None, why); never raises -- a narrative is never worth raising over."""
     exe = shutil.which("claude")
     if not exe:
         return None, "claude not on PATH"
     try:
         proc = subprocess.run(
-            [exe, "-p", prompt, "--disallowed-tools", *disallowed],
+            [exe, "-p", prompt, *tool_fence(tools)],
             input=payload,
             capture_output=True,
             text=True,

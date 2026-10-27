@@ -78,6 +78,23 @@ def _today_is_not_a_quarter_end(monkeypatch):
     monkeypatch.setattr(tt, "_quarter_end_today", lambda: False)
 
 
+@pytest.fixture(autouse=True)
+def _manual_opens_are_not_gated(request, monkeypatch):
+    """`tt execute_trade --live` refuses an opening order while halted, unarmed or killed
+    (2026-10-27); the live-submit tests here predate it and are about other things. Pinned off, as
+    the quarter end is; a test that asks for `real_manual_gate` keeps the real guard."""
+    if "real_manual_gate" in request.fixturenames:
+        return
+    from cherrypick.meic import tt
+
+    monkeypatch.setattr(tt, "_manual_open_refusal", lambda config, spec: None)
+
+
+@pytest.fixture
+def real_manual_gate():
+    """Opt out of `_manual_opens_are_not_gated`: the guard's own tests."""
+
+
 #: The designated account every test sees unless it says otherwise -- a fake, never a real number.
 TEST_DESIGNATED_ACCOUNT = "TEST0001"
 
