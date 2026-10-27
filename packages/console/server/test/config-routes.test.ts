@@ -198,4 +198,10 @@ describe("console prefs", () => {
   it("a keyless write is refused", async () => {
     expect((await post("/api/config/prefs", { value: 1 })).statusCode).toBe(400);
   });
+
+  it("an unbounded key or value is refused, so the table cannot be grown without limit", async () => {
+    expect((await post("/api/config/prefs", { key: "k".repeat(65), value: 1 })).statusCode).toBe(400);
+    expect((await post("/api/config/prefs", { key: "big", value: "v".repeat(20_000) })).statusCode).toBe(413);
+    expect((await post("/api/config/prefs", { key: "k".repeat(64), value: "ok" })).statusCode).toBe(200);
+  });
 });

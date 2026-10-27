@@ -287,19 +287,7 @@ def open_position_count(conn) -> int:
 # them would leave cash that no stint explains (or a credit paid twice on the re-run). These write
 # every row of one change and commit once.
 def _upsert_nocommit(conn, table: str, keys: tuple[str, ...], row: dict) -> None:
-    row = {**row, "updated_at": _store.now()}
-    where = " AND ".join(f"{k} = ?" for k in keys)
-    existing = conn.execute(f"SELECT id FROM {table} WHERE {where}", [row[k] for k in keys]).fetchone()
-    if existing is None:
-        row.setdefault("created_at", _store.now())
-        cols = ", ".join(row)
-        conn.execute(
-            f"INSERT INTO {table} ({cols}) VALUES ({', '.join('?' for _ in row)})", list(row.values())
-        )
-    else:
-        sets = ", ".join(f"{c} = ?" for c in row if c not in keys)
-        vals = [v for c, v in row.items() if c not in keys] + [row[k] for k in keys]
-        conn.execute(f"UPDATE {table} SET {sets} WHERE {where}", vals)
+    _store.upsert(conn, table, keys, row, commit=False)
 
 
 def apply_switch(conn, *, arm: str, closed: dict | None, opened: dict, cash: float) -> None:

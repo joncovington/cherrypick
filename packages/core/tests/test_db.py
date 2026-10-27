@@ -5,6 +5,15 @@ import sqlite3
 from cherrypick.core import db
 
 
+def test_column_set_reads_columns_and_degrades_to_empty():
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE t (a INTEGER, b TEXT)")
+    assert db.column_set(conn, "t") == {"a", "b"}
+    assert db.column_set(conn, "missing") == set()
+    conn.close()
+    assert db.column_set(conn, "t") == set()  # an unusable connection reads as "no table"
+
+
 def test_connect_creates_parent_dir_and_row_factory(tmp_path):
     dbfile = tmp_path / "nested" / "sub" / "trades.db"
     conn = db.connect(dbfile)

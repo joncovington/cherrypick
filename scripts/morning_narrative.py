@@ -123,24 +123,12 @@ how much of this morning's picture is prior-session data. Do not flatter the tap
 
 
 def _load(session: str) -> dict | None:
-    try:
-        return json.loads((STORE / f"morning-{session}.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+    return _common.load_dated(STORE, "morning", session)
 
 
 def _trend_context(session: str, count: int = TREND_SESSIONS) -> list[dict]:
     """Prior packs, oldest first. Best-effort: a missing day is simply not context."""
-    out = []
-    try:
-        day = date.fromisoformat(session)
-    except ValueError:
-        return out
-    for back in range(count, 0, -1):
-        prior = _load((day - timedelta(days=back)).isoformat())
-        if prior:
-            out.append(prior)
-    return out
+    return _common.trend_context(session, count, _load)
 
 
 def _technicals(session: str) -> dict | None:

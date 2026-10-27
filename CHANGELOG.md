@@ -11,6 +11,20 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed (2026-10-26): audit hardening, no measurement change.** From a read-only review of the
+  suite:
+  - **Console:** refuses a cross-site WebSocket, validates the advisor experiment id before it
+    reaches a subprocess, and bounds console prefs.
+  - **CI:** runs with a read-only token.
+  - **Silent failures now reported:**
+    - Telemetry writes that fail are counted and logged once rather than vanishing.
+    - gex never commits a regime row without its profile rows.
+    - The four stream-cache paper loops warn when their `defaults` block is missing.
+  - **Safer writes:** the orchestrator's job heartbeats are written atomically, and review's
+    `--session`/`--since` must be dates.
+  - **Dedup:** a few measured copies are folded into one: the table-columns reader, contango's
+    upsert, and the narratives' loaders.
+
 - **Added (2026-10-24): the research queue.** Long research tasks are rows, added with `run.py
   queue-add` and run one at a time by the supervisor's new `research-queue` job, so a many-hour
   fetch no longer dies with the session that started it. Only allow-listed kinds run: the

@@ -12,7 +12,7 @@ import json
 import shutil
 import subprocess
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 # Windows: run the console child (`claude`) without popping a window when the scheduler runs this
@@ -86,3 +86,26 @@ def start_cooldown(state_path: Path, reason: str, cooldown: timedelta) -> None:
     state_path.write_text(
         json.dumps({"cooldown_until": until.isoformat(), "reason": reason}, indent=2), encoding="utf-8"
     )
+
+
+def load_dated(store: Path, prefix: str, session: str) -> dict | None:
+    """`<store>/<prefix>-<session>.json`, or None when it is missing or unreadable."""
+    try:
+        return json.loads((store / f"{prefix}-{session}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def trend_context(session: str, count: int, load) -> list[dict]:
+    """The `count` days before `session` that `load` finds, oldest first. Best-effort: a missing
+    day is simply not context."""
+    out = []
+    try:
+        day = date.fromisoformat(session)
+    except ValueError:
+        return out
+    for back in range(count, 0, -1):
+        prior = load((day - timedelta(days=back)).isoformat())
+        if prior:
+            out.append(prior)
+    return out

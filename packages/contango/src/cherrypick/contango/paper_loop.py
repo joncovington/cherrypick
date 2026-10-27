@@ -79,6 +79,7 @@ def merged_params(config: dict, arm: str) -> dict:
 def enabled_arms(config: dict) -> list[str]:
     """Every arm the config declares and does not disable, in declared order. Each is validated
     here, so an inverted threshold pair stops the loop at the first tick, not at the first switch."""
+    _cfg.section(config, "defaults", label="contango", log=_log)  # says so once if the block moved
     declared = _cfg.registry(config, label="contango", log=_log)
     arms = [a for a, block in declared.items() if (block or {}).get("enabled", True)]
     for arm in arms:

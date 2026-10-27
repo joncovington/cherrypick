@@ -76,6 +76,34 @@ class TestRegistry:
         assert list(out) == ["1"]
 
 
+class TestSection:
+    def test_returns_the_block(self):
+        assert config.section({"defaults": {"quantity": 2}}, "defaults", label="pmcc") == {"quantity": 2}
+
+    def test_declared_empty_is_silent(self):
+        said = []
+        assert config.section({"defaults": {}}, "defaults", label="pmcc", log=said.append) == {}
+        assert said == []
+
+    def test_absent_warns_once_and_names_the_block(self):
+        """The moved-key case: every threshold under it would fall to its code default unsaid."""
+        said = []
+        for _ in range(20):
+            assert config.section({"arms": {}}, "defaults", label="pmcc", log=said.append) == {}
+        assert len(said) == 1
+        assert "pmcc" in said[0] and "`defaults`" in said[0]
+
+    def test_its_memo_is_separate_from_the_registry_warning(self):
+        said = []
+        config.registry({}, label="pmcc", log=said.append)
+        config.section({}, "defaults", label="pmcc", log=said.append)
+        assert len(said) == 2
+
+    def test_a_non_mapping_block_reads_as_empty(self):
+        assert config.section({"defaults": [1]}, "defaults", label="x") == {}
+        assert config.section(None, "defaults", label="x") == {}
+
+
 def test_the_base_alias_list_matches_the_one_core_advice_has_always_used():
     """`core.advice._legacy_base` is the mechanism this generalises; if the two lists diverge, a
     decision written under one spelling stops being readable under the other."""

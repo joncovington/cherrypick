@@ -62,6 +62,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import db as core_db
 from cherrypick.core import home as _home
 from cherrypick.core import ledgers as _ledgers
 from cherrypick.core import metrics as _metrics
@@ -104,11 +105,7 @@ COSTS_NOTE = (
 
 
 # --------------------------------------------------------------------------- reading
-def _cols(conn: sqlite3.Connection, table: str) -> set[str]:
-    try:
-        return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
-    except sqlite3.Error:
-        return set()
+_cols = core_db.column_set
 
 
 def read_breaks(conn: sqlite3.Connection) -> list[dict]:

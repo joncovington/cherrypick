@@ -8,6 +8,7 @@ MEIC's dashboard so the two render identically off the same cache.
 
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import sqlite3
@@ -582,37 +583,59 @@ def record_regimes(
                     **flow_measures(series, call_wall, put_wall, totals),
                     **volume_coverage(snap.chain_entries, snap.volume, snap.strike_scale),
                 }
-                conn.execute(
-                    "INSERT INTO gex_regime_history (symbol, trade_date, ts, spot, net_gex, "
-                    "net_gex_vol, zero_gamma, call_wall, put_wall, expiration, "
-                    f"{', '.join(FLOW_COLUMNS)}) "
-                    f"VALUES (?,?,?,?,?,?,?,?,?,?,{','.join('?' * len(FLOW_COLUMNS))})",
-                    (
-                        sym,
-                        today,
-                        now,
-                        spot_disp,
-                        totals.get("net_gex"),
-                        totals.get("net_gex_vol"),
-                        nearest_zero_gamma(series, spot_disp, "net_gex"),
-                        call_wall,
-                        put_wall,
-                        str(snap.expiration),
-                        *(flow[c] for c in FLOW_COLUMNS),
-                    ),
-                )
-                conn.executemany(
-                    "INSERT INTO gex_profile_history (symbol, trade_date, ts, strike, "
-                    f"{', '.join(PROFILE_COLUMNS)}) VALUES (?,?,?,?,{','.join('?' * len(PROFILE_COLUMNS))})",
-                    [
-                        (sym, today, now, s["strike"], *(s[c] for c in PROFILE_COLUMNS))
-                        for s in profile_rows(series)
-                    ],
-                )
+                conn.execute("SAVEPOINT regime_sample")
+                try:
+                    conn.execute(
+                        "INSERT INTO gex_regime_history (symbol, trade_date, ts, spot, net_gex, "
+                        "net_gex_vol, zero_gamma, call_wall, put_wall, expiration, "
+                        f"{', '.join(FLOW_COLUMNS)}) "
+                        f"VALUES (?,?,?,?,?,?,?,?,?,?,{','.join('?' * len(FLOW_COLUMNS))})",
+                        (
+                            sym,
+                            today,
+                            now,
+                            spot_disp,
+                            totals.get("net_gex"),
+                            totals.get("net_gex_vol"),
+                            nearest_zero_gamma(series, spot_disp, "net_gex"),
+                            call_wall,
+                            put_wall,
+                            str(snap.expiration),
+                            *(flow[c] for c in FLOW_COLUMNS),
+                        ),
+                    )
+                    conn.executemany(
+                        "INSERT INTO gex_profile_history (symbol, trade_date, ts, strike, "
+                        f"{', '.join(PROFILE_COLUMNS)}) VALUES (?,?,?,?,{','.join('?' * len(PROFILE_COLUMNS))})",
+                        [
+                            (sym, today, now, s["strike"], *(s[c] for c in PROFILE_COLUMNS))
+                            for s in profile_rows(series)
+                        ],
+                    )
+                except Exception:
+                    conn.execute("ROLLBACK TO regime_sample")  # never a regime row without its profile
+                    raise
+                finally:
+                    conn.execute("RELEASE regime_sample")
                 written += 1
-            except Exception:
+            except Exception as exc:  # noqa: BLE001
+                _note_record_failure("regime record", sym, exc)
                 continue  # one symbol's hiccup must not lose the others
         return written
+
+
+_record_log = logging.getLogger("cherrypick-gex.recorder")
+_last_record_failure: dict[tuple[str, str], str] = {}
+
+
+def _note_record_failure(kind: str, sym: str, exc: Exception) -> None:
+    """Say so when a symbol's history write fails, without repeating itself every tick: a failure that
+    persists logs once, and again only when its message changes. The write is still skipped, never
+    raised -- one symbol's hiccup must not lose the others."""
+    text = f"{type(exc).__name__}: {exc}"
+    if _last_record_failure.get((kind, sym)) != text:
+        _last_record_failure[(kind, sym)] = text
+        _record_log.warning("%s for %s failed (%s)", kind, sym, text)
 
 
 def record_quotes(
@@ -695,7 +718,8 @@ def record_quotes(
                 finally:
                     conn.execute("RELEASE quote_sample")
                 written += len(quotes)
-            except Exception:
+            except Exception as exc:  # noqa: BLE001
+                _note_record_failure("quote sample", sym, exc)
                 continue  # one symbol's hiccup must not lose the others
         return written
 

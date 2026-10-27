@@ -23,8 +23,14 @@ import { callAdvisorCli } from "../services/advisorBridge.js";
  * Gating is the standard mutating-surface posture from `security.ts` (loopback Host, CSRF, JSON).
  */
 
+/** An id never starts with a dash, so it can not be read as an option by the CLI it is handed to. */
+const EXPERIMENT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+
 export function registerAdvisorOpsRoutes(app: FastifyInstance, config: ConsoleConfig): void {
   app.post<{ Params: { id: string } }>("/api/advisor/experiments/:id/kill", async (req, reply) => {
+    if (!EXPERIMENT_ID.test(req.params.id)) {
+      return reply.code(400).send({ error: "experiment id has unexpected characters" });
+    }
     const result = callAdvisorCli({ op: "kill", experimentId: req.params.id });
     if (!result.ok) {
       return reply.code(result.code === "not_found" ? 404 : 503).send({ error: result.error });

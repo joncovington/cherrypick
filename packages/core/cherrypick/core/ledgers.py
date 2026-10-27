@@ -122,7 +122,6 @@ and say how much is not (`capital_unknown`).
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
@@ -280,11 +279,7 @@ ROW_NET = {
 }
 
 
-def _table_cols(conn, table: str) -> set:
-    try:
-        return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
-    except sqlite3.Error:
-        return set()
+_table_cols = core_db.column_set
 
 
 def _experiment_select(conn, table: str) -> tuple[str, bool]:

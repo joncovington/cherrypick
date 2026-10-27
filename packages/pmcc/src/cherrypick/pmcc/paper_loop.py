@@ -183,6 +183,7 @@ def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]
     decision recorded before that date still yields its single `advised:<base>`. The map is empty
     on a baseline day. Every tag here is on the roster the stream request subscribes for -- the
     2026-08-27 lesson (`stream_window.entry_possible`) holds for every twin, not just the first."""
+    _cfg.section(config, "defaults", label="pmcc", log=_log)  # says so once if the block moved
     declared = _cfg.registry(config, label="pmcc", log=_log)
     arms = [b for b in engine.ARMS if engine.arm_on(declared.get(b), b, today)]
     advised = advised_entries(advice_decision(config, today))

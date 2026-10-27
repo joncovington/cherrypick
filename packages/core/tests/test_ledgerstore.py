@@ -67,6 +67,16 @@ def test_upsert_inserts_then_updates_the_same_natural_key(store, conn):
     assert rows[0]["status"] == "closed"
 
 
+def test_upsert_without_commit_stays_in_the_callers_transaction(store, conn):
+    """A multi-row change (contango's switch) writes every row, then commits once -- or not at all."""
+    store.upsert(conn, "t_positions", ("position_id",), {"position_id": "p1", "status": "open"}, commit=False)
+    assert conn.in_transaction
+    conn.rollback()
+    assert list(conn.execute("SELECT * FROM t_positions")) == []
+    store.upsert(conn, "t_positions", ("position_id",), {"position_id": "p1", "status": "open"})
+    assert not conn.in_transaction
+
+
 def test_upsert_stamps_created_once_and_updated_every_time(store, conn):
     store.save_position(conn, {"position_id": "p1"})
     first = dict(conn.execute("SELECT * FROM t_positions").fetchone())
@@ -84,6 +94,18 @@ def test_a_telemetry_write_never_raises(store, conn):
     """Telemetry may never cost a trade or a tick."""
     store.record_mark(conn, position_id="p1", no_such_column=1)  # must not raise
     assert list(conn.execute("SELECT * FROM t_marks")) == []
+
+
+def test_a_swallowed_telemetry_write_is_counted_and_logged_once(store, conn, caplog):
+    """The swallow stays, but a session that drops every mark can no longer do it silently."""
+    assert store.telemetry_failures() == {}
+    with caplog.at_level("WARNING", logger="cherrypick-ledgerstore"):
+        for _ in range(3):
+            store.record_mark(conn, position_id="p1", no_such_column=1)
+    assert store.telemetry_failures() == {"marks:OperationalError": 3}
+    assert len([r for r in caplog.records if "t_marks" in r.getMessage()]) == 1  # first of a kind only
+    store.record_mark(conn, position_id="p1", usable=1)  # a good write adds nothing
+    assert store.telemetry_failures() == {"marks:OperationalError": 3}
 
 
 def test_a_telemetry_write_still_works_when_it_is_valid(store, conn):

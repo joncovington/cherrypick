@@ -30,7 +30,6 @@ those parts read `recorded: false` with the reason. Pure reads, no clock, no net
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import timedelta
 
 from cherrypick.core import db as core_db
@@ -78,11 +77,7 @@ FILLED = "filled"
 _SLACK = timedelta(seconds=120)
 
 
-def _cols(conn, table: str) -> set:
-    try:
-        return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
-    except sqlite3.Error:
-        return set()
+_cols = core_db.column_set
 
 
 def _detail(raw):

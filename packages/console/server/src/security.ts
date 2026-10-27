@@ -27,9 +27,16 @@ export function registerSecurity(app: FastifyInstance): void {
     if (!LOOPBACK_HOSTS.test(host)) {
       return reply.code(403).send({ error: "forbidden host" });
     }
+    const origin = req.headers.origin;
+    // A WebSocket upgrade is a GET, so it skips the mutating checks below -- but a browser sends
+    // the page's Origin with it and does not apply the same-origin policy to sockets, so any site
+    // the user visits could otherwise subscribe to the live streams. An absent Origin (a non-browser
+    // client) still passes, as it does for the mutating routes.
+    if (req.url.split("?")[0] === "/ws" && origin !== undefined && !isLoopbackUrl(origin)) {
+      return reply.code(403).send({ error: "forbidden origin" });
+    }
     if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return;
 
-    const origin = req.headers.origin;
     if (origin !== undefined && !isLoopbackUrl(origin)) {
       return reply.code(403).send({ error: "forbidden origin" });
     }

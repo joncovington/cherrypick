@@ -74,6 +74,17 @@ def columns(conn: sqlite3.Connection, table: str) -> list[str]:
     return [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
 
 
+def column_set(conn: sqlite3.Connection, table: str) -> set[str]:
+    """`table`'s column names as a set, or an empty set when it is missing or the pragma fails.
+
+    The reader-side twin of :func:`columns`: a read surface that must degrade to "no such table"
+    rather than raise on an unreadable file."""
+    try:
+        return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    except sqlite3.Error:
+        return set()
+
+
 # Every spelling a variant's column has had, canonical first (root CLAUDE.md, "The suite's
 # vocabulary"). A ledger's column moves to `arm` in a window of its own, so a reader outside the
 # module cannot know which side of that window the file it opened is on.

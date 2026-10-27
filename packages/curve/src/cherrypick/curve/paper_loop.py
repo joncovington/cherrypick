@@ -184,6 +184,7 @@ def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]
     recorded before that date still yields its single `advised:<base>`. Empty map on a baseline
     day -- and every day while `advice.enabled` stays false, which it is by design here. The
     roster only matters at entry; open rows are managed from the ledger whatever it says today."""
+    _cfg.section(config, "defaults", label="curve", log=_log)  # says so once if the block moved
     declared = _cfg.registry(config, label="curve", log=_log)
     arms = [b for b in engine.ARMS if (declared.get(b) or {}).get("enabled", True)]
     advised = advised_entries(advice_decision(config, today))
