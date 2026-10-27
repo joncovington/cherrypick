@@ -366,6 +366,7 @@ def run(
     workers: int = 4,
     extra_arms: dict[str, dict] | None = None,
     provisional: bool = False,
+    unvalidated_holdout: bool = False,
     module: str = MODULE,
     replay=None,
     read_rows=None,
@@ -377,7 +378,14 @@ def run(
 
     `provisional` (design window only) runs while history is still locked, to look early. It is
     no evidence and is kept apart from evidence: it records no trial, cannot take advised arms or
-    the holdout, and its run and report are marked provisional, which every reader shows."""
+    the holdout, and its run and report are marked provisional, which every reader shows.
+
+    `unvalidated_holdout` is the one exception (amended 2026-10-27, the user's decision for research
+    item 21): a provisional run of the HOLDOUT, asked for by name, with `spend_holdout`. Flies
+    validation can no longer reach `UNLOCK_SESSIONS` (paper stopped 2026-10-19 after five), so its
+    history cannot unlock. The run spends the holdout for each spec exactly as an unlocked one does,
+    records no trial, and is marked provisional everywhere: a read on unvalidated data, declared before
+    it ran."""
     if module not in MODULES:
         raise RunRefused(f"module must be one of {sorted(MODULES)}")
     mod = MODULES[module]
@@ -385,7 +393,11 @@ def run(
     read_rows = read_rows or (lambda path: _ledger_rows(path, mod.schema))
     if window not in WINDOWS:
         raise RunRefused(f"window must be one of {WINDOWS}")
-    if provisional and (window != "design" or extra_arms):
+    if unvalidated_holdout and not (provisional and window == "holdout" and spend_holdout):
+        raise RunRefused("an unvalidated holdout is a provisional holdout run that spends the holdout")
+    if provisional and (
+        window not in ("design", *(("holdout",) if unvalidated_holdout else ())) or extra_arms
+    ):
         raise RunRefused("a provisional run is the design window only, and never the advisor's specs")
     cadence = store.cadence_of(settings, cadence)
     arms = list(dict.fromkeys(["control", *arms]))  # control always runs: every result is paired with it

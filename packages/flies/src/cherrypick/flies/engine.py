@@ -32,7 +32,7 @@ from cherrypick.core import config as _cfg
 from cherrypick.core import entry as _entry
 from cherrypick.core.structures import tick_floor
 
-from cherrypick.flies import fly
+from cherrypick.flies import fill_model, fly
 
 PUT, CALL = fly.PUT, fly.CALL
 # `wide_wing` is control's twin — ATM, same window — differing only in `wing_width`, so the pair
@@ -161,6 +161,18 @@ ARMS = (
     # (declared 2026-10-16, from 2026-10-19). One variable vs control: the window. The live-start
     # replay put 12:30 ahead of 10:15 in 3 of 4 tick phases on 37 sessions, but not significantly.
     "window-1230",
+    # Research item 21 (declared 2026-10-27, history only; never in paper): control, but the entry
+    # rests at a limit `offset` above the spread's mid and fills only when a LATER tick's market
+    # reaches it within `window_seconds` (`entry_limit_settings`). The `-rh` twins add the
+    # `range-high` refusal. A resting credit order fills when the market moves against completion,
+    # so the rule carries the adverse selection live measured (43 of 50 at mid - 0.05, the misses
+    # the entries already working).
+    "limit-000",
+    "limit-005",
+    "limit-010",
+    "limit-000-rh",
+    "limit-005-rh",
+    "limit-010-rh",
 )
 
 # The live loop's completion cutoff when its block names none (`live_loop.DEFAULT_CUTOFF`).
@@ -1626,6 +1638,54 @@ def evaluate_credit_spread_entry(
             "entry_window": window,
         },
     )
+
+
+# --------------------------------------------------------------------------- resting entry limit
+# The `limit-*` arms (research item 21, 2026-10-27). Control books an entry at its modelled credit
+# (mid less `slippage_frac` of the legs' spreads) on the tick it plans it. These arms instead rest
+# the order at the spread's mid plus `offset`, floored to the tick, and fill it at that limit on the
+# first LATER tick whose `basis` price (mid, or the natural) reaches it, within `window_seconds`.
+# Unfilled, it lapses, the entry is re-planned, and no cadence slot was spent. While it rests the arm
+# plans no other legged entry: one working order, as live had.
+ENTRY_LIMIT_BASES = ("mid", "natural")
+
+
+def entry_limit_settings(params: dict) -> dict | None:
+    """An arm's resting-entry settings, or None when it books at the plan tick (every other arm). A
+    malformed block raises: an arm silently booking like control would measure nothing."""
+    cfg = params.get("entry_limit")
+    if not cfg:
+        return None
+    offset = float(cfg.get("offset", 0.0))
+    window = float(cfg.get("window_seconds", 120))
+    basis = cfg.get("basis", "mid")
+    if basis not in ENTRY_LIMIT_BASES or offset < 0 or window <= 0:
+        raise ValueError(
+            f"entry_limit must have offset >= 0, window_seconds > 0, basis in {ENTRY_LIMIT_BASES}"
+        )
+    return {"offset": offset, "window_seconds": window, "basis": basis}
+
+
+def entry_spread_prices(snapshot: dict, side: str, center: float, width: float) -> dict | None:
+    """The entry spread's credit at mid and at the natural on this snapshot (None with a hole)."""
+    q = fill_model.quotes_for(fill_model.ENTRY, side, center, width, lambda s, k: quote(snapshot, s, k))
+    return fill_model.spread_prices(fill_model.ENTRY, **q)
+
+
+def entry_limit_price(snapshot: dict, plan: dict, offset: float) -> float | None:
+    """The limit a resting entry asks: the plan spread's mid credit plus `offset`, floored to the
+    tick. None when the spread has no price or the limit floors to nothing."""
+    prices = entry_spread_prices(snapshot, plan["side"], plan["center"], plan["wing_width"])
+    if prices is None:
+        return None
+    limit = tick_floor(prices["mid"] + offset)
+    return limit if limit > 0 else None
+
+
+def entry_limit_touched(snapshot: dict, resting: dict) -> bool:
+    """Whether this snapshot's market reaches a resting entry's limit on its basis."""
+    prices = entry_spread_prices(snapshot, resting["side"], resting["center"], resting["wing_width"])
+    return prices is not None and prices[resting["basis"]] >= resting["limit_credit"] - 1e-9
 
 
 # --------------------------------------------------------------------------- legged entry (step 2)

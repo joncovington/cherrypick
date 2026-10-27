@@ -123,6 +123,28 @@ def test_a_provisional_run_looks_early_and_counts_for_nothing(world):
         _run(s, "design", provisional=True, extra_arms={"advised:x": {}})
 
 
+def test_an_unvalidated_holdout_is_asked_for_by_name_and_spends_the_holdout(world):
+    """The 2026-10-27 exception: locked history's holdout runs only when named, provisional, and
+    spending; then it is spent, as an unlocked holdout is, and it records no trial."""
+    s, _ = world
+    for kw in (
+        {"provisional": True, "spend_holdout": True},
+        {"unvalidated_holdout": True, "spend_holdout": True},
+        {"unvalidated_holdout": True, "provisional": True},
+    ):
+        with pytest.raises(runner.RunRefused):
+            _run(s, "holdout", **kw)
+    with pytest.raises(runner.RunRefused, match="unvalidated"):
+        _run(s, "design", provisional=True, unvalidated_holdout=True, spend_holdout=True)
+    report = _run(s, "holdout", provisional=True, spend_holdout=True, unvalidated_holdout=True)
+    assert report["provisional"] is True
+    conn = results.connect()
+    assert results.trial_count(conn, "flies") == 0
+    assert results.holdout_spent(conn, "flies", report["arms"]["range-high"]["spec_hash"])
+    with pytest.raises(runner.RunRefused, match="already spent"):
+        _run(s, "holdout", provisional=True, spend_holdout=True, unvalidated_holdout=True)
+
+
 def test_design_runs_are_trials_counted_once_per_spec(world):
     s, home = world
     _unlock(s)

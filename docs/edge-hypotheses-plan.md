@@ -1393,6 +1393,79 @@ run.*
 - **Not tested here:** his 2025 "convexity stack" (both sides at 25-50 cents, 2-5 DTE, around
   events) and his "Sigma Drift" (5-10 DTE), which have no mechanical rules in the transcripts.
 
+### 21. Legged SPX flies with a resting entry limit, with and without the range-high refusal
+
+*Source: the user, 2026-10-27, after a screenshot of a trader legging XSP 0DTE flies: "Fills and
+staying away from the edges of the range." Flies were retired on 2026-10-19 on stranded verticals;
+the four-year design replay found completion rate a symptom and the price paid the lever, and tried
+entry-credit filters but never a better entry price with fill realism. Declared here before any of
+it is run.*
+
+- **Question:** do flies' legged 0DTE SPX flies earn after costs if each entry rests above mid and
+  fills only when the market comes to it, alone or with the `range-high` refusal?
+- **Where the edge would live:** **execution**. A credit vertical sold richer than control's
+  modelled fill starts each position with more credit to fund completion and to cushion a strand.
+  Against it, a resting credit order fills when spot moves against completion: live's entries at mid
+  − 0.05 filled 43 of 50, and the misses were the ones already working. The rule carries that
+  adverse selection instead of assuming it away.
+- **Look-alikes:** `cherrypick hypotheses --similar` finds no rejected row with this setup, side,
+  structure and window. The nearest closed evidence is flies' own: the 2026-10-17 provisional design
+  run (control lost every year, no entry feature or range position separated strands), the
+  entry-credit filters and completion-limit sweeps the same day (none positive in either half), and
+  the 10-09 and 10-14 range gate reviews (both-ends gates hurt; only the narrow-range high was a
+  lead, the `range-high` arm, never read).
+- **Rival explanations, each with its check:**
+  - *Fewer trades, not better ones:* a limit that rarely fills only trades less. **Check:** the
+    verdict is the arm's own net, not its gap to control; trades per session are reported beside it.
+  - *Optimistic touch:* a mid that reaches the limit is not a fill. **Check:** the offsets run up to
+    0.10 above mid, and the arm's paired difference against its base (control, or `range-high` for a
+    twin) is reported.
+  - *A calm span:* **Check:** both time-halves of each window must pass.
+  - *The range gate alone:* **Check:** `range-high` runs as a reference beside the `-rh` twins.
+  - *Fees:* **Check:** still positive at 1.5× fees.
+- **The structure:** flies' `control` arm exactly (ATM centre, 5-wide, legged, 10:00-14:30 entries,
+  completion at its own rule, held to settlement), changed only in how the entry fills
+  (`engine.entry_limit_settings`):
+  - the entry rests at the planned spread's **mid credit plus the offset**, floored to the tick;
+  - it fills at that limit on the first **later** tick whose mid credit reaches it, within **120 s**
+    (two vendor ticks), never on the tick it is placed;
+  - unfilled, it lapses, the entry is re-planned, and no cadence slot was spent; while it rests the
+    arm plans no other legged entry.
+- **Six arms**, Holm-adjusted together: offsets **0.00, 0.05 and 0.10** on `control` (`limit-000`,
+  `limit-005`, `limit-010`), and the same three on `range-high` (`limit-000-rh` and so on).
+  `control` and `range-high` run beside them as references, never judged.
+- **Costs:** flies' own model. Fees are the suite's tastytrade schedule and the settlement fee $5 per
+  in-the-money strike. A limit fill concedes no slippage; completion keeps control's modelled fill.
+- **Measured:** each session's summed net per arm, in dollars at one contract.
+- **Window and sample:** the backtest's own windows over the 60 s vendor store (`SPX-60s.db`).
+  - **Design:** 2022-05-16 to 2025-06-30, about 780 sessions.
+  - **Holdout:** 2025-07-01 to 2026-10-12, about 320 sessions. At the user's request it is **run
+    straight after the design whatever the design shows**. It counts toward a pass only after a
+    design pass; after a design fail it is exploratory and cannot overturn the fail.
+  - **Both runs are provisional.** Flies validation needs 10 sessions of paper's book beside the
+    recorder, and paper stopped at five, so flies history cannot unlock. The user chose to run it
+    anyway (2026-10-27). The holdout spends once per arm through the runner's
+    `unvalidated_holdout`, added for this. Results from these runs carry the vendor data's own
+    unchecked error.
+  - Fewer than 100 sessions in a window is no verdict.
+- **Pass-or-fail rule**, per arm, all must hold:
+  - mean net per session above zero with a one-sided t above 2, one session one observation;
+  - Holm across the six limit arms;
+  - each time-half of the window positive;
+  - still positive at **1.5× fees**;
+  - then the holdout, with mean net above zero and a one-sided t above 2.
+- **Declared limits (B11):** 60 s ticks see one sample where paper saw four (the cadence cost is
+  measured in `validate`, not here); a fill is judged on mid, never on a print; a resting order
+  left at the session's end opens nothing.
+- **Name split (B9):** does not apply; one symbol.
+- **Data:** no new store. `scripts/flies_entry_limit_item21.py` builds a scratch flies config from the
+  machine's (the six arms added) and runs `cherrypick.backtest.runner` over each window. Results go
+  under the backtest data directory only; this plan records the verdict.
+- **Decides:**
+  - **A pass:** a proposal to revive flies in paper with the passing arm, with the robustness report.
+  - **A fail or no verdict:** legged 0DTE flies stay retired; entry price and the range gate are
+    closed as levers.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

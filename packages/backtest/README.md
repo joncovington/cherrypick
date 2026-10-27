@@ -58,8 +58,10 @@ Reports go to `~/.cherrypick/data/backtest/results/` and nowhere else.
 
 To look before the unlock, `run flies --arms ... --window design --cadence 60 --provisional` runs the
 design window anyway. A provisional run is marked provisional in its report, the runs table and the
-console, records no trial, and can never be the holdout or the advisor's specs: it is a look, not
-evidence.
+console, records no trial, and can never be the advisor's specs: it is a look, not evidence. It is
+the holdout only when asked for by name, `--window holdout --provisional --spend-holdout
+--unvalidated-holdout`, added 2026-10-27 because flies validation cannot reach its ten sessions now
+that paper has stopped. That run spends the holdout for each spec as an unlocked one does.
 
 ## The nightly fetch
 

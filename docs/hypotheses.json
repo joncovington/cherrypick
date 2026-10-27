@@ -549,6 +549,48 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 21,
+      "study": "item21",
+      "title": "Legged SPX flies with a resting entry limit, with and without the range-high refusal",
+      "status": "declared",
+      "legacy": false,
+      "setup": "entry-limit",
+      "side": "neutral",
+      "structure": "legged-butterfly",
+      "window": "0dte",
+      "measure": "net per session in $ at one contract, per arm: control's legged flies with the entry resting at mid + 0.00 / 0.05 / 0.10 and filled only by a later tick's mid within 120 s, each alone and with the range-high refusal",
+      "expected": "a positive mean net per session after flies' own costs",
+      "sample": "design 2022-05-16..2025-06-30 (~780 sessions, 60 s vendor store); holdout 2025-07-01..2026-10-12 run after the design whatever it shows (user, 2026-10-27), counting only after a design pass; both provisional, flies history being unvalidated; < 100 sessions = no verdict",
+      "rule": "per arm: one-sided t > 2 on session nets, Holm across the six limit arms, both time-halves positive, positive at 1.5x fees; then holdout mean > 0 with t > 2",
+      "mechanism": "a credit vertical sold richer than control's modelled fill funds completion and cushions a strand, if the fills it loses to adverse selection cost less than the price it gains",
+      "rivals": [
+        {
+          "explanation": "fewer trades, not better ones",
+          "check": "verdict on the arm's own net, trades per session reported"
+        },
+        {
+          "explanation": "an optimistic touch at mid",
+          "check": "offsets to 0.10 above mid; paired difference against the base arm reported"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "both time-halves of each window must pass"
+        },
+        {
+          "explanation": "the range gate alone",
+          "check": "range-high run as a reference beside the -rh twins"
+        },
+        {
+          "explanation": "fees",
+          "check": "positive at 1.5x fees"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#21-legged-spx-flies-with-a-resting-entry-limit-with-and-without-the-range-high-refusal",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []

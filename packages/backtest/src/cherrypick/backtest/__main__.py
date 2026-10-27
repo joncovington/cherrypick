@@ -417,6 +417,7 @@ def cmd_run(args) -> int:
             end=args.end,
             spend_holdout=args.spend_holdout,
             provisional=args.provisional,
+            unvalidated_holdout=args.unvalidated_holdout,
             workers=args.workers,
             module=args.module,
             log=lambda m: print(m, file=sys.stderr),
@@ -567,6 +568,12 @@ def main(argv: list[str] | None = None) -> int:
         "--provisional",
         action="store_true",
         help="design window while history is still locked: no trial, marked provisional everywhere",
+    )
+    rn.add_argument(
+        "--unvalidated-holdout",
+        dest="unvalidated_holdout",
+        action="store_true",
+        help="with --provisional --spend-holdout: spend the holdout while history is locked",
     )
     rn.add_argument("--workers", type=int, default=4)
     rn.set_defaults(fn=cmd_run)

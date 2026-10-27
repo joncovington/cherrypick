@@ -413,6 +413,30 @@ CREATE TABLE IF NOT EXISTS fly_selector_choices (
     reason      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_fly_selector_choices_day ON fly_selector_choices(trade_date, symbol);
+
+-- A `limit-*` arm's resting entry orders (research item 21, 2026-10-27; `engine.entry_limit_settings`).
+-- One row per order: placed at `limit_credit`, then `filled` (the position it opened) or `expired`.
+-- `plan` is the engine's approved plan at placement, booked at the limit when the order fills.
+CREATE TABLE IF NOT EXISTS fly_resting_entries (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id       TEXT NOT NULL,
+    trade_date    TEXT NOT NULL,
+    symbol        TEXT NOT NULL,
+    arm           TEXT NOT NULL,
+    placed_at     TEXT NOT NULL,
+    expires_at    TEXT NOT NULL,
+    side          TEXT NOT NULL,
+    center        REAL NOT NULL,
+    wing_width    REAL NOT NULL,
+    basis         TEXT NOT NULL,        -- mid | natural
+    limit_credit  REAL NOT NULL,
+    mid_at_place  REAL,
+    plan          TEXT NOT NULL,        -- JSON
+    status        TEXT NOT NULL,        -- resting | filled | expired
+    resolved_at   TEXT,
+    position_id   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_fly_resting_entries_book ON fly_resting_entries(book_id, status);
 """
 
 
@@ -1073,6 +1097,43 @@ def update_ladder_rung(conn, rung_id: int, fields: dict) -> None:
         return
     sets = ", ".join(f"{c} = ?" for c in fields)
     conn.execute(f"UPDATE fly_debit_ladder SET {sets} WHERE id = ?", (*fields.values(), rung_id))
+    conn.commit()
+
+
+def place_resting_entry(conn, row: dict) -> int:
+    """Record a resting entry order (`status` resting). Returns its id."""
+    row = {**row, "plan": json.dumps(row["plan"], sort_keys=True), "status": "resting"}
+    cols = list(row)
+    cur = conn.execute(
+        f"INSERT INTO fly_resting_entries ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})",
+        [row[c] for c in cols],
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def resting_entry(conn, book_id: str) -> dict | None:
+    """The book's working entry order, or None. The plan comes back parsed."""
+    row = conn.execute(
+        "SELECT * FROM fly_resting_entries WHERE book_id = ? AND status = 'resting' ORDER BY id DESC LIMIT 1",
+        (book_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    out = dict(row)
+    out["plan"] = json.loads(out["plan"])
+    return out
+
+
+def resolve_resting_entry(
+    conn, entry_id: int, status: str, when: str, position_id: str | None = None
+) -> None:
+    if status not in ("filled", "expired"):
+        raise ValueError(f"a resting entry resolves filled or expired, not {status!r}")
+    conn.execute(
+        "UPDATE fly_resting_entries SET status = ?, resolved_at = ?, position_id = ? WHERE id = ?",
+        (status, when, position_id, entry_id),
+    )
     conn.commit()
 
 
