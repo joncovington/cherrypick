@@ -197,7 +197,16 @@ def build_argv(
         module = args.get("module")
         if module not in VALIDATE_MODULES:
             raise Refused(f"validate needs 'module', one of {', '.join(VALIDATE_MODULES)}")
-        return [python, "-m", "cherrypick.backtest", "validate", "--module", module]
+        argv = [python, "-m", "cherrypick.backtest", "validate", "--module", module]
+        # Which store is validated: each cadence is its own file, and only the cadence a module's
+        # history runs at unlocks them. Absent, backtest's default store (15 s), which unlocks nothing
+        # at 60 s (2026-10-26: a MEIC validation compared the 15 s store's 4 sessions for that reason).
+        cadence = args.get("cadence")
+        if cadence is not None:
+            if type(cadence) is not int or not 1 <= cadence <= 3600:
+                raise Refused("validate's 'cadence' is whole seconds, 1 to 3600")
+            argv += ["--cadence", str(cadence)]
+        return argv
     else:
         raise Refused(f"unknown kind {kind!r}; allowed: {', '.join(KINDS)}")
     if stop_by:
