@@ -103,6 +103,9 @@ QUOTE_MAX_AGE_SECONDS = 120.0
 # would be skipped and the cadence would halve.
 QUOTE_INTERVAL_SECONDS = 10
 # How `gex_quotes.side` encodes the right. `core.quotehistory` decodes it; change both or neither.
+#: The feed's greek, recorded beside each quote: its age, and the price and vol it was computed at.
+GREEK_COLUMNS = ("delta_age_s", "greek_price", "greek_iv")
+
 QUOTE_SIDES = {"put": 0, "call": 1}
 
 # The config block (`quote_history`). OFF unless a machine's config turns it on: it is ~8 MB a
@@ -193,8 +196,15 @@ def _ensure_history_table(conn: sqlite3.Connection, db_path: Path | str | None =
         "CREATE TABLE IF NOT EXISTS gex_quotes ("
         "sample_id INTEGER NOT NULL, side INTEGER NOT NULL, strike REAL NOT NULL, "
         "bid REAL NOT NULL, ask REAL NOT NULL, mid REAL NOT NULL, age_s REAL, delta REAL, "
+        "delta_age_s REAL, greek_price REAL, greek_iv REAL, "
         "PRIMARY KEY (sample_id, side, strike)) WITHOUT ROWID"
     )
+    # The feed's greek age and the price and vol it was computed at (2026-10-27), on a file made
+    # before them. Nullable: the rows recorded earlier simply do not know.
+    have_q = {r[1] for r in conn.execute("PRAGMA table_info(gex_quotes)")}
+    for column in GREEK_COLUMNS:
+        if column not in have_q:
+            conn.execute(f"ALTER TABLE gex_quotes ADD COLUMN {column} REAL")
     # The first layout's table, created by the recorder the day before any session was recorded into
     # it. Dropped only while EMPTY: a file holding rows in it is left exactly as it is.
     if (
@@ -696,8 +706,8 @@ def record_quotes(
                         (sym, today, now, str(snap.expiration)),
                     ).lastrowid
                     conn.executemany(
-                        "INSERT INTO gex_quotes (sample_id, side, strike, bid, ask, mid, age_s, delta) "
-                        "VALUES (?,?,?,?,?,?,?,?)",
+                        "INSERT INTO gex_quotes (sample_id, side, strike, bid, ask, mid, age_s, delta, "
+                        "delta_age_s, greek_price, greek_iv) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                         [
                             (
                                 sample_id,
@@ -708,6 +718,9 @@ def record_quotes(
                                 q["mid"],
                                 q["age_seconds"],
                                 q["delta"],
+                                q.get("delta_age_seconds"),
+                                q.get("greek_price"),
+                                q.get("greek_iv"),
                             )
                             for q in quotes
                         ],

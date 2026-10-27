@@ -39,6 +39,9 @@ RECORDER_DDL = (
     "CREATE TABLE IF NOT EXISTS gex_quotes ("
     "sample_id INTEGER NOT NULL, side INTEGER NOT NULL, strike REAL NOT NULL, "
     "bid REAL NOT NULL, ask REAL NOT NULL, mid REAL NOT NULL, age_s REAL, delta REAL, "
+    # The recorder's feed-greek columns (2026-10-27), spelled the same so a replay reads either file;
+    # a vendor's history has no feed greeks, so they stay null here.
+    "delta_age_s REAL, greek_price REAL, greek_iv REAL, "
     "PRIMARY KEY (sample_id, side, strike)) WITHOUT ROWID",
     "CREATE TABLE IF NOT EXISTS daily_closes ("
     "symbol TEXT NOT NULL, trade_date TEXT NOT NULL, close REAL NOT NULL, "
