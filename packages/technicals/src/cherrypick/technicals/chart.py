@@ -68,15 +68,11 @@ def _r(v: float | None, digits: int = 4) -> float | None:
 def signal_days(highs, lows, closes, start: int = 0) -> list[dict]:
     """The scan rules each session from `start` matched, computed from whole-history series once
     rather than re-deriving `signals.readings` on every prefix (the same inputs, O(n) not O(n^2))."""
-    short = trend.scores(closes, trend.SHORT_TERM)
-    long_ = trend.scores(closes, trend.LONG_TERM)
-    cci5 = indicators.cci(highs, lows, closes, 5)
-    cci14 = indicators.cci(highs, lows, closes, 14)
-    rsi14 = indicators.rsi(closes, 14)
+    series = signals.readings_series(highs, lows, closes)
     out = []
     for i in range(max(start, 1), len(closes)):
-        r = signals.Readings(short[i], long_[i], cci5[i], cci5[i - 1], cci14[i], rsi14[i])
-        if any(v is None for v in vars(r).values()):
+        r = series[i]
+        if r is None:
             continue
         rules = signals.matches(r)
         if rules:

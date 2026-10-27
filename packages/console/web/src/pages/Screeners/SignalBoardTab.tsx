@@ -176,7 +176,8 @@ export function SignalBoardTab() {
         lists them. Counted: {counted.join(", ") || "—"}. Not counted yet: {data?.notCounted.join(", ") || "—"}, so counts run
         lower than the original board's and no three-signal floor is applied. Scored on the 15 saved boards (2026-09-23 to
         10-14), our stage tag found 69 of 73, analyst revisions 33 of 38, rotation 89 of 96, fundamentals 74 of 95,
-        fundamentals vs price 29 of 50, the scan 9 of 16. Fundamentals compare each company with its industry peers (its
+        fundamentals vs price 29 of 50, the scan 9 of 16; with the stage and scan rules refit on 2026-10-27, every saved
+        board re-scored gives the stage 114 of 115 and the scan 17 of 21. Fundamentals compare each company with its industry peers (its
         sector where an industry has fewer than five names), by our own measures rather than an exact copy of the original
         board's. History found no edge in the direction read or in revisions on their own: this is the board's view, not a
         tested signal.

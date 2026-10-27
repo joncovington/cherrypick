@@ -6,17 +6,34 @@ session and in total:
 
 - **side recall**: of the vendor's listings, how many we place on the same side;
 - **stage agreement**: of those, how many we give the same stage;
-- **extra**: names we list that the vendor did not that day -- reported as a rate, because the
-  vendor's daily universe varies in a way no price rule can see (see `stage`);
+- **extra**: names we list that the vendor did not that day, as a rate of its listings;
 - **counts**: ours beside the vendor's stated leaders and laggards.
+
+Each is also given apart for the sessions the 2026-10-14 refit fitted on (`FIT_THROUGH`) and the
+ones after, which it never saw. The vendor's editions end with session 2026-10-22, so the later
+half is final.
 """
 
 from __future__ import annotations
 
 from . import editions, stage, store
 
+# The refit of 2026-10-14 fitted on the editions describing sessions through this one; the later
+# ones are the unseen half every re-score reports apart.
+FIT_THROUGH = "2026-10-02"
 
-def score(rule: stage.StageRule = stage.DEFAULT_RULE, conn=None) -> dict:
+
+def _rates(t: dict) -> dict:
+    listed = t["listed"] or 1
+    return {
+        "side_recall": round(t["side"] / listed, 4),
+        "stage_agreement": round(t["stage"] / max(t["side"], 1), 4),
+        "extra_rate": round(t["extra"] / listed, 4),
+    }
+
+
+def score(rule: stage.StageRule = stage.DEFAULT_RULE, conn=None, split: str = FIT_THROUGH) -> dict:
+    """The scores over every edition, and apart for the sessions through `split` and after it."""
     vendor = editions.load()
     universe = sorted({s for day in vendor.values() for s in day})
     own = conn is None
@@ -26,7 +43,9 @@ def score(rule: stage.StageRule = stage.DEFAULT_RULE, conn=None) -> dict:
         conn.close()
     bench = closes.pop(rule.benchmark)
     sessions: dict[str, dict] = {}
-    totals = {"listed": 0, "side": 0, "stage": 0, "extra": 0, "missed": 0}
+    keys = ("listed", "side", "stage", "extra", "missed")
+    totals = dict.fromkeys(keys, 0)
+    halves = {name: dict.fromkeys((*keys, "editions"), 0) for name in ("fit", "later")}
     for day, theirs in sorted(vendor.items()):
         ours = stage.stages_on(day, {s: closes[s] for s in universe if closes.get(s)}, bench, rule)
         row = {
@@ -47,23 +66,27 @@ def score(rule: stage.StageRule = stage.DEFAULT_RULE, conn=None) -> dict:
             },
         }
         sessions[day] = row
-        for k in totals:
+        half = halves["fit" if day <= split else "later"]
+        half["editions"] += 1
+        for k in keys:
             totals[k] += row[k]
-    listed = totals["listed"] or 1
+            half[k] += row[k]
     return {
         "rule": {
             "name": rule.name,
+            "method": rule.method,
             "windows": rule.windows,
+            "laggard_windows": rule.side_windows("laggard"),
             "margins": rule.margins,
             "day_margin": rule.day_margin,
             "benchmark": rule.benchmark,
         },
         "universe": len(universe),
         "editions": len(vendor),
-        "side_recall": round(totals["side"] / listed, 4),
-        "stage_agreement": round(totals["stage"] / max(totals["side"], 1), 4),
-        "extra_rate": round(totals["extra"] / listed, 4),
+        **_rates(totals),
         "totals": totals,
+        "split": split,
+        "halves": {name: {**_rates(t), "totals": t} for name, t in halves.items()},
         "sessions": sessions,
     }
 
