@@ -798,7 +798,10 @@ producer — the rule `packages/overview/CLAUDE.md` already states.
 the 497 candidates, ETFs and benchmarks Dolt carries (368,904 bars back to 2023-09-25; SPX, NDX and
 VIX are not in Dolt), landed at 06:15 ET after the Dolt pull, in ~13 s a morning. Adjusted bars are a
 pure function over raw and reproduce the vendor's MSFT closes on all 753 sessions exactly (ANET to a
-cent, pre-split); `check-vendor` repeats that over every capture. IV rank reads Dolt's
+cent, pre-split); `check-vendor` repeats that over every capture, frozen at the last captures
+(2026-10-23). From 2026-10-27 the nightly check is `check-adjust`, against Yahoo's adjusted closes
+(`scripts/fetch_yahoo_adjusted.py`): it reads the ratio of the two series, which is flat unless one
+side applied a corporate action the other did not. IV rank reads Dolt's
 `volatility_history` where it covers a name. **Where it does not, tastytrade's rank is the fallback**
 (2026-09-29, `scripts/fetch_iv_rank.py`, the `technicals-iv-rank` job): no source reproduces the
 vendor's own IV rank (Dolt correlates 0.66, tastytrade 0.64), so building our own ATM IV from Cboe's

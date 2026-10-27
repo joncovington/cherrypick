@@ -102,6 +102,11 @@ CATCHUP_MINUTES = {
     "technicals-sectors": 240,
     # Append-only: a late fetch still lands every event, only with a later first-seen time.
     "technicals-revisions": 12 * 60,
+    # A year of each name replaced whole, so any time that evening is the same fetch; the morning
+    # check reads whatever was fetched last.
+    "technicals-yahoo-adjusted": 240,
+    # Local files only; a late check is the same check, and the next morning's covers a missed one.
+    "technicals-adjust-check": 12 * 60,
     "technicals-liquidity": 120,
     # A rerun rebuilds the same session's list from the same files; its readers run at 18:50-19:10.
     "technicals-securities": 120,
@@ -1284,6 +1289,41 @@ def derive_jobs(
             enabled_reason=""
             if board_on
             else "disabled in config (technicals.board) or with technicals-land",
+        ),
+    )
+    adjust_on = tc_on and tc["adjust_check"]
+    add(
+        "technicals-adjust-check",
+        lambda: JobSpec(
+            id="technicals-adjust-check",
+            # A package command: our adjusted closes against the Yahoo file the evening fetch wrote,
+            # after the landing added the same session. Exits 1 on an unexplained step (a split,
+            # spin-off or dividend one side lacks), which the watchdog reports as a failed job.
+            argv=(pythonw, "-m", "cherrypick.technicals", "check-adjust"),
+            kind=KIND_DAILY,
+            at_et=tc["adjust_check_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-adjust-check"],
+            trading_days_only=True,
+            enabled=adjust_on,
+            enabled_reason=""
+            if adjust_on
+            else "disabled in config (technicals.adjust_check) or with technicals-land",
+        ),
+    )
+    yahoo_adj_on = tc["enabled"] and tc["adjust_check"]
+    add(
+        "technicals-yahoo-adjusted",
+        lambda: JobSpec(
+            id="technicals-yahoo-adjusted",
+            # A script, not package code: it reads Yahoo's public chart endpoint (no credential, one
+            # request per name, paced) for a year of adjusted closes the morning check compares.
+            argv=(pythonw, _suite_script(launcher, "fetch_yahoo_adjusted.py")),
+            kind=KIND_DAILY,
+            at_et=tc["yahoo_adjusted_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-yahoo-adjusted"],
+            trading_days_only=True,
+            enabled=yahoo_adj_on,
+            enabled_reason="" if yahoo_adj_on else "disabled in config (technicals.adjust_check)",
         ),
     )
     div_on = tc["enabled"] and tc["dividends"]
