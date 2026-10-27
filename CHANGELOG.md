@@ -11,6 +11,14 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Fixed (2026-10-27): four names `check-adjust` found adjusted wrongly.** AZN's 2026-02-02 ADR ratio
+  change (1-for-2) and a 2015 2-for-1 are now in the split history. HON, CME and ITUB were dividend
+  disagreements our two sources could not settle: `dividends.reconcile` now lets Yahoo's amount
+  decide a pair more than 1.2x apart, so CME's annual variable dividend and ITUB's extraordinary one
+  are kept and HON's doubled tastytrade amounts are not. One payout tastytrade lists in parts (GFI)
+  is now one event. PBR is excluded from the tiebreak, since Yahoo's own amounts for it are mixed.
+  The vendor bar check is unchanged on every capture.
+
 - **Added (2026-10-27): `check-adjust`, the corporate-action tripwire.** With the vendor's chart
   captures gone (last 2026-10-23), nothing checked our split and dividend adjustment. Each evening
   `scripts/fetch_yahoo_adjusted.py` (job `technicals-yahoo-adjusted`, 19:45 ET) keeps a year of

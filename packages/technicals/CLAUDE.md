@@ -55,12 +55,12 @@ between corporate actions whatever its level.
   and fails, so a fetch that stopped cannot pass as a clean check.
 - **First run, 2026-10-27**: 934 names read, all agree once the 30 declared names are set aside.
   Those are real: seven spin-offs we do not model (BDX, CMCSA, CTVA, FDX, HON twice, SPGI), BNY's
-  ticker change, and four names where OURS is wrong and fixable -- AZN's ADR ratio change on
-  2026-02-02 (raw doubles, no split in Dolt), HON's three dividends (tastytrade's 2.38 against
-  Dolt's 1.19, kept by reconcile), CME's 2026-03-10 variable dividend (7.45, lost to the usual
-  payout) and ITUB's December extraordinary dividend. Their `KNOWN_STEPS` reasons say "OURS IS
-  WRONG"; remove the entry once fixed. Shown to fail on the real store: dropping APH's 2026-09-03
-  2:1 or KLAC's 2026-06-12 10:1 from a copy flags that date at 2.0 / 10.0 and exits 1.
+  ticker change, and four names where ours was wrong, all fixed the same day: AZN's 2026-02-02 ADR
+  ratio change (a 1-for-2 no source of ours carried; `fetch_split_history.py AZN` stored it, with a
+  2015 2-for-1 that was missing too), and HON's three dividends, CME's 2026-03-10 variable dividend
+  and ITUB's December extraordinary one (now decided by Yahoo, below). After the fixes all 934
+  agree with 28 names declared. Shown to fail on the real store: dropping APH's 2026-09-03 2:1 or KLAC's
+  2026-06-12 10:1 from a copy flags that date at 2.0 / 10.0 and exits 1.
 
 **Every comparison with a capture adjusts AS OF the capture's last session**
 (`store.adjusted_bars(..., as_of=)`: bars, splits and dividends through that day). A capture states
@@ -89,7 +89,14 @@ either side, tastytrade's amount when within 3x, and a gross outlier on either s
 name's usual payout (the median within two years, never all history). 36 of 40 then match at 99%+.
 **Tastytrade states some names' pre-split history on today's share basis** (AAPL, BKNG, AVGO, WMT,
 not the sector funds), so an amount is restated by its later splits only where Dolt confirms it;
-exact repeats inside one source are one event. On 2026-10-17 that took 207 of 218 captured names to
+exact repeats inside one source are one event, and same-date parts that sum to the other source's
+amount are one payout (GFI). **Yahoo breaks a large tie** (2026-10-27): a pair more than 1.2x apart
+takes the side Yahoo's amount for the event (`store.yahoo_dividends`, a year of it, put back on its
+own date's basis through Yahoo's split list) is within 5% of -- a special payout (CME's annual
+variable, ITUB's extraordinary) or a whole history on another basis (HON's tastytrade amounts are
+twice Dolt's back to 2009). PBR is excluded by name (`dividends.THIRD_EXCLUDED`): Yahoo mixes its
+per-share and per-ADR amounts. The cost is that `check-adjust` cannot flag an event Yahoo decided;
+`check-vendor` on every capture is unchanged by it. On 2026-10-17 that took 207 of 218 captured names to
 99%+. What still fails is not reconcilable from these two sources: CAD/CHF amounts (SU, ENB, CCJ,
 ALC), spin-offs neither models (APTV, LEN, ILMN), and the vendor's own misses (AU, MU). Those names
 are left out of fits that need exact cents.

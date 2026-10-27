@@ -128,19 +128,7 @@ KNOWN_STEPS: dict[tuple[str, str], str] = {
         "the ticker changed hands (BNY Mellon took BNY): our series rightly starts over, Yahoo's "
         "carries the new owner's history back"
     ),
-    ("AZN", "2026-02-02"): (
-        "OURS IS WRONG: the ADR ratio changed (raw 92.77 -> 188.41) and Dolt has no split; Yahoo "
-        "applies 1:2. Fix: scripts/fetch_split_history.py AZN, or a hand row"
-    ),
     ("AZN", "2026-02-19"): "the dividend on the AZN share basis after the 2026-02-02 ratio change",
-    ("HON", "2025-11-14"): "OURS IS WRONG: tastytrade states 2.38, twice Dolt's 1.19, and reconcile kept it",
-    ("HON", "2026-02-27"): "OURS IS WRONG: as 2025-11-14 (tastytrade's 2.38 against Dolt's 1.19)",
-    ("HON", "2026-05-15"): "OURS IS WRONG: as 2025-11-14 (tastytrade's 2.38 against Dolt's 1.19)",
-    ("CME", "2026-03-10"): (
-        "OURS IS WRONG: tastytrade's 7.45 (the annual variable dividend with the regular 1.30) lost "
-        "to the usual payout in reconcile"
-    ),
-    ("ITUB", "2025-12-11"): "OURS IS WRONG: the December extraordinary dividend is missing (0.069 vs 0.393)",
 }
 
 
