@@ -1,8 +1,8 @@
 """Our own support and resistance: confirmed swing points in our bars, nearest first.
 
 The chart's default levels and the setups watchlist's support and resistance. Nothing here reads
-vendor data. The vendor's levels stay on the chart as a comparison ("Vendor's view"), and
-`docs/setups.md` records how often ours land near theirs. That figure is a check, never a target
+vendor data. The vendor's levels were drawn beside them for comparison until its subscription ended,
+and `docs/setups.md` records how often ours landed near theirs. That figure is a check, never a target
 these parameters are tuned to.
 
 A swing high is a bar whose high is above every high of the SWING_K bars before it and not exceeded

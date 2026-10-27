@@ -57,7 +57,7 @@ def test_a_name_is_asked_for_only_when_its_reading_is_old():
         "NONE_NEW": {"sector": None, "fetched_on": "2026-10-10"},
         "NONE_OLD": {"sector": None, "fetched_on": "2026-09-01"},
     }
-    # A name in the vendor's map is asked too, for its industry (its sector stays the vendor's).
+    # A name in the vendor's map is asked too, for its industry and (since 2026-10-27) its sector.
     names = ["VENDOR", "FRESH", "STALE", "NONE_NEW", "NONE_OLD", "NEW"]
     assert fs.due(names, have, today) == ["VENDOR", "STALE", "NONE_OLD", "NEW"]
 
@@ -82,11 +82,14 @@ def test_peers_are_the_industry_falling_back_to_the_sector_for_a_small_one():
     assert "NOSECTOR" not in groups, "no sector and no industry is no group, so no score"
 
 
-def test_the_calendar_takes_the_vendors_sector_first_and_yahoos_otherwise():
+def test_the_calendar_takes_yahoos_sector_first_and_the_vendors_frozen_map_otherwise():
+    """Yahoo first since 2026-10-27 (the vendor's map stopped at its last edition); the map still
+    fills a name Yahoo has no sector for."""
     universe = paths.market_report_dir() / "universe"
     universe.mkdir(parents=True, exist_ok=True)
     (universe / "sectors.json").write_text(
-        json.dumps({"sectors": {"CB": {"sector": "Financials"}}}), encoding="utf-8"
+        json.dumps({"sectors": {"CB": {"sector": "Financials"}, "AGNC": {"sector": "Real Estate"}}}),
+        encoding="utf-8",
     )
     yahoo = {
         "names": {
@@ -96,4 +99,8 @@ def test_the_calendar_takes_the_vendors_sector_first_and_yahoos_otherwise():
         }
     }
     paths.yahoo_sectors().write_text(json.dumps(yahoo), encoding="utf-8")
-    assert ec._sector_map() == {"CB": ("Financials", "vendor"), "GM": ("Consumer Discretionary", "yahoo")}
+    assert ec._sector_map() == {
+        "CB": ("Industrials", "yahoo"),
+        "GM": ("Consumer Discretionary", "yahoo"),
+        "AGNC": ("Real Estate", "vendor"),
+    }

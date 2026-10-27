@@ -17,7 +17,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { TechnicalsChart, TechnicalsSetup, TechnicalsVendorLevel } from "@console/shared";
+import type { TechnicalsChart, TechnicalsSetup } from "@console/shared";
 import { useTechnicalsChart } from "../../lib/api";
 import { SERIES_COLORS } from "../../components/Charts";
 import { fmtIvr } from "../../lib/format";
@@ -26,24 +26,20 @@ import { canvasPalette as _pal, hexOf, resolveColor } from "../../components/cha
 const PAL = _pal();
 
 /**
- * One name's chart: our bars, our level grid, RSI and the trend scores, with the vendor's levels
- * and trend grades beside them where the vendor's chart was captured.
+ * One name's chart: our bars, our levels, RSI and our short-term trend score.
  *
  * Everything drawn is `packages/technicals`' chart file (`data/technicals/charts/<SYMBOL>.json`);
- * the page computes nothing. The comparison is the point: level SELECTION is unsolved, so the page
- * draws our grid's extremes and the vendor's levels, and marks each vendor level with whether we can
- * produce it -- support and resistance on our grid, gap levels as an edge of one of our own gaps. A
- * disagreement you can see, not a claim that we draw the vendor's levels.
- *
- * Styling carries that distinction: a support or resistance we place is a solid line, a gap level we
- * place is dotted, and any level we cannot produce is dashed.
+ * the page computes nothing. The file still carries the vendor's last captured levels and grades
+ * (the subscription ended 2026-10-24, the last capture is 2026-10-23); the page no longer draws or
+ * lists them, because a frozen capture beside today's bars reads as current.
  *
  * The arrows are one entry/exit setup at a time (`packages/technicals/setups.py`), picked by
  * `?setup=` (the family) and `?side=` (long, short or both): amber for a long -- up where it opened,
  * down where its exit rule closed it -- and pale for a short -- down labelled "short" where it
  * opened, up labelled "cover" where it closed -- with the lines that rule reads drawn beside them.
- * The levels default to our own (swing points, `swings.py`); the vendor's stay as a comparison. The package walks the positions; the page
- * only places what the file says. The scan-rule matches are listed below the chart, not drawn on it.
+ * The levels are our own (swing points, `swings.py`), with our grid's extremes on request. The
+ * package walks the positions; the page only places what the file says. The scan-rule matches are
+ * listed below the chart, not drawn on it.
  */
 
 const UP = hexOf("--pos", "#3af3a0");
@@ -53,7 +49,6 @@ const GRID_INK = hexOf("--text-muted", "#9ca3af");
  *  chips' ink is worked out from a hex: resolve each one once, here. */
 const SERIES = SERIES_COLORS.map(resolveColor);
 const OURS = SERIES[0]!;
-const VENDOR = SERIES[2]!;
 /** Both arrows are amber: an arrow marks an event, and green or red would read as a gain or a loss. */
 const ARROW = SERIES[2]!;
 /** A short's arrows: pale, so a short entry (down) is never read as a long's exit (also down). */
@@ -83,13 +78,6 @@ const RULE_LABEL: Record<string, string> = {
   CciRallyInBearishTrend: "CCI rally in a bearish trend",
 };
 
-const KIND_LABEL: Record<string, string> = {
-  support: "support",
-  resistance: "resistance",
-  gapSupport: "gap support",
-  gapResistance: "gap resistance",
-};
-
 function t(date: string): UTCTimestamp {
   return (Date.parse(`${date}T00:00:00Z`) / 1000) as UTCTimestamp;
 }
@@ -97,23 +85,6 @@ function t(date: string): UTCTimestamp {
 function fmt(v: number | null | undefined, digits = 2): string {
   if (v === null || v === undefined) return "—";
   return v.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
-}
-
-function levelColor(l: TechnicalsVendorLevel): string {
-  return l.kind === "support" || l.kind === "gapSupport" ? UP : DOWN;
-}
-
-const GAP_KINDS = new Set(["gapSupport", "gapResistance"]);
-
-function levelStyle(l: TechnicalsVendorLevel): LineStyle {
-  if (l.onOurGrid === false) return LineStyle.Dashed;
-  return GAP_KINDS.has(l.kind) ? LineStyle.Dotted : LineStyle.Solid;
-}
-
-/** "Placed / asked" over one family of levels; null placements (a capture with no grid) are left out. */
-function placement(levels: TechnicalsVendorLevel[]): { placed: number; asked: number } {
-  const asked = levels.filter((l) => l.onOurGrid !== null);
-  return { placed: asked.filter((l) => l.onOurGrid === true).length, asked: asked.length };
 }
 
 /** A line series from an aligned array; a null is whitespace (a gap), never a zero. */
@@ -142,10 +113,13 @@ interface LevelTitle {
   from?: Time;
 }
 
-/** Which horizontal levels are drawn: every one, only those the vendor's own chart draws, or none. */
-type LevelsMode = "ours" | "vendor" | "all" | "off";
-const LEVELS_MODES: readonly LevelsMode[] = ["ours", "vendor", "all", "off"];
-const LEVELS_LABEL: Record<LevelsMode, string> = { ours: "Our levels", vendor: "Vendor's view", all: "All", off: "Off" };
+/**
+ * Which horizontal levels are drawn: our swing levels, those and our grid's high and low, or none.
+ * `?levels=vendor` (the retired vendor's view) is not a mode, so an old link falls back to the default.
+ */
+type LevelsMode = "ours" | "all" | "off";
+const LEVELS_MODES: readonly LevelsMode[] = ["ours", "all", "off"];
+const LEVELS_LABEL: Record<LevelsMode, string> = { ours: "Our levels", all: "With grid", off: "Off" };
 
 /** A series' last drawn value, for its chip; null when it has none. */
 function lastValue(values: readonly (number | null)[]): number | null {
@@ -194,7 +168,7 @@ class LeftTitles implements ISeriesPrimitive<Time> {
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       context.font = "11px -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif";
       context.textBaseline = "middle";
-      // A chip centred on its line, as the library draws a title. A vendor level on the grid's high
+      // A chip centred on its line, as the library draws a title. A swing level on the grid's high
       // or low shares its line; chips that would overlap sit side by side instead.
       const placed: { y: number; left: number; right: number }[] = [];
       for (const l of this.titles) {
@@ -242,7 +216,7 @@ function PriceChart({ c, shown, levels }: { c: TechnicalsChart; shown: Technical
     });
     const dates = c.bars.map((b) => b.date);
 
-    // Pane 0: candles, our grid's extremes, the vendor's levels, the chosen setup's lines and arrows.
+    // Pane 0: candles, our levels and grid extremes, the chosen setup's lines and arrows.
     const candles = chart.addSeries(CandlestickSeries, {
       upColor: UP,
       downColor: DOWN,
@@ -253,10 +227,8 @@ function PriceChart({ c, shown, levels }: { c: TechnicalsChart; shown: Technical
     });
     candles.setData(c.bars.map((b) => ({ time: t(b.date), open: b.open, high: b.high, low: b.low, close: b.close })));
     const titles: LevelTitle[] = [];
-    // "Ours" draws our own swing levels; "vendor" only the levels the vendor's own chart draws (the
-    // file's `vendorView`, a package rule; a file without it shows them all), for comparison; "all"
-    // ours, our grid's extremes and every vendor level; "off" none. Never the setup lines, which are
-    // what the arrows are read against.
+    // "Ours" draws our own swing levels; "all" those and our grid's high and low; "off" none. Never
+    // the setup lines, which are what the arrows are read against.
     const fromDate = (date: string | null) =>
       date !== null && date > dates[0]! ? (dates.find((d) => d >= date) ?? dates[0]!) : dates[0]!;
     const levelLine = (value: number, date: string | null, color: string, style: LineStyle, title: string) => {
@@ -288,8 +260,6 @@ function PriceChart({ c, shown, levels }: { c: TechnicalsChart; shown: Technical
         titles.push({ price, title, color: GRID_INK });
       }
     }
-    const drawn = (c.vendor?.levels ?? []).filter((l) => levels === "all" || (levels === "vendor" && l.vendorView !== false));
-    for (const l of drawn) levelLine(l.value, l.date, levelColor(l), levelStyle(l), `vendor ${KIND_LABEL[l.kind] ?? l.kind}`);
     // The chips draw with whichever pane-0 series carries them, so they go on the last one added:
     // over every line, and under the arrows, which draw on top.
     let topmost: ISeriesApi<SeriesType> = candles;
@@ -367,18 +337,10 @@ function PriceChart({ c, shown, levels }: { c: TechnicalsChart; shown: Technical
     }
     rsi.attachPrimitive(new LeftTitles(seriesChip(c.rsi14, "RSI 14", OURS)));
 
-    // Pane 2: the short-term trend score, ours against the vendor's grade for the same day.
+    // Pane 2: our short-term trend score.
     const ours = chart.addSeries(LineSeries, { color: OURS, lineWidth: 2, lineType: 1, ...unlabelled }, 2);
     ours.setData(line(dates, c.trendShort));
-    const trendTitles = seriesChip(c.trendShort, "trend (ours)", OURS);
-    if (c.vendor && c.vendor.trendShort.length > 0) {
-      const first = dates[0]!;
-      const vendorTrend = c.vendor.trendShort.filter((p) => p.date >= first);
-      const theirs = chart.addSeries(LineSeries, { color: VENDOR, lineWidth: 2, lineType: 1, lineStyle: LineStyle.Dashed, ...unlabelled }, 2);
-      theirs.setData(vendorTrend.map((p) => ({ time: t(p.date), value: p.value })));
-      trendTitles.push(...seriesChip(vendorTrend.map((p) => p.value), "trend (vendor)", VENDOR));
-    }
-    ours.attachPrimitive(new LeftTitles(trendTitles));
+    ours.attachPrimitive(new LeftTitles(seriesChip(c.trendShort, "trend", OURS)));
 
     // Relative, not pixel, heights: a pixel height set before the first layout is overridden.
     const panes = chart.panes();
@@ -398,19 +360,15 @@ function PriceChart({ c, shown, levels }: { c: TechnicalsChart; shown: Technical
  * Where the setups read another symbol's volume (SPX reads SPY's) it says so, whatever setup is shown.
  */
 function LevelsToggle({ c, mode, onChange }: { c: TechnicalsChart; mode: LevelsMode; onChange: (m: LevelsMode) => void }) {
-  const all = c.ourLevels.length + (c.grid ? 2 : 0) + (c.vendor?.levels.length ?? 0);
-  const theirs = c.vendor?.levels.filter((l) => l.vendorView !== false).length ?? 0;
+  const all = c.ourLevels.length + (c.grid ? 2 : 0);
   const tip: Record<LevelsMode, string> = {
     ours: `Our own support and resistance, swing points in our bars, the two nearest each side: ${c.ourLevels.length} lines`,
-    vendor: `For comparison: only what the vendor's own chart draws, the two nearest supports and resistances: ${theirs} lines`,
-    all: `Ours, our grid's high and low and every level in the vendor's data: ${all} lines`,
+    all: `Ours, and our 250-session grid's high and low: ${all} lines`,
     off: "No levels",
   };
-  // Without a vendor capture there is no vendor's view to show.
-  const modes = LEVELS_MODES.filter((m) => m !== "vendor" || c.vendor !== null);
   return (
     <div className="mode-toggle" role="group" aria-label="levels" style={{ marginLeft: 0 }}>
-      {modes.map((m) => (
+      {LEVELS_MODES.map((m) => (
         <button key={m} type="button" title={tip[m]} className={m === mode ? "mode-btn active" : "mode-btn"} onClick={() => onChange(m)}>
           {LEVELS_LABEL[m]}
         </button>
@@ -512,99 +470,6 @@ function Card({ title, children, asOf }: { title: string; children: ReactNode; a
   );
 }
 
-function VendorCard({ c }: { c: TechnicalsChart }) {
-  const v = c.vendor;
-  if (!v) {
-    return (
-      <Card title="Against the vendor">
-        <p className="muted">The vendor's chart for {c.symbol} has not been captured; only ours is drawn.</p>
-      </Card>
-    );
-  }
-  const onGrid = placement(v.levels.filter((l) => !GAP_KINDS.has(l.kind)));
-  const onGaps = placement(v.levels.filter((l) => GAP_KINDS.has(l.kind)));
-  const agree = v.barsCompared ? v.barsAgree ?? 0 : null;
-  return (
-    <Card title="Against the vendor" asOf={`captured ${v.capture}, bars through ${v.through ?? "—"}`}>
-      <div className="stats-grid">
-        <div className="stat-tile">
-          <span className="stat-label">levels our grid places</span>
-          <span className="stat-value">
-            {onGrid.placed} of {onGrid.asked}
-          </span>
-          <span className="stat-label muted">support and resistance</span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-label">gap levels we place</span>
-          <span className="stat-value">{onGaps.asked === 0 ? "—" : `${onGaps.placed} of ${onGaps.asked}`}</span>
-          <span className="stat-label muted">an edge of one of our gaps, on its bar</span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-label">bars agreeing to the cent</span>
-          <span className="stat-value">
-            {agree === null ? "—" : `${agree} of ${v.barsCompared}`}
-          </span>
-          <span className="stat-label muted">prices; a grid is only as exact as its bars</span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-label">vendor rank</span>
-          <span className="stat-value">{v.rank ?? "—"}</span>
-          <span className="stat-label muted">1–10; ours {c.rank ?? "—"}</span>
-        </div>
-        <div className="stat-tile">
-          <span className="stat-label">vendor IV rank</span>
-          <span className="stat-value">{v.ivRank === null ? "—" : fmtIvr(v.ivRank / 100)}</span>
-          <span className="stat-label muted">
-            ours {c.ivRank ? fmtIvr(c.ivRank.value / 100) : "—"}; a different IV series
-          </span>
-        </div>
-      </div>
-      {v.levels.length === 0 ? (
-        <p className="muted">The capture carries no levels.</p>
-      ) : (
-        <div className="table-scroll">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Level</th>
-              <th>Price</th>
-              <th>Dated</th>
-              <th title="Support and resistance: a point on our grid. Gap levels: an edge of one of our own gaps, on the same bar.">
-                We place it
-              </th>
-              <th title="Whether the vendor's own chart page draws it: the two nearest of its support list and of its resistance list, never a gap level.">
-                On their chart
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...v.levels]
-              .sort((a, b) => b.value - a.value)
-              .map((l) => (
-                <tr key={`${l.kind}-${l.value}`}>
-                  <td style={{ color: levelColor(l) }}>{KIND_LABEL[l.kind] ?? l.kind}</td>
-                  <td>{fmt(l.value)}</td>
-                  <td className="muted">{l.date ?? "—"}</td>
-                  <td className={l.onOurGrid === false ? "pnl-neg" : l.onOurGrid === null ? "muted" : ""}>
-                    {l.onOurGrid === null ? "—" : l.onOurGrid ? (GAP_KINDS.has(l.kind) ? "gap edge" : "on grid") : "no"}
-                  </td>
-                  <td className={l.vendorView === true ? "" : "muted"}>{l.vendorView === null ? "—" : l.vendorView ? "yes" : "no"}</td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-        </div>
-      )}
-      <p className="muted">
-        On the chart: solid, a support or resistance our grid places; dotted, a gap level that is an edge of one
-        of our gaps; dashed, a level we cannot produce. Each starts at its own date, as the vendor draws it.
-        "Vendor's view" shows only the levels the vendor's chart page draws (the two nearest supports and
-        resistances, no gaps); which levels the vendor computes in the first place is not yet reproduced.
-      </p>
-    </Card>
-  );
-}
-
 function SignalsCard({ c }: { c: TechnicalsChart }) {
   const recent = [...c.signals].reverse().slice(0, 15);
   return (
@@ -642,7 +507,7 @@ function SignalsCard({ c }: { c: TechnicalsChart }) {
 /**
  * What the tab opens on when the URL names no symbol: the index itself. Dolt carries no cash
  * indexes, so SPX's chart is built from the broker's daily candles (scripts/fetch_index_bars.py,
- * landed by packages/technicals since 2026-10-01). It has no volume, no rank and no vendor chart.
+ * landed by packages/technicals since 2026-10-01). It has no volume and no rank.
  */
 const DEFAULT_SYMBOL = "SPX";
 
@@ -691,12 +556,11 @@ export function ChartPage() {
     else next.set("side", sd);
     setParams(next, { replace: true });
   };
-  // Our own levels, the vendor's kept for comparison; a chart file from before our levels falls back
-  // to the vendor's view or every level. A `?levels=` in the URL outranks that.
+  // Our own levels; a chart file from before them falls back to our grid's extremes. A `?levels=` in
+  // the URL outranks that, except the retired `vendor`, which falls back like any unknown value.
   const levelsParam = params.get("levels");
-  const fallback: LevelsMode = c && c.ourLevels.length > 0 ? "ours" : c?.vendor ? "vendor" : "all";
-  const asked = LEVELS_MODES.find((m) => m === levelsParam);
-  const levels: LevelsMode = asked === undefined || (asked === "vendor" && !c?.vendor) ? fallback : asked;
+  const fallback: LevelsMode = c && c.ourLevels.length > 0 ? "ours" : "all";
+  const levels: LevelsMode = LEVELS_MODES.find((m) => m === levelsParam) ?? fallback;
   const setLevels = (m: LevelsMode) => {
     const next = new URLSearchParams(params);
     if (m === fallback) next.delete("levels");
@@ -733,9 +597,7 @@ export function ChartPage() {
           />
           <datalist id="technicals-symbols">
             {(index?.symbols ?? []).map((s) => (
-              <option key={s.symbol} value={s.symbol}>
-                {s.vendor ? "vendor captured" : ""}
-              </option>
+              <option key={s.symbol} value={s.symbol} />
             ))}
           </datalist>
         </form>
@@ -746,8 +608,7 @@ export function ChartPage() {
       {isLoading && <p className="muted">Reading the chart…</p>}
       {!isLoading && !isError && symbol === undefined && (
         <p className="muted">
-          Pick a name — {index?.symbols.length ?? 0} charted
-          {index ? `, ${index.symbols.filter((s) => s.vendor).length} with the vendor's chart captured` : ""}.
+          Pick a name — {index?.symbols.length ?? 0} charted.
         </p>
       )}
       {!isLoading && !isError && symbol !== undefined && c === null && (
@@ -771,15 +632,10 @@ export function ChartPage() {
                 className="chip"
                 title={`IV rank as of ${c.ivRank.date}, ${
                   c.ivRank.source === "dolt" ? "ranked from Dolt's IV history" : "tastytrade's (Dolt has no IV for this name)"
-                }. Neither source is the vendor's IV, so the two can differ by several points.`}
+                }.`}
               >
                 IVR {fmtIvr(c.ivRank.value / 100)}
                 {c.ivRank.source !== "dolt" && <span className="muted"> · tastytrade</span>}
-              </span>
-            )}
-            {c.vendor?.sentiment && c.vendor.sentiment !== c.sentiment && (
-              <span className="chip muted" title={`The vendor's label as captured ${c.vendor.capture}`}>
-                vendor: {c.vendor.sentiment}
               </span>
             )}
           </div>
@@ -801,11 +657,9 @@ export function ChartPage() {
                 : "Too few sessions for a grid. "}
               Arrows: amber for a long (up where it opened, down where it closed), pale for a short (down
               labelled "short" where it opened, up labelled "cover" where it closed); each exit is labelled
-              with what closed it. Middle pane: RSI 14 with 30, 50 and 70. Bottom: the short-term trend score (−4 to +4), ours solid
-              {c.vendor ? ", the vendor's dashed" : ""}.
+              with what closed it. Middle pane: RSI 14 with 30, 50 and 70. Bottom: our short-term trend score (−4 to +4).
             </p>
           </Card>
-          <VendorCard c={c} />
           <SignalsCard c={c} />
         </>
       )}

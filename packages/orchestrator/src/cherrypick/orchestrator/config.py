@@ -545,7 +545,8 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # signals, leaders), written once from the bars the landing just refreshed.
         "report_at": tc.get("report_at", "06:30"),
         # `stage_lists_at`: our six stage lists on the close the landing just added, options-tradable
-        # names only (`python -m cherrypick.technicals stage-lists`), scored against the vendor's.
+        # names only (`python -m cherrypick.technicals stage-lists`), scored against the vendor's
+        # where one is filed for the session (none after 2026-10-23).
         "stage_lists_at": tc.get("stage_lists_at", "06:35"),
         # `history_at` / `fundamentals_at`: the history store's daily top-up from the local Dolt clones
         # (`history land`, every listed name's bars, ~20 s; `history fundamentals`, the weekly estimate

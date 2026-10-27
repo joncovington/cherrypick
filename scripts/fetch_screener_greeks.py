@@ -29,7 +29,9 @@ nothing about a name's real spread. `measure` runs inside the universe builder's
 half an hour before the close) and records, for every name on the latest lists that the universe
 does not already measure, the at-the-money call and put of the standard monthly nearest 30 days --
 the builder's own `_measure`, so the two sets of readings are taken the same way and read together.
-Written to `screener-greeks/measurements/<date>/<HHMM>.json`, the builder's file shape.
+Written to `screener-greeks/measurements/<date>/<HHMM>.json`, the builder's file shape. The lists
+are measured only while the vendor collector is on (`lists_to_measure`): since the subscription
+ended (2026-10-24) the run measures the earnings spreads alone.
 
 **The earnings calendar's suggested spreads** ride the same run (2026-10-17; docs/earnings-screener-
 plan.md, step 3): for each strong read reporting in the next week on the latest calendar, the
@@ -411,6 +413,20 @@ def today_et() -> str:
 def latest_list_day() -> str | None:
     days = sorted(p.name for p in (store_dir() / "vendor-screeners").glob("????-??-??") if p.is_dir())
     return days[-1] if days else None
+
+
+def lists_to_measure() -> tuple[str | None, dict[str, dict]]:
+    """(list day, lists) whose rows `measure` quotes: the newest saved vendor lists while the
+    collector is on (`cherrypick.core.vendor`), else none. With it off no list is ever newer than
+    the last one saved, so measuring it again would quote a frozen list's legs every session for no
+    reader (2026-10-26: 903 legs of the 2026-10-23 lists, twice). The earnings spreads, the run's
+    live half, do not depend on it."""
+    from cherrypick.core import vendor
+
+    if not vendor.suite_collector_on():
+        return None, {}
+    day = latest_list_day()
+    return day, (load_lists(day) if day else {})
 
 
 def _universe_builder():
@@ -991,11 +1007,7 @@ def cmd_measure(args) -> int:
             )
         )
         return 0
-    day = latest_list_day()
-    lists = load_lists(day) if day else {}
-    if not lists:
-        print(json.dumps({"ok": True, "skipped": "no saved screener lists"}))
-        return 0
+    day, lists = lists_to_measure()
     cands = set(ub._read_json(ub.store_dir() / "candidates.json", {}).get("names") or {})
     from cherrypick.technicals import liquidity
 
@@ -1005,12 +1017,19 @@ def cmd_measure(args) -> int:
     # (a name the universe already measures has its chain in the builder's file).
     calendar_day, earnings = earnings_rows(today)
     names = sorted({*names, *(r["symbol"] for r in earnings if r["symbol"] not in cands)})
+    root = store_dir() / "screener-greeks"
+    marks = marks_due(root, today)
+    if not lists and not earnings and not marks:
+        print(
+            json.dumps(
+                {"ok": True, "skipped": "no vendor lists to measure, no earnings spreads or marks due"}
+            )
+        )
+        return 0
     store = CredentialStore(SHARED_SERVICE)
     if store.missing_secrets():
         print(json.dumps({"ok": False, "reason": "credentials_missing"}))
         return 1
-    root = store_dir() / "screener-greeks"
-    marks = marks_due(root, today)
     chain_path = root / "chains" / f"{today.isoformat()}.json"
     chain_cache = ub._read_json(chain_path, {})
     started = datetime.now(UTC)
@@ -1043,11 +1062,13 @@ def cmd_measure(args) -> int:
     if legs_error:
         print(json.dumps({"ok": False, "path": str(out), "legs_error": legs_error}))
         return 1
-    apply_bars(legs, LEG_BARS)
-    legs_out = root / "legs" / today.isoformat() / f"{started.astimezone(et):%H%M}.json"
-    ub._write_json(
-        legs_out, {"measured_at": started.isoformat(), "list_date": day, "bars": LEG_BARS, "rows": legs}
-    )
+    legs_out = None
+    if lists:
+        apply_bars(legs, LEG_BARS)
+        legs_out = root / "legs" / today.isoformat() / f"{started.astimezone(et):%H%M}.json"
+        ub._write_json(
+            legs_out, {"measured_at": started.isoformat(), "list_date": day, "bars": LEG_BARS, "rows": legs}
+        )
     spreads_out = None
     if spreads:
         judge_earnings_legs(spreads, LEG_BARS)
@@ -1076,7 +1097,7 @@ def cmd_measure(args) -> int:
                 "path": str(out),
                 "names": len(measured),
                 "with_option_reading": usable,
-                "legs_path": str(legs_out),
+                "legs_path": str(legs_out) if legs_out else None,
                 "rows": len(legs),
                 "with_monthly": sum(1 for r in legs if r["monthly"]),
                 "quoted_vendor_legs": sum(1 for r in legs for leg in r["vendor"] if leg.get("quote")),

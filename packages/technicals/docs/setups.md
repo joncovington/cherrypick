@@ -203,7 +203,8 @@ computed from our own bars. The vendor is used only to check our calculations:
 - **Our support and resistance** (`swings.py`) are compared with the levels the vendor's chart
   draws, and the result is recorded below. The comparison is never a target.
 
-The vendor's levels remain on the chart as "Vendor's view" (and "All"), for comparison only.
+The chart drew the vendor's levels as "Vendor's view" (and in "All") for comparison until
+2026-10-27. The subscription ended 2026-10-24, and the chart now draws only ours.
 
 ## Our own support and resistance (`swings.py`)
 

@@ -101,7 +101,7 @@ describe("the technicals chart page", () => {
     expect(html).toContain("open since 2026-10-01");
   });
 
-  it("opens on our own levels; the vendor's view is a comparison, and the fallback for an older file", () => {
+  it("opens on our own levels and never shows the vendor's frozen capture; an old vendor link falls back", () => {
     const vendor = {
       capture: "2026-10-02",
       fetchedAt: null,
@@ -110,27 +110,27 @@ describe("the technicals chart page", () => {
         { kind: "support", value: 99, date: "2026-09-30", onOurGrid: true, vendorView: true },
         { kind: "gapSupport", value: 100, date: "2026-10-01", onOurGrid: true, vendorView: false },
       ],
-      rank: null,
-      sentiment: null,
-      ivRank: null,
-      trendShort: [],
+      rank: 7,
+      sentiment: "Bearish",
+      ivRank: 55,
+      trendShort: [{ date: "2026-10-01", value: 3 }],
       trendLong: [],
-      barsCompared: null,
-      barsAgree: null,
+      barsCompared: 10,
+      barsAgree: 10,
     };
     const ourLevels = [{ kind: "support" as const, value: 98, date: "2026-09-30" }];
-    // Ours whenever the file has them, with or without a vendor capture.
+    // Ours whenever the file has them; a file still carrying the vendor's capture shows none of it
+    // (the subscription ended 2026-10-24, and a frozen capture beside today's bars reads as current).
     const ours = render("/charts/technicals?symbol=SPX", chart({ vendor, ourLevels }));
     expect(ours).toContain('class="mode-btn active">Our levels</button>');
-    expect(ours).toContain("On their chart");
-    expect(render("/charts/technicals?symbol=SPX", chart({ ourLevels }))).toContain('class="mode-btn active">Our levels</button>');
-    // A file from before our levels: the vendor's view where captured, else everything.
-    expect(render("/charts/technicals?symbol=SPX", chart({ vendor }))).toMatch(/class="mode-btn active">Vendor's view<\/button>/);
-    const uncaptured = render("/charts/technicals?symbol=SPX", chart());
-    expect(uncaptured).toContain('class="mode-btn active">All</button>');
-    expect(uncaptured).not.toContain("Vendor's view</button>");
-    // A link asking for the vendor's view on a name with no capture falls back rather than drawing nothing.
-    expect(render("/charts/technicals?symbol=SPX&levels=vendor", chart({ ourLevels }))).toContain('class="mode-btn active">Our levels</button>');
+    for (const gone of ["Against the vendor", "On their chart", "vendor rank", "vendor: Bearish", "Vendor&#x27;s view", "trend (vendor)", "vendor captured"]) {
+      expect(ours).not.toContain(gone);
+    }
+    // A file from before our levels falls back to our grid's extremes, captured or not.
+    expect(render("/charts/technicals?symbol=SPX", chart({ vendor }))).toContain('class="mode-btn active">With grid</button>');
+    expect(render("/charts/technicals?symbol=SPX", chart())).toContain('class="mode-btn active">With grid</button>');
+    // A saved link asking for the retired vendor's view falls back rather than drawing nothing.
+    expect(render("/charts/technicals?symbol=SPX&levels=vendor", chart({ vendor, ourLevels }))).toContain('class="mode-btn active">Our levels</button>');
     expect(render("/charts/technicals?symbol=SPX&levels=off", chart({ vendor }))).toContain('class="mode-btn active">Off</button>');
   });
 

@@ -185,8 +185,10 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   short puts; ~98% of covered calls — the rest divide by price less mid, condition unknown).
   **Which names make each list is not here**; the spread list's selection is open. The console's
   fidelity tab that showed these rates was retired on 2026-10-19; the per-session files stay in
-  `screeners/`, and `score-screeners` keeps running because the income tabs' "ours" strike is its
-  `picks`.
+  `screeners/`. Nothing reads them now: the income tabs' "ours" strike that read its `picks` went
+  with the vendor's lists (2026-10-24, the tabs read `income-lists`), so since 2026-10-27 the job
+  follows `market_report.collector`, the only source of a new list. The last session scored is
+  2026-10-23.
 - **Our income lists** (`incomelists.py`, `income-lists`, 2026-10-19): the short-put and covered-call
   lists the Screeners page shows in place of the vendor's. From the afternoon income chains
   (`fetch_screener_greeks.py income`, the tradable names and the passing reference funds), each
@@ -252,12 +254,15 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
     fortnight's or month's move; the record states its inside-the-move share over those within a week
     too. Which expiry to use is the user's call, unchanged.
   - **Spread:** the navigator spread, as target strikes.
-  - **Sector:** the vendor's map where it has the name, else Yahoo's (`scripts/fetch_sectors.py`,
-    `paths.yahoo_sectors`), relabelled to the vendor's names (it agreed on all 120 names sampled,
-    2026-10-17). `sector_source` says which. The market report's sector measures use the same
-    fallback since 2026-10-20 (`report._sectors`), so a universe name the vendor's map never saw
-    still has a sector after the subscription ends; `fetch_sectors.py` asks for every universe
-    candidate too.
+  - **Sector:** Yahoo's (`scripts/fetch_sectors.py`, `paths.yahoo_sectors`), relabelled to the
+    vendor's eleven sector names so the spelling never changed, else the vendor's frozen map
+    (`fundamentals.sector_sources`). `sector_source` says which. Yahoo has been first since
+    2026-10-27, because the vendor's map stopped at its last edition (2026-10-23) while Yahoo's file
+    is refreshed nightly. Measured at the switch: of the 521 names both held, they disagreed on one
+    (FISV: the vendor's Consumer Discretionary, Yahoo's Technology). One of the report's names (WBD)
+    has no Yahoo sector and keeps the vendor's. The calendar, the signal board, the report's sector
+    measures (`report._sectors`) and the B5 slices all read this one function. `fetch_sectors.py`
+    asks for every calendar name and universe candidate.
   - **Checked against the vendor's page** for Oct 20-21, while its reads still led: its 12 names,
     same date, direction and strength; moves within 0.42 points on average. History found no edge in
     the spread.
@@ -394,7 +399,8 @@ earnings off stopped the server and every Dolt-reading job here). The income lis
 switch.
 `technicals-iv-rank` runs after the close on trading days. `technicals-screeners` (06:40 ET,
 `screeners_at`) scores every saved screener session with its broker chain, after the previous
-evening's late greeks run; a scored session is skipped. `technicals-skate` (06:45 ET, `skate_at`)
+evening's late greeks run; a scored session is skipped. It runs only while `market_report.collector`
+is on (off since the subscription ended). `technicals-skate` (06:45 ET, `skate_at`)
 writes the skate screen's bands from `history.db` (docs/skate-plan.md), then the forward record
 (`skate_record.py`: what the tab showed, what happened at expiry, the declared test; a failure there
 is reported and never fails the bands).

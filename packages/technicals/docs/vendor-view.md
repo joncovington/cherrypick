@@ -22,9 +22,11 @@ rule. Across all 247 captures held on 2026-10-03, the two never picked different
 `chart.vendor_view` applies it (`VIEW_PER_SIDE = 2`, `VIEW_KINDS`), and every vendor level in the
 chart file carries `vendor_view: true/false` (`chart_version` 4).
 
-**Since 2026-10-04 this view is for comparison only.** The chart opens on our own levels
-(`swings.py`, see [setups.md](setups.md)), and "Vendor's view" sits beside them for checking ours
-against. Nothing in the setups or the watchlist reads the vendor's levels.
+**From 2026-10-04 this view was for comparison only, and since 2026-10-27 the console no longer
+shows it.** The subscription ended 2026-10-24, so the last capture (2026-10-23) would sit beside
+current bars as if it were current. The chart file still carries `vendor_view`. The chart draws our
+own levels (`swings.py`, see [setups.md](setups.md)); nothing in the setups or the watchlist reads
+the vendor's levels.
 
 ## How it was measured (2026-10-03)
 
