@@ -39,6 +39,7 @@ from pathlib import Path
 
 from cherrypick.core import advice as _core_advice  # bounded-advice validator
 from cherrypick.core import calendar as _cal  # shared NYSE trading-day calendar
+from cherrypick.core import chaindelta as _chaindelta  # delta from a chain's own mids (2026-10-27)
 from cherrypick.core import config as _cfg
 from cherrypick.core import home as _core_home  # the shared state dir
 from cherrypick.core import logs as _logs
@@ -310,7 +311,9 @@ def _fetch_session(symbol):
     return d.get("day_open"), d.get("range_pct")
 
 
-def _build_candidates(symbol, last, widths, delta_targets, default_delta, today):
+def _build_candidates(
+    symbol, last, widths, delta_targets, default_delta, today, *, delta_source="stream", now=None
+):
     """Fetch the 0DTE chain and build wing-width candidates + leg_quotes. Mirrors the
     strike-selection the live loop/paper-loop.md describe: nearest-delta short strikes,
     wings at each configured width. A wide strike window (80) also covers near-money legs
@@ -342,13 +345,50 @@ def _build_candidates(symbol, last, widths, delta_targets, default_delta, today)
     for _exp, rows in chain.get("chain", {}).items():
         entries = rows
         break
-    return candidates_from_chain(entries, last, widths, delta_targets, default_delta)
+    years = _chaindelta.years_to_close(now or datetime.now(_chaindelta.ET))
+    return candidates_from_chain(
+        entries, last, widths, delta_targets, default_delta, delta_source=delta_source, years=years
+    )
 
 
-def candidates_from_chain(entries, last, widths, delta_targets, default_delta):
+DELTA_SOURCES = ("stream", "computed")
+
+
+def delta_source_for(cfg: dict, day: str) -> str:
+    """The delta source in force on session `day`: the config's `delta_source`, except "stream" for
+    a session before `delta_source_since` (the declared boundary, an ISO date). A loop asks for today;
+    a validation replay asks for the session it replays, so it reproduces what that session did."""
+    source = cfg.get("delta_source", "stream")
+    since = cfg.get("delta_source_since")
+    if source != "stream" and since and day < str(since):
+        return "stream"
+    return source
+
+
+def candidates_from_chain(
+    entries, last, widths, delta_targets, default_delta, *, delta_source="stream", years=None
+):
     """The candidate menu and `leg_quotes` from one expiration's chain rows (tt `get_option_chain`'s
     shape: strike_price, option_type, streamer_symbol, bid, ask, delta). Pure, so the quote-history
-    replay (`meic.replay`) selects strikes with exactly the code the paper loop runs."""
+    replay (`meic.replay`) selects strikes with exactly the code the paper loop runs.
+
+    `delta_source` (2026-10-27): "stream" picks strikes by the data feed's delta, as before; "computed"
+    by `core.chaindelta`'s delta from these rows' own mids at `years` to the close. The feed's delta
+    lags its quotes by about a minute (measured 2026-10-26; the module docstring there has the
+    numbers), so strikes chosen on it are a minute stale and no history source can reproduce them.
+    With "computed" every row keeps the feed's value as `delta_stream`. A chain whose deltas cannot be
+    computed (no put-call pair) yields no candidates -- never the feed's values as a quiet fallback --
+    but still yields `leg_quotes`, which marking open condors needs."""
+    if delta_source not in DELTA_SOURCES:
+        raise ValueError(f"delta_source must be one of {DELTA_SOURCES}, not {delta_source!r}")
+    computed_error = None
+    if delta_source == "computed":
+        if years is None:
+            computed_error = "computed delta needs the time to the close"
+        else:
+            entries = _chaindelta.with_computed_delta(list(entries), years=years)
+            if not any(e.get("delta") is not None for e in entries):
+                computed_error = "computed delta unavailable (no put-call parity pair, or no time left)"
     calls, puts = [], []
     for e in entries:
         strike = e.get("strike_price") or e.get("strike")
@@ -358,7 +398,8 @@ def candidates_from_chain(entries, last, widths, delta_targets, default_delta):
         rec = {
             "strike": float(strike),
             "streamer_symbol": e.get("streamer_symbol"),
-            "delta": e.get("delta"),
+            "delta": None if computed_error else e.get("delta"),
+            "delta_stream": e.get("delta_stream", e.get("delta")),
             "bid": e.get("bid"),
             "ask": e.get("ask"),
         }
@@ -373,6 +414,8 @@ def candidates_from_chain(entries, last, widths, delta_targets, default_delta):
     }
     if not calls or not puts:
         return [], leg_quotes, "no call/put quotes"
+    if computed_error:
+        return [], leg_quotes, computed_error
 
     def nearest(pool, target):
         c = [x for x in pool if x["delta"] is not None]
@@ -1070,7 +1113,13 @@ def run_iteration(cfg, force=False):
         extra_deltas = paper.union_short_deltas_for_symbol(symbol, cfg, all_profiles)
         delta_targets = [delta_target] + [d for d in extra_deltas if abs(d - delta_target) > 1e-9]
         candidates, leg_quotes, cand_err = _build_candidates(
-            symbol, price, widths, delta_targets, delta_target, today
+            symbol,
+            price,
+            widths,
+            delta_targets,
+            delta_target,
+            today,
+            delta_source=delta_source_for(cfg, today),
         )
         gex = _run_json(_TT + ["get_gex", "--symbol", symbol])
         atr_lookback = int(cfg.get("regime_atr_lookback_days", 5))
