@@ -19,6 +19,7 @@ import { PMCC_SLIDES, type PmccSlideId } from "../navGroups";
 import { PmccSession } from "../../pages/Pmcc/PmccSession";
 import type { SlideDef } from "../types";
 import { ModuleSummary } from "../../components/summary/ModuleSummary";
+import { BookArmGuide } from "../../components/ExperimentGuide";
 
 const PMCC_LABEL = Object.fromEntries(PMCC_SLIDES.map((s) => [s.id, s.label])) as Record<PmccSlideId, string>;
 
@@ -117,10 +118,13 @@ export function PmccLightbox({ slide }: { slide: string }) {
       id: "arms",
       label: PMCC_LABEL.arms,
       render: () => (
-        <div className="cards cards-wide">
-          <BookComparison data={data} updatedAt={dataUpdatedAt} symbol={symbol} />
-          <WeeklyByArmCard symbol={symbol} era={era} />
-        </div>
+        <>
+          <div className="cards cards-wide">
+            <BookComparison data={data} updatedAt={dataUpdatedAt} symbol={symbol} />
+            <WeeklyByArmCard symbol={symbol} era={era} />
+          </div>
+          <BookArmGuide module="pmcc" />
+        </>
       ),
     },
     { id: "performance", label: PMCC_LABEL.performance, render: () => <PmccPerformance era={era} /> },

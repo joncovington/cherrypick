@@ -36,16 +36,21 @@
   "_books_note": "All four books enter the IDENTICAL BWB from the same plan on the same tick -- four-way exact pairing on the base position. `control` never arms the add-on. `delta`/`bounce`/`flip` arm on their own trigger.py condition; once armed, every tick re-prices the add-on (a non-credit tick is a recorded refusal, addon_not_credit, and the arm stays live) until the first credit tick fires it -- ONE add-on maximum per position, armed until expiry with no cutoff. Until an arm's add-on actually fires, its positions are byte-identical to control's -- an expected find_identical_readings collision, not a defect. Each arm's effective sample is its FIRE COUNT, not its trade count; every read surface carries per-arm fire counts beside any P&L from day one.",
   "books": {
     "control": {
+      "_summary": "The ~7-DTE SPX put broken-wing butterfly alone, held to expiry with no add-on.",
       "enabled": true
     },
     "_base_install_note": "A base install runs only `control`. The engine's other built-in arms run unless a config switches them off, so the example lists each one with enabled:false. Turn one on (or define your own) in ~/.cherrypick/config/bwb.json.",
     "delta": {
+      "_summary": "Retired: added the put credit spread once the near wing reached 50 delta.",
+      "_retired": "2026-10-15",
       "enabled": false
     },
     "bounce": {
+      "_summary": "Adds the put credit spread once the near wing has reached 50 delta and pulled back to 45.",
       "enabled": false
     },
     "flip": {
+      "_summary": "Adds the put credit spread once spot has traded below the gamma flip and reclaimed it.",
       "enabled": false
     }
   },

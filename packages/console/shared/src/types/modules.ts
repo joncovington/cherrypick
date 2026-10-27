@@ -455,6 +455,12 @@ export interface ExperimentGuideEntry {
   retired: boolean;
   /** In the ledger but gone from the config entirely — explains rows the History tab still shows. */
   removed: boolean;
+  /** The arm's one line, plain English, from its config `_summary`; null where none is written. */
+  summary: string | null;
+  /** When it started measuring (`_since`, or pmcc's `from`), ISO date. */
+  since: string | null;
+  /** When it stopped (`_retired`), ISO date. */
+  retiredOn: string | null;
   notes: GuideNote[];
   overrides: GuideOverride[];
   derived: GuideDerived[];
@@ -464,7 +470,7 @@ export interface ExperimentGuideEntry {
 }
 
 export interface ExperimentGuide {
-  module: "flies" | "meic";
+  module: "flies" | "meic" | "calendars" | "pmcc" | "curve" | "contango" | "bwb";
   mode: TradingMode;
   /** What the module calls these — "arm" or "risk profile". */
   unit: string;

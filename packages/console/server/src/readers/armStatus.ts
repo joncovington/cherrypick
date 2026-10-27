@@ -4,14 +4,14 @@ import type { ArmModule, RetiredArmsPayload } from "@console/shared";
 import { meicRiskConfigPath, type ConsoleConfig } from "../config.js";
 
 /** Where each module keeps its arm registry. The module configs sit together in the config dir. */
-function registryFile(config: ConsoleConfig, module: ArmModule): string {
+export function registryFile(config: ConsoleConfig, module: ArmModule | "calendars"): string {
   if (module === "meic") return meicRiskConfigPath(config);
   return path.join(path.dirname(config.paths.fliesConfig), `${module}.json`);
 }
 
 /** The registry under whichever spelling the file uses: the suite reads `arms`, `books` and
  *  `profiles` alike (`cherrypick.core.config`), so this does too. */
-function registryOf(doc: Record<string, unknown>): Record<string, unknown> {
+export function registryOf(doc: Record<string, unknown>): Record<string, unknown> {
   for (const key of ["arms", "books", "profiles"]) {
     const v = doc[key];
     if (v !== null && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;

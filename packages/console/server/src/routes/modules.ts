@@ -5,7 +5,7 @@ import type { ConsoleConfig } from "../config.js";
 import { readMeicForest, resolveMeicSession } from "../readers/meic.js";
 import { readEntryAttempts } from "../readers/attempts.js";
 import { readDecisions } from "../readers/decisions.js";
-import { readFliesArmGuide, readMeicProfileGuide } from "../readers/experimentGuide.js";
+import { isBookModule, readBookGuide, readFliesArmGuide, readMeicProfileGuide } from "../readers/experimentGuide.js";
 import { readOccupancy } from "../readers/occupancy.js";
 import { readRetiredArms } from "../readers/armStatus.js";
 import { SUMMARY_READERS } from "../readers/summary/index.js";
@@ -319,6 +319,12 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/flies/arms", async (req) => readFliesArmGuide(config, parseMode(req.query)));
   // Which arms each module's config retires: the arm filters hide them unless asked.
   app.get("/api/arms/retired", async () => readRetiredArms(config));
+  // The book modules' arm guides (calendars, pmcc, curve, contango, bwb; paper). An unknown module is
+  // a 404, so the name is never used to build a path it does not already name.
+  app.get<{ Params: { module: string } }>("/api/arms/guide/:module", async (req, reply) => {
+    if (!isBookModule(req.params.module)) return reply.code(404).send({ error: "no arm guide for that module" });
+    return readBookGuide(config, req.params.module);
+  });
   // Costs pages (fee drag, where the premium went, entry outcomes per session), paper or live,
   // scoped to an era like the trade logs: "ALL" pools every era, anything else is checked here.
   const costsEra = (q: unknown): string | null => {

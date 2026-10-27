@@ -2217,7 +2217,14 @@ select.text-input {
 .arm-title {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.55rem;
+}
+
+/* The arm's own one line, beside its name: visible while the card is collapsed. */
+.arm-summary {
+  font-weight: normal;
+  font-size: 0.9em;
 }
 
 .arm-facts {

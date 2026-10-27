@@ -184,9 +184,12 @@
   "_books_note": "Two arms run since 2026-10-06; control ships disabled. `control` (2026-08-23 to 2026-10-06, retired): a 21-DTE long re-bought every cycle, an ATM weekly short, both closed at the short's expiry. It must be disabled by `enabled: false` -- it is the one arm the code turns on when undeclared. `shield` and `shield_hold`: Tom King's held-long design, a ~1-year long held while a weekly 0.70-delta short rolls against it; they share one entry plan and differ only in that shield also rolls early (85% of the short's extrinsic decayed, or spot at its strike) and shield_hold holds each short to Friday. An arm other than control that this block does not declare stays off. The `advised:<experiment>` twins shadowed control only, so pmcc's advice is off with it.",
   "books": {
     "control": {
+      "_summary": "Retired: a 21-DTE long re-bought each cycle with a weekly short; it runs off, replaced by the held-long arms.",
       "enabled": false
     },
     "shield": {
+      "_summary": "A ~1-year deep-ITM long held while a weekly 0.70-delta short is rolled early (at 85% decay) and on a breach.",
+      "_since": "2026-10-06",
       "_note": "Held-long arm (2026-10-05 boundary, docs/shield-study.md). What makes it itself is in code, engine.ARM_RULES, so this block tunes it but cannot turn it into a copy of control: a ~1-year long (the third-Friday monthly nearest 360 DTE in [240, 540]) chosen by delta in [0.88, 0.92] nearest 0.90 (0.90-0.95 before 2026-10-06), no extrinsic fallback; a 0.70-delta weekly short (band 0.65-0.78, soonest Friday 5-11 DTE, above the long's strike), rolled on its expiry day from the close - 60m with a buyback-only deadline at close - 20m; closed when the long reaches 45 DTE or P&L to date reaches -30% of the long's cost, re-entering the next session. entry_symbols_per_session staggers first entries across the symbols, one a session. deep_window_pct_by_symbol here is this arm's own: its long sits 20-40% in the money where control's sits 4-10%.",
       "enabled": true,
       "entry_symbols_per_session": 1,
@@ -205,6 +208,8 @@
       }
     },
     "shield_hold": {
+      "_summary": "shield's held long with the weekly short held to expiry: no early roll, no breach roll.",
+      "_since": "2026-10-06",
       "_note": "Held-long arm (2026-10-05 boundary, docs/shield-study.md). What makes it itself is in code, engine.ARM_RULES, so this block tunes it but cannot turn it into a copy of control: a ~1-year long (the third-Friday monthly nearest 360 DTE in [240, 540]) chosen by delta in [0.88, 0.92] nearest 0.90 (0.90-0.95 before 2026-10-06), no extrinsic fallback; a 0.70-delta weekly short (band 0.65-0.78, soonest Friday 5-11 DTE, above the long's strike), rolled on its expiry day from the close - 60m with a buyback-only deadline at close - 20m; closed when the long reaches 45 DTE or P&L to date reaches -30% of the long's cost, re-entering the next session. entry_symbols_per_session staggers first entries across the symbols, one a session. deep_window_pct_by_symbol here is this arm's own: its long sits 20-40% in the money where control's sits 4-10%.",
       "enabled": true,
       "entry_symbols_per_session": 1,
@@ -223,6 +228,7 @@
       }
     },
     "shield_guard": {
+      "_summary": "shield_hold plus one rule: an in-the-money short that turns assignment-exposed is rolled, to measure what avoiding early assignment costs.",
       "_note": "Held-long arm from 2026-10-26 (`from`): shield_hold plus one rule, engine.ARM_RULES `assignment_roll` - an in-the-money short whose extrinsic falls under assignment_exposure_tv (the telemetry's own exposure region) is rolled, at most once a session, never on a cash-settled leg. It measures what avoiding early-assignment exposure costs, the live question for an IRA. Paper still models no early assignment. Enters fresh from its start date, so read it against shield_hold on weekly marked change per symbol, not on entry-matched pairs.",
       "enabled": true,
       "from": "2026-10-26",

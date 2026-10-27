@@ -17,6 +17,7 @@ import { ModuleFrame } from "../ModuleFrame";
 import { CONTANGO_SLIDES, type ContangoSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
 import { ModuleSummary } from "../../components/summary/ModuleSummary";
+import { BookArmGuide } from "../../components/ExperimentGuide";
 
 const LABEL = Object.fromEntries(CONTANGO_SLIDES.map((s) => [s.id, s.label])) as Record<ContangoSlideId, string>;
 
@@ -37,7 +38,16 @@ export function ContangoLightbox({ slide }: { slide: string }) {
     { id: "session", label: LABEL.session, render: () => <ContangoToday data={data} metrics={metrics.data} loading={isLoading} /> },
     { id: "regime", label: LABEL.regime, render: () => <ContangoRegime data={data} /> },
     { id: "decisions", label: LABEL.decisions, render: () => <ContangoDecisions /> },
-    { id: "arms", label: LABEL.arms, render: () => <ContangoArms data={data} metrics={metrics.data} /> },
+    {
+      id: "arms",
+      label: LABEL.arms,
+      render: () => (
+        <>
+          <ContangoArms data={data} metrics={metrics.data} />
+          <BookArmGuide module="contango" />
+        </>
+      ),
+    },
     { id: "performance", label: LABEL.performance, render: () => <ContangoPerformance data={data} metrics={metrics.data} /> },
     { id: "analysis", label: LABEL.analysis, render: () => <AnalysisSlide module="contango" /> },
     { id: "costs", label: LABEL.costs, render: () => <ContangoCosts data={data} /> },
