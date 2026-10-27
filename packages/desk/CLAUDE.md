@@ -92,7 +92,10 @@ prompt the PIN, resolve the full account from the masked one, check the code, th
 `submit.lock`: re-run the gates, re-preflight and check buying power, write `submitting` with
 `journal.record_strict` (refuse if it fails), submit with `external_identifier = desk-<ticket>`. A
 submit that raises is resolved by reading `orders_today` for that identifier, never by resubmitting.
-`today_totals` counts `submitting`/`submitted`/`failed`/`uncertain` once per ticket on the ET date.
+`today_totals` counts `submitting`/`submitted`/`failed`/`uncertain` once per ticket on the ET date,
+and **fails closed**: an unreadable journal, a line that does not parse, or an attempt with an
+unreadable `max_loss` raises `JournalUnreadable`, which propose and confirm turn into a refusal. A
+display reads leniently (`read_all()`); only the caps read strictly.
 
 **`cancel` is exempt from the halt flag.** `policy.evaluate_management` has no `halt_present`
 parameter at all: a halt that trapped an account inside a stale working order would misfire in the

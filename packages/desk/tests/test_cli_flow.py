@@ -132,6 +132,37 @@ def test_propose_refuses_buying_power_over_the_cap(desk_on, pin_set, broker):
     assert any("max_order_buying_power_dollars" in r for r in out["refusals"])
 
 
+def _tear_the_journal():
+    path = cfgmod.journal_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write('{"event": "submitted", "ticket_id": "torn", "max_lo\n')
+
+
+def test_propose_refuses_when_the_journal_cannot_be_tallied(desk_on, pin_set, broker):
+    """An unreadable journal is not an empty one: the caps cannot be shown to have room."""
+    _tear_the_journal()
+    out = _propose()
+    assert out["ok"] is False
+    assert any("daily caps cannot be checked" in r for r in out["refusals"])
+
+
+def test_confirm_refuses_when_the_journal_tears_after_the_proposal(desk_on, pin_set, broker, tty):
+    rec = _propose()
+    assert rec["ok"] is True, rec
+    _tear_the_journal()
+    tty.answers = [pin_set]
+    out = _confirm(rec)
+    assert out["ok"] is False and broker.submits == []
+    assert "daily caps cannot be checked" in json.dumps(out)
+
+
+def test_status_names_the_tally_problem(desk_on, pin_set, broker):
+    _tear_the_journal()
+    out = cli.cmd_status(_Args())
+    assert out["tally_problem"] and "line" in out["tally_problem"]
+
+
 def test_propose_refuses_an_underlying_outside_the_allowlist(monkeypatch, pin_set, broker):
     write_config(allowed_underlyings=["SPY"])
     monkeypatch.setenv(cfgmod.EXPERIMENTAL_ENV, "1")

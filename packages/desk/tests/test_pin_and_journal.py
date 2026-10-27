@@ -263,6 +263,35 @@ def test_a_corrupt_line_does_not_break_reading():
     assert len(journal.read_all()) == 2
 
 
+def test_the_daily_tally_refuses_to_count_past_a_corrupt_line():
+    """A display may skip a line it cannot parse; the caps may not. The line cannot be shown to be
+    from another day, so skipping it could undercount what today already spent."""
+    journal.record("submitted", ticket_id="t1", max_loss=110.0)
+    with cfgmod.journal_path().open("a", encoding="utf-8") as fh:
+        fh.write('{"event": "submitted", "ticket_id": "t2", "max_lo\n')  # a torn write
+    with pytest.raises(journal.JournalUnreadable, match="line 2"):
+        journal.today_totals(journal.read_all()[0]["session_date"])
+
+
+def test_the_daily_tally_refuses_an_unreadable_max_loss():
+    journal.record("submitted", ticket_id="t1", max_loss="about ninety")
+    with pytest.raises(journal.JournalUnreadable, match="max_loss"):
+        journal.today_totals(journal.read_all()[0]["session_date"])
+
+
+def test_the_daily_tally_refuses_a_journal_it_cannot_open(monkeypatch):
+    journal.record("submitted", ticket_id="t1", max_loss=10.0)
+    day = journal.read_all()[0]["session_date"]
+
+    def locked(self, *a, **k):
+        raise PermissionError("locked by another process")
+
+    monkeypatch.setattr(type(cfgmod.journal_path()), "read_text", locked)
+    assert journal.read_all() == []  # the lenient reader still degrades for a display
+    with pytest.raises(journal.JournalUnreadable, match="unreadable"):
+        journal.today_totals(day)
+
+
 def _unwritable(monkeypatch):
     monkeypatch.setattr("pathlib.Path.mkdir", lambda *a, **k: (_ for _ in ()).throw(OSError("ro")))
 
