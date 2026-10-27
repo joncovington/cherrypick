@@ -97,6 +97,32 @@ def registry(
     return {}
 
 
+def section(
+    cfg: Mapping[str, Any] | None,
+    key: str,
+    *,
+    label: str,
+    log: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """A settings block (``defaults``) as a dict, warning once per label when it is ABSENT.
+
+    The same distinction as `registry`: a block declared empty is the operator's choice and passes
+    silently; a block that is not there at all means every threshold under it falls through to its
+    code default with nothing said -- the moved-key failure `registry` was built to catch, one level
+    over. Returns ``{}`` either way."""
+    if isinstance(cfg, Mapping) and key in cfg:
+        value = cfg[key]
+        return dict(value) if isinstance(value, Mapping) else {}
+    once = (label, (key,))
+    if log is not None and once not in _warned:
+        _warned.add(once)
+        log(
+            f"WARNING: {label} config has no `{key}` block -- every setting under it is running on "
+            "its code default. If this config used to declare one, the key moved."
+        )
+    return {}
+
+
 def _reset_warnings() -> None:
     """Test seam: the once-per-label memo is process-global by design."""
     _warned.clear()
