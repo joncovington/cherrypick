@@ -545,7 +545,8 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # signals, leaders), written once from the bars the landing just refreshed.
         "report_at": tc.get("report_at", "06:30"),
         # `stage_lists_at`: our six stage lists on the close the landing just added, options-tradable
-        # names only (`python -m cherrypick.technicals stage-lists`), scored against the vendor's.
+        # names only (`python -m cherrypick.technicals stage-lists`), scored against the vendor's
+        # where one is filed for the session (none after 2026-10-23).
         "stage_lists_at": tc.get("stage_lists_at", "06:35"),
         # `history_at` / `fundamentals_at`: the history store's daily top-up from the local Dolt clones
         # (`history land`, every listed name's bars, ~20 s; `history fundamentals`, the weekly estimate
@@ -579,6 +580,15 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # session's notes are out. Network, no credential; one request per name, paced (~35 min).
         "revisions": bool(tc.get("revisions", True)),
         "revisions_at": tc.get("revisions_at", "20:15"),
+        # `yahoo_adjusted_at` / `adjust_check_at`: the corporate-action tripwire that replaced the
+        # vendor's chart captures (2026-10-27). scripts/fetch_yahoo_adjusted.py reads a year of
+        # Yahoo's adjusted closes for every stored name in the evening (network, no credential,
+        # paced, ~15 minutes, before the revisions fetch); `python -m cherrypick.technicals
+        # check-adjust` compares our adjusted bars with them the next morning, after the landing,
+        # and exits non-zero on a step neither side explains -- the watchdog's failed-job warning.
+        "adjust_check": bool(tc.get("adjust_check", True)),
+        "yahoo_adjusted_at": tc.get("yahoo_adjusted_at", "19:45"),
+        "adjust_check_at": tc.get("adjust_check_at", "06:55"),
         # `liquidity_at`: the nightly liquidity verdict (`python -m cherrypick.technicals liquidity`,
         # local data only). After the IV-rank fetch it judges from, before the 19:00 screener greeks
         # run that reads it; every broker-spending job skips the names it holds illiquid.

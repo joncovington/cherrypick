@@ -494,7 +494,7 @@ def build(
 
 
 def _sector_map() -> dict[str, tuple[str, str]]:
-    """{symbol: (sector, source)}: `fundamentals.sector_sources`, the vendor's map first."""
+    """{symbol: (sector, source)}: `fundamentals.sector_sources`, Yahoo's first."""
     from . import fundamentals
 
     return fundamentals.sector_sources()

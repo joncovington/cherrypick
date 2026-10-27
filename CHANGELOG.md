@@ -11,6 +11,14 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added (2026-10-27): `check-adjust`, the corporate-action tripwire.** With the vendor's chart
+  captures gone (last 2026-10-23), nothing checked our split and dividend adjustment. Each evening
+  `scripts/fetch_yahoo_adjusted.py` (job `technicals-yahoo-adjusted`, 19:45 ET) keeps a year of
+  Yahoo's adjusted closes for every stored name. Each morning `technicals-adjust-check` (06:55 ET)
+  reads the ratio of ours to Yahoo's, which must be flat, and exits 1 on a step no declared reason
+  covers -- a split, spin-off or dividend one side lacks -- or on a stale Yahoo file. `check-vendor`
+  stays, frozen at the last captures.
+
 - **Added (2026-10-27): arm cards for every paper module.** calendars, pmcc, curve, contango and bwb now
   have the arm guide flies and MEIC had, under each module's arms tab. Each card shows:
   - the arm's one-line `_summary`, beside its name;

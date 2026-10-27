@@ -12,7 +12,7 @@ way the vendor adjusts them.** The store (Phase 2) and the stage, rotation and c
 **Credential-free and network-free.** Reads the LOCAL `dolt sql-server` (the `stocks` and `options`
 clones, pulled at 05:30 by `scripts/refresh_dolt_data.py`, outside every package) and, read-only,
 the market-report store the scripts write (universe candidates, vendor chart captures, analyst
-revision events). Writes only
+revision events, Yahoo's adjusted closes). Writes only
 `~/.cherrypick/data/technicals/`: `eod.db` and its report/chart files, and the historical study's
 `history.db` and `study/` results.
 
@@ -27,7 +27,40 @@ ex-date scaled by `1 - D / prior raw close`) and splits (`for / to` on price, in
 MSFT matches on all 753 sessions; ANET within a cent where a pre-split division lands on a half
 cent. So adjusted prices are stored and returned **unrounded**; rounding is a display decision.
 `check-vendor` repeats the comparison; a few OPEN prices differ by tens of cents (the sources
-disagree on which print is the open) — a known source difference, not a defect.
+disagree on which print is the open) — a known source difference, not a defect. **`check-vendor`
+is historical now**: the captures stopped on 2026-10-23, so it compares against a frozen set and
+can no longer see a new event.
+
+**The live tripwire is `check-adjust`** (`adjust_check.py`, 2026-10-27). Each evening
+`scripts/fetch_yahoo_adjusted.py` keeps a year of Yahoo's adjusted closes for every stored name
+(`market-report/adjusted/yahoo.db`, each name replaced whole, since every dividend restates the
+past). Each morning after the landing the check reads the ratio ours / Yahoo's, which must be flat
+between corporate actions whatever its level.
+- **A step** is the median of the five sessions before against the five from (`WINDOW`), placed
+  where the means' difference peaks. It fails beyond `TOLERANCE`, 0.2%, read off the first run (933
+  names: flat to 0.0005 on 90%, exactly flat on the median name); near the newest session the
+  windows shrink and the bar is 10%, so a split Dolt missed is seen the morning after.
+- **A missed move beyond 3x is a series restart, not a step** (`series_break` starts our series
+  over on it), so the restart is read from the raw closes (`series_restart`); a test fails without it.
+- Each step names its cause from its size and both sides' events within three sessions. **Yahoo
+  states a spin-off as a split** of the price ratio (BDX 1272:1000).
+- **Three causes never fail, by declared rule**, and are listed: `dividend: ours only` (Yahoo's
+  chart misses dividends, 57 names on the first run -- ACN's 2026-01-13 1.63 is in neither its
+  events nor its adjusted closes); `small split: ours only` (scrip dividends and small
+  consolidations Yahoo does not adjust for: PHG, NGG, FER, TRI, OPEN); excursions (two steps that
+  undo each other within ten sessions, no event).
+- Everything else fails unless declared with its reason: `KNOWN_DIVIDEND_NAMES` excuses only a
+  name's differing dividend amounts (the CAD-dividend names and four ADRs; a split on them still
+  fails), `KNOWN_STEPS` one dated step. A Yahoo file more than five days behind the store is `stale`
+  and fails, so a fetch that stopped cannot pass as a clean check.
+- **First run, 2026-10-27**: 934 names read, all agree once the 30 declared names are set aside.
+  Those are real: seven spin-offs we do not model (BDX, CMCSA, CTVA, FDX, HON twice, SPGI), BNY's
+  ticker change, and four names where OURS is wrong and fixable -- AZN's ADR ratio change on
+  2026-02-02 (raw doubles, no split in Dolt), HON's three dividends (tastytrade's 2.38 against
+  Dolt's 1.19, kept by reconcile), CME's 2026-03-10 variable dividend (7.45, lost to the usual
+  payout) and ITUB's December extraordinary dividend. Their `KNOWN_STEPS` reasons say "OURS IS
+  WRONG"; remove the entry once fixed. Shown to fail on the real store: dropping APH's 2026-09-03
+  2:1 or KLAC's 2026-06-12 10:1 from a copy flags that date at 2.0 / 10.0 and exits 1.
 
 **Every comparison with a capture adjusts AS OF the capture's last session**
 (`store.adjusted_bars(..., as_of=)`: bars, splits and dividends through that day). A capture states
@@ -123,12 +156,24 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   session our store has not landed as not yet landed, never scores it.
   **Trap: captures list daily trend scores NEWEST-first (105 of 121), so `series[-1]` is the oldest
   day. Sort by date first** (`chart.py` does).
-- **Level grid** (`levels.py`, `score-levels`): every vendor level is the high or low of the last
-  **250** sessions as printed, or a point on a grid anchored at that low with step = the "nice"
-  number nearest **by ratio** to (high - low) / 100. All 192 levels placed on names whose bars agree.
-- **Gap levels** (`levels.gap_edges`): every vendor gap level is an edge of a true two-bar gap in the
-  same 250-session window, dated on the edge's own bar; the TOP edge is gap support and the BOTTOM
-  gap resistance, whichever way it gapped. 221/221 on our bars (SGOV excepted).
+- **Level grid** (`levels.py`, `score-levels`): every vendor level is the high or low of the window
+  as printed, or a point on a grid anchored at that low with step = the "nice" number nearest **by
+  ratio** to (high - low) / 100. **The window is a calendar year, not 250 sessions** (refitted
+  2026-10-27, `levels.year_window`): bars dated on or after the same date a year back, both ends
+  inclusive, from the day the levels were computed -- for a capture the **UTC** date it was fetched
+  (`levels.capture_as_of`; later than its session after midnight UTC and at weekends), for our chart
+  the session. A name listed under a year gets all its bars. The 250 came from weekend-fetched 09-25
+  captures. Over all 737 agreeing captures it places 3,738 of 3,761 levels (250 sessions: 3,490);
+  through 10-02 1,090/1,093 (250: 1,064), after 2,648/2,668 (250: 2,426). ET or exclusive ends
+  score lower. Left: ZS and TSM, whose range / 100 (2.224, 2.234) sits just under the 2.236 ratio
+  midpoint, so we take 2.0 and the vendor 2.5 -- across every x1.25 step pair the vendor's switch
+  falls between 1.107x and 1.112x the lower step, not at 1.118x; not refitted -- and three names
+  whose history in our store is shorter than the vendor's (ECHO, P, DRAM). `score-levels --every`
+  scores every capture, `--sessions 250` the old rule (`levels.SESSION_WINDOW`).
+- **Gap levels** (`levels.gap_edges`): every vendor gap level is an edge of a true two-bar gap whose
+  later bar is in the same calendar-year window, dated on the edge's own bar; the TOP edge is gap
+  support and the BOTTOM gap resistance, whichever way it gapped. 1,277/1,277 over every agreeing
+  capture (250 sessions: 1,276).
 - **Rank 1-10** (`levels.rank_score`, `score-rank`): the decile of a name's percentile, across the
   **WHOLE US-listed market** (~8,500 names trading $100k a day, split-affected dropped), of
   `0.5 x 21-session return + 126-session return`. 52 of 62 exact, all within one. The landing stores
@@ -201,8 +246,10 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   short puts; ~98% of covered calls — the rest divide by price less mid, condition unknown).
   **Which names make each list is not here**; the spread list's selection is open. The console's
   fidelity tab that showed these rates was retired on 2026-10-19; the per-session files stay in
-  `screeners/`, and `score-screeners` keeps running because the income tabs' "ours" strike is its
-  `picks`.
+  `screeners/`. Nothing reads them now: the income tabs' "ours" strike that read its `picks` went
+  with the vendor's lists (2026-10-24, the tabs read `income-lists`), so since 2026-10-27 the job
+  follows `market_report.collector`, the only source of a new list. The last session scored is
+  2026-10-23.
 - **Our income lists** (`incomelists.py`, `income-lists`, 2026-10-19): the short-put and covered-call
   lists the Screeners page shows in place of the vendor's. From the afternoon income chains
   (`fetch_screener_greeks.py income`, the tradable names and the passing reference funds), each
@@ -269,12 +316,15 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
     fortnight's or month's move; the record states its inside-the-move share over those within a week
     too. Which expiry to use is the user's call, unchanged.
   - **Spread:** the navigator spread, as target strikes.
-  - **Sector:** the vendor's map where it has the name, else Yahoo's (`scripts/fetch_sectors.py`,
-    `paths.yahoo_sectors`), relabelled to the vendor's names (it agreed on all 120 names sampled,
-    2026-10-17). `sector_source` says which. The market report's sector measures use the same
-    fallback since 2026-10-20 (`report._sectors`), so a universe name the vendor's map never saw
-    still has a sector after the subscription ends; `fetch_sectors.py` asks for every universe
-    candidate too.
+  - **Sector:** Yahoo's (`scripts/fetch_sectors.py`, `paths.yahoo_sectors`), relabelled to the
+    vendor's eleven sector names so the spelling never changed, else the vendor's frozen map
+    (`fundamentals.sector_sources`). `sector_source` says which. Yahoo has been first since
+    2026-10-27, because the vendor's map stopped at its last edition (2026-10-23) while Yahoo's file
+    is refreshed nightly. Measured at the switch: of the 521 names both held, they disagreed on one
+    (FISV: the vendor's Consumer Discretionary, Yahoo's Technology). One of the report's names (WBD)
+    has no Yahoo sector and keeps the vendor's. The calendar, the signal board, the report's sector
+    measures (`report._sectors`) and the B5 slices all read this one function. `fetch_sectors.py`
+    asks for every calendar name and universe candidate.
   - **Checked against the vendor's page** for Oct 20-21, while its reads still led: its 12 names,
     same date, direction and strength; moves within 0.42 points on average. History found no edge in
     the spread.
@@ -292,8 +342,9 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   little time (crossing-profile minima, 2-3x chance; touch counts point the wrong way); dated bars
   are swing highs ~82% (supports included), swing lows 0.5%; a level's identity is its date and its
   price is re-derived nightly on the grid (a histogram of bars overlapping each cell fits best);
-  the vendor does not recompute every name every night, so any "date to last bar" feature must stop
-  at the day the set was computed; polarity/role reversal is at chance. Price and date do not
+  the "stale" AMD and MU sets once read as the vendor not recomputing every name nightly were the
+  250-session window -- every AMD and MU capture fits the calendar year from its fetch date -- so
+  nothing yet says a set is computed on any day but the fetch's; polarity/role reversal is at chance. Price and date do not
   determine each other by any rule tried (~35-37%). **What would settle it is a fixed panel
   re-captured every evening**, turning it into a differential problem; not more fitting.
   - **Which of its levels the vendor's chart DRAWS is a separate, solved question** (2026-10-03,
@@ -307,8 +358,8 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
 ## Outputs (Phase 7)
 
 - **Chart files** (`chart.py`): `data/technicals/charts/<SYMBOL>.json` plus `index.json`, written by
-  `report`: last 250 sessions of adjusted bars, the level grid, CCI 14 and 5, RSI 14, both trend
-  scores, scan matches per session. Where the vendor chart was captured the file carries its levels
+  `report`: last 250 sessions of adjusted bars (the grid's whole calendar year when longer), the
+  level grid, CCI 14 and 5, RSI 14, both trend scores, scan matches per session. Where the vendor chart was captured the file carries its levels
   (each marked whether our grid produces it; gap levels marked against our gap edges,
   `chart_version` 2), trend grades, rank and bar agreement. The console's `/charts/technicals` page draws
   **our grid's extremes, never levels claimed as the vendor's** — it is built to show where we
@@ -411,14 +462,17 @@ earnings off stopped the server and every Dolt-reading job here). The income lis
 switch.
 `technicals-iv-rank` runs after the close on trading days. `technicals-screeners` (06:40 ET,
 `screeners_at`) scores every saved screener session with its broker chain, after the previous
-evening's late greeks run; a scored session is skipped. `technicals-skate` (06:45 ET, `skate_at`)
+evening's late greeks run; a scored session is skipped. It runs only while `market_report.collector`
+is on (off since the subscription ended). `technicals-skate` (06:45 ET, `skate_at`)
 writes the skate screen's bands from `history.db` (docs/skate-plan.md), then the forward record
 (`skate_record.py`: what the tab showed, what happened at expiry, the declared test; a failure there
 is reported and never fails the bands).
 
 The rest run daily under the same `technicals` block (times ET, each overridable by its `*_at` key):
 `technicals-index-bars` 06:00, `-history` 06:20, `-fundamentals` 06:25, `-report` 06:30,
-`-stage-lists` 06:35, `-board` 06:45, `-earnings-record` 06:50; in the evening `-sectors` 18:40,
+`-stage-lists` 06:35, `-board` 06:45, `-earnings-record` 06:50, `-adjust-check` 06:55 (with the
+landing; exit 1 is the watchdog's failed-job warning); in the evening `-sectors` 18:40,
+`-yahoo-adjusted` 19:45 (Yahoo, no credential; both follow `technicals.adjust_check`),
 `-dollar-volume` 18:35 (the one that needs no Dolt: it follows the block's own switch),
 `-income-lists` 15:10 (after the 14:45 income chains, no Dolt; off with `market_report.income`),
 `-earnings-times` 18:45, `-securities` 18:48, `-iv-rank` 18:50, `-liquidity` 18:57,
@@ -451,14 +505,15 @@ gross, and ranking by net is the user's decision.
 | `python -m cherrypick.technicals status` | What the store holds, and the last landing. |
 | `python -m cherrypick.technicals liquidity` | Judge every name liquid or not from local data; the illiquid are skipped by broker-spending scripts and hidden from listed views until the monthly sweep. |
 | `python -m cherrypick.technicals bars SYMBOL [--raw] [--last N]` | Adjusted (or raw) bars and IV rank (ours, or tastytrade's where Dolt has none). |
-| `python -m cherrypick.technicals check-vendor [--all]` | Our adjusted bars against every vendor capture; non-zero exit on any disagreement. |
+| `python -m cherrypick.technicals check-vendor [--all]` | Historical (captures end 2026-10-23): our adjusted bars against every vendor capture; non-zero exit on any disagreement. |
+| `python -m cherrypick.technicals check-adjust [--symbols ...] [--tolerance X] [--all]` | The live tripwire: steps in the ratio of our adjusted closes to Yahoo's (`scripts/fetch_yahoo_adjusted.py`), each with its date, size, likely cause and both sides' events; non-zero exit on an undeclared step or a stale Yahoo file. |
 | `python -m cherrypick.technicals stages [--session D]` | Every candidate's stage on a session. |
 | `python -m cherrypick.technicals score-stages` | Stage rule against every saved edition: side recall, stage agreement, extra rate, counts. |
 | `python -m cherrypick.technicals rotation [--session D]` | Every rotation fund's state on a session. |
 | `python -m cherrypick.technicals score-rotation` | Rotation rule against every saved edition. |
 | `python -m cherrypick.technicals breadth [--sessions N]` | Daily leaders, laggards, net and bullish share. |
 | `python -m cherrypick.technicals score-trends` | Trend scores vs every capture: exact, label, within-one. |
-| `python -m cherrypick.technicals score-levels` | Vendor levels we place (grid and gap edges) on names whose bars agree to the cent. |
+| `python -m cherrypick.technicals score-levels [--every] [--sessions 250]` | Vendor levels we place (grid and gap edges) on names whose bars agree to the cent; every capture, or the old session-count window. |
 | `python -m cherrypick.technicals score-level-selection` | Where vendor levels sit among grid points, each measure against chance. |
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank (stored whole-market cut-offs) vs the vendor's. |
 | `python -m cherrypick.technicals score-signals` | Our six scan rules vs every saved scan list. |

@@ -11,11 +11,12 @@ to the vendor's (`RELABEL`); Nasdaq's stock screener agreed on about three in fo
 per name, paced, keeping only the quote whose symbol is the name itself (BRK.B is asked as BRK-B).
 The names are the newest earnings calendar's (`technicals earnings-calendar`) and the vendor map's,
 less those this file has read in `REFRESH_DAYS` (`RETRY_DAYS` for a name Yahoo gave no sector).
-The vendor-map names are asked for their INDUSTRY (2026-10-17): the fundamentals score ranks a name
-against its industry peers (`fundamentals.peer_groups`); their sector stays the vendor's. The file
-accumulates: `market-report/universe/sectors.yahoo.json`, as
+The vendor-map names were first asked for their INDUSTRY (2026-10-17): the fundamentals score ranks a
+name against its industry peers (`fundamentals.peer_groups`). The file accumulates:
+`market-report/universe/sectors.yahoo.json`, as
 `{fetched_at, names: {symbol: {sector, industry, fetched_on}}, failed}`. A 403 or 429 stops the run;
-what was read is still written. The vendor's map always wins for the sector where it has the name.
+what was read is still written. Since 2026-10-27 this file's sector wins wherever it has one, and the
+vendor's frozen map only fills a name it lacks (`fundamentals.sector_sources`).
 
 A script, not package code: it reaches the network. `packages/technicals` reads the file.
 

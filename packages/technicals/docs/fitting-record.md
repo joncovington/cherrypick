@@ -54,6 +54,15 @@ The window is 250 sessions, not 252 (three names' lows sat on the 252nd), and AD
 2.24 takes 2.50, nearer by ratio. With dividends reconciled the grid places all 192 levels on the 36
 names whose bars agree with the vendor's.
 
+**Refitted 2026-10-27: the window is a calendar year.** Those first captures were fetched on the
+weekend after the 09-25 session, and a year back from the fetch date happened to be 250 sessions
+back from the Friday. Over every capture to 10-23 whose bars agree (737), bars dated on or after the
+same date a year before the capture's UTC fetch date place 3,738 of 3,761 levels; 250 sessions
+3,490. The variants, placed of 3,761: fetch date UTC inclusive 3,738, ET inclusive 3,733, the
+session inclusive 3,688, and each exclusive variant lower (3,595-3,640). The split holds: through
+10-02 1,090/1,093 against 1,064 for 250 sessions, after it 2,648/2,668 against 2,426. Gap levels:
+1,277/1,277 (250 sessions 1,276). The AMD and MU "staleness" below was this window.
+
 ## Rank (2026-09-29)
 
 The vendor's help pages call it "a summary of short, medium, and long term indicators". A single
@@ -108,7 +117,10 @@ regular level nearby. TradingView's convention fails because most drawn gaps hav
 - **Not every name is recomputed nightly.** On 2026-09-29 AMD's levels fit the grid one day earlier
   and MU's two days earlier; TLT's were that day's. The 250 window explains 737 of 743 levels over
   every capture on the vendor's own bars (251, 252 or a calendar year explain fewer); the six misses
-  are AMD and MU (staleness) and one ZS level no lag up to 40 sessions explains.
+  are AMD and MU (staleness) and one ZS level no lag up to 40 sessions explains. *(2026-10-27: not
+  staleness -- every AMD and MU capture fits a calendar year back from its fetch date, and ZS is
+  the step choice: its range / 100 sits just under the 2.0/2.5 ratio midpoint and the vendor takes
+  2.5. See Level grid above.)*
 - **Price depends on the grid beyond snapping.** TLT's bars were identical on both nights yet its
   07-28 level went 83.17 -> 83.04 while the anchor moved 0.43; re-snapping moves a fixed price at
   most a step (0.10). Histograms tried, as local-minimum rate against chance: bars overlapping the

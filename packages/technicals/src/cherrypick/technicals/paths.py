@@ -111,5 +111,12 @@ def analyst_revisions() -> Path:
     return market_report_dir() / "analysts" / "revisions.db"
 
 
+def yahoo_adjusted() -> Path:
+    """Yahoo's daily closes and adjusted closes for every stored name, about a year each, replaced
+    whole per name on every fetch (an adjusted close is restated at each later dividend). Written
+    by scripts/fetch_yahoo_adjusted.py; `adjust_check` reads it. Read-only here."""
+    return market_report_dir() / "adjusted" / "yahoo.db"
+
+
 def universe_candidates() -> Path:
     return market_report_dir() / "universe" / "candidates.json"

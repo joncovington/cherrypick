@@ -340,6 +340,7 @@ def test_derive_full_suite_job_table():
         "technicals-earnings-times",
         "technicals-sectors",
         "technicals-revisions",
+        "technicals-yahoo-adjusted",
         "technicals-liquidity",
         "technicals-securities",
         "technicals-income-lists",
@@ -353,6 +354,7 @@ def test_derive_full_suite_job_table():
         "technicals-history",
         "technicals-fundamentals",
         "technicals-board",
+        "technicals-adjust-check",
         "earnings-moves",
         "fetch-headlines",
         "review-provisional",
@@ -1158,6 +1160,30 @@ def test_screener_rows_runs_follow_the_collector():
         assert "market_report.collector" in by_id[job_id].enabled_reason
     for job_id in ("report-screener-measure-1", "report-earnings-strikes", "report-income-chains"):
         assert by_id[job_id].enabled
+
+
+def test_scoring_the_vendor_screens_follows_the_collector():
+    """score-screeners reads only the vendor's saved lists and the chain recorded around them, so
+    with the collector off it never has a new session (none after 2026-10-23); the jobs over our
+    own lists and stages keep running."""
+    cfg = suite_cfg()
+    cfg["market_report"] = {"collector": False, "screener_greeks": True}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    job = by_id["technicals-screeners"]
+    assert not job.enabled and "market_report.collector" in job.enabled_reason
+    for job_id in (
+        "technicals-stage-lists",
+        "technicals-securities",
+        "technicals-income-lists",
+        "technicals-report",
+    ):
+        assert by_id[job_id].enabled, job_id
+    cfg["market_report"] = {
+        "collector": True,
+        "vendor_dashboard_url": "https://example.invalid/dashboard",
+        "vendor_edition_title": "Example Report",
+    }
+    assert {j.id: j for j in derive(cfg)[0]}["technicals-screeners"].enabled
 
 
 # --------------------------------------------------------------------------- stock universe (2026-09-27)

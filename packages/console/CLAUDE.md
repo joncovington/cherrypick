@@ -370,11 +370,15 @@ the setups watchlist:
     entry is never read as a long's exit.
     The rule text is the package's, never restated here. Where `volumeSource` is set (SPX: SPY) the
     page says so on every setup (`web/test/chartPage.test.tsx`, shown to fail when hidden).
-    Levels are `?levels=ours|vendor|all|off`: our own swing levels (the default), only those the
-    vendor's own chart draws (the file's `vendorView`, for comparison), everything, or none; never
-    the setup lines. Vendor levels are drawn from their own date, as the vendor draws them, and kept out
-    of the autoscale. Entry and exit arrows are both amber: an arrow marks an event, and green or
-    red would read as a gain or a loss.
+    Levels are `?levels=ours|all|off`: our own swing levels (the default), those and our grid's high
+    and low ("With grid"), or none; never the setup lines. Each is drawn from its own date and kept
+    out of the autoscale. **Nothing of the vendor's is shown** (2026-10-27): the file still carries
+    its last capture (2026-10-23) under `vendor`, and the reader still shapes it, but the levels, the
+    dashed trend line, the comparison card, its sentiment, rank and IV rank, and the index's "captured"
+    marks are gone, because a frozen capture beside today's bars reads as current. A saved
+    `?levels=vendor` link falls back to the default (`web/test/chartPage.test.tsx`, shown to fail
+    against the old page). Entry and exit arrows are both amber: an arrow marks an event, and green
+    or red would read as a gain or a loss.
 - `/charts/setups` is the setups watchlist (`pages/Setups/SetupsPage.tsx`, `GET /api/technicals/setups`
   over `charts/setups-index.json`): recent entries and exits, or open positions, long and short,
   each symbol linking to its chart with the setup and side selected; nothing on it is vendor data. Gated with the technicals tab. The page filters and sorts

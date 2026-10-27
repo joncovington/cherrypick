@@ -4,6 +4,7 @@ python -m cherrypick.technicals land [--symbols A B ...]
 python -m cherrypick.technicals status
 python -m cherrypick.technicals bars SYMBOL [--raw] [--last N]
 python -m cherrypick.technicals check-vendor [--all]
+python -m cherrypick.technicals check-adjust [--all] [--tolerance X] [--symbols ...]
 """
 
 from __future__ import annotations
@@ -152,6 +153,18 @@ def cmd_check_vendor(args) -> int:
         result["by_symbol"] = {s: r for s, r in result["by_symbol"].items() if r["agree"] < r["prices"]}
     print(json.dumps(result, indent=1))
     return 0 if result["prices"] and result["agree"] == result["prices"] else 1
+
+
+def cmd_check_adjust(args) -> int:
+    from . import adjust_check
+
+    result = adjust_check.check(args.tolerance, args.symbols or None)
+    if not args.all:
+        for key in ("too_short", "not_held", "not_fetched"):
+            if len(result[key]) > 20:
+                result[key] = f"{len(result[key])} names"
+    print(json.dumps(result, indent=1))
+    return 0 if result["symbols"] and not result["disagree"] and not result["stale"] else 1
 
 
 def cmd_score_stages(args) -> int:
@@ -416,10 +429,10 @@ def cmd_score_trends(_args) -> int:
     return 0
 
 
-def cmd_score_levels(_args) -> int:
+def cmd_score_levels(args) -> int:
     from . import chart_score
 
-    print(json.dumps(chart_score.score_levels(), indent=1))
+    print(json.dumps(chart_score.score_levels(every=args.every, sessions=args.sessions), indent=1))
     return 0
 
 
@@ -735,6 +748,14 @@ def main(argv: list[str] | None = None) -> int:
     cv = sub.add_parser("check-vendor", help="our adjusted bars against every vendor chart capture")
     cv.add_argument("--all", action="store_true", help="list every symbol, not only disagreements")
     cv.set_defaults(fn=cmd_check_vendor)
+    ca = sub.add_parser(
+        "check-adjust",
+        help="our adjusted closes against Yahoo's; a step in the ratio is a missed action",
+    )
+    ca.add_argument("--all", action="store_true", help="list every short, unheld and unfetched name in full")
+    ca.add_argument("--tolerance", type=float, help="the log-ratio step that counts (default: TOLERANCE)")
+    ca.add_argument("--symbols", nargs="+", help="these names only")
+    ca.set_defaults(fn=cmd_check_adjust)
     st = sub.add_parser("stages", help="the relative-strength stage of every candidate on a session")
     st.add_argument("--session", help="ISO date (default: the latest session stored)")
     st.set_defaults(fn=cmd_stages)
@@ -801,9 +822,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("score-trends", help="our trend scores against every vendor chart capture").set_defaults(
         fn=cmd_score_trends
     )
-    sub.add_parser("score-levels", help="how many vendor levels our grid places").set_defaults(
-        fn=cmd_score_levels
+    sl = sub.add_parser("score-levels", help="how many vendor levels our grid places")
+    sl.add_argument("--every", action="store_true", help="every capture on file, not each name's newest")
+    sl.add_argument(
+        "--sessions", type=int, help="this many sessions instead of the calendar year (old rule: 250)"
     )
+    sl.set_defaults(fn=cmd_score_levels)
     sub.add_parser(
         "score-level-selection", help="where the vendor's levels sit among the grid points, against chance"
     ).set_defaults(fn=cmd_score_level_selection)

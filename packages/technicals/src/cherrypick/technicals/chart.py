@@ -1,10 +1,10 @@
 """One chart file per name, for the console's chart page: our bars and readings beside the vendor's.
 
 Phase 7's per-name view. For every stock the store holds, `charts/<SYMBOL>.json` carries the last
-`DISPLAY` sessions of adjusted bars, the level grid those same sessions define, CCI (14 and the
-scan rules' 5), RSI 14, both trend scores, the scan-rule matches for every displayed session, and
-the entry/exit setups (`setups.py`, with the lines their rules read) -- all from this package's
-engines, so the console draws them and computes nothing.
+`DISPLAY` sessions of adjusted bars (the whole calendar year when longer), the level grid that year
+defines, CCI (14 and the scan rules' 5), RSI 14, both trend scores, the scan-rule matches for every
+displayed session, and the entry/exit setups (`setups.py`, with the lines their rules read) -- all
+from this package's engines, so the console draws them and computes nothing.
 
 Where the vendor's chart for the name has been captured, the file also carries what the vendor
 drew: its support, resistance and gap levels, each marked with whether OUR grid can produce it,
@@ -51,7 +51,8 @@ from . import (
 # (each setup names its family and side) and our own swing levels; 6: each trade's dollar volume,
 # and the study's confirmed rules (`tested`)
 CHART_VERSION = 6
-DISPLAY = levels.WINDOW  # the sessions the grid is built on, and so the ones worth drawing
+# The sessions drawn: at least this many, and the whole of the grid's calendar year when it holds more.
+DISPLAY = levels.SESSION_WINDOW
 # The index funds charted beside the stocks. Named, not taken from `store.stocks`: that filter
 # drops funds on purpose, because breadth counts stocks only, and the chart page is not breadth.
 INDEX_FUNDS = ("SPY", "QQQ", "IWM")
@@ -231,9 +232,11 @@ def _vendor(conn, symbol: str) -> dict | None:
     upto = store.adjusted_bars(conn, symbol, as_of=through)
     ours = {b.date: {f: getattr(b, f) for f in vendor_check.FIELDS} for b in upto}
     agreement = vendor_check.compare(ours, quotes)
-    # The grid as of the capture's own last bar -- the one the vendor's levels were drawn on.
-    g = levels.grid([b.high for b in upto], [b.low for b in upto])
-    gaps = levels.gap_edges([b.date for b in upto], [b.high for b in upto], [b.low for b in upto])
+    # The grid the vendor's levels were drawn on: our bars through the capture's last session, over
+    # the calendar year back from the day it was fetched.
+    w = levels.year_window([b.date for b in upto], levels.capture_as_of(doc.get("fetched_at"), through or ""))
+    g = levels.grid([b.high for b in upto], [b.low for b in upto], w)
+    gaps = levels.gap_edges([b.date for b in upto], [b.high for b in upto], [b.low for b in upto], w)
     sr = why.get("supportAndResistance") or {}
     lv = []
     for kind in ("support", "resistance", "gapSupport", "gapResistance"):
@@ -292,19 +295,20 @@ def build(
     highs = [b.high for b in bars]
     lows = [b.low for b in bars]
     closes = [b.close for b in bars]
-    start = max(0, len(bars) - DISPLAY)
+    w = levels.year_window([b.date for b in bars])  # a year back from the session
+    start = max(0, len(bars) - max(DISPLAY, w or 0))
     shown = bars[start:]
-    g = levels.grid(highs, lows)
+    g = levels.grid(highs, lows, w)
     grid = None
     if g is not None:
-        window = bars[-levels.WINDOW :]
+        window = bars[-w:]
         grid = {
             "low": g.low,
             "high": g.high,
             "step": g.step,
             "low_date": min(window, key=lambda b: b.low).date,
             "high_date": max(window, key=lambda b: b.high).date,
-            "window": levels.WINDOW,
+            "window": w,
         }
 
     def tail(xs, digits=2):
