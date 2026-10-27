@@ -28,6 +28,12 @@ def _at(s: str) -> datetime:
     return datetime.fromisoformat(s).replace(tzinfo=ET)
 
 
+@pytest.fixture(autouse=True)
+def no_backtest_read(monkeypatch):
+    """No test spawns the backtest to ask where its stores live; the store check's own tests pass one."""
+    monkeypatch.setattr(rq, "backtest_stores", lambda: None)
+
+
 @pytest.fixture
 def files(tmp_path):
     req = tmp_path / "requests.json"
@@ -320,3 +326,38 @@ def test_only_a_queued_row_is_cancelled(files, tmp_path):
     assert rq.cancel(1, db)["status"] == "cancelled"
     assert rq.cancel(1, db)["ok"] is False
     assert rq.cancel(7, db)["ok"] is False
+
+
+def _script_row(files, db, output, stores):
+    return rq.add(
+        "item19",
+        "script",
+        {"path": "scripts/study.py"},
+        step="fetch",
+        output=output,
+        path=db,
+        root=files["root"],
+        tracked=_tracked,
+        stores=lambda: stores,
+    )
+
+
+def test_an_output_naming_a_vendor_store_must_be_that_store(files, tmp_path):
+    vendor = tmp_path / "data" / "backtest" / "vendor" / "thetadata"
+    stores = {"ok": True, "dir": str(vendor), "files": ["SPX-60s.db", "SPX-time-warp.db"]}
+    db = tmp_path / "q.db"
+    # item 19, 2026-10-26: the store's name one directory up, so a complete fetch read as failed.
+    with pytest.raises(rq.Refused, match="lives at"):
+        _script_row(files, db, str(vendor.parent / "SPX-time-warp.db"), stores)
+    assert rq.rows(db) == []
+    assert _script_row(files, db, str(vendor / "SPX-time-warp.db"), stores)["status"] == "queued"
+
+
+def test_an_output_that_is_no_store_or_unknown_stores_is_not_judged(files, tmp_path):
+    vendor = tmp_path / "vendor" / "thetadata"
+    stores = {"ok": True, "dir": str(vendor), "files": ["SPX-60s.db"]}
+    db = tmp_path / "q.db"
+    assert _script_row(files, db, str(tmp_path / "results" / "verdict.json"), stores)["status"] == "queued"
+    rq.cancel(1, db)
+    # The backtest could not say where its stores live: the check cannot fire, and says so in its doc.
+    assert _script_row(files, db, str(tmp_path / "SPX-60s.db"), None)["status"] == "queued"
