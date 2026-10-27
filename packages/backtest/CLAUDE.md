@@ -140,6 +140,14 @@ amendment are kept locally under `~/.cherrypick`, per the licence.
 A profile disagreement is read against each side's strike count, which the report carries: either
 side's profile can be the thinner one, and fewer strikes move the walls and the flip.
 
+**MEIC's delta source (2026-10-27).** Before that session MEIC chose strikes by the data feed's delta,
+which lags its quotes by about a minute. The recording carries that lag and the vendor's delta (taken
+at its quotes' instant) does not, so on its default delta (each session's own) the vendor replay
+cannot choose paper's strikes whatever its data. `validate --module meic --delta-source computed`
+replays both sources on `core.chaindelta`'s delta from each one's own mids, so the decisions layer
+compares the data. That report is its own file (`...-delta-computed.json`) and records
+`delta_source`; history runs use the config's source, `computed` from 2026-10-27.
+
 ## The runner
 
 `run flies --arms ... --window validation|design|holdout` replays each session through flies itself

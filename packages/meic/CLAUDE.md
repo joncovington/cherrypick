@@ -163,7 +163,9 @@ python run.py gex-gate                       # what the negative-GEX gate refuse
   differences, and each side's worst cost on a full-day replay. No SPX arm ran a per-side stop in the
   recorder era, so the worst-cost path stands in for the plan's stops-matched check. The pass test
   was declared in `docs/quote-history-replay-plan.md` (Phase 2) before any number was read;
-  `packages/backtest`'s validation reads its summary.
+  `packages/backtest`'s validation reads its summary. Each session replays on the delta it ran with
+  (`delta_source_since`); `--delta-source` replays every session on one source instead, which is how
+  backtest's validation compares a vendor's history with the recording.
 
 ## What the advisor may move (`advice.bounds`)
 

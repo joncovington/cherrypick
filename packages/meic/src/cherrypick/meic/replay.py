@@ -424,7 +424,13 @@ def _check(args) -> dict:
             rep.at("sessions", day)
             try:
                 sessions.append(
-                    replay_check.decision_check(day, arms, history_db=args.history_db, paper_db=args.paper_db)
+                    replay_check.decision_check(
+                        day,
+                        arms,
+                        history_db=args.history_db,
+                        paper_db=args.paper_db,
+                        delta_source=args.delta_source,
+                    )
                 )
             except ValueError as exc:
                 rep.note(str(exc))
@@ -436,7 +442,7 @@ def _check(args) -> dict:
         for s in sessions:
             s.pop("matched_entries", None)
             s.pop("max_cost_diffs", None)
-    return {"ok": True, "sessions": sessions, "summary": summary}
+    return {"ok": True, "delta_source": args.delta_source, "sessions": sessions, "summary": summary}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -463,6 +469,12 @@ def build_parser() -> argparse.ArgumentParser:
     chk.add_argument("--history-db", default=None, help="default: the recorder's")
     chk.add_argument("--paper-db", default=None, help="default: MEIC's paper ledger")
     chk.add_argument("--detail", action="store_true", help="every matched entry and path difference")
+    chk.add_argument(
+        "--delta-source",
+        default=None,
+        choices=("stream", "computed"),
+        help="replay every session on this delta (default: the one each session ran with)",
+    )
     chk.set_defaults(func=_check)
     return p
 
