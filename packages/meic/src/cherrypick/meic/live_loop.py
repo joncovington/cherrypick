@@ -1308,7 +1308,7 @@ def _build_snapshot(cfg: dict, symbol: str):
     if arm_delta is not None and abs(arm_delta - delta_target) >= 1e-6:
         deltas.append(arm_delta)
     candidates, leg_quotes, cand_err = _pl._build_candidates(
-        symbol, price, widths, deltas, delta_target, today
+        symbol, price, widths, deltas, delta_target, today, delta_source=params.get("delta_source", "stream")
     )
     if cand_err and not candidates:
         return None, cand_err

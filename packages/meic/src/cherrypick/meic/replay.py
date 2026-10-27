@@ -56,6 +56,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from cherrypick.core import chaindelta as _chaindelta
 from cherrypick.core import home as _home
 from cherrypick.core import quotehistory
 from cherrypick.core.clock import ET
@@ -231,8 +232,16 @@ class ReplayDay:
         iv_rank, iv_pct = iv_rank_of(vix, self.vol["prior_closes"])
         delta_target = paper_loop._delta_target(self.cfg, vix)
         delta_targets = [delta_target] + [d for d in self.extra_deltas if abs(d - delta_target) > 1e-9]
+        # The same delta source the loop ran with, so a replay chooses strikes as paper did; with
+        # "computed" the vendor's chain and the recorder's give the same answer by construction.
         candidates, leg_quotes, _err = paper_loop.candidates_from_chain(
-            entries, spot, self.widths, delta_targets, delta_target
+            entries,
+            spot,
+            self.widths,
+            delta_targets,
+            delta_target,
+            delta_source=self.cfg.get("delta_source", "stream"),
+            years=_chaindelta.years_to_close(when),
         )
         gex, _stats = self.recorded.gex(sample["ts"], spot, 1)
         if gex.get("ok"):
