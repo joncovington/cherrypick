@@ -30,21 +30,36 @@ import { registryFile, registryOf } from "./armStatus.js";
 /** The arm's own one-line summary and dates (docs/progress-queue-arms-plan.md, phase 3): underscore
  *  keys, so documentation and never a setting. pmcc's `from` (a real setting: the arm starts entering
  *  then) is read as the start where no `_since` is written. */
-const META_KEYS = new Set(["_summary", "_since", "_retired"]);
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function isoDate(v: unknown): string | null {
-  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+  return typeof v === "string" && ISO_DATE.test(v) ? v : null;
+}
+
+/** A date key's date: the value itself when it is one, else the first date its prose names. The
+ *  deployed configs' 2026-10-12 retirements wrote `_retired` as prose ("Retired 2026-10-15 (…): …")
+ *  before the cards read it, and that prose stays the arm's note (`collectNotes`). */
+function dateIn(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  return isoDate(v) ?? v.match(/\b(\d{4}-\d{2}-\d{2})\b/)?.[1] ?? null;
 }
 
 export function armMeta(block: Record<string, unknown>): { summary: string | null; since: string | null; retiredOn: string | null } {
   const summary = typeof block["_summary"] === "string" && block["_summary"].trim() !== "" ? block["_summary"].trim() : null;
-  return { summary, since: isoDate(block["_since"]) ?? isoDate(block["from"]), retiredOn: isoDate(block["_retired"]) };
+  return { summary, since: dateIn(block["_since"]) ?? isoDate(block["from"]), retiredOn: dateIn(block["_retired"]) };
+}
+
+/** Keys the card shows as fields rather than notes: the summary always, a date key only when it is
+ *  a bare date -- one written as prose is a note too, and hiding it would lose what it says. */
+function isMetaField(k: string, v: unknown): boolean {
+  if (k === "_summary") return true;
+  return (k === "_since" || k === "_retired") && isoDate(v) !== null;
 }
 
 function collectNotes(block: Record<string, unknown>): GuideNote[] {
   const notes: GuideNote[] = [];
   for (const [k, v] of Object.entries(block)) {
-    if (META_KEYS.has(k) || !k.startsWith("_") || typeof v !== "string" || v.trim() === "") continue;
+    if (isMetaField(k, v) || !k.startsWith("_") || typeof v !== "string" || v.trim() === "") continue;
     notes.push({ key: k.replace(/^_/, ""), text: v });
   }
   // `_note` is the definition and leads; the rest keep config order behind it.
