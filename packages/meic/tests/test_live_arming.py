@@ -210,6 +210,35 @@ def test_a_held_lock_skips_the_tick(monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out)["skipped"] == "another live tick is running"
 
 
+def _corrupt_live_ledger():
+    from cherrypick.meic import paths
+
+    path = paths.live_db_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"this is not a sqlite database, it is a torn copy" * 20)
+    return str(path)
+
+
+def test_an_unreadable_ledger_is_never_a_clean_day(monkeypatch):
+    """It read as empty: settled, nothing open, nothing overdue -- the watchdog saw a flat book."""
+    _pin_config(monkeypatch)
+    _corrupt_live_ledger()
+    status = live_loop.run_status(_config(), designated="1234")
+    assert status["ledger_unreadable"] and "unreadable" in status["ledger_unreadable"]
+    assert status["session_settled"] is False and status["open_positions"] is None
+
+
+def test_settle_overdue_reports_an_unreadable_ledger_instead_of_nothing_to_do(monkeypatch):
+    db_path = _corrupt_live_ledger()
+    out = live_loop.settle_overdue(_config(), db_path, "2026-10-27", close_fn=lambda *a: 6000.0)
+    assert out["ok"] is False and "unreadable" in out["error"]
+
+
+def test_a_readable_ledger_reports_no_problem(monkeypatch):
+    _pin_config(monkeypatch)
+    assert live_loop.run_status(_config(), designated="1234")["ledger_unreadable"] is None
+
+
 def test_status_carries_what_the_watchdog_and_the_arm_command_read(monkeypatch):
     _pin_config(monkeypatch)
     status = live_loop.run_status(_config(), designated="1234")
