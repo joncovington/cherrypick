@@ -75,7 +75,8 @@ def _rows(cfg):
             dict(r)
             for r in conn.execute(
                 "SELECT s.symbol, s.trade_date, s.ts, s.expiration, q.side, q.strike, q.bid, q.ask, q.mid, "
-                "q.age_s, q.delta FROM gex_quote_samples s JOIN gex_quotes q ON q.sample_id = s.id "
+                "q.age_s, q.delta, q.delta_age_s, q.greek_price, q.greek_iv "
+                "FROM gex_quote_samples s JOIN gex_quotes q ON q.sample_id = s.id "
                 "ORDER BY s.ts, q.side DESC, q.strike"
             )
         ]
@@ -93,6 +94,43 @@ def test_a_sample_keeps_the_nearest_twenty_strikes_each_side_on_both_rights(tmp_
     assert puts[0] == 5905.0 and puts[-1] == 6100.0 and len(puts) == 40  # 20 below 6002, 20 at/above
     assert {r["expiration"] for r in rows} == {EXPIRY}
     assert all(r["delta"] is not None and r["mid"] == 1.1 for r in rows)
+
+
+def test_each_quote_carries_its_greeks_age_price_and_vol(tmp_path):
+    """The feed's delta lags its quotes (2026-10-27): recorded without its age it cannot be read."""
+    cfg = _cfg(tmp_path)
+    conn = sqlite3.connect(cfg["stream_cache_db"])
+    conn.execute("UPDATE stream_greeks SET updated_at = updated_at - 75, price = 1.4, iv = 0.18")
+    conn.commit()
+    conn.close()
+    service.record_quotes(cfg, now_et=IN_SESSION)
+    db = sqlite3.connect(cfg["history_db_path"])
+    ages = db.execute("SELECT delta_age_s, greek_price, greek_iv FROM gex_quotes").fetchall()
+    db.close()
+    assert ages and all(75 <= a < 90 and p == 1.4 and v == 0.18 for a, p, v in ages)
+
+
+def test_an_older_history_file_gains_the_greek_columns_and_keeps_its_rows(tmp_path):
+    cfg = _cfg(tmp_path)
+    old = sqlite3.connect(cfg["history_db_path"])
+    old.executescript("""
+        CREATE TABLE gex_quote_samples (id INTEGER PRIMARY KEY, symbol TEXT NOT NULL, trade_date TEXT NOT NULL,
+                                        ts REAL NOT NULL, expiration TEXT NOT NULL);
+        CREATE TABLE gex_quotes (sample_id INTEGER NOT NULL, side INTEGER NOT NULL, strike REAL NOT NULL,
+                                 bid REAL NOT NULL, ask REAL NOT NULL, mid REAL NOT NULL, age_s REAL, delta REAL,
+                                 PRIMARY KEY (sample_id, side, strike)) WITHOUT ROWID;
+        INSERT INTO gex_quote_samples VALUES (1, 'SPX', '2026-10-26', 1.0, '2026-10-26');
+        INSERT INTO gex_quotes VALUES (1, 1, 6000, 1.0, 1.2, 1.1, 0.5, 0.5);
+    """)
+    old.commit()
+    old.close()
+    service.record_quotes(cfg, now_et=IN_SESSION)
+    db = sqlite3.connect(cfg["history_db_path"])
+    cols = {r[1] for r in db.execute("PRAGMA table_info(gex_quotes)")}
+    kept = db.execute("SELECT delta, delta_age_s FROM gex_quotes WHERE sample_id = 1").fetchone()
+    db.close()
+    assert set(service.GREEK_COLUMNS) <= cols
+    assert kept == (0.5, None)
 
 
 def test_a_stale_or_crossed_quote_is_absent_never_a_zero(tmp_path):
@@ -243,12 +281,15 @@ def test_the_compact_layout_is_well_under_the_first(tmp_path):
     first.execute(
         "CREATE TABLE gex_quote_history (symbol TEXT NOT NULL, trade_date TEXT NOT NULL, ts REAL NOT NULL, "
         "expiration TEXT NOT NULL, side TEXT NOT NULL, strike REAL NOT NULL, bid REAL NOT NULL, "
-        "ask REAL NOT NULL, mid REAL NOT NULL, age_s REAL, delta REAL)"
+        "ask REAL NOT NULL, mid REAL NOT NULL, age_s REAL, delta REAL, "
+        "delta_age_s REAL, greek_price REAL, greek_iv REAL)"
     )
     first.execute("CREATE INDEX idx_gqh_sym_date ON gex_quote_history(symbol, trade_date, ts)")
+    # Same content in both layouts, the feed-greek columns included (2026-10-27): the check is the
+    # layout's cost, not the columns'.
     first.executemany(
         "INSERT INTO gex_quote_history VALUES (:symbol,:trade_date,:ts,:expiration,:side,:strike,:bid,:ask,"
-        ":mid,:age_s,:delta)",
+        ":mid,:age_s,:delta,:delta_age_s,:greek_price,:greek_iv)",
         rows,
     )
     first.commit()

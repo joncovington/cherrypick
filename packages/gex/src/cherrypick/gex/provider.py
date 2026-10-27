@@ -116,16 +116,26 @@ def chain_quotes(
     try:
         now_ts = time.time()
         ph = ", ".join("?" * len(legs))
-        deltas = {}
+        # The feed's greek with how old it is and the option price and vol it was computed at
+        # (2026-10-27). The feed's delta lags its quotes by about a minute, so a recorded delta means
+        # little without its age; the price it was computed at, against the quote's own mid, shows how
+        # far the market had moved since.
+        greeks = {}
         for r in conn.execute(
-            f"SELECT symbol, delta, updated_at FROM stream_greeks WHERE symbol IN ({ph})", list(legs)
+            f"SELECT symbol, delta, updated_at, price, iv FROM stream_greeks WHERE symbol IN ({ph})",
+            list(legs),
         ):
             if (
                 r["delta"] is not None
                 and r["updated_at"] is not None
                 and now_ts - float(r["updated_at"]) <= max_age_seconds
             ):
-                deltas[r["symbol"]] = float(r["delta"])
+                greeks[r["symbol"]] = {
+                    "delta": float(r["delta"]),
+                    "delta_age_seconds": round(now_ts - float(r["updated_at"]), 1),
+                    "greek_price": None if r["price"] is None else float(r["price"]),
+                    "greek_iv": None if r["iv"] is None else float(r["iv"]),
+                }
         out = []
         for r in conn.execute(
             f"SELECT symbol, bid, ask, mid, updated_at FROM stream_quotes WHERE symbol IN ({ph})", list(legs)
@@ -134,7 +144,18 @@ def chain_quotes(
             if q is None:
                 continue
             side, strike = legs[r["symbol"]]
-            out.append({"side": side, "strike": strike, **q, "delta": deltas.get(r["symbol"])})
+            g = greeks.get(r["symbol"]) or {}
+            out.append(
+                {
+                    "side": side,
+                    "strike": strike,
+                    **q,
+                    "delta": g.get("delta"),
+                    "delta_age_seconds": g.get("delta_age_seconds"),
+                    "greek_price": g.get("greek_price"),
+                    "greek_iv": g.get("greek_iv"),
+                }
+            )
         return sorted(out, key=lambda x: (x["side"], x["strike"]))
     finally:
         conn.close()
