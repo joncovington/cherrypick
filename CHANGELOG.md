@@ -11,6 +11,16 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added (2026-10-27): job progress, written by the job.** `core.progress` gives every long job a small
+  file under `state/progress/` (phases, counts, what it is on), and a child process reports beside its
+  parent's.
+  - **Who reports:** validation, the meic and flies replay checks, `backtest run`, and the chain and flow
+    fetches.
+  - **Reading it:** `queue-list` reads the files instead of spawning a counter per row. It adds the
+    overall share, the ETA and `stalled`/`orphaned`, and lists runs started by hand.
+  - **Console:** the queue tab's meter shows any job's nested progress (`docs/progress-queue-arms-plan.md`,
+    phase 1).
+
 - **Changed (2026-10-27): live-path hardening, no measurement change.** Each change only adds a
   refusal or a report:
   - **The manual live door obeys the halt.** A hand-placed opening order through meic's or earnings'

@@ -40,6 +40,7 @@ from pathlib import Path
 from cherrypick.core import compare as core_compare
 from cherrypick.core import home as _home
 from cherrypick.core import ledgers as core_ledgers
+from cherrypick.core import progress as core_progress
 
 from . import paths, results, stats, store
 
@@ -443,10 +444,14 @@ def run(
 
     per_arm: dict[str, dict[str, dict]] = {a: {} for a in arms}
     vix_by_session: dict[str, dict] = {}
+    rep = core_progress.Reporter(f"backtest-run-{mod.name}")
+    rep.phase("sessions", total=len(todo), unit="days")
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         for day, out, rows in pool.map(one, todo):
+            rep.advance("sessions", current=day)  # a refused session is done too: it is counted, not lost
             if not out.get("ok"):
                 refused[day] = str(out.get("error"))[:200]
+                log(f"{day} refused: {refused[day]}")
                 continue
             if mod.reports_vix:
                 counts = out.get("vix_sources") or {}
@@ -526,6 +531,7 @@ def run(
     out_path = paths.results_dir() / "runs" / f"{run_id}.json"
     out_path.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
     report["written"] = str(out_path)
+    rep.finish("done")
     return report
 
 

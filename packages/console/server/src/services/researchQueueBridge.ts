@@ -64,20 +64,36 @@ function toResult(v: unknown): ResearchTaskResult | null {
   };
 }
 
+const PROGRESS_STATES = ["running", "done", "failed", "stalled", "orphaned"] as const;
+
+/** A `core.progress` view, renamed; null for anything without a job name or a known state. */
 export function toProgress(v: unknown): ResearchProgress | null {
   const r = rec(v);
-  const total = n(r["total"]);
-  const answered = n(r["answered"]);
-  if (total === null || answered === null) return null;
-  const byStatus: Record<string, number> = {};
-  for (const [k, x] of Object.entries(rec(r["by_status"]))) if (typeof x === "number") byStatus[k] = x;
+  const job = s(r["job"]);
+  const state = s(r["state"]) as ResearchProgress["state"] | null;
+  if (job === null || state === null || !PROGRESS_STATES.includes(state)) return null;
+  const phases = (Array.isArray(r["phases"]) ? r["phases"] : []).map((x) => {
+    const p = rec(x);
+    return {
+      name: s(p["name"]) ?? "",
+      done: n(p["done"]) ?? 0,
+      total: n(p["total"]),
+      unit: s(p["unit"]) ?? "",
+      current: s(p["current"]),
+    };
+  });
   return {
-    total,
-    answered,
-    byStatus,
-    ratePerMin: n(r["rate_per_min"]),
-    etaMinutes: n(r["eta_minutes"]),
-    lastAnswerAgeS: n(r["last_answer_age_s"]),
+    file: s(r["file"]) ?? job,
+    job,
+    state,
+    phases,
+    fraction: n(r["fraction"]),
+    etaSeconds: n(r["eta_s"]),
+    ageSeconds: n(r["age_s"]),
+    line: s(r["line"]) ?? "",
+    note: s(r["note"]),
+    startedAt: n(r["started_at"]),
+    updatedAt: n(r["updated_at"]),
   };
 }
 
@@ -119,7 +135,10 @@ export function shapeQueue(res: SpawnedJson): BridgedResult<ResearchQueue> {
   const b = res.json["blackout"];
   const blackout = Array.isArray(b) && b.length === 2 && b.every((x) => typeof x === "string") ? ([b[0], b[1]] as [string, string]) : null;
   const tasks = (Array.isArray(res.json["tasks"]) ? res.json["tasks"] : []).map(toTask).filter((t): t is ResearchTask => t !== null);
-  return { ok: true, data: { sessionHeld: res.json["session_held"] === true, blackout, tasks }, error: null };
+  const byHand = (Array.isArray(res.json["by_hand"]) ? res.json["by_hand"] : [])
+    .map(toProgress)
+    .filter((p): p is ResearchProgress => p !== null);
+  return { ok: true, data: { sessionHeld: res.json["session_held"] === true, blackout, tasks, byHand }, error: null };
 }
 
 export async function readResearchQueue(now = Date.now()): Promise<BridgedResult<ResearchQueue>> {

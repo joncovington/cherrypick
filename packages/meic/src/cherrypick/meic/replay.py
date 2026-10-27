@@ -389,17 +389,26 @@ def _run(args) -> dict:
 
 
 def _check(args) -> dict:
+    from cherrypick.core import progress
+
     from cherrypick.meic import replay_check  # function-local: replay_check imports this module
 
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
+    days = [d.strip() for d in args.dates.split(",") if d.strip()]
     sessions = []
-    for day in [d.strip() for d in args.dates.split(",") if d.strip()]:
-        try:
-            sessions.append(
-                replay_check.decision_check(day, arms, history_db=args.history_db, paper_db=args.paper_db)
-            )
-        except ValueError as exc:
-            return {"ok": False, "error": str(exc)}
+    with progress.Reporter("meic-replay-check") as rep:
+        rep.phase("sessions", total=len(days), unit="days")
+        for day in days:
+            rep.at("sessions", day)
+            try:
+                sessions.append(
+                    replay_check.decision_check(day, arms, history_db=args.history_db, paper_db=args.paper_db)
+                )
+            except ValueError as exc:
+                rep.note(str(exc))
+                rep.finish("failed")
+                return {"ok": False, "error": str(exc)}
+            rep.advance("sessions")
     summary = replay_check.summarise(sessions)
     if not args.detail:
         for s in sessions:
