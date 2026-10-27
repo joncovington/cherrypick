@@ -60,7 +60,7 @@ import tempfile
 from pathlib import Path
 
 from cherrypick.core import db as core_db
-from cherrypick.core import quotehistory
+from cherrypick.core import progress, quotehistory
 
 from . import paths, store
 
@@ -259,23 +259,39 @@ def profile_layer(recorder_db: Path, vendor_db: Path, symbol: str, day: str) -> 
 def _flies_cli(args: list[str]) -> dict:
     """`python -m cherrypick.flies.cli <args>` with this interpreter; its JSON reply, or the failure."""
     proc = subprocess.run(
-        [sys.executable, "-m", "cherrypick.flies.cli", *args], capture_output=True, text=True, timeout=3600
+        [sys.executable, "-m", "cherrypick.flies.cli", *args],
+        stdout=subprocess.PIPE,
+        text=True,
+        timeout=3600,
     )
     try:
         return json.loads(proc.stdout)
     except json.JSONDecodeError:
-        return {"ok": False, "error": (proc.stderr or proc.stdout)[-800:], "returncode": proc.returncode}
+        # The child's stderr went straight to ours (the queue log), as it happened.
+        return {
+            "ok": False,
+            "error": (proc.stdout or "")[-800:] or "no JSON reply; see the log",
+            "returncode": proc.returncode,
+        }
 
 
 def _meic_cli(args: list[str]) -> dict:
     """`python -m cherrypick.meic.replay <args>` with this interpreter; its JSON reply, or the failure."""
     proc = subprocess.run(
-        [sys.executable, "-m", "cherrypick.meic.replay", *args], capture_output=True, text=True, timeout=36000
+        [sys.executable, "-m", "cherrypick.meic.replay", *args],
+        stdout=subprocess.PIPE,
+        text=True,
+        timeout=36000,
     )
     try:
         return json.loads(proc.stdout)
     except json.JSONDecodeError:
-        return {"ok": False, "error": (proc.stderr or proc.stdout)[-800:], "returncode": proc.returncode}
+        # The child's stderr went straight to ours (the queue log), as it happened.
+        return {
+            "ok": False,
+            "error": (proc.stdout or "")[-800:] or "no JSON reply; see the log",
+            "returncode": proc.returncode,
+        }
 
 
 #: Per module: the check's CLI, the verb that runs it, and what its summary reports beside the pass
@@ -397,18 +413,26 @@ def decisions_layer(
     thinned_db: Path | None = None,
     command: tuple = ("replay-check",),
     outcome_keys: tuple = ("completion_outcome_agreement",),
+    rep=None,
 ) -> dict:
     """A module's replay check (flies' `replay-check` by default) on the recording, on the vendor's
     store and, when the vendor's store is coarser, on the recording thinned to the vendor's instants
     (`thinned_db`). The bar compares the vendor with the recording at the vendor's cadence (module
     docstring, amended 2026-10-17)."""
-    out = {
-        "recorder": _check(runner, recorder_db, dates, command),
-        "vendor": _check(runner, vendor_db, dates, command),
-    }
+    sources = [("recorder", recorder_db), ("vendor", vendor_db)]
+    if thinned_db is not None:
+        sources.append(("recorder_at_vendor_cadence", thinned_db))
+    if rep is not None:
+        rep.phase("decisions", total=len(sources), unit="replays")
+    out = {}
+    for name, db in sources:
+        if rep is not None:
+            rep.at("decisions", name)
+        out[name] = _check(runner, db, dates, command)
+        if rep is not None:
+            rep.advance("decisions")
     basis = "recorder"
     if thinned_db is not None:
-        out["recorder_at_vendor_cadence"] = _check(runner, thinned_db, dates, command)
         basis = "recorder_at_vendor_cadence"
         full, thin = out["recorder"], out["recorder_at_vendor_cadence"]
         out["cadence_cost"] = {
@@ -472,14 +496,18 @@ def run(
         "dates": dates,
         "recorder_db": str(recorder_db),
         "vendor_db": str(vendor_db),
-        "sessions": {
-            day: {
-                "quotes": quotes_layer(recorder_db, vendor_db, symbol, day),
-                "profile": profile_layer(recorder_db, vendor_db, symbol, day),
-            }
-            for day in dates
-        },
+        "sessions": {},
     }
+    rep = progress.Reporter(f"backtest-validate-{module}")
+    rep.phase("layers", total=len(dates), unit="sessions")
+    for day in dates:
+        rep.at("layers", day)
+        report["sessions"][day] = {
+            "quotes": quotes_layer(recorder_db, vendor_db, symbol, day),
+            "profile": profile_layer(recorder_db, vendor_db, symbol, day),
+        }
+        rep.advance("layers")
+    rep.close_phase("layers")
     rec_gap, ven_gap = median_gap(recorder_db, symbol, dates), median_gap(vendor_db, symbol, dates)
     report["sample_gap_seconds"] = {"recorder": rec_gap, "vendor": ven_gap}
     if rec_gap and ven_gap and ven_gap >= COARSER_RATIO * rec_gap:
@@ -494,10 +522,11 @@ def run(
                 thinned_db=thinned,
                 command=command,
                 outcome_keys=outcome_keys,
+                rep=rep,
             )
     else:
         report["decisions"] = decisions_layer(
-            recorder_db, vendor_db, dates, runner=runner, command=command, outcome_keys=outcome_keys
+            recorder_db, vendor_db, dates, runner=runner, command=command, outcome_keys=outcome_keys, rep=rep
         )
     out_dir = paths.results_dir() / "validation"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -506,6 +535,7 @@ def run(
     path = out_dir / f"{prefix}{symbol.upper()}-{dates[0]}_{dates[-1]}.json"
     path.write_text(json.dumps(report, indent=1), encoding="utf-8")
     report["written"] = str(path)
+    rep.finish("done")
     return report
 
 

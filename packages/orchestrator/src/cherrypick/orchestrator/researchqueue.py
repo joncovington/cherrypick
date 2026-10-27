@@ -44,6 +44,7 @@ fetches and scripts by subprocess -- it imports no other package.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -55,6 +56,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as _home
+from cherrypick.core import progress as _progress
 
 from .util import CREATE_NO_WINDOW, pid_alive
 
@@ -511,24 +513,9 @@ def result_of(row: dict, report: dict, log: Path) -> dict:
     return out
 
 
-def fetch_progress(row: dict, *, python: str | None = None, timeout: float = 60.0) -> dict | None:
-    """A chain fetch row's progress through its request file, from the backtest package's own
-    `chain-progress` verb (by subprocess: this package never imports a module). Counts, rate and ETA
-    only. None for any other kind, or when the read fails -- a meter is never a reason to fail a list."""
-    if row.get("kind") != "fetch-chains":
-        return None
-    args = json.loads(row["args"]) if isinstance(row.get("args"), str) else (row.get("args") or {})
-    req = args.get("requests")
-    if not req:
-        return None
-    try:
-        res = subprocess.run(
-            [python or sys.executable, "-m", "cherrypick.backtest", "chain-progress", "--requests", str(req)],
-            capture_output=True, text=True, timeout=timeout, creationflags=CREATE_NO_WINDOW,
-        )  # fmt: skip
-        return json.loads(res.stdout) if res.returncode == 0 else None
-    except (OSError, subprocess.SubprocessError, ValueError):
-        return None
+def progress_file(task_id: int) -> Path:
+    """Where queued task `task_id` reports its progress (`core.progress`)."""
+    return _progress.progress_dir() / f"q{task_id}.json"
 
 
 def rows(path: Path | None = None, *, study: str | None = None, limit: int = 200) -> list[dict]:
@@ -667,6 +654,9 @@ def run_next(
             fh = log.open("a", encoding="utf-8")
             fh.write(f"\n=== run {pick['runs'] + 1} at {_now_iso()} ET: {' '.join(argv)}\n")
             fh.flush()
+            # The task's progress file (core.progress): the job writes it, its children report beside
+            # it, and queue-list reads it -- no counting subprocess per row.
+            env = dict(os.environ, **{_progress.ENV: str(progress_file(pick["id"]))})
             proc = spawn(
                 argv,
                 stdout=subprocess.PIPE,
@@ -674,6 +664,7 @@ def run_next(
                 cwd=str(repo_root()),
                 text=True,
                 creationflags=CREATE_NO_WINDOW,
+                env=env,
             )
             conn.execute(
                 "UPDATE tasks SET status = 'running', started_at = ?, runs = runs + 1, pid = ?, note = NULL"

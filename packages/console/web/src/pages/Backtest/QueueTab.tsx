@@ -61,32 +61,27 @@ export function resultLine(t: ResearchTask): string {
   return parts.join(" · ");
 }
 
-/** "1h 51m" / "12m" / "done". */
-export function etaText(minutes: number | null): string {
-  if (minutes === null) return "no recent answers";
-  if (minutes <= 0) return "done";
-  const h = Math.floor(minutes / 60);
-  return h > 0 ? `${h}h ${minutes % 60}m` : `${minutes}m`;
-}
 
-/** "6,000 of 10,000 (60.0%) · 200/min · ~20m left" -- and "stalled" when nothing has been
- *  answered for 10 minutes while the row is not finished. */
+/** The job's own one-line reading, with "stalled" or "orphaned" said plainly when the reader concluded
+ *  it (the orchestrator puts both in `line`; a finished job adds its state). */
 export function progressLine(p: NonNullable<ResearchTask["progress"]>): string {
-  const pct = p.total > 0 ? (p.answered / p.total) * 100 : 0;
-  const parts = [`${p.answered.toLocaleString("en-US")} of ${p.total.toLocaleString("en-US")} (${pct.toFixed(1)}%)`];
-  if (p.ratePerMin !== null) parts.push(`${Math.round(p.ratePerMin)}/min`, `~${etaText(p.etaMinutes)} left`);
-  else if (p.answered < p.total) parts.push(p.lastAnswerAgeS !== null && p.lastAnswerAgeS > 600 ? "stalled" : "not started");
+  const pct = p.fraction !== null ? `${(p.fraction * 100).toFixed(1)}%` : null;
+  const parts = [pct, p.line || null].filter((x): x is string => x !== null);
+  if (p.state === "done" || p.state === "failed") parts.push(p.state);
+  if (p.note) parts.push(p.note);
   return parts.join(" · ");
 }
 
 function Meter({ p }: { p: NonNullable<ResearchTask["progress"]> }) {
-  const frac = p.total > 0 ? Math.min(1, p.answered / p.total) : 0;
-  const by = Object.entries(p.byStatus).map(([k, v]) => `${v.toLocaleString("en-US")} ${k}`).join(", ");
+  const frac = p.fraction ?? 0;
+  const detail = p.phases.map((ph) => `${ph.name}: ${ph.done}${ph.total !== null ? ` of ${ph.total}` : ""}`).join("; ");
   return (
-    <div className="queue-meter" title={by}>
-      <div className="queue-meter-bar" role="progressbar" aria-valuemin={0} aria-valuemax={p.total} aria-valuenow={p.answered}>
-        <div className="queue-meter-fill" style={{ width: `${(frac * 100).toFixed(1)}%` }} />
-      </div>
+    <div className="queue-meter" title={detail}>
+      {p.fraction !== null ? (
+        <div className="queue-meter-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(frac * 100)}>
+          <div className="queue-meter-fill" style={{ width: `${(frac * 100).toFixed(1)}%` }} />
+        </div>
+      ) : null}
       <span className="muted">{progressLine(p)}</span>
     </div>
   );

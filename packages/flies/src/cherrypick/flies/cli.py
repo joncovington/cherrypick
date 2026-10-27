@@ -275,12 +275,19 @@ def cmd_replay_check(args) -> int:
     if paper is None:
         print(json.dumps({"ok": False, "error": "no paper ledger"}))
         return 1
+    from cherrypick.core import progress
+
     config = load_config(args.config)
-    sessions = [
-        replay_check.decision_check(config, day.strip(), paper, arm=args.arm, history_db=args.history_db)
-        for day in args.dates.split(",")
-        if day.strip()
-    ]
+    days = [day.strip() for day in args.dates.split(",") if day.strip()]
+    sessions = []
+    with progress.Reporter("flies-replay-check") as rep:
+        rep.phase("sessions", total=len(days), unit="days")
+        for day in days:
+            rep.at("sessions", day)
+            sessions.append(
+                replay_check.decision_check(config, day, paper, arm=args.arm, history_db=args.history_db)
+            )
+            rep.advance("sessions")
     # The summary reads every session's matched entries (the credit differences), so it is computed
     # before the detail is dropped from the reply -- dropping it first raised KeyError on every run
     # without --detail.

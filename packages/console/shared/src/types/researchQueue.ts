@@ -52,19 +52,40 @@ export interface ResearchTask {
   note: string | null;
   /** A queued row only: "ready", or why it waits now. */
   waits: string | null;
-  /** A chain fetch's meter through its request file (backtest `chain-progress`), whoever runs it; null
-   *  for other kinds or a finished row. Counts, rate and ETA only. */
+  /** What the task's own progress file says (`core.progress`), written by the job and its children;
+   *  null for a task that has not written one. */
   progress: ResearchProgress | null;
 }
 
+export interface ResearchProgressPhase {
+  name: string;
+  done: number;
+  total: number | null;
+  unit: string;
+  /** What the phase is working on now (a session date, a source). */
+  current: string | null;
+}
+
+/** One job's progress, joined from its own file and its live children's (outermost phase first). */
 export interface ResearchProgress {
-  total: number;
-  answered: number;
-  byStatus: Record<string, number>;
-  ratePerMin: number | null;
-  etaMinutes: number | null;
-  /** Seconds since the store last recorded an answer for this list: a stalled run shows here. */
-  lastAnswerAgeS: number | null;
+  /** The file stem: `q<id>` for a queued task, `<job>-<pid>` for a run started by hand. */
+  file: string;
+  job: string;
+  /** running / done / failed, or what the reader concluded: stalled (alive, silent 10 minutes) and
+   *  orphaned (gone without a final state). */
+  state: "running" | "done" | "failed" | "stalled" | "orphaned";
+  phases: ResearchProgressPhase[];
+  /** The overall share done across nested phases, 0-1; null when no phase has a total. */
+  fraction: number | null;
+  etaSeconds: number | null;
+  /** Seconds since the job last wrote. */
+  ageSeconds: number | null;
+  /** The orchestrator's one-line reading, e.g. "decisions 1/3 replays (vendor) · sessions 2/4 days". */
+  line: string;
+  note: string | null;
+  /** Epoch seconds. */
+  startedAt: number | null;
+  updatedAt: number | null;
 }
 
 export interface ResearchQueue {
@@ -73,4 +94,6 @@ export interface ResearchQueue {
   /** The nightly backtest-fetch window ("HH:MM" ET) no ThetaData task runs inside, on trading days. */
   blackout: [string, string] | null;
   tasks: ResearchTask[];
+  /** Runs started by hand (no queue row), running or finished in the last 30 days. */
+  byHand: ResearchProgress[];
 }

@@ -1,19 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { etaText, progressLine } from "../src/pages/Backtest/QueueTab";
+import { progressLine } from "../src/pages/Backtest/QueueTab";
 
-const p = { total: 10000, answered: 6000, byStatus: { complete: 5900 }, ratePerMin: 200.4, etaMinutes: 20, lastAnswerAgeS: 1 };
+const p = {
+  file: "q3",
+  job: "backtest-validate-meic",
+  state: "running" as const,
+  phases: [{ name: "sessions", done: 2, total: 4, unit: "days", current: "2026-10-15" }],
+  fraction: 0.5,
+  etaSeconds: 600,
+  ageSeconds: 3,
+  line: "sessions 2/4 days (2026-10-15) · ~10 min left",
+  note: null,
+  startedAt: 1000,
+  updatedAt: 1600,
+};
 
-describe("the queue's fetch meter", () => {
-  it("states counts, share, rate and time left", () => {
-    expect(progressLine(p)).toBe("6,000 of 10,000 (60.0%) · 200/min · ~20m left");
-    expect(etaText(12)).toBe("12m");
-    expect(etaText(0)).toBe("done");
+describe("the queue's progress meter", () => {
+  it("states the overall share and the job's own reading", () => {
+    expect(progressLine(p)).toBe("50.0% · sessions 2/4 days (2026-10-15) · ~10 min left");
   });
 
-  it("says stalled when nothing was answered for ten minutes, not started when nothing ever was", () => {
-    expect(progressLine({ ...p, ratePerMin: null, etaMinutes: null, lastAnswerAgeS: 900 })).toContain("stalled");
-    expect(progressLine({ ...p, answered: 0, ratePerMin: null, etaMinutes: null, lastAnswerAgeS: null })).toContain(
-      "not started",
-    );
+  it("says how a finished job ended, and its note", () => {
+    expect(progressLine({ ...p, state: "failed", note: "no official close" })).toContain("failed · no official close");
+  });
+
+  it("reads a job with no totals by its line alone", () => {
+    expect(progressLine({ ...p, fraction: null, line: "working 7" })).toBe("working 7");
   });
 });

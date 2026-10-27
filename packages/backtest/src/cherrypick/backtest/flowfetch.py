@@ -28,6 +28,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 from cherrypick.core import calendar as _cal
+from cherrypick.core import progress as core_progress
 
 from . import flow, paths
 from .vendor import FATAL, VendorRefusal
@@ -227,6 +228,9 @@ def fetch_plan(
                 counts["skipped"] += 1
             else:
                 todo.append((session, sym))
+        rep = core_progress.Reporter("backtest-fetch-flow")
+        rep.phase("days", total=len(plan), unit="symbol-days")
+        rep.advance("days", counts["skipped"])
         pending = iter(todo)
         with ThreadPoolExecutor(max(1, workers)) as ex:
             running = {}
@@ -266,11 +270,15 @@ def fetch_plan(
                         seconds.append(took)
                         n, kept = rec["orders"], len(rec["kept"])
                         log(f"{sym} {session}: {rec['status']}, {n} orders, {kept} kept, {took:.1f}s")
+                    rep.advance("days", current=f"{sym} {session}")
                     if fatal is None:
                         submit_next()
             if fatal is not None:
                 log(f"stopping: {fatal}")
+                rep.note(f"stopping: {fatal}")
+                rep.finish("failed")
                 raise fatal
+            rep.finish("done")
     finally:
         conn.close()
     return {

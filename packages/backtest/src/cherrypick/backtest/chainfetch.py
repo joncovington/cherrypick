@@ -30,6 +30,8 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import progress as core_progress
+
 from . import paths
 from .vendor import FATAL, VendorRefusal
 
@@ -159,6 +161,11 @@ def fetch_chains(
             "stopped": False,
         }
         started = time.monotonic()
+        # Answered of the whole request list, as `progress` below counts it: a resumed fetch starts
+        # where the last one stopped rather than at zero.
+        rep = core_progress.Reporter("backtest-fetch-chains")
+        rep.phase("requests", total=len(requests), unit="chains")
+        rep.advance("requests", report["already"])
         pending = iter(todo)
         with ThreadPoolExecutor(max(1, workers)) as ex:
             running = {}
@@ -204,6 +211,7 @@ def fetch_chains(
                         n = write_chain(conn, key, rows)
                         report["complete" if n else "empty"] += 1
                         report["rows"] += n
+                    rep.advance("requests", current=f"{key[0]} {key[1]}")
                     if not report.get("aborted"):
                         submit_next()
                 done_n = report["complete"] + report["empty"] + report["refused"]
@@ -213,6 +221,9 @@ def fetch_chains(
                 if report.get("aborted"):
                     break
         report["seconds"] = round(time.monotonic() - started, 1)
+        if report.get("stopped"):
+            rep.note("stopped: resumes from here on the next run")
+        rep.finish("failed" if report.get("aborted") else "done")
         return report
     finally:
         conn.close()
