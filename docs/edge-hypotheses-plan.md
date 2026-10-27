@@ -1287,10 +1287,111 @@ two-session fetch smoke test read row counts only.*
   10:30 sale. The holdout is now spent for this specification; a revised Time Warp needs a new one.
   Local result: `.../item19/study-2025-01-01-2026-10-23.json`.
 - **Not tested here:**
-  - his "Convex Stack" (one with-trend 4-5DTE fly, twice a week), declared as its own item after
-    this one;
+  - his "Convex Stack" (one with-trend 4-5DTE fly, twice a week), declared as item 20;
   - his late-day 0DTE broken-wing scalp, which depends on his chart levels. Its volume-profile rule
     is not yet known well enough to code.
+
+### 20. The Convex Stack: one with-trend SPX fly bought twice a week at about 5 DTE
+
+*Source: the same public channel as item 19, its live final-hour shows of 2026-10-15 to 10-22 and
+earlier teaching videos (transcripts kept in session scratch only). The host shows about five live
+trades and a "100% hit rate", with no ledger and no backtest. The user approved the test, and a read
+of the holdout whatever the design shows, on 2026-10-27. Declared here before any of it is fetched or
+run.*
+
+- **Question:** does buying the host's one out-of-the-money fly on the side his moving average
+  points to, twice a week at about 5 DTE, earn after costs?
+- **Where the edge would live:** a **signal** carried by **premium**. The claim is that a fly a
+  little out of the money on the trend side, a few days out, is cheap for how often a trending
+  market reaches it. If the trend rule carries nothing, the same fly on the other side does as well.
+- **Look-alikes:** `cherrypick hypotheses --similar` finds no rejected row with this setup, side,
+  structure and window. The nearest closed evidence: item 5 (an EMA trend gate on PMCC, failed),
+  item 4 (trend against reversion on 0DTE spreads, failed), item 19 (this host's overnight fly
+  pair, failed in design and holdout) and flies' 0DTE record (retired 2026-10-19). None held one
+  fly for several days.
+- **Rival explanations, each with its check:**
+  - *Drift:* in a rising market a call fly pays more often, trend rule or not. **Check:** the same
+    rule's fly on the other side is priced and scored at every entry and reported beside it, by
+    side. A trend rule that only matches its opposite has no signal.
+  - *A calm span:* **Check:** both time-halves of the design window must pass; results by width
+    band.
+  - *The exit carries it:* **Check:** three exit arms, Holm-adjusted together, one of them simply
+    held to expiry.
+  - *Overlap:* a Monday trade and the Thursday trade overlap by a day and share a move. **Check:**
+    entries are reported by weekday, and each week (Monday plus the Thursday after it) is also
+    tested as one observation beside the per-entry test.
+  - *Fills:* **Check:** the verdict is at the working price; mid and mid + $0.05 a fly beside it.
+- **The structure (his stated rules, with each gap filled by a declared mechanical stand-in):**
+  - SPX weekly options (SPXW). Entries on **Mondays**, expiring that **Friday**, and on
+    **Thursdays**, expiring the next **Tuesday**. A holiday expiry moves to the listed trading day
+    before it; an entry day that is a holiday is skipped. His replacement entry after an early close
+    is not in the test: it adds trades only after a winner, which mixes the exit into the count.
+  - Entry at **15:45 ET** on D, from D's 15:45 one-minute quote (his entries are in his 3 PM show;
+    he states no minute).
+  - **Direction:** a sine-weighted moving average, length 14, of SPX on four-hour bars of the
+    regular session (09:30-13:30 and 13:30-16:00, each closing at its last spot print in
+    `SPX-60s.db`'s spot history). At entry the second bar is still open and closes at the 15:45
+    spot, as a live chart shows it. The average above its value one bar earlier means a **call
+    fly**; otherwise a **put fly**. The weight of the i-th of the 14 bars is `sin(i·π/15)`.
+  - **Width** `w` by D−1's VIX close, his table at our declared point in each band: **25** below
+    17, **30** from 17 to 24.5, **40** from 24.5 to 32, **50** above 32.
+  - One symmetric fly, long 1 / short 2 / long 1, wings `w` from the body. The body is the strike
+    **nearest spot, on the trend side, whose fly costs at most 10% of `w`** at the working price,
+    walking out one listed strike at a time (his cap is 10%; his heat-map choice inside 5-10% cannot
+    be replayed). All four strikes two-sided. No such body: the entry is skipped and counted.
+  - No stop, no roll, no adjustment. A fly not sold settles at X's official close (intrinsic).
+- **Three exit arms**, Holm-adjusted together:
+  - **A, hold:** settle at X's close.
+  - **B, take profit at 3× the debit:** on the five-minute marks from 09:35 on each session after D,
+    sell at the first mark worth at least three times the fly's debit. Otherwise it settles. (His
+    "300-400%" is loose; 3× the debit is the declared point.)
+  - **C, two sessions in:** sell at the 15:45 mark of the second trading session after D (Wednesday
+    for a Monday entry, Monday for a Thursday's), his "usually two or three days in". A missing 15:45
+    mark uses that session's last mark before it; none at all settles, counted.
+- **Costs:** the suite's tastytrade schedule (`cherrypick.core.fees`), as item 19: $1.00 a contract
+  to open, exchange and regulatory fees on every leg, no commission to close, $5 per in-the-money
+  settlement symbol.
+- **Measured:** each entry's net in dollars at one contract, and as a share of its debit.
+- **Window and sample:**
+  - **Design:** 2022-05-16 to 2024-12-31, about 270 entries (the first once 14 four-hour bars
+    exist). Read for the verdict.
+  - **Holdout:** 2025-01-01 to 2026-10-23, about 180 entries, with the same rules unchanged. At the
+    user's request it is **run straight after the design whatever the design shows**. It counts
+    toward a pass only after a design pass; after a design fail it is reported as exploratory and
+    cannot overturn the fail.
+  - Fewer than 100 entries in a window is no verdict.
+- **Pass-or-fail rule**, per arm, all must hold:
+  - mean net per entry above zero with a one-sided t above 2, one entry one observation;
+  - Holm across the three arms;
+  - each time-half of the design window positive;
+  - still positive at **1.5× costs**;
+  - the week-as-one-observation t above 2 as well;
+  - then the holdout, with mean net above zero and a one-sided t above 2.
+- **Minimum detectable effect (B12):** from the design window's own spread of entry nets, recorded in
+  the local result. No comparable result exists to plan it from.
+- **Declared limits (B11):**
+  - a fly open at X's close settles at the SPX close in `SPX-60s.db`'s `daily_closes`, the vendor's
+    official close from 2024-05-13 and its last underlying print before; the two are reported apart;
+  - the path is fetched about 400 points either side of each session's spot; a leg outside it has no
+    mark that session, so arm B cannot sell then, and arm C falls back as above;
+  - entries skipped for missing quotes, bars or an unaffordable body are counted, by reason;
+  - the VIX band uses D−1's close, and the moving average only spot printed by 15:45 on D.
+- **Name split (B9):** does not apply; one symbol.
+- **Robustness report beside a pass (B13), never used to re-choose:**
+  - neighbours: the body at 5% and 7.5% of `w`; entry at 15:40 and 15:50; widths one band narrower
+    and wider; arm B at 2× and 4×;
+  - costs at 1.5× and 2×; the bootstrapped drawdown and losing streak; the largest size inside a
+    declared 10% of the account, passed at run time.
+- **Data:** `scripts/fetch_spx_convex_stack.py` writes `SPX-convex-stack.db`, declared in
+  `stores.STORES`: each entry's 15:40-15:50 chain at one minute, and that expiry on every session to
+  expiry at five minutes. The study reads only it, `SPX-60s.db`'s spot history and daily closes, and
+  Cboe's VIX history. Results go under the backtest data directory only; this plan records the
+  verdict.
+- **Decides:**
+  - **A pass:** a proposal for a paper arm beside the suite's loops, with the robustness report.
+  - **A fail or no verdict:** closes this structure as specified.
+- **Not tested here:** his 2025 "convexity stack" (both sides at 25-50 cents, 2-5 DTE, around
+  events) and his "Sigma Drift" (5-10 DTE), which have no mechanical rules in the transcripts.
 
 ## Not worth revisiting
 
