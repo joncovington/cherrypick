@@ -2221,10 +2221,13 @@ select.text-input {
   gap: 0.55rem;
 }
 
-/* The arm's own one line, beside its name: visible while the card is collapsed. */
+/* The arm's own one line, beside its name: visible while the card is collapsed. A sentence, so it
+   undoes the card title's capitals and tracking -- uppercased it read as a label, not prose. */
 .arm-summary {
   font-weight: normal;
-  font-size: 0.9em;
+  font-size: 12.5px;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .arm-facts {
