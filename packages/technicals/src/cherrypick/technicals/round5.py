@@ -10,7 +10,7 @@ committed before this module first ran. In brief:
   within the name's sector (the market report's sector map) -- or, as a side view, across every name
   with estimates.
 - **Two directional triggers, each both ways:**
-  - `stage`: the name becomes an early leader (`stage.classify`, the live rule) with no leader
+  - `stage`: the name becomes an early leader (`stage.series`, the live rule) with no leader
     reading of any stage in the FRESH sessions before; bearish, an early laggard likewise;
   - `trend`: the short-term trend score reaches Bullish (>= 3) from below; bearish, Bearish (<= -3)
     from above.
@@ -87,21 +87,8 @@ def decile(score: float | None, cutoffs: list[float] | None) -> int | None:
 
 
 def stage_series(closes: list[float | None], bench: list[float]) -> list[stage.Stage | None]:
-    """`stage.classify` on every session, both series on the benchmark's calendar."""
-    rule = stage.DEFAULT_RULE
-    out: list[stage.Stage | None] = []
-    for i in range(len(bench)):
-
-        def ex(n, i=i):
-            if i - n < 0:
-                return None
-            a, b = closes[i - n], closes[i]
-            if not (a and b):
-                return None
-            return (b / a - 1.0) - (bench[i] / bench[i - n] - 1.0)
-
-        out.append(stage.classify([ex(n) for n in rule.windows], ex(1), rule))
-    return out
+    """The live stage rule on every session, both series on the benchmark's calendar."""
+    return stage.series(closes, bench, stage.DEFAULT_RULE)
 
 
 def stage_trigger(stages: list[stage.Stage | None], i: int, side: str) -> bool:

@@ -2,7 +2,7 @@
 on -- the vendor's Early Breakout ... Early Breakdown watchlists, rebuilt so they outlive the
 subscription (it ends 2026-10-24).
 
-**From what.** The stage rule (`stage.py`, the one the editions score at 97% same side) over every
+**From what.** The stage rule (`stage.py`, the one the editions score at 99% same side) over every
 stock the store holds, on one session's close, against SPY. A list is one side and stage:
 
     Early Breakout             leader / early       Early Breakdown           laggard / early
@@ -22,7 +22,8 @@ rolling over (its names' median 1-10 score was 10 on that day).
 the chart session of the run that saved it. So each of our sessions is compared with the vendor's
 lists filed under that session AND the one before, on the vendor's names we hold bars for, all of
 them (not only the tradable ones): whichever agrees better says which close the vendor's evening
-lists describe. On the 2026-10-16 lists (captured the next day): 99% same side, 76% same stage.
+lists describe. On the 2026-10-16 lists (captured the next day): 100% same side, 96% same stage
+(99% and 76% with the excess rule before the 2026-10-27 refit).
 
     python -m cherrypick.technicals stage-lists [--session YYYY-MM-DD]
 """

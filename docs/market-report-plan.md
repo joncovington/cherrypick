@@ -827,6 +827,15 @@ varies by day; so the sharp test below ("the same 33 and 131") cannot hold as to
 by per-name side and stage agreement, with counts compared as rates. The rule is declared and
 re-scored as editions accumulate, not tuned further on five days.
 
+**Refit 2026-10-14, landed 2026-10-27: the stage is a channel breakout on the price ratio** (close
+over dividend-adjusted SPY). A leader's ratio is above every ratio of the prior 20 / 41 / 62
+sessions (early / building / confirmed), a laggard's below every one of the prior 14 / 30 / 62; no
+margins and no one-day condition. On the 14 editions after the fitting ten it places 99.4% of the
+vendor's listings on the same side and 97.3% on the same stage, with extras at 3.9% of the
+vendor's listings, against 98.3% / 78.1% / 88% for the rule above. The "~30% extra" was the old
+rule's error, not the vendor's universe. Breadth's bullish share now correlates 0.98 with the
+vendor's over the 24 edition sessions. The rule above stays as `stage.EXCESS_RULE`.
+
 **Rotation and the breadth history landed the same day.** Rotation is the relative-rotation quadrant
 of a slow (63-session) and fast (10-session) relative trend, against SPY or, for the nine
 "Asset" funds, AOR, with 3%/1% neutral bands: the vendor's exact state for 91 of 119 placements
@@ -868,7 +877,11 @@ them with tastytrade's history brought 36 of 40 names to 99% or better.
 + [short > long] + 2[close > long WMA] - 3` over 20/50 and 50/200 sessions, -4 on a close below both
 and under the lower 20-day Bollinger band. Exact on 99.7% (short) and 99.6% (long) of days on our
 own bars, against ~51% for the baseline. The scan rules were refitted on the true scores: 88% of
-flagged names, from 84%. Level selection is measured (`score-level-selection`) but not solved.
+flagged names, from 84%. **Refit again 2026-10-14, landed 2026-10-27** (`signals.py`): trend
+following on CCI(50)'s sign, the close against the 26 EMA and RSI(14) about 50.5; counter-trend on
+the mean of RSI(10) and RSI(40), options-liquid names only (our contract count standing in for the
+vendor's liquidity rank); the CCI rally needs bearish sentiment too. On the 12 scan lists after
+the fitting five: recall 92.5%, precision 81.3%, against 86.7% / 64.9% for the rules before. Level selection is measured (`score-level-selection`) but not solved.
 
 - Dividend-adjusted daily bars first: the level placement depends on them (see "What the
   platform's charts show"). Phase 2 supplies them.

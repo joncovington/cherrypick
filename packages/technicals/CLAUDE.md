@@ -88,13 +88,18 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
 
 ## Solved rules (keep the numbers; re-score, do not re-litigate)
 
-- **Stage** (`stage.py`, `score-stages`; stages decoded from ticker colours by `editions.py`): early
-  on the one-month screen only, building when one and two months agree, confirmed when all three do,
-  **plus a fourth condition — the one-day move against the index is on the same side**. Parameters
-  10/30/63 sessions, margins 1%/2%/2%, against dividend-adjusted SPY: 955 of 980 vendor listings on
-  the same side (97%), same stage on 82%. Fitted on five days, so the declared `StageRule` is
-  re-scored as editions accumulate, not tuned further. About 30% extra listings are structural (the
-  vendor's universe varies by day), so counts are compared **as rates, never totals**.
+- **Stage** (`stage.py`, `score-stages`; stages decoded from ticker colours by `editions.py`): **a
+  channel breakout on the price ratio** (adjusted close / dividend-adjusted SPY). A leader's ratio is
+  above every ratio of the prior 20 sessions (early), of the prior 20 and 41 (building), of the
+  prior 20, 41 and 62 (confirmed); a laggard's is below every one of the prior 14, 30 and 62. No
+  margins, no one-day condition. Refit 2026-10-14, landed 2026-10-27; scored on all 24 editions
+  (the answer key ends at session 2026-10-22, so these are final): fit half (10 sessions through
+  10-02) 97.3% same side, 97.5% same stage, 5.9% extra; later half (14 unseen) **99.4% side, 97.3%
+  stage, 3.9% extra**. The rule before (`EXCESS_RULE`: excess returns over 10/30/63 sessions,
+  margins 1/2/2%, plus the one-day move on the same side) scored 97.6/82.4/73% and 98.3/78.1/88%.
+  The "~30% structural extras" once put down to the vendor's universe varying by day were the
+  rule's. Reading "each of the prior N" as the one ratio N back loses (94% side, 77% stage, extras
+  2x listings, later half). `score-stages --rule excess` re-scores the old rule.
 - **Rotation** (`rotation.py`, `score-rotation`): the daily quadrant (refit 2026-10-17). Relative
   strength against SPY, or AOR for the 13 funds the vendor types "Asset"; its level is relative
   strength over its own 63-session average, its momentum that level against itself 10 sessions back,
@@ -103,9 +108,9 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   The banded rule before it (`BANDED_RULE`, 3%/1% bands) scored 55% and ran weeks late.
   `editions.decode_rotation` finds headings **by markup, never by phrase** (the paragraph above
   uses the same words).
-- **Breadth** rebuilds the daily chart from prices: over sixteen sessions (Sept 2-24, eleven unused
-  in fitting) bullish share correlates 0.93 (leaders 0.78, laggards 0.90) — the out-of-sample
-  evidence the stage rule is the vendor's.
+- **Breadth** rebuilds the daily chart from prices: over the 24 edition sessions our bullish share
+  (every candidate) correlates 0.98 with the vendor's stated counts (leaders 0.997, laggards 0.95);
+  the excess rule managed 0.91 (0.90, 0.85) on the same sessions, 0.93 on the sixteen of Sept 2-24.
 - **Indicators** (`indicators.py`): SMA, EMA, WMA, sd, Wilder's RSI, Lambert's CCI (period 14),
   each undefined until its window is full.
 - **Trend scores** (`trend.py`, `score-trends`): `2[close > short SMA] + 2[close > long SMA] +
@@ -130,10 +135,18 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   only nine cut-offs per session (`rank_cutoffs`, last 15 sessions); report, chart files and
   `score-rank` all use them, and a session without cut-offs falls back to ranking within the store.
   Not dividend-adjusted across the market (a point or so on six months).
-- **Scan rules** (`signals.py`, `score-signals`): 245 of 278 flagged names (88%). Trend rules use whole
-  labels (Bullish 3..4, Bearish -3..-4), never "trend = -4"; bullish trend-following is RSI(14)
-  40..50; CCI rules run on CCI-5; a dip is yesterday's CCI below -100 with today's back above. Both
-  saved lists were used in the refit, so there is no unseen day yet; re-score as lists accrue.
+- **Scan rules** (`signals.py`, `score-signals`; refit 2026-10-14, landed 2026-10-27). Trend
+  following: CCI(50) > 0, close below the 26 EMA, RSI(14) <= 50.5 (bearish mirrored, >= 50.5).
+  Counter-trend: the mean of RSI(10) and RSI(40) <= 35 / >= 70, **options-liquid names only** — our
+  proxy for the vendor's liquidity rank (gone with it): >= 200 option contracts a day on our public
+  security list (`signals.LIQUID_CONTRACTS`), an unrated name counting as liquid. CCI rally: short
+  trend <= -2, sentiment Bearish, CCI(5) from above +100 to at or below it. CCI dip unchanged
+  (yesterday's CCI(5) below -100, today's back above, short trend >= 3). On all 17 saved lists (the
+  last is session 2026-10-23, so final): fit (5 lists through 10-02) recall 95.0%, precision 79.4%;
+  later (12 unseen) **recall 92.5%, precision 81.3%**. The rules before (`FIT_2026_09_29`, trend
+  labels and RSI(14)) scored 87.5/65.3% and 86.7/64.9%; `score-signals --rules fit-2026-09-29`.
+  **The scorer dates each idea by its `dateOfScan`**, not the folder (three ideas were saved a
+  session late), and scores only sessions with a list of their own.
 - **Analyst revisions** (`revisions.py`, `score-revisions`): a tag is an upgrade or downgrade, an
   initiation on a side, or a target move of 5%+, from **that session's events only** (every matched
   tag had lag zero). 32 of 37 board tags agree, 1 extra in 77 untagged rows; all five misses are the
@@ -162,6 +175,9 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
     half by sector) and scan 9/16 (the two trend-following rules over the session and the one
     before, read off the saved scan lists). Fundamentals, fundamentals vs price and the scan are
     marked approximate; 114 of 130 rows land on the board's side. Not counted: the three flow tags.
+    Re-scored on every saved board with the refit stage and scan rules (2026-10-27): stage 114/115
+    at 5 extra (109 at 14 before), scan 17/21 at 1 extra (12 at 6 before), 163 rows on the board's
+    side (161 before).
   - A tie has no side. The history store is topped up each morning for it (`history land` 06:20,
     `history fundamentals` 06:25 ET); the board is written at 06:45 ET to
     `data/technicals/board/<session>.json`; record-only.
@@ -223,8 +239,9 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
 - **The stage lists** (`stagelists.py`, `stage-lists`, 2026-10-17): the vendor's six stage
   watchlists (Early Breakout ... Early Breakdown) rebuilt from the stage rule on one close,
   **options-tradable names only** (the vendor's are mostly not: 34 of its 98 Early Breakouts on
-  10-16). On the vendor's 10-16 lists, 99% same side and 76% same stage; ours promotes a name to
-  confirmed a step sooner. The vendor's watchlists carry no date, so each session is scored against
+  10-16). On the vendor's 10-16 lists (the only ones saved), 100% same side and 96% same stage
+  with the channel rule (99% and 76% with the excess rule before it, which promoted a name to
+  confirmed a step sooner). The vendor's watchlists carry no date, so each session is scored against
   the vendor's filed under it and the one before, to learn which close its evening lists describe.
   Mirrored to tastytrade by hand (`scripts/sync_stage_watchlists.py --apply`), never on a schedule.
 - **The earnings calendar** (`earnings_calendar.py`, `earnings-calendar`, 2026-10-17;

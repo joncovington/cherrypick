@@ -233,49 +233,95 @@ def score_rank() -> dict:
     }
 
 
-def score_signals() -> dict:
-    """Our scan rules against every scan list the collector has saved: per rule, the vendor's flagged
-    names we catch, and the stocks we flag that it did not (among those the store holds)."""
-    from . import signals, symbols
+# The scan refit of 2026-10-14 fitted on the lists of the sessions through this one; the later lists
+# are the unseen half every re-score reports apart.
+SCAN_FIT_THROUGH = "2026-10-02"
 
-    root = paths.market_report_dir() / "vendor-charts"
-    conn = store.connect()
-    stocks = store.stocks(conn, symbols.candidates())
-    per_rule = {r: {"flagged": 0, "caught": 0, "false": 0} for r in signals.RULES}
-    sessions = []
-    for path in sorted(root.glob("????-??-??/trade-ideas.json")):
+
+def scan_lists() -> dict[str, dict[str, set[str]]]:
+    """{session: {symbol: the rules it was flagged by}} from every saved scan list. Each idea is
+    dated by its own `dateOfScan`, never by the folder it was saved in: a list can carry an idea
+    from the session before (three did, in the lists of 2026-09-30, 10-12 and 10-13). Only a session
+    with a list of its own is scored -- a stray idea dated to a session no list was saved for
+    (2026-09-29) is one name of an unseen list, and scoring it would count every flag of ours that
+    day as false."""
+    paths_ = sorted((paths.market_report_dir() / "vendor-charts").glob("????-??-??/trade-ideas.json"))
+    out: dict[str, dict[str, set[str]]] = {p.parent.name: {} for p in paths_}
+    for path in paths_:
         try:
             ideas = json.loads(path.read_text(encoding="utf-8")).get("tradeIdeas") or []
         except (OSError, ValueError):
             continue
-        day = path.parent.name
-        theirs: dict[str, set] = {}
         for t in ideas:
+            day = str(t.get("dateOfScan") or "")[:10] or path.parent.name
             sym = str(t.get("symbol", "")).split(".")[0]
             for rule in t.get("rules") or []:
-                theirs.setdefault(sym, set()).add(rule.get("ruleMatch"))
-        ours: dict[str, set] = {}
-        for sym in sorted(set(theirs) | set(stocks)):
-            bars = [b for b in store.adjusted_bars(conn, sym) if b.date <= day]
-            if not bars or bars[-1].date != day:
-                continue
-            r = signals.readings([b.high for b in bars], [b.low for b in bars], [b.close for b in bars])
-            if r is not None:
-                ours[sym] = set(signals.matches(r))
-        for rule in signals.RULES:
-            flagged = {s for s, rs in theirs.items() if rule in rs and s in ours}
-            mine = {s for s, rs in ours.items() if rule in rs}
-            per_rule[rule]["flagged"] += len(flagged)
-            per_rule[rule]["caught"] += len(flagged & mine)
-            per_rule[rule]["false"] += len(mine - {s for s, rs in theirs.items() if rule in rs})
-        sessions.append(day)
-    conn.close()
+                if day in out:
+                    out[day].setdefault(sym, set()).add(rule.get("ruleMatch"))
+    return {d: v for d, v in out.items() if v}
+
+
+def _scan_rates(per_rule: dict) -> dict:
     flagged = sum(v["flagged"] for v in per_rule.values())
     caught = sum(v["caught"] for v in per_rule.values())
+    false = sum(v["false"] for v in per_rule.values())
     return {
-        "sessions": sessions,
         "caught": caught,
         "flagged": flagged,
-        "rate": round(caught / flagged, 3) if flagged else None,
+        "false": false,
+        "recall": round(caught / flagged, 3) if flagged else None,
+        "precision": round(caught / (caught + false), 3) if caught + false else None,
+    }
+
+
+def score_signals(rules: str | None = None, split: str = SCAN_FIT_THROUGH) -> dict:
+    """Our scan rules against every scan list the collector has saved: per rule, the vendor's flagged
+    names we catch (recall), and the stocks we flag that it did not (among those the store holds),
+    over every list and apart for the sessions through `split` and after. The counter-trend rules'
+    liquidity reads one security list, the newest scored session's: the public list begins
+    2026-10-16, and a name's option volume moves slowly against a month of lists."""
+    from . import signals, symbols
+
+    rules = rules or signals.CURRENT
+    vendor = scan_lists()
+    conn = store.connect()
+    stocks = store.stocks(conn, symbols.candidates())
+    contracts = signals.liquid_contracts(max(vendor)) if vendor else {}
+    readings: dict[str, dict[str, signals.Readings]] = {}
+    for sym in sorted({*stocks, *(s for day in vendor.values() for s in day)}):
+        bars = store.adjusted_bars(conn, sym)
+        if bars:
+            hlc = [b.high for b in bars], [b.low for b in bars], [b.close for b in bars]
+            series = signals.readings_series(*hlc)
+            readings[sym] = {b.date: r for b, r in zip(bars, series, strict=True) if r is not None}
+    conn.close()
+    blank = lambda: {r: {"flagged": 0, "caught": 0, "false": 0} for r in signals.RULES}  # noqa: E731
+    per_rule, halves = blank(), {"fit": blank(), "later": blank()}
+    for day, theirs in sorted(vendor.items()):
+        ours = {
+            sym: set(signals.matches(by_day[day], signals.is_liquid(sym, contracts), rules))
+            for sym, by_day in readings.items()
+            if (sym in theirs or sym in stocks) and day in by_day
+        }
+        half = halves["fit" if day <= split else "later"]
+        for rule in signals.RULES:
+            listed = {s for s, rs in theirs.items() if rule in rs}
+            flagged = listed & set(ours)
+            mine = {s for s, rs in ours.items() if rule in rs}
+            for tally in (per_rule[rule], half[rule]):
+                tally["flagged"] += len(flagged)
+                tally["caught"] += len(flagged & mine)
+                tally["false"] += len(mine - listed)
+    return {
+        "rules": rules,
+        "sessions": sorted(vendor),
+        **_scan_rates(per_rule),
+        "rate": _scan_rates(per_rule)["recall"],
+        "split": split,
+        "halves": {
+            name: {"sessions": sum(1 for d in vendor if (d <= split) == (name == "fit")), **_scan_rates(h)}
+            for name, h in halves.items()
+        },
+        "liquidity": {"contracts_at_least": signals.LIQUID_CONTRACTS, "names_rated": len(contracts)},
         "by_rule": per_rule,
     }

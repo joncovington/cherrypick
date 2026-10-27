@@ -5,7 +5,7 @@ from __future__ import annotations
 from cherrypick.technicals import editions, stage, stage_score, store
 from cherrypick.technicals.stage import Stage, StageRule, classify
 
-RULE = StageRule(windows=(2, 3, 4), margins=(0.01, 0.02, 0.02), day_margin=0.0)
+RULE = StageRule(windows=(2, 3, 4), laggard_windows=None, method="excess", margins=(0.01, 0.02, 0.02))
 
 
 def test_all_three_windows_and_the_day_agreeing_is_confirmed():
@@ -92,6 +92,68 @@ def test_the_scorer_counts_side_stage_extra_and_missed(monkeypatch):
         }
     }
     monkeypatch.setattr(editions, "load", lambda: vendor)
-    result = stage_score.score(StageRule(windows=(1, 2, 3), margins=(0.01, 0.01, 0.01)), conn)
+    excess_rule = StageRule(
+        windows=(1, 2, 3), laggard_windows=None, method="excess", margins=(0.01, 0.01, 0.01)
+    )
+    result = stage_score.score(excess_rule, conn)
     assert result["totals"] == {"listed": 3, "side": 2, "stage": 1, "extra": 0, "missed": 1}
     assert result["sessions"]["2026-09-24"]["counts"] == {"ours": [1, 1], "vendor": [2, 1]}
+    assert (
+        result["halves"]["fit"]["totals"]["listed"] == 3
+        and result["halves"]["later"]["totals"]["editions"] == 0
+    )
+    later = stage_score.score(excess_rule, conn, split="2026-09-23")["halves"]
+    assert later["later"]["totals"]["side"] == 2 and later["fit"]["totals"]["editions"] == 0
+
+
+# --------------------------------------------------------------------------- the channel rule
+
+CHANNEL = StageRule(windows=(2, 3, 4), laggard_windows=(1, 2, 4))
+
+
+def test_the_live_rule_is_the_channel_and_the_excess_rule_stays_named():
+    assert stage.DEFAULT_RULE is stage.CHANNEL_RULE and stage.CHANNEL_RULE.method == "channel"
+    assert stage.CHANNEL_RULE.windows == (20, 41, 62) and stage.CHANNEL_RULE.side_windows("laggard") == (
+        14,
+        30,
+        62,
+    )
+    assert stage.EXCESS_RULE.windows == (10, 30, 63) and stage.EXCESS_RULE.name == "fit-2026-09-27"
+    assert stage.RULES == {"channel": stage.CHANNEL_RULE, "excess": stage.EXCESS_RULE}
+
+
+def test_a_leader_is_above_every_ratio_of_each_prior_window():
+    # oldest first; the last is today. Above all 4 prior: confirmed.
+    assert stage.classify_channel([1.0, 1.1, 1.2, 1.3, 1.4], CHANNEL) == Stage("leader", "confirmed")
+    # Above the prior 2 and 3, not the 4th back (1.5): building.
+    assert stage.classify_channel([1.5, 1.1, 1.2, 1.3, 1.4], CHANNEL) == Stage("leader", "building")
+    # Above the prior 2 only: early.
+    assert stage.classify_channel([1.5, 1.5, 1.2, 1.3, 1.4], CHANNEL) == Stage("leader", "early")
+
+
+def test_every_ratio_in_the_window_counts_not_only_the_one_n_back():
+    """The channel, not a point comparison: 3 back is lower than today, but 2 back was higher."""
+    got = stage.classify_channel([1.0, 1.0, 1.0, 1.5, 1.4], CHANNEL)
+    assert got is None or got.side != "leader"
+
+
+def test_a_laggard_reads_its_own_windows():
+    # Below the one prior (1-session channel) and the prior 2, not all 4 (0.8 four back): building.
+    assert stage.classify_channel([0.8, 1.0, 1.0, 1.0, 0.9], CHANNEL) == Stage("laggard", "building")
+    assert stage.classify_channel([1.0, 1.0, 1.0, 0.95, 0.9], CHANNEL) == Stage("laggard", "confirmed")
+
+
+def test_a_missing_ratio_or_short_history_is_never_a_channel_verdict():
+    assert stage.classify_channel([1.0, None, 1.2, 1.3, 1.4], CHANNEL) is None
+    assert stage.classify_channel([1.1, 1.2, 1.3, 1.4], CHANNEL) is None
+
+
+def test_stages_on_reads_the_ratio_to_the_benchmark_on_its_calendar():
+    days = [f"d{k}" for k in range(6)]
+    bench = {d: 100.0 * 1.01**k for k, d in enumerate(days)}
+    up = {d: 50.0 * 1.03**k for k, d in enumerate(days)}  # rises faster than the benchmark
+    flat = {d: 50.0 for d in days}  # falls against a rising benchmark
+    got = stage.stages_on("d5", {"UP": up, "FLAT": flat}, bench, CHANNEL)
+    assert got == {"UP": Stage("leader", "confirmed"), "FLAT": Stage("laggard", "confirmed")}
+    assert stage.series([up[d] for d in days], [bench[d] for d in days], CHANNEL)[5] == got["UP"]
+    assert stage.stages_on("d3", {"UP": up}, bench, CHANNEL) == {}, "not enough history"

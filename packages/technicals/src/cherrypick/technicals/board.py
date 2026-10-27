@@ -17,6 +17,9 @@ one of the 430 points the other way), and every listed row has at least three.
 | fvp | the fundamentals place against our 1-10 rank | fundamentals ahead / price ahead | 29 of 50 |
 | scan | `signals.py` trend-following rules, the session or the one before | trend following | 9 of 16 |
 
+Re-scored on every saved board 2026-10-27, when the stage and scan rules were refit: stage 114 of
+115 at 5 extras (the rule before, 109 at 14), scan 17 of 21 at 1 extra (before, 12 at 6).
+
 Rotation is the daily quadrant (refit 2026-10-17; the banded rule before it found 61 of 96).
 Fundamentals is our score -- four measures ranked against the name's INDUSTRY peers
 (`fundamentals.peer_groups`; its sector where fewer than five), margin twice -- placed across the

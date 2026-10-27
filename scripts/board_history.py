@@ -11,7 +11,7 @@ for edge-hypotheses item 14's selector B (docs/edge-hypotheses-plan.md). It live
 because it reads `history.db`, which `packages/backtest` may not import.
 
 **The same rules, read as of each session.** Every method is the live module's own function:
-- stage: `round5.stage_series` (`stage.classify` on SPY's calendar, as `stage.stages_on` reads it);
+- stage: `round5.stage_series` (`stage.series` on SPY's calendar, as `stage.stages_on` reads it);
 - rotation: `rotation.states_on` on the sector funds' closes cut at the session;
 - fundamentals: `fundamentals.market_percentiles` (industry peers) on the newest weekly estimate
   snapshot on or before the session, with `board`'s tails;
@@ -57,7 +57,6 @@ from cherrypick.technicals import (
     board,
     fundamentals,
     history,
-    indicators,
     levels,
     paths,
     revisions,
@@ -67,7 +66,6 @@ from cherrypick.technicals import (
     stage,
     store,
     symbols,
-    trend,
 )
 
 START = "2017-10-26"  # Dolt's first estimate snapshot: fundamentals and fvp need it
@@ -108,22 +106,10 @@ class Market:
 def scan_sides(highs: list[float], lows: list[float], closes: list[float]) -> list[set[int]]:
     """For each index, the sides of the trend-following rules `signals.matches` finds on the bars up
     to it (empty when any reading is missing). Causal: every indicator here reads only the past."""
-    ts = trend.scores(closes, trend.SHORT_TERM)
-    tl = trend.scores(closes, trend.LONG_TERM)
-    c5 = indicators.cci(highs, lows, closes, 5)
-    c14 = indicators.cci(highs, lows, closes, 14)
-    r14 = indicators.rsi(closes, 14)
-    out: list[set[int]] = []
-    for k in range(len(closes)):
-        if k < 1:
-            out.append(set())
-            continue
-        r = signals.Readings(ts[k], tl[k], c5[k], c5[k - 1], c14[k], r14[k])
-        if any(v is None for v in vars(r).values()):
-            out.append(set())
-            continue
-        out.append({board.SCAN_SIDE[m] for m in signals.matches(r) if m in board.SCAN_SIDE})
-    return out
+    return [
+        set() if r is None else {board.SCAN_SIDE[m] for m in signals.matches(r) if m in board.SCAN_SIDE}
+        for r in signals.readings_series(highs, lows, closes)
+    ]
 
 
 def rank_score_at(closes: list[float], i: int) -> float | None:

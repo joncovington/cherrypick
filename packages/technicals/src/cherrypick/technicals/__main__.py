@@ -154,10 +154,10 @@ def cmd_check_vendor(args) -> int:
     return 0 if result["prices"] and result["agree"] == result["prices"] else 1
 
 
-def cmd_score_stages(_args) -> int:
-    from . import stage_score
+def cmd_score_stages(args) -> int:
+    from . import stage, stage_score
 
-    print(json.dumps(stage_score.score(), indent=1))
+    print(json.dumps(stage_score.score(stage.RULES[args.rule]), indent=1))
     return 0
 
 
@@ -437,10 +437,10 @@ def cmd_score_rank(_args) -> int:
     return 0
 
 
-def cmd_score_signals(_args) -> int:
+def cmd_score_signals(args) -> int:
     from . import chart_score
 
-    print(json.dumps(chart_score.score_signals(), indent=1))
+    print(json.dumps(chart_score.score_signals(args.rules), indent=1))
     return 0
 
 
@@ -738,9 +738,11 @@ def main(argv: list[str] | None = None) -> int:
     st = sub.add_parser("stages", help="the relative-strength stage of every candidate on a session")
     st.add_argument("--session", help="ISO date (default: the latest session stored)")
     st.set_defaults(fn=cmd_stages)
-    sub.add_parser("score-stages", help="score the stage rule against every saved edition").set_defaults(
-        fn=cmd_score_stages
+    ss = sub.add_parser("score-stages", help="score the stage rule against every saved edition")
+    ss.add_argument(
+        "--rule", choices=["channel", "excess"], default="channel", help="excess: the rule before 2026-10-27"
     )
+    ss.set_defaults(fn=cmd_score_stages)
     ro = sub.add_parser("rotation", help="every rotation fund's state on a session")
     ro.add_argument("--session", help="ISO date (default: the latest session stored)")
     ro.set_defaults(fn=cmd_rotation)
@@ -806,9 +808,9 @@ def main(argv: list[str] | None = None) -> int:
         "score-level-selection", help="where the vendor's levels sit among the grid points, against chance"
     ).set_defaults(fn=cmd_score_level_selection)
     sub.add_parser("score-rank", help="our 1-10 rank against the vendor's").set_defaults(fn=cmd_score_rank)
-    sub.add_parser("score-signals", help="our scan rules against every saved scan list").set_defaults(
-        fn=cmd_score_signals
-    )
+    sg = sub.add_parser("score-signals", help="our scan rules against every saved scan list")
+    sg.add_argument("--rules", choices=["fit-2026-10-27", "fit-2026-09-29"], help="default: fit-2026-10-27")
+    sg.set_defaults(fn=cmd_score_signals)
     hi = sub.add_parser("history", help="the historical study's store (docs/signal-log-plan.md)")
     hs = hi.add_subparsers(dest="history_cmd", required=True)
     hs.add_parser("land", help="land Dolt's whole daily history into history.db").set_defaults(

@@ -91,13 +91,14 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
 
     # Signals and the relative-strength leaders.
     sig: dict[str, list[str]] = {r: [] for r in signals.RULES}
+    contracts = signals.liquid_contracts(day)  # the counter-trend rules' liquidity bar
     returns = {}
     for sym, bs in bars.items():
         if bs[-1].date != day:
             continue
         r = signals.readings([b.high for b in bs], [b.low for b in bs], [b.close for b in bs])
         if r is not None:
-            for rule in signals.matches(r):
+            for rule in signals.matches(r, signals.is_liquid(sym, contracts)):
                 if sym not in hidden:
                     sig[rule].append(sym)
         if len(bs) > levels.RANK_SESSIONS:
@@ -162,7 +163,7 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
         "generated_at": datetime.now(UTC).isoformat(),
         "universe": len(bars),
         "hidden_illiquid": len(hidden & set(bars)),
-        "rules": {"stage": stage.DEFAULT_RULE.name, "rotation": rrule.name},
+        "rules": {"stage": stage.DEFAULT_RULE.name, "rotation": rrule.name, "scan": signals.CURRENT},
         "breadth": history,
         "stages": stages,
         "rotation": rot,
