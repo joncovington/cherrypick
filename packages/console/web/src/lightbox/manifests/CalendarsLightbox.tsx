@@ -15,6 +15,7 @@ import { ModuleFrame } from "../ModuleFrame";
 import { CALENDARS_SLIDES, type CalendarsSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
 import { ModuleSummary } from "../../components/summary/ModuleSummary";
+import { BookArmGuide } from "../../components/ExperimentGuide";
 
 const CALENDARS_LABEL = Object.fromEntries(CALENDARS_SLIDES.map((s) => [s.id, s.label])) as Record<CalendarsSlideId, string>;
 
@@ -82,9 +83,12 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
       id: "arms",
       label: CALENDARS_LABEL.arms,
       render: () => (
-        <div className="cards cards-wide">
-          <BookComparison data={data} updatedAt={dataUpdatedAt} />
-        </div>
+        <>
+          <div className="cards cards-wide">
+            <BookComparison data={data} updatedAt={dataUpdatedAt} />
+          </div>
+          <BookArmGuide module="calendars" />
+        </>
       ),
     },
     { id: "policies", label: CALENDARS_LABEL.policies, render: () => <PoliciesTab /> },

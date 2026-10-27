@@ -18,6 +18,7 @@ import { ModuleFrame } from "../ModuleFrame";
 import { BWB_SLIDES, type BwbSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
 import { ModuleSummary } from "../../components/summary/ModuleSummary";
+import { BookArmGuide } from "../../components/ExperimentGuide";
 
 const BWB_LABEL = Object.fromEntries(BWB_SLIDES.map((s) => [s.id, s.label])) as Record<BwbSlideId, string>;
 
@@ -50,16 +51,19 @@ export function BwbLightbox({ slide }: { slide: string }) {
       id: "arms",
       label: BWB_LABEL.arms,
       render: () => (
-        <div className="cards cards-wide">
-          <BookComparison data={data} updatedAt={dataUpdatedAt} />
-          <FireCountsCard
-            counts={data?.fireCounts ?? []}
-            correlationCaveat={
-              data?.correlationCaveat ?? "concurrent positions share regime context -- rows are not independent samples"
-            }
-            updatedAt={dataUpdatedAt}
-          />
-        </div>
+        <>
+          <div className="cards cards-wide">
+            <BookComparison data={data} updatedAt={dataUpdatedAt} />
+            <FireCountsCard
+              counts={data?.fireCounts ?? []}
+              correlationCaveat={
+                data?.correlationCaveat ?? "concurrent positions share regime context -- rows are not independent samples"
+              }
+              updatedAt={dataUpdatedAt}
+            />
+          </div>
+          <BookArmGuide module="bwb" />
+        </>
       ),
     },
     { id: "vol", label: BWB_LABEL.vol, render: () => <BwbVolSlide /> },

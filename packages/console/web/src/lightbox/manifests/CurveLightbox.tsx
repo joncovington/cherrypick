@@ -15,6 +15,7 @@ import { ModuleFrame } from "../ModuleFrame";
 import { CURVE_SLIDES, type CurveSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
 import { ModuleSummary } from "../../components/summary/ModuleSummary";
+import { BookArmGuide } from "../../components/ExperimentGuide";
 
 const CURVE_LABEL = Object.fromEntries(CURVE_SLIDES.map((s) => [s.id, s.label])) as Record<CurveSlideId, string>;
 
@@ -58,9 +59,12 @@ export function CurveLightbox({ slide }: { slide: string }) {
       id: "arms",
       label: CURVE_LABEL.arms,
       render: () => (
-        <div className="cards cards-wide">
-          <ArmComparison data={data} flipDivergence={data?.flipDivergence} updatedAt={dataUpdatedAt} />
-        </div>
+        <>
+          <div className="cards cards-wide">
+            <ArmComparison data={data} flipDivergence={data?.flipDivergence} updatedAt={dataUpdatedAt} />
+          </div>
+          <BookArmGuide module="curve" />
+        </>
       ),
     },
     { id: "performance", label: CURVE_LABEL.performance, render: () => <CurvePerformance data={data} /> },

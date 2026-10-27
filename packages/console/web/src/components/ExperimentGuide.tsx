@@ -84,6 +84,7 @@ function EntryCard({ entry, unit }: { entry: ExperimentGuideEntry; unit: string 
           ) : (
             <span className="chip chip-missing">never run</span>
           )}
+          {entry.summary !== null && <span className="arm-summary muted">{entry.summary}</span>}
         </span>
       }
       collapseKey={`guide-${unit}-${entry.name}`}
@@ -98,6 +99,8 @@ function EntryCard({ entry, unit }: { entry: ExperimentGuideEntry; unit: string 
         ) : (
           <>no positions in this arm</>
         )}
+        {entry.since !== null && <> · measuring since {entry.since}</>}
+        {entry.retiredOn !== null && <> · retired {entry.retiredOn}</>}
       </div>
 
       {entry.removed ? (
@@ -167,6 +170,21 @@ function EntryCard({ entry, unit }: { entry: ExperimentGuideEntry; unit: string 
 
       <Notes notes={entry.notes} />
     </Card>
+  );
+}
+
+/** The arm guide for a book module (calendars, pmcc, curve, contango, bwb): paper only, from
+ *  `/api/arms/guide/<module>`. Shown under the module's arms comparison. */
+export function BookArmGuide({ module }: { module: "calendars" | "pmcc" | "curve" | "contango" | "bwb" }) {
+  return (
+    <>
+      <h2 className="arm-section-head">What each arm is</h2>
+      <ExperimentGuideView
+        url={`/api/arms/guide/${module}`}
+        mode="paper"
+        intro="Each arm is its own paper portfolio over the same market. The one line beside each name, its dates and its notes are the module's own config; what makes it different is derived from its settings against the shared defaults and its siblings."
+      />
+    </>
   );
 }
 

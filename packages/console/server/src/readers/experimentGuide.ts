@@ -11,6 +11,7 @@ import { meicRiskConfigPath, type ConsoleConfig } from "../config.js";
 import { armColumnOf, readJson, str, withReadOnlyDb } from "./db.js";
 import { adviceDeclOf, advisedTagStatus, type AdviceDecl } from "./adviceDecl.js";
 import { readExperimentIndex, resolveAdvisedTag, type ExperimentRef } from "./experimentIndex.js";
+import { registryFile, registryOf } from "./armStatus.js";
 
 /**
  * What each experiment arm (flies) or risk profile (MEIC) is, what makes it different, and when it
@@ -26,10 +27,24 @@ import { readExperimentIndex, resolveAdvisedTag, type ExperimentRef } from "./ex
  *    whether it ever ran.
  */
 
+/** The arm's own one-line summary and dates (docs/progress-queue-arms-plan.md, phase 3): underscore
+ *  keys, so documentation and never a setting. pmcc's `from` (a real setting: the arm starts entering
+ *  then) is read as the start where no `_since` is written. */
+const META_KEYS = new Set(["_summary", "_since", "_retired"]);
+
+function isoDate(v: unknown): string | null {
+  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+}
+
+export function armMeta(block: Record<string, unknown>): { summary: string | null; since: string | null; retiredOn: string | null } {
+  const summary = typeof block["_summary"] === "string" && block["_summary"].trim() !== "" ? block["_summary"].trim() : null;
+  return { summary, since: isoDate(block["_since"]) ?? isoDate(block["from"]), retiredOn: isoDate(block["_retired"]) };
+}
+
 function collectNotes(block: Record<string, unknown>): GuideNote[] {
   const notes: GuideNote[] = [];
   for (const [k, v] of Object.entries(block)) {
-    if (!k.startsWith("_") || typeof v !== "string" || v.trim() === "") continue;
+    if (META_KEYS.has(k) || !k.startsWith("_") || typeof v !== "string" || v.trim() === "") continue;
     notes.push({ key: k.replace(/^_/, ""), text: v });
   }
   // `_note` is the definition and leads; the rest keep config order behind it.
@@ -96,13 +111,13 @@ interface LedgerRow {
   n: number;
 }
 
-function ledgerSpans(dbPath: string, table: string): Map<string, LedgerRow> {
+function ledgerSpans(dbPath: string, table: string, dateColumn = "trade_date"): Map<string, LedgerRow> {
   return withReadOnlyDb<Map<string, LedgerRow>>(dbPath, new Map(), (db) => {
     const column = armColumnOf(db, table);
     const out = new Map<string, LedgerRow>();
     for (const r of db
       .prepare<[], Record<string, unknown>>(
-        `SELECT ${column} AS k, MIN(trade_date) AS first, MAX(trade_date) AS last, COUNT(*) AS n
+        `SELECT ${column} AS k, MIN(${dateColumn}) AS first, MAX(${dateColumn}) AS last, COUNT(*) AS n
            FROM ${table} WHERE ${column} IS NOT NULL GROUP BY ${column}`,
       )
       .all()) {
@@ -113,19 +128,33 @@ function ledgerSpans(dbPath: string, table: string): Map<string, LedgerRow> {
 }
 
 function measurementBreaks(dbPath: string): ExperimentGuide["breaks"] {
-  return withReadOnlyDb<ExperimentGuide["breaks"]>(dbPath, [], (db) =>
-    db
+  return withReadOnlyDb<ExperimentGuide["breaks"]>(dbPath, [], (db) => {
+    const cols = new Set(db.prepare<[], { name: string }>("PRAGMA table_info(measurement_breaks)").all().map((c) => c.name));
+    if (cols.has("scope")) {
+      // flies and MEIC: break_date, scope, kind, reason.
+      return db
+        .prepare<[], Record<string, unknown>>("SELECT break_date, scope, kind, reason FROM measurement_breaks ORDER BY break_date")
+        .all()
+        .map((r) => ({
+          date: str(r["break_date"]) ?? "",
+          scope: str(r["scope"]) ?? "*",
+          kind: str(r["kind"]) ?? "",
+          reason: str(r["reason"]) ?? "",
+        }));
+    }
+    if (!cols.has("key")) return [];
+    // The newer modules: break_date, key, old_value, new_value, note -- one changed setting a row.
+    return db
       .prepare<[], Record<string, unknown>>(
-        "SELECT break_date, scope, kind, reason FROM measurement_breaks ORDER BY break_date",
+        "SELECT break_date, key, old_value, new_value, note FROM measurement_breaks ORDER BY break_date",
       )
       .all()
-      .map((r) => ({
-        date: str(r["break_date"]) ?? "",
-        scope: str(r["scope"]) ?? "*",
-        kind: str(r["kind"]) ?? "",
-        reason: str(r["reason"]) ?? "",
-      })),
-  );
+      .map((r) => {
+        const change = `${str(r["key"]) ?? "?"}: ${str(r["old_value"]) ?? "—"} → ${str(r["new_value"]) ?? "—"}`;
+        const note = str(r["note"]);
+        return { date: str(r["break_date"]) ?? "", scope: "*", kind: str(r["key"]) ?? "", reason: note ? `${change}. ${note}` : change };
+      });
+  });
 }
 
 /** Running first, then finished, then gone-from-config; each group in the config's own order. */
@@ -148,6 +177,9 @@ function removedEntries(seen: Map<string, LedgerRow>, known: Set<string>): Exper
       enabled: false,
       retired: false,
       removed: true,
+      summary: null,
+      since: null,
+      retiredOn: null,
       notes: [],
       overrides: [],
       derived: [],
@@ -244,6 +276,9 @@ function advisedEntries(
       enabled: active,
       retired: !active,
       removed: false,
+      summary: `The advisor's twin of ${base}${label === null ? "" : `, for "${label}"`}.`,
+      since: row.first || null,
+      retiredOn: null,
       notes,
       overrides: [],
       derived: [
@@ -302,11 +337,13 @@ export function readFliesArmGuide(config: ConsoleConfig, mode: TradingMode): Exp
     // the whole experiment.
     const explicitRule = typeof block["center_rule"] === "string" ? block["center_rule"] : null;
     const centring = (explicitRule ?? name) === "gex" ? "GEX" : "ATM";
+    const meta = armMeta(block);
     return {
       name,
       enabled,
-      retired: !enabled && row !== undefined,
+      retired: !enabled && (row !== undefined || meta.retiredOn !== null),
       removed: false,
+      ...meta,
       notes: collectNotes(block),
       overrides: buildOverrides(block, defaults, shared),
       derived: [
@@ -374,11 +411,13 @@ export function readMeicProfileGuide(config: ConsoleConfig, mode: TradingMode): 
   const entries: ExperimentGuideEntry[] = blocks.map(([name, block]) => {
     const row = seen.get(name);
     const enabled = block["enabled"] === true;
+    const meta = armMeta(block);
     return {
       name,
       enabled,
-      retired: !enabled && row !== undefined,
+      retired: !enabled && (row !== undefined || meta.retiredOn !== null),
       removed: false,
+      ...meta,
       notes: collectNotes(block),
       overrides: buildOverrides(block, moduleConfig, shared),
       derived: [],
@@ -402,6 +441,86 @@ export function readMeicProfileGuide(config: ConsoleConfig, mode: TradingMode): 
     ...base,
     configMissing: false,
     groupNotes,
+    breaks: measurementBreaks(dbPath),
+    entries: order([
+      ...entries,
+      ...advised,
+      ...removedEntries(seen, new Set([...entries, ...advised].map((e) => e.name))),
+    ]),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The book modules -- calendars, pmcc, curve, contango, bwb (paper)
+// ---------------------------------------------------------------------------------------------
+
+/** Each book module's ledger: one positions table, an `arm` column, the session it entered. */
+export const BOOK_MODULES = {
+  calendars: { table: "dc_positions", dir: "calendarsDir", baseKey: "base_book" },
+  pmcc: { table: "pmcc_positions", dir: "pmccDir", baseKey: "base_book" },
+  curve: { table: "curve_positions", dir: "curveDir", baseKey: "base_book" },
+  contango: { table: "contango_positions", dir: "contangoDir", baseKey: "base_arm" },
+  bwb: { table: "bwb_positions", dir: "bwbDir", baseKey: "base_book" },
+} as const;
+
+export type BookModule = keyof typeof BOOK_MODULES;
+
+export function isBookModule(m: string): m is BookModule {
+  return Object.prototype.hasOwnProperty.call(BOOK_MODULES, m);
+}
+
+export function readBookGuide(config: ConsoleConfig, module: BookModule): ExperimentGuide {
+  const spec = BOOK_MODULES[module];
+  const base: ExperimentGuide = {
+    module,
+    mode: "paper",
+    unit: "arm",
+    groupNotes: [],
+    breaks: [],
+    entries: [],
+    configMissing: true,
+  };
+  const doc = readJson(registryFile(config, module));
+  if (doc === null) return base;
+  const registry = registryOf(doc);
+  const defaults = (doc["defaults"] ?? {}) as Record<string, unknown>;
+  const dbPath = path.join(config.paths[spec.dir], "paper_trades.db");
+  const seen = ledgerSpans(dbPath, spec.table, "entry_session");
+  const blocks = Object.entries(registry).filter(
+    ([n, v]) => !n.startsWith("_") && typeof v === "object" && v !== null,
+  ) as Array<[string, Record<string, unknown>]>;
+  const shared = majorityValues(blocks);
+  const entries: ExperimentGuideEntry[] = blocks.map(([name, block]) => {
+    const row = seen.get(name);
+    const meta = armMeta(block);
+    // These modules default an arm to enabled (each engine reads `enabled` with a true default).
+    // Status is what the loop obeys; a `_retired` date is shown, never read as the switch.
+    const enabled = block["enabled"] !== false;
+    return {
+      name,
+      enabled,
+      retired: !enabled && (row !== undefined || meta.retiredOn !== null),
+      removed: false,
+      ...meta,
+      notes: collectNotes(block),
+      overrides: buildOverrides(block, defaults, shared),
+      derived: [],
+      firstSession: row?.first ?? null,
+      lastSession: row?.last ?? null,
+      positions: row?.n ?? 0,
+    };
+  });
+  const advised = advisedEntries(
+    seen,
+    adviceDeclOf(doc, spec.baseKey),
+    "arm",
+    readExperimentIndex(config, module),
+    ledgerStamps(dbPath, spec.table),
+  );
+  return {
+    ...base,
+    configMissing: false,
+    groupNotes: collectNotes(registry),
     breaks: measurementBreaks(dbPath),
     entries: order([
       ...entries,

@@ -47,16 +47,22 @@
   "_books_note": "`control` is the strategy as pitched: enter on a contango day (buffered below 1.0 by contango_max, so a knife-edge 0.999 read doesn't count), close at profit_take_pct OR the regime-flip hard exit (a MEASURED ratio crossing >= 1.0 mid-trade closes next tick regardless of P&L \u2014 never on an unmeasured/stale read) OR close_dte. `noflip` shares control's entry EXACTLY, same tick, same fills (the exact-pairing property) \u2014 its exit is control's minus the flip rule, so it holds through backwardation to target or close_dte. Until a flip actually fires, control and noflip are byte-identical by construction (an expected `find_identical_readings` collision, not a defect); read surfaces present `flip_divergence_count` beside the pair as the noflip comparison's real sample size. `hook` enters ONLY on the two-day-confirmed hook signal (its own tick, its own variable) and exits by control's rules. hook_threshold and close_dte are declared here, NOT in the advice bounds below \u2014 the hook book's value is a fixed rare-event definition, and close_dte bounds the settlement path; both are journaled-break territory, not overlay territory.",
   "books": {
     "control": {
+      "_summary": "A VXX call credit spread entered on a contango day, out at the profit target, on a measured regime flip, or at close_dte.",
       "enabled": true
     },
     "_base_install_note": "A base install runs only `control`. The engine's other built-in arms run unless a config switches them off, so the example lists each one with enabled:false. Turn one on (or define your own) in ~/.cherrypick/config/curve.json.",
     "noflip": {
+      "_summary": "control's entry exactly, without the regime-flip exit: the two are identical until a flip fires.",
       "enabled": false
     },
     "hook": {
+      "_summary": "Retired: entered only on a two-day-confirmed backwardation hook, which gave no signal in 33 sessions.",
+      "_retired": "2026-10-15",
       "enabled": false
     },
     "near": {
+      "_summary": "control's gate and exits on a 0.40-delta short instead of 0.30.",
+      "_since": "2026-10-06",
       "enabled": false,
       "short_delta_target": 0.40,
       "_note": "near (2026-10-06): control's gate and exits on a 0.40-delta short -- promoted from the killed advisor experiment short-delta-nearer-money, which entered twice where the 0.30-delta control could not. Planned from its own params; carries the regime-flip exit."

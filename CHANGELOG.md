@@ -11,6 +11,17 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added (2026-10-27): arm cards for every paper module.** calendars, pmcc, curve, contango and bwb now
+  have the arm guide flies and MEIC had, under each module's arms tab. Each card shows:
+  - the arm's one-line `_summary`, beside its name;
+  - its `_since` and `_retired` dates;
+  - what makes it different from the defaults and its siblings;
+  - its ledger span and the module's measurement breaks.
+
+  Every arm in the example configs carries a summary, and an orchestrator test fails when a declared arm
+  has none (`docs/progress-queue-arms-plan.md`, phase 3). Underscore keys are documentation; no loop
+  reads them.
+
 - **Changed (2026-10-27): live-path hardening, no measurement change.** Each change only adds a
   refusal or a report:
   - **The manual live door obeys the halt.** A hand-placed opening order through meic's or earnings'

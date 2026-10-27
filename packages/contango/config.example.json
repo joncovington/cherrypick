@@ -27,9 +27,11 @@
   "_arms_note": "control: the plain switch at 0.97, the rule curve gates its entries on. flipexit: in below 0.97, out only at a real inversion (1.0), holding through the band. Replayed on SVXY 2018-03..2026-10 with SHV as cash, see the package CLAUDE.md for the numbers. A leverage arm (SVIX, -1x) is a config block away -- risk_symbol SVIX -- and is deliberately not declared: SVIX replayed worse.",
   "arms": {
     "control": {
+      "_summary": "SVXY while VIX/VIX3M is below 0.97, T-bills (SHV) once it reaches 0.97.",
       "enabled": true
     },
     "flipexit": {
+      "_summary": "In below 0.97 like control, but out only once VIX/VIX3M reaches 1.0.",
       "enabled": true,
       "exit_at_or_above": 1.0
     }

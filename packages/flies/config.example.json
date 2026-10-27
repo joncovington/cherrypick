@@ -141,6 +141,7 @@
   "_arms_note": "Each arm differs from control in EXACTLY one thing, each with its own book. control is what makes every other arm falsifiable: gex vs control isolates centring, time_window vs control isolates timing, and the width-N arms vs control sweep wing width in STRIKE increments, not points (control at the default width is the sweep's 1-strike rung — a width-1 arm would duplicate its book under a second name). wide_wing was the single-point version of the width question; it stays for the SPX-era books' attribution but is disabled now the sweep covers it.",
   "arms": {
     "control": {
+      "_summary": "The ATM 0DTE net-credit butterfly, 10:00-14:30 entries: the baseline every flies arm is read against.",
       "enabled": true,
       "_note": "ATM, same window and position cap as the gex arm. The shared baseline for EVERY comparison: gex vs control isolates the CENTRING rule (identical windows), time_window vs control isolates the TIMING (identical centring), width-N vs control isolates the WINGS. It must therefore match gex on everything except where it centres — and it doubles as the width sweep's 1-increment rung, since it trades the default wing_width.",
       "_history_note": "This was a single 12:00-12:15 window with max_positions 2, against gex's 09:45-14:30 and 4 — a 19x difference in entry opportunity. Per-trade metrics survive that, but net P&L per arm does not: the gex arm could have out-earned control purely by trading more often, and the headline comparison would have measured trade count rather than the GEX signal.",
