@@ -36,7 +36,6 @@ import os
 import shutil
 import subprocess
 import sys
-from datetime import date, timedelta
 from pathlib import Path
 
 # scripts/_common.py, beside this file (a test loading this script by path has no scripts/ on sys.path).
@@ -124,24 +123,12 @@ Do not flatter the results. A losing day described plainly is more useful than o
 
 
 def _load(session: str) -> dict | None:
-    try:
-        return json.loads((STORE / f"eod-{session}.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+    return _common.load_dated(STORE, "eod", session)
 
 
 def _trend_context(session: str, count: int = TREND_SESSIONS) -> list[dict]:
     """Prior fact sets, oldest first. Best-effort: a missing day is simply not context."""
-    out = []
-    try:
-        day = date.fromisoformat(session)
-    except ValueError:
-        return out
-    for back in range(count, 0, -1):
-        prior = _load((day - timedelta(days=back)).isoformat())
-        if prior:
-            out.append(prior)
-    return out
+    return _common.trend_context(session, count, _load)
 
 
 def _run_claude(payload: str) -> tuple[str | None, str | None]:
