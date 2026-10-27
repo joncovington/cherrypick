@@ -102,6 +102,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from cherrypick.core.jsonio import write_json_atomic
+
 from cherrypick.notify import Notifier
 from cherrypick.notify import secrets as notify_secrets
 from cherrypick.orchestrator import (
@@ -703,7 +705,7 @@ def _run_earnings(cfg, phase: str) -> None:
         return
     if not timeutil.is_trading_day(now, holidays):
         rec = {"date": today, "ok": True, "skipped": "not a trading day", "phase": phase}
-        hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+        write_json_atomic(hb_path, rec)
         _append_log(log_path, rec)
         _emit(rec)
         return
@@ -739,7 +741,7 @@ def _run_earnings(cfg, phase: str) -> None:
         "closed": (result or {}).get("closed"),
         "stranded": (result or {}).get("stranded"),
     }
-    hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    write_json_atomic(hb_path, rec)
     _append_log(log_path, {**rec, "result": result})
 
     if not ok:
@@ -818,7 +820,7 @@ def _run_earnings_symbol_watch(cfg) -> None:
         "total": (result or {}).get("total"),
         "done": (result or {}).get("done"),
     }
-    hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    write_json_atomic(hb_path, rec)
     _append_log(log_path, {**rec, "result": result})
 
     if not ok:
@@ -895,7 +897,7 @@ def _run_review(cfg, *, final: bool) -> None:
         "status": (result or {}).get("status"),
         "reconciled": reconciled,
     }
-    hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    write_json_atomic(hb_path, rec)
     _append_log(log_path, {**rec, "result": result})
 
     notifier = Notifier(cfg.get("notify"))
@@ -928,7 +930,7 @@ def _manage_post_due(cfg, session: str | None, every: int) -> bool:
     now = timeutil.now_et(cfg.get("timezone", "America/New_York"))
     if not managepost.post_due(last, now, session, every):
         return False
-    path.write_text(json.dumps({"session": session, "at": now.isoformat()}), encoding="utf-8")
+    write_json_atomic(path, {"session": session, "at": now.isoformat()}, indent=None)
     return True
 
 
@@ -940,8 +942,6 @@ def _run_manage(cfg) -> None:
     into its own home for the console. The evaluation is advice: nothing on this path places, closes
     or sizes an order, so a failed pass costs a missing page and is a WARNING.
     """
-    from cherrypick.core.jsonio import write_json_atomic
-
     from cherrypick.orchestrator import managesnap
 
     hb_path = cfgmod.state_file("manage.last.json")
@@ -976,7 +976,7 @@ def _run_manage(cfg) -> None:
 
     counts = (result or {}).get("counts") or {}
     rec = {"ok": ok, "error": error, "session": (result or {}).get("session"), "counts": counts}
-    hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    write_json_atomic(hb_path, rec)
     _append_log(log_path, {**rec, "result": result})
 
     notifier = Notifier(cfg.get("notify"))
@@ -1045,7 +1045,7 @@ def _run_morning(cfg) -> None:
         "session": (result or {}).get("session"),
         "phase": (result or {}).get("phase"),
     }
-    hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    write_json_atomic(hb_path, rec)
     _append_log(log_path, {**rec, "result": result})
 
     if not ok:
@@ -1129,7 +1129,7 @@ def cmd_restart_console(cfg) -> None:
         # node is the launcher's CHILD, so the listener is normally not new_pid itself; say what is
         # on the port and let `ps` / the duplicate check judge it rather than guessing here.
         rec["port_listener"] = {"port": port, "pid": listener}
-    cfgmod.state_file("restart_console.last.json").write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    write_json_atomic(cfgmod.state_file("restart_console.last.json"), rec)
     _emit(rec)
     if not rec.get("ok"):
         sys.exit(1)
@@ -1431,7 +1431,7 @@ def cmd_ensure_supervisor(cfg) -> None:
     if supersnap.supervisor_alive():
         if state.get("failures"):
             state = {"failures": 0, "notified": False}
-            state_path.write_text(json.dumps(state), encoding="utf-8")
+            write_json_atomic(state_path, state, indent=None)
         _emit({"ok": True, "detail": "supervisor running"})
         return
 
@@ -1485,7 +1485,7 @@ def cmd_ensure_supervisor(cfg) -> None:
         except Exception:
             pass
     keep = {k: state[k] for k in ("service_down_since",) if k in state}
-    state_path.write_text(json.dumps({"failures": failures, "notified": notified, **keep}), encoding="utf-8")
+    write_json_atomic(state_path, {"failures": failures, "notified": notified, **keep}, indent=None)
     _emit(
         {
             "ok": started,
