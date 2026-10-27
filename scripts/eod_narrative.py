@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -58,13 +59,42 @@ STORE = Path(
     or Path(os.environ.get("CHERRYPICK_HOME") or (Path.home() / ".cherrypick")) / "data" / "review"
 )
 
-# The agent gets no tools that can act. It reads what is on stdin and writes what it returns; the
-# script -- never the agent -- puts anything on disk.
-DISALLOWED = ["Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Task"]
+# The agent gets no tools at all (`_common.tool_fence`). It reads what is on stdin and writes what it
+# returns; the script -- never the agent -- puts anything on disk.
+TOOLS: list[str] = []
 TIMEOUT_SECONDS = 600
 TREND_SESSIONS = 5
 MAX_ISSUES_PER_RUN = 3
 ISSUE_LABEL = "eod-finding"
+
+# What may never leave this machine in a public issue (2026-10-27). The repo is public and the text is
+# the model's: a recommendation that quotes a P&L, a licensed backtest result or an account number
+# would be published by an unattended job. A recommendation that trips any of these is withheld --
+# it stays in the local note -- rather than rewritten, because a model's sentence with its numbers
+# cut out can say something it did not. Deterministic on purpose: no second model judges the first.
+MAX_ISSUE_CHARS = 500
+_UNPUBLISHABLE = (
+    (re.compile(r"\$\s*-?\d"), "a dollar figure"),
+    (re.compile(r"-?\d+(?:\.\d+)?\s*%"), "a percentage"),
+    (re.compile(r"\b\d{1,3}(?:,\d{3})+\b|\b\d{4,}(?:\.\d+)?\b"), "a large number"),
+    (re.compile(r"\b[0-9][A-Z]{1,3}[0-9A-Z]{4,6}\b"), "an account-like token"),
+    (re.compile(r"\*{4}\d{4}"), "a masked account"),
+    (re.compile(r"(?i)\b(thetadata|backtest|vendor|licen[cs]ed?)\b"), "a licensed-data reference"),
+)
+
+
+def _unpublishable(text: str) -> str | None:
+    """Why `text` may not be posted to the public repo, or None when it may."""
+    if len(text) > MAX_ISSUE_CHARS:
+        return f"longer than {MAX_ISSUE_CHARS} characters"
+    # A session date is not a figure. Anything else numeric of four digits or more is withheld,
+    # strikes included: over-withholding costs a tracked item, under-withholding publishes a P&L.
+    undated = re.sub(r"\b\d{4}-\d{2}-\d{2}\b", "", text)
+    for pattern, what in _UNPUBLISHABLE:
+        if pattern.search(undated):
+            return f"it contains {what}"
+    return None
+
 
 PROMPT = """You are writing the end-of-day note for a personal options-trading suite.
 
@@ -132,7 +162,7 @@ def _trend_context(session: str, count: int = TREND_SESSIONS) -> list[dict]:
 
 
 def _run_claude(payload: str) -> tuple[str | None, str | None]:
-    return _common.run_claude(payload, prompt=PROMPT, disallowed=DISALLOWED, timeout=TIMEOUT_SECONDS)
+    return _common.run_claude(payload, prompt=PROMPT, tools=TOOLS, timeout=TIMEOUT_SECONDS)
 
 
 def _recommendations(note: str) -> list[str]:
@@ -189,6 +219,10 @@ def _file_issues(recs: list[str], session: str, dry_run: bool) -> list[dict]:
     for rec in recs[:MAX_ISSUES_PER_RUN]:
         title = rec.split("**")[1] if "**" in rec else rec[:60]
         title = f"EOD {session}: {title}".strip()
+        withheld = _unpublishable(rec)
+        if withheld:
+            results.append({"ok": False, "withheld": withheld, "note": "kept in the local note, not filed"})
+            continue
         if any(t.endswith(title.split(": ", 1)[-1]) for t in titles):
             results.append({"ok": True, "skipped": "already open", "title": title})
             continue
