@@ -25,6 +25,12 @@ const CURVE = {
     control: { enabled: true, _summary: "The VXX call credit spread on a contango day.", _note: "Enter on a contango day." },
     noflip: { _summary: "control without the flip exit." },
     hook: { enabled: false, _summary: "Retired: the backwardation hook.", _retired: "2026-10-15" },
+    // The deployed configs' 2026-10-12 retirements wrote `_retired` as prose before the cards read it.
+    wall: {
+      enabled: false,
+      _summary: "A call-side BWB at the GEX call wall.",
+      _retired: "Retired 2026-10-15 (docs/experiment-log.md): no edge at any width.",
+    },
     near: { enabled: true, short_delta_target: 0.4, _summary: "A 0.40-delta short.", _since: "2026-10-06" },
   },
 };
@@ -125,6 +131,14 @@ describe("armMeta", () => {
   it("reads _summary, _since (or pmcc's from) and _retired, and only ISO dates", () => {
     expect(armMeta({ _summary: "  x  ", from: "2026-10-26" })).toEqual({ summary: "x", since: "2026-10-26", retiredOn: null });
     expect(armMeta({ _since: "Oct 6", _retired: "2026-10-15" })).toEqual({ summary: null, since: null, retiredOn: "2026-10-15" });
+  });
+
+  it("takes the date out of a prose _retired, and keeps the prose as a note", () => {
+    expect(armMeta({ _retired: "Retired 2026-10-15 (docs/experiment-log.md): no edge." }).retiredOn).toBe("2026-10-15");
+    const wall = arm("wall");
+    expect(wall.retiredOn).toBe("2026-10-15");
+    expect(wall.notes).toEqual([{ key: "retired", text: "Retired 2026-10-15 (docs/experiment-log.md): no edge at any width." }]);
+    expect(arm("hook").notes).toEqual([]); // a bare date is a field only
   });
 });
 
