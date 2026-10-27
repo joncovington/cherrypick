@@ -112,7 +112,8 @@ and anything still open says so in its own words.*
 4. **A declared subscription budget — BUILT.** `streamrequests.estimate_subscriptions` /
    `budget_status` model the cost from the same registry union the producer subscribes from, and
    `watchdog._check_subscription_budget` raises a finding past `DEFAULT_SUBSCRIPTION_BUDGET`
-   (12,000). It names the WORST symbol as well as the total, because the 2026-08-24 book was
+   (12,000), or past `streamer.subscription_budget` where one is set — read from the producer's
+   own `config/streamer.json` first, as its window width is, then the suite config. It names the WORST symbol as well as the total, because the 2026-08-24 book was
    dominated by one declaration and a total alone does not say which one to look at. It is an
    ESTIMATE and will not equal the producer's own `subscribed_symbols` — its job is a change in
    order of magnitude, not a reconciliation.
