@@ -47,7 +47,7 @@ from cherrypick.core.broker import cli as _broker_cli
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET
 from cherrypick.core.dxfeed import num as _dxfeed_num
-from cherrypick.core.redact import mask_account
+from cherrypick.core.redact import mask_account, redact_accounts
 
 from cherrypick.meic import credentials as _creds
 from cherrypick.meic import gex_math
@@ -329,8 +329,16 @@ def _cache_get_greeks(symbols: list[str]) -> dict[str, dict]:
 # ---------------------------------------------------------------------------
 
 
-def _out(data: Any) -> None:
-    print(json.dumps(data, default=str))
+# The verbs whose output carries FULL account numbers on purpose: the orchestrator's designation
+# flow (`list_accounts`, `get_account_info`) and its reconcile read (`get_positions`) match on them.
+# Every other verb's output is masked to `****1234` (2026-10-27): an order verb's result carried the
+# full number to stdout, which an agent session reads and a terminal scrollback keeps.
+FULL_ACCOUNT_VERBS = frozenset({"list_accounts", "get_account_info", "get_positions"})
+
+
+def _out(data: Any, *, command: str | None = None) -> None:
+    text = json.dumps(data, default=str)
+    print(text if command in FULL_ACCOUNT_VERBS else redact_accounts(text))
 
 
 _error = _broker_cli.error_result
@@ -1799,7 +1807,7 @@ def main():
         "get_calendar": cmd_get_calendar,
     }
     if args.command in sync_dispatch:
-        _out(sync_dispatch[args.command](args))
+        _out(sync_dispatch[args.command](args), command=args.command)
         return
 
     dispatch = {
@@ -1829,7 +1837,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    _out(asyncio.run(fn(args)))
+    _out(asyncio.run(fn(args)), command=args.command)
 
 
 if __name__ == "__main__":

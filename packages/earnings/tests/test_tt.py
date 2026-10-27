@@ -558,3 +558,17 @@ def test_a_live_submit_that_times_out_after_acceptance_is_recovered_not_reported
     result = asyncio.run(tt.cmd_execute_trade(args))
     assert result["ok"] is True and result["recovered"] is True and result["order_id"] == "99"
     assert result["external_identifier"].startswith("earnings-") and "timed out" in result["error"]
+
+
+def test_an_order_verbs_output_masks_the_account(monkeypatch, capsys):
+    """The order result carried the full account number to stdout; only the designation reads keep it."""
+
+    async def placed(args):
+        return {"ok": True, "account_number": "5WT01234"}
+
+    monkeypatch.setattr(tt, "cmd_execute_trade", placed)
+    monkeypatch.setattr(sys, "argv", ["tt", "execute_trade", "--order", "{}"])
+    tt.main()
+    out = capsys.readouterr().out
+    assert "5WT01234" not in out and "****1234" in out
+    assert tt.FULL_ACCOUNT_VERBS == {"list_accounts", "get_account_info", "get_positions"}

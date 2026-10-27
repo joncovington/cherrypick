@@ -943,6 +943,30 @@ def test_get_intraday_range_without_summary_row(cache_db):
     assert out["ok"] is False
 
 
+def _printed(monkeypatch, capsys, verb, result, extra=()):
+    async def handler(args):
+        return result
+
+    monkeypatch.setattr(tt, f"cmd_{verb}", handler)
+    monkeypatch.setattr(sys, "argv", ["tt", verb, *extra])
+    tt.main()
+    return capsys.readouterr().out
+
+
+def test_an_order_verbs_output_masks_the_account(monkeypatch, capsys):
+    """The order result carried the full account number to stdout, which an agent session reads."""
+    placed = {"ok": True, "account_number": "5WT01234", "response": {"order": {"account-number": "5WT01234"}}}
+    out = _printed(monkeypatch, capsys, "execute_trade", placed, ["--order", "{}"])
+    assert "5WT01234" not in out and out.count("****1234") == 2
+
+
+def test_the_designation_and_reconcile_reads_keep_the_full_number(monkeypatch, capsys):
+    """The orchestrator matches these on the full number; masking them would break designation."""
+    accounts = {"ok": True, "accounts": [{"account_number": "5WT01234"}]}
+    assert "5WT01234" in _printed(monkeypatch, capsys, "list_accounts", accounts)
+    assert tt.FULL_ACCOUNT_VERBS == {"list_accounts", "get_account_info", "get_positions"}
+
+
 def test_a_command_goes_straight_to_its_own_path_with_no_sidecar(monkeypatch, capsys):
     # The 127.0.0.1:7699 sidecar was removed (2026-10-18): nothing to try first, no fallback note.
     async def quote(args):

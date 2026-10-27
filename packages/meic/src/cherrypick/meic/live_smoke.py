@@ -32,6 +32,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from cherrypick.core.redact import mask_account
+
 _SRC = Path(__file__).resolve().parent
 _TT = [sys.executable, "-m", "cherrypick.meic.tt"]
 
@@ -125,7 +127,8 @@ def evaluate(result: dict, expect_account: str | None) -> list[dict]:
     if expect_account:
         add(
             "ran against the designated account",
-            acct == expect_account,
+            # execute_trade's output is masked (tt.FULL_ACCOUNT_VERBS); compare the masked forms
+            mask_account(acct) == mask_account(expect_account),
             f"response account ...{str(acct)[-4:] if acct else '?'} vs designated ...{expect_account[-4:]}",
         )
     else:

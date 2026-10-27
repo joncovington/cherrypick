@@ -47,7 +47,7 @@ from cherrypick.core import execution as _execution
 from cherrypick.core import killcriteria as _kill
 from cherrypick.core import ledgers as _ledgers
 from cherrypick.core.broker import cli as _broker_cli
-from cherrypick.core.redact import mask_account
+from cherrypick.core.redact import mask_account, redact_accounts
 
 from cherrypick.earnings import credentials as _creds
 from cherrypick.earnings import paths as _paths
@@ -70,8 +70,16 @@ def _live_trading_enabled() -> bool:
     return bool(_load_config().get("enable_live_trading", False))
 
 
-def _out(data: Any) -> None:
-    print(json.dumps(data, default=str))
+# The verbs whose output carries FULL account numbers on purpose: the orchestrator's designation
+# flow (`list_accounts`, `get_account_info`) and its reconcile read (`get_positions`) match on them.
+# Every other verb's output is masked to `****1234` (2026-10-27): an order verb's result carried the
+# full number to stdout, which an agent session reads and a terminal scrollback keeps.
+FULL_ACCOUNT_VERBS = frozenset({"list_accounts", "get_account_info", "get_positions"})
+
+
+def _out(data: Any, *, command: str | None = None) -> None:
+    text = json.dumps(data, default=str)
+    print(text if command in FULL_ACCOUNT_VERBS else redact_accounts(text))
 
 
 _error = _broker_cli.error_result
@@ -721,7 +729,7 @@ def main() -> None:
         result = asyncio.run(handler(args))
     else:
         result = handler(args)
-    _out(result)
+    _out(result, command=args.command)
 
 
 if __name__ == "__main__":
