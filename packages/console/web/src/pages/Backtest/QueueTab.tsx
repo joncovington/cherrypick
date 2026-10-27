@@ -1,15 +1,24 @@
-import type { ReactNode } from "react";
-import type { ResearchQueue, ResearchTask } from "@console/shared";
+import { Fragment, useState, type ReactNode } from "react";
+import type { ResearchProgress, ResearchQueue, ResearchTask } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { useBridged } from "../../lib/bridged";
+import { getPref, usePrefsVersion, writePref } from "../../lib/prefs";
 
 /**
- * The Backtest page's queue tab (2026-10-24): the research tasks the supervisor's `research-queue`
- * job runs one at a time, read through `/api/backtest/queue` (`services/researchQueueBridge.ts`, the
- * orchestrator's `queue-list`). Read-only: rows are added with `run.py queue-add` and cancelled with
- * `run.py queue-cancel`. Why a queued row waits is the orchestrator's own reason, shown as given.
- * Rows are grouped by study (the category; a row's name is `study/step`), and a finished row shows
- * what it produced: a fetch's counts and input, a script's declared conclusion, its log.
+ * The Backtest page's queue tab (2026-10-24; laid out again 2026-10-27, docs/progress-queue-arms-plan.md
+ * phase 2): the research tasks the supervisor's `research-queue` job runs one at a time, and the runs
+ * started by hand beside them, read through `/api/backtest/queue` (the orchestrator's `queue-list`).
+ *
+ * Three sections, so what is happening is never below what happened:
+ *
+ * - **Now**: running tasks with their meters, then queued ones in the order the runner takes them
+ *   (ready first, oldest first), each with the orchestrator's own reason for waiting; and runs started
+ *   by hand that are still going.
+ * - **Recent**: finished in the last 30 days, newest first.
+ * - **History**: older, collapsed, grouped by study.
+ *
+ * Five columns; a row opens to the rest (arguments, timings, the result's fields, the log's tail).
+ * Read-only: rows are added with `run.py queue-add` and cancelled with `run.py queue-cancel`.
  */
 
 const STATUS_CHIP: Record<ResearchTask["status"], string> = {
@@ -21,12 +30,59 @@ const STATUS_CHIP: Record<ResearchTask["status"], string> = {
   cancelled: "chip muted",
 };
 
+const PROGRESS_CHIP: Record<ResearchProgress["state"], string> = {
+  running: "chip chip-ok",
+  done: "chip chip-ok",
+  failed: "chip chip-warn",
+  stalled: "chip chip-warn",
+  orphaned: "chip chip-warn",
+};
+
+export const RECENT_DAYS = 30;
+const DAY_MS = 86_400_000;
+
 /** "2026-10-26T18:30:05" -> "Oct 26 18:30" (ET, as the orchestrator records it). */
 export function stamp(iso: string | null): string {
   if (iso === null || iso === "") return "—";
   const [d, t] = iso.split("T");
   const day = new Date(`${d}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
   return t ? `${day} ${t.slice(0, 5)}` : day;
+}
+
+/** An ET wall-clock stamp as milliseconds on the same naive scale as `etNowMs`. */
+export function etMs(iso: string | null): number | null {
+  if (iso === null || iso === "") return null;
+  const t = Date.parse(`${iso.length === 10 ? `${iso}T00:00:00` : iso}Z`);
+  return Number.isNaN(t) ? null : t;
+}
+
+/** Now, as ET wall clock on a naive millisecond scale, so it compares with the orchestrator's stamps. */
+export function etNowMs(now = Date.now()): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    })
+      .formatToParts(new Date(now))
+      .map((p) => [p.type, p.value]),
+  );
+  return Date.parse(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}Z`);
+}
+
+/** "just now" / "12 min ago" / "3 h ago" / "4 d ago". */
+export function ago(ms: number | null, nowMs: number): string {
+  if (ms === null) return "—";
+  const mins = Math.max(0, Math.round((nowMs - ms) / 60_000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  return hours < 48 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
 }
 
 /** The task's arguments in one line: a file's name rather than its full path, other values as given. */
@@ -61,10 +117,9 @@ export function resultLine(t: ResearchTask): string {
   return parts.join(" · ");
 }
 
-
 /** The job's own one-line reading, with "stalled" or "orphaned" said plainly when the reader concluded
  *  it (the orchestrator puts both in `line`; a finished job adds its state). */
-export function progressLine(p: NonNullable<ResearchTask["progress"]>): string {
+export function progressLine(p: ResearchProgress): string {
   const pct = p.fraction !== null ? `${(p.fraction * 100).toFixed(1)}%` : null;
   const parts = [pct, p.line || null].filter((x): x is string => x !== null);
   if (p.state === "done" || p.state === "failed") parts.push(p.state);
@@ -72,7 +127,79 @@ export function progressLine(p: NonNullable<ResearchTask["progress"]>): string {
   return parts.join(" · ");
 }
 
-function Meter({ p }: { p: NonNullable<ResearchTask["progress"]> }) {
+// --------------------------------------------------------------------------- the sections
+const FINISHED: ReadonlyArray<ResearchTask["status"]> = ["done", "failed", "stopped", "cancelled"];
+
+export interface QueuePlan {
+  running: ResearchTask[];
+  /** In the order the runner takes them: ready first, then waiting; oldest first within each. */
+  queued: ResearchTask[];
+  byHandLive: ResearchProgress[];
+  recent: ResearchTask[];
+  byHandRecent: ResearchProgress[];
+  /** Older than `RECENT_DAYS`, by study in name order, newest first within one. */
+  history: Array<[string, ResearchTask[]]>;
+}
+
+/** When a finished row finished, for sorting and the 30-day cut: its finish, else its start, else when queued. */
+function endedMs(t: ResearchTask): number | null {
+  return etMs(t.finishedAt) ?? etMs(t.startedAt) ?? etMs(t.createdAt);
+}
+
+export function plan(q: ResearchQueue, nowMs: number, nowEpochS = Date.now() / 1000): QueuePlan {
+  const cut = nowMs - RECENT_DAYS * DAY_MS;
+  const running = q.tasks.filter((t) => t.status === "running").sort((a, b) => a.id - b.id);
+  const queued = q.tasks
+    .filter((t) => t.status === "queued")
+    .sort((a, b) => Number(b.waits === "ready") - Number(a.waits === "ready") || a.id - b.id);
+  const finished = q.tasks.filter((t) => FINISHED.includes(t.status));
+  const recent = finished
+    .filter((t) => (endedMs(t) ?? 0) >= cut)
+    .sort((a, b) => (endedMs(b) ?? 0) - (endedMs(a) ?? 0) || b.id - a.id);
+  const old = finished.filter((t) => (endedMs(t) ?? 0) < cut);
+  const groups = new Map<string, ResearchTask[]>();
+  for (const t of old) groups.set(t.study, [...(groups.get(t.study) ?? []), t]);
+  const history = [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([s, ts]) => [s, [...ts].sort((x, y) => y.id - x.id)] as [string, ResearchTask[]]);
+  const live = (p: ResearchProgress) => p.state === "running" || p.state === "stalled";
+  const byHandLive = q.byHand.filter(live);
+  const byHandRecent = q.byHand
+    .filter((p) => !live(p) && (p.updatedAt ?? 0) >= nowEpochS - RECENT_DAYS * 86_400)
+    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  return { running, queued, byHandLive, recent, byHandRecent, history };
+}
+
+/** "1 running · 2 queued · next: item19/fetch-resume (outside the 18:30–20:30 window)". */
+export function headline(p: QueuePlan): string {
+  const parts = [`${p.running.length} running`, `${p.queued.length} queued`];
+  if (p.byHandLive.length > 0) parts.push(`${p.byHandLive.length} by hand`);
+  const next = p.queued[0];
+  if (next) parts.push(`next: ${next.name}${next.waits && next.waits !== "ready" ? ` (${next.waits})` : ""}`);
+  return parts.join(" · ");
+}
+
+// --------------------------------------------------------------------------- filters
+export type StatusFilter = "all" | "active" | "failed" | "done";
+const FILTER_KEY = "backtest-queue-filter";
+
+export function keep(t: ResearchTask, status: StatusFilter, study: string): boolean {
+  if (study !== "" && t.study !== study) return false;
+  if (status === "active") return t.status === "running" || t.status === "queued";
+  if (status === "failed") return t.status === "failed";
+  if (status === "done") return t.status === "done";
+  return true;
+}
+
+function useFilter(): [{ status: StatusFilter; study: string }, (f: { status: StatusFilter; study: string }) => void] {
+  usePrefsVersion();
+  const raw = getPref(FILTER_KEY) as { status?: StatusFilter; study?: string } | undefined;
+  const value = { status: raw?.status ?? "all", study: raw?.study ?? "" };
+  return [value, (f) => void writePref(FILTER_KEY, f)];
+}
+
+// --------------------------------------------------------------------------- rows
+function Meter({ p }: { p: ResearchProgress }) {
   const frac = p.fraction ?? 0;
   const detail = p.phases.map((ph) => `${ph.name}: ${ph.done}${ph.total !== null ? ` of ${ph.total}` : ""}`).join("; ");
   return (
@@ -87,105 +214,306 @@ function Meter({ p }: { p: NonNullable<ResearchTask["progress"]> }) {
   );
 }
 
-function StateCell({ t }: { t: ResearchTask }) {
-  const detail = t.status === "queued" ? (t.waits === "ready" ? "ready: starts at the next tick" : t.waits) : t.note;
+function waitText(t: ResearchTask): string | null {
+  if (t.status === "queued") return t.waits === "ready" ? "ready: starts at the next tick" : t.waits;
+  return t.note;
+}
+
+const COLS = 6;
+
+function Toggle({ open, label, onClick }: { open: boolean; label: string; onClick: () => void }) {
   return (
-    <td>
-      <span className={STATUS_CHIP[t.status]}>{t.status}</span>
-      {detail ? <span className="muted"> {detail}</span> : null}
-      {t.progress ? <Meter p={t.progress} /> : null}
-    </td>
+    <button type="button" className="btn btn-quiet" aria-expanded={open} aria-label={`${open ? "Close" : "Open"} ${label}`} onClick={onClick}>
+      {open ? "▾" : "▸"}
+    </button>
   );
 }
 
-/** The rows grouped by study (the category), studies in name order, each study's rows newest first. */
-export function byStudy(tasks: ResearchTask[]): Array<[string, ResearchTask[]]> {
-  const groups = new Map<string, ResearchTask[]>();
-  for (const t of tasks) groups.set(t.study, [...(groups.get(t.study) ?? []), t]);
-  return [...groups.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([s, ts]) => [s, [...ts].sort((x, y) => y.id - x.id)] as [string, ResearchTask[]]);
+function Field({ k, children }: { k: string; children: ReactNode }) {
+  return (
+    <>
+      <dt>{k}</dt>
+      <dd>{children}</dd>
+    </>
+  );
 }
 
-const COLUMNS = 11;
+function LogTail({ id }: { id: number }) {
+  const { data, isLoading } = useBridged<{ lines: string[] }>(["backtest", "queue-log", String(id)], `/api/backtest/queue/${id}/log`, 30_000);
+  const lines = data?.data?.lines ?? [];
+  if (isLoading) return <span className="skeleton skeleton-text" style={{ width: "60%" }} />;
+  if (lines.length === 0) return <p className="muted">No log yet.</p>;
+  return <pre className="queue-log">{lines.join("\n")}</pre>;
+}
 
-export function QueueTable({ q }: { q: ResearchQueue }) {
-  if (q.tasks.length === 0) {
-    return <p className="muted">The queue is empty.</p>;
+export function TaskDetail({ t, withLog = true }: { t: ResearchTask; withLog?: boolean }) {
+  const r = t.result;
+  return (
+    <div className="queue-detail">
+      <dl className="queue-fields">
+        <Field k="arguments">
+          <code>{JSON.stringify(t.args)}</code>
+        </Field>
+        {t.needs ? <Field k="needs">{t.needs}</Field> : null}
+        {t.notBefore ? <Field k="not before">{stamp(t.notBefore)} ET</Field> : null}
+        {t.stopBy ? <Field k="stop by">{stamp(t.stopBy)} ET</Field> : null}
+        <Field k="queued / started / finished">
+          {stamp(t.createdAt)} · {stamp(t.startedAt)} · {stamp(t.finishedAt)} ET
+        </Field>
+        <Field k="runs / exit">
+          {t.runs} · <span className={t.exitCode !== null && t.exitCode !== 0 ? "pnl-neg" : undefined}>{t.exitCode ?? "—"}</span>
+        </Field>
+        {t.output ? <Field k="declares">{t.output}</Field> : null}
+        {r?.report
+          ? Object.entries(r.report).map(([k, v]) => (
+              <Field key={k} k={k}>
+                {String(v)}
+              </Field>
+            ))
+          : null}
+        {r?.input ? <Field k="input">{r.input}</Field> : null}
+        {r?.output ? (
+          <Field k="output">
+            {r.output}
+            {r.outputExists === false ? <span className="pnl-neg"> (missing)</span> : null}
+          </Field>
+        ) : null}
+        {r?.log ? <Field k="log">{r.log}</Field> : null}
+        {t.progress ? (
+          <Field k="progress">
+            {t.progress.phases.map((ph) => `${ph.name} ${ph.done}${ph.total !== null ? `/${ph.total}` : ""}${ph.current ? ` (${ph.current})` : ""}`).join(" · ") ||
+              "—"}
+          </Field>
+        ) : null}
+      </dl>
+      {withLog ? <LogTail id={t.id} /> : null}
+    </div>
+  );
+}
+
+function TaskRows({ t, nowMs }: { t: ResearchTask; nowMs: number }) {
+  const [open, setOpen] = useState(false);
+  const when = t.status === "running" ? etMs(t.startedAt) : t.status === "queued" ? etMs(t.createdAt) : endedMs(t);
+  const wait = waitText(t);
+  return (
+    <Fragment>
+      <tr>
+        <td>
+          <Toggle open={open} label={t.name} onClick={() => setOpen(!open)} />
+        </td>
+        <td title={`#${t.id}`}>
+          {t.name}
+          {t.needs.includes("thetadata") ? (
+            <span className="chip" title="Needs the vendor account's one ThetaData session">
+              ThetaData
+            </span>
+          ) : null}
+        </td>
+        <td>
+          <span className="chip muted">{t.kind}</span>
+        </td>
+        <td>
+          <span className={STATUS_CHIP[t.status]}>{t.status}</span>
+          {wait ? <span className="muted"> {wait}</span> : null}
+          {t.progress && (t.status === "running" || t.status === "queued") ? <Meter p={t.progress} /> : null}
+        </td>
+        <td className={t.result?.outputExists === false ? "pnl-neg" : undefined}>{resultLine(t)}</td>
+        <td className="muted" title={stamp(t.finishedAt ?? t.startedAt ?? t.createdAt)}>
+          {ago(when, nowMs)}
+        </td>
+      </tr>
+      {open ? (
+        <tr className="queue-detail-row">
+          <td colSpan={COLS}>
+            <TaskDetail t={t} />
+          </td>
+        </tr>
+      ) : null}
+    </Fragment>
+  );
+}
+
+function ByHandRows({ p }: { p: ResearchProgress }) {
+  const [open, setOpen] = useState(false);
+  const nowS = Date.now() / 1000;
+  const when = p.updatedAt !== null ? `${Math.max(0, Math.round((nowS - p.updatedAt) / 60))} min ago` : "—";
+  return (
+    <Fragment>
+      <tr>
+        <td>
+          <Toggle open={open} label={p.job} onClick={() => setOpen(!open)} />
+        </td>
+        <td title={p.file}>{p.job}</td>
+        <td>
+          <span className="chip muted" title="Started without the queue: found through its progress file">
+            by hand
+          </span>
+        </td>
+        <td>
+          <span className={PROGRESS_CHIP[p.state]}>{p.state}</span>
+          <Meter p={p} />
+        </td>
+        <td className="muted">{p.note ?? "—"}</td>
+        <td className="muted">{when}</td>
+      </tr>
+      {open ? (
+        <tr className="queue-detail-row">
+          <td colSpan={COLS}>
+            <dl className="queue-fields">
+              <Field k="file">{p.file}</Field>
+              {p.phases.map((ph) => (
+                <Field key={ph.name} k={ph.name}>
+                  {ph.done}
+                  {ph.total !== null ? ` of ${ph.total}` : ""} {ph.unit}
+                  {ph.current ? ` · on ${ph.current}` : ""}
+                </Field>
+              ))}
+            </dl>
+          </td>
+        </tr>
+      ) : null}
+    </Fragment>
+  );
+}
+
+function Section({ title, count, children }: { title: string; count: number; children: ReactNode }) {
+  return (
+    <>
+      <tr className="row-group">
+        <th colSpan={COLS} scope="rowgroup">
+          {title} <span className="muted">· {count}</span>
+        </th>
+      </tr>
+      {children}
+    </>
+  );
+}
+
+export function QueueTable({ q, nowMs = etNowMs(), status = "all", study = "" }: { q: ResearchQueue; nowMs?: number; status?: StatusFilter; study?: string }) {
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const shown = { ...q, tasks: q.tasks.filter((t) => keep(t, status, study)) };
+  const p = plan(shown, nowMs);
+  const hand = study === "" && (status === "all" || status === "active");
+  const nowCount = p.running.length + p.queued.length + (hand ? p.byHandLive.length : 0);
+  const recentCount = p.recent.length + (hand ? p.byHandRecent.length : 0);
+  const historyCount = p.history.reduce((n, [, ts]) => n + ts.length, 0);
+  if (nowCount + recentCount + historyCount === 0) {
+    return <p className="muted">{q.tasks.length === 0 && q.byHand.length === 0 ? "The queue is empty." : "Nothing matches the filter."}</p>;
   }
   return (
     <div className="table-scroll">
-      <table className="data-table">
+      <table className="data-table queue-table">
         <thead>
           <tr>
-            <th className="num">#</th>
-            <th title="The step within its study: the row's name is study/step">Step</th>
+            <th aria-label="Open" />
+            <th title="study/step: a study is the task's category">Task</th>
             <th>Kind</th>
-            <th title="What the task was given: a file is shown by its name">Arguments</th>
             <th>State</th>
             <th title="What a finished row produced: its counts and the file it points to, then its log">Result</th>
-            <th className="num" title="How many times it has started: a fetch stopped for the nightly window resumes as a new run">
-              Runs
-            </th>
-            <th title="ET">Queued</th>
-            <th title="ET">Started</th>
-            <th title="ET">Finished</th>
-            <th className="num">Exit</th>
+            <th title="Started (running), queued (waiting) or finished, ET">When</th>
           </tr>
         </thead>
         <tbody>
-          {byStudy(q.tasks).map(([study, rows]) => [
-            <tr key={`study-${study}`} className="row-group">
-              <th colSpan={COLUMNS} scope="rowgroup">
-                {study} <span className="muted">· {rows.length} task{rows.length === 1 ? "" : "s"}</span>
-              </th>
-            </tr>,
-            ...rows.map((t) => (
-            <tr key={t.id}>
-              <td className="num">{t.id}</td>
-              <td title={t.name}>
-                {t.step}
-                {t.needs.includes("thetadata") ? (
-                  <span className="chip" title="Needs the vendor account's one ThetaData session">
-                    ThetaData
+          <Section title="Now" count={nowCount}>
+            {p.running.map((t) => (
+              <TaskRows key={t.id} t={t} nowMs={nowMs} />
+            ))}
+            {hand ? p.byHandLive.map((x) => <ByHandRows key={x.file} p={x} />) : null}
+            {p.queued.map((t) => (
+              <TaskRows key={t.id} t={t} nowMs={nowMs} />
+            ))}
+            {nowCount === 0 ? (
+              <tr>
+                <td colSpan={COLS} className="muted">
+                  Nothing running or queued.
+                </td>
+              </tr>
+            ) : null}
+          </Section>
+          <Section title={`Recent (${RECENT_DAYS} days)`} count={recentCount}>
+            {p.recent.map((t) => (
+              <TaskRows key={t.id} t={t} nowMs={nowMs} />
+            ))}
+            {hand ? p.byHandRecent.map((x) => <ByHandRows key={x.file} p={x} />) : null}
+          </Section>
+          {historyCount > 0 ? (
+            <>
+              <tr className="row-group">
+                <th colSpan={COLS} scope="rowgroup">
+                  <Toggle open={historyOpen} label="the history" onClick={() => setHistoryOpen(!historyOpen)} /> History{" "}
+                  <span className="muted">
+                    · {historyCount} older than {RECENT_DAYS} days, by study
                   </span>
-                ) : null}
-                {t.notBefore ? <span className="muted"> · not before {stamp(t.notBefore)}</span> : null}
-                {t.stopBy ? <span className="muted"> · stop by {stamp(t.stopBy)}</span> : null}
-              </td>
-              <td>{t.kind}</td>
-              <td className="muted">{argsLine(t.args)}</td>
-              <StateCell t={t} />
-              <td className={t.result?.outputExists === false ? "pnl-neg" : undefined}>{resultLine(t)}</td>
-              <td className="num">{t.runs}</td>
-              <td>{stamp(t.createdAt)}</td>
-              <td>{stamp(t.startedAt)}</td>
-              <td>{stamp(t.finishedAt)}</td>
-              <td className={t.exitCode !== null && t.exitCode !== 0 ? "num pnl-neg" : "num"}>{t.exitCode ?? "—"}</td>
-            </tr>
-            )),
-          ])}
+                </th>
+              </tr>
+              {historyOpen
+                ? p.history.map(([s, ts]) => (
+                    <Fragment key={`h-${s}`}>
+                      <tr className="row-subgroup">
+                        <td colSpan={COLS} className="muted">
+                          {s} · {ts.length} task{ts.length === 1 ? "" : "s"}
+                        </td>
+                      </tr>
+                      {ts.map((t) => (
+                        <TaskRows key={t.id} t={t} nowMs={nowMs} />
+                      ))}
+                    </Fragment>
+                  ))
+                : null}
+            </>
+          ) : null}
         </tbody>
       </table>
     </div>
   );
 }
 
+function Filters({ q, value, onChange }: { q: ResearchQueue; value: { status: StatusFilter; study: string }; onChange: (v: { status: StatusFilter; study: string }) => void }) {
+  const studies = [...new Set(q.tasks.map((t) => t.study))].sort();
+  const options: Array<[StatusFilter, string]> = [
+    ["all", "all"],
+    ["active", "running + queued"],
+    ["failed", "failed"],
+    ["done", "done"],
+  ];
+  return (
+    <div className="history-controls" role="group" aria-label="Filter the queue">
+      {options.map(([v, label]) => (
+        <button key={v} type="button" className={value.status === v ? "chip chip-ok" : "chip"} aria-pressed={value.status === v} onClick={() => onChange({ ...value, status: v })}>
+          {label}
+        </button>
+      ))}
+      <select aria-label="Study" value={value.study} onChange={(e) => onChange({ ...value, study: e.target.value })}>
+        <option value="">every study</option>
+        {studies.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 export function BacktestQueueTab() {
   const { data, isLoading, isError, error, dataUpdatedAt } = useBridged<ResearchQueue>(["backtest", "queue"], "/api/backtest/queue", 30_000);
+  const [filter, setFilter] = useFilter();
   let body: ReactNode;
   if (isLoading) body = <span className="skeleton skeleton-text" style={{ width: "40%" }} />;
   else if (isError) body = <p className="muted">{(error as Error).message}</p>;
   else if (data === undefined || !data.ok || data.data === null) body = <p className="muted">{data?.error ?? "research queue read unavailable"}</p>;
   else {
     const q = data.data;
+    const nowMs = etNowMs();
     body = (
       <>
+        <p style={{ margin: "0 0 4px" }}>{headline(plan(q, nowMs))}</p>
         <p className="muted" style={{ margin: "0 0 8px" }}>
           ThetaData session {q.sessionHeld ? "held by another process" : "free"}
           {q.blackout ? ` · no ThetaData task runs ${q.blackout[0]}–${q.blackout[1]} ET on trading days (the nightly backtest-fetch)` : ""}
         </p>
-        <QueueTable q={q} />
+        <Filters q={q} value={filter} onChange={setFilter} />
+        <QueueTable q={q} nowMs={nowMs} status={filter.status} study={filter.study} />
       </>
     );
   }
@@ -193,11 +521,11 @@ export function BacktestQueueTab() {
     <Card title="Research queue" collapseKey="backtest-queue" updatedAt={dataUpdatedAt} isError={isError}>
       {body}
       <p className="muted" style={{ marginTop: 8 }}>
-        The supervisor runs one task at a time, oldest ready first: an allow-listed fetch (fetch-chains, fetch-flow) or a
-        script checked into <code>scripts/</code>. A fetch stopped by the nightly window resumes after it. Add one with{" "}
-        <code>run.py queue-add --study &lt;study&gt; [--step &lt;step&gt;] --task &lt;kind&gt; --task-args &apos;&#123;…&#125;&apos;</code>; a
-        task is named study/step, and a study is its category. Cancel a queued one with{" "}
-        <code>run.py queue-cancel --task-id N</code>. Read-only here.
+        The supervisor runs one task at a time, oldest ready first: an allow-listed fetch (fetch-chains, fetch-flow), a
+        validation, or a script checked into <code>scripts/</code>. A fetch stopped by the nightly window resumes after it. Add
+        one with <code>run.py queue-add --study &lt;study&gt; [--step &lt;step&gt;] --task &lt;kind&gt; --task-args &apos;&#123;…&#125;&apos;</code>;
+        cancel a queued one with <code>run.py queue-cancel --task-id N</code>. A run started by hand shows here through its
+        progress file. Read-only here.
       </p>
     </Card>
   );

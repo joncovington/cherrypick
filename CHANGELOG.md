@@ -11,6 +11,16 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed (2026-10-27): the Backtest → queue tab, laid out again.** It is now three sections:
+  - **Now:** running tasks first, then queued ones in the order the runner takes them, with the
+    orchestrator's reasons for waiting, and runs started by hand.
+  - **Recent:** the last 30 days.
+  - **History:** older tasks, collapsed and grouped by study.
+
+  Each row has five columns and opens to show its arguments, timings, exit code, result fields and the
+  last 40 lines of its log (a new read-only route behind the Backtest gate). Status and study filters
+  are remembered per viewer (`docs/progress-queue-arms-plan.md`, phase 2).
+
 - **Added (2026-10-27): job progress, written by the job.** `core.progress` gives every long job a small
   file under `state/progress/` (phases, counts, what it is on), and a child process reports beside its
   parent's.

@@ -86,6 +86,14 @@ function parseLine(source: string, raw: string): LogLine {
   }
 }
 
+/** The last `limit` lines of research-queue task `id`'s log (`logs/research-queue/<id>.log`, written
+ *  by the orchestrator's runner); empty when there is none yet. `id` is an integer, so the path can
+ *  name nothing outside that directory. */
+export function readQueueLog(config: ConsoleConfig, id: number, limit = 40): string[] {
+  if (!Number.isInteger(id) || id <= 0) return [];
+  return tailFile(path.join(config.paths.cherrypick, "logs", "research-queue", `${id}.log`)).slice(-limit);
+}
+
 /** Every suite log, by the id the System page filters on. Paths as the writers name them. */
 export function logSources(config: ConsoleConfig): Array<{ id: string; path: string }> {
   const root = path.join(config.paths.cherrypick, "logs");
