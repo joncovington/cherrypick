@@ -12,6 +12,7 @@ import { readBacktestOverview, readBacktestRun } from "../services/backtestBridg
 import { readResearchQueue } from "../services/researchQueueBridge.js";
 import type { ConsoleConfig } from "../config.js";
 import { readSlices } from "../readers/slices.js";
+import { readQueueLog } from "../readers/logs.js";
 
 /**
  * `GET /api/backtest/overview`, `GET /api/backtest/runs/:id` and `GET /api/backtest/queue` — the
@@ -58,6 +59,19 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
   app.get("/api/backtest/queue", async (_req, reply): Promise<BridgedResult<ResearchQueue> | FastifyReply> => {
     if (!backtestOn(getFeatures())) return refuse(reply);
     return readResearchQueue();
+  });
+
+  // One task's log tail, for its expanded row. The id is a positive integer and the path is built
+  // from it alone, so nothing outside `logs/research-queue/` can be named.
+  app.get<{ Params: { id: string } }>("/api/backtest/queue/:id/log", async (req, reply) => {
+    if (!backtestOn(getFeatures()) || config === undefined) return refuse(reply);
+    if (!/^[1-9]\d{0,8}$/.test(req.params.id)) return reply.code(400).send({ error: "task id must be a positive integer" });
+    const result: BridgedResult<{ lines: string[] }> = {
+      ok: true,
+      data: { lines: readQueueLog(config, Number(req.params.id)) },
+      error: null,
+    };
+    return result;
   });
 
   // B5's slice reports (`technicals slices` files). Behind the same gate: one may be built from a
