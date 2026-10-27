@@ -51,3 +51,12 @@ def test_a_run_report_is_read_by_id_and_a_bad_id_is_refused(capsys):
     assert out["ok"] and out["report"] == {"run_id": "x"}
     assert readout.run_report("../../etc/passwd")["ok"] is False
     assert cli.main(["read", "run", "--id", "nope"]) == 1
+
+
+def test_read_stores_names_every_declared_store_and_where_they_live(capsys):
+    from cherrypick.backtest import stores
+
+    s = _settings()
+    out = readout.store_locations(s)
+    assert out["ok"] and out["dir"] == str(paths.vendor_dir(s))
+    assert out["files"] == [e["file"] for e in stores.STORES]

@@ -7,7 +7,8 @@ gate: it answers whoever asks on this machine, as every other read verb does.
 
 `overview` -> {ok, license, windows, stores, validation, runs, trials}
 `run --id X [--capital N]` -> {ok, report, cards} (the run's own report, as written, and its cards:
-cards.py, on the run's peak session risk as the account unless a capital is chosen)
+cards.py, each arm on its own peak session risk unless one capital is chosen for all)
+`stores` -> {ok, dir, files} (where the declared vendor stores live; the research queue's check)
 """
 
 from __future__ import annotations
@@ -144,6 +145,14 @@ def overview(settings: dict) -> dict:
         "runs": runs,
         "trials": trials,
     }
+
+
+def store_locations(settings: dict) -> dict:
+    """Where every declared vendor store lives (`stores.STORES` in `paths.vendor_dir`): names and the
+    directory only, no file is opened."""
+    from . import stores
+
+    return {"ok": True, "dir": str(paths.vendor_dir(settings)), "files": [e["file"] for e in stores.STORES]}
 
 
 def run_report(run_id: str, capital: float | None = None) -> dict:

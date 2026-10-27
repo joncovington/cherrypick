@@ -162,6 +162,38 @@ def git_tracked(root: Path, path: Path) -> bool:
     return r.returncode == 0
 
 
+def backtest_stores() -> dict | None:
+    """Where the backtest declares its vendor stores (`read stores`: {dir, files}), or None when it
+    cannot say (not installed, or the read failed)."""
+    try:
+        r = subprocess.run(
+            [sys.executable, "-m", "cherrypick.backtest", "read", "stores"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        out = json.loads(r.stdout) if r.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+    return out if isinstance(out, dict) and out.get("ok") else None
+
+
+def check_store_output(output: str, stores: dict | None) -> None:
+    """A declared output named like a declared vendor store must BE that store: the runner judges a
+    finished row by whether its output exists, so a store's name in the wrong directory turns a
+    complete fetch into a failure and holds every row after it (item 19, 2026-10-26: `vendor/` for
+    `vendor/thetadata/`). Unchecked when the backtest cannot say where its stores live."""
+    if stores is None:
+        return
+    p = Path(output).expanduser()
+    if p.name not in stores.get("files", []):
+        return
+    where = Path(stores["dir"]) / p.name
+    if p.resolve() != where.resolve():
+        raise Refused(f"output {output!r} names the vendor store {p.name}, which lives at {where}")
+
+
 # kind -> (what it needs, whether --stop-by bounds it)
 KINDS: dict[str, tuple[tuple[str, ...], bool]] = {
     "fetch-chains": ((THETADATA,), True),
@@ -450,11 +482,13 @@ def add(
     path: Path | None = None,
     root: Path | None = None,
     tracked: Callable[[Path, Path], bool] | None = None,
+    stores: Callable[[], dict | None] | None = None,
 ) -> dict:
     """Queue one task, named `study/step` (step defaults to the kind). Everything is checked now, so
     a row the runner would refuse is never added: the kind and arguments (`build_argv`), both names
-    as slugs, the times, a script's declared `output` (where its conclusion will be), and that no
-    other live row has the same name."""
+    as slugs, the times, a script's declared `output` (where its conclusion will be; a vendor store's
+    name only at that store's own path, `check_store_output`), and that no other live row has the
+    same name."""
     step = step or kind
     for what, v in (("study", study), ("step", step)):
         if not isinstance(v, str) or not SLUG.match(v):
@@ -467,6 +501,8 @@ def add(
             datetime.fromisoformat(v)  # ValueError on a malformed time
     if output is not None and not output.strip():
         output = None
+    if output is not None:
+        check_store_output(output, (stores or backtest_stores)())
     needs = ",".join(KINDS[kind][0])
     with connect(path) as conn:
         live = conn.execute(
