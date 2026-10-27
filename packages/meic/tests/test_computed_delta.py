@@ -123,6 +123,16 @@ def test_a_validation_replays_a_session_on_the_delta_it_ran_with(monkeypatch):
         replay_check.decision_check("2026-10-26", ["control"], delta_source="vendor")
 
 
+def test_decision_check_does_not_shadow_the_book_function():
+    """2026-10-26: the source was bound to a local `as_of`, hiding the module's `as_of(row, t)`, so
+    every session with a paper entry died with "'str' object is not callable" and the night's
+    validation compared none. The test above stops before the book is built, so it never saw it."""
+    from cherrypick.meic import replay_check
+
+    code = replay_check.decision_check.__code__
+    assert "as_of" not in code.co_varnames + code.co_cellvars
+
+
 def test_an_unknown_source_is_refused():
     with pytest.raises(ValueError, match="delta_source"):
         paper_loop.candidates_from_chain(chain(), SPOT, [10], [0.16], 0.16, delta_source="vendor")
