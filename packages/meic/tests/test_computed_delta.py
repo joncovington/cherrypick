@@ -123,6 +123,49 @@ def test_a_validation_replays_a_session_on_the_delta_it_ran_with(monkeypatch):
         replay_check.decision_check("2026-10-26", ["control"], delta_source="vendor")
 
 
+def test_a_check_with_a_delta_source_still_rewinds_paper_s_book(monkeypatch, tmp_path):
+    """The source must not shadow `as_of`, the book's rewind: it did, and every check from #601 to
+    the fix crashed on its first paper entry, so the validations it fed compared no session."""
+    import sqlite3
+    from types import SimpleNamespace
+
+    from cherrypick.meic import replay, replay_check
+
+    class Stop(Exception):
+        pass
+
+    entered = "2026-10-26T12:00:00"
+    paper_db = tmp_path / "paper.db"
+    conn = sqlite3.connect(paper_db)
+    conn.execute("CREATE TABLE ic_trades (trade_date, symbol, arm, status, entry_time, settle_underlying)")
+    conn.execute(
+        "INSERT INTO ic_trades VALUES (?, ?, 'control', 'settled', ?, NULL)",
+        ("2026-10-26", replay.SYMBOL, entered),
+    )
+    conn.commit()
+    conn.close()
+    stamp = replay_check._ts(entered)
+    seen = {}
+
+    def fake_tick(template, rday, sample, book, arms):
+        seen["book"] = book
+        raise Stop
+
+    monkeypatch.setattr(replay, "replay_profiles", lambda arms: ({}, {}))
+    monkeypatch.setattr(
+        replay,
+        "ReplayDay",
+        lambda *a, **k: SimpleNamespace(recorded=SimpleNamespace(samples=[{"ts": stamp}]), vol=20.0),
+    )
+    monkeypatch.setattr(replay_check, "_Template", lambda: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(replay_check, "_tick", fake_tick)
+    for source in (None, "computed"):
+        seen.clear()
+        with pytest.raises(Stop):
+            replay_check.decision_check("2026-10-26", ["control"], paper_db=paper_db, delta_source=source)
+        assert seen["book"] == [], source
+
+
 def test_an_unknown_source_is_refused():
     with pytest.raises(ValueError, match="delta_source"):
         paper_loop.candidates_from_chain(chain(), SPOT, [10], [0.16], 0.16, delta_source="vendor")

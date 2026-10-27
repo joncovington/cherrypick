@@ -181,8 +181,8 @@ def decision_check(
         raise ValueError(f"delta_source must be one of {paper_loop.DELTA_SOURCES}, not {delta_source!r}")
     # By default the delta that session ran with: the check asks whether the replay reproduces
     # paper's own decisions, so a session before `delta_source_since` is replayed on the feed's delta.
-    as_of = delta_source or paper_loop.delta_source_for(cfg, day)
-    rday = replay.ReplayDay(day, cfg, profiles, history_db=history_db, delta_source=as_of)
+    source = delta_source or paper_loop.delta_source_for(cfg, day)
+    rday = replay.ReplayDay(day, cfg, profiles, history_db=history_db, delta_source=source)
     if not rday.recorded.samples:
         return {"ok": False, "day": day, "error": "no recorded samples"}
     if not rday.vol:
@@ -248,7 +248,7 @@ def decision_check(
     with tempfile.TemporaryDirectory() as tmp:
         ledger = Path(tmp) / "day.db"
         full = replay.replay_session(
-            day, ledger, arms=arms, history_db=history_db, settle_price=settle_price, delta_source=as_of
+            day, ledger, arms=arms, history_db=history_db, settle_price=settle_price, delta_source=source
         )
         if full.get("ok"):
             conn = sqlite3.connect(ledger)
