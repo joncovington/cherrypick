@@ -77,8 +77,10 @@ function EntryCard({ entry, unit }: { entry: ExperimentGuideEntry; unit: string 
             </span>
           ) : entry.enabled ? (
             <span className="chip chip-ok">running</span>
-          ) : entry.positions > 0 ? (
-            <span className="chip" title="disabled, but it has sessions in the book">
+          ) : entry.retired ? (
+            // The server's reading: disabled, and either traded or dated retired (`_retired`). An arm
+            // retired before it ever traded -- curve's hook -- is retired, not "never run".
+            <span className="chip" title={entry.positions > 0 ? "disabled, but it has sessions in the book" : "disabled and dated retired; it never traded"}>
               retired
             </span>
           ) : (
