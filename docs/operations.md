@@ -117,6 +117,10 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 Research and screener collectors (the other `technicals-*` jobs, `report-screener-*`,
 `report-skate-quotes-*`, `report-earnings-strikes`, `pmcc-earnings-refresh`,
 `flies-intraday-agent`) are derived the same way; `run.py status` lists them with their schedules.
+The ones fed only by the vendor -- `report-screener-greeks` / `-late` and `technicals-screeners` --
+are off with `market_report.collector`, as the collector is (the subscription ended 2026-10-24).
+`report-screener-measure-1` / `-2` stay on for the earnings calendar's spreads and quote the
+vendor's list rows only while the collector is on.
 
 Missed-fire policy after sleep/hibernate: interval jobs fire once immediately and resume cadence
 (never a burst); daily/monthly jobs fire inside their catchup window, else record `missed` and skip.

@@ -103,6 +103,19 @@ def test_measure_skips_names_the_universe_already_measures_and_uses_its_spelling
     assert fsg.measure_names(lists, {"AAPL"}) == ["BRK.B", "SLS"]
 
 
+def test_measure_reads_the_vendor_lists_only_while_the_collector_is_on(monkeypatch):
+    """With the collector off the newest saved list is frozen (2026-10-23), and quoting its legs
+    every session feeds no reader; the earnings spreads go on without it."""
+    import cherrypick.core.vendor as vendor
+
+    monkeypatch.setattr(fsg, "latest_list_day", lambda: "2026-10-23")
+    monkeypatch.setattr(fsg, "load_lists", lambda day: LISTS)
+    monkeypatch.setattr(vendor, "suite_collector_on", lambda: False)
+    assert fsg.lists_to_measure() == (None, {})
+    monkeypatch.setattr(vendor, "suite_collector_on", lambda: True)
+    assert fsg.lists_to_measure() == ("2026-10-23", LISTS)
+
+
 # --- legs: the vendor's option against the user's monthly ------------------------------------
 
 MONTHLIES = {"2026-11-20", "2026-12-18", "2027-01-15"}

@@ -65,6 +65,14 @@ fake clocks) and spawns short-lived headless ticks, recording per-job state in
 stdlib + local files only — no broker, network or AI — and every registration check dual-reads
 (schtasks fallback) until the transition window closes.
 
+**A job fed only by the vendor follows `market_report.collector`** (`cherrypick.core.vendor`, the
+switch every vendor reader shares): the collector itself, the two greeks runs over the vendor's list
+rows, and `technicals-screeners` (2026-10-27). With it off they are disabled with that reason rather
+than left to no-op every night. A job that only *partly* reads a vendor file keeps running and drops
+that part itself: `technicals-stage-lists` (its score against the vendor's watchlists),
+`technicals-securities` (the comparison with the vendor's list) and `report-screener-measure-*`,
+which quotes the vendor's list rows only while the collector is on and the earnings spreads always.
+
 **A child's stderr goes to `logs/jobs/<job-id>.stderr.log`** (a file, never a pipe: a child that
 outlives a supervisor restart keeps writing). On a failed exit the supervisor masks the run's last
 lines through `core.redact` and puts them in `supervisor.log` and the registry as `last_error`, which
