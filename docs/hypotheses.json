@@ -474,7 +474,7 @@
       "id": 19,
       "study": "item19",
       "title": "The Time Warp: two OTM SPX flies bought at the close, sold the next session",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "close-to-next-session",
       "side": "two-sided",
