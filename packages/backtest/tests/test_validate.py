@@ -195,6 +195,51 @@ def test_run_thins_only_when_the_vendor_is_coarser(tmp_path):
     assert same["decisions"]["data_basis"] == "recorder" and "thinned.db" not in seen
 
 
+def test_meic_validation_can_replay_both_sources_on_one_delta(tmp_path):
+    rec = _store_at(tmp_path, "rec", _rows(DAY))
+    _store_at(tmp_path, "ven", _rows(DAY))
+    s = settings.resolve({"store": {"dir": str(tmp_path / "ven")}})
+    seen = []
+
+    def runner(args):
+        seen.append(list(args))
+        return _summary(12)
+
+    out = validate.run(
+        s, "SPX", [DAY], recorder_db=rec, module="meic", runner=runner, delta_source="computed"
+    )
+    # Every replay, recorder's and vendor's alike, on the computed delta.
+    assert seen and all(a[a.index("--delta-source") + 1] == "computed" for a in seen)
+    assert out["delta_source"] == "computed"
+    # Its own report: never written over the as-run one for the same dates.
+    assert out["written"].endswith(f"meic-SPX-{DAY}_{DAY}-delta-computed.json")
+    seen.clear()
+    as_run = validate.run(s, "SPX", [DAY], recorder_db=rec, module="meic", runner=runner)
+    assert all("--delta-source" not in a for a in seen) and as_run["delta_source"] is None
+    assert as_run["written"].endswith(f"meic-SPX-{DAY}_{DAY}.json")
+
+
+@pytest.mark.parametrize("module, source", [("flies", "computed"), ("meic", "lagged")])
+def test_a_delta_source_is_meics_and_one_it_knows(tmp_path, module, source):
+    s = settings.resolve({"store": {"dir": str(tmp_path / "ven")}})
+    with pytest.raises(ValueError, match="delta_source"):
+        validate.run(s, "SPX", [DAY], module=module, delta_source=source, runner=lambda a: _summary(12))
+
+
+def test_the_delta_sources_are_meics_own():
+    """This package imports no strategy module, so it spells MEIC's sources; read them from MEIC."""
+    import ast
+
+    src = Path(__file__).resolve().parents[2] / "meic" / "src" / "cherrypick" / "meic" / "paper_loop.py"
+    tree = ast.parse(src.read_text(encoding="utf-8"))
+    declared = next(
+        ast.literal_eval(n.value)
+        for n in tree.body
+        if isinstance(n, ast.Assign) and any(getattr(t, "id", None) == "DELTA_SOURCES" for t in n.targets)
+    )
+    assert validate.DELTA_SOURCES == declared
+
+
 def test_a_failed_check_run_never_unlocks(tmp_path):
     broken = {"ok": False, "error": "boom"}
     out = validate.decisions_layer(

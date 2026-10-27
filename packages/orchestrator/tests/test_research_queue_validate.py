@@ -23,6 +23,24 @@ def test_an_unknown_module_is_refused(args):
         rq.build_argv("validate", args, "py")
 
 
+def test_meic_validation_can_name_one_delta_source_for_both_replays():
+    argv = rq.build_argv("validate", {"module": "meic", "cadence": 60, "delta_source": "computed"}, "py")
+    assert argv[-4:] == ["--cadence", "60", "--delta-source", "computed"]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        {"module": "meic", "delta_source": "Computed"},
+        {"module": "meic", "delta_source": "lagged"},
+        {"module": "flies", "delta_source": "computed"},  # flies picks no strike by delta
+    ],
+)
+def test_a_delta_source_that_is_not_meics_is_refused(args):
+    with pytest.raises(rq.Refused, match="delta_source"):
+        rq.build_argv("validate", args, "py")
+
+
 def test_a_cadence_picks_the_store_validated():
     argv = rq.build_argv("validate", {"module": "meic", "cadence": 60}, "py")
     assert argv[-2:] == ["--cadence", "60"]

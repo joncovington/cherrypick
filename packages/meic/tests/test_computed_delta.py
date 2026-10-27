@@ -114,6 +114,13 @@ def test_a_validation_replays_a_session_on_the_delta_it_ran_with(monkeypatch):
         with pytest.raises(Stop):
             replay_check.decision_check(day, ["control"])
         assert seen["source"] == expected, day
+    # A chosen source replaces the session's own: backtest's validation runs both of its sources on
+    # "computed", because the feed's lag is in the recording and not in a vendor's history.
+    with pytest.raises(Stop):
+        replay_check.decision_check("2026-10-26", ["control"], delta_source="computed")
+    assert seen["source"] == "computed"
+    with pytest.raises(ValueError, match="delta_source"):
+        replay_check.decision_check("2026-10-26", ["control"], delta_source="vendor")
 
 
 def test_an_unknown_source_is_refused():

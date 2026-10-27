@@ -388,7 +388,14 @@ def cmd_validate(args) -> int:
         return 1
     arms = [a.strip() for a in args.arms.split(",") if a.strip()] if args.arms else None
     report = validate.run(
-        s, args.dataset, dates, recorder_db=recorder, cadence=args.cadence, module=args.module, arms=arms
+        s,
+        args.dataset,
+        dates,
+        recorder_db=recorder,
+        cadence=args.cadence,
+        module=args.module,
+        arms=arms,
+        delta_source=args.delta_source,
     )
     _emit(report)
     return 0
@@ -588,6 +595,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     va.add_argument("--module", default="flies", choices=("flies", "meic"), help="whose replay to validate")
     va.add_argument("--arms", default=None, help="meic: comma-separated SPX arms to check (default control)")
+    va.add_argument(
+        "--delta-source",
+        default=None,
+        choices=("stream", "computed"),
+        help="meic: one delta source for both replays (default: each session's own, as paper ran it)",
+    )
     va.set_defaults(fn=cmd_validate)
     pg = sub.add_parser("purge")
     pg.add_argument("--derived", action="store_true", help="also remove results derived from the data")

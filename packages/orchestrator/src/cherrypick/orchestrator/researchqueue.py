@@ -238,6 +238,12 @@ def build_argv(
             if type(cadence) is not int or not 1 <= cadence <= 3600:
                 raise Refused("validate's 'cadence' is whole seconds, 1 to 3600")
             argv += ["--cadence", str(cadence)]
+        # MEIC's one delta for both replays (backtest validate --delta-source, 2026-10-27).
+        delta_source = args.get("delta_source")
+        if delta_source is not None:
+            if module != "meic" or delta_source not in ("stream", "computed"):
+                raise Refused("validate's 'delta_source' is MEIC's: 'stream' or 'computed'")
+            argv += ["--delta-source", delta_source]
         return argv
     else:
         raise Refused(f"unknown kind {kind!r}; allowed: {', '.join(KINDS)}")

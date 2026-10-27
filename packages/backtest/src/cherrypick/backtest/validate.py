@@ -302,6 +302,10 @@ CHECKS = {
     "meic": (_meic_cli, ("check",), ("path_pairs",)),
 }
 
+#: MEIC's delta sources (`meic.paper_loop.DELTA_SOURCES`), spelled here because this package imports
+#: no strategy module; `tests/test_validate.py` reads MEIC's source and holds the two equal.
+DELTA_SOURCES = ("stream", "computed")
+
 
 def _sample_instants(db: Path, symbol: str, day: str) -> list[float]:
     conn = core_db.connect_ro(db)
@@ -479,15 +483,26 @@ def run(
     runner=None,
     module: str = "flies",
     arms: list[str] | None = None,
+    delta_source: str | None = None,
 ) -> dict:
     """Validate `module`'s replay on the vendor store against the recording (`arms`: MEIC's arms to
-    check, default its check's own). The report names the module, so each unlocks only its own."""
+    check, default its check's own). The report names the module, so each unlocks only its own.
+
+    `delta_source` (MEIC only, 2026-10-27) replays both sources on one delta. By default each session
+    replays on the delta paper ran with, and before 2026-10-27 that was the data feed's, which lags
+    its quotes by about a minute: the recording carries that lag and the vendor's delta does not, so
+    the vendor replay could not choose paper's strikes whatever its data. "computed" picks strikes
+    from each source's own mids (`core.chaindelta`), so the decisions layer compares the data."""
     if module not in CHECKS:
         raise ValueError(f"module must be one of {sorted(CHECKS)}")
+    if delta_source is not None and (module != "meic" or delta_source not in DELTA_SOURCES):
+        raise ValueError(f"delta_source is MEIC's, one of {DELTA_SOURCES}")
     default_runner, command, outcome_keys = CHECKS[module]
     runner = runner or default_runner
     if module == "meic" and arms:
         command = (*command, "--arms", ",".join(arms))
+    if delta_source is not None:
+        command = (*command, "--delta-source", delta_source)
     recorder_db = Path(recorder_db) if recorder_db else quotehistory.default_history_db()
     vendor_db = store.db_path(settings, symbol, cadence)
     report = {
@@ -496,6 +511,8 @@ def run(
         "dates": dates,
         "recorder_db": str(recorder_db),
         "vendor_db": str(vendor_db),
+        # None: each session on the delta paper ran with (`delta_source_since`).
+        "delta_source": delta_source,
         "sessions": {},
     }
     rep = progress.Reporter(f"backtest-validate-{module}")
@@ -532,7 +549,9 @@ def run(
     out_dir.mkdir(parents=True, exist_ok=True)
     # flies' reports keep the name they have always had; another module's carry its name first.
     prefix = "" if module == "flies" else f"{module}-"
-    path = out_dir / f"{prefix}{symbol.upper()}-{dates[0]}_{dates[-1]}.json"
+    # A chosen delta source is its own report, never written over the as-run one for the same dates.
+    suffix = "" if delta_source is None else f"-delta-{delta_source}"
+    path = out_dir / f"{prefix}{symbol.upper()}-{dates[0]}_{dates[-1]}{suffix}.json"
     path.write_text(json.dumps(report, indent=1), encoding="utf-8")
     report["written"] = str(path)
     rep.finish("done")
