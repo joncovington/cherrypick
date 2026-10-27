@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import date, timedelta
 
-from cherrypick.technicals import chart, indicators, paths, signals, store
+from cherrypick.technicals import chart, indicators, levels, paths, signals, store
 
 
 def _land(conn, symbol, n=320):
-    days = [f"{2025 + i // 336}-{(i // 28) % 12 + 1:02d}-{i % 28 + 1:02d}" for i in range(n)]
+    # Weekdays from 2024-06-03, so a calendar year back from the last one is ~261 sessions.
+    first = date(2024, 6, 3)
+    every = (first + timedelta(days=k) for k in range(2 * n))
+    days = [d.isoformat() for d in every if d.weekday() < 5][:n]
     rows = []
     for i, d in enumerate(days):
         c = 100 + 10 * math.sin(i / 9) + i * 0.05
@@ -23,12 +27,15 @@ def test_the_chart_draws_the_grid_window_and_the_engines_own_readings():
     conn = store.connect()
     days = _land(conn, "ABC")
     doc = chart.build(conn, "ABC")
-    assert doc["session"] == days[-1] and len(doc["bars"]["date"]) == chart.DISPLAY
-    assert doc["bars"]["date"][0] == days[-chart.DISPLAY]
+    # The calendar year back from the session holds more than DISPLAY sessions, and all are drawn.
+    w = sum(d >= levels.year_start(days[-1]) for d in days)
+    assert w > chart.DISPLAY and doc["grid"]["window"] == w
+    assert doc["session"] == days[-1] and len(doc["bars"]["date"]) == w
+    assert doc["bars"]["date"][0] == days[-w]
     bars = store.adjusted_bars(conn, "ABC")
     highs, lows, closes = [b.high for b in bars], [b.low for b in bars], [b.close for b in bars]
     assert doc["cci14"][-1] == round(indicators.cci(highs, lows, closes, 14)[-1], 2)
-    window = bars[-250:]
+    window = bars[-w:]
     assert doc["grid"]["low"] == min(b.low for b in window) and doc["grid"]["high"] == max(
         b.high for b in window
     )
@@ -56,7 +63,7 @@ def test_a_vendor_capture_carries_its_levels_marked_against_our_grid_and_gaps():
     store.upsert_bars(conn, [("ABC", days[-2], top + 1, top + 2, top, top + 1, 1000)])
     conn.commit()
     bars = store.adjusted_bars(conn, "ABC")
-    lo = min(b.low for b in bars[-250:])
+    lo = min(b.low for b in bars[-levels.year_window([b.date for b in bars]) :])
     root = paths.market_report_dir() / "vendor-charts" / days[-1]
     root.mkdir(parents=True, exist_ok=True)
     quotes = [{"date": b.date, "open": b.open, "high": b.high, "low": b.low, "close": b.close} for b in bars]
@@ -99,12 +106,12 @@ def test_a_dividend_after_the_capture_does_not_move_our_bars_off_the_vendors():
     days = _land(conn, "ABC")
     through = days[-6]
     bars = [b for b in store.adjusted_bars(conn, "ABC") if b.date <= through]
-    lo = min(b.low for b in bars[-250:])
+    lo = min(b.low for b in bars[-levels.year_window([b.date for b in bars]) :])
     root = paths.market_report_dir() / "vendor-charts" / through
     root.mkdir(parents=True, exist_ok=True)
     quotes = [{"date": b.date, "open": b.open, "high": b.high, "low": b.low, "close": b.close} for b in bars]
-    levels = {"support": [{"value": round(lo, 4)}]}
-    doc = {"why": {"historicalQuotes": quotes, "supportAndResistance": levels}}
+    sr = {"support": [{"value": round(lo, 4)}]}
+    doc = {"why": {"historicalQuotes": quotes, "supportAndResistance": sr}}
     (root / "ABC.json").write_text(json.dumps(doc), encoding="utf-8")
     before = chart.build(conn, "ABC")["vendor"]
     assert before["bars_agree"] == before["bars_compared"] > 0 and before["levels"][0]["on_our_grid"]

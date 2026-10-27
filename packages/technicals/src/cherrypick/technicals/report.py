@@ -27,10 +27,10 @@ MOVER_VOLUME_SESSIONS = 50
 
 
 def _sectors() -> dict[str, str]:
-    """{symbol: sector}: the vendor's map where it has the name, else Yahoo's relabelled to the
-    vendor's sector names (`fundamentals.sector_sources`, 2026-10-20). Before, the report kept the
-    vendor's map alone, so a name added after the subscription ends (2026-10-24) would have had no
-    sector in the report's sector measures."""
+    """{symbol: sector}: Yahoo's, relabelled to the vendor's sector names, where it has the name,
+    else the vendor's frozen map (`fundamentals.sector_sources`; Yahoo first since 2026-10-27).
+    Before 2026-10-20 the report kept the vendor's map alone, so a name added after the
+    subscription ended (2026-10-24) would have had no sector in the report's sector measures."""
     return {s: sector for s, (sector, _src) in fundamentals.sector_sources().items()}
 
 

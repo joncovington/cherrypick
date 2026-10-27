@@ -151,12 +151,24 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   session our store has not landed as not yet landed, never scores it.
   **Trap: captures list daily trend scores NEWEST-first (105 of 121), so `series[-1]` is the oldest
   day. Sort by date first** (`chart.py` does).
-- **Level grid** (`levels.py`, `score-levels`): every vendor level is the high or low of the last
-  **250** sessions as printed, or a point on a grid anchored at that low with step = the "nice"
-  number nearest **by ratio** to (high - low) / 100. All 192 levels placed on names whose bars agree.
-- **Gap levels** (`levels.gap_edges`): every vendor gap level is an edge of a true two-bar gap in the
-  same 250-session window, dated on the edge's own bar; the TOP edge is gap support and the BOTTOM
-  gap resistance, whichever way it gapped. 221/221 on our bars (SGOV excepted).
+- **Level grid** (`levels.py`, `score-levels`): every vendor level is the high or low of the window
+  as printed, or a point on a grid anchored at that low with step = the "nice" number nearest **by
+  ratio** to (high - low) / 100. **The window is a calendar year, not 250 sessions** (refitted
+  2026-10-27, `levels.year_window`): bars dated on or after the same date a year back, both ends
+  inclusive, from the day the levels were computed -- for a capture the **UTC** date it was fetched
+  (`levels.capture_as_of`; later than its session after midnight UTC and at weekends), for our chart
+  the session. A name listed under a year gets all its bars. The 250 came from weekend-fetched 09-25
+  captures. Over all 737 agreeing captures it places 3,738 of 3,761 levels (250 sessions: 3,490);
+  through 10-02 1,090/1,093 (250: 1,064), after 2,648/2,668 (250: 2,426). ET or exclusive ends
+  score lower. Left: ZS and TSM, whose range / 100 (2.224, 2.234) sits just under the 2.236 ratio
+  midpoint, so we take 2.0 and the vendor 2.5 -- across every x1.25 step pair the vendor's switch
+  falls between 1.107x and 1.112x the lower step, not at 1.118x; not refitted -- and three names
+  whose history in our store is shorter than the vendor's (ECHO, P, DRAM). `score-levels --every`
+  scores every capture, `--sessions 250` the old rule (`levels.SESSION_WINDOW`).
+- **Gap levels** (`levels.gap_edges`): every vendor gap level is an edge of a true two-bar gap whose
+  later bar is in the same calendar-year window, dated on the edge's own bar; the TOP edge is gap
+  support and the BOTTOM gap resistance, whichever way it gapped. 1,277/1,277 over every agreeing
+  capture (250 sessions: 1,276).
 - **Rank 1-10** (`levels.rank_score`, `score-rank`): the decile of a name's percentile, across the
   **WHOLE US-listed market** (~8,500 names trading $100k a day, split-affected dropped), of
   `0.5 x 21-session return + 126-session return`. 52 of 62 exact, all within one. The landing stores
@@ -218,8 +230,10 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   short puts; ~98% of covered calls — the rest divide by price less mid, condition unknown).
   **Which names make each list is not here**; the spread list's selection is open. The console's
   fidelity tab that showed these rates was retired on 2026-10-19; the per-session files stay in
-  `screeners/`, and `score-screeners` keeps running because the income tabs' "ours" strike is its
-  `picks`.
+  `screeners/`. Nothing reads them now: the income tabs' "ours" strike that read its `picks` went
+  with the vendor's lists (2026-10-24, the tabs read `income-lists`), so since 2026-10-27 the job
+  follows `market_report.collector`, the only source of a new list. The last session scored is
+  2026-10-23.
 - **Our income lists** (`incomelists.py`, `income-lists`, 2026-10-19): the short-put and covered-call
   lists the Screeners page shows in place of the vendor's. From the afternoon income chains
   (`fetch_screener_greeks.py income`, the tradable names and the passing reference funds), each
@@ -285,12 +299,15 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
     fortnight's or month's move; the record states its inside-the-move share over those within a week
     too. Which expiry to use is the user's call, unchanged.
   - **Spread:** the navigator spread, as target strikes.
-  - **Sector:** the vendor's map where it has the name, else Yahoo's (`scripts/fetch_sectors.py`,
-    `paths.yahoo_sectors`), relabelled to the vendor's names (it agreed on all 120 names sampled,
-    2026-10-17). `sector_source` says which. The market report's sector measures use the same
-    fallback since 2026-10-20 (`report._sectors`), so a universe name the vendor's map never saw
-    still has a sector after the subscription ends; `fetch_sectors.py` asks for every universe
-    candidate too.
+  - **Sector:** Yahoo's (`scripts/fetch_sectors.py`, `paths.yahoo_sectors`), relabelled to the
+    vendor's eleven sector names so the spelling never changed, else the vendor's frozen map
+    (`fundamentals.sector_sources`). `sector_source` says which. Yahoo has been first since
+    2026-10-27, because the vendor's map stopped at its last edition (2026-10-23) while Yahoo's file
+    is refreshed nightly. Measured at the switch: of the 521 names both held, they disagreed on one
+    (FISV: the vendor's Consumer Discretionary, Yahoo's Technology). One of the report's names (WBD)
+    has no Yahoo sector and keeps the vendor's. The calendar, the signal board, the report's sector
+    measures (`report._sectors`) and the B5 slices all read this one function. `fetch_sectors.py`
+    asks for every calendar name and universe candidate.
   - **Checked against the vendor's page** for Oct 20-21, while its reads still led: its 12 names,
     same date, direction and strength; moves within 0.42 points on average. History found no edge in
     the spread.
@@ -308,8 +325,9 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
   little time (crossing-profile minima, 2-3x chance; touch counts point the wrong way); dated bars
   are swing highs ~82% (supports included), swing lows 0.5%; a level's identity is its date and its
   price is re-derived nightly on the grid (a histogram of bars overlapping each cell fits best);
-  the vendor does not recompute every name every night, so any "date to last bar" feature must stop
-  at the day the set was computed; polarity/role reversal is at chance. Price and date do not
+  the "stale" AMD and MU sets once read as the vendor not recomputing every name nightly were the
+  250-session window -- every AMD and MU capture fits the calendar year from its fetch date -- so
+  nothing yet says a set is computed on any day but the fetch's; polarity/role reversal is at chance. Price and date do not
   determine each other by any rule tried (~35-37%). **What would settle it is a fixed panel
   re-captured every evening**, turning it into a differential problem; not more fitting.
   - **Which of its levels the vendor's chart DRAWS is a separate, solved question** (2026-10-03,
@@ -323,8 +341,8 @@ stages, ranks or scoring though the universe lists SPX as a candidate; its chart
 ## Outputs (Phase 7)
 
 - **Chart files** (`chart.py`): `data/technicals/charts/<SYMBOL>.json` plus `index.json`, written by
-  `report`: last 250 sessions of adjusted bars, the level grid, CCI 14 and 5, RSI 14, both trend
-  scores, scan matches per session. Where the vendor chart was captured the file carries its levels
+  `report`: last 250 sessions of adjusted bars (the grid's whole calendar year when longer), the
+  level grid, CCI 14 and 5, RSI 14, both trend scores, scan matches per session. Where the vendor chart was captured the file carries its levels
   (each marked whether our grid produces it; gap levels marked against our gap edges,
   `chart_version` 2), trend grades, rank and bar agreement. The console's `/charts/technicals` page draws
   **our grid's extremes, never levels claimed as the vendor's** — it is built to show where we
@@ -427,7 +445,8 @@ earnings off stopped the server and every Dolt-reading job here). The income lis
 switch.
 `technicals-iv-rank` runs after the close on trading days. `technicals-screeners` (06:40 ET,
 `screeners_at`) scores every saved screener session with its broker chain, after the previous
-evening's late greeks run; a scored session is skipped. `technicals-skate` (06:45 ET, `skate_at`)
+evening's late greeks run; a scored session is skipped. It runs only while `market_report.collector`
+is on (off since the subscription ended). `technicals-skate` (06:45 ET, `skate_at`)
 writes the skate screen's bands from `history.db` (docs/skate-plan.md), then the forward record
 (`skate_record.py`: what the tab showed, what happened at expiry, the declared test; a failure there
 is reported and never fails the bands).
@@ -477,7 +496,7 @@ gross, and ranking by net is the user's decision.
 | `python -m cherrypick.technicals score-rotation` | Rotation rule against every saved edition. |
 | `python -m cherrypick.technicals breadth [--sessions N]` | Daily leaders, laggards, net and bullish share. |
 | `python -m cherrypick.technicals score-trends` | Trend scores vs every capture: exact, label, within-one. |
-| `python -m cherrypick.technicals score-levels` | Vendor levels we place (grid and gap edges) on names whose bars agree to the cent. |
+| `python -m cherrypick.technicals score-levels [--every] [--sessions 250]` | Vendor levels we place (grid and gap edges) on names whose bars agree to the cent; every capture, or the old session-count window. |
 | `python -m cherrypick.technicals score-level-selection` | Where vendor levels sit among grid points, each measure against chance. |
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank (stored whole-market cut-offs) vs the vendor's. |
 | `python -m cherrypick.technicals score-signals` | Our six scan rules vs every saved scan list. |

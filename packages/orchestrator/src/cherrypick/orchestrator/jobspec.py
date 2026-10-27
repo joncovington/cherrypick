@@ -1223,7 +1223,8 @@ def derive_jobs(
         lambda: JobSpec(
             id="technicals-stage-lists",
             # A package command: our six stage lists on the close the landing just added, tradable
-            # names only, scored against the vendor's saved watchlists while they exist.
+            # names only. The score against the vendor's watchlists finds none filed for a session
+            # after 2026-10-23 and is left out; the lists themselves are ours and stay.
             argv=(pythonw, "-m", "cherrypick.technicals", "stage-lists"),
             kind=KIND_DAILY,
             at_et=tc["stage_lists_at"],
@@ -1416,7 +1417,8 @@ def derive_jobs(
         lambda: JobSpec(
             id="technicals-sectors",
             # A script, not package code: it reads Yahoo's public search (no credential, one request
-            # per name, paced) for the sector of the earnings calendar names the vendor's map lacks.
+            # per name, paced) for the sector and industry of the calendar names and universe
+            # candidates: the suite's sector source since 2026-10-27, ahead of the vendor's frozen map.
             argv=(pythonw, _suite_script(launcher, "fetch_sectors.py")),
             kind=KIND_DAILY,
             at_et=tc["sectors_at"],
@@ -1533,6 +1535,10 @@ def derive_jobs(
             enabled_reason=tc_off_why,
         ),
     )
+    # Its only input is the vendor's saved lists and the evening chain recorded around them, both of
+    # which stop with the collector, so it follows the collector too: off, there is never a new
+    # session to score (none since 2026-10-23), and nothing reads what it writes.
+    scr_on = tc_on and cfgmod.market_report_settings(cfg)["collector"]
     add(
         "technicals-screeners",
         lambda: JobSpec(
@@ -1545,8 +1551,8 @@ def derive_jobs(
             at_et=tc["screeners_at"],
             catchup_minutes=CATCHUP_MINUTES["technicals-screeners"],
             trading_days_only=True,
-            enabled=tc_on,
-            enabled_reason=tc_off_why,
+            enabled=scr_on,
+            enabled_reason=tc_off_why or ("" if scr_on else "disabled in config (market_report.collector)"),
         ),
     )
     skate_on = tc_on and tc["history"] and tc["skate"]
@@ -1919,9 +1925,10 @@ def derive_jobs(
             f"report-screener-measure-{i}",
             lambda i=i, at=at: JobSpec(
                 id=f"report-screener-measure-{i}",
-                # The listed names' ATM monthly spreads in regular hours (the evening quotes are after
-                # the close). Read-only REST quotes; the script refuses outside its window, so a late
-                # catch-up cannot record an after-hours book.
+                # The earnings calendar's suggested spreads and their forward-record marks, quoted in
+                # regular hours, and -- only while the collector is on (the script's own check) -- the
+                # vendor's listed names' ATM monthly spreads. Read-only REST quotes; the script refuses
+                # outside its window, so a late catch-up cannot record an after-hours book.
                 argv=(pythonw, _suite_script(launcher, "fetch_screener_greeks.py"), "measure"),
                 kind=KIND_DAILY,
                 at_et=at,

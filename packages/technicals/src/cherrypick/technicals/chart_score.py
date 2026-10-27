@@ -88,50 +88,65 @@ def score_trends() -> dict:
     }
 
 
-def _captures() -> dict:
+def _captures(every: bool = False) -> list[tuple[str, dict, str]]:
+    """(symbol, capture, the date its window runs back from): the newest capture of each name, or
+    every capture on file with `every`."""
+    from . import levels
+
     root = paths.market_report_dir() / "vendor-charts"
-    newest = {}
-    for path in sorted(root.glob("????-??-??/*.json")):
-        if path.name != "trade-ideas.json" and not path.name.endswith(".rejected.json"):
-            newest[path.stem] = path
-    out = {}
-    for sym, path in newest.items():
+    found = [
+        p
+        for p in sorted(root.glob("????-??-??/*.json"))
+        if p.name != "trade-ideas.json" and not p.name.endswith(".rejected.json")
+    ]
+    if not every:
+        found = list({p.stem: p for p in found}.values())
+    out = []
+    for path in found:
         try:
-            out[sym] = json.loads(path.read_text(encoding="utf-8"))["why"]
-        except (OSError, ValueError, KeyError, TypeError):
+            doc = json.loads(path.read_text(encoding="utf-8"))
+            why = doc["why"]
+            session = why["historicalQuotes"][-1]["date"][:10]
+        except (OSError, ValueError, KeyError, TypeError, IndexError):
             continue
-    return out
+        out.append((path.stem, why, levels.capture_as_of(doc.get("fetched_at"), session)))
+    return sorted(out, key=lambda c: (c[0], c[2]))
 
 
-def _agreeing(conn, min_bar_agreement: float, skipped: list):
-    """(symbol, capture, our bars through the capture) for each name whose adjusted bars agree with
-    the vendor's to the cent -- a grid is only as exact as the bars under it. The rest go to
-    `skipped`."""
+def _agreeing(conn, min_bar_agreement: float, skipped: list, every: bool = False):
+    """(symbol, capture, our bars through the capture, the window's as-of date) for each capture whose
+    adjusted bars agree with the vendor's to the cent -- a grid is only as exact as the bars under it.
+    The rest go to `skipped`."""
     from . import vendor_check
 
-    for sym, why in sorted(_captures().items()):
+    for sym, why, as_of in _captures(every):
         bars = store.adjusted_bars(conn, sym, as_of=why["historicalQuotes"][-1]["date"][:10])
         ours = {b.date: {f: getattr(b, f) for f in vendor_check.FIELDS} for b in bars}
         agreement = vendor_check.compare(ours, why["historicalQuotes"])
         if not agreement["prices"] or agreement["agree"] / agreement["prices"] < min_bar_agreement:
             skipped.append(sym)
             continue
-        yield sym, why, bars
+        yield sym, why, bars, as_of
 
 
-def score_levels(min_bar_agreement: float = 0.99) -> dict:
+def score_levels(min_bar_agreement: float = 0.99, every: bool = False, sessions: int | None = None) -> dict:
     """How many of the vendor's levels we can produce, on the names whose adjusted bars agree with the
     vendor's to the cent: support and resistance on our grid, gap levels as edges of our own gaps.
-    This checks placement, not selection; `score_level_selection` measures selection."""
+    This checks placement, not selection; `score_level_selection` measures selection. The window is
+    the calendar year back from each capture's fetch date, or the last `sessions` bars to re-score
+    a session-count rule (`levels.SESSION_WINDOW`); `every` scores every capture, not each name's
+    newest."""
     from . import levels
 
     conn = store.connect()
     names, placed, total, gap_placed, gap_total, skipped = 0, 0, 0, 0, 0, []
-    for _sym, why, bars in _agreeing(conn, min_bar_agreement, skipped):
-        g = levels.grid([b.high for b in bars], [b.low for b in bars])
+    for _sym, why, bars, as_of in _agreeing(conn, min_bar_agreement, skipped, every):
+        dates = [b.date for b in bars]
+        w = sessions or levels.year_window(dates, as_of)
+        g = levels.grid([b.high for b in bars], [b.low for b in bars], w)
         sr = why.get("supportAndResistance") or {}
         values = [x["value"] for k in ("support", "resistance") for x in sr.get(k) or []]
-        edges = levels.gap_edges([b.date for b in bars], [b.high for b in bars], [b.low for b in bars])
+        edges = levels.gap_edges(dates, [b.high for b in bars], [b.low for b in bars], w)
         for k in ("gapSupport", "gapResistance"):
             for x in sr.get(k) or []:
                 gap_total += 1
@@ -161,9 +176,10 @@ def score_level_selection(min_bar_agreement: float = 0.99) -> dict:
 
     conn = store.connect()
     tally, names, skipped = level_selection.Tally(), 0, []
-    for _sym, why, bars in _agreeing(conn, min_bar_agreement, skipped):
-        window = bars[-levels.WINDOW :]
-        g = levels.grid([b.high for b in bars], [b.low for b in bars])
+    for _sym, why, bars, as_of in _agreeing(conn, min_bar_agreement, skipped):
+        w = levels.year_window([b.date for b in bars], as_of)
+        window = bars[-w:] if w else []
+        g = levels.grid([b.high for b in bars], [b.low for b in bars], w)
         sr = why.get("supportAndResistance") or {}
         vendor = [
             (x["value"], str(x.get("date") or "")[:10])

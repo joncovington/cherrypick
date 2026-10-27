@@ -322,18 +322,27 @@ def sector_map() -> dict[str, str]:
 
 
 def sector_sources() -> dict[str, tuple[str, str]]:
-    """{symbol: (sector, source)}: the vendor's map (`sector_map`) where it has the name, else
-    Yahoo's (`scripts/fetch_sectors.py`, relabelled to the vendor's sector names; it agreed with the
-    vendor's on all 120 names sampled, 2026-10-17). The earnings calendar, the signal board and,
-    from 2026-10-20, the report's sector measures read this."""
+    """{symbol: (sector, source)}: Yahoo's (`scripts/fetch_sectors.py`, relabelled to the vendor's
+    eleven sector names, so the spelling is unchanged) where it has the name, else the vendor's map
+    (`sector_map`). The earnings calendar, the signal board and the report's sector measures read
+    this.
+
+    Yahoo first since 2026-10-27: the vendor's map is frozen at its last edition (2026-10-23) while
+    Yahoo's file is refreshed nightly. On the switch the two disagreed on one name of the 521 both
+    held (FISV: the vendor's Consumer Discretionary, Yahoo's Technology), and one name of the
+    report's (WBD) had no Yahoo sector and keeps the vendor's."""
     import json
 
     try:
         yahoo = json.loads(paths.yahoo_sectors().read_text(encoding="utf-8")).get("names") or {}
     except (OSError, ValueError):
         yahoo = {}
-    out = {
-        s: (row["sector"], "yahoo") for s, row in yahoo.items() if isinstance(row, dict) and row.get("sector")
-    }
-    out.update({s: (v, "vendor") for s, v in sector_map().items()})
+    out = {s: (v, "vendor") for s, v in sector_map().items()}
+    out.update(
+        {
+            s: (row["sector"], "yahoo")
+            for s, row in yahoo.items()
+            if isinstance(row, dict) and row.get("sector")
+        }
+    )
     return out

@@ -1,22 +1,23 @@
 """Our own support and resistance: confirmed swing points in our bars, nearest first.
 
 The chart's default levels and the setups watchlist's support and resistance. Nothing here reads
-vendor data. The vendor's levels stay on the chart as a comparison ("Vendor's view"), and
-`docs/setups.md` records how often ours land near theirs. That figure is a check, never a target
+vendor data. The vendor's levels were drawn beside them for comparison until its subscription ended,
+and `docs/setups.md` records how often ours landed near theirs. That figure is a check, never a target
 these parameters are tuned to.
 
 A swing high is a bar whose high is above every high of the SWING_K bars before it and not exceeded
 by any of the SWING_K bars after it; a swing low the mirror. The trailing bars make it confirmed: a
 swing is not one until SWING_K sessions have printed after it, so the newest bars cannot be one.
 Resistance is a swing high above the last close and support a swing low below it, the textbook
-reading (a broken level is not turned into its opposite). Within the last WINDOW sessions, the
-PER_SIDE nearest on each side are kept, skipping any within MERGE of one already kept, so two highs a
-few cents apart are one level. Each level is dated on its swing bar and drawn from there.
+reading (a broken level is not turned into its opposite). Within the last SESSION_WINDOW sessions (the
+250 a chart draws -- our own choice, not the vendor grid's calendar year), the PER_SIDE nearest on
+each side are kept, skipping any within MERGE of one already kept, so two highs a few cents apart are
+one level. Each level is dated on its swing bar and drawn from there.
 """
 
 from __future__ import annotations
 
-from .levels import WINDOW
+from .levels import SESSION_WINDOW
 
 # Two trading weeks either side: a high or low the market respected for a month, the textbook
 # "major swing". Checked against the vendor's view on 129 captures (2026-10-04): within 1% of one of
@@ -58,7 +59,7 @@ def levels(
     highs: list[float],
     lows: list[float],
     close: float,
-    window: int = WINDOW,
+    window: int = SESSION_WINDOW,
     per_side: int = PER_SIDE,
 ) -> list[dict]:
     """Support and resistance as of the last bar: [{kind, value, date}], nearest first per side."""

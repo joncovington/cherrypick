@@ -429,10 +429,10 @@ def cmd_score_trends(_args) -> int:
     return 0
 
 
-def cmd_score_levels(_args) -> int:
+def cmd_score_levels(args) -> int:
     from . import chart_score
 
-    print(json.dumps(chart_score.score_levels(), indent=1))
+    print(json.dumps(chart_score.score_levels(every=args.every, sessions=args.sessions), indent=1))
     return 0
 
 
@@ -820,9 +820,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("score-trends", help="our trend scores against every vendor chart capture").set_defaults(
         fn=cmd_score_trends
     )
-    sub.add_parser("score-levels", help="how many vendor levels our grid places").set_defaults(
-        fn=cmd_score_levels
+    sl = sub.add_parser("score-levels", help="how many vendor levels our grid places")
+    sl.add_argument("--every", action="store_true", help="every capture on file, not each name's newest")
+    sl.add_argument(
+        "--sessions", type=int, help="this many sessions instead of the calendar year (old rule: 250)"
     )
+    sl.set_defaults(fn=cmd_score_levels)
     sub.add_parser(
         "score-level-selection", help="where the vendor's levels sit among the grid points, against chance"
     ).set_defaults(fn=cmd_score_level_selection)
