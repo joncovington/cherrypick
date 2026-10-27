@@ -21,3 +21,14 @@ def test_validate_builds_the_backtest_verb_for_a_known_module():
 def test_an_unknown_module_is_refused(args):
     with pytest.raises(rq.Refused, match="validate needs"):
         rq.build_argv("validate", args, "py")
+
+
+def test_a_cadence_picks_the_store_validated():
+    argv = rq.build_argv("validate", {"module": "meic", "cadence": 60}, "py")
+    assert argv[-2:] == ["--cadence", "60"]
+
+
+@pytest.mark.parametrize("cadence", ["60", 60.0, True, 0, -15, 7200, "60; rm"])
+def test_a_cadence_that_is_not_whole_seconds_is_refused(cadence):
+    with pytest.raises(rq.Refused, match="cadence"):
+        rq.build_argv("validate", {"module": "meic", "cadence": cadence}, "py")

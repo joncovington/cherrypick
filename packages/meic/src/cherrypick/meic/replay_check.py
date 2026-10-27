@@ -36,7 +36,7 @@ from pathlib import Path
 from cherrypick.core.clock import ET
 
 from cherrypick.meic import db as meic_db
-from cherrypick.meic import paper, replay
+from cherrypick.meic import paper, paper_loop, replay
 from cherrypick.meic import paths as _paths
 
 WINDOW_SECONDS = 30.0
@@ -172,7 +172,10 @@ def _episodes(hits: list[tuple[float, tuple]], gap: float) -> list[dict]:
 def decision_check(day: str, arms: list[str], *, history_db=None, paper_db=None, settle_price=None) -> dict:
     """The replay's decisions against paper's on `day`, each from paper's own book (module docstring)."""
     cfg, profiles = replay.replay_profiles(arms)
-    rday = replay.ReplayDay(day, cfg, profiles, history_db=history_db)
+    # The delta that session ran with: the check asks whether the replay reproduces paper's own
+    # decisions, so a session before `delta_source_since` is replayed on the feed's delta.
+    as_of = paper_loop.delta_source_for(cfg, day)
+    rday = replay.ReplayDay(day, cfg, profiles, history_db=history_db, delta_source=as_of)
     if not rday.recorded.samples:
         return {"ok": False, "day": day, "error": "no recorded samples"}
     if not rday.vol:
@@ -237,7 +240,9 @@ def decision_check(day: str, arms: list[str], *, history_db=None, paper_db=None,
     max_cost_diffs, path_pairs = [], 0
     with tempfile.TemporaryDirectory() as tmp:
         ledger = Path(tmp) / "day.db"
-        full = replay.replay_session(day, ledger, arms=arms, history_db=history_db, settle_price=settle_price)
+        full = replay.replay_session(
+            day, ledger, arms=arms, history_db=history_db, settle_price=settle_price, delta_source=as_of
+        )
         if full.get("ok"):
             conn = sqlite3.connect(ledger)
             conn.row_factory = sqlite3.Row
