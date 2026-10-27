@@ -48,6 +48,8 @@ class Greeks:
 
 
 def _engine(**kw):
+    # The per-minute bucket is off unless a test turns it on, so the pacing tests stay instant.
+    kw.setdefault("subscribe_per_minute", 0)
     return ChainStreamer(session_factory=lambda: None, db_path=":memory:", symbols=["SPX"], **kw)
 
 
@@ -115,3 +117,103 @@ def test_zero_pace_is_allowed_and_still_chunks():
 def test_chunk_size_is_floored_at_one(chunk):
     """A zero or negative chunk would divide the book into infinite empty slices."""
     assert _engine(subscribe_chunk=chunk).subscribe_chunk == 1
+
+
+# -- the per-minute token bucket (2026-10-26) --------------------------------------------------------
+# DXLink's limit is a budget over about a minute, not a per-second rate: 200 symbols/s still died
+# ~19s into every connection. These run the bucket at 600/min (10/s) so a test takes a second.
+
+
+def test_bucket_lets_a_burst_out_then_holds_to_the_refill_rate():
+    eng = _engine(subscribe_chunk=10, subscribe_pace_s=0.0, subscribe_burst=10, subscribe_per_minute=600)
+    fake = _FakeStreamer()
+    asyncio.run(eng._send_subs(fake, Quote, [f"S{i}" for i in range(30)]))
+    assert [c for _, _, c in fake.sent] == [10, 10, 10]
+    # The first chunk is the burst; the next two each wait ~1s for ten tokens at 10/s.
+    elapsed = fake.times[-1] - fake.times[0]
+    assert elapsed >= 1.8, f"bucket did not hold the rate: {elapsed:.2f}s for 30 symbols"
+
+
+def test_bucket_is_shared_across_event_types_and_unsubscribes():
+    """One token per symbol per event type, adds and drops alike — the window path's four event
+    types for one add-list spend four times the symbols."""
+    eng = _engine(subscribe_chunk=100, subscribe_pace_s=0.0, subscribe_burst=10, subscribe_per_minute=600)
+    fake = _FakeStreamer()
+
+    async def scenario():
+        await eng._send_subs(fake, Quote, [f"S{i}" for i in range(10)])
+        await eng._send_subs(fake, Greeks, [f"S{i}" for i in range(10)], remove=True)
+
+    asyncio.run(scenario())
+    assert fake.times[1] - fake.times[0] >= 0.9
+
+
+def test_a_chunk_larger_than_the_burst_still_goes():
+    """Never stuck: an oversized chunk waits for a full bucket, then goes into debt."""
+    eng = _engine(subscribe_chunk=50, subscribe_pace_s=0.0, subscribe_burst=10, subscribe_per_minute=600)
+    fake = _FakeStreamer()
+    asyncio.run(eng._send_subs(fake, Quote, [f"S{i}" for i in range(50)]))
+    assert [c for _, _, c in fake.sent] == [50]
+    assert eng._tokens < 0
+
+
+def test_rate_cut_halves_the_refill_and_empties_the_bucket():
+    eng = _engine(subscribe_per_minute=1500)
+    eng._note_rate_cut()
+    assert eng.subscribe_per_minute == 750
+    assert eng._tokens == 0
+    eng._note_rate_cut()
+    eng._note_rate_cut()
+    assert eng.subscribe_per_minute == 500  # floored
+    assert eng.rate_cuts == 3
+
+
+def test_a_clean_hour_earns_a_quarter_back(monkeypatch):
+    eng = _engine(subscribe_per_minute=1500)
+    eng._note_rate_cut()
+    eng._refill(eng._last_rate_cut_at + 3600.0)
+    assert eng.subscribe_per_minute == 750 + 375
+    eng._refill(eng._last_rate_cut_at + 3600.0)
+    assert eng.subscribe_per_minute == 1500  # capped at the base
+    eng._refill(eng._last_rate_cut_at + 3600.0)
+    assert eng.subscribe_per_minute == 1500
+
+
+def test_rate_cut_is_recognised_inside_the_taskgroup_wrapper():
+    """THE guard for the halving: the SDK's error arrives wrapped in an ExceptionGroup."""
+    from cherrypick.core.streamer import _is_rate_cut
+
+    err = RuntimeError("Fatal streamer error: Your subscription rate is too high")
+    assert _is_rate_cut(BaseExceptionGroup("unhandled errors in a TaskGroup", [err]))  # noqa: F821
+    assert not _is_rate_cut(BaseExceptionGroup("x", [RuntimeError("EndOfStream")]))  # noqa: F821
+
+
+def test_reconnect_loop_halves_the_budget_on_a_rate_cut(monkeypatch, tmp_path):
+    """The wiring: a rate cut surfacing from a connection reaches `_note_rate_cut`; any other
+    stream error does not."""
+    eng = ChainStreamer(
+        session_factory=lambda: None, db_path=tmp_path / "c.db", symbols=["SPX"], subscribe_per_minute=1500
+    )
+    cut = RuntimeError("Fatal streamer error: Your subscription rate is too high")
+    errors = [RuntimeError("EndOfStream"), ExceptionGroup("unhandled errors in a TaskGroup", [cut])]  # noqa: F821
+
+    async def fake_run_stream(state):
+        if errors:
+            raise errors.pop(0)
+        state.stop_event.set()
+
+    async def no_sleep(_delay):
+        return None
+
+    monkeypatch.setattr(eng, "_run_stream", fake_run_stream)
+    monkeypatch.setattr("cherrypick.core.streamer.asyncio.sleep", no_sleep)
+    asyncio.run(eng.run_async())
+    assert eng.rate_cuts == 1
+    assert eng.subscribe_per_minute == 750
+
+
+def test_sent_within_counts_the_recent_window():
+    eng = _engine(subscribe_chunk=10, subscribe_pace_s=0.0)
+    fake = _FakeStreamer()
+    asyncio.run(eng._send_subs(fake, Quote, [f"S{i}" for i in range(25)]))
+    assert eng.sent_within(60) == 25

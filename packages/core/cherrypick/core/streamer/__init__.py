@@ -65,8 +65,23 @@ _RECONNECT_MAX = 60.0
 # four seconds, and DXLink killed every connection ~11s in for the whole session (539 reconnects,
 # against about one a day before). 100 per 0.5s (200 symbols/s) spreads the same resubscribe over
 # ~30s, still well inside the settling window.
+#
+# Same day, later: 200 symbols/s did not hold either -- every connection still died ~19s in. The
+# limit is not a per-second rate but a budget over about a minute. Another tastytrade recorder
+# (alan-strats #94-#96) measured the same error from 2026-10-12: tripped at ~5,000 symbols in 97s
+# (~50/s average), and held a full session once no minute carried more than ~2,000. So the choke
+# point also spends a token bucket: SUBSCRIBE_BURST at once, refilled at SUBSCRIBE_PER_MINUTE, one
+# token per symbol per event type, unsubscribes included. A rate cut halves the refill (never under
+# SUBSCRIBE_MIN_PER_MINUTE) and empties the bucket; each clean hour earns a quarter of the base
+# back. A full resubscribe now takes minutes, not seconds -- the underlyings go first (the
+# connection's list subscriptions precede every window), so spot is fresh while strikes fill in.
 SUBSCRIBE_CHUNK = 100
 SUBSCRIBE_PACE_S = 0.5
+SUBSCRIBE_BURST = 500
+SUBSCRIBE_PER_MINUTE = 1500
+SUBSCRIBE_MIN_PER_MINUTE = 500
+_SUBSCRIBE_RECOVERY_S = 3600.0
+_RATE_CUT_TEXT = "subscription rate is too high"
 _COMMIT_BATCH_INTERVAL_S = 0.5
 _COMMIT_BATCH_MAX_PENDING = 25
 # 2+4+8+16+32+60s ~= 2 minutes of retries for a single symbol's chain fetch before giving up and
@@ -193,6 +208,13 @@ async def _wait_or_stop(state: _State, delay: float) -> bool:
     return state.stop_event.is_set()
 
 
+def _is_rate_cut(exc: BaseException) -> bool:
+    """Whether DXLink closed the socket for subscribing too fast, anywhere in an exception group."""
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_is_rate_cut(sub) for sub in exc.exceptions)
+    return _RATE_CUT_TEXT in str(exc).lower()
+
+
 def _same_file(a: Path | str, b: Path | str) -> bool:
     """Whether two paths name one file, whether or not it exists yet."""
     return os.path.normcase(str(Path(a).expanduser().resolve())) == os.path.normcase(
@@ -221,6 +243,8 @@ class ChainStreamer:
         subscription_poll_s: float = 30.0,
         subscribe_chunk: int = SUBSCRIBE_CHUNK,
         subscribe_pace_s: float = SUBSCRIBE_PACE_S,
+        subscribe_burst: int = SUBSCRIBE_BURST,
+        subscribe_per_minute: float = SUBSCRIBE_PER_MINUTE,
         stop_file: Path | str | None = None,
         stop_poll_s: float = 1.0,
         logger: logging.Logger | None = None,
@@ -253,6 +277,16 @@ class ChainStreamer:
         self.subscribe_chunk = max(1, int(subscribe_chunk))
         self.subscribe_pace_s = max(0.0, float(subscribe_pace_s))
         self._last_subscribe_at = 0.0
+        # The token bucket (see SUBSCRIBE_BURST). It outlives connections on purpose: a reconnect
+        # does not reset whatever budget the server is counting. A per-minute rate of 0 turns it off.
+        self.subscribe_burst = max(1, int(subscribe_burst))
+        self.subscribe_base_per_minute = max(0.0, float(subscribe_per_minute))
+        self.subscribe_per_minute = self.subscribe_base_per_minute
+        self._tokens = float(self.subscribe_burst)
+        self._tokens_at = time.monotonic()
+        self._last_rate_cut_at = time.monotonic()
+        self._sent_log: list[tuple[float, int]] = []  # (monotonic ts, symbols) for the last 300s
+        self.rate_cuts = 0
         self.stop_file = Path(stop_file) if stop_file else None
         self.stop_poll_s = max(0.1, float(stop_poll_s))
         self._stale_resub_at: dict[str, float] = {}
@@ -372,12 +406,75 @@ class ChainStreamer:
             return
         op = streamer.unsubscribe if remove else streamer.subscribe
         for i in range(0, len(syms), self.subscribe_chunk):
+            chunk = syms[i : i + self.subscribe_chunk]
             if self.subscribe_pace_s:
                 wait = self._last_subscribe_at + self.subscribe_pace_s - time.monotonic()
                 if wait > 0:
                     await asyncio.sleep(wait)
-            await op(cls, syms[i : i + self.subscribe_chunk])
+            await self._spend_tokens(len(chunk))
+            await op(cls, chunk)
             self._last_subscribe_at = time.monotonic()
+            self._record_sent(len(chunk))
+
+    def _refill(self, now: float) -> None:
+        if now - self._last_rate_cut_at >= _SUBSCRIBE_RECOVERY_S and (
+            self.subscribe_per_minute < self.subscribe_base_per_minute
+        ):
+            self.subscribe_per_minute = min(
+                self.subscribe_base_per_minute,
+                self.subscribe_per_minute + self.subscribe_base_per_minute / 4,
+            )
+            self._last_rate_cut_at = now
+            self.log.info("Subscribe budget recovering: %.0f/min", self.subscribe_per_minute)
+        self._tokens = min(
+            float(self.subscribe_burst),
+            self._tokens + (now - self._tokens_at) * self.subscribe_per_minute / 60.0,
+        )
+        self._tokens_at = now
+
+    async def _spend_tokens(self, n: int) -> None:
+        """Wait until the bucket holds `n` tokens (a chunk larger than the burst waits for a full
+        bucket and goes into debt, so it is never stuck), then spend them."""
+        if not self.subscribe_base_per_minute:
+            return
+        need = min(float(n), float(self.subscribe_burst))
+        while True:
+            self._refill(time.monotonic())
+            if self._tokens >= need:
+                break
+            await asyncio.sleep((need - self._tokens) * 60.0 / self.subscribe_per_minute)
+        self._tokens -= n
+
+    def _record_sent(self, n: int) -> None:
+        now = time.monotonic()
+        self._sent_log.append((now, n))
+        while self._sent_log and now - self._sent_log[0][0] > 300.0:
+            self._sent_log.pop(0)
+
+    def sent_within(self, seconds: float) -> int:
+        """Symbols (per event type) sent in the last `seconds`, for the rate-cut log line."""
+        now = time.monotonic()
+        return sum(n for ts, n in self._sent_log if now - ts <= seconds)
+
+    def _note_rate_cut(self) -> None:
+        """DXLink said the subscription rate is too high: halve the refill, empty the bucket."""
+        self.rate_cuts += 1
+        self.log.warning(
+            "Subscription rate cut #%d: sent %d in 10s, %d in 60s, %d in 300s at %.0f/min",
+            self.rate_cuts,
+            self.sent_within(10),
+            self.sent_within(60),
+            self.sent_within(300),
+            self.subscribe_per_minute,
+        )
+        if self.subscribe_base_per_minute:
+            self.subscribe_per_minute = max(
+                min(SUBSCRIBE_MIN_PER_MINUTE, self.subscribe_base_per_minute),
+                self.subscribe_per_minute / 2,
+            )
+        self._tokens = 0.0
+        self._tokens_at = self._last_rate_cut_at = time.monotonic()
+        self.log.warning("Subscribe budget now %.0f/min", self.subscribe_per_minute)
 
     async def _apply_subscriptions(
         self, streamer, state: _State, subs: dict, Trade, Quote, Greeks, Summary
@@ -1281,6 +1378,8 @@ class ChainStreamer:
                             len(exc.exceptions),
                             "".join(traceback.format_exception(type(sub), sub, sub.__traceback__)),
                         )
+                if _is_rate_cut(exc):
+                    self._note_rate_cut()
                 self.log.warning("Stream error: %s — reconnecting in %.0fs", exc, delay)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, _RECONNECT_MAX)
