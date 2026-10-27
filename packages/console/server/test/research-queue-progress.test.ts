@@ -1,12 +1,45 @@
 import { describe, expect, it } from "vitest";
-import { toProgress } from "../src/services/researchQueueBridge.js";
+import { shapeQueue, toProgress } from "../src/services/researchQueueBridge.js";
 
-describe("a fetch row's progress", () => {
-  it("renames the orchestrator's counts and refuses a shapeless one", () => {
-    expect(
-      toProgress({ total: 10, answered: 4, by_status: { complete: 3, empty: 1 }, rate_per_min: 2, eta_minutes: 3, last_answer_age_s: 5 }),
-    ).toEqual({ total: 10, answered: 4, byStatus: { complete: 3, empty: 1 }, ratePerMin: 2, etaMinutes: 3, lastAnswerAgeS: 5 });
+const view = {
+  file: "q3",
+  job: "backtest-validate-meic",
+  state: "running",
+  phases: [
+    { name: "decisions", done: 1, total: 3, unit: "replays", current: "vendor" },
+    { name: "sessions", done: 2, total: 4, unit: "days", current: "2026-10-15" },
+  ],
+  fraction: 0.5,
+  eta_s: 1800,
+  age_s: 4,
+  line: "decisions 1/3 replays (vendor) · sessions 2/4 days (2026-10-15) · ~30 min left",
+  note: null,
+  started_at: 1000,
+  updated_at: 1600,
+};
+
+describe("a job's progress (core.progress)", () => {
+  it("renames the orchestrator's view and keeps every nested phase", () => {
+    const p = toProgress(view);
+    expect(p).toMatchObject({ file: "q3", state: "running", fraction: 0.5, etaSeconds: 1800, ageSeconds: 4 });
+    expect(p?.phases.map((ph) => `${ph.name} ${ph.done}/${ph.total} ${ph.current}`)).toEqual([
+      "decisions 1/3 vendor",
+      "sessions 2/4 2026-10-15",
+    ]);
+  });
+
+  it("refuses a shapeless one and an unknown state", () => {
     expect(toProgress(null)).toBeNull();
-    expect(toProgress({ total: 10 })).toBeNull();
+    expect(toProgress({ job: "x" })).toBeNull();
+    expect(toProgress({ ...view, state: "sleeping" })).toBeNull();
+  });
+
+  it("carries runs started by hand beside the queue's tasks", () => {
+    const res = shapeQueue({
+      ok: true,
+      error: null,
+      json: { ok: true, session_held: false, blackout: null, tasks: [], by_hand: [{ ...view, file: "backtest-run-meic-77" }] },
+    });
+    expect(res.ok && res.data?.byHand.map((p) => p.file)).toEqual(["backtest-run-meic-77"]);
   });
 });

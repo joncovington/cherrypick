@@ -4915,3 +4915,46 @@ select.text-input {
   background: var(--accent);
 }
 
+/* The queue's expanded row: the fields that do not fit a five-column row, then the log's tail. */
+.queue-detail-row > td {
+  background: var(--surface-sunken);
+}
+
+.queue-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.queue-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.queue-fields dt {
+  color: var(--text-muted);
+}
+
+.queue-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.queue-log {
+  max-height: 16em;
+  overflow: auto;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  font-family: var(--num-face);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.queue-table .row-subgroup > td {
+  padding-left: 24px;
+}
+

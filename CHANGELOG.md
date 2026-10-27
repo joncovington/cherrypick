@@ -22,6 +22,26 @@ beyond the latest release.
   has none (`docs/progress-queue-arms-plan.md`, phase 3). Underscore keys are documentation; no loop
   reads them.
 
+- **Changed (2026-10-27): the Backtest → queue tab, laid out again.** It is now three sections:
+  - **Now:** running tasks first, then queued ones in the order the runner takes them, with the
+    orchestrator's reasons for waiting, and runs started by hand.
+  - **Recent:** the last 30 days.
+  - **History:** older tasks, collapsed and grouped by study.
+
+  Each row has five columns and opens to show its arguments, timings, exit code, result fields and the
+  last 40 lines of its log (a new read-only route behind the Backtest gate). Status and study filters
+  are remembered per viewer (`docs/progress-queue-arms-plan.md`, phase 2).
+
+- **Added (2026-10-27): job progress, written by the job.** `core.progress` gives every long job a small
+  file under `state/progress/` (phases, counts, what it is on), and a child process reports beside its
+  parent's.
+  - **Who reports:** validation, the meic and flies replay checks, `backtest run`, and the chain and flow
+    fetches.
+  - **Reading it:** `queue-list` reads the files instead of spawning a counter per row. It adds the
+    overall share, the ETA and `stalled`/`orphaned`, and lists runs started by hand.
+  - **Console:** the queue tab's meter shows any job's nested progress (`docs/progress-queue-arms-plan.md`,
+    phase 1).
+
 - **Changed (2026-10-27): live-path hardening, no measurement change.** Each change only adds a
   refusal or a report:
   - **The manual live door obeys the halt.** A hand-placed opening order through meic's or earnings'

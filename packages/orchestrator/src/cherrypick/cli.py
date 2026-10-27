@@ -1653,6 +1653,7 @@ def cmd_queue_list(cfg, args) -> None:
     from datetime import datetime
 
     from cherrypick.core import calendar as cal
+    from cherrypick.core import progress as _progress
 
     from cherrypick.orchestrator import researchqueue as rq
 
@@ -1668,17 +1669,20 @@ def cmd_queue_list(cfg, args) -> None:
             for r in tasks
             if r["status"] == "queued" and r.get("after")
         }
+    # Every job's progress file, read once (core.progress): a queued task's is `q<id>`; anything else
+    # is a run started by hand, shown beside the queue while it runs and for 30 days after.
+    _progress.prune()
+    views = {v["file"]: v for v in _progress.read_all()}
     for r in tasks:
         if r["status"] == "queued":
             r["waits"] = rq.ready(r, now, cal.is_trading_day, held, window, status_of.get(r["id"])) or "ready"
         r["name"] = rq.name(r)
-        # A chain fetch's meter, for a row not yet finished: counts through its request file, whoever
-        # is running it (the queue, or a run started by hand on the same file).
-        r["progress"] = rq.fetch_progress(r) if r["status"] in ("queued", "running", "stopped") else None
+        r["progress"] = views.get(f"q{r['id']}")
         r["args"] = json.loads(r["args"])
         r["result"] = json.loads(r["result"]) if r.get("result") else None
         out.append(r)
-    _emit({"ok": True, "session_held": held, "blackout": list(window), "tasks": out})
+    by_hand = [v for stem, v in views.items() if not (stem.startswith("q") and stem[1:].isdigit())]
+    _emit({"ok": True, "session_held": held, "blackout": list(window), "tasks": out, "by_hand": by_hand})
 
 
 def cmd_queue_cancel(args) -> None:
