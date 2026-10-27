@@ -1498,18 +1498,26 @@ def main(argv=None) -> int:
     if args.expected_legs:
         print(json.dumps(expected_legs(config, conn), default=str))
         return 0
-    if args.settle_overdue:
-        today = clock.now_et().date().isoformat()
-        return out(settle_overdue(config, conn, cache_path=cache_path, today=today))
-    if args.settle:
-        broker = None
-        if args.price is None:
-            broker = BrokerAdapter(config)
-        return out(
-            run_settle_live(
-                config, conn, cache_path=cache_path, price=args.price, day=args.date, broker=broker
+    if args.settle_overdue or args.settle:
+        # Under the tick's own lock, as meic's settle is (2026-10-27): a tick and a settlement
+        # writing the same rows is P&L corruption. A busy lock refuses rather than waits; the
+        # orchestrator's overdue settle simply runs again on its next pass.
+        if not looplock.acquire(_once_lock_path(), 180, alive=looplock.pid_alive):
+            return out({"ok": False, "error": "a live tick is running; try again in a minute"})
+        try:
+            if args.settle_overdue:
+                today = clock.now_et().date().isoformat()
+                return out(settle_overdue(config, conn, cache_path=cache_path, today=today))
+            broker = None
+            if args.price is None:
+                broker = BrokerAdapter(config)
+            return out(
+                run_settle_live(
+                    config, conn, cache_path=cache_path, price=args.price, day=args.date, broker=broker
+                )
             )
-        )
+        finally:
+            looplock.release(_once_lock_path())
     if args.once:
         if args.live:
             from cherrypick.bwb import credentials
