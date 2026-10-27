@@ -314,7 +314,7 @@ def test_the_menu_carries_the_live_arms_own_delta_band(monkeypatch):
     monkeypatch.setattr(pl, "_fetch_atr", lambda *_: None)
     monkeypatch.setattr(pl, "_fetch_intraday_range_pct", lambda _s: None)
 
-    def menu(_symbol, _last, widths, delta_targets, default_delta, _today):
+    def menu(_symbol, _last, widths, delta_targets, default_delta, _today, **_kw):
         cands = [
             {"wing_width": w, "short_delta": d, "is_default_delta": d == default_delta}
             for d in delta_targets

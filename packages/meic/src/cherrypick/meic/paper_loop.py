@@ -354,6 +354,17 @@ def _build_candidates(
 DELTA_SOURCES = ("stream", "computed")
 
 
+def delta_source_for(cfg: dict, day: str) -> str:
+    """The delta source in force on session `day`: the config's `delta_source`, except "stream" for
+    a session before `delta_source_since` (the declared boundary, an ISO date). A loop asks for today;
+    a validation replay asks for the session it replays, so it reproduces what that session did."""
+    source = cfg.get("delta_source", "stream")
+    since = cfg.get("delta_source_since")
+    if source != "stream" and since and day < str(since):
+        return "stream"
+    return source
+
+
 def candidates_from_chain(
     entries, last, widths, delta_targets, default_delta, *, delta_source="stream", years=None
 ):
@@ -1108,7 +1119,7 @@ def run_iteration(cfg, force=False):
             delta_targets,
             delta_target,
             today,
-            delta_source=cfg.get("delta_source", "stream"),
+            delta_source=delta_source_for(cfg, today),
         )
         gex = _run_json(_TT + ["get_gex", "--symbol", symbol])
         atr_lookback = int(cfg.get("regime_atr_lookback_days", 5))

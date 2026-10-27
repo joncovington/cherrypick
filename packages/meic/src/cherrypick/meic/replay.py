@@ -192,9 +192,21 @@ def prior_true_ranges(history_db: Path, symbol: str, day: str, sessions: int) ->
 class ReplayDay:
     """One recorded session ready to hand out MEIC's snapshot at any recorded instant."""
 
-    def __init__(self, day: str, cfg: dict, profiles: dict, *, history_db: Path | str | None = None):
+    def __init__(
+        self,
+        day: str,
+        cfg: dict,
+        profiles: dict,
+        *,
+        history_db: Path | str | None = None,
+        delta_source: str | None = None,
+    ):
         self.day = day
         self.cfg = cfg
+        # Which delta picks the strikes. A history run evaluates the rule as configured NOW, so its
+        # default is the config's own `delta_source` on every session; a validation replay passes the
+        # source that session actually ran with (`paper_loop.delta_source_for`), so it can match paper.
+        self.delta_source = delta_source or cfg.get("delta_source", "stream")
         self.profiles = profiles
         self.recorded = quotehistory.RecordedDay(SYMBOL, day, history_db=history_db)
         self.vol = vol_inputs(day, load_cboe("VIX"), load_cboe("VIX1D"))
@@ -240,7 +252,7 @@ class ReplayDay:
             self.widths,
             delta_targets,
             delta_target,
-            delta_source=self.cfg.get("delta_source", "stream"),
+            delta_source=self.delta_source,
             years=_chaindelta.years_to_close(when),
         )
         gex, _stats = self.recorded.gex(sample["ts"], spot, 1)
@@ -313,14 +325,15 @@ def replay_session(
     history_db: Path | str | None = None,
     settle_price: float | None = None,
     tick_seconds: float = DEFAULT_TICK_SECONDS,
+    delta_source: str | None = None,
 ) -> dict:
     """Replay `day` for `arms` (default control) into a fresh scratch ledger, ticking every
-    `tick_seconds`, then settle at `settle_price`."""
+    `tick_seconds`, then settle at `settle_price`. `delta_source` as `ReplayDay` takes it."""
     if history_db is None and day < FIRST_SESSION:
         return {"ok": False, "error": f"no quote history before {FIRST_SESSION}"}
     arms = arms or ["control"]
     cfg, profiles = replay_profiles(arms)
-    replay = ReplayDay(day, cfg, profiles, history_db=history_db)
+    replay = ReplayDay(day, cfg, profiles, history_db=history_db, delta_source=delta_source)
     if not replay.recorded.samples:
         return {"ok": False, "error": f"no recorded samples for {SYMBOL} on {day}"}
     if not replay.vol:

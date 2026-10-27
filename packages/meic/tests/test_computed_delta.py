@@ -82,6 +82,40 @@ def test_a_chain_that_cannot_be_computed_refuses_entries_but_still_marks():
     assert cands == [] and "time to the close" in err and quotes
 
 
+def test_the_source_in_force_is_the_streams_before_the_declared_boundary():
+    cfg = {"delta_source": "computed", "delta_source_since": "2026-10-27"}
+    assert paper_loop.delta_source_for(cfg, "2026-10-26") == "stream"
+    assert paper_loop.delta_source_for(cfg, "2026-10-27") == "computed"
+    assert paper_loop.delta_source_for({"delta_source": "computed"}, "2026-01-02") == "computed"
+    assert paper_loop.delta_source_for({}, "2026-10-27") == "stream"
+
+
+def test_a_validation_replays_a_session_on_the_delta_it_ran_with(monkeypatch):
+    """A history run evaluates today's rule; the check reproduces the session, so before the boundary it
+    must pick on the feed's delta or it would be checking a rule paper never ran."""
+    from cherrypick.meic import replay, replay_check
+
+    seen = {}
+
+    class Stop(Exception):
+        pass
+
+    def fake_day(day, cfg, profiles, *, history_db=None, delta_source=None):
+        seen["source"] = delta_source
+        raise Stop
+
+    monkeypatch.setattr(
+        replay,
+        "replay_profiles",
+        lambda arms: ({"delta_source": "computed", "delta_source_since": "2026-10-27"}, {}),
+    )
+    monkeypatch.setattr(replay, "ReplayDay", fake_day)
+    for day, expected in (("2026-10-26", "stream"), ("2026-10-28", "computed")):
+        with pytest.raises(Stop):
+            replay_check.decision_check(day, ["control"])
+        assert seen["source"] == expected, day
+
+
 def test_an_unknown_source_is_refused():
     with pytest.raises(ValueError, match="delta_source"):
         paper_loop.candidates_from_chain(chain(), SPOT, [10], [0.16], 0.16, delta_source="vendor")
