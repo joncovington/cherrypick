@@ -507,6 +507,48 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 20,
+      "study": "item20",
+      "title": "The Convex Stack: one with-trend SPX fly bought twice a week at about 5 DTE",
+      "status": "declared",
+      "legacy": false,
+      "setup": "ma-trend",
+      "side": "directional",
+      "structure": "long-butterfly",
+      "window": "weekly",
+      "measure": "net per entry in $ at one contract (and as a share of the debit), for three exit arms: held to expiry, sold at 3x the debit, sold two sessions in",
+      "expected": "a positive mean net per entry after the suite's tastytrade costs",
+      "sample": "design 2022-05-16..2024-12-31 (~270 entries, Mondays and Thursdays); holdout 2025-01-01..2026-10-23 run after the design whatever it shows (user, 2026-10-27), counting only after a design pass; < 100 entries = no verdict",
+      "rule": "per arm: one-sided t > 2 on entry nets, Holm across the three arms, both design time-halves positive, positive at 1.5x costs, week-as-one-observation t > 2; then holdout mean > 0 with t > 2",
+      "mechanism": "a fly a little out of the money on the side a 4-hour moving average points to, a few days out, is cheap for how often a trending market reaches it",
+      "rivals": [
+        {
+          "explanation": "market drift",
+          "check": "the opposite side's fly scored at every entry and reported beside it, by side"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "both design time-halves must pass; results by width band"
+        },
+        {
+          "explanation": "the exit carries it",
+          "check": "three exit arms including hold to expiry, Holm across them"
+        },
+        {
+          "explanation": "overlapping Monday and Thursday trades",
+          "check": "by weekday, and each week tested as one observation"
+        },
+        {
+          "explanation": "optimistic fills",
+          "check": "verdict at the working price; mid and mid + $0.05 reported"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#20-the-convex-stack-one-with-trend-spx-fly-bought-twice-a-week-at-about-5-dte",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
