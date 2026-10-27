@@ -8,7 +8,7 @@ this, that a cumulative book lets one lucky structure paper over a strategy that
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from cherrypick.flies import (
     analytics,  # noqa: E402
@@ -1174,10 +1174,62 @@ def _process_snapshot(
 
     # --- 2. legged entry: sell a new credit spread
     if "legged" in params.get("entry_modes", ["legged"]):
-        enter, reason, plan = engine.evaluate_credit_spread_entry(
-            snapshot, params, open_positions, positions, gate_detail
+        # A `limit-*` arm (engine.entry_limit_settings) works one resting order first: filled at its
+        # limit on a later tick that reaches it, lapsed past its window, else still working, when
+        # the arm plans nothing new this tick.
+        limit_cfg = engine.entry_limit_settings(params)
+        resting = dbmod.resting_entry(conn, book_id) if limit_cfg else None
+        working = False
+        if resting is not None:
+            if fill_model.parse_ts(now) > fill_model.parse_ts(
+                resting["placed_at"]
+            ) and engine.entry_limit_touched(snapshot, resting):
+                book_legged({**resting["plan"], "credit": resting["limit_credit"], "slippage": 0.0})
+                dbmod.resolve_resting_entry(conn, resting["id"], "filled", now, positions[-1]["position_id"])
+                working = True
+            elif fill_model.parse_ts(now) >= fill_model.parse_ts(resting["expires_at"]):
+                dbmod.resolve_resting_entry(conn, resting["id"], "expired", now)
+                journal("legged", "entry_limit_expired", center=resting["center"])
+            else:
+                journal("legged", "entry_limit_working", center=resting["center"])
+                actions.append({"action": "entry_skipped", "mode": "legged", "reason": "entry_limit_working"})
+                working = True
+        enter, reason, plan = (
+            (False, None, None)
+            if working
+            else engine.evaluate_credit_spread_entry(snapshot, params, open_positions, positions, gate_detail)
         )
-        if enter:
+        limit = engine.entry_limit_price(snapshot, plan, limit_cfg["offset"]) if enter and limit_cfg else None
+        if enter and limit_cfg and limit is None:
+            enter, reason = False, "entry_limit_unpriced"
+        if working:
+            pass
+        elif enter and limit_cfg:
+            expires = fill_model.parse_ts(now) + timedelta(seconds=limit_cfg["window_seconds"])
+            dbmod.place_resting_entry(
+                conn,
+                {
+                    "book_id": book_id,
+                    "trade_date": trade_date,
+                    "symbol": symbol,
+                    "arm": arm,
+                    "placed_at": now,
+                    "expires_at": expires.isoformat(),
+                    "side": plan["side"],
+                    "center": plan["center"],
+                    "wing_width": plan["wing_width"],
+                    "basis": limit_cfg["basis"],
+                    "limit_credit": limit,
+                    "mid_at_place": (
+                        engine.entry_spread_prices(snapshot, plan["side"], plan["center"], plan["wing_width"])
+                        or {}
+                    ).get("mid"),
+                    "plan": plan,
+                },
+            )
+            journal("legged", "entry_limit_placed", center=plan["center"], detail=f"limit {limit:.2f} credit")
+            actions.append({"action": "entry_limit_placed", "side": plan["side"], "center": plan["center"]})
+        elif enter:
             book_legged(plan)
         else:
             journal("legged", reason, center=wanted_center)
