@@ -67,6 +67,16 @@ def test_upsert_inserts_then_updates_the_same_natural_key(store, conn):
     assert rows[0]["status"] == "closed"
 
 
+def test_upsert_without_commit_stays_in_the_callers_transaction(store, conn):
+    """A multi-row change (contango's switch) writes every row, then commits once -- or not at all."""
+    store.upsert(conn, "t_positions", ("position_id",), {"position_id": "p1", "status": "open"}, commit=False)
+    assert conn.in_transaction
+    conn.rollback()
+    assert list(conn.execute("SELECT * FROM t_positions")) == []
+    store.upsert(conn, "t_positions", ("position_id",), {"position_id": "p1", "status": "open"})
+    assert not conn.in_transaction
+
+
 def test_upsert_stamps_created_once_and_updated_every_time(store, conn):
     store.save_position(conn, {"position_id": "p1"})
     first = dict(conn.execute("SELECT * FROM t_positions").fetchone())

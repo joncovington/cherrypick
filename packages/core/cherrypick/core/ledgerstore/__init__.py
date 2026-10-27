@@ -100,9 +100,10 @@ class LedgerStore:
 
     # ----------------------------------------------------------------- state writers (never swallow)
 
-    def upsert(self, conn, table: str, keys: tuple[str, ...], row: dict) -> None:
+    def upsert(self, conn, table: str, keys: tuple[str, ...], row: dict, *, commit: bool = True) -> None:
         """Insert `row`, or update the existing row with the same natural key — a restart mid-session
-        re-writes the same position rather than duplicating it."""
+        re-writes the same position rather than duplicating it. `commit=False` leaves the write in
+        the caller's transaction, for a change that moves several rows and must land as one."""
         row = {**row, "updated_at": self.now()}
         where = " AND ".join(f"{k} = ?" for k in keys)
         existing = conn.execute(f"SELECT id FROM {table} WHERE {where}", [row[k] for k in keys]).fetchone()
@@ -115,7 +116,8 @@ class LedgerStore:
             sets = ", ".join(f"{c} = ?" for c in row if c not in keys)
             vals = [v for c, v in row.items() if c not in keys] + [row[k] for k in keys]
             conn.execute(f"UPDATE {table} SET {sets} WHERE {where}", vals)
-        conn.commit()
+        if commit:
+            conn.commit()
 
     def save_position(self, conn, row: dict) -> None:
         self.upsert(conn, self.table("positions"), ("position_id",), row)
