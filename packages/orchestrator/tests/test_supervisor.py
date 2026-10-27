@@ -700,12 +700,14 @@ def test_registry_drops_jobs_config_no_longer_derives(tmp_path, monkeypatch):
     from cherrypick.orchestrator import supervisor as sup
 
     s = sup.Supervisor.__new__(sup.Supervisor)
+    s._handles = {}
     s._state = {
         "watchdog": {"enabled": True},
         "earnings-entry": {"enabled": True, "last_fire_day": "2026-08-11"},
         "flies-paper": {"enabled": True, "running_pid": 4242},
         "broken-job": {"enabled": False},
     }
+    monkeypatch.setattr(sup, "same_process", lambda pid, started: pid == 4242)
 
     class _Spec:
         def __init__(self, jid):
@@ -719,6 +721,42 @@ def test_registry_drops_jobs_config_no_longer_derives(tmp_path, monkeypatch):
     assert "flies-paper" in s._state, "a row with a running child is never dropped"
     # Missing because it FAILED to derive, not because it was retired — its history is evidence.
     assert "broken-job" in s._state, "a derivation failure keeps its row"
+
+
+def test_an_exit_after_a_job_stops_being_derived_is_not_read_as_the_next_days(spawned, monkeypatch):
+    """2026-10-26/27: the meic live loop self-disarmed at 17:00, taking its companion job (the
+    alert daemon) out of the derived table; the daemon exited a second later. Nothing polled an
+    underived job, so the next morning's arm reaped that exit as "session complete" and the daemon
+    sat idle through the whole armed day."""
+    from cherrypick.orchestrator import jobspec
+
+    table: list[jobspec.JobSpec] = []
+    monkeypatch.setattr(supervisor.jobspec, "derive_jobs", lambda cfg, **kw: (list(table), {}))
+    spec = jobspec.JobSpec(
+        id="meic-alert-daemon",
+        argv=("pythonw", "-m", "cherrypick.meic.alert_daemon"),
+        kind=jobspec.KIND_RESIDENT,
+        interval_seconds=120,
+        window_start="00:00",
+        window_end="17:00",
+    )
+    sup = supervisor.Supervisor(base_cfg())
+
+    table.append(spec)
+    assert "meic-alert-daemon" in sup.pass_once(now=MONDAY_NOON)["started"]
+    first = spawned[-1]
+    _settle(sup._state["meic-alert-daemon"])
+
+    table.clear()  # disarmed at 17:00 -- the companion is no longer derived...
+    sup.pass_once(now=datetime(2026, 8, 10, 17, 0, tzinfo=ET))
+    first.exit(0)  # ...and the daemon reaches its own deadline a second later
+    sup.pass_once(now=datetime(2026, 8, 10, 17, 1, tzinfo=ET))
+    assert "meic-alert-daemon" not in sup._state, "the exited child's row goes with its job"
+
+    table.append(spec)  # armed again the next morning
+    res = sup.pass_once(now=datetime(2026, 8, 11, 8, 43, tzinfo=ET))
+    assert "meic-alert-daemon" in res["started"], "yesterday's exit is not today's session end"
+    assert not sup._state["meic-alert-daemon"].get("module_stopped")
 
 
 @pytest.mark.unit

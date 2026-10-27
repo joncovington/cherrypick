@@ -1119,10 +1119,22 @@ class Supervisor:
         overlap guard loses track of a process it would otherwise still reap. And a job whose
         derivation FAILED this pass stays too: that job is missing because something is broken, not
         because it was retired, and dropping its history would erase the evidence.
+
+        A child that has EXITED since its job stopped being derived goes with its row and handle,
+        though. Nothing else polls an underived job, so the exit used to wait for the job to come
+        back and was read then as that day's: 2026-10-26 the meic live loop self-disarmed at 17:00
+        (the arm record, and so the companion job, gone), the alert daemon exited at 17:00:01, and
+        the next morning's arm reaped that exit as "session complete" and idled the daemon all day.
         """
         keep = {spec.id for spec in jobs} | set(errors)
         for jid in [j for j in self._state if j not in keep]:
-            if self._state[jid].get("running_pid"):
+            st = self._state[jid]
+            handle = self._handles.get(jid)
+            if handle is not None:
+                if handle.poll() is None:
+                    continue
+                self._handles.pop(jid, None)
+            elif st.get("running_pid") and same_process(st["running_pid"], st.get("pid_started_at")):
                 continue
             self._state.pop(jid, None)
             _log(f"{jid}: no longer derived from config — registry row dropped")
