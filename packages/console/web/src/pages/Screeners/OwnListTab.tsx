@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { IncomeList, IncomeListRow } from "@console/shared";
+import type { FairValueFields, IncomeList, IncomeListRow } from "@console/shared";
 import { SortTh, sortRows, useSort } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
 import { useIncomeList } from "../../lib/api";
@@ -72,6 +72,49 @@ export function EarningsCell({ r }: { r: Pick<IncomeListRow, "earnings" | "earni
     );
   }
   return <td className="muted" title="No announcement date is known, so the trade is never called clear">unknown</td>;
+}
+
+export const FAIR_TITLE =
+  "The session's DCF estimate of the share's value (cherrypick.core.valuation on Dolt's annual statements): the price " +
+  "against it, with the model's low-high range. A model estimate with no measured edge, never a ranking.";
+
+const FAIR_FLAG: Record<string, string> = {
+  terminal_heavy: "the terminal value is over 75% of the enterprise value: the answer is the perpetuity, not the forecast",
+  negative_base_fcf: "the first forecast year's cash flow is negative",
+  beta_bounded: "the regression beta was outside 0.5-2.0 and was bounded",
+  beta_disagrees: "the broker's beta differs from ours by more than 0.5",
+  shares_stale: "spot times the last fiscal year's shares is more than 10% off the broker's market cap",
+};
+
+const FAIR_STATE: Record<string, string> = {
+  "not-applicable": "A fund, a bank or a REIT: an operating-cash-flow DCF does not describe it",
+  "no-statements": "No annual statements published by the session",
+  refused: "The model refused this name (too little history, no operating profit, a rate too near the growth, or a cash flow that never turns positive)",
+  unbuilt: "No fair-value file had been built for the session",
+  unlisted: "The fair-value file has no row for this name",
+};
+
+/** The fair-value gap: the price against the model's value; shared with the credit-spread tab. */
+export function FairCell({ fair }: { fair: FairValueFields | null | undefined }) {
+  if (fair === null || fair === undefined) return <td className="muted" title="A list built before the fair-value fields existed">—</td>;
+  if (fair.fairState !== "valued" || fair.fairGap === null || fair.fairValue === null) {
+    const state = fair.fairState ?? "unbuilt";
+    return (
+      <td className="muted" title={FAIR_STATE[state] ?? state}>
+        {state === "not-applicable" ? "n/a" : "—"}
+      </td>
+    );
+  }
+  const flags = fair.fairFlags.map((f) => FAIR_FLAG[f] ?? f);
+  const title =
+    `Fair value ${money(fair.fairValue)} (range ${money(fair.fairLow)}–${money(fair.fairHigh)}); the price is ` +
+    `${signedPct(fair.fairGap)} against it. ${FAIR_TITLE}${flags.length > 0 ? ` Flags: ${flags.join("; ")}.` : ""}`;
+  return (
+    <td className="num" title={title}>
+      {signedPct(fair.fairGap)}
+      {fair.fairFlags.length > 0 ? <span className="muted"> †</span> : null}
+    </td>
+  );
 }
 
 function LiquidCell({ r }: { r: IncomeListRow }) {
@@ -331,6 +374,9 @@ export function OwnListTab({ list }: { list: IncomeList }) {
                 />
                 <SortTh label="Annual" k="annual" sort={sort} className="num" title="Return × 365 ÷ days, simple. Yield, not edge." />
                 <SortTh label="Distance" k="distance" sort={sort} className="num" title="Strike against the share price" />
+                <th className="num" title={FAIR_TITLE}>
+                  Vs fair
+                </th>
                 <SortTh label="Earnings" k="earnings" sort={sort} title="The next announcement, against this trade's own expiry" />
                 {calls && (
                   <th title="The broker's ex-dividend date against this call's expiry: in trade (a call in the money then can be assigned early for the dividend), after, past (the next is not posted) or unknown">
@@ -379,6 +425,7 @@ export function OwnListTab({ list }: { list: IncomeList }) {
                   <td className="num">{pct(r.returnFraction, 2)}</td>
                   <td className="num">{pct(r.annualFraction)}</td>
                   <td className="num">{signedPct(r.distanceFraction)}</td>
+                  <FairCell fair={r.fair} />
                   <EarningsCell r={r} />
                   {calls && <ExDividendCell r={r} />}
                   <LiquidCell r={r} />

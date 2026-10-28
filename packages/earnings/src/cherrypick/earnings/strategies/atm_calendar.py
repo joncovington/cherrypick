@@ -27,7 +27,7 @@ everything not specific to this strategy's structure or thresholds.
 Strategy-specific config lives under config.json's "strategies.atm_calendar"
 key.
 
-Commands (see CLAUDE.md's Tool Reference):
+Commands (see docs/reference.md's Tool Reference):
   get_candidates --date MM/DD/YYYY
   get_order --symbol X --earnings_date YYYY-MM-DD --earnings_timing "..."
 """

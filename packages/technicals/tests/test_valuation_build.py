@@ -112,6 +112,24 @@ def test_the_build_values_a_stock_and_says_why_the_others_have_no_value(history)
     assert "valued" in doc["states"] and doc["rule"]["edge"].startswith("none measured")
 
 
+def test_the_risk_free_rate_is_the_treasury_ten_year_when_the_file_is_there(history):
+    from cherrypick.core import treasury
+
+    valuation.build(SESSION, names=["AAA"])
+    doc = json.loads(valuation.latest(SESSION).read_text(encoding="utf-8"))
+    assert doc["rule"]["risk_free"] == 0.04 and doc["rule"]["risk_free_source"].startswith("incomerules")
+    p = treasury.path(2026)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text('Date,"10 Yr"\n10/24/2026,4.25\n10/27/2026,4.40\n', encoding="utf-8")
+    out = valuation.build(SESSION, names=["AAA"])
+    assert out["ok"]
+    doc = json.loads(valuation.latest(SESSION).read_text(encoding="utf-8"))
+    # The last curve strictly before the session: the 24th, never the session's own.
+    assert doc["rule"]["risk_free"] == pytest.approx(0.0425)
+    assert doc["rule"]["risk_free_source"] == "treasury 10y 2026-10-24"
+    assert doc["rows"]["AAA"]["wacc"] >= valuation._val.MIN_WACC
+
+
 def test_a_valued_name_is_read_back_by_session(history):
     assert valuation.latest(SESSION) is None
     valuation.build(SESSION, names=["AAA"])

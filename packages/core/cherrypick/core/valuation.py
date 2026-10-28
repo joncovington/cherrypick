@@ -13,7 +13,8 @@ Market Taker Mentoring's episode on DCF strengths and weaknesses. Both say the s
 is only as good as its assumptions, the terminal value is most of the answer for a growth name, and
 the right use is one data point beside other checks when picking short-put and covered-call names.
 So this module builds **one mechanical base case** from the company's own history (medians of the
-last five fiscal years, the consensus next-year sales growth when a caller has it) and states a
+newest three fiscal years for the margin and the percent-of-revenue lines, the five-year revenue
+CAGR or the consensus next-year sales growth when a caller has it) and states a
 **low-high range** from a grid over the discount rate and the terminal growth, rather than asking
 anyone to write bull and bear cases. Nothing here is a ranking, and no edge has been measured for it.
 
@@ -52,10 +53,20 @@ DEFAULT_TAX = 0.21
 KD_BOUNDS = (0.02, 0.12)
 # Fewer fiscal years than this and a median is not a history.
 MIN_YEARS = 3
+# The margin and the percent-of-revenue lines are medians over this many of the newest fiscal years
+# (2026-10-28, from five): the forecast runs on the business as it now is, and the median of three
+# still ignores one odd year. The revenue CAGR keeps the full five-year window.
+MARGIN_YEARS = 3
+# A cost of capital under this is below what equity has earned over any long run; a near-zero or
+# negative regression beta (a utility, a tobacco name) gave 5.5% and a value twice the price on
+# 2026-10-27, so the rate is floored here and the answer flagged (`wacc_floored`).
+MIN_WACC = 0.07
 # Below this spread between WACC and terminal growth the perpetuity is arithmetic, not a value.
 MIN_SPREAD = 0.01
-# A terminal value above this share of EV says the answer is the perpetuity, not the forecast.
-TERMINAL_HEAVY = 0.75
+# A terminal value above this share of EV says the answer is the perpetuity, not the forecast. With
+# five years and a 2% terminal the perpetuity is 60-80% of EV for most names; 0.75 flagged 250 of
+# 423 on 2026-10-27, so the bar is 0.85 (2026-10-28), where the forecast years barely matter.
+TERMINAL_HEAVY = 0.85
 # The sensitivity grid: WACC a point either way in half-point steps, terminal growth half a point
 # either way in quarter-point steps.
 WACC_STEPS = (-0.01, -0.005, 0.0, 0.005, 0.01)
@@ -163,15 +174,17 @@ def drivers_from_history(
     consensus_growth: float | None = None,
     terminal_growth: float = TERMINAL_GROWTH,
 ) -> Drivers | Refusal:
-    """The base case from the last `FORECAST_YEARS` fiscal years: medians for the margin and the
-    percent-of-revenue lines, year-one growth from the consensus when given (else the window's CAGR),
-    faded to `terminal_growth` by year five."""
+    """The base case from the last `FORECAST_YEARS` fiscal years: medians over the newest
+    `MARGIN_YEARS` for the margin and the percent-of-revenue lines, year-one growth from the
+    consensus when given (else the five-year window's CAGR), faded to `terminal_growth` by year
+    five."""
     hist = sorted(years, key=lambda y: y.end)[-FORECAST_YEARS:]
     if len(hist) < MIN_YEARS:
         return Refusal("too_few_years")
     if any(y.revenue <= 0 for y in hist):
         return Refusal("no_revenue")
-    margin = statistics.median(y.ebit / y.revenue for y in hist)
+    recent = hist[-MARGIN_YEARS:]
+    margin = statistics.median(y.ebit / y.revenue for y in recent)
     if margin <= 0:
         return Refusal("no_operating_profit")
     g1 = consensus_growth
@@ -182,10 +195,10 @@ def drivers_from_history(
     return Drivers(
         growth=fade(_clamp(g1, GROWTH_BOUNDS), terminal_growth),
         ebit_margin=margin,
-        da_pct=statistics.median(y.da / y.revenue for y in hist),
-        capex_pct=statistics.median(y.capex / y.revenue for y in hist),
-        nwc_pct=statistics.median(-y.nwc_change / y.revenue for y in hist),
-        tax_rate=effective_tax(hist),
+        da_pct=statistics.median(y.da / y.revenue for y in recent),
+        capex_pct=statistics.median(y.capex / y.revenue for y in recent),
+        nwc_pct=statistics.median(-y.nwc_change / y.revenue for y in recent),
+        tax_rate=effective_tax(recent),
         terminal_growth=terminal_growth,
     )
 
@@ -250,8 +263,9 @@ def project(base: FiscalYear, d: Drivers) -> tuple[Projection, ...]:
 
 
 def terminal_value(fcf: float, rate: float, growth: float) -> float | None:
-    """The perpetuity after the last forecast year; None when the spread is under `MIN_SPREAD`."""
-    if rate - growth < MIN_SPREAD:
+    """The perpetuity after the last forecast year; None when the spread is under `MIN_SPREAD` (and
+    always when the rate is not above the growth: that is a division, not a value)."""
+    if rate <= growth or rate - growth < MIN_SPREAD:
         return None
     return fcf * (1.0 + growth) / (rate - growth)
 
@@ -320,9 +334,10 @@ def value(
     if base.shares <= 0:
         return Refusal("no_shares")
     b = bounded_beta(beta_raw)
-    rate = wacc(
+    raw_rate = wacc(
         cost_of_equity(rf, b, erp), cost_of_debt(base.interest, base.debt, d.tax_rate), base.debt, market_cap
     )
+    rate = max(raw_rate, MIN_WACC)
     if rate - d.terminal_growth < MIN_SPREAD:
         return Refusal("wacc_near_growth")
     projections = project(base, d)
@@ -345,6 +360,8 @@ def value(
         flags.append("negative_base_fcf")
     if b != beta_raw:
         flags.append("beta_bounded")
+    if rate != raw_rate:
+        flags.append("wacc_floored")
     ebitda = base.ebit + base.da
     return Valuation(
         fair_value=fair,

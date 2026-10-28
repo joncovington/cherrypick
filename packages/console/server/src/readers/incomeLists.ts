@@ -12,6 +12,7 @@ import type {
   CreditSpreadRow,
   CreditSpreadSelectionPick,
   CreditSpreadWidth,
+  FairValueFields,
   IncomeEarnings,
   IncomeExDividend,
   IncomeList,
@@ -55,6 +56,22 @@ function days(dir: string): string[] {
   }
 }
 
+const FAIR_STATES: readonly string[] = ["valued", "not-applicable", "no-statements", "refused", "unbuilt", "unlisted"];
+
+/** The six fair-value fields a version-3 row carries; null for a row from before them. */
+function fairOf(r: Record<string, unknown>): FairValueFields | null {
+  if (!("fair_state" in r)) return null;
+  const state = str(r["fair_state"]);
+  return {
+    fairValue: num(r["fair_value"]),
+    fairLow: num(r["fair_low"]),
+    fairHigh: num(r["fair_high"]),
+    fairGap: num(r["fair_gap"]),
+    fairState: state !== null && FAIR_STATES.includes(state) ? (state as FairValueFields["fairState"]) : null,
+    fairFlags: Array.isArray(r["fair_flags"]) ? r["fair_flags"].filter((f): f is string => typeof f === "string") : [],
+  };
+}
+
 function toRow(v: unknown): IncomeListRow | null {
   const r = rec(v);
   const symbol = str(r["symbol"]);
@@ -95,6 +112,7 @@ function toRow(v: unknown): IncomeListRow | null {
     exDividendDate: str(r["ex_dividend_date"]),
     leveraged: str(r["leveraged"]),
     fit: null, // joined from manage's evaluation in readIncomeList
+    fair: fairOf(r),
   };
 }
 
@@ -267,6 +285,7 @@ function toSpread(v: unknown): CreditSpreadRow | null {
     exDividend: spread === "call" ? (ex !== null && EX_DIVIDEND.includes(ex) ? ex : "unknown") : null,
     exDividendDate: str(r["ex_dividend_date"]),
     leveraged: str(r["leveraged"]),
+    fair: fairOf(r),
   };
 }
 

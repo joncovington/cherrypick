@@ -33,6 +33,7 @@ import type {
   IncomeList,
   IncomeListPayload,
   CreditSpreadPayload,
+  ValuationPayload,
   PmccPayload,
   PmccCycleRow,
   PmccHistory,
@@ -244,6 +245,16 @@ export function useIncomeList(list: IncomeList, day: string | null) {
     queryKey: ["income-list", list, day],
     queryFn: () => getJson<IncomeListPayload>(`/api/screeners/own/${list}${day ? `?day=${encodeURIComponent(day)}` : ""}`),
     // Built once a session, after the afternoon chains.
+    refetchInterval: 300_000,
+  });
+}
+
+/** The fair-value file (technicals valuation, 2026-10-27): one DCF estimate a name a session. */
+export function useValuation(day: string | null) {
+  return useQuery<ValuationPayload>({
+    queryKey: ["valuation", day],
+    queryFn: () => getJson<ValuationPayload>(`/api/screeners/valuation${day ? `?day=${encodeURIComponent(day)}` : ""}`),
+    // Built once a session, in the morning after the statements landing.
     refetchInterval: 300_000,
   });
 }
