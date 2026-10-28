@@ -1627,6 +1627,105 @@ of it is run, and run after item 23's verdict.*
   - **A fail or no verdict:** live stays at 14:00; the afternoon slot is closed as a lever.
     Hypothesis 2's morning read is recorded either way.
 
+### 25. The skate put's expiry and management: 14 days against the monthly, held, halved or rolled
+
+*Source: the user, 2026-10-28: "for skate trades, would shorter dated CSP be better to use,
+assuming no earnings cross the expiry?", then "shorter dated, letting them run to expiry or
+assignment vs rolling?". The skate study (docs/skate-plan.md) measured how often a band strike
+skates, not what a breach costs; its "Not in this plan" left that to the licensed data. This is
+that test. Declared here before any of it is fetched or run.*
+
+- **Question:** does a cash-secured put sold at the skate band earn more on a 14-day weekly than on
+  the 45-60 day monthly, and does holding it, closing it at half the credit, or rolling it when
+  tested change the answer?
+- **Where the edge would live:** **premium**, harvested faster. The band holds the per-cycle skate
+  rate near 89% at every expiry (the 2026-10-18 study), and a shorter option earns more model theta
+  a day. Against it: more cycles pay more spread and fees and meet more gaps, and a weekly's strikes
+  are thinner. Earnings favour the short expiry: a 14-day cycle crosses a report far less often than
+  a 45-60 day one, so it spends less time idle. Rolling would live in **management**: payoff
+  shaping, not a source of edge on its own.
+- **Look-alikes:** the 10-19 short-put sweep and the 10-23 confirmation (16 delta 45-60 DTE closed
+  at half credit: no tested edge; 28-35 DTE worse at every delta); the 10-20 strangle management
+  test (rolling the untested side failed both halves; this rolls the tested side); the skate
+  study's expiry read (7-14 days best on the model price, the monthly on a tradable bid).
+- **7 days was screened out before declaring.** The skate quote runs of 2026-10-20 to 10-27 (broker
+  quotes in regular hours, the fixed band's put pick, entry cost alone at a quarter of the bid-ask
+  plus the opening fee, a lower bound) put the median annual cost at 3.2% of capital at 7 days
+  with open interest of 100 or more (two thirds of picks above 2%), 1.0% at 14 days and 0.4% on the
+  monthly. No put rule measured so far has shown more than about 2% a year of edge, so a 7-day arm
+  starts behind; it is not run. The 14-day arm clears that bar.
+- **Rival explanations, each with its check:**
+  - *Drift, not premium:* a short put is long the stock. **Check:** every arm is measured as edge,
+    net minus the delta-equivalent stock position over the same days, as the 10-19 sweep.
+  - *A bull year:* the 10-23 confirmation's put edge was a 2025-26 effect. **Check:** 2022 must
+    agree before a pass.
+  - *Costs on more cycles:* **Check:** the arm's own edge still positive with a 3/8 spread
+    concession.
+  - *A few names:* **Check:** the paired difference is per name, and a sign count across names is
+    reported beside the mean.
+  - *Searching a grid:* **Check:** Holm across the five judged arms; the grid is fixed here.
+- **The structure:** six arms, one put at a time per name.
+  - **Strike:** the first listed put at or below the fixed band (close − 0.75 × the 10-session
+    average of the high-low range over N sessions, N the trading days to the expiry; `technicals
+    skate`'s band), on the entry day's close. The by-expiry band is not run.
+  - **Expiry:** `w14`, the weekly 12-16 calendar days out; `m45`, the standard monthly 45-60 days
+    out. An arm with no expiry in its range that day waits.
+  - **Earnings:** a stock whose report falls on or before the expiry is not entered; a report date
+    that is unknown is not "clear". Funds are exempt. Dates from Dolt's `earnings_calendar`.
+  - **Management**, crossed with both expiries:
+    - `hold`: the educator's buy-to-close at $0.03 resting from the fill, filled on the first close
+      whose ask is at or under it; otherwise held to expiry or assignment.
+    - `tp50`: bought back at half the credit, as the 10-19 sweep's `tp50`.
+    - `roll`: when a close is at or below the strike, the educator's net-zero roll: buy it back and
+      sell the same arm's next expiry, at the highest strike at or below the old one whose bid
+      covers the buyback. No such strike, a report inside the new expiry, or two rolls already made:
+      no roll, and the put runs to expiry. A rolled position is one trade, its cash summed.
+  - **Assignment:** settled at the expiry close's intrinsic value with the $5 settlement fee; the
+    shares are not kept. The wheel's calls are not part of this test.
+  - **Base:** `m45-tp50`, the short-put list's rule at the band strike. **Judged:** `w14-hold`,
+    `w14-tp50`, `w14-roll`, `m45-hold`, `m45-roll`.
+- **Costs:** fills at mid conceding a quarter of the bid-ask, the broker's fees from `core.fees`,
+  $5 per in-the-money settlement. Early assignment is not modelled (an upper bound).
+- **Measured:** per name and arm, edge as a percentage of the strike's capital a year, over the
+  whole window, idle days included, so an arm that sits out earnings pays for it.
+- **Names:** the 56 names of the 10-23 confirmation, all from the universe. A name is in a
+  window's run only if its weeklies are listed on at least 90% of that window's weeks; a name that
+  fails is dropped from every arm, so the pairing holds. **Judged:** the stocks. **References, never
+  judged:** the funds (SPY, QQQ, IWM, GLD, XLE, SLV), reported per name, SPY first: if the skate
+  stocks cannot beat the index put, the band adds nothing.
+- **Window and sample:** the vendor's end-of-day daily paths (`eod_chains.db`), the confirmation's
+  two windows.
+  - **Design:** entries 2025-10-01 to 2026-10-16. It decides.
+  - **Holdout:** entries in 2022, run straight after the design. It counts toward a pass only after a
+    design pass, and cannot overturn a design fail.
+  - The monthly arms are near the confirmation's 16-delta rule (band strikes sit near 0.15 delta),
+    so `m45` is partly seen in both windows. The weekly arms are not.
+  - Fewer than 30 judged names or 300 trades in an arm in a window is no verdict.
+- **Pass-or-fail rule**, per judged arm, all must hold in the design window:
+  - the per-name paired difference against `m45-tp50` has a mean above zero and a one-sided t above
+    2, with Holm across the five arms;
+  - the paired difference positive on more than half the names;
+  - the arm's own median edge above zero, and still positive at a 3/8 spread concession;
+  - then the holdout: the paired mean above zero and the arm's own median edge above zero.
+- **Declared limits (B11):** daily closes only, so the $0.03 buy-back, half credit and the tested
+  test are read once a day, and a gap through the strike inside a day is seen at the close; the
+  store has no volume, so open interest of 100 cannot be checked, and a leg whose quote fails
+  `core.legbars`' spread bar on the entry day is skipped; early assignment not modelled; the band is
+  our reconstruction of the educator's unpublished one.
+- **Name split (B9):** design and holdout cover the same names; the funds are reported apart.
+- **Data:** a weekly fetch on top of the confirmation's monthly paths. A request file (each name,
+  each weekly expiry in both windows, its path from 18 days before) goes through `python -m
+  cherrypick.backtest fetch-chain-paths` as a research-queue row (`item25/fetch-chain-paths`), and
+  the replay as a committed script after it (`item25/study`). Results go under the backtest data
+  directory only; this plan records the verdict.
+- **Decides:**
+  - **A pass:** the Skate tab's best-expiry pick and the wheel view's `ROLL_OR_CLOSE` suggestion
+    follow the passing arm, a read-surface change, and the short-put list's rule is re-read against
+    it.
+  - **A fail or no verdict:** the monthly stays the skate default, the tab's per-day ranking gets a
+    note that it is not a tested edge, and rolling a tested put is recorded as payoff shaping that
+    did not pay.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
