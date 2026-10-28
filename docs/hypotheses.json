@@ -596,7 +596,7 @@
       "id": 22,
       "study": "item22",
       "title": "The overnight condor: a 1DTE SPX iron condor sold at the close, bought back the next morning",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "close-to-next-session",
       "side": "two-sided",

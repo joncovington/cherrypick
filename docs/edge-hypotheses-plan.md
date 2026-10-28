@@ -1562,6 +1562,20 @@ whatever the design shows, on 2026-10-27. Declared here before any of it is run.
     account is an IRA, so the defined-risk condor is the only version worth proposing.
   - **A fail or no verdict:** closes the overnight 1DTE short as specified; with item 19 that closes
     both sides of the 1DTE overnight premium.
+- **Result (2026-10-27): fail, both arms; the structure is closed.** In the design window neither
+  the 09:35 buy-back nor the settled condor has a positive mean net after costs at the working
+  price, and neither has a positive time-half. The mid-price fill, reported as context, puts the
+  buy-back arm near zero: the overnight premium is about fair at mid, and the spread and fees take
+  the rest. The closure split does not behave as the mechanism predicts: the weekend's sign is not
+  the same in the two windows. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item22/study-2022-05-16-2024-12-31.json`).
+- **Holdout, run straight after as declared; exploratory, not a verdict.** After a design fail it
+  cannot overturn the fail. With the rules unchanged the buy-back arm fails every check there too.
+  The settled arm's mean is positive in the holdout but far from the t bar, and its closure split is
+  the design window's reversed. The holdout is now spent for this specification. Local result:
+  `.../item22/study-2025-01-01-2026-10-23.json`.
+- **What this closes:** with item 19, both sides of the 1DTE overnight premium on SPX as specified.
+  Idea B of the 2026-10-27 review (the same condor on RUT and NDX) is not fetched.
 
 ## Not worth revisiting
 
