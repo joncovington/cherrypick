@@ -61,6 +61,12 @@ names" one click away. A name is options-tradable when both hold (`tradable.py`)
 
 A cash index (SPX) has no stock volume; its weeklies alone decide.
 
+**From 2026-10-27 the flag is the liquidity verdict's `tradable`** (`liquidity.py`): the two tests
+above, and the name's monthly options confirmed liquid (ATM spread at most 7.5% of mid, chain open
+interest worth $250M, chain volume worth $5M, over its last five income readings). A `thin` name
+still has its chart and rows, flagged not tradable, so the default view hides it and "All names"
+shows it. A machine with no verdict file yet falls back to the two tests alone.
+
 Since 2026-10-07 a name the nightly liquidity verdict holds illiquid (`liquidity.py`) has no chart
 file, so no row at all, until the monthly sweep. The weeklies are read from each name's own latest
 IV-rank reading, at most 10 days old.

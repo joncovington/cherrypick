@@ -1173,10 +1173,22 @@ def stress_closes(conn, symbol: str) -> list[float]:
     return [b.close for b in skate.price_bars(conn, store_sym)]
 
 
+#: technicals `liquidity.MEASURED`, spelled here so this pure helper needs no technicals import
+#: (packages/technicals/tests/test_liquidity.py holds the two equal).
+MEASURED = frozenset({"tradable", "thin"})
+
+
 def income_names(verdicts: dict[str, dict], funds: set[str] = frozenset()) -> list[str]:
-    """The tradable names, in the store's spelling (BRK.B), and the reference funds that pass the
-    same test (`liquidity.reference_tradable`: SPY, QQQ, the sector funds)."""
-    return sorted({*(s for s, v in verdicts.items() if (v or {}).get("verdict") == "tradable"), *funds})
+    """The names to measure, in the store's spelling (BRK.B): the tradable ones and the thin ones
+    (`MEASURED`: a thin name is measured so its monthly options can admit it), and the reference
+    funds judged the same way (`liquidity.reference_measured`: SPY, QQQ, the sector funds)."""
+    return sorted({*(s for s, v in verdicts.items() if (v or {}).get("verdict") in MEASURED), *funds})
+
+
+def name_verdicts(verdicts: dict[str, dict], reference: dict[str, dict]) -> dict[str, str]:
+    """{symbol: the liquidity verdict it was measured under}, stamped on each reading's entry so a
+    reader that may not import technicals (manage) lists only the tradable ones."""
+    return {s: (v or {}).get("verdict") for s, v in {**verdicts, **reference}.items()}
 
 
 def income_reach(iv: float | None, dte: int) -> float:
@@ -1498,7 +1510,9 @@ def cmd_income(args) -> int:
             )
         )
         return 0
-    names = income_names(liquidity.load(), liquidity.reference_tradable())[: args.limit]
+    verdicts, reference = liquidity.load(), liquidity.load_reference()
+    names = income_names(verdicts, liquidity.reference_measured(reference))[: args.limit]
+    stamp = name_verdicts(verdicts, reference)
     if not names:
         print(json.dumps({"ok": False, "reason": "no tradable names: the liquidity verdicts are missing"}))
         return 1
@@ -1529,7 +1543,12 @@ def cmd_income(args) -> int:
     symbols: dict[str, dict] = {}
     for sym in names:
         plan = plans.get(sym)
-        entry: dict = {"spot": spots.get(sym), **income_metrics(metric_rows, sym), "fund": funds.get(sym)}
+        entry: dict = {
+            "spot": spots.get(sym),
+            **income_metrics(metric_rows, sym),
+            "fund": funds.get(sym),
+            "liquidity": stamp.get(sym),
+        }
         if plan is None:
             entry["error"] = "no chain listed" if not cache.get(sym) else "no cycle monthly or no price"
             symbols[sym] = entry

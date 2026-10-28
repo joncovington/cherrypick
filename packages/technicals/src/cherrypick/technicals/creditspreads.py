@@ -242,6 +242,12 @@ def build_rows(
             continue
         vol = entry.get("iv_index") or (entry.get("hv_30") or 0) / 100.0 or None
         move = expected_move(spot, vol, int(cs["dte"]))
+        widths = width_table(short, priced, move, bars)
+        # A row no width of which can be traded as one order is a name the user would never trade
+        # (2026-10-27): no row. A reading from before the bars carries no verdict and keeps its rows.
+        if bars and not any(w.get("passes") for w in widths):
+            drops.append("no width passes the leg bars")
+            continue
         ex = entry.get("ex_dividend_date")
         rows.append(
             {
@@ -279,7 +285,7 @@ def build_rows(
                     )
                     for name in SELECTIONS
                 },  # fmt: skip
-                "widths": width_table(short, priced, move, bars),
+                "widths": widths,
                 "earnings": incomelists.earnings_state(entry, session, cs["expiry"], kind),
                 "earnings_date": entry.get("earnings_date"),
                 "earnings_estimated": entry.get("earnings_estimated"),

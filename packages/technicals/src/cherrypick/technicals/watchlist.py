@@ -16,8 +16,9 @@ it has one, and the context the user reads a signal against, all as of the chart
   the last close. No vendor data: the vendor's levels are a comparison on the chart, nothing more.
 - **Dollar volume**: the 50-session median of close x volume to the session before the entry -- the
   number the historical study's universe and its "$300M a day" rule read (`universe.membership`).
-- **Options-tradable**: the name lists weekly options and its stock trades at least $100M a day
-  (`tradable.py`); null when there is no label.
+- **Options-tradable**: the liquidity verdict calls the name tradable (`liquidity.py`: weekly
+  options, $100M a day in the stock, and its monthly options confirmed liquid, from 2026-10-27); a
+  cash index by its weeklies alone (`tradable.py`); null when there is no verdict and no label.
 
 A row from a setup carries `tested: null`. The historical study's confirmed rules (`chart.TESTED`)
 add their own rows, each with `tested` naming the rule: the same setup re-walked with the study's
@@ -35,7 +36,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import setup_read, tradable, trend
+from . import setup_read, symbols, tradable, trend
 
 # 2: short setups (family, side), our own levels and labels, trend_agrees; 3: tested rows, dollar
 # volume at entry, options_tradable; 4: each row's rule, ATR and `read` (setup_read.py)
@@ -78,11 +79,28 @@ def nearest_levels(ours: list[dict] | None, close: float | None) -> tuple[dict |
     return at(max(below, default=None)), at(min(above, default=None))
 
 
-def rows(doc: dict[str, Any], spy: dict[str, float], weekly: set[str] | None = None) -> list[dict]:
+def options_tradable(
+    symbol: str, weekly: set[str] | None, dollar_volume: float | None, liquid: set[str] | None
+) -> bool | None:
+    """The row's flag: the liquidity verdict's (`liquid`, the tradable names and reference funds)
+    when there is one; a cash index, which the verdict never judges, and a machine with no verdict
+    yet, by the weeklies label."""
+    if liquid is not None and symbol not in symbols.INDEXES:
+        return symbol in liquid
+    return tradable.tradable(symbol, weekly, dollar_volume)
+
+
+def rows(
+    doc: dict[str, Any],
+    spy: dict[str, float],
+    weekly: set[str] | None = None,
+    liquid: set[str] | None = None,
+) -> list[dict]:
     """The watchlist rows for one chart file: open positions, and positions that entered or exited
     within the last WINDOW sessions drawn, from its setups and its tested rules. `weekly` is the
     names listing weekly options (`tradable.weeklies`); None when there is no label, which leaves
-    every row's options-tradable flag null."""
+    every row's options-tradable flag null. `liquid` is the names the liquidity verdict calls
+    tradable; None reads the weeklies label instead."""
     dates = doc["bars"]["date"]
     closes = doc["bars"]["close"]
     if not dates:
@@ -112,7 +130,7 @@ def rows(doc: dict[str, Any], spy: dict[str, float], weekly: set[str] | None = N
         "vs_spy_1m": vs_spy(dates, closes, spy),
         "support": support,
         "resistance": resistance,
-        "options_tradable": tradable.tradable(doc["symbol"], weekly, doc.get("dollar_volume_50d")),
+        "options_tradable": options_tradable(doc["symbol"], weekly, doc.get("dollar_volume_50d"), liquid),
         "atr14": None if atr14 is None else round(atr14, 4),
     }
     blocks = [(s, None) for s in doc.get("setups") or []]
