@@ -225,3 +225,22 @@ def test_a_name_without_its_weeklies_is_dropped():
     assert st.weekly_coverage(full, "X", w0, w1) == 1.0
     holed = {**full, **{("X", e.isoformat()): "empty" for e in weeks[:6]}}
     assert st.weekly_coverage(holed, "X", w0, w1) < st.WEEKLY_COVERAGE
+
+
+# --- the report dates ---------------------------------------------------------------------------------
+
+
+def test_a_hole_is_a_trading_day_with_no_report_for_anyone():
+    counts = {date(2022, 1, 21): 6, date(2022, 1, 31): 30}  # nothing listed on the 24th to the 28th
+    holes = st.dolt_holes(counts, date(2022, 1, 21), date(2022, 1, 31))
+    assert holes == [date(2022, 1, d) for d in (24, 25, 26, 27, 28)]  # the weekend is no hole
+    assert st.dolt_holes({date(2022, 1, 24): 1}, date(2022, 1, 24), date(2022, 1, 24)) == []
+
+
+def test_reports_merge_an_old_ticker_and_the_holes_nasdaq_fills():
+    dolt = {"AAPL": {date(2021, 10, 28)}, "FB": {date(2022, 2, 2)}, "META": {date(2022, 7, 27)}}
+    filled = {date(2022, 1, 27): {"AAPL", "MA"}}
+    got = st.merge_reports(dolt, filled, ["AAPL", "META", "MSFT"])
+    assert got["AAPL"] == [date(2021, 10, 28), date(2022, 1, 27)]
+    assert got["META"] == [date(2022, 2, 2), date(2022, 7, 27)]
+    assert got["MSFT"] == []

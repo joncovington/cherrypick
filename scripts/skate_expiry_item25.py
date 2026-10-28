@@ -3,6 +3,7 @@ the fixed skate band on the 14-day weekly against the 45-60 day monthly, each he
 buy-back resting, closed at half credit, or rolled net-zero when tested.
 
     python scripts/skate_expiry_item25.py requests [--out FILE]     # the path requests still to fetch
+    python scripts/skate_expiry_item25.py reports                   # the report dates, once (network)
     python scripts/skate_expiry_item25.py study [--json PATH] [--names A,B]
 
 `requests` writes, for each name the confirmation fetched, every weekly expiry the two windows can
@@ -87,6 +88,10 @@ WEEKLY_COVERAGE = 0.90
 # have one missing between them.
 REPORT_DUE_DAYS = 80
 REPORT_GAP_DAYS = 120
+# Report dates: Dolt's calendar, a name's old ticker included, and Nasdaq's public calendar for the
+# days Dolt holds nothing at all (`dolt_holes`).
+REPORT_SPAN = (date(2021, 6, 1), date(2027, 6, 30))
+ALIASES = {"META": ("FB",)}  # Facebook's ticker until 2022-06-09
 MIN_NAMES = 30
 MIN_TRADES = 300
 T_BAR = 2.0
@@ -481,26 +486,35 @@ def weekly_coverage(status: dict[tuple[str, str], str], sym: str, w0: date, w1: 
     return sum(status.get((sym, e.isoformat())) == "complete" for e in weeks) / len(weeks) if weeks else 0.0
 
 
+def dolt_holes(counts: dict[date, int], a: date, b: date) -> list[date]:
+    """Trading days from a through b on which Dolt lists no report for any company: a hole in the
+    calendar (2022-01-24 to 01-28 has none, the week big tech reported), not a quiet day."""
+    out, d = [], a
+    while d <= b:
+        if cal.is_trading_day(d) and not counts.get(d):
+            out.append(d)
+        d += timedelta(days=1)
+    return out
+
+
+def merge_reports(
+    dolt: dict[str, set[date]], filled: dict[date, set[str]], names: list[str]
+) -> dict[str, list[date]]:
+    """Each name's report dates: Dolt's under the name or an old ticker (`ALIASES`), plus the hole days
+    Nasdaq lists the name on."""
+    out = {}
+    for sym in names:
+        spellings = (sym, *ALIASES.get(sym, ()))
+        got = set().union(*(dolt.get(s, set()) for s in spellings))
+        got |= {d for d, syms in filled.items() if any(s in syms for s in spellings)}
+        out[sym] = sorted(got)
+    return out
+
+
 def load_reports(names: list[str], cache: Path) -> dict[str, list[date]]:
     if not cache.exists():
-        from cherrypick.technicals import land
-
-        conn = land._connect(land.DEFAULTS, "earnings")
-        try:
-            cur = conn.cursor()
-            marks = ",".join(["%s"] * len(names))
-            cur.execute(
-                f"SELECT act_symbol, date FROM earnings_calendar WHERE act_symbol IN ({marks}) "
-                "AND date BETWEEN %s AND %s",
-                [*names, date(2021, 6, 1), date(2027, 6, 30)],
-            )
-            got: dict[str, list[str]] = defaultdict(list)
-            for sym, d in cur.fetchall():
-                got[sym].append(d.isoformat())
-        finally:
-            conn.close()
-        cache.write_text(json.dumps({s: sorted(set(v)) for s, v in got.items()}), encoding="utf-8")
-    raw = json.loads(cache.read_text(encoding="utf-8"))
+        raise SystemExit(f"no report dates at {cache}: run `skate_expiry_item25.py reports` first")
+    raw = json.loads(cache.read_text(encoding="utf-8"))["dates"]
     return {s: [date.fromisoformat(d) for d in raw.get(s, [])] for s in names}
 
 
@@ -546,6 +560,65 @@ def cmd_requests(args) -> int:
     out = Path(args.out) if args.out else _out_dir() / "path_requests.json"
     out.write_text(json.dumps({"requests": reqs}, indent=0), encoding="utf-8")
     print(json.dumps({"names": len(names), "requests": len(reqs), "file": str(out)}))
+    return 0
+
+
+def cmd_reports(args) -> int:
+    """The report-date cache the study reads: Dolt, and Nasdaq for Dolt's empty trading days. Run once,
+    before the study, so the study needs neither the Dolt server nor the network."""
+    import time
+    import urllib.error
+
+    from cherrypick.technicals import land
+
+    spec = importlib.util.spec_from_file_location(
+        "fetch_earnings_times", Path(__file__).with_name("fetch_earnings_times.py")
+    )
+    fet = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fet)
+    vend = _store()
+    names = sorted({s for (s,) in vend.execute("SELECT DISTINCT symbol FROM eod_chain_paths")})
+    spellings = sorted({s for n in names for s in (n, *ALIASES.get(n, ()))})
+    conn = land._connect(land.DEFAULTS, "earnings")
+    try:
+        cur = conn.cursor()
+        marks = ",".join(["%s"] * len(spellings))
+        cur.execute(
+            f"SELECT act_symbol, date FROM earnings_calendar WHERE act_symbol IN ({marks}) "
+            "AND date BETWEEN %s AND %s",
+            [*spellings, *REPORT_SPAN],
+        )
+        dolt: dict[str, set[date]] = defaultdict(set)
+        for sym, d in cur.fetchall():
+            dolt[sym].add(d)
+        cur.execute(
+            "SELECT date, COUNT(*) FROM earnings_calendar WHERE date BETWEEN %s AND %s GROUP BY date",
+            REPORT_SPAN,
+        )
+        counts = dict(cur.fetchall())
+    finally:
+        conn.close()
+    holes = dolt_holes(counts, REPORT_SPAN[0], min(REPORT_SPAN[1], date.today() - timedelta(days=1)))
+    filled: dict[date, set[str]] = {}
+    for d in holes:
+        try:
+            filled[d] = set(fet.parse(fet.fetch_day(d)))
+        except urllib.error.HTTPError as exc:
+            if exc.code in (403, 429):
+                print(f"Nasdaq refused ({exc.code}) at {d}: no cache written", file=sys.stderr)
+                return 1
+            raise
+        time.sleep(fet.PAUSE_S)
+    dates = merge_reports(dolt, filled, names)
+    out = _out_dir() / "earnings_dates.json"
+    body = {
+        "sources": "Dolt earnings_calendar; Nasdaq's public calendar for Dolt's empty trading days",
+        "holes": [d.isoformat() for d in holes],
+        "dates": {s: [d.isoformat() for d in v] for s, v in dates.items()},
+    }
+    out.write_text(json.dumps(body), encoding="utf-8")
+    hit = sum(1 for d, syms in filled.items() for s in names if s in syms)
+    print(json.dumps({"names": len(names), "holes": len(holes), "filled_from_nasdaq": hit, "file": str(out)}))
     return 0
 
 
@@ -612,6 +685,7 @@ def main(argv: list[str] | None = None) -> int:
     r = sub.add_parser("requests")
     r.add_argument("--out")
     r.set_defaults(fn=cmd_requests)
+    sub.add_parser("reports").set_defaults(fn=cmd_reports)
     s = sub.add_parser("study")
     s.add_argument("--json")
     s.add_argument("--names", help="comma-separated, for a quick look; the verdict needs every name")
