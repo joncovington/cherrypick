@@ -109,8 +109,11 @@ def spot_on(conn, symbol: str, as_of: str) -> tuple[str, float] | None:
     return None if row is None or row[1] is None else (row[0], float(row[1]))
 
 
-def consensus_growth(conn, symbol: str, as_of: str) -> float | None:
-    snap = fundamentals.snapshot_on(conn, as_of)
+def consensus_growth(conn, symbol: str, as_of: str, snapshot: str | None = None) -> float | None:
+    """The "Next Year" sales consensus against its year-ago figure at `snapshot` (default: the
+    newest estimate snapshot on or before `as_of`; a build finds it once and passes it, since the
+    snapshot read scans the whole estimates table)."""
+    snap = snapshot or fundamentals.snapshot_on(conn, as_of)
     if snap is None:
         return None
     row = conn.execute(
@@ -153,6 +156,7 @@ def value_one(
     sector: str | None,
     index_closes: dict[str, float],
     broker: dict | None,
+    snapshot: str | None = None,
 ) -> dict[str, Any]:
     """One row of the file. Never raises on a name's data: the row says what stopped it."""
     row: dict[str, Any] = {
@@ -207,7 +211,7 @@ def value_one(
     row["beta_raw"] = round(b, 4)
     market_cap = spot[1] * years[-1].shares
     row["market_cap"] = round(market_cap, 2)
-    g = consensus_growth(conn, symbol, as_of)
+    g = consensus_growth(conn, symbol, as_of, snapshot)
     row["consensus_used"] = g is not None
     out = _val.value(years, market_cap, b, consensus_growth=g)
     if isinstance(out, _val.Refusal):
@@ -273,10 +277,13 @@ def build(day: str | None = None, path: Path | None = None, names: list[str] | N
         index_closes = closes_as_of(conn, INDEX, as_of)
         if not index_closes:
             return {"ok": False, "reason": f"no {INDEX} bars in the history store"}
+        # One snapshot read for the whole build: `snapshot_on` scans the estimates table (~0.3 s), and
+        # a name at a time it was most of the first run's 22 minutes (2026-10-27).
+        snapshot = fundamentals.snapshot_on(conn, as_of)
         rows = {}
         for sym in sorted(names):
             rows[sym] = value_one(
-                conn, sym, as_of, kinds.get(sym), sectors.get(sym), index_closes, broker.get(sym)
+                conn, sym, as_of, kinds.get(sym), sectors.get(sym), index_closes, broker.get(sym), snapshot
             )
     finally:
         conn.close()
