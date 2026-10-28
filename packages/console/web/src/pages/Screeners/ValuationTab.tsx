@@ -17,7 +17,9 @@ const PAGE_SIZES = [50, 100, 200, 500] as const;
 const DASH = "—";
 
 const FLAG_TITLE: Record<string, string> = {
-  terminal_heavy: "terminal value over 75% of EV: the answer is the perpetuity, not the forecast",
+  terminal_heavy: "terminal value over 85% of EV: the answer is the perpetuity, not the forecast",
+  wacc_floored: "the cost of capital came out under 7% and was floored there",
+  split_adjusted: "the stock split after its last annual report; the shares were carried through the split",
   negative_base_fcf: "the first forecast year's cash flow is negative",
   beta_bounded: "the regression beta sat outside 0.5-2.0 and was bounded",
   beta_disagrees: "the broker's beta differs from ours by more than 0.5",
@@ -61,7 +63,25 @@ const SORTS: Record<string, (r: ValuationRow) => number | string | null> = {
   margin: (r) => r.ebitMargin,
   terminal: (r) => r.terminalShare,
   multiple: (r) => r.impliedEvEbitda,
+  needsMargin: (r) => r.impliedMargin,
+  needsGrowth: (r) => r.impliedGrowth,
+  reach: (r) => r.reach,
 };
+
+const REACH_TITLE: Record<string, string> = {
+  "below value": "The price is at or under the model's value: it asks nothing the business has not already done",
+  "within history":
+    "The margin or the growth the price needs, either one alone, is no more than the company's best of the last five fiscal years",
+  "beyond history":
+    "Neither the margin nor the growth alone reaches the price without beating the company's own best of the last five fiscal years: the price assumes a better business than the record shows",
+};
+
+function needsGrowth(r: ValuationRow): string {
+  if (r.impliedGrowth === null) return DASH;
+  if (r.impliedGrowthEdge === "above") return `over ${signedPct(r.impliedGrowth)}`;
+  if (r.impliedGrowthEdge === "below") return `under ${signedPct(r.impliedGrowth)}`;
+  return signedPct(r.impliedGrowth);
+}
 
 export type ValuationView = "valued" | "pmcc" | "all";
 
@@ -113,7 +133,10 @@ export function ValuationTab() {
         beta, with a perpetuity after. A model's number, not a price: the range is what a point either way in the rate
         and half a point in the growth do to it. Tested on month-ends 2018–26, the names that
         read cheapest did no better over the next three months than those that read richest, so the rows are in symbol
-        order and the figure sits beside the income lists as a description, never a reason to pick a name.
+        order and the figure sits beside the income lists as a description, never a reason to pick a name. The
+        last three columns turn it around: the margin, or the growth, the price needs with everything else
+        held, beside the company's own best of five years. "Beyond history" means the price assumes a better
+        business than the record shows: for a long-dated call, that is how much has to go right, not a forecast.
       </p>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
@@ -185,12 +208,15 @@ export function ValuationTab() {
                   Range
                 </th>
                 <SortTh label="Vs fair" k="gap" sort={sort} className="num" title="Price ÷ fair value − 1: positive when the price sits above the model's value" />
-                <SortTh label="WACC" k="wacc" sort={sort} className="num" title="Cost of equity (4% + beta × 5%) and after-tax cost of debt, weighted by market cap and debt" />
+                <SortTh label="WACC" k="wacc" sort={sort} className="num" title="Cost of equity (the 10-year Treasury + beta × 5%) and after-tax cost of debt, weighted by market cap and debt, floored at 7%" />
                 <SortTh label="β" k="beta" sort={sort} className="num" title="OLS of weekly log returns on SPY over three years, bounded 0.5-2.0; the broker's beside it when it differs" />
                 <SortTh label="Growth" k="growth" sort={sort} className="num" title="Year-one revenue growth: the consensus next-year sales when the store has it, else the five-year CAGR, bounded" />
-                <SortTh label="Margin" k="margin" sort={sort} className="num" title="The median operating margin of the last five fiscal years" />
-                <SortTh label="TV share" k="terminal" sort={sort} className="num" title="The discounted terminal value's share of enterprise value; over 75% the answer is the perpetuity" />
+                <SortTh label="Margin" k="margin" sort={sort} className="num" title="The median operating margin of the last three fiscal years" />
+                <SortTh label="TV share" k="terminal" sort={sort} className="num" title="The discounted terminal value's share of enterprise value; over 85% the answer is the perpetuity" />
                 <SortTh label="EV/EBITDA" k="multiple" sort={sort} className="num" title="The model's enterprise value over the last fiscal year's EBITDA, a sanity figure" />
+                <SortTh label="Needs margin" k="needsMargin" sort={sort} className="num" title="Reverse DCF: the long-run operating margin at which the model's value equals the price, everything else held; the company's best of the last five fiscal years beside it. A dash: no margin under 100% of revenue gets there" />
+                <SortTh label="Needs growth" k="needsGrowth" sort={sort} className="num" title="Reverse DCF: the year-one revenue growth, faded to 2% by year five as the base case is, at which the value equals the price, everything else held; the company's best year of the last five beside it" />
+                <SortTh label="Reach" k="reach" sort={sort} title="Whether one lever alone reaches the price within the company's own record: below value, within history, beyond history" />
                 <th title="The builder's flags">Flags</th>
               </tr>
             </thead>
@@ -229,6 +255,17 @@ export function ValuationTab() {
                   <td className="num">{pct(r.terminalShare, 0)}</td>
                   <td className="num" title={r.marketCap !== null ? `market cap ${billions(r.marketCap)}` : undefined}>
                     {r.impliedEvEbitda === null ? DASH : `${r.impliedEvEbitda.toFixed(1)}×`}
+                  </td>
+                  <td className="num" title={r.bestMargin !== null ? `best of the last five years ${pct(r.bestMargin)}` : undefined}>
+                    {r.state !== "valued" ? DASH : pct(r.impliedMargin)}
+                    {r.bestMargin !== null ? <span className="muted"> · best {pct(r.bestMargin)}</span> : null}
+                  </td>
+                  <td className="num" title={r.bestGrowth !== null ? `best of the last five years ${signedPct(r.bestGrowth)}` : undefined}>
+                    {needsGrowth(r)}
+                    {r.bestGrowth !== null ? <span className="muted"> · best {signedPct(r.bestGrowth)}</span> : null}
+                  </td>
+                  <td className={r.reach === "beyond history" ? undefined : "muted"} title={r.reach ? REACH_TITLE[r.reach] : undefined}>
+                    {r.reach ?? DASH}
                   </td>
                   <td>
                     {r.flags.map((f) => (

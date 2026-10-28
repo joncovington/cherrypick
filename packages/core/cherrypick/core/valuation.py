@@ -384,3 +384,89 @@ def value(
         projections=projections,
         flags=tuple(flags),
     )
+
+
+# ------------------------------------------------------------------------------- the reverse DCF
+
+# The search band for the year-one growth a price implies (faded to the terminal rate the same way as
+# the base case). Outside it the answer is "beyond any plausible path", reported as the edge it hit.
+IMPLIED_GROWTH_BOUNDS = (-0.50, 2.00)
+# The margin a price implies is reported only inside this band: an operating margin above 100% of
+# revenue, or below -100%, is not a business.
+IMPLIED_MARGIN_BOUNDS = (-1.0, 1.0)
+
+
+@dataclass(frozen=True)
+class Implied:
+    """What the price asks of the company, one lever at a time, every other driver held at the base
+    case and the WACC unchanged; beside each, the company's own best of the last `FORECAST_YEARS`.
+
+    `margin` is the long-run EBIT margin at which the model's value equals the price (None outside
+    `IMPLIED_MARGIN_BOUNDS`). `growth` is the year-one revenue growth, faded to the terminal rate by
+    year five as the base case is, at which it does; `growth_edge` says when the answer sits beyond
+    `IMPLIED_GROWTH_BOUNDS` ("above" or "below"), and `growth` is then that edge."""
+
+    margin: float | None
+    growth: float
+    growth_edge: str | None
+    best_margin: float
+    best_growth: float | None
+
+
+def _ps(base: FiscalYear, d: Drivers, rate: float) -> float | None:
+    cell = _per_share(project(base, d), rate, d.terminal_growth, base)
+    return None if cell is None else cell[0]
+
+
+def best_figures(years: list[FiscalYear]) -> tuple[float, float | None]:
+    """(highest EBIT margin, highest year-over-year revenue growth) over the newest `FORECAST_YEARS`
+    fiscal years; growth is None with fewer than two years."""
+    hist = sorted(years, key=lambda y: y.end)[-FORECAST_YEARS:]
+    margin = max(y.ebit / y.revenue for y in hist if y.revenue > 0)
+    growth = [b.revenue / a.revenue - 1.0 for a, b in zip(hist, hist[1:], strict=False) if a.revenue > 0]
+    return margin, (max(growth) if growth else None)
+
+
+def implied(years: list[FiscalYear], v: Valuation, price: float) -> Implied | None:
+    """The reverse DCF: the margin and the growth at which `value` would read the price. None when
+    the price is not positive or the base case cannot be re-priced."""
+    if price <= 0:
+        return None
+    base = max(years, key=lambda y: y.end)
+    d = v.drivers
+    best_margin, best_growth = best_figures(years)
+    # Value per share is linear in the margin (every year's FCF is), so two points solve it.
+    step = 0.10
+    f0 = _ps(base, d, v.wacc)
+    f1 = _ps(base, _replace_margin(d, d.ebit_margin + step), v.wacc)
+    margin = None
+    if f0 is not None and f1 is not None and f1 != f0:
+        m = d.ebit_margin + (price - f0) * step / (f1 - f0)
+        if IMPLIED_MARGIN_BOUNDS[0] <= m <= IMPLIED_MARGIN_BOUNDS[1]:
+            margin = m
+
+    # Value rises with growth while the FCF margin is positive (the base case requires it), so bisect.
+    def at(g: float) -> float:
+        out = _ps(base, _replace_growth(d, fade(g, d.terminal_growth)), v.wacc)
+        return -math.inf if out is None else out
+
+    lo, hi = IMPLIED_GROWTH_BOUNDS
+    if at(hi) < price:
+        return Implied(margin, hi, "above", best_margin, best_growth)
+    if at(lo) > price:
+        return Implied(margin, lo, "below", best_margin, best_growth)
+    for _ in range(60):
+        mid = (lo + hi) / 2.0
+        if at(mid) < price:
+            lo = mid
+        else:
+            hi = mid
+    return Implied(margin, (lo + hi) / 2.0, None, best_margin, best_growth)
+
+
+def _replace_margin(d: Drivers, margin: float) -> Drivers:
+    return Drivers(d.growth, margin, d.da_pct, d.capex_pct, d.nwc_pct, d.tax_rate, d.terminal_growth)
+
+
+def _replace_growth(d: Drivers, growth: tuple[float, ...]) -> Drivers:
+    return Drivers(growth, d.ebit_margin, d.da_pct, d.capex_pct, d.nwc_pct, d.tax_rate, d.terminal_growth)

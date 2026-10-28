@@ -205,7 +205,7 @@ tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/
   consensus sales growth from the history store): per name its state (valued, not applicable, no
   statements, refused -- with the reason), price, fair value, the grid range, the gap, WACC, beta
   (the broker's beside it where it disagrees), year-one growth, margin, the terminal value's share of
-  EV, the implied EV/EBITDA and the builder's flags. Views: valued (default), pmcc (its configured
+  EV, the implied EV/EBITDA, the reverse DCF (2026-10-28: the margin and the growth the price needs, each beside the company's best of five years, and the builder's reach: below value, within history, beyond history) and the builder's flags. Views: valued (default), pmcc (its configured
   symbols, badged from pmcc's own config through `readers/pmcc.ts`, its funds not applicable) and
   all. **"Tested 2018–26: no edge"** heads the table and is never removed; rows are by symbol, and a column
   sort is the reader's own click. Behind `NeedsDolt`: the statements come from the local Dolt clone.

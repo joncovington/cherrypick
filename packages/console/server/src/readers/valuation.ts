@@ -44,6 +44,11 @@ function strings(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((f): f is string => typeof f === "string") : [];
 }
 
+/** The value when it is one of the builder's words, else null (an older file, or a word it never writes). */
+function oneOf<T extends string>(v: unknown, words: readonly T[]): T | null {
+  return typeof v === "string" && (words as readonly string[]).includes(v) ? (v as T) : null;
+}
+
 function toRow(v: unknown, pmcc: ReadonlySet<string>): ValuationRow | null {
   const r = rec(v);
   const symbol = str(r["symbol"]);
@@ -72,6 +77,12 @@ function toRow(v: unknown, pmcc: ReadonlySet<string>): ValuationRow | null {
     ebitMargin: num(r["ebit_margin"]),
     terminalShare: num(r["terminal_share"]),
     impliedEvEbitda: num(r["implied_ev_ebitda"]),
+    impliedMargin: num(r["implied_margin"]),
+    impliedGrowth: num(r["implied_growth"]),
+    impliedGrowthEdge: oneOf(r["implied_growth_edge"], ["above", "below"] as const),
+    bestMargin: num(r["best_margin"]),
+    bestGrowth: num(r["best_growth"]),
+    reach: oneOf(r["reach"], ["below value", "within history", "beyond history"] as const),
     consensusUsed: r["consensus_used"] === true,
     flags: strings(r["flags"]),
     pmcc: pmcc.has(symbol),

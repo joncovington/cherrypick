@@ -160,7 +160,7 @@ what is unsolved, and scheduling.
   mechanical base case (three-year medians, working capital over five, growth faded to 2%) and a low-high range from a WACC x
   terminal-growth grid; the broker's beta and market cap ride along as a cross-check
   (`beta_disagrees`, `shares_stale`). Funds, banks and REITs are `not-applicable`; a name the model
-  cannot value says why. From version 3 every income-list row carries its `fair_*` fields. **A model
+  cannot value says why. Each valued row also carries the reverse DCF (`core.valuation.implied`): the margin and the year-one growth the price needs, one at a time, beside the best of the last five fiscal years, and `reach` (below value, within history, beyond history). From version 3 every income-list row carries its `fair_*` fields. **A model
   estimate of value, tested 2018-26 with no edge, never a ranking.**
 - **The security list** (`securities.py`, `securities`, 2026-10-17): every listed symbol's type
   (Nasdaq Trader's directory), options (any OCC volume in 20 sessions) and a liquidity rank that is

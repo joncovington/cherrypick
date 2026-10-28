@@ -150,6 +150,30 @@ def test_shares_after_splits_counts_only_splits_between_the_year_end_and_the_ses
     assert valuation.shares_after_splits(100.0, reverse, "2025-12-31", "2026-10-27")[0] == 10.0
 
 
+def test_a_valued_row_carries_the_reverse_dcf(history):
+    valuation.build(SESSION, names=["AAA", "LOSS"])
+    rows = json.loads(valuation.latest(SESSION).read_text(encoding="utf-8"))["rows"]
+    a = rows["AAA"]
+    assert a["best_margin"] == pytest.approx(0.10)  # every year in the fixture at a 10% margin
+    assert a["best_growth"] == pytest.approx(0.05)
+    assert (a["implied_margin"] > a["ebit_margin"]) == (a["spot"] > a["fair_value"])
+    assert a["reach"] in ("below value", "within history", "beyond history")
+    assert rows["LOSS"]["implied_margin"] is None and rows["LOSS"]["reach"] is None
+
+
+def test_reach_reads_one_lever_at_a_time():
+    from cherrypick.core.valuation import Implied
+
+    def imp(margin, growth, edge=None):
+        return Implied(margin, growth, edge, best_margin=0.20, best_growth=0.15)
+
+    assert valuation.reach(90.0, 100.0, imp(0.10, 0.02)) == "below value"
+    assert valuation.reach(150.0, 100.0, imp(0.18, 0.40)) == "within history"  # the margin fits
+    assert valuation.reach(150.0, 100.0, imp(0.35, 0.12)) == "within history"  # the growth fits
+    assert valuation.reach(150.0, 100.0, imp(0.35, 0.40)) == "beyond history"
+    assert valuation.reach(150.0, 100.0, imp(None, 1.0, "above")) == "beyond history"
+
+
 def test_the_risk_free_rate_is_the_treasury_ten_year_when_the_file_is_there(history):
     from cherrypick.core import treasury
 
