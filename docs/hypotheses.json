@@ -591,6 +591,52 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 22,
+      "study": "item22",
+      "title": "The overnight condor: a 1DTE SPX iron condor sold at the close, bought back the next morning",
+      "status": "declared",
+      "legacy": false,
+      "setup": "close-to-next-session",
+      "side": "two-sided",
+      "structure": "short-iron-condor",
+      "window": "overnight",
+      "measure": "condor net per session in $ at one contract a side (and as a share of its credit), for two exit arms: bought back at the 09:35 mark, and settled at the expiry's close",
+      "expected": "a positive mean net per session after the suite's tastytrade costs",
+      "sample": "design 2022-05-16..2024-12-31 (~660 sessions); holdout 2025-01-01..2026-10-23 run after the design whatever it shows (user, 2026-10-27), counting only after a design pass; < 100 entered sessions = no verdict",
+      "rule": "per arm: one-sided t > 2 on session nets, Holm across the two arms, both design time-halves positive, positive at 1.5x costs; then holdout mean > 0 with t > 2",
+      "mechanism": "options are priced on calendar time while variance over a market closure is lower than over the same trading hours (Jones and Shemesh 2018), so the overnight share of a 1DTE condor's time value is sold rich; item 19 lost on the long side of the same night",
+      "rivals": [
+        {
+          "explanation": "market drift",
+          "check": "call and put verticals reported apart"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "both design time-halves must pass; results by VIX band"
+        },
+        {
+          "explanation": "a few gaps decide it",
+          "check": "five worst sessions reported; bootstrapped drawdown beside a pass"
+        },
+        {
+          "explanation": "optimistic fills in wide quotes",
+          "check": "verdict at the working price; mid and mid - $0.05 reported"
+        },
+        {
+          "explanation": "fees on an eighteen-hour hold",
+          "check": "positive at 1.5x costs"
+        },
+        {
+          "explanation": "the closure is not the source",
+          "check": "nets by closure kind (weeknight; weekend or holiday) reported, never filtered"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#22-the-overnight-condor-a-1dte-spx-iron-condor-sold-at-the-close-bought-back-the-next-morning",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
