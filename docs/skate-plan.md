@@ -378,7 +378,9 @@ None of it touches a trading loop, so none of it is measurement-affecting; each 
 - The "trade" objective (assignment wanted, strikes from valuation).
 - Support and resistance: our technicals don't reproduce level selection yet.
 - What a breach costs. Skate rate is a frequency; weighing the loss needs historical option prices
-  (the backtest package's licensed data), which would stay local.
+  (the backtest package's licensed data), which would stay local. Declared 2026-10-28 as item 25
+  of [docs/edge-hypotheses-plan.md](edge-hypotheses-plan.md): the put at 14 days against the
+  monthly, held, closed at half credit or rolled.
 
 ## Decisions (user, 2026-10-18)
 
