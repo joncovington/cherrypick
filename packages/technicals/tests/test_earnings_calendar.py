@@ -29,6 +29,42 @@ def vendor_on():
     home.config_path().write_text(json.dumps(cfg), encoding="utf-8")
 
 
+class _Every(set):
+    """A liquidity verdict that calls every name tradable: these cases test the calendar's other
+    rules; the verdict's own filter is tested below."""
+
+    def __contains__(self, _):
+        return True
+
+    def __or__(self, _):
+        return self
+
+
+@pytest.fixture(autouse=True)
+def every_name_tradable(monkeypatch):
+    from cherrypick.technicals import liquidity
+
+    monkeypatch.setattr(liquidity, "tradable_names", lambda names=None: _Every())
+    monkeypatch.setattr(liquidity, "reference_tradable", lambda reference=None: set())
+
+
+def test_only_names_the_liquidity_verdict_calls_tradable_get_a_row():
+    """2026-10-27, the user: no symbol in a screener that would never be traded."""
+    dolt = {
+        "events": {"AAA": (date(2026, 10, 20), AMC), "THIN": (date(2026, 10, 21), BMO)},
+        "names": {},
+        "closes": {"AAA": 100.0, "THIN": 50.0},
+        "close_date": "2026-10-16",
+    }
+    out = ec.build("2026-10-16", dolt=dolt, ours={}, allowed={"AAA"})
+    assert [r["symbol"] for r in out["rows"]] == ["AAA"]
+    assert out["dropped"] == {"not tradable by the liquidity verdict": 1}
+    # A share-class name is matched in either spelling.
+    dolt["events"]["BRK/B"] = (date(2026, 10, 20), AMC)
+    out = ec.build("2026-10-16", dolt=dolt, ours={}, allowed={"AAA", "BRK.B"})
+    assert [r["symbol"] for r in out["rows"]] == ["AAA", "BRK/B"]
+
+
 def test_company_names_lose_the_share_class_boilerplate():
     assert ec.company("Netflix, Inc. - Common Stock") == "Netflix, Inc."
     assert ec.company("Chubb Limited  Common Stock") == "Chubb Limited"

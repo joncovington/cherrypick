@@ -144,14 +144,24 @@ def test_a_weekly_is_never_the_cycle_and_an_empty_range_is_none():
     assert fsg.cycle_expiry([_exp("2026-11-20", 29), _exp("2026-12-18", 64)], _is_monthly) is None
 
 
-def test_income_names_are_the_tradable_verdicts_only():
+def test_income_names_are_the_tradable_and_thin_verdicts():
+    """A thin name (monthly options not yet confirmed liquid) is measured, so it can be admitted;
+    an illiquid one is not (2026-10-27)."""
     verdicts = {
         "AA": {"verdict": "tradable"},
         "A": {"verdict": "illiquid"},
         "BRK.B": {"verdict": "tradable"},
+        "NEW": {"verdict": "thin"},
         "X": {},
     }
-    assert fsg.income_names(verdicts) == ["AA", "BRK.B"]
+    assert fsg.income_names(verdicts) == ["AA", "BRK.B", "NEW"]
+    assert fsg.income_names(verdicts, {"SPY"}) == ["AA", "BRK.B", "NEW", "SPY"]
+
+
+def test_each_entry_is_stamped_with_the_verdict_it_was_measured_under():
+    names = {"AA": {"verdict": "tradable"}, "NEW": {"verdict": "thin"}}
+    stamp = fsg.name_verdicts(names, {"XLU": {"verdict": "thin"}})
+    assert stamp == {"AA": "tradable", "NEW": "thin", "XLU": "thin"}
 
 
 def test_a_fund_is_flagged_from_the_listings_and_an_unlisted_name_is_left_out():

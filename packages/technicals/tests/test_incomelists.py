@@ -165,11 +165,40 @@ def test_the_badge_reads_the_list_skate_leaves_these_funds_out_by():
 
 
 def test_the_leg_verdict_is_the_readings_own():
-    out = incomelists.build_lists(_doc({"AAA": _entry(options=_chain(passes=False))}))
-    assert out["lists"]["short-puts"][0]["passes"] is False
+    out = incomelists.build_lists(_doc({"AAA": _entry()}))
+    assert out["lists"]["short-puts"][0]["passes"] is True
 
 
-def test_the_build_reads_the_newest_real_reading_and_never_a_trial():
+def test_a_row_whose_option_fails_the_leg_bars_is_no_row_and_is_counted():
+    """2026-10-27, the user: no symbol in a screener that would never be traded."""
+    e = _entry(
+        options=_chain(passes=False),
+        cc={**_entry()["cc"], "options": _chain(dte=31, rights="C", passes=False)},
+    )
+    out = incomelists.build_lists(_doc({"AAA": e}))
+    assert out["lists"]["short-puts"] == [] and out["lists"]["covered-calls"] == []
+    assert out["dropped"]["short-puts"] == {"the put fails the leg bars": 1}
+    assert out["dropped"]["covered-calls"] == {"the call fails the leg bars": 1}
+    # A reading from before the bars carries no verdict: its rows stay.
+    old = incomelists.build_lists(_doc({"AAA": _entry(options=_chain(passes=None))}))
+    assert len(old["lists"]["short-puts"]) == 1
+
+
+def test_only_names_the_liquidity_verdict_calls_tradable_are_listed():
+    out = incomelists.build_lists(_doc({"AAA": _entry(), "THIN": _entry()}), allowed={"AAA"})
+    for name in ("short-puts", "covered-calls"):
+        assert [r["symbol"] for r in out["lists"][name]] == ["AAA"]
+        assert out["dropped"][name] == {"not tradable by the liquidity verdict": 1}
+    # No verdict set given: every name read is listed (the pure builder's default).
+    assert len(incomelists.build_lists(_doc({"AAA": _entry(), "THIN": _entry()}))["lists"]["short-puts"]) == 2
+
+
+def test_the_build_reads_the_newest_real_reading_and_never_a_trial(monkeypatch):
+    from cherrypick.technicals import liquidity
+
+    monkeypatch.setattr(
+        liquidity, "load", lambda: {"AAA": {"verdict": "tradable"}, "OLD": {"verdict": "tradable"}}
+    )
     root = incomelists.income_dir()
     root.mkdir(parents=True)
     (root / "2026-10-19.json").write_text(

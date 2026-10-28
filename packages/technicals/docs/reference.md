@@ -253,12 +253,21 @@ what is unsolved, and scheduling.
   at entry and `options_tradable`. **The study's confirmed rule** (`chart.TESTED`, `mr-300m`) is
   walked with the study's own code into each chart file's `tested` and gets its own rows, marked
   `tested`; they overlap the setup's rows, so a reader shows one kind or the other.
-  **Options-tradable** (`tradable.py`) is weekly options plus $100M a day in the stock. It is read
-  from each name's own latest IV-rank reading (no older than 10 days); tastytrade's rating is not
-  part of it, because the rating marks a name down for its share price.
+  **Options-tradable** is the liquidity verdict's `tradable` (below) from 2026-10-27; before, it was
+  `tradable.py`'s label alone: weekly options plus $100M a day in the stock, read from each name's
+  own latest IV-rank reading (no older than 10 days). tastytrade's rating is not part of either,
+  because the rating marks a name down for its share price. A cash index is judged by its weeklies.
 - **Liquidity verdicts** (`liquidity.py`, `liquidity` command, nightly 18:57 ET) hold a name that
   fails the options-tradable test **illiquid until the monthly sweep** (the first trading day of the
-  month). The test's dollar volume is the candle file's for every name (2026-10-19; before, the
+  month). **From 2026-10-27 a name that passes it is `thin`, not `tradable`, until its cycle-monthly
+  options are confirmed liquid** on the median of its last five income readings (at least three): an
+  ATM spread at most 7.5% of mid, the chain's open interest worth at least $250M and its volume at
+  least $5M (contracts x 100 x spot; a contract count repeats the share-price bias). A thin name is
+  measured every session and admitted the night it clears; no screener lists it (stage lists,
+  skate, short puts, covered calls, credit spreads, the earnings calendar and so its forward
+  record and spread readings, the setups table's default, manage's
+  candidates). Each income reading stamps the verdict it was measured under (`liquidity`), which
+  manage reads. The test's dollar volume is the candle file's for every name (2026-10-19; before, the
   store's bars, else Dolt's). It judges the store's names, the screener names and, from
   2026-10-19, every **liquid optionable** name (`securities.liquid_optionable`: the current security
   list's rank 1-2 optionable names, else the shipped `seed_universe.json`) -- the income lists'

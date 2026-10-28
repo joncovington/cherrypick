@@ -380,9 +380,18 @@ def build(
     settings: dict | None = None,
     dolt: dict | None = None,
     ours: dict | None = None,
+    allowed: set[str] | None = None,
 ) -> dict:
     """The calendar for the session `day` (YYYY-MM-DD). `dolt` and `ours` stand in for the Dolt read
-    and our own reads (tests)."""
+    and our own reads (tests).
+
+    Only names the liquidity verdict calls tradable get a row (2026-10-27, the user: no symbol in a
+    screener that would never be traded); the rest are counted in `dropped`. `allowed` stands in for
+    the verdict (tests); None reads it (`liquidity.tradable_names` and the reference funds)."""
+    if allowed is None:
+        from . import liquidity
+
+        allowed = liquidity.tradable_names() | liquidity.reference_tradable()
     s = {**DEFAULTS, **(settings or {})}
     session = date.fromisoformat(day)
     end = session + timedelta(days=int(s["window_days"]))
@@ -406,7 +415,11 @@ def build(
     ours = ours if ours is not None else our_reads(day, candidates)
 
     rows = []
+    dropped = 0
     for sym in candidates:
+        if sym not in allowed and sym.replace("/", ".") not in allowed:
+            dropped += 1
+            continue
         de = dolt["events"].get(sym)
         be = broker.get(sym)
         be = be if be and session <= be[0] <= end else None
@@ -489,6 +502,9 @@ def build(
             "nasdaq_times": times_at,
             "close_date": dolt.get("close_date"),
         },
+        # Reporting names the liquidity verdict does not call tradable: no row (thin, illiquid or
+        # unjudged). Counted, so a short calendar never reads as a quiet week.
+        "dropped": {"not tradable by the liquidity verdict": dropped},
         "rows": rows,
     }
 
