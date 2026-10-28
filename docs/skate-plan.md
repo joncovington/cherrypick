@@ -15,9 +15,9 @@ were decided by the user on 2026-10-18 (see "Decisions").
 
 A screen for short options sold where the seller does not want assignment: covered calls above
 the stock's recent range and cash-secured puts below it, on our own options-tradable names. The
-method is Dan Passarelli's "skate" objective ([Stop Picking Wheel Strategy Strikes by
-Delta](https://www.youtube.com/watch?v=pd6KYv5O0b4), Theta Profits; [Ep73 – My Exact Process for
-Trading Covered Calls](https://www.youtube.com/watch?v=_7sX9naKTaE)). It is a read surface, a new
+method is an options educator's "skate" objective ([Stop Picking Wheel Strategy Strikes by
+Delta](https://www.youtube.com/watch?v=pd6KYv5O0b4), Theta Profits; [the educator's covered-call
+process](https://www.youtube.com/watch?v=_7sX9naKTaE)). It is a read surface, a new
 tab on the console's Screeners page. It places no order and opens no paper position.
 
 Once one of its trades is open in the real account, the wheel view follows it: the put, any
@@ -152,7 +152,7 @@ tradable name, each side and each Friday expiry out to 63 days:
   were not (it moved MAGS, VOO, EWJ and EWZ by up to 5 points against the study's raw prices):
   - **fixed**: haircut 0.75 at every expiry;
   - **by expiry**: a declared schedule in config, defaulting to 0.65 for expiries of 14 days or
-    fewer (Passarelli's Ep73 example) and 0.75 beyond. When both land on the same price, the row
+    fewer (the educator's covered-call example) and 0.75 beyond. When both land on the same price, the row
     says so.
 
 On the 2026-10-16 close: 458 tradable names, 336 with bands, 1,986 name-side-expiry rows, 93

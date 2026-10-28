@@ -112,6 +112,44 @@ def test_the_build_values_a_stock_and_says_why_the_others_have_no_value(history)
     assert "valued" in doc["states"] and doc["rule"]["edge"].startswith("none measured")
 
 
+def test_a_split_after_the_fiscal_year_scales_the_shares_and_is_flagged(history):
+    # AAA's last statements end 2025-12-31 with 100 shares; a 25-for-1 on 2026-04-06 makes 2,500.
+    # The raw closes drop 25-fold from the ex-date as a real split's do, so the value per share falls
+    # with them and the gap to the price is unchanged. A 2-for-1 before the year's end is already in
+    # the year's count and must not move it.
+    before = valuation.build(SESSION, names=["AAA"])
+    assert before["ok"]
+    plain = json.loads(valuation.latest(SESSION).read_text(encoding="utf-8"))["rows"]["AAA"]
+    conn = store.connect(paths.history_db())
+    conn.execute(
+        "UPDATE bars SET open = open / 25, high = high / 25, low = low / 25, close = close / 25"
+        " WHERE symbol = 'AAA' AND date >= '2026-04-06'"
+    )
+    conn.execute(
+        "UPDATE bars SET open = open * 2, high = high * 2, low = low * 2, close = close * 2"
+        " WHERE symbol = 'AAA' AND date < '2025-06-02'"
+    )
+    store.upsert_splits(conn, [("AAA", "2026-04-06", 25.0, 1.0), ("AAA", "2025-06-02", 2.0, 1.0)])
+    conn.commit()
+    conn.close()
+    valuation.build(SESSION, names=["AAA"])
+    a = json.loads(valuation.latest(SESSION).read_text(encoding="utf-8"))["rows"]["AAA"]
+    assert "split_adjusted" in a["flags"] and "split_adjusted" not in plain["flags"]
+    assert a["market_cap"] == pytest.approx(a["spot"] * 2500.0, rel=1e-4)  # spot is rounded
+    assert a["fair_value"] == pytest.approx(plain["fair_value"] / 25.0, rel=0.02)
+    assert a["gap"] == pytest.approx(plain["gap"], abs=0.02)
+
+
+def test_shares_after_splits_counts_only_splits_between_the_year_end_and_the_session():
+    from cherrypick.technicals.adjust import Split
+
+    splits = [Split("2025-06-02", 2.0, 1.0), Split("2026-04-06", 25.0, 1.0), Split("2026-11-02", 3.0, 1.0)]
+    assert valuation.shares_after_splits(100.0, splits, "2025-12-31", "2026-10-27") == (2500.0, True)
+    assert valuation.shares_after_splits(100.0, splits, "2026-06-30", "2026-10-27") == (100.0, False)
+    reverse = [Split("2026-04-06", 1.0, 10.0)]  # a 1-for-10 reverse split
+    assert valuation.shares_after_splits(100.0, reverse, "2025-12-31", "2026-10-27")[0] == 10.0
+
+
 def test_the_risk_free_rate_is_the_treasury_ten_year_when_the_file_is_there(history):
     from cherrypick.core import treasury
 
