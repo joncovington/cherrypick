@@ -222,6 +222,7 @@ def build_rows(
     kind: str | None,
     bars: dict | None,
     leveraged: str | None = None,
+    fair: dict | None = None,
 ) -> tuple[list[dict], list[str]]:
     """(rows, drop reasons) for one name: a row per side its fresh entries call for. `priced` is the
     `cs` block's options, priced (`incomelists.priced`)."""
@@ -289,6 +290,7 @@ def build_rows(
                 "ex_dividend_date": ex if side == "C" else None,
                 "iv_index": entry.get("iv_index"),
                 "leveraged": leveraged,
+                **incomelists.fair_fields(fair),
             }
         )
     return rows, drops

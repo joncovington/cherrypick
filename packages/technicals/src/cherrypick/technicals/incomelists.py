@@ -32,10 +32,18 @@ ex-dividend date is carried with its state the same way: `in-trade`, `after`, `p
 day monthly, untested -- see `creditspreads.py`. The signals are walked over the history store, so a
 reading with no `cs` block, or a build without the store, has no credit-spread list.
 
+**Fair value** (2026-10-27, version 3): every row carries the session's DCF estimate from the
+fair-value file (`valuation.py`, `cherrypick.core.valuation`): `fair_value`, `fair_low`, `fair_high`,
+`fair_gap` (the price over the estimate, less one: positive is a price above the model's value) and
+`fair_state` (`valued`, `not-applicable` for a fund or a bank, `no-statements`, `refused`, or
+`unbuilt` when no file has been built). A model estimate of value with no measured edge, shown
+beside the row's own figures and never ordering the list.
+
     python -m cherrypick.technicals income-lists [--day YYYY-MM-DD] [--source FILE]
 
-Network-free: it reads the chain file, the security list and the history store, and writes
-`income-lists/<session>.json` under this package's data dir (a `--source` run writes `.trial.json`).
+Network-free: it reads the chain file, the security list, the history store and the fair-value file,
+and writes `income-lists/<session>.json` under this package's data dir (a `--source` run writes
+`.trial.json`).
 """
 
 from __future__ import annotations
@@ -52,8 +60,24 @@ from . import paths, securities
 
 LISTS = ("short-puts", "covered-calls")
 CREDIT_SPREADS = "credit-spreads"
-# 2: the credit-spread list (2026-10-24).
-LIST_VERSION = 2
+# 2: the credit-spread list (2026-10-24). 3: the fair-value fields on every row (2026-10-27).
+LIST_VERSION = 3
+FAIR_FIELDS = ("fair_value", "fair_low", "fair_high", "fair_gap", "fair_state", "fair_flags")
+
+
+def fair_fields(valued: dict | None) -> dict:
+    """The six fair-value fields from one row of the fair-value file (`valuation.py`); `unbuilt`
+    when there is no file, `unlisted` when the file has no row for the name."""
+    if valued is None:
+        return dict.fromkeys(FAIR_FIELDS, None) | {"fair_state": "unbuilt", "fair_flags": []}
+    return {
+        "fair_value": valued.get("fair_value"),
+        "fair_low": valued.get("low"),
+        "fair_high": valued.get("high"),
+        "fair_gap": valued.get("gap"),
+        "fair_state": valued.get("state") or "unlisted",
+        "fair_flags": list(valued.get("flags") or []),
+    }
 
 
 def income_dir() -> Path:
@@ -150,6 +174,7 @@ def row(
     session: str,
     kind: str | None,
     leveraged: str | None = None,
+    fair: dict | None = None,
 ) -> dict:
     spot = float(entry["spot"])
     work = legbars.working_premium(o)
@@ -191,6 +216,8 @@ def row(
         # (`leveraged_funds.json`): a daily-reset fund decays and gaps in ways its delta does not
         # price, so the row says so. Badged, never dropped (income review plan, item 9).
         "leveraged": leveraged,
+        # The session's DCF estimate (version 3): a model's value beside the price, never an ordering.
+        **fair_fields(fair),
     }
 
 
@@ -199,16 +226,24 @@ def build_lists(
     kinds: dict[str, str] | None = None,
     leveraged: dict[str, str] | None = None,
     signals: dict[str, list[dict]] | None = None,
+    fair: dict[str, dict] | None = None,
 ) -> dict[str, Any]:
     """{"lists": {list: [rows by symbol]}, "dropped": {list: {reason: count}}} from one income reading.
     `leveraged` is {symbol: kind} for the declared leveraged, inverse and volatility funds. `signals`
     is each name's fresh setup entries (`creditspreads.fresh_entries`); None builds no credit-spread
-    list at all, an empty one an empty list."""
+    list at all, an empty one an empty list. `fair` is the fair-value file's rows by symbol; None
+    marks every row `unbuilt`."""
     from . import creditspreads
 
     session = str(doc.get("session") or "")
     kinds = kinds or {}
     leveraged = leveraged or {}
+
+    def fair_of(sym: str) -> dict | None:
+        if fair is None:
+            return None
+        return fair.get(sym) or fair.get(sym.replace(".", "/")) or {"state": "unlisted"}
+
     names = (*LISTS, CREDIT_SPREADS) if signals is not None else LISTS
     lists: dict[str, list] = {name: [] for name in names}
     dropped: dict[str, dict[str, int]] = {name: {} for name in names}
@@ -241,6 +276,7 @@ def build_lists(
                     kind,
                     doc.get("bars"),
                     lev,
+                    fair_of(sym),
                 )
                 lists[CREDIT_SPREADS].extend(rows)
                 for w in why:
@@ -252,7 +288,9 @@ def build_lists(
         if p is False:
             drop("short-puts", "no strike within the delta tolerance")
         elif p:
-            lists["short-puts"].append(row(sym, entry, p, entry["expiry"], entry["dte"], session, kind, lev))
+            lists["short-puts"].append(
+                row(sym, entry, p, entry["expiry"], entry["dte"], session, kind, lev, fair_of(sym))
+            )
         else:
             drop("short-puts", "no priced put out of the money")
         cc = entry.get("cc")
@@ -264,7 +302,7 @@ def build_lists(
         if c is False:
             drop("covered-calls", "no strike within the delta tolerance")
         elif c:
-            r = row(sym, entry, c, cc["expiry"], cc["dte"], session, kind, lev)
+            r = row(sym, entry, c, cc["expiry"], cc["dte"], session, kind, lev, fair_of(sym))
             r["window"] = cc.get("window")
             lists["covered-calls"].append(r)
         else:
@@ -328,10 +366,13 @@ def build(day: str | None = None, source: Path | None = None) -> dict[str, Any]:
     from .skate import leveraged_funds
 
     lev = {s: str(f.get("kind") or "leveraged") for s, f in leveraged_funds().items()}
-    from . import creditspreads
+    from . import creditspreads, valuation
 
     signals = setup_signals(sorted(doc.get("symbols") or {}), session)
-    built = build_lists(doc, _kinds(session), lev, signals)
+    fair_doc = valuation.load(session)
+    built = build_lists(
+        doc, _kinds(session), lev, signals, None if fair_doc is None else fair_doc.get("rows")
+    )
     out = {
         "version": LIST_VERSION,
         "session": session,
@@ -349,7 +390,9 @@ def build(day: str | None = None, source: Path | None = None) -> dict[str, Any]:
             "chains": doc.get("rule"),
             "bars": doc.get("bars"),
             "credit_spreads": creditspreads.rule(),
+            "fair_value": None if fair_doc is None else fair_doc.get("rule"),
         },
+        "fair_value_session": None if fair_doc is None else fair_doc.get("session"),
         "names": len(doc.get("symbols") or {}),
         **built,
     }

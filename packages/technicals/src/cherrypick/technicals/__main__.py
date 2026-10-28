@@ -298,6 +298,15 @@ def cmd_income_lists(args) -> int:
     return 0 if report.get("ok") else 1
 
 
+def cmd_valuation(args) -> int:
+    """The fair-value file: one DCF estimate a liquid optionable name (valuation.py)."""
+    from . import valuation
+
+    report = valuation.build(day=args.day)
+    print(json.dumps(report, indent=1))
+    return 0 if report.get("ok") else 1
+
+
 def cmd_skate(args) -> int:
     """The skate screen's bands and their history (skate.py): the history store and local files only."""
     from . import skate
@@ -488,14 +497,18 @@ def cmd_history_land(_args) -> int:
 
 
 def cmd_history_fundamentals(_args) -> int:
-    """Round 5's inputs: Dolt's next-year EPS and sales estimates and quarterly income statements."""
-    from . import fundamentals
+    """Round 5's inputs: Dolt's next-year EPS and sales estimates and quarterly income statements;
+    then the annual statements the fair-value build reads (statements.py)."""
+    from . import fundamentals, statements
 
     def progress(k, n, lo, rows):
         if k % 12 == 0 or k == n:
             print(f"window {k}/{n} from {lo}: {rows:,} estimate rows", flush=True)
 
     out = fundamentals.land(progress=progress)
+    if out.get("ok"):
+        out["statements"] = statements.land()
+        out["ok"] = bool(out["statements"].get("ok"))
     print(json.dumps(out, indent=1))
     return 0 if out.get("ok") else 1
 
@@ -784,6 +797,11 @@ def main(argv: list[str] | None = None) -> int:
     il.add_argument("--day", help="the newest reading on or before this day (YYYY-MM-DD); default today")
     il.add_argument("--source", help="build from this income file instead (written as a .trial.json)")
     il.set_defaults(fn=cmd_income_lists)
+    va = sub.add_parser(
+        "valuation", help="the fair-value file: one DCF estimate a liquid optionable name (history store)"
+    )
+    va.add_argument("--day", help="value as of this session (YYYY-MM-DD); default today")
+    va.set_defaults(fn=cmd_valuation)
     su = sub.add_parser(
         "seed-universe", help="the income lists' universe source; --write rewrites the shipped seed"
     )

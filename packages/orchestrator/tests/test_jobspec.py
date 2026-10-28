@@ -353,6 +353,7 @@ def test_derive_full_suite_job_table():
         "technicals-stage-lists",
         "technicals-history",
         "technicals-fundamentals",
+        "technicals-valuation",
         "technicals-board",
         "technicals-adjust-check",
         "earnings-moves",
