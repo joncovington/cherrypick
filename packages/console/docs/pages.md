@@ -170,7 +170,7 @@ the setups watchlist:
 **Screeners** (`/screeners`, 2026-10-16; `lightbox/manifests/ScreenersLightbox.tsx`) — two groups
 (2026-10-18 order). Our own screens first: the earnings calendar, its forward record and the signal
 board. Then the income lists: short puts, covered calls and credit spreads, one tab each. The fidelity
-tab was retired on 2026-10-19; its final rates are in `packages/technicals/CLAUDE.md`.
+tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/reference.md`.
 
 - **The income lists are OURS only** (2026-10-24). The vendor's subscription ended, so its saved days
   are no longer shown, there is no source toggle, and the vendor reader and its route are gone. Its
