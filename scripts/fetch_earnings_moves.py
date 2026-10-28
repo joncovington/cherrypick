@@ -29,6 +29,8 @@ import sys
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+from cherrypick.core.broker import standard_chains
+
 DAYS = 7
 PAUSE_S = 1.0
 AMC = "After market close"
@@ -140,14 +142,8 @@ async def price(session, events) -> list[dict]:
                 {**move_row(sym, d, when, None, spot, None, None, None), "reason": f"chain: {exc}"[:120]}
             )
             continue
-        chain = next(
-            (
-                c
-                for c in (chains if isinstance(chains, list) else [chains])
-                if c.root_symbol == sym.replace(".", "/")
-            ),
-            None,
-        )
+        # The name's standard chain, not the root's spelling (BRK/B's options trade as BRKB).
+        chain = next(iter(standard_chains(chains, sym)), None)
         exps = {e.expiration_date: e for e in (chain.expirations if chain else [])}
         exp = front_expiration(sorted(exps), d, when)
         call = put = strike = None
