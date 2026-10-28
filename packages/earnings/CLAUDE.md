@@ -20,7 +20,10 @@ live. `atm_calendar` and
 `broken_wing_butterfly` from 2026-10-26 (`strat_test_harness.STRAT_TEST_RETIRED`, dated retirements;
 docs/operating-history.md). **Exits price at mid for positions entered from 2026-10-26**, natural
 side before (`scanner.exit_basis`; slippage is a cost on a mid fill only, `costs.exit_costs`) —
-never pool across that break. Undefined-risk/naked
+never pool across that break. **From 2026-10-28 every entry path admits only names the suite's
+liquidity verdict calls `tradable`** (declared 2026-10-27; docs/operating-history.md): a refused
+name is a recorded `not_tradable` drop, an unknown one is refused, and a missing or stale verdict
+refuses everything loudly, never silently. Never pool across that break either. Undefined-risk/naked
 strategies were deliberately removed — a naked short on a single-name gap can blow out arbitrarily
 overnight. New strategies go under `src/cherrypick/earnings/strategies/` without touching the engine.
 

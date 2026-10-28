@@ -43,7 +43,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from cherrypick.earnings import scanner, symbol_watch
+from cherrypick.earnings import scanner, symbol_watch, universe
 from cherrypick.earnings.strategies import (
     atm_calendar,
     broken_wing_butterfly,
@@ -580,7 +580,17 @@ def cmd_get_ranked_symbols(args) -> dict:
             result = _evaluate_and_rank_symbol(entry["symbol"], entry["date"], entry["timing"], config)
             per_symbol.append(result)
 
-    rankable = [s for s in per_symbol if s["best_strategy"] is not None]
+    # From 2026-10-28 only a name the suite's liquidity verdict calls tradable is ranked for entry
+    # (universe.py; docs/operating-history.md). A refused name keeps its row and says why.
+    scan_session = str(scanner._date.today())
+    verdict = universe.load()
+    refused = {
+        s["symbol"]: why
+        for s in per_symbol
+        if s["best_strategy"] is not None and (why := universe.refusal(s["symbol"], scan_session, verdict))
+    }
+
+    rankable = [s for s in per_symbol if s["best_strategy"] is not None and s["symbol"] not in refused]
     rankable.sort(key=lambda s: s["best_score"], reverse=True)
 
     ranked_for_selection = [{"symbol": s["symbol"], "composite_score": s["best_score"]} for s in rankable]
@@ -620,6 +630,9 @@ def cmd_get_ranked_symbols(args) -> dict:
                     top_reasons.append(f"{r['name']}: {r['reject_reasons'][0]}")
             s["outcome"] = "rejected_no_viable_strategy"
             s["reason"] = "; ".join(top_reasons) if top_reasons else "no strategy produced a reject reason"
+        elif s["symbol"] in refused:
+            s["outcome"] = refused[s["symbol"]].split(":")[0]  # not_tradable | liquidity_verdict_unavailable
+            s["reason"] = refused[s["symbol"]]
 
     scan_date = str(scanner._date.today())
     for s in per_symbol:

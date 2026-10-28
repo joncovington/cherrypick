@@ -67,6 +67,7 @@ from cherrypick.earnings import (
     scanner,
     sizing,
     symbol_watch,
+    universe,
 )
 from cherrypick.earnings.bounded import OpTimeout as _OpTimeout
 from cherrypick.earnings.bounded import run_bounded as _run_bounded
@@ -618,6 +619,7 @@ def cmd_run_entries(args) -> dict:
     # consult it -- their params ride on the rows they manage (advice.py), which is what makes an
     # advised position's exits continue after advice lapses.
     advice_decision = advice.decision(config, scan_date)
+    verdict = universe.load()  # read once: every refusal this run names the same file
 
     workers = config.get("entry_scan_workers", 4)
     symbol_timeout = config.get("dolt_symbol_timeout_seconds", 90)
@@ -695,6 +697,13 @@ def cmd_run_entries(args) -> dict:
                 continue
             if strategy_not_started(strategy_name, scan_date):
                 drop("strategy_not_started")
+                continue
+            # From 2026-10-28 only a name the suite's liquidity verdict calls tradable opens
+            # (universe.py; docs/operating-history.md). The advised twins open only beside this
+            # entry, so they are gated with it.
+            refused = universe.refusal(symbol, scan_date, verdict)
+            if refused:
+                drop(refused)
                 continue
 
             try:
@@ -841,6 +850,12 @@ def cmd_run_entries(args) -> dict:
         "portfolio_mode": portfolio_mode,
         "opened": opened,
         "skipped": skipped,
+        # The verdict this run gated on (universe.py): its date, or why it could not gate.
+        "universe": {
+            "updated_on": verdict.get("updated_on"),
+            "unavailable": universe.unavailable(verdict, scan_date),
+            "gated": scan_date >= universe.ENTRY_UNIVERSE_FROM,
+        },
     }
 
 

@@ -174,3 +174,82 @@ is declared now and scored once:
 - **Pass:** ρ ≤ −0.20 **and** the most-inverted third's mean beats the least-inverted third's.
   Both must hold. A pass proposes a `symbol_screen` gate, which is its own boundary. A fail
   closes it, and the covariate stays recorded.
+
+## The 2026-10-28 boundary (declared 2026-10-27 for 2026-11-02; moved to 10-28 the same night)
+
+**Moved forward at the user's request**, late on 2026-10-27, to bind on the next session's 15:35
+entry scan. One consequence of the short notice:
+
+- **The verdict is re-run by hand that morning.** The first verdict under the new bars (technicals
+  #628) would otherwise be written only at 18:57 ET on 10-28, after the entry scan. Once #628 is
+  merged into the live checkout, `python -m cherrypick.technicals liquidity` is run once before
+  15:35, and its `updated_on` (2026-10-28) is the file the boundary's first scan reads.
+- **The forward preview moves the same session**, if this merges before the 06:30 ET forward scan.
+  If it merges later, that one pass runs on tastytrade's watchlists. It only orders the entry scan,
+  and the gate refuses on the verdict whatever the order, so the entries bind on 10-28 either way.
+
+One measurement-affecting change: **the entry scan admits only names the suite's liquidity verdict
+calls `tradable`.** The user's rule (2026-10-27): every screener and every candidate comes from
+names confirmed liquid -- weekly options, tight bid/ask, good open interest and volume on the
+monthlies -- because "I don't want symbols in the screeners that I will never trade." The rest of
+the suite reads that verdict from technicals PR #628. Earnings is the one candidate surface that
+still screens every name on the Dolt calendar, so it changes here, at a boundary, because it
+changes which names every arm trades.
+
+**The verdict** is technicals' `liquidity.py` file (`<home>/data/market-report/liquidity/verdicts.json`,
+written nightly at 18:57 ET), read from disk through `cherrypick.core.home`; earnings imports no
+technicals. A name is `tradable` when it has weekly options, $100M a day in the stock, and a
+cycle-monthly chain that clears three bars on the median of its last five income readings: an ATM
+spread of at most 7.5% of mid, open interest worth at least $250M and volume worth at least $5M
+(contracts x 100 x spot). The bars are the user's, chosen on 2026-10-27. The reference funds' own
+verdicts (SPY, QQQ, the sector funds) count the same way.
+
+**How it binds.** It is dated in code, as the 10-15 and 10-26 changes were: an entry scan for a
+session on or after 2026-10-28 refuses any name the verdict does not call `tradable`. It merges
+ahead of the boundary and binds on it, with no config change.
+
+- **Every entry path:** `rank_strategies` (paper now; live too whenever `enable_live_trading` is
+  turned on), the `strat_test` harness and the advised twins. Exits and settlement are untouched:
+  positions open on 2026-10-28 run off under the ordinary close path.
+- **A refused name is a drop, never a silence.** Its screen row is written and the opening refused
+  at the execution stage as `not_tradable`, carrying the verdict (`thin` or `illiquid`) and its
+  reasons. "Refused for liquidity" must never read as "nothing qualified".
+- **Unknown is refused, loudly.** A name the verdict file does not hold is refused as
+  `not_tradable` (`unjudged`): unconfirmed is not liquid. A missing verdict file, or one not
+  rewritten for more than three trading sessions, refuses every candidate as
+  `liquidity_verdict_unavailable`, with why. That is the outage the 2026-08-17..24 bound caused,
+  made visible instead of silent: a day that refuses everything says why on every row. (A doctor
+  check on the verdict file's age is a follow-up, not part of this boundary.)
+- **The verdict the scan read is recorded.** Every refusal names the verdict file's `updated_on`,
+  and the entry run's result carries a `universe` block (`updated_on`, `unavailable`, `gated`), so
+  a refusal can be traced to the file that made it. The code is `universe.py`.
+- **The forward preview follows.** `symbol_watch`'s universe changes from tastytrade's "Liquid
+  Symbols", "High Options Volume" and "tasty Earnings" watchlists to the same verdict, from the
+  2026-10-28 forward scan (above). That is a read surface; it also orders the entry scan
+  (`covered_symbols`), which changes no admission.
+
+**What to expect.** Of the 307 paper entries from 2026-09-01 to 2026-10-27, 136 (44%) were on
+names today's readings call `thin`: 34 of the 81 names entered, most often DOCU, PATH, CHWY, AEO,
+M, APLD, AI, PL, KR, LEN, GM, HAL, SAP and HON. Expect about half the entries per session and a
+universe of larger, more liquid names. Never pool across the boundary: a per-arm result reads
+from 2026-10-28 or ends before it.
+
+**The `term_structure` test above is not changed.** Its sample (the first 70 events from
+2026-10-26) now spans the boundary, two sessions before it (10-26, 10-27) and the rest after, and at the new
+rate it takes roughly twice as long to fill. The declared test is scored as written. Beside it,
+described and never re-judged, the same ρ and thirds are reported for the post-boundary events
+alone.
+
+**Journal on the day:** one `entry_universe` break dated 2026-10-28 in the paper ledger, recorded
+with `paper_loop record-break --key entry_universe --date 2026-10-28 --old "every Dolt calendar
+name the screen passes" --new "liquidity verdict: tradable only"`. If live trading is on by then,
+the same row goes in the live ledger.
+
+**Considered and not adopted:**
+- *The tradable list as a soft preference* (order the scan by it, admit the rest). It would keep
+  the sample rate, but the user's rule is about which names are candidates at all, not which come
+  first.
+- *A separate earnings liquidity screen.* `fetch_liquidity_criteria` already screens each name's
+  spread, open interest and volume on its own event expiry, and keeps doing so. The verdict adds
+  the standing, multi-session test of the monthlies that one event-day chain cannot give, and it
+  is the same test every other screener uses.

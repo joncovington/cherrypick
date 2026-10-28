@@ -11,6 +11,14 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed (2026-10-28, a declared measurement boundary): earnings opens only on names the
+  liquidity verdict calls tradable.** Every entry path (the ranked scan, the `strat_test` harness
+  and the advised twins beside it) refuses any other name from the 2026-10-28 session as an
+  execution-stage `not_tradable` drop that names the verdict and its reasons. An unjudged name is
+  refused, and a missing or stale verdict refuses everything as `liquidity_verdict_unavailable`. The
+  forward preview moves off tastytrade's watchlists onto the same verdict the same session. About
+  half the recent entries were on names now refused. Never pool an arm's results across this date.
+
 - **Changed (2026-10-27): no screener lists a name whose options the user would not trade.** The
   liquidity verdict gains `thin`: a name with weeklies and $100M a day whose cycle-monthly options
   are not confirmed liquid -- ATM spread over 7.5% of mid, chain open interest under $250M or chain
@@ -20,8 +28,8 @@ beyond the latest release.
   and manage's candidates read only `tradable`. A list row whose own option
   (or, for a spread, every width) fails the leg bars is now dropped and counted instead of flagged.
   Thin names are still measured nightly, so one is admitted the night it clears. About 166 names
-  pass on the 10-27 readings, against 484 before. The earnings scanner's universe is not changed
-  here: its entry scan reads it, so that change waits for a boundary.
+  pass on the 10-27 readings, against 484 before. The earnings entry scan follows at the
+  2026-10-28 boundary (the entry above), since it changes which names every earnings arm trades.
 
 - **Fixed (2026-10-27): four names `check-adjust` found adjusted wrongly.** AZN's 2026-02-02 ADR ratio
   change (1-for-2) and a 2015 2-for-1 are now in the split history. HON, CME and ITUB were dividend
