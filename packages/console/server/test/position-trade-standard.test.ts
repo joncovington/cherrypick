@@ -8,7 +8,7 @@ import { readCurveHistory } from "../src/readers/curve.js";
 import { positionCash } from "../src/readers/positionCash.js";
 
 /**
- * The trade table standard (root CLAUDE.md) for the position modules that share one accounting --
+ * The trade table standard (docs/conventions/money-layout.md) for the position modules that share one accounting --
  * calendars, pmcc and curve -- through `readers/positionCash.ts`, exercised here via curve's history.
  *
  * `fees` is the total of every cost (entry fee and slippage, each exit's fee and slippage, and the

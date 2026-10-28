@@ -1,11 +1,11 @@
 """The switch as fills: what selling one holding and buying the other costs. Pure functions over
 quotes the caller already read.
 
-**Fills are at mid, and the concession is a separate cost.** That is the suite's model for mid-filled
-modules (root CLAUDE.md, "Slippage is its own column"): a marketable order pays half the quoted
-spread, so `slippage` per share is that half-spread, floored at `slippage_floor_bps` of the mid --
-a one-cent quote on a $50 fund is half a basis point, and nothing fills that well at size. The
-replay this module was built from charged 2 bps a side; the floor is that number.
+**Fills are at mid, and the concession is a separate cost.** That is the suite's model for mid-filled modules
+(docs/conventions/money-layout.md, "Slippage is its own column"): a marketable order pays half the quoted
+spread, so `slippage` per share is that half-spread, floored at `slippage_floor_bps` of the mid -- a one-cent
+quote on a $50 fund is half a basis point, and nothing fills that well at size. The replay this module was
+built from charged 2 bps a side; the floor is that number.
 
 **Fees** are `cherrypick.core.fees.stock_trade_fee`: buys free, sells carry the SEC fee and FINRA
 TAF. No commission -- tastytrade charges none on shares.
@@ -124,7 +124,8 @@ def plan_switch(
 
 
 def stint_result(position: dict, sell: dict) -> dict:
-    """The closed row's money for one holding stint, laid out so it adds up (root CLAUDE.md):
+    """The closed row's money for one holding stint, laid out so it adds up
+    (docs/conventions/money-layout.md):
     entry (a debit, negative) + exit (a credit) + distributions = gross; gross - fees - slippage = net.
     """
     entry_value = -round(position["shares"] * position["entry_mid"], 2)

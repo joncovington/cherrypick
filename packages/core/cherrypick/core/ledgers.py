@@ -1192,8 +1192,8 @@ def _flies_held(conn) -> list[dict]:
 HELD_READERS = {**OPEN_READERS, "meic_ic": _meic_held, "fly_book": _flies_held}
 
 
-# Retired spellings of a schema id, resolved for good. A config is a file a person keeps across
-# upgrades with no migration (root CLAUDE.md), so `"trade_schema": "pmcc_99"` -- every install before
+# Retired spellings of a schema id, resolved for good. A config is a file a person keeps across upgrades with
+# no migration (docs/conventions/working-rules.md), so `"trade_schema": "pmcc_99"` -- every install before
 # 2026-10-04, when the module's name lost its "-99" -- must keep reading. Registries are keyed by the
 # canonical id only; every lookup by a configured or requested id goes through `canonical_schema`.
 SCHEMA_ALIASES = {"pmcc_99": "pmcc"}

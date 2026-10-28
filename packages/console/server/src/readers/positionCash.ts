@@ -2,7 +2,7 @@ import type { TradeMoney, TradeTotals } from "@console/shared";
 import { hasColumn, num, str, type DatabaseHandle } from "./db.js";
 
 /**
- * The trade table standard (root CLAUDE.md) for the position modules that share one accounting:
+ * The trade table standard (docs/conventions/money-layout.md) for the position modules that share one accounting:
  * calendars, pmcc and curve (`<prefix>positions`).
  *
  * Their ledgers agree on what every money column means. `gross_pnl` is mid-priced and cost-free,

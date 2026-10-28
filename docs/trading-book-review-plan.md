@@ -129,7 +129,7 @@ its PR), `dropped` (with why).
 - Every module's trade history gains `r_multiple`: net P&L divided by the trade's maximum loss at
   entry (the defined-risk structures' natural 1R). An undefined-risk structure says so and has no R.
 - Recorded where the max loss is known at entry, derived for older rows where it can be recovered
-  (a dry-run-by-default backfill, per the root CLAUDE.md's rule for recording missing components).
+  (a dry-run-by-default backfill, per docs/conventions/money-layout.md's rule for recording missing components).
 - It makes modules comparable on one scale, and gives B2 its unit.
 
 **B4. Entry context on every trade row.** *(built 2026-10-24 as `cherrypick.technicals.entrycontext`: derived on read from the local end-of-day store, as of the close before entry, so every row already written has it and no module's schema or decisions change; `python -m cherrypick.technicals entry-context --db <ledger> --schema <schema>`. An index has no relative volume or sector.)*

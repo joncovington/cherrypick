@@ -1,5 +1,5 @@
 /**
- * Fee drag, the one definition every surface uses (root CLAUDE.md, "one money layout"): trading
+ * Fee drag, the one definition every surface uses (docs/conventions/money-layout.md): trading
  * fees -- commissions and exchange fees, never settlement -- divided by the premium collected at
  * entry. Shared because the server derives it for the readers and the web derives it for a few
  * tiles that sum their own rows, and two copies already disagreed once (fees ÷ gross P&L on flies,

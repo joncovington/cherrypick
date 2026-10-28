@@ -121,7 +121,7 @@ bars, run the same way over paper, live or replay output:
 - **Profit durability:** net with the top 1, 5 and 10% of trades removed, extending
   `ledgers.concentration`. Removing rows is labelled as removal, never as a re-run.
 - **Slippage ladder:** two paths, because flies and MEIC hold slippage inside gross and the
-  cost-basis modules charge it separately (see the money layout in the root CLAUDE.md). Neither path
+  cost-basis modules charge it separately (see the money layout in docs/conventions/money-layout.md). Neither path
   subtracts slippage twice.
 - **Drawdown stress test:** the 95th-percentile drawdown over reshuffled and block-reshuffled daily
   P&L, on `core.stats`' stationary bootstrap.
@@ -287,6 +287,6 @@ First daily read over the suite window, with the control arms and earnings' firs
 - The minimum n below which a bucket greys out, and whether it counts trades or independent sessions
   (review already counts independent events).
 - Where the fact set lives in core. It must not be called "overview" (the pre-open package) or use
-  `book` or `profile` (see the vocabulary table in the root CLAUDE.md).
+  `book` or `profile` (see the vocabulary table in docs/conventions/working-rules.md).
 - How far back `core.events` covers, which bounds the event buckets over the replay and backtest
   history.

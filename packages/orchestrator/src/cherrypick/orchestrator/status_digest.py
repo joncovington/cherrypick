@@ -362,7 +362,7 @@ def _fly_live_lines(fly: dict) -> list[str]:
             if age is not None and age > _STALE_MINUTES:
                 s += f" ({age}m old)"  # a dead loop's last mark must not read as current
             parts.append(s)
-        # A book-level floor always carries the band over which it holds (root CLAUDE.md).
+        # A book-level floor always carries the band over which it holds (docs/conventions/packages.md).
         band = None
         if b.get("band_low") is not None and b.get("band_high") is not None:
             band = f"{b['band_low']:.0f}–{b['band_high']:.0f}"

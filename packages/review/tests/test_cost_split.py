@@ -1,5 +1,5 @@
 """Fact set v10: costs as separate columns -- fees, settlement, slippage with its basis -- beside the
-old total, so the review states money the way every other surface does (root CLAUDE.md)."""
+old total, so the review states money the way every other surface does (docs/conventions/money-layout.md)."""
 
 import sqlite3
 from datetime import datetime

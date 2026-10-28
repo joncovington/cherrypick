@@ -4,7 +4,7 @@
  */
 
 /**
- * One arm's CLOSED positions in the suite's money layout (root CLAUDE.md): gross, then trading
+ * One arm's CLOSED positions in the suite's money layout (docs/conventions/money-layout.md): gross, then trading
  * fees, settlement and slippage as separate costs, so gross - fees - settlement - slippage = net.
  */
 export interface ArmMoneyRow {

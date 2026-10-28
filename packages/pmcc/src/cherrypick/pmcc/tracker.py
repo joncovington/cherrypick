@@ -13,7 +13,7 @@ its own timestamp. The header is `value_at(now)` and every weekly row is `value_
 close)`, so the last row and the header are the same number by construction, and a reader of this
 module cannot find two answers to "what is it worth".
 
-**Money is the suite's layout** (root CLAUDE.md): P&L is net; cash flows are signed (a credit `+`, a
+**Money is the suite's layout** (docs/conventions/money-layout.md): P&L is net; cash flows are signed (a credit `+`, a
 debit `-`) in whole-position dollars; fees, slippage (charged as a cost in this module) and
 settlement are separate figures, and every total is the sum of its parts. `None` is "not
 recorded" or "not priceable", never zero.

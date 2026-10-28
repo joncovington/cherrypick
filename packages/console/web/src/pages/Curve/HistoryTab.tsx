@@ -63,7 +63,7 @@ const COLUMNS: ColumnDef<CurveCycleRow>[] = [
  */
 const CURVE_HISTORY_SORTS = ["dates", "symbol", "arm", "regime", "qty", "price", "entry", "exit", "gross", "fees", "settle", "slip", "net"];
 
-/** Completed cycles in the suite's standard trade layout (root CLAUDE.md). */
+/** Completed cycles in the suite's standard trade layout (docs/conventions/money-layout.md). */
 export function HistoryTab() {
   const [arm, setArm] = useState<string | null>(null);
   const [symbol, setSymbol] = useState<string | null>(null);
