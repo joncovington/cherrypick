@@ -347,7 +347,7 @@ export const CHARTS_SLIDES = [
 /** The screeners (2026-10-18 order): our own screens first -- the earnings calendar and its record,
  *  the signal board, the skate screen (2026-10-19) -- then the income lists (one tab each,
  *  2026-10-16), all three our own since the vendor's subscription ended on 2026-10-24. The fidelity
- *  tab, how well our rules matched the vendor's, was retired on 2026-10-19 (`packages/technicals/CLAUDE.md`). */
+ *  tab, how well our rules matched the vendor's, was retired on 2026-10-19 (`packages/technicals/docs/reference.md`). */
 export const SCREENERS_SLIDES = [
   { id: "earnings", label: "earnings" },
   { id: "earnings-record", label: "earnings record" },
