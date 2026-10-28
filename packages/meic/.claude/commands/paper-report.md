@@ -45,6 +45,6 @@ Include the last ~15 trades across all profiles (from `get_range_summary`'s unde
 
 ## 6. Write the report
 
-Plain-English synthesis: which stream(s) are trending toward graduation and why, which are clearly lagging, and whether the sample is even large enough yet to say anything (be honest if it isn't — `control` in particular may accrue few trades on low-IV weeks, which is a valid, reportable outcome per CLAUDE.md's low-IV credit-floor discussion, not a bug).
+Plain-English synthesis: which stream(s) are trending toward graduation and why, which are clearly lagging, and whether the sample is even large enough yet to say anything (be honest if it isn't — `control` in particular may accrue few trades on low-IV weeks, which is a valid, reportable outcome per docs/agent-loop.md's low-IV credit-floor discussion (Step 6), not a bug).
 
 Save to `logs/paper-week-<N>-<start>_<end>.md` (increment `<N>` from the highest existing `logs/paper-week-*.md` file, or use the date range alone if this is the first report). One combined report covering every enabled stream — do not write separate per-stream files.

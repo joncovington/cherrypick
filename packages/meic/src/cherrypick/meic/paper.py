@@ -7,7 +7,7 @@ the result to `process_symbol`, which evaluates all four risk profiles from
 config.risk.json against that one snapshot, synthesizes fills/exits, and writes to the
 paper database (paper_trades.db in the data home, selected via --db or MEIC_DB_PATH).
 
-Design mirrors the live Step 6 hard-stops (CLAUDE.md) and the entry/stop math specified
+Design mirrors the live Step 6 hard-stops (docs/agent-loop.md) and the entry/stop math specified
 in .claude/commands/execute-entry.md and .claude/commands/stop-management.md, but applies
 them deterministically (fixed policy, no agent judgment) so the four profiles are
 compared on identical, reproducible criteria. See docs/paper-trading.md.
@@ -781,7 +781,7 @@ def evaluate_entry(
     todays_entry_count: int = 0,
     last_entry_min: int | None = None,
 ) -> tuple:
-    """Encode the Step-6 hard-stops from CLAUDE.md against one profile's thresholds.
+    """Encode the Step-6 hard-stops from docs/agent-loop.md against one profile's thresholds.
 
     snapshot: one pre-fetched market snapshot for a symbol/session (see paper-loop.md for
         exact shape) including a `candidates` list — one entry per scanned wing width.
@@ -882,7 +882,7 @@ def evaluate_entry(
 
     now_min = _time_to_minutes(snapshot["now_et"])
 
-    # Daily target is GUIDANCE, not a hard cap (matching CLAUDE.md): once a portfolio has reached
+    # Daily target is GUIDANCE, not a hard cap (matching docs/agent-loop.md): once a portfolio has reached
     # its daily_ic_trade_target on this symbol it may still trade, but only a higher-conviction
     # setup qualifies — the credit floor is scaled by `over_target_credit_multiple` in the candidate
     # loop below. Favorable conditions (richer premium) therefore allow more entries, while marginal

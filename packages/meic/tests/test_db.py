@@ -264,7 +264,7 @@ def test_get_today_pnl_filtered_by_symbol(db_path, capsys):
 
 def test_get_eod_summary_spans_all_symbols(db_path, capsys):
     """EOD summary is intentionally account-wide (one combined report per day covering
-    every symbol) — see CLAUDE.md Step 8 and eod-report.md."""
+    every symbol) — see docs/agent-loop.md Step 8 and eod-report.md."""
     _insert_trade(db_path, ic_order_id="IC-X", symbol="XSP", pnl=1.0, fees=0.1)
     _insert_trade(db_path, ic_order_id="IC-S", symbol="SPX", pnl=3.0, fees=0.3)
     db.cmd_get_eod_summary(None)

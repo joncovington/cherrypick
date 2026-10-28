@@ -586,8 +586,8 @@ async def cmd_get_vix1d(args) -> dict:
     Intended as a more precise intraday-regime signal for 0DTE-specific
     decisions than the standard 30-day VIX (which measures a much longer
     volatility window than a same-day option actually spans) -- not yet
-    wired into any entry gate; CLAUDE.md's regime detection still uses
-    standard VIX only. See CLAUDE.md for how this might be incorporated.
+    wired into any entry gate; docs/agent-loop.md's regime detection still uses
+    standard VIX only. See docs/agent-loop.md for how this might be incorporated.
     """
     try:
         timeout = getattr(args, "timeout", 6.0)

@@ -109,7 +109,7 @@ against `control` when `control` was the stopping book, and after the 2026-08-21
 `control` the never-stopping substrate it validated nothing (4,678 of 6,043 rows "mismatched");
 it now finds the stopping arms from the rows themselves. If a future change makes that validation
 fail, every derived stop-policy number is void until it's fixed. What the
-derivation prices and charges is set out in `packages/meic/CLAUDE.md` ("reworked 2026-09-24").
+derivation prices and charges is set out in [reference.md](reference.md) ("Deriving stop policies read-side").
 
 ### Corrections this redesign made to earlier assumptions
 

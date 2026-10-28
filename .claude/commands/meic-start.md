@@ -29,8 +29,9 @@ directory and adds a mode pre-check.
      up (`python packages/streamer/run.py --status`: require `running: true` AND a small
      `oldest_event_age_s` in-session). If down, `python packages/orchestrator/run.py install` starts it.
      It is the only producer: MEIC's own streamer was removed on 2026-10-18. Then
-   - read `packages/meic/CLAUDE.md` in full and run the MEIC agent loop — invoke the `/loop` skill with:
+   - read `packages/meic/CLAUDE.md` and `packages/meic/docs/agent-loop.md` in full and run the MEIC
+     agent loop — invoke the `/loop` skill with:
      *"Execute the next MEIC agent loop iteration following the operating instructions in
-     packages/meic/CLAUDE.md."*
+     packages/meic/CLAUDE.md and the Loop Steps in packages/meic/docs/agent-loop.md."*
 
 4. Tell me startup is complete and the loop is self-pacing.
