@@ -5,6 +5,7 @@ import { NeedsDolt } from "../../pages/Screeners/NeedsDolt";
 import { OwnListTab } from "../../pages/Screeners/OwnListTab";
 import { SignalBoardTab } from "../../pages/Screeners/SignalBoardTab";
 import { SkateTab } from "../../pages/Screeners/SkateTab";
+import { ValuationTab } from "../../pages/Screeners/ValuationTab";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
@@ -20,6 +21,12 @@ export const slides: SlideDef[] = [
   { id: "credit-spreads", label: "credit spreads", render: () => (
       <NeedsDolt slide="credit-spreads" label="credit spreads">
         <CreditSpreadTab />
+      </NeedsDolt>
+    ) },
+  // The fair-value file (2026-10-27) is built from Dolt's annual statements in the history store.
+  { id: "valuation", label: "fair value", render: () => (
+      <NeedsDolt slide="valuation" label="fair value">
+        <ValuationTab />
       </NeedsDolt>
     ) },
   { id: "earnings", label: "earnings", render: () => (

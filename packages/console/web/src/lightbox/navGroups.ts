@@ -356,6 +356,7 @@ export const SCREENERS_SLIDES = [
   { id: "short-puts", label: "short puts" },
   { id: "covered-calls", label: "covered calls" },
   { id: "credit-spreads", label: "credit spreads" },
+  { id: "valuation", label: "fair value" },
 ] as const satisfies readonly NavSlide[];
 
 /**
@@ -542,12 +543,12 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   charts: { slides: CHARTS_SLIDES },
   screeners: {
     slides: SCREENERS_SLIDES,
-    simple: ["earnings", "earnings-record", "board", "skate", "short-puts", "covered-calls", "credit-spreads"],
+    simple: ["earnings", "earnings-record", "board", "skate", "short-puts", "covered-calls", "credit-spreads", "valuation"],
     groups: [
       { label: "screens", ids: ["earnings", "earnings-record", "board", "skate"] },
       // Named for what the lists hold, not their source: they were the vendor's until 2026-10-24 and
       // are our own since, under the same names.
-      { label: "income lists", ids: ["short-puts", "covered-calls", "credit-spreads"] },
+      { label: "income lists", ids: ["short-puts", "covered-calls", "credit-spreads", "valuation"] },
     ],
   },
   reports: { slides: REPORTS_SLIDES },

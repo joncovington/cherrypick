@@ -8,6 +8,7 @@ import type {
   SignalBoardPayload,
   SkatePayload,
   SkateRecordPayload,
+  ValuationPayload,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { readEarningsCalendar } from "../readers/earningsCalendar.js";
@@ -16,8 +17,14 @@ import { CREDIT_SPREADS, INCOME_LISTS, readCreditSpreadList, readIncomeList } fr
 import { readSignalBoard } from "../readers/signalBoard.js";
 import { readSkate } from "../readers/skate.js";
 import { readSkateRecord } from "../readers/skateRecord.js";
+import { readValuation } from "../readers/valuation.js";
 
 export function registerScreenerRoutes(app: FastifyInstance, config: ConsoleConfig): void {
+  // The fair-value file (technicals valuation): one DCF estimate a name a session; no measured edge.
+  app.get<{ Querystring: { day?: string } }>(
+    "/api/screeners/valuation",
+    async (req): Promise<ValuationPayload> => readValuation(config, req.query.day ?? null),
+  );
   // Our own lists (technicals income-lists). The vendor's saved lists are no longer served: its
   // subscription ended 2026-10-24.
   app.get<{ Params: { list: string }; Querystring: { day?: string } }>(

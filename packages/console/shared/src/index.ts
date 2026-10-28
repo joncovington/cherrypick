@@ -40,6 +40,7 @@ export * from "./types/manage.js";
 export * from "./types/armStatus.js";
 export * from "./types/summary.js";
 export * from "./types/incomeLists.js";
+export * from "./types/valuation.js";
 export * from "./types/earningsCalendar.js";
 export * from "./types/earningsVerdict.js";
 export * from "./types/signalBoard.js";

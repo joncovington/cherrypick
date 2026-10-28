@@ -157,4 +157,24 @@ describe("readIncomeList", () => {
   it("nothing built is an empty list, not an error", () => {
     expect(readIncomeList(config, "short-puts", null)).toMatchObject({ day: null, days: [], rows: [] });
   });
+
+  it("passes the fair-value fields through; a list built before them reads null, and a junk state is null", () => {
+    const fair = { fair_value: 120, fair_low: 100, fair_high: 140, fair_gap: -0.1667, fair_state: "valued", fair_flags: ["terminal_heavy"] };
+    write(
+      "2026-10-27.json",
+      doc("2026-10-27", [
+        { ...ROW, ...fair },
+        { ...ROW, symbol: "FUND", fair_value: null, fair_low: null, fair_high: null, fair_gap: null, fair_state: "not-applicable", fair_flags: [] },
+        { ...ROW, symbol: "OLD" },
+        { ...ROW, symbol: "JUNK", fair_state: "maybe", fair_flags: "x" },
+      ]),
+    );
+    const rows = readIncomeList(config, "short-puts", null).rows;
+    expect(rows.map((r) => [r.symbol, r.fair])).toEqual([
+      ["AAA", { fairValue: 120, fairLow: 100, fairHigh: 140, fairGap: -0.1667, fairState: "valued", fairFlags: ["terminal_heavy"] }],
+      ["FUND", { fairValue: null, fairLow: null, fairHigh: null, fairGap: null, fairState: "not-applicable", fairFlags: [] }],
+      ["OLD", null],
+      ["JUNK", { fairValue: null, fairLow: null, fairHigh: null, fairGap: null, fairState: null, fairFlags: [] }],
+    ]);
+  });
 });

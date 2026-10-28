@@ -155,7 +155,7 @@ export function offReason(id: string, f: Features): OffReason | null {
  * screeners and was told it needed a vendor).
  */
 // credit-spreads (2026-10-24): its setups are walked over the history store, which Dolt fills.
-export const SCREENERS_NEED_DOLT: ReadonlySet<string> = new Set(["earnings", "earnings-record", "board", "skate", "credit-spreads"]);
+export const SCREENERS_NEED_DOLT: ReadonlySet<string> = new Set(["earnings", "earnings-record", "board", "skate", "credit-spreads", "valuation"]);
 
 /** Why a Dolt-backed Screeners tab has nothing to show, or null when it does (or when that is
  *  unknown: loading or a failed bridge shows the tab, as every rule here does). */

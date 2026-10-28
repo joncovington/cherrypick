@@ -4,7 +4,7 @@ import type { CreditSpreadPrice, CreditSpreadRow } from "@console/shared";
 import { SortTh, sortRows, useSort } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
 import { useCreditSpreadList } from "../../lib/api";
-import { EarningsCell } from "./OwnListTab";
+import { EarningsCell, FAIR_TITLE, FairCell } from "./OwnListTab";
 
 /**
  * Our own credit-spread list (2026-10-24): the chart setups' fresh entries as spreads on the 30-45 day
@@ -217,7 +217,7 @@ const SORTS: Record<string, (r: CreditSpreadRow) => number | string | null> = {
   earnings: (r) => r.earningsDate,
 };
 
-const COLUMNS = 15;
+const COLUMNS = 16;
 
 /** The default selection: the user's original rule, which reads every row. */
 export const DEFAULT_SELECTION = "credit-share";
@@ -409,6 +409,9 @@ export function CreditSpreadTab() {
                 <SortTh label="Credit" k="credit" sort={sort} className="num" title="Per share at the working price: halfway from the mid to the natural fill" />
                 <SortTh label="Credit %" k="creditPct" sort={sort} className="num" title="Credit ÷ width" />
                 <SortTh label="Max loss" k="maxLoss" sort={sort} className="num" title="Whole contract: (width − credit) × 100" />
+                <th className="num" title={FAIR_TITLE}>
+                  Vs fair
+                </th>
                 <SortTh label="Earnings" k="earnings" sort={sort} title="The next announcement, against this spread's expiry" />
                 <th title="Call spreads: the broker's ex-dividend date against expiry">Ex-div</th>
                 <th title="The leg bars on the picked spread as one order">Liquid</th>
@@ -483,6 +486,7 @@ export function CreditSpreadTab() {
                           <td className="num">{contract(r.pick.maxLoss)}</td>
                         </>
                       )}
+                      <FairCell fair={r.fair} />
                       <EarningsCell r={r} />
                       <ExDividendCell r={r} />
                       <LiquidCell p={r.pick} />

@@ -210,6 +210,11 @@ function loadParams(config: ConsoleConfig): PmccParams {
   };
 }
 
+/** pmcc's configured symbols, for a read surface that badges them (the fair-value tab). */
+export function pmccSymbols(config: ConsoleConfig): string[] {
+  return loadParams(config).symbols;
+}
+
 /**
  * The session every card on the page names.
  *

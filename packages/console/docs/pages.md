@@ -193,6 +193,22 @@ tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/
   are by symbol. A session built before the list, or without the history store, says so (`built`
   false) rather than showing an empty table. Behind `NeedsDolt` (`SCREENERS_NEED_DOLT`): the setups
   come from the history store.
+- **Vs fair on every income-list row** (2026-10-27; income-lists version 3, `FairCell` in
+  `OwnListTab.tsx`, shared with the credit-spread tab): the price against the session's DCF estimate
+  from the fair-value file, the range and the builder's flags in the cell's title (a `†` marks a
+  flagged row). `n/a` for a fund, a bank or a REIT; `—` with the reason for a name the model has no
+  value for, or a list built before the fields. **A model estimate with no measured edge**, in the
+  header's title; the column never orders the list.
+- **Fair value** (2026-10-27; `ValuationTab.tsx`, `readers/valuation.ts`,
+  `GET /api/screeners/valuation[?day=]`): the fair-value file `technicals valuation` writes each
+  session (`cherrypick.core.valuation` on Dolt's annual statements, a regression beta and the
+  consensus sales growth from the history store): per name its state (valued, not applicable, no
+  statements, refused -- with the reason), price, fair value, the grid range, the gap, WACC, beta
+  (the broker's beside it where it disagrees), year-one growth, margin, the terminal value's share of
+  EV, the implied EV/EBITDA and the builder's flags. Views: valued (default), pmcc (its configured
+  symbols, badged from pmcc's own config through `readers/pmcc.ts`, its funds not applicable) and
+  all. **"No measured edge"** heads the table and is never removed; rows are by symbol, and a column
+  sort is the reader's own click. Behind `NeedsDolt`: the statements come from the local Dolt clone.
 
   **The earnings tab** (2026-10-17; `pages/Screeners/EarningsCalendarTab.tsx`,
   `readers/earningsCalendar.ts`, `GET /api/screeners/earnings[?day=]`) is the earnings calendar,
