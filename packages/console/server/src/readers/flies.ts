@@ -1056,7 +1056,7 @@ export interface FliesTradeLogRow {
   quantity: number | null;
   /** Net entry price per share, signed: credit +, debit −. The one per-share column in the row. */
   price: number | null;
-  /** The trade table standard (console CLAUDE.md): whole-position dollars, signed cash flow.
+  /** The trade table standard (packages/console/docs/tables.md): whole-position dollars, signed cash flow.
    *  entry + exit = gross; gross − fees − settlement = net. `exit` is derived as gross − entry so
    *  the row sums by construction, and it carries the settlement payoff of a held-to-expiry fly. */
   entryCash: number | null;

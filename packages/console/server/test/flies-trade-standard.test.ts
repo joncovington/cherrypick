@@ -14,7 +14,7 @@ import {
 } from "../src/readers/flies.js";
 
 /**
- * The trade table standard (packages/console/CLAUDE.md) on the flies tables.
+ * The trade table standard (packages/console/docs/tables.md) on the flies tables.
  *
  * Every money column is whole-position dollars with a signed cash flow, and a row adds up left to
  * right: entry + exit = gross, gross − fees − settlement = net. `fees` in the ledger is the TOTAL
