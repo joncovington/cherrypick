@@ -65,3 +65,33 @@ def test_a_shape_is_cached_until_the_file_changes(tmp_path, monkeypatch):
     out = stores.inventory({}, vendor_dir=tmp_path, cache_path=cache)
     assert calls == ["SPX-60s.db", "SPX-60s.db"]
     assert {s["file"]: s for s in out["stores"]}["SPX-60s.db"]["tables"]["t"]["rows"] == 3
+
+
+def test_the_cache_is_banked_store_by_store_so_a_cut_off_read_keeps_what_it_counted(tmp_path, monkeypatch):
+    # Two changed stores; the read dies on the second (the bridge's timeout, in life). The first
+    # store's count is on disk, so the next read counts only the second. Before 2026-10-28 the cache
+    # was written once at the end, and a read that never reached the end banked nothing.
+    import json
+
+    _db(tmp_path / "SPX-60s.db")
+    _db(tmp_path / "flow.db")
+    cache = tmp_path / "cache.json"
+    calls = []
+    real = stores._shape
+
+    def shape(p):
+        calls.append(p.name)
+        if p.name == "flow.db" and len(calls) == 2:
+            raise KeyboardInterrupt  # the read cut off mid-count
+        return real(p)
+
+    monkeypatch.setattr(stores, "_shape", shape)
+    try:
+        stores.inventory({}, vendor_dir=tmp_path, cache_path=cache)
+    except KeyboardInterrupt:
+        pass
+    assert list(json.loads(cache.read_text(encoding="utf-8"))) == ["SPX-60s.db"]
+    out = stores.inventory({}, vendor_dir=tmp_path, cache_path=cache)
+    assert calls == ["SPX-60s.db", "flow.db", "flow.db"]
+    assert sorted(json.loads(cache.read_text(encoding="utf-8"))) == ["SPX-60s.db", "flow.db"]
+    assert {s["file"]: s for s in out["stores"]}["flow.db"]["tables"]["t"]["rows"] == 2
