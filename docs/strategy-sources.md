@@ -281,7 +281,7 @@ has never referenced.
 | File | What it holds |
 |---|---|
 | [`packages/flies/README.md`](../packages/flies/README.md) (222 lines) | "The idea in plain terms" and the two ways a credit is manufactured — start here. |
-| [`packages/flies/CLAUDE.md`](../packages/flies/CLAUDE.md) (683 lines) | The full statement: what the strategy actually is, the honesty rules, **"The arms"** (the canonical arm list), the layout. |
+| [`packages/flies/CLAUDE.md`](../packages/flies/CLAUDE.md) and [`docs/reference.md`](../packages/flies/docs/reference.md) | The full statement: what the strategy actually is and the honesty rules (CLAUDE.md); **"The arms"** (the canonical arm list) and the layout (reference.md). |
 | [`packages/flies/docs/faq.md`](../packages/flies/docs/faq.md) | The strategy explained question by question, including why only SPX/XSP (European, cash-settled) and never SPY or /ES-/MES futures options. |
 | [`packages/flies/docs/history.md`](../packages/flies/docs/history.md) (850 lines) | The verbatim dated record every rule came from — including the 2026-08-01 XSP→SPX switch (fees 41.4% drag vs 10.9%). |
 | [`packages/flies/docs/experiment-log.md`](../packages/flies/docs/experiment-log.md) | The append-only per-session record since 2026-07-20 — the evidence behind the standing conclusions. |

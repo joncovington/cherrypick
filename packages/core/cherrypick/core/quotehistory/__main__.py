@@ -24,7 +24,8 @@ from cherrypick.core import calendar as _cal
 from cherrypick.core import clock as _clock
 from cherrypick.core import quotehistory as _qh
 
-# The first session the gex recorder kept chain quotes for (flies CLAUDE.md, core.quotehistory).
+# The first session the gex recorder kept chain quotes for
+# (packages/flies/docs/reference.md, core.quotehistory).
 RECORDED_FROM = "2026-10-13"
 DEFAULT_GAP_SECONDS = 60.0
 
