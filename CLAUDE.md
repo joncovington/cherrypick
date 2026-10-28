@@ -6,10 +6,10 @@ detail. What each package may do (live or paper, credentials, what it writes) is
 changing a package you don't know. The text as it stood before the 2026-09-29 consolidation is in
 [docs/history/root-claude-md-2026-09-29.md](docs/history/root-claude-md-2026-09-29.md).
 
-Packages: orchestrator, meic, earnings, gex, streamer, flies, calendars, pmcc, curve, contango, bwb,
-overview, technicals, console, review, manage, advisor, backtest, desk. `cherrypick.core` is
-`packages/core`, an editable dependency of each. Users install with the root `install.*`; developers
-run `scripts/dev-install.ps1`/`.sh`.
+Packages: orchestrator, meic, earnings, gex, streamer, flies (retired 2026-10-19), calendars, pmcc,
+curve, contango, bwb, overview, technicals, console, review, manage, advisor, backtest, desk.
+`cherrypick.core` is `packages/core`, an editable dependency of each. Users install with the root
+`install.*`; developers run `scripts/dev-install.ps1`/`.sh`.
 
 ## Limits most tasks run into
 

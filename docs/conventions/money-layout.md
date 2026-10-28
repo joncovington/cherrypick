@@ -4,7 +4,7 @@ Moved from the root CLAUDE.md.
 
 Every surface that shows a trade — console table, review fact set, report, notification — states money
 the same way, so modules can be compared. Flies is the reference implementation;
-`packages/console/CLAUDE.md` holds the console specifics.
+`packages/console/docs/tables.md` holds the console specifics.
 
 - **"P&L" means net, always.** net = gross − fees − settlement (− slippage, where charged as a cost). A
   gross figure is labelled gross.

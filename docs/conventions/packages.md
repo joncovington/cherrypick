@@ -14,9 +14,10 @@ what it may write. The package's own CLAUDE.md holds the detail.
   renders.
 - **packages/streamer** — the **single** producer of the shared stream cache every module reads.
   Modules declare symbols via `state/stream_requests/`; nothing else may write that cache.
-- **packages/flies** — 0DTE net-credit butterflies. Paper by default, with a narrow, per-day-armed live
-  pilot (one arm, one symbol, a worst-case buying-power cap). Floors are measured after fees, and a
-  book-level floor always carries the price band over which it holds.
+- **packages/flies** — 0DTE net-credit butterflies. **Retired by the developer in the live config on
+  2026-10-19; may be reinstated at a later date** (`modules.flies.enabled`). Paper by default, with a
+  narrow, per-day-armed live pilot (one arm, one symbol, a worst-case buying-power cap). Floors are
+  measured after fees, and a book-level floor always carries the price band over which it holds.
 - **packages/calendars** — weekly SPY double calendars; **paper-only, credential-free**, a pure
   stream-cache consumer (chains via the streamer's `expirations` field). An exit-parameter experiment:
   `control` closes at Friday's bell, `path` holds to expiry recording a mark path, and a read-side
