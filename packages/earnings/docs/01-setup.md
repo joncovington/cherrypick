@@ -236,8 +236,8 @@ tastytrade connection — if a failure mentions either, check `tests/conftest.py
 ## Next Steps
 
 1. **Read** [Quick Reference](./02-quick-reference.md) for daily CLI workflows.
-2. **Read** `CLAUDE.md` in full — it's the authoritative operational spec (loop steps, tool
-   reference, config options, database schema).
+2. **Read** `CLAUDE.md` in full — it's the authoritative operational spec (loop steps, database
+   schema) — and [reference.md](./reference.md) for the tool reference and config options.
 3. **Study** [Strategy Guide](./05-strategies.md) for how each of the 7 strategies works.
 4. **Run** `/paper-start` daily for a few weeks before considering live trading.
 

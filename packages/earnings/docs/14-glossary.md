@@ -239,7 +239,7 @@ Dry-run validate (no `--live`, still performs a real margin check) or submit a l
 Per-strategy expectancy/win-rate/IV-crush text report. The charts are on the console's Earnings page
 (the HTML `strategy_dashboard` was retired on 2026-08-12).
 
-See `CLAUDE.md`'s Tool Reference for the complete command list.
+See `docs/reference.md`'s Tool Reference for the complete command list.
 
 ---
 

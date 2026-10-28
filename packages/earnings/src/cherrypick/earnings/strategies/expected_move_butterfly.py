@@ -25,7 +25,7 @@ into an asymmetric fly. EM is 0.85 x the front ATM straddle, the suite's convent
 `skew_abs`, so `scanner.compute_composite_score` returns None and `rank_strategies` never offers it
 as a symbol's best; the harness opens every accepted strategy regardless.
 
-Commands (see CLAUDE.md's Tool Reference):
+Commands (see docs/reference.md's Tool Reference):
   get_candidates --date MM/DD/YYYY
   get_order --symbol X --earnings_date YYYY-MM-DD --earnings_timing "..."
 """

@@ -8,7 +8,7 @@ key, not at the top level -- this is what keeps a second strategy's own
 thresholds (e.g. a calendar spread's own min_term_structure) from
 colliding with this one's.
 
-Commands (see CLAUDE.md's Tool Reference):
+Commands (see docs/reference.md's Tool Reference):
   get_candidates --date MM/DD/YYYY
   get_order --symbol X --earnings_date YYYY-MM-DD --earnings_timing "..."
 """

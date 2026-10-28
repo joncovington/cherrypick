@@ -10,7 +10,7 @@ for the first and currently only implementation), which import from this
 module rather than duplicating it.
 
 
-Commands (see CLAUDE.md's Tool Reference):
+Commands (see docs/reference.md's Tool Reference):
   get_calendar --date MM/DD/YYYY
   get_iv_rv --symbol X
   get_winrate --symbol X [--lookback_quarters N]
@@ -744,7 +744,7 @@ def end_tt_cache() -> None:
 
 def call_tt(args_list: list[str]) -> dict:
     """Shell out to tt.py, matching this project's documented CLI-tool
-    architecture (see CLAUDE.md's Tool Reference) rather than importing it,
+    architecture (see docs/reference.md's Tool Reference) rather than importing it,
     so this engine stays decoupled from tt.py's broker/credential setup.
     Raises RuntimeError on a non-zero exit (a real crash, not a normal
     {"ok": false} response, which tt.py returns for expected failures like
