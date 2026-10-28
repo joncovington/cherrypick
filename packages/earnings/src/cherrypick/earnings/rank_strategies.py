@@ -33,7 +33,7 @@ reserved name no real strategy uses) capturing both why the winning
 strategy beat its within-symbol runner-up and where the symbol landed
 relative to every other candidate symbol that day.
 
-Commands (see CLAUDE.md's Tool Reference):
+Commands (see docs/reference.md's Tool Reference):
   get_ranked_symbols --date MM/DD/YYYY
 """
 

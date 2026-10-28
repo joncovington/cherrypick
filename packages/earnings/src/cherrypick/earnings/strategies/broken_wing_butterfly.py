@@ -30,7 +30,7 @@ liquidity gates, generic exit-debit calc, debit-spread exit evaluation,
 ranking, CLI scaffolding) for everything else. Strategy-specific config
 lives under config.json's "strategies.broken_wing_butterfly" key.
 
-Commands (see CLAUDE.md's Tool Reference):
+Commands (see docs/reference.md's Tool Reference):
   get_candidates --date MM/DD/YYYY
   get_order --symbol X --earnings_date YYYY-MM-DD --earnings_timing "..."
 """

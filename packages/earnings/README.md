@@ -178,8 +178,8 @@ sees it.
   reports and config all live under `~/.cherrypick` (config at `~/.cherrypick/config/earnings.json`,
   else a legacy in-repo `config/config.json`, else the shipped `config/config.example.json`).
 
-Full operational detail — loop steps, config options, database schema — lives in `CLAUDE.md`,
-the authoritative spec this system runs against.
+Full operational detail — loop steps and database schema — lives in `CLAUDE.md`, the authoritative
+spec this system runs against; commands and config options are in [docs/reference.md](docs/reference.md).
 
 ---
 
@@ -228,8 +228,8 @@ pytest
 - [docs/05-strategies.md](./docs/05-strategies.md) — strategy-by-strategy structure and rules
 - [docs/screening-criteria.md](./docs/screening-criteria.md) — hard filters and the accept/reject screen (source
   of truth for what gates a candidate)
-- `CLAUDE.md` — the authoritative operational spec (loop steps, tool reference, config options,
-  database schema)
+- `CLAUDE.md` — the authoritative operational spec (loop steps, database schema); its tool
+  reference and config options are in [docs/reference.md](docs/reference.md)
 
 **Suite-level:** [cherrypick README](../../README.md) · [suite user guide](../../docs/PROJECT.md) ·
 [orchestrator](../orchestrator) · [meic module](../meic)
