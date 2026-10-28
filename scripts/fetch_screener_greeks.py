@@ -66,6 +66,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from cherrypick.core import legbars
+from cherrypick.core.broker import standard_chains
 
 LISTS = (
     ("short-puts", "shortPuts"),
@@ -266,8 +267,9 @@ async def collect(session, wanted: dict, limit: int | None, plans: dict | None =
                 break
             result[sym]["error"] = f"chain: {exc}"[:160]
             continue
-        chains = chains if isinstance(chains, list) else [chains]
-        chain = next((c for c in chains if c.root_symbol == _broker(sym)), chains[0] if chains else None)
+        # The name's standard chain (core.broker.standard_chains): not the root's spelling, which a
+        # share class does not share (BRK/B trades as BRKB), nor whichever chain came first.
+        chain = next(iter(standard_chains(chains, sym)), None)
         by_exp = {e.expiration_date.isoformat(): e for e in (chain.expirations if chain else [])}
         if sym in plans:
             pick = nearest_dte([(x, e.days_to_expiration) for x, e in by_exp.items()], CAND_DTE)
@@ -806,9 +808,9 @@ async def _chain_listings(
             cache[sym] = []
             continue
         exps = []
-        for chain in chains if isinstance(chains, list) else [chains]:
-            if chain.root_symbol != ub.to_tastytrade(sym):
-                continue  # a non-standard root (an adjusted deliverable) is not the name's chain
+        # The broker's standard chain, not the root's spelling: a share class trades under a root
+        # without its slash (BRK/B as BRKB), and an adjusted deliverable is a non-standard type.
+        for chain in standard_chains(chains, sym):
             for e in chain.expirations:
                 if lo <= e.days_to_expiration <= hi:
                     exps.append(

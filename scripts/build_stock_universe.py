@@ -84,6 +84,8 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from cherrypick.core.broker import standard_chains
+
 # scripts/_common.py, beside this file (a test loading this script by path has no scripts/ on sys.path).
 _HERE = str(Path(__file__).resolve().parent)
 if _HERE not in sys.path:
@@ -927,9 +929,9 @@ async def _measure(session, symbols: list[str], chain_cache: dict, limit_chains:
             continue
         fetched += 1
         exps = []
-        for chain in chains if isinstance(chains, list) else [chains]:
-            if chain.root_symbol != to_tastytrade(sym):
-                continue  # a non-standard root (an adjusted deliverable) is not the name's chain
+        # The broker's standard chain, not the root's spelling: a share class trades under a root
+        # without its slash (BRK/B as BRKB), and an adjusted deliverable is a non-standard type.
+        for chain in standard_chains(chains, sym):
             for e in chain.expirations:
                 if lo <= e.days_to_expiration <= hi:
                     exps.append(

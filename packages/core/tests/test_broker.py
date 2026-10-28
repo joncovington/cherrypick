@@ -122,6 +122,32 @@ def test_atm_window_defaults_to_median_strike():
     assert [broker.strike_of(o) for o in kept] == [100.0]
 
 
+def _chain(root, underlying, kind):
+    return SimpleNamespace(root_symbol=root, underlying_symbol=underlying, option_chain_type=kind)
+
+
+def test_a_share_class_keeps_its_standard_chain_under_a_root_without_the_slash():
+    """The broker's reply for BRK/B, probed 2026-10-27: root BRKB, type Standard, 100 shares. The old
+    root-equals-symbol test dropped it, so BRK.B never had a chain (or a liquidity verdict)."""
+    brkb = _chain("BRKB", "BRK/B", "Standard")
+    assert broker.standard_chains([brkb], "BRK.B") == [brkb]
+    assert broker.standard_chains(brkb, "BRK/B") == [brkb]  # a single reply, not a list
+
+
+def test_an_adjusted_deliverables_chain_is_left_out():
+    """LEN's reply, probed the same day: LEN (Standard) and LEN1 (type '1', an adjusted deliverable)."""
+    len_, len1 = _chain("LEN", "LEN", "Standard"), _chain("LEN1", "LEN", "1")
+    assert broker.standard_chains([len1, len_], "LEN") == [len_]
+    assert broker.standard_chains([_chain("XYZ", "OTHER", "Standard")], "XYZ") == []
+
+
+def test_a_reply_without_a_chain_type_falls_back_to_the_root():
+    old = SimpleNamespace(root_symbol="AAPL")
+    assert broker.standard_chains([old], "AAPL") == [old]
+    assert broker.standard_chains([SimpleNamespace(root_symbol="AAPL1")], "AAPL") == []
+    assert broker.standard_chains([None], "AAPL") == []
+
+
 def test_atm_window_empty_options_passthrough():
     assert broker.atm_window([], strike_count=5) == []
 

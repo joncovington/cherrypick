@@ -120,6 +120,32 @@ def atm_window(options: list, strike_count: int, around_price: float | None = No
     return [o for o in options if strike_of(o) in keep]
 
 
+STANDARD_CHAIN = "Standard"
+
+
+def standard_chains(chains: Any, symbol: str) -> list:
+    """The name's standard option chains among a `NestedOptionChain.get` reply: the broker's own
+    `option_chain_type` "Standard" on the name's underlying, so an adjusted deliverable's chain
+    (LEN1 beside LEN, type "1") is left out.
+
+    Judged by the type, not the root symbol (2026-10-27): a share class's options trade under a
+    root without the slash -- BRK/B's are `BRKB`, BF/B's `BFB`, both "Standard" with 100 shares --
+    so the old `root_symbol == symbol` test threw away every share class's chain. `symbol` is
+    either spelling (BRK.B or BRK/B). A reply with no type falls back to that root test."""
+    want = symbol.replace(".", "/")
+    out = []
+    for c in chains if isinstance(chains, list) else [chains]:
+        if c is None:
+            continue
+        kind = getattr(c, "option_chain_type", None)
+        if kind is None:
+            if getattr(c, "root_symbol", None) == want:
+                out.append(c)
+        elif kind == STANDARD_CHAIN and getattr(c, "underlying_symbol", want) == want:
+            out.append(c)
+    return out
+
+
 # --------------------------------------------------------------------------- order construction
 # Order-action spec string -> tastytrade OrderAction enum name. Byte-for-byte identical in both repos.
 ACTION_MAP = {
