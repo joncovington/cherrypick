@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { feeDragPct, sumIfAllRecorded, tradingFees } from "@console/shared";
 
 /**
- * The one fee-drag definition (root CLAUDE.md): trading fees -- never settlement -- over the premium
+ * The one fee-drag definition (docs/conventions/money-layout.md): trading fees -- never settlement -- over the premium
  * collected. Before it was shared, flies divided the fee total by gross P&L and MEIC divided fees
  * with settlement folded in by the credit, while the costs page had it right; three surfaces, three
  * numbers under one name.

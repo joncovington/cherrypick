@@ -85,7 +85,7 @@ def column_set(conn: sqlite3.Connection, table: str) -> set[str]:
         return set()
 
 
-# Every spelling a variant's column has had, canonical first (root CLAUDE.md, "The suite's
+# Every spelling a variant's column has had, canonical first (docs/conventions/working-rules.md, "The suite's
 # vocabulary"). A ledger's column moves to `arm` in a window of its own, so a reader outside the
 # module cannot know which side of that window the file it opened is on.
 ARM_COLUMNS: tuple[str, ...] = ("arm", "risk_profile", "book", "profile")

@@ -7,7 +7,7 @@ import type { ConsoleConfig } from "../src/config.js";
 import { readMeic, readMeicAnalytics, NO_SCOPE, NO_TRADE_QUERY, meicExitKind } from "../src/readers/meic.js";
 
 /**
- * The trade table standard (root CLAUDE.md) on MEIC's positions and history.
+ * The trade table standard (docs/conventions/money-layout.md) on MEIC's positions and history.
  *
  * MEIC's `pnl` is GROSS and `fees` the total, with `settlement_fees` a component of it (2026-09-25).
  * A row must add up left to right -- entry + exit = gross, gross − fees − settlement = net -- which

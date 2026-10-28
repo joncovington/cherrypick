@@ -7,7 +7,7 @@ import type { ConsoleConfig } from "../src/config.js";
 import { readEarningsLive } from "../src/readers/earningsLive.js";
 
 /**
- * The earnings live card's open positions in the money layout (root CLAUDE.md): one per-share figure
+ * The earnings live card's open positions in the money layout (docs/conventions/money-layout.md): one per-share figure
  * per side, the rest whole-position dollars. The ledger stores `entry_credit` and a mark's
  * `exit_debit` as POSITION totals per share (strat_test_harness: per-contract x quantity), so a
  * multi-contract row passed straight through states the total under "per share". The schema is

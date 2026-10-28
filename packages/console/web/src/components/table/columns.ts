@@ -6,7 +6,7 @@ import { getPref, usePrefsVersion, writePref } from "../../lib/prefs";
  * come from this list rather than from hand-written `<th>`/`<td>` rows, so every history table
  * gets the same controls and a column's definition travels with it.
  *
- * Two kinds, and the difference is the trade table standard (root CLAUDE.md), not taste:
+ * Two kinds, and the difference is the trade table standard (docs/conventions/money-layout.md), not taste:
  *
  * - `describe` columns -- dates, strikes, arm, exit reason -- say which trade a row is. Any of
  *   them can be hidden and they can be put in any order.

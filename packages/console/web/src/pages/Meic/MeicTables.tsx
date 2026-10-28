@@ -9,7 +9,7 @@ import { useUrlDateRange } from "../../components/table/DateRange";
 import type { ColumnDef } from "../../components/table/columns";
 
 /**
- * MEIC's two trade tables in the suite's standard layout (root CLAUDE.md, "Trade histories and
+ * MEIC's two trade tables in the suite's standard layout (docs/conventions/money-layout.md, "Trade histories and
  * reports"): `positions` is every iron condor the session held, entry side only; `history` is the
  * closed ones, with entry and exit as signed cash, how it ended, gross, fees, settlement, slippage
  * and net. Both are pages of one server query (`view`), so a row cannot mean two things.

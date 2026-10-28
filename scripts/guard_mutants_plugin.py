@@ -1,10 +1,10 @@
 """The guard mutants, and the pytest plugin that applies one -- in memory, never on disk.
 
-A guard is only worth its failures ("A guard has to be shown to fail", the root CLAUDE.md). Each
-entry below breaks one guard the way a regression would, and names the test that must then FAIL.
-`scripts/guard_mutants.py` runs those tests once clean (they must pass) and once per mutant (they
-must not). The source is never edited: the plugin patches a module attribute when pytest starts,
-inside that one test process, so a mutant cannot leak into the checkout or another run.
+A guard is only worth its failures ("A guard has to be shown to fail", docs/conventions/working-rules.md).
+Each entry below breaks one guard the way a regression would, and names the test that must then FAIL.
+`scripts/guard_mutants.py` runs those tests once clean (they must pass) and once per mutant (they must not).
+The source is never edited: the plugin patches a module attribute when pytest starts, inside that one test
+process, so a mutant cannot leak into the checkout or another run.
 
 Loaded with `-p guard_mutants_plugin` and the mutant's id in CHERRYPICK_GUARD_MUTANT. Without that
 variable it does nothing.

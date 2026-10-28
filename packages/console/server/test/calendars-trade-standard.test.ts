@@ -7,7 +7,7 @@ import type { ConsoleConfig } from "../src/config.js";
 import { readCalendarsWeeks } from "../src/readers/calendars.js";
 
 /**
- * The trade table standard (root CLAUDE.md) on calendars' weeks: every position of a week and arm
+ * The trade table standard (docs/conventions/money-layout.md) on calendars' weeks: every position of a week and arm
  * through the shared `positionCash`, summed, against calendars' own schema
  * (`fixtures/calendars-ledger-schema.sql`, pinned by its test_console_schema_fixture.py).
  *

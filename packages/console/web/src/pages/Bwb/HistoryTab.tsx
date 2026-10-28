@@ -11,7 +11,7 @@ import { fmtStrike } from "../../lib/optionFormat";
 import { fmtCash, fmtPrice } from "../../lib/format";
 
 /**
- * Completed positions in the suite's standard trade layout (root CLAUDE.md): entry and exit as
+ * Completed positions in the suite's standard trade layout (docs/conventions/money-layout.md): entry and exit as
  * signed whole-position cash, how each ended, gross, then every cost, then net.
  *
  * bwb prices fills at mid and CHARGES slippage as a cost, so `slip` is subtracted here -- the other

@@ -4,7 +4,7 @@ import type { ColumnDef } from "./table/columns";
 import { fmtCash, fmtMoney, fmtPrice } from "../lib/format";
 
 /**
- * The trade table standard's columns (root CLAUDE.md, "Trade histories and reports"), for the
+ * The trade table standard's columns (docs/conventions/money-layout.md), for the
  * modules whose readers hand back a `TradeMoney` row: calendars, pmcc and curve. Declared once, so
  * the headers and their definitions are stated in one place, in the same order, with the same
  * titles -- and as `ColumnDef`s, so the history tables' columns menu can hide and reorder them.

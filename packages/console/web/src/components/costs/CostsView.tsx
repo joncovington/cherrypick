@@ -8,7 +8,7 @@ import { fmtMoney } from "../../lib/format";
  * A module's costs page body (curve 2026-10-05, pmcc 2026-10-06): where the premium went, and how
  * often the gates let an entry through.
  *
- * Fee drag is trading fees ÷ premium collected (root CLAUDE.md), named that way; "all costs ÷
+ * Fee drag is trading fees ÷ premium collected (docs/conventions/money-layout.md), named that way; "all costs ÷
  * premium" adds settlement and slippage beside it, never inside it. Entry outcomes are counted per
  * SESSION (`readers/armCosts.ts`), so a gate that refused every tick is one session.
  */

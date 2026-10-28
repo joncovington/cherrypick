@@ -7,7 +7,7 @@ import type { ConsoleConfig } from "../src/config.js";
 import { readPmccHistory } from "../src/readers/pmcc.js";
 
 /**
- * The trade table standard (root CLAUDE.md) on pmcc's completed cycles, against pmcc's own schema
+ * The trade table standard (docs/conventions/money-layout.md) on pmcc's completed cycles, against pmcc's own schema
  * (`fixtures/pmcc-ledger-schema.sql`, generated from its `db.connect` and pinned by its
  * test_console_schema_fixture.py).
  *

@@ -29,7 +29,7 @@ export interface MeicTradeRow {
   netCredit: number | null;
   quantity: number | null;
   status: string;
-  /** The trade table standard (root CLAUDE.md): whole-position dollars, signed cash flow.
+  /** The trade table standard (docs/conventions/money-layout.md): whole-position dollars, signed cash flow.
    *  entry + exit = gross; gross − fees − settlement = net. Slippage sits inside the fill prices,
    *  so it is a measure beside gross and never subtracted. */
   entryCash: number | null;
@@ -203,7 +203,7 @@ export interface EarningsTradeRow {
   /** Net entry price per share, signed: credit +, debit −. */
   entryCredit: number | null;
   quantity: number | null;
-  /** The trade table standard (root CLAUDE.md): whole-position dollars, signed cash flow.
+  /** The trade table standard (docs/conventions/money-layout.md): whole-position dollars, signed cash flow.
    *  entry + exit = gross; gross − fees − settlement − slippage = net. earnings prices fills at mid
    *  and CHARGES slippage as a cost (inside entry_cost/exit_cost), so it is subtracted here. */
   entryCash: number | null;
@@ -261,7 +261,7 @@ export interface EarningsIntegrity extends ModuleIntegrity {
    * page's sharpest way to mislead, so the mix is stated rather than left to the per-row badges.
    *
    * `books` here is the RESERVED sense -- the paper-vs-live ledger designation, not a variant.
-   * It keeps the word on purpose; see the vocabulary table in the root CLAUDE.md.
+   * It keeps the word on purpose; see the vocabulary table in docs/conventions/working-rules.md.
    */
   books: { live: number; paper: number };
   /** `old -> new` per break: this schema records what actually changed, not just that it did. */
@@ -1481,7 +1481,7 @@ export interface BwbCycleRow {
   addonLongStrike: number | null;
   addonCredit: number | null;
   quantity: number | null;
-  /** The trade table standard (root CLAUDE.md): whole-position dollars, signed cash flow.
+  /** The trade table standard (docs/conventions/money-layout.md): whole-position dollars, signed cash flow.
    *  entry + add-on + exit = gross; gross − fees − settlement − slippage = net. bwb prices fills at
    *  mid and CHARGES slippage as a cost, so here it is subtracted -- except on a broker-reconciled
    *  row, whose real fills already carry it (`slippage` null there). */
@@ -1499,7 +1499,7 @@ export interface BwbCycleRow {
 }
 
 /**
- * The trade table standard's money columns (root CLAUDE.md, "Trade histories and reports"), shared
+ * The trade table standard's money columns (docs/conventions/money-layout.md), shared
  * by the position modules whose ledgers keep one accounting (calendars, pmcc, curve): whole-position
  * dollars, signed cash flow, entry + exit = gross, gross − fees − settlement − slippage = net.
  */

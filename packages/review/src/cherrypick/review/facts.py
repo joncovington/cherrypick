@@ -44,10 +44,10 @@ from cherrypick.review import paths as _paths
 # 6 (2026-08-26): each module's facts gained `concentration` — how much of the net rests on one arm.
 # Additive; nothing gates on this number, it is displayed so a reader can tell which shape they have.
 # 7 (2026-09-01): + health.entries per module, flies health.completions.
-# 8 (2026-09-23): `by_profile` -> `by_arm`, and `concentration`'s rows and `largest` with it. One
-# word for a variant across the suite (root CLAUDE.md). A RENAME, not an addition, which is the
-# whole reason it takes a version: the 22 sets already on disk say `by_profile` and are never
-# rewritten, so every reader takes both spellings and will keep doing so.
+# 8 (2026-09-23): `by_profile` -> `by_arm`, and `concentration`'s rows and `largest` with it. One word for a
+# variant across the suite (docs/conventions/working-rules.md). A RENAME, not an addition, which is the whole
+# reason it takes a version: the 22 sets already on disk say `by_profile` and are never rewritten, so every
+# reader takes both spellings and will keep doing so.
 # 9 (2026-10-06): pmcc's `expected` reads the held-long shorts (`basis`
 # `held_long_short_extrinsic_sold_vs_captured`, counted in `shorts_closed`) once control retired.
 # Additive: a session with no held-long short closed still carries control's basis.
@@ -736,12 +736,12 @@ def _known_sum(records: list[dict], key: str) -> tuple[float | None, int]:
 
 
 def _cost_parts(records: list[dict]) -> dict:
-    """`cost` split the way the suite's money layout states it (root CLAUDE.md), from the parts each
-    `core.ledgers` record carries: trading `fees`; `settlement` (exercise / assignment / delivery),
-    None when no record in the group recorded it -- the charge, if any, then sits inside `fees`,
-    never as a zero -- with the unrecorded count beside it; and `slippage` with the basis it is on.
-    `in_gross` slippage (meic, flies) is already inside gross and is a measure, never subtracted;
-    `cost` slippage (fills at mid) is a charge, so gross - fees - settlement - slippage = net."""
+    """`cost` split the way the suite's money layout states it (docs/conventions/money-layout.md), from the
+    parts each `core.ledgers` record carries: trading `fees`; `settlement` (exercise / assignment / delivery),
+    None when no record in the group recorded it -- the charge, if any, then sits inside `fees`, never as a
+    zero -- with the unrecorded count beside it; and `slippage` with the basis it is on. `in_gross` slippage
+    (meic, flies) is already inside gross and is a measure, never subtracted; `cost` slippage (fills at mid)
+    is a charge, so gross - fees - settlement - slippage = net."""
     settlement, settlement_unrecorded = _known_sum(records, "settlement")
     slippage, slippage_unrecorded = _known_sum(records, "slippage")
     bases = {r.get("slippage_basis") for r in records if r.get("slippage_basis")}

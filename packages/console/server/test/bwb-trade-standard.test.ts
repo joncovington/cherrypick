@@ -7,7 +7,7 @@ import type { ConsoleConfig } from "../src/config.js";
 import { readBwbHistory, bwbExitKind } from "../src/readers/bwb.js";
 
 /**
- * The trade table standard (root CLAUDE.md) on bwb's completed positions.
+ * The trade table standard (docs/conventions/money-layout.md) on bwb's completed positions.
  *
  * bwb is the other slippage model from flies and meic: fills at mid, slippage CHARGED as a cost and
  * folded into the `fees` total with the entry fee, the add-on fee and settlement. A row must still

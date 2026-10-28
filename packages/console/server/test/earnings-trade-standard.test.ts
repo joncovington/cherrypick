@@ -11,7 +11,7 @@ import { readEarnings, readEarningsAnalytics, earningsExitKind } from "../src/re
 setVerdictCaller(() => ({ ok: false, verdict: null, error: "stubbed" }));
 
 /**
- * The trade table standard (root CLAUDE.md) on earnings' closed trades.
+ * The trade table standard (docs/conventions/money-layout.md) on earnings' closed trades.
  *
  * earnings keeps costs out of `pnl` (gross) and in entry_cost + exit_cost, which carry the slippage
  * charge and, on exit_cost, any settlement fee (`settlement_fees`, 2026-09-25). A row must add up --

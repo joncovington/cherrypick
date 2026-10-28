@@ -110,7 +110,7 @@ export function entryOutcomes(db: DatabaseHandle, table: string, since: string |
 /**
  * Per-arm money for a module whose modelled fill already CONCEDES slippage (flies, meic): gross is
  * after the concession, `fees` in the ledger is the total of trading fees and settlement, and
- * slippage is a recorded measure -- shown, never subtracted again (root CLAUDE.md). So here
+ * slippage is a recorded measure -- shown, never subtracted again (docs/conventions/money-layout.md). So here
  * gross - fees - settlement = net, and `slippage` stands beside the row, not in it.
  * `rows`: `arm`, `gross`, `fees_total`, `settlement_fees`, `slippage_dollars`, `premium`.
  */

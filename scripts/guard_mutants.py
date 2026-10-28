@@ -1,6 +1,6 @@
 """Show that the suite's guards can still fail.
 
-"A guard has to be shown to fail" (the root CLAUDE.md): a green check that cannot fire reads as
+"A guard has to be shown to fail" (docs/conventions/working-rules.md): a green check that cannot fire reads as
 coverage and is worse than none. This runs each guard's test twice -- clean, where it must pass,
 and under its mutant (`guard_mutants_plugin.MUTANTS`), where it must fail on an assertion. A
 mutant whose tests still pass SURVIVED: the guard no longer catches the regression it was written

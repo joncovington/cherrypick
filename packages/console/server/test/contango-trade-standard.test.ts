@@ -7,7 +7,7 @@ import type { ConsoleConfig } from "../src/config.js";
 import { readContango, readContangoHistory } from "../src/readers/contango.js";
 
 /**
- * The trade table standard (root CLAUDE.md) on contango's closed stints, against contango's own
+ * The trade table standard (docs/conventions/money-layout.md) on contango's closed stints, against contango's own
  * schema (`fixtures/contango-ledger-schema.sql`, generated from its `db.connect` and pinned by its
  * test_console_schema_fixture.py).
  *

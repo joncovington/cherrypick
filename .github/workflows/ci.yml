@@ -137,7 +137,7 @@ jobs:
         if: env.RUN == 'true'
         run: pytest
 
-  # Every guard shown to fail (the root CLAUDE.md's rule, run rather than remembered): each guard's
+  # Every guard shown to fail (docs/conventions/working-rules.md's rule, run rather than remembered): each guard's
   # test runs clean, where it must pass, and under a mutant that breaks the guard in memory, where it
   # must fail on an assertion. A guard can only stop failing when code changes, so this runs whenever
   # a package that carries a mutant changes (and on every push to main); the pre-bell `guard-mutants`
