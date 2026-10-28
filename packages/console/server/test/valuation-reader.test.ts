@@ -42,6 +42,12 @@ const VALUED = {
   ebit_margin: 0.104,
   terminal_share: 0.71,
   implied_ev_ebitda: 18.4,
+  implied_margin: 0.142,
+  implied_growth: 0.2,
+  implied_growth_edge: null,
+  best_margin: 0.112,
+  best_growth: 0.13,
+  reach: "beyond history",
   consensus_used: true,
   flags: ["beta_disagrees"],
 };
@@ -102,6 +108,12 @@ describe("readValuation", () => {
       growthY1: 0.11,
       terminalShare: 0.71,
       impliedEvEbitda: 18.4,
+      impliedMargin: 0.142,
+      impliedGrowth: 0.2,
+      impliedGrowthEdge: null,
+      bestMargin: 0.112,
+      bestGrowth: 0.13,
+      reach: "beyond history",
       consensusUsed: true,
       flags: ["beta_disagrees"],
     });
@@ -113,6 +125,15 @@ describe("readValuation", () => {
     write("2026-10-27.json", doc("2026-10-27", { AMZN: VALUED }));
     expect(readValuation(config, "2026-10-26").rows[0].symbol).toBe("OLD");
     expect(readValuation(config, "2026-01-01").day).toBe("2026-10-27");
+  });
+
+  it("reads a file built before the reverse DCF, or a word it never writes, as null", () => {
+    const old: Record<string, unknown> = { ...VALUED };
+    for (const k of ["implied_margin", "implied_growth", "implied_growth_edge", "best_margin", "best_growth", "reach"]) delete old[k];
+    write("2026-10-27.json", doc("2026-10-27", { AMZN: old, ODD: { ...VALUED, symbol: "ODD", reach: "maybe" } }));
+    const rows = readValuation(config, null).rows;
+    expect(rows[0]).toMatchObject({ impliedMargin: null, impliedGrowth: null, impliedGrowthEdge: null, bestMargin: null, reach: null });
+    expect(rows[1].reach).toBeNull();
   });
 
   it("badges nothing when pmcc has no config", () => {

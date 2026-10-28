@@ -49,6 +49,21 @@ export interface ValuationRow {
   /** The discounted terminal value's share of EV: above 0.75 the answer is the perpetuity. */
   terminalShare: number | null;
   impliedEvEbitda: number | null;
+  /** The reverse DCF (core.valuation.implied): the long-run operating margin, and separately the
+   *  year-one revenue growth (faded to the terminal rate by year five), at which the base case
+   *  equals the price, every other driver held. Null margin: none under 100% of revenue reaches it. */
+  impliedMargin: number | null;
+  impliedGrowth: number | null;
+  /** "above" or "below" when the growth the price needs sits outside the search band; the
+   *  growth is then that edge. */
+  impliedGrowthEdge: "above" | "below" | null;
+  /** The company's best operating margin and best year-over-year revenue growth of the last
+   *  five fiscal years. */
+  bestMargin: number | null;
+  bestGrowth: number | null;
+  /** The builder's read: "below value" (the price asks nothing new), "within history" (either
+   *  lever alone gets there without beating the company's best), "beyond history". */
+  reach: "below value" | "within history" | "beyond history" | null;
   consensusUsed: boolean;
   flags: string[];
   /** One of pmcc's configured symbols (its own config, read by the console). */

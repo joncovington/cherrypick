@@ -16,6 +16,12 @@ store and writes `valuation/<session>.json`. For every liquid optionable name on
 - **consensus growth** is the "Next Year" sales consensus against its year-ago figure at the newest
   weekly estimate snapshot on or before the session (`fundamentals.growth`), when the store has one.
 
+Each valued row also carries the reverse DCF (`core.valuation.implied`, 2026-10-28): the margin and,
+separately, the year-one growth at which the base case equals the price, beside the company's own
+best margin and revenue growth of the last five fiscal years, and `reach` in words (`below value`,
+`within history`, `beyond history`). It reads what the price asks of the company; like the value, it
+is a description, never a selector.
+
 The broker's beta and market cap (`market-report/iv/tastytrade.json`, the newest day at or before the
 session) ride along as a cross-check: `beta_disagrees` when the two betas differ by more than
 `BETA_DISAGREE`, `shares_stale` when spot times Dolt's shares is more than `SHARES_STALE` off the
@@ -203,6 +209,12 @@ def value_one(
         "terminal_share": None,
         "implied_ev_ebitda": None,
         "consensus_used": False,
+        "implied_margin": None,
+        "implied_growth": None,
+        "implied_growth_edge": None,
+        "best_margin": None,
+        "best_growth": None,
+        "reach": None,
         "flags": [],
     }
     if kind is not None and kind != "Stock":
@@ -257,7 +269,32 @@ def value_one(
         implied_ev_ebitda=None if out.implied_ev_ebitda is None else round(out.implied_ev_ebitda, 2),
         flags=_flags(out, broker, market_cap) + (["split_adjusted"] if split else []),
     )
+    imp = _val.implied(years, out, spot[1])
+    if imp is not None:
+        row.update(
+            implied_margin=None if imp.margin is None else round(imp.margin, 4),
+            implied_growth=round(imp.growth, 4),
+            implied_growth_edge=imp.growth_edge,
+            best_margin=round(imp.best_margin, 4),
+            best_growth=None if imp.best_growth is None else round(imp.best_growth, 4),
+            reach=reach(spot[1], out.fair_value, imp),
+        )
     return row
+
+
+def reach(price: float, fair: float, imp: _val.Implied) -> str:
+    """How far the price sits from the company's own record, one lever at a time:
+
+    - `below value`: the price is at or under the base case, so it asks for nothing new;
+    - `within history`: the margin or the growth the price needs is no more than the company's best
+      of the last five fiscal years (either lever alone gets there);
+    - `beyond history`: neither lever alone gets there without beating the company's own best.
+    """
+    if price <= fair:
+        return "below value"
+    margin_ok = imp.margin is not None and imp.margin <= imp.best_margin
+    growth_ok = imp.growth_edge is None and imp.best_growth is not None and imp.growth <= imp.best_growth
+    return "within history" if margin_ok or growth_ok else "beyond history"
 
 
 # ----------------------------------------------------------------------------------------- the build
@@ -290,6 +327,12 @@ def rule(rf: float = _val.incomerules.RATE, rf_source: str = "incomerules.RATE")
         "min_spread": _val.MIN_SPREAD,
         "terminal_heavy": _val.TERMINAL_HEAVY,
         "grid": {"wacc": _val.WACC_STEPS, "growth": _val.GROWTH_STEPS},
+        "reverse": (
+            "the long-run EBIT margin, and separately the year-one growth faded to the terminal rate, at "
+            "which the base case equals the price, every other driver and the WACC held; beside the "
+            "company's best margin and best year-over-year revenue growth of the last five fiscal years"
+        ),
+        "implied_growth_bounds": _val.IMPLIED_GROWTH_BOUNDS,
         "not_dcf_sectors": NOT_DCF_SECTORS,
         "publication_lag_days": fundamentals.PUBLICATION_LAG,
         "edge": "none measured; a model estimate of value, never a ranking",

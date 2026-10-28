@@ -32,6 +32,12 @@ function row(over: Partial<ValuationRow>): ValuationRow {
     ebitMargin: 0.15,
     terminalShare: 0.68,
     impliedEvEbitda: 12.3,
+    impliedMargin: null,
+    impliedGrowth: null,
+    impliedGrowthEdge: null,
+    bestMargin: null,
+    bestGrowth: null,
+    reach: null,
     consensusUsed: true,
     flags: [],
     pmcc: false,
@@ -111,6 +117,21 @@ describe("the fair-value tab", () => {
     const html = render();
     expect(html).toContain("terminal heavy");
     expect(html).toContain("1.90");
+  });
+
+  it("shows what the price needs beside the company's best, and the builder's reach in words", () => {
+    payload = base([
+      row({ symbol: "AAA", impliedMargin: 0.407, bestMargin: 0.112, impliedGrowth: 2, impliedGrowthEdge: "above", bestGrowth: 0.124, reach: "beyond history" }),
+      row({ symbol: "BBB", impliedMargin: 0.12, bestMargin: 0.15, impliedGrowth: 0.05, bestGrowth: 0.08, reach: "within history" }),
+    ]);
+    const html = render();
+    expect(html).toContain("Needs margin");
+    expect(html).toContain("40.7%");
+    expect(html).toContain("best 11.2%");
+    expect(html).toContain("over +200.0%");
+    expect(html).toContain("beyond history");
+    expect(html).toContain("within history");
+    expect(html).toContain("the price assumes a better business than the record shows");
   });
 
   it("says when nothing has been built", () => {

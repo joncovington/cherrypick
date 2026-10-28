@@ -198,6 +198,59 @@ def test_the_cost_of_debt_floors_without_debt_and_clamps_an_artefact():
     assert v.wacc(0.09, 0.0375, 0.0, 0.0) == 0.09
 
 
+def _reprice(years, out, margin=None, growth=None):
+    """The model's value with one lever moved, everything else as the base case."""
+    d = out.drivers
+    if margin is not None:
+        d = v._replace_margin(d, margin)
+    if growth is not None:
+        d = v._replace_growth(d, v.fade(growth, d.terminal_growth))
+    return v._ps(max(years, key=lambda y: y.end), d, out.wacc)
+
+
+def test_the_reverse_dcf_at_the_fair_value_returns_the_base_case():
+    out = v.value(FLAT, market_cap=800.0, beta_raw=1.0, consensus_growth=0.05)
+    imp = v.implied(FLAT, out, out.fair_value)
+    assert imp.margin == pytest.approx(out.drivers.ebit_margin)
+    assert imp.growth == pytest.approx(out.drivers.growth[0], abs=1e-9)
+    assert imp.growth_edge is None
+
+
+def test_the_implied_margin_and_growth_each_reprice_the_model_to_the_price():
+    out = v.value(FLAT, market_cap=800.0, beta_raw=1.0)
+    price = out.fair_value * 1.8
+    imp = v.implied(FLAT, out, price)
+    assert imp.margin > out.drivers.ebit_margin and imp.growth > out.drivers.growth[0]
+    assert _reprice(FLAT, out, margin=imp.margin) == pytest.approx(price, abs=0.005)
+    assert _reprice(FLAT, out, growth=imp.growth) == pytest.approx(price, abs=0.005)
+    cheap = v.implied(FLAT, out, out.fair_value * 0.5)
+    assert cheap.margin < out.drivers.ebit_margin and cheap.growth < out.drivers.growth[0]
+
+
+def test_a_price_no_plausible_path_reaches_says_so():
+    out = v.value(FLAT, market_cap=800.0, beta_raw=1.0)
+    imp = v.implied(FLAT, out, out.fair_value * 1000)
+    assert imp.growth_edge == "above" and imp.growth == v.IMPLIED_GROWTH_BOUNDS[1]
+    assert imp.margin is None  # a margin over 100% of revenue is not a business
+    low = v.implied(FLAT, out, 0.01)
+    assert low.growth_edge == "below"
+    assert v.implied(FLAT, out, 0.0) is None
+
+
+def test_the_best_figures_are_the_window_highs():
+    years = [
+        _year("2021-12-31", revenue=500.0, ebit=150.0),
+        _year("2022-12-31", revenue=600.0, ebit=60.0),
+        _year("2023-12-31", revenue=900.0, ebit=90.0),
+        _year("2024-12-31", revenue=900.0, ebit=90.0),
+        _year("2025-12-31", revenue=1000.0, ebit=100.0),
+    ]
+    margin, growth = v.best_figures(years)
+    assert margin == pytest.approx(0.30)
+    assert growth == pytest.approx(0.50)
+    assert v.best_figures(years[:1])[1] is None
+
+
 def test_effective_tax_defaults_when_nothing_reads():
     assert v.effective_tax([_year(y.end, pretax=None, taxes=None) for y in FLAT]) == v.DEFAULT_TAX
     assert v.effective_tax([_year(y.end, pretax=100.0, taxes=0.0) for y in FLAT]) == v.TAX_BOUNDS[0]
