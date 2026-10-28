@@ -30,6 +30,7 @@
  * must check the file exists.
  */
 
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { consoleUrl } from "@console/shared/paths";
@@ -37,6 +38,22 @@ import { consoleUrl } from "@console/shared/paths";
 const SKIP = 0;
 const FAIL_EXPECT = 1;
 const FAIL_UNREACHABLE = 2;
+/** How long a browser gets to exit after `close()` before it is killed. */
+const CLOSE_GRACE_MS = 10_000;
+
+/** Ends a browser and its children. On Windows a plain `kill()` leaves Chrome running. */
+function killTree(pid) {
+  if (pid === undefined) return;
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+  } else {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // already gone
+    }
+  }
+}
 
 /** Where a system browser lives, per platform. `CHROME_PATH` wins so an unusual install still works. */
 const CANDIDATES = {
@@ -304,7 +321,14 @@ async function main() {
     console.log(`ui-check: ${url} OK`);
     return SKIP;
   } finally {
-    await browser.close();
+    // Every output is written by now. Chrome 156 on Windows can take minutes to exit after a
+    // clean close, long enough for the post's 150 s limit to discard a capture that had already
+    // succeeded, so the close gets a bound and the process is killed after it.
+    const closed = await Promise.race([
+      browser.close().then(() => true, () => false),
+      new Promise((r) => setTimeout(() => r(false), CLOSE_GRACE_MS)),
+    ]);
+    if (!closed) killTree(browser.process()?.pid);
   }
 }
 
