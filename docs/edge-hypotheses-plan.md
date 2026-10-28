@@ -1476,6 +1476,18 @@ it is run.*
   - **A pass:** a proposal to revive flies in paper with the passing arm, with the robustness report.
   - **A fail or no verdict:** legged 0DTE flies stay retired; entry price and the range gate are
     closed as levers.
+- **Result (2026-10-27): fail, all six arms; legged flies stay retired.** In the design window no
+  arm passes any check: every mean net is negative, in both time-halves and at 1.5× fees, and the
+  `control` and `range-high` references lose as heavily. Resting at mid or mid + 0.05 does worse
+  than the arm's base, significantly at mid: the orders that fill are the ones spot is moving away
+  from completion, the adverse selection the rule was built to carry. Only the 0.10 offsets edge
+  ahead of their bases, by far less than significance. Entry price and the range gate are closed as
+  levers. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item21/study-design-2022-05-16-2025-06-30.json`).
+- **Holdout, run straight after as declared; exploratory, not a verdict.** After a design fail it
+  cannot overturn the fail. With the rules unchanged, all six arms fail every check there too, in
+  the same order: mid worst, 0.10 level with its base. The holdout is now spent for this
+  specification. Local result: `.../item21/study-holdout-2025-07-01-2026-10-12.json`.
 
 ## Not worth revisiting
 

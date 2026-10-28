@@ -554,7 +554,7 @@
       "id": 21,
       "study": "item21",
       "title": "Legged SPX flies with a resting entry limit, with and without the range-high refusal",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "entry-limit",
       "side": "neutral",
