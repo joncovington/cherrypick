@@ -57,7 +57,6 @@ from types import SimpleNamespace
 from cherrypick.core import calendar as cal
 from cherrypick.core import legbars
 from cherrypick.core import stats as core_stats
-from cherrypick.technicals import skate
 
 _spec = importlib.util.spec_from_file_location("pcr", Path(__file__).with_name("premium_cycle_replay.py"))
 pcr = importlib.util.module_from_spec(_spec)
@@ -113,8 +112,11 @@ def fridays(a: date, b: date) -> list[date]:
 
 
 def is_monthly(d: date) -> bool:
-    """The standard monthly: the third Friday, or the trading day before it when that is a holiday."""
-    return d == skate.monthly_expiry(d.year, d.month)
+    """The standard monthly: the third Friday, or the trading day before it when that is a holiday
+    (`technicals.skate.monthly_expiry`'s rule; that package is not imported at load, so the tests run
+    with core alone)."""
+    third = pcr.third_friday(d.year, d.month)
+    return d == (third if cal.is_trading_day(third) else cal.previous_trading_day(third))
 
 
 def in_range(arm: str, day: date, exp: date) -> bool:
