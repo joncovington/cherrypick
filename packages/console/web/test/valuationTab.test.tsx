@@ -1,0 +1,120 @@
+import { describe, it, expect, vi } from "vitest";
+import { renderToString } from "react-dom/server";
+import { MemoryRouter } from "react-router-dom";
+import type { ValuationPayload, ValuationRow } from "@console/shared";
+
+/**
+ * The fair-value tab: the standing no-edge note, the views, the symbol order, the pmcc badge and
+ * what a non-valued row shows. The page decides nothing -- every figure is the builder's.
+ */
+
+function row(over: Partial<ValuationRow>): ValuationRow {
+  return {
+    symbol: "AAA",
+    type: "Stock",
+    sector: "Technology",
+    state: "valued",
+    reason: null,
+    spot: 100,
+    spotDate: "2026-10-27",
+    fiscalYearEnd: "2025-12-31",
+    fairValue: 120,
+    low: 100,
+    high: 140,
+    gap: -0.1667,
+    wacc: 0.09,
+    beta: 1.1,
+    betaRaw: 1.1,
+    betaBroker: null,
+    marketCap: 5e9,
+    marketCapBroker: null,
+    growthY1: 0.08,
+    ebitMargin: 0.15,
+    terminalShare: 0.68,
+    impliedEvEbitda: 12.3,
+    consensusUsed: true,
+    flags: [],
+    pmcc: false,
+    ...over,
+  };
+}
+
+let payload: ValuationPayload;
+vi.mock("../src/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/api")>()),
+  useValuation: () => ({ data: payload, isLoading: false, isError: false }),
+}));
+
+const { ValuationTab, applyView } = await import("../src/pages/Screeners/ValuationTab");
+
+function render(url = "/screeners/valuation"): string {
+  return renderToString(
+    <MemoryRouter initialEntries={[url]}>
+      <ValuationTab />
+    </MemoryRouter>,
+  ).replace(/<!-- -->/g, "");
+}
+
+function base(rows: ValuationRow[]): ValuationPayload {
+  return {
+    day: "2026-10-27",
+    days: ["2026-10-27"],
+    builtAt: "b",
+    universe: "public list of 2026-10-27",
+    names: rows.length,
+    states: { valued: rows.filter((r) => r.state === "valued").length },
+    rule: { forecastYears: 5, terminalGrowth: 0.02, riskFree: 0.04, equityPremium: 0.05, beta: "OLS", edge: "none measured" },
+    rows,
+  };
+}
+
+describe("the fair-value tab", () => {
+  it("always says the estimate has no measured edge", () => {
+    payload = base([row({})]);
+    expect(render()).toContain("No measured edge.");
+    payload = base([]);
+    expect(render()).toContain("No measured edge.");
+  });
+
+  it("shows the valued names by default, in the reader's symbol order, with the gap and the range", () => {
+    // The reader orders by symbol; the page keeps that order, whatever the gaps say.
+    payload = base([row({ symbol: "AAA", gap: 0.25, fairValue: 80, low: 60, high: 95 }), row({ symbol: "ZZZ", gap: -0.5 })]);
+    const html = render();
+    expect(html.indexOf(">AAA<")).toBeLessThan(html.indexOf(">ZZZ<"));
+    expect(html).toContain("+25.0%");
+    expect(html).toContain("60.00 – 95.00");
+  });
+
+  it("hides a non-valued name until the All view, which says why there is no value", () => {
+    payload = base([row({}), row({ symbol: "BNK", state: "not-applicable", reason: "financials", fairValue: null, gap: null })]);
+    expect(render()).not.toContain("BNK");
+    const all = render("/screeners/valuation?view=all");
+    expect(all).toContain("BNK");
+    expect(all).toContain("not applicable");
+    expect(all).toContain("financials");
+  });
+
+  it("badges pmcc's symbols and the pmcc view keeps them whether valued or not", () => {
+    const rows = [row({ symbol: "AMZN", pmcc: true }), row({ symbol: "XSP", type: "Exchange Traded Fund", state: "not-applicable", reason: "fund", pmcc: true, fairValue: null, gap: null }), row({})];
+    payload = base(rows);
+    const html = render("/screeners/valuation?view=pmcc");
+    expect(html).toContain("AMZN");
+    expect(html).toContain("XSP");
+    expect(html).not.toMatch(/>AAA</);
+    expect(html.match(/A symbol pmcc trades/g)?.length).toBe(2); // the badge, not the view button
+    expect(applyView(rows, "pmcc", "").map((r) => r.symbol)).toEqual(["AMZN", "XSP"]);
+    expect(applyView(rows, "valued", "A").map((r) => r.symbol)).toEqual(["AMZN", "AAA"]);
+  });
+
+  it("shows the builder's flags and the broker's beta where it disagrees", () => {
+    payload = base([row({ flags: ["terminal_heavy", "beta_disagrees"], betaBroker: 1.9 })]);
+    const html = render();
+    expect(html).toContain("terminal heavy");
+    expect(html).toContain("1.90");
+  });
+
+  it("says when nothing has been built", () => {
+    payload = { ...base([]), day: null, days: [] };
+    expect(render()).toContain("No fair-value file built yet");
+  });
+});

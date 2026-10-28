@@ -4,6 +4,8 @@
  * builder's; the reader renames and decides nothing.
  */
 
+import type { FairValueFields } from "./valuation.js";
+
 export type IncomeList = "short-puts" | "covered-calls";
 
 /** The next announcement against the trade's own expiry; `none` for a fund, which reports none. */
@@ -61,6 +63,9 @@ export interface IncomeListRow {
    *  a short put within the buying power available, a covered call on an uncovered 100-share lot.
    *  null when unjudged -- no evaluation for the session, or a strike manage did not price. */
   fit: boolean | null;
+  /** The session's DCF estimate (income-lists version 3, 2026-10-27; `types/valuation.ts`): a model
+   *  estimate of value with no measured edge, shown beside the row and never ordering the list. */
+  fair: FairValueFields | null;
 }
 
 export interface IncomeListPayload {
@@ -153,6 +158,8 @@ export interface CreditSpreadRow {
   exDividend: IncomeExDividend | null;
   exDividendDate: string | null;
   leveraged: string | null;
+  /** The session's DCF estimate (version 3); null on a list built before it. */
+  fair: FairValueFields | null;
 }
 
 export interface CreditSpreadSelectionPick {
