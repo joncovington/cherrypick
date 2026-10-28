@@ -142,7 +142,7 @@ export interface FliesBookRow {
   tradeDate: string;
   arm: string | null;
   symbol: string;
-  /** The trade table standard (packages/console/CLAUDE.md): whole-book dollars, signed cash flow.
+  /** The trade table standard (packages/console/docs/tables.md): whole-book dollars, signed cash flow.
    *  entry + exit = gross; gross − fees − settlement = net (`pnl`). */
   entryCash: number | null;
   exitCash: number | null;

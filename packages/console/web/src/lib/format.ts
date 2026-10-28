@@ -19,7 +19,7 @@ export function fmtMoney(v: number | null): string {
 
 /**
  * A signed cash flow in whole-position dollars: `+$178.75` received, `-$50.00` paid. The trade table
- * standard (console CLAUDE.md) signs every entry/exit this way so a row adds up left to right.
+ * standard (packages/console/docs/tables.md) signs every entry/exit this way so a row adds up left to right.
  */
 export function fmtCash(v: number | null): string {
   if (v === null) return "—";

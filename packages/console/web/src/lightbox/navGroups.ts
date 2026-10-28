@@ -167,7 +167,7 @@ export type BwbSlideId = (typeof BWB_SLIDES)[number]["id"];
  * answered the same question three ways that disagreed. `screening` absorbed `upcoming` and the
  * rejection funnel that sat on the strategies page: the forward scan, the screen's verdicts and
  * why it refused, in one place. The old ids reach their new homes. `summary` stays: it is the
- * module's simple-view page, a suite pattern (console CLAUDE.md, "A summary slide is a module's own").
+ * module's simple-view page, a suite pattern (packages/console/docs/pages.md, "A summary slide is a module's own").
  */
 export const EARNINGS_SLIDES = [
   { id: "session", label: "session" },
