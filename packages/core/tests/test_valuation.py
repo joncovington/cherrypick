@@ -60,6 +60,30 @@ def test_the_medians_ignore_one_bad_year():
     assert d.tax_rate == pytest.approx(0.25)
 
 
+def test_the_margin_window_is_the_newest_three_years_and_the_growth_window_all_five():
+    # Two fat years, then three at the going margin: the forecast runs on the three. Revenue doubles
+    # over the five years, so the CAGR is the full window's.
+    years = [
+        _year("2021-12-31", revenue=500.0, ebit=150.0),
+        _year("2022-12-31", revenue=600.0, ebit=180.0),
+        _year("2023-12-31", revenue=800.0, ebit=80.0),
+        _year("2024-12-31", revenue=900.0, ebit=90.0),
+        _year("2025-12-31", revenue=1000.0, ebit=100.0),
+    ]
+    d = v.drivers_from_history(years)
+    assert d.ebit_margin == pytest.approx(0.10)
+    assert d.growth[0] == pytest.approx(v._clamp((1000.0 / 500.0) ** 0.25 - 1, v.GROWTH_BOUNDS))
+    assert len(years[-v.MARGIN_YEARS :]) == 3
+
+
+def test_a_cost_of_capital_under_the_floor_is_floored_and_flagged():
+    # A floored beta at a 4% rate: ke 6.5%, kd 3.75% after tax, 80/20 -> 5.95%, under the 7% floor.
+    out = v.value(FLAT, market_cap=800.0, beta_raw=0.1)
+    assert out.wacc == pytest.approx(v.MIN_WACC)
+    assert "wacc_floored" in out.flags and "beta_bounded" in out.flags
+    assert "wacc_floored" not in v.value(FLAT, market_cap=800.0, beta_raw=1.0).flags
+
+
 def test_the_value_to_the_cent_against_a_hand_computation():
     # beta 1.0 at a 4% rate and 5% premium: ke 9%; kd 10/200 = 5% pre-tax, 3.75% after; market cap 800
     # against debt 200: WACC = 0.09 x 0.8 + 0.0375 x 0.2 = 0.0795.
@@ -129,12 +153,12 @@ def test_a_cash_flow_that_never_turns_positive_is_refused():
 
 
 def test_a_rate_too_close_to_growth_is_refused_and_the_guard_is_what_refuses(monkeypatch):
-    # beta 0.5 (the floor) at a 2% rate and no premium: ke 2%; all-equity so WACC 2% = terminal growth.
-    out = v.value(FLAT, market_cap=800.0, beta_raw=0.5, rf=0.02, erp=0.0)
+    # The rate floors at 7%; a terminal growth of 6.5% leaves half a point, under the one-point spread.
+    out = v.value(FLAT, market_cap=800.0, beta_raw=0.5, rf=0.02, erp=0.0, terminal_growth=0.065)
     assert out == v.Refusal("wacc_near_growth")
     # Break the guard on purpose: with no minimum spread the same inputs produce a number.
     monkeypatch.setattr(v, "MIN_SPREAD", -1.0)
-    broken = v.value(FLAT, market_cap=800.0, beta_raw=0.5, rf=0.02, erp=0.0)
+    broken = v.value(FLAT, market_cap=800.0, beta_raw=0.5, rf=0.02, erp=0.0, terminal_growth=0.065)
     assert not isinstance(broken, v.Refusal) or broken.reason != "wacc_near_growth"
 
 

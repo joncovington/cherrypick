@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 
 from cherrypick.core import events as _events
 from cherrypick.core import home as _home
+from cherrypick.core import treasury as _treasury
 
 ET = ZoneInfo("America/New_York")
 
@@ -37,8 +38,9 @@ TREASURY_URL = (
     "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/"
     "{year}/all?type=daily_treasury_yield_curve&field_tdr_date_value={year}&page&_format=csv"
 )
-# The tenors the pack reports, by Treasury's own column names.
-TENORS = {"3m": "3 Mo", "2y": "2 Yr", "5y": "5 Yr", "10y": "10 Yr", "30y": "30 Yr"}
+# The tenors the pack reports, by Treasury's own column names: `cherrypick.core.treasury`'s, since
+# the fair-value build reads the same file for its risk-free rate (2026-10-28).
+TENORS = _treasury.TENORS
 
 # Cboe's delayed SPX option chain: every strike of every expiration with IV and delta, as of the
 # last close. ~13 MB; only the derived risk-reversal row is kept.
@@ -56,8 +58,9 @@ def cboe_path(symbol: str) -> Path:
     return store_dir() / "cboe" / f"{symbol}.csv"
 
 
-def treasury_path(year: int) -> Path:
-    return store_dir() / "treasury" / f"{year}.csv"
+# The Treasury file's path, parser and reader are `cherrypick.core.treasury`'s (2026-10-28); kept
+# under their old names here for the fetcher and the pack.
+treasury_path = _treasury.path
 
 
 def risk_reversal_path() -> Path:
@@ -106,26 +109,7 @@ def parse_cboe(text: str) -> list[tuple[date, float]]:
     return out
 
 
-def parse_treasury(text: str) -> list[tuple[date, dict[str, float]]]:
-    """[(session, {tenor: yield %})] oldest first, for the tenors in `TENORS` that the row carries."""
-    reader = csv.DictReader(io.StringIO(text.lstrip("﻿")))
-    if not reader.fieldnames or "Date" not in reader.fieldnames:
-        return []
-    out = []
-    for row in reader:
-        day = _us_date(row.get("Date") or "")
-        if not day:
-            continue
-        curve = {}
-        for key, column in TENORS.items():
-            try:
-                curve[key] = float(row.get(column) or "")
-            except ValueError:
-                continue
-        if curve:
-            out.append((day, curve))
-    out.sort()
-    return out
+parse_treasury = _treasury.parse
 
 
 # The BEA release-dates parser is `cherrypick.core.events.parse_bea` (2026-10-02): flies tags every
@@ -246,16 +230,7 @@ def cboe_series(symbol: str, session: str) -> list[tuple[date, float]]:
     return [row for row in parse_cboe(text) if row[0] < day] if text else []
 
 
-def treasury_curve(session: str) -> list[tuple[date, dict[str, float]]]:
-    """Treasury's curves strictly before `session`, oldest first, across this year's file and last
-    year's (the first sessions of January need December)."""
-    day = date.fromisoformat(session)
-    rows = []
-    for year in (day.year - 1, day.year):
-        text = _read(treasury_path(year))
-        if text:
-            rows.extend(parse_treasury(text))
-    return sorted(r for r in rows if r[0] < day)
+treasury_curve = _treasury.curves_before
 
 
 def risk_reversal_before(session: str) -> dict | None:
