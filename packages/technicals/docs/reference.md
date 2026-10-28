@@ -264,7 +264,8 @@ what is unsolved, and scheduling.
   ATM spread at most 7.5% of mid, the chain's open interest worth at least $250M and its volume at
   least $5M (contracts x 100 x spot; a contract count repeats the share-price bias). A thin name is
   measured every session and admitted the night it clears; no screener lists it (stage lists,
-  skate, short puts, covered calls, credit spreads, the setups table's default, manage's
+  skate, short puts, covered calls, credit spreads, the earnings calendar and so its forward
+  record and spread readings, the setups table's default, manage's
   candidates). Each income reading stamps the verdict it was measured under (`liquidity`), which
   manage reads. The test's dollar volume is the candle file's for every name (2026-10-19; before, the
   store's bars, else Dolt's). It judges the store's names, the screener names and, from
