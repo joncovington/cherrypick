@@ -8,7 +8,11 @@ store and writes `valuation/<session>.json`. For every liquid optionable name on
   the 45-day publication lag);
 - **beta** is the OLS slope of the name's weekly log returns on SPY's over the trailing
   `BETA_YEARS`, both from the store's adjusted bars as adjusted on the session;
-- **market cap** is spot times the last fiscal year's shares;
+- **shares** are the last fiscal year's, times every split with an ex-date after the fiscal year's
+  end and on or before the session (`shares_after_splits`, flag `split_adjusted`): spot is the raw
+  close, so a split since the statements would otherwise read the value per share 25 times high (BKNG,
+  25-for-1 on 2026-04-06, read 97% cheap on 2026-10-27);
+- **market cap** is spot times those shares;
 - **consensus growth** is the "Next Year" sales consensus against its year-ago figure at the newest
   weekly estimate snapshot on or before the session (`fundamentals.growth`), when the store has one.
 
@@ -30,6 +34,7 @@ Local files only: the history store, the security list, the sector maps and the 
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import math
 from datetime import UTC, date, datetime, timedelta
@@ -40,6 +45,7 @@ from cherrypick.core import jsonio as _jsonio
 from cherrypick.core import treasury as _treasury
 from cherrypick.core import valuation as _val
 
+from . import adjust as _adjust
 from . import fundamentals, paths, securities, statements, store
 
 VERSION = 1
@@ -96,6 +102,16 @@ def aligned_returns(
     start = (date.fromisoformat(as_of) - timedelta(days=365 * years)).isoformat()
     dates = sorted(d for d in stock if start <= d <= as_of and d in index)
     return log_returns([stock[d] for d in dates]), log_returns([index[d] for d in dates])
+
+
+def shares_after_splits(shares: float, splits: list, fiscal_end: str, as_of: str) -> tuple[float, bool]:
+    """(shares on the session, whether a split moved them): the fiscal year's count times each split's
+    to/for ratio whose ex-date falls after the year's end and on or before the session."""
+    factor = 1.0
+    for s in splits:
+        if fiscal_end < s.ex_date <= as_of and s.to_factor > 0 and s.for_factor > 0:
+            factor *= s.to_factor / s.for_factor
+    return shares * factor, factor != 1.0
 
 
 def closes_as_of(conn, symbol: str, as_of: str) -> dict[str, float]:
@@ -211,7 +227,15 @@ def value_one(
         row.update(state="refused", reason="no_beta")
         return row
     row["beta_raw"] = round(b, 4)
-    market_cap = spot[1] * years[-1].shares
+    shares, split = shares_after_splits(
+        years[-1].shares,
+        _adjust.dedupe_splits(store.raw_bars(conn, symbol), store.splits(conn, symbol)),
+        years[-1].end,
+        as_of,
+    )
+    if split:
+        years = [*years[:-1], dataclasses.replace(years[-1], shares=shares)]
+    market_cap = spot[1] * shares
     row["market_cap"] = round(market_cap, 2)
     g = consensus_growth(conn, symbol, as_of, snapshot)
     row["consensus_used"] = g is not None
@@ -231,7 +255,7 @@ def value_one(
         ebit_margin=round(out.drivers.ebit_margin, 4),
         terminal_share=round(out.terminal_share, 4),
         implied_ev_ebitda=None if out.implied_ev_ebitda is None else round(out.implied_ev_ebitda, 2),
-        flags=_flags(out, broker, market_cap),
+        flags=_flags(out, broker, market_cap) + (["split_adjusted"] if split else []),
     )
     return row
 

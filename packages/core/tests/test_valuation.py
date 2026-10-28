@@ -76,6 +76,15 @@ def test_the_margin_window_is_the_newest_three_years_and_the_growth_window_all_f
     assert len(years[-v.MARGIN_YEARS :]) == 3
 
 
+def test_working_capital_reads_five_years_so_two_one_offs_in_three_do_not_set_it():
+    # KO's shape: three ordinary years, then two that absorbed 15% of revenue (a tax deposit, a
+    # settlement). The three-year median would charge 15% forever; the five-year one charges 1%.
+    years = FLAT[:3] + [_year("2024-12-31", nwc_change=-150.0), _year("2025-12-31", nwc_change=-150.0)]
+    d = v.drivers_from_history(years)
+    assert v.NWC_YEARS == v.FORECAST_YEARS > v.MARGIN_YEARS
+    assert d.nwc_pct == pytest.approx(0.01)
+
+
 def test_a_cost_of_capital_under_the_floor_is_floored_and_flagged():
     # A floored beta at a 4% rate: ke 6.5%, kd 3.75% after tax, 80/20 -> 5.95%, under the 7% floor.
     out = v.value(FLAT, market_cap=800.0, beta_raw=0.1)

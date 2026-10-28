@@ -156,8 +156,8 @@ what is unsolved, and scheduling.
   optionable name a session, `valuation/<session>.json`, from `cherrypick.core.valuation` on Dolt's
   annual statements (`statements.py`, landed with `history fundamentals`, counted 45 days after the
   fiscal year end), a three-year weekly regression beta on SPY from the store's adjusted bars, spot
-  times year-end shares, and the "Next Year" sales consensus at the newest estimate snapshot. One
-  mechanical base case (five-year medians, growth faded to 2%) and a low-high range from a WACC x
+  times year-end shares carried through any split since (`split_adjusted`), and the "Next Year" sales consensus at the newest estimate snapshot. One
+  mechanical base case (three-year medians, working capital over five, growth faded to 2%) and a low-high range from a WACC x
   terminal-growth grid; the broker's beta and market cap ride along as a cross-check
   (`beta_disagrees`, `shares_stale`). Funds, banks and REITs are `not-applicable`; a name the model
   cannot value says why. From version 3 every income-list row carries its `fair_*` fields. **A model

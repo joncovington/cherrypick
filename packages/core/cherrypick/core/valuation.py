@@ -9,7 +9,7 @@ The arithmetic every DCF shares, written once so the income lists and the Screen
     WACC   = ke x E/(D+E) + kd (1 - tax) x D/(D+E),   ke = rf + beta (rm - rf)
 
 Reviewed 2026-10-27 from a student fund's spreadsheets (`Equity-Valuation-Modelling-in-Excel`) and
-Market Taker Mentoring's episode on DCF strengths and weaknesses. Both say the same thing: the value
+an options educator's episode on DCF strengths and weaknesses. Both say the same thing: the value
 is only as good as its assumptions, the terminal value is most of the answer for a growth name, and
 the right use is one data point beside other checks when picking short-put and covered-call names.
 So this module builds **one mechanical base case** from the company's own history (medians of the
@@ -57,6 +57,11 @@ MIN_YEARS = 3
 # (2026-10-28, from five): the forecast runs on the business as it now is, and the median of three
 # still ignores one odd year. The revenue CAGR keeps the full five-year window.
 MARGIN_YEARS = 3
+# Working capital is the exception: it is lumpy, not a trend, and a one-off (a tax deposit, a
+# settlement) can land in two of three years. KO's 2024-25 lines absorbed 13-15% of revenue, a
+# three-year median charged that forever and valued it at $4 against $93 (2026-10-28), so its median
+# keeps the full five-year window.
+NWC_YEARS = 5
 # A cost of capital under this is below what equity has earned over any long run; a near-zero or
 # negative regression beta (a utility, a tobacco name) gave 5.5% and a value twice the price on
 # 2026-10-27, so the rate is floored here and the answer flagged (`wacc_floored`).
@@ -175,7 +180,8 @@ def drivers_from_history(
     terminal_growth: float = TERMINAL_GROWTH,
 ) -> Drivers | Refusal:
     """The base case from the last `FORECAST_YEARS` fiscal years: medians over the newest
-    `MARGIN_YEARS` for the margin and the percent-of-revenue lines, year-one growth from the
+    `MARGIN_YEARS` for the margin and the percent-of-revenue lines (working capital over
+    `NWC_YEARS`), year-one growth from the
     consensus when given (else the five-year window's CAGR), faded to `terminal_growth` by year
     five."""
     hist = sorted(years, key=lambda y: y.end)[-FORECAST_YEARS:]
@@ -197,7 +203,7 @@ def drivers_from_history(
         ebit_margin=margin,
         da_pct=statistics.median(y.da / y.revenue for y in recent),
         capex_pct=statistics.median(y.capex / y.revenue for y in recent),
-        nwc_pct=statistics.median(-y.nwc_change / y.revenue for y in recent),
+        nwc_pct=statistics.median(-y.nwc_change / y.revenue for y in hist[-NWC_YEARS:]),
         tax_rate=effective_tax(recent),
         terminal_growth=terminal_growth,
     )
