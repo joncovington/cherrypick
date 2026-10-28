@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ExecutionModule, ExecutionWeek, SliceCell } from "@console/shared";
+import type { ExecutionModule, ExecutionWeek, SliceCell, SliceDimensionRead, SliceReport } from "@console/shared";
 import { gapLine, overrideLine, windowLine } from "../src/pages/Live/ExecutionTab";
-import { fmtCi, fmtMean } from "../src/pages/Backtest/SlicesTab";
+import { dimensionLabel, dimensionSentence, fmtCi, fmtMean, overallSentence } from "../src/pages/Backtest/SlicesTab";
 
 const week = (over: Partial<ExecutionWeek>): ExecutionWeek => ({
   week: "2026-W42",
@@ -46,6 +46,54 @@ describe("the slices tab's figures", () => {
     expect(fmtMean({ ...c, mean: 12.5 }, "net $")).toBe("$12.50");
     expect(fmtCi(c, "R")).toBe("-0.100 to 0.200");
     expect(fmtCi({ ...c, ci95: null }, "R")).toBe("—");
+  });
+});
+
+describe("the slices tab's plain-English card", () => {
+  const cell = (value: string, mean: number, lo: number, hi: number): SliceCell => ({ value, n: 500, mean, ci95: [lo, hi], greyed: false });
+  const read = (r: SliceDimensionRead["read"], best: SliceCell | null, worst: SliceCell | null): SliceDimensionRead => ({
+    name: "entry_hour",
+    read: r,
+    best,
+    worst,
+    ranked: 2,
+    greyed: 0,
+  });
+
+  it("says a separated dimension matters, with both groups and their averages", () => {
+    const s = dimensionSentence(read("separated", cell("13:00", 0.1764, 0.169, 0.1838), cell("09:00", 0.0504, 0.0166, 0.0842)), "R");
+    expect(s).toBe(
+      "This one matters. 13:00 averaged 0.176R a trade against 0.050R a trade for 09:00, and their likely ranges do not overlap, so the gap is unlikely to be chance in these trades.",
+    );
+  });
+
+  it("says an overlapping dimension could be chance, and says nothing where there is nothing to compare", () => {
+    expect(dimensionSentence(read("overlapping", cell("uptrend", 0.12, 0.1, 0.13), cell("mixed", 0.11, 0.1, 0.12)), "R")).toContain("could be chance");
+    expect(dimensionSentence(read("one-group", cell("same day", 0.1, 0.05, 0.15), null), "R")).toBe(
+      "Every trade fell in one group (same day), so there is nothing to compare here.",
+    );
+    expect(dimensionSentence(read("too-few", null, null), "R")).toContain("says nothing yet");
+  });
+
+  it("puts the overall result against zero in words, in the report's unit", () => {
+    const base: SliceReport = {
+      file: "a.json",
+      label: "meic_ic/control/all",
+      unit: "R",
+      trades: 12105,
+      cells: 13,
+      rankedCells: 13,
+      overall: cell("all", 0.1186, 0.1132, 0.124),
+      dimensions: [],
+      note: "",
+      analysis: { schema: "meic_ic", arm: "control", month: null, overall: "positive", dimensions: [], greyedCells: 0 },
+    };
+    expect(overallSentence(base)).toBe(
+      "Across all 12,105 trades the average was 0.119R a trade, and the true average very likely sits between 0.113R and 0.124R. That whole range is above zero, so on these trades the arm made money.",
+    );
+    expect(overallSentence({ ...base, analysis: { ...base.analysis, overall: "unclear" } })).toContain("breaking even");
+    expect(dimensionLabel("entry_hour")).toBe("The hour of the day the trade was entered (Eastern time)");
+    expect(dimensionLabel("new_thing")).toBe("new thing");
   });
 });
 
