@@ -325,6 +325,9 @@ it.
   Report net by slot, by year, and the worst session per slot.
 - **Build only if:** the afternoon advantage holds in most years, not just on average, and survives
   the worst-session comparison. A window change is measurement-affecting, so it waits for a boundary.
+- **Held-out test declared 2026-10-28 as item 24**, after the B5 slice report on MEIC paper found
+  entry hour the one dimension that separates. Live already trades 14:00; item 24 asks which
+  afternoon slot, with two morning slots reported beside it for this hypothesis's own read.
 
 ### 3. The mid-morning ATM iron fly
 
@@ -1558,6 +1561,71 @@ here before any of it is run.*
     `d16` against `live-1400`; it is not decided by this test.
   - **A fail or no verdict:** live stays at 16 delta, and the short delta is closed as a lever for
     the 14:00 rule.
+
+### 24. The entry slot of MEIC's live rule: 12:00 to 13:30 against 14:00
+
+*Source: the user, 2026-10-28, after the B5 slice report on MEIC paper `control` found entry hour the
+one dimension that separates (12:00 and 13:00 entries ahead of 14:00, mornings well behind; paper
+figures, in-sample, a single market regime). Hypothesis 2's held-out test. Declared here before any
+of it is run, and run after item 23's verdict.*
+
+- **Question:** does one condor a session entered earlier in the afternoon earn more than the same
+  condor entered at 14:00, the slot live trades?
+- **Where the edge would live:** **timing**. An earlier entry collects more premium and has more
+  hours to decay, and also more hours for a move to reach a short and fire a stop. Mornings carry
+  the open's tail; the slot report suggests the trade-off turns around midday.
+- **Look-alikes:** the 10-14 entry-time study (36 sessions: 12:30 the best single slot); the
+  pm-200 provisional replay's per-slot read, which chose 14:00 (13:30 the one slot positive in every
+  span); the B5 slice report. They disagree on the best afternoon slot, which is this question.
+- **Rival explanations, each with its check:**
+  - *A gate, not the slot:* the credit floor binds harder as credit decays through the afternoon,
+    and the call ceiling differs by session period. **Check:** every arm is ungated, as item 23's.
+  - *A calm span:* **Check:** the paired difference must be positive in both time-halves; each
+    arm's net by year and its worst session are reported.
+  - *Fees:* **Check:** the slot's own net still positive at 1.5× fees.
+  - *Searching a grid:* **Check:** Holm across the four slots; the grid is fixed here.
+- **The structure:**
+  - Every arm is the registry's `pm-200` (SPX, 10 wide, per-side stop at 2× the whole credit,
+    30-minute spacing) with no credit floor (`min_credit_pct_of_width` and the low-IV relief floor
+    both 0) and no call-delta entry ceiling (all three 1), entering in one 30-minute slot, so one
+    condor a session.
+  - `s1400` (14:00–14:30) is the base: item 23's `d16`, or its passing arm.
+  - **Judged:** `s1200`, `s1230`, `s1300`, `s1330`, each slot 30 minutes from its name.
+  - **References, never judged:** `s1000` and `s1100`, for hypothesis 2's afternoon-against-morning
+    read, and `control`, which the runner requires.
+  - **The delta is item 23's verdict:** 16 if item 23 fails or has no verdict; the passing arm's
+    delta if one passes (the strongest by paired t if several do). The run is queued only once that
+    verdict is recorded, and the delta it ran at is in its result file's name.
+- **Costs:** MEIC paper's own model, as item 23.
+- **Measured:** each session's summed net per arm, in dollars at one condor.
+- **Window and sample:** the backtest's own windows over the 60 s vendor store (`SPX-60s.db`).
+  - **Design:** 2022-05-16 to 2025-06-30. It decides.
+  - **Holdout:** 2025-07-01 to 2026-10-12, **already seen for these slots.** `pm-200` entered at
+    every one of them over the holdout dates, and its per-slot read there chose live's 14:00 (see
+    "Provisional now" above). So the holdout run is a consistency check only: it is reported,
+    and a passing slot whose paired mean there is not positive is reported as such, but it cannot
+    make or overturn a verdict. Out-of-sample evidence for any slot comes from sessions after
+    2026-10-12.
+  - **Provisional**, as item 23: MEIC history has not unlocked.
+  - Fewer than 100 sessions in a window is no verdict.
+- **Pass-or-fail rule**, per judged slot, all must hold in the design window:
+  - the paired difference against `s1400` (one session one observation) has a mean above zero and a
+    one-sided t above 2;
+  - Holm across the four slots;
+  - the paired difference positive in each time-half;
+  - the slot's own mean net above zero, and still positive at **1.5× fees**.
+- **Declared limits (B11):** 60 s ticks; one entry per slot, at the first tick that clears; strikes
+  by the replay's delta source; stops under the fill model.
+- **Name split (B9):** does not apply; one symbol.
+- **Data:** no new store. `scripts/meic_entry_slot_item24.py --delta D` builds a scratch MEIC arm
+  registry from the machine's (seven arms added) and runs `cherrypick.backtest.runner` over each
+  window. Results go under the backtest data directory only; this plan records the verdict.
+- **Decides:**
+  - **A pass:** a proposal to move live's entry window to the passing slot at a declared boundary,
+    after MEIC validation unlocks and with the kill criteria re-derived, with fresh sessions after
+    2026-10-12 read before the change.
+  - **A fail or no verdict:** live stays at 14:00; the afternoon slot is closed as a lever.
+    Hypothesis 2's morning read is recorded either way.
 
 ## Not worth revisiting
 
