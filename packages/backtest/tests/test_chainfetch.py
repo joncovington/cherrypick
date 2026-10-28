@@ -222,6 +222,21 @@ def test_paths_resume_retry_refusals_and_stop_on_a_fatal_one(tmp_path):
     assert "unauthenticated" in out["aborted"] and out["complete"] == 2
 
 
+def test_a_stopped_path_fetch_starts_nothing_more_and_a_rerun_resumes(tmp_path):
+    s = _settings(tmp_path)
+    many = [(f"N{k:03d}", "2024-03-15", "2024-02-02", "2024-03-15") for k in range(10)]
+    asked = {"n": 0}
+
+    def stop() -> bool:
+        asked["n"] += 1
+        return asked["n"] > 4  # four paths start, then the deadline passes
+
+    out = chainfetch.fetch_paths(s, FakePaths(), many, workers=1, stop=stop, log=lambda m: None)
+    assert out["stopped"] is True and out["complete"] == 4
+    again = chainfetch.fetch_paths(s, FakePaths(), many, workers=1, log=lambda m: None)
+    assert again["stopped"] is False and again["already"] == 4 and again["complete"] == 6
+
+
 def test_a_path_with_a_hole_is_recorded_refused_and_retried_not_empty(tmp_path):
     class Holed(FakePaths):
         def eod_chain_range(self, root, start, through, expiration):

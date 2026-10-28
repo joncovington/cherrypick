@@ -8,8 +8,9 @@ the supervisor's `research-queue` job takes the oldest ready row every few minut
 **What a row may run is an allow-list, never a command line** (`KINDS`). The supervisor is a Windows
 service with the broker credentials in reach, so a row that could name any command would be
 unreviewed code run by it. A kind builds its own argv from the row's arguments:
-- `fetch-chains` / `fetch-flow`: the backtest package's resumable ThetaData fetches, given a request
-  or plan file. Each is bounded by `--stop-by`, and a fetch that stops is queued again to resume.
+- `fetch-chains` / `fetch-chain-paths` / `fetch-flow`: the backtest package's resumable ThetaData
+  fetches, given a request or plan file. Each is bounded by `--stop-by`, and a fetch that stops is
+  queued again to resume.
 - `script`: a Python file checked into the repo's `scripts/` (git must know it), with string
   arguments, no shell. It may not need the ThetaData session: it cannot be stopped mid-run.
 
@@ -197,6 +198,8 @@ def check_store_output(output: str, stores: dict | None) -> None:
 # kind -> (what it needs, whether --stop-by bounds it)
 KINDS: dict[str, tuple[tuple[str, ...], bool]] = {
     "fetch-chains": ((THETADATA,), True),
+    # Each expiry's daily path (backtest `fetch-chain-paths`, 2026-10-28): the same store and session.
+    "fetch-chain-paths": ((THETADATA,), True),
     "fetch-flow": ((THETADATA,), True),
     "script": ((), False),
     # A module's replay validated against the recording (backtest `validate`): local stores only, no
@@ -217,8 +220,8 @@ def build_argv(
     tracked: Callable[[Path, Path], bool] | None = None,
 ) -> list[str]:
     """The task's command, built by its kind from its arguments; `Refused` for anything else."""
-    if kind == "fetch-chains":
-        argv = [python, "-m", "cherrypick.backtest", "fetch-chains"]
+    if kind in ("fetch-chains", "fetch-chain-paths"):
+        argv = [python, "-m", "cherrypick.backtest", kind]
         argv += ["--requests", _file_arg(args, "requests"), "--workers", _workers(args, 3)]
     elif kind == "fetch-flow":
         argv = [python, "-m", "cherrypick.backtest", "fetch-flow"]
@@ -555,9 +558,9 @@ def result_of(row: dict, report: dict, log: Path) -> dict:
     counts = {k: report[k] for k in keys if k in report}
     if counts:
         out["report"] = counts
-    if row["kind"] in ("fetch-chains", "fetch-flow"):
+    if row["kind"] in ("fetch-chains", "fetch-chain-paths", "fetch-flow"):
         out["input"] = args.get("requests") or args.get("plan")
-        out["store"] = "backtest " + ("eod_chains.db" if row["kind"] == "fetch-chains" else "flow store")
+        out["store"] = "backtest " + ("flow store" if row["kind"] == "fetch-flow" else "eod_chains.db")
     if row.get("output"):
         out["output"] = row["output"]
         out["output_exists"] = Path(row["output"]).expanduser().exists()
