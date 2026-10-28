@@ -90,6 +90,7 @@ index that tells you which one to open.
 | `redact` | Account numbers masked to `****1234` before they reach a log. |
 | `power` | Is this machine on battery (Windows, Linux, macOS)? A reading that cannot be taken is `known: False`, never "plugged in". |
 | `bs` | Black-Scholes-Merton (continuous dividend) price, delta and the vol that prices a mid. A model that bounds or compares, never a tradable price. |
+| `valuation` | An unlevered DCF of one company from plain numbers the caller read (fiscal years, market cap, a regression beta, the consensus next-year sales growth): one mechanical base case (five-year medians, growth faded to a 2% terminal) and a low-high range from a WACC x terminal-growth grid, per share. A history it cannot read, a rate too near the growth, or a cash flow that never turns positive is a `Refusal` with its reason, never a number; a terminal value above 75% of EV is flagged. Banks and REITs are refused by sector before the call. A model estimate of value with no measured edge; never a ranking. Written for the income lists and the Screeners fair-value tab (technicals) so no second DCF arithmetic appears. |
 | `vendor` | The one switch (`market_report.collector`) every vendor-fed job and reader follows. |
 
 **The bar for putting something here is that two packages would otherwise disagree** — on what a fee
