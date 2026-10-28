@@ -1390,6 +1390,17 @@ run.*
 - **Decides:**
   - **A pass:** a proposal for a paper arm beside the suite's loops, with the robustness report.
   - **A fail or no verdict:** closes this structure as specified.
+- **Result (2026-10-27): fail, all three arms; the structure is closed.** In the design window no
+  arm (hold, 3x the debit, two sessions in) has a positive mean net after costs or a positive
+  time-half. The trend rule carries no signal: the opposite side's fly, scored at every entry, lost
+  less than the trend side's in every arm but the 3x sale, where the gap is far from significant.
+  The mid-price fills, reported only as context, pass the rule in no arm either. Every figure is in
+  the local result
+  (`~/.cherrypick/data/backtest/results/research/item20/study-2022-05-16-2024-12-31.json`).
+- **Holdout, run straight after as declared; exploratory, not a verdict.** After a design fail it
+  cannot overturn the fail. With the rules unchanged, all three arms fail every check there too,
+  and the trend side again does no better than the opposite side. The holdout is now spent for this
+  specification. Local result: `.../item20/study-2025-01-01-2026-10-23.json`.
 - **Not tested here:** his 2025 "convexity stack" (both sides at 25-50 cents, 2-5 DTE, around
   events) and his "Sigma Drift" (5-10 DTE), which have no mechanical rules in the transcripts.
 
