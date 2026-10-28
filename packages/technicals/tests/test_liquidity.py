@@ -76,6 +76,19 @@ def test_a_thin_verdict_is_not_sticky_and_is_measured():
     assert liquidity.illiquid({"B": {"verdict": "thin"}}) == set()  # not skipped by the broker scripts
 
 
+def test_the_income_fetch_measures_the_same_verdicts_this_module_names():
+    """scripts/fetch_screener_greeks.py spells MEASURED itself (the orchestrator's CI installs no
+    technicals); the two must stay equal, or a thin name would never be measured and never admitted."""
+    import importlib.util
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[3] / "scripts" / "fetch_screener_greeks.py"
+    spec = importlib.util.spec_from_file_location("fetch_screener_greeks", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.MEASURED == liquidity.MEASURED
+
+
 def _option(k, right, bid, ask, oi=1000, vol=50):
     return {"strike": k, "right": right, "bid": bid, "ask": ask, "open_interest": oi, "volume": vol}
 

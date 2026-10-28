@@ -1173,15 +1173,16 @@ def stress_closes(conn, symbol: str) -> list[float]:
     return [b.close for b in skate.price_bars(conn, store_sym)]
 
 
+#: technicals `liquidity.MEASURED`, spelled here so this pure helper needs no technicals import
+#: (packages/technicals/tests/test_liquidity.py holds the two equal).
+MEASURED = frozenset({"tradable", "thin"})
+
+
 def income_names(verdicts: dict[str, dict], funds: set[str] = frozenset()) -> list[str]:
     """The names to measure, in the store's spelling (BRK.B): the tradable ones and the thin ones
-    (`liquidity.MEASURED`: a thin name is measured so its monthly options can admit it), and the
-    reference funds judged the same way (`liquidity.reference_measured`: SPY, QQQ, the sector funds)."""
-    from cherrypick.technicals import liquidity
-
-    return sorted(
-        {*(s for s, v in verdicts.items() if (v or {}).get("verdict") in liquidity.MEASURED), *funds}
-    )
+    (`MEASURED`: a thin name is measured so its monthly options can admit it), and the reference
+    funds judged the same way (`liquidity.reference_measured`: SPY, QQQ, the sector funds)."""
+    return sorted({*(s for s, v in verdicts.items() if (v or {}).get("verdict") in MEASURED), *funds})
 
 
 def name_verdicts(verdicts: dict[str, dict], reference: dict[str, dict]) -> dict[str, str]:
