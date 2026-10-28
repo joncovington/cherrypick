@@ -22,7 +22,7 @@ import {
 
 /**
  * Flies's simplified-view summary: the legged 0DTE butterfly book judged the way the module judges
- * itself (packages/flies/CLAUDE.md, "five measurements"): how often a leg-in became a fly, what
+ * itself (packages/flies/docs/reference.md, "five measurements"): how often a leg-in became a fly, what
  * the strands cost against what the completions earned, the floor the completions locked, and the
  * fee drag that drove the SPX switch.
  *
@@ -37,7 +37,7 @@ const MODULE = "flies";
 const UNIT = "a legged 0DTE fly (or the vertical it stranded as)";
 /** The trade log's settled population (flies.ts `SETTLED`). */
 const SETTLED = "status = 'settled' AND void_reason IS NULL";
-/** Paper legged completions pay the live limit from this session (flies CLAUDE.md): never pool
+/** Paper legged completions pay the live limit from this session (packages/flies/docs/reference.md): never pool
  *  completion P&L across it. */
 const COMPLETION_RULE_BREAK = "2026-10-05";
 

@@ -1,0 +1,601 @@
+# flies module reference
+
+Moved from the flies CLAUDE.md, which keeps the retirement status, the strategy, the honesty rules,
+the guardrails and the status notes.
+
+## Layout
+
+| file | role |
+|---|---|
+| `cherrypick/flies/fly.py` | payoffs, quote pricing, fees, position and book floor math. Pure. |
+| `cherrypick/flies/engine.py` | centre selection, entry gates, the completion gate, settlement. Pure. |
+| `cherrypick/flies/provider.py` | builds snapshots from the shared stream cache, read-only. No decisions. |
+| `cherrypick/flies/paper_loop.py` | session driver: fetch, run every arm, settle at the bell. `run_once`/`run_settle` take `snapshot_fn` and `replay=True` for the quote-history replay: a replayed tick touches nothing but its ledger (no heartbeat, log file or advice decision, which writes). |
+| `cherrypick/flies/replay.py` | the quote-history replay (docs/quote-history-replay-plan.md Phase 1): rebuilds each recorded sample as paper's snapshot (quotes in paper's window and age, GEX from the recorded profile within 360 s, session bounds from the spot trail up to the instant) and runs `paper_loop.run_once` over it into a scratch ledger. Rule arms only; model-driven arms are refused. CLI `replay --date --out`. |
+| `cherrypick/flies/replay_check.py` | the replay's decision-level validation (plan, stage 2): at each recorded sample the replay is handed paper's own book as of that instant (`as_of`) and runs one tick; each paper entry and completion is tested at its own moment, and replay decisions paper never made are counted as episodes. `summarise` applies the declared pass test (ten sessions); the completion test is on outcome, declared for ten sessions from 2026-10-19 (root docs/quote-history-replay-plan.md). CLI `replay-check --dates`. |
+| `cherrypick/flies/book.py` | wires engine decisions to the paper DB; one book per (date, arm, symbol). A replay hands `process_snapshot`/`settle_book` the tick's `now` (or `paper_loop.run_once` its `when`) and every stamp — entry_time, completed_at, latencies, the cadence clock, the journals — is that instant (`clock.pinned`); the loops pass none and stamp the wall clock. |
+| `cherrypick/flies/db.py` | `fly_positions` (ledger) and `fly_books` (roll-up with the floor's price band). |
+| `cherrypick/flies/analytics.py` | the one query layer every read surface goes through. Read-only. |
+| `cherrypick/flies/analysis_rows.py` | The `scripts/flies_*` replays' settled-row loader and the ONE split of a row's `fees` into entry / completion / roll / settlement (`fees` is the total; the print's part is `settlement_fees`, else derived from a reconciled total, else the module's own fee at the print; the trades share the rest by shape). A replay never takes the entry's fee another way. |
+| `cherrypick/flies/eod.py` | Report builders, retired 2026-08-13 (`packages/review` reports the session now). `logs_dir()` is still the loops' path helper. |
+| `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `regime` / `bands` / `replay-gates` / `hedge-overlay` (`--run-k`) / `reversal-book` / `fill-model` / `regime-cuts` / `debit-first-offsets` / `debit-ladder` / `selector-fit` / `selector-replay` / `close-or-hold` / `close-tags` / `close-tag-tracker` / `agent-eval` / `backfill-events` / `backfill-peak-risk`; the console bridges three read-only evidence verbs, `live-gap` (live vs paper paired per session), `gate-sessions` (gate arms vs control over each arm's own window) and `selector-sessions`. |
+| `cherrypick/flies/close_or_hold.py` | `run.py close-or-hold` (live ledger; `--paper`, `--at HH:MM`): each of today's open positions closed now at natural (long legs at the bid, shorts at the ask, less `ic_close_fee`) beside its expected expiry P&L under the empirical move from this clock time (±5 min) to the close, from the gex recorder's `gex_spot_history` and `daily_closes`, settled through `fly.position_pnl` with its settlement fee. Any unusable leg quote means no close number, never a guess. **Unscaled** (a quiet day and a fast one weigh the same), ~50-80 sessions, no estimate under 20; values the structure as it stands, not a completion still resting. A read, not advice: nothing consults it and rule 5 stands. Pure functions plus a read-only reader. |
+| `cherrypick/flies/selector.py` | The selector arm, pure: candidates against its own book, the merge, scoring, the choice, `fit`, model validation. [docs/selector.md](docs/selector.md). |
+| `cherrypick/flies/selector_replay.py` | The selector walked forward over recorded sessions, out of sample, beside every benchmark it must beat. Read-only. |
+| `cherrypick/flies/ladder.py` | The debit-first shadow ladder, pure: rung geometry, the entry price, the per-tick fold through the arm's own completion function, settlement. |
+| `cherrypick/flies/live_loop.py` | The LIVE loop: a 1-min `--once --live` tick fired by the supervisor while the arm record (`state/flies-live-arm.json`, written per day via `/live-flies-start`) is valid; self-disarms at `live.disarm_time` by deleting the record. The arm record, both disarm reasons, the supervisor-heartbeat read and the record-only arming rule are `cherrypick.core.live` (thin wrappers here; the pre-cutover record location stays flies-only, and arming without a supervisor is refused -- the schtasks fallback was removed 2026-10-08); fill confirmation reads `cherrypick.core.execution.fill_state`. `--once` (dry-run default) is the rung-0 smoke; `--status`; `--settle --price` for the official print; burst fill-watchers `--watch-fills`. Every live tick marks each open position at mid into `fly_live_marks` — pure telemetry after every decision; an unquoted leg gets no row, never a zero. A mid is not a fill. Live only: paper's result is settled payoff by design. |
+| `cherrypick/flies/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor). `live_gates` is `live_loop.readiness` plus today's arm record (read as the tick's dead-man's switch reads it), so `execute_trade --live` and every adapter submit refuse an unarmed day, a bad `live.arm` or a missing designated account exactly as the tick does. The loop's adapter is `cherrypick.core.execution.Broker` with this module's session, account, `live_gates`, serializer and deploy cap injected; only the REST re-quote remains here. `official_settlement_price` is `cherrypick.core.settlement`'s, kept as a module attribute so the adapter and tests patch one seam. |
+| `cherrypick/flies/live_orders.py` | Pure engine-decision → order-spec builders (OCC symbols from the provider). Tick rounding is `cherrypick.core.structures`. |
+| `cherrypick/flies/alert_daemon.py` | Optional order-alert daemon: one account-alert websocket for the trading day, a companion on the arm record that the supervisor keeps up while armed (restarted on death or silence) / stopped on disarm. Decides nothing — appends to the inbox below so fills are *noticed* sooner. |
+| `cherrypick/flies/alerts_db.py` | The WAL-mode alert inbox (`live_alerts.db`), separate from the ledger on purpose — 1 writer (daemon), N readers (tick, watcher). |
+| `cherrypick/flies/credentials.py` | `fliesagent` keyring store + hidden-input CLI (orchestrator `connect` delegates here). `designated_account` is `CredentialStore.designated_account()`. |
+| `cherrypick/flies/fill_model.py` | Fill realism, pure: the three at-fill distances, spread prices and gaps, first-touch records, rule scoring, the paper shadow's outcome. [docs/fill-model.md](docs/fill-model.md). |
+| `cherrypick/flies/fill_facts.py` | Fill realism, recorded: the live loop's order/path writers (`fly_live_orders`, `fly_order_path`), `rebuild`, and the dry-run-by-default `backfill` from broker transactions and the gex spot trail. |
+| `cherrypick/flies/intraday_pack.py`, `intraday_advice.py`, `intraday_eval.py`, `intraday_replay.py` | The intraday agent ([docs/intraday-agent-plan.md](docs/intraday-agent-plan.md)): the fact pack with its look-ahead guard, validation of a decision and the live tick's read of it, the qualification (`agent-eval`), and the historical replay. Deterministic; the model call is `scripts/flies_intraday_agent.py`. |
+| `cherrypick/flies/close_tags.py` | Closes of stranded verticals tagged at natural on the row, never executed (`close-tags`, `close-tag-tracker`). |
+| `cherrypick/flies/completion_escalation.py` | A raised completion limit replayed on live's own quoted order path (`scripts/flies_completion_replay.py`). Pure. |
+| `cherrypick/flies/replay_gates.py` | `replay-gates`: the miss-stop and trend-bucket gates re-run over recorded rows. Read-only. |
+| `cherrypick/flies/stream_window.py` | Escalates the streamer's ATM window after repeated `missing_leg_quotes` refusals, and decays it back. |
+| `cherrypick/flies/fee_reconcile.py` | Settled live rows against the broker's cash, run daily by the supervisor's `flies-fee-reconcile` job whether or not live was armed. |
+| `cherrypick/flies/clock.py` | ET clock helpers; `clock.pinned` stamps a replayed tick with its own instant. |
+| `tests/fixtures/books.json` | three real tastytrade order chains, transcribed. |
+
+## The read side
+
+**Everything reads through `analytics.py`**, and a test asserts the report's headline figure is exactly
+what that layer returns — MEIC grew three call sites that disagree about what "net" means.
+
+**Three journals, each kept separate on purpose.**
+- `fly_decisions` records *why* every entry was made or refused, collapsing identical consecutive
+  reasons into one counted run.
+- `fly_iterations` records what each arm *wanted* on each iteration, before any gate could veto it —
+  uncollapsed, because collapsing destroys what arm divergence needs.
+- `fly_snapshots` records one row per (tick × symbol) of what the feed gave us: "ok" with quote counts,
+  or the provider's refusal reason. A stretch of refused rows is a feed problem; a stretch with *no
+  rows at all* is the loop not running — without it those two silences were identical. Written in
+  `paper_loop.run_once` on both the built and the refused path; pure telemetry, no decision reads it.
+
+**A book's session peak risk is recorded at settlement** (`fly_books.peak_risk`/`peak_risk_at`,
+`analytics.session_peak_risk`): the largest open worst case the book carried, `max(0, -floor)` over
+every position, each rewound to its state at that moment (rule 3: an uncompleted vertical at full
+defined risk). It is the capital `core.analysis` reads for flies, whose positions carry none per trade.
+A measurement only; nothing in the loop reads it. `run.py backfill-peak-risk [--write]` fills books
+settled before it existed (dry run by default) and checks the replay against the live loop's own
+`fly_live_marks.open_margin` at the same tick. The two differ for two known reasons, both named in its
+output: an entry still at its limit when the broker filled it better, and an entry order working at
+that tick that never filled. Any other gap is listed as unexplained. On 2026-10-16 the live ledger
+read 14 of 21 sessions matched to the cent and 7 explained, none unexplained.
+
+**Five measurements this strategy needs and generic P&L reporting cannot give:**
+
+- **Completion rate** — how often a leg-in became a fly. Near zero means short verticals wearing a
+  costume. `analytics.completion_trend` gives it per session, because a blended rate can drift while
+  looking stable.
+- **The counterfactual** (`best_completing_debit`) — for misses, *the market never offered it* versus
+  *our gate refused it*: identical in the P&L, opposite remedies. "Our gate" is two verdicts,
+  `buffer_blocked` (`D < C - fee_buffer`) and `floor_blocked` (`floor >= min_floor_dollars`), read from
+  the `fly_decisions` journal rather than recomputed, so they cannot drift from the gate as configured.
+- **Completion latency** — a fly that took 40 minutes and 8 points of drift is far likelier to fill
+  live than one that appeared for seconds. The paper-vs-live gap, measured.
+- **The post-completion counterfactual** (`post_best_completing_debit`/`_credit`) — for completions,
+  how much better the price got AFTER the first qualifying tick was taken. The stream cache keeps no
+  quote history, so it is recorded live (`book.py` step 1d, pure telemetry, no gate reads it) or lost.
+  (From 2026-10-13 the gex recorder keeps the chain's quotes every ~15 s, `core.quotehistory`, so a
+  replay can re-derive it for sessions from then on.)
+  `analytics.left_on_table` splits it by `completion_gex_bucket`. The decision record and the bar a
+  wait-for-better rule must clear: [docs/completion-timing.md](docs/completion-timing.md).
+- **Arm divergence** — how often arms picked different centres. **Only meaningful against an arm
+  that centres differently** (`gex`): the ATM arms agree on centre by construction (100% over 184
+  iterations), which says nothing about redundancy. Read `time_window` vs `control` on timing and
+  completion, `width-N` vs `control` on width. Never read a structural identity as a finding.
+
+**Fill realism, tag-don't-gate** (2026-10-02, [docs/fill-model.md](docs/fill-model.md)). Paper
+completes on the first tick its modelled debit clears the gate and pays that debit; live rests a
+limit at `max_safe_completion_debit` and pays the limit. 43 of the first 48 live completions filled
+below the best modelled debit the live loop ever saw, so the gap between the two is measured, not
+assumed:
+- **Live** records every order (`fly_live_orders`, filled or not) and what it saw while it worked
+  (`fly_order_path`, each tick and watcher cycle). At each fill it keeps all three distances (spot
+  past the centre, spot past the completing long strike, the mid/natural gap to the limit), signed
+  as `fill_model.py` defines them, plus the broker's own fill time and leg-fill price. The price
+  gaps come only from a look at most 15 s before the fill (its age is `fill_obs_age_s`), else
+  NULL: a minute-old look on a fast tape once read 0.55 above the limit that filled. **The
+  ledger's live `debit`/`credit` are the broker's fill price** (`fill_model.booked_price`, from
+  2026-10-12), and the order's limit stays on `fly_live_orders.limit_price`. Before that they were
+  the limit (the status `price` field), which hid 23 of 163 fills' price improvement; `fill_facts
+  book-prices` rewrote those, each checked against the broker's transactions. With no leg fills,
+  or a leg sum worse than the limit, the limit is still booked. A row says `fill_time_source = 'noticed'` when
+  the broker's time is unknown. Every write goes through `live_loop._telemetry`: a failure is
+  logged, never raised into a fill confirmation or a placement.
+- **Paper** stamps each legged entry with the limit a live completion would rest at
+  (`shadow_completion_limit`) and keeps first touches against it every tick until settlement
+  (`shadow_touches`), whether or not paper's own rule completed the position.
+  `analytics.shadow_completion` replays it at any grid value. **Switching paper to a live-like
+  rule changes what control's numbers mean: fit first, shadow second, switch only at a declared
+  boundary.**
+- **From 2026-10-05 every paper legged completion PAYS THE LIVE LIMIT** (`engine.pays_limit`,
+  `completion_price` / `completion_price_from`). The trigger is unchanged: the modelled debit at
+  or under the limit. The price is `engine.completion_limit`, the one formula live's resting order
+  is priced from; live filled at it 42 times out of 42. The plan's `market_debit` keeps the
+  modelled market price, and the best-debit counterfactuals record that, never the price paid. A
+  book-wide `completion_rule` break (`paper_loop._note_completion_rule`): **never pool completion
+  P&L across 2026-10-05.** The trigger's timing is the next step, fitted from quoted live paths
+  against the shadow, as a second break.
+- **The entry shadow (2026-10-14, step 1f′).** Live entry orders fill 86% (43 of 50), and the misses
+  are not random: spot was moving toward completion in 6 of 7, so live misses the entries that were
+  going its way. Each paper legged entry stamps the limit live would ask (`shadow_entry_limit`) and
+  its first 60 s (`shadow_entry_path`: spot's move toward completion, the entry spread's gaps).
+  `run.py fill-model`'s `entry` block fits a miss rule on live's orders off the gex spot trail,
+  never the order path (it stops at the fill), and splits paper's net by it. **No rule yet beats
+  assuming every entry fills**, so the split is not read until one does. Paper still enters on the
+  tick. [docs/fill-model.md](docs/fill-model.md#the-entry-shadow-2026-10-14).
+
+**Two shadow streams from 2026-10-05, both tag-don't-gate:**
+- **`hedge_mid_at_completion`** is the overlay hedge's sale value on the legged completion tick.
+  `hedge-overlay`'s `sell_at_completion` block reads it ("hold the hedge only while stranded").
+  Completed rows without it are untracked there, never a free sale.
+- **The debit-first shadow ladder** (`ladder.py`, `fly_debit_ladder`). On an arm that sets
+  `debit_ladder`, every fill also prices the same trade k strikes out each way. Each rung is carried
+  by `engine.evaluate_debit_completion` itself and settled through `engine.settle`. A rung is never
+  a position, and a refused rung carries its reason and no price. `run.py debit-ladder` reads it,
+  calibrated against real delta-arm fills at the same centre; read the calibration before any cell.
+  A rung at k = 0 reproduces its anchor exactly, and a test pins it.
+
+**Intraday agent (built 2026-10-06, [docs/intraday-agent-plan.md](docs/intraday-agent-plan.md)).** A model reads the session and decides the trend gate and which stranded verticals to close for the `intraday-agent` arm, beside the fixed `trend-rule` arm (both under "The arms"). Closes are tagged at natural on the row, never executed (`close_tags.py`; `run.py close-tags`, `close-tag-tracker`). The model call lives outside the package (`scripts/flies_intraday_agent.py`, supervisor jobs `flies-intraday-agent` and `flies-intraday-agent-live`). On live it is chosen per day in `/live-flies-start` (`live_loop --agent-mode`), only up to the modes the qualification unlocks (`run.py agent-eval`), shadow until then; there is no live closing path (`intraday_advice.LIVE_CLOSES_BUILT` is false).
+
+**Two overlays on the legged book, both tag-don't-gate** (2026-09-19):
+- **The hedge overlay** (`engine.hedge_candidate`, `book.py` step 1e, `analytics.hedge_overlay`,
+  `run.py hedge-overlay`). At every legged entry the ~`hedge_delta` (0.05) option on the spread's
+  losing side, beyond the long wing, is priced and stamped (`hedge_*` columns) and **never bought**;
+  each tick keeps the running max of what selling it would fetch, and settlement records its
+  intrinsic (0 when worthless, NULL only when no hedge was recorded — the read side keeps those
+  apart). The sell-at-Nx replay over the running max **is an upper bound, not a fill**. Paper only;
+  the spread's own decision and price are untouched.
+- **The reversal book** (`analytics.reversal_book`, `run.py reversal-book`) pairs each settled
+  `control` legged entry with the settled `debit_first` entry from the partner arm on the same losing
+  side (`debit-first-down` for a put spread, `-up` for a call), same session, nearest in entry time
+  within a window, each partner used once. A combined arm would break the one-variable rule twice. An
+  unmatched base entry is reported, never paired with a distant partner.
+
+**The regime-cuts artifact** (`run.py regime-cuts --write`, nightly 16:40 ET via `paper.regime_cuts_at`
+/ `regime_cuts_argv`). Every arm with settled era rows, cut by every regime dimension and by the
+declared cross-tabs (`analytics.CROSS_TABS`), written to `data/flies/regime_cuts-<session>.json` plus
+a `regime_cuts.json` latest copy only a newer session replaces (`--session` re-cuts a past day,
+`--backfill --since` fills a run). The contract is `cherrypick.core.regimecuts` (MEIC writes the same
+shape); the console and the advisor's deep pack read it and recompute no cell. Rules that live in the
+writer, not in any reader:
+- The era is scoped by this ledger's `measurement_breaks`: the latest book-wide break on or before
+  the session starts it; an arm added later starts at its own `arm_added` break; a future-dated break
+  is listed and ignored until it passes; a `partial_session` break never bounds anything.
+- Every cell carries `sessions`, stamped `thin` below three — a by-hand cut once made net-GEX sign look
+  predictive (84% vs 75%) when the whole effect sat in one seven-session cell.
+- With `--write` it also carries `gate_replay` (`replay_gates.sweep` over the advice base arm's era:
+  miss stop 15..90 min, both trend-bucket refusals, every `entry_windows` choice), because the advisor
+  reads only its pack — `miss-stop-90` was once proposed from latency quantiles when the replay said it
+  would have cost $1,097. `entry_windows` has three fixed choices (control's own 10:00-14:30, a
+  midday skip, 10:30); a test pins that control's own window is one of them.
+- The core's robustness stamps (`fragile`, `paired`, `history`, `multiplicity`) come from
+  `by_regime(..., with_sessions=True)`. First read: 1 of 46 same-day paired contrasts under p 0.10
+  against ~4.6 by chance — pooled cells that look like findings are what a gate would be read
+  against, not evidence the regime decides the entry.
+
+**`drift_alignment`** is derived at read time, never stored: `with` / `flat` / `against` from
+`completing_direction` against the stored `entry_trend_*` pair, with `flat` taken from the trend tag so
+the band is the arm's own `regime_trend_points` — the cut and the `refuse_completion_against_trend`
+gate can never disagree about "committed". Side alone is a coin flip; side × trend is the variable.
+`by_drift_alignment` stays as the EOD version under `DRIFT_BAND_PCT`. Each book's summary also
+carries `completion_latency_min` (p25/p50/p75/max) and `miss_gap` (`credit - best_completing_debit`
+over uncompleted verticals), copied through `regimecuts.assemble` only when present so MEIC's books
+carry neither. `by_regime`'s phase rename replaces every `entry_`, not the first; `test_regime_cuts.py`
+pins it.
+
+**The second cross-tab, gex × drift_alignment**, is declared module-side in `analytics.CROSS_TABS`, not
+in `core.regimecuts.DEFAULT_CROSS_TABS` (an iron condor has no drift analogue), appended so
+`cross_tabs[0]` stays the shared one. A three-way gex × trend × drift_alignment cross was refused: 27
+cells at this sample is a fishing surface, and `trend` is already inside `drift_alignment`.
+
+**The console's flies page has a time axis.** `analytics.session_timeline` assembles the day from rows
+already written. `settle_now` replays the book at each tick as an expiry payoff at live spot — **not a
+mark**, and the page says so. Replaying rewinds each legged row exactly (a short vertical until it
+completes: pre-completion fee `vertical_open_fee`, net the recorded `credit`), never drawing a fly
+before it existed. Both charts refuse to smooth: lines **break across a gap** rather than interpolate
+(a straight segment over a 100-minute silence reads as a calm market), and the payoff curve draws one
+line per arm, never a blended book.
+
+## Data source
+
+This module **runs no streamer**. `provider.py` reads the shared stream cache
+(`~/.cherrypick/data/marketdata/stream_cache.db`) read-only, produced by `packages/streamer` from the
+union of every module's `state/stream_requests/` file — this module rewrites its own every tick. Open
+interest, and so GEX, exists only because the producer subscribes DXLink Summary for its ATM window.
+**Each loop also declares its own open legs**, since spot leaving the ATM window is exactly when a
+short vertical needs its marks: `fly_positions` carries four `*_leg_symbol` columns (the DXLink
+streamer symbol, never OCC), stamped at entry and completion from the same quote the price came from;
+`stream_request.py`'s `leg_sources` query points at each loop's OWN ledger (`flies.json` → paper,
+`flies-live.json` → live). A live completing leg is stamped when the resting order is PLACED.
+
+**The provider refuses rather than guesses.** Stale quotes (`max_quote_age_seconds`), crossed quotes,
+missing spot, an empty chain — each returns `{"ok": False, "reason": ...}`, logged and stepped past.
+Refusals are ordinary, not errors. `quote_stats` is recorded on every snapshot so a barren session
+reads as "the data was thin", not "the strategy found nothing".
+
+**GEX inputs are refused when stale or thin.** Gamma older than `max_gex_input_age_seconds` (1800)
+is dropped, and below `min_gex_strikes` (20) the surface is refused and `select_center` degrades to
+ATM. Without the bound a dead feed produced a surface indistinguishable from a live one.
+`snapshot["gex_stats"]` carries fresh/stale/coverage and the `input_rule`.
+- **From 2026-10-06 (`provider.GEX_SURFACE_RULE_FROM`, a `gex_surface` break) the inputs are the gex
+  recorder's.** Open interest is kept at any age for a strike whose gamma is live, leftover gamma
+  (`core.gex.LEFTOVER_ROW_SECONDS`) is dropped, and `gex_input_age` is the gamma's age alone.
+- **Before that, OI was held to the gamma limit.** OI is a once-a-day number the streamer rarely
+  re-sends, so most strikes lost theirs by the afternoon. Control's stored net GEX had the opposite
+  sign to the recorder's on 47 of 348 entries. **Never pool `entry_/completion_gex_*` across 10-06.**
+- **The walls are still a different definition** from the recorder's: gross call/put peaks here,
+  net-GEX walls there. Same inputs, different walls, by design.
+
+`cherrypick.core.fees` supplies the fee schedule and `cherrypick.core.gex.compute_gex` the per-strike
+GEX profile — neither is reimplemented here.
+
+## The arms
+
+Separate books, each differing from `control` in **exactly one** thing. Every gate is shared, so each
+comparison measures one variable. Keep `max_positions` equal across any compared pair, or the
+comparison measures opportunity count instead of the variable. `engine.ARMS` is the registry; an arm
+runs only where a machine's config defines it (the shipped example holds only `control`, with each
+other arm's settings in a `_<arm>` note), and `tests/test_engine.py` checks that every configured arm
+is a registered one. Full history per arm: [docs/history.md](docs/history.md#the-arms-in-full).
+
+- `control` — ATM, all day. The naive baseline without which a profitable arm proves nothing.
+- `gex` — centre on the strongest positive per-strike net GEX near spot. Degrades to ATM when no OI
+  is cached, recording `center_reason` so those samples can be excluded.
+- `time_window` — ATM, only inside configured windows, which are **not** ranked: each trade is
+  tagged with its window and the ranking comes from our own sessions. Its windows **straddle**
+  control's rather than nest (nesting made the two identical but for opportunity count), and
+  `max_positions_per_window` (2) stops one window spending the whole book — over 07-20…07-24 a global
+  cap put 15 of 16 entries in the first window and the timing hypothesis was never exercised.
+- `width-2` … `width-5`, `width-10` — control's twins pinning `wing_width_strikes`
+  (`wing_width = strike_increment × wing_width_strikes`); `control` is the 1-strike rung, so there is
+  no `width-1`. Defined in STRIKES since 2026-08-15 so the sweep survives a symbol switch; XSP-era
+  rows under these names used raw point widths and are a different geometry — never pooled
+  (`CURRENT_ERA` keys on symbol). A hypothesis, not a fix: if no width yields a fee-positive floor,
+  the drift is fundamental to the mechanism, which is itself a result (rule 6).
+- `wide_wing` — **disabled**, superseded by the sweep; kept in `ARMS` so its books stay readable.
+- `debit-first` — isolates **legging order**: buy the debit vertical first, complete by *selling* the
+  credit spread once spot drifts back toward the centre. Its uncompleted branch is bounded at the
+  debit paid, never legged's `-W` tail. **GEX-centred** (`center_rule: "gex"`), so it differs from
+  `control` in two things: read it against `gex` for legging order alone.
+- `iron` — **RETIRED before it ever traded; keep the negative result (rule 6),
+  [docs/iron-completion.md](docs/iron-completion.md).** Completing into an iron fly uses the identical
+  strike pair, so put-call parity pins `D + credit2 = wing_width` for any skew: the two gates are one
+  inequality, `iron net − W ≡ fly net`, and what is left is adverse cost (+$3.46/position, $495 over
+  143 completions). Code kept and tested; disabled; `completion_modes` stays `["debit"]` everywhere.
+  **`book.py`'s "take the higher floor" dispatch is wrong and must be fixed before any revival** —
+  `fly` reserves 3 ITM strikes and `iron_fly` 2 (`fly.WORST_CASE_ITM_LEGS`) at different worst-case
+  prices, so iron's floor reads $5.00 high everywhere.
+- `bwb` — isolates **entry construction**: a broken-wing butterfly entered whole for a credit, near
+  wing `wing_width`, far wing `wing_width * bwb_far_width_ratio` (a ratio so it scales with width).
+  Until rolled it carries REAL negative tail risk (`wing_width - far_width`) that `position_floor`'s
+  `bwb` branch never reports as bounded. The roll buys `centre −/+ wing_width` and sells the held far
+  wing (a vertical of width `far_width - wing_width`), converting it to a symmetric fly once it
+  clears its own price and floor gates. GEX-centred.
+  - **The 25 bwb rows of 2026-08-04..08-06 are void** — the roll priced a spread 3× too wide and did
+    not produce a butterfly. They carry `void_reason` and every read surface drops them
+    (`db._VOID_BACKFILL`, `analytics.voided` states what was held back). A cutoff lives in data,
+    never in prose.
+  - **Side rule is `engine.choose_bwb_side` (`centre ≥ spot → calls`), never legged `choose_side`**:
+    the legged rule put the roll spread in the money, where its intrinsic (5.00 on a 5-wide) can
+    never clear `roll_debit < credit − fee_buffer`.
+  - **Safety and credit trade directly**: pushing the tail away from spot shrinks the credit, so
+    `min_bwb_credit_pct_of_tail` (0.15), not the price gate, is what binds. The roll trap it tests is
+    in [docs/faq.md](docs/faq.md).
+- **Retired at the 2026-10-15 boundary** (experiment log, 2026-10-12): `debit-first-up`,
+  `debit-first-down`, `bwb-up`, `bwb-down`, `bwb-up-w2`, `bwb-down-w2` and `bwb-atm`. Their entries
+  below are kept as the record. `debit-first-atm` stays: its shadow ladder's 10-session read cannot
+  be complete by 10-15 (the 10-08 outage voided that session's anchors), so it slips to the next
+  boundary.
+- **Retiring at the 2026-10-26 boundary** (experiment log, 2026-10-17): `restack` and
+  `debit-first-atm`, retired on the backtest's evidence (results kept locally under `~/.cherrypick`,
+  per the licence). The log gives the conditions: the retirement waits for validation to unlock
+  history and a re-run with every searched arm counted as a trial.
+- `bwb-atm`, `debit-first-atm` (retired; kept as the record) — ATM twins of the two GEX-centred construction arms, restoring the
+  one-variable rule: **X-atm vs `control`** isolates construction, **X-atm vs X** isolates centring. ATM
+  means the structure straddles spot, deliberately. **No `spot + N strikes` arm**: `center_offset` is
+  stored as a signed continuous float and re-cut with `by_regime(bucket_edges=...)`; what matters is
+  placement relative to the drift, not raw distance. Build a placement arm only if the GEX arms'
+  offset curve shows something, and make it drift-aware.
+- `debit-first-up`, `debit-first-down` — the OTM debit-first pair (`center_rule: "delta"`,
+  `engine._delta_center`, deltas from `provider._attach_deltas`): buy a debit vertical centred at
+  `debit_delta_target` (0.15, a magnitude) away from spot and complete by selling the same-centre
+  credit spread once spot walks into it.
+  - **Delta, not a strike offset** — one trade all day. The chosen delta is stamped as
+    `entry_center_delta` on **every** arm's rows, and `center_offset_value` is still recorded, so 0.15
+    can be re-cut rather than cost a second pair.
+  - **Two arms, one variable**: up and down differ only in `center_direction` (a test pins it). Should
+    direction follow the day is a re-cut on `trend_bucket`, not a third arm.
+  - **Refuse, never degrade**: no fresh delta, no strike within `debit_delta_tolerance` (0.05), or a
+    spread not wholly beyond spot each return no centre with its own reason — an ATM fallback would
+    trade the ATM arm's trade under this arm's name. Delta is filtered at the **quote** age limit.
+  - `min_debit_pct_of_width: 0.02` (the shared 0.20 would refuse a 15-delta spread by design);
+    `debit_cannot_be_out_earned` still applies. **Paper only** — `live_orders.py` builds legged specs
+    alone; read against `control` over 15–20 sessions before live is a question. The post-completion
+    counterfactual bites hardest here.
+- `bwb-up`, `bwb-down`, `bwb-up-w2`, `bwb-down-w2` — delta-placed bwb pairs on the same rule and
+  target as the debit-first pair, so the two constructions sit on the same strikes and differ in one
+  thing (credit now with a tail vs debit now with a conditional completion). **The credit floor is not
+  loosened**; refusal rows are the result. From 2026-09-30 each bwb attempt row, refused or filled,
+  carries the structure in `proposed_legs` (strikes, quotes, deltas) and, once priced, its
+  `would_be_credit` — enough to settle a refused bwb against the print and replay any floor
+  (`scripts/flies_bwb_floor_replay.py`: unrolled; it checks itself against the real fills and prints
+  no floor table for an arm that fails); both are NULL before that. `entry_far_wing_delta` is
+  stamped on every row so the flat floor can later be re-derived against `P(tail) × tail` — store
+  first, retune second. Two widths
+  (5/10 and 10/20) as separate arms, each with its own `max_bwb_tail_dollars`. **Paper only, never a
+  live candidate.** Read the roll as the result (`best_roll_debit`, unrolled vs rolled P&L). No hedge
+  overlay — insuring the far wing is the roll's job.
+- `selector` — **on the roster from 2026-10-15** (built 2026-10-04, [docs/selector.md](docs/selector.md)). One
+  portfolio that, each tick, runs its declared sources' own entry functions against ITS book,
+  merges identical plans (mode, side and geometry; never pooling the proposers' rows), scores them on
+  a model fitted the night before and pinned for the session, and books at most one through the
+  same booking code its source uses. **With no model it is control's exact twin**, and a test pins
+  that through settlement. Its positions complete under the proposing source's params
+  (`selected_from`). Every tick writes `fly_selector_choices`. **Started 2026-10-15** (its
+  `arm_added` break); the first read is at 10 departing sessions, on per-session net against control (experiment log,
+  2026-10-04, amended 2026-10-12).
+  - **Procedure v2** (2026-10-12, before it traded): it skips or departs only on a cell whose
+    session interval (`core.regimecuts.robustness`) is wholly clear of zero, and never on a
+    source's all-regime average. Version 1 would have skipped half the book on a −$8.51 cell.
+  - **Sources `control` and `vol-floor`.** `debit-first-atm` was dropped; more sources only once
+    the quote-history replay can score them.
+- `vol-floor` — `control` plus one variable (from 2026-10-05): no entry while the ATM straddle is
+  under `min_entry_straddle_pct` (0.0022) of spot (`engine.low_vol_refusal`, refusal
+  `straddle_below_floor`).
+  - **Why:** completion is a race for spot to travel a wing width one way before the close, and
+    control's low-vol third of sessions completed 70% against a ~75% break-even.
+  - **The threshold:** a ratio, so it survives spot moving. It was matched to the 17-point cut's
+    refusal rate and not re-optimised. In-sample it was ahead in both halves of the era but not
+    significantly: a test, not a default.
+  - **The one variable is pinned:** `tests/test_vol_floor.py` checks this machine's definition
+    equals control's apart from the floor.
+  - **The judging rule** is declared in the experiment log (2026-10-02).
+- `range-high` — `control` plus one variable (from 2026-10-12): no entry while spot is at or above
+  `range_high_pct` (0.9) of a session range narrower than `range_high_max_points` (30)
+  (`engine.range_high_refusal`, refusal `near_session_high`; the range is `stream_summary`'s
+  day high and low, the row the trend tag reads).
+  - **Why:** over control's 386 SPX entries (07-20..10-09), entries at a new high of a quiet
+    session completed 70% for -$2,548 (47 entries, 26 sessions). Gating both ends of the range
+    lost, and at-the-high entries on travelled days made money.
+  - **Found by search** over about 25 cuts on the rows that measure it, and it hurt more sessions
+    (16) than it helped (10): a test, not a default. Fails open with no session range.
+  - **The one variable is pinned:** `tests/test_range_high.py` checks this machine's definition
+    equals control's apart from the gate's two settings.
+  - **The judging rule** is declared in the experiment log (2026-10-09).
+- `wall-clear` — `control` plus one variable, **from 2026-10-12** (moved from 10-19 on the morning
+  of 10-12, before the open; experiment log 2026-10-12): no legged entry while the GEX wall on the completing side (the call wall for a put spread, the put
+  wall for a call spread) is under `wall_clear_ahead_points` (10) ahead of spot or crossed by under
+  `wall_clear_past_points` (5) (`engine.wall_clearance_refusal`, refusals `call_wall_not_cleared` /
+  `put_wall_not_cleared`).
+  - **Why:** control's entries with that wall 0–10 points ahead completed 64% for −$34 a spread.
+    The thresholds were read off those rows (`scripts/flies_wall_clear_replay.py`), and walls do not
+    visibly stop spot, so it is a forward test.
+  - **It reads the recorder's walls,** `snapshot["recorded_gex"]` via `core.regime.gex_at` (at most
+    600 s old), never the snapshot's own `gex` walls: those are gross call/put peaks
+    (`compute_gex`), the recorder's are net-GEX walls (`net_walls`), and they differ on the same
+    inputs. Fails open when unmeasured.
+  - **The one variable is pinned** by `tests/test_wall_clear.py`; the judging rule is in the
+    experiment log (2026-10-05).
+- `live-shadow` — **the live configuration in paper, from 2026-10-15**. Not a variant of `control`:
+  an arm declaring `mirror_live` takes its params from the live block (`engine.live_mirror_params`:
+  `live.arm`'s params, live's start, completion cutoff and buying-power cap, the entry credit floored
+  to the tick), and ignores any key of its own. Read against the **live ledger** over the same
+  sessions, never against `control`. `tests/test_live_shadow.py` pins it to `live_loop`'s params and
+  lists, key by key, what paper cannot express (resting fills, fresh REST quotes, mid-first pricing,
+  the one-minute tick, the quarter-end block).
+- `restack` — `control` plus one relaxed rule, **from 2026-10-12** (moved from 10-19, as
+  `wall-clear`): the duplicate rule ignores a structure once it is completed risk-free (`restack_completed`,
+  `engine.completed_risk_free`), so spot returning to a completed fly's centre may sell that vertical
+  again. An open vertical or a negative-floor completion still blocks.
+  - **Why:** spot came back to 127 of control's 196 completed flies (08-21..10-09), and the rule
+    refuses before pricing, so what a second contract earns was never recorded.
+  - **The cost is concentration:** every contract on a centre settles to the same payoff.
+  - **The one variable is pinned** by `tests/test_restack.py`; the read is
+    `scripts/flies_restack_read.py`, and the judging rule is in the experiment log (2026-10-11).
+- `range-centre` — `control` plus one variable, a placement gate, **from 2026-10-15** (declared
+  2026-10-14): no entry while spot is at or above `range_pos_max` (0.8) of the session range so far,
+  on any range width (refusal `range_position_high`), or while the ATM centre sits more than
+  `center_above_spot_max` (1.25) points above spot, which on an ATM arm is the put spread sold
+  furthest in the money (refusal `center_above_spot`). `engine.placement_refusal`; the range check
+  fails open without a session range.
+  - **Why:** ahead of control in each of three eras on control's own rows, and flat across nearby
+    thresholds. Found by search over ~8,700 cuts whose best performers did not carry to unseen
+    sessions as a group, so it is read forward, not trusted.
+  - **The one variable is pinned** by `tests/test_range_centre.py`; the judging rule is in the
+    experiment log (2026-10-14).
+- `window-1300` — `control` with its entries confined to 13:00–13:59, **from 2026-10-15** (declared
+  2026-10-14). One variable: the window. Its book is empty at 13:00 where control's is not, so it
+  measures the hour without the morning's positions occupying its centres. Pinned by
+  `tests/test_range_centre.py`; judging rule in the experiment log (2026-10-14).
+- `window-1230` — `control` with its entries starting at 12:30 instead of 10:00, ending with
+  control's at 14:30, **from 2026-10-19** (declared 2026-10-16). One variable: the window. From the
+  live-start replay's half-hour grid, ahead of 10:15 in 3 of 4 tick phases but not significantly, so
+  a forward test. Pinned by `tests/test_window_1230.py`; judging rule in the experiment log
+  (2026-10-16).
+- `trend-rule` — `control` plus the trend gate, **from 2026-10-06**
+  ([docs/intraday-agent-plan.md](docs/intraday-agent-plan.md)): `refuse_completion_against_trend`
+  refuses an entry whose completion needs the day to turn against a drift beyond
+  `regime_trend_points`, and `tag_closes: "rule"` tags (never executes) a close of a stranded
+  vertical through its short but not past its wing on a day committed against it
+  (`close_tags.rule_wants_close`). The arm the agent must beat.
+- `intraday-agent` — `trend-rule`'s gate switched per tick by the agent's fresh decision
+  (`trend_gate_source: "agent"`, `paper_loop.tick_config`; the rule's gate exactly when there is
+  none), and the closes the agent names, tagged the same way. **From 2026-10-06**; judged against
+  `trend-rule`, not just `control`. Needs `intraday_agent.enabled` and the supervisor's
+  `flies-intraday-agent` job.
+
+### Regime tagging
+
+`engine.classify_regime` tags every entry and completion, on every arm, from the snapshot in hand:
+`vol_bucket` (ATM straddle/spot), `gex_bucket` (gamma concentration, `"unknown"` without OI),
+`time_bucket`, `skew_bucket` (OTM put vs call at the traded strikes), `center_offset_bucket` (signed
+`centre − spot`, one strike per bucket), `trend_bucket` (`spot − day_open`, from the cache's
+`stream_summary` via `provider._session_bounds`), `event_bucket` (the day's scheduled releases
+against the moment, from `cherrypick.core.events` via `provider._day_events`). **Inert — nothing
+gates on it.** It exists to build
+a future selector that picks the winning entry/completion candidate for the current regime, and
+**a regime selector must score its candidates at a common price** (the iron dispatch above is the
+cautionary case). A tag definition is expensive to change once data accumulates, so think before
+changing one. The narrative behind every dimension:
+[docs/history.md](docs/history.md#regime-tagging-how-each-dimension-got-its-present-form).
+
+- **`event` is the one tag read from a calendar, not the market** (2026-10-02). `after` (a major
+  release has come out today: CPI, PPI, NFP, retail sales, PCE, GDP, JOLTS, FOMC), `before`, `none`,
+  or `unknown` when any calendar source cannot speak for the day. **Unknown is never quiet:** a
+  machine with no FRED key tags `unknown`, not `none`. `event_value` is minutes since the latest
+  major release; `event_labels` lists every release, minor ones too. Backfillable exactly
+  (`run.py backfill-events`, dry run unless `--write`), because a calendar is history. FRED mixes
+  headline dates with revisions, so Census's own calendar is the source for its releases (retail
+  sales, housing, durable goods): FRED read 2026-09-28 as a retail-sales day, and Census has nothing
+  on it. Michigan's preliminary sentiment reading comes from its own page (FRED lists only the
+  final). ISM, Conference Board confidence, FOMC minutes and options expiry are computed by rule
+  (`source: "rule"`). After a calendar correction, `backfill-events --restamp --write` re-tags.
+- **Store the measure, not just the bucket.** `classify_regime` returns the continuous measure behind
+  each bucket plus the GEX surface's provenance (`net_gex`, `gamma_flip`, `gex_strikes`,
+  `gex_input_age`); `analytics.by_regime(..., bucket_edges=[...])` re-cuts it. Regime data has no
+  backfill path, so a threshold can only be recalibrated from the stored number.
+- **Trend band is 20 points** (not one 5-point strike, where the opposing bucket inverts). Chosen on
+  the same 76 rows that measure it — a best estimate, not a calibrated constant. Trend-from-open lags.
+- **`refuse_completion_against_trend` stays retired.** The early 89% vs 7% opposing-drift split (15
+  trades, 3 sessions) did not survive the advisor era: over 25 sessions `against` completed 73% and
+  `with` 67%, `with` beat `against` 7 of 19 days (p 0.36), and `against` is fragile. Do not revive it
+  from the early figure.
+- **Trend can be backfilled only while `stream_summary` retains rows** (back to 2026-07-29 today); the
+  cache offers no retention guarantee. Chop/trend stays absent: it needs the path, which is
+  cross-tick state. [docs/centre-lag.md](docs/centre-lag.md).
+- **`center_offset` describes our own choice, not the market** — a market regime is something to
+  condition on, this is something to change. Its sign fixes which way spot must go for a leg-in to
+  complete; `max_total_gamma` centres where price *has been* and so lags on trending days. Signed and
+  side-neutral, never a "lagging" boolean (a snapshot carries no trend). Kept alongside `trend`
+  because they catch different entries and imply **opposite remedies** (skip the trade vs fix the
+  centring). Content only on GEX-centred arms. The float was backfilled exactly on 292 paper / 9 live
+  rows; the bucket was left NULL there — re-cut the float instead. What lag costs is lag *against the
+  direction of travel*, not lag alone. Nothing gates on it yet; [docs/centre-lag.md](docs/centre-lag.md)
+  says what evidence would justify a gate.
+- **`gex_bucket` is windowed near spot over the top 3 strikes** (whole-chain share read `thin` 60/60).
+  **`time_bucket` boundaries are 11:00/13:00** (10:00/15:30 was constant by construction); re-cut it
+  splits 43/35/19 with completion falling 72% → 63% → 58%, which is the mechanism (less session left
+  to drift). It is **not** redundant with `entry_window`, whose dominant cell holds 74 of 97 rows.
+  Chosen on the same 97 rows that measure it.
+- **`analytics.regime_coverage` guards the read.** A single-bucket dimension is `degenerate`: the EOD
+  report warns and withholds that dimension's P&L table (a one-bucket table reads as a finding). It
+  also reports `sessions`, `daily_scale`, `effective_n` and `underpowered`, because **rows are not
+  draws** — positions on one day observe one market. `daily_scale` is measured (`DAILY_SCALE_RATIO`),
+  not declared; `underpowered` is keyed on sessions, not `effective_n`. `degenerate` means re-cut the
+  float, `underpowered` means collect more sessions. `by_regime` reports sessions per bucket.
+- **A stale checkout silently loses regime data** (the loop imports from the working tree, so the
+  checked-out branch decides what the ledger records). `db.stale_writer_columns` compares the running
+  code against the **database file's** columns — comparing the schema registry against
+  `classify_regime` catches nothing, since both are stale together. `paper_loop` logs it at session
+  start and does not enforce: refusing to trade would turn a telemetry gap into an outage.
+
+## Two declared-but-off entry gates
+
+`engine.trend_bucket_refusal` (`refuse_trend_bucket`: none | up_from_open | down_from_open) refuses
+every entry while the session's trend-from-open bucket is the named one — the day, not the leg.
+`engine.miss_stop_refusal` (`miss_stop_minutes`) stops an arm entering for the day once any of its
+spreads has sat uncompleted that long (losing sessions were RUNS of misses into one tape). Both are
+off unless an arm or advice sets them; `refuse_trend_bucket` is declared in `advice.bounds`, and
+`miss_stop_minutes` was taken out of them at the 2026-10-15 boundary (negative on live, re-proposed
+repeatedly; experiment log 2026-10-12) -- an arm may still set it; both sit ahead of strike
+selection so a refusal is attributed to the session; legged only. Because each reads only facts every
+row carries, `replay_gates.py` (`replay-gates`) re-runs recorded sessions under either rule exactly —
+the cheap first answer before the advised twin's forward A/B. The live tick stamps `entry_time_min`
+on its rows as paper does; without it the cadence clock and this gate silently never fired live.
+
+## Per-arm portfolios: cadence and the entry rules
+
+Each arm is an independent portfolio with **unbounded capital and buying power**, so three rules are
+the whole of what paces it — and **the refusals are the primary measurement**, not a diagnostic.
+
+- **Cadence** — one entry per arm per `min_seconds_between_entries` (360), clocked from the last
+  **fill**; an unfilled order did not spend the slot. `engine.cadence_state`.
+- **The same-strike sign rule** — within one arm, every open leg at a given (expiry, right, strike)
+  must share a sign; a long against a short is refused, because legs that net to zero make every
+  downstream number describe a position nobody holds. `cherrypick.core.entry.sign_conflict`, fed by
+  `fly.position_legs`. **Option type is part of the leg identity** — a short put and a long call at
+  one strike do not net. The rule pushes adjacent structures a strike further apart by design (the
+  `+1 -2 +2 -2 +1` shape still stacks); **expect fewer entries than pre-2026-08-11 books, and do not
+  pool the two.**
+- **No duplicate structure** — keyed on `(centre, wing_width, far_width)` across the whole day.
+  Replaces `center_already_occupied`.
+
+**Both sides of the sign comparison are stamped with one expiry token** (the day book is all 0DTE for
+its `trade_date`; a snapshot's own date field is not guaranteed). If they ever disagreed the rule would
+silently permit everything — **a gate that fails open and silently is worse than no gate.**
+
+**`fly_entry_attempts` is the measurement record; `fly_decisions` stays the narrative.** One
+uncollapsed row per evaluated opportunity (outcome, blocking strike, seconds still to wait). `no_fill`
+is its own outcome, neither a spent slot nor a refusal. Writes are wrapped so a telemetry failure can
+never cost a trade.
+
+**Changing the cadence is a measurement break** — entry pacing decides what a per-session net means.
+Journal it and keep the eras apart.
+
+## The advised arm (paper only, off by default)
+
+When `advice.enabled` is true, the paper loop looks ONCE at session start for
+`state/advice/flies-<session>.json`, re-validates it with `cherrypick.core.advice` against this
+module's own `advice.bounds`, and runs each admitted experiment as a synthetic arm beside the base arm
+its entry names — one arm per entry `advised_books` returns, tagged `advised:<experiment name>`. The
+core mechanism is in [packages/core/CLAUDE.md](../core/CLAUDE.md). Module specifics:
+
+- Absent, stale, expired or invalid advice means baseline; one out-of-bounds value rejects that
+  experiment's whole overlay (its baseline day, nobody else's). The day's decision is pinned in
+  `data/flies/advice_active.json` so advice never starts, stops or changes mid-session.
+- The base is read from the entry, never split out of the tag. An arm holding rows whose entry is gone
+  resolves its base through `_advised_base` (the decision's entry, else legacy `advised:<arm>`, else
+  `advice.base_arm`). Pre-2026-09-17 decision files still open `advised:control`, so history reads
+  unchanged; `experiment_id` (via `stamp_for`) separates the experiments that shared that tag. Rows
+  from before the column read `NULL` and are never rewritten.
+- **An advised arm is a new BOOK, not a measurement break** in `control`, which never changes meaning
+  mid-experiment. Rows key on the arm string, so it needs no `engine.ARMS` entry.
+- **No management twin, because this module has no exits.** Tick and settlement share ONE roster
+  helper (`paper_loop.session_arms`) that includes any advised arm still holding rows for the day,
+  whatever today's advice says — a narrower settlement roster would strand a book open.
+- Keep the bounds narrow: an advised book that differs from control on five axes measures nothing.
+
+## The live pilot
+
+Live trading is running, not hypothetical. The two questions moving to live raised, and how the pilot
+resolves them:
+
+- **Legging is where live diverges hardest from paper.** Live, step 2 is a working limit that may sit
+  or fill worse, so the paper completion rate was taken as a **ceiling** on the live rate. The first
+  48 live completions question that: a resting limit filled where paper's modelled debit said no
+  (fill realism, above). Built-in abort check: once 30+ live legged entries exist,
+  `analytics.live_vs_paper` flags `abort_rule.triggered` when the live rate is more than 15 points
+  below paper over the same days. It is reported in `live_loop --status` and halts nothing; acting
+  on it is a person's call.
+- **`fund_from_open_credit` needs a real buying-power check** before any outright entry. Moot for the
+  pilot: outright entries are off in live, so this must be solved before they could go live.
+
+The full plan — Gate 0, live-loop architecture, kill switches, the fee-math symbol decision, the
+rung-by-rung rollout — is [docs/live-trading-plan.md](docs/live-trading-plan.md).
+
+## Band placement (`python run.py bands`)
+
+Where each book's band sat relative to the range the session actually printed. A fly's floor holding
+is the joint event of band placement and realised range, so `floor_holds` alone credits a wide band on
+a quiet day and blames a tight one on a fast day.
+
+- **Both edges**: the metric is `min(low_margin, high_margin)` with the binding edge named (72 of 152
+  books were bound by the UPPER edge), normalised by the session's realised range (ex-post) and by the
+  VIX1D one-day implied move (knowable at entry — the only one that separates "places wider bands"
+  from "got quieter days").
+- **The range comes from the stream cache's `day_high`/`day_low`, not `fly_iterations`** — a 0.11-point
+  breach is invisible to sampled ticks.
+- **Ranges key on (session, symbol)** — this module has traded SPX and XSP, and keying on date alone
+  scores XSP bands against SPX ranges.
+- `band_placement_classifier` agrees with `floor_holds` 97.4% (two-edge) vs 72.4% (one-edge) on 152
+  books. **Read it as agreement, not prediction**: `floor_holds` is a property of the structure settled
+  before the open, so part of the agreement is mechanical; the rule-vs-rule comparison is the result.
+  Residual disagreements (books that touched an edge and settled back inside) are labelled as such.
+
+How the metric was arrived at: [docs/history.md](docs/history.md#band-placement-how-the-metric-was-arrived-at).
