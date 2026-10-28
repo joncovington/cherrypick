@@ -512,7 +512,7 @@
       "id": 20,
       "study": "item20",
       "title": "The Convex Stack: one with-trend SPX fly bought twice a week at about 5 DTE",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "ma-trend",
       "side": "directional",
