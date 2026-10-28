@@ -169,13 +169,16 @@ def test_rate_cut_halves_the_refill_and_empties_the_bucket():
 
 
 def test_a_clean_hour_earns_a_quarter_back(monkeypatch):
+    # A pinned clock: at a fractional reading, (t + 3600) + 3600 - (t + 3600) can round below
+    # 3600 and the recovery never fires (a fresh CI runner's small uptime hits that often).
+    monkeypatch.setattr("cherrypick.core.streamer.time.monotonic", lambda: 0.0)
     eng = _engine(subscribe_per_minute=1500)
     eng._note_rate_cut()
-    eng._refill(eng._last_rate_cut_at + 3600.0)
+    eng._refill(3600.0)
     assert eng.subscribe_per_minute == 750 + 375
-    eng._refill(eng._last_rate_cut_at + 3600.0)
+    eng._refill(7200.0)
     assert eng.subscribe_per_minute == 1500  # capped at the base
-    eng._refill(eng._last_rate_cut_at + 3600.0)
+    eng._refill(10800.0)
     assert eng.subscribe_per_minute == 1500
 
 
