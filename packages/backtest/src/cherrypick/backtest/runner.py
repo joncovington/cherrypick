@@ -385,7 +385,7 @@ def run(
     validation can no longer reach `UNLOCK_SESSIONS` (paper stopped 2026-10-19 after five), so its
     history cannot unlock. The run spends the holdout for each spec exactly as an unlocked one does,
     records no trial, and is marked provisional everywhere: a read on unvalidated data, declared before
-    it ran."""
+    it ran. Item 23 (2026-10-28) uses it for MEIC, whose history has not unlocked either."""
     if module not in MODULES:
         raise RunRefused(f"module must be one of {sorted(MODULES)}")
     mod = MODULES[module]

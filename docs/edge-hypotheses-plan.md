@@ -1489,6 +1489,76 @@ it is run.*
   the same order: mid worst, 0.10 level with its base. The holdout is now spent for this
   specification. Local result: `.../item21/study-holdout-2025-07-01-2026-10-12.json`.
 
+### 23. The short delta of MEIC's live rule: 12, 20, 25 and 30 against 16
+
+*Source: the user, 2026-10-28: "what does allowing pm-200 to enter at 20 delta do to the expected
+value?", then "does it make sense to test a range of deltas?" and "test with no floor, ceilings?".
+No run has varied the delta of the
+rule live trades: every MEIC backtest keeps `pm-200` at 16, and the 2026-10-18 condor study tried
+only 12 and 16, at every half hour. Item 22 is taken by the overnight condor (PR #625). Declared
+here before any of it is run.*
+
+- **Question:** does a different short delta raise the expected value per session of the rule live
+  trades, `pm-200` entering once a day 14:00–14:30?
+- **Where the edge would live:** **premium**. A nearer short collects more credit, so fees take a
+  smaller share and the 2× stop sits further away in dollars. Against it, a nearer short is tested
+  more often in the last two hours, and stopped losses already run larger than the average win.
+  Which wins is the question; nothing here assumes it.
+- **Look-alikes:** the 10-18 condor study (16 delta held at net-2.0 in both halves, 12 did not, at
+  every half hour 12:00–14:30, outside MEIC's own code); the income studies, where selling nearer the
+  money found no edge after costs. Neither tested MEIC's own engine at 14:00 above 16.
+- **Rival explanations, each with its check:**
+  - *A gate, not the delta:* the credit floor (15% of width) would refuse far shorts and the call
+    ceiling near ones. **Check:** the judged arms carry neither; a session with no entry still counts
+    at zero in the pairing, and trades per arm are reported.
+  - *A calm span:* **Check:** the paired difference must be positive in both time-halves.
+  - *Fees:* **Check:** the arm's own net is still positive at 1.5× fees.
+  - *Searching a grid:* **Check:** Holm across the four arms; the grid is fixed here and not
+    extended after a look.
+- **The structure:**
+  - `live-1400` is the registry's `pm-200` (SPX, 10 wide, per-side stop at 2× the whole credit,
+    30-minute spacing) with entries 14:00–14:30, so one condor a session: the rule live trades
+    through its live block, its credit floor and call-delta ceiling included.
+  - `d16` is `live-1400` with **no credit floor** (`min_credit_pct_of_width` and the low-IV relief
+    floor both 0) and **no call-delta entry ceiling** (all three set to 1). A condor whose credit is
+    not positive, or does not cover its opening fee, is still refused: that is structure, not a gate.
+  - `d12`, `d20`, `d25` and `d30` are `d16` with `short_delta_target` changed. Nothing else differs.
+  - `live-1400` and `control` are references, never judged. `d16` against `live-1400` is reported:
+    it is what the two gates do at 16.
+- **Costs:** MEIC paper's own model: fees from `core.fees`, stops filled under the replay's fill
+  model, cash settlement at the store's close.
+- **Measured:** each session's summed net per arm, in dollars at one condor.
+- **Window and sample:** the backtest's own windows over the 60 s vendor store (`SPX-60s.db`).
+  - **Design:** 2022-05-16 to 2025-06-30. **Holdout:** 2025-07-01 to 2026-10-12, run straight after
+    the design whatever it shows (the user's choice, 2026-10-28). It counts toward a pass only after
+    a design pass; after a design fail it is exploratory and cannot overturn the fail.
+  - `pm-200-1400` was chosen with the holdout dates seen, so `live-1400`'s result there is not out
+    of sample. The ungated arms have never run, so their paired differences there are.
+  - **Both runs are provisional.** MEIC validation has not unlocked (row #16 is its verdict), and
+    the user chose to run anyway. The holdout spends once per arm through the runner's
+    `unvalidated_holdout`. Results carry the vendor data's own unchecked error.
+  - Fewer than 100 sessions in a window is no verdict.
+- **Pass-or-fail rule**, per grid arm, all must hold:
+  - the paired difference against `d16` (one session one observation) has a mean above zero and a
+    one-sided t above 2;
+  - Holm across the four arms;
+  - the paired difference positive in each time-half of the window;
+  - the arm's own mean net above zero, and still positive at **1.5× fees**;
+  - then the holdout: the paired difference with a mean above zero and a one-sided t above 2.
+- **Declared limits (B11):** 60 s ticks; strikes by the replay's delta source; a stop fills under
+  the fill model, not a recorded fill. VIX bands do not move the delta: every arm sets its own.
+- **Name split (B9):** does not apply; one symbol.
+- **Data:** no new store. `scripts/meic_delta_grid_item23.py` builds a scratch MEIC arm registry from
+  the machine's (the six arms added) and runs `cherrypick.backtest.runner` over each window. Results
+  go under the backtest data directory only; this plan records the verdict.
+- **Decides:**
+  - **A pass:** a proposal to move `live.arm` to the passing delta at a declared boundary, after MEIC
+    validation unlocks, with the kill criteria re-derived from that arm's replay. The passing arm is
+    ungated, so whether the floor and ceiling come with it is part of that proposal, read from
+    `d16` against `live-1400`; it is not decided by this test.
+  - **A fail or no verdict:** live stays at 16 delta, and the short delta is closed as a lever for
+    the 14:00 rule.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
