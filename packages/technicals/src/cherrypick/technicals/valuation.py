@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import jsonio as _jsonio
+from cherrypick.core import treasury as _treasury
 from cherrypick.core import valuation as _val
 
 from . import fundamentals, paths, securities, statements, store
@@ -157,6 +158,7 @@ def value_one(
     index_closes: dict[str, float],
     broker: dict | None,
     snapshot: str | None = None,
+    rf: float = _val.incomerules.RATE,
 ) -> dict[str, Any]:
     """One row of the file. Never raises on a name's data: the row says what stopped it."""
     row: dict[str, Any] = {
@@ -213,7 +215,7 @@ def value_one(
     row["market_cap"] = round(market_cap, 2)
     g = consensus_growth(conn, symbol, as_of, snapshot)
     row["consensus_used"] = g is not None
-    out = _val.value(years, market_cap, b, consensus_growth=g)
+    out = _val.value(years, market_cap, b, consensus_growth=g, rf=rf)
     if isinstance(out, _val.Refusal):
         row.update(state="refused", reason=out.reason)
         return row
@@ -237,11 +239,24 @@ def value_one(
 # ----------------------------------------------------------------------------------------- the build
 
 
-def rule() -> dict[str, Any]:
+def risk_free(as_of: str) -> tuple[float, str]:
+    """(rate, where it came from): the 10-year Treasury par yield of the last curve before the
+    session (`core.treasury`, 2026-10-28), else the suite's declared rate when no file is on disk."""
+    read = _treasury.yield_before(as_of, "10y")
+    if read is None:
+        return _val.incomerules.RATE, "incomerules.RATE (no Treasury file)"
+    day, pct = read
+    return pct / 100.0, f"treasury 10y {day.isoformat()}"
+
+
+def rule(rf: float = _val.incomerules.RATE, rf_source: str = "incomerules.RATE") -> dict[str, Any]:
     return {
         "forecast_years": _val.FORECAST_YEARS,
         "terminal_growth": _val.TERMINAL_GROWTH,
-        "risk_free": _val.incomerules.RATE,
+        "risk_free": rf,
+        "risk_free_source": rf_source,
+        "min_wacc": _val.MIN_WACC,
+        "margin_years": _val.MARGIN_YEARS,
         "equity_premium": _val.EQUITY_PREMIUM,
         "beta": f"OLS of weekly log returns on {INDEX}, {BETA_YEARS} years, bounded {_val.BETA_BOUNDS}",
         "growth_bounds": _val.GROWTH_BOUNDS,
@@ -280,10 +295,19 @@ def build(day: str | None = None, path: Path | None = None, names: list[str] | N
         # One snapshot read for the whole build: `snapshot_on` scans the estimates table (~0.3 s), and
         # a name at a time it was most of the first run's 22 minutes (2026-10-27).
         snapshot = fundamentals.snapshot_on(conn, as_of)
+        rf, rf_source = risk_free(as_of)
         rows = {}
         for sym in sorted(names):
             rows[sym] = value_one(
-                conn, sym, as_of, kinds.get(sym), sectors.get(sym), index_closes, broker.get(sym), snapshot
+                conn,
+                sym,
+                as_of,
+                kinds.get(sym),
+                sectors.get(sym),
+                index_closes,
+                broker.get(sym),
+                snapshot,
+                rf,
             )
     finally:
         conn.close()
@@ -297,7 +321,7 @@ def build(day: str | None = None, path: Path | None = None, names: list[str] | N
         "built_at": datetime.now(UTC).isoformat(),
         "universe": source,
         "security_list": pick.get("day"),
-        "rule": rule(),
+        "rule": rule(rf, rf_source),
         "names": len(rows),
         "states": counts,
         "rows": rows,
