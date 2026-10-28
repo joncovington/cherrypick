@@ -1725,6 +1725,31 @@ that test. Declared here before any of it is fetched or run.*
   - **A fail or no verdict:** the monthly stays the skate default, the tab's per-day ranking gets a
     note that it is not a tested edge, and rolling a tested put is recorded as payoff shaping that
     did not pay.
+- **Clarified 2026-10-28, while building the replay, before any fetch or run**
+  (`scripts/skate_expiry_item25.py`). Where the declaration was silent:
+  - **The roll arm keeps the $0.03 buy-back.** The educator places it at the fill and rolls only
+    when tested, so `roll` is `hold` plus the roll. A roll's new leg must pass the same spread bar.
+  - **Unknown report dates.** A stock is clear only when no report falls in the span and Dolt shows
+    the quarter around it: the reports either side no more than 120 days apart, or, when the next
+    is not listed yet, the last one under 80 days before the expiry. Anything else is unknown, and
+    not entered.
+  - **Where report dates come from.** Dolt's `earnings_calendar`, under a name's old ticker too
+    (META's reports before 2022-07 are under FB). Dolt lists nothing at all on 37 trading days since
+    2021-06, among them 2022-01-24 to 01-28, the week big tech reported, so those days alone come
+    from Nasdaq's public calendar (`fetch_earnings_times.fetch_day`). The dates are cached once by
+    the script's `reports` step, and the study reads only that file. What stays unknown: COST's
+    March reports, which neither lists by date, and one gap each for PEP, GS and MS.
+  - **Splits.** An entry or roll whose span holds a split is not taken. The band is figured on
+    split-adjusted bars as a ratio to the close and applied to the day's own close, so the strike is
+    on the chain's share basis.
+  - **Run ends.** Entries stop at each window's end, and positions run on to the last session the
+    monthly paths reach: 2026-10-22 for the design, 2023-02-17 for the holdout. A position still
+    open then is marked at its working buy-back.
+  - **What is fetched.** Only the weeklies the store does not hold, each from 18 days before its
+    expiry, plus the March 2023 monthly a late 2022 roll can reach. Fridays only, so `w14` enters
+    Wednesday to Friday: a Monday or Tuesday is 11 or 18 days from a Friday.
+  - **Weekly coverage** is the share of a window's non-monthly Fridays whose path came back
+    complete.
 
 ## Not worth revisiting
 
