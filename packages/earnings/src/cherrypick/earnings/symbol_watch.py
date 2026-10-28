@@ -72,6 +72,7 @@ from cherrypick.core import calendar as _calendar
 
 from cherrypick.earnings import paths as _paths
 from cherrypick.earnings import scanner as _scanner
+from cherrypick.earnings import universe as _universe
 from cherrypick.earnings.bounded import OpTimeout as _OpTimeout
 from cherrypick.earnings.bounded import run_bounded as _run_bounded
 
@@ -222,6 +223,17 @@ def fresh_snapshot(session: str | None = None) -> dict | None:
     except (TypeError, ValueError, OSError, OverflowError):
         return None
     return snapshot
+
+
+def preview_universe(session: str) -> set[str] | None:
+    """The forward scan's universe for `session`. From 2026-10-29 the suite's liquidity verdict
+    (universe.py, docs/operating-history.md); before, tastytrade's watchlists. None scans everyone:
+    a verdict that cannot gate, or a failed watchlist fetch, degrades to that, never to scanning no
+    one -- this pass only previews and orders, and the entry gate refuses on its own."""
+    if session >= _universe.PREVIEW_FROM:
+        verdict = _universe.load()
+        return None if _universe.unavailable(verdict, session) else (_universe.tradable(verdict) or None)
+    return _scanner.fetch_watch_universe()
 
 
 def covered_symbols(session: str | None = None) -> set[str]:
@@ -559,9 +571,9 @@ def refresh_symbol_watch(days: int = _DEFAULT_DAYS, config: dict | None = None) 
 
     liquid_only = (config.get("symbol_watch") or {}).get("liquid_only", True)
     if liquid_only:
-        universe = _scanner.fetch_watch_universe()
+        universe = preview_universe(str(today))
         if universe:
-            by_symbol = {s: info for s, info in by_symbol.items() if s in universe}
+            by_symbol = {s: info for s, info in by_symbol.items() if _universe.spelled_in(s, universe)}
 
     total = len(by_symbol)
 

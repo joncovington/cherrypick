@@ -175,7 +175,18 @@ is declared now and scored once:
   Both must hold. A pass proposes a `symbol_screen` gate, which is its own boundary. A fail
   closes it, and the covariate stays recorded.
 
-## The 2026-11-02 boundary (declared 2026-10-27)
+## The 2026-10-28 boundary (declared 2026-10-27 for 2026-11-02; moved to 10-28 on 10-28)
+
+**Moved forward at the user's request**, at 04:07 ET on 2026-10-28, to bind on that session's
+15:35 entry scan. Two consequences of the short notice:
+
+- **The verdict is re-run by hand that morning.** The first verdict under the new bars (technicals
+  #628) would otherwise be written only at 18:57 ET, after the entry scan. Once #628 is merged into
+  the live checkout, `python -m cherrypick.technicals liquidity` is run once before 15:35, and its
+  `updated_on` (2026-10-28) is the file the boundary's first scan reads.
+- **The forward preview moves on 2026-10-29, not 10-28.** That morning's 06:30 forward scan ran
+  before anything could merge, on tastytrade's watchlists. It only orders the entry scan, and the
+  gate refuses on the verdict whatever the order, so the entries themselves bind on 10-28.
 
 One measurement-affecting change: **the entry scan admits only names the suite's liquidity verdict
 calls `tradable`.** The user's rule (2026-10-27): every screener and every candidate comes from
@@ -194,41 +205,43 @@ spread of at most 7.5% of mid, open interest worth at least $250M and volume wor
 verdicts (SPY, QQQ, the sector funds) count the same way.
 
 **How it binds.** It is dated in code, as the 10-15 and 10-26 changes were: an entry scan for a
-session on or after 2026-11-02 refuses any name the verdict does not call `tradable`. It merges
+session on or after 2026-10-28 refuses any name the verdict does not call `tradable`. It merges
 ahead of the boundary and binds on it, with no config change.
 
 - **Every entry path:** `rank_strategies` (paper now; live too whenever `enable_live_trading` is
   turned on), the `strat_test` harness and the advised twins. Exits and settlement are untouched:
-  positions open on 2026-11-02 run off under the ordinary close path.
+  positions open on 2026-10-28 run off under the ordinary close path.
 - **A refused name is a drop, never a silence.** Its screen row is written and the opening refused
   at the execution stage as `not_tradable`, carrying the verdict (`thin` or `illiquid`) and its
   reasons. "Refused for liquidity" must never read as "nothing qualified".
 - **Unknown is refused, loudly.** A name the verdict file does not hold is refused as
   `not_tradable` (`unjudged`): unconfirmed is not liquid. A missing verdict file, or one not
-  rewritten for three trading days, refuses every candidate as `liquidity_verdict_unavailable`
-  and the doctor reports it. That is the outage the 2026-08-17..24 bound caused, made visible
-  instead of silent: a day that refuses everything says why on every row.
-- **The verdict the scan read is recorded.** Each screen row carries the verdict file's
-  `updated_on`, so a refusal can be traced to the file that made it.
+  rewritten for more than three trading sessions, refuses every candidate as
+  `liquidity_verdict_unavailable`, with why. That is the outage the 2026-08-17..24 bound caused,
+  made visible instead of silent: a day that refuses everything says why on every row. (A doctor
+  check on the verdict file's age is a follow-up, not part of this boundary.)
+- **The verdict the scan read is recorded.** Every refusal names the verdict file's `updated_on`,
+  and the entry run's result carries a `universe` block (`updated_on`, `unavailable`, `gated`), so
+  a refusal can be traced to the file that made it. The code is `universe.py`.
 - **The forward preview follows.** `symbol_watch`'s universe changes from tastytrade's "Liquid
   Symbols", "High Options Volume" and "tasty Earnings" watchlists to the same verdict, from the
-  same session. That is a read surface, but it also orders the entry scan (`covered_symbols`), so
-  it lands with the boundary rather than ahead of it.
+  2026-10-29 forward scan (above). That is a read surface; it also orders the entry scan
+  (`covered_symbols`), which changes no admission.
 
 **What to expect.** Of the 307 paper entries from 2026-09-01 to 2026-10-27, 136 (44%) were on
 names today's readings call `thin`: 34 of the 81 names entered, most often DOCU, PATH, CHWY, AEO,
 M, APLD, AI, PL, KR, LEN, GM, HAL, SAP and HON. Expect about half the entries per session and a
 universe of larger, more liquid names. Never pool across the boundary: a per-arm result reads
-from 2026-11-02 or ends before it.
+from 2026-10-28 or ends before it.
 
 **The `term_structure` test above is not changed.** Its sample (the first 70 events from
-2026-10-26) now spans the boundary, about one week before it and the rest after, and at the new
+2026-10-26) now spans the boundary, two sessions before it (10-26, 10-27) and the rest after, and at the new
 rate it takes roughly twice as long to fill. The declared test is scored as written. Beside it,
 described and never re-judged, the same ρ and thirds are reported for the post-boundary events
 alone.
 
-**Journal on the day:** one `entry_universe` break dated 2026-11-02 in the paper ledger, recorded
-with `paper_loop record-break --key entry_universe --date 2026-11-02 --old "every Dolt calendar
+**Journal on the day:** one `entry_universe` break dated 2026-10-28 in the paper ledger, recorded
+with `paper_loop record-break --key entry_universe --date 2026-10-28 --old "every Dolt calendar
 name the screen passes" --new "liquidity verdict: tradable only"`. If live trading is on by then,
 the same row goes in the live ledger.
 

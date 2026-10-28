@@ -11,6 +11,14 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Changed (2026-10-28, a declared measurement boundary): earnings opens only on names the
+  liquidity verdict calls tradable.** Every entry path (the ranked scan, the `strat_test` harness
+  and the advised twins beside it) refuses any other name from the 2026-10-28 session as an
+  execution-stage `not_tradable` drop that names the verdict and its reasons. An unjudged name is
+  refused, and a missing or stale verdict refuses everything as `liquidity_verdict_unavailable`. The
+  forward preview moves off tastytrade's watchlists onto the same verdict from 2026-10-29. About
+  half the recent entries were on names now refused. Never pool an arm's results across this date.
+
 - **Fixed (2026-10-27): four names `check-adjust` found adjusted wrongly.** AZN's 2026-02-02 ADR ratio
   change (1-for-2) and a 2015 2-for-1 are now in the split history. HON, CME and ITUB were dividend
   disagreements our two sources could not settle: `dividends.reconcile` now lets Yahoo's amount
