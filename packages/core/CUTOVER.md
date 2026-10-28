@@ -4,7 +4,7 @@
 > when `cherrypick-core` was a separate repository being wired into modules one at a time. That is
 > done: core is now `packages/core` in this monorepo, every package installs it as an editable
 > dependency, and there is no cutover left to perform. It also names `tastytrade-mcp`, which is
-> retired. For current state read [`CLAUDE.md`](CLAUDE.md) — including the module map — and the suite
+> retired. For current state read [`CLAUDE.md`](CLAUDE.md) — and the [module map](docs/module-map.md) — and the suite
 > [documentation index](../../docs/README.md). Kept because the verification-per-module method is
 > worth having on record if core is ever wired into something new.
 
