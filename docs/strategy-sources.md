@@ -19,7 +19,7 @@ video was read off its page.
 
 | File | What it holds |
 |---|---|
-| [`packages/meic/CLAUDE.md`](../packages/meic/CLAUDE.md) (640 lines) | The operating contract: the agent loop step by step, the full config table with every key's meaning and default, the guardrails, and the pinned decisions (e.g. the stop basis is fixed in code, never a config choice). |
+| [`packages/meic/CLAUDE.md`](../packages/meic/CLAUDE.md), [`docs/agent-loop.md`](../packages/meic/docs/agent-loop.md) and [`docs/reference.md`](../packages/meic/docs/reference.md) | The operating contract: the guardrails (CLAUDE.md), the agent loop step by step (agent-loop.md), the full config table with every key's meaning and default (reference.md), and the pinned decisions (e.g. the stop basis is fixed in code, never a config choice). |
 | [`packages/meic/docs/strategy.md`](../packages/meic/docs/strategy.md) (188 lines) | **The strategy document.** IC structure, delta targeting with the VIX-banded scale, session classification, OTM guardrails, the entry price strategies against CBOE Complex Order Book constraints, stop management with the tightening triggers, post-stop evaluation, and the three exit paths (no profit target; cash-settled symbols expire, physically settled force-closed). |
 | [`packages/meic/GATES.md`](../packages/meic/GATES.md) (416 lines) | The complete entry-gate catalog: 33 gates in 12 sections, in evaluation order, each with trigger, effect, config key, rationale and IC/ORB impact. |
 | [`packages/meic/docs/paper-experiments.md`](../packages/meic/docs/paper-experiments.md) | The study record: the breakeven identity the module sits against, the 2026-08 four-stream forward test, and the four derived stop policies (`stop-none`, `stop-0.75-net`, `stop-2.0-side`, `strike-touch`) computed read-side from recorded paths. |
@@ -54,7 +54,7 @@ settled ones are closed before the bell.
   that side's own credit is called "the published Chambless MEIC convention" in
   [`docs/strategy.md`](../packages/meic/docs/strategy.md) and
   [`docs/paper-experiments.md`](../packages/meic/docs/paper-experiments.md), and pinned in
-  [`CLAUDE.md`](../packages/meic/CLAUDE.md) (`per_side_stop_management`: "the Chambless convention …
+  [`docs/reference.md`](../packages/meic/docs/reference.md) (`per_side_stop_management`: "the Chambless convention …
   fixed in code"). It is designed so one side stopping scratches the trade — the other side's
   remaining credit roughly offsets the loss. `stop_trigger_ratio: 0.95` is identified in the repo as
   the documented **"MEIC+"** variant (the stop $0.10 below exact breakeven, so a scratch trends

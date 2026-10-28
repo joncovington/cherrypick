@@ -4,7 +4,7 @@ Turns a paper.py decision (the same `chosen` candidate `evaluate_entry` returns,
 `decision` dict `evaluate_open_trade` returns) into a `tt.py execute_trade` order spec. Nothing
 here talks to a broker, a DB, or a file — `live_loop.py` owns submission and recording.
 
-Three order shapes (IC entry is the only entry shape live v1 supports — see CLAUDE.md's "MEIC
+Three order shapes (IC entry is the only entry shape live v1 supports — see docs/reference.md's "MEIC
 has no profit-target close" and the live-loop plan's rung-1 scope: no ORB, no multi-symbol):
 
   entry_spec        4-leg IC open (2x sell-to-open, 2x buy-to-open), Day limit at the net
@@ -12,7 +12,7 @@ has no profit-target close" and the live-loop plan's rung-1 scope: no ORB, no mu
                     index options tick in nickels so the preflight can't reject the increment).
                     Mirrors live_smoke.py's spec_from_strategy pricing exactly.
   stop_close_spec   2-leg close of one side (BTC the short, STC the long), Day limit at the
-                    marketable crossing price times CLAUDE.md's documented `stop_limit_ratio`
+                    marketable crossing price times docs/reference.md's documented `stop_limit_ratio`
                     cushion `(short_ask - long_bid) * stop_limit_ratio`, ceilinged to the tick
                     so the cushion can't be rounded back below marketable.
   force_close_spec  Same crossing-price pricing as stop_close_spec, over whichever side(s) of

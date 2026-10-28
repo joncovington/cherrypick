@@ -41,7 +41,7 @@ python ../streamer/run.py    # blocks; run detached/hidden
 
 Invoke the `/loop` skill with the prompt:
 
-> Execute the next MEIC agent loop iteration following the operating instructions in CLAUDE.md.
+> Execute the next MEIC agent loop iteration following the operating instructions in CLAUDE.md and the Loop Steps in docs/agent-loop.md.
 
 Tell the user:
 "Startup complete — agent loop started. The loop will self-pace each iteration."

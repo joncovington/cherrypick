@@ -34,7 +34,7 @@ def test_slippage_frac_is_cores_single_source_of_truth():
 
 
 def test_open_fees_spx_matches_documented_fallback():
-    # CLAUDE.md's fee_estimate_fallback_per_contract documents SPX at $6.89
+    # docs/reference.md's fee_estimate_fallback_per_contract documents SPX at $6.89
     assert paper.open_fees("SPX", quantity=1) == pytest.approx(6.89, abs=0.01)
 
 
@@ -283,7 +283,7 @@ _FOMC = "2026-01-28"  # first 2026 FOMC day
 
 
 def test_quarterly_range_gate_blocks_when_session_range_blown():
-    """CLAUDE.md clause (c) of the quarterly hard stops, previously documented + configured
+    """docs/agent-loop.md clause (c) of the quarterly hard stops, previously documented + configured
     but with no implementation at all: once the session range exceeds
     quarterly_expiry_max_intraday_range_pct, no new entries for the day."""
     snap = _base_snapshot(date=_QUARTERLY, expiration=_QUARTERLY, intraday_range_pct=0.006)

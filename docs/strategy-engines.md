@@ -58,7 +58,7 @@ at 17:00 ET), and the interactive agent session (`/meic-start`), which the orche
 
 → Depth: [`meic/docs/strategy.md`](../packages/meic/docs/strategy.md),
 [`meic/GATES.md`](../packages/meic/GATES.md),
-[`meic/CLAUDE.md`](../packages/meic/CLAUDE.md) (full config table + loop steps).
+[`meic/docs/reference.md`](../packages/meic/docs/reference.md) (full config table) and [`meic/docs/agent-loop.md`](../packages/meic/docs/agent-loop.md) (loop steps).
 
 ## Earnings — defined-risk earnings plays
 
