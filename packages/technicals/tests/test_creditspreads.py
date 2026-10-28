@@ -114,6 +114,18 @@ def test_the_short_is_the_option_nearest_40_delta_on_the_30_to_45_day_monthly():
     assert row["conflict"] is False and row["ex_dividend"] is None
 
 
+def test_a_row_no_width_of_which_can_be_traded_is_no_row_and_is_counted():
+    """2026-10-27, the user: no symbol in a screener that would never be traded. A dollar-wide quote
+    on every leg costs far more than any width's credit to trade as one order."""
+    wide = _entry(cs={"expiry": CS_EXPIRY, "dte": CS_DTE, "options": _chain(width=1.0)})
+    out = _spreads({"AAA": wide}, {"AAA": PUT_SIGNAL})
+    assert out["lists"]["credit-spreads"] == []
+    assert out["dropped"]["credit-spreads"] == {"no width passes the leg bars": 1}
+    # A reading from before the bars (no `bars` block) carries no verdict and keeps its row.
+    old = incomelists.build_lists({**_doc({"AAA": wide}), "bars": None}, signals={"AAA": PUT_SIGNAL})
+    assert len(old["lists"]["credit-spreads"]) == 1
+
+
 def test_the_pick_is_the_widest_long_giving_35_to_40_percent_of_the_width():
     (row,) = _spreads({"AAA": _entry()}, {"AAA": PUT_SIGNAL})["lists"]["credit-spreads"]
     pick = row["pick"]

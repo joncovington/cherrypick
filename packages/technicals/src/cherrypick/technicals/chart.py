@@ -385,6 +385,10 @@ def write_all(session: str | None = None, conn=None) -> dict:
     spy = {b.date: b.close for b in store.adjusted_bars(conn, "SPY")}
     spy_above = hypotheses.spy_regime(conn)
     weekly, label_day = tradable.weeklies()
+    # The setups table's options-tradable flag is the liquidity verdict's (2026-10-27): a thin name,
+    # its monthly options not confirmed liquid, is charted but flagged, so "Tradable only" hides it.
+    verdicts = liquidity.load()
+    liquid = liquidity.tradable_names(verdicts) | liquidity.reference_tradable() if verdicts else None
     # Names held illiquid get no chart, no picker entry and no watchlist row (liquidity.py): their
     # bars stay in the store for scoring, but nothing lists them until a sweep re-admits them.
     names = liquidity.listed(store.stocks(conn, symbols.all_symbols()))
@@ -395,7 +399,7 @@ def write_all(session: str | None = None, conn=None) -> dict:
         _write(charts_dir() / f"{sym}.json", doc)
         written.append({"symbol": sym, "session": doc["session"], "vendor": doc["vendor"] is not None})
         sessions.add(doc["session"])
-        rows.extend(watchlist.rows(doc, spy, weekly if label_day else None))
+        rows.extend(watchlist.rows(doc, spy, weekly if label_day else None, liquid))
         for key, held in setup_read.hold_spans(doc).items():
             spans.setdefault(key, []).extend(held)
     if own:

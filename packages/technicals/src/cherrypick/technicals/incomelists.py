@@ -199,11 +199,16 @@ def build_lists(
     kinds: dict[str, str] | None = None,
     leveraged: dict[str, str] | None = None,
     signals: dict[str, list[dict]] | None = None,
+    allowed: set[str] | None = None,
 ) -> dict[str, Any]:
     """{"lists": {list: [rows by symbol]}, "dropped": {list: {reason: count}}} from one income reading.
     `leveraged` is {symbol: kind} for the declared leveraged, inverse and volatility funds. `signals`
     is each name's fresh setup entries (`creditspreads.fresh_entries`); None builds no credit-spread
-    list at all, an empty one an empty list."""
+    list at all, an empty one an empty list. `allowed` is the names the liquidity verdict calls
+    tradable (`liquidity.tradable_names` and the reference funds); None lists every name read.
+
+    A row whose own option fails the leg bars (`passes` false) is no row, counted: the user never
+    trades it (2026-10-27). A reading from before the bars carries no verdict and keeps its rows."""
     from . import creditspreads
 
     session = str(doc.get("session") or "")
@@ -218,6 +223,10 @@ def build_lists(
 
     for sym, entry in sorted((doc.get("symbols") or {}).items()):
         spot = entry.get("spot")
+        if allowed is not None and sym not in allowed:
+            for name in names:
+                drop(name, "not tradable by the liquidity verdict")
+            continue
         if entry.get("error") or not spot:
             for name in names:
                 drop(name, "no chain")
@@ -251,6 +260,8 @@ def build_lists(
         p = within(nearest(puts, "P", incomerules.SHORT_PUT_DELTA, spot), incomerules.SHORT_PUT_DELTA)
         if p is False:
             drop("short-puts", "no strike within the delta tolerance")
+        elif p and p.get("passes") is False:
+            drop("short-puts", "the put fails the leg bars")
         elif p:
             lists["short-puts"].append(row(sym, entry, p, entry["expiry"], entry["dte"], session, kind, lev))
         else:
@@ -263,6 +274,8 @@ def build_lists(
         c = within(nearest(calls, "C", incomerules.COVERED_CALL_DELTA, spot), incomerules.COVERED_CALL_DELTA)
         if c is False:
             drop("covered-calls", "no strike within the delta tolerance")
+        elif c and c.get("passes") is False:
+            drop("covered-calls", "the call fails the leg bars")
         elif c:
             r = row(sym, entry, c, cc["expiry"], cc["dte"], session, kind, lev)
             r["window"] = cc.get("window")
@@ -328,10 +341,11 @@ def build(day: str | None = None, source: Path | None = None) -> dict[str, Any]:
     from .skate import leveraged_funds
 
     lev = {s: str(f.get("kind") or "leveraged") for s, f in leveraged_funds().items()}
-    from . import creditspreads
+    from . import creditspreads, liquidity
 
     signals = setup_signals(sorted(doc.get("symbols") or {}), session)
-    built = build_lists(doc, _kinds(session), lev, signals)
+    allowed = liquidity.tradable_names() | liquidity.reference_tradable()
+    built = build_lists(doc, _kinds(session), lev, signals, allowed)
     out = {
         "version": LIST_VERSION,
         "session": session,

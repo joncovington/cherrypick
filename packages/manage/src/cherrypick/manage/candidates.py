@@ -725,6 +725,11 @@ def suggest(
 
     fit: dict[str, dict[str, Any]] = {}
     for sym, entry in sorted(income["symbols"].items()):
+        # The verdict the reading was measured under (2026-10-27): only a name the user would trade,
+        # its monthly options confirmed liquid, is a candidate. A reading from before carries none.
+        if entry.get("liquidity", "tradable") != "tradable":
+            drop("not tradable by the liquidity verdict")
+            continue
         if entry.get("error"):
             drop("no chain")
             continue

@@ -246,6 +246,15 @@ def test_an_illiquid_option_excludes_a_short_put_but_a_spread_is_judged_as_one_o
     assert _rows(out, "put_spread")
 
 
+def test_only_a_name_measured_as_tradable_is_a_candidate():
+    """The income reading stamps each name's liquidity verdict (2026-10-27): a thin one, its monthly
+    options not confirmed liquid, is no candidate. A reading from before the stamp keeps every name."""
+    out = _suggest({"AAA": _entry(liquidity="thin"), "BBB": _entry(liquidity="tradable")})
+    assert out["excluded"]["not tradable by the liquidity verdict"] == 1
+    assert {r["underlying"] for r in _rows(out)} == {"BBB"}
+    assert _rows(_suggest({"AAA": _entry()}))
+
+
 def test_a_spread_that_costs_too_much_to_trade_is_excluded():
     # 60 cents wide a leg: mid less natural is 60 cents, more than the spread's credit.
     out = _suggest({"AAA": _entry(spread=0.60)})

@@ -6,8 +6,27 @@ again. A sweep is the first trading day of each month: that day every script mea
 as before, and tonight's verdict re-judges the ones held illiquid.
 
 **The test is the options-tradable one** (`tradable.py`): weekly options and $100M a day of stock.
-The spread bar the user asked for joins it once it is chosen on complete readings. It is NOT the
-universe builder's membership rule, which is far stricter (32 members of 600 candidates).
+It is NOT the universe builder's membership rule, which is far stricter (32 members of 600
+candidates).
+
+**And the monthly options must be confirmed liquid (2026-10-27, the user): "I don't want symbols in
+the screeners that I will never trade."** A name that passes the test above is `thin`, not
+`tradable`, until its cycle-monthly chain clears `OPTION_BARS` on the median of its last
+`OPTION_READINGS` income readings (`fetch_screener_greeks.py income`, broker quotes in regular
+hours), with at least `MIN_OPTION_READINGS` of them:
+
+- the at-the-money spread, the wider of the call and the put, at most 7.5% of its mid;
+- the whole monthly chain's open interest worth at least $250M (contracts x 100 x spot);
+- the whole monthly chain's volume worth at least $5M (a part-day count, read at the afternoon fetch).
+
+**Open interest and volume are in dollars, not contracts.** A contract count is the share-price bias
+the user rejected in tastytrade's rating (2026-10-04): at 25,000 contracts and 500 a day, the first
+bars tried, HD, APP, GS, CAT, LLY and COST were thin while penny and leveraged names with huge
+counts passed. The user chose these bars on 2026-10-27 from five readings of the 487 names that
+passed the stock test (chain open interest median $184M, volume median $6M); they keep about 166.
+A `thin` name is not sticky and is not skipped: the income fetch keeps measuring it every session, so
+it is admitted the night its readings clear the bars, and no listed screener shows it until then. A
+name not yet measured is `thin` too and says so: unconfirmed is not liquid.
 
 **The dollar volume is the broker's daily candles'** (`dollarvolume.py`, from 2026-10-19), for
 every name, so the verdict needs no Dolt and no store; before, it read the store's bars and Dolt's
@@ -30,6 +49,8 @@ evening fetch writes.
 from __future__ import annotations
 
 import json
+import re
+import statistics
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -39,7 +60,19 @@ from cherrypick.core import jsonio as _jsonio
 from . import dollarvolume, paths, symbols, tradable, universe
 
 ILLIQUID = "illiquid"
+THIN = "thin"
 TRADABLE = "tradable"
+#: The verdicts the income fetch measures: a thin name is measured so it can be admitted.
+MEASURED = frozenset({TRADABLE, THIN})
+
+OPTION_BARS: dict = {
+    "max_atm_spread_pct": 0.075,
+    "min_chain_open_interest_usd": 250e6,
+    "min_chain_volume_usd": 5e6,
+}
+OPTION_READINGS = 5
+MIN_OPTION_READINGS = 3
+_READING_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}\.json$")
 
 # Reference series, never judged: the benchmarks the engines measure against, the rotation funds the
 # report's rotation section places, and the cash indexes. They are not trade candidates, and hiding
@@ -55,14 +88,19 @@ def verdicts_path() -> Path:
 # Pure: the judgement, the sweep day, the sticky update.
 
 
-def judge(symbol: str, expiries_35d: int | None, dollar_volume: float | None) -> tuple[str | None, list[str]]:
-    """(verdict, reasons). None when the data to judge is missing, or for a reference series."""
+def judge(
+    symbol: str, expiries_35d: int | None, dollar_volume: float | None, options: dict | None = None
+) -> tuple[str | None, list[str]]:
+    """(verdict, reasons). None when the data to judge is missing, or for a reference series.
+    `options` is the name's monthly measures (`option_measures`); None is a name not yet measured."""
     if symbol in REFERENCE:
         return None, []
-    return _test(expiries_35d, dollar_volume)
+    return _test(expiries_35d, dollar_volume, options)
 
 
-def _test(expiries_35d: int | None, dollar_volume: float | None) -> tuple[str | None, list[str]]:
+def _test(
+    expiries_35d: int | None, dollar_volume: float | None, options: dict | None
+) -> tuple[str | None, list[str]]:
     if expiries_35d is None or dollar_volume is None:
         return None, []
     reasons = []
@@ -70,15 +108,119 @@ def _test(expiries_35d: int | None, dollar_volume: float | None) -> tuple[str | 
         reasons.append(f"no weekly options ({expiries_35d} expiries in 35 days)")
     if dollar_volume < tradable.MIN_DOLLAR_VOLUME:
         reasons.append(f"${dollar_volume / 1e6:.0f}M a day, under ${tradable.MIN_DOLLAR_VOLUME / 1e6:.0f}M")
-    return (ILLIQUID, reasons) if reasons else (TRADABLE, [])
+    if reasons:
+        return ILLIQUID, reasons
+    thin = option_reasons(options)
+    return (THIN, thin) if thin else (TRADABLE, [])
 
 
-def reference_verdicts(funds: list[str], rows: dict, dv: dict, today: str) -> dict[str, dict]:
-    """The reference funds' verdicts by the options-tradable test, judged afresh every night; a fund
-    the data cannot judge is left out."""
+def option_reasons(options: dict | None, bars: dict | None = None) -> list[str]:
+    """Why a name's monthly options fail `OPTION_BARS`; empty when they clear every bar."""
+    bars = bars or OPTION_BARS
+    n = (options or {}).get("readings") or 0
+    if n < MIN_OPTION_READINGS:
+        return [f"monthly options not yet confirmed ({n} of {MIN_OPTION_READINGS} readings)"]
+    out = []
+    spread = options.get("atm_spread_pct")
+    if spread is None or spread > bars["max_atm_spread_pct"]:
+        shown = "unquoted" if spread is None else f"{spread:.1%} of mid"
+        out.append(f"monthly ATM spread {shown}, over {bars['max_atm_spread_pct']:.1%}")
+    oi, vol = options.get("chain_open_interest_usd") or 0, options.get("chain_volume_usd") or 0
+    if oi < bars["min_chain_open_interest_usd"]:
+        out.append(f"monthly open interest {_usd(oi)}, under {_usd(bars['min_chain_open_interest_usd'])}")
+    if vol < bars["min_chain_volume_usd"]:
+        out.append(f"monthly volume {_usd(vol)}, under {_usd(bars['min_chain_volume_usd'])}")
+    return out
+
+
+def _usd(x: float) -> str:
+    return f"${x / 1e6:,.1f}M" if x < 10e6 else f"${x / 1e6:,.0f}M"
+
+
+def reading_measures(entry: dict) -> dict | None:
+    """One income reading's monthly measures for one name: the at-the-money spread (the wider of
+    the call and the put at the strike nearest spot, as a share of its mid), and the chain's summed
+    open interest and volume, in contracts and in dollars (contracts x 100 x spot, the bars' unit).
+    None when the reading has no chain or no spot."""
+    opts, spot = entry.get("options") or [], entry.get("spot")
+    if entry.get("error") or not opts or not spot:
+        return None
+    atm_k = min({o["strike"] for o in opts}, key=lambda k: abs(k - spot))
+    spreads = [
+        (o["ask"] - o["bid"]) / ((o["ask"] + o["bid"]) / 2)
+        for o in opts
+        if o["strike"] == atm_k and o.get("bid") is not None and o.get("ask") and o["ask"] >= o["bid"]
+    ]
+    oi = sum(o.get("open_interest") or 0 for o in opts)
+    vol = sum(o.get("volume") or 0 for o in opts)
+    return {
+        "atm_spread_pct": max(spreads) if spreads else None,
+        "chain_open_interest": oi,
+        "chain_volume": vol,
+        "chain_open_interest_usd": oi * 100 * spot,
+        "chain_volume_usd": vol * 100 * spot,
+    }
+
+
+def option_measures(readings: list[dict]) -> dict[str, dict]:
+    """{symbol: medians of its measures over the last `OPTION_READINGS` readings that measured it,
+    and how many that was}. `readings` are income-reading documents, oldest first. A reading with an
+    unquoted ATM is counted, and its spread median taken over the quoted ones."""
+    per: dict[str, list[dict]] = {}
+    for doc in readings:
+        for sym, entry in (doc.get("symbols") or {}).items():
+            m = reading_measures(entry)
+            if m is not None:
+                per.setdefault(sym, []).append(m)
+    out = {}
+    for sym, ms in per.items():
+        ms = ms[-OPTION_READINGS:]
+        spreads = [m["atm_spread_pct"] for m in ms if m["atm_spread_pct"] is not None]
+        out[sym] = {
+            "atm_spread_pct": round(statistics.median(spreads), 4) if spreads else None,
+            **{
+                k: round(statistics.median(m[k] for m in ms), 2)
+                for k in (
+                    "chain_open_interest",
+                    "chain_volume",
+                    "chain_open_interest_usd",
+                    "chain_volume_usd",
+                )
+            },
+            "readings": len(ms),
+        }
+    return out
+
+
+def income_readings_dir() -> Path:
+    return paths.market_report_dir() / "screener-greeks" / "income"
+
+
+def recent_readings(root: Path | None = None, n: int = OPTION_READINGS) -> tuple[list[dict], list[str]]:
+    """(the last `n` sessions' income readings, oldest first; their file names). Only a session's own
+    file (`YYYY-MM-DD.json`) counts: a variant written beside it (`.pre-fund`) is not a second reading."""
+    root = root or income_readings_dir()
+    files = (
+        sorted(p for p in root.glob("*.json") if _READING_NAME.match(p.name))[-n:] if root.exists() else []
+    )
+    docs = []
+    for f in files:
+        try:
+            docs.append(json.loads(f.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+    return docs, [f.name for f in files]
+
+
+def reference_verdicts(
+    funds: list[str], rows: dict, dv: dict, today: str, options: dict[str, dict] | None = None
+) -> dict[str, dict]:
+    """The reference funds' verdicts by the same test, monthly options included, judged afresh every
+    night; a fund the data cannot judge is left out."""
+    options = options or {}
     out = {}
     for s in funds:
-        verdict, reasons = _test((rows.get(s) or {}).get("expiries_35d"), dv.get(s))
+        verdict, reasons = _test((rows.get(s) or {}).get("expiries_35d"), dv.get(s), options.get(s))
         if verdict is not None:
             out[s] = {"verdict": verdict, "reasons": reasons, "judged_on": today}
     return out
@@ -123,16 +265,33 @@ def load() -> dict[str, dict]:
         return {}
 
 
-def reference_tradable() -> set[str]:
+def tradable_names(names: dict[str, dict] | None = None) -> set[str]:
+    """The names a screener may list: verdict `tradable` (neither thin nor illiquid)."""
+    names = load() if names is None else names
+    return {s for s, v in names.items() if (v or {}).get("verdict") == TRADABLE}
+
+
+def load_reference() -> dict[str, dict]:
+    """The reference funds' verdicts (`build`'s `reference` block); empty when there is no file."""
+    try:
+        return json.loads(verdicts_path().read_text(encoding="utf-8")).get("reference") or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def reference_tradable(reference: dict[str, dict] | None = None) -> set[str]:
     """The reference funds that pass the options-tradable test tonight (SPY, QQQ, the sector funds).
     Judged apart from the names (`build`), so a reference fund is never held illiquid or hidden from
     the report; read by the income candidates, which would otherwise never see the market's most
     liquid underlyings (found 2026-10-19: SPY, QQQ, IWM, TLT and every sector fund were missing)."""
-    try:
-        doc = json.loads(verdicts_path().read_text(encoding="utf-8")).get("reference") or {}
-    except (OSError, ValueError):
-        return set()
-    return {s for s, v in doc.items() if (v or {}).get("verdict") == TRADABLE}
+    reference = load_reference() if reference is None else reference
+    return {s for s, v in reference.items() if (v or {}).get("verdict") == TRADABLE}
+
+
+def reference_measured(reference: dict[str, dict] | None = None) -> set[str]:
+    """The reference funds the income fetch measures: tradable or thin, so a thin fund can be admitted."""
+    reference = load_reference() if reference is None else reference
+    return {s for s, v in reference.items() if (v or {}).get("verdict") in MEASURED}
 
 
 def illiquid(names: dict[str, dict] | None = None) -> set[str]:
@@ -188,17 +347,24 @@ def build(today: date | None = None) -> dict[str, Any]:
     rows, label_day = tradable.latest_rows()
     dv_names, dv_header = dollarvolume.latest(today.isoformat())
     dv = dollarvolume.medians(dv_names, universe.WINDOW)
-    fresh = {s: judge(s, (rows.get(s) or {}).get("expiries_35d"), dv.get(s)) for s in names}
+    readings, reading_files = recent_readings()
+    opts = option_measures(readings)
+    fresh = {s: judge(s, (rows.get(s) or {}).get("expiries_35d"), dv.get(s), opts.get(s)) for s in names}
     previous = load()
     verdicts = update(previous, fresh, today.isoformat(), sweep)
+    for s, v in verdicts.items():
+        if s in opts and v.get("judged_on") == today.isoformat():
+            v["options"] = opts[s]
     doc = {
         "updated_on": today.isoformat(),
         "sweep": sweep,
         "label_day": label_day,
         "dollar_volume_file": dv_header.get("file"),
         "liquid_optionable_from": liquid_from,
+        "option_bars": {**OPTION_BARS, "readings": OPTION_READINGS, "min_readings": MIN_OPTION_READINGS},
+        "option_reading_files": reading_files,
         "names": verdicts,
-        "reference": reference_verdicts(funds, rows, dv, today.isoformat()),
+        "reference": reference_verdicts(funds, rows, dv, today.isoformat(), opts),
     }
     path = _jsonio.write_json_atomic(verdicts_path(), doc, indent=1, default=None)
     held = illiquid(verdicts)
@@ -208,6 +374,7 @@ def build(today: date | None = None) -> dict[str, Any]:
         "names": len(names),
         "illiquid": len(held),
         "tradable": sum(1 for v in verdicts.values() if v.get("verdict") == TRADABLE),
+        "thin": sum(1 for v in verdicts.values() if v.get("verdict") == THIN),
         "unjudged": sum(1 for s in names if s not in verdicts),
         "newly_illiquid": sorted(s for s in held if (previous.get(s) or {}).get("verdict") != ILLIQUID),
         "readmitted": sorted(
