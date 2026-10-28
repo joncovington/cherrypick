@@ -161,7 +161,7 @@ what is unsolved, and scheduling.
   terminal-growth grid; the broker's beta and market cap ride along as a cross-check
   (`beta_disagrees`, `shares_stale`). Funds, banks and REITs are `not-applicable`; a name the model
   cannot value says why. From version 3 every income-list row carries its `fair_*` fields. **A model
-  estimate of value with no measured edge, never a ranking.**
+  estimate of value, tested 2018-26 with no edge, never a ranking.**
 - **The security list** (`securities.py`, `securities`, 2026-10-17): every listed symbol's type
   (Nasdaq Trader's directory), options (any OCC volume in 20 sessions) and a liquidity rank that is
   **ours**: 2 at 200 contracts and $100M of stock a day, 1 at 2,000 and $300M. The dollar volume
@@ -385,7 +385,7 @@ gross, and ranking by net is the user's decision.
 | `python -m cherrypick.technicals study round6 [--workers N] [--count]` | Round 6: a revision inside the strong bearing, against the same bearing without one; `--count` gives frequencies only. |
 | `python -m cherrypick.technicals history land` | Land Dolt's whole daily history (2011 on, every name) into `history.db`. Incremental. |
 | `python -m cherrypick.technicals history fundamentals` | Land Dolt's next-year EPS and sales estimates and quarterly income statements into `history.db` (round 5's inputs), then every annual statement row (`statements_annual`, the fair-value build's inputs). |
-| `python -m cherrypick.technicals valuation [--day D]` | The fair-value file: one DCF estimate a liquid optionable name as of the session, from the history store (`valuation/<session>.json`). A model estimate with no measured edge. |
+| `python -m cherrypick.technicals valuation [--day D]` | The fair-value file: one DCF estimate a liquid optionable name as of the session, from the history store (`valuation/<session>.json`). A model estimate, tested 2018-26 with no edge. |
 | `python -m cherrypick.technicals history check` | `history.db` against `eod.db` on the overlap, to the cent, and price jumps no split explains. |
 | `python -m cherrypick.technicals study run [--workers N]` | The historical study under analysis plan v2; writes `study/history-results-<stamp>.json`. |
 | `python -m cherrypick.technicals study round2 --stage A\|B [--workers N]` | Round 2's declared improvements, discovery on half A, confirmation on half B. |

@@ -36,7 +36,7 @@ reading with no `cs` block, or a build without the store, has no credit-spread l
 fair-value file (`valuation.py`, `cherrypick.core.valuation`): `fair_value`, `fair_low`, `fair_high`,
 `fair_gap` (the price over the estimate, less one: positive is a price above the model's value) and
 `fair_state` (`valued`, `not-applicable` for a fund or a bank, `no-statements`, `refused`, or
-`unbuilt` when no file has been built). A model estimate of value with no measured edge, shown
+`unbuilt` when no file has been built). A model estimate of value, tested 2018-26 with no edge, shown
 beside the row's own figures and never ordering the list.
 
     python -m cherrypick.technicals income-lists [--day YYYY-MM-DD] [--source FILE]

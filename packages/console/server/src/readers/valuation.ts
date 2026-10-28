@@ -3,7 +3,7 @@
  * `valuation` writes one file a session (`technicals/valuation/<session>.json`), one DCF estimate a
  * liquid optionable name from `cherrypick.core.valuation`. This renames its rows, badges pmcc's
  * configured symbols (pmcc's own config, never technicals'), and decides nothing. A model estimate
- * of value with no measured edge; the rows are by symbol.
+ * of value, tested 2018-26 with no edge; the rows are by symbol.
  */
 import fs from "node:fs";
 import path from "node:path";

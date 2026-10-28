@@ -236,7 +236,7 @@ describe("our short-put list", () => {
     expect(html).toContain("+25.0%");
     expect(html).toContain("−33.3%");
     expect(html).toContain(">n/a<");
-    expect(html).toContain("no measured edge");
+    expect(html).toContain("tested 2018–26: no edge");
     expect(html.indexOf(">AAA<")).toBeLessThan(html.indexOf(">ZZZ<"));
   });
 

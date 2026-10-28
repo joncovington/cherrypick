@@ -2,7 +2,7 @@
  * The fair-value file (`packages/technicals` `valuation`, 2026-10-27): one DCF estimate a liquid
  * optionable name a session, from `cherrypick.core.valuation` on Dolt's annual statements. Every
  * figure is the builder's; the reader renames, badges pmcc's symbols from pmcc's own config, and
- * decides nothing. A model estimate of value with NO measured edge; never a ranking.
+ * decides nothing. A model estimate of value tested 2018-26 with NO edge; never a ranking.
  */
 
 /** `valued` carries the figures; the others carry a `reason` instead. */
