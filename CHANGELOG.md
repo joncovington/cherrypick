@@ -16,7 +16,7 @@ beyond the latest release.
   and the advised twins beside it) refuses any other name from the 2026-10-28 session as an
   execution-stage `not_tradable` drop that names the verdict and its reasons. An unjudged name is
   refused, and a missing or stale verdict refuses everything as `liquidity_verdict_unavailable`. The
-  forward preview moves off tastytrade's watchlists onto the same verdict from 2026-10-29. About
+  forward preview moves off tastytrade's watchlists onto the same verdict the same session. About
   half the recent entries were on names now refused. Never pool an arm's results across this date.
 
 - **Fixed (2026-10-27): four names `check-adjust` found adjusted wrongly.** AZN's 2026-02-02 ADR ratio

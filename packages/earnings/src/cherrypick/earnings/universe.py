@@ -29,9 +29,8 @@ from cherrypick.core import home as _home
 
 #: The first session whose entries the verdict gates (the 2026-10-28 boundary).
 ENTRY_UNIVERSE_FROM = "2026-10-28"
-#: The first forward scan (`symbol_watch`) that previews only the verdict's names: the 10-28 one ran
-#: at 06:30, before the boundary could merge.
-PREVIEW_FROM = "2026-10-29"
+#: The first forward scan (`symbol_watch`) that previews only the verdict's names: the same session.
+PREVIEW_FROM = "2026-10-28"
 #: A verdict file not rewritten for more than this many trading sessions is stale.
 STALE_TRADING_DAYS = 3
 TRADABLE = "tradable"

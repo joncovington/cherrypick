@@ -431,7 +431,10 @@ def test_refresh_symbol_watch_prefilters_to_watch_universe_by_default(monkeypatc
     monkeypatch.setattr(
         symbol_watch._scanner, "fetch_dolthub_calendar_range", lambda start, end, config: rows
     )
-    monkeypatch.setattr(symbol_watch._scanner, "fetch_watch_universe", lambda: {"AAPL", "MSFT"})
+    # The universe's source is chosen by date (tastytrade's watchlists before 2026-10-28, the
+    # liquidity verdict from it: `preview_universe`, tested in test_entry_universe.py); this tests the
+    # filter it feeds, so the source is stood in.
+    monkeypatch.setattr(symbol_watch, "preview_universe", lambda session: {"AAPL", "MSFT"})
 
     seen_symbols = []
     monkeypatch.setattr(

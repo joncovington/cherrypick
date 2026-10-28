@@ -75,6 +75,9 @@ def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monk
     # (STRAT_TEST_RETIRED), and the entry scan reads today's date, so from that session on this test
     # opened nothing and failed. Its retirement has its own tests.
     monkeypatch.delitem(runner.STRAT_TEST_RETIRED, "broken_wing_butterfly")
+    # Likewise the liquidity gate (from 2026-10-28, universe.py): this test home holds no verdict, so
+    # from that session XYZ would be refused. The gate has its own tests (test_entry_universe.py).
+    monkeypatch.setattr(runner.universe, "refusal", lambda *a: None)
 
     config = {"close_quote_retries": 0, "strategies": {"broken_wing_butterfly": {}}}
     monkeypatch.setattr(runner.rank_strategies, "_ensure_dolt_running", lambda: True)

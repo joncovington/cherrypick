@@ -226,7 +226,7 @@ def fresh_snapshot(session: str | None = None) -> dict | None:
 
 
 def preview_universe(session: str) -> set[str] | None:
-    """The forward scan's universe for `session`. From 2026-10-29 the suite's liquidity verdict
+    """The forward scan's universe for `session`. From 2026-10-28 the suite's liquidity verdict
     (universe.py, docs/operating-history.md); before, tastytrade's watchlists. None scans everyone:
     a verdict that cannot gate, or a failed watchlist fetch, degrades to that, never to scanning no
     one -- this pass only previews and orders, and the entry gate refuses on its own."""

@@ -175,18 +175,18 @@ is declared now and scored once:
   Both must hold. A pass proposes a `symbol_screen` gate, which is its own boundary. A fail
   closes it, and the covariate stays recorded.
 
-## The 2026-10-28 boundary (declared 2026-10-27 for 2026-11-02; moved to 10-28 on 10-28)
+## The 2026-10-28 boundary (declared 2026-10-27 for 2026-11-02; moved to 10-28 the same night)
 
-**Moved forward at the user's request**, at 04:07 ET on 2026-10-28, to bind on that session's
-15:35 entry scan. Two consequences of the short notice:
+**Moved forward at the user's request**, late on 2026-10-27, to bind on the next session's 15:35
+entry scan. One consequence of the short notice:
 
 - **The verdict is re-run by hand that morning.** The first verdict under the new bars (technicals
-  #628) would otherwise be written only at 18:57 ET, after the entry scan. Once #628 is merged into
-  the live checkout, `python -m cherrypick.technicals liquidity` is run once before 15:35, and its
-  `updated_on` (2026-10-28) is the file the boundary's first scan reads.
-- **The forward preview moves on 2026-10-29, not 10-28.** That morning's 06:30 forward scan ran
-  before anything could merge, on tastytrade's watchlists. It only orders the entry scan, and the
-  gate refuses on the verdict whatever the order, so the entries themselves bind on 10-28.
+  #628) would otherwise be written only at 18:57 ET on 10-28, after the entry scan. Once #628 is
+  merged into the live checkout, `python -m cherrypick.technicals liquidity` is run once before
+  15:35, and its `updated_on` (2026-10-28) is the file the boundary's first scan reads.
+- **The forward preview moves the same session**, if this merges before the 06:30 ET forward scan.
+  If it merges later, that one pass runs on tastytrade's watchlists. It only orders the entry scan,
+  and the gate refuses on the verdict whatever the order, so the entries bind on 10-28 either way.
 
 One measurement-affecting change: **the entry scan admits only names the suite's liquidity verdict
 calls `tradable`.** The user's rule (2026-10-27): every screener and every candidate comes from
@@ -225,7 +225,7 @@ ahead of the boundary and binds on it, with no config change.
   a refusal can be traced to the file that made it. The code is `universe.py`.
 - **The forward preview follows.** `symbol_watch`'s universe changes from tastytrade's "Liquid
   Symbols", "High Options Volume" and "tasty Earnings" watchlists to the same verdict, from the
-  2026-10-29 forward scan (above). That is a read surface; it also orders the entry scan
+  2026-10-28 forward scan (above). That is a read surface; it also orders the entry scan
   (`covered_symbols`), which changes no admission.
 
 **What to expect.** Of the 307 paper entries from 2026-09-01 to 2026-10-27, 136 (44%) were on

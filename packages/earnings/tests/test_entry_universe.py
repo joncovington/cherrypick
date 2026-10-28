@@ -84,20 +84,20 @@ def test_the_tradable_set_and_spellings():
 
 
 # --------------------------------------------------------------------------- the forward preview
-def test_the_preview_moves_onto_the_verdict_on_10_29_not_before(monkeypatch):
+def test_the_preview_moves_onto_the_verdict_on_10_28_not_before(monkeypatch):
     from cherrypick.earnings import symbol_watch
 
     monkeypatch.setattr(scanner, "fetch_watch_universe", lambda: {"TASTY"})
-    monkeypatch.setattr(universe, "load", lambda path=None: _verdict(updated_on="2026-10-28", AAA="tradable"))
-    assert symbol_watch.preview_universe("2026-10-28") == {"TASTY"}
-    assert symbol_watch.preview_universe("2026-10-29") == {"AAA", "SPY"}
+    monkeypatch.setattr(universe, "load", lambda path=None: _verdict(updated_on="2026-10-27", AAA="tradable"))
+    assert symbol_watch.preview_universe("2026-10-27") == {"TASTY"}
+    assert symbol_watch.preview_universe("2026-10-28") == {"AAA", "SPY"}
 
 
 def test_a_preview_without_a_usable_verdict_scans_everyone(monkeypatch):
     from cherrypick.earnings import symbol_watch
 
     monkeypatch.setattr(universe, "load", lambda path=None: {"error": "no verdict file (verdicts.json)"})
-    assert symbol_watch.preview_universe("2026-10-29") is None
+    assert symbol_watch.preview_universe("2026-10-28") is None
 
 
 # --------------------------------------------------------------------------- the harness
