@@ -20,8 +20,8 @@ broker's market cap. Ours are the figures used; the broker's are shown.
 A fund, and a stock in a sector a DCF on operating cash flow does not describe (`NOT_DCF_SECTORS`:
 banks earn interest, REITs are valued on their assets), is `not-applicable`. A name without
 statements is `no-statements`; one the model refuses carries the model's reason. **A model estimate of
-value, tested 2018-26 with no edge (scripts/fair_value_history.py), never a ranking**: rows are by symbol, and the income lists carry the
-figure beside their own, never ordered by it.
+value, tested 2018-26 with no edge (scripts/fair_value_history.py), never a ranking**: rows are by
+symbol, and the income lists carry the figure beside their own, never ordered by it.
 
     python -m cherrypick.technicals valuation [--day YYYY-MM-DD]
 
