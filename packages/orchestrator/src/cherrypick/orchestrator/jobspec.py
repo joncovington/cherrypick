@@ -87,6 +87,8 @@ CATCHUP_MINUTES = {
     # Incremental top-ups from the local Dolt clones: a late one is the same landing.
     "technicals-history": 12 * 60,
     "technicals-fundamentals": 12 * 60,
+    # A rerun rebuilds the same session's fair-value file from the same store.
+    "technicals-valuation": 12 * 60,
     # A rerun rebuilds the same session's board from the same store.
     "technicals-board": 12 * 60,
     # Dividend histories change weekly at most; a late fetch is the same fetch.
@@ -1274,6 +1276,23 @@ def derive_jobs(
                 else "disabled in config (technicals.history) or with technicals-land",
             ),
         )
+    add(
+        "technicals-valuation",
+        lambda: JobSpec(
+            id="technicals-valuation",
+            # The fair-value file (one DCF estimate a liquid optionable name) from the history store
+            # the 06:25 landing just topped up; the income lists and the Screeners tab read it.
+            argv=(pythonw, "-m", "cherrypick.technicals", "valuation"),
+            kind=KIND_DAILY,
+            at_et=tc["valuation_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-valuation"],
+            trading_days_only=False,
+            enabled=hist_on,
+            enabled_reason=""
+            if hist_on
+            else "disabled in config (technicals.history) or with technicals-land",
+        ),
+    )
     board_on = tc_on and tc["board"]
     add(
         "technicals-board",

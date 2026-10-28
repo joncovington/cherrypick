@@ -152,6 +152,16 @@ what is unsolved, and scheduling.
   width at the working price, null when none does (often). Every row carries the width table item 17
   will score (1/2/3/5 strikes, 0.25/0.5/0.75 of the move). **Untested**: the rule says so until item 17
   runs. No history store, no list (never an empty one).
+- **The fair-value file** (`valuation.py`, `valuation`, 2026-10-27): one DCF estimate a liquid
+  optionable name a session, `valuation/<session>.json`, from `cherrypick.core.valuation` on Dolt's
+  annual statements (`statements.py`, landed with `history fundamentals`, counted 45 days after the
+  fiscal year end), a three-year weekly regression beta on SPY from the store's adjusted bars, spot
+  times year-end shares, and the "Next Year" sales consensus at the newest estimate snapshot. One
+  mechanical base case (five-year medians, growth faded to 2%) and a low-high range from a WACC x
+  terminal-growth grid; the broker's beta and market cap ride along as a cross-check
+  (`beta_disagrees`, `shares_stale`). Funds, banks and REITs are `not-applicable`; a name the model
+  cannot value says why. From version 3 every income-list row carries its `fair_*` fields. **A model
+  estimate of value with no measured edge, never a ranking.**
 - **The security list** (`securities.py`, `securities`, 2026-10-17): every listed symbol's type
   (Nasdaq Trader's directory), options (any OCC volume in 20 sessions) and a liquidity rank that is
   **ours**: 2 at 200 contracts and $100M of stock a day, 1 at 2,000 and $300M. The dollar volume
@@ -365,7 +375,8 @@ gross, and ranking by net is the user's decision.
 | `python -m cherrypick.technicals study round7 [--workers N] [--count]` | Round 7: entering a bearing (frozen `bearing_table.py`) against random entry; `--count` gives frequencies only. |
 | `python -m cherrypick.technicals study round6 [--workers N] [--count]` | Round 6: a revision inside the strong bearing, against the same bearing without one; `--count` gives frequencies only. |
 | `python -m cherrypick.technicals history land` | Land Dolt's whole daily history (2011 on, every name) into `history.db`. Incremental. |
-| `python -m cherrypick.technicals history fundamentals` | Land Dolt's next-year EPS and sales estimates and quarterly income statements into `history.db` (round 5's inputs). |
+| `python -m cherrypick.technicals history fundamentals` | Land Dolt's next-year EPS and sales estimates and quarterly income statements into `history.db` (round 5's inputs), then every annual statement row (`statements_annual`, the fair-value build's inputs). |
+| `python -m cherrypick.technicals valuation [--day D]` | The fair-value file: one DCF estimate a liquid optionable name as of the session, from the history store (`valuation/<session>.json`). A model estimate with no measured edge. |
 | `python -m cherrypick.technicals history check` | `history.db` against `eod.db` on the overlap, to the cent, and price jumps no split explains. |
 | `python -m cherrypick.technicals study run [--workers N]` | The historical study under analysis plan v2; writes `study/history-results-<stamp>.json`. |
 | `python -m cherrypick.technicals study round2 --stage A\|B [--workers N]` | Round 2's declared improvements, discovery on half A, confirmation on half B. |

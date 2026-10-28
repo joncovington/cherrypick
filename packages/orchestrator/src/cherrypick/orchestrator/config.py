@@ -554,6 +554,9 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "history": bool(tc.get("history", True)),
         "history_at": tc.get("history_at", "06:20"),
         "fundamentals_at": tc.get("fundamentals_at", "06:25"),
+        # `valuation_at`: the fair-value file (`python -m cherrypick.technicals valuation`, one DCF
+        # estimate a liquid optionable name from the store the landing just topped up).
+        "valuation_at": tc.get("valuation_at", "06:28"),
         # `board_at`: the signal board (`python -m cherrypick.technicals board`), each name's count of
         # agreeing methods, from the same landing and the previous evening's analyst revisions.
         "board": bool(tc.get("board", True)),

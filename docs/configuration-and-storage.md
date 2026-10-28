@@ -47,6 +47,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
                                   #   series (market_regime_history / daily_closes; read via
                                   #   cherrypick.core.regime — see docs/regime-recorder-plan.md)
   data/technicals/eod.db          # technicals' end-of-day store (bars, splits, dividends, IV)
+  data/technicals/valuation/      # <session>.json, one DCF fair-value estimate a liquid optionable name
   data/overview/                  # morning-<day>.json fact packs + renders + notes
   data/advisor/                   # advisor.db, fact packs, checkpoints
   logs/                           # suite logs

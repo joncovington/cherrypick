@@ -626,6 +626,8 @@
     "history": true,
     "history_at": "06:20",
     "fundamentals_at": "06:25",
+    "_comment_valuation_at": "The fair-value file (python -m cherrypick.technicals valuation, local files only): one DCF estimate a liquid optionable name -- cherrypick.core.valuation on Dolt's annual statements, a regression beta and the consensus sales growth from the history store -- in technicals/valuation/<session>.json, after the 06:25 landing. The income lists and the Screeners fair-value tab read it. A model estimate with no measured edge; follows the history switch. ET.",
+    "valuation_at": "06:28",
     "_comment_board_at": "The signal board (python -m cherrypick.technicals board, local data only): each listed stock's count of methods agreeing on one side -- RS stage, its sector's rotation, fundamentals (our score's market tails), the trend scan and that session's analyst revisions -- for the console's Screeners signal board. After report_at and the history top-up, with the previous evening's revisions fetch. Record-only. ET.",
     "board": true,
     "board_at": "06:45",
