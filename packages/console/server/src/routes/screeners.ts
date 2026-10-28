@@ -20,7 +20,7 @@ import { readSkateRecord } from "../readers/skateRecord.js";
 import { readValuation } from "../readers/valuation.js";
 
 export function registerScreenerRoutes(app: FastifyInstance, config: ConsoleConfig): void {
-  // The fair-value file (technicals valuation): one DCF estimate a name a session; no measured edge.
+  // The fair-value file (technicals valuation): one DCF estimate a name a session; tested 2018-26, no edge.
   app.get<{ Querystring: { day?: string } }>(
     "/api/screeners/valuation",
     async (req): Promise<ValuationPayload> => readValuation(config, req.query.day ?? null),

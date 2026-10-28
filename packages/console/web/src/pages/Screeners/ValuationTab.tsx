@@ -8,7 +8,7 @@ import { useValuation } from "../../lib/api";
  * The fair-value tab (2026-10-27): one DCF estimate a liquid optionable name a session, from
  * `packages/technicals` `valuation` (`cherrypick.core.valuation` on Dolt's annual statements). Every
  * figure is the builder's; this formats and filters, and ranks nothing -- rows are by symbol, and a
- * column sort is the reader's own choice. The standing note says the estimate has no measured edge
+ * column sort is the reader's own choice. The standing note says the estimate was tested and has no edge
  * and is never removed while the table shows. pmcc's configured stocks carry a badge (its funds read
  * not applicable: a DCF on operating cash flow does not describe a fund, a bank or a REIT).
  */
@@ -107,12 +107,13 @@ export function ValuationTab() {
       </div>
 
       <p className="muted" style={{ margin: "0 0 10px" }}>
-        <strong>No measured edge.</strong> A discounted-cash-flow estimate of each share's value from the company's own
+        <strong>Tested 2018–26: no edge.</strong> A discounted-cash-flow estimate of each share's value from the company's own
         statements: five forecast years from the last five fiscal years' medians (growth from the consensus next-year
         sales, faded to {pct(data?.rule.terminalGrowth ?? 0.02, 0)}), discounted at a cost of capital from a regression
         beta, with a perpetuity after. A model's number, not a price: the range is what a point either way in the rate
-        and half a point in the growth do to it. Whether the gap to the price says anything about forward returns has not
-        been tested, so the rows are in symbol order and the figure sits beside the income lists as one data point.
+        and half a point in the growth do to it. Tested on month-ends 2018–26, the names that
+        read cheapest did no better over the next three months than those that read richest, so the rows are in symbol
+        order and the figure sits beside the income lists as a description, never a reason to pick a name.
       </p>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>

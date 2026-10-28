@@ -76,7 +76,7 @@ export function EarningsCell({ r }: { r: Pick<IncomeListRow, "earnings" | "earni
 
 export const FAIR_TITLE =
   "The session's DCF estimate of the share's value (cherrypick.core.valuation on Dolt's annual statements): the price " +
-  "against it, with the model's low-high range. A model estimate with no measured edge, never a ranking.";
+  "against it, with the model's low-high range. A model estimate, tested 2018–26: no edge, never a ranking.";
 
 const FAIR_FLAG: Record<string, string> = {
   terminal_heavy: "the terminal value is over 75% of the enterprise value: the answer is the perpetuity, not the forecast",

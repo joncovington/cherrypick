@@ -69,11 +69,11 @@ function base(rows: ValuationRow[]): ValuationPayload {
 }
 
 describe("the fair-value tab", () => {
-  it("always says the estimate has no measured edge", () => {
+  it("always says the estimate was tested and has no edge", () => {
     payload = base([row({})]);
-    expect(render()).toContain("No measured edge.");
+    expect(render()).toContain("Tested 2018–26: no edge.");
     payload = base([]);
-    expect(render()).toContain("No measured edge.");
+    expect(render()).toContain("Tested 2018–26: no edge.");
   });
 
   it("shows the valued names by default, in the reader's symbol order, with the gap and the range", () => {

@@ -197,7 +197,7 @@ tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/
   `OwnListTab.tsx`, shared with the credit-spread tab): the price against the session's DCF estimate
   from the fair-value file, the range and the builder's flags in the cell's title (a `†` marks a
   flagged row). `n/a` for a fund, a bank or a REIT; `—` with the reason for a name the model has no
-  value for, or a list built before the fields. **A model estimate with no measured edge**, in the
+  value for, or a list built before the fields. **A model estimate, tested 2018–26 with no edge**, in the
   header's title; the column never orders the list.
 - **Fair value** (2026-10-27; `ValuationTab.tsx`, `readers/valuation.ts`,
   `GET /api/screeners/valuation[?day=]`): the fair-value file `technicals valuation` writes each
@@ -207,7 +207,7 @@ tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/
   (the broker's beside it where it disagrees), year-one growth, margin, the terminal value's share of
   EV, the implied EV/EBITDA and the builder's flags. Views: valued (default), pmcc (its configured
   symbols, badged from pmcc's own config through `readers/pmcc.ts`, its funds not applicable) and
-  all. **"No measured edge"** heads the table and is never removed; rows are by symbol, and a column
+  all. **"Tested 2018–26: no edge"** heads the table and is never removed; rows are by symbol, and a column
   sort is the reader's own click. Behind `NeedsDolt`: the statements come from the local Dolt clone.
 
   **The earnings tab** (2026-10-17; `pages/Screeners/EarningsCalendarTab.tsx`,

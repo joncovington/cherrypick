@@ -64,7 +64,7 @@ export interface IncomeListRow {
    *  null when unjudged -- no evaluation for the session, or a strike manage did not price. */
   fit: boolean | null;
   /** The session's DCF estimate (income-lists version 3, 2026-10-27; `types/valuation.ts`): a model
-   *  estimate of value with no measured edge, shown beside the row and never ordering the list. */
+   *  estimate of value, tested 2018-26 with no edge, shown beside the row and never ordering the list. */
   fair: FairValueFields | null;
 }
 
