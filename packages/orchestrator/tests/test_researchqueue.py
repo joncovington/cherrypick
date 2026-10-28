@@ -66,6 +66,20 @@ def test_a_fetch_builds_its_own_command_bounded_by_its_stop_by(files):
     ]
 
 
+def test_a_path_fetch_needs_the_vendor_session_and_is_bounded_by_its_stop_by(files):
+    argv = rq.build_argv("fetch-chain-paths", {"requests": str(files["req"])}, PY, "2026-10-28T18:30")
+    assert argv == [PY, "-m", "cherrypick.backtest", "fetch-chain-paths", "--requests", str(files["req"])] + [
+        "--workers",
+        "3",
+        "--stop-by",
+        "2026-10-28T18:30",
+    ]
+    assert rq.KINDS["fetch-chain-paths"] == ((rq.THETADATA,), True)
+    row = {"kind": "fetch-chain-paths", "args": json.dumps({"requests": "req.json"})}
+    out = rq.result_of(row, {"complete": 2}, Path("q.log"))
+    assert out["input"] == "req.json" and out["store"] == "backtest eod_chains.db"
+
+
 def test_anything_off_the_allow_list_is_refused(files):
     with pytest.raises(rq.Refused, match="unknown kind"):
         rq.build_argv("shell", {"cmd": "del /s *"}, PY)

@@ -82,9 +82,10 @@ Subcommands:
   secrets-status       Show which push-channel secrets are configured (secret-free).
   secrets-delete       Remove a stored secret (--channel).
   queue-add            Queue a research task (orchestrator/researchqueue.py), named --study/--step
-                       (slugs; step defaults to the kind): --task fetch-chains|fetch-flow|script,
-                       --task-args JSON, --output (a script's conclusion file), --not-before /
-                       --stop-by (ET, YYYY-MM-DDTHH:MM). Allow-listed kinds only.
+                       (slugs; step defaults to the kind): --task
+                       fetch-chains|fetch-chain-paths|fetch-flow|script, --task-args JSON,
+                       --output (a script's conclusion file), --not-before / --stop-by (ET,
+                       YYYY-MM-DDTHH:MM). Allow-listed kinds only.
   queue-list           The research queue's rows, newest first (--study narrows), why a queued one
                        waits, and where a finished one's result is.
   queue-cancel         Cancel a queued task (--task-id).
@@ -2402,7 +2403,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="For stop: every daemon and every job still running (after `uninstall`; refused before)",
     )
     parser.add_argument(
-        "--task", default=None, help="For queue-add: fetch-chains, fetch-flow, script or validate"
+        "--task",
+        default=None,
+        help="For queue-add: fetch-chains, fetch-chain-paths, fetch-flow, script or validate",
     )
     parser.add_argument(
         "--task-args",

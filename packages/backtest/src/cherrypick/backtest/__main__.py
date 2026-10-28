@@ -250,7 +250,7 @@ def cmd_fetch_chain_paths(args) -> int:
         return 2
     report = chainfetch.fetch_paths(
         s, client, requests, workers=args.workers, refetch=args.refetch, limit=args.limit,
-        log=lambda m: print(m, file=sys.stderr),
+        stop=_stop_by(args.stop_by), log=lambda m: print(m, file=sys.stderr),
     )  # fmt: skip
     _emit(report)
     return 1 if report.get("aborted") else 0
@@ -533,6 +533,7 @@ def main(argv: list[str] | None = None) -> int:
     fp.add_argument("--workers", type=int, default=3, help="concurrent requests on the one session")
     fp.add_argument("--limit", type=int, help="fetch at most this many paths this run")
     fp.add_argument("--refetch", action="store_true", help="replace paths already complete or empty")
+    fp.add_argument("--stop-by", help="ET wall clock, YYYY-MM-DDTHH:MM: start no path after it")
     fp.set_defaults(fn=cmd_fetch_chain_paths)
     cs = sub.add_parser("chains-status", help="what the end-of-day chain store holds")
     cs.set_defaults(fn=cmd_chains_status)

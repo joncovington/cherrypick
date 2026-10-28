@@ -292,12 +292,13 @@ def fetch_paths(
     workers: int = 1,
     refetch: bool = False,
     limit: int | None = None,
+    stop=None,
     log=print,
 ) -> dict[str, Any]:
     """The daily path of each expiry over [start, through], one vendor call per 7-day chunk of the
     range (`eod_chain_range`; a request spans under a year): what a replay needs to mark a held
-    contract every session, not only on the day it was opened. Resumable and stopped by a fatal
-    refusal, like `fetch_chains`."""
+    contract every session, not only on the day it was opened. Resumable, stopped by a fatal
+    refusal, and by `stop` as `fetch_chains` is."""
     conn = connect(settings)
     try:
         done: set = set()
@@ -318,6 +319,7 @@ def fetch_paths(
             "refused": 0,
             "sessions": 0,
             "rows": 0,
+            "stopped": False,
         }
         if limit is not None:
             todo = todo[:limit]
@@ -327,6 +329,9 @@ def fetch_paths(
             running = {}
 
             def submit_next() -> bool:
+                if stop is not None and stop():
+                    report["stopped"] = True
+                    return False
                 key = next(pending, None)
                 if key is None:
                     return False
