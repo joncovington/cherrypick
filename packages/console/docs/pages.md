@@ -731,4 +731,4 @@ several chances to disagree about which base a book shadows.
 against the mid at submit, overrides, and the gap to its paper mirror. Backtest → `slices` (B5)
 reads the `technicals slices` JSON under `data/technicals/slices/` (`readers/slices.ts`), behind the
 backtest gate because a report may come from a licensed replay; greyed cells stay greyed and the page
-says a cell is never a gate. Both rename and render; every rule is the Python side's.
+says a cell is never a gate. Both rename and render; every rule is the Python side's. From 2026-10-28 an "In plain English" card heads each report: what the report is and what R means, the overall result against zero, one sentence a dimension (one group, too few groups with 30 trades, separated -- two groups' 95% intervals do not overlap -- or overlapping), the upshot, and how to use it. The reading is the reader's (`analysis`, `readDimension`); the card only words it.

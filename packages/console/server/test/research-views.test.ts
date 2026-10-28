@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import { loadConfig, type ConsoleConfig } from "../src/config.js";
 import { registerBacktestRoutes } from "../src/routes/backtest.js";
-import { readSlices, shapeSlice } from "../src/readers/slices.js";
+import { readDimension, readSlices, shapeSlice } from "../src/readers/slices.js";
 import { setBridgeCaller, type BridgeResult } from "../src/services/configBridge.js";
 import { invalidateFeatures } from "../src/services/featuresBridge.js";
 import { shapeExecution } from "../src/services/executionBridge.js";
@@ -74,6 +74,24 @@ describe("the slice reports", () => {
       ["sideways", true],
     ]);
     expect(shapeSlice("b.json", { label: "x" })).toBeNull(); // not labelled in-sample: not a slice report
+  });
+
+  it("read each dimension in plain terms: one group, too few, separated or overlapping", () => {
+    const cell = (value: string, mean: number, lo: number, hi: number, greyed = false) => ({ value, n: 100, mean, ci95: [lo, hi] as [number, number], greyed });
+    expect(readDimension("holding", [cell("same day", 0.1, 0.05, 0.15)]).read).toBe("one-group");
+    expect(readDimension("environment", [cell("uptrend", 0.1, 0, 0.2), cell("sideways", 0.3, 0.1, 0.5, true)]).read).toBe("too-few");
+    const sep = readDimension("entry_hour", [cell("09:00", 0.05, 0.02, 0.08), cell("13:00", 0.18, 0.17, 0.19), cell("11:00", 0.08, 0.06, 0.1)]);
+    expect([sep.read, sep.best?.value, sep.worst?.value]).toEqual(["separated", "13:00", "09:00"]);
+    const ov = readDimension("environment", [cell("mixed", 0.11, 0.1, 0.12), cell("uptrend", 0.12, 0.105, 0.125)]);
+    expect([ov.read, ov.best?.value, ov.worst?.value]).toEqual(["overlapping", "uptrend", "mixed"]);
+  });
+
+  it("reads the label and the overall interval against zero", () => {
+    const r = shapeSlice("a.json", SLICE)!;
+    expect(r.analysis).toMatchObject({ schema: "bwb_132", arm: "bounce", month: null, overall: "unclear", greyedCells: 1 });
+    expect(r.analysis.dimensions[0]).toMatchObject({ name: "environment", read: "too-few", ranked: 1, greyed: 1 });
+    const pos = shapeSlice("c.json", { ...SLICE, label: "meic_ic/control/2026-10", overall: { n: 9, mean: 0.1, ci95: [0.05, 0.15], greyed: false } })!;
+    expect(pos.analysis).toMatchObject({ arm: "control", month: "2026-10", overall: "positive" });
   });
 
   it("reads every report in the directory and skips a broken file", () => {

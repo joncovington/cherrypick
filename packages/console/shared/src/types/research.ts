@@ -73,6 +73,35 @@ export interface SliceReport {
   overall: SliceCell;
   dimensions: { name: string; cells: SliceCell[] }[];
   note: string;
+  /** The plain-English reading of the report (2026-10-28), derived by the reader from the cells. */
+  analysis: SliceAnalysis;
+}
+
+/** How one dimension reads:
+ *  - `one-group`: every trade fell in one group, so there is nothing to compare;
+ *  - `too-few`: only one group (or none) has 30+ trades;
+ *  - `separated`: two ranked groups' 95% intervals do not overlap (`best` is the one whose interval
+ *    sits higher, `worst` the lower);
+ *  - `overlapping`: every ranked group's interval overlaps another's, so a gap could be chance
+ *    (`best`/`worst` are the highest and lowest means, for the sentence). */
+export interface SliceDimensionRead {
+  name: string;
+  read: "one-group" | "too-few" | "separated" | "overlapping";
+  best: SliceCell | null;
+  worst: SliceCell | null;
+  ranked: number;
+  greyed: number;
+}
+
+export interface SliceAnalysis {
+  /** From the label `<schema>/<arm>/<month or all>`; null when the label does not split. */
+  schema: string | null;
+  arm: string | null;
+  month: string | null;
+  /** The overall interval against zero: all above, all below, or crossing it. */
+  overall: "positive" | "negative" | "unclear";
+  dimensions: SliceDimensionRead[];
+  greyedCells: number;
 }
 
 export interface SliceReports {
