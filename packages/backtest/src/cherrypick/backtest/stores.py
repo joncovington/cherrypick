@@ -104,9 +104,10 @@ def _shape(path: Path) -> dict[str, Any]:
     return out
 
 
-def _cached_shape(p: Path, cache: dict) -> dict[str, Any]:
+def _cached_shape(p: Path, cache: dict, on_miss=None) -> dict[str, Any]:
     """`_shape`, kept while the file's size and mtime are unchanged: a full count over the larger
-    stores takes seconds, and the Data tab reads this on every refresh."""
+    stores takes seconds, and the Data tab reads this on every refresh. `on_miss` runs after a
+    recount, so a caller can persist the cache store by store."""
     st = p.stat()
     key = f"{st.st_size}:{int(st.st_mtime)}"
     hit = cache.get(p.name)
@@ -114,6 +115,8 @@ def _cached_shape(p: Path, cache: dict) -> dict[str, Any]:
         return hit["shape"]
     shape = _shape(p)
     cache[p.name] = {"key": key, "shape": shape}
+    if on_miss is not None:
+        on_miss()
     return shape
 
 
@@ -121,7 +124,14 @@ def inventory(
     settings: dict, *, vendor_dir: Path | None = None, cache_path: Path | None = None
 ) -> dict[str, Any]:
     """The vendor directory against `STORES`: declared stores present or missing, and undeclared files.
-    Shapes are cached (`cache_path`, default the results dir's `store_inventory.json`; counts only)."""
+    Shapes are cached (`cache_path`, default the results dir's `store_inventory.json`; counts only).
+
+    The cache is written after EVERY recount, not once at the end (2026-10-28): the console's bridge
+    gives this read 30 s, and when several multi-gigabyte stores had changed since the last read
+    (the nightly 60 s append plus two new chain stores), one read could not finish inside it and the
+    next read started every count over again -- the Backtest page stayed "unavailable" for as long
+    as that held. Now each refresh banks the stores it managed, and the page recovers within a few.
+    """
     d = vendor_dir or paths.vendor_dir(settings)
     cache_file = cache_path or (paths.results_dir() / "store_inventory.json")
     try:
@@ -130,22 +140,28 @@ def inventory(
         cache = {}
     on_disk = {p.name: p for p in sorted(d.glob("*.db"))} if d.exists() else {}
     declared = {e["file"] for e in STORES}
+
+    def save() -> None:
+        try:
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(
+                json.dumps({k: v for k, v in cache.items() if k in on_disk}), encoding="utf-8"
+            )
+        except OSError:
+            pass
+
     rows = []
     for e in STORES:
         p = on_disk.get(e["file"])
         row = {**e, "present": p is not None, "script": script_of(e)}
         if p is not None:
             row["bytes"] = p.stat().st_size
-            row.update(_cached_shape(p, cache))
+            row.update(_cached_shape(p, cache, save))
         rows.append(row)
     undeclared = [
-        {"file": name, "bytes": p.stat().st_size, **_cached_shape(p, cache)}
+        {"file": name, "bytes": p.stat().st_size, **_cached_shape(p, cache, save)}
         for name, p in on_disk.items()
         if name not in declared
     ]
-    try:
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_text(json.dumps({k: v for k, v in cache.items() if k in on_disk}), encoding="utf-8")
-    except OSError:
-        pass
+    save()
     return {"dir": str(d), "stores": rows, "undeclared": undeclared}
