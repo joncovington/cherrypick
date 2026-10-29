@@ -286,7 +286,8 @@ export function ValuationTab() {
       {data && data.day !== null && all.length > 0 && shown.length === 0 && <p className="muted">Nothing matches these filters.</p>}
 
       <p className="muted" style={{ marginTop: 8 }}>
-        The names are the security list's rank 1-2 optionable names{data?.universe ? ` (${data.universe})` : ""}. Statements
+        The names are the security list's rank 1-2 optionable names that the liquidity verdict calls options-tradable
+        {data?.universe ? ` (${data.universe})` : ""}. Statements
         are Dolt's annual rows, counted 45 days after the fiscal year ends; the broker's beta and market cap ride along as
         a cross-check and decide nothing. A name the model cannot value says why instead of showing a number.
       </p>

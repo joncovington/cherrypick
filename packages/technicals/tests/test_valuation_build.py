@@ -112,6 +112,19 @@ def test_the_build_values_a_stock_and_says_why_the_others_have_no_value(history)
     assert "valued" in doc["states"] and doc["rule"]["edge"].startswith("none measured")
 
 
+def test_only_options_tradable_names_are_valued(history, monkeypatch):
+    """The fair-value tab is a screener: a liquid optionable name the liquidity verdict does not call
+    tradable is never valued, only counted (2026-10-28)."""
+    monkeypatch.setattr(
+        valuation.securities, "liquid_optionable", lambda day=None: (["AAA", "LOSS", "NEW"], "public list")
+    )
+    out = valuation.build(SESSION, allowed={"AAA", "ZZZ"})
+    assert out["ok"], out
+    doc = json.loads(valuation.latest(SESSION).read_text(encoding="utf-8"))
+    assert sorted(doc["rows"]) == ["AAA"]
+    assert doc["not_tradable"] == 2 and doc["universe"] == "public list, options-tradable only"
+
+
 def test_a_split_after_the_fiscal_year_scales_the_shares_and_is_flagged(history):
     # AAA's last statements end 2025-12-31 with 100 shares; a 25-for-1 on 2026-04-06 makes 2,500.
     # The raw closes drop 25-fold from the ex-date as a real split's do, so the value per share falls

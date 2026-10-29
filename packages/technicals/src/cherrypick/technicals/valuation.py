@@ -1,7 +1,8 @@
 """The fair-value file: one DCF estimate a name a session, for the income lists and the Screeners tab.
 
 `cherrypick.core.valuation` holds the arithmetic; this module reads its inputs from the history
-store and writes `valuation/<session>.json`. For every liquid optionable name on the security list:
+store and writes `valuation/<session>.json`. For every liquid optionable name on the security list
+that the liquidity verdict calls options-tradable (`build`):
 
 - **spot** is the last close at or before the session (`bars`);
 - **the fiscal years** are Dolt's annual statements published by the session (`statements.years`,
@@ -339,16 +340,34 @@ def rule(rf: float = _val.incomerules.RATE, rf_source: str = "incomerules.RATE")
     }
 
 
-def build(day: str | None = None, path: Path | None = None, names: list[str] | None = None) -> dict[str, Any]:
-    """Value the liquid optionable names as of `day` and write `valuation/<day>.json`."""
+def build(
+    day: str | None = None,
+    path: Path | None = None,
+    names: list[str] | None = None,
+    allowed: set[str] | None = None,
+) -> dict[str, Any]:
+    """Value the options-tradable names as of `day` and write `valuation/<day>.json`.
+
+    The universe is the security list's liquid optionable names cut to those the liquidity verdict
+    calls tradable (2026-10-28, the user: the fair-value tab is a screener, and no screener lists a
+    name that would never be traded; `liquidity.py`). `allowed` stands in for the verdict (tests);
+    None reads it. Names passed in `names` are valued as given."""
     as_of = day or date.today().isoformat()
     db = path or paths.history_db()
     if not db.exists():
         return {"ok": False, "reason": f"no history store at {db} (history land, history fundamentals)"}
     rows_sec, pick = securities.latest(as_of)
     kinds = {str(r["symbol"]).replace("/", "."): r.get("type") for r in rows_sec if r.get("symbol")}
+    not_tradable = 0
     if names is None:
-        names, source = securities.liquid_optionable(as_of)
+        if allowed is None:
+            from . import liquidity
+
+            allowed = liquidity.tradable_names() | liquidity.reference_tradable()
+        listed, source = securities.liquid_optionable(as_of)
+        names = [s for s in listed if s in allowed]
+        not_tradable = len(listed) - len(names)
+        source = f"{source}, options-tradable only"
     else:
         source = "given"
     sectors = {s: v[0] for s, v in fundamentals.sector_sources().items()}
@@ -390,6 +409,7 @@ def build(day: str | None = None, path: Path | None = None, names: list[str] | N
         "security_list": pick.get("day"),
         "rule": rule(rf, rf_source),
         "names": len(rows),
+        "not_tradable": not_tradable,
         "states": counts,
         "rows": rows,
     }
