@@ -220,8 +220,12 @@ describe("the fair-value tab", () => {
     expect(d).toContain("over +200.0%");
   });
 
-  it("says in the details why a name has no value", () => {
-    expect(detail(row({ state: "not-applicable", reason: "financials" }))).toContain("not applicable: financials");
+  it("says in words, in the details, why a name has no value", () => {
+    expect(detail(row({ state: "not-applicable", reason: "financials" }))).toContain("A bank earns on its balance sheet");
+    const debt = detail(row({ state: "refused", reason: "debt_dominated", fairValue: null }));
+    expect(debt).toContain("No fair value.");
+    expect(debt).toContain("covers its interest less than 1.5 times");
+    expect(detail(row({ state: "refused", reason: "something_new" }))).toContain("something new.");
   });
 
   it("says when nothing has been built", () => {

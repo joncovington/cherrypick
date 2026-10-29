@@ -42,6 +42,31 @@ export function stateLabel(s: string): string {
   return STATE_LABEL[s] ?? s;
 }
 
+/** Why there is no value, in words: the builder's and the model's reasons (`core.valuation`). */
+const REASON_TEXT: Record<string, string> = {
+  fund: "A fund has no operating cash flow of its own to discount.",
+  financials: "A bank earns on its balance sheet, which a cash-flow model does not describe.",
+  "real estate": "A REIT is valued on its assets, which a cash-flow model does not describe.",
+  debt_dominated:
+    "Its operating profit covers its interest less than 1.5 times and debt is over half its capital. The model prices debt at its coupon, far below what a lender would charge such a company today, so it shows no value rather than a wrong one.",
+  negative_equity: "After the debt, nothing is left for the shareholders.",
+  non_positive_ev: "The forecast cash flows are worth nothing at the model's discount rate.",
+  negative_terminal_fcf: "The forecast cash flow is still negative in year five, so there is no perpetuity to value.",
+  no_operating_profit: "The company has no operating profit to forecast from.",
+  no_revenue: "The statements carry no revenue.",
+  too_few_years: "Fewer than three fiscal years of statements: not enough history for the medians.",
+  no_growth_read: "No revenue growth could be read from the history.",
+  wacc_near_growth: "The discount rate sits too close to the long-run growth for a perpetuity to mean anything.",
+  no_beta: "Too little price history to measure the stock's beta.",
+  no_shares: "The statements carry no share count.",
+  no_price: "No closing price on or before the session.",
+};
+
+export function reasonText(reason: string | null): string {
+  if (reason === null) return "The model has no value for it.";
+  return REASON_TEXT[reason] ?? `${reason.replace(/_/g, " ")}.`;
+}
+
 export function money(v: number | null): string {
   return v === null ? DASH : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -313,9 +338,8 @@ export function headline(r: ValuationRow): string {
 export function ValuationDetail({ r, rule }: { r: ValuationRow; rule?: ValuationPayload["rule"] }) {
   if (r.state !== "valued") {
     return (
-      <p className="muted" style={{ margin: 0 }}>
-        {stateLabel(r.state)}
-        {r.reason ? `: ${r.reason.replace(/_/g, " ")}` : ""}. A discounted-cash-flow model does not describe it, so it has no fair value.
+      <p style={{ margin: 0 }}>
+        <strong>No fair value.</strong> {reasonText(r.reason)}
       </p>
     );
   }
