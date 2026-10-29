@@ -397,11 +397,15 @@ def _interrupted_run(s, cut: str) -> list[str]:
     return replayed
 
 
+STALE: list[str] = []
+
+
 def _rerun(s):
     replayed = []
 
     def replay(day, out, arms, history_db, settle, config):
-        assert not out.exists(), "a ledger the interruption cut short is discarded before its replay"
+        if out.exists():  # recorded, not asserted: the runner would take an assertion for a refusal
+            STALE.append(day)
         replayed.append(day)
         return _replay(day, out, arms, history_db, settle, config)
 
@@ -424,7 +428,9 @@ def _run_dirs() -> set[str]:
 def test_an_interrupted_run_resumes_from_its_finished_sessions(world, clean_commit):
     s, _ = world
     assert _interrupted_run(s, "2026-10-15") == ["2026-10-14", "2026-10-15"]
+    STALE.clear()
     report, replayed = _rerun(s)
+    assert STALE == [], "a ledger the interruption cut short is discarded before its replay"
     assert replayed == ["2026-10-15"], "the finished session is read back, not replayed"
     assert report["resumed"] == {"sessions_reused": 1}
     assert _run_dirs() == {report["run_id"]}, "the resumed run keeps the interrupted run's id and directory"
