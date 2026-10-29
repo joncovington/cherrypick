@@ -66,6 +66,15 @@ NWC_YEARS = 5
 # negative regression beta (a utility, a tobacco name) gave 5.5% and a value twice the price on
 # 2026-10-27, so the rate is floored here and the answer flagged (`wacc_floored`).
 MIN_WACC = 0.07
+# A company whose operating profit covers its interest less than DEBT_COVERAGE times, with debt over
+# DEBT_WEIGHT of its capital (debt plus market cap), is refused (`debt_dominated`, 2026-10-28, the
+# user). The WACC prices debt at its coupon (interest over the balance), and for such a company the
+# coupon is far below what a lender would charge today, while debt carries most of the weight: AAL
+# (EBIT 0.85x interest, debt 78% of capital) came out under the 7% floor and read $40 against $12.61,
+# where a lender's rate leaves the shareholders nothing. The model cannot price that debt, so it says
+# so rather than show a number. One name of 88 valued on 2026-10-28.
+DEBT_COVERAGE = 1.5
+DEBT_WEIGHT = 0.5
 # Below this spread between WACC and terminal growth the perpetuity is arithmetic, not a value.
 MIN_SPREAD = 0.01
 # A terminal value above this share of EV says the answer is the perpetuity, not the forecast. With
@@ -234,6 +243,16 @@ def cost_of_equity(rf: float, b: float, erp: float = EQUITY_PREMIUM) -> float:
     return rf + b * erp
 
 
+def debt_dominated(base: FiscalYear, market_cap: float) -> bool:
+    """Whether the operating profit covers the interest less than `DEBT_COVERAGE` times while debt is
+    over `DEBT_WEIGHT` of the capital: a company whose debt the coupon cannot price. A company with no
+    debt, no interest or net interest income is never this."""
+    if base.debt <= 0 or base.interest is None or base.interest <= 0:
+        return False
+    weight = base.debt / (base.debt + max(market_cap, 0.0))
+    return base.ebit / base.interest < DEBT_COVERAGE and weight > DEBT_WEIGHT
+
+
 def cost_of_debt(interest: float | None, debt: float, tax_rate: float) -> float:
     """After tax. Interest over the debt balance, clamped; the floor when there is no debt or no
     interest figure (a company without debt borrows at the floor if it ever does)."""
@@ -339,6 +358,8 @@ def value(
     base = max(years, key=lambda y: y.end)
     if base.shares <= 0:
         return Refusal("no_shares")
+    if debt_dominated(base, market_cap):
+        return Refusal("debt_dominated")
     b = bounded_beta(beta_raw)
     raw_rate = wacc(
         cost_of_equity(rf, b, erp), cost_of_debt(base.interest, base.debt, d.tax_rate), base.debt, market_cap
