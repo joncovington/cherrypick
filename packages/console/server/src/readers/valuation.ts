@@ -7,7 +7,13 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type { ValuationPayload, ValuationRow, ValuationState } from "@console/shared";
+import type {
+  ValuationBridge,
+  ValuationForecastYear,
+  ValuationPayload,
+  ValuationRow,
+  ValuationState,
+} from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num, str } from "./db.js";
 import { pmccSymbols } from "./pmcc.js";
@@ -84,9 +90,39 @@ function toRow(v: unknown, pmcc: ReadonlySet<string>): ValuationRow | null {
     bestGrowth: num(r["best_growth"]),
     reach: oneOf(r["reach"], ["below value", "within history", "beyond history"] as const),
     consensusUsed: r["consensus_used"] === true,
+    terminalGrowth: num(r["terminal_growth"]),
+    forecast: forecastOf(r["forecast"]),
+    bridge: bridgeOf(r["bridge"]),
     flags: strings(r["flags"]),
     pmcc: pmcc.has(symbol),
   };
+}
+
+/** The forecast years; null when the file has none (an older file, a non-valued row) or any year is
+ *  short a figure the chart needs. */
+function forecastOf(v: unknown): ValuationForecastYear[] | null {
+  if (!Array.isArray(v) || v.length === 0) return null;
+  const out: ValuationForecastYear[] = [];
+  for (const item of v) {
+    const y = rec(item);
+    const year = num(y["year"]);
+    const revenue = num(y["revenue"]);
+    const growth = num(y["growth"]);
+    const fcf = num(y["fcf"]);
+    if (year === null || revenue === null || growth === null || fcf === null) return null;
+    out.push({ year, revenue, growth, ebitMargin: num(y["ebit_margin"]), fcf });
+  }
+  return out;
+}
+
+/** The bridge, whole or not at all: a part-bridge would not add up to the value. */
+function bridgeOf(v: unknown): ValuationBridge | null {
+  const b = rec(v);
+  const keys = ["pv_forecast", "pv_terminal", "ev", "debt", "cash", "equity", "shares"] as const;
+  const n = keys.map((k) => num(b[k]));
+  if (n.some((x) => x === null)) return null;
+  const [pvForecast, pvTerminal, ev, debt, cash, equity, shares] = n as number[];
+  return { pvForecast: pvForecast!, pvTerminal: pvTerminal!, ev: ev!, debt: debt!, cash: cash!, equity: equity!, shares: shares! };
 }
 
 export function readValuation(config: ConsoleConfig, dayParam: string | null): ValuationPayload {
@@ -100,7 +136,15 @@ export function readValuation(config: ConsoleConfig, dayParam: string | null): V
     universe: null,
     names: 0,
     states: {},
-    rule: { forecastYears: null, terminalGrowth: null, riskFree: null, equityPremium: null, beta: null, edge: null },
+    rule: {
+      forecastYears: null,
+      terminalGrowth: null,
+      riskFree: null,
+      riskFreeSource: null,
+      equityPremium: null,
+      beta: null,
+      edge: null,
+    },
     rows: [],
   };
   if (day === null) return empty;
@@ -128,6 +172,7 @@ export function readValuation(config: ConsoleConfig, dayParam: string | null): V
       forecastYears: num(rule["forecast_years"]),
       terminalGrowth: num(rule["terminal_growth"]),
       riskFree: num(rule["risk_free"]),
+      riskFreeSource: str(rule["risk_free_source"]),
       equityPremium: num(rule["equity_premium"]),
       beta: str(rule["beta"]),
       edge: str(rule["edge"]),

@@ -110,6 +110,16 @@ def test_the_build_values_a_stock_and_says_why_the_others_have_no_value(history)
     assert a["market_cap"] == pytest.approx(a["spot"] * 100.0)
     assert "shares_stale" in a["flags"]  # the broker says 5,000 against spot x 100 shares
     assert "valued" in doc["states"] and doc["rule"]["edge"].startswith("none measured")
+    # The tab's bridge and forecast are the base case's own arithmetic: they add up to the value.
+    b = a["bridge"]
+    assert b["pv_forecast"] + b["pv_terminal"] == pytest.approx(b["ev"], abs=0.02)
+    assert b["ev"] - b["debt"] + b["cash"] == pytest.approx(b["equity"], abs=0.02)
+    assert b["equity"] / b["shares"] == pytest.approx(a["fair_value"], abs=0.01)
+    assert b["pv_terminal"] / b["ev"] == pytest.approx(a["terminal_share"], abs=1e-3)
+    assert [f["year"] for f in a["forecast"]] == [1, 2, 3, 4, 5]
+    assert a["forecast"][0]["growth"] == pytest.approx(a["growth_y1"], abs=1e-4)
+    assert a["terminal_growth"] == doc["rule"]["terminal_growth"]
+    assert rows["BNK"]["bridge"] is None and rows["BNK"]["forecast"] is None
 
 
 def test_only_options_tradable_names_are_valued(history, monkeypatch):

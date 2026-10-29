@@ -1,9 +1,12 @@
-import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { ValuationRow } from "@console/shared";
 import { SortTh, sortRows, useSort } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
 import { useValuation } from "../../lib/api";
+import { ValuationDetail, flagText, money, pct, stateLabel, stretch, stretchText } from "./ValuationDetail";
+
+export { ValuationDetail, stretch } from "./ValuationDetail";
 
 /**
  * The fair-value tab (2026-10-27): one DCF estimate an options-tradable name a session, from
@@ -14,51 +17,15 @@ import { useValuation } from "../../lib/api";
  * assigned; a column sort is the reader's own choice.
  *
  * A row carries only what that choice needs (symbol, price, fair value, reach, stretch; 2026-10-28, the
- * user: the full table confused); the model's inputs, the reverse DCF's two levers and the builder's
- * flags open beneath it (`ValuationDetail`). The standing note says the estimate was tested and has no
- * edge and is never removed while the table shows. pmcc's configured stocks carry a badge (its funds
- * read not applicable: a DCF on operating cash flow does not describe a fund, a bank or a REIT).
+ * user: the full table confused); everything else opens beneath it (`ValuationDetail`). The standing
+ * note says the estimate was tested and has no edge and is never removed while the table shows.
+ * pmcc's configured stocks carry a badge (its funds read not applicable: a DCF on operating cash flow
+ * does not describe a fund, a bank or a REIT).
  */
 
 const PAGE_SIZES = [50, 100, 200, 500] as const;
 const DASH = "—";
 const COLUMNS = 6;
-
-const FLAG_TEXT: Record<string, string> = {
-  terminal_heavy: "Over 85% of the value is the perpetuity after year five, so the answer rests on the long-run guess.",
-  wacc_floored: "The cost of capital came out under 7% and was floored there.",
-  split_adjusted: "The stock split after its last annual report; the share count was carried through the split.",
-  negative_base_fcf: "The first forecast year's cash flow is negative.",
-  beta_bounded: "The measured beta sat outside 0.5–2.0 and was bounded.",
-  beta_disagrees: "The broker's beta differs from ours by more than 0.5.",
-  shares_stale: "Price × year-end shares is more than 10% off the broker's market cap: the share count may be stale.",
-};
-
-const STATE_LABEL: Record<string, string> = {
-  valued: "valued",
-  "not-applicable": "not applicable",
-  "no-statements": "no statements",
-  refused: "no value",
-};
-
-function money(v: number | null): string {
-  return v === null ? DASH : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function pct(v: number | null, digits = 1): string {
-  return v === null ? DASH : `${(v * 100).toFixed(digits)}%`;
-}
-
-function signedPct(v: number | null): string {
-  if (v === null) return DASH;
-  return `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v * 100).toFixed(1)}%`;
-}
-
-function billions(v: number | null): string {
-  if (v === null) return DASH;
-  const b = v / 1e9;
-  return b >= 100 ? `$${b.toFixed(0)}B` : b >= 1 ? `$${b.toFixed(1)}B` : `$${(v / 1e6).toFixed(0)}M`;
-}
 
 const SORTS: Record<string, (r: ValuationRow) => number | string | null> = {
   symbol: (r) => r.symbol,
@@ -67,14 +34,6 @@ const SORTS: Record<string, (r: ValuationRow) => number | string | null> = {
   reach: (r) => r.reach,
   stretch: (r) => stretch(r),
 };
-
-/** The margin the price needs over the company's best of the last five fiscal years: 0.8 asks 80% of
- *  its best year, 1.5 half again above anything it has done. Infinity when no margin under 100% of
- *  revenue reaches the price; null when there is no valued row or no positive best to measure against. */
-export function stretch(r: ValuationRow): number | null {
-  if (r.state !== "valued" || r.bestMargin === null || r.bestMargin <= 0) return null;
-  return r.impliedMargin === null ? Number.POSITIVE_INFINITY : r.impliedMargin / r.bestMargin;
-}
 
 const REACH_RANK: Record<string, number> = { "below value": 0, "within history": 1, "beyond history": 2 };
 
@@ -96,11 +55,6 @@ export function riskOrder(rows: ValuationRow[]): ValuationRow[] {
   });
 }
 
-function stretchText(v: number | null): string {
-  if (v === null) return DASH;
-  return v === Number.POSITIVE_INFINITY ? "none reaches" : `${v.toFixed(2)}×`;
-}
-
 const REACH_TITLE: Record<string, string> = {
   "below value": "The price is at or under the model's value: it asks nothing the business has not already done",
   "within history":
@@ -108,13 +62,6 @@ const REACH_TITLE: Record<string, string> = {
   "beyond history":
     "Neither the margin nor the growth alone reaches the price without beating the company's own best of the last five fiscal years: the price assumes a better business than the record shows",
 };
-
-function needsGrowth(r: ValuationRow): string {
-  if (r.impliedGrowth === null) return DASH;
-  if (r.impliedGrowthEdge === "above") return `over ${signedPct(r.impliedGrowth)}`;
-  if (r.impliedGrowthEdge === "below") return `under ${signedPct(r.impliedGrowth)}`;
-  return signedPct(r.impliedGrowth);
-}
 
 export type ValuationView = "valued" | "pmcc" | "all";
 
@@ -125,109 +72,6 @@ export function applyView(rows: ValuationRow[], view: ValuationView, q: string):
     if (view === "pmcc") return r.pmcc;
     return true;
   });
-}
-
-function Fact({ label, value, title }: { label: string; value: ReactNode; title?: string }) {
-  return (
-    <>
-      <dt className="muted" title={title}>
-        {label}
-      </dt>
-      <dd style={{ margin: 0 }} className="num">
-        {value}
-      </dd>
-    </>
-  );
-}
-
-const FACTS: CSSProperties ={ display: "grid", gridTemplateColumns: "max-content max-content", gap: "2px 12px", margin: "4px 0 0" };
-
-/** Everything behind one row: the two levers against the company's record, the model's inputs, and
- *  the builder's flags in words. */
-export function ValuationDetail({ r }: { r: ValuationRow }) {
-  if (r.state !== "valued") {
-    return (
-      <p className="muted" style={{ margin: 0 }}>
-        {STATE_LABEL[r.state] ?? r.state}
-        {r.reason ? `: ${r.reason.replace(/_/g, " ")}` : ""}. A discounted-cash-flow model does not describe it, so it has no fair value.
-      </p>
-    );
-  }
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "12px 32px" }}>
-      <div>
-        <strong>What the price needs</strong>
-        <dl style={FACTS}>
-          <Fact
-            label="Operating margin"
-            title="The long-run margin at which the model's value equals the price, everything else held; beside it the company's best of the last five fiscal years"
-            value={
-              <>
-                {r.impliedMargin === null ? "none under 100%" : pct(r.impliedMargin)}
-                <span className="muted"> · best {pct(r.bestMargin)}</span>
-              </>
-            }
-          />
-          <Fact
-            label="Year-one growth"
-            title="The revenue growth, faded to 2% by year five, at which the value equals the price, everything else held; beside it the company's best year of the last five"
-            value={
-              <>
-                {needsGrowth(r)}
-                <span className="muted"> · best {signedPct(r.bestGrowth)}</span>
-              </>
-            }
-          />
-          <Fact label="Price vs fair" title="Price ÷ fair value − 1. Tested 2018–26: no edge" value={signedPct(r.gap)} />
-          <Fact
-            label="Fair value range"
-            title="The cost of capital a point either way, the terminal growth half a point either way"
-            value={r.low === null || r.high === null ? DASH : `${money(r.low)} – ${money(r.high)}`}
-          />
-        </dl>
-      </div>
-      <div>
-        <strong>The model's inputs</strong>
-        <dl style={FACTS}>
-          <Fact
-            label="Revenue growth, year one"
-            value={
-              <>
-                {signedPct(r.growthY1)}
-                <span className="muted"> · {r.consensusUsed ? "analyst consensus" : "five-year history"}</span>
-              </>
-            }
-          />
-          <Fact label="Operating margin" title="The median of the last three fiscal years" value={pct(r.ebitMargin)} />
-          <Fact label="Cost of capital" title="The 10-year Treasury + beta × 5% for equity, after-tax cost of debt, floored at 7%" value={pct(r.wacc)} />
-          <Fact
-            label="Beta"
-            title="Weekly returns on SPY over three years, bounded 0.5–2.0"
-            value={
-              <>
-                {r.beta === null ? DASH : r.beta.toFixed(2)}
-                {r.betaBroker !== null ? <span className="muted"> · broker {r.betaBroker.toFixed(2)}</span> : null}
-              </>
-            }
-          />
-          <Fact label="Value after year five" title="The perpetuity's share of the model's enterprise value" value={pct(r.terminalShare, 0)} />
-          <Fact label="EV / EBITDA" title="The model's enterprise value over the last fiscal year's EBITDA, a sanity figure" value={r.impliedEvEbitda === null ? DASH : `${r.impliedEvEbitda.toFixed(1)}×`} />
-          <Fact label="Market cap" value={billions(r.marketCap)} />
-          <Fact label="Statements to" value={r.fiscalYearEnd ?? DASH} />
-        </dl>
-      </div>
-      {r.flags.length > 0 && (
-        <div style={{ maxWidth: 420 }}>
-          <strong>Notes</strong>
-          <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
-            {r.flags.map((f) => (
-              <li key={f}>{FLAG_TEXT[f] ?? f.replace(/_/g, " ")}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function ValuationTab() {
@@ -376,7 +220,7 @@ export function ValuationTab() {
                           </span>
                         ) : null}
                         {r.flags.length > 0 ? (
-                          <span className="chip muted" title={r.flags.map((f) => FLAG_TEXT[f] ?? f).join(" ")}>
+                          <span className="chip muted" title={r.flags.map(flagText).join(" ")}>
                             {r.flags.length === 1 ? "1 note" : `${r.flags.length} notes`}
                           </span>
                         ) : null}
@@ -389,7 +233,7 @@ export function ValuationTab() {
                         </td>
                       ) : (
                         <td className="muted" title={r.reason ?? undefined}>
-                          {STATE_LABEL[r.state] ?? r.state}
+                          {stateLabel(r.state)}
                           {r.reason ? ` · ${r.reason.replace(/_/g, " ")}` : ""}
                         </td>
                       )}
@@ -398,7 +242,7 @@ export function ValuationTab() {
                     {isOpen && (
                       <tr className="row-detail">
                         <td colSpan={COLUMNS}>
-                          <ValuationDetail r={r} />
+                          <ValuationDetail r={r} rule={data?.rule} />
                         </td>
                       </tr>
                     )}
