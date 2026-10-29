@@ -216,6 +216,9 @@ def value_one(
         "best_margin": None,
         "best_growth": None,
         "reach": None,
+        "terminal_growth": None,
+        "forecast": None,
+        "bridge": None,
         "flags": [],
     }
     if kind is not None and kind != "Stock":
@@ -269,6 +272,9 @@ def value_one(
         terminal_share=round(out.terminal_share, 4),
         implied_ev_ebitda=None if out.implied_ev_ebitda is None else round(out.implied_ev_ebitda, 2),
         flags=_flags(out, broker, market_cap) + (["split_adjusted"] if split else []),
+        terminal_growth=out.drivers.terminal_growth,
+        forecast=forecast_rows(out),
+        bridge=bridge(out, max(years, key=lambda y: y.end)),  # the model's own base year
     )
     imp = _val.implied(years, out, spot[1])
     if imp is not None:
@@ -281,6 +287,38 @@ def value_one(
             reach=reach(spot[1], out.fair_value, imp),
         )
     return row
+
+
+def forecast_rows(out: _val.Valuation) -> list[dict[str, float]]:
+    """The base case's forecast years as the tab draws them: revenue, its growth, the operating margin
+    and the free cash flow to the firm, in dollars."""
+    return [
+        {
+            "year": p.year,
+            "revenue": round(p.revenue, 2),
+            "growth": round(out.drivers.growth[p.year - 1], 4),
+            "ebit_margin": round(p.ebit / p.revenue, 4) if p.revenue else None,
+            "fcf": round(p.fcf, 2),
+        }
+        for p in out.projections
+    ]
+
+
+def bridge(out: _val.Valuation, base: _val.FiscalYear) -> dict[str, float]:
+    """From the business's value to the value per share, the base case's own arithmetic
+    (`core.valuation.equity_per_share`): the forecast years' and the perpetuity's present values make
+    the enterprise value; less debt, plus cash, is the equity; over the shares, `fair_value`."""
+    pv_terminal = out.ev * out.terminal_share
+    equity = out.ev - base.debt + base.cash
+    return {
+        "pv_forecast": round(out.ev - pv_terminal, 2),
+        "pv_terminal": round(pv_terminal, 2),
+        "ev": round(out.ev, 2),
+        "debt": round(base.debt, 2),
+        "cash": round(base.cash, 2),
+        "equity": round(equity, 2),
+        "shares": round(base.shares, 2),
+    }
 
 
 def reach(price: float, fair: float, imp: _val.Implied) -> str:

@@ -88,7 +88,7 @@ describe("readValuation", () => {
     const p = readValuation(config, null);
     expect(p.day).toBe("2026-10-27");
     expect(p.days).toEqual(["2026-10-27", "2026-10-26"]);
-    expect(p.rule).toEqual({ forecastYears: 5, terminalGrowth: 0.02, riskFree: 0.04, equityPremium: 0.05, beta: "OLS weekly", edge: "none measured" });
+    expect(p.rule).toEqual({ forecastYears: 5, terminalGrowth: 0.02, riskFree: 0.04, riskFreeSource: null, equityPremium: 0.05, beta: "OLS weekly", edge: "none measured" });
     expect(p.states).toEqual({ valued: 1, "not-applicable: fund": 1 });
     expect(p.rows.map((r) => [r.symbol, r.state, r.reason, r.pmcc])).toEqual([
       ["AMZN", "valued", null, true],
@@ -134,6 +134,26 @@ describe("readValuation", () => {
     const rows = readValuation(config, null).rows;
     expect(rows[0]).toMatchObject({ impliedMargin: null, impliedGrowth: null, impliedGrowthEdge: null, bestMargin: null, reach: null });
     expect(rows[1].reach).toBeNull();
+  });
+
+  it("renames the forecast and the bridge, and reads a part-bridge or an older file as null", () => {
+    const bridge = { pv_forecast: 4e11, pv_terminal: 9.8e11, ev: 1.38e12, debt: 1.5e11, cash: 9e10, equity: 1.32e12, shares: 1.06e10 };
+    const forecast = [1, 2, 3, 4, 5].map((year) => ({ year, revenue: 7e11 + year * 4e10, growth: 0.09, ebit_margin: 0.104, fcf: 5e10 + year * 4e9 }));
+    write(
+      "2026-10-27.json",
+      doc("2026-10-27", {
+        AMZN: { ...VALUED, terminal_growth: 0.02, forecast, bridge },
+        PART: { ...VALUED, symbol: "PART", bridge: { ...bridge, cash: null }, forecast: [{ year: 1, revenue: 1 }] },
+        OLD: { ...VALUED, symbol: "OLD" },
+      }),
+    );
+    const [amzn, old, part] = readValuation(config, null).rows;
+    expect(amzn!.terminalGrowth).toBe(0.02);
+    expect(amzn!.bridge).toEqual({ pvForecast: 4e11, pvTerminal: 9.8e11, ev: 1.38e12, debt: 1.5e11, cash: 9e10, equity: 1.32e12, shares: 1.06e10 });
+    expect(amzn!.forecast).toHaveLength(5);
+    expect(amzn!.forecast![0]).toEqual({ year: 1, revenue: 7.4e11, growth: 0.09, ebitMargin: 0.104, fcf: 5.4e10 });
+    expect([old!.bridge, old!.forecast, old!.terminalGrowth]).toEqual([null, null, null]);
+    expect([part!.bridge, part!.forecast]).toEqual([null, null]);
   });
 
   it("badges nothing when pmcc has no config", () => {

@@ -65,9 +65,37 @@ export interface ValuationRow {
    *  lever alone gets there without beating the company's best), "beyond history". */
   reach: "below value" | "within history" | "beyond history" | null;
   consensusUsed: boolean;
+  /** The perpetuity's growth after the forecast years. */
+  terminalGrowth: number | null;
+  /** The base case's forecast years (2026-10-28, the tab's detail); null on an older file or a
+   *  non-valued row. Dollars. */
+  forecast: ValuationForecastYear[] | null;
+  /** From the business's value to the value per share, the base case's own arithmetic; null as
+   *  `forecast`. Dollars; `equity / shares` is `fairValue`. */
+  bridge: ValuationBridge | null;
   flags: string[];
   /** One of pmcc's configured symbols (its own config, read by the console). */
   pmcc: boolean;
+}
+
+export interface ValuationForecastYear {
+  year: number;
+  revenue: number;
+  /** The year's revenue growth: year one from the consensus or the history, faded to the long run. */
+  growth: number;
+  ebitMargin: number | null;
+  /** Free cash flow to the firm. */
+  fcf: number;
+}
+
+export interface ValuationBridge {
+  pvForecast: number;
+  pvTerminal: number;
+  ev: number;
+  debt: number;
+  cash: number;
+  equity: number;
+  shares: number;
 }
 
 export interface ValuationPayload {
@@ -83,6 +111,8 @@ export interface ValuationPayload {
     forecastYears: number | null;
     terminalGrowth: number | null;
     riskFree: number | null;
+    /** Where the risk-free rate came from (the Treasury file and its day, or the fallback). */
+    riskFreeSource: string | null;
     equityPremium: number | null;
     beta: string | null;
     edge: string | null;
