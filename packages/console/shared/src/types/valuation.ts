@@ -73,6 +73,9 @@ export interface ValuationRow {
   /** From the business's value to the value per share, the base case's own arithmetic; null as
    *  `forecast`. Dollars; `equity / shares` is `fairValue`. */
   bridge: ValuationBridge | null;
+  /** The model's working, every input with its source (version 2, 2026-10-29: the Advanced view);
+   *  null on an older file or a non-valued row. */
+  model: ValuationModel | null;
   flags: string[];
   /** One of pmcc's configured symbols (its own config, read by the console). */
   pmcc: boolean;
@@ -86,6 +89,16 @@ export interface ValuationForecastYear {
   ebitMargin: number | null;
   /** Free cash flow to the firm. */
   fcf: number;
+  /** Version 2's working (null on an older file): where the growth came from, and each line. */
+  growthSource: "consensus" | "history" | "fade" | null;
+  ebit: number | null;
+  nopat: number | null;
+  da: number | null;
+  capex: number | null;
+  wcChange: number | null;
+  /** The mid-year discount factor, and the year's present value. */
+  discount: number | null;
+  pv: number | null;
 }
 
 export interface ValuationBridge {
@@ -96,6 +109,80 @@ export interface ValuationBridge {
   cash: number;
   equity: number;
   shares: number;
+  /** Version 2's other claims and the share count's parts; 0 on an older file. */
+  financeLease: number;
+  preferred: number;
+  nci: number;
+  basicShares: number;
+  rsu: number;
+  optionShares: number;
+}
+
+/** The discount rate's build: each component, where it came from. */
+export interface ValuationCapital {
+  rf: number | null;
+  rfSource: string | null;
+  erp: number | null;
+  erpMonth: string | null;
+  betaRaw: number | null;
+  beta: number | null;
+  ke: number | null;
+  /** EBIT over interest; null when the company has no interest expense. */
+  coverage: number | null;
+  rating: string | null;
+  spread: number | null;
+  ratingsAsOf: string | null;
+  kdPreTax: number | null;
+  kdAfterTax: number | null;
+  marginalTax: number | null;
+  equityWeight: number | null;
+  debtWeight: number | null;
+  wacc: number | null;
+}
+
+export interface ValuationHistoryYear {
+  end: string;
+  revenue: number | null;
+  ebitMargin: number | null;
+  daPct: number | null;
+  capexPct: number | null;
+  wcPct: number | null;
+  taxRate: number | null;
+}
+
+export interface ValuationModel {
+  capital: ValuationCapital;
+  drivers: {
+    ebitMargin: number | null;
+    daPct: number | null;
+    capexPct: number | null;
+    wcPct: number | null;
+    wcIsLevel: boolean;
+    taxRate: number | null;
+    historyYears: number | null;
+  };
+  terminal: { fcf: number | null; value: number | null; reinvestmentRate: number | null; roic: number | null };
+  consensus: {
+    snapshot: string | null;
+    years: { periodEnd: string; revenue: number; analysts: number | null; high: number | null; low: number | null }[];
+  };
+  history: ValuationHistoryYear[];
+  /** [WACC step, growth step, value per share or null]. */
+  grid: [number, number, number | null][];
+  data: {
+    fiscalYearEnd: string | null;
+    filed: string | null;
+    latestPeriod: string | null;
+    latestFiled: string | null;
+    sic: string | null;
+    sicDescription: string | null;
+    source: string | null;
+  };
+  /** The tag or derivation each line of the base year came from ("Dolt" where the filing was silent). */
+  sources: Record<string, string>;
+  /** Lines where the filing and Dolt's statements differ by more than 10%: [filing, Dolt]. */
+  disagree: Record<string, [number, number]>;
+  impliedWacc: number | null;
 }
 
 export interface ValuationPayload {

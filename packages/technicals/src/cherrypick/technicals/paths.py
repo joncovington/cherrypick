@@ -120,3 +120,9 @@ def yahoo_adjusted() -> Path:
 
 def universe_candidates() -> Path:
     return market_report_dir() / "universe" / "candidates.json"
+
+
+def fair_value_dir() -> Path:
+    """packages/fundamentals' fair-value files, one a session. Read here by path, never by import:
+    fundamentals reads this package for prices, so an import back would be a cycle. Read-only here."""
+    return _home.data_dir("fundamentals", env="FUNDAMENTALS_DATA_DIR") / "valuation"

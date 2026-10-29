@@ -62,6 +62,13 @@ what it may write. The package's own CLAUDE.md holds the detail.
   Credential-free and network-free; adjusted bars are computed on read and match the vendor's to the
   cent; engines are fitted against the vendor and scored out of sample. Level SELECTION is not yet
   reproduced, and the docs say so.
+- **packages/fundamentals** — company fundamentals and the fair-value file (moved out of technicals
+  on 2026-10-29): each company's SEC filings (point in time by filing date), Dolt's annual statements
+  and revenue consensus, and Damodaran's public ERP and coverage-to-rating table, into its own store;
+  the daily fair-value file the Screeners tab and the technicals income lists read. Credential-free
+  and network-free (two scripts fetch); **reads technicals for prices, the one package besides core
+  another declares**, and technicals reads it back by file only. A description, never a selector:
+  tested 2018-26 with no edge.
 - **packages/console** — the reactive web UI (Node + TypeScript, React SPA on 127.0.0.1:5070), the
   suite's **only** read surface. **Holds no path that touches an order.** Kept alive by the supervisor
   (restarted on death and on a stale `state/console.heartbeat`). Read-only over every other package

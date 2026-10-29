@@ -176,8 +176,8 @@ writes the skate screen's bands from `history.db` (docs/skate-plan.md), then the
 is reported and never fails the bands).
 
 The rest run daily under the same `technicals` block (times ET, each overridable by its `*_at` key):
-`technicals-index-bars` 06:00, `-history` 06:20, `-fundamentals` 06:25, `-valuation` 06:28 (the
-fair-value file, with the history switch), `-report` 06:30,
+`technicals-index-bars` 06:00, `-history` 06:20, `-fundamentals` 06:25 (the fair-value file moved to
+packages/fundamentals on 2026-10-29, read here by path), `-report` 06:30,
 `-stage-lists` 06:35, `-board` 06:45, `-earnings-record` 06:50, `-adjust-check` 06:55 (with the
 landing; exit 1 is the watchdog's failed-job warning); in the evening `-sectors` 18:40,
 `-yahoo-adjusted` 19:45 (Yahoo, no credential; both follow `technicals.adjust_check`),

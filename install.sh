@@ -103,9 +103,11 @@ step "Creating the Python environment (.venv)"
 step "Installing the cherrypick packages (a few minutes the first time)"
 # packages/core first: every other package depends on it and it is not on PyPI.
 "$VPY" -m pip install --quiet -e "$ROOT/packages/core"
+# packages/technicals next: packages/fundamentals depends on it, and it is not on PyPI either.
+"$VPY" -m pip install --quiet -e "$ROOT/packages/technicals"
 for proj in "$ROOT"/packages/*/pyproject.toml; do
     pkg="$(basename "$(dirname "$proj")")"
-    [ "$pkg" = core ] && continue
+    { [ "$pkg" = core ] || [ "$pkg" = technicals ]; } && continue
     if [ "$pkg" = desk ] && [ "$WITH_DESK" != 1 ]; then continue; fi
     note "$pkg"
     "$VPY" -m pip install --quiet -e "$ROOT/packages/$pkg"

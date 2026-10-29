@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import type { ValuationPayload, ValuationRow } from "@console/shared";
+import type { ValuationModel, ValuationPayload, ValuationRow } from "@console/shared";
 import { AXIS_FONT, CHART_GRID, CHART_GRID_STRONG, niceTicks } from "../../components/Charts";
 
 /**
@@ -18,13 +18,21 @@ import { AXIS_FONT, CHART_GRID, CHART_GRID_STRONG, niceTicks } from "../../compo
 const DASH = "—";
 
 const FLAG_TEXT: Record<string, string> = {
-  terminal_heavy: "Over 85% of the value is the perpetuity after year five, so the answer rests on the long-run guess.",
+  terminal_heavy: "Over 85% of the value is the perpetuity after year ten, so the answer rests on the long-run guess.",
   wacc_floored: "The cost of capital came out under 7% and was floored there.",
   split_adjusted: "The stock split after its last annual report; the share count was carried through the split.",
   negative_base_fcf: "The first forecast year's cash flow is negative.",
   beta_bounded: "The measured beta sat outside 0.5–2.0 and was bounded.",
   beta_disagrees: "The broker's beta differs from ours by more than 0.5.",
   shares_stale: "Price × year-end shares is more than 10% off the broker's market cap: the share count may be stale.",
+  // Version 2's (2026-10-29).
+  consensus_dip:
+    "An analyst year grows less than the long-run rate (a patent cliff, a cycle turning); the forecast fades from it, so if the dip is a one-off the value is understated.",
+  filing_disagrees: "A line in the filing differs from Dolt's by more than 10%; the value uses the filing (see Advanced).",
+  wc_floored:
+    "Working capital is negative (customers and suppliers fund the business); the forecast takes no cash from it as revenue grows.",
+  negative_early_fcf: "The forecast's free cash flow is negative in one of its first three years (heavy investment ahead).",
+  erp_fallback: "Damodaran's equity risk premium file was missing; a fallback premium was used.",
 };
 
 export function flagText(f: string): string {
@@ -51,7 +59,7 @@ const REASON_TEXT: Record<string, string> = {
     "Its operating profit covers its interest less than 1.5 times and debt is over half its capital. The model prices debt at its coupon, far below what a lender would charge such a company today, so it shows no value rather than a wrong one.",
   negative_equity: "After the debt, nothing is left for the shareholders.",
   non_positive_ev: "The forecast cash flows are worth nothing at the model's discount rate.",
-  negative_terminal_fcf: "The forecast cash flow is still negative in year five, so there is no perpetuity to value.",
+  negative_terminal_fcf: "The forecast cash flow is still negative in year ten, so there is no perpetuity to value.",
   no_operating_profit: "The company has no operating profit to forecast from.",
   no_revenue: "The statements carry no revenue.",
   too_few_years: "Fewer than three fiscal years of statements: not enough history for the medians.",
@@ -402,8 +410,8 @@ export function ValuationDetail({ r, rule }: { r: ValuationRow; rule?: Valuation
         <Card title="Forecast inputs">
           <div style={{ fontSize: 15, fontWeight: 700 }}>{r.consensusUsed ? "Analyst consensus, then history" : "Company history"}</div>
           <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-            Year-one revenue growth {signedPct(r.growthY1)} from {r.consensusUsed ? "the next-year sales consensus" : "the five-year growth"}, faded to{" "}
-            {pct(r.terminalGrowth)} by year five. Operating margin {pct(r.ebitMargin)}: the median of the last three years. Statements through{" "}
+            Year-one revenue growth {signedPct(r.growthY1)} from {r.consensusUsed ? "the current-year revenue consensus" : "the five-year growth"}, faded to{" "}
+            {pct(r.terminalGrowth)} by year ten. Operating margin {pct(r.ebitMargin)}: the median of the last five years. Statements through{" "}
             {r.fiscalYearEnd ?? DASH}.
           </div>
         </Card>
@@ -433,8 +441,8 @@ export function ValuationDetail({ r, rule }: { r: ValuationRow; rule?: Valuation
           ) : (
             <table className="data-table" style={{ width: "100%" }}>
               <tbody>
-                <Line label="Present value of years 1–5 cash flow" value={signedBig(b.pvForecast)} tone={b.pvForecast >= 0 ? "pos" : "neg"} />
-                <Line label="Present value of cash flow after year 5" value={signedBig(b.pvTerminal)} tone={b.pvTerminal >= 0 ? "pos" : "neg"} />
+                <Line label="Present value of years 1–10 cash flow" value={signedBig(b.pvForecast)} tone={b.pvForecast >= 0 ? "pos" : "neg"} />
+                <Line label="Present value of cash flow after year 10" value={signedBig(b.pvTerminal)} tone={b.pvTerminal >= 0 ? "pos" : "neg"} />
                 <Line label="= Enterprise value" value={big(b.ev)} strong />
                 <Line label="Cash" value={signedBig(b.cash)} tone="pos" />
                 <Line label="Debt" value={signedBig(-b.debt)} tone={b.debt > 0 ? "neg" : undefined} />
@@ -448,8 +456,8 @@ export function ValuationDetail({ r, rule }: { r: ValuationRow; rule?: Valuation
           <table className="data-table" style={{ width: "100%" }}>
             <tbody>
               <Line label="Discount rate (WACC)" value={pct(r.wacc, 2)} />
-              <Line label="Long-run growth after year 5" value={pct(r.terminalGrowth, 2)} />
-              <Line label="Share of value from after year 5" value={pct(r.terminalShare)} />
+              <Line label="Long-run growth after year 10" value={pct(r.terminalGrowth, 2)} />
+              <Line label="Share of value from after year 10" value={pct(r.terminalShare)} />
               <Line
                 label="Beta (ours · broker's)"
                 value={`${r.beta === null ? DASH : r.beta.toFixed(2)}${r.betaBroker !== null ? ` · broker ${r.betaBroker.toFixed(2)}` : ""}`}
@@ -473,6 +481,231 @@ export function ValuationDetail({ r, rule }: { r: ValuationRow; rule?: Valuation
           </ul>
         </Card>
       )}
+
+      {r.model !== null && <Advanced r={r} m={r.model} />}
     </div>
+  );
+}
+
+// ----------------------------------------------------------------------------------------- advanced
+
+/** Where a line of the base year came from, in words: a filing tag, a derivation, or Dolt. */
+export function sourceText(src: string | undefined, filed: string | null): string {
+  if (src === undefined) return "not stated";
+  if (src.startsWith("Dolt")) return src === "Dolt" ? "Dolt annual statements" : "Dolt annual statements (the filing does not state it)";
+  if (src.startsWith("derived")) return `${src.replace(/^derived: /, "derived from the filing: ")}`;
+  return `SEC filing${filed ? ` of ${filed}` : ""}: ${src}`;
+}
+
+function Row3({ label, value, source }: { label: string; value: string; source: string }) {
+  return (
+    <tr>
+      <td>{label}</td>
+      <td className="num" style={{ textAlign: "right", fontFamily: "var(--num-face)" }}>
+        {value}
+      </td>
+      <td className="muted" style={{ fontSize: 12 }}>
+        {source}
+      </td>
+    </tr>
+  );
+}
+
+const TH = { textAlign: "left" as const, fontWeight: 600 };
+
+/** The model's whole working: every input with its source, the discount-rate build, the year-by-year
+ *  forecast to the stable year, the share count and the history the ratios are medians of. */
+function Advanced({ r, m }: { r: ValuationRow; m: ValuationModel }) {
+  const c = m.capital;
+  const d = m.drivers;
+  const b = r.bridge;
+  const base = m.history[m.history.length - 1];
+  const filed = m.data.filed;
+  const s = m.sources;
+  const cons = m.consensus.years;
+  const consText = (i: number) => {
+    const y = cons[i];
+    return y
+      ? `Analyst consensus for the year to ${y.periodEnd} (${y.analysts ?? "?"} analysts, range ${big(y.low)}–${big(y.high)}), snapshot ${m.consensus.snapshot ?? DASH}`
+      : "no consensus: the line fades from the history";
+  };
+  const f = r.forecast ?? [];
+  return (
+    <details>
+      <summary style={{ cursor: "pointer", fontWeight: 600 }}>Advanced: every input and where it came from</summary>
+      <div style={{ display: "grid", gap: 10, marginTop: 8 }}>
+        <Card title="Every input and where it came from">
+          <table className="data-table" style={{ width: "100%" }}>
+            <thead>
+              <tr>
+                <th style={TH}>Input</th>
+                <th className="num">Value</th>
+                <th style={TH}>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              <Row3 label={`Revenue, fiscal year to ${m.data.fiscalYearEnd ?? DASH}`} value={big(base?.revenue ?? null)} source={sourceText(s["revenue"], filed)} />
+              <Row3 label="Operating income (EBIT)" value={pct(base?.ebitMargin ?? null) + " of revenue"} source={sourceText(s["ebit"], filed)} />
+              <Row3 label="Depreciation and amortisation" value={pct(base?.daPct ?? null) + " of revenue"} source={sourceText(s["da"], filed)} />
+              <Row3 label="Capital spending" value={pct(base?.capexPct ?? null) + " of revenue"} source={sourceText(s["capex"], filed)} />
+              <Row3 label="Interest expense" value={c.coverage === null ? "none" : `coverage ${c.coverage.toFixed(1)}×`} source={sourceText(s["interest"], filed)} />
+              <Row3 label="Cash and marketable securities" value={b ? big(b.cash) : DASH} source={sourceText(s["cash"], filed)} />
+              <Row3 label="Debt" value={b ? big(b.debt) : DASH} source={sourceText(s["debt"], filed)} />
+              <Row3 label="Basic shares" value={b ? count(b.basicShares) : DASH} source={sourceText(s["shares"], filed)} />
+              <Row3 label="Year 1 revenue growth" value={signedPct(f[0]?.growth ?? null)} source={consText(0)} />
+              <Row3 label="Year 2 revenue growth" value={signedPct(f[1]?.growth ?? null)} source={consText(1)} />
+              <Row3 label="Years 3–10 revenue growth" value={`fades to ${pct(r.terminalGrowth, 1)}`} source="A straight line from the last consensus year to the long-run rate in year 10" />
+              <Row3 label="Long-run operating margin" value={pct(d.ebitMargin)} source={`Median of the last ${d.historyYears ?? 5} fiscal years`} />
+              <Row3 label="Long-run D&A" value={pct(d.daPct) + " of revenue"} source={`Median of the last ${d.historyYears ?? 5} fiscal years`} />
+              <Row3 label="Long-run capital spending" value={pct(d.capexPct) + " of revenue"} source={`Median of the last ${d.historyYears ?? 5} fiscal years`} />
+              <Row3
+                label="Working capital"
+                value={pct(d.wcPct) + " of revenue"}
+                source={d.wcIsLevel ? "Median level of the last five years, from the balance sheet (floored at zero)" : "Median yearly investment of the last five years (no balance-sheet level)"}
+              />
+              <Row3 label="Tax rate" value={pct(d.taxRate)} source="Median effective rate of the last five years, loss years excluded, bounded 10–35%" />
+              <Row3 label="Growth after year 10" value={pct(r.terminalGrowth, 2)} source="Declared long-run rate (below the 10-year Treasury)" />
+              <Row3 label="Return on capital after year 10" value={pct(m.terminal.roic, 2)} source="Equal to the discount rate (stable growth, Damodaran): growth adds no value after year 10" />
+              <Row3 label="Risk-free rate" value={pct(c.rf, 2)} source={c.rfSource ?? DASH} />
+              <Row3 label="Equity risk premium" value={pct(c.erp, 2)} source={c.erpMonth ? `Damodaran implied ERP, ${c.erpMonth}` : "fallback (no Damodaran file)"} />
+              <Row3 label="Beta" value={c.beta === null ? DASH : c.beta.toFixed(2)} source={`5 years of weekly total returns vs SPY, raw ${c.betaRaw?.toFixed(2) ?? DASH}, Blume-adjusted (0.67 × raw + 0.33)`} />
+              <Row3
+                label="Pre-tax cost of debt"
+                value={pct(c.kdPreTax, 2)}
+                source={`Risk-free + ${pct(c.spread, 2)} for a ${c.rating ?? DASH} synthetic rating from interest coverage (Damodaran's table, ${c.ratingsAsOf ?? DASH})`}
+              />
+              <Row3 label="Tax on interest" value={pct(c.marginalTax, 0)} source="US marginal rate" />
+            </tbody>
+          </table>
+        </Card>
+
+        <Card title="Discount rate (WACC) build">
+          <table className="data-table" style={{ width: "100%" }}>
+            <tbody>
+              <Row3 label="Cost of equity" value={pct(c.ke, 2)} source={`${pct(c.rf, 2)} + ${c.beta?.toFixed(2) ?? DASH} × ${pct(c.erp, 2)}`} />
+              <Row3 label="After-tax cost of debt" value={pct(c.kdAfterTax, 2)} source={`${pct(c.kdPreTax, 2)} × (1 − ${pct(c.marginalTax, 0)})`} />
+              <Row3 label="Equity weight" value={pct(c.equityWeight)} source="Market value: price × basic shares" />
+              <Row3 label="Debt weight" value={pct(c.debtWeight)} source="Book debt and finance leases" />
+              <Row3 label="WACC" value={pct(c.wacc, 2)} source="Equity weight × cost of equity + debt weight × after-tax cost of debt" />
+            </tbody>
+          </table>
+        </Card>
+
+        <Card title="Year-by-year calculation">
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th style={TH}>Line</th>
+                  {f.map((y) => (
+                    <th key={y.year} className="num">
+                      Y{y.year}
+                    </th>
+                  ))}
+                  <th className="num">Y11 (stable)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Revenue source</td>
+                  {f.map((y) => (
+                    <td key={y.year} className="muted" style={{ fontSize: 11 }}>
+                      {y.growthSource ?? DASH}
+                    </td>
+                  ))}
+                  <td />
+                </tr>
+                {(
+                  [
+                    ["Revenue", (y) => big(y.revenue)],
+                    ["Growth", (y) => signedPct(y.growth)],
+                    ["EBIT", (y) => big(y.ebit)],
+                    ["NOPAT", (y) => big(y.nopat)],
+                    ["+ D&A", (y) => big(y.da)],
+                    ["− Capital spending", (y) => big(y.capex)],
+                    ["− Working capital", (y) => big(y.wcChange)],
+                    ["= Free cash flow", (y) => big(y.fcf)],
+                    ["Discount (mid-year)", (y) => (y.discount === null ? DASH : y.discount.toFixed(4))],
+                    ["Present value", (y) => big(y.pv)],
+                  ] as [string, (y: (typeof f)[number]) => string][]
+                ).map(([label, fn]) => (
+                  <tr key={label}>
+                    <td>{label}</td>
+                    {f.map((y) => (
+                      <td key={y.year} className="num" style={{ fontFamily: "var(--num-face)" }}>
+                        {fn(y)}
+                      </td>
+                    ))}
+                    <td className="num" style={{ fontFamily: "var(--num-face)" }}>
+                      {label === "= Free cash flow" ? big(m.terminal.fcf) : label === "Growth" ? pct(r.terminalGrowth, 1) : ""}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            Year 11 reinvests {pct(m.terminal.reinvestmentRate)} of its after-tax operating profit to grow at {pct(r.terminalGrowth, 1)};
+            the value after year 10 is {big(m.terminal.value)}, {big(b?.pvTerminal ?? null)} today.
+          </div>
+        </Card>
+
+        {b !== null && (
+          <Card title="Share count and dilution">
+            <table className="data-table" style={{ width: "100%" }}>
+              <tbody>
+                <Row3 label="Basic shares outstanding" value={count(b.basicShares)} source={sourceText(s["shares"], filed)} />
+                <Row3 label="Unvested restricted units" value={count(b.rsu)} source="Counted at 100% vesting" />
+                <Row3 label="Options (treasury-stock method)" value={count(b.optionShares)} source="At the modelled value per share, not today's price" />
+                <Row3 label="Shares the value is divided by" value={count(b.shares)} source="" />
+              </tbody>
+            </table>
+          </Card>
+        )}
+
+        <Card title="Company history">
+          <table className="data-table" style={{ width: "100%" }}>
+            <thead>
+              <tr>
+                <th style={TH}>Fiscal year</th>
+                <th className="num">Revenue</th>
+                <th className="num">EBIT margin</th>
+                <th className="num">D&A</th>
+                <th className="num">Capex</th>
+                <th className="num">Working capital</th>
+                <th className="num">Tax</th>
+              </tr>
+            </thead>
+            <tbody>
+              {m.history.map((y) => (
+                <tr key={y.end}>
+                  <td>{y.end}</td>
+                  <td className="num">{big(y.revenue)}</td>
+                  <td className="num">{pct(y.ebitMargin)}</td>
+                  <td className="num">{pct(y.daPct)}</td>
+                  <td className="num">{pct(y.capexPct)}</td>
+                  <td className="num">{pct(y.wcPct)}</td>
+                  <td className="num">{pct(y.taxRate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            {m.data.source ?? DASH}
+            {m.data.sic ? ` · SIC ${m.data.sic} (${m.data.sicDescription ?? ""})` : ""}
+            {m.data.latestPeriod ? ` · latest results for the period to ${m.data.latestPeriod}, filed ${m.data.latestFiled ?? DASH}` : ""}
+          </div>
+          {Object.keys(m.disagree).length > 0 && (
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12 }}>
+              {Object.entries(m.disagree).map(([line, [filing, dolt]]) => (
+                <li key={line}>
+                  {line}: the filing states {big(filing)}, Dolt {big(dolt)}; the value uses the filing.
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+    </details>
   );
 }

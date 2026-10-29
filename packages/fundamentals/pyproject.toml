@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cherrypick-fundamentals"
+version = "0.1.0"
+description = "Company fundamentals and the fair-value model's inputs: SEC filings, analyst consensus, Damodaran's cost-of-capital data, and the fair-value file"
+requires-python = ">=3.11"
+license = "MIT"
+# cherrypick-core and cherrypick-technicals are sibling in-repo packages, installed editable alongside
+# this one; neither is on PyPI. Technicals is read as a library for prices only (bars, splits, the
+# security list, the liquidity verdict); it never imports this package, which it reads by file.
+# mysql-connector-python speaks to the LOCAL `dolt sql-server` (the statements and consensus
+# landings). Nothing here reaches the network: scripts/fetch_sec_facts.py and fetch_damodaran.py do.
+dependencies = ["cherrypick-core", "cherrypick-technicals", "mysql-connector-python"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff==0.16.10"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests", "src"]
+
+[tool.ruff]
+extend = "../../ruff.toml"
+target-version = "py311"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src/cherrypick"]
+sources = ["src"]

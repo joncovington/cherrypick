@@ -1,4 +1,4 @@
-# Fair value: closing the model's gaps (plan, 2026-10-28)
+# Fair value: closing the model's gaps (plan, 2026-10-28; built 2026-10-29)
 
 The fair-value tab (`core.valuation`, `technicals valuation`, the Screeners tab) was checked name by
 name against a reference DCF platform the user subscribes to. The comparison found two arithmetic
@@ -104,6 +104,15 @@ written down here with its cause, not tuned away.
 `scripts/fair_value_history.py` re-runs on the new model, at month-ends 2018-26, point in time from
 the filings' own dates. The verdict stands or changes as the study says. Until then every surface
 keeps "Tested 2018-26: no edge".
+
+**Result (2026-10-29): FAIL in both halves; "no edge" stands.** The declared test of 2026-10-28,
+unchanged, on version 2 valued by the nightly build's own code: 716 liquid optionable stocks, 441
+ever valued, 102 month-ends from 2018. The cheap-less-rich 63-session return spread was positive in
+19 of 51 sessions in the first half (median −1.7%) and 16 of 51 in the second (median −2.1%); the
+short-put proxy failed both halves too; Spearman's mean +0.01. The names version 2 reads as cheap did
+slightly worse than the rich ones, as under version 1 (median −1.25% a half). Public data and our own
+model; the full result is `~/.cherrypick/data/fundamentals/study/fair-value-history-v2-20261029.json`.
+The fair value stays a description: what a price asks of a company, never a reason to pick one.
 
 ## Order and boundaries
 

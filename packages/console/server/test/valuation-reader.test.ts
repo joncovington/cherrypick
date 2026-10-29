@@ -14,7 +14,7 @@ let tmp: string;
 let config: ConsoleConfig;
 
 function write(name: string, doc: unknown): void {
-  const dir = path.join(tmp, "technicals", "valuation");
+  const dir = path.join(tmp, "fundamentals", "valuation"); // beside technicalsDir: the fallback
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, name), JSON.stringify(doc));
 }
@@ -149,11 +149,47 @@ describe("readValuation", () => {
     );
     const [amzn, old, part] = readValuation(config, null).rows;
     expect(amzn!.terminalGrowth).toBe(0.02);
-    expect(amzn!.bridge).toEqual({ pvForecast: 4e11, pvTerminal: 9.8e11, ev: 1.38e12, debt: 1.5e11, cash: 9e10, equity: 1.32e12, shares: 1.06e10 });
+    expect(amzn!.bridge).toEqual({
+      pvForecast: 4e11, pvTerminal: 9.8e11, ev: 1.38e12, debt: 1.5e11, cash: 9e10, equity: 1.32e12, shares: 1.06e10,
+      financeLease: 0, preferred: 0, nci: 0, basicShares: 1.06e10, rsu: 0, optionShares: 0,
+    });
     expect(amzn!.forecast).toHaveLength(5);
-    expect(amzn!.forecast![0]).toEqual({ year: 1, revenue: 7.4e11, growth: 0.09, ebitMargin: 0.104, fcf: 5.4e10 });
+    expect(amzn!.forecast![0]).toMatchObject({ year: 1, revenue: 7.4e11, growth: 0.09, ebitMargin: 0.104, fcf: 5.4e10, growthSource: null });
+    expect(amzn!.model).toBeNull(); // a version-1 row: no capital build
     expect([old!.bridge, old!.forecast, old!.terminalGrowth]).toEqual([null, null, null]);
     expect([part!.bridge, part!.forecast]).toEqual([null, null]);
+  });
+
+  it("renames version 2's working: the discount-rate build, the sources and the disagreements", () => {
+    const v2 = {
+      ...VALUED,
+      implied_wacc: 0.081,
+      capital: {
+        rf: 0.0499, rf_source: "10-year Treasury 2026-10-27", erp: 0.042, erp_month: "2026-10-01", beta_raw: 0.24,
+        beta: 0.49, ke: 0.0706, coverage: 7.9, rating: "Aa2/AA", spread: 0.0055, ratings_as_of: "January 2026",
+        kd_pre_tax: 0.0554, kd_after_tax: 0.0415, marginal_tax: 0.25, equity_weight: 0.742, debt_weight: 0.258, wacc: 0.0631,
+      },
+      drivers: { ebit_margin: 0.2, da_pct: 0.14, capex_pct: 0.027, wc_pct: 0.009, wc_is_level: true, tax_rate: 0.156, history_years: 5 },
+      terminal: { fcf: 2.94e9, value: 7.71e10, reinvestment_rate: 0.396, roic: 0.0631 },
+      consensus: { snapshot: "2026-10-25", years: [{ period_end: "2026-12-31", revenue: 4.99e10, analysts: 9, high: 5.01e10, low: 4.91e10 }] },
+      history: [{ end: "2025-12-31", revenue: 4.82e10, ebit_margin: 0.233, da_pct: 0.086, capex_pct: 0.027, wc_pct: -0.024, tax_rate: 0.244 }],
+      grid: [[0, 0, 46.16], [0.01, 0, 40.3]],
+      data: { fiscal_year_end: "2025-12-31", filed: "2026-02-11", latest_period: "2026-06-30", latest_filed: "2026-07-30", sic: "2834", sic_description: "Pharmaceutical Preparations", source: "SEC filings" },
+      sources: { interest: "InterestExpenseNonoperating", capex: "Dolt (not stated in the filing)" },
+      disagree: { interest: [1.89e9, 0] },
+    };
+    write("2026-10-27.json", doc("2026-10-27", { BMY: v2 }));
+    const m = readValuation(config, null).rows[0]!.model!;
+    expect(m.capital).toMatchObject({ rating: "Aa2/AA", coverage: 7.9, kdPreTax: 0.0554, erpMonth: "2026-10-01", wacc: 0.0631 });
+    expect(m.drivers.wcIsLevel).toBe(true);
+    expect(m.terminal.reinvestmentRate).toBe(0.396);
+    expect(m.consensus.years[0]).toEqual({ periodEnd: "2026-12-31", revenue: 4.99e10, analysts: 9, high: 5.01e10, low: 4.91e10 });
+    expect(m.history[0]!.ebitMargin).toBe(0.233);
+    expect(m.grid).toEqual([[0, 0, 46.16], [0.01, 0, 40.3]]);
+    expect(m.data).toMatchObject({ sic: "2834", source: "SEC filings", latestPeriod: "2026-06-30" });
+    expect(m.sources.capex).toBe("Dolt (not stated in the filing)");
+    expect(m.disagree).toEqual({ interest: [1.89e9, 0] });
+    expect(m.impliedWacc).toBe(0.081);
   });
 
   it("badges nothing when pmcc has no config", () => {

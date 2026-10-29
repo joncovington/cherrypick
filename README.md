@@ -231,6 +231,7 @@ read them.
 | [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
 | [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Read-only. |
 | [packages/overview](packages/overview) | The pre-open morning market overview: one deterministic fact pack per session with a mechanical GREEN/YELLOW/RED phase. Read-only over everything it touches. |
+| [packages/fundamentals](packages/fundamentals) | Company fundamentals and the fair-value file: SEC filings, Dolt's statements and consensus, and Damodaran's cost-of-capital data, for the Screeners fair-value tab (needs the optional Dolt data). |
 | [packages/technicals](packages/technicals) | The market report's end-of-day store and technical engines: adjusted daily bars and IV for the universe and rotation ETFs, from the local Dolt clones (needs the optional Dolt data). |
 | [packages/review](packages/review) | The cross-module end-of-day review: one versioned fact set per session over every engine, plus the renders of it. Read-only over every other package. |
 | [packages/manage](packages/manage) | The daily position-management evaluation of the real account against a configurable ruleset: an action, a rule and a confidence for every trade. Advice only. |
