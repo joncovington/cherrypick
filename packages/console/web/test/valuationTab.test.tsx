@@ -51,7 +51,7 @@ vi.mock("../src/lib/api", async (importOriginal) => ({
   useValuation: () => ({ data: payload, isLoading: false, isError: false }),
 }));
 
-const { ValuationTab, applyView } = await import("../src/pages/Screeners/ValuationTab");
+const { ValuationTab, applyView, riskOrder, stretch } = await import("../src/pages/Screeners/ValuationTab");
 
 function render(url = "/screeners/valuation"): string {
   return renderToString(
@@ -82,13 +82,34 @@ describe("the fair-value tab", () => {
     expect(render()).toContain("Tested 2018–26: no edge.");
   });
 
-  it("shows the valued names by default, in the reader's symbol order, with the gap and the range", () => {
-    // The reader orders by symbol; the page keeps that order, whatever the gaps say.
+  it("shows the valued names by default, with the gap and the range, never ordered by the gap", () => {
+    // Neither row has a reach or a stretch, so they fall to symbol order, whatever the gaps say.
     payload = base([row({ symbol: "AAA", gap: 0.25, fairValue: 80, low: 60, high: 95 }), row({ symbol: "ZZZ", gap: -0.5 })]);
     const html = render();
     expect(html.indexOf(">AAA<")).toBeLessThan(html.indexOf(">ZZZ<"));
     expect(html).toContain("+25.0%");
     expect(html).toContain("60.00 – 95.00");
+  });
+
+  it("opens by what the price asks: reach, then stretch, then symbol", () => {
+    const rows = [
+      row({ symbol: "BEY", reach: "beyond history", impliedMargin: 0.3, bestMargin: 0.2 }), // 1.5
+      row({ symbol: "NON", reach: "beyond history", impliedMargin: null, bestMargin: 0.2 }), // none reaches
+      row({ symbol: "WIB", reach: "within history", impliedMargin: 0.18, bestMargin: 0.2 }), // 0.9
+      row({ symbol: "WIA", reach: "within history", impliedMargin: 0.1, bestMargin: 0.2, gap: 0.9 }), // 0.5
+      row({ symbol: "BLW", reach: "below value", impliedMargin: 0.12, bestMargin: 0.2, gap: 0.4 }), // 0.6
+      row({ symbol: "AAA" }), // no reach: last
+    ];
+    expect(riskOrder(rows).map((r) => r.symbol)).toEqual(["BLW", "WIA", "WIB", "BEY", "NON", "AAA"]);
+    expect(stretch(rows[0]!)).toBeCloseTo(1.5);
+    expect(stretch(rows[1]!)).toBe(Number.POSITIVE_INFINITY);
+    expect(stretch(row({ state: "refused", bestMargin: 0.2, impliedMargin: 0.1 }))).toBeNull();
+    payload = base(rows);
+    const html = render();
+    expect(html.indexOf(">BLW<")).toBeLessThan(html.indexOf(">WIA<"));
+    expect(html.indexOf(">WIB<")).toBeLessThan(html.indexOf(">BEY<"));
+    expect(html).toContain("1.50×");
+    expect(html).toContain("none reaches");
   });
 
   it("hides a non-valued name until the All view, which says why there is no value", () => {

@@ -5,10 +5,12 @@ import { Pager, usePage } from "../../components/ScopeBar";
 import { useValuation } from "../../lib/api";
 
 /**
- * The fair-value tab (2026-10-27): one DCF estimate a liquid optionable name a session, from
+ * The fair-value tab (2026-10-27): one DCF estimate an options-tradable name a session, from
  * `packages/technicals` `valuation` (`cherrypick.core.valuation` on Dolt's annual statements). Every
- * figure is the builder's; this formats and filters, and ranks nothing -- rows are by symbol, and a
- * column sort is the reader's own choice. The standing note says the estimate was tested and has no edge
+ * figure is the builder's; this formats and filters. It never orders by the gap (tested, no edge): by
+ * default the rows open by how much the price asks of the company (`riskOrder`: reach, then `stretch`,
+ * 2026-10-28, the user), the read for a PMCC long leg and for the stock a wheel or skate put may be
+ * assigned; a column sort is the reader's own choice. The standing note says the estimate was tested and has no edge
  * and is never removed while the table shows. pmcc's configured stocks carry a badge (its funds read
  * not applicable: a DCF on operating cash flow does not describe a fund, a bank or a REIT).
  */
@@ -66,7 +68,41 @@ const SORTS: Record<string, (r: ValuationRow) => number | string | null> = {
   needsMargin: (r) => r.impliedMargin,
   needsGrowth: (r) => r.impliedGrowth,
   reach: (r) => r.reach,
+  stretch: (r) => stretch(r),
 };
+
+/** The margin the price needs over the company's best of the last five fiscal years: 0.8 asks 80% of
+ *  its best year, 1.5 half again above anything it has done. Infinity when no margin under 100% of
+ *  revenue reaches the price; null when there is no valued row or no positive best to measure against. */
+export function stretch(r: ValuationRow): number | null {
+  if (r.state !== "valued" || r.bestMargin === null || r.bestMargin <= 0) return null;
+  return r.impliedMargin === null ? Number.POSITIVE_INFINITY : r.impliedMargin / r.bestMargin;
+}
+
+const REACH_RANK: Record<string, number> = { "below value": 0, "within history": 1, "beyond history": 2 };
+
+/** The default order: reach (below value, within history, beyond history), then stretch ascending,
+ *  then symbol; a row with neither sinks. It orders by what the price asks, never by the gap. */
+export function riskOrder(rows: ValuationRow[]): ValuationRow[] {
+  const rank = (r: ValuationRow) => (r.reach === null ? 3 : (REACH_RANK[r.reach] ?? 3));
+  return [...rows].sort((a, b) => {
+    const byReach = rank(a) - rank(b);
+    if (byReach !== 0) return byReach;
+    const sa = stretch(a);
+    const sb = stretch(b);
+    if (sa !== sb) {
+      if (sa === null) return 1;
+      if (sb === null) return -1;
+      return sa < sb ? -1 : 1;
+    }
+    return a.symbol.localeCompare(b.symbol);
+  });
+}
+
+function stretchText(v: number | null): string {
+  if (v === null) return DASH;
+  return v === Number.POSITIVE_INFINITY ? "none reaches" : `${v.toFixed(2)}×`;
+}
 
 const REACH_TITLE: Record<string, string> = {
   "below value": "The price is at or under the model's value: it asks nothing the business has not already done",
@@ -111,7 +147,7 @@ export function ValuationTab() {
 
   const all = data?.rows ?? [];
   const shown = applyView(all, view, q);
-  const sorted = sortRows(shown, sort, SORTS);
+  const sorted = sort.key === null ? riskOrder(shown) : sortRows(shown, sort, SORTS);
   const { page, setOffset, setLimit } = usePage([data?.day, view, q, sort.key, sort.dir], 100);
   const rows = sorted.slice(page.offset, page.offset + page.limit);
   const latest = data?.days[0] ?? null;
@@ -132,11 +168,13 @@ export function ValuationTab() {
         sales, faded to {pct(data?.rule.terminalGrowth ?? 0.02, 0)}), discounted at a cost of capital from a regression
         beta, with a perpetuity after. A model's number, not a price: the range is what a point either way in the rate
         and half a point in the growth do to it. Tested on month-ends 2018–26, the names that
-        read cheapest did no better over the next three months than those that read richest, so the rows are in symbol
-        order and the figure sits beside the income lists as a description, never a reason to pick a name. The
-        last three columns turn it around: the margin, or the growth, the price needs with everything else
-        held, beside the company's own best of five years. "Beyond history" means the price assumes a better
-        business than the record shows: for a long-dated call, that is how much has to go right, not a forecast.
+        read cheapest did no better over the next three months than those that read richest, so nothing here orders
+        by it and the figure sits beside the income lists as a description, never a reason to pick a name. The
+        last columns turn it around: the margin, or the growth, the price needs with everything else held, beside
+        the company's own best of five years. "Beyond history" means the price assumes a better business than the
+        record shows; stretch is the margin the price needs over the company's best. For a long-dated call, or a
+        stock a wheel or skate put may be assigned, that is how much has to go right, not a forecast, and the rows
+        open in that order: below value first, then within history, then beyond, each by stretch.
       </p>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
@@ -217,6 +255,7 @@ export function ValuationTab() {
                 <SortTh label="Needs margin" k="needsMargin" sort={sort} className="num" title="Reverse DCF: the long-run operating margin at which the model's value equals the price, everything else held; the company's best of the last five fiscal years beside it. A dash: no margin under 100% of revenue gets there" />
                 <SortTh label="Needs growth" k="needsGrowth" sort={sort} className="num" title="Reverse DCF: the year-one revenue growth, faded to 2% by year five as the base case is, at which the value equals the price, everything else held; the company's best year of the last five beside it" />
                 <SortTh label="Reach" k="reach" sort={sort} title="Whether one lever alone reaches the price within the company's own record: below value, within history, beyond history" />
+                <SortTh label="Stretch" k="stretch" sort={sort} className="num" title="The margin the price needs over the company's best of the last five fiscal years: under 1 asks less than its best year, over 1 more than it has ever done. The default order is reach, then stretch" />
                 <th title="The builder's flags">Flags</th>
               </tr>
             </thead>
@@ -266,6 +305,16 @@ export function ValuationTab() {
                   </td>
                   <td className={r.reach === "beyond history" ? undefined : "muted"} title={r.reach ? REACH_TITLE[r.reach] : undefined}>
                     {r.reach ?? DASH}
+                  </td>
+                  <td
+                    className="num"
+                    title={
+                      r.impliedGrowth !== null && r.bestGrowth !== null
+                        ? `growth: needs ${needsGrowth(r)} against a best of ${signedPct(r.bestGrowth)}`
+                        : undefined
+                    }
+                  >
+                    {stretchText(stretch(r))}
                   </td>
                   <td>
                     {r.flags.map((f) => (
