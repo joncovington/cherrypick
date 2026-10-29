@@ -1561,6 +1561,15 @@ here before any of it is run.*
     `d16` against `live-1400`; it is not decided by this test.
   - **A fail or no verdict:** live stays at 16 delta, and the short delta is closed as a lever for
     the 14:00 rule.
+- **Result (2026-10-28): fail, all four arms; live stays at 16 delta and the short delta is closed
+  as a lever for the 14:00 rule.** Provisional, as declared. In the design window no arm's paired
+  difference against `d16` clears the t bar or Holm. 12 delta trails 16 in both windows. 20, 25
+  and 30 lean ahead in both time-halves of the design but far from significance, and the
+  holdout, exploratory after a design fail, does not change that. Every arm's own net is positive
+  and stays so at 1.5× fees, so the rule earns at each delta; it does not earn more away from 16.
+  Item 24 therefore runs at 16. Every figure is in the local results
+  (`~/.cherrypick/data/backtest/results/research/item23/study-design-2022-05-16-2025-06-30.json`
+  and `study-holdout-2025-07-01-2026-10-12.json`).
 
 ### 24. The entry slot of MEIC's live rule: 12:00 to 13:30 against 14:00
 
