@@ -16,7 +16,8 @@ unreviewed code run by it. A kind builds its own argv from the row's arguments:
 
 **When a task may start** (`ready`):
 - one task at a time; a `running` row whose process is gone (a reboot, a killed supervisor) is put
-  back to `queued`, and a fetch resumes where it stopped;
+  back to `queued`, and a fetch resumes where it stopped, as does a script's backtest run (backtest
+  `runner.run` keeps each finished session, 2026-10-28; `validate` starts over);
 - a ThetaData task waits while anything holds the session lock (`state/thetadata-session.lock`, the
   backtest package's), and never starts inside `BLACKOUT` ET on a trading day, the nightly
   `backtest-fetch`'s window; its `--stop-by` is the next blackout start, or the row's own stop-by if
