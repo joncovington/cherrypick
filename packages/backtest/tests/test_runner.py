@@ -370,3 +370,94 @@ def test_meic_refusals(meic_world):
     (home / "config" / "meic.risk.json").unlink()
     with pytest.raises(runner.RunRefused, match="no MEIC registry config"):
         _meic_run(s, "validation")
+
+
+# ------------------------------------------------------------------------------------------- resuming
+
+
+class Interrupted(BaseException):
+    """A reboot mid-run: not an Exception, so no session's refusal swallows it."""
+
+
+def _interrupted_run(s, cut: str) -> list[str]:
+    """Run the validation window until the replay of `cut`, which dies after writing half a ledger."""
+    replayed = []
+
+    def replay(day, out, arms, history_db, settle, config):
+        replayed.append(day)
+        if day == cut:
+            out.write_bytes(b"half a ledger")
+            raise Interrupted
+        return _replay(day, out, arms, history_db, settle, config)
+
+    with pytest.raises(Interrupted):
+        runner.run(
+            s, ["range-high"], "validation", replay=replay, read_rows=_read, workers=1, log=lambda _m: None
+        )
+    return replayed
+
+
+STALE: list[str] = []
+
+
+def _rerun(s):
+    replayed = []
+
+    def replay(day, out, arms, history_db, settle, config):
+        if out.exists():  # recorded, not asserted: the runner would take an assertion for a refusal
+            STALE.append(day)
+        replayed.append(day)
+        return _replay(day, out, arms, history_db, settle, config)
+
+    report = runner.run(
+        s, ["range-high"], "validation", replay=replay, read_rows=_read, workers=1, log=lambda _m: None
+    )
+    return report, replayed
+
+
+@pytest.fixture()
+def clean_commit(monkeypatch):
+    monkeypatch.setattr(runner, "_code_commit", lambda: "abc123")
+    monkeypatch.setattr(runner.looplock, "pid_alive", lambda pid: False)  # the interrupted owner is gone
+
+
+def _run_dirs() -> set[str]:
+    return {p.name for p in (paths.results_dir() / "runs").iterdir() if p.is_dir() and p.name != "pending"}
+
+
+def test_an_interrupted_run_resumes_from_its_finished_sessions(world, clean_commit):
+    s, _ = world
+    assert _interrupted_run(s, "2026-10-15") == ["2026-10-14", "2026-10-15"]
+    STALE.clear()
+    report, replayed = _rerun(s)
+    assert STALE == [], "a ledger the interruption cut short is discarded before its replay"
+    assert replayed == ["2026-10-15"], "the finished session is read back, not replayed"
+    assert report["resumed"] == {"sessions_reused": 1}
+    assert _run_dirs() == {report["run_id"]}, "the resumed run keeps the interrupted run's id and directory"
+    assert not list((paths.results_dir() / "runs" / "pending").iterdir()), "a recorded run is never resumed"
+    whole = _run(s, "validation")
+    assert "resumed" not in whole
+    assert report["arms"] == whole["arms"], "a resumed run reports what an uninterrupted one does"
+
+
+def test_a_run_is_not_resumed_when_any_input_changed(world, clean_commit):
+    s, home = world
+    _interrupted_run(s, "2026-10-15")
+    cfg = json.loads((home / "config" / "flies.json").read_text())
+    cfg["arms"]["range-high"]["gate"] = "y"
+    (home / "config" / "flies.json").write_text(json.dumps(cfg), encoding="utf-8")
+    report, replayed = _rerun(s)
+    assert "resumed" not in report and replayed == ["2026-10-14", "2026-10-15"]
+
+
+def test_a_dirty_checkout_or_a_live_owner_is_never_resumed(world, clean_commit, monkeypatch):
+    s, _ = world
+    monkeypatch.setattr(runner, "_code_commit", lambda: "abc123+dirty")
+    _interrupted_run(s, "2026-10-15")
+    report, replayed = _rerun(s)
+    assert "resumed" not in report and len(replayed) == 2
+    monkeypatch.setattr(runner, "_code_commit", lambda: "abc123")
+    _interrupted_run(s, "2026-10-15")
+    monkeypatch.setattr(runner.looplock, "pid_alive", lambda pid: True)  # its owner still runs
+    report, replayed = _rerun(s)
+    assert "resumed" not in report and len(replayed) == 2

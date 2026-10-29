@@ -18,6 +18,16 @@ What may run, and when (declared 2026-10-17):
 The fill model is the module's own (flies paper's legged fill rule, applied by its own tick); a
 result carries that name, and other fill models arrive as flies options, never as a second copy of
 the rule here.
+
+**An interrupted run resumes (2026-10-28).** A design or holdout run can take half a day, and a reboot
+or a killed supervisor threw it all away: the research queue re-queues the row, and the rerun started
+from the first session. Now each session that replays and reads back cleanly leaves a marker beside
+its ledger (`<day>.ok.json`), and a run whose every input matches an unfinished one (`_resume_key`:
+module, window, span, cadence, arms and their spec hashes, the module's config, the data fingerprint
+and the code commit) takes over that run's directory and `run_id`, reads the marked sessions back and
+replays only the rest. Nothing is recorded until the end, so a resumed run's report is the one an
+uninterrupted run would have written. A checkout with uncommitted changes never resumes (the commit
+does not pin its code), nor is a run taken over while its owner is alive.
 """
 
 from __future__ import annotations
@@ -40,6 +50,7 @@ from pathlib import Path
 from cherrypick.core import compare as core_compare
 from cherrypick.core import home as _home
 from cherrypick.core import ledgers as core_ledgers
+from cherrypick.core import looplock
 from cherrypick.core import progress as core_progress
 
 from . import paths, results, stats, store
@@ -98,6 +109,59 @@ def _code_commit() -> str | None:
         return head.strip() + ("+dirty" if dirty.strip() else "") if head.strip() else None
     except OSError:
         return None
+
+
+def _resume_key(parts: dict) -> str | None:
+    """What an interrupted run must match to be resumed; None when no clean commit pins the code."""
+    commit = parts.get("code_commit")
+    if not commit or commit.endswith("+dirty"):
+        return None
+    return hashlib.sha256(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+def _pending_path(key: str) -> Path:
+    return paths.results_dir() / "runs" / "pending" / f"{key}.json"
+
+
+def _new_run_id() -> str:
+    return time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
+
+
+def _claim(key: str | None) -> tuple[str, bool]:
+    """This run's id, and whether it takes over an interrupted run with the same key. A run whose owner
+    is still alive is left alone, and this one starts afresh without a claim of its own."""
+    if key is None:
+        return _new_run_id(), False
+    pending = _pending_path(key)
+    try:
+        prior = json.loads(pending.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        prior = None
+    if prior and looplock.pid_alive(prior.get("pid")):
+        return _new_run_id(), False
+    resumed = bool(prior) and (paths.results_dir() / "runs" / str(prior.get("run_id"))).is_dir()
+    run_id = prior["run_id"] if resumed else _new_run_id()
+    pending.parent.mkdir(parents=True, exist_ok=True)
+    pending.write_text(json.dumps({"run_id": run_id, "pid": os.getpid()}), encoding="utf-8")
+    return run_id, resumed
+
+
+def _discard_ledger(db: Path) -> None:
+    """Remove a session's ledger an interrupted run left part-written, so its replay starts clean."""
+    for suffix in ("", "-journal", "-wal", "-shm"):
+        try:
+            Path(str(db) + suffix).unlink(missing_ok=True)
+        except OSError as exc:
+            raise RunRefused(
+                f"{db.name} from the interrupted run is still open ({exc}); "
+                "end the replay holding it and run again"
+            ) from exc
+
+
+def _write_marker(path: Path, out: dict) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(out, default=str), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def unlocked(settings: dict, symbol: str, cadence: int, *, module: str = MODULE) -> bool:
@@ -433,7 +497,18 @@ def run(
         fingerprint = _fingerprint(vconn, symbol, [d for d, _ in days], inputs)
     finally:
         vconn.close()
-    run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
+    code_commit = _code_commit()
+    key = _resume_key(
+        {
+            "module": mod.name, "window": window, "span": [lo, hi], "symbol": symbol.upper(),
+            "cadence": cadence, "arms": arms, "hashes": hashes, "config": config,
+            "fingerprint": fingerprint, "code_commit": code_commit,
+            "provisional": provisional, "unvalidated_holdout": unvalidated_holdout,
+        }
+    )  # fmt: skip
+    if key is None:
+        log("this run cannot resume if interrupted: the checkout has uncommitted changes")
+    run_id, resumed = _claim(key)
     ledger_dir = paths.results_dir() / "runs" / run_id
     ledger_dir.mkdir(parents=True, exist_ok=True)
     snapshot = mod.snapshot(config, ledger_dir)
@@ -444,12 +519,25 @@ def run(
             refused[day] = "no_settle_price"
         else:
             todo.append((day, close))
+    # A session is finished once its marker is written; anything else in the directory is a replay the
+    # interruption cut short, and goes before it runs again.
+    finished = {day for day, _ in todo if (ledger_dir / f"{day}.ok.json").is_file()}
+    for day, _ in todo:
+        if day not in finished:
+            _discard_ledger(ledger_dir / f"{day}.db")
+    if resumed:
+        log(f"resuming run {run_id}: {len(finished)} of {len(todo)} sessions already replayed")
 
     def one(item):
         day, close = item
+        db, marker = ledger_dir / f"{day}.db", ledger_dir / f"{day}.ok.json"
         try:
-            out = replay(day, ledger_dir / f"{day}.db", arms, history_db, close, snapshot)
-            rows = read_rows(ledger_dir / f"{day}.db") if out.get("ok") else None
+            if day in finished:
+                return day, json.loads(marker.read_text(encoding="utf-8")), read_rows(db)
+            out = replay(day, db, arms, history_db, close, snapshot)
+            rows = read_rows(db) if out.get("ok") else None
+            if rows is not None:
+                _write_marker(marker, out)
         except Exception as exc:  # noqa: BLE001 -- one bad session is that session's refusal, never the run's
             return day, {"ok": False, "error": f"{type(exc).__name__}: {exc}"}, None
         return day, out, rows
@@ -489,12 +577,14 @@ def run(
             "fill_model": mod.fill_model,
             "config_files": {k: str(p) for k, p in config_paths.items()},
             "config_snapshot": str(snapshot),
-            "code_commit": _code_commit(),
+            "code_commit": code_commit,
             "data_fingerprint": fingerprint,
             "sessions_requested": len(days),
             "refused": refused,
         }
     )
+    if resumed:
+        report["resumed"] = {"sessions_reused": len(finished)}
     if mod.name == "flies":  # the keys every flies report has carried
         report["flies_config"] = str(config_paths["flies"])
         report["flies_config_snapshot"] = str(snapshot)
@@ -542,6 +632,8 @@ def run(
     rconn.close()
     out_path = paths.results_dir() / "runs" / f"{run_id}.json"
     out_path.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
+    if key is not None:
+        _pending_path(key).unlink(missing_ok=True)  # recorded: never taken over again
     report["written"] = str(out_path)
     rep.finish("done")
     return report
