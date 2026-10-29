@@ -51,7 +51,11 @@ vi.mock("../src/lib/api", async (importOriginal) => ({
   useValuation: () => ({ data: payload, isLoading: false, isError: false }),
 }));
 
-const { ValuationTab, applyView, riskOrder, stretch } = await import("../src/pages/Screeners/ValuationTab");
+const { ValuationTab, ValuationDetail, applyView, riskOrder, stretch } = await import("../src/pages/Screeners/ValuationTab");
+
+function detail(r: ValuationRow): string {
+  return renderToString(<ValuationDetail r={r} />).replace(/<!-- -->/g, "");
+}
 
 function render(url = "/screeners/valuation"): string {
   return renderToString(
@@ -82,13 +86,20 @@ describe("the fair-value tab", () => {
     expect(render()).toContain("Tested 2018–26: no edge.");
   });
 
-  it("shows the valued names by default, with the gap and the range, never ordered by the gap", () => {
+  it("shows the valued names by default, never ordered by the gap, with the gap and range kept to the details", () => {
     // Neither row has a reach or a stretch, so they fall to symbol order, whatever the gaps say.
-    payload = base([row({ symbol: "AAA", gap: 0.25, fairValue: 80, low: 60, high: 95 }), row({ symbol: "ZZZ", gap: -0.5 })]);
+    const aaa = row({ symbol: "AAA", gap: 0.25, fairValue: 80, low: 60, high: 95 });
+    payload = base([aaa, row({ symbol: "ZZZ", gap: -0.5 })]);
     const html = render();
     expect(html.indexOf(">AAA<")).toBeLessThan(html.indexOf(">ZZZ<"));
-    expect(html).toContain("+25.0%");
-    expect(html).toContain("60.00 – 95.00");
+    expect(html).toContain("80.00");
+    expect(html).not.toContain("+25.0%"); // a row carries what the choice needs; the rest opens beneath it
+    expect(html).not.toContain("WACC");
+    expect(html).toContain("Show AAA&#x27;s details");
+    const d = detail(aaa);
+    expect(d).toContain("+25.0%");
+    expect(d).toContain("60.00 – 95.00");
+    expect(d).toContain("Cost of capital");
   });
 
   it("opens by what the price asks: reach, then stretch, then symbol", () => {
@@ -133,26 +144,32 @@ describe("the fair-value tab", () => {
     expect(applyView(rows, "valued", "A").map((r) => r.symbol)).toEqual(["AMZN", "AAA"]);
   });
 
-  it("shows the builder's flags and the broker's beta where it disagrees", () => {
-    payload = base([row({ flags: ["terminal_heavy", "beta_disagrees"], betaBroker: 1.9 })]);
-    const html = render();
-    expect(html).toContain("terminal heavy");
-    expect(html).toContain("1.90");
+  it("counts the builder's flags on the row and spells them out, with the broker's beta, in the details", () => {
+    const r = row({ flags: ["terminal_heavy", "beta_disagrees"], betaBroker: 1.9 });
+    payload = base([r]);
+    expect(render()).toContain("2 notes");
+    const d = detail(r);
+    expect(d).toContain("Over 85% of the value is the perpetuity");
+    expect(d).toContain("broker 1.90");
   });
 
-  it("shows what the price needs beside the company's best, and the builder's reach in words", () => {
-    payload = base([
-      row({ symbol: "AAA", impliedMargin: 0.407, bestMargin: 0.112, impliedGrowth: 2, impliedGrowthEdge: "above", bestGrowth: 0.124, reach: "beyond history" }),
-      row({ symbol: "BBB", impliedMargin: 0.12, bestMargin: 0.15, impliedGrowth: 0.05, bestGrowth: 0.08, reach: "within history" }),
-    ]);
+  it("shows the reach in words on the row, and what the price needs beside the company's best in the details", () => {
+    const aaa = row({ symbol: "AAA", impliedMargin: 0.407, bestMargin: 0.112, impliedGrowth: 2, impliedGrowthEdge: "above", bestGrowth: 0.124, reach: "beyond history" });
+    payload = base([aaa, row({ symbol: "BBB", impliedMargin: 0.12, bestMargin: 0.15, impliedGrowth: 0.05, bestGrowth: 0.08, reach: "within history" })]);
     const html = render();
-    expect(html).toContain("Needs margin");
-    expect(html).toContain("40.7%");
-    expect(html).toContain("best 11.2%");
-    expect(html).toContain("over +200.0%");
     expect(html).toContain("beyond history");
     expect(html).toContain("within history");
     expect(html).toContain("the price assumes a better business than the record shows");
+    expect(html).toContain("3.63×"); // 0.407 / 0.112
+    const d = detail(aaa);
+    expect(d).toContain("What the price needs");
+    expect(d).toContain("40.7%");
+    expect(d).toContain("best 11.2%");
+    expect(d).toContain("over +200.0%");
+  });
+
+  it("says in the details why a name has no value", () => {
+    expect(detail(row({ state: "not-applicable", reason: "financials" }))).toContain("not applicable: financials");
   });
 
   it("says when nothing has been built", () => {
