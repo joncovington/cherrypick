@@ -14,8 +14,10 @@ The rules, in the order they apply to each changed path:
   - packages/console/**           the console job.
   - packages/orchestrator/**      orchestrator, and the console (its Config page bridges the
                                   orchestrator's config editor).
-  - packages/<p>/**               that package's job. No package imports another except core
-                                  (checked 2026-10-02), so nothing else can break.
+  - packages/technicals/**        technicals, and fundamentals (it reads technicals for prices:
+                                  `DEPENDENTS`, 2026-10-29).
+  - packages/<p>/**               that package's job. No other package imports another except core,
+                                  so nothing else can break.
   - packages/<unknown>/**         everything: a directory this script does not recognise is not one
                                   it can reason about.
   - any other *.md file           nothing: the docs job always runs and is the only one that reads it.
@@ -36,6 +38,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
+# The packages that import another besides core: a change to the key reruns each dependent too.
+DEPENDENTS = {"technicals": ("fundamentals",)}
 
 
 def python_packages(root: Path = ROOT) -> list[str]:
@@ -74,6 +78,7 @@ def plan(paths: list[str], *, all_jobs: bool = False, root: Path = ROOT) -> dict
                 console = True
             elif name in known:
                 packages.add(name)
+                packages.update(d for d in DEPENDENTS.get(name, ()) if d in known)
                 if name == "orchestrator":
                     console = True
             else:

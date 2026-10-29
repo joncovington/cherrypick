@@ -554,9 +554,6 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "history": bool(tc.get("history", True)),
         "history_at": tc.get("history_at", "06:20"),
         "fundamentals_at": tc.get("fundamentals_at", "06:25"),
-        # `valuation_at`: the fair-value file (`python -m cherrypick.technicals valuation`, one DCF
-        # estimate a liquid optionable name from the store the landing just topped up).
-        "valuation_at": tc.get("valuation_at", "06:28"),
         # `board_at`: the signal board (`python -m cherrypick.technicals board`), each name's count of
         # agreeing methods, from the same landing and the previous evening's analyst revisions.
         "board": bool(tc.get("board", True)),
@@ -769,6 +766,30 @@ def quikoptions_post_problem(q: dict[str, Any]) -> str | None:
     if unknown:
         return f"post_cards names sections there are not: {unknown} (known: {list(QUIKOPTIONS_SECTIONS)})"
     return None
+
+
+def fundamentals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved scheduling for packages/fundamentals (2026-10-29): the fair-value file and what feeds it.
+    ON by default wherever technicals is on: it reads technicals' bars and the local Dolt clones.
+
+    - `sec_at`: scripts/fetch_sec_facts.py, SEC EDGAR's filing index for every fair-value name and a
+      company's facts only when it filed a new report (network, no credential; the request header is
+      `SEC_USER_AGENT` in the checkout's untracked `.env`). About 170 small requests, paced.
+    - `damodaran_at`: scripts/fetch_damodaran.py, the implied ERP and the coverage-to-rating table; two
+      requests, at most once a week (the script skips a fresh file).
+    - `land_at`: `python -m cherrypick.fundamentals land all`, the filings, Dolt's annual statements and
+      its revenue consensus into `fundamentals.db`, after technicals' 06:25 landing.
+    - `valuation_at`: `python -m cherrypick.fundamentals valuation`, the fair-value file the income lists
+      and the Screeners tab read."""
+    fc = cfg.get("fundamentals", {}) or {}
+    on = bool(fc.get("enabled", True)) and technicals_settings(cfg)["enabled"]
+    return {
+        "enabled": on,
+        "sec_at": fc.get("sec_at", "06:00"),
+        "damodaran_at": fc.get("damodaran_at", "06:02"),
+        "land_at": fc.get("land_at", "06:30"),
+        "valuation_at": fc.get("valuation_at", "06:35"),
+    }
 
 
 def research_queue_settings(cfg: dict[str, Any]) -> dict[str, Any]:

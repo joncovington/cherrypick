@@ -26,11 +26,12 @@ function Install-Editable($relativePath, $label) {
 }
 
 Install-Editable "packages\core[dev]" "packages/core (must be first)"
+Install-Editable "packages\technicals[dev]" "packages/technicals (before fundamentals, which depends on it)"
 
 # Every Python package in the tree, found by its pyproject.toml rather than listed: the hand-kept
 # list this replaced had quietly missed bwb and curve.
 Get-ChildItem "$root\packages" -Directory |
-    Where-Object { $_.Name -ne "core" -and (Test-Path "$($_.FullName)\pyproject.toml") } |
+    Where-Object { $_.Name -notin @("core", "technicals") -and (Test-Path "$($_.FullName)\pyproject.toml") } |
     Sort-Object Name |
     ForEach-Object { Install-Editable "packages\$($_.Name)[dev]" "packages/$($_.Name)" }
 

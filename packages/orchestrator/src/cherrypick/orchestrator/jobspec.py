@@ -87,8 +87,12 @@ CATCHUP_MINUTES = {
     # Incremental top-ups from the local Dolt clones: a late one is the same landing.
     "technicals-history": 12 * 60,
     "technicals-fundamentals": 12 * 60,
-    # A rerun rebuilds the same session's fair-value file from the same store.
-    "technicals-valuation": 12 * 60,
+    # packages/fundamentals: the SEC and Damodaran fetches skip what they hold, the landing is
+    # incremental, and a rerun rebuilds the same session's fair-value file from the same stores.
+    "fundamentals-sec": 12 * 60,
+    "fundamentals-damodaran": 12 * 60,
+    "fundamentals-land": 12 * 60,
+    "fundamentals-valuation": 12 * 60,
     # A rerun rebuilds the same session's board from the same store.
     "technicals-board": 12 * 60,
     # Dividend histories change weekly at most; a late fetch is the same fetch.
@@ -1276,23 +1280,38 @@ def derive_jobs(
                 else "disabled in config (technicals.history) or with technicals-land",
             ),
         )
-    add(
-        "technicals-valuation",
-        lambda: JobSpec(
-            id="technicals-valuation",
-            # The fair-value file (one DCF estimate a liquid optionable name) from the history store
-            # the 06:25 landing just topped up; the income lists and the Screeners tab read it.
-            argv=(pythonw, "-m", "cherrypick.technicals", "valuation"),
-            kind=KIND_DAILY,
-            at_et=tc["valuation_at"],
-            catchup_minutes=CATCHUP_MINUTES["technicals-valuation"],
-            trading_days_only=False,
-            enabled=hist_on,
-            enabled_reason=""
-            if hist_on
-            else "disabled in config (technicals.history) or with technicals-land",
+    # packages/fundamentals (2026-10-29): the fair-value file and what feeds it. The two fetches are
+    # scripts (they reach the network); the landing and the build are the package, local files only.
+    fc = cfgmod.fundamentals_settings(cfg)
+    fund_on = fc["enabled"] and hist_on
+    fund_reason = "" if fund_on else "disabled in config (fundamentals) or with technicals' history landing"
+    for job, argv, at in (
+        ("fundamentals-sec", (pythonw, _suite_script(launcher, "fetch_sec_facts.py")), fc["sec_at"]),
+        (
+            "fundamentals-damodaran",
+            (pythonw, _suite_script(launcher, "fetch_damodaran.py")),
+            fc["damodaran_at"],
         ),
-    )
+        ("fundamentals-land", (pythonw, "-m", "cherrypick.fundamentals", "land", "all"), fc["land_at"]),
+        (
+            "fundamentals-valuation",
+            (pythonw, "-m", "cherrypick.fundamentals", "valuation"),
+            fc["valuation_at"],
+        ),
+    ):
+        add(
+            job,
+            lambda job=job, argv=argv, at=at: JobSpec(
+                id=job,
+                argv=argv,
+                kind=KIND_DAILY,
+                at_et=at,
+                catchup_minutes=CATCHUP_MINUTES[job],
+                trading_days_only=False,
+                enabled=fund_on,
+                enabled_reason=fund_reason,
+            ),
+        )
     board_on = tc_on and tc["board"]
     add(
         "technicals-board",

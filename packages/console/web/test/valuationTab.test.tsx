@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import type { ValuationPayload, ValuationRow } from "@console/shared";
+import type { ValuationModel, ValuationPayload, ValuationRow } from "@console/shared";
 
 /**
  * The fair-value tab: the standing no-edge note, the views, the symbol order, the pmcc badge and
@@ -42,6 +42,7 @@ function row(over: Partial<ValuationRow>): ValuationRow {
     terminalGrowth: 0.02,
     forecast: null,
     bridge: null,
+    model: null,
     flags: [],
     pmcc: false,
     ...over,
@@ -138,8 +139,8 @@ describe("the fair-value tab", () => {
   it("walks from the business's value to the value per share, and draws the forecast's years", () => {
     const r = row({
       fairValue: 33.8,
-      bridge: { pvForecast: 1.59e11, pvTerminal: 2.35e11, ev: 3.94e11, debt: 1.75e11, cash: 1.08e10, equity: 2.29e11, shares: 6.77e9 },
-      forecast: [1, 2, 3, 4, 5].map((year) => ({ year, revenue: 1.2e11, growth: 0.03, ebitMargin: 0.187, fcf: 1.9e10 + year * 1e9 })),
+      bridge: { pvForecast: 1.59e11, pvTerminal: 2.35e11, ev: 3.94e11, debt: 1.75e11, cash: 1.08e10, equity: 2.29e11, shares: 6.77e9, financeLease: 0, preferred: 0, nci: 0, basicShares: 6.77e9, rsu: 0, optionShares: 0 },
+      forecast: [1, 2, 3, 4, 5].map((year) => ({ year, revenue: 1.2e11, growth: 0.03, ebitMargin: 0.187, fcf: 1.9e10 + year * 1e9, growthSource: null, ebit: null, nopat: null, da: null, capex: null, wcChange: null, discount: null, pv: null })),
     });
     const d = detail(r);
     expect(d).toContain("= Enterprise value");
@@ -218,6 +219,37 @@ describe("the fair-value tab", () => {
     expect(d).toContain("40.7%");
     expect(d).toContain("its best in five years was 11.2%");
     expect(d).toContain("over +200.0%");
+  });
+
+  it("lists every input with its source in the Advanced view, and only for a version-2 row", () => {
+    const model: ValuationModel = {
+      capital: {
+        rf: 0.0499, rfSource: "10-year Treasury 2026-10-27", erp: 0.042, erpMonth: "2026-10-01", betaRaw: 0.24, beta: 0.49,
+        ke: 0.0706, coverage: 7.9, rating: "Aa2/AA", spread: 0.0055, ratingsAsOf: "January 2026", kdPreTax: 0.0554,
+        kdAfterTax: 0.0415, marginalTax: 0.25, equityWeight: 0.742, debtWeight: 0.258, wacc: 0.0631,
+      },
+      drivers: { ebitMargin: 0.2, daPct: 0.14, capexPct: 0.027, wcPct: 0.009, wcIsLevel: true, taxRate: 0.156, historyYears: 5 },
+      terminal: { fcf: 2.94e9, value: 7.71e10, reinvestmentRate: 0.396, roic: 0.0631 },
+      consensus: { snapshot: "2026-10-25", years: [{ periodEnd: "2026-12-31", revenue: 4.99e10, analysts: 9, high: 5.01e10, low: 4.91e10 }] },
+      history: [{ end: "2025-12-31", revenue: 4.82e10, ebitMargin: 0.233, daPct: 0.086, capexPct: 0.027, wcPct: -0.024, taxRate: 0.244 }],
+      grid: [],
+      data: { fiscalYearEnd: "2025-12-31", filed: "2026-02-11", latestPeriod: "2026-06-30", latestFiled: "2026-07-30", sic: "2834", sicDescription: "Pharmaceutical Preparations", source: "SEC filings" },
+      sources: { revenue: "Revenues", interest: "InterestExpenseNonoperating", capex: "Dolt (not stated in the filing)", ebit: "derived: pretax + interest" },
+      disagree: { interest: [1.89e9, 0] },
+      impliedWacc: 0.081,
+    };  // fmt: skip
+    const d = detail(row({ model }));
+    expect(d).toContain("Advanced: every input and where it came from");
+    expect(d).toContain("SEC filing of 2026-02-11: Revenues");
+    expect(d).toContain("SEC filing of 2026-02-11: InterestExpenseNonoperating");
+    expect(d).toContain("Dolt annual statements (the filing does not state it)");
+    expect(d).toContain("derived from the filing: pretax + interest");
+    expect(d).toContain("Damodaran implied ERP, 2026-10-01");
+    expect(d).toContain("Aa2/AA synthetic rating from interest coverage (Damodaran&#x27;s table, January 2026)");
+    expect(d).toContain("9 analysts");
+    expect(d).toContain("Year-by-year calculation");
+    expect(d).toContain("interest: the filing states $1.9B, Dolt $0; the value uses the filing.");
+    expect(detail(row({}))).not.toContain("Advanced:");
   });
 
   it("says in words, in the details, why a name has no value", () => {

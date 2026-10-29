@@ -1,15 +1,16 @@
 /**
- * The fair-value file for the Screeners page's fair-value tab (2026-10-27): `packages/technicals`
- * `valuation` writes one file a session (`technicals/valuation/<session>.json`), one DCF estimate a
- * liquid optionable name from `cherrypick.core.valuation`. This renames its rows, badges pmcc's
- * configured symbols (pmcc's own config, never technicals'), and decides nothing. A model estimate
- * of value, tested 2018-26 with no edge; the rows are by symbol.
+ * The fair-value file for the Screeners page's fair-value tab: packages/fundamentals `valuation`
+ * (2026-10-29, moved from packages/technicals) writes one file a session
+ * (`fundamentals/valuation/<session>.json`), one DCF estimate an options-tradable name from
+ * `cherrypick.core.valuation`. This renames its rows, badges pmcc's configured symbols (pmcc's own
+ * config), and decides nothing. A model estimate of value, tested 2018-26 with no edge.
  */
 import fs from "node:fs";
 import path from "node:path";
 import type {
   ValuationBridge,
   ValuationForecastYear,
+  ValuationModel,
   ValuationPayload,
   ValuationRow,
   ValuationState,
@@ -48,6 +49,76 @@ function days(dir: string): string[] {
 
 function strings(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((f): f is string => typeof f === "string") : [];
+}
+
+/** packages/fundamentals' data directory: the config's, else beside technicals' (a test config). */
+function fundamentalsDir(config: ConsoleConfig): string {
+  return config.paths.fundamentalsDir ?? path.join(path.dirname(config.paths.technicalsDir), "fundamentals");
+}
+
+const GROWTH_SOURCES = ["consensus", "history", "fade"] as const;
+
+/** Version 2's working; null on an older file (no `capital`) or a non-valued row. */
+function modelOf(r: Record<string, unknown>): ValuationModel | null {
+  const c = rec(r["capital"]);
+  if (Object.keys(c).length === 0) return null;
+  const d = rec(r["drivers"]);
+  const t = rec(r["terminal"]);
+  const cons = rec(r["consensus"]);
+  const data = rec(r["data"]);
+  const grid: [number, number, number | null][] = [];
+  for (const cell of Array.isArray(r["grid"]) ? r["grid"] : []) {
+    if (Array.isArray(cell) && cell.length === 3 && num(cell[0]) !== null && num(cell[1]) !== null) {
+      grid.push([num(cell[0])!, num(cell[1])!, num(cell[2])]);
+    }
+  }
+  const sources: Record<string, string> = {};
+  for (const [k, v] of Object.entries(rec(r["sources"]))) if (typeof v === "string") sources[k] = v;
+  const disagree: Record<string, [number, number]> = {};
+  for (const [k, v] of Object.entries(rec(r["disagree"]))) {
+    if (Array.isArray(v) && num(v[0]) !== null && num(v[1]) !== null) disagree[k] = [num(v[0])!, num(v[1])!];
+  }
+  return {
+    capital: {
+      rf: num(c["rf"]), rfSource: str(c["rf_source"]), erp: num(c["erp"]), erpMonth: str(c["erp_month"]),
+      betaRaw: num(c["beta_raw"]), beta: num(c["beta"]), ke: num(c["ke"]), coverage: num(c["coverage"]),
+      rating: str(c["rating"]), spread: num(c["spread"]), ratingsAsOf: str(c["ratings_as_of"]),
+      kdPreTax: num(c["kd_pre_tax"]), kdAfterTax: num(c["kd_after_tax"]), marginalTax: num(c["marginal_tax"]),
+      equityWeight: num(c["equity_weight"]), debtWeight: num(c["debt_weight"]), wacc: num(c["wacc"]),
+    },
+    drivers: {
+      ebitMargin: num(d["ebit_margin"]), daPct: num(d["da_pct"]), capexPct: num(d["capex_pct"]),
+      wcPct: num(d["wc_pct"]), wcIsLevel: d["wc_is_level"] === true, taxRate: num(d["tax_rate"]),
+      historyYears: num(d["history_years"]),
+    },
+    terminal: { fcf: num(t["fcf"]), value: num(t["value"]), reinvestmentRate: num(t["reinvestment_rate"]), roic: num(t["roic"]) },
+    consensus: {
+      snapshot: str(cons["snapshot"]),
+      years: (Array.isArray(cons["years"]) ? cons["years"] : [])
+        .map((y) => rec(y))
+        .filter((y) => str(y["period_end"]) !== null && num(y["revenue"]) !== null)
+        .map((y) => ({
+          periodEnd: str(y["period_end"])!, revenue: num(y["revenue"])!, analysts: num(y["analysts"]),
+          high: num(y["high"]), low: num(y["low"]),
+        })),
+    },
+    history: (Array.isArray(r["history"]) ? r["history"] : [])
+      .map((y) => rec(y))
+      .filter((y) => str(y["end"]) !== null)
+      .map((y) => ({
+        end: str(y["end"])!, revenue: num(y["revenue"]), ebitMargin: num(y["ebit_margin"]), daPct: num(y["da_pct"]),
+        capexPct: num(y["capex_pct"]), wcPct: num(y["wc_pct"]), taxRate: num(y["tax_rate"]),
+      })),
+    grid,
+    data: {
+      fiscalYearEnd: str(data["fiscal_year_end"]), filed: str(data["filed"]), latestPeriod: str(data["latest_period"]),
+      latestFiled: str(data["latest_filed"]), sic: str(data["sic"]), sicDescription: str(data["sic_description"]),
+      source: str(data["source"]),
+    },
+    sources,
+    disagree,
+    impliedWacc: num(r["implied_wacc"]),
+  };
 }
 
 /** The value when it is one of the builder's words, else null (an older file, or a word it never writes). */
@@ -93,6 +164,7 @@ function toRow(v: unknown, pmcc: ReadonlySet<string>): ValuationRow | null {
     terminalGrowth: num(r["terminal_growth"]),
     forecast: forecastOf(r["forecast"]),
     bridge: bridgeOf(r["bridge"]),
+    model: modelOf(r),
     flags: strings(r["flags"]),
     pmcc: pmcc.has(symbol),
   };
@@ -110,7 +182,12 @@ function forecastOf(v: unknown): ValuationForecastYear[] | null {
     const growth = num(y["growth"]);
     const fcf = num(y["fcf"]);
     if (year === null || revenue === null || growth === null || fcf === null) return null;
-    out.push({ year, revenue, growth, ebitMargin: num(y["ebit_margin"]), fcf });
+    out.push({
+      year, revenue, growth, ebitMargin: num(y["ebit_margin"]), fcf,
+      growthSource: oneOf(y["growth_source"], GROWTH_SOURCES), ebit: num(y["ebit"]), nopat: num(y["nopat"]),
+      da: num(y["da"]), capex: num(y["capex"]), wcChange: num(y["wc_change"]), discount: num(y["discount"]),
+      pv: num(y["pv"]),
+    });
   }
   return out;
 }
@@ -122,11 +199,16 @@ function bridgeOf(v: unknown): ValuationBridge | null {
   const n = keys.map((k) => num(b[k]));
   if (n.some((x) => x === null)) return null;
   const [pvForecast, pvTerminal, ev, debt, cash, equity, shares] = n as number[];
-  return { pvForecast: pvForecast!, pvTerminal: pvTerminal!, ev: ev!, debt: debt!, cash: cash!, equity: equity!, shares: shares! };
+  const opt = (k: string) => num(b[k]) ?? 0;
+  return {
+    pvForecast: pvForecast!, pvTerminal: pvTerminal!, ev: ev!, debt: debt!, cash: cash!, equity: equity!, shares: shares!,
+    financeLease: opt("finance_lease"), preferred: opt("preferred"), nci: opt("nci"),
+    basicShares: num(b["basic_shares"]) ?? shares!, rsu: opt("rsu"), optionShares: opt("option_shares"),
+  };
 }
 
 export function readValuation(config: ConsoleConfig, dayParam: string | null): ValuationPayload {
-  const dir = path.join(config.paths.technicalsDir, "valuation");
+  const dir = path.join(fundamentalsDir(config), "valuation");
   const all = days(dir);
   const day = dayParam !== null && DAY.test(dayParam) && all.includes(dayParam) ? dayParam : (all[0] ?? null);
   const empty: ValuationPayload = {

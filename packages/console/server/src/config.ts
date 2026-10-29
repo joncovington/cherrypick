@@ -41,6 +41,10 @@ export interface ConsoleConfig {
     advisorDir: string;
     /** `data/technicals/` — the technicals report (`report-<session>.json`) the Morning tab shows. */
     technicalsDir: string;
+    /** `data/fundamentals/` -- packages/fundamentals' fair-value files (`valuation/<session>.json`) the
+        Screeners fair-value tab shows. Optional so a config built elsewhere (tests) need not name it;
+        the reader falls back to the directory beside `technicalsDir`. */
+    fundamentalsDir?: string;
     /** `data/quikoptions/` — the Hot Options Report captures (`hot-options/<session>.json`) the
         Options flow page shows. Optional so a config built elsewhere (tests) need not name it; the
         reader falls back to `<cherrypick>/data/quikoptions`. */
@@ -106,6 +110,7 @@ export function loadConfig(): ConsoleConfig {
       overviewDir: path.join(data, "overview"),
       advisorDir: path.join(data, "advisor"),
       technicalsDir: path.join(data, "technicals"),
+      fundamentalsDir: path.join(data, "fundamentals"),
       quikoptionsDir: path.join(data, "quikoptions"),
       marketReportDir: path.join(data, "market-report"),
       adviceDir: path.join(CHERRYPICK, "state", "advice"),

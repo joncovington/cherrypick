@@ -43,6 +43,21 @@ def test_one_package_runs_alone():
     }
 
 
+def test_a_package_another_imports_reruns_its_dependents():
+    """fundamentals reads technicals for prices: a technicals change can break it."""
+    out = ccp.plan(["packages/technicals/src/cherrypick/technicals/store.py"])["packages"]
+    assert "technicals" in out and "fundamentals" in out
+    assert ccp.plan(["packages/fundamentals/src/cherrypick/fundamentals/valuation.py"])["packages"] == [
+        "fundamentals"
+    ]
+    # Every dependent named is a real package that really declares the import.
+    for key, deps in ccp.DEPENDENTS.items():
+        for d in deps:
+            assert f"cherrypick-{key}" in (ROOT / "packages" / d / "pyproject.toml").read_text(
+                encoding="utf-8"
+            )
+
+
 def test_a_package_with_a_guard_mutant_runs_the_guards():
     out = ccp.plan(["packages/flies/src/cherrypick/flies/live_loop.py"])
     assert out["packages"] == ["flies"] and out["guards"] is True

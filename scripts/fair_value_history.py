@@ -1,13 +1,12 @@
 """Does the fair-value gap say anything about what comes next? A point-in-time history study.
 
-The fair-value file (`technicals valuation`, `cherrypick.core.valuation`) carries no measured edge:
-docs/conventions and the Screeners tab say so. This is the test. For the last session of every
-month from `START` on, each liquid optionable stock is valued exactly as the nightly build values
-it, from what was knowable that day -- Dolt's annual statements published 45 days after the fiscal
-year end, the newest weekly consensus snapshot, a three-year weekly beta on SPY, the price that day
--- and its gap (price over value, less one) is set against what the shares then did.
+The fair-value file (`fundamentals valuation`, `cherrypick.core.valuation`) carries no measured edge:
+the Screeners tab says so. This is the test. For the last session of every month from `START` on,
+each liquid optionable stock is valued **by the nightly build's own code** (`fundamentals.valuation
+.value_one`), from what was knowable that day, and its gap (price over value, less one) is set against
+what the shares then did.
 
-**Declared before the first run (2026-10-28):**
+**Declared before the first run (2026-10-28), unchanged for the version-2 re-run (2026-10-29):**
 
 - **Outcomes.** The 63-session forward total return (dividend-adjusted closes), and a short-put
   proxy: whether the shares were still within `PUT_OTM` (8%) of the entry price `PUT_HORIZON` (42)
@@ -22,21 +21,30 @@ year end, the newest weekly consensus snapshot, a three-year weekly beta on SPY,
   sign test at p < 0.05, and the median spread is positive. Anything else FAILS; fewer than
   `MIN_SESSIONS` sessions in a half is NO VERDICT. A pass means the gap selects; it does not size a
   trade or make the lists a ranking.
-- **Known limits, declared.** The universe is today's liquid optionable list, so names that died or
-  delisted are missing (survivorship); the risk-free rate is the suite's constant 4% for every
-  session (the Treasury file starts 2025); dividend adjustment is as of today, not the session;
-  statements before 2016 are thinner in Dolt.
+
+**What is point in time (version 2).** The company's SEC facts as filed by the session (each fact's
+own filing date), Dolt's statements 45 days after their period ends where the filings are silent, the
+newest weekly revenue consensus no older than three weeks, Damodaran's implied ERP for the month, the
+10-year Treasury before the session, a five-year weekly beta, the price that day.
+
+**Known limits, declared.** The universe is today's liquid optionable list, so names that died or
+delisted are missing (survivorship); the Treasury file starts in 2025, so earlier sessions read the
+suite's declared 4%; Damodaran's coverage-to-rating table is today's (January 2026) for every session;
+the sector map and the security types are today's; dividend adjustment is as of today, not the session.
+The reverse DCF is not computed here (the gap needs only the value).
 
     python scripts/fair_value_history.py [--start 2018-01-01] [--sessions N] [--names N] [--out FILE]
 
-Local files only (the history store, the security list, the sector maps). Writes one JSON to the
-technicals study directory and prints the verdict. Public data and our own model: the result may be
-quoted.
+Local files only (the technicals store's bars, the fundamentals store, the security list, the sector
+maps, the Damodaran and Treasury files); the SEC facts for the study's names must be fetched first
+(scripts/fetch_sec_facts.py --names ...). Writes one JSON to the fundamentals study directory and prints
+the verdict. Public data and our own model: the result may be quoted.
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import statistics
 import sys
@@ -44,10 +52,11 @@ import time
 from datetime import UTC, datetime
 
 from cherrypick.core import stats
-from cherrypick.core import valuation as _val
 from cherrypick.core.jsonio import write_json_atomic
-from cherrypick.technicals import fundamentals, paths, securities, statements, store
-from cherrypick.technicals import valuation as _tv
+from cherrypick.fundamentals import consensus, damodaran, paths, secfacts, statements, valuation
+from cherrypick.technicals import fundamentals as _score
+from cherrypick.technicals import paths as tpaths
+from cherrypick.technicals import securities, store
 
 START = "2018-01-01"
 FORWARD = 63  # sessions, ~3 months
@@ -139,55 +148,53 @@ def half_verdict(spreads: list[float]) -> dict:
     }
 
 
-def value_name(
-    conn, sym: str, sessions: list[str], spy_adj: dict[str, float], snapshots: dict[str, str | None]
-):
-    """Every session's (gap, forward return, put win) for one name, from one load of its data."""
-    bars = store.adjusted_bars(conn, sym)
-    if not bars:
-        return []
-    adj = {b.date: b.close for b in bars}
-    raw = {b.date: (b.close / b.price_factor if b.price_factor else b.close) for b in bars}
-    dates = [b.date for b in bars]
+def _cache_prices(bars_conn) -> None:
+    """The build reads each name's bars and splits once a call; a study calls it ~100 times a name.
+    Cache them per name (adjusted as of today, a declared limit), and skip the reverse DCF."""
+    # The originals, taken before the patch below: `valuation.store` is this same module object.
+    adjusted, raw, splits = store.adjusted_bars, store.raw_bars, store.splits
+    adj_of = functools.lru_cache(maxsize=4)(lambda sym: adjusted(bars_conn, sym))
+    raw_of = functools.lru_cache(maxsize=4)(lambda sym: raw(bars_conn, sym))
+    splits_of = functools.lru_cache(maxsize=4)(lambda sym: splits(bars_conn, sym))
+
+    def closes_as_of(_conn, sym, as_of):
+        return {b.date: b.close for b in adj_of(sym) if b.date <= as_of}
+
+    def spot_on(_conn, sym, as_of):
+        last = None
+        for b in raw_of(sym):
+            if b.date > as_of:
+                break
+            if b.close is not None:
+                last = (b.date, float(b.close))
+        return last
+
+    valuation.closes_as_of = closes_as_of
+    valuation.spot_on = spot_on
+    valuation.store.raw_bars = lambda _c, sym: raw_of(sym)
+    valuation.store.splits = lambda _c, sym: splits_of(sym)
+    valuation._val.implied = lambda *a, **k: None
+
+
+def value_name(conn, bars_conn, sym, sessions, spy_adj, kind, sector, ratings) -> list[tuple]:
+    """Every session's (session, gap, forward return, put win) for one name, valued by the build."""
+    adj = {b.date: b.close for b in store.adjusted_bars(bars_conn, sym)}
+    dates = sorted(adj)
     idx = {d: i for i, d in enumerate(dates)}
-    stmt_rows = [
-        tuple(r)
-        for r in conn.execute(
-            f"SELECT {', '.join(statements.COLUMNS)} FROM statements_annual"
-            " WHERE symbol = ? ORDER BY period_end",
-            (sym,),
-        ).fetchall()
-    ]
-    if not stmt_rows:
-        return []
-    est = {
-        d: (c, y)
-        for d, c, y in conn.execute(
-            "SELECT date, consensus, year_ago FROM estimates WHERE symbol = ? AND kind = 'sales'", (sym,)
-        )
-    }
     out = []
     for s in sessions:
         i = idx.get(s)
         if i is None or i + FORWARD >= len(dates):
             continue
-        years = statements.years_from_rows(stmt_rows, s)
-        if not years:
-            continue
-        sr, ir = _tv.aligned_returns({d: adj[d] for d in dates[: i + 1]}, spy_adj, s)
-        b = _val.beta(sr, ir) if len(sr) >= _tv.MIN_RETURNS else None
-        if b is None:
-            continue
-        snap = snapshots.get(s)
-        g = None
-        if snap is not None and snap in est:
-            g = fundamentals.growth(est[snap][0], est[snap][1])
-        res = _val.value(years, raw[s] * years[-1].shares, b, consensus_growth=g)
-        if isinstance(res, _val.Refusal):
+        rf, rf_source = valuation.risk_free(s)
+        row = valuation.value_one(
+            conn, bars_conn, sym, s, kind, sector, spy_adj, None, rf, rf_source, damodaran.erp(s), ratings
+        )
+        if row["state"] != "valued" or not row["fair_value"]:
             continue
         fwd = adj[dates[i + FORWARD]] / adj[s] - 1.0
         put_ret = adj[dates[i + PUT_HORIZON]] / adj[s] - 1.0
-        out.append((s, sym, raw[s] / res.fair_value - 1.0, fwd, put_ret > -PUT_OTM))
+        out.append((s, row["spot"] / row["fair_value"] - 1.0, fwd, put_ret > -PUT_OTM))
     return out
 
 
@@ -199,37 +206,39 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
     started = time.monotonic()
-    conn = store.connect(paths.history_db())
-    conn.executescript(statements.SCHEMA)
+    bars_conn = store.connect(tpaths.history_db())
+    conn = secfacts.connect()
+    conn.executescript(statements.SCHEMA + consensus.SCHEMA)
+    _cache_prices(bars_conn)
     rows_sec, pick = securities.latest()
     kinds = {str(r["symbol"]).replace("/", "."): r.get("type") for r in rows_sec if r.get("symbol")}
     names, source = securities.liquid_optionable()
-    sectors = {s: v[0] for s, v in fundamentals.sector_sources().items()}
-    names = [n for n in names if kinds.get(n) == "Stock" and sectors.get(n) not in _tv.NOT_DCF_SECTORS]
+    sectors = {s: v[0] for s, v in _score.sector_sources().items()}
+    names = [n for n in names if kinds.get(n) == "Stock"]
     if args.names:
         names = names[: args.names]
-    spy_bars = store.adjusted_bars(conn, _tv.INDEX)
-    spy_adj = {b.date: b.close for b in spy_bars}
-    spy_dates = [b.date for b in spy_bars]
+    ratings = valuation.ratings_table()
+    spy_adj = {b.date: b.close for b in store.adjusted_bars(bars_conn, valuation.INDEX)}
+    spy_dates = sorted(spy_adj)
     sessions = [
         d for d in month_ends(spy_dates) if d >= args.start and spy_dates.index(d) + FORWARD < len(spy_dates)
     ]
     if args.sessions:
         sessions = sessions[-args.sessions :]
-    snapshots = {s: fundamentals.snapshot_on(conn, s) for s in sessions}
     by_session: dict[str, list[tuple[float, float, bool]]] = {s: [] for s in sessions}
     valued_names = 0
     for k, sym in enumerate(names, 1):
-        rows = value_name(conn, sym, sessions, spy_adj, snapshots)
+        rows = value_name(conn, bars_conn, sym, sessions, spy_adj, kinds.get(sym), sectors.get(sym), ratings)
         if rows:
             valued_names += 1
-        for s, _sym, gap, fwd, put in rows:
+        for s, gap, fwd, put in rows:
             by_session[s].append((gap, fwd, put))
         if k % 50 == 0:
             print(
                 f"{k}/{len(names)} names, {round(time.monotonic() - started)} s", file=sys.stderr, flush=True
             )
     conn.close()
+    bars_conn.close()
     per_session = {s: tercile_spread(r) for s, r in by_session.items() if len(r) >= MIN_NAMES}
     used = sorted(per_session)
     mid = len(used) // 2
@@ -247,6 +256,7 @@ def main(argv=None) -> int:
     out = {
         "study": "fair-value-history",
         "declared": "2026-10-28",
+        "model_version": valuation.VERSION,
         "built_at": datetime.now(UTC).isoformat(),
         "rule": {
             "start": args.start,
@@ -256,14 +266,12 @@ def main(argv=None) -> int:
             "min_names": MIN_NAMES,
             "min_sessions": MIN_SESSIONS,
             "alpha": ALPHA,
-            "model": {
-                "min_wacc": getattr(_val, "MIN_WACC", None),
-                "margin_years": getattr(_val, "MARGIN_YEARS", None),
-            },
             "universe": source,
             "security_list": pick.get("day"),
-            "risk_free": _val.incomerules.RATE,
-            "limits": "survivorship (today's universe); constant risk-free; dividends adjusted as of today",
+            "limits": (
+                "survivorship (today's universe); risk-free 4% before the 2025 Treasury file; today's "
+                "coverage-to-rating table; today's sectors and types; dividends adjusted as of today"
+            ),
         },
         "names": len(names),
         "names_valued_ever": valued_names,
@@ -281,18 +289,16 @@ def main(argv=None) -> int:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     path = args.out or (paths.study_dir() / f"fair-value-history-{stamp}.json")
     written = write_json_atomic(path, out, indent=1, default=None)
-    summary = {
-        k: out[k]
-        for k in (
-            "verdict",
-            "sessions",
-            "names",
-            "names_valued_ever",
-            "spearman_mean",
-            "spearman_negative_share",
-            "seconds",
-        )
-    }
+    keys = (
+        "verdict",
+        "sessions",
+        "names",
+        "names_valued_ever",
+        "spearman_mean",
+        "spearman_negative_share",
+        "seconds",
+    )
+    summary = {k: out[k] for k in keys}
     summary["return_spread"] = halves
     summary["put_spread"] = put_halves
     summary["file"] = str(written)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from cherrypick.technicals import statements
+from cherrypick.fundamentals import statements
 
 # One joined Dolt row in QUERY's column order: CVS FY2025 as Dolt states it (2026-10-27), in dollars.
 DOLT_CVS_2025 = (

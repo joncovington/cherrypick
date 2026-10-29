@@ -82,7 +82,7 @@ jobs:
         # five of them were never added: bwb, curve, advisor, review and overview carried 553
         # passing tests between them that CI had never once run. Adding a package here is part of
         # landing it, not a follow-up -- tools/tests/test_ci_changed_packages.py now fails until it is.
-        package: [core, orchestrator, meic, earnings, gex, flies, calendars, pmcc, streamer, desk, bwb, curve, contango, advisor, review, overview, technicals, manage, backtest]
+        package: [core, orchestrator, meic, earnings, gex, flies, calendars, pmcc, streamer, desk, bwb, curve, contango, advisor, review, overview, technicals, fundamentals, manage, backtest]
     defaults:
       run:
         working-directory: packages/${{ matrix.package }}
@@ -122,6 +122,10 @@ jobs:
             # something auth.session's lazy-session-building invariant covers. Install the `broker`
             # extra too, so this is honest coverage rather than narrowed to fit a dev-only install.
             uv pip install -e ".[dev,broker]"
+          elif [ "${{ matrix.package }}" == "fundamentals" ]; then
+            # fundamentals reads technicals for prices (its bars, splits, security list), the one
+            # package besides core another declares; both siblings in the same resolve.
+            uv pip install -e ../core -e ../technicals -e ".[dev]"
           else
             # packages/core is not on PyPI (Private :: Do Not Upload); every consumer declares it as
             # a plain named dependency, so it is installed in the same resolve, from its directory.

@@ -33,7 +33,8 @@ day monthly, untested -- see `creditspreads.py`. The signals are walked over the
 reading with no `cs` block, or a build without the store, has no credit-spread list.
 
 **Fair value** (2026-10-27, version 3): every row carries the session's DCF estimate from the
-fair-value file (`valuation.py`, `cherrypick.core.valuation`): `fair_value`, `fair_low`, `fair_high`,
+fair-value file (packages/fundamentals `valuation.py`, `cherrypick.core.valuation`): `fair_value`,
+`fair_low`, `fair_high`,
 `fair_gap` (the price over the estimate, less one: positive is a price above the model's value) and
 `fair_state` (`valued`, `not-applicable` for a fund or a bank, `no-statements`, `refused`, or
 `unbuilt` when no file has been built). A model estimate of value, tested 2018-26 with no edge, shown
@@ -66,7 +67,8 @@ FAIR_FIELDS = ("fair_value", "fair_low", "fair_high", "fair_gap", "fair_state", 
 
 
 def fair_fields(valued: dict | None) -> dict:
-    """The six fair-value fields from one row of the fair-value file (`valuation.py`); `unbuilt`
+    """The six fair-value fields from one row of the fair-value file (packages/fundamentals
+    `valuation.py`); `unbuilt`
     when there is no file, `unlisted` when the file has no row for the name."""
     if valued is None:
         return dict.fromkeys(FAIR_FIELDS, None) | {"fair_state": "unbuilt", "fair_flags": []}
@@ -219,6 +221,20 @@ def row(
         # The session's DCF estimate (version 3): a model's value beside the price, never an ordering.
         **fair_fields(fair),
     }
+
+
+def fair_value_file(session: str) -> dict | None:
+    """The newest fair-value file on or before the session (packages/fundamentals writes it; read by
+    path, so this package never imports that one), or None when none has been built."""
+    root = paths.fair_value_dir()
+    days = sorted(p.stem for p in root.glob("????-??-??.json")) if root.is_dir() else []
+    pick = max((d for d in days if d <= session), default=None)
+    if pick is None:
+        return None
+    try:
+        return json.loads((root / f"{pick}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 def build_lists(
@@ -379,10 +395,10 @@ def build(day: str | None = None, source: Path | None = None) -> dict[str, Any]:
     from .skate import leveraged_funds
 
     lev = {s: str(f.get("kind") or "leveraged") for s, f in leveraged_funds().items()}
-    from . import creditspreads, liquidity, valuation
+    from . import creditspreads, liquidity
 
     signals = setup_signals(sorted(doc.get("symbols") or {}), session)
-    fair_doc = valuation.load(session)
+    fair_doc = fair_value_file(session)
     built = build_lists(
         doc,
         _kinds(session),

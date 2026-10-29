@@ -23,9 +23,10 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from cherrypick.core import valuation as _val
+from cherrypick.technicals import fundamentals as _score
+from cherrypick.technicals import land as _land
 
-from . import fundamentals, paths
-from . import land as _land
+from . import db as _db
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS statements_annual (
@@ -74,9 +75,7 @@ WHERE i.period = 'Year'
 
 
 def connect(path: Path | None = None):
-    conn = fundamentals.connect(path or paths.history_db())
-    conn.executescript(SCHEMA)
-    return conn
+    return _db.connect(path, SCHEMA)
 
 
 def row_from_dolt(r: tuple) -> tuple:
@@ -149,7 +148,7 @@ def land(cfg: dict | None = None, path: Path | None = None) -> dict:
 
 def published_by(as_of: str) -> str:
     """The last fiscal year end whose statements count on `as_of`."""
-    return (date.fromisoformat(as_of) - timedelta(days=fundamentals.PUBLICATION_LAG)).isoformat()
+    return (date.fromisoformat(as_of) - timedelta(days=_score.PUBLICATION_LAG)).isoformat()
 
 
 def years_from_rows(rows: list[tuple], as_of: str | None = None) -> list[_val.FiscalYear]:

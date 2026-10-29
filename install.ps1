@@ -108,8 +108,10 @@ Run $VPy @("-m", "pip", "install", "--quiet", "--upgrade", "pip") "Upgrading pip
 Step "Installing the cherrypick packages (a few minutes the first time)"
 # packages/core first: every other package depends on it and it is not on PyPI.
 Run $VPy @("-m", "pip", "install", "--quiet", "-e", (Join-Path $Root "packages\core")) "Installing packages/core"
+# packages/technicals next: packages/fundamentals depends on it, and it is not on PyPI either.
+Run $VPy @("-m", "pip", "install", "--quiet", "-e", (Join-Path $Root "packages\technicals")) "Installing packages/technicals"
 $packages = Get-ChildItem (Join-Path $Root "packages") -Directory |
-    Where-Object { $_.Name -ne "core" -and (Test-Path (Join-Path $_.FullName "pyproject.toml")) } |
+    Where-Object { $_.Name -notin @("core", "technicals") -and (Test-Path (Join-Path $_.FullName "pyproject.toml")) } |
     Where-Object { $WithDesk -or $_.Name -ne "desk" } |
     Sort-Object Name
 foreach ($pkg in $packages) {

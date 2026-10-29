@@ -1,87 +1,74 @@
 """An unlevered discounted-cash-flow value of one company: a model estimate of value, never a price.
 
-The arithmetic every DCF shares, written once so the income lists and the Screeners fair-value tab
-(technicals) and any later reader agree on it:
+The arithmetic, written once so the income lists, the Screeners fair-value tab and the history study
+agree on it (docs/fair-value-model-plan.md, version 2 of 2026-10-28):
 
-    FCF_t  = EBIT_t x (1 - tax) + D&A_t - capex_t - working-capital investment_t
-    EV     = sum FCF_t / (1 + WACC)^t  +  TV / (1 + WACC)^N,   TV = FCF_N (1 + g) / (WACC - g)
-    equity = EV - debt + cash;   value per share = equity / shares
-    WACC   = ke x E/(D+E) + kd (1 - tax) x D/(D+E),   ke = rf + beta (rm - rf)
+    FCFF_t   = EBIT_t (1 - tax) + D&A_t - capex_t - (WC_t - WC_t-1)          years 1..10
+    FCFF_11  = NOPAT_11 (1 - g / ROIC),  ROIC = WACC                          the stable year
+    EV       = sum FCFF_t / (1 + WACC)^(t - 1/2)  +  FCFF_11 / (WACC - g) / (1 + WACC)^10
+    equity   = EV + cash - debt - finance leases - preferred - noncontrolling interest
+    shares   = basic + unvested RSUs + options by the treasury-stock method at the modelled value
+    WACC     = ke E/(D+E) + kd (1 - 25%) D/(D+E),   ke = rf + beta ERP,   kd = rf + spread(coverage)
 
-Reviewed 2026-10-27 from a student fund's spreadsheets (`Equity-Valuation-Modelling-in-Excel`) and
-an options educator's episode on DCF strengths and weaknesses. Both say the same thing: the value
-is only as good as its assumptions, the terminal value is most of the answer for a growth name, and
-the right use is one data point beside other checks when picking short-put and covered-call names.
-So this module builds **one mechanical base case** from the company's own history (medians of the
-newest three fiscal years for the margin and the percent-of-revenue lines, the five-year revenue
-CAGR or the consensus next-year sales growth when a caller has it) and states a
-**low-high range** from a grid over the discount rate and the terminal growth, rather than asking
-anyone to write bull and bear cases. Nothing here is a ranking, and no edge has been measured for it.
+The method is public and standard: ten forecast years that start from the analysts' revenue for the
+years they cover and fade to the long-run rate; margins, D&A, capex and working capital from the
+company's own five-year history; a **terminal value that pays for its growth** (the stable-growth
+method in Aswath Damodaran's teaching: after year ten new investment earns the cost of capital, so
+growth neither adds value nor removes it, and the perpetuity stops counting free growth); a
+Blume-adjusted beta; a cost of debt from the **synthetic rating** an interest-coverage ratio maps to
+(the caller passes Damodaran's coverage table); mid-year discounting; the full equity bridge.
 
-Every input is a plain number the caller read from its own store (statements, bars, estimates); the
-module reaches no file and no network. Every constant is declared below with its reason. A company
-the model cannot value -- too little history, no operating profit, a discount rate too close to the
-growth rate, a cash flow that never turns positive -- gets a `Refusal` with its reason, never a
-number. Banks and REITs are not DCF-able on operating cash flow; the caller refuses them by sector
-before calling.
+Version 1 (2026-10-27) forecast five years, priced debt at its coupon, floored the WACC at 7%, bounded
+beta and let the perpetuity grow for free. Checked name by name against a reference DCF platform on
+2026-10-28, that read AAL at three times its price on cheap coupon debt, missed BMY's patent cliff and
+could not value a company mid build-out (ORCL). This version replaces all four.
+
+Every input is a plain number the caller read from its own store; the module reaches no file and no
+network. Every constant is declared with its reason. A company the model cannot value gets a
+`Refusal` with its reason, never a number. Banks, insurers, brokers, REITs, funds and foreign filers
+are refused by the caller before it calls (their statements are not an operating business's).
 """
 
 from __future__ import annotations
 
 import math
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 
-from cherrypick.core import incomerules
-
-# Five forecast years: the paper's rule, and further out the drivers are guesses.
-FORECAST_YEARS = 5
-# Growth into perpetuity: bounded by nominal GDP growth; a company cannot outgrow the economy forever.
-TERMINAL_GROWTH = 0.02
-# The equity premium over the risk-free rate (the 9% market return the spreadsheets hard-coded, less
-# a 4% rate); a long-run convention, declared, not estimated.
-EQUITY_PREMIUM = 0.05
-# A regression beta outside this band is noise or a regime, not a cost of capital.
-BETA_BOUNDS = (0.5, 2.0)
-# Year-one revenue growth outside this band is a one-off (an acquisition, a collapse), not a path.
-GROWTH_BOUNDS = (-0.10, 0.25)
+# Ten forecast years: long enough for a company whose investment pays later (a build-out) to reach
+# its payoff inside the forecast, which five years could not (ORCL, 2026-10-28).
+FORECAST_YEARS = 10
+# Long-run growth after year ten: nominal growth for a mature US business, under the 10-year Treasury.
+TERMINAL_GROWTH = 0.025
+# The company's own history: five fiscal years for every ratio, the median of them.
+HISTORY_YEARS = 5
+# Fewer fiscal years than this and a median is not a history.
+MIN_YEARS = 3
+# Blume's adjustment pulls a regression beta a third of the way toward 1: betas regress to the market
+# over time, and the forecast is about the next ten years, not the last five.
+BLUME = (0.67, 0.33)
+# Even adjusted, a beta outside this band is a data fault, not a cost of capital; flagged when it binds.
+BETA_SANITY = (0.2, 3.0)
+# The US marginal corporate rate (21% federal plus a typical state rate): the tax shield on interest.
+MARGINAL_TAX = 0.25
 # An effective tax rate outside this band is a loss carry-forward or a one-off, not the going rate.
 TAX_BOUNDS = (0.10, 0.35)
 # The US statutory rate since 2018, used when a company's history gives no readable effective rate.
 DEFAULT_TAX = 0.21
-# A pre-tax cost of debt outside this band is a reporting artefact (interest on a near-zero balance).
-KD_BOUNDS = (0.02, 0.12)
-# Fewer fiscal years than this and a median is not a history.
-MIN_YEARS = 3
-# The margin and the percent-of-revenue lines are medians over this many of the newest fiscal years
-# (2026-10-28, from five): the forecast runs on the business as it now is, and the median of three
-# still ignores one odd year. The revenue CAGR keeps the full five-year window.
-MARGIN_YEARS = 3
-# Working capital is the exception: it is lumpy, not a trend, and a one-off (a tax deposit, a
-# settlement) can land in two of three years. KO's 2024-25 lines absorbed 13-15% of revenue, a
-# three-year median charged that forever and valued it at $4 against $93 (2026-10-28), so its median
-# keeps the full five-year window.
-NWC_YEARS = 5
-# A cost of capital under this is below what equity has earned over any long run; a near-zero or
-# negative regression beta (a utility, a tobacco name) gave 5.5% and a value twice the price on
-# 2026-10-27, so the rate is floored here and the answer flagged (`wacc_floored`).
-MIN_WACC = 0.07
-# A company whose operating profit covers its interest less than DEBT_COVERAGE times, with debt over
-# DEBT_WEIGHT of its capital (debt plus market cap), is refused (`debt_dominated`, 2026-10-28, the
-# user). The WACC prices debt at its coupon (interest over the balance), and for such a company the
-# coupon is far below what a lender would charge today, while debt carries most of the weight: AAL
-# (EBIT 0.85x interest, debt 78% of capital) came out under the 7% floor and read $40 against $12.61,
-# where a lender's rate leaves the shareholders nothing. The model cannot price that debt, so it says
-# so rather than show a number. One name of 88 valued on 2026-10-28.
-DEBT_COVERAGE = 1.5
-DEBT_WEIGHT = 0.5
-# Below this spread between WACC and terminal growth the perpetuity is arithmetic, not a value.
+# Year-one growth from history, when no consensus covers the year, is clamped: an acquisition or a
+# collapse in the window is a one-off, not a path. A consensus year is taken as the analysts give it,
+# inside the wider sanity band.
+HISTORY_GROWTH_BOUNDS = (-0.10, 0.25)
+CONSENSUS_GROWTH_BOUNDS = (-0.60, 1.50)
+# Working capital as a share of revenue is floored here: growth is never funded by suppliers for free.
+WC_FLOOR = 0.0
+# Below this spread between WACC and long-run growth the perpetuity is arithmetic, not a value.
 MIN_SPREAD = 0.01
-# A terminal value above this share of EV says the answer is the perpetuity, not the forecast. With
-# five years and a 2% terminal the perpetuity is 60-80% of EV for most names; 0.75 flagged 250 of
-# 423 on 2026-10-27, so the bar is 0.85 (2026-10-28), where the forecast years barely matter.
+# A terminal value above this share of EV says the answer is the perpetuity, not the forecast.
 TERMINAL_HEAVY = 0.85
-# The sensitivity grid: WACC a point either way in half-point steps, terminal growth half a point
+# Options by the treasury-stock method are settled at the modelled value, which they change: iterate.
+DILUTION_ROUNDS = 3
+# The sensitivity grid: WACC a point either way in half-point steps, long-run growth half a point
 # either way in quarter-point steps.
 WACC_STEPS = (-0.01, -0.005, 0.0, 0.005, 0.01)
 GROWTH_STEPS = (-0.005, -0.0025, 0.0, 0.0025, 0.005)
@@ -89,34 +76,54 @@ GROWTH_STEPS = (-0.005, -0.0025, 0.0, 0.0025, 0.005)
 
 @dataclass(frozen=True)
 class FiscalYear:
-    """One fiscal year as the statements state it. Money in one unit throughout (dollars or
-    millions); `shares` in the same unit as the per-share answer wants."""
+    """One fiscal year as the company stated it. Money in one unit throughout (dollars); `shares` the
+    basic count. The optional lines feed the equity bridge and the share count when known."""
 
     end: str  # ISO date the year ended
     revenue: float
     ebit: float  # operating income after depreciation
-    da: float  # depreciation and amortisation (positive)
+    da: float  # depreciation and amortisation of the company's own assets (positive)
     capex: float  # cash spent on fixed assets (positive)
     nwc_change: float  # the cash-flow statement's working-capital line: negative when cash was absorbed
-    debt: float  # long-term debt plus its current portion and notes payable
-    cash: float  # cash and equivalents
-    shares: float  # shares outstanding at year end
+    debt: float  # short and long-term borrowings
+    cash: float  # cash, equivalents and marketable securities
+    shares: float  # basic shares outstanding
     pretax: float | None = None
     taxes: float | None = None
     interest: float | None = None
+    wc_level: float | None = None  # operating working capital at year end
+    finance_lease: float = 0.0
+    preferred: float = 0.0
+    nci: float = 0.0  # noncontrolling interest
+    rsu: float = 0.0  # unvested restricted units, counted as shares
+    options: float = 0.0
+    options_strike: float | None = None
+
+
+@dataclass(frozen=True)
+class Rating:
+    """One band of a coverage-to-rating table: coverage in [low, high] reads this rating and spread."""
+
+    low: float
+    high: float
+    name: str
+    spread: float
 
 
 @dataclass(frozen=True)
 class Drivers:
-    """What the forecast runs on: five growth rates, then everything as a share of revenue."""
+    """What the forecast runs on: ten growth rates, then everything as a share of revenue."""
 
     growth: tuple[float, ...]
+    growth_sources: tuple[str, ...]  # "consensus" or "history" per year
     ebit_margin: float
     da_pct: float
     capex_pct: float
-    nwc_pct: float  # working-capital investment as a share of revenue (positive absorbs cash)
+    wc_pct: float  # working capital as a share of revenue (a level), or its yearly investment (a flow)
+    wc_is_level: bool
     tax_rate: float
     terminal_growth: float
+    wc_floored: bool = False  # the history's working capital was negative and was floored
 
 
 @dataclass(frozen=True)
@@ -127,8 +134,44 @@ class Projection:
     nopat: float
     da: float
     capex: float
-    nwc: float
+    wc_change: float  # investment in working capital (positive absorbs cash)
     fcf: float
+    discount: float  # the mid-year factor
+    pv: float
+
+
+@dataclass(frozen=True)
+class CostOfCapital:
+    rf: float
+    erp: float
+    beta_raw: float
+    beta: float  # Blume-adjusted, inside BETA_SANITY
+    ke: float
+    coverage: float | None  # EBIT over interest; None when the company has no interest expense
+    rating: str
+    spread: float
+    kd_pre_tax: float
+    kd_after_tax: float
+    equity_weight: float
+    debt_weight: float
+    wacc: float
+
+
+@dataclass(frozen=True)
+class Bridge:
+    pv_forecast: float
+    pv_terminal: float
+    ev: float
+    cash: float
+    debt: float
+    finance_lease: float
+    preferred: float
+    nci: float
+    equity: float
+    basic_shares: float
+    rsu: float
+    option_shares: float
+    shares: float  # the diluted count the value is divided by
 
 
 @dataclass(frozen=True)
@@ -142,15 +185,26 @@ class Valuation:
     low: float  # the grid's minimum
     high: float  # the grid's maximum
     wacc: float
-    beta: float  # the bounded beta the WACC used
-    beta_raw: float
+    capital: CostOfCapital
     drivers: Drivers
     ev: float
-    terminal_value: float  # undiscounted
+    terminal_fcf: float  # year eleven's
+    terminal_value: float  # undiscounted, at year ten
     terminal_share: float  # discounted TV over EV
+    reinvestment_rate: float  # of year eleven's NOPAT, g / ROIC
     implied_ev_ebitda: float | None  # EV over the base year's EBITDA, a sanity figure
     projections: tuple[Projection, ...]
-    flags: tuple[str, ...]
+    bridge: Bridge
+    grid: dict[tuple[float, float], float | None] = field(default_factory=dict)
+    flags: tuple[str, ...] = ()
+
+    @property
+    def beta(self) -> float:
+        return self.capital.beta
+
+    @property
+    def beta_raw(self) -> float:
+        return self.capital.beta_raw
 
 
 # -------------------------------------------------------------------------------------- the drivers
@@ -167,54 +221,82 @@ def cagr(first: float, last: float, years: int) -> float | None:
     return (last / first) ** (1.0 / years) - 1.0
 
 
-def fade(start: float, end: float, n: int = FORECAST_YEARS) -> tuple[float, ...]:
-    """`n` rates from `start` in year one to `end` in year `n`, linear."""
-    if n == 1:
-        return (start,)
-    return tuple(start + (end - start) * i / (n - 1) for i in range(n))
-
-
 def effective_tax(years: list[FiscalYear]) -> float:
-    """The median effective rate over the years with a profit and a tax figure, clamped; the
-    statutory default when none reads."""
+    """The median effective rate over the years with a profit and a tax figure (a loss year is
+    excluded), clamped; the statutory default when none reads."""
     rates = [y.taxes / y.pretax for y in years if y.pretax and y.pretax > 0 and y.taxes is not None]
     if not rates:
         return DEFAULT_TAX
     return _clamp(statistics.median(rates), TAX_BOUNDS)
 
 
+def growth_path(
+    base_revenue: float,
+    consensus: list[float],
+    history_growth: float,
+    terminal: float,
+    n: int = FORECAST_YEARS,
+    clamp: bool = True,
+) -> tuple[tuple[float, ...], tuple[str, ...]]:
+    """Year-by-year revenue growth: the consensus revenue for the years it covers (year one is the
+    current fiscal year), then a straight line from the last such year's growth to `terminal` in year
+    `n`. With no consensus, year one is the history growth (clamped unless `clamp` is False: the reverse
+    DCF searches beyond the clamp) and the line starts there."""
+    growth: list[float] = []
+    sources: list[str] = []
+    prev = base_revenue
+    for rev in consensus[:n]:
+        growth.append(_clamp(rev / prev - 1.0, CONSENSUS_GROWTH_BOUNDS))
+        sources.append("consensus")
+        prev = rev
+    if not growth:
+        growth.append(_clamp(history_growth, HISTORY_GROWTH_BOUNDS) if clamp else history_growth)
+        sources.append("history")
+    k, g_k = len(growth), growth[-1]
+    for t in range(k + 1, n + 1):
+        growth.append(g_k + (terminal - g_k) * (t - k) / (n - k))
+        sources.append("fade")
+    return tuple(growth), tuple(sources)
+
+
 def drivers_from_history(
-    years: list[FiscalYear],
-    consensus_growth: float | None = None,
-    terminal_growth: float = TERMINAL_GROWTH,
+    years: list[FiscalYear], consensus: list[float] | None = None, terminal_growth: float = TERMINAL_GROWTH
 ) -> Drivers | Refusal:
-    """The base case from the last `FORECAST_YEARS` fiscal years: medians over the newest
-    `MARGIN_YEARS` for the margin and the percent-of-revenue lines (working capital over
-    `NWC_YEARS`), year-one growth from the
-    consensus when given (else the five-year window's CAGR), faded to `terminal_growth` by year
-    five."""
-    hist = sorted(years, key=lambda y: y.end)[-FORECAST_YEARS:]
+    """The base case from the newest `HISTORY_YEARS` fiscal years: medians of the operating margin, D&A,
+    capex and working capital as shares of revenue, the median effective tax rate, and the growth path."""
+    hist = sorted(years, key=lambda y: y.end)[-HISTORY_YEARS:]
     if len(hist) < MIN_YEARS:
         return Refusal("too_few_years")
     if any(y.revenue <= 0 for y in hist):
         return Refusal("no_revenue")
-    recent = hist[-MARGIN_YEARS:]
-    margin = statistics.median(y.ebit / y.revenue for y in recent)
+    margin = statistics.median(y.ebit / y.revenue for y in hist)
     if margin <= 0:
         return Refusal("no_operating_profit")
-    g1 = consensus_growth
-    if g1 is None:
-        g1 = cagr(hist[0].revenue, hist[-1].revenue, len(hist) - 1)
-    if g1 is None:
+    levels = [y.wc_level / y.revenue for y in hist if y.wc_level is not None]
+    if len(levels) >= MIN_YEARS:
+        wc_pct, is_level = statistics.median(levels), True
+    else:
+        wc_pct, is_level = statistics.median(-y.nwc_change / y.revenue for y in hist), False
+    # Negative working capital (customers and suppliers fund the business) would release cash in
+    # proportion to growth forever: DELL's -25% read about $21B of free cash in a +72% year (2026-10-28).
+    # The forecast takes none of it: the ratio is floored at zero, and the floor is flagged.
+    floored = wc_pct < WC_FLOOR
+    wc_pct = max(wc_pct, WC_FLOOR)
+    g_hist = cagr(hist[0].revenue, hist[-1].revenue, len(hist) - 1)
+    if g_hist is None and not consensus:
         return Refusal("no_growth_read")
+    growth, sources = growth_path(hist[-1].revenue, list(consensus or []), g_hist or 0.0, terminal_growth)
     return Drivers(
-        growth=fade(_clamp(g1, GROWTH_BOUNDS), terminal_growth),
+        growth=growth,
+        growth_sources=sources,
         ebit_margin=margin,
-        da_pct=statistics.median(y.da / y.revenue for y in recent),
-        capex_pct=statistics.median(y.capex / y.revenue for y in recent),
-        nwc_pct=statistics.median(-y.nwc_change / y.revenue for y in hist[-NWC_YEARS:]),
-        tax_rate=effective_tax(recent),
+        da_pct=statistics.median(y.da / y.revenue for y in hist),
+        capex_pct=statistics.median(y.capex / y.revenue for y in hist),
+        wc_pct=wc_pct,
+        wc_is_level=is_level,
+        tax_rate=effective_tax(hist),
         terminal_growth=terminal_growth,
+        wc_floored=floored,
     )
 
 
@@ -235,102 +317,115 @@ def beta(stock_returns: list[float], index_returns: list[float]) -> float | None
     return sum((a - ms) * (b - mm) for a, b in zip(s, m, strict=True)) / var
 
 
-def bounded_beta(b: float) -> float:
-    return _clamp(b, BETA_BOUNDS)
+def blume(raw: float) -> float:
+    return BLUME[0] * raw + BLUME[1]
 
 
-def cost_of_equity(rf: float, b: float, erp: float = EQUITY_PREMIUM) -> float:
-    return rf + b * erp
+def rate_for(coverage: float | None, table: list[Rating]) -> Rating:
+    """The band an interest coverage ratio falls in; no interest expense reads the top band."""
+    bands = sorted(table, key=lambda b: b.low)
+    if coverage is None or not math.isfinite(coverage):
+        return bands[-1]
+    for b in bands:
+        if b.low <= coverage <= b.high:
+            return b
+    for b in bands:  # between two bands' rounded edges: the next band up
+        if coverage < b.low:
+            return b
+    return bands[-1]
 
 
-def debt_dominated(base: FiscalYear, market_cap: float) -> bool:
-    """Whether the operating profit covers the interest less than `DEBT_COVERAGE` times while debt is
-    over `DEBT_WEIGHT` of the capital: a company whose debt the coupon cannot price. A company with no
-    debt, no interest or net interest income is never this."""
-    if base.debt <= 0 or base.interest is None or base.interest <= 0:
-        return False
-    weight = base.debt / (base.debt + max(market_cap, 0.0))
-    return base.ebit / base.interest < DEBT_COVERAGE and weight > DEBT_WEIGHT
-
-
-def cost_of_debt(interest: float | None, debt: float, tax_rate: float) -> float:
-    """After tax. Interest over the debt balance, clamped; the floor when there is no debt or no
-    interest figure (a company without debt borrows at the floor if it ever does)."""
-    if interest is None or debt <= 0:
-        pre = KD_BOUNDS[0]
-    else:
-        pre = _clamp(abs(interest) / debt, KD_BOUNDS)
-    return pre * (1.0 - tax_rate)
-
-
-def wacc(ke: float, kd_after_tax: float, debt: float, market_cap: float) -> float:
-    total = max(debt, 0.0) + max(market_cap, 0.0)
-    if total <= 0:
-        return ke
-    return ke * market_cap / total + kd_after_tax * max(debt, 0.0) / total
+def cost_of_capital(
+    base: FiscalYear, market_cap: float, beta_raw: float, rf: float, erp: float, table: list[Rating]
+) -> CostOfCapital:
+    b = _clamp(blume(beta_raw), BETA_SANITY)
+    ke = rf + b * erp
+    interest = base.interest if base.interest is not None and base.interest > 0 else None
+    coverage = None if interest is None else base.ebit / interest
+    band = rate_for(coverage, table)
+    kd = rf + band.spread
+    debt = max(base.debt, 0.0) + max(base.finance_lease, 0.0)
+    total = debt + max(market_cap, 0.0)
+    we = 1.0 if total <= 0 else max(market_cap, 0.0) / total
+    wd = 1.0 - we
+    after = kd * (1.0 - MARGINAL_TAX)
+    return CostOfCapital(
+        rf, erp, beta_raw, b, ke, coverage, band.name, band.spread, kd, after, we, wd, ke * we + after * wd
+    )
 
 
 # ---------------------------------------------------------------------------------- the cash flows
 
 
-def project(base: FiscalYear, d: Drivers) -> tuple[Projection, ...]:
+def project(base: FiscalYear, d: Drivers, rate: float) -> tuple[Projection, ...]:
     out = []
     revenue = base.revenue
+    wc_prev = d.wc_pct * base.revenue
     for i, g in enumerate(d.growth, 1):
         revenue = revenue * (1.0 + g)
         ebit = revenue * d.ebit_margin
         nopat = ebit * (1.0 - d.tax_rate)
         da = revenue * d.da_pct
         capex = revenue * d.capex_pct
-        nwc = revenue * d.nwc_pct
-        out.append(Projection(i, revenue, ebit, nopat, da, capex, nwc, nopat + da - capex - nwc))
+        if d.wc_is_level:
+            wc = d.wc_pct * revenue
+            wc_change, wc_prev = wc - wc_prev, wc
+        else:
+            wc_change = d.wc_pct * revenue
+        fcf = nopat + da - capex - wc_change
+        disc = 1.0 / (1.0 + rate) ** (i - 0.5)
+        out.append(Projection(i, revenue, ebit, nopat, da, capex, wc_change, fcf, disc, fcf * disc))
     return tuple(out)
 
 
-def terminal_value(fcf: float, rate: float, growth: float) -> float | None:
-    """The perpetuity after the last forecast year; None when the spread is under `MIN_SPREAD` (and
-    always when the rate is not above the growth: that is a division, not a value)."""
-    if rate <= growth or rate - growth < MIN_SPREAD:
-        return None
-    return fcf * (1.0 + growth) / (rate - growth)
-
-
-def present_value(flows: list[float] | tuple[float, ...], rate: float) -> float:
-    return sum(f / (1.0 + rate) ** t for t, f in enumerate(flows, 1))
-
-
-def equity_per_share(ev: float, debt: float, cash: float, shares: float) -> float | None:
-    if shares <= 0:
-        return None
-    return (ev - debt + cash) / shares
-
-
-def _per_share(
-    projections: tuple[Projection, ...], rate: float, growth: float, base: FiscalYear
+def terminal(
+    last: Projection, d: Drivers, rate: float, roic: float | None = None
 ) -> tuple[float, float, float] | None:
-    """(per share, EV, discounted TV) at one rate and growth, or None where the model refuses."""
-    tv = terminal_value(projections[-1].fcf, rate, growth)
-    if tv is None:
+    """(year eleven's FCFF, the undiscounted value at year ten, the reinvestment rate), or None when the
+    spread is under `MIN_SPREAD`. Year eleven grows at the long-run rate and reinvests g / ROIC of its
+    NOPAT to do so; ROIC defaults to the WACC (growth then neither adds value nor removes it)."""
+    g = d.terminal_growth
+    if rate <= g or rate - g < MIN_SPREAD:
         return None
-    n = len(projections)
-    pv_tv = tv / (1.0 + rate) ** n
-    ev = present_value([p.fcf for p in projections], rate) + pv_tv
-    ps = equity_per_share(ev, base.debt, base.cash, base.shares)
-    if ps is None:
-        return None
-    return ps, ev, pv_tv
+    roic = rate if roic is None else roic
+    nopat = last.revenue * (1.0 + g) * d.ebit_margin * (1.0 - d.tax_rate)
+    reinvest = g / roic if roic > 0 else 1.0
+    fcf = nopat * (1.0 - reinvest)
+    return fcf, fcf / (rate - g), reinvest
 
 
-def sensitivity(
-    projections: tuple[Projection, ...], rate: float, growth: float, base: FiscalYear
-) -> dict[tuple[float, float], float | None]:
-    """Per-share value at each (WACC step, growth step) of the grid; None where the model refuses."""
-    out: dict[tuple[float, float], float | None] = {}
-    for dw in WACC_STEPS:
-        for dg in GROWTH_STEPS:
-            cell = _per_share(projections, rate + dw, growth + dg, base)
-            out[(dw, dg)] = None if cell is None else cell[0]
-    return out
+def equity_bridge(ev: float, pv_f: float, pv_t: float, base: FiscalYear) -> tuple[float, Bridge] | None:
+    """(value per share, the bridge) with options settled by the treasury-stock method at the value
+    they help set; None when there are no shares."""
+    equity = ev + base.cash - base.debt - base.finance_lease - base.preferred - base.nci
+    basic = base.shares + max(base.rsu, 0.0)
+    if basic <= 0:
+        return None
+    opt = 0.0
+    for _ in range(DILUTION_ROUNDS):
+        ps = equity / (basic + opt)
+        k = base.options_strike
+        opt = (
+            base.options * max(0.0, ps - k) / ps if base.options > 0 and k is not None and ps > k > 0 else 0.0
+        )
+    shares = basic + opt
+    b = Bridge(pv_f, pv_t, ev, base.cash, base.debt, base.finance_lease, base.preferred, base.nci, equity,
+               base.shares, max(base.rsu, 0.0), opt, shares)  # fmt: skip
+    return equity / shares, b
+
+
+def _price(base: FiscalYear, d: Drivers, rate: float, roic: float | None = None):
+    """(per share, bridge, projections, terminal) at one rate, or None where the model refuses."""
+    proj = project(base, d, rate)
+    term = terminal(proj[-1], d, rate, roic)
+    if term is None:
+        return None
+    pv_f = sum(p.pv for p in proj)
+    pv_t = term[1] / (1.0 + rate) ** len(proj)
+    out = equity_bridge(pv_f + pv_t, pv_f, pv_t, base)
+    if out is None:
+        return None
+    return out[0], out[1], proj, term
 
 
 # ------------------------------------------------------------------------------------- the answer
@@ -338,71 +433,81 @@ def sensitivity(
 
 def value(
     years: list[FiscalYear],
-    market_cap: float,
+    price: float,
     beta_raw: float | None,
-    consensus_growth: float | None = None,
-    rf: float = incomerules.RATE,
-    erp: float = EQUITY_PREMIUM,
+    rf: float,
+    erp: float,
+    ratings: list[Rating],
+    consensus: list[float] | None = None,
     terminal_growth: float = TERMINAL_GROWTH,
+    roic: float | None = None,
 ) -> Valuation | Refusal:
-    """The base-case value per share and its grid range, or why there is none.
+    """The base-case value per share, its grid range and every step behind it, or why there is none.
 
     `years` are the fiscal years the caller may know as of its session (point in time is the caller's
-    job); `market_cap` weights the WACC; `beta_raw` is the caller's regression beta (bounded here).
+    job); `price` sets the market weights; `beta_raw` is the caller's regression beta (adjusted here);
+    `ratings` the coverage-to-rating table; `consensus` the analysts' revenue for the fiscal years after
+    the last reported one, nearest first; `roic` the return on capital after year ten (None: the WACC).
     """
     if beta_raw is None or not math.isfinite(beta_raw):
         return Refusal("no_beta")
-    d = drivers_from_history(years, consensus_growth, terminal_growth)
+    if not ratings:
+        return Refusal("no_rating_table")
+    d = drivers_from_history(years, consensus, terminal_growth)
     if isinstance(d, Refusal):
         return d
     base = max(years, key=lambda y: y.end)
     if base.shares <= 0:
         return Refusal("no_shares")
-    if debt_dominated(base, market_cap):
-        return Refusal("debt_dominated")
-    b = bounded_beta(beta_raw)
-    raw_rate = wacc(
-        cost_of_equity(rf, b, erp), cost_of_debt(base.interest, base.debt, d.tax_rate), base.debt, market_cap
-    )
-    rate = max(raw_rate, MIN_WACC)
+    cap = cost_of_capital(base, price * base.shares, beta_raw, rf, erp, ratings)
+    rate = cap.wacc
     if rate - d.terminal_growth < MIN_SPREAD:
         return Refusal("wacc_near_growth")
-    projections = project(base, d)
-    if projections[-1].fcf <= 0:
-        return Refusal("negative_terminal_fcf")
-    centre = _per_share(projections, rate, d.terminal_growth, base)
+    centre = _price(base, d, rate, roic)
     if centre is None:
         return Refusal("wacc_near_growth")
-    fair, ev, pv_tv = centre
-    if ev <= 0:
+    fair, bridge, proj, (tfcf, tv, reinvest) = centre
+    if bridge.ev <= 0:
         return Refusal("non_positive_ev")
     if fair <= 0:
         return Refusal("negative_equity")
-    grid = [v for v in sensitivity(projections, rate, d.terminal_growth, base).values() if v is not None]
+    grid: dict[tuple[float, float], float | None] = {}
+    for dw in WACC_STEPS:
+        for dg in GROWTH_STEPS:
+            cell = _price(base, replace(d, terminal_growth=d.terminal_growth + dg), rate + dw, roic)
+            grid[(dw, dg)] = None if cell is None else cell[0]
+    cells = [v for v in grid.values() if v is not None]
     flags = []
-    terminal_share = pv_tv / ev
+    terminal_share = bridge.pv_terminal / bridge.ev
     if terminal_share > TERMINAL_HEAVY:
         flags.append("terminal_heavy")
-    if projections[0].fcf <= 0:
-        flags.append("negative_base_fcf")
-    if b != beta_raw:
+    if any(p.fcf <= 0 for p in proj[:3]):
+        flags.append("negative_early_fcf")
+    if cap.beta != blume(beta_raw):
         flags.append("beta_bounded")
-    if rate != raw_rate:
-        flags.append("wacc_floored")
+    if any(
+        s == "consensus" and g < d.terminal_growth for g, s in zip(d.growth, d.growth_sources, strict=True)
+    ):
+        flags.append("consensus_dip")
+    if d.wc_floored:
+        flags.append("wc_floored")
     ebitda = base.ebit + base.da
     return Valuation(
         fair_value=fair,
-        low=min(grid),
-        high=max(grid),
+        low=min(cells),
+        high=max(cells),
         wacc=rate,
-        beta=b,
-        beta_raw=beta_raw,
+        capital=cap,
         drivers=d,
-        ev=ev,
-        terminal_value=terminal_value(projections[-1].fcf, rate, d.terminal_growth) or 0.0,
+        ev=bridge.ev,
+        terminal_fcf=tfcf,
+        terminal_value=tv,
         terminal_share=terminal_share,
-        implied_ev_ebitda=ev / ebitda if ebitda > 0 else None,
-        projections=projections,
+        reinvestment_rate=reinvest,
+        implied_ev_ebitda=bridge.ev / ebitda if ebitda > 0 else None,
+        projections=proj,
+        bridge=bridge,
+        grid=grid,
         flags=tuple(flags),
     )
 
@@ -415,79 +520,90 @@ IMPLIED_GROWTH_BOUNDS = (-0.50, 2.00)
 # The margin a price implies is reported only inside this band: an operating margin above 100% of
 # revenue, or below -100%, is not a business.
 IMPLIED_MARGIN_BOUNDS = (-1.0, 1.0)
+# The discount rate a price implies is searched in this band.
+IMPLIED_WACC_BOUNDS = (0.03, 0.30)
 
 
 @dataclass(frozen=True)
 class Implied:
     """What the price asks of the company, one lever at a time, every other driver held at the base
-    case and the WACC unchanged; beside each, the company's own best of the last `FORECAST_YEARS`.
+    case; beside each, the company's own best of the last `HISTORY_YEARS`.
 
     `margin` is the long-run EBIT margin at which the model's value equals the price (None outside
     `IMPLIED_MARGIN_BOUNDS`). `growth` is the year-one revenue growth, faded to the terminal rate by
-    year five as the base case is, at which it does; `growth_edge` says when the answer sits beyond
-    `IMPLIED_GROWTH_BOUNDS` ("above" or "below"), and `growth` is then that edge."""
+    year ten, at which it does; `growth_edge` says when the answer sits beyond `IMPLIED_GROWTH_BOUNDS`
+    ("above" or "below"), and `growth` is then that edge. `wacc` is the discount rate at which it does
+    (None outside `IMPLIED_WACC_BOUNDS`)."""
 
     margin: float | None
     growth: float
     growth_edge: str | None
     best_margin: float
     best_growth: float | None
-
-
-def _ps(base: FiscalYear, d: Drivers, rate: float) -> float | None:
-    cell = _per_share(project(base, d), rate, d.terminal_growth, base)
-    return None if cell is None else cell[0]
+    wacc: float | None = None
 
 
 def best_figures(years: list[FiscalYear]) -> tuple[float, float | None]:
-    """(highest EBIT margin, highest year-over-year revenue growth) over the newest `FORECAST_YEARS`
+    """(highest EBIT margin, highest year-over-year revenue growth) over the newest `HISTORY_YEARS`
     fiscal years; growth is None with fewer than two years."""
-    hist = sorted(years, key=lambda y: y.end)[-FORECAST_YEARS:]
+    hist = sorted(years, key=lambda y: y.end)[-HISTORY_YEARS:]
     margin = max(y.ebit / y.revenue for y in hist if y.revenue > 0)
     growth = [b.revenue / a.revenue - 1.0 for a, b in zip(hist, hist[1:], strict=False) if a.revenue > 0]
     return margin, (max(growth) if growth else None)
 
 
-def implied(years: list[FiscalYear], v: Valuation, price: float) -> Implied | None:
-    """The reverse DCF: the margin and the growth at which `value` would read the price. None when
-    the price is not positive or the base case cannot be re-priced."""
+def implied(years: list[FiscalYear], v: Valuation, price: float, roic: float | None = None) -> Implied | None:
+    """The reverse DCF: the margin, the growth and the discount rate at which `value` would read the
+    price. None when the price is not positive."""
     if price <= 0:
         return None
     base = max(years, key=lambda y: y.end)
     d = v.drivers
     best_margin, best_growth = best_figures(years)
-    # Value per share is linear in the margin (every year's FCF is), so two points solve it.
-    step = 0.10
-    f0 = _ps(base, d, v.wacc)
-    f1 = _ps(base, _replace_margin(d, d.ebit_margin + step), v.wacc)
+
+    def ps(dd: Drivers, rate: float = v.wacc) -> float | None:
+        out = _price(base, dd, rate, roic)
+        return None if out is None else out[0]
+
+    # Value is close to linear in the margin while no option is in or out of the money: two points,
+    # then one secant step to absorb the dilution's kink.
     margin = None
+    step = 0.10
+    f0, f1 = ps(d), ps(replace(d, ebit_margin=d.ebit_margin + step))
     if f0 is not None and f1 is not None and f1 != f0:
         m = d.ebit_margin + (price - f0) * step / (f1 - f0)
+        fm = ps(replace(d, ebit_margin=m))
+        if fm is not None and fm != f0 and m != d.ebit_margin:
+            m = m + (price - fm) * (m - d.ebit_margin) / (fm - f0)
         if IMPLIED_MARGIN_BOUNDS[0] <= m <= IMPLIED_MARGIN_BOUNDS[1]:
             margin = m
 
-    # Value rises with growth while the FCF margin is positive (the base case requires it), so bisect.
-    def at(g: float) -> float:
-        out = _ps(base, _replace_growth(d, fade(g, d.terminal_growth)), v.wacc)
+    def at_growth(g: float) -> float:
+        path, src = growth_path(base.revenue, [], g, d.terminal_growth, clamp=False)
+        out = ps(replace(d, growth=path, growth_sources=src))
         return -math.inf if out is None else out
 
     lo, hi = IMPLIED_GROWTH_BOUNDS
-    if at(hi) < price:
-        return Implied(margin, hi, "above", best_margin, best_growth)
-    if at(lo) > price:
-        return Implied(margin, lo, "below", best_margin, best_growth)
-    for _ in range(60):
-        mid = (lo + hi) / 2.0
-        if at(mid) < price:
-            lo = mid
-        else:
-            hi = mid
-    return Implied(margin, (lo + hi) / 2.0, None, best_margin, best_growth)
-
-
-def _replace_margin(d: Drivers, margin: float) -> Drivers:
-    return Drivers(d.growth, margin, d.da_pct, d.capex_pct, d.nwc_pct, d.tax_rate, d.terminal_growth)
-
-
-def _replace_growth(d: Drivers, growth: tuple[float, ...]) -> Drivers:
-    return Drivers(growth, d.ebit_margin, d.da_pct, d.capex_pct, d.nwc_pct, d.tax_rate, d.terminal_growth)
+    if at_growth(hi) < price:
+        g_out, edge = hi, "above"
+    elif at_growth(lo) > price:
+        g_out, edge = lo, "below"
+    else:
+        for _ in range(60):
+            mid = (lo + hi) / 2.0
+            lo, hi = (mid, hi) if at_growth(mid) < price else (lo, mid)
+        g_out, edge = (lo + hi) / 2.0, None
+    # Value falls as the rate rises: bisect.
+    wacc = None
+    rlo, rhi = max(IMPLIED_WACC_BOUNDS[0], d.terminal_growth + MIN_SPREAD), IMPLIED_WACC_BOUNDS[1]
+    vlo, vhi = ps(d, rlo), ps(d, rhi)
+    if vlo is not None and vhi is not None and vhi <= price <= vlo:
+        for _ in range(60):
+            mid = (rlo + rhi) / 2.0
+            vm = ps(d, mid)
+            if vm is None or vm > price:
+                rlo = mid
+            else:
+                rhi = mid
+        wacc = (rlo + rhi) / 2.0
+    return Implied(margin, g_out, edge, best_margin, best_growth, wacc)
