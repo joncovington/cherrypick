@@ -156,6 +156,20 @@ def test_no_beta_and_no_shares_are_refused():
     assert v.value([_year(y.end, shares=0.0) for y in FLAT], 800.0, 1.0) == v.Refusal("no_shares")
 
 
+def test_debt_the_coupon_cannot_price_is_refused_and_only_both_bars_together_refuse():
+    """AAL's shape (2026-10-28): EBIT under 1.5x the interest AND debt over half the capital. Either
+    alone, no debt, or net interest income still values."""
+    thin = [_year(y.end, debt=1000.0, interest=80.0) for y in FLAT]  # cover 1.25x; debt 1000 of 1,900
+    assert v.value(thin, 900.0, 1.0) == v.Refusal("debt_dominated")
+    light = [_year(y.end, interest=80.0) for y in FLAT]  # cover 1.25x, debt 200 of 1,000
+    assert isinstance(v.value(light, 900.0, 1.0), v.Valuation)
+    covered = [_year(y.end, debt=1000.0, interest=50.0) for y in FLAT]  # 53% debt, cover 2x
+    assert isinstance(v.value(covered, 900.0, 1.0), v.Valuation)
+    income = [_year(y.end, debt=1000.0, interest=-80.0) for y in FLAT]
+    assert not v.debt_dominated(income[-1], 900.0)
+    assert not v.debt_dominated(_year("2025-12-31", debt=0.0, interest=80.0), 800.0)
+
+
 def test_a_cash_flow_that_never_turns_positive_is_refused():
     heavy = [_year(y.end, capex=200.0) for y in FLAT]  # capex 20% of revenue against a 10% margin
     assert v.value(heavy, 800.0, 1.0) == v.Refusal("negative_terminal_fcf")
