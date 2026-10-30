@@ -242,7 +242,10 @@ rename it `alerts`.
    - MEIC live against paper (landed 2026-10-30) on Live → meic: each live condor beside its
      paper twin `live-shadow`, paired per session (same strikes first), with the condors live sat
      out counted apart
-   - the user's short strikes against the GEX walls
+   - the user's short strikes against the GEX walls: dropped 2026-10-30. Walls exist only for the
+     SPX/XSP expiry that ends that day, and the user's shorts are single names and ETFs at 20–60 DTE,
+     which have none. A same-day wall says nothing about a monthly strike, so the view would mislead.
+     Revisit only if a wall built for the monthly expiry is first shown to predict something
 
 Each batch is one or two PRs. Batch 1 is a day's work and changes no layout.
 
