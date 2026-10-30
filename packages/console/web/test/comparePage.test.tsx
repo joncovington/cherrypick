@@ -54,13 +54,19 @@ function armOrder(html: string, module: string): string[] {
   return [...section(html, module).matchAll(/<tr[^>]*data-arm="([^"]+)"/g)].map((m) => m[1] ?? "");
 }
 
-/** The `<td>`s of one arm's row, as markup. */
-function rowCells(html: string, module: string, arm: string): string[] {
-  const s = section(html, module);
+/**
+ * One arm's cells by column id, the arm opened so its expanded line is in the markup: since
+ * 2026-10-30 most statistics sit there, not in the row (docs/console-review-plan.md batch 3).
+ */
+function cells(module: string, arm: string): Record<string, string> {
+  const s = section(render(`/compare?arm=${module}/${arm}`), module);
   const at = s.indexOf(`data-arm="${arm}"`);
-  const row = s.slice(at, s.indexOf("</tr>", at));
-  return [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1] ?? "");
+  const next = s.indexOf("data-arm=", at + 1);
+  const block = s.slice(at, next === -1 ? undefined : next);
+  return Object.fromEntries([...block.matchAll(/<td[^>]*data-col="([^"]+)"[^>]*>([\s\S]*?)<\/td>/g)].map((m) => [m[1] ?? "", m[2] ?? ""]));
 }
+
+const VS = ["vs_sessions", "vs_mean", "vs_per_entry", "vs_per_risk", "vs_t", "vs_p", "vs_more", "vs_unpaired"];
 
 describe("the arm table", () => {
   it("keeps the bridge's order with no sort", () => {
@@ -104,14 +110,12 @@ describe("the arm table", () => {
   });
 
   it("renders a null as an em dash, never $0.00", () => {
-    const html = render("/compare");
     // control's own row: every vs-control cell is null.
-    const control = rowCells(html, "flies", "control");
-    const vsCells = control.slice(-8);
-    for (const c of vsCells) expect(c).toContain("—");
-    expect(control.join("")).not.toContain("$0.00");
+    const control = cells("flies", "control");
+    for (const id of VS) expect(control[id]).toContain("—");
+    expect(Object.values(control).join("")).not.toContain("$0.00");
     // range-high: one paired session, so no interval, no t bound, no projection.
-    const range = rowCells(html, "flies", "range-high").join("");
+    const range = Object.values(cells("flies", "range-high")).join("");
     expect(range).toContain('<div class="muted cmp-sub">—</div>');
     expect(range).not.toMatch(/\[\$0\.00, \$0\.00\]/);
   });
@@ -120,7 +124,8 @@ describe("the arm table", () => {
     const html = render("/compare");
     expect(html).toMatch(/title="costs = every modelled cost[^"]*"[^>]*data-sort="costs"/);
     expect(html).toMatch(/title="gross − costs[^"]*"[^>]*data-sort="net"/);
-    expect(html).toMatch(/title="maximum drawdown[^"]*per-SESSION[^"]*"/);
+    // Max drawdown is in the expanded line, under its own header and definition.
+    expect(render("/compare?arm=flies/control")).toMatch(/title="maximum drawdown[^"]*per-SESSION[^"]*"/);
   });
 
   it("says what the intervals are and that the projection is one", () => {
@@ -140,33 +145,30 @@ describe("no verdicts", () => {
   });
 
   it("tones only by sign: interval ends, the t bound and the p carry no tone", () => {
-    const html = render("/compare");
     // advised:miss-stop-90's interval excludes zero ([-159.33, -12.40]) and its t bound is negative:
     // exactly the row a significance colour would paint. Its t bound, sign test, projection and
     // unpaired cells must carry no tone; its mean diff is toned by its sign, its interval is not.
-    const cells = rowCells(html, "flies", "advised:miss-stop-90");
-    const vs = cells.slice(-8);
-    for (const c of [vs[4], vs[5], vs[6], vs[7]]) expect(c).not.toMatch(/pnl-(pos|neg)/);
-    expect(vs[1]).toMatch(/^<span class="pnl-neg">-\$81\.53<\/span>/);
-    expect(vs[1]).toContain('<div class="muted cmp-sub">[-$159.33, -$12.40]</div>');
+    const c = cells("flies", "advised:miss-stop-90");
+    for (const id of ["vs_t", "vs_p", "vs_more", "vs_unpaired"]) expect(c[id]).not.toMatch(/pnl-(pos|neg)/);
+    expect(c["vs_mean"]).toMatch(/^<span class="pnl-neg">-\$81\.53<\/span>/);
+    expect(c["vs_mean"]).toContain('<div class="muted cmp-sub">[-$159.33, -$12.40]</div>');
   });
 });
 
 describe("size-normalised figures", () => {
   it("shows net per entry with entries per session, and a dash where no capital is recorded", () => {
-    const cells = rowCells(render("/compare"), "flies", "advised:miss-stop-90").join("");
-    expect(cells).toContain('<span class="pnl-neg">-$23.05</span>');
-    expect(cells).toContain('<div class="muted cmp-sub">4.7 / session</div>');
+    const c = cells("flies", "advised:miss-stop-90");
+    expect(c["per_entry"]).toContain('<span class="pnl-neg">-$23.05</span>');
+    expect(c["per_entry"]).toContain('<div class="muted cmp-sub">4.7 / session</div>');
     // flies records no capital per trade: its risk-normalised cells are dashes, never $0.00.
-    const vs = rowCells(render("/compare"), "flies", "advised:miss-stop-90").slice(-8);
-    expect(vs[3]).toMatch(/^<span class="muted">—<\/span>/);
-    expect(vs[3]).not.toContain("$0.00");
+    expect(c["vs_per_risk"]).toMatch(/^<span class="muted">—<\/span>/);
+    expect(c["vs_per_risk"]).not.toContain("$0.00");
   });
 
   it("pairs per entry beside the dollar pair, toned by sign, its interval untoned", () => {
-    const vs = rowCells(render("/compare"), "flies", "advised:miss-stop-90").slice(-8);
-    expect(vs[2]).toMatch(/^<span class="pnl-neg">-\$19\.75<\/span>/);
-    expect(vs[2]).toContain('<div class="muted cmp-sub">[-$37.37, -$3.43]</div>');
+    const c = cells("flies", "advised:miss-stop-90");
+    expect(c["vs_per_entry"]).toMatch(/^<span class="pnl-neg">-\$19\.75<\/span>/);
+    expect(c["vs_per_entry"]).toContain('<div class="muted cmp-sub">[-$37.37, -$3.43]</div>');
   });
 
   it("renders a per-$100-risk pair when the ledger records capital", () => {
@@ -178,16 +180,28 @@ describe("size-normalised figures", () => {
     const saved = payload;
     payload = { ok: true, scope: "era", data: doc, error: null };
     try {
-      const cells = rowCells(render("/compare"), "flies", "debit-first-up");
-      const joined = cells.join("");
-      expect(joined).toContain('<span class="pnl-pos">+$1.50</span>');
-      expect(joined).toContain(`${String(arm.trades - 1)} of ${String(arm.trades)} trades`);
-      const vs = cells.slice(-8);
-      expect(vs[3]).toMatch(/^<span class="pnl-pos">\+\$0\.42<\/span>/);
-      expect(vs[3]).toContain('<div class="muted cmp-sub">[-$0.10, +$0.90]</div>');
+      const c = cells("flies", "debit-first-up");
+      expect(c["per_risk"]).toContain('<span class="pnl-pos">+$1.50</span>');
+      expect(c["per_risk"]).toContain(`${String(arm.trades - 1)} of ${String(arm.trades)} trades`);
+      expect(c["vs_per_risk"]).toMatch(/^<span class="pnl-pos">\+\$0\.42<\/span>/);
+      expect(c["vs_per_risk"]).toContain('<div class="muted cmp-sub">[-$0.10, +$0.90]</div>');
     } finally {
       payload = saved;
     }
+  });
+});
+
+describe("a short row, the rest in the expanded line", () => {
+  const rowHeaders = (html: string) => [...section(html, "flies").matchAll(/data-sort="([^"]+)"/g)].map((m) => m[1]);
+
+  it("keeps the money together in the row and every other statistic in the open arm's line", () => {
+    const shut = render("/compare");
+    expect(rowHeaders(shut)).toEqual(["arm", "trades", "gross", "costs", "net", "per_risk", "vs_sessions", "vs_mean", "vs_t"]);
+    expect(Object.keys(cells("flies", "control")).sort()).toEqual(
+      ["trades", "gross", "costs", "net", "per_risk", "vs_sessions", "vs_mean", "vs_t", "control", "sessions", "win", "dd", "mean", "per_entry", "more", "vs_per_entry", "vs_per_risk", "vs_p", "vs_more", "vs_unpaired"].sort(),
+    );
+    // Shut, an arm's statistics beyond the row are not in the markup at all.
+    expect(section(shut, "flies")).not.toContain('data-col="dd"');
   });
 });
 
