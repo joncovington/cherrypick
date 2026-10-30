@@ -1873,10 +1873,35 @@ def _trades_since(cfg):
     return count
 
 
+def _queue_rows() -> list[dict]:
+    from cherrypick.orchestrator import researchqueue
+
+    try:
+        return researchqueue.rows(limit=100_000)
+    except Exception:  # no queue on this machine
+        return []
+
+
+def _study_folders() -> set[str]:
+    """Result folders under the home: a study run by hand leaves no queue row, only these."""
+    from cherrypick.core import home as core_home
+
+    out: set[str] = set()
+    for base in ("data/backtest/results/research", "data/research"):
+        d = core_home.home() / base
+        if d.is_dir():
+            out |= {p.name for p in d.iterdir() if p.is_dir()}
+    return out
+
+
 def cmd_hypotheses(cfg, args) -> None:
     """B7: check the register, list rule changes due a re-read, and (--similar) rejected look-alikes."""
     reg = hypotheses.load()
     problems = hypotheses.check(reg)
+    studies = {r["study"] for r in _queue_rows()} | _study_folders()
+    problems += [
+        f"study {s} (queue or result folder): no register row" for s in hypotheses.unregistered(reg, studies)
+    ]
     out = {"ok": not problems, "problems": problems, "rereads": hypotheses.rereads(reg, _trades_since(cfg))}
     if args.similar:
         out["similar_rejected"] = [
@@ -1886,6 +1911,33 @@ def cmd_hypotheses(cfg, args) -> None:
     _emit(out)
     if problems:
         sys.exit(1)
+
+
+def cmd_hypotheses_board() -> None:
+    """The studies board: each register row with its result files' verdicts and its queue rows.
+    Reads result files under the home, licensed ones included, so the console shows it only behind
+    the backtest gate."""
+    from datetime import datetime
+
+    from cherrypick.core import home as core_home
+
+    from cherrypick.orchestrator import researchqueue as rq
+
+    home = core_home.home()
+
+    def read(path: str):
+        p = Path(path.replace("{home}", home.as_posix()))
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            mtime = datetime.fromtimestamp(p.stat().st_mtime, rq.ET).strftime("%Y-%m-%dT%H:%M:%S")
+        except (OSError, ValueError):
+            return None, None
+        return data, mtime
+
+    reg = hypotheses.load()
+    out = hypotheses.board(reg, _queue_rows(), read)
+    out["unregistered"] = hypotheses.unregistered(reg, set(out["unregistered"]) | _study_folders())
+    _emit({"ok": True, **out})
 
 
 def cmd_retests(args) -> None:
@@ -2131,6 +2183,7 @@ def build_parser() -> argparse.ArgumentParser:
             "calibrate",
             "execution",
             "hypotheses",
+            "hypotheses-board",
             "retests",
             "run-earnings-entry",
             "run-earnings-exit",
@@ -2507,6 +2560,7 @@ def main() -> None:
         "calibrate": lambda: cmd_calibrate(cfg),
         "execution": lambda: cmd_execution(cfg, args),
         "hypotheses": lambda: cmd_hypotheses(cfg, args),
+        "hypotheses-board": cmd_hypotheses_board,
         "retests": lambda: cmd_retests(args),
         "notify-trades": lambda: cmd_notify_trades(cfg, dry_run=args.dry_run),
         "notify-desk": lambda: cmd_notify_desk(cfg),

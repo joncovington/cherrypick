@@ -6,7 +6,9 @@ explanations with the check that rules each out, its status and a pointer to the
 Never figures: licensed results stay under `~/.cherrypick`, so the register can live in the repo.
 
 - `check`: every row is well formed, and every pointer names a heading that exists. Rows from item 18
-  on must fill every field; legacy rows (1-17) point to the prose that holds theirs.
+  on must fill every field, and one with a verdict names its result files; legacy rows (1-17) point
+  to the prose that holds theirs. On this machine the command also lists queue studies with no row
+  (`unregistered`).
 - `similar`: before a new hypothesis is declared, the rejected rows with the same setup, side,
   structure and window, so a retest is a choice the declaration says out loud.
 - `rereads`: every logged rule change, and whether it has had its first `REREAD_AFTER` trades and is
@@ -32,6 +34,9 @@ RETESTABLE = ("declared", "passed", "failed", "no_verdict")
 MATCH_ON = ("setup", "side", "structure", "window")
 FOUR_PARTS = ("measure", "expected", "sample", "rule")
 REQUIRED_NEW = (*FOUR_PARTS, "mechanism", *MATCH_ON)
+VERDICTS = ("passed", "failed", "no_verdict")
+RESULT_PREFIX = "{home}/"
+ITEM_STUDY = re.compile(r"^item\d+$")
 REREAD_AFTER = 100
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -79,6 +84,17 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
                 isinstance(r, dict) and r.get("explanation") and r.get("check") for r in rivals
             ):
                 problems.append(f"{tag}: a new hypothesis names its rival explanations, each with its check")
+            if row.get("status") in VERDICTS and not row.get("results"):
+                problems.append(f"{tag}: a verdict names its result files in results")
+        results = row.get("results")
+        if results is not None and not (
+            isinstance(results, list)
+            and all(isinstance(p, str) and p.startswith(RESULT_PREFIX) for p in results)
+        ):
+            # Results are licensed or derived from licensed data: they live under the home, never the repo.
+            problems.append(f"{tag}: results must be a list of {RESULT_PREFIX}... paths")
+        if row.get("outcome") is not None and not isinstance(row.get("outcome"), str):
+            problems.append(f"{tag}: outcome is the decision in words")
         pointer = str(row.get("pointer") or "")
         file, _, frag = pointer.partition("#")
         if not file or not frag:
@@ -101,6 +117,106 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
         if missing:
             problems.append(f"rule change {i}: must state {', '.join(missing)}")
     return problems
+
+
+def unregistered(reg: dict, queue_studies) -> list[str]:
+    """Research-queue studies named `itemN` with no register row: a study ran before it was declared here."""
+    known = {r.get("study") for r in reg.get("hypotheses", [])}
+    return sorted({s for s in queue_studies if ITEM_STUDY.match(s or "") and s not in known})
+
+
+GROUPS = ("in_progress", "declared", "finished", "observation")
+ACTIVE = ("queued", "running")
+BOARD_FIELDS = (
+    "id", "study", "title", "status", "legacy", "pointer", "outcome",
+    "measure", "expected", "sample", "rule", "mechanism", "rivals",
+)  # fmt: skip
+
+
+def _word(v: str) -> str:
+    return v.strip().lower().replace("_", " ")
+
+
+def verdicts(data) -> list[dict] | None:
+    """A result file's `verdict` as `[{arm, verdict}]`, from the three shapes studies write: one word,
+    one word per arm, or per arm as `{"verdict": ...}`. None when there is no word to read: the
+    board says so and never works one out from the figures."""
+    v = data.get("verdict") if isinstance(data, dict) else None
+    if isinstance(v, str):
+        return [{"arm": None, "verdict": _word(v)}]
+    if not isinstance(v, dict) or not v:
+        return None
+    out = []
+    for arm, x in v.items():
+        word = x if isinstance(x, str) else x.get("verdict") if isinstance(x, dict) else None
+        if not isinstance(word, str):
+            return None
+        out.append({"arm": arm, "verdict": _word(word)})
+    return out
+
+
+def _result(path: str, read) -> dict:
+    data, mtime = read(path)
+    words = verdicts(data) if data is not None else None
+    window, span = (data or {}).get("window"), (data or {}).get("span")
+    if isinstance(window, list):
+        window, span = None, window
+    distinct = sorted({w["verdict"] for w in words or []})
+    return {
+        "path": path,
+        "name": path.rsplit("/", 1)[-1],
+        "present": data is not None,
+        "modified": mtime,
+        "window": window if isinstance(window, str) else None,
+        "span": span if isinstance(span, list) and len(span) == 2 else None,
+        "run_id": (data or {}).get("run_id"),
+        "provisional": (data or {}).get("provisional"),
+        "verdicts": words,
+        "summary": None if not distinct else distinct[0] if len(distinct) == 1 else "mixed",
+    }
+
+
+def board(reg: dict, queue_rows: list[dict], read) -> dict:
+    """The studies board (docs/studies-board-plan.md): each register row joined with its result
+    files' verdicts and its research-queue rows. `read(path)` returns `(data, modified)` for a
+    `{home}/...` path, `(None, None)` when the file is absent or unreadable.
+
+    The register decides the status. Where the queue disagrees (a declared row with a task running)
+    both are shown; the reader never rewrites the register."""
+    by_study: dict[str, list[dict]] = {}
+    for q in queue_rows:
+        by_study.setdefault(q.get("study") or "", []).append(q)
+    rows = []
+    for r in reg.get("hypotheses", []):
+        tasks = sorted(by_study.get(r.get("study"), []), key=lambda q: q.get("id") or 0, reverse=True)
+        results = [_result(p, read) for p in r.get("results") or []]
+        active = any(q.get("status") in ACTIVE for q in tasks)
+        status = r.get("status")
+        if status in VERDICTS:
+            group = "finished"
+        elif status == "observation":
+            group = "observation"
+        else:
+            group = "in_progress" if active or status == "running" else "declared"
+        stamps = [q.get(k) for q in tasks for k in ("finished_at", "started_at", "created_at") if q.get(k)]
+        stamps += [x["modified"] for x in results if x["modified"]]
+        rows.append({
+            **{k: r.get(k) for k in BOARD_FIELDS},
+            "group": group,
+            "results": results,
+            "queue": {
+                "active": active,
+                "tasks": [
+                    {k: q.get(k) for k in ("id", "step", "status", "created_at", "started_at", "finished_at")}
+                    for q in tasks[:10]
+                ],
+            },
+            "last_activity": max(stamps) if stamps else None,
+        })  # fmt: skip
+    rows.sort(key=lambda x: x["id"] or 0, reverse=True)
+    rows.sort(key=lambda x: x["last_activity"] or "", reverse=True)
+    rows.sort(key=lambda x: GROUPS.index(x["group"]))
+    return {"rows": rows, "unregistered": unregistered(reg, by_study)}
 
 
 def similar(reg: dict, proposal: dict) -> list[dict]:

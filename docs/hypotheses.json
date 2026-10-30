@@ -1,5 +1,5 @@
 {
-  "_note": "B7 of docs/trading-book-review-plan.md: one row per hypothesis. Statuses and pointers only, never licensed figures (results stay under ~/.cherrypick). Legacy rows (items 1-17) predate the register: their four parts, mechanism and rivals live in the plan section they point to. From item 18 every field is required. Checked by `cherrypick hypotheses check`.",
+  "_note": "B7 of docs/trading-book-review-plan.md: one row per hypothesis. Statuses and pointers only, never licensed figures (results stay under ~/.cherrypick). Legacy rows (items 1-17) predate the register: their four parts, mechanism and rivals live in the plan section they point to. From item 18 every field is required. `results` names each result file as a `{home}/...` path (the file stays on this machine); a row from item 18 with a verdict must name one. `outcome` is the decision in words, never a figure. Checked by `cherrypick hypotheses check`.",
   "hypotheses": [
     {
       "id": 1,
@@ -308,7 +308,10 @@
       "mechanism": null,
       "rivals": [],
       "pointer": "docs/edge-hypotheses-plan.md#12-gex-levels-revisited-with-history",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item12-design-halves.json",
+        "{home}/data/backtest/results/research/item12-gamma-barrier-refix-2026-10-25.json"
+      ],
       "retest": {
         "kind": "script",
         "args": {
@@ -365,7 +368,10 @@
       "mechanism": null,
       "rivals": [],
       "pointer": "docs/edge-hypotheses-plan.md#14-selecting-credit-spreads-which-names-which-side",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item14/results/item14-2026-10-21.json",
+        "{home}/data/backtest/results/research/item14/results/item14-2026-10-23.json"
+      ],
       "retest": null,
       "retests": []
     },
@@ -428,7 +434,9 @@
       "mechanism": null,
       "rivals": [],
       "pointer": "docs/edge-hypotheses-plan.md#17-our-own-credit-spread-list-setup-side-and-width-per-symbol",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item17/study.json"
+      ],
       "retest": null,
       "retests": []
     },
@@ -466,9 +474,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#18-mean-reversion-put-spreads-tested-once-on-the-holdout",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item18/study.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "the cell is closed"
     },
     {
       "id": 19,
@@ -504,9 +515,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#19-the-time-warp-two-out-of-the-money-spx-flies-bought-at-the-close-sold-the-next-morning",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item19/study-2022-05-16-2024-12-31.json",
+        "{home}/data/backtest/results/research/item19/study-2025-01-01-2026-10-23.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "the Time Warp is closed"
     },
     {
       "id": 20,
@@ -546,9 +561,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#20-the-convex-stack-one-with-trend-spx-fly-bought-twice-a-week-at-about-5-dte",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item20/study-2022-05-16-2024-12-31.json",
+        "{home}/data/backtest/results/research/item20/study-2025-01-01-2026-10-23.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "the Convex Stack is closed"
     },
     {
       "id": 21,
@@ -588,7 +607,139 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#21-legged-spx-flies-with-a-resting-entry-limit-with-and-without-the-range-high-refusal",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item21/study-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item21/study-holdout-2025-07-01-2026-10-12.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": "legged flies stay retired"
+    },
+    {
+      "id": 23,
+      "study": "item23",
+      "title": "The short delta of MEIC's live rule: 12, 20, 25 and 30 against 16",
+      "status": "failed",
+      "legacy": false,
+      "setup": "short-delta",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "summed net per session in $ at one condor, per arm: pm-200 entering 14:00-14:30 with no credit floor and no call-delta ceiling (d16), and the same with the short delta at 12, 20, 25 and 30",
+      "expected": "a positive paired difference per session against d16",
+      "sample": "design 2022-05-16..2025-06-30, holdout 2025-07-01..2026-10-12 run straight after (user, 2026-10-28), counting only after a design pass; 60 s vendor store; both provisional, MEIC history being unvalidated; < 100 sessions = no verdict",
+      "rule": "per arm: paired difference against d16 with mean > 0 and one-sided t > 2, Holm across the four arms, positive in both time-halves, own mean net > 0 and still positive at 1.5x fees; then holdout mean > 0 with t > 2",
+      "mechanism": "a nearer short collects more credit, so fees take a smaller share and the 2x stop sits further away in dollars, if that outweighs being tested more often in the last two hours",
+      "rivals": [
+        {
+          "explanation": "a gate, not the delta",
+          "check": "judged arms carry no credit floor or call ceiling; sessions with no entry count at zero"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "paired difference positive in both time-halves"
+        },
+        {
+          "explanation": "fees",
+          "check": "own net positive at 1.5x fees"
+        },
+        {
+          "explanation": "searching a grid",
+          "check": "Holm across the four arms; grid fixed before any look"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#23-the-short-delta-of-meics-live-rule-12-20-25-and-30-against-16",
+      "results": [
+        "{home}/data/backtest/results/research/item23/study-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item23/study-holdout-2025-07-01-2026-10-12.json"
+      ],
+      "outcome": "live stays at 16 delta; the short delta is closed as a lever for the 14:00 rule",
+      "retest": null,
+      "retests": []
+    },
+    {
+      "id": 24,
+      "study": "item24",
+      "title": "The entry slot of MEIC's live rule: 12:00 to 13:30 against 14:00",
+      "status": "failed",
+      "legacy": false,
+      "setup": "entry-time",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "summed net per session in $ at one condor, per arm: ungated pm-200 at 16 delta entering in one 30-minute slot, 12:00, 12:30, 13:00 or 13:30, against 14:00 (s1400)",
+      "expected": "a positive paired difference per session against s1400",
+      "sample": "design 2022-05-16..2025-06-30 decides; holdout 2025-07-01..2026-10-12 already seen for these slots, a consistency check only; 60 s vendor store; provisional; < 100 sessions = no verdict",
+      "rule": "per slot, design window: paired difference against s1400 with mean > 0 and one-sided t > 2, Holm across the four slots, positive in both time-halves, own mean net > 0 and still positive at 1.5x fees",
+      "mechanism": "an earlier entry collects more premium and has more hours to decay, if that outweighs more hours for a move to reach a short and fire a stop",
+      "rivals": [
+        {
+          "explanation": "a gate, not the slot",
+          "check": "every arm ungated, as item 23's"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "paired difference positive in both time-halves; net by year and worst session reported"
+        },
+        {
+          "explanation": "fees",
+          "check": "own net positive at 1.5x fees"
+        },
+        {
+          "explanation": "searching a grid",
+          "check": "Holm across the four slots; grid fixed before any look"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#24-the-entry-slot-of-meics-live-rule-1200-to-1330-against-1400",
+      "results": [
+        "{home}/data/backtest/results/research/item24/study-design-2022-05-16-2025-06-30-d16.json"
+      ],
+      "outcome": "live stays at 14:00; the afternoon slot is closed as a lever",
+      "retest": null,
+      "retests": []
+    },
+    {
+      "id": 25,
+      "study": "item25",
+      "title": "The skate put's expiry and management: 14 days against the monthly, held, halved or rolled",
+      "status": "no_verdict",
+      "legacy": false,
+      "setup": "skate-expiry",
+      "side": "bullish",
+      "structure": "cash-secured-put",
+      "window": "weekly",
+      "measure": "edge per name and arm as % of the strike's capital a year (net minus the delta-equivalent stock), idle days included: the band put on a 14-day weekly or the 45-60 day monthly, held, closed at half credit or rolled when tested, against m45-tp50",
+      "expected": "a positive per-name paired difference against m45-tp50",
+      "sample": "the 56 names of the 10-23 confirmation, end-of-day vendor paths; design entries 2025-10-01..2026-10-16 decides, holdout entries in 2022 count only after a design pass; < 30 judged names or 300 trades in an arm = no verdict",
+      "rule": "per arm, design window: per-name paired difference mean > 0 with one-sided t > 2, Holm across five arms, positive on more than half the names, own median edge > 0 and still positive at a 3/8 spread concession; then holdout paired mean > 0 and own median edge > 0",
+      "mechanism": "the band holds the per-cycle skate rate near 89% at every expiry and a shorter option earns more theta a day, if that outweighs more cycles paying more spread and fees and meeting more gaps",
+      "rivals": [
+        {
+          "explanation": "drift, not premium",
+          "check": "measured as edge over the delta-equivalent stock"
+        },
+        {
+          "explanation": "a bull year",
+          "check": "2022 must agree before a pass"
+        },
+        {
+          "explanation": "costs on more cycles",
+          "check": "own edge positive at a 3/8 spread concession"
+        },
+        {
+          "explanation": "a few names",
+          "check": "per-name pairing with a sign count across names"
+        },
+        {
+          "explanation": "searching a grid",
+          "check": "Holm across the five judged arms; grid fixed before any look"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#25-the-skate-puts-expiry-and-management-14-days-against-the-monthly-held-halved-or-rolled",
+      "results": [
+        "{home}/data/backtest/results/research/item25/results.json"
+      ],
+      "outcome": "the monthly stays the skate default; the best-expiry ranking says it is not a tested edge",
       "retest": null,
       "retests": []
     },

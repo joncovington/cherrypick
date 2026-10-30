@@ -45,6 +45,10 @@ written are not re-judged. The arithmetic is `cherrypick.core.robustness`
   here. Run `cherrypick hypotheses --similar '{"setup": ..., "structure": ...}'` first; a rejected
   look-alike is named in the declaration, so a retest is said out loud. `cherrypick hypotheses`
   fails on a malformed row. A `retest` recipe (the research queue's kind and args) lets B14 re-run it.
+  When the result lands, the row's status changes, `results` names the files as `{home}/...` paths
+  and `outcome` says the decision in words (2026-10-29, for the Backtest page's studies board).
+- **A result file the board can read:** a top-level `verdict` (one word, or one per arm, or per arm
+  as `{"verdict": ...}`), its `window`, and the `run_id` when the study ran through the runner.
 - **Declared limits** (B11): how a position open at a name's last bar is settled (the last close; no
   deal or recovery price), how many trades empty chains removed, and whether any input reflects
   only today's state (the tradable list is hindsight; report it apart).
