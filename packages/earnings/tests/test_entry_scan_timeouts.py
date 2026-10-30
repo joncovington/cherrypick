@@ -51,7 +51,10 @@ def stub_entry_scan(monkeypatch):
 
 
 def _config(**overrides):
-    cfg = {"strategies": {}, "strat_test_portfolio": "per_strategy"}
+    cfg = {
+        "strategies": {name: {} for name in rank_strategies._REGISTRY_BY_NAME},
+        "strat_test_portfolio": "per_strategy",
+    }
     cfg.update(overrides)
     return cfg
 

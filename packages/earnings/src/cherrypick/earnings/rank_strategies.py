@@ -376,6 +376,18 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
 _REGISTRY_BY_NAME = {entry["name"]: entry for entry in STRATEGY_REGISTRY}
 
 
+def missing_strategy_blocks(config: dict) -> list[str]:
+    """Registered strategies with no block under ``config["strategies"]``.
+
+    A missing block is not a disabled strategy: its apply_tiering reads its thresholds bare, so it
+    raises KeyError, which ends the whole symbol's evaluate_symbol and takes the other strategies'
+    results with it. An install whose config predated expected_move_butterfly (registered
+    2026-10-13) opened nothing from then on while every run reported ok.
+    """
+    blocks = config.get("strategies") or {}
+    return [entry["name"] for entry in STRATEGY_REGISTRY if entry["name"] not in blocks]
+
+
 def reverify_symbol(
     symbol: str, strategy_name: str, earnings_date, earnings_timing: str, config: dict
 ) -> dict:

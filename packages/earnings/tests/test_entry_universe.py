@@ -118,7 +118,12 @@ def _drive(monkeypatch, today, verdict):
     monkeypatch.setattr(r, "_capture_market_context", lambda day: None)
     monkeypatch.setattr(r, "_save_entry_review", lambda *a, **k: None)
     monkeypatch.setattr(
-        scanner, "_load_config", lambda *a, **k: {"strategies": {}, "strat_test_portfolio": "per_strategy"}
+        scanner,
+        "_load_config",
+        lambda *a, **k: {
+            "strategies": {name: {} for name in rank_strategies._REGISTRY_BY_NAME},
+            "strat_test_portfolio": "per_strategy",
+        },
     )
     monkeypatch.setattr(scanner, "fetch_entry_window_calendar", lambda config, **k: list(_CAL))
     monkeypatch.setattr(
