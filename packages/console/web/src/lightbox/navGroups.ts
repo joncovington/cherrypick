@@ -288,11 +288,11 @@ export type CalendarsSlideId = (typeof CALENDARS_SLIDES)[number]["id"];
  * - Config has a page per `fieldMeta.ts` section plus `prefs`, read from that list rather than
  *   copied, so a section added there is a page here without a second edit.
  */
+// 2026-10-30 (docs/console-review-plan.md, batch 2): `volume` is the skew tab's third chart, and
+// `history` is a sparkline of today's recorded net GEX on `gex`, with when each symbol last recorded.
 export const GEX_SLIDES = [
   { id: "gex", label: "gex" },
   { id: "skew", label: "iv skew" },
-  { id: "volume", label: "volume" },
-  { id: "history", label: "history" },
 ] as const satisfies readonly NavSlide[];
 
 export type GexSlideId = (typeof GEX_SLIDES)[number]["id"];
@@ -364,16 +364,14 @@ export const SCREENERS_SLIDES = [
 
 /**
  * Options flow (2026-10-03): QuikOptions' Hot Options Report, one capture a session
- * (`docs/quikoptions-plan.md`). `today` is the page at a glance and links into the four tables,
- * each the site's own table in full.
+ * (`docs/quikoptions-plan.md`). `today` is the page at a glance and links into the site's four
+ * tables, each in full. They were four tabs until 2026-10-30 (docs/console-review-plan.md, batch 2)
+ * and are one `tables` tab now, the table chosen in the page; the old ids land on their own table.
  */
 export const FLOW_SLIDES = [
   { id: "today", label: "today" },
   { id: "derived", label: "derived flow" },
-  { id: "birdseye", label: "birdseye" },
-  { id: "trades", label: "trades" },
-  { id: "spreads", label: "spreads" },
-  { id: "voloi", label: "vol / OI" },
+  { id: "tables", label: "tables" },
 ] as const satisfies readonly NavSlide[];
 
 export type FlowSlideId = (typeof FLOW_SLIDES)[number]["id"];
@@ -396,12 +394,12 @@ export const BACKTEST_SLIDES = [
 
 /**
  * System (2026-10-01): the suite's own health, read-only. `health` is the verdict at a glance; the
- * rest are the detail behind it, one subsystem a tab.
+ * rest are the detail behind it, one subsystem a tab. `modules` folded into `health` on 2026-10-30:
+ * health already carried a second table of the same modules' live gates.
  */
 export const SYSTEM_SLIDES = [
   { id: "health", label: "health" },
   { id: "supervisor", label: "supervisor" },
-  { id: "modules", label: "modules" },
   { id: "data", label: "data" },
   { id: "environment", label: "environment" },
   { id: "logs", label: "logs" },
@@ -532,14 +530,11 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     ],
     legacy: { now: "session" },
   },
-  gex: { slides: GEX_SLIDES },
+  gex: { slides: GEX_SLIDES, legacy: { volume: "skew", history: "gex" } },
   flow: {
     slides: FLOW_SLIDES,
     simple: ["today"],
-    groups: [
-      { label: "today", ids: ["today", "derived"] },
-      { label: "tables", ids: ["birdseye", "trades", "spreads", "voloi"] },
-    ],
+    legacy: { birdseye: "tables", trades: "tables", spreads: "tables", voloi: "tables" },
   },
   // Simple leaves out flies (2026-10-21): the module is retired, and its live tab is its history.
   live: { slides: LIVE_SLIDES, simple: ["today", "positions", "portfolio", "wheel", "pmcc", "meic"], legacy: { manage: "positions" } },
@@ -559,8 +554,8 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   // `validation` folded into `data` (2026-10-30); `/backtest/slices` is a route to Compare (App.tsx).
   backtest: { slides: BACKTEST_SLIDES, legacy: { validation: "data" } },
   advisor: { slides: ADVISOR_SLIDES },
-  system: { slides: SYSTEM_SLIDES },
-  config: { slides: CONFIG_SLIDES },
+  system: { slides: SYSTEM_SLIDES, legacy: { modules: "health" } },
+  config: { slides: CONFIG_SLIDES, legacy: { dev: "timing" } },
 };
 
 /** The declared ids, in rail order. */

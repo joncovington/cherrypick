@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { FlowRejected, OptionsFlowDay } from "@console/shared";
 import { useOptionsFlow } from "../../lib/api";
-import { FlowBirdseye, FlowDerived, FlowSpreads, FlowToday, FlowTrades, FlowVolOi } from "../../pages/Flow/FlowPage";
+import { FlowDerived, FlowTables, FlowToday, flowTableId } from "../../pages/Flow/FlowPage";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
@@ -74,10 +74,22 @@ export function FlowLightbox({ slide }: { slide: string }) {
       ),
     },
     { id: "derived", label: "derived flow", render: body((d) => <FlowDerived day={d} />) },
-    { id: "birdseye", label: "birdseye", render: body((d) => <FlowBirdseye day={d} />) },
-    { id: "trades", label: "trades", render: body((d) => <FlowTrades day={d} />) },
-    { id: "spreads", label: "spreads", render: body((d) => <FlowSpreads day={d} />) },
-    { id: "voloi", label: "vol / OI", render: body((d) => <FlowVolOi day={d} />) },
+    {
+      id: "tables",
+      label: "tables",
+      render: body((d) => (
+        <FlowTables
+          day={d}
+          // An old tab's address (`/flow/trades`) lands here on its own table.
+          table={flowTableId(params.get("table") ?? slide)}
+          onTable={(t) => {
+            const next = new URLSearchParams(params);
+            next.set("table", t);
+            setParams(next, { replace: true });
+          }}
+        />
+      )),
+    },
   ];
 
   const headerControls =

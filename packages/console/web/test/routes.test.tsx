@@ -231,7 +231,7 @@ describe("the suite surfaces are on the frame", () => {
     ["/gex/skew", "GEX / iv skew"],
     ["/gex", "GEX / gex"],
     ["/flow", "Options flow / today"],
-    ["/flow/spreads", "Options flow / spreads"],
+    ["/flow/tables", "Options flow / tables"],
     ["/live", "Live / today"],
     ["/live/flies", "Live / flies"],
     ["/reports/eod", "Reports / eod"],
@@ -252,6 +252,22 @@ describe("the suite surfaces are on the frame", () => {
       if (route.split("/").length > 2) expect(html).toContain('aria-current="page"');
       expect(text(html)).toContain(crumb);
       expect(html).not.toContain("Page not found");
+    });
+  }
+
+  // Folded 2026-10-30 (docs/console-review-plan.md, batch 2): each old address lands on the tab
+  // that holds it now, never on the page's first tab by accident.
+  const folded: Array<[string, string]> = [
+    ["/flow/spreads", "Options flow / tables"],
+    ["/flow/voloi", "Options flow / tables"],
+    ["/gex/volume", "GEX / iv skew"],
+    ["/gex/history", "GEX / gex"],
+    ["/system/modules", "System / health"],
+    ["/config/dev", "Config / timing"],
+  ];
+  for (const [route, crumb] of folded) {
+    it(`${route}, folded, opens on ${crumb}`, () => {
+      expect(text(render(route))).toContain(crumb);
     });
   }
 
