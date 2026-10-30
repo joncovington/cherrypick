@@ -437,24 +437,42 @@ def _capture_market_context(day: str) -> None:
 
 
 def _parallel_scan(calendar, config, workers, symbol_timeout, budget_seconds):
+    """`_scan_stream`, collected and aligned to ``calendar``: a list of ``(entry, results, reason)``
+    -- ``reason`` is None on success, else a skip reason (timeout / error /
+    entry_scan_budget_exceeded)."""
+    index = {id(e): i for i, e in enumerate(calendar)}
+    out: list = [None] * len(calendar)
+    for entry, results, reason in _scan_stream(calendar, config, workers, symbol_timeout, budget_seconds):
+        out[index[id(entry)]] = (entry, results, reason)
+    return out
+
+
+def _scan_stream(calendar, config, workers, symbol_timeout, budget_seconds):
     """Evaluate every calendar symbol's strategies concurrently, bounded two ways: each symbol by
-    ``symbol_timeout`` (via _run_bounded) and the whole phase by ``budget_seconds``. Returns a list
-    aligned to ``calendar`` of ``(entry, results, reason)`` -- ``reason`` is None on success, else a
-    skip reason (timeout / error / entry_scan_budget_exceeded).
+    ``symbol_timeout`` (via _run_bounded) and the whole phase by ``budget_seconds``. Yields
+    ``(entry, results, reason)`` as each symbol finishes, then one budget_exceeded row per symbol
+    that never did.
+
+    Yielded, not returned (2026-10-29): the caller opens each symbol's positions while the rest are
+    still being scanned. Collected first, the write phase began only when the slowest symbol was done,
+    and as the screened universe grew that was after the entry window: 2026-10-28's scan ran to 16:01
+    and all 58 accepted candidates were dropped as `entry_window_closed`.
 
     Broker reads only, no DB writes: evaluate_symbol calls are independent and broker-read heavy, and
     the tt cache is thread-local, so running symbols concurrently is safe and collapses the scan's
     wall clock by roughly the worker count. Order building and every SQLite write stay in the caller's
-    sequential phase so the paper DB keeps a single writer.
+    thread so the paper DB keeps a single writer.
     """
-    out: list = [None] * len(calendar)
     # Check the budget BEFORE dispatching anything. Submitting first and relying on as_completed's
     # timeout + cancel_futures does not hold: a worker begins executing the moment it is submitted,
     # and cancel_futures only cancels futures that have not started -- so an already-exhausted budget
     # still fired up to `workers` Dolt-heavy evaluations, decided by a thread race. That is the exact
     # work this backstop exists to prevent.
     if budget_seconds is not None and budget_seconds <= 0:
-        return [(e, None, "entry_scan_budget_exceeded") for e in calendar]
+        for e in calendar:
+            yield (e, None, "entry_scan_budget_exceeded")
+        return
+    done: set = set()
     pool = _cf.ThreadPoolExecutor(max_workers=max(1, workers))
     try:
         fut_to_idx = {
@@ -472,20 +490,21 @@ def _parallel_scan(calendar, config, workers, symbol_timeout, budget_seconds):
         try:
             for fut in _cf.as_completed(fut_to_idx, timeout=budget_seconds):
                 i = fut_to_idx[fut]
+                done.add(i)
                 try:
-                    out[i] = (calendar[i], fut.result(), None)
+                    row = (calendar[i], fut.result(), None)
                 except _OpTimeout:
-                    out[i] = (calendar[i], None, f"evaluate_symbol_timeout_{symbol_timeout}s")
+                    row = (calendar[i], None, f"evaluate_symbol_timeout_{symbol_timeout}s")
                 except Exception as exc:
-                    out[i] = (calendar[i], None, f"evaluate_symbol_error: {exc}")
+                    row = (calendar[i], None, f"evaluate_symbol_error: {exc}")
+                yield row
         except _cf.TimeoutError:
             pass  # overall budget hit -- unfinished symbols fall through to budget_exceeded below
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
-    for i, slot in enumerate(out):
-        if slot is None:
-            out[i] = (calendar[i], None, "entry_scan_budget_exceeded")
-    return out
+    for i, e in enumerate(calendar):
+        if i not in done:
+            yield (e, None, "entry_scan_budget_exceeded")
 
 
 def _log_scan_row(
@@ -625,9 +644,10 @@ def cmd_run_entries(args) -> dict:
     symbol_timeout = config.get("dolt_symbol_timeout_seconds", 90)
     budget = config.get("entry_scan_budget_seconds", 1500)
 
-    # Scan phase (parallel, broker reads only): evaluate every symbol's strategies concurrently.
-    # Write phase (sequential, below): order building + every paper-DB write, so SQLite has one writer.
-    scanned = _parallel_scan(calendar, config, workers, symbol_timeout, budget)
+    # Scan (parallel, broker reads only): every symbol's strategies evaluated concurrently, each
+    # yielded as it finishes. Write (this thread, below): order building + every paper-DB write, so
+    # SQLite has one writer -- interleaved with the scan rather than after it (2026-10-29).
+    scanned = _scan_stream(calendar, config, workers, symbol_timeout, budget)
 
     for entry, results, scan_reason in scanned:
         symbol, earnings_date, timing = entry["symbol"], entry["date"], entry["timing"]

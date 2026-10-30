@@ -293,6 +293,26 @@ def test_wide_quotes_are_marked_but_not_acted_on(priced):
     assert event["gate"] == "spread_too_wide"
 
 
+def test_a_close_held_by_the_spread_gate_is_taken_once_its_patience_is_spent(priced):
+    """2026-10-27..29: profit targets and stop-losses fired and were refused by the spread gate on
+    every tick for days, on wings quoting 200% wide, until only the expiry close was left. From
+    2026-10-30 a close held 30 minutes in a session is taken anyway. Shown to fail by never
+    returning a wait from `_spread_patience_spent`."""
+    order_id = open_trade()
+    priced(quotes_pricing(2.10, spread=0.90))
+    for hhmm in ("10:00", "10:15", "10:29"):
+        paper_loop.run_iteration(CONFIG, at(hhmm))
+        assert db_paper.cmd_get_open_positions(_ns())["positions"], f"still waiting at {hhmm}"
+    paper_loop.run_iteration(CONFIG, at("10:30"))
+
+    assert db_paper.cmd_get_open_positions(_ns())["positions"] == []
+    taken = db_paper.cmd_get_management_events(_ns(order_id=order_id, session_date=None, limit=None))[
+        "events"
+    ][0]
+    assert taken["executed"] == 1 and taken["reason"] == "profit_target"
+    assert json.loads(taken["detail_json"])["spread_gate_waited_minutes"] == 30
+
+
 # --------------------------------------------------------------------------- the lifecycle rules
 def test_a_winner_short_of_target_survives_the_first_morning(priced):
     """The change from the old sweep, end to end: this position used to close at 09:45."""
@@ -375,6 +395,28 @@ def test_the_entry_scan_runs_once_a_day(monkeypatch):
 
     assert first["phase"] == "entry" and len(calls) == 1
     assert second["phase"] != "entry", "the heartbeat's date is what makes the scan idempotent"
+
+
+@pytest.mark.parametrize(
+    "result, retried",
+    [
+        ({"ok": False, "error": "tastytrade connection failed"}, True),
+        ({"ok": False, "error": "late", "opened": [{"symbol": "X"}]}, False),
+    ],
+)
+def test_a_failed_entry_scan_is_retried_unless_it_opened_something(monkeypatch, result, retried):
+    """2026-10-29: a 10-second broker-connection timeout at 15:35 cost the whole night, because the
+    failed attempt's heartbeat read as the day's scan. A failure that opened nothing is retried on the
+    next tick in the window; one that opened positions is not run twice. Shown to fail by restoring
+    the date-only check in `entry_already_ran`."""
+    calls = []
+    monkeypatch.setattr(harness, "cmd_run_entries", lambda args: calls.append(args.date) or result)
+
+    paper_loop.run_iteration(CONFIG, at("15:36"))
+    second = paper_loop.run_iteration(CONFIG, at("15:37"))
+
+    assert (second["phase"] == "entry") is retried
+    assert len(calls) == (2 if retried else 1)
 
 
 def test_the_entry_scan_writes_the_sla_heartbeat_the_watchdog_reads(monkeypatch, wired):

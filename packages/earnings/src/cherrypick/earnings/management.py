@@ -98,6 +98,12 @@ POLICY_DEFAULTS = {
     # on a comfortably-cleared profit target, which would otherwise have ridden to next-day
     # settlement instead of taking the exit the position had already earned.
     "max_leg_spread_abs_zero_bid": 0.20,
+    # How long a fired close may wait on the spread gate within a session before it is taken anyway,
+    # at the position's own fill basis, as the expiry close is (2026-10-30 break). Without a bound
+    # the gate held decided exits for days: from 2026-10-27, CNC's iron condor and iron fly profit
+    # targets, STX's and TER's, and TER's and GLXY's stop-losses were refused on every tick (~1,200
+    # a day) on wings quoting 200% wide, leaving the 15:30 expiry close as the only exit.
+    "spread_gate_patience_minutes": 30,
     # Every position with a leg expiring today is closed from this time (ET), whatever its P&L
     # or any other rule. These are physically settled single names: an ITM leg that expires is an
     # exercise or an assignment -- shares, overnight gap risk, and fees -- so the house rule is to

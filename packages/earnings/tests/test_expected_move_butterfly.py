@@ -210,7 +210,7 @@ def _drive(monkeypatch, today):
     )
     monkeypatch.setattr(scanner, "fetch_entry_window_calendar", lambda config, **k: list(_CAL))
     accepted = [{"name": "expected_move_butterfly", "reject_reasons": [], "accepted": True, "criteria": {}}]
-    monkeypatch.setattr(harness, "_parallel_scan", lambda *a, **k: [(_CAL[0], accepted, None)])
+    monkeypatch.setattr(harness, "_scan_stream", lambda *a, **k: [(_CAL[0], accepted, None)])
     monkeypatch.setattr(harness, "_log_scan_row", lambda *a, **kw: None)
     monkeypatch.setattr(harness, "_past_entry_window", lambda config: False)
 
