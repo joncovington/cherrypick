@@ -28,7 +28,8 @@ far away. Each wall-day's d = crossed - F(x). Under no effect d averages zero; a
 it negative. The placebo is the same name's and side's wall distance from 21 sessions earlier, read
 against this session's path.
 
-**The verdict** (design window; the holdout only after a design pass): the pooled mean d (each
+**The verdict** (design window, then the holdout; the holdout is computed and reported whatever
+the design result, but a design fail stays a fail): the pooled mean d (each
 session's mean over its name-side cells) at or below -0.05 with the 95% one-sided upper bound of a
 stationary bootstrap (mean block h) below zero; d negative on each name and each side, and in each
 half of the window; the pooled mean d below the placebo's; then the holdout's pooled mean d below
@@ -492,8 +493,9 @@ def cmd_study(args) -> int:
 
     design, counts = window("design")
     enough = all(n >= MIN_WALL_DAYS for n in counts.values())
-    # The holdout is read only after a design pass.
-    holdout = window("holdout")[0] if design["passes"] and enough else None
+    # The holdout is computed whatever the design result (the user's call, 2026-10-30, before any
+    # data was fetched); verdict() still fails a design fail.
+    holdout = window("holdout")[0] if enough else None
     result["verdict"] = verdict(design, holdout, enough)
     result["window"] = f"{WINDOWS['design'][0]}..{WINDOWS['design'][1]}" + (
         f"; holdout {WINDOWS['holdout'][0]}..{WINDOWS['holdout'][1]}" if holdout is not None else ""
