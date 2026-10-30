@@ -966,6 +966,44 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 30,
+      "study": "item30",
+      "title": "GEX walls on the monthly expiry: does price stop short of them over the next two weeks?",
+      "status": "declared",
+      "legacy": false,
+      "setup": "gex-levels",
+      "side": "neutral",
+      "structure": "none",
+      "window": "multi-day",
+      "measure": "per wall-day, whether price reaches the wall over the next 10 sessions less the rate any level at the same sigma distance is reached (d); walls from core.gex net_walls on the monthly 20-60 days out nearest 45, open interest from the previous close",
+      "expected": "a pooled mean d at or below -0.05: walls reached 5 points less often than distance alone predicts",
+      "sample": "SPY and AAPL, every session; design 2022-01-03..2024-12-31, holdout 2025-01-02..2026-09-30; walls 0.25-2 sigma from the close; < 200 wall-days for a name in a window = no verdict",
+      "rule": "design: pooled mean d <= -0.05 and its 95% one-sided stationary-bootstrap upper bound < 0; d < 0 on each name-side cell and each half; below the 21-session-lag placebo; then holdout pooled mean d < 0",
+      "mechanism": "dealer hedging of the monthly's open interest damps moves through the largest gamma strikes",
+      "rivals": [
+        {
+          "explanation": "wall distance follows the volatility regime",
+          "check": "placebo: the wall distance from 21 sessions earlier against this session's path"
+        },
+        {
+          "explanation": "implied vol overstates the move",
+          "check": "the baseline is the realised reach rate at the same sigma distance"
+        },
+        {
+          "explanation": "one name or one side",
+          "check": "d negative on each of the four name-side cells"
+        },
+        {
+          "explanation": "one era",
+          "check": "both design halves, then the holdout"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#30-gex-walls-on-the-monthly-expiry-does-price-stop-short-of-them-over-the-next-two-weeks",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []

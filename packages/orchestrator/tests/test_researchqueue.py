@@ -80,6 +80,22 @@ def test_a_path_fetch_needs_the_vendor_session_and_is_bounded_by_its_stop_by(fil
     assert out["input"] == "req.json" and out["store"] == "backtest eod_chains.db"
 
 
+def test_an_open_interest_fetch_takes_a_plan_needs_the_vendor_session_and_is_bounded(files):
+    argv = rq.build_argv("fetch-oi", {"plan": str(files["req"])}, PY, "2026-11-02T18:30")
+    assert argv == [PY, "-m", "cherrypick.backtest", "fetch-oi", "--plan", str(files["req"])] + [
+        "--workers",
+        "3",
+        "--stop-by",
+        "2026-11-02T18:30",
+    ]
+    assert rq.KINDS["fetch-oi"] == ((rq.THETADATA,), True)
+    row = {"kind": "fetch-oi", "args": json.dumps({"plan": "plan.json"})}
+    out = rq.result_of(row, {"complete": 2}, Path("q.log"))
+    assert out["input"] == "plan.json" and out["store"] == "backtest open_interest.db"
+    flow = rq.result_of({"kind": "fetch-flow", "args": "{}"}, {}, Path("q.log"))
+    assert flow["store"] == "backtest flow store"
+
+
 def test_anything_off_the_allow_list_is_refused(files):
     with pytest.raises(rq.Refused, match="unknown kind"):
         rq.build_argv("shell", {"cmd": "del /s *"}, PY)

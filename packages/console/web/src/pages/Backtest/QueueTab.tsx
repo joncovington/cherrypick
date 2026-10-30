@@ -557,7 +557,7 @@ export function BacktestQueueTab() {
     <Card title="Research queue" collapseKey="backtest-queue" updatedAt={dataUpdatedAt} isError={isError}>
       {body}
       <p className="muted" style={{ marginTop: 8 }}>
-        The supervisor runs one task at a time, oldest ready first: an allow-listed fetch (fetch-chains, fetch-flow), a
+        The supervisor runs one task at a time, oldest ready first: an allow-listed fetch (fetch-chains, fetch-flow, fetch-oi), a
         validation, or a script checked into <code>scripts/</code>. A fetch stopped by the nightly window resumes after it. Add
         one with <code>run.py queue-add --study &lt;study&gt; [--step &lt;step&gt;] --task &lt;kind&gt; --task-args &apos;&#123;…&#125;&apos;</code>;
         cancel a queued one with <code>run.py queue-cancel --task-id N</code>. A run started by hand shows here through its

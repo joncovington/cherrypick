@@ -305,6 +305,39 @@ def cmd_fetch_flow(args) -> int:
     return 0
 
 
+def cmd_fetch_oi(args) -> int:
+    """The open-interest fetch (oifetch.py): a network verb, refused on the same terms as `fetch`."""
+    from . import flowfetch, oifetch
+    from .vendor import VendorRefusal, client_for
+
+    s = settings.load(args.config)
+    refusal = _fetch_refusal(s)
+    if refusal:
+        print(f"fetch-oi refused: {refusal}", file=sys.stderr)
+        return 2
+    stop = _stop_by(args.stop_by)
+    try:
+        client = client_for(s)
+    except VendorRefusal as exc:
+        print(f"fetch-oi refused: {exc}", file=sys.stderr)
+        return 2
+    try:
+        report = oifetch.fetch_plan(
+            s,
+            client,
+            flowfetch.read_plan(args.plan),
+            workers=args.workers,
+            refetch=args.refetch,
+            stop=stop,
+            log=lambda m: print(m, file=sys.stderr),
+        )
+    except VendorRefusal as exc:
+        _emit({"aborted": str(exc)})
+        return 1
+    _emit(report)
+    return 0
+
+
 def cmd_flow_coverage(args) -> int:
     from . import flowfetch
 
@@ -549,6 +582,12 @@ def main(argv: list[str] | None = None) -> int:
     ff.add_argument("--refetch", action="store_true", help="re-fetch days already complete")
     ff.set_defaults(fn=cmd_fetch_flow)
     sub.add_parser("flow-coverage", help="the flow store's days by status").set_defaults(fn=cmd_flow_coverage)
+    fo = sub.add_parser("fetch-oi", help="open interest per contract per name and session (a network verb)")
+    fo.add_argument("--plan", required=True, help="a plan file, {sessions: {session: [symbols]}}")
+    fo.add_argument("--workers", type=int, default=1, help="concurrent requests on the one session")
+    fo.add_argument("--stop-by", help="ET wall clock, YYYY-MM-DDTHH:MM: start no request after it")
+    fo.add_argument("--refetch", action="store_true", help="re-fetch days already complete")
+    fo.set_defaults(fn=cmd_fetch_oi)
     cv = sub.add_parser("coverage", help="sessions in the store, complete and refused")
     cv.add_argument("--dataset", default="SPX")
     cv.set_defaults(fn=cmd_coverage)

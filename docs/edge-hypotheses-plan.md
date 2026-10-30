@@ -2337,6 +2337,97 @@ trip at the natural cost a sixth to a half of a spread's best case.*
   - **A fail or no verdict:** the module trades shares only, and the option versions are closed as
     specified.
 
+### 30. GEX walls on the monthly expiry: does price stop short of them over the next two weeks?
+
+*Source: the user, 2026-10-30. The console review dropped a view of the user's short strikes against
+the GEX walls (#703), because the module's walls are the 0DTE SPX/XSP expiry's and the user's shorts
+are 20-60 day single names and ETFs. The user asked how the walls could be tested for those trades,
+and for a non-index name without daily expiries beside the index. **A retest, said out loud:** item
+12 closed the 0DTE barrier read (failed, 2026-10-19, re-run 10-25). This is a different expiry and
+horizon: walls from the monthly a 20-60 day trade sells, read over 5 to 20 sessions.*
+
+- **Question:** does price reach a wall built from the monthly expiry less often over the next 10
+  sessions than it reaches any level the same distance away?
+- **Where the edge would live:** a **flow effect**, dealer hedging of the monthly's open interest. If
+  it exists, a short strike beyond a wall is breached less often than its delta says, which is premium
+  the delta does not price. Test A asks only whether the barrier exists. Test B, whether a short
+  strike behind a wall earns more after costs than one at the same delta, is declared after Test A
+  passes and before any of its outcomes are read. A Test A fail closes both.
+- **Names:** SPY, the index, whose daily chains are already on disk (SPX's are not); and AAPL, the
+  single stock with some of the deepest single-name open interest, listed weekly and monthly. The study
+  reports, from the fetched open interest, every week in which a name lists more than one expiry
+  (expected for SPY's dailies, and zero for AAPL). Two names, so no name split (B9).
+- **The walls,** per name and session D, at D's close:
+  - **Target expiry:** the standard monthly (third Friday, or the trading day before when it is a
+    holiday) 20 to 60 calendar days out, nearest 45.
+  - **Each strike's vol:** Black-Scholes from its own side's mid, the 3-month bill rate before D, no
+    dividend. Its gamma is from that vol.
+  - **Open interest:** the vendor's report on D's morning, the previous close's, so nothing published
+    after D's close is used.
+  - **The walls:** `core.gex.compute_gex_profile` (one gamma per strike) and `core.gex.net_walls`, the
+    GEX module's own: the call wall is the most positive net strike, the put wall the most negative.
+    The single-side peaks (largest call gamma, largest put gamma) are reported, not judged.
+  - **No wall that side that day:** a wall on the wrong side of the close, or nearer than 0.25 or
+    further than 2 sigma_h.
+- **Measured:**
+  - sigma_h = the at-the-money strike's vol x the close x sqrt(h / 252), h = 10 sessions.
+  - The excursion M: the highest high (call side) or lowest low (put side) over the h sessions after
+    D, from D's close, in sigma_h.
+  - F(x): the share of all of a name's and side's sessions in the window whose M reaches x, the rate at
+    which any level that far away is reached. (On one day every level on a side is reached or not by
+    the same path, so the baseline is across days at the same distance.)
+  - Each wall-day's **d** = 1 if M reaches the wall, else 0, less F(the wall's distance). With no
+    effect, d averages zero; a wall that holds makes it negative.
+  - Pooled: each session's mean d over its name-side cells (four).
+- **Windows:**
+  - **Design:** 2022-01-03 to 2024-12-31 (2022's fall and 2023-24's rise).
+  - **Holdout:** 2025-01-02 to 2026-09-30, read only after a design pass.
+  - Fewer than 200 wall-days for a name in a window is no verdict.
+- **Pass-or-fail rule**, all must hold in the design window:
+  - the pooled mean d at or below -0.05 (5 points fewer crossings than distance alone predicts);
+  - the 95% one-sided upper bound of the pooled mean, by stationary bootstrap (mean block h, 2,000
+    resamples, seeded), below zero;
+  - d negative on each of the four name-side cells, and in each half of the window;
+  - the pooled mean d below the placebo's;
+  - then the holdout's pooled mean d below zero.
+- **Rival explanations, each with its check:**
+  - *Walls sit where the regime makes crossing unlikely* (a wall's distance follows volatility): the
+    **placebo**, the same name's and side's wall distance from 21 sessions earlier, read against this
+    session's path. The walls must beat it.
+  - *Implied vol overstates the move,* so every level looks hard to reach: F is measured from the
+    realised excursions at the same sigma distance, so that bias is in the baseline too.
+  - *One name or one side:* each of the four cells must agree.
+  - *One era:* both halves of the design window must agree, then the holdout.
+  - *Round strikes:* walls and baseline are both read at their own distances, and a round strike is
+    no nearer to being reached than another at the same distance.
+- **Reported, not judged:** h = 5 and 20, and the single-side peak walls, beside the judged reading
+  (B13's neighbours). There are no costs in Test A, so there is no cost stress.
+- **Minimum detectable effect (B12):** d is a crossing (0 or 1) less a rate, so a cell's spread is
+  near 0.5, and overlapping 10-session paths leave about 75 independent readings a cell in the design
+  window. Pooled over four correlated cells, the bootstrap bound clears zero only for an effect near
+  -0.07 or larger. A no-verdict or fail reads "no barrier stronger than about 7 points".
+- **Declared limits (B11):**
+  - End-of-day chains, so the walls are read at the close, and the excursion uses daily highs and
+    lows (the technicals bar store, raw, the chain's own strike basis; neither name split in the
+    windows).
+  - The wall comes from one expiry, the monthly a trade would sell, not all expiries summed.
+  - Open interest does not say who holds it. `net_walls` assumes dealers are short puts and long
+    calls; the peak walls, reported beside, assume nothing about the side.
+  - Black-Scholes vols with no dividend; the out-of-the-money side keeps the dividend's effect small.
+  - A session whose target chain or open interest is missing is skipped and counted (`missing` in the
+    result).
+- **Data:** the stored ThetaData end-of-day chains for the monthly expiries, with the 2023-25 monthlies
+  fetched by a `fetch-chain-paths` row; open interest by the new `fetch-oi` (`oifetch.py`, its own
+  store `open_interest.db`). The study is `scripts/gex_walls_item30.py`, run as `item30/fetch-chain-paths`,
+  `item30/fetch-oi` and `item30/study`. The results are derived from licensed data, so they stay under
+  `~/.cherrypick/data/backtest/results/research/item30/`, and this plan records the verdict without
+  figures.
+- **Decides:**
+  - **A pass:** Test B is declared (short strikes behind a wall against the same delta without one,
+    after costs), and the console's dropped view is reconsidered only if Test B passes.
+  - **A fail or no verdict:** the walls stay a 0DTE read, the view stays dropped, and the barrier read
+    is closed for monthly expiries too.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
