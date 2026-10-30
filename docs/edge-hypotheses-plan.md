@@ -1497,6 +1497,106 @@ it is run.*
   the same order: mid worst, 0.10 level with its base. The holdout is now spent for this
   specification. Local result: `.../item21/study-holdout-2025-07-01-2026-10-12.json`.
 
+### 22. The overnight condor: a 1DTE SPX iron condor sold at the close, bought back the next morning
+
+*Source: the suite's own evidence and a published anomaly. Item 19 bought far 1DTE wings across the
+night from the same store and lost in both windows and both arms: the long side of the overnight
+premium failed after costs. Jones and Shemesh ("Option Mispricing around Nontrading Periods",
+Journal of Finance, 2018) report that options are priced on calendar time while variance over a
+market closure is lower than over the same hours of trading, so writing options across nights, and
+weekends above all, earns excess returns. The user approved the test, and a read of the holdout
+whatever the design shows, on 2026-10-27. Declared here before any of it is run. No new fetch.*
+
+- **Question:** does selling a 1DTE SPX iron condor in the last minutes of a session and buying it
+  back at the next open earn after costs?
+- **Where the edge would live:** the **premium**, in one specific place: the overnight share of a
+  1DTE option's time value, priced as if the closure traded. Not a signal.
+- **Look-alikes:** `cherrypick hypotheses --similar` finds no rejected row with this setup, side,
+  structure and window. The nearest closed evidence is item 19 (the same night, the same store, the
+  other side of the trade), item 9 (a 0DTE afternoon condor held to settlement, failed), item 2 (0DTE
+  entry times) and MEIC's condors, all intraday. None sold across the closure.
+- **Rival explanations, each with its check:**
+  - *Drift:* the put side wins because the market rose overnight. **Check:** the call and put
+    verticals are priced and reported apart; a result the call side cannot share is drift.
+  - *A calm span:* **Check:** both time-halves of the design window must pass; results by VIX band
+    (D−1's close) are reported.
+  - *The tail:* a few gaps decide it. **Check:** the five worst sessions are reported with the
+    verdict, and the bootstrapped drawdown beside a pass; the holdout holds 2025's April gaps.
+  - *Fills:* 1DTE out-of-the-money SPX quotes are several ticks wide at the close. **Check:** the
+    verdict is at the working price; mid and mid − $0.05 a structure are reported beside it.
+  - *Fees:* four legs opened for an eighteen-hour hold. **Check:** still positive at 1.5× costs.
+  - *The mechanism's own prediction:* if the closure is the premium's source, the weekend should pay
+    at least the weeknight. **Check:** nets by closure kind (one night; a weekend or holiday) are
+    reported. This is a description beside the verdict, never a filter.
+- **The structure (declared by us, nothing tuned):**
+  - SPX weekly options (SPXW) expiring the next trading day E; a Friday's E is the Monday.
+  - Entry at **15:50 ET** on session D, from D's 15:50 one-minute quote.
+  - Short call: the call above spot whose delta is nearest **+0.10**; short put: the put below spot
+    whose delta is nearest **−0.10**, each by the vendor's delta at that quote. Each wing **25**
+    points further out. One contract a side. All four legs must be quoted two-sided; a session
+    missing a side is skipped and counted.
+  - No stop, no adjustment.
+- **Two exit arms**, Holm-adjusted together:
+  - **A, buy back at the open:** the whole condor at E's **09:35** five-minute mark, the first mark
+    to 09:50 when 09:35 has no quote for a leg; none by 09:50 settles. The mechanism's own arm.
+  - **B, settle:** hold to E's official close. Whether the day adds to the night or takes from it.
+- **Costs:** the suite's tastytrade schedule (`cherrypick.core.fees`), as item 19: $1.00 a contract
+  to open, exchange and regulatory fees on every leg, no commission to close, $5 per in-the-money
+  settlement symbol.
+- **Measured:** the condor's net per session in dollars at one contract a side, and as a share of
+  its credit.
+- **Window and sample:**
+  - **Design:** 2022-05-16 to 2024-12-31, about 660 sessions. Read for the verdict.
+  - **Holdout:** 2025-01-01 to 2026-10-23, about 450 sessions, the same rules unchanged. At the
+    user's request it is **run straight after the design whatever the design shows**. It counts
+    toward a pass only after a design pass; after a design fail it is exploratory and cannot
+    overturn the fail.
+  - Fewer than 100 entered sessions in a window is no verdict.
+- **Pass-or-fail rule**, per arm, all must hold:
+  - mean net per session above zero with a one-sided t above 2, one session one observation;
+  - Holm across the two arms;
+  - each time-half of the design window positive;
+  - still positive at **1.5× costs**;
+  - then the holdout, with mean net above zero and a one-sided t above 2.
+- **Minimum detectable effect (B12):** from the design window's own spread of session nets, recorded
+  in the local result before the holdout is read. Item 19's session nets are the nearest comparable
+  spread but are a long structure's; they are not used to plan this one.
+- **Declared limits (B11):**
+  - a condor settling at E's close uses the SPX close in `SPX-60s.db`'s `daily_closes`, the vendor's
+    official close from 2024-05-13 and its last underlying print before; the two are reported apart;
+  - the store's deltas are the vendor's; a strike without one is not a short candidate;
+  - sessions skipped for missing quotes or a missing side are counted, by reason;
+  - the VIX band uses D−1's close, known at entry; nothing reflects only today's state.
+- **Name split (B9):** does not apply; one symbol.
+- **Robustness report beside a pass (B13), never used to re-choose:**
+  - neighbours: shorts at 0.05 and 0.15 delta; wings 15 and 50; entry at 15:45 and 15:55; the
+    buy-back at 09:45 and 10:30;
+  - costs at 1.5× and 2×; the bootstrapped drawdown and losing streak; the largest size inside a
+    declared 10% of the account, passed at run time.
+- **Data:** no new store. `scripts/overnight_condor_item22.py` reads `SPX-time-warp.db` (item 19's
+  store, which holds every session's 15:45-15:55 next-expiry chain and that expiry's next session at
+  five minutes), `SPX-60s.db`'s daily closes and Cboe's VIX history. Results go under the backtest
+  data directory only; this plan records the verdict.
+- **Decides:**
+  - **A pass:** a proposal for a paper arm beside the suite's loops, with the robustness report. The
+    account is an IRA, so the defined-risk condor is the only version worth proposing.
+  - **A fail or no verdict:** closes the overnight 1DTE short as specified; with item 19 that closes
+    both sides of the 1DTE overnight premium.
+- **Result (2026-10-27): fail, both arms; the structure is closed.** In the design window neither
+  the 09:35 buy-back nor the settled condor has a positive mean net after costs at the working
+  price, and neither has a positive time-half. The mid-price fill, reported as context, puts the
+  buy-back arm near zero: the overnight premium is about fair at mid, and the spread and fees take
+  the rest. The closure split does not behave as the mechanism predicts: the weekend's sign is not
+  the same in the two windows. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item22/study-2022-05-16-2024-12-31.json`).
+- **Holdout, run straight after as declared; exploratory, not a verdict.** After a design fail it
+  cannot overturn the fail. With the rules unchanged the buy-back arm fails every check there too.
+  The settled arm's mean is positive in the holdout but far from the t bar, and its closure split is
+  the design window's reversed. The holdout is now spent for this specification. Local result:
+  `.../item22/study-2025-01-01-2026-10-23.json`.
+- **What this closes:** with item 19, both sides of the 1DTE overnight premium on SPX as specified.
+  Idea B of the 2026-10-27 review (the same condor on RUT and NDX) is not fetched.
+
 ### 23. The short delta of MEIC's live rule: 12, 20, 25 and 30 against 16
 
 *Source: the user, 2026-10-28: "what does allowing pm-200 to enter at 20 delta do to the expected
