@@ -104,6 +104,36 @@ class TestSection:
         assert config.section(None, "defaults", label="x") == {}
 
 
+class TestUndeclared:
+    def test_names_an_arm_the_config_predates_and_says_once(self):
+        """The 2026-10-29 case: a config kept from before an arm existed runs it on the module's
+        default with nothing said."""
+        said = []
+        for _ in range(20):
+            missing = config.undeclared(
+                {"control": {}}, ("control", "near"), label="curve", means="runs on defaults", log=said.append
+            )
+            assert missing == ["near"]
+        assert len(said) == 1
+        assert "curve" in said[0] and "near" in said[0] and "runs on defaults" in said[0]
+
+    def test_a_config_naming_every_arm_is_silent(self):
+        said = []
+        assert (
+            config.undeclared(
+                {"control": {}, "near": {}}, ("control", "near"), label="curve", means="x", log=said.append
+            )
+            == []
+        )
+        assert said == []
+
+    def test_an_empty_registry_is_left_to_registry(self):
+        """Absent, `registry` already warned; declared empty, every arm is off on purpose."""
+        said = []
+        assert config.undeclared({}, ("control", "near"), label="curve", means="x", log=said.append) == []
+        assert said == []
+
+
 def test_the_base_alias_list_matches_the_one_core_advice_has_always_used():
     """`core.advice._legacy_base` is the mechanism this generalises; if the two lists diverge, a
     decision written under one spelling stops being readable under the other."""
