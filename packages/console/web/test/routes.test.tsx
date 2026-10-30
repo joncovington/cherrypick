@@ -396,7 +396,7 @@ describe("a page the suite has turned off", () => {
 
   it("backtest renders on its own frame, and is on the rail, only when the suite says true", () => {
     const on = { ...base, features: { ...base.features, backtest: true } };
-    expect(text(renderWith("/backtest", on))).toContain("Backtest / data");
+    expect(text(renderWith("/backtest", on))).toContain("Backtest / queue");
     expect(text(renderWith("/backtest/runs", on))).toContain("Backtest / runs");
     expect(renderWith("/backtest", on)).not.toContain("Page not found");
     expect(renderWith("/flies/session", on)).toContain('href="/backtest"');
