@@ -2003,6 +2003,71 @@ cells motivated `confirm`; they are in-sample and one name.*
     cost inside a position sold whole at a gain, so they are reported, not read as losing trades.
   - **No random-entry control:** every arm is paired against the base, as declared.
 
+### 28. The share ladder before 2011 and on single stocks: daily-reset funds rebuilt from their 1x history
+
+*Source: the user, 2026-10-29, asking which other symbols fit the ladder, then "yes" to rebuilding
+the funds' history. Item 26 starts in 2011, so it never sees 2000-02 or 2008, the falls that test
+"hold until +4%" hardest, and its history rule leaves out every single-stock fund (all listed
+2022 or later). Declared before item 26's or 27's verdict; only their trials (SOXL, TECL, TQQQ,
+2011 on) have been seen.*
+
+- **Question:** do item 26's arms keep their edge over random entries, and what do their holds and
+  drawdowns look like, on leveraged funds rebuilt from their 1x history back to 1999, through
+  2000-02 and 2008? And on single-stock 2x funds rebuilt from their stocks?
+- **Where the edge would live:** item 26's: **signal**, mean reversion after a large fall. This
+  item adds no new arm. It is a further holdout, with the two worst falls in the data, and a risk
+  read for setting caps.
+- **The rebuilt fund.** Each session, the fund's return is the leverage times the 1x fund's
+  close-to-close total return (Yahoo's adjusted close, so dividends are in), less the fund's
+  expense ratio and the leverage less one times the 3-month Treasury bill rate, each a year over
+  252 sessions. The open, high and low are the previous rebuilt close moved by the leverage times
+  the 1x fund's own move from its previous close, which is exact for a fund that resets daily and
+  trades with its index. The 3-month rate is Treasury's daily par yield curve (the source
+  `scripts/fetch_market_files.py` already reads), back to 1999. Expense ratio: 0.95% a year,
+  every rebuilt fund.
+- **Validation first, per name.** Over the years the real fund and the rebuilt one overlap, daily
+  returns must correlate at 0.99 or more and the annual returns must differ by 3 points or less
+  on average. A name that fails is reported and not used.
+- **Names.**
+  - **Funds:** item 26's judged names with a 1x counterpart in `fetch_ladder_bars.COUNTERPART`,
+    each rebuilt from its counterpart's first bar at the fund's own leverage.
+  - **Single stocks, reported apart and never pooled with the funds:** every single-stock long 2x
+    fund in `leveraged_funds.json` at $20M or more of median dollar volume on the broker file of
+    2026-10-29, rebuilt from its stock. One stock counts once, however many funds track it.
+    Validated over the fund's own short life.
+- **Windows:**
+  - **Pre-2011 holdout:** sessions from the rebuilt series' first (1999 at the earliest, once 20
+    sessions of history stand behind it) to 2010-12-31.
+  - **Stress reads, reported:** 2000-03-01 to 2002-12-31 and 2007-10-01 to 2009-12-31.
+  - **Single stocks:** from 2000-01-03, or the stock's listing, to 2026-10-28.
+- **Measured:** item 26's measures per name and arm (edge over the random-entry control, % a year,
+  longest hold, drawdown with open lots marked, lots never closed by the window's end), plus item
+  27's longest hold and capital share for its arms, on the same rebuilt bars.
+- **Rival explanations, each with its check:**
+  - *The rebuild flatters the fund:* the validation above, and a rebuilt series that closes a
+    window richer than the real fund is reported as such.
+  - *Survivors only:* rebuilding from the 1x fund removes the closure problem for the index funds;
+    the single stocks are today's survivors, said so in the report.
+  - *One era:* the two stress windows are read apart.
+- **Pass-or-fail rule**, only for an item 26 arm that passed item 26: in the pre-2011 holdout, the
+  mean edge across the funds is above zero and positive on more than half of them. An arm that
+  failed item 26 is only reported here. Fewer than 8 funds or 300 closed lots is no verdict.
+- **Declared limits (B11):** the rebuild has no tracking error beyond fees and financing, no swap
+  spread and no intraday rebalancing effects; daily bars only; 0.95% is one fee for every fund.
+- **Data:** daily bars and adjusted closes for the 1x funds and stocks (the broker's where it
+  reaches, Yahoo's before), and Treasury's yearly yield-curve files, fetched by script into
+  `~/.cherrypick/data/research/item28/`. A replay importing item 26's and 27's
+  (`scripts/share_ladder_item28.py`), run as `item28/fetch` and `item28/study`.
+- **Decides:**
+  - **A pass:** the arm stays the module's default, and the module's caps and default names are
+    proposed from the worst pre-2011 drawdown and longest hold.
+  - **A fail:** item 26's pass is recorded as a post-2011 effect. The module's console tab says so,
+    and the live pilot is sized from the pre-2011 drawdown.
+  - **Either way:** a name whose rebuilt history holds a lot open over 5 years, or a drawdown over
+    90% of its budget, is left off the module's default list, kept only by the user's choice.
+    Single stocks join the default list only if they meet that and their edge is above zero across
+    the whole span.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

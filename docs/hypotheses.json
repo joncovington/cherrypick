@@ -679,6 +679,40 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 28,
+      "study": "item28",
+      "title": "The share ladder before 2011 and on single stocks: daily-reset funds rebuilt from their 1x history",
+      "status": "declared",
+      "legacy": false,
+      "setup": "dip-buy",
+      "side": "bullish",
+      "structure": "shares",
+      "window": "multi-day",
+      "measure": "item 26's measures per name and arm (edge over random entries, % a year, longest hold, drawdown, lots never closed) and item 27's hold measures, on leveraged funds rebuilt from their 1x history (leverage x total return, less 0.95% fee and (L-1) x 3-month bill), validated against the real fund",
+      "expected": "item 26's passing arms keep a positive mean edge before 2011",
+      "sample": "item 26's judged funds with a 1x counterpart, rebuilt from the counterpart's first bar (1999 at the earliest) to 2010-12-31; stress reads 2000-03..2002-12 and 2007-10..2009-12; single-stock 2x funds rebuilt from their stocks 2000 on, reported apart; < 8 funds or < 300 closed lots = no verdict",
+      "rule": "for an arm that passed item 26: pre-2011 mean edge > 0 and positive on more than half the funds; a name with a lot held over 5 years or a drawdown over 90% of budget leaves the default list",
+      "mechanism": "item 26's: mean reversion after a large fall in a daily-reset fund, here read through the two worst falls in the data",
+      "rivals": [
+        {
+          "explanation": "the rebuild flatters the fund",
+          "check": "validation: daily correlation >= 0.99, annual difference <= 3 points"
+        },
+        {
+          "explanation": "survivors only",
+          "check": "index funds rebuilt from their 1x; single stocks reported as survivors"
+        },
+        {
+          "explanation": "one era",
+          "check": "the two stress windows read apart"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#28-the-share-ladder-before-2011-and-on-single-stocks-daily-reset-funds-rebuilt-from-their-1x-history",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
