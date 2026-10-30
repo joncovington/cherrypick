@@ -356,7 +356,15 @@ cherrypick.backtest read overview|run --id`, async, memoised 30 s) each 404 with
 unless the features answer says `backtest: true`; a run id is checked against the runner's shape
 (`BACKTEST_RUN_ID` in `@console/shared`) and anything else is a 400 that spawns nothing. A bridge,
 not a mirror: the unlock verdict, every check, the paired interval and `no_exposure` are the module's.
-Tabs (`queue` first, and the landing tab, from 2026-10-29): `data` (licence clock, stores with refusals), `validation` (per cadence: the unlock verdict, the
+Tabs (`queue` first, and the landing tab, then `studies`, `runs`, `data`, `validation`, from
+2026-10-29): `studies` (2026-10-29, `pages/Backtest/StudiesTab.tsx`, `GET /api/backtest/studies` →
+`services/studiesBridge.ts` → `python -m cherrypick.cli hypotheses-board`, behind the same gate
+because the verdicts are read from licensed result files; docs/studies-board-plan.md): what we
+tested and what we found. One row per hypothesis-register item, grouped in progress / declared /
+finished / observations, with its status (the register's), each result file's verdict as the study
+wrote it (a file with no word says "see plan", never a guess), the decision taken and when it last
+moved. A row opens to the pass test, rivals with their checks, per-arm verdicts, its run, its queue
+rows and the plan section on GitHub. A result file is shown by its name only), `data` (licence clock, stores with refusals), `validation` (per cadence: the unlock verdict, the
 vendor-against-recorder checks, per-session quote and profile agreement), `runs` (the list; `?run=`
 reads one report: each arm's summary, the pairing with control, trials, fill model, code commit, data
 fingerprint, refused sessions, and the run cards, 2026-10-26, `pages/Backtest/RunCards.tsx`: per arm

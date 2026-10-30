@@ -1,6 +1,7 @@
 import { BacktestDataTab, BacktestRunsTab, BacktestValidationTab } from "../../pages/Backtest/BacktestPage";
 import { BacktestQueueTab } from "../../pages/Backtest/QueueTab";
 import { BacktestSlicesTab } from "../../pages/Backtest/SlicesTab";
+import { BacktestStudiesTab } from "../../pages/Backtest/StudiesTab";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
@@ -13,9 +14,11 @@ import type { SlideDef } from "../types";
 export const slides: SlideDef[] = [
   // The queue first (2026-10-29): what is running and what just finished is what the page is opened for.
   { id: "queue", label: "queue", render: () => <BacktestQueueTab /> },
+  // What we tested and what we found (2026-10-29): a run is opened from its study.
+  { id: "studies", label: "studies", render: () => <BacktestStudiesTab /> },
+  { id: "runs", label: "runs", render: () => <BacktestRunsTab /> },
   { id: "data", label: "data", render: () => <BacktestDataTab /> },
   { id: "validation", label: "validation", render: () => <BacktestValidationTab /> },
-  { id: "runs", label: "runs", render: () => <BacktestRunsTab /> },
   // B5: an arm's in-sample slice report (`technicals slices`); never a gate.
   { id: "slices", label: "slices", render: () => <BacktestSlicesTab /> },
 ];

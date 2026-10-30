@@ -181,7 +181,7 @@ export function headline(p: QueuePlan): string {
 
 // --------------------------------------------------------------------------- filters
 export type StatusFilter = "all" | "active" | "failed" | "done";
-const FILTER_KEY = "backtest-queue-filter";
+export const FILTER_KEY = "backtest-queue-filter";
 
 export function keep(t: ResearchTask, status: StatusFilter, study: string): boolean {
   if (study !== "" && t.study !== study) return false;

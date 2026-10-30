@@ -4,6 +4,7 @@ import { registerBacktestRoutes } from "../src/routes/backtest.js";
 import { resetBacktestCache, setBacktestCaller, type BacktestRequest } from "../src/services/backtestBridge.js";
 import { setBridgeCaller, type BridgeResult } from "../src/services/configBridge.js";
 import { resetResearchQueueCache, setResearchQueueCaller } from "../src/services/researchQueueBridge.js";
+import { resetStudiesCache, setStudiesCaller } from "../src/services/studiesBridge.js";
 import { backtestOn, invalidateFeatures } from "../src/services/featuresBridge.js";
 import type { SpawnedJson } from "../src/services/moduleCli.js";
 
@@ -88,6 +89,50 @@ function stubQueue(reply: SpawnedJson) {
   });
 }
 
+const STUDIES = {
+  ok: true,
+  unregistered: ["item22"],
+  rows: [
+    {
+      id: 23,
+      study: "item23",
+      title: "The short delta",
+      status: "failed",
+      legacy: false,
+      pointer: "docs/edge-hypotheses-plan.md#23-the-short-delta",
+      outcome: "live stays at 16 delta",
+      rule: "t > 2",
+      rivals: [{ explanation: "a calm span", check: "both halves" }, { explanation: "no check" }],
+      group: "finished",
+      results: [
+        {
+          path: "{home}/data/backtest/results/research/item23/study-design.json",
+          name: "study-design.json",
+          present: true,
+          modified: "2026-10-28T06:50:12",
+          window: "design",
+          span: null,
+          run_id: "20261028-065012-0174bd",
+          provisional: true,
+          verdicts: [{ arm: "d20", verdict: "fail" }],
+          summary: "fail",
+        },
+      ],
+      queue: { active: false, tasks: [{ id: 24, step: "holdout", status: "done", finished_at: "2026-10-28T23:38:59" }] },
+      last_activity: "2026-10-28T23:38:59",
+    },
+    { id: 99, study: "item99", title: "no group" },
+  ],
+};
+
+let studiesSpawns = 0;
+function stubStudies(reply: SpawnedJson) {
+  setStudiesCaller(async () => {
+    studiesSpawns += 1;
+    return reply;
+  });
+}
+
 let app: FastifyInstance;
 
 beforeAll(async () => {
@@ -104,11 +149,14 @@ afterEach(() => {
   setBridgeCaller();
   setBacktestCaller();
   setResearchQueueCaller();
+  setStudiesCaller();
   invalidateFeatures();
   resetBacktestCache();
   resetResearchQueueCache();
+  resetStudiesCache();
   spawned = [];
   queueSpawns = 0;
+  studiesSpawns = 0;
 });
 
 const closed: Array<[string, BridgeResult]> = [
@@ -126,9 +174,14 @@ describe("the gate is closed", () => {
       const b = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}` });
       stubQueue({ ok: true, json: QUEUE, error: null });
       const c = await app.inject({ method: "GET", url: "/api/backtest/queue" });
+      stubStudies({ ok: true, json: STUDIES, error: null });
+      const d = await app.inject({ method: "GET", url: "/api/backtest/studies" });
       expect(a.statusCode).toBe(404);
       expect(b.statusCode).toBe(404);
       expect(c.statusCode).toBe(404);
+      expect(d.statusCode).toBe(404);
+      expect(d.body).not.toContain("item23");
+      expect(studiesSpawns).toBe(0);
       // The unknown-API body, so a closed gate reads as no route at all.
       expect(a.json()).toEqual({ error: "not found" });
       expect(a.body).not.toContain("SPX");
@@ -241,6 +294,41 @@ describe("the gate is open", () => {
       data: null,
       error: "research queue read unavailable — exit 2",
     });
+  });
+
+  it("serves the studies board renamed: a result keeps its file name only, a bad row is dropped", async () => {
+    setBridgeCaller(() => features({ backtest: true }));
+    stubStudies({ ok: true, json: STUDIES, error: null });
+    const r = await app.inject({ method: "GET", url: "/api/backtest/studies" });
+    expect(r.statusCode).toBe(200);
+    const body = r.json();
+    expect(body.ok).toBe(true);
+    expect(body.data.unregistered).toEqual(["item22"]);
+    expect(body.data.rows).toHaveLength(1);
+    expect(body.data.rows[0]).toMatchObject({
+      id: 23,
+      study: "item23",
+      status: "failed",
+      group: "finished",
+      outcome: "live stays at 16 delta",
+      queueActive: false,
+      lastActivity: "2026-10-28T23:38:59",
+      rivals: [{ explanation: "a calm span", check: "both halves" }],
+      tasks: [{ id: 24, step: "holdout", status: "done", createdAt: null, startedAt: null, finishedAt: "2026-10-28T23:38:59" }],
+    });
+    expect(body.data.rows[0].results[0]).toEqual({
+      name: "study-design.json",
+      present: true,
+      modified: "2026-10-28T06:50:12",
+      window: "design",
+      span: null,
+      runId: "20261028-065012-0174bd",
+      provisional: true,
+      verdicts: [{ arm: "d20", verdict: "fail" }],
+      summary: "fail",
+    });
+    expect(r.body).not.toContain("{home}");
+    expect(studiesSpawns).toBe(1);
   });
 
   it("a failed subprocess is an error, never an empty overview", async () => {
