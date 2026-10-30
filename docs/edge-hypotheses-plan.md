@@ -2314,6 +2314,17 @@ trip at the natural cost a sixth to a half of a spread's best case.*
   trigger level, and an intraday target is read on closes. Black-Scholes deltas, not the vendor's.
   Early assignment of a short leg is not modelled. The 7- and 21-day tenors have no history before
   2022.
+- **Settled with the replay, before the history was fetched (2026-10-30):**
+  - Strikes are read against the day's raw close (the technicals history's bars). The trigger and
+    the target read split-adjusted ratios.
+  - A split ex-date inside a trade ends it at the session before, at that session's quotes, because
+    an adjusted contract's strikes and deliverable change. TQQQ split five times in the windows.
+  - A leg with no two-sided quote on an exit session is marked at its last earlier quote in the
+    trade. On its expiry session, it is marked at intrinsic value with the settlement fee. Both are
+    counted.
+  - A roll that cannot be opened ends the trade where the last set closed.
+  - The reported ZEBRA exercise applies only when the long calls are in the money.
+  - The stress takes the options' fees and fills only. The share lot keeps its 0.05% a side.
 - **Data:** ThetaData Options Standard end-of-day chains for SOXL and TQQQ, fetched by a research-queue
   `fetch-chains` row into the backtest store, beside item 26's `bars.db` and item 28's Treasury files.
   The replay is `scripts/share_ladder_item29.py`, run as `item29/plan`, `item29/fetch-chains` and
