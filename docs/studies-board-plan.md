@@ -108,12 +108,14 @@ The register and this plan hold verdict words and pointers only. The board reads
 files on this machine, behind the fail-closed backtest gate, and shows words, never their figures.
 No fixture in a test carries a licensed figure.
 
-## Open questions
+## Decisions (2026-10-29)
 
-1. **Slices:** move to Review (needs a per-tab fail-closed gate, since `FAIL_CLOSED_PAGES` is
-   per page) or stay under Backtest.
-2. **The trial count:** `trials` in the overview is empty, so the DSR on every run deflates by
-   nothing. Recording trials per study is a fix to a number recorded wrong; it is its own PR, not
-   part of this board.
-3. **Pre-register items (1-17):** shown with status and pointer only, or backfilled with the full
-   fields where the plan section has them?
+1. **Slices moves to Review.** It reads paper trades, and a reader looks for it beside paper and
+   live results. A report may still come from a licensed replay, so it needs a fail-closed gate per
+   tab (`FAIL_CLOSED_PAGES` is per page today); that gate lands with the move, shown to fail first.
+2. **The trial count is its own PR.** `trials` in the overview is empty, so the DSR on every run
+   deflates by nothing. Recording trials per study fixes a number recorded wrong, so it lands
+   immediately and apart from this board.
+3. **Pre-register items (1-17) show status and pointer only.** Their four parts live in the plan
+   sections they point to; backfilling them now would rewrite declarations after the result was
+   known. Their `results` is filled where a file exists.
