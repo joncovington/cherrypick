@@ -2,7 +2,7 @@ import { Fragment, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ManageAccount, ManageLevel, ManagePayload, ManageTrade } from "@console/shared";
 import { Card, DataCard, sortRows, useSort } from "../../components/DataTable";
-import { Cells, HeadRow, headersOf, useColumns, type Column } from "../../components/columns";
+import { Cells, HeadRow, SecondaryCells, headersOf, secondaryOf, useColumns, type Column } from "../../components/columns";
 import { TileGrid, tileCount } from "../../components/performance/TileGrid";
 import { useOverview } from "../../lib/api";
 import { parseSuiteTs } from "../../lib/etTime";
@@ -77,12 +77,6 @@ function net(price: number | null, side: "cr" | "db" | null): string {
   return price === null || side === null ? "—" : `${price.toFixed(2)} ${side}`;
 }
 
-/** A level's net price signed the suite's way (credit +, debit −), so a column of them sorts as cash. */
-function signedLevel(l: ManageLevel | null): number | null {
-  if (l === null || l.netPrice === null || l.netSide === null) return null;
-  return l.netSide === "cr" ? l.netPrice : -l.netPrice;
-}
-
 // A stop set from the max loss rather than the premium. The share is the ruleset's, not this page's.
 function levelText(l: ManageLevel | null): string {
   if (!l) return "—";
@@ -111,15 +105,13 @@ const ACTION_PRIORITY: Record<string, number> = {
   HOLD: 7,
 };
 
-const HELD_TITLE = "an earnings trade: its take profit and stop wait for the call, and it closes after it";
-
 /**
  * The expanded trade: the plain-English verdict as a lead, then the facts behind it as a row of
  * cards (opened, exit levels, the closing order, what the model says it can still do, the rules, and
  * an earnings trade's report where it is one), then the legs. Every figure is packages/manage's;
  * this only lays them out.
  */
-function TradeDetail({ t }: { t: ManageTrade }) {
+export function TradeDetail({ t }: { t: ManageTrade }) {
   const et = t.earningsTrade;
   const held = heldForCall(t);
   // Entry + close at mid = gross; gross − fees = net. Fees are a cost, shown positive and subtracted once.
@@ -468,10 +460,22 @@ function PortfolioAccount({ a, oversize }: { a: ManageAccount; oversize: number 
  * the trade cell). P&L is net of fees in both views (2026-10-21; it was gross, with net only in the
  * expanded chain); a trade whose fees were never read shows a dash, its gross on hover.
  */
+/** An earnings date the position's nearest short expiry reaches: the one case the column matters. */
+export function earningsInLife(t: ManageTrade): boolean {
+  const days = t.earnings?.days ?? null;
+  return days !== null && days >= 0 && (t.nearestShortDte === null || days <= t.nearestShortDte);
+}
+
+/**
+ * The simple view keeps a trade, what to do, its net, and why (2026-10-30, docs/console-review-plan.md
+ * batch 3). The exit levels are in each trade's expanded row already, and live capture repeats capture
+ * on a fresher mark; both stay in the detail view.
+ */
 function tradeColumns(
   variant: "act" | "hold",
   open: string | null,
   setOpen: (id: string | null) => void,
+  anyEarnings: boolean,
 ): Column<ManageTrade>[] {
   const head: Column<ManageTrade>[] = [
     {
@@ -521,8 +525,8 @@ function tradeColumns(
           },
         ]
       : []),
-    { key: "conf", label: "conf.", sort: "conf", detailOnly: true, td: (t) => <td style={RIGHT}>{t.confidence ?? "—"}</td> },
-    { key: "kind", label: "kind", sort: "kind", detailOnly: true, td: (t) => <td>{t.kind ?? "—"}</td> },
+    { key: "conf", label: "conf.", sort: "conf", secondary: true, td: (t) => <td style={RIGHT}>{t.confidence ?? "—"}</td> },
+    { key: "kind", label: "kind", sort: "kind", secondary: true, td: (t) => <td>{t.kind ?? "—"}</td> },
     {
       key: "pnl",
       label: "P&L (net)",
@@ -557,6 +561,7 @@ function tradeColumns(
     },
     {
       key: "liveCapture",
+      secondary: true,
       label: "live capture",
       sort: "liveCapture",
       title: "capture / return on the live mark; 'at TP' / 'at stop' when it reaches the evaluation's level (the next evaluation judges it)",
@@ -565,6 +570,7 @@ function tradeColumns(
     { key: "dte", label: "short dte", sort: "dte", td: (t) => <td style={RIGHT}>{t.nearestShortDte ?? "—"}</td> },
     {
       key: "earnings",
+      secondary: !anyEarnings,
       label: "earnings",
       sort: "earnings",
       title: "sorts by days to the announcement",
@@ -586,36 +592,7 @@ function tradeColumns(
       },
     ];
   }
-  const waits = (
-    <td className="muted" style={RIGHT} title={HELD_TITLE}>
-      waits for call
-    </td>
-  );
-  return [
-    ...head,
-    {
-      key: "tp",
-      label: "take profit",
-      sort: "tp",
-      td: (t) => (heldForCall(t) ? waits : <td style={RIGHT}>{net(t.takeProfit?.netPrice ?? null, t.takeProfit?.netSide ?? null)}</td>),
-    },
-    {
-      key: "stop",
-      label: "stop",
-      sort: "stop",
-      td: (t) => (heldForCall(t) ? waits : <td style={RIGHT}>{net(t.stop?.netPrice ?? null, t.stop?.netSide ?? null)}</td>),
-    },
-    {
-      key: "timeExit",
-      label: "time exit",
-      td: (t) => (
-        <td title={t.earningsTrade ? HELD_TITLE : undefined}>
-          {t.timeExit ?? "—"}
-          {t.earningsTrade ? <span className="muted"> · after call</span> : null}
-        </td>
-      ),
-    },
-  ];
+  return head;
 }
 
 /**
@@ -637,7 +614,9 @@ export function TradesCard({
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const sort = useSort();
-  const cols = useColumns(tradeColumns(variant, open, setOpen));
+  const all = tradeColumns(variant, open, setOpen, trades.some(earningsInLife));
+  const cols = useColumns(all);
+  const secondary = secondaryOf(all);
   const live = useLiveMarks();
   const liveOf = (t: ManageTrade) => live?.trades.get(t.tradeId);
   // Each trade's detail row is rendered inside its own Fragment, so it follows its trade through a sort.
@@ -652,8 +631,6 @@ export function TradesCard({
     capture: (t) => t.capture,
     dte: (t) => t.nearestShortDte,
     earnings: (t) => t.earnings?.days ?? null,
-    tp: (t) => signedLevel(t.takeProfit),
-    stop: (t) => signedLevel(t.stop),
   });
   return (
     <DataCard
@@ -672,6 +649,7 @@ export function TradesCard({
           {open === t.tradeId && (
             <tr>
               <td colSpan={cols.length}>
+                <SecondaryCells cols={secondary} row={t} />
                 <TradeDetail t={t} />
               </td>
             </tr>
