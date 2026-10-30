@@ -122,7 +122,10 @@ attributes say: the full company name, the call/put badge, and the side tooltip.
   The one exception is a **mixed** spread, a structure with a call and a put leg (the site's `M`:
   a risk reversal, a strangle), first seen 2026-10-07. Its premium does not satisfy the identity
   (RUN 6/12 RR at 0.16 × 113,000 printed 1,130; VALE and BABA off by other factors, no formula fits
-  all three), so it is kept as the site's figure with `premium_unverified`. It is still required to
+  all three), so it is kept as the site's figure with `premium_unverified`. So is a spread of more
+  than two legs, first seen 2026-10-29: a GE call condor (CFST) printed half the identity and an OXY
+  double calendar (CST) printed 152 for 1.52 × 8,515, each rejecting its whole day (10-29, and 10-30
+  on an NVDA CFST); every two-leg type seen satisfies it exactly. Either is still required to
   read. It never sizes, scores or ranks a derived flow, is never the largest trade, and is marked
   "unverified" in the console and the Discord post. `reparse` promotes a rejected day whose own
   HTML passes after a parser fix.

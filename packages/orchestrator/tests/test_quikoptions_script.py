@@ -99,6 +99,7 @@ def report(
     sweep_headers: list[str] | None = None,
     expiry: str = "21-Jan-28",
     mixed_premium: str | None = None,
+    condor_premium: str | None = None,
 ) -> str:
     # VALE's risk reversal as the site drew it on 2026-10-07: 0.08 x 10,000 printed a premium of
     # 10,000, which price x size x 100 (80,000) does not reproduce.
@@ -110,6 +111,18 @@ def report(
             + _td("13.63", "13.62 / 13.63") + _td("BOST")
         ]
         if mixed_premium is not None
+        else []
+    )  # fmt: skip
+    # GE's four-leg call condor as the site drew it on 2026-10-29: 4.34 x 10,000 printed a premium of
+    # 2,170,217, half of price x size x 100.
+    condor = (
+        [
+            MENU + _symbol("GE", "GE Aerospace") + _td("13:37:43.057", "10/2/2026 1:37:43 PM")
+            + _td("10,000") + _td("20-Nov-26") + _td("CFST") + _cp("C")
+            + _td("261120 320/330/340/350 CFST") + _td("4.34") + _td("0.15") + _td(condor_premium) + _td("")
+            + _td("311.38", "311.27 / 311.49") + _td("PHIL")
+        ]
+        if condor_premium is not None
         else []
     )  # fmt: skip
     tables = {
@@ -141,6 +154,7 @@ def report(
                 + _td("261009 11/11.5 CS") + _td("-0.22") + _td("-0.24") + _td(spread_premium) + _td("")
                 + _td("11.12", "11.11 / 11.12") + _td("EDGX"),
                 *mixed,
+                *condor,
             ],
         ),
         "Top VolOverOI (OI &gt; 100)": (
@@ -797,6 +811,28 @@ def test_an_unverified_premium_is_never_the_largest_trade():
     ai = next(r for r in doc["tables"]["spreads"] if r["symbol"] == "AI")
     assert ai["premium_unverified"] is False
     assert doc["derived"]["largest_trade"]["symbol"] != "VALE"
+
+
+def test_a_four_leg_spread_premium_is_not_checked():
+    assert _check(report(condor_premium="2,170,217")) == []
+    ge = next(r for r in _report_doc(condor_premium="2,170,217")["tables"]["spreads"] if r["symbol"] == "GE")
+    assert ge["cp"] == "call" and ge["premium"] == 2_170_217 and ge["premium_unverified"] is True
+
+
+def test_a_four_leg_spread_still_needs_its_numbers():
+    assert _check(report(condor_premium="")) == ["spreads GE: price, size or premium did not read"]
+
+
+def test_a_two_leg_spread_is_still_checked_beside_a_four_leg_one():
+    problems = _check(report(condor_premium="2,170,217", spread_premium="921,800"))
+    assert len(problems) == 1 and problems[0].startswith("spreads AI")
+
+
+def test_spread_legs_counts_the_spread_cell():
+    assert fq.spread_legs("261009 11/11.5 CS") == 2
+    assert fq.spread_legs("261120 320/330/340/350 CFST") == 4
+    assert fq.spread_legs("261030 66/261030 67/261106 64/261106 65 CST") == 4
+    assert fq.spread_legs(None) is None
 
 
 def _store(tmp_path, monkeypatch):

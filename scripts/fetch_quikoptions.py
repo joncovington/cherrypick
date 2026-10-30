@@ -464,8 +464,8 @@ def validate_report(doc: dict, expected: date | None = None) -> list[str]:
     Volume / OI, on Openings too, whose OI is at most OPENING_MAX_OI (0 until 2026-10-09; V/OI =
     Volume at OI 0). Plus: the session the page states is the one expected, every table is there
     with at least one row, every expiry and call/put reads. A mixed spread (call and put legs, `M`)
-    is the one row the premium identity is not checked on: the site's premium for one does not
-    satisfy it."""
+    and a spread of more than two legs are the rows the premium identity is not checked on: the
+    site's premium for either does not satisfy it."""
     problems = list(doc.get("problems", []))
     if expected is not None and doc.get("session") != expected.isoformat():
         problems.append(f"page shows session {doc.get('session')}, expected {expected.isoformat()}")
@@ -511,11 +511,12 @@ def validate_report(doc: dict, expected: date | None = None) -> list[str]:
             )
             if None in (price, size, premium):
                 problems.append(f"{name} {sym}: price, size or premium did not read")
-            elif row.get("cp") == "mixed":
+            elif name == "spreads" and premium_unverified(row):
                 # The site's premium for a mixed structure is not price x size x 100 (2026-10-07:
                 # RUN 6/12 RR at 0.16 x 113,000 printed 1,130; VALE and BABA off by other factors),
-                # and no formula fits all three. It is kept as the site's figure and marked
-                # unverified in `derive`, never checked against an identity it does not satisfy.
+                # and no formula fits all three; nor is a four-leg one's (`premium_unverified`). It
+                # is kept as the site's figure and marked unverified in `derive`, never checked
+                # against an identity it does not satisfy.
                 pass
             elif abs(price * size * 100 - premium) > tol:
                 problems.append(f"{name} {sym}: {price} x {size} x 100 != premium {premium:,.0f}")
@@ -551,7 +552,7 @@ def validate_report(doc: dict, expected: date | None = None) -> list[str]:
 # What the console and the Discord series show beyond the site's own cells. Computed here, at
 # capture, because the console derives no verdicts of its own; recomputable for every saved day
 # from its HTML (`reparse`), so a change to a rule here is a re-run, never a lost day.
-DERIVED_VERSION = 2  # 2: spreads carry premium_unverified (mixed), kept out of largest_trade
+DERIVED_VERSION = 3  # 2: spreads carry premium_unverified (mixed), kept out of largest_trade; 3: 4-leg too
 SIZE_BANDS = {
     "1": ("1s",),
     "2-10": ("2s", "3s", "4s", "5s", "6s", "7s", "8s", "9s", "10s"),
@@ -572,6 +573,22 @@ def spread_direction(price: float | None, delta: float | None, cp: str | None) -
     if ((price > 0) == (delta > 0)) != (cp == "call"):
         return None
     return "bought" if price > 0 else "sold"
+
+
+def spread_legs(text: str | None) -> int | None:
+    """How many legs the site's Spread cell names: a strike, or an expiry and strike, per leg, joined
+    by "/" ("261120 320/330/340/350 CFST" is four). None when the cell did not read."""
+    return text.count("/") + 1 if text else None
+
+
+def premium_unverified(row: dict) -> bool:
+    """Whether a spread's premium is a site figure that price x size x 100 does not reproduce: a
+    mixed structure (2026-10-07), or one of more than two legs. Every two-leg type seen satisfies the
+    identity; the first four-leg ones did not (2026-10-29: a GE call condor, CFST, printed half of it
+    and an OXY double calendar, CST, printed 152 for 1.52 x 8,515; 2026-10-30 an NVDA CFST, half),
+    and one such row rejected the whole day."""
+    legs = spread_legs(row.get("spread"))
+    return row.get("cp") == "mixed" or (legs is not None and legs > 2)
 
 
 def derive(doc: dict) -> dict:
@@ -596,7 +613,7 @@ def derive(doc: dict) -> dict:
     groups: dict[tuple, int] = {}
     for row in tables.get("spreads", []):
         row["direction"] = spread_direction(row.get("price"), row.get("delta"), row.get("cp"))
-        row["premium_unverified"] = row.get("cp") == "mixed"
+        row["premium_unverified"] = premium_unverified(row)
         key = (row.get("symbol"), row.get("time_et"), row.get("size"))
         groups[key] = groups.get(key, 0) + 1
     for row in tables.get("spreads", []):
