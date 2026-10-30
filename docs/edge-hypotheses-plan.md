@@ -2020,6 +2020,28 @@ before any of it is fetched or run.*
   are listed in the result. A different leverage on the same index (SSO beside SPXL, QLD beside
   TQQQ) stays a separate name. The user asked about UPRO and SPXL, which raised it; nothing had
   run. This applies to item 27 too, which reads item 26's names.
+- **Result (2026-10-30): fail, every arm, in the design window; the holdout is reported, not
+  judged.** On 17 names (UPRO and URTY dropped as the same bets as SPXL and TNA), each arm's mean
+  edge over the random-entry control is small and positive (except `chain-5` and `scaled-3`), and
+  positive on most names. But the t is under 1 for every arm, far from the bar, and Holm passes
+  none. For most arms that is the only check that fails; `once-1`, `chain-1` and `steps-1` also have
+  a negative first half, and `scaled-3` fails throughout.
+  - **By name:** the equity-index funds (semiconductors, technology, Nasdaq, S&P, Dow) carry the
+    positive edge. The commodity, gold-miner, oil and China funds carry the negative.
+  - **Rivals:** holding the fund beats the arm on most names in the design window. The same rules
+    on the 1x counterparts make little, so what the ladder earns comes mostly from the leverage,
+    not the trigger.
+  - **The holdout, reported:** the mean edge stays small and positive on about three names in five.
+  - **Intraday, reported:** on hourly bars the `once-3` replay makes a few points a year less than
+    the daily replay over the same span on SOXL, TECL and TQQQ, so the daily fills read somewhat
+    high. The user's own six SOXL fills each sit inside the broker's 5-minute bar, every buy under
+    the trigger, every sell matching a lot at its target.
+  - Every figure is in the local results (`~/.cherrypick/data/research/item26/results.json`,
+    `intraday.json`).
+- **What this decides:** the fail branch. The module is still built, paper first; its console tab
+  says the rule is not a tested edge. The live pilot is sized from the measured drawdown, and the
+  user decides whether to arm it. The defaults lean to the equity-index funds, where the edge sign
+  was positive, though that is a reading of a failed test, not a pass.
 
 ### 27. Getting the share ladder out of multi-year holds: averaging down, a decaying target, a time stop, a trend check, a confirmation
 
@@ -2114,6 +2136,21 @@ cells motivated `confirm`; they are in-sample and one name.*
     sells the position opens no new one. Its "losses realised" count lots sold under their own
     cost inside a position sold whole at a gain, so they are reported, not read as losing trades.
   - **No random-entry control:** every arm is paired against the base, as declared.
+- **Result (2026-10-30): `decay` passes; the other five fail.** On item 26's 17 names:
+  - **`decay`** meets every check in the design window and both in the holdout. The longest hold is
+    shorter on most names and in both halves, return gives up less than a point a year at both
+    costs, and drawdown is no worse. The gain is modest: the median name's longest hold falls by
+    about a sixth, and lots still wait over a year on the hard names.
+  - **`confirm`** fails only on the t of the shorter hold. Its return and drawdown are both better
+    than the base in the design window and the holdout. Promising, but not shown.
+  - **`avg-5`, `avg-5-decay`, `time-120`** shorten holds clearly, but pay for it: return falls
+    beyond the 2-point margin or drawdown worsens (`time-120` sharply).
+  - **`trend`** shortens holds on too few names, and its return falls beyond the margin in the
+    design window.
+  - Every figure is in the local result (`~/.cherrypick/data/research/item27/results.json`).
+- **What this decides:** the pass branch for `decay`. It becomes the `ladder` module's default exit,
+  paper first, and the live pilot's caps are proposed from its drawdown and longest hold. Item 26
+  failed, so this is the better way to run an untested rule, not an edge.
 
 ### 28. The share ladder before 2011 and on single stocks: daily-reset funds rebuilt from their 1x history
 
@@ -2184,6 +2221,28 @@ the funds' history. Item 26 starts in 2011, so it never sees 2000-02 or 2008, th
     90% of its budget, is left off the module's default list, kept only by the user's choice.
     Single stocks join the default list only if they meet that and their edge is above zero across
     the whole span.
+- **Result (2026-10-30): no verdict; no arm passed item 26, so every arm is reported.** The fetch and
+  replay are `scripts/share_ladder_item28.py` (`item28/fetch`, `item28/study`).
+  - **Validation:** 11 of the 17 funds pass. AGQ, FAS, TECL, UCO, USD and YINN fail, on correlation
+    or the annual difference. TECL's miss sits mostly in 2009, before it moved to the index the 1x
+    fund tracks. It stays out as declared. ERX's fit from 2020-04-01 confirms the change date. Most
+    rebuilt series end the overlap richer than the real fund (financing and swap costs above the
+    bill rate), so the rebuild flatters, if anything.
+  - **The pre-2011 holdout, reported:** most arms' mean edge is negative and positive on a minority of
+    funds. The `chain` arms at caps 3 and 5 are the exception, positive on most. The 2007-09 read is
+    negative for nearly every arm, sharply so for most; the 2000-02 read is mixed.
+  - **Holds:** a lot bought in the 2000-02 fall on rebuilt SOXL, TQQQ and others is still open in
+    2026. Over the whole rebuilt span, `once-3` holds a lot over five years or draws down over 90% of
+    its budget on 10 of the 11 funds. SSO is the one fund left on the default list.
+  - **Single stocks:** 32 of 40 fail validation, almost all on the annual difference. A 3-point
+    annual bar is tight for stocks with 100%-plus years, where a small daily shortfall in the fund
+    compounds into many points. The eight left are reported apart. On `once-3`, CBRS and NOW meet
+    the default-list rule. All of them are today's survivors.
+  - Every figure is in the local result (`~/.cherrypick/data/research/item28/results.json`).
+- **What this decides:** the "either way" branch. Under the declared rule, the module's default list
+  holds SSO alone among the funds. Every other fund, SOXL and TQQQ included, joins only by the
+  user's choice, with the console tab showing its rebuilt worst hold and drawdown. Caps are proposed
+  from the pre-2011 drawdowns, not the post-2011 ones.
 
 ## Not worth revisiting
 
