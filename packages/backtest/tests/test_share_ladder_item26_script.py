@@ -128,3 +128,12 @@ def test_verdict_passes_only_when_every_check_holds_and_is_no_verdict_when_thin(
     assert all(v["verdict"] == "fail" for v in noisy.values())
     thin = sl.judge(names(5, [2.0, 2.5, 3.0, 1.5]))
     assert all(v["verdict"] == "no verdict" for v in thin.values())
+
+
+def test_one_fund_per_index_and_leverage_keeps_the_most_traded():
+    dv = {"UPRO": 270e6, "SPXL": 410e6, "SSO": 200e6, "TNA": 250e6, "URTY": 26e6, "SOXL": 8e9, "AGQ": 2e8}
+    kept, dropped = sl.one_per_bet(list(dv), dv)
+    assert kept == ["AGQ", "SOXL", "SPXL", "SSO", "TNA"]  # SSO is 2x SPY: a different bet from SPXL
+    assert dropped == {"UPRO": "SPXL", "URTY": "TNA"}
+    alone, none = sl.one_per_bet(["UPRO", "SOXL"], dv)
+    assert alone == ["SOXL", "UPRO"] and none == {}

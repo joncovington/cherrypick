@@ -330,10 +330,28 @@ def names_in(conn: sqlite3.Connection) -> tuple[list[str], dict]:
     lev = sorted(s for s, f in leveraged_funds().items() if str(f.get("kind") or "leveraged") == "leveraged")
     first = dict(conn.execute("SELECT symbol, MIN(start) FROM bars WHERE interval = '1d' GROUP BY symbol"))
     picked = [s for s in lev if med.get(s, 0) >= MIN_DOLLAR_VOLUME and (first.get(s) or "9999") <= FIRST_BAR]
-    return picked, {
+    kept, dropped = one_per_bet(picked, med)
+    return kept, {
         "dollar_volume_file": meta.get("file"),
         "liquid": sum(med.get(s, 0) >= MIN_DOLLAR_VOLUME for s in lev),
+        "same_bet_dropped": dropped,
     }
+
+
+def one_per_bet(names: list[str], dollar_volume: dict[str, float]) -> tuple[list[str], dict[str, str]]:
+    """One fund per counterpart and leverage, the most traded; ({dropped: kept} beside the kept
+    list). A fund with no counterpart or no known leverage is its own bet."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from fetch_ladder_bars import COUNTERPART, LEVERAGE
+
+    best: dict[tuple, str] = {}
+    for s in names:
+        key = (COUNTERPART[s], LEVERAGE[s]) if s in COUNTERPART and s in LEVERAGE else (s,)
+        if key not in best or dollar_volume.get(s, 0) > dollar_volume.get(best[key], 0):
+            best[key] = s
+    kept = sorted(best.values())
+    dropped = {s: best[(COUNTERPART[s], LEVERAGE[s])] for s in names if s not in kept}
+    return kept, dropped
 
 
 def daily_bars(conn: sqlite3.Connection, symbol: str) -> list[Bar]:

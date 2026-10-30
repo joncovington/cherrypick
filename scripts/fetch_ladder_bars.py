@@ -141,6 +141,17 @@ COUNTERPART = {
     "UST": "IEF",
 }
 
+# Each counterpart-mapped fund's leverage today. Two funds on one counterpart at one leverage are
+# the same bet (UPRO and SPXL, TNA and URTY, MIDU and UMDD); a study counts the pair once.
+LEVERAGE = {
+    **dict.fromkeys(("SOXL", "TECL", "TQQQ", "UPRO", "SPXL", "UDOW", "TNA", "URTY", "MIDU", "UMDD"), 3),
+    **dict.fromkeys(("FAS", "DPST", "LABU", "CURE", "DRN", "DUSL", "UTSL", "RETL", "NAIL", "DFEN"), 3),
+    **dict.fromkeys(("WEBL", "PILL", "TPOR", "EDC", "YINN", "KORU", "EURL", "MEXX", "TMF", "TYD"), 3),
+    **dict.fromkeys(("USD", "ROM", "QLD", "SSO", "DDM", "UWM", "MVV", "UYG", "ERX", "DIG", "RXL"), 2),
+    **dict.fromkeys(("URE", "UYM", "UXI", "UGE", "NUGT", "JNUG", "CHAU", "INDL", "BRZU", "UCO"), 2),
+    **dict.fromkeys(("BOIL", "AGQ", "UGL", "UBT", "UST"), 2),
+}
+
 
 class Blocked(Exception):
     """Yahoo refused the run (403/429): stop its part, keep what is stored."""
