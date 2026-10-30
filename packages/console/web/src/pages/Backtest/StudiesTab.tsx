@@ -203,7 +203,12 @@ function StudyRows({ row, nowMs, focus = false }: { row: StudyRow; nowMs: number
         </td>
         <td>
           <span className={STATUS_CHIP[row.status] ?? "chip"}>{statusWord(row.status)}</span>
-          {row.queueActive ? <span className="chip chip-ok"> task running</span> : null}
+          {/* queueActive is queued OR running; the word comes from the tasks themselves. */}
+          {row.tasks.some((t) => t.status === "running") ? (
+            <span className="chip chip-ok"> task running</span>
+          ) : row.queueActive ? (
+            <span className="chip"> task queued</span>
+          ) : null}
         </td>
         <td>{resultsLine(row)}</td>
         <td>{row.outcome ?? <span className="muted">—</span>}</td>

@@ -67,7 +67,17 @@ function row(over: Partial<StudyRow>): StudyRow {
 const BOARD: StudiesBoard = {
   unregistered: [],
   rows: [
-    row({ id: 26, study: "item26", title: "A dip-buying share ladder", status: "declared", group: "in_progress", queueActive: true, results: [], outcome: null }),
+    row({
+      id: 26,
+      study: "item26",
+      title: "A dip-buying share ladder",
+      status: "declared",
+      group: "in_progress",
+      queueActive: true,
+      tasks: [{ id: 40, step: "fetch", status: "running", createdAt: null, startedAt: "2026-10-28T19:00:00", finishedAt: null }],
+      results: [],
+      outcome: null,
+    }),
     row({}),
     row({ id: 25, study: "item25", status: "no_verdict", results: [] }),
     row({ id: 2, study: "item2", status: "observation", group: "observation", legacy: true, results: [], rivals: [], rule: null }),
@@ -90,6 +100,24 @@ describe("studies tab", () => {
     expect(out).toContain("live stays at 16 delta");
     expect(out).toContain("task running");
     expect(out).toContain("no verdict");
+  });
+
+  it("a study whose tasks are only queued says queued, not running", () => {
+    // The queue's `active` is queued or running (2026-10-30: two studies said "task running" in
+    // the 18:30-20:30 window while the queue ran nothing).
+    const waiting = row({
+      id: 30,
+      study: "item30",
+      status: "declared",
+      group: "in_progress",
+      queueActive: true,
+      tasks: [{ id: 42, step: "fetch-chain-paths", status: "queued", createdAt: null, startedAt: null, finishedAt: null }],
+      results: [],
+      outcome: null,
+    });
+    const out = html(<StudiesTable board={{ unregistered: [], rows: [waiting] }} nowMs={NOW} />);
+    expect(out).toContain("task queued");
+    expect(out).not.toContain("task running");
   });
 
   it("a result with no word says so, never a guess; a missing file says missing", () => {
