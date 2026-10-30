@@ -39,8 +39,9 @@ function seed(db: Database.Database): void {
   t.run("t1", DAY, "control", "SPX", "stopped", 100, 10, 2, 1.5, `${DAY}T12:10:00`);
   leg.run("t1", "put", "stopped");
   leg.run("t1", "call", "expired");
-  // an OPEN control SPX condor in the same hour: no money, no leg counts, no average dilution
-  t.run("t2", DAY, "control", "SPX", "open", null, null, null, null, `${DAY}T12:20:00`);
+  // an OPEN control SPX condor in the same hour: no money, no leg counts, no average dilution.
+  // Its entry fees are on the row already, as the ledger writes them at the fill.
+  t.run("t2", DAY, "control", "SPX", "open", null, 4, null, null, `${DAY}T12:20:00`);
   leg.run("t2", "put", "open");
   leg.run("t2", "call", "open");
   // settled live-shadow XSP
@@ -144,6 +145,16 @@ describe("the MEIC summary's money", () => {
     const control = s.arms.find((a) => a.arm === "control")!;
     expect(control.evaluated).toBe(3); // SPX only; its 5 XSP refusals belong to no row here
     expect(control.filled).toBe(1);
+  });
+
+  it("foots the by-arm card to the hero, leaving an open condor's entry fees out of both", () => {
+    for (const range of ["day", "week", "month", "all"] as const) {
+      const s = readMeicSummary(config, "paper", ALL_ERAS, range, DAY, 1);
+      const arms = s.arms.reduce((sum, a) => sum + a.net, 0);
+      expect(Math.round(arms * 100)).toBe(Math.round(s.hero.net * 100));
+    }
+    const control = readMeicSummary(config, "paper", ALL_ERAS, "day", DAY, 1).arms.find((a) => a.arm === "control")!;
+    expect(control.net).toBe(90); // t1's 100 - 10; t2's 4 of entry fees wait for it to settle
   });
 
   it("reads a ledger with no entry_attempts table instead of blanking the slide", () => {

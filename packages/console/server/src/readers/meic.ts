@@ -2228,9 +2228,14 @@ export function readMeicSummary(
     const armParams = [...allArms.params, ...rc.params];
     const armMoney = db
       .prepare<string[], Record<string, unknown>>(
+        // Money from settled rows only, as the hero's: an open condor's entry fees are already on
+        // its row, and counting them here put a day of open trades' fees on the card while the
+        // hero, summing settled rows, read zero (2026-10-30). Open rows still make an arm's row,
+        // so an arm trading today keeps its gate counts.
         `SELECT ${armCol} AS arm, symbol,
                 ${SETTLED} AS trades, ${NET} AS net,
-                COALESCE(SUM(pnl), 0) AS gross, COALESCE(SUM(fees), 0) AS fees_total
+                COALESCE(SUM(pnl), 0) AS gross,
+                COALESCE(SUM(CASE WHEN pnl IS NOT NULL THEN fees END), 0) AS fees_total
            FROM ic_trades WHERE ${armWhere} GROUP BY ${armCol}, symbol`,
       )
       .all(...armParams);
