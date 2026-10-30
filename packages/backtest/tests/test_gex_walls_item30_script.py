@@ -115,9 +115,10 @@ def test_one_cell_against_the_rest_fails():
     assert not out["conditions"]["negative_each_cell"] and not out["passes"]
 
 
-def test_the_verdict_reads_the_holdout_only_after_a_design_pass():
+def test_a_design_fail_stays_a_fail_whatever_the_holdout_shows():
     good, bad = {"passes": True, "mean_d": -0.1}, {"passes": False, "mean_d": 0.0}
     assert s30.verdict(bad, None, True) == "FAIL"
+    assert s30.verdict(bad, {"mean_d": -0.2}, True) == "FAIL"
     assert s30.verdict(good, {"mean_d": -0.01}, True) == "PASS"
     assert s30.verdict(good, {"mean_d": 0.01}, True) == "FAIL"
     assert s30.verdict(good, None, False) == "NO VERDICT"

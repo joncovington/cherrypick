@@ -979,7 +979,7 @@
       "window": "multi-day",
       "measure": "per wall-day, whether price reaches the wall over the next 10 sessions less the rate any level at the same sigma distance is reached (d); walls from core.gex net_walls on the monthly 20-60 days out nearest 45, open interest from the previous close",
       "expected": "a pooled mean d at or below -0.05: walls reached 5 points less often than distance alone predicts",
-      "sample": "SPY and AAPL, every session; design 2022-01-03..2024-12-31, holdout 2025-01-02..2026-09-30; walls 0.25-2 sigma from the close; < 200 wall-days for a name in a window = no verdict",
+      "sample": "SPY and AAPL, every session; design 2022-01-03..2024-12-31, holdout 2025-01-02..2026-09-30 run after the design whatever it shows (user, 2026-10-30), counting only after a design pass; walls 0.25-2 sigma from the close; < 200 wall-days for a name in a window = no verdict",
       "rule": "design: pooled mean d <= -0.05 and its 95% one-sided stationary-bootstrap upper bound < 0; d < 0 on each name-side cell and each half; below the 21-session-lag placebo; then holdout pooled mean d < 0",
       "mechanism": "dealer hedging of the monthly's open interest damps moves through the largest gamma strikes",
       "rivals": [

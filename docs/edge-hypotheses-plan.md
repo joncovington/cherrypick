@@ -2381,7 +2381,8 @@ horizon: walls from the monthly a 20-60 day trade sells, read over 5 to 20 sessi
   - Pooled: each session's mean d over its name-side cells (four).
 - **Windows:**
   - **Design:** 2022-01-03 to 2024-12-31 (2022's fall and 2023-24's rise).
-  - **Holdout:** 2025-01-02 to 2026-09-30, read only after a design pass.
+  - **Holdout:** 2025-01-02 to 2026-09-30. It is computed and reported whatever the design result
+    (changed 2026-10-30, before any data was fetched), but a design fail is still a fail.
   - Fewer than 200 wall-days for a name in a window is no verdict.
 - **Pass-or-fail rule**, all must hold in the design window:
   - the pooled mean d at or below -0.05 (5 points fewer crossings than distance alone predicts);
