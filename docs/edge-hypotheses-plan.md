@@ -1909,6 +1909,88 @@ before any of it is fetched or run.*
     control.
   - **Run** as a research-queue row (`item26/study`) after the fetch; about 5 minutes a name.
 
+### 27. Getting the share ladder out of multi-year holds: averaging down, a decaying target, a time stop, a trend check, a confirmation
+
+*Source: the user, 2026-10-29: "I would like you to speculate on ways to avoid having to hold for
+such a long period", then "yes" to declaring the likeliest. Declared before item 26's verdict.
+**Seen before declaring:** item 26's timing trial on SOXL alone (scratch store) and its per-lot
+slices. Every lot held over a year was bought early in a long semis fall (2011, 2022, 2024), and
+lots bought on a 15%+ drop or a gap-down open made the least, with intervals spanning zero. Those
+cells motivated `confirm`; they are in-sample and one name.*
+
+- **Question:** does a change to how the ladder adds or exits lots shorten its longest holds
+  without costing more than 2 points a year of return?
+- **Where the edge would live:** **management**, payoff shaping, not a new source of edge. Long
+  holds come from lots bought early in a long fall, and a 3x fund needs a larger rebound than its
+  index to get back to cost. Each arm attacks one of those: buying less early in a fall, or needing
+  less of a rebound to exit.
+- **Look-alikes:** the 10-20 strangle management test (stops failed both halves); the pmcc roll
+  policy (lost to holding); the 10-19 covered-call study.
+- **Base, fixed now:** item 26's `once-3`, the arm nearest the user's own trading. It is the base
+  whatever item 26 finds, so its verdict cannot steer the comparison.
+- **The arms**, each `once-3` with one change, unless stated:
+  - `avg-5`: averaging down. The first lot as `once`; while a position is open, a further lot at
+    each 7% under the last lot bought, up to 5 lots; all of the position sells together at 104% of
+    its average cost. Its budget is 5 lots.
+  - `decay`: each lot's target is 104% of cost for its first 30 calendar days, its cost plus the
+    round-trip cost (breakeven) from day 31, and 95% of cost from day 121.
+  - `avg-5-decay`: `avg-5`, with the blended target decaying on the same schedule from the
+    position's first lot.
+  - `time-120`: a lot still open 120 calendar days after its purchase sells at the next session's
+    open. A bound on `decay`, not a proposal.
+  - `trend`: no new lot while the 1x counterpart's previous close is under its 200-session
+    average. Run only on names with a counterpart.
+  - `confirm`: a session reaching the 7% trigger arms a signal; the lot is bought at the open of
+    the session after the first one that closes up, within 5 sessions, or the signal lapses.
+- **Measured**, per name and arm, in each window: the longest hold in days and the 90th
+  percentile; capital-days tied up per budget; the share of sessions with the cap full; the
+  drawdown with open lots marked to market; % of budget a year; lots opened and closed. Each
+  against `once-3` on the same name, as paired differences.
+- **Rival explanations, each with its check:**
+  - *Shorter holds by selling losers:* that is how `decay` and `time-120` work. **Check:** the
+    return condition below; realised losses are reported.
+  - *Fewer lots, not better ones* (`trend`, `confirm`): **Check:** lots opened reported beside
+    every figure.
+  - *More capital at risk* (`avg-5`): **Check:** drawdown as % of its own larger budget, and peak
+    capital committed, reported.
+  - *One era:* **Check:** both design halves must agree.
+  - *Searching a grid:* **Check:** Holm across the six arms; the schedule (30/120 days, 95%,
+    5 lots) is fixed here.
+- **Pass-or-fail rule**, per arm, all must hold in the design window:
+  - the per-name log ratio of the longest hold to `once-3`'s has a mean below zero with a one-sided
+    t under −2, Holm across the six arms, and is below zero on more than half the names;
+  - it is below zero in both halves (2011-2015, 2016-2019);
+  - the per-name paired difference in % a year has a mean no lower than −2 points, at 0.05% and at
+    0.15% a side;
+  - the mean paired difference in drawdown is no worse than zero;
+  - then the holdout: the mean log ratio of the longest hold below zero and the return condition
+    holding.
+- **Names, windows, costs, fills:** item 26's judged names, windows, costs and daily-bar fill
+  rules. An exit at the open (`time-120`, a `decay` step reached by a gap) fills at the open.
+  Fewer than 8 names, or 300 closed lots in the arm or the base, in a window is no verdict.
+- **Declared limits (B11):** daily bars only; `avg-5` takes on more exposure at the bottom of a
+  fall, and a fund that never recovers takes all of it; the decay schedule is one guess, not a
+  search.
+- **Data:** item 26's `bars.db`; nothing new is fetched. A script importing item 26's replay
+  (`scripts/share_ladder_item27.py`), run as `item27/study` after `item26/study`.
+- **Not in this test, with why** (kept for a later item if this one does not solve it):
+  - *Exit when the 1x fund is up X% since the lot's entry,* sidestepping the 3x fund's decay. Not
+    yet: it changes what the ladder sells for. It is a different rule, not a management of this
+    one, and needs its own declaration.
+  - *Spread across funds that do not fall together* (semis, gold miners, energy, bonds). Not yet:
+    it does not shorten a hold, only how much of the budget one stuck group freezes, and the
+    planned correlated-group cap already covers part of it. Best tested as a portfolio item once
+    the module's caps are set.
+  - *Selling calls against stuck lots* to lower their break-even. Not yet: a contract needs 100
+    shares, beyond the user's lot size (about $1,000, 2026-10-29), and the 10-19 covered-call study
+    found the overlay lost against holding on most names.
+- **Decides:**
+  - **A pass:** the passing arm with the shortest longest hold becomes the `ladder` module's
+    default, paper first, and the live pilot's caps are proposed from its drawdown and longest
+    hold.
+  - **A fail or no verdict:** the module keeps item 26's rule. Its console tab shows each open
+    lot's age and the capital it holds. A management rule chosen by hand is labelled untested.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
