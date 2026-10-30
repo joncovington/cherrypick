@@ -27,15 +27,15 @@ export interface MeicLiveGapRow {
 }
 
 export interface MeicLiveGapTotals {
-  /** Sessions where both settled: these rows add up to the three nets. */
+  /** Condor pairs settled on both sides: these rows add up to the three nets. */
   paired: number;
   liveNet: number;
   paperNet: number;
   gap: number;
-  /** Sessions paper traded and live did not (not armed, or refused): what live sat out. */
+  /** Paper condors with no live one (live not armed, or refused): what live sat out. */
   paperOnly: number;
   paperOnlyNet: number;
-  /** Sessions live traded with no paper twin row. */
+  /** Live condors with no paper twin. */
   liveOnly: number;
 }
 

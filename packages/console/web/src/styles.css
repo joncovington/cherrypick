@@ -4284,6 +4284,17 @@ select.text-input {
   font-weight: 500;
   color: var(--text-muted);
 }
+/* MEIC live vs paper (pages/Live/MeicLiveGap.tsx) borrows the month table; it is wider, so it scrolls
+   inside its card on a phone rather than pushing the page sideways. */
+.gap-scroll {
+  overflow-x: auto;
+}
+.pp-months.gap-table {
+  max-width: 900px;
+}
+.gap-table th {
+  white-space: nowrap;
+}
 .pp-months tfoot td {
   font-weight: 600;
   border-bottom: none;

@@ -45,10 +45,10 @@ describe("MeicLiveGapView", () => {
   it("states the paired totals, the gap and what live sat out", () => {
     const html = render(payload());
     expect(html).toContain("live vs paper — live-shadow");
-    expect(html).toContain("1 session both settled");
+    expect(html).toContain("1 pair settled on both sides");
     expect(html).toContain("$153.00");
     expect(html).toContain("-$4.00");
-    expect(html).toContain("paper traded 1 session live sat out ($175.00)");
+    expect(html).toContain("paper traded 1 condor live sat out ($175.00)");
   });
 
   it("marks a session live did not trade, and shows each side's condor", () => {
