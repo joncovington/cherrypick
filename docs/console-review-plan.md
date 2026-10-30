@@ -208,8 +208,10 @@ rename it `alerts`.
    - MEIC calibration into performance (landed 2026-10-30)
    - Flow 6 tabs to 3, GEX 4 to 2 (landed 2026-10-30, #686)
    - System `modules` into health; Config `dev` into timing (landed 2026-10-30, #686)
-3. **Cards for wide tables:**
-   - Live positions and income candidates
+3. **Cards for wide tables.** Trimmed in BOTH views (the user's choice, 2026-10-30; the console
+   defaults to detail): a short row, and the rest as `secondary` columns in the row's expanded line.
+   - Live positions (landed 2026-10-30). The income candidates are left as they are: six columns in
+     simple view, and a "top three" would rank a list kept by symbol because nothing has an edge
    - Screeners: income lists merged and trimmed, credit spreads, skate as a lens
    - Compare arms (risk merged in), Charts setups
    - module open-position tables (descriptive columns only; money groups whole)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ManageTrade } from "@console/shared";
-import { TradesCard } from "../src/pages/Live/ManagePage";
+import { TradeDetail, TradesCard } from "../src/pages/Live/ManagePage";
 import { aligned, inView, tables } from "./viewTables";
 
 /**
@@ -69,19 +69,25 @@ function hold(t: ManageTrade): string {
   return text(renderToString(<TradesCard title="holding" trades={[t]} loading={false} empty="none" variant="hold" />));
 }
 
+// The exit levels left the holding row on 2026-10-30 (docs/console-review-plan.md batch 3): they are
+// the expanded line's "exit levels" card, so the held-for-call wording is read there.
+function expanded(t: ManageTrade): string {
+  return text(renderToString(<TradeDetail t={t} />));
+}
+
 describe("the held-for-call chip on the positions table", () => {
   it("an earnings trade before its call waits for the call", () => {
-    const html = hold(trade({ earningsTrade: { report: "2026-10-20", timeOfDay: "AMC", leadDays: 4, passed: false } }));
-    expect(html).toContain("waits for call");
-    expect(html).toContain("after call");
-    expect(html).toContain("earnings");
+    const t = trade({ earningsTrade: { report: "2026-10-20", timeOfDay: "AMC", leadDays: 4, passed: false } });
+    expect(hold(t)).toContain("earnings"); // the chip, in the trade cell
+    expect(expanded(t)).toContain("waits for the call");
+    expect(expanded(t)).toContain("after the call");
   });
 
   it("a name excused from the rule shows its own stop and take profit, and no chip", () => {
     // The evaluation of an excused name carries an upcoming report (`earnings`) but no `earnings_trade`.
-    const html = hold(trade({}));
-    expect(html).not.toContain("waits for call");
-    expect(html).not.toContain("after call");
+    const html = expanded(trade({}));
+    expect(html).not.toContain("waits for the call");
+    expect(html).not.toContain("after the call");
     expect(html).toContain("5.60");
     expect(html).toContain("1.40");
   });
@@ -93,13 +99,16 @@ describe("the positions tables, simple and detail", () => {
     renderToString(<TradesCard title={variant} trades={[t]} loading={false} empty="none" variant={variant} />);
   const act = trade({ action: "CLOSE", reason: "stop hit", pnlGross: -57, pnlNet: -59.6, fees: -2.6 });
 
-  it("hides conf. and kind in simple, keeps them in detail, and every row stays under its headers", () => {
+  it("keeps conf., kind and the exit levels out of the row in both views, and every row stays under its headers", () => {
     for (const variant of ["act", "hold"] as const) {
       const simple = tables(inView("simple", () => card(variant, act)))[0]!;
       const detail = tables(inView("detail", () => card(variant, act)))[0]!;
-      expect(simple.headers).not.toContain("conf.");
-      expect(simple.headers).not.toContain("kind");
-      expect(detail.headers).toEqual(expect.arrayContaining(["conf.", "kind"]));
+      for (const t of [simple, detail]) {
+        expect(t.headers).not.toContain("conf.");
+        expect(t.headers).not.toContain("kind");
+        expect(t.headers).not.toContain("live capture");
+        expect(t.headers).not.toContain("take profit");
+      }
       expect(aligned(simple)).toBe(true);
       expect(aligned(detail)).toBe(true);
     }
