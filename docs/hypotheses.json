@@ -591,6 +591,52 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 26,
+      "study": "item26",
+      "title": "A dip-buying share ladder on leveraged funds: buy 7% under the previous close, sell each lot 4% up",
+      "status": "declared",
+      "legacy": false,
+      "setup": "dip-buy",
+      "side": "bullish",
+      "structure": "shares",
+      "window": "multi-day",
+      "measure": "per name and arm, net as a percentage of the name's budget (cap x tranche) a year, idle days included, less a random-entry control's mean (same entries a year at random sessions' opens, same exit, cap and budget, 200 draws); arms once/chain/steps x caps 1/3/5 plus a volatility-scaled once/3",
+      "expected": "a positive mean edge across names after 0.05% a side",
+      "sample": "long leveraged funds in leveraged_funds.json with bars from 2011-01-03 and $20M+ median dollar volume (broker file of 2026-10-29); design 2011-01-03..2019-12-31 daily (Yahoo), holdout 2020-01-02..2026-10-28 (broker from 2022-12-29) counting only after a design pass; < 8 names or < 300 closed lots an arm = no verdict",
+      "rule": "per arm: per-name edge mean > 0 with one-sided t > 2, Holm across ten arms; positive on more than half the names; both design halves positive; positive at 0.15% a side; then holdout mean > 0 and positive on more than half the names",
+      "mechanism": "short-term mean reversion after a large down move in a daily-reset fund, harvested a lot at a time, against the fund's path decay and the open losses a no-stop rule keeps",
+      "rivals": [
+        {
+          "explanation": "long a bull market, not a signal",
+          "check": "judged as edge over the random-entry control"
+        },
+        {
+          "explanation": "leverage, not the trigger",
+          "check": "the same rules on each fund's 1x counterpart, reported"
+        },
+        {
+          "explanation": "a few names",
+          "check": "sign count across names beside the mean"
+        },
+        {
+          "explanation": "one era",
+          "check": "both design halves must agree; holdout holds 2020 and 2022"
+        },
+        {
+          "explanation": "costs",
+          "check": "positive at three times the declared cost"
+        },
+        {
+          "explanation": "searching a grid",
+          "check": "Holm across the ten judged arms"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#26-a-dip-buying-share-ladder-on-leveraged-funds-buy-7-under-the-previous-close-sell-each-lot-4-up",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
