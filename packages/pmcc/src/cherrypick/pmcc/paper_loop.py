@@ -185,6 +185,13 @@ def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]
     2026-08-27 lesson (`stream_window.entry_possible`) holds for every twin, not just the first."""
     _cfg.section(config, "defaults", label="pmcc", log=_log)  # says so once if the block moved
     declared = _cfg.registry(config, label="pmcc", log=_log)
+    _cfg.undeclared(
+        declared,
+        engine.ARMS,
+        label="pmcc",
+        means="each stays off (control excepted, which stays on)",
+        log=_log,
+    )
     arms = [b for b in engine.ARMS if engine.arm_on(declared.get(b), b, today)]
     advised = advised_entries(advice_decision(config, today))
     arms.extend(tag for tag in advised if tag not in arms)

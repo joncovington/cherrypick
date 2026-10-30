@@ -123,6 +123,38 @@ def section(
     return {}
 
 
+def undeclared(
+    declared: Mapping[str, Any],
+    known: tuple[str, ...] | list[str],
+    *,
+    label: str,
+    means: str,
+    log: Callable[[str], None] | None = None,
+) -> list[str]:
+    """The arms the code knows that a declared registry does not name, warning once per label.
+
+    `registry` catches the registry that is missing outright; this is the case one level down. A
+    config kept across upgrades never gains the block for an arm added after it was written, and
+    what the module then does with that arm is its own default, said nowhere: curve runs it on
+    `defaults` (an arm identical to control under another name), pmcc keeps it off. `means` says
+    which, in the module's words.
+
+    An empty registry is skipped: absent, `registry` has already warned; declared empty, the
+    operator turned every arm off on purpose.
+    """
+    if not declared:
+        return []
+    missing = [name for name in known if name not in declared]
+    once = (label, ("undeclared", *missing))
+    if missing and log is not None and once not in _warned:
+        _warned.add(once)
+        log(
+            f"WARNING: {label} config declares no block for {', '.join(missing)} -- {means}. "
+            "If the config predates the arm, copy its block from the module's config.example.json."
+        )
+    return missing
+
+
 def _reset_warnings() -> None:
     """Test seam: the once-per-label memo is process-global by design."""
     _warned.clear()

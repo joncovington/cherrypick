@@ -35,3 +35,27 @@ def test_a_config_without_the_block_warns_once(monkeypatch):
     del config["defaults"]
     warned = _ticks(config, monkeypatch)
     assert len(warned) == 1 and "pmcc" in warned[0]
+
+
+def _undeclared_warnings(config, monkeypatch, n=3):
+    said = []
+    monkeypatch.setattr(paper_loop, "_log", said.append)
+    _cfg._reset_warnings()
+    for _ in range(n):
+        paper_loop.session_books(config, "2026-10-26")
+    _cfg._reset_warnings()
+    return [s for s in said if "declares no block" in s]
+
+
+def test_the_example_config_declares_every_arm(monkeypatch):
+    config = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    assert _undeclared_warnings(config, monkeypatch) == []
+
+
+def test_a_config_that_predates_an_arm_warns_once_naming_it(monkeypatch):
+    """The 2026-10-29 case: a config kept from before `shield_guard` existed kept it off with nothing said."""
+    config = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    key = next(k for k in _cfg.ARM_REGISTRY_KEYS if k in config)
+    del config[key]["shield_guard"]
+    warned = _undeclared_warnings(config, monkeypatch)
+    assert len(warned) == 1 and "pmcc" in warned[0] and "shield_guard" in warned[0]
