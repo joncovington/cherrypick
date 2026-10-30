@@ -6,7 +6,9 @@ explanations with the check that rules each out, its status and a pointer to the
 Never figures: licensed results stay under `~/.cherrypick`, so the register can live in the repo.
 
 - `check`: every row is well formed, and every pointer names a heading that exists. Rows from item 18
-  on must fill every field; legacy rows (1-17) point to the prose that holds theirs.
+  on must fill every field, and one with a verdict names its result files; legacy rows (1-17) point
+  to the prose that holds theirs. On this machine the command also lists queue studies with no row
+  (`unregistered`).
 - `similar`: before a new hypothesis is declared, the rejected rows with the same setup, side,
   structure and window, so a retest is a choice the declaration says out loud.
 - `rereads`: every logged rule change, and whether it has had its first `REREAD_AFTER` trades and is
@@ -32,6 +34,9 @@ RETESTABLE = ("declared", "passed", "failed", "no_verdict")
 MATCH_ON = ("setup", "side", "structure", "window")
 FOUR_PARTS = ("measure", "expected", "sample", "rule")
 REQUIRED_NEW = (*FOUR_PARTS, "mechanism", *MATCH_ON)
+VERDICTS = ("passed", "failed", "no_verdict")
+RESULT_PREFIX = "{home}/"
+ITEM_STUDY = re.compile(r"^item\d+$")
 REREAD_AFTER = 100
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -79,6 +84,17 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
                 isinstance(r, dict) and r.get("explanation") and r.get("check") for r in rivals
             ):
                 problems.append(f"{tag}: a new hypothesis names its rival explanations, each with its check")
+            if row.get("status") in VERDICTS and not row.get("results"):
+                problems.append(f"{tag}: a verdict names its result files in results")
+        results = row.get("results")
+        if results is not None and not (
+            isinstance(results, list)
+            and all(isinstance(p, str) and p.startswith(RESULT_PREFIX) for p in results)
+        ):
+            # Results are licensed or derived from licensed data: they live under the home, never the repo.
+            problems.append(f"{tag}: results must be a list of {RESULT_PREFIX}... paths")
+        if row.get("outcome") is not None and not isinstance(row.get("outcome"), str):
+            problems.append(f"{tag}: outcome is the decision in words")
         pointer = str(row.get("pointer") or "")
         file, _, frag = pointer.partition("#")
         if not file or not frag:
@@ -101,6 +117,12 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
         if missing:
             problems.append(f"rule change {i}: must state {', '.join(missing)}")
     return problems
+
+
+def unregistered(reg: dict, queue_studies) -> list[str]:
+    """Research-queue studies named `itemN` with no register row: a study ran before it was declared here."""
+    known = {r.get("study") for r in reg.get("hypotheses", [])}
+    return sorted({s for s in queue_studies if ITEM_STUDY.match(s or "") and s not in known})
 
 
 def similar(reg: dict, proposal: dict) -> list[dict]:

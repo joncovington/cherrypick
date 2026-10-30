@@ -1875,8 +1875,21 @@ def _trades_since(cfg):
 
 def cmd_hypotheses(cfg, args) -> None:
     """B7: check the register, list rule changes due a re-read, and (--similar) rejected look-alikes."""
+    from cherrypick.core import home as core_home
+    from cherrypick.orchestrator import researchqueue
+
     reg = hypotheses.load()
     problems = hypotheses.check(reg)
+    try:
+        studies = {r["study"] for r in researchqueue.rows(limit=100_000)}
+    except Exception:  # no queue on this machine: nothing to compare
+        studies = set()
+    # A study run by hand leaves no queue row, only its result folder.
+    for base in ("data/backtest/results/research", "data/research"):
+        d = core_home.home() / base
+        if d.is_dir():
+            studies |= {p.name for p in d.iterdir() if p.is_dir()}
+    problems += [f"study {s} (queue or result folder): no register row" for s in hypotheses.unregistered(reg, studies)]
     out = {"ok": not problems, "problems": problems, "rereads": hypotheses.rereads(reg, _trades_since(cfg))}
     if args.similar:
         out["similar_rejected"] = [

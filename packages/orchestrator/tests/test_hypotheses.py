@@ -47,6 +47,23 @@ def test_bad_status_pointer_and_duplicates_are_caught():
     assert any("names no heading" in p for p in problems)
 
 
+def test_a_verdict_names_its_results_under_the_home():
+    done = {**NEW, "status": "failed", "results": ["{home}/data/backtest/results/research/item18/study.json"]}
+    assert hy.check({"hypotheses": [done]}) == []
+    # Broken on purpose: a verdict with no result, and a result outside the home.
+    assert any("names its result files" in p for p in hy.check({"hypotheses": [{**done, "results": None}]}))
+    assert any("{home}/" in p for p in hy.check({"hypotheses": [{**done, "results": ["docs/x.json"]}]}))
+    # A declared row has no result yet, and a legacy verdict may have none.
+    assert hy.check({"hypotheses": [NEW]}) == []
+    assert hy.check({"hypotheses": [{**NEW, "legacy": True, "status": "failed", "rule": None}]}) == []
+
+
+def test_every_queue_item_study_has_a_row():
+    reg = {"hypotheses": [NEW]}
+    assert hy.unregistered(reg, {"item18", "validation", "fair-value"}) == []
+    assert hy.unregistered(reg, {"item18", "item22", "item99"}) == ["item22", "item99"]
+
+
 def test_similar_lists_only_rejected_matches_on_stated_tags():
     reg = hy.load()
     hits = hy.similar(reg, {"setup": "down-day", "structure": "put-bwb"})
