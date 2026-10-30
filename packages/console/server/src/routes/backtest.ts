@@ -6,17 +6,19 @@ import {
   type BacktestRunReport,
   type BridgedResult,
   type ResearchQueue,
+  type StudiesBoard,
 } from "@console/shared";
 import { backtestOn, getFeatures } from "../services/featuresBridge.js";
 import { readBacktestOverview, readBacktestRun } from "../services/backtestBridge.js";
 import { readResearchQueue } from "../services/researchQueueBridge.js";
+import { readStudies } from "../services/studiesBridge.js";
 import type { ConsoleConfig } from "../config.js";
 import { readSlices } from "../readers/slices.js";
 import { readQueueLog } from "../readers/logs.js";
 
 /**
- * `GET /api/backtest/overview`, `GET /api/backtest/runs/:id` and `GET /api/backtest/queue` — the
- * Backtest page.
+ * `GET /api/backtest/overview`, `GET /api/backtest/runs/:id`, `GET /api/backtest/queue` and
+ * `GET /api/backtest/studies` — the Backtest page.
  *
  * **Each route refuses on its own, fail closed.** Unless the orchestrator's features answer was read
  * and says `backtest: true` (`featuresBridge.backtestOn`), the answer is the same 404 an unknown API
@@ -59,6 +61,13 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
   app.get("/api/backtest/queue", async (_req, reply): Promise<BridgedResult<ResearchQueue> | FastifyReply> => {
     if (!backtestOn(getFeatures())) return refuse(reply);
     return readResearchQueue();
+  });
+
+  // The studies board (orchestrator `hypotheses-board`). Behind the same gate: its verdicts are read
+  // from licensed result files.
+  app.get("/api/backtest/studies", async (_req, reply): Promise<BridgedResult<StudiesBoard> | FastifyReply> => {
+    if (!backtestOn(getFeatures())) return refuse(reply);
+    return readStudies();
   });
 
   // One task's log tail, for its expanded row. The id is a positive integer and the path is built
