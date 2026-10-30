@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { ManageBpLevel, ManageCandidate, ManageCandidates } from "@console/shared";
 import { Card } from "../../components/DataTable";
-import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
+import { Cells, SecondaryCells, secondaryOf, useColumns, type Column } from "../../components/columns";
 import { PremiumSlider, useMinPremium } from "../../components/PremiumSlider";
 import { fmtCash, fmtMoney } from "../../lib/format";
 
@@ -137,8 +137,9 @@ function altVerb(c: ManageCandidate, alt: ManageCandidate): string {
 
 /**
  * The columns both lists share, for a row sized at `n(c)` contracts. Quantity, the per-share price,
- * theta and (on the fits list) delta and the next cap are the detail view's; the per-share price is
- * on the cash cell's hover in both. No buying-power dollars column (2026-10-21): what a trade does to
+ * theta and (on the fits list) delta and the next cap are in the row's expanded line in every view
+ * (2026-10-30, docs/console-review-plan.md batch 3: they were the detail view's, the view the console
+ * opens in); the per-share price is also on the cash cell's hover. No buying-power dollars column (2026-10-21): what a trade does to
  * the book is the waiting list's `BP after`, and the too-big list states each one's buying power.
  */
 function sharedColumns(n: (c: ManageCandidate) => number, qtyTitle: string): Column<ManageCandidate>[] {
@@ -171,12 +172,12 @@ function sharedColumns(n: (c: ManageCandidate) => number, qtyTitle: string): Col
         </td>
       ),
     },
-    { key: "qty", label: "qty", title: qtyTitle, detailOnly: true, td: (c) => <td className="num">{n(c)}</td> },
+    { key: "qty", label: "qty", title: qtyTitle, secondary: true, td: (c) => <td className="num">{n(c)}</td> },
     {
       key: "price",
       label: "price",
       title: "per-share net price at mid, and the natural fill (sell at the bid, buy at the ask)",
-      detailOnly: true,
+      secondary: true,
       td: (c) => (
         <td className="num" title={`natural ${price(c.perUnit.natural)}`}>
           {netPrice(c)}
@@ -212,27 +213,27 @@ const THETA_COLUMN = (n: (c: ManageCandidate) => number): Column<ManageCandidate
   key: "theta",
   label: "θ / day",
   title: "theta, whole position, dollars a day",
-  detailOnly: true,
+  secondary: true,
   td: (c) => <td className="num">{fmtCash(times(n(c), c.perUnit.theta))}</td>,
 });
 
 const fitUnits = (c: ManageCandidate) => c.units;
 
-const FIT_COLUMNS: Column<ManageCandidate>[] = [
+export const FIT_COLUMNS: Column<ManageCandidate>[] = [
   ...sharedColumns(fitUnits, "contracts (spreads: one of each leg)"),
   THETA_COLUMN(fitUnits),
   {
     key: "bwd",
     label: "Δ SPY sh",
     title: "beta-weighted delta the position adds, in SPY shares",
-    detailOnly: true,
+    secondary: true,
     td: (c) => <td className="num">{c.perUnit.bwd === null ? "—" : (c.units * c.perUnit.bwd).toFixed(1)}</td>,
   },
   {
     key: "binding",
     label: "next stops at",
     title: "the cap the next contract would break",
-    detailOnly: true,
+    secondary: true,
     td: (c) => <td className="muted">{c.binding ?? "max contracts"}</td>,
   },
 ];
@@ -272,24 +273,52 @@ const WAITING_COLUMNS: Column<ManageCandidate>[] = [
   THETA_COLUMN(roomUnits),
 ];
 
-function FitsTable({ rows }: { rows: ManageCandidate[] }) {
-  const cols = useColumns(FIT_COLUMNS);
+/** A list's rows, each opening to its secondary figures; the opener is the row's first cell. */
+function CandidateRows({ rows, all }: { rows: ManageCandidate[]; all: Column<ManageCandidate>[] }) {
+  const [open, setOpen] = useState<number | null>(null);
+  const cols = useColumns(all);
+  const secondary = secondaryOf(all);
   return (
     <div className="table-scroll">
       <table className="data-table">
         <thead>
-          <HeadRow cols={cols} />
+          <tr>
+            <th aria-label="more" />
+            {cols.map((c) => (
+              <th key={c.key} title={c.title}>
+                {c.label}
+              </th>
+            ))}
+          </tr>
         </thead>
         <tbody>
           {rows.map((c, i) => (
-            <tr key={`${c.underlying}-${c.kind}-${i}`}>
-              <Cells cols={cols} row={c} />
-            </tr>
+            <Fragment key={`${c.underlying}-${c.kind}-${i}`}>
+              <tr>
+                <td>
+                  <button type="button" className="btn btn-quiet" aria-expanded={open === i} aria-label={`${open === i ? "Hide" : "Show"} ${c.underlying}'s detail`} onClick={() => setOpen(open === i ? null : i)}>
+                    {open === i ? "▾" : "▸"}
+                  </button>
+                </td>
+                <Cells cols={cols} row={c} />
+              </tr>
+              {open === i && (
+                <tr>
+                  <td colSpan={cols.length + 1}>
+                    <SecondaryCells cols={secondary} row={c} />
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
     </div>
   );
+}
+
+function FitsTable({ rows }: { rows: ManageCandidate[] }) {
+  return <CandidateRows rows={rows} all={FIT_COLUMNS} />;
 }
 
 function pct(v: number | null, digits = 0): string {
@@ -303,7 +332,6 @@ const BP_WORD: Record<ManageBpLevel, string> = { ok: "under the cap", over: "ove
 /** Trades stopped only by how full the book is, sized as if there were room. The chip is where
  *  taking one TODAY would leave buying power against the VIX-scaled cap, graded by the package. */
 function WaitingTable({ c }: { c: ManageCandidates }) {
-  const cols = useColumns(WAITING_COLUMNS);
   if (c.waiting.length === 0) return null;
   const warn = c.bpWarnOver === null ? "" : ` (amber within ${pct(c.bpWarnOver)} of it, red past that)`;
   return (
@@ -316,20 +344,7 @@ function WaitingTable({ c }: { c: ManageCandidates }) {
         the chip is where taking it today would leave you. Close positions to make the room, or take one knowing it runs
         the book past its cap.
       </p>
-      <div className="table-scroll">
-        <table className="data-table">
-          <thead>
-            <HeadRow cols={cols} />
-          </thead>
-          <tbody>
-            {c.waiting.map((w, i) => (
-              <tr key={`${w.underlying}-${w.kind}-${i}`}>
-                <Cells cols={cols} row={w} />
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <CandidateRows rows={c.waiting} all={WAITING_COLUMNS} />
       {c.waitingTotal > c.waiting.length && (
         <p className="muted pf-caption">
           the first {c.waiting.length} of {c.waitingTotal} waiting, by symbol
