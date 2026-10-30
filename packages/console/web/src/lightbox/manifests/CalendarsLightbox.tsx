@@ -34,8 +34,7 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
   const absent = data !== undefined && !data.dbPresent;
 
   const slides: Array<SlideDef & { id: CalendarsSlideId }> = [
-    { id: "summary", label: CALENDARS_LABEL.summary, render: () => <ModuleSummary module="calendars" mode={"paper"} /> },
-    { id: "session", label: CALENDARS_LABEL.session, render: () => <CalendarsSession data={data} loading={isLoading} /> },
+    { id: "summary", label: CALENDARS_LABEL.summary, render: () => <ModuleSummary module="calendars" mode={"paper"} today={<CalendarsSession data={data} loading={isLoading} />} /> },
     {
       id: "plan",
       label: CALENDARS_LABEL.plan,

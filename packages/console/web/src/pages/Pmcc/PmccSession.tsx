@@ -97,23 +97,8 @@ export function PmccSession({
       />
 
       <GridCard
-        label="closed net by arm"
-        span={6}
-        h={304}
-        to="/pmcc/arms"
-        toLabel="the arm comparison"
-        foot="after every cost"
-      >
-        <DivergingBars
-          rows={armRows.map(([arm, t]) => ({ label: arm, value: t.net, title: `${arm}: ${String(t.positions)} cycles` }))}
-          format={fmtMoney}
-          emptyText={loading ? "reading…" : "no cycle has completed yet"}
-        />
-      </GridCard>
-
-      <GridCard
         label="verdicts this session"
-        span={6}
+        span={12}
         h={304}
         to="/pmcc/decisions"
         toLabel="the management log"

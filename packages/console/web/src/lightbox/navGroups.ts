@@ -104,11 +104,10 @@ export type FliesSlideId = (typeof FLIES_SLIDES)[number]["id"];
  *   history, which is what the same id means on flies — a bookmark to it lands on the closest thing.
  */
 export const MEIC_SLIDES = [
-  { id: "session", label: "session" },
   // The gauge-led day summary (2026-10): the slide whose adopted visual language became the
   // suite's theme, and the pattern for every module's own summary — one per module, each in its
   // own KPI vocabulary; no central summary page.
-  { id: "summary", label: "summary" },
+  { id: "summary", label: "today" },
   { id: "forest", label: "forest" },
   { id: "attempts", label: "attempts" },
   { id: "positions", label: "positions" },
@@ -137,8 +136,7 @@ export type MeicSlideId = (typeof MEIC_SLIDES)[number]["id"];
  * the evidence group. Both are the module's own reads, bridged.
  */
 export const BWB_SLIDES = [
-  { id: "session", label: "session" },
-  { id: "summary", label: "summary" },
+  { id: "summary", label: "today" },
   { id: "positions", label: "positions" },
   { id: "history", label: "history" },
   { id: "decisions", label: "decisions" },
@@ -170,8 +168,7 @@ export type BwbSlideId = (typeof BWB_SLIDES)[number]["id"];
  * module's simple-view page, a suite pattern (packages/console/docs/pages.md, "A summary slide is a module's own").
  */
 export const EARNINGS_SLIDES = [
-  { id: "session", label: "session" },
-  { id: "summary", label: "summary" },
+  { id: "summary", label: "today" },
   { id: "positions", label: "positions" },
   { id: "history", label: "history" },
   { id: "decisions", label: "decisions" },
@@ -189,8 +186,7 @@ export type EarningsSlideId = (typeof EARNINGS_SLIDES)[number]["id"];
  * suite's standard trade layout.
  */
 export const CURVE_SLIDES = [
-  { id: "session", label: "session" },
-  { id: "summary", label: "summary" },
+  { id: "summary", label: "today" },
   { id: "regime", label: "regime" },
   { id: "positions", label: "positions" },
   { id: "history", label: "history" },
@@ -212,8 +208,7 @@ export type CurveSlideId = (typeof CURVE_SLIDES)[number]["id"];
  * the missed windows and the distributions. No advisor tab: the module declares no advice bounds.
  */
 export const CONTANGO_SLIDES = [
-  { id: "session", label: "session" },
-  { id: "summary", label: "summary" },
+  { id: "summary", label: "today" },
   { id: "regime", label: "regime" },
   { id: "positions", label: "positions" },
   { id: "history", label: "history" },
@@ -234,8 +229,7 @@ export type ContangoSlideId = (typeof CONTANGO_SLIDES)[number]["id"];
  * the suite's standard trade layout, each still expanding to its legs, rolls and settlement.
  */
 export const PMCC_SLIDES = [
-  { id: "session", label: "session" },
-  { id: "summary", label: "summary" },
+  { id: "summary", label: "today" },
   { id: "positions", label: "positions" },
   { id: "tracker", label: "tracker" },
   { id: "history", label: "history" },
@@ -257,8 +251,7 @@ export type PmccSlideId = (typeof PMCC_SLIDES)[number]["id"];
  * suite's standard trade layout, each still expanding to its legs.
  */
 export const CALENDARS_SLIDES = [
-  { id: "session", label: "session" },
-  { id: "summary", label: "summary" },
+  { id: "summary", label: "today" },
   { id: "plan", label: "plan" },
   { id: "positions", label: "positions" },
   { id: "history", label: "history" },
@@ -443,38 +436,39 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     slides: MEIC_SLIDES,
     simple: ["summary", "forest", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "summary", "forest", "attempts"] },
+      { label: "today", ids: ["summary", "forest", "attempts"] },
       { label: "tables", ids: ["positions", "history", "sessions"] },
       { label: "evidence", ids: ["exits", "regime"] },
       { label: "study", ids: ["performance", "analysis", "costs", "advisor"] },
       { label: "help", ids: ["guide"] },
     ],
-    legacy: { now: "session", trades: "history", calibration: "performance" },
+    legacy: { session: "summary", now: "summary", trades: "history", calibration: "performance" },
   },
   bwb: {
     slides: BWB_SLIDES,
-    simple: ["summary", "session", "performance", "positions", "guide"],
+    simple: ["summary", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "summary"] },
+      { label: "today", ids: ["summary"] },
       { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions", "arms", "vol", "livegap"] },
       { label: "study", ids: ["performance", "analysis", "advisor"] },
       { label: "help", ids: ["guide"] },
     ],
-    legacy: { now: "session" },
+    legacy: { session: "summary", now: "summary" },
   },
   earnings: {
     slides: EARNINGS_SLIDES,
-    simple: ["summary", "session", "strategies", "positions"],
+    simple: ["summary", "strategies", "positions"],
     groups: [
-      { label: "today", ids: ["session", "summary"] },
+      { label: "today", ids: ["summary"] },
       { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions", "screening"] },
       { label: "study", ids: ["strategies", "advisor"] },
     ],
     legacy: {
-      now: "session",
-      overview: "session",
+      session: "summary",
+      now: "summary",
+      overview: "summary",
       detail: "strategies",
       trades: "history",
       performance: "strategies",
@@ -484,51 +478,51 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   curve: {
     slides: CURVE_SLIDES,
-    simple: ["summary", "session", "regime", "performance", "positions", "guide"],
+    simple: ["summary", "regime", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "summary", "regime"] },
+      { label: "today", ids: ["summary", "regime"] },
       { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "analysis", "costs", "advisor"] },
       { label: "help", ids: ["guide"] },
     ],
-    legacy: { now: "session" },
+    legacy: { session: "summary", now: "summary" },
   },
   contango: {
     slides: CONTANGO_SLIDES,
-    simple: ["summary", "session", "regime", "performance", "positions", "guide"],
+    simple: ["summary", "regime", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "summary", "regime"] },
+      { label: "today", ids: ["summary", "regime"] },
       { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "analysis", "costs"] },
       { label: "help", ids: ["guide"] },
     ],
-    legacy: {},
+    legacy: { session: "summary" },
   },
   calendars: {
     slides: CALENDARS_SLIDES,
-    simple: ["summary", "session", "plan", "performance", "positions", "guide"],
+    simple: ["summary", "plan", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "summary", "plan"] },
+      { label: "today", ids: ["summary", "plan"] },
       { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions", "arms", "policies"] },
       { label: "study", ids: ["performance", "analysis", "advisor"] },
       { label: "help", ids: ["guide"] },
     ],
-    legacy: { now: "session", weeks: "history" },
+    legacy: { session: "summary", now: "summary", weeks: "history" },
   },
   pmcc: {
     slides: PMCC_SLIDES,
-    simple: ["summary", "session", "performance", "positions", "guide"],
+    simple: ["summary", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["session", "summary"] },
+      { label: "today", ids: ["summary"] },
       { label: "tables", ids: ["positions", "tracker", "history"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "analysis", "costs", "advisor"] },
       { label: "help", ids: ["guide"] },
     ],
-    legacy: { now: "session" },
+    legacy: { session: "summary", now: "summary" },
   },
   gex: { slides: GEX_SLIDES, legacy: { volume: "skew", history: "gex" } },
   flow: {

@@ -28,7 +28,7 @@
  * Colour carries only the sign of a number (pos/neg), never a verdict — the package's tone rule
  * applied to pixels.
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMeicSummary } from "../../lib/api";
 import type { MeicSummarySlice } from "@console/shared";
@@ -51,6 +51,9 @@ export interface MeicSummaryProps {
   onDayStep: (delta: -1 | 1) => void;
   /** Whether the arrows can move at all (the manifest has a session list to step through). */
   canStepDay: boolean;
+  /** The session cards (net, positions, costs, why entries were refused), above the window. They
+   *  were the `session` tab until 2026-10-30. */
+  today?: ReactNode;
 }
 
 /* ---------------------------------------------------------------------------
@@ -572,7 +575,7 @@ function Toolbar({
  * error page must not look like an empty window, and an empty window must not look like a
  * loading page. The badge is gone: every figure on this slide is now the ledger's own.
  */
-export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSummaryProps) {
+export function MeicSummary({ mode, scope, day, onDayStep, canStepDay, today }: MeicSummaryProps) {
   // The range rides the URL (?range=week): a link to a page is a link to the range it names —
   // the console's own convention for mode — and it makes the window statically verifiable.
   // Anything unstated or unrecognised falls through to the day, like the header's day select.
@@ -608,6 +611,7 @@ export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSum
   if (q.isError) {
     return (
       <div className="ts-root">
+        {today !== undefined && <div className="ts-today">{today}</div>}
         <p className="ts-empty">the summary read failed — {q.error instanceof Error ? q.error.message : "unknown error"}</p>
       </div>
     );
@@ -624,6 +628,8 @@ export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSum
       : s?.window.label) || "…";
   return (
     <div className="ts-root">
+      {/* The session first, on its own read, so it never waits on the window's numbers below. */}
+      {today !== undefined && <div className="ts-today">{today}</div>}
       <Toolbar
         range={range}
         onRange={setRange}

@@ -61,7 +61,7 @@ describe("the simple and detail views", () => {
   it("a bare module URL lands on the view's first tab; a named tab is honoured in either view", () => {
     const slides = NAV_DECL.meic.slides;
     expect(resolveSlide("meic", "", slides, viewSlides("meic", slides, "simple"))).toBe("summary");
-    expect(resolveSlide("meic", "", slides, viewSlides("meic", slides, "detail"))).toBe("session");
+    expect(resolveSlide("meic", "", slides, viewSlides("meic", slides, "detail"))).toBe("summary");
     expect(resolveSlide("meic", "attempts", slides, viewSlides("meic", slides, "simple"))).toBe("attempts");
   });
 });

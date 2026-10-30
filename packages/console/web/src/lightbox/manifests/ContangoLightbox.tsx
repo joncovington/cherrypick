@@ -34,8 +34,7 @@ export function ContangoLightbox({ slide }: { slide: string }) {
   const loopState = iteration === null ? "no-data" : iteration.ageSeconds < 900 ? "live" : "idle";
 
   const slides: Array<SlideDef & { id: ContangoSlideId }> = [
-    { id: "summary", label: LABEL.summary, render: () => <ModuleSummary module="contango" mode={"paper"} /> },
-    { id: "session", label: LABEL.session, render: () => <ContangoToday data={data} metrics={metrics.data} loading={isLoading} /> },
+    { id: "summary", label: LABEL.summary, render: () => <ModuleSummary module="contango" mode={"paper"} today={<ContangoToday data={data} metrics={metrics.data} loading={isLoading} />} /> },
     { id: "regime", label: LABEL.regime, render: () => <ContangoRegime data={data} /> },
     { id: "decisions", label: LABEL.decisions, render: () => <ContangoDecisions /> },
     {

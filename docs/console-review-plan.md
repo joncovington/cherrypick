@@ -195,8 +195,10 @@ rename it `alerts`.
    - System storage was never broken: sizes are walked when the page is read, and the first walk
      after a restart takes minutes. The note says so, and an unmeasured table says "not measured
      yet" instead of showing empty headers
-2. **Fold the duplicates:**
-   - every module: summary + session into one today tab
+2. **Fold the duplicates** (all landed 2026-10-30):
+   - every module but Flies: summary + session into one `today` tab (id `summary`; `/x/session`
+     lands there). The session's tiles open it on their own read; its by-arm card, a repeat of the
+     summary's, went, as did MEIC's refusals card (the summary's evaluations card holds it)
    - module `advisor` tabs leave the module pages while the advisor is paused (`advisor_paused` in
      the suite's features, landed 2026-10-30, with decision 3)
    - module `arms` tabs **stay** (revised 2026-10-30): beside the net-by-arm table they hold each

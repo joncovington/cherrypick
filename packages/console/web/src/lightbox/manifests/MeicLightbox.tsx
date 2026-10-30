@@ -159,17 +159,18 @@ export function MeicLightbox({ slide }: { slide: string }) {
   });
 
   const slides: Array<SlideDef & { id: MeicSlideId }> = [
-    { id: "session", label: MEIC_LABEL.session, render: () => <MeicSession mode={mode} scope={scopeArgs} /> },
     {
       // Trade summary — the one-read slide (readers/meic.ts, "The summary slide's one read").
       // Scope, mode and session come from the page's own state; the day arrows step the header's
-      // session select, so every page still names one day.
+      // session select, so every page still names one day. The session's cards open it (they were
+      // the `session` tab until 2026-10-30).
       id: "summary",
       label: MEIC_LABEL.summary,
       render: () => (
         <MeicSummary
           mode={mode}
           scope={scopeArgs}
+          today={<MeicSession mode={mode} scope={scopeArgs} />}
           day={day}
           canStepDay={(data?.summaries.length ?? 0) > 0}
           onDayStep={(delta) => {

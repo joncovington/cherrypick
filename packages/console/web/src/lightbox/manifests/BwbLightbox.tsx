@@ -37,8 +37,7 @@ export function BwbLightbox({ slide }: { slide: string }) {
     data?.today.lastIteration == null ? "no-data" : data.today.lastIteration.ageSeconds < 900 ? "live" : "idle";
 
   const slides: Array<SlideDef & { id: BwbSlideId }> = [
-    { id: "summary", label: BWB_LABEL.summary, render: () => <ModuleSummary module="bwb" mode={mode} /> },
-    { id: "session", label: BWB_LABEL.session, render: () => <BwbSession data={data} loading={isLoading} mode={mode} /> },
+    { id: "summary", label: BWB_LABEL.summary, render: () => <ModuleSummary module="bwb" mode={mode} today={<BwbSession data={data} loading={isLoading} mode={mode} />} /> },
     {
       id: "decisions",
       label: BWB_LABEL.decisions,

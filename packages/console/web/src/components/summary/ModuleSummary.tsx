@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import type { ModuleSummarySlice, SummaryBreakdown, SummaryTile, SummaryUnit, TradingMode } from "@console/shared";
@@ -247,9 +248,13 @@ export function ModuleSummary({
   scope,
   day,
   onDay,
+  today,
 }: {
   module: string;
   mode: TradingMode;
+  /** The module's own session cards (open now, today's entries and why), above the window's numbers.
+   *  Summary and session were two tabs until 2026-10-30 (docs/console-review-plan.md, batch 2). */
+  today?: ReactNode;
   /** The page header's arm/symbol/era, so the summary narrows the way the page beside it does. */
   scope?: SummaryScope;
   /** The page's session. `undefined` = drive it from this component's own `?day=` (a module with
@@ -268,6 +273,7 @@ export function ModuleSummary({
   if (q.isError) {
     return (
       <div className="ts-root">
+        {today !== undefined && <div className="ts-today">{today}</div>}
         <p className="ts-empty">the summary read failed — {q.error instanceof Error ? q.error.message : "unknown error"}</p>
       </div>
     );
@@ -284,8 +290,8 @@ export function ModuleSummary({
     next.set("day", target);
     setParams(next, { replace: true });
   };
-  const today = etToday();
-  const stale = s !== null && effectiveDay === null && s.window.label === "day" && s.window.from !== null && s.window.from < today;
+  const etDay = etToday();
+  const stale = s !== null && effectiveDay === null && s.window.label === "day" && s.window.from !== null && s.window.from < etDay;
   const label =
     s === null
       ? "…"
@@ -294,6 +300,8 @@ export function ModuleSummary({
         : s.window.label;
   return (
     <div className="ts-root">
+      {/* The session first, on its own read, so it never waits on the window's numbers below. */}
+      {today !== undefined && <div className="ts-today">{today}</div>}
       <RangeToolbar
         range={range}
         onRange={setRange}

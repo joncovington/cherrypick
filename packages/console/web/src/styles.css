@@ -3965,6 +3965,10 @@ select.text-input {
   font-size: 12px;
   margin: 0 0 0.6rem;
 }
+/* The module's session cards at the head of its today tab (2026-10-30). */
+.ts-today {
+  margin: 0 0 0.9rem;
+}
 .ts-notes {
   font-size: 12px;
   margin: 0.4rem 0 0;
