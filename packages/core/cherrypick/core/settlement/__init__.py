@@ -39,6 +39,13 @@ __all__ = [
 # (`dated_index_close`) -- the catch-up settlement of a book a machine outage left open (2026-10-08).
 OFFICIAL_SOURCES = frozenset({"official", "tastytrade_close", "yahoo", "barchart", "yahoo_daily"})
 
+# The web fallbacks' quote is the closing print only once the print has posted. Read seconds after
+# the bell it is still the last trade: 2026-10-15 and 10-26 settled MEIC live at a Yahoo quote taken
+# ~50 s after 16:00 (774.98 against the 774.41 close; 7681.19 against 7676.77). Until 16:20 ET a
+# Yahoo or Barchart reading is provisional and the caller retries -- the grace paper's catch-up
+# already waited (`_OFFICIAL_PRINT_GRACE_MIN`, 20 minutes).
+WEB_CLOSE_FROM_ET = (16, 20)
+
 
 def is_official_source(source: str | None) -> bool:
     return source in OFFICIAL_SOURCES
@@ -188,14 +195,17 @@ def _barchart_index_price(symbol: str) -> float | None:
         return None
 
 
-async def official_index_close(session, symbol: str) -> tuple[float | None, str]:
+async def official_index_close(session, symbol: str, *, now=None) -> tuple[float | None, str]:
     """Best-effort fetch of the day's settlement/closing index level for `symbol` (XSP/SPX).
     Returns `(price, source)`, where `source` names not just WHICH provider answered but whether
     the value is authoritative:
 
         tastytrade_close / yahoo / barchart   -> a posted CLOSING value; safe to call official
         tastytrade_<field>_provisional        -> an intraday tick; caller MUST keep retrying
+        yahoo_provisional / barchart_provisional -> a web quote read before `WEB_CLOSE_FROM_ET`
         no_source_available                   -> nothing answered; caller must not guess
+
+    `now` (an ET datetime, default the clock) decides whether a web quote can be the close yet.
 
     That distinction is the point (added 2026-07-31): this previously returned a bare "tastytrade"
     for any of close/last/mark, and the caller stamped every one of them `settlement_source =
@@ -216,12 +226,18 @@ async def official_index_close(session, symbol: str) -> tuple[float | None, str]
     if price is not None and field == "close":
         return price, "tastytrade_close"
 
+    if now is None:
+        from cherrypick.core.clock import now_et
+
+        now = now_et()
+    posted = (now.hour, now.minute) >= WEB_CLOSE_FROM_ET
+    suffix = "" if posted else "_provisional"
     fallback = await asyncio.to_thread(_yahoo_index_price, symbol)
     if fallback is not None:
-        return fallback, "yahoo"
+        return fallback, f"yahoo{suffix}"
     fallback = await asyncio.to_thread(_barchart_index_price, symbol)
     if fallback is not None:
-        return fallback, "barchart"
+        return fallback, f"barchart{suffix}"
 
     # Nothing authoritative answered. tastytrade's last/mark is better than no price at all, but
     # the caller MUST treat it as provisional and keep retrying -- see the caller's settle loop.
