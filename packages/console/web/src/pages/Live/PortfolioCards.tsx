@@ -516,7 +516,16 @@ function HedgeCard({ p }: { p: ManagePortfolio }) {
  * the stress row) -- 2026-10-19: moved up from below the scenarios, where it was read last -- and the
  * breakdowns, `scenarios` (ScenarioCards.tsx) and the hedge come after it.
  */
-export function PortfolioCards({ p, scenarios }: { p: ManagePortfolio | null; scenarios?: ReactNode }) {
+export function PortfolioCards({
+  p,
+  scenarios,
+  history,
+}: {
+  p: ManagePortfolio | null;
+  scenarios?: ReactNode;
+  /** The bands over time (BandsHistory.tsx), under the guidance it explains. */
+  history?: ReactNode;
+}) {
   // The broker check (a record of our model against the broker's) and the scenarios (the risk matrix
   // and graph) are the detail view's (2026-10-21).
   const detail = useViewMode() === "detail";
@@ -530,6 +539,7 @@ export function PortfolioCards({ p, scenarios }: { p: ManagePortfolio | null; sc
         <StressCard p={p} />
       </div>
       <GuidanceCard p={p} />
+      {history}
       <div className="cards cards-pairs">
         <ContributionCard p={p} figure="bwd" />
         <ContributionCard p={p} figure="theta" />

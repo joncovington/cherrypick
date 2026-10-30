@@ -556,7 +556,11 @@ manage's own `expiring` line beneath it, never in its totals. **Every band and e
 the reading's `bands`**: the dial draws manage's band and takes amber only from its `inside` flag,
 never from where the needle sits (`web/test/managePortfolioCards.test.tsx` shows a needle inside its
 band drawn as outside when the flag says so). Long and short delta carry no tone. An evaluation
-written before the reading has `portfolio: null` and draws no cards. Both tabs' header shows manage's
+written before the reading has `portfolio: null` and draws no cards. **Bands over time** (2026-10-30,
+`pages/Live/BandsHistory.tsx`, `GET /api/manage/bands` → `readManageBandsHistory`) sits under the
+guidance: every stored evaluation's delta, theta and buying-power reading against that session's
+own band (the delta band moves with theta, the buying-power cap with the VIX), amber from manage's
+flag only; one point per session, its last run. Both tabs' header shows manage's
 `pre_open` as a red line (a snapshot taken before 09:30 ET reads yesterday's close and leaves today's
 expiring legs unpriced). The contribution cards sum the names past their twelve into one "others"
 row, so the rows add up to the book. **Live marks** (2026-10-22, `readers/manageLive.ts`,

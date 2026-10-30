@@ -234,7 +234,10 @@ rename it `alerts`.
      a live loop needing a person, then manage's actions in its own order with its reasons, held
      positions expiring within a week or reporting before their short expires, and how many
      income trades fit the room. It never says "nothing to do" for positions it has not read
-   - on Live, still open: premium-income pace, delta and theta bands over time
+   - on Live portfolio: bands over time (landed 2026-10-30), under the guidance: delta, theta and
+     buying power per stored evaluation, each against the band that day's evaluation judged it by
+   - on Live, still open: premium-income pace against a theta target of 0.2% of net liq a day
+     (agreed 2026-10-30; set in config), beside premium collected and net kept on closed trades
    - MEIC live against paper
    - the user's short strikes against the GEX walls
 

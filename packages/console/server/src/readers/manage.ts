@@ -12,6 +12,8 @@ import path from "node:path";
 import type {
   ManageAccount,
   ManageBand,
+  ManageBandsHistoryPayload,
+  ManageBandsSession,
   ManageBpLevel,
   ManageBrokerCheck,
   ManageCandidate,
@@ -1102,6 +1104,39 @@ function leveragedFor(config: ConsoleConfig, session: string): Leveraged {
     }
   }
   return out;
+}
+
+/**
+ * The bands across every stored evaluation, oldest first: each session's own bounds and reading, as
+ * that day's evaluation stated them. Sessions before the reading carried bands are left out, and an
+ * unreadable file is skipped rather than drawn as a gap at zero.
+ */
+export function readManageBandsHistory(config: ConsoleConfig): ManageBandsHistoryPayload {
+  const byAccount = new Map<string, ManageBandsSession[]>();
+  for (const session of listSessions(config)) {
+    let doc: Record<string, unknown>;
+    try {
+      doc = rec(JSON.parse(fs.readFileSync(path.join(config.paths.manageDir, `eval-${session}.json`), "utf-8")));
+    } catch {
+      continue;
+    }
+    for (const a of arr(doc["accounts"])) {
+      const p = rec(rec(a)["portfolio"]);
+      const bands = rec(p["bands"]);
+      if (Object.keys(bands).length === 0) continue;
+      const account = str(rec(a)["account"]) ?? "account";
+      const row: ManageBandsSession = {
+        session,
+        netLiq: num(p["net_liq"]),
+        theta: num(p["theta_ex_front"]) ?? num(p["theta"]),
+        delta: bands["delta"] ? band(bands["delta"]) : null,
+        thetaPct: bands["theta"] ? band(bands["theta"]) : null,
+        buyingPower: bands["buying_power"] ? band(bands["buying_power"]) : null,
+      };
+      byAccount.set(account, [...(byAccount.get(account) ?? []), row]);
+    }
+  }
+  return { accounts: [...byAccount].map(([account, sessions]) => ({ account, sessions })) };
 }
 
 export function readManage(config: ConsoleConfig, session?: string): ManagePayload {

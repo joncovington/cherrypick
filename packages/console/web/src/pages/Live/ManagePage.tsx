@@ -9,6 +9,7 @@ import { parseSuiteTs } from "../../lib/etTime";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
 import { ActionChip, DetailCard, Kv, Money, ageText, etStamp, tone } from "./manageParts";
+import { BandsHistoryCard } from "./BandsHistory";
 import { PortfolioCards } from "./PortfolioCards";
 import { ScenarioCards } from "./ScenarioCards";
 import { PmccCards } from "./PmccCards";
@@ -444,7 +445,11 @@ function PortfolioAccount({ a, oversize }: { a: ManageAccount; oversize: number 
       <AccountTiles a={a} oversize={oversize} />
       <LiveGreeksCard a={a} />
       {a.portfolio ? (
-        <PortfolioCards p={a.portfolio} scenarios={<ScenarioCards p={a.portfolio} />} />
+        <PortfolioCards
+          p={a.portfolio}
+          scenarios={<ScenarioCards p={a.portfolio} />}
+          history={<BandsHistoryCard account={a.account} />}
+        />
       ) : (
         <p className="muted" style={{ margin: 0 }}>
           no portfolio reading for this account in this evaluation

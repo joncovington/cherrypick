@@ -841,3 +841,23 @@ export interface ManageLivePayload {
   /** Each held underlying's (and the benchmark's) streamed price. */
   spots: Record<string, number>;
 }
+
+/**
+ * One stored evaluation's bands for one account, as that day's reading stated them. A band moves
+ * with the book (the delta band is scaled by theta, the buying-power cap by the VIX), so each
+ * session carries its own bounds, never today's.
+ */
+export interface ManageBandsSession {
+  session: string;
+  netLiq: number | null;
+  /** Dollars a day: the figure the theta band is judged on (without the legs about to expire). */
+  theta: number | null;
+  delta: ManageBand | null;
+  thetaPct: ManageBand | null;
+  buyingPower: ManageBand | null;
+}
+
+/** Every stored evaluation that carried bands, oldest first, per masked account. */
+export interface ManageBandsHistoryPayload {
+  accounts: Array<{ account: string; sessions: ManageBandsSession[] }>;
+}
