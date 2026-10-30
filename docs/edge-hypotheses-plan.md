@@ -1783,6 +1783,115 @@ that test. Declared here before any of it is fetched or run.*
   - **Weekly coverage** is the share of a window's non-monthly Fridays whose path came back
     complete.
 
+### 26. A dip-buying share ladder on leveraged funds: buy 7% under the previous close, sell each lot 4% up
+
+*Source: the user, 2026-10-29: members of a trading group buy SOXL shares after a 7% drop and sell
+after a 4% gain, sometimes holding several tranches; the user trades it by hand. Then: "I think it
+is from the previous day's close. I think they hold until the 4%", "let's not limit this to just
+one symbol", "could probably add TECL". **The user builds the module whatever this shows**
+(2026-10-29); the verdict sets how it is sized and armed, not whether it exists. Declared here
+before any of it is fetched or run.*
+
+- **Question:** does buying a leveraged fund's shares 7% under the latest 4:00 pm close, and
+  selling each lot on its own at 4% over its cost, earn more than the same exposure taken at random
+  times?
+- **Where the edge would live:** **signal**: short-term mean reversion after a large down move in a
+  daily-reset fund. Against it: a 3x fund's own path decay, and a hold-until-up rule with no stop
+  that keeps every loss open. A win rate near 100% on closed lots says nothing; the open lots carry
+  the result.
+- **Look-alikes:** none in this plan trades shares. The contango module (SVXY/SHV) is the nearest:
+  a fund held on a rule, where the replay found the gate bought drawdown, not return.
+- **Rival explanations, each with its check:**
+  - *Long a bull market, not a signal:* any long rule in SOXL wins since 2023. **Check:** every arm
+    is judged as edge over a random-entry control: the same number of entries a year on sessions
+    drawn at random, filled at that session's open, with the same exit, cap and budget, averaged over
+    200 draws.
+  - *Leverage, not the trigger:* **Check:** the same rules on each fund's 1x counterpart (SOXL →
+    SOXX, TECL → XLK, TQQQ → QQQ, and so on where one exists), reported beside the fund, never
+    judged.
+  - *A few names:* **Check:** a sign count across names beside the mean.
+  - *One era:* **Check:** both time-halves of the design must agree, and the holdout holds 2020 and
+    2022.
+  - *Costs:* **Check:** still positive at three times the declared cost.
+  - *Searching a grid:* **Check:** Holm across the ten judged arms; the grid is fixed here.
+- **The structure:** one budget per name, `cap × tranche`; whole shares; no stop, no time limit.
+  - **Entry trigger:** a price at or under 93% of the latest 4:00 pm close: the previous session's
+    before 4:00 pm, the same session's after it (the user's 10/29 buy at 16:06 was 12% under that
+    day's own close). The second-tranche rule is not settled (the user's 10/22 buys were 11%
+    apart), so it is an arm:
+    - `once`: at most one new lot a session;
+    - `chain`: a further lot at each 7% under the last lot bought, in the same session or later;
+    - `steps`: lots at 7%, 14%, 21% … under the reference close, one per step reached.
+  - **Exit:** each lot sells at 104% of its own cost.
+  - **Cap:** at most 1, 3 or 5 lots open per name. An entry with the cap full is skipped, not
+    queued.
+  - **Arms:** the nine `once/chain/steps × 1/3/5`, plus `scaled`: `once`, cap 3, with the drop at
+    1.5 and the gain at 0.9 times the fund's 20-session standard deviation of daily returns (about
+    7% and 4% for SOXL at its long-run volatility), so a calmer fund is asked for a move of its own
+    size. All ten are judged. No limit on lots is reported, not judged: its budget is not defined.
+- **Fills on daily bars:** a resting buy at the trigger fills at the open if the session opens
+  under it, otherwise at the trigger if the low reaches it. A resting sell fills at the open if the
+  session opens over it, otherwise at the target if the high reaches it. A lot bought in a session
+  is never sold in that session (the worse order where daily bars cannot tell). Lots open at a
+  window's end are marked at the last close.
+- **Costs:** 0.05% of the price a side, for spread, slippage and the regulatory fees on sales; the
+  broker charges no commission on these shares. Checked at 0.15%.
+- **Measured:** per name and arm, net as a percentage of the name's budget a year, idle days
+  included; edge is that less the random-entry control's mean. Reported beside it, never judged:
+  the drawdown with open lots marked to market, the longest a lot stayed open, the most capital
+  tied up, buy-and-hold, and the 1x counterpart.
+- **Names:** every `leveraged` (long, not inverse or volatility) fund in `technicals`'
+  `leveraged_funds.json` with daily bars from 2011-01-03 and a median daily dollar volume of $20M or
+  more in the broker-sourced dollar-volume file of 2026-10-29 (`scripts/fetch_dollar_volume.py`,
+  the 50-session median the liquidity verdict reads). **Judged:** all of them. SOXL, TECL and TQQQ, the
+  names the user trades or asked for, are reported first. Single-stock funds start after 2022, so
+  they fall out by rule. A fund closed before 2026 is not in the list, so the sample is survivors
+  only, an upper bound.
+- **Window and sample:** daily bars, the broker's first (the user's rule), Yahoo's where the broker
+  has none.
+  - **Which bar a session takes:** the broker's regular-hours daily candle, unless it is missing or
+    its close is more than 1% from Yahoo's, then Yahoo's. Both are split-adjusted, but the broker's
+    close on the session before a split is not (SOXX 2024-03-06, TQQQ 2025-11-19, XLK 2025-12-04),
+    and its feed lacked 2026-10-28 when first fetched. The broker's candles start 2022-12-29, so the
+    design window is Yahoo's alone and the holdout mostly the broker's.
+  - **Design:** sessions 2011-01-03 to 2019-12-31. It decides.
+  - **Holdout:** sessions 2020-01-02 to 2026-10-28, run straight after the design. It counts toward
+    a pass only after a design pass, and cannot overturn a design fail.
+  - Fewer than 8 judged names, or 300 closed lots in an arm in a window, is no verdict.
+- **Pass-or-fail rule**, per judged arm, all must hold in the design window:
+  - the per-name edge has a mean above zero and a one-sided t above 2, with Holm across the ten
+    arms;
+  - edge positive on more than half the names;
+  - mean edge positive in both time-halves (2011-2015, 2016-2019);
+  - mean edge still positive at the 0.15% cost;
+  - then the holdout: mean edge above zero and positive on more than half the names.
+- **Declared limits (B11):** daily bars are the regular session, so a drop or a rise seen only
+  before 9:30 or after 4:00 is missed, and the open stands in for the pre-market. **Checked
+  separately, reported, never judged:** hourly bars with extended hours for SOXL, TECL and TQQQ,
+  the broker's from 2026-01 and Yahoo's from 2023-12 before that, cut to 8:00-20:00 ET
+  (tastytrade's equity day is 8:15-20:00; SOXL may not trade overnight there,
+  `overnight-trading-permitted` false on 2026-10-29), replayed with the same rules against the
+  daily replay over the same span. Yahoo's extended-hours bars carry bad prints (SOXL's 10-29 16:00
+  bar: a high of 123 and a low of 68.5 inside a 102-to-89 move), so outside 9:30-16:00 a Yahoo
+  bar's high and low are clipped to 3% beyond its open and close. Also: the user's five SOXL fills
+  of 10/22-10/29 must come out of a replay on the broker's 5-minute bars as trades, at or inside
+  each bar's range. Survivors only, as above.
+- **Name split (B9):** design and holdout cover the same names.
+- **Data:** fetched by a committed script (`scripts/fetch_ladder_bars.py`) into
+  `~/.cherrypick/data/research/item26/`, never the repo: the broker's DXLink candles (daily,
+  regular hours, for every candidate and 1x counterpart; hourly and 5-minute with extended hours
+  for the three names) and Yahoo's public bars for what the broker does not reach (daily from each
+  fund's start with split events; hourly from 2023-12). The replay is
+  `scripts/share_ladder_item26.py`, a pure function of those files, run as research-queue rows
+  (`item26/fetch-bars`, `item26/study`). Results stay under that directory; this plan records the
+  verdict.
+- **Decides** (the module is built either way, by the user's choice):
+  - **A pass:** the paper module's default arm follows the passing arm, and the live pilot's sizing
+    is proposed from its drawdown and longest open lot.
+  - **A fail or no verdict:** the module is still built, paper first. Its console tab says the rule
+    is not a tested edge. The live pilot's sizing is proposed from the measured drawdown alone, and
+    the user decides whether to arm it.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
