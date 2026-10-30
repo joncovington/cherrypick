@@ -172,6 +172,23 @@ def test_the_holdout_needs_asking_for_and_is_spent_once(world):
         _run(s, "holdout", spend_holdout=True)
 
 
+def test_control_never_spends_the_holdout(world):
+    """Control runs beside every arm and is never judged, so a later study's holdout is not refused
+    because an earlier one ran control there (item 24, 2026-10-29). The judged arm still is."""
+    s, home = world
+    _unlock(s)
+    report = _run(s, "holdout", spend_holdout=True)
+    conn = results.connect()
+    assert not results.holdout_spent(conn, "flies", report["arms"]["control"]["spec_hash"])
+    cfg = json.loads((home / "config" / "flies.json").read_text())
+    cfg["arms"]["range-high"]["gate"] = "y"
+    (home / "config" / "flies.json").write_text(json.dumps(cfg), encoding="utf-8")
+    again = _run(s, "holdout", spend_holdout=True)
+    assert again["arms"]["control"]["spec_hash"] == report["arms"]["control"]["spec_hash"]
+    with pytest.raises(runner.RunRefused, match=r"already spent for \['range-high'\]"):
+        _run(s, "holdout", spend_holdout=True)
+
+
 def test_an_unknown_arm_or_a_missing_config_is_refused(world):
     s, home = world
     with pytest.raises(runner.RunRefused, match="no arm"):
