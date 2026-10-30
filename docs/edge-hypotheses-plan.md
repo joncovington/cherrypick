@@ -1908,6 +1908,14 @@ before any of it is fetched or run.*
   - **The 1x counterpart** runs every arm's rules and is reported as its own % a year, without a
     control.
   - **Run** as a research-queue row (`item26/study`) after the fetch; about 5 minutes a name.
+- **Clarified 2026-10-29, before the full run: one fund per bet.** Two funds on the same index at
+  the same leverage move as one (UPRO and SPXL, 3x the S&P 500; TNA and URTY, 3x the Russell
+  2000; MIDU and UMDD, 3x mid-caps), so counting both would inflate the name count behind the t
+  and the sign count. The judged names keep one fund per 1x counterpart and leverage
+  (`fetch_ladder_bars.LEVERAGE`), the one with the larger median dollar volume; the dropped funds
+  are listed in the result. A different leverage on the same index (SSO beside SPXL, QLD beside
+  TQQQ) stays a separate name. The user asked about UPRO and SPXL, which raised it; nothing had
+  run. This applies to item 27 too, which reads item 26's names.
 
 ### 27. Getting the share ladder out of multi-year holds: averaging down, a decaying target, a time stop, a trend check, a confirmation
 
