@@ -1891,6 +1891,23 @@ before any of it is fetched or run.*
   - **A fail or no verdict:** the module is still built, paper first. Its console tab says the rule
     is not a tested edge. The live pilot's sizing is proposed from the measured drawdown alone, and
     the user decides whether to arm it.
+- **Clarified 2026-10-29, while building the replay, before the full run**
+  (`scripts/share_ladder_item26.py`; one trial on SOXL alone, from a scratch store, to time it).
+  Where the declaration was silent:
+  - **A lot is $10,000** in whole shares, so a name's budget is $10,000 times its cap.
+  - **`chain` with lots open** steps only from the last lot bought; a new session's 7% under the
+    previous close does not open a lot while one is held. With none held, it starts from the
+    previous close again.
+  - **A slot sold in a session frees the next session**, and a cap that is full skips the entry.
+    Daily bars cannot tell which came first, so the replay takes the worse order.
+  - **The halves are their own runs**, each starting with no lots; so is the cost check, on the
+    design window.
+  - **The control's draws** are sessions with a previous close in the window (for `scaled`, with
+    20 returns behind them), one lot at most a session, as many as the arm opened. A draw whose cap
+    is full is skipped, as the arm's would be.
+  - **The 1x counterpart** runs every arm's rules and is reported as its own % a year, without a
+    control.
+  - **Run** as a research-queue row (`item26/study`) after the fetch; about 5 minutes a name.
 
 ## Not worth revisiting
 
