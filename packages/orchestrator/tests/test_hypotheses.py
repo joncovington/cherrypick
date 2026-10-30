@@ -64,6 +64,63 @@ def test_every_queue_item_study_has_a_row():
     assert hy.unregistered(reg, {"item18", "item22", "item99"}) == ["item22", "item99"]
 
 
+def test_verdicts_reads_the_three_shapes_and_never_guesses():
+    assert hy.verdicts({"verdict": "fail"}) == [{"arm": None, "verdict": "fail"}]
+    assert hy.verdicts({"verdict": {"a": "fail", "b": "no_verdict"}}) == [
+        {"arm": "a", "verdict": "fail"},
+        {"arm": "b", "verdict": "no verdict"},
+    ]
+    assert hy.verdicts({"verdict": {"a": {"verdict": "pass", "t": 2.4}}}) == [{"arm": "a", "verdict": "pass"}]
+    # No word to read: figures alone are never turned into a verdict.
+    assert hy.verdicts({"verdict": {"a": {"t": 2.4}}}) is None
+    assert hy.verdicts({"tests": []}) is None
+
+
+def test_board_joins_results_and_queue_and_groups_rows():
+    done = {
+        **NEW,
+        "id": 21,
+        "study": "item21",
+        "status": "failed",
+        "results": ["{home}/r/design.json", "{home}/r/gone.json"],
+    }
+    declared = {**NEW, "id": 26, "study": "item26"}
+    idle = {**NEW, "id": 28, "study": "item28"}
+    files = {
+        "{home}/r/design.json": (
+            {"window": "design", "run_id": "20261027-183407-be19ad", "verdict": {"x": "fail", "y": "pass"}},
+            "2026-10-28T00:53:17",
+        ),
+    }
+    queue = [
+        {
+            "id": 5,
+            "study": "item26",
+            "step": "study",
+            "status": "queued",
+            "created_at": "2026-10-30T00:38:40",
+        },
+        {
+            "id": 4,
+            "study": "item21",
+            "step": "design",
+            "status": "done",
+            "finished_at": "2026-10-27T20:00:00",
+        },
+        {"id": 3, "study": "item22", "step": "study", "status": "done"},
+    ]
+    out = hy.board({"hypotheses": [idle, done, declared]}, queue, lambda p: files.get(p, (None, None)))
+    assert [r["study"] for r in out["rows"]] == ["item26", "item28", "item21"]
+    assert [r["group"] for r in out["rows"]] == ["in_progress", "declared", "finished"]
+    d21 = out["rows"][2]
+    assert d21["results"][0]["summary"] == "mixed" and d21["results"][0]["run_id"] == "20261027-183407-be19ad"
+    assert d21["results"][1]["present"] is False and d21["results"][1]["summary"] is None
+    assert d21["last_activity"] == "2026-10-28T00:53:17"
+    # The register decides the status: a queued task moves the group, never the status.
+    assert out["rows"][0]["status"] == "declared" and out["rows"][0]["queue"]["active"] is True
+    assert out["unregistered"] == ["item22"]
+
+
 def test_similar_lists_only_rejected_matches_on_stated_tags():
     reg = hy.load()
     hits = hy.similar(reg, {"setup": "down-day", "structure": "put-bwb"})
