@@ -186,8 +186,16 @@ def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]
     roster only matters at entry; open rows are managed from the ledger whatever it says today."""
     _cfg.section(config, "defaults", label="curve", log=_log)  # says so once if the block moved
     declared = _cfg.registry(config, label="curve", log=_log)
-    _cfg.undeclared(declared, engine.ARMS, label="curve", means="each runs on `defaults` alone", log=_log)
-    arms = [b for b in engine.ARMS if (declared.get(b) or {}).get("enabled", True)]
+    _cfg.undeclared(
+        declared,
+        engine.ARMS,
+        label="curve",
+        means="each stays off (control excepted, which stays on)",
+        log=_log,
+    )
+    arms = [
+        b for b in engine.ARMS if (declared.get(b) or {}).get("enabled", engine.DEFAULT_ENABLED.get(b, False))
+    ]
     advised = advised_entries(advice_decision(config, today))
     arms.extend(tag for tag in advised if tag not in arms)
     return arms, advised
