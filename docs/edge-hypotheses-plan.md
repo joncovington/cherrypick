@@ -1990,6 +1990,18 @@ cells motivated `confirm`; they are in-sample and one name.*
     hold.
   - **A fail or no verdict:** the module keeps item 26's rule. Its console tab shows each open
     lot's age and the capital it holds. A management rule chosen by hand is labelled untested.
+- **Clarified 2026-10-29, while building the replay, before the full run**
+  (`scripts/share_ladder_item27.py`; one trial on SOXL, TECL and TQQQ from a scratch store).
+  Where the declaration was silent:
+  - **The base is item 26's own `once-3`.** A test holds this script's base to item 26's replay,
+    lot for lot.
+  - **`confirm`'s five sessions start with the trigger session.** A signal is not re-armed while
+    one is open or a buy is scheduled.
+  - **`trend` takes no lot until the counterpart has 200 sessions** of closes behind the session.
+  - **`avg-5`'s exit** is read on the position held at the session's start, and a session that
+    sells the position opens no new one. Its "losses realised" count lots sold under their own
+    cost inside a position sold whole at a gain, so they are reported, not read as losing trades.
+  - **No random-entry control:** every arm is paired against the base, as declared.
 
 ## Not worth revisiting
 
