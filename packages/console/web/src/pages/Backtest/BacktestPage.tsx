@@ -336,7 +336,15 @@ function StoreInventory({ inv, stores, updatedAt }: { inv: BacktestInventory; st
                   </div>
                 </td>
                 <td className="muted" style={{ fontSize: 12 }}>{s.holds}</td>
-                <td className="muted" style={{ fontSize: 12 }}>{s.present ? mainTable(s) : "—"}</td>
+                <td className="muted" style={{ fontSize: 12 }}>
+                  {s.present ? mainTable(s) : "—"}
+                  {s.pending ? (
+                    <span className="chip" title="Changed since its last count; the backtest-inventory job counts it again">
+                      {" "}
+                      count pending
+                    </span>
+                  ) : null}
+                </td>
                 <td className="num">{fmtBytes(s.bytes)}</td>
                 <td className="muted" style={{ fontSize: 12 }}>{refusedCell(fetched.get(s.file))}</td>
                 <td className="muted" style={{ fontSize: 12 }}>{s.used_by}</td>

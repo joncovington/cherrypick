@@ -1,11 +1,17 @@
 """The store registry: every vendor store declared with the code that rebuilds it, and the inventory
 naming any store nobody declared."""
 
+import json
+import os
 import sqlite3
 import subprocess
 from pathlib import Path
 
-from cherrypick.backtest import stores
+import pytest
+from test_fetch import _settings
+
+from cherrypick.backtest import __main__ as cli
+from cherrypick.backtest import paths, readout, stores
 
 REPO = Path(__file__).resolve().parents[3]
 
@@ -59,7 +65,6 @@ def test_a_shape_is_cached_until_the_file_changes(tmp_path, monkeypatch):
     con.execute("INSERT INTO t VALUES ('2024-06-03', 3.0)")
     con.commit()
     con.close()
-    import os
 
     os.utime(tmp_path / "SPX-60s.db", (1, 2_000_000_000))
     out = stores.inventory({}, vendor_dir=tmp_path, cache_path=cache)
@@ -71,7 +76,6 @@ def test_the_cache_is_banked_store_by_store_so_a_cut_off_read_keeps_what_it_coun
     # Two changed stores; the read dies on the second (the bridge's timeout, in life). The first
     # store's count is on disk, so the next read counts only the second. Before 2026-10-28 the cache
     # was written once at the end, and a read that never reached the end banked nothing.
-    import json
 
     _db(tmp_path / "SPX-60s.db")
     _db(tmp_path / "flow.db")
@@ -95,3 +99,54 @@ def test_the_cache_is_banked_store_by_store_so_a_cut_off_read_keeps_what_it_coun
     assert calls == ["SPX-60s.db", "flow.db", "flow.db"]
     assert sorted(json.loads(cache.read_text(encoding="utf-8"))) == ["SPX-60s.db", "flow.db"]
     assert {s["file"]: s for s in out["stores"]}["flow.db"]["tables"]["t"]["rows"] == 2
+
+
+def test_without_recount_a_changed_store_keeps_its_last_count_marked_pending_and_nothing_is_written(
+    tmp_path, monkeypatch
+):
+    # The console's read (2026-10-30): a cold count of the largest stores outlasts the bridge's 30 s,
+    # so the read never counts. A changed store comes back with its last count, marked pending, and
+    # the cache is left for the `inventory` verb to update.
+    _db(tmp_path / "SPX-60s.db")
+    _db(tmp_path / "flow.db")
+    cache = tmp_path / "cache.json"
+    stores.inventory({}, vendor_dir=tmp_path, cache_path=cache)
+    before = cache.read_text(encoding="utf-8")
+    con = sqlite3.connect(tmp_path / "SPX-60s.db")
+    con.execute("INSERT INTO t VALUES ('2024-06-03', 3.0)")
+    con.commit()
+    con.close()
+    os.utime(tmp_path / "SPX-60s.db", (1, 2_000_000_000))
+    _db(tmp_path / "mystery.db")
+    calls = []
+    monkeypatch.setattr(stores, "_shape", lambda p: calls.append(p.name) or {"tables": {}})
+    out = stores.inventory({}, vendor_dir=tmp_path, cache_path=cache, recount=False)
+    assert calls == []
+    assert cache.read_text(encoding="utf-8") == before
+    by = {s["file"]: s for s in out["stores"]}
+    assert by["SPX-60s.db"]["pending"] is True and by["SPX-60s.db"]["tables"]["t"]["rows"] == 2
+    assert "pending" not in by["flow.db"]
+    (u,) = out["undeclared"]
+    assert u["file"] == "mystery.db" and u["tables"] == {} and u["pending"] is True
+    assert out["recounted"] == []
+
+
+def test_the_overview_never_counts_a_store(monkeypatch):
+    # The guard on the console's read path: an overview that counted would be cut off by the bridge.
+    s = _settings()
+    paths.vendor_dir(s).mkdir(parents=True, exist_ok=True)
+    _db(paths.vendor_dir(s) / "SPX-convex-stack.db")
+    monkeypatch.setattr(stores, "_shape", lambda p: pytest.fail(f"the overview counted {p.name}"))
+    inv = readout.overview(s)["inventory"]
+    assert {x["file"]: x for x in inv["stores"]}["SPX-convex-stack.db"]["pending"] is True
+
+
+def test_the_inventory_verb_counts_what_changed_and_says_which(monkeypatch, capsys):
+    s = _settings()
+    paths.vendor_dir(s).mkdir(parents=True, exist_ok=True)
+    _db(paths.vendor_dir(s) / "flow.db")
+    monkeypatch.setattr(cli.settings, "load", lambda _c: s)
+    assert cli.main(["inventory"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"ok": True, "recounted": ["flow.db"], "pending": []}
+    assert cli.main(["inventory"]) == 0
+    assert json.loads(capsys.readouterr().out)["recounted"] == []

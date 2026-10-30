@@ -377,7 +377,8 @@ tolerance or, none outside, the session count; the per-cadence comparison tables
 replay measures, per-session quote and profile agreement) behind an expand. Then the licence, one
 line while it is active with no end date and its clock once it ends; then one store table, the
 inventory with each replay store's refused sessions joined in by file and the rebuild code under
-the store's name; the old fetch-record table only when the inventory cannot be read), `runs` (the list; `?run=`
+the store's name, and "count pending" on a store changed since the `backtest-inventory` job last
+counted it, because the read never counts; the old fetch-record table only when the inventory cannot be read), `runs` (the list; `?run=`
 reads one report: each arm's summary, the pairing with control, trials, fill model, code commit, data
 fingerprint, refused sessions, and the run cards, 2026-10-26, `pages/Backtest/RunCards.tsx`: per arm
 the account, equity and drawdown, edge trend, deepest drawdowns, month-by-year grid, trades, premium

@@ -110,33 +110,41 @@ def _shape(path: Path) -> dict[str, Any]:
     return out
 
 
-def _cached_shape(p: Path, cache: dict, on_miss=None) -> dict[str, Any]:
-    """`_shape`, kept while the file's size and mtime are unchanged: a full count over the larger
-    stores takes seconds, and the Data tab reads this on every refresh. `on_miss` runs after a
-    recount, so a caller can persist the cache store by store."""
+def _cached_shape(p: Path, cache: dict, recount: bool, on_miss=None) -> dict[str, Any]:
+    """`_shape`, kept while the file's size and mtime are unchanged. A changed file is counted again
+    only with `recount`; without it, the last count comes back marked `pending` (no tables when
+    there was none). `on_miss` runs after a recount, so a caller can persist the cache store by store."""
     st = p.stat()
     key = f"{st.st_size}:{int(st.st_mtime)}"
     hit = cache.get(p.name)
     if hit and hit.get("key") == key:
         return hit["shape"]
+    if not recount:
+        return {**(hit["shape"] if hit else {"tables": {}}), "pending": True}
     shape = _shape(p)
     cache[p.name] = {"key": key, "shape": shape}
     if on_miss is not None:
-        on_miss()
+        on_miss(p.name)
     return shape
 
 
 def inventory(
-    settings: dict, *, vendor_dir: Path | None = None, cache_path: Path | None = None
+    settings: dict,
+    *,
+    vendor_dir: Path | None = None,
+    cache_path: Path | None = None,
+    recount: bool = True,
 ) -> dict[str, Any]:
     """The vendor directory against `STORES`: declared stores present or missing, and undeclared files.
     Shapes are cached (`cache_path`, default the results dir's `store_inventory.json`; counts only).
 
-    The cache is written after EVERY recount, not once at the end (2026-10-28): the console's bridge
-    gives this read 30 s, and when several multi-gigabyte stores had changed since the last read
-    (the nightly 60 s append plus two new chain stores), one read could not finish inside it and the
-    next read started every count over again -- the Backtest page stayed "unavailable" for as long
-    as that held. Now each refresh banks the stores it managed, and the page recovers within a few.
+    Only the `inventory` verb recounts (2026-10-30). The console's overview reads with
+    `recount=False`: a cold count of the largest stores takes a minute or more, the console's bridge
+    gives a read 30 s, and a read cut off before it banked a count started the same count again next
+    time, so the Backtest page stayed "unavailable" while a queue fetch kept a store changing. The
+    supervisor's `backtest-inventory` job counts with no such limit; until it has, a changed store
+    shows its last count marked `pending`. The cache is still written after every recount, so a
+    count cut off by anything else keeps the stores it finished.
     """
     d = vendor_dir or paths.vendor_dir(settings)
     cache_file = cache_path or (paths.results_dir() / "store_inventory.json")
@@ -146,13 +154,17 @@ def inventory(
         cache = {}
     on_disk = {p.name: p for p in sorted(d.glob("*.db"))} if d.exists() else {}
     declared = {e["file"] for e in STORES}
+    recounted: list[str] = []
 
-    def save() -> None:
+    def save(name: str | None = None) -> None:
+        if name is not None:
+            recounted.append(name)
         try:
             cache_file.parent.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(
-                json.dumps({k: v for k, v in cache.items() if k in on_disk}), encoding="utf-8"
-            )
+            # Written whole then swapped in, so a read never sees half a file.
+            tmp = cache_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps({k: v for k, v in cache.items() if k in on_disk}), encoding="utf-8")
+            tmp.replace(cache_file)
         except OSError:
             pass
 
@@ -162,12 +174,13 @@ def inventory(
         row = {**e, "present": p is not None, "script": script_of(e)}
         if p is not None:
             row["bytes"] = p.stat().st_size
-            row.update(_cached_shape(p, cache, save))
+            row.update(_cached_shape(p, cache, recount, save))
         rows.append(row)
     undeclared = [
-        {"file": name, "bytes": p.stat().st_size, **_cached_shape(p, cache, save)}
+        {"file": name, "bytes": p.stat().st_size, **_cached_shape(p, cache, recount, save)}
         for name, p in on_disk.items()
         if name not in declared
     ]
-    save()
-    return {"dir": str(d), "stores": rows, "undeclared": undeclared}
+    if recount:
+        save()
+    return {"dir": str(d), "stores": rows, "undeclared": undeclared, "recounted": recounted}
