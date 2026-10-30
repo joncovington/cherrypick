@@ -356,8 +356,9 @@ cherrypick.backtest read overview|run --id`, async, memoised 30 s) each 404 with
 unless the features answer says `backtest: true`; a run id is checked against the runner's shape
 (`BACKTEST_RUN_ID` in `@console/shared`) and anything else is a 400 that spawns nothing. A bridge,
 not a mirror: the unlock verdict, every check, the paired interval and `no_exposure` are the module's.
-Tabs (`queue` first, and the landing tab, then `studies`, `runs`, `data`, `validation`, from
-2026-10-29): `studies` (2026-10-29, `pages/Backtest/StudiesTab.tsx`, `GET /api/backtest/studies` →
+Tabs (`queue` first, and the landing tab, then `studies`, `runs`, `data`, from 2026-10-30;
+`validation` folded into `data`, its old URL landing there; `slices` moved to Compare, its old URL
+redirected): `studies` (2026-10-29, `pages/Backtest/StudiesTab.tsx`, `GET /api/backtest/studies` →
 `services/studiesBridge.ts` → `python -m cherrypick.cli hypotheses-board`, behind the same gate
 because the verdicts are read from licensed result files; docs/studies-board-plan.md): what we
 tested and what we found. One row per hypothesis-register item, grouped in progress / declared /
@@ -370,8 +371,13 @@ queue row carries its study's verdict as a chip linking to the board, the runs l
 column, a run report opens with an "in plain English" card (what ran, the study it answers and
 that study's verdict and decision, control's net, each arm against control and where its interval
 sits against zero, all the report's figures worded), and the `provisional` chip links to
-validation), `data` (licence clock, stores with refusals), `validation` (per cadence: the unlock verdict, the
-vendor-against-recorder checks, per-session quote and profile agreement), `runs` (the list; `?run=`
+data), `data` (2026-10-30 layout: "is history trusted?" first -- the answer, then per validation the
+module's unlock verdict, the sessions compared and what stands in the way, the checks outside
+tolerance or, none outside, the session count; the per-cadence comparison tables (decision checks,
+replay measures, per-session quote and profile agreement) behind an expand. Then the licence, one
+line while it is active with no end date and its clock once it ends; then one store table, the
+inventory with each replay store's refused sessions joined in by file and the rebuild code under
+the store's name; the old fetch-record table only when the inventory cannot be read), `runs` (the list; `?run=`
 reads one report: each arm's summary, the pairing with control, trials, fill model, code commit, data
 fingerprint, refused sessions, and the run cards, 2026-10-26, `pages/Backtest/RunCards.tsx`: per arm
 the account, equity and drawdown, edge trend, deepest drawdowns, month-by-year grid, trades, premium
@@ -742,7 +748,10 @@ several chances to disagree about which base a book shadows.
 
 **The book-review read surfaces (2026-10-24).** Live → `execution` (B10) renders the orchestrator's
 `execution --json` through `services/executionBridge.ts`: each live arm's week, fill rate, slippage
-against the mid at submit, overrides, and the gap to its paper mirror. Backtest → `slices` (B5)
-reads the `technicals slices` JSON under `data/technicals/slices/` (`readers/slices.ts`), behind the
-backtest gate because a report may come from a licensed replay; greyed cells stay greyed and the page
+against the mid at submit, overrides, and the gap to its paper mirror. Compare → `slices` (B5;
+under Backtest until 2026-10-30, `/backtest/slices` redirects) reads the `technicals slices` JSON
+under `data/technicals/slices/` (`readers/slices.ts`), behind the backtest gate because a report may
+come from a licensed replay: the tab fails closed (`FAIL_CLOSED_SLIDES`, `visibility.ts`; off, unknown
+or unread, it leaves the rail and its URL falls to Compare's first tab) and the server refuses
+`/api/backtest/slices` on its own. Greyed cells stay greyed and the page
 says a cell is never a gate. Both rename and render; every rule is the Python side's. From 2026-10-28 an "In plain English" card heads each report: what the report is and what R means, the overall result against zero, one sentence a dimension (one group, too few groups with 30 trades, separated -- two groups' 95% intervals do not overlap -- or overlapping), the upshot, and how to use it. The reading is the reader's (`analysis`, `readDimension`); the card only words it.

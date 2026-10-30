@@ -5,7 +5,8 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NAV_DECL } from "../src/lightbox/navGroups";
-import { MODULE_LABEL, TRADING_MODULE_ORDER, isModuleId } from "../src/lightbox/moduleOrder";
+import { MODULE_LABEL, TRADING_MODULE_ORDER, isModuleId, type ModuleId } from "../src/lightbox/moduleOrder";
+import { FAIL_CLOSED_SLIDES } from "../src/lib/visibility";
 import type { SuiteFeatures, SuiteFeaturesOk } from "@console/shared";
 
 /**
@@ -78,6 +79,12 @@ const walk = (dir: string): void => {
   }
 };
 walk(path.join(__dirname, "..", "src"));
+
+/** A link into a page or tab that fails closed on the backtest feature. */
+const gated = (to: string): boolean => {
+  const [, module, id] = to.split("/") as [string, string, string];
+  return module === "backtest" || FAIL_CLOSED_SLIDES.get(module)?.has(id) === true;
+};
 
 describe("no path renders a blank page", () => {
   it("an unknown path gets the not-found page, never an empty document", () => {
@@ -208,8 +215,9 @@ describe("the module frame", () => {
       if (!isModuleId(module)) continue;
       const label = NAV_DECL[module].slides.find((sl) => sl.id === id)?.label;
       expect(label, `${to} is not a declared ${module} tab`).toBeDefined();
-      // Backtest fails closed, so its links are opened with the feature on, in its own block below.
-      if (module === "backtest") continue;
+      // Backtest and its gated tabs elsewhere fail closed, so their links are opened with the feature
+      // on, in the backtest block below.
+      if (gated(to)) continue;
       expect(text(render(to)), `${to} did not open its own tab`).toContain(`${MODULE_LABEL[module]} / ${label!}`);
     }
     // One whole-app render per link: past the 5 s default when the full suite runs in parallel.
@@ -397,17 +405,34 @@ describe("a page the suite has turned off", () => {
     }
   });
 
+  // Compare's slices tab (moved from Backtest 2026-10-30) fails closed on the same feature: off,
+  // unknown or unread, the tab is gone from the rail and its URL falls to Compare's first tab.
+  // Shown to fail: with the FAIL_CLOSED_SLIDES line removed from isSlideVisible, the hidden cases
+  // rendered "Compare / slices".
+  it("compare's slices tab is there only when the suite says backtest: true", () => {
+    const on = { ...base, features: { ...base.features, backtest: true } };
+    expect(text(renderWith("/compare/slices", on))).toContain("Compare / slices");
+    expect(renderWith("/compare/arms", on)).toContain('href="/compare/slices"');
+    for (const html of [render("/compare/slices"), renderWith("/compare/slices", base), renderWith("/compare/slices", { ok: false, error: "x" })]) {
+      expect(text(html)).not.toContain("Compare / slices");
+      expect(html).not.toContain('href="/compare/slices"');
+    }
+  });
+
   it("backtest renders on its own frame, and is on the rail, only when the suite says true", () => {
     const on = { ...base, features: { ...base.features, backtest: true } };
     expect(text(renderWith("/backtest", on))).toContain("Backtest / queue");
     expect(text(renderWith("/backtest/runs", on))).toContain("Backtest / runs");
-    // Every card link into the page opens its own tab once the gate is open.
-    const into = [...links].filter((l) => l.startsWith("/backtest/"));
+    // Every card link into a gated page or tab opens its own tab once the gate is open.
+    const into = [...links].filter(gated);
     expect(into.length).toBeGreaterThan(0);
     for (const to of into) {
-      const label = NAV_DECL.backtest.slides.find((sl) => sl.id === to.split("/")[2])?.label;
-      expect(text(renderWith(to, on)), `${to} did not open its own tab`).toContain(`Backtest / ${label!}`);
+      const [, module, id] = to.split("/") as [ModuleId, ModuleId, string];
+      const label = NAV_DECL[module].slides.find((sl) => sl.id === id)?.label;
+      expect(text(renderWith(to, on)), `${to} did not open its own tab`).toContain(`${MODULE_LABEL[module]} / ${label!}`);
     }
+    // The old validation tab lands on data, where it now lives.
+    expect(text(renderWith("/backtest/validation", on))).toContain("Backtest / data");
     expect(renderWith("/backtest", on)).not.toContain("Page not found");
     expect(renderWith("/flies/session", on)).toContain('href="/backtest"');
     expect(renderWith("/flies/session", base)).not.toContain('href="/backtest"');

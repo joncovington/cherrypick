@@ -27,6 +27,9 @@ export default function App() {
         {/* The technicals chart moved to the Charts page (2026-10-01); morning-pack links and
             bookmarks still say `/reports/chart?symbol=X`. A static segment outranks `:module/:slide`. */}
         <Route path="reports/chart" element={<MovedTo to="/charts/technicals" />} />
+        {/* The slice reports moved from Backtest to Compare (2026-10-30). Compare's tab fails closed on
+            the same feature, so with it off the redirect lands on Compare's first tab. */}
+        <Route path="backtest/slices" element={<MovedTo to="/compare/slices" />} />
         {/* Champions & challengers was REMOVED 2026-08-20 — judging whether an arm earned
             anything belongs to the advisor's experiments now. Redirected rather than left to the
             generic 404, which tells the reader their build is stale and to reload: true for a

@@ -4,11 +4,15 @@ import { Card } from "../../components/DataTable";
 import { useBridged } from "../../lib/bridged";
 
 /**
- * The Backtest page's slices tab (B5, docs/trading-book-review-plan.md): an arm's in-sample slice
+ * The Compare page's slices tab (B5, docs/trading-book-review-plan.md): an arm's in-sample slice
  * report from `python -m cherrypick.technicals slices`. Each cell shows n, its mean and a 95%
  * interval; a cell under 30 trades is greyed and never ranked. The header says how many cells there
  * are, so one strong cell reads in context. A good cell is a hypothesis to declare and test on held-out
  * data -- never a gate -- and the page says so first.
+ *
+ * Moved from Backtest 2026-10-30: the reports read paper and live ledgers, so a reader looks for them
+ * beside the arms. A report may still come from a licensed replay, so the tab fails closed on the
+ * backtest feature (`FAIL_CLOSED_SLIDES`) and the read stays `/api/backtest/slices`, gated on the server.
  */
 
 export function fmtMean(c: SliceCell, unit: string): string {
@@ -164,7 +168,7 @@ function Report({ r }: { r: SliceReport }) {
   );
 }
 
-export function BacktestSlicesTab() {
+export function SlicesTab() {
   const q = useBridged<SliceReports>(["backtest-slices"], "/api/backtest/slices", 300_000);
   const [pick, setPick] = useState<string | null>(null);
   if (q.isLoading) return <p className="muted">Reading the slice reports…</p>;

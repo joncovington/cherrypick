@@ -1,6 +1,5 @@
-import { BacktestDataTab, BacktestRunsTab, BacktestValidationTab } from "../../pages/Backtest/BacktestPage";
+import { BacktestDataTab, BacktestRunsTab } from "../../pages/Backtest/BacktestPage";
 import { BacktestQueueTab } from "../../pages/Backtest/QueueTab";
-import { BacktestSlicesTab } from "../../pages/Backtest/SlicesTab";
 import { BacktestStudiesTab } from "../../pages/Backtest/StudiesTab";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
@@ -17,10 +16,9 @@ export const slides: SlideDef[] = [
   // What we tested and what we found (2026-10-29): a run is opened from its study.
   { id: "studies", label: "studies", render: () => <BacktestStudiesTab /> },
   { id: "runs", label: "runs", render: () => <BacktestRunsTab /> },
+  // Validation lives here from 2026-10-30, as "is history trusted?" with its tables behind an expand;
+  // slices moved to Compare.
   { id: "data", label: "data", render: () => <BacktestDataTab /> },
-  { id: "validation", label: "validation", render: () => <BacktestValidationTab /> },
-  // B5: an arm's in-sample slice report (`technicals slices`); never a gate.
-  { id: "slices", label: "slices", render: () => <BacktestSlicesTab /> },
 ];
 
 export function BacktestLightbox({ slide }: { slide: string }) {

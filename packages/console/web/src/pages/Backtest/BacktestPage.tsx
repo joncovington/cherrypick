@@ -5,6 +5,7 @@ import type {
   BacktestInventoryStore,
   BacktestOverview,
   BacktestRunReport,
+  BacktestStore,
   BacktestSideReading,
   BacktestValidation,
   BridgedResult,
@@ -129,29 +130,109 @@ export function BacktestDataTab() {
         const l = d.license;
         return (
           <div className="cards cards-wide">
+            <TrustCard validation={d.validation} updatedAt={updatedAt} />
             <Card title="licence" updatedAt={updatedAt}>
-              <TileGrid count={6}>
-                <Tile label="licence" value={l.active ? "active" : "terminated"} cls={l.active ? "" : "pnl-neg"} />
-                <Tile label="terminated on" value={l.terminated_on ?? "—"} />
-                <Tile
-                  label="purge by"
-                  value={l.purge_by ?? "—"}
-                  title="the date every vendor-derived file must be deleted by, once the licence ends"
-                />
-                <Tile
-                  label="days left"
-                  value={l.overdue ? <span className="chip chip-missing">overdue</span> : l.days_left === null ? "—" : String(l.days_left)}
-                  title="days until the purge date"
-                />
-                <Tile label="design window" value={span(d.windows.design)} />
-                <Tile label="holdout window" value={span(d.windows.holdout)} />
-              </TileGrid>
+              {l.active && l.terminated_on === null ? (
+                <p style={{ margin: 0 }}>
+                  Active, with no end date set. When it ends, every vendor-derived file must be deleted by its purge date.
+                </p>
+              ) : (
+                <TileGrid count={4}>
+                  <Tile label="licence" value={l.active ? "active" : "terminated"} cls={l.active ? "" : "pnl-neg"} />
+                  <Tile label="terminated on" value={l.terminated_on ?? "—"} />
+                  <Tile
+                    label="purge by"
+                    value={l.purge_by ?? "—"}
+                    title="the date every vendor-derived file must be deleted by, once the licence ends"
+                  />
+                  <Tile
+                    label="days left"
+                    value={l.overdue ? <span className="chip chip-missing">overdue</span> : l.days_left === null ? "—" : String(l.days_left)}
+                    title="days until the purge date"
+                  />
+                </TileGrid>
+              )}
               {l.overdue && (
                 <p className="muted" style={{ fontSize: 12 }}>
                   The purge date has passed: <code>python -m cherrypick.backtest purge</code> lists what must go.
                 </p>
               )}
             </Card>
+            {d.inventory ? (
+              <StoreInventory inv={d.inventory} stores={d.stores} updatedAt={updatedAt} />
+            ) : (
+              <VendorStores d={d} updatedAt={updatedAt} />
+            )}
+          </div>
+        );
+      }}
+    </WithOverview>
+  );
+}
+
+/**
+ * Is history trusted? The module's unlock verdict per validation, first, with what stands in the way:
+ * the checks outside tolerance, or (none outside) the sessions compared so far. The comparison
+ * tables are behind an expand. Folded in from its own tab 2026-10-30.
+ */
+export function TrustCard({ validation, updatedAt }: { validation: BacktestValidation[]; updatedAt: number }) {
+  const unlocked = validation.filter((v) => v.unlocks_history);
+  const answer =
+    validation.length === 0
+      ? "Not yet asked: no validation has run."
+      : unlocked.length > 0
+        ? `Yes: ${unlocked.length} of ${validation.length} validation${validation.length === 1 ? "" : "s"} unlock${unlocked.length === 1 ? "s" : ""} history.`
+        : `No: ${validation.length === 1 ? "the one validation does not unlock" : `none of the ${validation.length} validations unlocks`} history, so every replay over it is provisional, not evidence.`;
+  return (
+    <Card title="is history trusted?" updatedAt={updatedAt}>
+      <p style={{ margin: "0 0 6px" }}>
+        <strong>{answer}</strong>
+      </p>
+      {validation.length === 0 ? (
+        <p className="muted">
+          <code>python -m cherrypick.backtest validate</code> compares the vendor store against the recorder&apos;s own sessions.
+        </p>
+      ) : (
+        <>
+          <ul style={{ margin: "0 0 6px", paddingLeft: "1.1em" }}>
+            {validation.map((v) => {
+              const failing = Object.entries(v.vendor_within_tolerance ?? {})
+                .filter(([, ok]) => ok === false)
+                .map(([n]) => n)
+                .sort();
+              return (
+                <li key={v.file}>
+                  <span className={v.unlocks_history ? "chip chip-ok" : "chip chip-warn"}>
+                    {v.unlocks_history ? "unlocks" : "does not unlock"}
+                  </span>{" "}
+                  {v.cadence === null ? "unknown cadence" : `${String(v.cadence)} s`}, {v.sessions_compared ?? "—"} session(s) compared
+                  {v.dates.length > 0 ? ` (${v.dates[0]!} to ${v.dates[v.dates.length - 1]!})` : ""}.{" "}
+                  {v.unlocks_history
+                    ? null
+                    : failing.length > 0
+                      ? `Outside tolerance: ${failing.join(", ")}.`
+                      : "Every check is within tolerance; it needs more sessions compared."}
+                </li>
+              );
+            })}
+          </ul>
+          <details>
+            <summary className="muted">the comparison tables</summary>
+            <div className="cards cards-wide" style={{ marginTop: 8 }}>
+              {validation.map((v) => (
+                <ValidationCard key={v.file} v={v} updatedAt={updatedAt} />
+              ))}
+            </div>
+          </details>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/** The replay stores' fetch record, shown only when the inventory could not be read. */
+function VendorStores({ d, updatedAt }: { d: BacktestOverview; updatedAt: number }) {
+  return (
             <Card title="vendor stores" updatedAt={updatedAt}>
               {d.stores.length === 0 ? (
                 <p className="muted">No vendor store on this machine yet.</p>
@@ -190,11 +271,6 @@ export function BacktestDataTab() {
                 </div>
               )}
             </Card>
-            <StoreInventory inv={d.inventory} updatedAt={updatedAt} />
-          </div>
-        );
-      }}
-    </WithOverview>
   );
 }
 
@@ -212,8 +288,18 @@ export function mainTable(s: BacktestInventoryStore): string {
   return `${name}: ${v.rows.toLocaleString("en-US")} rows${v.span ? ` · ${v.span[0]} to ${v.span[1]}` : ""}`;
 }
 
-function StoreInventory({ inv, updatedAt }: { inv: BacktestInventory | undefined; updatedAt: number }) {
-  if (!inv) return null;
+/** "412 · half_day 2": a replay store's sessions the fetch refused, and why. */
+function refusedCell(s: BacktestStore | undefined): string {
+  if (!s || s.refused === 0) return "—";
+  const why = Object.entries(s.refused_reasons)
+    .map(([k, n]) => `${k} ${String(n)}`)
+    .join(", ");
+  return why ? `${fmtCount(s.refused)} · ${why}` : fmtCount(s.refused);
+}
+
+function StoreInventory({ inv, stores, updatedAt }: { inv: BacktestInventory; stores: BacktestStore[]; updatedAt: number }) {
+  // The replay stores' fetch record, joined by file: one table, not two (2026-10-30).
+  const fetched = new Map(stores.map((s) => [s.file, s]));
   return (
     <Card title="every store, and the code that rebuilds it" updatedAt={updatedAt}>
       <p className="muted" style={{ fontSize: 12 }}>
@@ -231,11 +317,11 @@ function StoreInventory({ inv, updatedAt }: { inv: BacktestInventory | undefined
         <table className="data-table">
           <thead>
             <tr>
-              <th>store</th>
+              <th title="The file, and the code that rebuilds it">store</th>
               <th>holds</th>
               <th>largest table</th>
               <th className="num">size</th>
-              <th>built by</th>
+              <th title="Sessions the fetch refused to store, and why">refused</th>
               <th>used by</th>
             </tr>
           </thead>
@@ -245,13 +331,14 @@ function StoreInventory({ inv, updatedAt }: { inv: BacktestInventory | undefined
                 <td>
                   {s.file}
                   {s.present === false ? <span className="chip chip-warn"> missing</span> : null}
+                  <div style={{ fontSize: 12 }}>
+                    <code>{s.built_by}</code>
+                  </div>
                 </td>
                 <td className="muted" style={{ fontSize: 12 }}>{s.holds}</td>
                 <td className="muted" style={{ fontSize: 12 }}>{s.present ? mainTable(s) : "—"}</td>
                 <td className="num">{fmtBytes(s.bytes)}</td>
-                <td style={{ fontSize: 12 }}>
-                  <code>{s.built_by}</code>
-                </td>
+                <td className="muted" style={{ fontSize: 12 }}>{refusedCell(fetched.get(s.file))}</td>
                 <td className="muted" style={{ fontSize: 12 }}>{s.used_by}</td>
               </tr>
             ))}
@@ -451,28 +538,6 @@ function ValidationCard({ v, updatedAt }: { v: BacktestValidation; updatedAt: nu
   );
 }
 
-export function BacktestValidationTab() {
-  return (
-    <WithOverview>
-      {(d, updatedAt) =>
-        d.validation.length === 0 ? (
-          <section className="card">
-            <p className="muted">
-              No validation has been run yet: <code>python -m cherrypick.backtest validate</code> compares the vendor store
-              against the recorder&apos;s own sessions.
-            </p>
-          </section>
-        ) : (
-          <div className="cards cards-wide">
-            {d.validation.map((v) => (
-              <ValidationCard key={v.file} v={v} updatedAt={updatedAt} />
-            ))}
-          </div>
-        )
-      }
-    </WithOverview>
-  );
-}
 
 // ------------------------------------------------------------------ runs
 
@@ -859,10 +924,10 @@ export function BacktestRunsTab() {
 function ProvisionalChip() {
   return (
     <Link
-      to="/backtest/validation"
+      to="/backtest/data"
       className="chip chip-warn"
       style={{ marginLeft: 6 }}
-      title="made before validation unlocked history: not a trial, not evidence, never shown to the advisor. Open validation for why"
+      title="made before validation unlocked history: not a trial, not evidence, never shown to the advisor. Open data for why"
     >
       provisional
     </Link>
