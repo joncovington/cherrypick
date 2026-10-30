@@ -2244,6 +2244,88 @@ the funds' history. Item 26 starts in 2011, so it never sees 2000-02 or 2008, th
   user's choice, with the console tab showing its rebuilt worst hold and drawdown. Caps are proposed
   from the pre-2011 drawdowns, not the post-2011 ones.
 
+### 29. The share ladder in options: a call debit spread, a put credit spread or a ZEBRA in place of the share lot
+
+*Source: the user, 2026-10-29 and 30. They asked "Is there a way to create a trade like this with
+options?", then added the ZEBRA and asked for its expiry to be tested as a grid. Declared after items
+26 to 28 reported (item 26 failed). The only options data seen is the broker quote probe of
+2026-10-30, one snapshot on a day SOXL fell 22%. Strikes were $5 apart near the money, and a round
+trip at the natural cost a sixth to a half of a spread's best case.*
+
+- **Question:** on the ladder's trigger days, does an option structure in place of the share lot
+  make more per trade than a share lot of the same delta, after the options' wider costs?
+- **Where the edge would live:** not in a signal; item 26 found none. In **execution and
+  structure**: whether the options' defined loss and convexity, or the put spread's premium, pay
+  for their costs over the lot's life. The quote probe says costs are the hurdle.
+- **Names:** SOXL and TQQQ, the ladder's names with weekly options that trade. TECL's options are
+  thin.
+- **The entry:** a session whose low reaches 93% of the previous close (item 26's `once` trigger).
+  Daily chains cannot see the intraday trigger price, so the structure enters at that session's
+  close, from the vendor's end-of-day quotes, and the share lot it is paired with enters at the same
+  close. One open position per name and arm; a trigger while one is open is skipped and counted.
+- **The target:** the first later close at or above 104% of the entry close, as the share lot's.
+- **Tenors** (the expiry chosen at entry):
+  - **7-day:** the first expiry 5 or more calendar days out.
+  - **21-day:** the first expiry 18 or more days out.
+  - **60-90-day:** the expiry in 60 to 90 days nearest 75.
+- **Structures,** one set each, strikes from the entry close S:
+  - **Call debit spread:** long the call nearest S; short the first strike at or above 1.04 x S.
+  - **Put credit spread:** short the put nearest S; long the first strike at or below 0.96 x S.
+  - **ZEBRA:** long 2 calls at the strike whose delta is nearest 0.70; short 1 call nearest S.
+    Delta is Black-Scholes from the leg's mid, the 3-month bill rate and no dividend.
+- **When the target is not reached by expiry** (for the 60-90-day tenor, by 21 days left):
+  - **close:** the structure is closed at that session's quotes;
+  - **roll:** closed and opened again at the same tenor from that session's close, the target
+    staying 104% of the first entry close, until it is reached or the window ends;
+  - **exercise** (ZEBRA only, reported): the long calls become 200 shares at their strike, the
+    short is closed, and the shares are held to the target as a share lot.
+- **Judged arms:** 3 structures x 3 tenors x {close, roll}, 18 in all, Holm across them.
+- **Measured,** per trade: the structure's net in dollars less the net of a share lot of the same
+  entry delta (whole shares), entered and exited at the same closes, per share of that delta.
+  Reported beside it: the structure's net as a share of its capital at risk (the debit, or the width
+  less the credit), the share lot's on its cost, the hold, and the worst trade.
+- **Costs:** fills at the natural, buying at the ask and selling at the bid, as the working price;
+  mid reported. The suite's tastytrade schedule (`cherrypick.core.fees`): $1.00 a contract to
+  open, exchange and regulatory fees on every leg, no commission to close. An exercise is charged
+  as the broker's. The share lot pays item 26's 0.05% a side.
+- **Windows:**
+  - **Design:** the 7- and 21-day tenors 2022-01-03 to 2024-12-31 (SOXL lists an expiry every week
+    from 2022; TQQQ's weeklies reach 2015 but are not used, so both names share one window); the
+    60-90-day tenor 2016-05-02 to 2024-12-31 (the subscription serves both names' chains from 2016;
+    2013 needs a higher tier).
+  - **Holdout:** 2025-01-02 to 2026-10-28, every tenor, counting only after a design pass.
+  - Fewer than 30 closed trades in an arm in a window is no verdict.
+- **Pass-or-fail rule**, per arm, all must hold:
+  - in the design window, the mean paired difference above zero with a one-sided t above 2, one
+    trade one observation, and Holm across the 18;
+  - positive in each time-half of the design window, and on each name;
+  - still positive with fees at 1.5x and fills at the natural plus $0.05 a leg;
+  - then the holdout's mean paired difference above zero.
+- **Rival explanations, each with its check:**
+  - *Leverage, not the structure:* every trade is paired against shares of the same entry delta.
+  - *A bull market:* the structure and its share lot buy on the same days, so the market's drift is
+    in both.
+  - *Costs read too kindly:* the verdict is at the natural; mid is reported only.
+  - *One volatility regime:* the design holds 2022's fall, and both time-halves must agree.
+  - *One name:* positive on each of the two.
+- **Minimum detectable effect (B12):** from the design window's own spread of paired differences,
+  recorded in the local result before the holdout is read.
+- **Declared limits (B11):** end-of-day quotes only, so the entry is at the close, not at the
+  trigger level, and an intraday target is read on closes. Black-Scholes deltas, not the vendor's.
+  Early assignment of a short leg is not modelled. The 7- and 21-day tenors have no history before
+  2022.
+- **Data:** ThetaData Options Standard end-of-day chains for SOXL and TQQQ, fetched by a research-queue
+  `fetch-chains` row into the backtest store, beside item 26's `bars.db` and item 28's Treasury files.
+  The replay is `scripts/share_ladder_item29.py`, run as `item29/plan`, `item29/fetch-chains` and
+  `item29/study`. The results are derived from licensed data, so they stay under
+  `~/.cherrypick/data/backtest/results/research/item29/`, and this plan records the verdict without
+  figures.
+- **Decides:**
+  - **A pass:** the passing structure becomes an option in the `ladder` module beside the share lot,
+    paper first, its legs placed in regular hours only.
+  - **A fail or no verdict:** the module trades shares only, and the option versions are closed as
+    specified.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

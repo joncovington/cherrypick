@@ -924,6 +924,48 @@
       "retest": null,
       "retests": [],
       "outcome": "no arm passed item 26, so all reported; the default list keeps SSO alone among the funds, caps from pre-2011 drawdowns"
+    },
+    {
+      "id": 29,
+      "study": "item29",
+      "title": "The share ladder in options: a call debit spread, a put credit spread or a ZEBRA in place of the share lot",
+      "status": "declared",
+      "legacy": false,
+      "setup": "dip-buy",
+      "side": "bullish",
+      "structure": "options",
+      "window": "multi-day",
+      "measure": "per trade, the structure's net less a same-entry-delta share lot's net over the same closes, per share of that delta; 3 structures (call debit spread, put credit spread, ZEBRA) x 3 tenors (7, 21, 60-90 days) x 2 expiry rules (close, roll)",
+      "expected": "a positive mean paired difference after fills at the natural and tastytrade fees",
+      "sample": "SOXL and TQQQ trigger sessions (low <= 93% of the previous close), entered at the close from ThetaData end-of-day chains; design 2022-01-03..2024-12-31 (7/21-day) and 2016-05-02..2024-12-31 (60-90-day), holdout 2025-01-02..2026-10-28; < 30 closed trades an arm in a window = no verdict",
+      "rule": "per arm: design mean paired difference > 0 with one-sided t > 2, Holm across 18 arms; positive in each design half and on each name; positive at 1.5x fees and natural + $0.05 a leg; then holdout mean > 0",
+      "mechanism": "options' defined loss and convexity, or the put spread's premium, against their wider costs over the lot's life; no new signal",
+      "rivals": [
+        {
+          "explanation": "leverage, not the structure",
+          "check": "each trade paired against shares of the same entry delta"
+        },
+        {
+          "explanation": "a bull market",
+          "check": "structure and share lot buy on the same days"
+        },
+        {
+          "explanation": "costs read too kindly",
+          "check": "verdict at the natural; mid reported only"
+        },
+        {
+          "explanation": "one volatility regime",
+          "check": "design holds 2022; both time-halves must agree"
+        },
+        {
+          "explanation": "one name",
+          "check": "positive on each of SOXL and TQQQ"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#29-the-share-ladder-in-options-a-call-debit-spread-a-put-credit-spread-or-a-zebra-in-place-of-the-share-lot",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
