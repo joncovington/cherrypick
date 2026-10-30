@@ -134,6 +134,12 @@ def evaluate(
         today, after_close = when.date().isoformat(), when.hour >= 16
         exp, _ = _lp.drop_expired(exp, today, after_close)
         held, expired = _lp.drop_expired(held, today, after_close)
+        # A module that names the expiries it trades (MEIC: today's) leaves the account's other
+        # expiries -- a hand-placed position on the same underlying -- out of the comparison.
+        declared = [live[m].get("expiries") for m in modules]
+        held, out_of_scope = _lp.in_scope(
+            held, exp, None if any(d is None for d in declared) else [e for d in declared for e in d]
+        )
         diffs = _lp.compare(exp, held)
         results.append(
             {
@@ -142,6 +148,7 @@ def evaluate(
                 "underlyings": underlyings,
                 "pending_orders": sum(int(live[m].get("pending") or 0) for m in modules),
                 "expired_unprocessed": expired,
+                "out_of_scope": out_of_scope,
                 "diffs": diffs,
                 "confirmed": _lp.confirmed(prev_by_account.get(masked, []), diffs),
             }
