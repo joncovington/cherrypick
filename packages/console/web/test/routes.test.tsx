@@ -266,6 +266,8 @@ describe("the suite surfaces are on the frame", () => {
     ["/gex/history", "GEX / gex"],
     ["/system/modules", "System / health"],
     ["/config/dev", "Config / timing"],
+    ["/screeners/short-puts", "Screeners / puts &amp; calls"], // the ampersand is escaped in markup
+    ["/screeners/covered-calls", "Screeners / puts &amp; calls"],
   ];
   for (const [route, crumb] of folded) {
     it(`${route}, folded, opens on ${crumb}`, () => {

@@ -349,8 +349,7 @@ export const SCREENERS_SLIDES = [
   { id: "earnings-record", label: "earnings record" },
   { id: "board", label: "signal board" },
   { id: "skate", label: "skate" },
-  { id: "short-puts", label: "short puts" },
-  { id: "covered-calls", label: "covered calls" },
+  { id: "income", label: "puts & calls" },
   { id: "credit-spreads", label: "credit spreads" },
   { id: "valuation", label: "fair value" },
 ] as const satisfies readonly NavSlide[];
@@ -535,13 +534,15 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   charts: { slides: CHARTS_SLIDES },
   screeners: {
     slides: SCREENERS_SLIDES,
-    simple: ["earnings", "earnings-record", "board", "skate", "short-puts", "covered-calls", "credit-spreads", "valuation"],
+    simple: ["earnings", "earnings-record", "board", "skate", "income", "credit-spreads", "valuation"],
     groups: [
       { label: "screens", ids: ["earnings", "earnings-record", "board", "skate"] },
       // Named for what the lists hold, not their source: they were the vendor's until 2026-10-24 and
       // are our own since, under the same names.
-      { label: "income lists", ids: ["short-puts", "covered-calls", "credit-spreads", "valuation"] },
+      { label: "income lists", ids: ["income", "credit-spreads", "valuation"] },
     ],
+    // Short puts and covered calls became one tab with a switch on 2026-10-30.
+    legacy: { "short-puts": "income", "covered-calls": "income" },
   },
   reports: { slides: REPORTS_SLIDES },
   compare: { slides: COMPARE_SLIDES },

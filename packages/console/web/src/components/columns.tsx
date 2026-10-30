@@ -24,6 +24,8 @@ export interface Column<R> {
   sort?: string;
   detailOnly?: boolean;
   secondary?: boolean;
+  /** The header cell's class (`num` for a right-aligned figure). */
+  className?: string;
   /** The whole cell, `<td>` included, so a column keeps its own class, title and alignment. */
   td: (row: R) => ReactNode;
 }
@@ -76,7 +78,7 @@ export function HeadRow<R>({ cols }: { cols: readonly Column<R>[] }) {
   return (
     <tr>
       {cols.map((c) => (
-        <th key={c.key} title={c.title}>
+        <th key={c.key} title={c.title} className={c.className}>
           {c.label}
         </th>
       ))}

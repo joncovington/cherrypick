@@ -50,7 +50,8 @@ vi.mock("../src/lib/api", async (importOriginal) => ({
   useIncomeList: () => ({ data: payload, isLoading: false, isError: false }),
 }));
 
-const { OwnListTab, applyFilters } = await import("../src/pages/Screeners/OwnListTab");
+const { OwnListTab, applyFilters, incomeColumns } = await import("../src/pages/Screeners/OwnListTab");
+const { SecondaryCells, secondaryOf } = await import("../src/components/columns");
 
 function render(url = "/screeners/short-puts", list: "short-puts" | "covered-calls" = "short-puts"): string {
   return renderToString(
@@ -223,21 +224,25 @@ describe("our short-put list", () => {
     expect(render()).toContain("No tested edge.");
   });
 
-  it("shows the fair-value gap beside the row, states a non-valued name, and never orders by it", () => {
+  it("shows the fair-value gap in the row's expanded line, states a non-valued name, and never orders by it", () => {
     // The builder's order (by symbol): the cheap name after the rich one, whatever the gap says.
-    payload = base([
+    const rows = [
       row({ symbol: "AAA", fair: { fairValue: 80, fairLow: 60, fairHigh: 95, fairGap: 0.25, fairState: "valued", fairFlags: ["terminal_heavy"] } }),
       row({ symbol: "FUND", fair: { fairValue: null, fairLow: null, fairHigh: null, fairGap: null, fairState: "not-applicable", fairFlags: [] } }),
       row({ symbol: "OLD", fair: null }),
       row({ symbol: "ZZZ", fair: { fairValue: 150, fairLow: 120, fairHigh: 180, fairGap: -0.3333, fairState: "valued", fairFlags: [] } }),
-    ]);
+    ];
+    payload = base(rows);
     const html = render();
-    expect(html).toContain("Vs fair");
-    expect(html).toContain("+25.0%");
-    expect(html).toContain("−33.3%");
-    expect(html).toContain(">n/a<");
-    expect(html).toContain("tested 2018–26: no edge");
-    expect(html.indexOf(">AAA<")).toBeLessThan(html.indexOf(">ZZZ<"));
+    // Out of the row since 2026-10-30 (docs/console-review-plan.md batch 3): a model opinion, not a pick.
+    expect(html).not.toContain("Vs fair");
+    expect(html.indexOf("AAA<")).toBeLessThan(html.indexOf("ZZZ<"));
+    const line = (r: IncomeListRow) => renderToString(<SecondaryCells cols={secondaryOf(incomeColumns(false, null, () => {}))} row={r} />);
+    expect(line(rows[0]!)).toContain("Vs fair");
+    expect(line(rows[0]!)).toContain("+25.0%");
+    expect(line(rows[3]!)).toContain("−33.3%");
+    expect(line(rows[1]!)).toContain(">n/a<");
+    expect(line(rows[0]!)).toContain("tested 2018–26: no edge");
   });
 
   it("says when nothing has been built, and when the reading was cut short", () => {

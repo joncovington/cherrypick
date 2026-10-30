@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Fragment, useState, type ReactNode } from "react";
+import { useLocation, useSearchParams } from "react-router-dom";
 import type { FairValueFields, IncomeList, IncomeListRow } from "@console/shared";
 import { SortTh, sortRows, useSort } from "../../components/DataTable";
+import { Cells, SecondaryCells, secondaryOf, useColumns, type Column } from "../../components/columns";
 import { Pager, usePage } from "../../components/ScopeBar";
 import { useIncomeList } from "../../lib/api";
 import { PremiumSlider, useMinPremium } from "../../components/PremiumSlider";
@@ -201,6 +202,95 @@ export function applyFilters(all: IncomeListRow[], f: OwnListFilters) {
   return { shown, hidden };
 }
 
+/**
+ * The list's columns (2026-10-30, docs/console-review-plan.md batch 3): the row holds what picks a
+ * trade -- the name, the contract, its delta, the premium, its yield, how far out, the announcement --
+ * and the quote's working and the model's opinions sit in the row's expanded line, in every view.
+ */
+export function incomeColumns(calls: boolean, open: string | null, setOpen: (s: string | null) => void): Column<IncomeListRow>[] {
+  return [
+    {
+      key: "symbol",
+      label: "Symbol",
+      sort: "symbol",
+      td: (r) => (
+        <td>
+          <button type="button" className="btn btn-quiet" aria-expanded={open === r.symbol} onClick={() => setOpen(open === r.symbol ? null : r.symbol)}>
+            {open === r.symbol ? "▾" : "▸"} {r.symbol}
+          </button>
+          {r.type && r.type !== "Stock" ? <span className="muted"> · {r.type === "Exchange Traded Fund" ? "fund" : r.type}</span> : null}
+          {r.leveraged ? (
+            <span className="chip" title="A daily-reset fund (the declared leveraged, inverse and volatility list): it decays and gaps in ways its delta does not price">
+              {r.leveraged}
+            </span>
+          ) : null}
+          {r.fit === false ? (
+            <span className="chip muted" title={calls ? "No uncovered 100-share lot held" : "More buying power than the account has"}>
+              does not fit
+            </span>
+          ) : null}
+        </td>
+      ),
+    },
+    {
+      key: "expiry",
+      label: "Expiry",
+      title: calls ? "The covered call's expiry: the monthly 30-45 days out, else the cycle monthly" : "The cycle monthly: 45-60 days out, else 30-60",
+      td: (r) => (
+        <td>
+          {shortDate(r.expiry)} <span className="muted">{r.dte}d</span>
+          {calls && r.window === "cycle" ? <span className="chip" title="No monthly was listed 30-45 days out">cycle</span> : null}
+        </td>
+      ),
+    },
+    { key: "strike", label: "Strike", sort: "strike", className: "num", td: (r) => <td className="num">{r.strike}{calls ? "C" : "P"}</td> },
+    { key: "delta", label: "Δ", sort: "delta", className: "num", title: "Black-Scholes on the option's own IV, solved from its mid", td: (r) => <td className="num">{r.delta.toFixed(2)}</td> },
+    { key: "premium", label: "Premium", sort: "premium", className: "num", title: "Whole contract: working × 100", td: (r) => <td className="num">{r.premium === null ? "—" : `$${money(r.premium)}`}</td> },
+    { key: "annual", label: "Annual", sort: "annual", className: "num", title: "Return × 365 ÷ days, simple. Yield, not edge.", td: (r) => <td className="num">{pct(r.annualFraction)}</td> },
+    { key: "distance", label: "Distance", sort: "distance", className: "num", title: "Strike against the share price", td: (r) => <td className="num">{signedPct(r.distanceFraction)}</td> },
+    { key: "earnings", label: "Earnings", sort: "earnings", title: "The next announcement, against this trade's own expiry", td: (r) => <EarningsCell r={r} /> },
+    ...(calls
+      ? [
+          {
+            key: "exdiv",
+            label: "Ex-div",
+            title:
+              "The broker's ex-dividend date against this call's expiry: in trade (a call in the money then can be assigned early for the dividend), after, past (the next is not posted) or unknown",
+            td: (r: IncomeListRow) => <ExDividendCell r={r} />,
+          },
+        ]
+      : []),
+    { key: "price", label: "Price", secondary: true, className: "num", td: (r) => <td className="num">{money(r.spot)}</td> },
+    { key: "iv", label: "IV", secondary: true, className: "num", td: (r) => <td className="num">{pct(r.iv, 0)}</td> },
+    {
+      key: "quote",
+      label: "Bid × ask",
+      secondary: true,
+      className: "num",
+      title: "The afternoon quote, per share",
+      td: (r) => <td className="num">{money(r.bid)} × {money(r.ask)}</td>,
+    },
+    {
+      key: "working",
+      label: "Working",
+      secondary: true,
+      className: "num",
+      title: "Per share: the mid less a quarter of the width, what a limit at the mid stepped down fills at",
+      td: (r) => <td className="num">{money(r.working)}</td>,
+    },
+    {
+      key: "ret",
+      label: "Return",
+      secondary: true,
+      className: "num",
+      title: calls ? "Working premium ÷ share price" : "Working premium ÷ strike (the cash it secures)",
+      td: (r) => <td className="num">{pct(r.returnFraction, 2)}</td>,
+    },
+    { key: "fair", label: "Vs fair", secondary: true, className: "num", title: FAIR_TITLE, td: (r) => <FairCell fair={r.fair} /> },
+    { key: "liquid", label: "Liquid", secondary: true, title: "The reading's own verdict against the leg bars", td: (r) => <LiquidCell r={r} /> },
+  ];
+}
+
 const SORTS: Record<string, (r: IncomeListRow) => number | string | null> = {
   symbol: (r) => r.symbol,
   price: (r) => r.spot,
@@ -215,6 +305,41 @@ const SORTS: Record<string, (r: IncomeListRow) => number | string | null> = {
   oi: (r) => r.openInterest,
   earnings: (r) => r.earningsDate,
 };
+
+/** `?list=calls` or `?list=puts`, else the list an old tab's address names (`/screeners/covered-calls`). */
+export function incomeListFrom(param: string | null, path: string): IncomeList {
+  if (param === "calls") return "covered-calls";
+  if (param === "puts") return "short-puts";
+  return path.endsWith("/covered-calls") ? "covered-calls" : "short-puts";
+}
+
+/**
+ * Both income lists on one tab (2026-10-30, docs/console-review-plan.md batch 3): the same component,
+ * the same columns, one switch. The list rides `?list=`, and the two old tabs' addresses still open
+ * their own list.
+ */
+export function IncomeListsTab() {
+  const [params, setParams] = useSearchParams();
+  const { pathname } = useLocation();
+  const list = incomeListFrom(params.get("list"), pathname);
+  const choose = (next: IncomeList) => {
+    const p = new URLSearchParams(params);
+    p.set("list", next === "covered-calls" ? "calls" : "puts");
+    setParams(p, { replace: true });
+  };
+  return (
+    <>
+      <div className="mode-toggle" role="group" aria-label="income list" style={{ marginBottom: 12 }}>
+        {(["short-puts", "covered-calls"] as const).map((l) => (
+          <button key={l} type="button" className={`mode-btn ${l === list ? "active" : ""}`} aria-pressed={l === list} onClick={() => choose(l)}>
+            {TITLE[l].toLowerCase()}
+          </button>
+        ))}
+      </div>
+      <OwnListTab key={list} list={list} />
+    </>
+  );
+}
 
 export function OwnListTab({ list }: { list: IncomeList }) {
   const [params, setParams] = useSearchParams();
@@ -246,6 +371,10 @@ export function OwnListTab({ list }: { list: IncomeList }) {
   );
   const rows = sorted.slice(page.offset, page.offset + page.limit);
   const calls = list === "covered-calls";
+  const [open, setOpen] = useState<string | null>(null);
+  const allCols = incomeColumns(calls, open, setOpen);
+  const cols = useColumns(allCols);
+  const secondary = secondaryOf(allCols);
   const latest = data?.days[0] ?? null;
   const dropped = Object.entries(data?.dropped ?? {});
 
@@ -360,80 +489,31 @@ export function OwnListTab({ list }: { list: IncomeList }) {
           <table className="data-table">
             <thead>
               <tr>
-                <SortTh label="Symbol" k="symbol" sort={sort} />
-                <SortTh label="Price" k="price" sort={sort} className="num" />
-                <th title={calls ? "The covered call's expiry: the monthly 30-45 days out, else the cycle monthly" : "The cycle monthly: 45-60 days out, else 30-60"}>Expiry</th>
-                <SortTh label="Strike" k="strike" sort={sort} className="num" />
-                <SortTh label="Δ" k="delta" sort={sort} className="num" title="Black-Scholes on the option's own IV, solved from its mid" />
-                <SortTh label="IV" k="iv" sort={sort} className="num" />
-                <th className="num" title="The afternoon quote, per share">Bid × ask</th>
-                <SortTh label="Working" k="working" sort={sort} className="num" title="Per share: the mid less a quarter of the width, what a limit at the mid stepped down fills at" />
-                <SortTh label="Premium" k="premium" sort={sort} className="num" title="Whole contract: working × 100" />
-                <SortTh
-                  label="Return"
-                  k="ret"
-                  sort={sort}
-                  className="num"
-                  title={calls ? "Working premium ÷ share price" : "Working premium ÷ strike (the cash it secures)"}
-                />
-                <SortTh label="Annual" k="annual" sort={sort} className="num" title="Return × 365 ÷ days, simple. Yield, not edge." />
-                <SortTh label="Distance" k="distance" sort={sort} className="num" title="Strike against the share price" />
-                <th className="num" title={FAIR_TITLE}>
-                  Vs fair
-                </th>
-                <SortTh label="Earnings" k="earnings" sort={sort} title="The next announcement, against this trade's own expiry" />
-                {calls && (
-                  <th title="The broker's ex-dividend date against this call's expiry: in trade (a call in the money then can be assigned early for the dividend), after, past (the next is not posted) or unknown">
-                    Ex-div
-                  </th>
+                {cols.map((c) =>
+                  c.sort !== undefined ? (
+                    <SortTh key={c.key} label={c.label} k={c.sort} sort={sort} className={c.className} title={c.title} />
+                  ) : (
+                    <th key={c.key} className={c.className} title={c.title}>
+                      {c.label}
+                    </th>
+                  ),
                 )}
-                <th title="The reading's own verdict against the leg bars">Liquid</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.symbol}>
-                  <td>
-                    {r.symbol}
-                    {r.type && r.type !== "Stock" ? <span className="muted"> · {r.type === "Exchange Traded Fund" ? "fund" : r.type}</span> : null}
-                    {r.leveraged ? (
-                      <span
-                        className="chip"
-                        title="A daily-reset fund (the declared leveraged, inverse and volatility list): it decays and gaps in ways its delta does not price"
-                      >
-                        {r.leveraged}
-                      </span>
-                    ) : null}
-                    {r.fit === false ? (
-                      <span className="chip muted" title={calls ? "No uncovered 100-share lot held" : "More buying power than the account has"}>
-                        does not fit
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="num">{money(r.spot)}</td>
-                  <td>
-                    {shortDate(r.expiry)} <span className="muted">{r.dte}d</span>
-                    {calls && r.window === "cycle" ? <span className="chip" title="No monthly was listed 30-45 days out">cycle</span> : null}
-                  </td>
-                  <td className="num">
-                    {r.strike}
-                    {calls ? "C" : "P"}
-                  </td>
-                  <td className="num">{r.delta.toFixed(2)}</td>
-                  <td className="num">{pct(r.iv, 0)}</td>
-                  <td className="num">
-                    {money(r.bid)} × {money(r.ask)}
-                  </td>
-                  <td className="num">{money(r.working)}</td>
-                  <td className="num">{r.premium === null ? "—" : `$${money(r.premium)}`}</td>
-                  <td className="num">{pct(r.returnFraction, 2)}</td>
-                  <td className="num">{pct(r.annualFraction)}</td>
-                  <td className="num">{signedPct(r.distanceFraction)}</td>
-                  <FairCell fair={r.fair} />
-                  <EarningsCell r={r} />
-                  {calls && <ExDividendCell r={r} />}
-                  <LiquidCell r={r} />
-                </tr>
+                <Fragment key={r.symbol}>
+                  <tr>
+                    <Cells cols={cols} row={r} />
+                  </tr>
+                  {open === r.symbol && (
+                    <tr>
+                      <td colSpan={cols.length}>
+                        <SecondaryCells cols={secondary} row={r} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>

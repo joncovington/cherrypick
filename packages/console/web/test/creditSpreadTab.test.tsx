@@ -78,6 +78,19 @@ vi.mock("../src/lib/api", async (importOriginal) => ({
 
 const { CreditSpreadTab, WidthTable, applyFilters } = await import("../src/pages/Screeners/CreditSpreadTab");
 
+/** A row's expanded line: its setups, price, fair value and ex-dividend, then its widths. */
+function expanded(r: CreditSpreadRow): string {
+  return renderToString(
+    <MemoryRouter>
+      <table>
+        <tbody>
+          <WidthTable r={r} colSpan={10} />
+        </tbody>
+      </table>
+    </MemoryRouter>,
+  ).replace(/<!-- -->/g, "");
+}
+
 function render(url = "/screeners/credit-spreads"): string {
   return renderToString(
     <MemoryRouter initialEntries={[url]}>
@@ -107,11 +120,14 @@ describe("our credit-spread list", () => {
     payload = base([row({})]);
     const html = render();
     expect(html).toContain("bull put");
-    expect(html).toContain("pullback · 2d ago");
     expect(html).toContain("96P");
     expect(html).toContain("0.74 cr");
-    expect(html).toContain("37.0%");
     expect(html).toContain("$126"); // (2 − 0.74) × 100
+    // The setups and each width's credit % sit in the row's expanded line since 2026-10-30.
+    expect(html).not.toContain("pullback · 2d ago");
+    const line = expanded(row({}));
+    expect(line).toContain("pullback · 2d ago");
+    expect(line).toContain("37.0%");
   });
 
   it("keeps a row with no 35-40% width, saying so, and hides it only on request", () => {
@@ -151,8 +167,9 @@ describe("our credit-spread list", () => {
     const html = render();
     expect(html).toContain("both sides");
     expect(html).toContain("bear call");
-    expect(html).toContain("mean reversion (short) · last close");
-    expect(html).toContain("in trade · Nov 2");
+    const call = row({ symbol: "PUTS", spread: "call", setups: ["reversion-short"], signals: [{ setup: "reversion-short", date: "2026-10-23", ago: 0 }], exDividend: "in-trade", exDividendDate: "2026-11-02" });
+    expect(expanded(call)).toContain("mean reversion (short) · last close");
+    expect(expanded(call)).toContain("in trade · Nov 2");
     const calls = render("/screeners/credit-spreads?side=call");
     expect(calls).not.toContain("ONLY");
     expect(calls).toContain("2 on the other side");
