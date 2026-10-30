@@ -48,6 +48,12 @@ STORES: list[dict[str, str]] = [
         "used_by": "the flow-signal study (docs/flow-signal-plan.md)",
     },
     {
+        "file": "open_interest.db",
+        "holds": "open interest per contract per name and session, expiries within 100 days",
+        "built_by": "python -m cherrypick.backtest fetch-oi --plan FILE",
+        "used_by": "item 30, monthly-expiry GEX walls (scripts/gex_walls_item30.py)",
+    },
+    {
         "file": "addon_weeklies.db",
         "holds": "SPXW weekly put minute greeks over each bwb life, and 10:00 ATM calls",
         "built_by": "scripts/fetch_addon_weeklies.py",

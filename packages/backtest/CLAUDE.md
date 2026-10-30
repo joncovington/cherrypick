@@ -243,3 +243,9 @@ top-share rule. Its own store, `flow.db`, in the marked licensed directory. A da
   in Python, and a liquid name's day is hundreds of thousands of prints, so the vendor's reply time
   also varies widely between requests. The full design window across the universe does not fit in
   nights; how it is thinned is decided before any outcome is read (the plan).
+
+**The open-interest fetch** (`fetch-oi`, `oifetch.py`; item 30): each name's open interest per
+contract per session, every expiry from the session through `MAX_DAYS` (100) calendar days, one
+vendor call a name-day, from a `{sessions: {session: [symbols]}}` plan as `fetch-flow` reads. Its own
+store, `open_interest.db`, in the marked licensed directory. Session D's row is the vendor's morning
+report, the previous close's figure, so a reading at D's close uses nothing published after it.

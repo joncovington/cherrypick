@@ -8,8 +8,8 @@ the supervisor's `research-queue` job takes the oldest ready row every few minut
 **What a row may run is an allow-list, never a command line** (`KINDS`). The supervisor is a Windows
 service with the broker credentials in reach, so a row that could name any command would be
 unreviewed code run by it. A kind builds its own argv from the row's arguments:
-- `fetch-chains` / `fetch-chain-paths` / `fetch-flow`: the backtest package's resumable ThetaData
-  fetches, given a request or plan file. Each is bounded by `--stop-by`, and a fetch that stops is
+- `fetch-chains` / `fetch-chain-paths` / `fetch-flow` / `fetch-oi`: the backtest package's resumable
+  ThetaData fetches, given a request or plan file. Each is bounded by `--stop-by`, and a fetch that stops is
   queued again to resume.
 - `script`: a Python file checked into the repo's `scripts/` (git must know it), with string
   arguments, no shell. It may not need the ThetaData session: it cannot be stopped mid-run.
@@ -202,10 +202,20 @@ KINDS: dict[str, tuple[tuple[str, ...], bool]] = {
     # Each expiry's daily path (backtest `fetch-chain-paths`, 2026-10-28): the same store and session.
     "fetch-chain-paths": ((THETADATA,), True),
     "fetch-flow": ((THETADATA,), True),
+    # Open interest per contract per name-day (backtest `fetch-oi`, item 30): the same session.
+    "fetch-oi": ((THETADATA,), True),
     "script": ((), False),
     # A module's replay validated against the recording (backtest `validate`): local stores only, no
     # vendor session. Its report is what unlocks that module's history runs (2026-10-25).
     "validate": ((), False),
+}
+
+#: Where each fetch kind writes, for a finished row's result.
+FETCH_STORES = {
+    "fetch-chains": "eod_chains.db",
+    "fetch-chain-paths": "eod_chains.db",
+    "fetch-flow": "flow store",
+    "fetch-oi": "open_interest.db",
 }
 
 #: The modules `validate` knows (backtest `validate.CHECKS`), checked here so a typo never queues.
@@ -224,8 +234,8 @@ def build_argv(
     if kind in ("fetch-chains", "fetch-chain-paths"):
         argv = [python, "-m", "cherrypick.backtest", kind]
         argv += ["--requests", _file_arg(args, "requests"), "--workers", _workers(args, 3)]
-    elif kind == "fetch-flow":
-        argv = [python, "-m", "cherrypick.backtest", "fetch-flow"]
+    elif kind in ("fetch-flow", "fetch-oi"):
+        argv = [python, "-m", "cherrypick.backtest", kind]
         argv += ["--plan", _file_arg(args, "plan"), "--workers", _workers(args, 3)]
     elif kind == "script":
         return [python, *_tracked_script(args, root or repo_root(), tracked or git_tracked)]
@@ -559,9 +569,9 @@ def result_of(row: dict, report: dict, log: Path) -> dict:
     counts = {k: report[k] for k in keys if k in report}
     if counts:
         out["report"] = counts
-    if row["kind"] in ("fetch-chains", "fetch-chain-paths", "fetch-flow"):
+    if row["kind"] in FETCH_STORES:
         out["input"] = args.get("requests") or args.get("plan")
-        out["store"] = "backtest " + ("flow store" if row["kind"] == "fetch-flow" else "eod_chains.db")
+        out["store"] = "backtest " + FETCH_STORES[row["kind"]]
     if row.get("output"):
         out["output"] = row["output"]
         out["output_exists"] = Path(row["output"]).expanduser().exists()
