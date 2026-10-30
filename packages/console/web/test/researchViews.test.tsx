@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ExecutionModule, ExecutionWeek, SliceCell, SliceDimensionRead, SliceReport } from "@console/shared";
 import { gapLine, overrideLine, windowLine } from "../src/pages/Live/ExecutionTab";
-import { dimensionLabel, dimensionSentence, fmtCi, fmtMean, overallSentence } from "../src/pages/Backtest/SlicesTab";
+import { dimensionLabel, dimensionSentence, fmtCi, fmtMean, overallSentence } from "../src/pages/Compare/SlicesTab";
 
 const week = (over: Partial<ExecutionWeek>): ExecutionWeek => ({
   week: "2026-W42",

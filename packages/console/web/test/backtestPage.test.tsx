@@ -3,10 +3,10 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BacktestArmCards, BacktestOverview, BacktestRunCards, BacktestRunReport, BridgedResult } from "@console/shared";
-import { BacktestDataTab, BacktestRunsTab, BacktestValidationTab, trialsLine } from "../src/pages/Backtest/BacktestPage";
+import { BacktestDataTab, BacktestRunsTab, trialsLine } from "../src/pages/Backtest/BacktestPage";
 
 /**
- * The Backtest page's three tabs, rendered with the bridge's documents already in the query cache
+ * The Backtest page's data and runs tabs (validation folded into data 2026-10-30), rendered with the bridge's documents already in the query cache
  * (a render that only ever sees the loading state is not a test). Pinned: the licence note heads
  * every tab; the unlock verdict and each check are the module's, shown as written; a run's money
  * is net, signed, whole-position dollars, with fees shown as a cost and never toned; a
@@ -129,7 +129,7 @@ const seedOverview = (c: QueryClient, v: BridgedResult<BacktestOverview> = { ok:
 
 describe("every tab", () => {
   it("opens with the licensed-data note", () => {
-    for (const tab of [<BacktestDataTab />, <BacktestValidationTab />, <BacktestRunsTab />]) {
+    for (const tab of [<BacktestDataTab />, <BacktestRunsTab />]) {
       const html = render(tab, "/backtest", (c) => seedOverview(c));
       expect(html).toContain("Licensed vendor data.");
       expect(html).toContain("do not screenshot, export, copy or share it");
@@ -146,23 +146,54 @@ describe("every tab", () => {
 });
 
 describe("data", () => {
-  it("shows the licence clock and each store with its refusals", () => {
+  it("says the licence in a line while it is active with no end date, and each store with its refusals", () => {
     const html = render(<BacktestDataTab />, "/backtest/data", (c) => seedOverview(c));
-    expect(html).toContain("active");
-    expect(html).toContain("2023-01-03 → 2025-06-30");
+    expect(html).toContain("Active, with no end date set.");
+    // The study windows moved to the studies tab.
+    expect(html).not.toContain("2023-01-03 → 2025-06-30");
     expect(html).toContain("SPX-60s.db");
     expect(html).toContain("412");
     expect(html).toContain("half_day 2");
   });
+
+  it("a terminated licence shows its clock", () => {
+    const ended = { ...OVERVIEW, license: { active: false, terminated_on: "2027-01-01", purge_by: "2027-01-31", days_left: 12, overdue: false } };
+    const html = render(<BacktestDataTab />, "/backtest/data", (c) => seedOverview(c, { ok: true, data: ended, error: null }));
+    expect(html).toContain("terminated");
+    expect(html).toContain("2027-01-31");
+  });
+
+  it("joins the fetch record into the inventory: one store table, not two", () => {
+    const inventory = {
+      stores: [{ file: "SPX-60s.db", present: true, holds: "SPX intraday", built_by: "fetch --cadence 60", used_by: "replays", bytes: 2.65e9, tables: {} }],
+      undeclared: [],
+    };
+    const withInv = { ...OVERVIEW, inventory } as unknown as BacktestOverview;
+    const html = render(<BacktestDataTab />, "/backtest/data", (c) => seedOverview(c, { ok: true, data: withInv, error: null }));
+    expect(html).not.toContain("vendor stores");
+    expect(html).toContain("fetch --cadence 60");
+    expect(html).toContain("2 · half_day 2");
+  });
 });
 
-describe("validation", () => {
-  it("states the module's unlock verdict and each check as written", () => {
-    const html = render(<BacktestValidationTab />, "/backtest/validation", (c) => seedOverview(c));
+describe("is history trusted?", () => {
+  it("answers first, names what stands in the way, and keeps the module's tables behind an expand", () => {
+    const tol = { ...OVERVIEW.validation[0]!, vendor_within_tolerance: { entries_match: true, settles_match: false } };
+    const html = render(<BacktestDataTab />, "/backtest/data", (c) =>
+      seedOverview(c, { ok: true, data: { ...OVERVIEW, validation: [tol] }, error: null }),
+    );
+    expect(html).toContain("No: the one validation does not unlock history");
+    expect(html).toContain("Outside tolerance: settles_match.");
+    expect(html).toContain("<details>");
+    // The tables, as written, inside it.
     expect(html).toContain("does not unlock history");
-    expect(html).toContain("settles_match");
     expect(html).toContain("98.7%");
     expect(html).toContain("no vendor profile");
+  });
+
+  it("with every check within tolerance, it is the session count that stands in the way", () => {
+    const html = render(<BacktestDataTab />, "/backtest/data", (c) => seedOverview(c));
+    expect(html).toContain("Every check is within tolerance; it needs more sessions compared.");
   });
 });
 

@@ -34,6 +34,14 @@ export function isFailClosed(id: string): boolean {
   return FAIL_CLOSED_PAGES.has(id);
 }
 
+/**
+ * Tabs that fail closed on another page (2026-10-30), each gated on the backtest feature: Compare's
+ * slices reports may come from a licensed replay. Hidden, the tab leaves the rail and `j`/`k`, and its
+ * URL falls to the page's first tab, so nothing on the screen names it. The server refuses its read
+ * on its own (`/api/backtest/slices`).
+ */
+export const FAIL_CLOSED_SLIDES: ReadonlyMap<string, ReadonlySet<string>> = new Map([["compare", new Set(["slices"])]]);
+
 /** A fail-closed page that is not shown: its route must behave as if it did not exist. */
 export function isHiddenAsUnknown(id: string, f: Features): boolean {
   return isFailClosed(id) && !isModuleVisible(id, f);
@@ -101,6 +109,7 @@ export const LIVE_ACCOUNT_WIDE: ReadonlySet<string> = new Set(["today", "positio
 export function isSlideVisible(module: string, slide: string, f: Features, inUse: LiveInUse = NO_LIVE_IN_USE): boolean {
   // A hidden fail-closed page has no tabs either, so neither the rail nor `j`/`k` can name one.
   if (isFailClosed(module)) return isModuleVisible(module, f);
+  if (FAIL_CLOSED_SLIDES.get(module)?.has(slide)) return known(f) && f.features["backtest"] === true;
   if (slide === "advisor" && isTradingModuleId(module)) return isFeatureOn("advisor", f);
   if (module === "charts" && (slide === "technicals" || slide === "setups")) return isFeatureOn("technicals", f);
   // A Live tab named for a module (flies, meic) follows that module's live master switch, but only
