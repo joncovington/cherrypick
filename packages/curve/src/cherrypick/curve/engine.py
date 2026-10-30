@@ -24,6 +24,11 @@ from cherrypick.core import settlement as _settlement
 # where the 0.30-delta control could not.
 ARMS = ("control", "noflip", "hook", "near")
 
+# Whether an arm the config does not declare may enter. Only control, as in pmcc (from 2026-10-30;
+# docs/history.md): an undeclared arm has no params of its own, so it would run control's trades under
+# another name -- which an install whose config predated `near` did from 2026-10-06.
+DEFAULT_ENABLED = {"control": True}
+
 # VXX is a standard American-style, physically-settled equity option — the calendars/pmcc
 # decomposition applies verbatim. No `cash` style is offered: this module trades exactly one
 # underlying and it is always physical, so a config declaring anything else is a refusal, not a

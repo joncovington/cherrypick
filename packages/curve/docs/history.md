@@ -60,6 +60,18 @@ the limit on size: about ten contracts bid at the short strikes.
 
 `hook` never traded: 0 hook signals in 33 sessions (32 `no_hook_signal` refusals 08-27..10-12), so
 it has no position and no reading. `books.hook.enabled` false, never a deleted block (an absent
-built-in book runs by default); `arms` break 2026-10-15 (`control, noflip, near`). The daily regime
+built-in book ran by default until 2026-10-30); `arms` break 2026-10-15 (`control, noflip, near`). The daily regime
 and the hook flag are still written every session, traded or not, so the signal's own history keeps
 accruing if the idea comes back. Written by `scripts/boundary_2026_10_19.py` (its file name kept) before the 10-15 session.
+
+## An undeclared arm stays off from the 2026-10-30 boundary (declared 2026-10-29)
+
+Until now an arm the config did not name ran on `defaults`. A config is kept across upgrades and
+never gains a new arm's block, so an install whose config predated `near` (2026-10-06) has run a
+`near` with no 0.40-delta short of its own: control's trades under another name, with nothing said.
+From 2026-10-30 an undeclared arm stays off, control excepted (`engine.DEFAULT_ENABLED`), as pmcc
+has always done. The loop warns once, naming any such arm (`core.config.undeclared`, #668).
+
+This install declares all four arms, so its roster is unchanged and no `arms` break is journaled.
+An install that does not declare `near` loses an arm that was never what its name said. Its `near`
+rows before 2026-10-30 are control's, and should be read that way.

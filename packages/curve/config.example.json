@@ -50,7 +50,7 @@
       "_summary": "A VXX call credit spread entered on a contango day, out at the profit target, on a measured regime flip, or at close_dte.",
       "enabled": true
     },
-    "_base_install_note": "A base install runs only `control`. The engine's other built-in arms run unless a config switches them off, so the example lists each one with enabled:false. Turn one on (or define your own) in ~/.cherrypick/config/curve.json.",
+    "_base_install_note": "A base install runs only `control`. From 2026-10-30 an arm a config does not mention stays off (control excepted); before then it ran on `defaults`, so the example still lists each one with enabled:false. Turn one on (or define your own) in ~/.cherrypick/config/curve.json.",
     "noflip": {
       "_summary": "control's entry exactly, without the regime-flip exit: the two are identical until a flip fires.",
       "enabled": false
