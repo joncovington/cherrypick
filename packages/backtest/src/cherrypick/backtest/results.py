@@ -7,7 +7,8 @@ what decides its trades (the arm's resolved parameters, the cadence and the fill
 name or the window, so re-running the same spec adds nothing and changing one parameter adds one.
 DSR deflates by this count; it cannot be argued down after the fact because nothing else writes it.
 
-**A holdout is spent once per spec**, recorded in `holdout_spent`, and refused after.
+**A holdout is spent once per spec**, recorded in `holdout_spent`, and refused after. `control` is
+never recorded there: it is paired with, never judged.
 """
 
 from __future__ import annotations

@@ -13,7 +13,8 @@ What may run, and when (declared 2026-10-17):
   seen; they are what the vendor data is checked against, and they count as no trial.
 - **`design`**: only once validation has unlocked history for this store's cadence
   (`validate.UNLOCK_SESSIONS`). Every (spec, arm) evaluated here is a trial (`results.trials`).
-- **`holdout`**: as design, and only with `spend_holdout`, once per spec, ever.
+- **`holdout`**: as design, and only with `spend_holdout`, once per spec, ever. `control` is the
+  exception: it runs beside every arm and is never judged, so it spends nothing (2026-10-29).
 
 The fill model is the module's own (flies paper's legged fill rule, applied by its own tick); a
 result carries that name, and other fill models arrive as flies options, never as a second copy of
@@ -486,7 +487,8 @@ def run(
     if window == "holdout":
         if not spend_holdout:
             raise RunRefused("the holdout is spent once per spec: pass --spend-holdout to spend it")
-        spent = [a for a in arms if results.holdout_spent(rconn, mod.name, hashes[a])]
+        # control is never judged, only paired with, so it never spends the holdout (2026-10-29)
+        spent = [a for a in arms if a != "control" and results.holdout_spent(rconn, mod.name, hashes[a])]
         if spent:
             raise RunRefused(f"the holdout is already spent for {spent}")
     history_db = store.db_path(settings, symbol, cadence)
@@ -626,7 +628,7 @@ def run(
                 "VALUES (?,?,?,?,?,?,?,?)",
                 (run_id, arm, hashes[arm], day, v["net"], v["gross"], v["fees"], v["trades"]),
             )
-        if window == "holdout":
+        if window == "holdout" and arm != "control":
             results.spend_holdout(rconn, module=mod.name, spec_hash=hashes[arm], arm=arm, run_id=run_id)
     rconn.commit()
     rconn.close()

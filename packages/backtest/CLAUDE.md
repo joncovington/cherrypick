@@ -161,7 +161,8 @@ is paper's arithmetic. Control always runs beside the named arms; every arm is p
   trial** (`results.trials`), keyed by a hash of what decides its trades (flies' `defaults`, the arm's
   entry, `symbols`, cadence, fill model): re-running a spec adds nothing, changing a parameter adds
   one. DSR deflates by this count.
-- **`holdout`** needs `--spend-holdout` and is spent once per spec, ever.
+- **`holdout`** needs `--spend-holdout` and is spent once per spec, ever. `control` never spends it
+  (2026-10-29): it runs beside every arm unjudged, and spending it refused every later study's holdout.
 
 Statistics (`stats.py`) are per session, never annualised: PSR, DSR at the trial count, minimum track
 record, and a stationary-bootstrap interval. The fill model is flies paper's own (`FILL_MODEL`).
