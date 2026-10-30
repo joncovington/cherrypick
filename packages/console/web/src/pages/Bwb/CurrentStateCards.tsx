@@ -3,7 +3,7 @@ import { Card, DataCard, SortTh, fmtMoney, fmtNum, fmtPct, sortRows, useSort } f
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { fmtStrike } from "../../lib/optionFormat";
 import { fmtCash, fmtPrice } from "../../lib/format";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { ArmSelect } from "../../components/ArmSelect";
 
 function strikeSet(near: number | null, body: number | null, far: number | null): string {
@@ -53,43 +53,80 @@ function TriggerCell({ p }: { p: BwbOpenPosition }) {
   return <span className="muted">idle</span>;
 }
 
+/**
+ * The open BWBs (2026-10-30, docs/console-review-plan.md batch 3): the row identifies the trade and
+ * keeps its money together -- the fly's credit, the add-on's, the mark net of costs to date -- and
+ * the trigger. The quantity, the per-share price, the spot, the peak delta and the flip flag are in
+ * the row's expanded line.
+ */
 function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
+  const [open, setOpen] = useState<string | null>(null);
   return (
     <>
-      {rows.map((p) => (
-        <tr key={p.positionId}>
-          <td>{p.symbol}</td>
-          <td>{p.arm}</td>
-          {/* MM-DD, the pmcc precedent — every row here is near-dated, so the year is noise.
-              The full date rides the title so it is still recoverable. */}
-          <td>{p.entrySession === "" ? "—" : p.entrySession}</td>
-          <td>{p.expiration ?? "—"}</td>
-          <td>{strikeSet(p.nearStrike, p.bodyStrike, p.farStrike)}</td>
-          <td>{p.quantity ?? "—"}</td>
-          <td title="the fly's own net credit, per share">{fmtPrice(p.entryCredit)}</td>
-          <td title="the fly's opening credit, whole position">{fmtCash(p.entryCash)}</td>
-          <td title="the add-on credit spread's credit, whole position, once its trigger fired">
-            {p.addOnCash === null ? <span className="muted">—</span> : fmtCash(p.addOnCash)}
-          </td>
-          <td>
-            <UnrealisedPnlCell
-              gross={p.unrealisedGross}
-              net={p.unrealisedNet}
-              fees={p.feesToDate}
-              detail={p.currentCloseCost === null ? undefined : `costs ${fmtMoney(p.currentCloseCost)}/share to close`}
-            />
-          </td>
-          <td>{fmtNum(p.currentSpot ?? p.entrySpot, 2)}</td>
-          <td>{p.peakAbsDelta === null ? "—" : fmtNum(p.peakAbsDelta, 3)}</td>
-          <td>{p.belowFlipSeen ? <span className="chip chip-warn integrity-chip">below flip</span> : <span className="muted">—</span>}</td>
-          <td>
-            <TriggerCell p={p} />
-          </td>
-        </tr>
-      ))}
+      {rows.map((p) => {
+        const isOpen = open === p.positionId;
+        return (
+          <Fragment key={p.positionId}>
+            <tr>
+              <td>
+                <button type="button" className="btn btn-quiet" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : p.positionId)}>
+                  {isOpen ? "▾" : "▸"} {p.symbol}
+                </button>
+                {p.belowFlipSeen ? <span className="chip chip-warn integrity-chip">below flip</span> : null}
+              </td>
+              <td>{p.arm}</td>
+              <td>
+                {p.entrySession === "" ? "—" : p.entrySession} <span className="muted">→ {p.expiration ?? "—"}</span>
+              </td>
+              <td>{strikeSet(p.nearStrike, p.bodyStrike, p.farStrike)}</td>
+              <td title="the fly's opening credit, whole position">{fmtCash(p.entryCash)}</td>
+              <td title="the add-on credit spread's credit, whole position, once its trigger fired">
+                {p.addOnCash === null ? <span className="muted">—</span> : fmtCash(p.addOnCash)}
+              </td>
+              <td>
+                <UnrealisedPnlCell
+                  gross={p.unrealisedGross}
+                  net={p.unrealisedNet}
+                  fees={p.feesToDate}
+                  detail={p.currentCloseCost === null ? undefined : `costs ${fmtMoney(p.currentCloseCost)}/share to close`}
+                />
+              </td>
+              <td>
+                <TriggerCell p={p} />
+              </td>
+            </tr>
+            {isOpen && (
+              <tr className="row-detail">
+                <td colSpan={HEADERS.length}>
+                  <table className="data-table secondary-cells" aria-label={`${p.symbol} ${p.arm} position detail`}>
+                    <thead>
+                      <tr>
+                        <th>qty</th>
+                        <th title="the fly's own net credit, per share">price</th>
+                        <th>spot</th>
+                        <th>peak |delta|</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>{p.quantity ?? "—"}</td>
+                        <td>{fmtPrice(p.entryCredit)}</td>
+                        <td>{fmtNum(p.currentSpot ?? p.entrySpot, 2)}</td>
+                        <td>{p.peakAbsDelta === null ? "—" : fmtNum(p.peakAbsDelta, 3)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            )}
+          </Fragment>
+        );
+      })}
     </>
   );
 }
+
+const HEADERS = ["symbol", "arm", "opened → expiry", "near/body x2/far", "entry", "add-on $", "mark (net of costs to date)", "add-on (short/long)"];
 
 /** Every open BWB, one row each — symbol and expiry identify the trade, arm identifies the arm. */
 export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefined; updatedAt?: number }) {
@@ -98,7 +135,7 @@ export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefin
   const sort = useSort();
   if (data === undefined) return null;
   const empty = data.openPositions.length === 0;
-  const headers = ["symbol", "arm", "opened", "expiry", "near/body x2/far", "qty", "price", "entry", "add-on $", "mark (net of costs to date)", "spot", "peak |delta|", "below flip", "add-on (short/long)"];
+  const headers = HEADERS;
   if (empty) {
     return (
       <DataCard
@@ -106,7 +143,7 @@ export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefin
         headers={headers}
         loading={false}
         rowCount={0}
-        numFrom={5}
+        numFrom={4}
         empty="no open trades -- the daily ladder accumulates one BWB per arm per session"
         updatedAt={updatedAt}
       >
@@ -148,15 +185,10 @@ export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefin
   const sortKeys: Record<string, string> = {
     symbol: "symbol",
     arm: "arm",
-    opened: "opened",
-    expiry: "expiry",
-    qty: "qty",
-    price: "price",
+    "opened → expiry": "opened",
     entry: "entry",
     "add-on $": "addon",
     "mark (net of costs to date)": "mark",
-    spot: "spot",
-    "peak |delta|": "delta",
   };
   return (
     <Card
@@ -166,7 +198,7 @@ export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefin
       controls={<ArmSelect module="bwb" value={arm} options={arms} onChange={setArm} />}
     >
       <div className="table-scroll">
-        <table className="data-table num-from-5">
+        <table className="data-table num-from-4">
           <thead>
             <tr>
               {headers.map((h) => {

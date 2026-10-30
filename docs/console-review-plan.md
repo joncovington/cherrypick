@@ -212,9 +212,13 @@ rename it `alerts`.
    defaults to detail): a short row, and the rest as `secondary` columns in the row's expanded line.
    - Live positions (landed 2026-10-30). The income candidates are left as they are: six columns in
      simple view, and a "top three" would rank a list kept by symbol because nothing has an edge
-   - Screeners: income lists merged and trimmed, credit spreads, skate as a lens
-   - Compare arms (risk merged in), Charts setups
-   - module open-position tables (descriptive columns only; money groups whole)
+   - Screeners: income lists merged into one "puts & calls" tab and trimmed, credit spreads trimmed
+     (landed, #690). Skate as a lens on the income list is still open: a redesign, not a trim
+   - Compare arms (landed, #691: 9 columns, gross/costs/net kept together) and Charts setups
+     (10). Merging `risk` into arms is still open: it reads core.analysis, not core.compare
+   - module open-position tables: BWB's 14 columns to 8 with an expanded line (landed). MEIC (10)
+     and Earnings (8) were already short; PMCC, Calendars, Curve and Contango wait for the
+     Experiments page (batch 4)
 4. **Experiments and Flies:**
    - the Experiments page
    - the Flies record page
