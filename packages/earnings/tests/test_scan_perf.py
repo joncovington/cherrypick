@@ -262,6 +262,29 @@ def test_parallel_scan_aligns_results_and_classifies_failures(monkeypatch):
     assert by["CCC"][0] is None and "evaluate_symbol_timeout" in by["CCC"][1]
 
 
+def test_a_finished_symbol_is_handed_over_before_a_slow_one_finishes(monkeypatch):
+    """2026-10-28: the write phase waited for the slowest symbol, the scan ran to 16:01, and all 58
+    accepted candidates were dropped as `entry_window_closed`. The stream hands each symbol to the
+    writer as it finishes. Shown to fail by collecting the stream into a list before yielding."""
+    import threading
+
+    release = threading.Event()
+
+    def fake_eval(sym, d, t, cfg):
+        if sym == "SLOW":
+            release.wait(5)
+        return [{"name": "iron_fly", "tier": "Reject"}]
+
+    monkeypatch.setattr(rs, "evaluate_symbol", fake_eval)
+    stream = r._scan_stream(_cal("SLOW", "FAST"), {}, workers=2, symbol_timeout=10, budget_seconds=30)
+    started = time.monotonic()
+    first = next(stream)
+    assert first[0]["symbol"] == "FAST" and time.monotonic() - started < 2
+    release.set()
+    rest = list(stream)
+    assert [e["symbol"] for e, _, _ in rest] == ["SLOW"]
+
+
 def test_parallel_scan_budget_marks_unfinished_symbols(monkeypatch):
     def slow(sym, d, t, cfg):
         time.sleep(1)

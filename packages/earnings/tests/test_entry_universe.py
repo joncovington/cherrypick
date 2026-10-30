@@ -123,7 +123,7 @@ def _drive(monkeypatch, today, verdict):
     monkeypatch.setattr(scanner, "fetch_entry_window_calendar", lambda config, **k: list(_CAL))
     monkeypatch.setattr(
         r,
-        "_parallel_scan",
+        "_scan_stream",
         lambda *a, **k: [
             (_CAL[0], [{"name": "iron_fly", "reject_reasons": [], "accepted": True, "criteria": {}}], None)
         ],

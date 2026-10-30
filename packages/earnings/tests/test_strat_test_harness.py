@@ -118,7 +118,7 @@ def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monk
     monkeypatch.setattr(runner, "_leg_quotes_for_symbols", lambda u, syms, p: {s: quotes[s] for s in syms})
     monkeypatch.setattr(
         runner,
-        "_parallel_scan",
+        "_scan_stream",
         lambda *a, **k: [
             (
                 {"symbol": "XYZ", "date": "2026-07-28", "timing": "AMC"},

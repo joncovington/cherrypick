@@ -253,3 +253,42 @@ the same row goes in the live ledger.
   spread, open interest and volume on its own event expiry, and keeps doing so. The verdict adds
   the standing, multi-session test of the monthlies that one event-day chain cannot give, and it
   is the same test every other screener uses.
+
+## The 2026-10-30 boundary (declared 2026-10-29)
+
+An audit on 2026-10-29 found the entry scan losing whole sessions and decided exits not being taken.
+The user asked for the fix, with the boundary declared before the next trading day. Three changes,
+all binding from the 2026-10-30 session:
+
+- **A failed entry scan is retried.** The 15:35 scan ran once a day, and a failed attempt's
+  heartbeat read as the day's scan. On 2026-10-29 a 10-second broker-connection timeout at 15:35
+  skipped the night, as it had on four earlier sessions (07-13, 10-13 among them). A scan that fails
+  before opening anything is now retried on the next tick, until `entry_window_end` (15:55). One
+  that opened something is never run twice.
+- **Entries open as the scan goes.** The write phase used to begin only once every symbol was
+  scanned. As the screened universe grew, the scan took 16 minutes on 10-27 and 26 on 10-28, ran
+  past the window, and every accepted candidate was dropped as `entry_window_closed`: 29 on 10-27,
+  58 on 10-28 (none opened), 12 on 10-21. Each symbol is now opened as soon as its scan finishes,
+  while the rest are still being scanned (`_scan_stream`). Which names get in on a heavy night is
+  still bounded by the window, but no longer by the slowest name.
+- **A held close is taken after 30 minutes.** A fired exit (profit target, stop-loss, session cap,
+  PEAD) was refused by the spread gate on every tick while any wing quoted wide. From 10-27, CNC's
+  iron condor and iron fly profit targets, STX's and TER's targets and TER's and GLXY's stop-losses
+  were refused about 1,200 times a day, leaving the 15:30 expiry close as the only exit. From
+  2026-10-30, a close the gate has held for `spread_gate_patience_minutes` (30) in one session is
+  taken anyway. It is priced on the position's own basis (mid plus the haircut from 2026-10-26,
+  natural side before), as the expiry close already is through the same gate. The event records
+  `spread_gate_waited_minutes`. Each session waits afresh, because the overnight book is a
+  different market.
+
+**No backfill.** The missed nights (10-28, 10-29) cannot be filled: an entry is priced from that
+afternoon's live chain, and nothing recorded it. The held exits are not re-dated either; doing so
+would apply a rule after the fact. The 19 positions open on 10-29 (all expiring 10-30) come under
+the patience rule from the 10-30 morning.
+
+**What to expect.** More entries on heavy nights, and earlier exits on wide-quoted names, at prices
+that concede more of the spread than the held decisions would have shown. Exit timing changes, so a
+per-arm result reads from 2026-10-30 or ends before it; never pool across the boundary.
+
+**Journal on the day:** one `entry_and_exit_patience` break dated 2026-10-30 in the paper ledger,
+recorded with `paper_loop record-break`.

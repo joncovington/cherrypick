@@ -23,7 +23,10 @@ side before (`scanner.exit_basis`; slippage is a cost on a mid fill only, `costs
 never pool across that break. **From 2026-10-28 every entry path admits only names the suite's
 liquidity verdict calls `tradable`** (declared 2026-10-27; docs/operating-history.md): a refused
 name is a recorded `not_tradable` drop, an unknown one is refused, and a missing or stale verdict
-refuses everything loudly, never silently. Never pool across that break either. Undefined-risk/naked
+refuses everything loudly, never silently. Never pool across that break either. **From 2026-10-30**
+a failed entry scan is retried inside the window, entries open as the scan goes, and a close the
+spread gate has held 30 minutes in a session is taken anyway (docs/operating-history.md); never pool
+across that one. Undefined-risk/naked
 strategies were deliberately removed — a naked short on a single-name gap can blow out arbitrarily
 overnight. New strategies go under `src/cherrypick/earnings/strategies/` without touching the engine.
 

@@ -13,8 +13,9 @@ tick knows what to do from the time and the database alone.
     pre_open      09:00-09:30, refresh the producer's subscription request
     open_window   09:30 to the execution window, MARK but never act
     management    the execution window to 15:40, mark, decide, and act
-    entry         `entry_scan_at` (15:35 by default), the forced-sampling entry scan, once per day;
-                  it takes precedence over management and may start until `entry_window_end` (15:55)
+    entry         `entry_scan_at` (15:35 by default), the forced-sampling entry scan, once per day
+                  (a failed scan that opened nothing is retried on the next tick); it takes
+                  precedence over management and may start until `entry_window_end` (15:55)
     eod           16:00-16:30, write the session's reports
 
 The open window is a phase of its own because the first ten minutes of an earnings name's options
@@ -532,6 +533,11 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
                 snap, config, trade.get("strategy") or "", now=now, reason=decision.reason
             )
         )
+        patience = None
+        if gate == "spread_too_wide":
+            patience = _spread_patience_spent(trade, config, now)
+            if patience is not None:
+                gate = None
         if decision.closes and not execute:
             gate = gate or "open_window"
         # The per-tick cap spreads discretionary exits across ticks; an expiry close is not
@@ -585,7 +591,11 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
             now,
             phase,
             executed=True,
-            detail={**decision.detail, "source": priced.get("source")},
+            detail={
+                **decision.detail,
+                "source": priced.get("source"),
+                **({"spread_gate_waited_minutes": patience} if patience is not None else {}),
+            },
             mark_id=mark_id,
         )
 
@@ -602,6 +612,28 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
         "closed": closed,
         "open_capital_warn": open_capital > float(policy.get("open_capital_warn") or float("inf")),
     }
+
+
+def _spread_patience_spent(trade: dict, config: dict, now: datetime) -> int | None:
+    """Minutes this position's close has been held by the spread gate today, once that reaches the
+    policy's `spread_gate_patience_minutes`; None while it is still inside it (or never was held).
+
+    Counted from the first `spread_too_wide` event of the session, from the events table, so a tick
+    needs no memory of the one before it. Per session: a new morning waits again, because the
+    overnight book is a different market. The close then prices at the position's own basis, as
+    the expiry close does through the same gate."""
+    policy = management.policy_for(trade.get("strategy") or "", management.effective_config(trade, config))
+    limit = policy.get("spread_gate_patience_minutes")
+    if limit is None:
+        return None
+    events = db_paper.cmd_get_management_events(
+        _ns(order_id=trade["order_id"], session_date=now.date().isoformat(), limit=5000)
+    )["events"]
+    held = [e["occurred_at"] for e in events if e.get("gate") == "spread_too_wide" and e.get("occurred_at")]
+    if not held:
+        return None
+    waited = int((now.timestamp() - min(held)) // 60)
+    return waited if waited >= int(limit) else None
 
 
 def _record_event(trade, action, reason, now, phase, *, executed, gate=None, detail=None, mark_id=None):
@@ -641,11 +673,17 @@ def forward_scan_already_ran(session: str) -> bool:
 
 
 def entry_already_ran(session: str) -> bool:
+    """Whether today's entry scan is done. A scan that failed before opening anything is not: the
+    next tick inside the window tries again (2026-10-29: a 10-second broker-connection timeout at
+    15:35 skipped the whole night, as it had on four earlier sessions, because the failed
+    attempt's heartbeat read as the day's scan)."""
     try:
         record = json.loads(state_file("earnings_entry.last.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
-    return record.get("date") == session
+    if record.get("date") != session:
+        return False
+    return record.get("ok") is not False or bool(record.get("opened"))
 
 
 def run_iteration(config: dict | None = None, now: datetime | None = None) -> dict:
