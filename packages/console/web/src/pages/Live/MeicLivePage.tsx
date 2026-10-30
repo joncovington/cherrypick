@@ -7,6 +7,7 @@ import { HistoryTable } from "../../components/table/HistoryTable";
 import { fmtCash, fmtPrice } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
 import { HISTORY_COLUMNS, feesNetWords } from "../Meic/MeicTables";
+import { MeicLiveGapCard } from "./MeicLiveGap";
 
 /**
  * MEIC's live loop, read-only (2026-10-15): the flies Live tab's arming strip and trade tables, cut
@@ -289,6 +290,8 @@ export function MeicLivePage() {
           )
         }
       />
+
+      <MeicLiveGapCard />
     </div>
   );
 }

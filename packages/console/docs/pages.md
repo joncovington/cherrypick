@@ -530,6 +530,12 @@ side with a recorded close cost is closed) and resolved history (`stopped`/`expi
 through `meicTradeCash` and the MEIC page's own history columns, less slippage (a live fill is the
 broker's). Cancelled rows are in neither table. No curve or feed: the live loop writes no marks and
 no `loop_log`, so there is no loop pill either. Pinned by `server/test/meic-live-reader.test.ts`.
+**Live vs paper** (2026-10-30, `pages/Live/MeicLiveGap.tsx` over `GET /api/live/meic/gap` →
+`readers/meicLiveGap.ts`) closes the tab: each live condor beside the paper arm `live-shadow`
+(`follows_live`, so it trades what the `live` block trades) from the first live session on, paired
+per session with the same strikes first, then entry order. The gap is live net less paper net, + in
+live's favour; paired totals are the sums of their rows, and paper condors on days live sat out are
+counted on their own line. Pinned by `server/test/meic-live-gap.test.ts`.
 
 **The Live page's `today` tab** (`pages/Live/LiveTodayPage.tsx` over `GET /api/live/today` →
 `readers/liveToday.ts`, 2026-10-15) opens `/live`: one row per live loop (flies, meic, bwb), the

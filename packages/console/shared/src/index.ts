@@ -24,6 +24,7 @@ export * from "./types/portfolio.js";
 export * from "./types/live.js";
 export * from "./types/liveBooks.js";
 export * from "./types/liveMeic.js";
+export * from "./types/meicLiveGap.js";
 export * from "./types/liveToday.js";
 export * from "./types/regimeCuts.js";
 export * from "./types/fliesAgent.js";

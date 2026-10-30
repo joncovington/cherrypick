@@ -239,7 +239,9 @@ rename it `alerts`.
    - on Live portfolio: the premium pace (landed 2026-10-30), above the bands: theta against a
      target of 0.2% of net liq a day (agreed 2026-10-30; `portfolio.theta.target_pct_nlv` in
      manage.json), and premium collected beside premium kept per month from the account-wide history
-   - MEIC live against paper
+   - MEIC live against paper (landed 2026-10-30) on Live → meic: each live condor beside its
+     paper twin `live-shadow`, paired per session (same strikes first), with the condors live sat
+     out counted apart
    - the user's short strikes against the GEX walls
 
 Each batch is one or two PRs. Batch 1 is a day's work and changes no layout.
