@@ -2030,10 +2030,15 @@ the funds' history. Item 26 starts in 2011, so it never sees 2000-02 or 2008, th
   on average. A name that fails is reported and not used.
 - **Names.**
   - **Funds:** item 26's judged names with a 1x counterpart in `fetch_ladder_bars.COUNTERPART`,
-    each rebuilt from its counterpart's first bar at the fund's own leverage.
+    each rebuilt from its counterpart's first bar at the fund's leverage today
+    (`fetch_ladder_bars.LEVERAGE`). Item 26 already keeps one fund per counterpart and leverage, so
+    no two rebuilt series are the same (UPRO and SPXL would both be 3x SPY). A fund whose leverage
+    changed (ERX and NUGT went from 3x to 2x in 2020) is validated only on sessions since the
+    change.
   - **Single stocks, reported apart and never pooled with the funds:** every single-stock long 2x
     fund in `leveraged_funds.json` at $20M or more of median dollar volume on the broker file of
-    2026-10-29, rebuilt from its stock. One stock counts once, however many funds track it.
+    2026-10-29, rebuilt from its stock. One stock counts once, however many funds track it (the
+    most traded fund is the one validated).
     Validated over the fund's own short life.
 - **Windows:**
   - **Pre-2011 holdout:** sessions from the rebuilt series' first (1999 at the earliest, once 20
