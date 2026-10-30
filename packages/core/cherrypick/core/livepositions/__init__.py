@@ -89,6 +89,22 @@ def drop_expired(legs: dict[Key, int], today: str, after_close: bool) -> tuple[d
     return kept, len(legs) - len(kept)
 
 
+def in_scope(
+    broker: dict[Key, int], expected: dict[Key, int], declared: Iterable[str] | None
+) -> tuple[dict[Key, int], int]:
+    """`broker` cut to the expiries the live modules can hold, and how many keys were left out.
+    `declared` is the union of the modules' declared expiries, or None when any module on the account
+    declares none -- then every expiry is compared, as before. An expiry the ledger holds is always in
+    scope, so a ledger leg is never compared against nothing. Added 2026-10-30: a hand-placed SPX
+    condor expiring 11-20 in MEIC's account (MEIC enters today's expiry only) read as four unrecorded
+    fills and raised a CRITICAL."""
+    if declared is None:
+        return dict(broker), 0
+    expiries = set(declared) | {k[1] for k in expected}
+    kept = {k: v for k, v in broker.items() if k[1] in expiries}
+    return kept, len(broker) - len(kept)
+
+
 def compare(expected: dict[Key, int], broker: dict[Key, int]) -> list[dict[str, Any]]:
     """Every key where the two disagree, sorted: ``{underlying, expiry, right, strike, expected,
     broker, kind}`` with kind ``unrecorded`` (the broker holds what no ledger does), ``missing`` (a

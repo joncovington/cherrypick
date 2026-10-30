@@ -1400,6 +1400,9 @@ def expected_legs(cfg: dict, db_path: str, *, include_pending: bool = False) -> 
         "underlyings": sorted(symbols | ({live_symbol} if live_symbol else set())),
         # Armed means today's arm record (2026-10-14), not the master switch, which stays on.
         "armed_today": arm_stamp_date() == _pl._now_et().strftime("%Y-%m-%d"),
+        # The expiries this loop can hold (2026-10-30): it enters today's expiry only, so the
+        # positions check leaves a hand-placed SPX position on another expiry out of the comparison.
+        "expiries": [_pl._now_et().strftime("%Y-%m-%d")],
         "legs": legs,
         "pending": pending,
     }

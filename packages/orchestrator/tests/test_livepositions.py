@@ -161,6 +161,54 @@ def test_after_the_close_todays_expired_contracts_are_left_out_of_both_sides(mon
     assert [(d["expiry"], d["kind"]) for d in acct["diffs"]] == [("2026-10-09", "unrecorded")]
 
 
+# --------------------------------------------------------------------------- declared expiries
+# 2026-10-30: a hand-placed SPX condor expiring 11-20 in MEIC's account read as four unrecorded
+# fills. MEIC names the expiries it trades; the account's other expiries are left out.
+HAND_CONDOR = [
+    pos("SPXW  261120P07340000", 1, "Long"),
+    pos("SPXW  261120P07350000", 1, "Short"),
+    pos("SPXW  261120C07825000", 1, "Short"),
+    pos("SPXW  261120C07835000", 1, "Long"),
+]
+
+
+def test_a_hand_placed_position_on_an_undeclared_expiry_is_left_out():
+    fetch = broker(pos("SPXW  261008P05800000", 1, "Short"), *HAND_CONDOR)
+    meic = dict(module([SHORT_5800]), expiries=["2026-10-08"])
+    out = lp.evaluate({"meic": meic}, {"meic": ACCT}, fetch, None)
+    assert out["verdict"] == lp.MATCH
+    assert out["accounts"][0]["out_of_scope"] == 4
+
+
+def test_an_unrecorded_fill_on_a_declared_expiry_still_mismatches():
+    fetch = broker(pos("SPXW  261008P05790000", 1, "Long"), *HAND_CONDOR)
+    meic = dict(module(), expiries=["2026-10-08"])
+    first = lp.evaluate({"meic": meic}, {"meic": ACCT}, fetch, None)
+    second = lp.evaluate({"meic": meic}, {"meic": ACCT}, fetch, first)
+    assert second["verdict"] == lp.MISMATCH
+    (diff,) = second["accounts"][0]["confirmed"]
+    assert (diff["expiry"], diff["strike"]) == ("2026-10-08", 5790.0)
+
+
+def test_a_ledger_leg_on_an_undeclared_expiry_is_still_compared():
+    # The ledger says it holds a 10-09 leg the broker does not: never scoped away.
+    leg = dict(SHORT_5800, expiry="2026-10-09")
+    fetch = broker(pos("SPXW  261009P05790000", 1, "Long"))
+    meic = dict(module([leg]), expiries=["2026-10-08"])
+    out = lp.evaluate({"meic": meic}, {"meic": ACCT}, fetch, None)
+    assert sorted((d["strike"], d["kind"]) for d in out["accounts"][0]["diffs"]) == [
+        (5790.0, "unrecorded"),
+        (5800.0, "missing"),
+    ]
+
+
+def test_one_module_declaring_nothing_keeps_every_expiry_compared():
+    fetch = broker(*HAND_CONDOR)
+    meic = dict(module(), expiries=["2026-10-08"])
+    out = lp.evaluate({"meic": meic, "bwb": module()}, {"meic": ACCT, "bwb": ACCT}, fetch, None)
+    assert len(out["accounts"][0]["diffs"]) == 4 and out["accounts"][0]["out_of_scope"] == 0
+
+
 # --------------------------------------------------------------------------- broker outage (item 3)
 def test_broker_failing_for_three_minutes_is_critical_and_two_is_not():
     now = datetime(2026, 10, 8, 11, 0, tzinfo=timezone.utc)
