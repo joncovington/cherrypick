@@ -201,7 +201,7 @@ rename it `alerts`.
    - Compare arms (risk merged in), Charts setups
    - module open-position tables (descriptive columns only; money groups whole)
 4. **Experiments and Flies:**
-   - the Experiments page (or four five-part pages)
+   - the Experiments page
    - the Flies record page
    - the rail regrouped; fixed module keys
 5. **Fill the gaps:**
@@ -211,11 +211,13 @@ rename it `alerts`.
 
 Each batch is one or two PRs. Batch 1 is a day's work and changes no layout.
 
-## Decisions for the user
+## Decisions (taken 2026-10-30)
 
-1. **Experiments:** one Experiments page with a section per module, or four separate pages cut to
-   five tabs each?
-2. **Flies:** a one-page record, or out of the console entirely (its ledgers stay on disk)?
-3. **Advisor while paused:** a card on System, or leave the page as it is?
-4. **Income candidates:** stay on Live portfolio (they are sized to the user's room) or move to
-   Screeners beside the lists?
+1. **Experiments:** one Experiments page with a section per module (PMCC, Calendars, Curve,
+   Contango), not four pages cut to five tabs each.
+2. **Flies:** a one-page record (final result, the live pilot's trades, why it was retired); its
+   ledgers stay on disk.
+3. **Advisor while paused:** a status line at the top of its page and a card on System; it leaves
+   the Research rail section until it is unpaused.
+4. **Income candidates:** stay on Live portfolio, where they are sized to the user's delta and
+   theta room.
