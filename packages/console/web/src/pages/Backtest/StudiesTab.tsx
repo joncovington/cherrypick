@@ -1,10 +1,11 @@
-import { Fragment, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { BacktestOverview, StudiesBoard, StudyGroup, StudyResult, StudyRow } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { useBridged } from "../../lib/bridged";
 import { writePref } from "../../lib/prefs";
 import { FILTER_KEY, ago, etMs, etNowMs, stamp } from "./QueueTab";
+import { useStudies } from "./studyIndex";
 
 /**
  * The Backtest page's studies tab (2026-10-29, docs/studies-board-plan.md): what we tested and what
@@ -184,11 +185,16 @@ export function StudyDetail({ row }: { row: StudyRow }) {
   );
 }
 
-function StudyRows({ row, nowMs }: { row: StudyRow; nowMs: number }) {
-  const [open, setOpen] = useState(false);
+function StudyRows({ row, nowMs, focus = false }: { row: StudyRow; nowMs: number; focus?: boolean }) {
+  const [open, setOpen] = useState(focus);
+  const ref = useRef<HTMLTableRowElement>(null);
+  // Reached from another tab's link (`?study=`): opened, and brought into view once.
+  useEffect(() => {
+    if (focus) ref.current?.scrollIntoView({ block: "center" });
+  }, [focus]);
   return (
     <Fragment>
-      <tr>
+      <tr ref={ref} className={focus ? "row-selected" : undefined}>
         <td>
           <Toggle open={open} label={row.study} onClick={() => setOpen(!open)} />
         </td>
@@ -216,7 +222,7 @@ function StudyRows({ row, nowMs }: { row: StudyRow; nowMs: number }) {
   );
 }
 
-export function StudiesTable({ board, nowMs = etNowMs() }: { board: StudiesBoard; nowMs?: number }) {
+export function StudiesTable({ board, nowMs = etNowMs(), focus = null }: { board: StudiesBoard; nowMs?: number; focus?: string | null }) {
   if (board.rows.length === 0) return <p className="muted">The register has no rows.</p>;
   const groups = (Object.keys(GROUP_TITLE) as StudyGroup[]).map((g) => [g, board.rows.filter((r) => r.group === g)] as const);
   return (
@@ -243,7 +249,7 @@ export function StudiesTable({ board, nowMs = etNowMs() }: { board: StudiesBoard
                   </th>
                 </tr>
                 {rows.map((r) => (
-                  <StudyRows key={r.study} row={r} nowMs={nowMs} />
+                  <StudyRows key={r.study} row={r} nowMs={nowMs} focus={r.study === focus} />
                 ))}
               </Fragment>
             ))}
@@ -254,7 +260,8 @@ export function StudiesTable({ board, nowMs = etNowMs() }: { board: StudiesBoard
 }
 
 export function BacktestStudiesTab() {
-  const { data, isLoading, isError, error, dataUpdatedAt } = useBridged<StudiesBoard>(["backtest", "studies"], "/api/backtest/studies", 30_000);
+  const { data, isLoading, isError, error, dataUpdatedAt } = useStudies();
+  const [params] = useSearchParams();
   const overview = useBridged<BacktestOverview>(["backtest", "overview"], "/api/backtest/overview", 60_000);
   const context = contextLine(overview.data?.ok ? overview.data.data : null);
   let body: ReactNode;
@@ -276,7 +283,7 @@ export function BacktestStudiesTab() {
             Ran with no register row: {b.unregistered.join(", ")}. Add each to <code>docs/hypotheses.json</code>.
           </p>
         ) : null}
-        <StudiesTable board={b} />
+        <StudiesTable board={b} focus={params.get("study")} />
       </>
     );
   }

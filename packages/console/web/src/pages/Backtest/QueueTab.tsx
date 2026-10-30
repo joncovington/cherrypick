@@ -1,5 +1,7 @@
 import { Fragment, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import type { ResearchProgress, ResearchQueue, ResearchTask } from "@console/shared";
+import { VERDICT_STATUSES, indexStudies, studyHref, useStudies, type StudyIndex } from "./studyIndex";
 import { Card } from "../../components/DataTable";
 import { useBridged } from "../../lib/bridged";
 import { getPref, usePrefsVersion, writePref } from "../../lib/prefs";
@@ -291,7 +293,23 @@ export function TaskDetail({ t, withLog = true }: { t: ResearchTask; withLog?: b
   );
 }
 
-function TaskRows({ t, nowMs }: { t: ResearchTask; nowMs: number }) {
+/** A study's verdict beside its task, linking to the board: a row can be done while its study failed. */
+export function StudyChip({ study, studies }: { study: string; studies?: StudyIndex }) {
+  const row = studies?.byStudy.get(study);
+  if (!row || !VERDICT_STATUSES.includes(row.status)) return null;
+  const word = row.status.replace(/_/g, " ");
+  return (
+    <Link
+      to={studyHref(study)}
+      className={row.status === "failed" ? "chip chip-missing" : row.status === "passed" ? "chip chip-ok" : "chip"}
+      title={`${row.title}: the study's verdict (open it on the studies tab)`}
+    >
+      {word}
+    </Link>
+  );
+}
+
+function TaskRows({ t, nowMs, studies }: { t: ResearchTask; nowMs: number; studies?: StudyIndex }) {
   const [open, setOpen] = useState(false);
   const when = t.status === "running" ? etMs(t.startedAt) : t.status === "queued" ? etMs(t.createdAt) : endedMs(t);
   const wait = waitText(t);
@@ -302,7 +320,7 @@ function TaskRows({ t, nowMs }: { t: ResearchTask; nowMs: number }) {
           <Toggle open={open} label={t.name} onClick={() => setOpen(!open)} />
         </td>
         <td title={`#${t.id}`}>
-          {t.name}
+          {t.name} <StudyChip study={t.study} studies={studies} />
           {t.needs.includes("thetadata") ? (
             <span className="chip" title="Needs the vendor account's one ThetaData session">
               ThetaData
@@ -389,7 +407,19 @@ function Section({ title, count, children }: { title: string; count: number; chi
   );
 }
 
-export function QueueTable({ q, nowMs = etNowMs(), status = "all", study = "" }: { q: ResearchQueue; nowMs?: number; status?: StatusFilter; study?: string }) {
+export function QueueTable({
+  q,
+  nowMs = etNowMs(),
+  status = "all",
+  study = "",
+  studies,
+}: {
+  q: ResearchQueue;
+  nowMs?: number;
+  status?: StatusFilter;
+  study?: string;
+  studies?: StudyIndex;
+}) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const shown = { ...q, tasks: q.tasks.filter((t) => keep(t, status, study)) };
   const p = plan(shown, nowMs);
@@ -418,11 +448,11 @@ export function QueueTable({ q, nowMs = etNowMs(), status = "all", study = "" }:
         <tbody>
           <Section title="Now" count={nowCount}>
             {p.running.map((t) => (
-              <TaskRows key={t.id} t={t} nowMs={nowMs} />
+              <TaskRows key={t.id} t={t} nowMs={nowMs} studies={studies} />
             ))}
             {hand ? p.byHandLive.map((x) => <ByHandRows key={x.file} p={x} />) : null}
             {p.queued.map((t) => (
-              <TaskRows key={t.id} t={t} nowMs={nowMs} />
+              <TaskRows key={t.id} t={t} nowMs={nowMs} studies={studies} />
             ))}
             {nowCount === 0 ? (
               <tr>
@@ -435,7 +465,7 @@ export function QueueTable({ q, nowMs = etNowMs(), status = "all", study = "" }:
           {status === "active" ? null : (
             <Section title={`Recent (${RECENT_DAYS} days)`} count={recentCount}>
               {p.recent.map((t) => (
-                <TaskRows key={t.id} t={t} nowMs={nowMs} />
+                <TaskRows key={t.id} t={t} nowMs={nowMs} studies={studies} />
               ))}
               {handFinished ? p.byHandRecent.map((x) => <ByHandRows key={x.file} p={x} />) : null}
             </Section>
@@ -459,7 +489,7 @@ export function QueueTable({ q, nowMs = etNowMs(), status = "all", study = "" }:
                         </td>
                       </tr>
                       {ts.map((t) => (
-                        <TaskRows key={t.id} t={t} nowMs={nowMs} />
+                        <TaskRows key={t.id} t={t} nowMs={nowMs} studies={studies} />
                       ))}
                     </Fragment>
                   ))
@@ -502,6 +532,8 @@ function Filters({ q, value, onChange }: { q: ResearchQueue; value: { status: St
 export function BacktestQueueTab() {
   const { data, isLoading, isError, error, dataUpdatedAt } = useBridged<ResearchQueue>(["backtest", "queue"], "/api/backtest/queue", 30_000);
   const [filter, setFilter] = useFilter();
+  const studies = useStudies();
+  const index = indexStudies(studies.data?.ok ? studies.data.data : null);
   let body: ReactNode;
   if (isLoading) body = <span className="skeleton skeleton-text" style={{ width: "40%" }} />;
   else if (isError) body = <p className="muted">{(error as Error).message}</p>;
@@ -517,7 +549,7 @@ export function BacktestQueueTab() {
           {q.blackout ? ` · no ThetaData task runs ${q.blackout[0]}–${q.blackout[1]} ET on trading days (the nightly backtest-fetch)` : ""}
         </p>
         <Filters q={q} value={filter} onChange={setFilter} />
-        <QueueTable q={q} nowMs={nowMs} status={filter.status} study={filter.study} />
+        <QueueTable q={q} nowMs={nowMs} status={filter.status} study={filter.study} studies={index} />
       </>
     );
   }

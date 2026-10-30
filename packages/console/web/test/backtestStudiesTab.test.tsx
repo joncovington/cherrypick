@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import type { BacktestOverview, StudiesBoard, StudyRow } from "@console/shared";
-import { etMs } from "../src/pages/Backtest/QueueTab";
+import type { BacktestOverview, BacktestRunReport, StudiesBoard, StudyRow } from "@console/shared";
+import { RunPlainEnglish } from "../src/pages/Backtest/BacktestPage";
+import { StudyChip, etMs } from "../src/pages/Backtest/QueueTab";
 import { StudiesTable, StudyDetail, contextLine, headline, planUrl, resultLabel, resultsLine } from "../src/pages/Backtest/StudiesTab";
+import { indexStudies, studyHref } from "../src/pages/Backtest/studyIndex";
 
 /**
  * The Backtest page's studies tab (2026-10-29): one row per register item, grouped in progress /
@@ -119,5 +121,51 @@ describe("studies tab", () => {
     expect(contextLine(o)).toContain("Design window 2022-05-16 to 2025-06-30");
     expect(contextLine({ ...o, validation: [{ unlocks_history: true }] } as unknown as BacktestOverview)).not.toContain("provisional");
     expect(contextLine(null)).toBeNull();
+  });
+});
+
+describe("links between the tabs", () => {
+  const index = indexStudies(BOARD);
+
+  it("indexes a study by name and a run by the result that names it", () => {
+    expect(index.byStudy.get("item25")?.status).toBe("no_verdict");
+    expect(index.byRun.get("20261028-065012-0174bd")?.result.window).toBe("design");
+    expect(indexStudies(null).byRun.size).toBe(0);
+  });
+
+  it("a queue row shows its study's verdict, linking to the board; a declared study shows nothing", () => {
+    const failed = html(<StudyChip study="item23" studies={index} />);
+    expect(failed).toContain("failed");
+    expect(failed).toContain(`href="${studyHref("item23")}"`);
+    expect(html(<StudyChip study="item26" studies={index} />)).toBe("");
+    expect(html(<StudyChip study="validation" studies={index} />)).toBe("");
+  });
+
+  it("a study named in the URL opens", () => {
+    expect(html(<StudiesTable board={BOARD} nowMs={NOW} focus="item23" />)).toContain("pass test");
+    expect(html(<StudiesTable board={BOARD} nowMs={NOW} />)).not.toContain("pass test");
+  });
+
+  it("a run report opens in plain words: the study, its verdict, each arm against control", () => {
+    const r = {
+      window: "design",
+      span: ["2022-05-16", "2025-06-30"],
+      cadence: 60,
+      arms: {
+        control: { spec_hash: "c", summary: { sessions: 778, total: 1000, mean: 1.29 } },
+        d20: { spec_hash: "a", summary: { sessions: 778 }, vs_control: { sessions: 778, mean_diff: 2.5, ci: [-1, 6] } },
+        d12: { spec_hash: "b", summary: { sessions: 778 }, vs_control: { sessions: 778, mean_diff: -3, ci: [-6, -0.5] } },
+        same: { spec_hash: "d", summary: { sessions: 778 }, no_exposure: true },
+      },
+    } as unknown as BacktestRunReport;
+    const study = index.byRun.get("20261028-065012-0174bd");
+    const out = html(<RunPlainEnglish r={r} study={study} />).replace(/<!-- -->/g, "");
+    expect(out).toContain("item 23");
+    expect(out).toContain("<strong>fail</strong>");
+    expect(out).toContain("live stays at 16 delta");
+    expect(out).toContain("d20: +$2.50 a session against control; the interval includes zero");
+    expect(out).toContain("the interval is below zero");
+    expect(out).toContain("same measured nothing");
+    expect(html(<RunPlainEnglish r={r} />)).toContain("No study in the register names this run.");
   });
 });

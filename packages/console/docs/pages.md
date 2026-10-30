@@ -364,7 +364,13 @@ tested and what we found. One row per hypothesis-register item, grouped in progr
 finished / observations, with its status (the register's), each result file's verdict as the study
 wrote it (a file with no word says "see plan", never a guess), the decision taken and when it last
 moved. A row opens to the pass test, rivals with their checks, per-arm verdicts, its run, its queue
-rows and the plan section on GitHub. A result file is shown by its name only), `data` (licence clock, stores with refusals), `validation` (per cadence: the unlock verdict, the
+rows and the plan section on GitHub. A result file is shown by its name only. `?study=` opens one
+row. The other tabs point back (2026-10-30, `pages/Backtest/studyIndex.ts`, one shared fetch): a
+queue row carries its study's verdict as a chip linking to the board, the runs list has a `study`
+column, a run report opens with an "in plain English" card (what ran, the study it answers and
+that study's verdict and decision, control's net, each arm against control and where its interval
+sits against zero, all the report's figures worded), and the `provisional` chip links to
+validation), `data` (licence clock, stores with refusals), `validation` (per cadence: the unlock verdict, the
 vendor-against-recorder checks, per-session quote and profile agreement), `runs` (the list; `?run=`
 reads one report: each arm's summary, the pairing with control, trials, fill model, code commit, data
 fingerprint, refused sessions, and the run cards, 2026-10-26, `pages/Backtest/RunCards.tsx`: per arm

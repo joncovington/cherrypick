@@ -61,6 +61,24 @@ function render(path: string): string {
   );
 }
 
+// Cards link to pages rather than opening overlays (2026-09-24). A link to a tab the rail does
+// not declare resolves to the first tab and looks like it worked, so every `to="/<page>/<tab>"`
+// in the web source is read -- not a list kept here -- and each must open its own tab. That
+// covers links across pages too (flies' live-pilot tile to Live, 2026-09-25).
+const links = new Set<string>();
+const walk = (dir: string): void => {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) walk(p);
+    else if (e.name.endsWith(".tsx")) {
+      for (const m of fs.readFileSync(p, "utf-8").matchAll(/\bto="(\/([a-z]+)\/[a-z]+)"/g)) {
+        if (isModuleId(m[2]!)) links.add(m[1]!);
+      }
+    }
+  }
+};
+walk(path.join(__dirname, "..", "src"));
+
 describe("no path renders a blank page", () => {
   it("an unknown path gets the not-found page, never an empty document", () => {
     const html = render("/no-such-page");
@@ -177,24 +195,6 @@ describe("the module frame", () => {
     expect(text(render("/meic/sessions"))).toContain("MEIC / sessions");
   });
 
-  // Cards link to pages rather than opening overlays (2026-09-24). A link to a tab the rail does
-  // not declare resolves to the first tab and looks like it worked, so every `to="/<page>/<tab>"`
-  // in the web source is read -- not a list kept here -- and each must open its own tab. That
-  // covers links across pages too (flies' live-pilot tile to Live, 2026-09-25).
-  const links = new Set<string>();
-  const walk = (dir: string): void => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) walk(p);
-      else if (e.name.endsWith(".tsx")) {
-        for (const m of fs.readFileSync(p, "utf-8").matchAll(/\bto="(\/([a-z]+)\/[a-z]+)"/g)) {
-          if (isModuleId(m[2]!)) links.add(m[1]!);
-        }
-      }
-    }
-  };
-  walk(path.join(__dirname, "..", "src"));
-
   it("finds card links on every trading module's pages", () => {
     // A regex that silently matched nothing would pass every check below.
     for (const module of TRADING_MODULE_ORDER) {
@@ -208,9 +208,12 @@ describe("the module frame", () => {
       if (!isModuleId(module)) continue;
       const label = NAV_DECL[module].slides.find((sl) => sl.id === id)?.label;
       expect(label, `${to} is not a declared ${module} tab`).toBeDefined();
+      // Backtest fails closed, so its links are opened with the feature on, in its own block below.
+      if (module === "backtest") continue;
       expect(text(render(to)), `${to} did not open its own tab`).toContain(`${MODULE_LABEL[module]} / ${label!}`);
     }
-  });
+    // One whole-app render per link: past the 5 s default when the full suite runs in parallel.
+  }, 30_000);
 });
 
 describe("the suite surfaces are on the frame", () => {
@@ -398,6 +401,13 @@ describe("a page the suite has turned off", () => {
     const on = { ...base, features: { ...base.features, backtest: true } };
     expect(text(renderWith("/backtest", on))).toContain("Backtest / queue");
     expect(text(renderWith("/backtest/runs", on))).toContain("Backtest / runs");
+    // Every card link into the page opens its own tab once the gate is open.
+    const into = [...links].filter((l) => l.startsWith("/backtest/"));
+    expect(into.length).toBeGreaterThan(0);
+    for (const to of into) {
+      const label = NAV_DECL.backtest.slides.find((sl) => sl.id === to.split("/")[2])?.label;
+      expect(text(renderWith(to, on)), `${to} did not open its own tab`).toContain(`Backtest / ${label!}`);
+    }
     expect(renderWith("/backtest", on)).not.toContain("Page not found");
     expect(renderWith("/flies/session", on)).toContain('href="/backtest"');
     expect(renderWith("/flies/session", base)).not.toContain('href="/backtest"');

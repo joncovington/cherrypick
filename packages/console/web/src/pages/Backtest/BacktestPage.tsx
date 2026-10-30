@@ -8,16 +8,19 @@ import type {
   BacktestSideReading,
   BacktestValidation,
   BridgedResult,
+  StudyResult,
+  StudyRow,
 } from "@console/shared";
 import { isBacktestCapital } from "@console/shared";
 import { useQuery } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { ReactNode } from "react";
 import { Card } from "../../components/DataTable";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { fmtGap, signTone, useBridged } from "../../lib/bridged";
 import { fmtCash, fmtCount, fmtNum } from "../../lib/format";
 import { RunCards } from "./RunCards";
+import { indexStudies, studyHref, useStudies, type StudyIndex } from "./studyIndex";
 
 /**
  * The Backtest page (2026-10-17): `packages/backtest`'s replays over licensed vendor history, read
@@ -624,7 +627,7 @@ function capitalParam(raw: string | null): number | null {
   return raw !== null && isBacktestCapital(raw) ? Number(raw) : null;
 }
 
-function RunReport({ id }: { id: string }) {
+function RunReport({ id, study }: { id: string; study?: { row: StudyRow; result: StudyResult } }) {
   const [params, setParams] = useSearchParams();
   const capital = capitalParam(params.get("capital"));
   const pickCapital = (c: number | null) => {
@@ -645,6 +648,7 @@ function RunReport({ id }: { id: string }) {
         <p className="muted">{data?.error ?? "run unavailable"}</p>
       ) : (
         <>
+          <RunPlainEnglish r={r} study={study} />
           {r.provisional === true && (
             <p className="muted">
               <ProvisionalChip /> {r.provisional_note ?? "Provisional: not a trial and not evidence."}
@@ -702,9 +706,78 @@ function RunReport({ id }: { id: string }) {
   );
 }
 
+/** "item 23 · design": the study a run belongs to, from the result file that names it. */
+function StudyCell({ id, index }: { id: string; index: StudyIndex }) {
+  const hit = index.byRun.get(id);
+  if (!hit) return <span className="muted">—</span>;
+  const where = hit.result.window ?? hit.result.name;
+  return (
+    <Link to={studyHref(hit.row.study)} title={hit.row.title}>
+      item {hit.row.id} · {where}
+    </Link>
+  );
+}
+
+/** Which way an interval sits against zero, in words. */
+function against(ci: [number, number] | null | undefined): string {
+  if (!ci) return "";
+  if (ci[0] > 0) return "the interval is above zero";
+  if (ci[1] < 0) return "the interval is below zero";
+  return "the interval includes zero";
+}
+
+/**
+ * The run in plain words, before the tables: what ran, which study it answers and that study's
+ * verdict, whether it counts as evidence, and each arm against control. Every figure is the
+ * report's; the card only words it.
+ */
+export function RunPlainEnglish({ r, study }: { r: BacktestRunReport; study?: { row: StudyRow; result: StudyResult } }) {
+  const arms = Object.entries(r.arms);
+  const control = r.arms["control"];
+  return (
+    <div className="plain-english">
+      <div className="card-subhead">in plain English</div>
+      <p>
+        A replay of the {r.window} window, {span(r.span)}, at {String(r.cadence)} s ticks, with {arms.length} arm
+        {arms.length === 1 ? "" : "s"}.{" "}
+        {study ? (
+          <>
+            It is <Link to={studyHref(study.row.study)}>item {study.row.id}</Link>&apos;s {study.result.window ?? "result"} run: &ldquo;
+            {study.row.title}&rdquo;. The study&apos;s verdict here is <strong>{study.result.summary ?? "not written"}</strong>
+            {study.row.outcome ? `, and the decision: ${study.row.outcome}` : ""}.
+          </>
+        ) : (
+          "No study in the register names this run."
+        )}
+      </p>
+      {control && (
+        <p>
+          Control made {fmtCash(control.summary.mean)} a session on average, {fmtCash(control.summary.total)} over the run.
+        </p>
+      )}
+      <ul style={{ margin: "0 0 8px", paddingLeft: "1.1em" }}>
+        {arms
+          .filter(([arm]) => arm !== "control")
+          .map(([arm, a]) => {
+            const v = a.vs_control;
+            if (a.no_exposure === true) return <li key={arm}>{arm} measured nothing: every session matched control&apos;s to the cent.</li>;
+            if (!v || v.mean_diff === null) return <li key={arm}>{arm}: not paired with control.</li>;
+            return (
+              <li key={arm}>
+                {arm}: {fmtCash(v.mean_diff)} a session against control; {against(v.ci)} ({ci(v.ci)}).
+              </li>
+            );
+          })}
+      </ul>
+    </div>
+  );
+}
+
 export function BacktestRunsTab() {
   const [params, setParams] = useSearchParams();
   const selected = params.get("run");
+  const studies = useStudies();
+  const index = indexStudies(studies.data?.ok ? studies.data.data : null);
   const pick = (id: string) => {
     const next = new URLSearchParams(params);
     next.set("run", id);
@@ -730,6 +803,7 @@ export function BacktestRunsTab() {
                   <thead>
                     <tr>
                       <th>run</th>
+                      <th title="The study whose result names this run">study</th>
                       <th>created (ET)</th>
                       <th>module</th>
                       <th>window</th>
@@ -753,6 +827,9 @@ export function BacktestRunsTab() {
                             {r.run_id}
                           </button>
                         </td>
+                        <td>
+                          <StudyCell id={r.run_id} index={index} />
+                        </td>
                         <td className="muted">{etStamp(r.created_at)}</td>
                         <td>{r.module}</td>
                         <td>
@@ -771,7 +848,7 @@ export function BacktestRunsTab() {
               </div>
             )}
           </Card>
-          {selected !== null && <RunReport id={selected} />}
+          {selected !== null && <RunReport id={selected} study={index.byRun.get(selected)} />}
         </div>
       )}
     </WithOverview>
@@ -781,12 +858,13 @@ export function BacktestRunsTab() {
 /** A run made before validation unlocked history: shown as such wherever it appears. */
 function ProvisionalChip() {
   return (
-    <span
+    <Link
+      to="/backtest/validation"
       className="chip chip-warn"
       style={{ marginLeft: 6 }}
-      title="made before validation unlocked history: not a trial, not evidence, never shown to the advisor"
+      title="made before validation unlocked history: not a trial, not evidence, never shown to the advisor. Open validation for why"
     >
       provisional
-    </span>
+    </Link>
   );
 }
