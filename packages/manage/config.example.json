@@ -251,6 +251,8 @@
       "enabled": true,
       "min_pct_nlv": 0.001,
       "max_pct_nlv": 0.003,
+      "_target_pct_nlv": "The premium pace's target on the same figure: theta to hold inside the band, not to maximise.",
+      "target_pct_nlv": 0.002,
       "front_dte": 2,
       "confidence": 40
     },

@@ -520,11 +520,14 @@ export function PortfolioCards({
   p,
   scenarios,
   history,
+  pace,
 }: {
   p: ManagePortfolio | null;
   scenarios?: ReactNode;
   /** The bands over time (BandsHistory.tsx), under the guidance it explains. */
   history?: ReactNode;
+  /** The premium pace (PremiumPace.tsx): the goal the bands serve, so it comes before them. */
+  pace?: ReactNode;
 }) {
   // The broker check (a record of our model against the broker's) and the scenarios (the risk matrix
   // and graph) are the detail view's (2026-10-21).
@@ -539,6 +542,7 @@ export function PortfolioCards({
         <StressCard p={p} />
       </div>
       <GuidanceCard p={p} />
+      {pace}
       {history}
       <div className="cards cards-pairs">
         <ContributionCard p={p} figure="bwd" />

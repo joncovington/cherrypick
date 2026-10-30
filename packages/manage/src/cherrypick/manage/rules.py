@@ -282,6 +282,9 @@ DEFAULT_RULES: dict[str, Any] = {
             "enabled": True,
             "min_pct_nlv": 0.001,
             "max_pct_nlv": 0.003,
+            # The premium pace's target (premium.py), on the band's own figure: a pace to hold
+            # inside the band, not a quantity to maximise. Agreed with the operator 2026-10-30.
+            "target_pct_nlv": 0.002,
             "front_dte": 2,
             "confidence": 40,
         },

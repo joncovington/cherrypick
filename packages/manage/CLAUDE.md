@@ -13,7 +13,8 @@ position at a time, with the rules re-derived each time.
 evaluation's held legs, their underlyings and the benchmark as quote-only `legs`, never `symbols`, so
 the console can mark them live between runs. A re-run of a past session does not rewrite it. It has
 no broker credentials and no network: the snapshot is taken by
-the orchestrator's `manage` verb (`orchestrator/managesnap.py`: positions and balances, market metrics, trade history,
+the orchestrator's `manage` verb (`orchestrator/managesnap.py`: positions and balances, market metrics, trade history
+per held name and for the whole account (`account_transactions`, v15, for the premium pace),
 the XSP hedge chain, the quoted chain of each expiry holding a short strangle, the next quoted
 expiries after each covered call, PMCC short and short put (`roll_out_chains`, v14, capped; `pmcc.py`
 and `wheel.py` price their rolls there first and fall back to the income reading), the broker's greeks

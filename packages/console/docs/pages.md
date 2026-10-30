@@ -556,7 +556,11 @@ manage's own `expiring` line beneath it, never in its totals. **Every band and e
 the reading's `bands`**: the dial draws manage's band and takes amber only from its `inside` flag,
 never from where the needle sits (`web/test/managePortfolioCards.test.tsx` shows a needle inside its
 band drawn as outside when the flag says so). Long and short delta carry no tone. An evaluation
-written before the reading has `portfolio: null` and draws no cards. **Bands over time** (2026-10-30,
+written before the reading has `portfolio: null` and draws no cards. **Premium pace** (2026-10-30,
+`pages/Live/PremiumPace.tsx`) follows the guidance: manage's `premium` (theta against its target on the
+theta band's scale, this week, six months of collected beside kept with a foot row that adds them up,
+and what manage left out). It draws nothing for an evaluation written before it existed or for an
+account that is not the broker tool's designated one. **Bands over time** (2026-10-30,
 `pages/Live/BandsHistory.tsx`, `GET /api/manage/bands` → `readManageBandsHistory`) sits under the
 guidance: every stored evaluation's delta, theta and buying-power reading against that session's
 own band (the delta band moves with theta, the buying-power cap with the VIX), amber from manage's

@@ -90,6 +90,32 @@ describe("readManage", () => {
     expect(out.accounts).toEqual([]);
   });
 
+  it("passes the premium pace through in the page's names, and null before it existed", () => {
+    const doc = evalDoc("2026-10-30");
+    const [account] = doc["accounts"] as Array<Record<string, unknown>>;
+    account!["premium"] = {
+      target: { pct_nlv: 0.002, dollars: 40, theta: 38, ratio: 0.95 },
+      error: null,
+      history_from: "2025-09-25",
+      months: [{ month: "2026-10", collected: 600, orders: 3, kept: -80.25, closed: 6 }],
+      week: { from: "2026-10-26", collected: 150, orders: 1, kept: null, closed: 0 },
+      unmatched: { legs: 1, net: -12 },
+      zero_dte: { legs: 3, net: -45.5, underlyings: ["SPX"] },
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-30.json"), JSON.stringify(doc));
+    expect(readManage(config).accounts[0]!.premium).toEqual({
+      target: { pctNlv: 0.002, dollars: 40, theta: 38, ratio: 0.95 },
+      error: null,
+      historyFrom: "2025-09-25",
+      months: [{ month: "2026-10", collected: 600, orders: 3, kept: -80.25, closed: 6 }],
+      week: { from: "2026-10-26", collected: 150, orders: 1, kept: null, closed: 0 },
+      unmatched: { legs: 1, net: -12 },
+      zeroDte: { legs: 3, net: -45.5, underlyings: ["SPX"] },
+    });
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-30.json"), JSON.stringify(evalDoc("2026-10-30")));
+    expect(readManage(config).accounts[0]!.premium).toBeNull();
+  });
+
   it("passes manage's pre-open flag through, and none on an evaluation without it", () => {
     const doc = { ...evalDoc("2026-10-21"), pre_open: { taken_at: "07:17", expiring_unpriced: ["SPCX"] } };
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-21.json"), JSON.stringify(doc));

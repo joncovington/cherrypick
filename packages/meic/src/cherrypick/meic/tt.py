@@ -522,12 +522,25 @@ async def cmd_get_transactions(args) -> dict:
 
     The read the position evaluation needs to see an order chain: the orders that opened, rolled and
     adjusted a position, which the positions endpoint flattens into one average open price per leg.
+    `--account_wide` reads the whole account in one list instead (`"account"`), closed names
+    included: the premium pace counts what was collected and kept on trades no longer held.
     Rows carry only the fields that read uses; no account number is returned.
     """
     try:
+        if not args.account_wide and not args.underlyings:
+            return {"ok": False, "error": "get_transactions needs --underlyings or --account_wide"}
         account = await _get_account(getattr(args, "account_number", None))
         session = get_session()
         since = date.fromisoformat(args.since)
+        if args.account_wide:
+            rows = await _broker.transaction_history(
+                account, session, start_date=since, end_date=date.today()
+            )
+            return {
+                "ok": True,
+                "since": args.since,
+                "account": [{k: r.get(k) for k in TRANSACTION_FIELDS} for r in rows],
+            }
         out: dict[str, list] = {}
         for sym in args.underlyings:
             rows = await _broker.transaction_history(
@@ -1720,7 +1733,8 @@ def main():
     p_pos.add_argument("--account_number", default=None)
 
     p_tx = sub.add_parser("get_transactions")
-    p_tx.add_argument("--underlyings", nargs="+", required=True)
+    p_tx.add_argument("--underlyings", nargs="*", default=[])
+    p_tx.add_argument("--account_wide", action="store_true")
     p_tx.add_argument("--since", required=True, help="YYYY-MM-DD")
     p_tx.add_argument("--account_number", default=None)
 

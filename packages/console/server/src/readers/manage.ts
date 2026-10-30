@@ -26,6 +26,7 @@ import type {
   ManageScenarios,
   ManageHedgeSuggestion,
   ManagePortfolio,
+  ManagePremium,
   ManageAction,
   ManageFired,
   ManageDriverKind,
@@ -1074,6 +1075,42 @@ function account(v: unknown, rules: Record<string, unknown>, lev: Leveraged = NO
     portfolio: portfolio(a["portfolio"], rules, lev),
     wheel: wheel(a["wheel"]),
     pmcc: pmcc(a["pmcc"], rules),
+    premium: premium(a["premium"]),
+  };
+}
+
+function premium(v: unknown): ManagePremium | null {
+  if (v === null || v === undefined) return null;
+  const p = rec(v);
+  const t = rec(p["target"]);
+  const w = p["week"] ? rec(p["week"]) : null;
+  const u = p["unmatched"] ? rec(p["unmatched"]) : null;
+  const z = p["zero_dte"] ? rec(p["zero_dte"]) : null;
+  return {
+    target: { pctNlv: num(t["pct_nlv"]), dollars: num(t["dollars"]), theta: num(t["theta"]), ratio: num(t["ratio"]) },
+    error: str(p["error"]),
+    historyFrom: str(p["history_from"]),
+    months: arr(p["months"]).map((raw) => {
+      const m = rec(raw);
+      return {
+        month: str(m["month"]) ?? "",
+        collected: num(m["collected"]),
+        orders: num(m["orders"]) ?? 0,
+        kept: num(m["kept"]),
+        closed: num(m["closed"]) ?? 0,
+      };
+    }),
+    week: w
+      ? {
+          from: str(w["from"]),
+          collected: num(w["collected"]),
+          orders: num(w["orders"]) ?? 0,
+          kept: num(w["kept"]),
+          closed: num(w["closed"]) ?? 0,
+        }
+      : null,
+    unmatched: u ? { legs: num(u["legs"]) ?? 0, net: num(u["net"]) } : null,
+    zeroDte: z ? { legs: num(z["legs"]) ?? 0, net: num(z["net"]), underlyings: strs(z["underlyings"]) } : null,
   };
 }
 

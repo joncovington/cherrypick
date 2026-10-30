@@ -11,6 +11,13 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added (2026-10-30): the premium pace on Live → portfolio.** Manage reads theta against a target
+  of 0.2% of net liq a day (`portfolio.theta.target_pct_nlv`, set in `manage.json`), and premium
+  collected beside premium kept per month from the whole account's trade history, which the snapshot
+  now reads (v15, `get_transactions --account_wide`, GET only). The live loops' 0DTE legs and legs
+  opened before the history are left out and stated. **Bands over time** (2026-10-30) sits under it:
+  each stored evaluation's delta, theta and buying power against that day's own band.
+
 - **Changed (2026-10-28, a declared measurement boundary): earnings opens only on names the
   liquidity verdict calls tradable.** Every entry path (the ranked scan, the `strat_test` harness
   and the advised twins beside it) refuses any other name from the 2026-10-28 session as an

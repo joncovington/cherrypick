@@ -125,7 +125,7 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 14
+SNAPSHOT_VERSION = 15
 # Greeks move far more slowly than a bid; the cache's are used up to this old, the feed's otherwise.
 GREEKS_MAX_AGE_SECONDS = 900.0
 # Monday reads Friday's afternoon reading; anything older is a stale book of quotes.
@@ -234,6 +234,20 @@ def transactions(
         cfg, prefer, ["get_transactions", "--underlyings", *symbols, "--since", since], timeout=180
     )
     return payload.get("transactions") or {}, error
+
+
+def account_transactions(cfg: dict[str, Any], prefer: str | None = None) -> tuple[list, str | None]:
+    """The whole account's trade history reaching back HISTORY_DAYS, closed names included, for
+    manage's premium pace (v15): what was collected and kept on trades no longer held, which the
+    per-underlying read cannot see. One list; an error string when unavailable."""
+    since = (date.today() - timedelta(days=HISTORY_DAYS)).isoformat()
+    payload, error = _first_answer(
+        cfg, prefer, ["get_transactions", "--account_wide", "--since", since], timeout=180
+    )
+    rows = payload.get("account")
+    if error is None and not isinstance(rows, list):
+        return [], "the broker tool answered without an account-wide list"
+    return rows or [], error
 
 
 def _option_symbols(positions: dict[str, Any]) -> dict[str, str]:
@@ -899,6 +913,7 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
     quoted = sorted({*symbols, BENCHMARK, HEDGE_ROOT, VOLATILITY_INDEX})
     metrics, error = market_metrics(cfg, quoted, prefer) if ok else ({}, None)
     history, history_error = transactions(cfg, symbols, prefer) if ok else ({}, None)
+    account_history, account_history_error = account_transactions(cfg, prefer) if ok else ([], None)
     session = clock.today_iso()
     fill_earnings_times(metrics, earnings_times(date.fromisoformat(session)))
     hedge_spot = (metrics.get(HEDGE_ROOT) or {}).get("last")
@@ -925,6 +940,8 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "metrics_error": error,
         "transactions": history,
         "transactions_error": history_error,
+        "account_transactions": account_history,
+        "account_transactions_error": account_history_error,
         "hedge_chain": hedge,
         "broker_greeks": greeks,
         "broker_greeks_error": greeks_error,
