@@ -109,6 +109,14 @@ describe("the research queue tab: sections", () => {
     expect(html.indexOf("backtest-run-meic")).toBeLessThan(html.indexOf("meic-replay-check"));
   });
 
+  it("keeps a finished run started by hand, and the Recent section, out of running + queued", () => {
+    const q = queue([task({})], [byHand({}), byHand({ file: "x-1", job: "meic-replay-check", state: "done", fraction: 1, line: "sessions 4/4 days" })]);
+    const html = render(q, { status: "active" });
+    expect(html).toContain("backtest-run-meic");
+    expect(html).not.toContain("meic-replay-check");
+    expect(html).not.toContain("Recent (");
+  });
+
   it("says when the queue is empty, and when the filter hides everything", () => {
     expect(render(queue([]))).toContain("The queue is empty.");
     expect(render(queue([task({})]), { status: "failed" })).toContain("Nothing matches the filter.");
