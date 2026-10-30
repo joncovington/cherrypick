@@ -137,7 +137,8 @@ def _stores_inventory(settings: dict) -> dict:
     from . import stores
 
     try:
-        return stores.inventory(settings)
+        # Never counts: the bridge's 30 s cannot hold a cold count (`stores.inventory`).
+        return stores.inventory(settings, recount=False)
     except Exception as exc:  # noqa: BLE001 -- the inventory never breaks the overview
         return {"error": str(exc), "stores": [], "undeclared": []}
 

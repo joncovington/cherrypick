@@ -111,6 +111,8 @@ export interface BacktestInventoryStore {
   script?: string | null;
   bytes?: number;
   tables?: Record<string, BacktestStoreTable>;
+  /** Changed since its last count: `tables` is that count, until the backtest-inventory job runs. */
+  pending?: boolean;
   error?: string;
 }
 

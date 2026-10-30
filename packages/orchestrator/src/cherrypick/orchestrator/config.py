@@ -812,13 +812,20 @@ def backtest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     install has. Trading days only, after the vendor's end-of-day data has posted; it asks for the
     last `fetch_recent_sessions` sessions and skips any already complete, so a missed night is
     picked up by the next. `fetch_cadence` is the store's cadence in seconds (60: the vendor serves
-    no sub-minute history before 2026)."""
+    no sub-minute history before 2026).
+
+    `inventory` is the store count behind the Backtest page's Data tab (`backtest-inventory`,
+    2026-10-30), every `inventory_interval_minutes`. It follows `fetch` unless set: a machine that
+    fetches has stores to count, and the console's read no longer counts them itself."""
     b = cfg.get("backtest", {}) or {}
+    fetch = bool(b.get("fetch", False))
     return {
-        "fetch": bool(b.get("fetch", False)),
+        "fetch": fetch,
         "fetch_at": b.get("fetch_at", "18:45"),
         "fetch_cadence": int(b.get("fetch_cadence", 60)),
         "fetch_recent_sessions": int(b.get("fetch_recent_sessions", 5)),
+        "inventory": bool(b.get("inventory", fetch)),
+        "inventory_interval_minutes": int(b.get("inventory_interval_minutes", 10)),
     }
 
 

@@ -1172,6 +1172,20 @@ def derive_jobs(
             enabled_reason="" if bt["fetch"] else "disabled in config (backtest.fetch)",
         ),
     )
+    add(
+        "backtest-inventory",
+        lambda: JobSpec(
+            id="backtest-inventory",
+            # The Data tab's store counts (packages/backtest `inventory`): stat-only when nothing
+            # changed, a full count of each store that did. The console's read never counts, since
+            # a cold count of the largest stores outlasts its 30 s. Local files only.
+            argv=(pythonw, "-m", "cherrypick.backtest", "inventory"),
+            kind=KIND_INTERVAL,
+            interval_seconds=bt["inventory_interval_minutes"] * 60,
+            enabled=bt["inventory"],
+            enabled_reason="" if bt["inventory"] else "disabled in config (backtest.inventory)",
+        ),
+    )
     rqs = cfgmod.research_queue_settings(cfg)
     add(
         "research-queue",

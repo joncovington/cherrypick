@@ -14,6 +14,7 @@ python -m cherrypick.backtest derive-regimes [--dataset SPX]   # regime rows fro
 python -m cherrypick.backtest validate [--module flies|meic] [--dates a,b,...]   # against the recorder
 python -m cherrypick.backtest run flies --arms range-high --window validation|design|holdout [--cadence 60]
 python -m cherrypick.backtest run meic --arms bp-10k --window design [--cadence 60]   # MEIC's own engine
+python -m cherrypick.backtest inventory           # count every changed store into the Data tab's cache
 python -m cherrypick.backtest purge [--derived] [--apply]   # expunge the vendor's data (dry run by default)
 """
 
@@ -502,6 +503,17 @@ def cmd_read(args) -> int:
     return 0 if out["ok"] else 1
 
 
+def cmd_inventory(args) -> int:
+    """Count every store changed since its last count (the supervisor's backtest-inventory job). The
+    console's overview never counts, so this is what moves the Data tab's numbers. Names only out."""
+    from . import stores
+
+    out = stores.inventory(settings.load(args.config))
+    pending = [s["file"] for s in out["stores"] + out["undeclared"] if s.get("pending")]
+    _emit({"ok": True, "recounted": out["recounted"], "pending": pending})
+    return 0
+
+
 def cmd_purge(args) -> int:
     s = settings.load(args.config)
     if args.apply:
@@ -629,6 +641,9 @@ def main(argv: list[str] | None = None) -> int:
         help="with `run`: the cards' account in dollars (default: peak session risk)",
     )
     rd.set_defaults(fn=cmd_read)
+    sub.add_parser(
+        "inventory", help="count every store changed since its last count (the Data tab's numbers)"
+    ).set_defaults(fn=cmd_inventory)
     for sp in (f, fv, cv, dr, va, rn, ra):
         sp.add_argument(
             "--cadence",

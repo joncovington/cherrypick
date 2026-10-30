@@ -710,11 +710,12 @@
     "critical_minutes": 30
   },
   "backtest": {
-    "_comment": "The nightly vendor fetch for packages/backtest (job backtest-fetch, `python -m cherrypick.backtest fetch --cadence <fetch_cadence> --recent <fetch_recent_sessions>`). OFF by default: it needs a vendor subscription, the key in the keyring (python -m cherrypick.backtest key set) and ~/.cherrypick/config/backtest.json enabled, plus the vendor library (pip install -e \"packages/backtest[thetadata]\"). Trading days only at fetch_at (ET); complete sessions are skipped, so a missed night is picked up by the next. While it runs it holds the vendor account's only session: do not log in with the key elsewhere then.",
+    "_comment": "The nightly vendor fetch for packages/backtest (job backtest-fetch, `python -m cherrypick.backtest fetch --cadence <fetch_cadence> --recent <fetch_recent_sessions>`). OFF by default: it needs a vendor subscription, the key in the keyring (python -m cherrypick.backtest key set) and ~/.cherrypick/config/backtest.json enabled, plus the vendor library (pip install -e \"packages/backtest[thetadata]\"). Trading days only at fetch_at (ET); complete sessions are skipped, so a missed night is picked up by the next. While it runs it holds the vendor account's only session: do not log in with the key elsewhere then. Job backtest-inventory (`python -m cherrypick.backtest inventory`, every inventory_interval_minutes) counts each store that changed for the Backtest page's Data tab, which never counts on its own; it follows fetch unless `inventory` is set true or false.",
     "fetch": false,
     "fetch_at": "18:45",
     "fetch_cadence": 60,
-    "fetch_recent_sessions": 5
+    "fetch_recent_sessions": 5,
+    "inventory_interval_minutes": 10
   },
   "research_queue": {
     "_comment": "The research queue (job research-queue, `run.py queue-run`; orchestrator/researchqueue.py): long research tasks added as rows with `run.py queue-add --study <study> [--step <step>] --task <kind> --task-args <json> [--output <file>]`, each named study/step (lowercase slugs; the study is its category; one live row per name; a finished row points to its counts, input or declared output, and log), run one at a time by the supervisor, so a many-hour fetch survives the terminal or assistant session that queued it. Allow-listed kinds only: fetch-chains, fetch-flow, fetch-oi (resumable ThetaData fetches, bounded by --stop-by) and script (a file checked into scripts/, string arguments, no shell). A ThetaData task waits while the vendor session is held and keeps clear of the nightly backtest-fetch, from blackout_before_minutes before backtest.fetch_at to blackout_after_minutes after on trading days: it stops there and resumes after. One notification per finished or failed task. On by default: with no rows it does nothing. `run.py queue-list` shows the rows and why a queued one waits.",

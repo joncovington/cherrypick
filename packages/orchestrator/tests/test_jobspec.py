@@ -331,6 +331,7 @@ def test_derive_full_suite_job_table():
         "market-files",
         "market-files-retry",
         "backtest-fetch",
+        "backtest-inventory",
         "research-queue",
         "technicals-land",
         "technicals-dividends",
@@ -1555,3 +1556,20 @@ def test_the_backtest_fetch_is_off_by_default_and_fetches_the_recent_sessions_wh
     on = {j.id: j for j in derive(cfg)[0]}["backtest-fetch"]
     assert on.enabled and on.trading_days_only and on.at_et == "18:45"
     assert on.argv[1:] == ("-m", "cherrypick.backtest", "fetch", "--cadence", "60", "--recent", "3")
+
+
+def test_the_backtest_inventory_follows_the_fetch_unless_set():
+    """The Data tab's store count runs where the fetch does, every 10 minutes by default; its own
+    `backtest.inventory` overrides that either way."""
+    off = {j.id: j for j in derive(suite_cfg())[0]}["backtest-inventory"]
+    assert not off.enabled and "backtest.inventory" in off.enabled_reason
+    cfg = suite_cfg()
+    cfg["backtest"] = {"fetch": True}
+    on = {j.id: j for j in derive(cfg)[0]}["backtest-inventory"]
+    assert on.enabled and on.interval_seconds == 600
+    assert on.argv[1:] == ("-m", "cherrypick.backtest", "inventory")
+    cfg["backtest"] = {"fetch": True, "inventory": False}
+    assert not {j.id: j for j in derive(cfg)[0]}["backtest-inventory"].enabled
+    cfg["backtest"] = {"inventory": True, "inventory_interval_minutes": 5}
+    alone = {j.id: j for j in derive(cfg)[0]}["backtest-inventory"]
+    assert alone.enabled and alone.interval_seconds == 300

@@ -212,6 +212,11 @@ keyring, a complete session in the store), with its server routes refusing on th
 `overview` carries `provisional_looks` beside `trials` (2026-10-30): the distinct specs run as
 provisional looks, per module. A look records no trial, so it never enters a DSR; the count is for
 the reader, who would otherwise see "trials: none" after dozens of looks at the same history.
+**`read overview` never counts a store (2026-10-30).** Its inventory is the cache as last counted; a
+store changed since then comes back marked `pending`. The `inventory` verb does the counting, run by
+the supervisor's `backtest-inventory` job. A cold count of the largest stores takes over a minute and
+the console's bridge gives a read 30 s, so a read that counted was killed mid-count, banked nothing,
+and the page showed "unavailable" while a queue fetch kept a store changing.
 
 **The run cards** (`cards.py`, 2026-10-26): `read run` also returns each arm's path, drawdown
 periods, month and year rows, session and trade anatomy, premium (fee drag, and capture rate from

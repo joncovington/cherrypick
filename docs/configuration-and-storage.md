@@ -161,7 +161,7 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | `log_archive` | **on**, day 1 @ 03:30 | `log-archive` (monthly) |
 | `reconcile.schedule` | **off** by default, daily 16:30 when enabled — worth turning on once any module trades live, since it diffs the live ledger against the broker | `reconcile` |
 | `manage` | **off** (`enabled`), daily at `at` (10:00 ET), and at each `also_at` time | `manage-eval`, `manage-eval-HHMM` |
-| `backtest` | **off** (`fetch`), daily at `fetch_at` (18:45 ET) | `backtest-fetch` |
+| `backtest` | **off** (`fetch`), daily at `fetch_at` (18:45 ET); the store count follows `fetch` unless `inventory` is set | `backtest-fetch`, `backtest-inventory` |
 | `live_positions` | **on** | `live-positions` |
 | `live_fill_alerts` | **on**, enabled only while a live module is armed | `live-fill-alerts` |
 | `live_settle_overdue` | **on**, hourly | `settle-overdue-live` |
