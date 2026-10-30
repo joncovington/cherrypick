@@ -133,6 +133,8 @@ def gated_features(cfg: dict[str, Any]) -> dict[str, Any]:
         "services": services,
         "features": {
             "advisor": bool(cfgmod.advisor_settings(cfg)["enabled"]),
+            # Any truthy value counts, as the advisor's own `_paused` reads it (experiments.py).
+            "advisor_paused": bool((cfg.get("advisor") or {}).get("paused")),
             "review_narrative": bool(review["enabled"] and review["narrative"]),
             "morning_narrative": bool(morning["enabled"] and morning["narrative"]),
             "technicals": bool(cfgmod.technicals_settings(cfg)["enabled"])

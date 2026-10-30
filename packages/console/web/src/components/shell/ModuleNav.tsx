@@ -5,7 +5,7 @@ import { NAV_DECL, navGroups, viewSlides } from "../../lightbox/navGroups";
 import { useViewMode } from "../../lib/viewMode";
 import { CONFIG_LINK, railHalves, suiteLinksFor, visibleNavLinks, type NavLinkDef } from "./navLinks";
 import { useFeatures } from "../../lib/useFeatures";
-import { isSlideVisible } from "../../lib/visibility";
+import { isAdvisorPaused, isSlideVisible } from "../../lib/visibility";
 import { useLiveLoopsInUse } from "../../lib/useLiveToday";
 import { ExperimentalChip } from "../ExperimentalChip";
 import { useDirtyCount } from "../../pages/Config/stagedStore";
@@ -68,8 +68,11 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
   const { modules } = visible;
   // Real money and the market reads above the modules; research and the suite's own pages below.
   const { above, below } = railHalves(suite);
-  const research = below.filter((l) => l.section === "research");
-  const suitePages = below.filter((l) => l.section !== "research");
+  // A paused advisor is a status to check, not research to read (2026-10-30): it sits with System.
+  const paused = isAdvisorPaused(features);
+  const inResearch = (l: (typeof below)[number]) => l.section === "research" && !(paused && l.to === "/advisor");
+  const research = below.filter(inResearch);
+  const suitePages = below.filter((l) => !inResearch(l));
   const grouping = navGroups(
     module ?? ("meic" as ModuleId), // never read when module is null — grouping is built only for the open module
     module === null

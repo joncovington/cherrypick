@@ -142,11 +142,22 @@ def test_gated_features_is_the_one_view_the_console_reads():
     assert view["modules"]["earnings"]["enabled"] is True
     assert view["modules"]["pmcc"] == {"configured": False, "enabled": False, "missing": []}
     assert view["features"]["advisor"] is False
+    assert view["features"]["advisor_paused"] is False
     assert view["features"]["technicals"] is True
     assert view["features"]["options_flow"] is False  # off until a person signs in and switches it on
     cfg = _cfg(dolt=True)
     cfg["quikoptions"] = {"enabled": True}
     assert caps.gated_features(cfg)["features"]["options_flow"] is True
+
+
+def test_gated_features_reports_the_advisor_pause_as_the_advisor_reads_it():
+    cfg = _cfg()
+    cfg["advisor"] = {"enabled": True, "paused": True}
+    assert caps.gated_features(cfg)["features"]["advisor_paused"] is True
+    cfg["advisor"]["paused"] = "yes"  # malformed still counts, failing safe
+    assert caps.gated_features(cfg)["features"]["advisor_paused"] is True
+    cfg["advisor"]["paused"] = False
+    assert caps.gated_features(cfg)["features"]["advisor_paused"] is False
 
 
 def test_gated_features_names_each_readable_live_switch(monkeypatch, tmp_path):

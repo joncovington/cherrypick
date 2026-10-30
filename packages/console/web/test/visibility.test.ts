@@ -68,6 +68,14 @@ describe("gex, the advisor and the reports", () => {
     expect(isSlideVisible("flies", "advisor", ALL_ON)).toBe(true);
   });
 
+  it("a module's advisor tab goes while the advisor is paused; the Advisor page stays", () => {
+    const paused = withOff({ features: { ...ALL_ON.features, advisor_paused: true } });
+    expect(isSlideVisible("meic", "advisor", paused)).toBe(false);
+    expect(isSlideVisible("bwb", "advisor", paused)).toBe(false);
+    expect(isModuleVisible("advisor", paused)).toBe(true);
+    expect(isSlideVisible("meic", "advisor", withOff({ features: { ...ALL_ON.features, advisor_paused: false } }))).toBe(true);
+  });
+
   it("a switched-off live loop's tab stays while Live Today reports anything for it (#422)", () => {
     const meicOff = withOff({ live: { flies: true, meic: false } });
     // MEIC's switch turned off mid-session with a condor still open: the only page that shows it

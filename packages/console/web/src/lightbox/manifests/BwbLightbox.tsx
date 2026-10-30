@@ -4,7 +4,8 @@ import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { LoopPill } from "../../components/ScopeBar";
 import { IntegrityStrip } from "../../pages/Bwb/IntegrityStrip";
-import { BookComparison, FireCountsCard, OpenTradesCard } from "../../pages/Bwb/CurrentStateCards";
+import { Link } from "react-router-dom";
+import { FireCountsCard, OpenTradesCard } from "../../pages/Bwb/CurrentStateCards";
 import { BwbSession } from "../../pages/Bwb/BwbSession";
 import { DecisionsCard } from "../../components/DecisionsCard";
 import { HistoryTab } from "../../pages/Bwb/HistoryTab";
@@ -53,7 +54,15 @@ export function BwbLightbox({ slide }: { slide: string }) {
       render: () => (
         <>
           <div className="cards cards-wide">
-            <BookComparison data={data} updatedAt={dataUpdatedAt} />
+            {/* Net by arm left this tab 2026-10-30: the summary's by-arm card and Compare both answer
+                it, Compare with each arm paired against control. */}
+            <section className="card">
+              <p className="muted" style={{ margin: 0 }}>
+                Net by arm is on the <Link to="/bwb/summary">summary</Link>, and each arm against control, with paired
+                statistics, is on <Link to="/compare/arms">Compare</Link>. Until an arm&rsquo;s add-on fires, its positions
+                are the same as control&rsquo;s, an expected collision rather than a defect: read the fires below first.
+              </p>
+            </section>
             <FireCountsCard
               counts={data?.fireCounts ?? []}
               correlationCaveat={

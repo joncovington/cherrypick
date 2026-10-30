@@ -1,13 +1,10 @@
-import type { BwbArmCell, BwbFireCount, BwbOpenPosition, BwbPayload } from "@console/shared";
-import { Card, DataCard, PnlCell, SortTh, fmtMoney, fmtNum, fmtPct, sortRows, useSort } from "../../components/DataTable";
+import type { BwbFireCount, BwbOpenPosition, BwbPayload } from "@console/shared";
+import { Card, DataCard, SortTh, fmtMoney, fmtNum, fmtPct, sortRows, useSort } from "../../components/DataTable";
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
-import { SignedBar } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
 import { fmtCash, fmtPrice } from "../../lib/format";
 import { useState } from "react";
 import { ArmSelect } from "../../components/ArmSelect";
-
-const CORE_BOOKS = ["control", "delta", "bounce", "flip"];
 
 function strikeSet(near: number | null, body: number | null, far: number | null): string {
   if (near === null && body === null && far === null) return "—";
@@ -220,73 +217,6 @@ export function FireCountsCard({ counts, correlationCaveat, updatedAt }: { count
         </div>
       )}
       <p className="integrity-note">{correlationCaveat}</p>
-    </Card>
-  );
-}
-
-interface BookTotals {
-  arm: string;
-  positions: number;
-  net: number | null;
-  wins: number;
-}
-
-function totalsByBook(arms: BwbArmCell[]): BookTotals[] {
-  const map = new Map<string, BookTotals>();
-  for (const cell of arms) {
-    const t = map.get(cell.arm) ?? { arm: cell.arm, positions: 0, net: null, wins: 0 };
-    t.positions += cell.positions;
-    if (cell.netPnl !== null) t.net = (t.net ?? 0) + cell.netPnl;
-    if (cell.winRate !== null) t.wins += cell.winRate * cell.positions;
-    map.set(cell.arm, t);
-  }
-  return [...map.values()].sort((a, b) => {
-    const ia = CORE_BOOKS.indexOf(a.arm);
-    const ib = CORE_BOOKS.indexOf(b.arm);
-    if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-    return a.arm.localeCompare(b.arm);
-  });
-}
-
-/** Net-by-arm, over CLOSED positions -- `analytics.headline()`. */
-export function BookComparison({ data, updatedAt }: { data: BwbPayload | undefined; updatedAt?: number }) {
-  const arms = data?.arms ?? [];
-  const totals = totalsByBook(arms);
-  const maxAbs = Math.max(1, ...totals.map((t) => Math.abs(t.net ?? 0)));
-  const hasClosed = arms.length > 0;
-
-  return (
-    <Card title="net by arm" collapseKey="bwb-arms" updatedAt={updatedAt}>
-      {!hasClosed ? (
-        <p className="muted">
-          no completed positions yet -- results fill in as the daily ladder settles at expiry
-          {data !== undefined && data.openCount > 0 && (
-            <> ({data.openCount} open position{data.openCount === 1 ? "" : "s"} so far)</>
-          )}
-        </p>
-      ) : (
-        <div className="table-scroll">
-        <table className="data-table num-from-1">
-          <tbody>
-            {totals.map((t) => (
-              <tr key={t.arm}>
-                <td>{t.arm}</td>
-                <td style={{ width: "50%" }}>
-                  <SignedBar value={t.net ?? 0} maxAbs={maxAbs} compact />
-                </td>
-                <td>
-                  <PnlCell v={t.net} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
-      )}
-      <p className="integrity-note">
-        Until an arm's add-on actually fires, its positions are byte-identical to control's -- an expected
-        collision, not a defect. Read fires beside this table, not instead of it.
-      </p>
     </Card>
   );
 }
