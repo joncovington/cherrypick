@@ -797,7 +797,7 @@
       "id": 26,
       "study": "item26",
       "title": "A dip-buying share ladder on leveraged funds: buy 7% under the previous close, sell each lot 4% up",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "dip-buy",
       "side": "bullish",
@@ -835,15 +835,19 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#26-a-dip-buying-share-ladder-on-leveraged-funds-buy-7-under-the-previous-close-sell-each-lot-4-up",
-      "results": null,
+      "results": [
+        "{home}/data/research/item26/results.json",
+        "{home}/data/research/item26/intraday.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "no tested edge; the ladder module is built paper first, its tab says so, the pilot is sized from drawdown"
     },
     {
       "id": 27,
       "study": "item27",
       "title": "Getting the share ladder out of multi-year holds: averaging down, a decaying target, a time stop, a trend check, a confirmation",
-      "status": "declared",
+      "status": "passed",
       "legacy": false,
       "setup": "dip-buy",
       "side": "bullish",
@@ -877,15 +881,18 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#27-getting-the-share-ladder-out-of-multi-year-holds-averaging-down-a-decaying-target-a-time-stop-a-trend-check-a-confirmation",
-      "results": null,
+      "results": [
+        "{home}/data/research/item27/results.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "decay (104% to day 30, breakeven to day 120, 95% after) becomes the ladder module's default exit; the other five arms fail"
     },
     {
       "id": 28,
       "study": "item28",
       "title": "The share ladder before 2011 and on single stocks: daily-reset funds rebuilt from their 1x history",
-      "status": "declared",
+      "status": "no_verdict",
       "legacy": false,
       "setup": "dip-buy",
       "side": "bullish",
@@ -911,9 +918,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#28-the-share-ladder-before-2011-and-on-single-stocks-daily-reset-funds-rebuilt-from-their-1x-history",
-      "results": null,
+      "results": [
+        "{home}/data/research/item28/results.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "no arm passed item 26, so all reported; the default list keeps SSO alone among the funds, caps from pre-2011 drawdowns"
     }
   ],
   "rule_changes": []
