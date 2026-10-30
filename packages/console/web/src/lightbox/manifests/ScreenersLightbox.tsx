@@ -2,7 +2,7 @@ import { EarningsCalendarTab } from "../../pages/Screeners/EarningsCalendarTab";
 import { EarningsRecordTab } from "../../pages/Screeners/EarningsRecordTab";
 import { CreditSpreadTab } from "../../pages/Screeners/CreditSpreadTab";
 import { NeedsDolt } from "../../pages/Screeners/NeedsDolt";
-import { OwnListTab } from "../../pages/Screeners/OwnListTab";
+import { IncomeListsTab } from "../../pages/Screeners/OwnListTab";
 import { SignalBoardTab } from "../../pages/Screeners/SignalBoardTab";
 import { SkateTab } from "../../pages/Screeners/SkateTab";
 import { ValuationTab } from "../../pages/Screeners/ValuationTab";
@@ -15,8 +15,8 @@ import type { SlideDef } from "../types";
  */
 export const slides: SlideDef[] = [
   // Our own lists only: the vendor's subscription ended 2026-10-24, and its saved days are no longer shown.
-  { id: "short-puts", label: "short puts", render: () => <OwnListTab list="short-puts" /> },
-  { id: "covered-calls", label: "covered calls", render: () => <OwnListTab list="covered-calls" /> },
+  // One tab since 2026-10-30, with a put/call switch; `short-puts` and `covered-calls` land on it.
+  { id: "income", label: "puts & calls", render: () => <IncomeListsTab /> },
   // The setups are read from the history store, which Dolt fills.
   { id: "credit-spreads", label: "credit spreads", render: () => (
       <NeedsDolt slide="credit-spreads" label="credit spreads">

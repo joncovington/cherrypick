@@ -115,6 +115,28 @@ export function WidthTable({ r, colSpan }: { r: CreditSpreadRow; colSpan: number
   return (
     <tr className="row-detail">
       <td colSpan={colSpan}>
+        {/* Out of the row since 2026-10-30 (docs/console-review-plan.md batch 3); the widths below
+            carry each width's credit % and liquidity, the pick's included. */}
+        <table className="data-table secondary-cells" aria-label={`${r.symbol} setups and context`}>
+          <thead>
+            <tr>
+              <th title="The setups behind the row, and the close each entered on">Setups</th>
+              <th className="num">Price</th>
+              <th className="num" title={FAIR_TITLE}>
+                Vs fair
+              </th>
+              <th title="Call spreads: the broker's ex-dividend date against expiry">Ex-div</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <SetupsCell r={r} />
+              <td className="num">{money(r.spot)}</td>
+              <FairCell fair={r.fair} />
+              <ExDividendCell r={r} />
+            </tr>
+          </tbody>
+        </table>
         <table className="data-table" aria-label={`${r.symbol} ${r.spread} spread widths`}>
           <thead>
             <tr>
@@ -217,7 +239,7 @@ const SORTS: Record<string, (r: CreditSpreadRow) => number | string | null> = {
   earnings: (r) => r.earningsDate,
 };
 
-const COLUMNS = 16;
+const COLUMNS = 10;
 
 /** The default selection: the user's original rule, which reads every row. */
 export const DEFAULT_SELECTION = "credit-share";
@@ -398,8 +420,6 @@ export function CreditSpreadTab() {
                 <th aria-label="Widths" />
                 <SortTh label="Symbol" k="symbol" sort={sort} />
                 <SortTh label="Spread" k="spread" sort={sort} title="A long setup is a put spread; its short mirror a call spread" />
-                <th title="The setups behind the row, and the close each entered on">Setups</th>
-                <SortTh label="Price" k="price" sort={sort} className="num" />
                 <th title="The standard monthly 30-45 days out">Expiry</th>
                 <SortTh label="Short" k="short" sort={sort} className="num" title="The option nearest 0.40 delta, within 0.05" />
                 <th className="num" title={`The pick: the widest listed long giving ${shareLabel} of the width at the working price`}>
@@ -407,14 +427,8 @@ export function CreditSpreadTab() {
                 </th>
                 <SortTh label="Width" k="width" sort={sort} className="num" />
                 <SortTh label="Credit" k="credit" sort={sort} className="num" title="Per share at the working price: halfway from the mid to the natural fill" />
-                <SortTh label="Credit %" k="creditPct" sort={sort} className="num" title="Credit ÷ width" />
                 <SortTh label="Max loss" k="maxLoss" sort={sort} className="num" title="Whole contract: (width − credit) × 100" />
-                <th className="num" title={FAIR_TITLE}>
-                  Vs fair
-                </th>
                 <SortTh label="Earnings" k="earnings" sort={sort} title="The next announcement, against this spread's expiry" />
-                <th title="Call spreads: the broker's ex-dividend date against expiry">Ex-div</th>
-                <th title="The leg bars on the picked spread as one order">Liquid</th>
               </tr>
             </thead>
             <tbody>
@@ -453,8 +467,6 @@ export function CreditSpreadTab() {
                         ) : null}
                       </td>
                       <td className={r.spread === "put" ? "pnl-pos" : "pnl-neg"}>{r.spread === "put" ? "bull put" : "bear call"}</td>
-                      <SetupsCell r={r} />
-                      <td className="num">{money(r.spot)}</td>
                       <td>
                         {shortDate(r.expiry)} <span className="muted">{r.dte}d</span>
                         {r.window === "45-60" ? (
@@ -471,7 +483,7 @@ export function CreditSpreadTab() {
                         {right} <span className="muted">{Math.abs(r.short.delta).toFixed(2)}</span>
                       </td>
                       {r.pick === null ? (
-                        <td colSpan={5} className="muted" title="No listed width gives that share of the width at the working price; open the row for each width's credit">
+                        <td colSpan={4} className="muted" title="No listed width gives that share of the width at the working price; open the row for each width's credit">
                           no {shareLabel} width
                         </td>
                       ) : (
@@ -482,14 +494,10 @@ export function CreditSpreadTab() {
                           </td>
                           <td className="num">{money(r.pick.width)}</td>
                           <td className="num">{credit(r.pick.credit)}</td>
-                          <td className="num">{pct(r.pick.creditWidth)}</td>
                           <td className="num">{contract(r.pick.maxLoss)}</td>
                         </>
                       )}
-                      <FairCell fair={r.fair} />
                       <EarningsCell r={r} />
-                      <ExDividendCell r={r} />
-                      <LiquidCell p={r.pick} />
                     </tr>
                     {isOpen && <WidthTable r={r} colSpan={COLUMNS} />}
                   </Fragment>
