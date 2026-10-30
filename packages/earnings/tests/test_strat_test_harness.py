@@ -79,7 +79,10 @@ def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monk
     # from that session XYZ would be refused. The gate has its own tests (test_entry_universe.py).
     monkeypatch.setattr(runner.universe, "refusal", lambda *a: None)
 
-    config = {"close_quote_retries": 0, "strategies": {"broken_wing_butterfly": {}}}
+    config = {
+        "close_quote_retries": 0,
+        "strategies": {name: {} for name in runner.rank_strategies._REGISTRY_BY_NAME},
+    }
     monkeypatch.setattr(runner.rank_strategies, "_ensure_dolt_running", lambda: True)
     monkeypatch.setattr(runner.rank_strategies, "_verify_tastytrade_connection", lambda: True)
     monkeypatch.setattr(runner.scanner, "_load_config", lambda *a, **k: config)
@@ -493,3 +496,35 @@ def test_avg_sold_iv_returns_none_with_no_matching_quote():
     legs = [{"symbol": "SC", "action": "Sell to Open"}]
     quotes = {}
     assert runner._avg_sold_iv(legs, quotes) is None
+
+
+# --- a registered strategy with no config block ------------------------------------
+
+
+def test_the_entry_run_refuses_a_config_missing_a_registered_strategy(monkeypatch):
+    """An install whose config predates a strategy (expected_move_butterfly, 2026-10-13) used to
+    fail every symbol in the scan with KeyError and still report ok. The run now refuses up front,
+    naming the block, before a calendar is fetched."""
+    blocks = {name: {} for name in runner.rank_strategies._REGISTRY_BY_NAME}
+    del blocks["expected_move_butterfly"]
+    monkeypatch.setattr(runner.rank_strategies, "_ensure_dolt_running", lambda: True)
+    monkeypatch.setattr(runner.rank_strategies, "_verify_tastytrade_connection", lambda: True)
+    monkeypatch.setattr(runner.scanner, "_load_config", lambda *a, **k: {"strategies": blocks})
+
+    def calendar(*a, **k):
+        raise AssertionError("the scan began")
+
+    monkeypatch.setattr(runner.scanner, "fetch_entry_window_calendar", calendar)
+
+    result = runner.cmd_run_entries(argparse.Namespace())
+
+    assert result["ok"] is False
+    assert "expected_move_butterfly" in result["error"]
+    assert "config.example.json" in result["error"]
+
+
+def test_the_shipped_example_has_a_block_for_every_registered_strategy():
+    """The example is what the refusal tells an install to copy from, and what a new install runs."""
+    example = runner.scanner._paths._PKG_ROOT / "config" / "config.example.json"
+    config = json.loads(example.read_text(encoding="utf-8"))
+    assert runner.rank_strategies.missing_strategy_blocks(config) == []

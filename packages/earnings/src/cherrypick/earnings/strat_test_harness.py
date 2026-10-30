@@ -600,6 +600,16 @@ def cmd_run_entries(args) -> dict:
         return {"ok": False, "error": "tastytrade connection failed"}
 
     config = scanner._load_config()
+    # Refuse the run rather than let every symbol fail in the scan (rank_strategies.
+    # missing_strategy_blocks). Checked here, not in _load_config: closes and status load the same
+    # config, and a strategy added upstream must not stop an install's open positions being managed.
+    missing = rank_strategies.missing_strategy_blocks(config)
+    if missing:
+        return {
+            "ok": False,
+            "error": f"config has no block for strategies {', '.join(missing)}: "
+            "copy each from packages/earnings/config/config.example.json",
+        }
 
     scan_date = str(_date.today())
     calendar_timeout = config.get("dolt_calendar_timeout_seconds", 30)
