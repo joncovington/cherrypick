@@ -1314,7 +1314,9 @@ def _build_snapshot(cfg: dict, symbol: str):
         # After the settlement time a 0DTE menu cannot be priced (no time left for delta), and none
         # is needed: nothing can be entered. The tick still runs, to settle what is held. On
         # 2026-10-29 every tick after 16:00 failed here, so a held side sat open past the close.
-        settle_min = paper._time_to_minutes(paper.load_base_config().get("expiration_settlement_time", "16:00"))
+        settle_min = paper._time_to_minutes(
+            paper.load_base_config().get("expiration_settlement_time", "16:00")
+        )
         if paper._time_to_minutes(now_et) < settle_min:
             return None, cand_err
         candidates, leg_quotes = [], {}
