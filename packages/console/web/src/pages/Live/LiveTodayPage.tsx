@@ -1,11 +1,13 @@
 import { Link } from "react-router-dom";
-import type { LiveTodayLoop, LiveTodayPayload } from "@console/shared";
+import type { LiveTodayLoop, LiveTodayPayload, ManagePayload } from "@console/shared";
 import { DataCard, PnlCell, fmtNum } from "../../components/DataTable";
 import { Cells, headersOf, useColumns, type Column } from "../../components/columns";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { fmtMoney } from "../../lib/format";
 import { useLiveToday } from "../../lib/useLiveToday";
 import { Tile } from "../Flies/PerformanceTab";
+import { useManage } from "./ManagePage";
+import { WhatToDoList, todoList } from "./WhatToDo";
 
 /**
  * The Live page's `today` tab (2026-10-15): every live loop's day on one page -- what is armed,
@@ -190,7 +192,7 @@ function loopColumns(working: boolean): Column<LiveTodayLoop>[] {
   ];
 }
 
-export function LiveTodayView({ data: d }: { data: LiveTodayPayload }) {
+export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; manage?: ManagePayload }) {
   const s = d.suite;
   const cols = useColumns(loopColumns(anyWorking(d.loops)));
   return (
@@ -242,20 +244,8 @@ export function LiveTodayView({ data: d }: { data: LiveTodayPayload }) {
         </TileGrid>
       </section>
 
-      <section className="card">
-        <h2>needs a person</h2>
-        {d.attention.length === 0 ? (
-          <p className="muted">Nothing needs a person: no orphaned or held orders, no tripped breaker, no overdue settlement, broker contact ok.</p>
-        ) : (
-          <ul style={{ margin: 0, paddingLeft: "1.1rem" }}>
-            {d.attention.map((a, i) => (
-              <li key={`${a.loop}-${a.kind}-${i}`}>
-                <Link to={a.to}>{a.loop}</Link> <span className="pnl-neg">{a.kind.replace(/_/g, " ")}</span> — {a.detail}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {/* "needs a person" became the first part of what to do today (2026-10-30). */}
+      <WhatToDoList items={todoList(d, manage)} evaluated={manage?.session ?? null} />
 
       <DataCard
         title={`Live loops — ${d.session}`}
@@ -294,7 +284,8 @@ export function LiveTodayView({ data: d }: { data: LiveTodayPayload }) {
 
 export function LiveTodayPage() {
   const { data, isLoading, isError } = useLiveToday();
+  const manage = useManage(undefined);
   if (isError) return <p className="pnl-neg">The live loops could not be read.</p>;
   if (isLoading || data === undefined) return <p className="muted">loading the live loops…</p>;
-  return <LiveTodayView data={data} />;
+  return <LiveTodayView data={data} manage={manage.data} />;
 }

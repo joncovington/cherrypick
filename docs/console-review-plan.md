@@ -210,8 +210,9 @@ rename it `alerts`.
    - System `modules` into health; Config `dev` into timing (landed 2026-10-30, #686)
 3. **Cards for wide tables.** Trimmed in BOTH views (the user's choice, 2026-10-30; the console
    defaults to detail): a short row, and the rest as `secondary` columns in the row's expanded line.
-   - Live positions (landed 2026-10-30). The income candidates are left as they are: six columns in
-     simple view, and a "top three" would rank a list kept by symbol because nothing has an edge
+   - Live positions (landed 2026-10-30), and the income candidates on Live portfolio (twelve
+     columns in detail): their quantity, price, theta, delta and next cap went to the
+     expanded line. No "top three": it would rank a list kept by symbol because nothing has an edge
    - Screeners: income lists merged into one "puts & calls" tab and trimmed, credit spreads trimmed
      (landed, #690). Skate as a lens on the income list is still open: a redesign, not a trim
    - Compare arms (landed, #691: 9 columns, gross/costs/net kept together) and Charts setups
@@ -229,7 +230,11 @@ rename it `alerts`.
    - the rail: MEIC 1, BWB 2, Earnings 3, Experiments 4, fixed (an off module's digit does nothing);
      Config is `g o`; the Suite header goes when Config is all it would hold
 5. **Fill the gaps:**
-   - on Live: premium-income pace, delta and theta bands over time, and "what to do today" (actions, candidates that fit the room, expiring and earnings exposure)
+   - on Live: "what to do today" (landed 2026-10-30) on the today tab, replacing "needs a person":
+     a live loop needing a person, then manage's actions in its own order with its reasons, held
+     positions expiring within a week or reporting before their short expires, and how many
+     income trades fit the room. It never says "nothing to do" for positions it has not read
+   - on Live, still open: premium-income pace, delta and theta bands over time
    - MEIC live against paper
    - the user's short strikes against the GEX walls
 

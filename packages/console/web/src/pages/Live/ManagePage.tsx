@@ -94,7 +94,7 @@ function heldForCall(t: ManageTrade): boolean {
 }
 
 // manage's own ranking (evaluate.PRIORITY), so the action column sorts by urgency, not alphabet.
-const ACTION_PRIORITY: Record<string, number> = {
+export const ACTION_PRIORITY: Record<string, number> = {
   ROLL_FOR_CREDIT: 0,
   CLOSE: 1,
   TAKE_PROFIT: 2,

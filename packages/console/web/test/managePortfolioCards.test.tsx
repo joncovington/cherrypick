@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ReactElement } from "react";
 import type { ManageCandidate, ManageCandidateRoom, ManageCandidates, ManagePortfolio } from "@console/shared";
-import { IncomeCard, netPrice } from "../src/pages/Live/IncomeCard";
+import { FIT_COLUMNS, IncomeCard, netPrice } from "../src/pages/Live/IncomeCard";
+import { SecondaryCells, secondaryOf } from "../src/components/columns";
 import { BandDial, PortfolioCards, placesApart } from "../src/pages/Live/PortfolioCards";
 import { BuyingPowerCard, LadderCard, RiskGraphCard, RiskMatrixCard, ScenarioCards } from "../src/pages/Live/ScenarioCards";
 import { aligned, inView, tables } from "./viewTables";
@@ -466,7 +467,8 @@ describe("IncomeCard", () => {
     expect(html).toContain("2.47 cr"); // the per-share net price, marked
     expect(html).toContain("+$494.00"); // cash: 2 contracts x $247 received
     expect(html).toContain("$506.00"); // risk: 2 x $253
-    expect(html).toContain("per-trade risk");
+    // The next cap is in the row's expanded line since 2026-10-30.
+    expect(renderToString(<SecondaryCells cols={secondaryOf(FIT_COLUMNS)} row={candidate()} />)).toContain("per-trade risk");
     expect(html).toContain("re-quote before sending");
     expect(html).toContain("120 earnings inside the trade");
     // An earnings date nobody knows is a chip on the name; a known one (after expiry, or the trade
@@ -703,7 +705,7 @@ describe("the portfolio tab, simple and detail", () => {
     expect(detail).toContain("tile-grid-5");
   });
 
-  it("the income tables drop buying power in both views and keep qty, price, theta, delta and the next cap to detail", () => {
+  it("the income tables drop buying power, and keep qty, price, theta, delta and the next cap to the expanded line, in both views", () => {
     const c = income({ fits: [candidate()], waiting: [candidate({ ifRoom: room() })], waitingTotal: 1 });
     const simple = tables(inView("simple", () => render(<IncomeCard c={c} />)));
     const detail = tables(inView("detail", () => render(<IncomeCard c={c} />)));
@@ -713,16 +715,12 @@ describe("the portfolio tab, simple and detail", () => {
       expect(aligned(t)).toBe(true);
     }
     expect(simple[1]!.headers).toContain("BP after");
-    for (const h of ["qty", "price", "θ / day"]) {
-      expect(simple[0]!.headers).not.toContain(h);
-      expect(simple[1]!.headers).not.toContain(h);
-      expect(detail[0]!.headers).toContain(h);
-      expect(detail[1]!.headers).toContain(h);
+    // Out of the row in BOTH views since 2026-10-30: the console opens in detail.
+    for (const h of ["qty", "price", "θ / day", "Δ SPY sh", "next stops at"]) {
+      for (const t of [...simple, ...detail]) expect(t.headers).not.toContain(h);
     }
-    for (const h of ["Δ SPY sh", "next stops at"]) {
-      expect(simple[0]!.headers).not.toContain(h);
-      expect(detail[0]!.headers).toContain(h);
-    }
+    const line = renderToString(<SecondaryCells cols={secondaryOf(FIT_COLUMNS)} row={candidate()} />);
+    for (const h of ["qty", "price", "θ / day", "Δ SPY sh", "next stops at"]) expect(line).toContain(h);
   });
 
   it("hides a candidate under the remembered premium floor and says how many", () => {
