@@ -11,7 +11,7 @@ import type {
 } from "@console/shared";
 import { dismissAdvisorProposal, killAdvisorExperiment, useAdvisor } from "../../lib/api";
 import { useFeatures } from "../../lib/useFeatures";
-import { isModuleVisible } from "../../lib/visibility";
+import { isAdvisorPaused, isModuleVisible } from "../../lib/visibility";
 import { otherFields, paramRows, scalar } from "./proposalPayload";
 import { TabStrip } from "../../components/ScopeBar";
 import { SortTh, sortRows, useSort } from "../../components/DataTable";
@@ -822,6 +822,20 @@ export function ExperimentRollup({ experiments }: { experiments: AdvisorExperime
   );
 }
 
+/** `advisor.paused` is on: what that means here, in the advisor's own rules (packages/advisor/CLAUDE.md). */
+export function PausedNotice() {
+  return (
+    <section className="card" role="status" style={{ borderLeft: "3px solid var(--warn)", marginBottom: 12 }}>
+      <h2>The advisor is paused</h2>
+      <p className="muted">
+        A new experiment is admitted queued and none activates; the model cannot change or end a running one, and a
+        kill it proposes is recorded, not acted on. Lifting the pause activates nothing: each held experiment waits
+        for <code>activate &lt;id&gt;</code>. The module pages hide their advisor tabs until then.
+      </p>
+    </section>
+  );
+}
+
 export function AdvisorPage() {
   const [tab, setTab] = useState<Tab>("today");
   const [session, setSession] = useState<string | undefined>(undefined);
@@ -881,6 +895,8 @@ export function AdvisorPage() {
             ))}
         </select>
       </div>
+
+      {isAdvisorPaused(features) && <PausedNotice />}
 
       {actionError !== null && <p className="pnl-neg">{actionError}</p>}
 

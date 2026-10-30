@@ -254,12 +254,18 @@ export function MeicLightbox({ slide }: { slide: string }) {
       ),
     },
     { id: "regime", label: MEIC_LABEL.regime, render: () => <RegimeCutsTab module="meic" arm={profile} /> },
+    // One tab since 2026-10-30 (docs/console-review-plan.md, batch 2): the suite's calibration reading
+    // every module shares, then MEIC's own performance view, which was the `calibration` tab.
     {
-      id: "calibration",
-      label: MEIC_LABEL.calibration,
-      render: () => <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />,
+      id: "performance",
+      label: MEIC_LABEL.performance,
+      render: () => (
+        <>
+          <PerformanceSlide module="meic" mode={mode} arm={profile} />
+          <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />
+        </>
+      ),
     },
-    { id: "performance", label: MEIC_LABEL.performance, render: () => <PerformanceSlide module="meic" mode={mode} arm={profile} /> },
     { id: "analysis", label: MEIC_LABEL.analysis, render: () => <AnalysisSlide module="meic" mode={mode} arm={profile} /> },
     { id: "costs", label: MEIC_LABEL.costs, render: () => <ModuleCosts module="meic" mode={mode} era={era} arm={profile} /> },
     { id: "advisor", label: MEIC_LABEL.advisor, render: () => <AdvisorSlide module="meic" /> },

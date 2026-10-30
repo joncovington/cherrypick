@@ -116,7 +116,7 @@ export const MEIC_SLIDES = [
   { id: "sessions", label: "sessions" },
   { id: "exits", label: "exits" },
   { id: "regime", label: "regime cuts" },
-  { id: "calibration", label: "calibration" },
+  // `calibration` folded into `performance` 2026-10-30; the old id lands there (legacy below).
   { id: "performance", label: "performance" },
   { id: "analysis", label: "analysis" },
   { id: "costs", label: "costs" },
@@ -446,10 +446,10 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
       { label: "today", ids: ["session", "summary", "forest", "attempts"] },
       { label: "tables", ids: ["positions", "history", "sessions"] },
       { label: "evidence", ids: ["exits", "regime"] },
-      { label: "study", ids: ["calibration", "performance", "analysis", "costs", "advisor"] },
+      { label: "study", ids: ["performance", "analysis", "costs", "advisor"] },
       { label: "help", ids: ["guide"] },
     ],
-    legacy: { now: "session", trades: "history" },
+    legacy: { now: "session", trades: "history", calibration: "performance" },
   },
   bwb: {
     slides: BWB_SLIDES,

@@ -197,10 +197,15 @@ rename it `alerts`.
      yet" instead of showing empty headers
 2. **Fold the duplicates:**
    - every module: summary + session into one today tab
-   - module `advisor` and `arms` tabs leave the module pages
-   - MEIC calibration into performance
-   - Flow 6 tabs to 3, GEX 4 to 2
-   - System `modules` into health; Config `dev` into timing
+   - module `advisor` tabs leave the module pages while the advisor is paused (`advisor_paused` in
+     the suite's features, landed 2026-10-30, with decision 3)
+   - module `arms` tabs **stay** (revised 2026-10-30): beside the net-by-arm table they hold each
+     arm's guide, Contango's NAV comparison, Curve's flip divergence and BWB's fire counts, none of
+     which Compare shows. Only BWB's net-by-arm card, a repeat of the summary's, gave way to a
+     pointer; PMCC's and Calendars' are reshaped with the Experiments page (batch 4)
+   - MEIC calibration into performance (landed 2026-10-30)
+   - Flow 6 tabs to 3, GEX 4 to 2 (landed 2026-10-30, #686)
+   - System `modules` into health; Config `dev` into timing (landed 2026-10-30, #686)
 3. **Cards for wide tables:**
    - Live positions and income candidates
    - Screeners: income lists merged and trimmed, credit spreads, skate as a lens

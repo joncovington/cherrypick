@@ -9,7 +9,10 @@ import {
   useSystemModules,
   useSystemSupervisor,
 } from "../../lib/api";
+import { Link } from "react-router-dom";
 import { ModuleCellLink } from "../../components/ModuleLink";
+import { useFeatures } from "../../lib/useFeatures";
+import { isAdvisorPaused } from "../../lib/visibility";
 import { SortTh, sortRows, useSort } from "../../components/DataTable";
 
 /**
@@ -183,6 +186,8 @@ function FindingsCard({ title, findings: all, note }: { title: string; findings:
 
 export function HealthTab() {
   const { data, isError } = useSystemHealth();
+  // A paused advisor is a standing state of the suite, so health says so (2026-10-30).
+  const paused = isAdvisorPaused(useFeatures());
   if (data === undefined) return <Loading isError={isError} />;
   // Problems first (the server's order), then the daemon itself ahead of what it runs.
   const supervisorFindings = data.watchdog.findings
@@ -226,6 +231,14 @@ export function HealthTab() {
       />
 
       <div className="cards cards-wide">
+        {paused && (
+          <Section title="advisor">
+            <p>
+              <span className="chip chip-warn">paused</span> Nothing new activates and the model cannot change a running
+              experiment. <Link to="/advisor">The Advisor page</Link> says what is held and how to release it.
+            </p>
+          </Section>
+        )}
         <Section title="notifications" note={data.notify.webhookNote}>
           <dl className="system-dl">
             <dt>channels</dt>

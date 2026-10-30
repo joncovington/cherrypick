@@ -52,6 +52,11 @@ export function isFeatureOn(name: string, f: Features): boolean {
   return !known(f) || f.features[name] !== false;
 }
 
+/** `advisor.paused`, only when the suite said so: an unread reply is not a pause. */
+export function isAdvisorPaused(f: Features): boolean {
+  return known(f) && f.features["advisor_paused"] === true;
+}
+
 /**
  * Whether a page in the rail (a module id, or a suite surface) is shown.
  *
@@ -110,7 +115,11 @@ export function isSlideVisible(module: string, slide: string, f: Features, inUse
   // A hidden fail-closed page has no tabs either, so neither the rail nor `j`/`k` can name one.
   if (isFailClosed(module)) return isModuleVisible(module, f);
   if (FAIL_CLOSED_SLIDES.get(module)?.has(slide)) return known(f) && f.features["backtest"] === true;
-  if (slide === "advisor" && isTradingModuleId(module)) return isFeatureOn("advisor", f);
+  // A module's advisor tab also goes while the advisor is paused (2026-10-30): nothing new runs, and
+  // the Advisor page says why. Only an explicit `advisor_paused: true` hides it.
+  if (slide === "advisor" && isTradingModuleId(module)) {
+    return isFeatureOn("advisor", f) && !isAdvisorPaused(f);
+  }
   if (module === "charts" && (slide === "technicals" || slide === "setups")) return isFeatureOn("technicals", f);
   // A Live tab named for a module (flies, meic) follows that module's live master switch, but only
   // once that loop is idle. A switch turned off mid-session leaves a position open, an order
