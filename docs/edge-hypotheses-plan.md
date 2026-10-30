@@ -328,6 +328,7 @@ it.
 - **Held-out test declared 2026-10-28 as item 24**, after the B5 slice report on MEIC paper found
   entry hour the one dimension that separates. Live already trades 14:00; item 24 asks which
   afternoon slot, with two morning slots reported beside it for this hypothesis's own read.
+- **Closed 2026-10-29 by item 24's fail:** no afternoon slot beats 14:00, and mornings trail it.
 
 ### 3. The mid-morning ATM iron fly
 
@@ -1635,6 +1636,19 @@ of it is run, and run after item 23's verdict.*
     2026-10-12 read before the change.
   - **A fail or no verdict:** live stays at 14:00; the afternoon slot is closed as a lever.
     Hypothesis 2's morning read is recorded either way.
+- **Result (2026-10-29): fail, all four slots; live stays at 14:00 and the afternoon slot is closed
+  as a lever.** Provisional, as declared, at 16 delta (item 23's verdict). In the design window
+  12:00, 12:30 and 13:00 all trail 14:00, none significantly; 12:00 and 13:00 lose on their own and
+  12:30 does not survive 1.5× fees. 13:30 is the one slot ahead of 14:00, far short of the t bar
+  and behind it in the second half, which matches the pm-200 replay's read of 13:30. The B5 paper
+  read (12:00 and 13:00 ahead) does not hold over history. **Hypothesis 2's morning read:** both
+  morning references trail 14:00, so mornings are worse than the afternoon. Every figure is in the
+  local result
+  (`~/.cherrypick/data/backtest/results/research/item24/study-design-2022-05-16-2025-06-30-d16.json`).
+- **Holdout refused on its first run (2026-10-29), re-queued.** The runner refused the window
+  because `control`, which runs beside every arm and is never judged, was spent there by item 23.
+  The runner now exempts `control` from the spent check; the consistency check is reported here
+  when it runs, and cannot change the verdict.
 
 ### 25. The skate put's expiry and management: 14 days against the monthly, held, halved or rolled
 
@@ -1734,6 +1748,15 @@ that test. Declared here before any of it is fetched or run.*
   - **A fail or no verdict:** the monthly stays the skate default, the tab's per-day ranking gets a
     note that it is not a tested edge, and rolling a tested put is recorded as payoff shaping that
     did not pay.
+- **Result (2026-10-29): no verdict, all five arms; the monthly stays the skate default.** The base,
+  `m45-tp50`, falls under the 300-trade floor in the design window: a 45-60 day put crosses a report
+  on most entry days, so the earnings rule leaves it few trades. Without the floor the answer would
+  not change: no arm's paired difference comes near the t bar in the design. In the holdout, which
+  counts only after a design pass, the weekly arms trail the monthly and the two other monthly arms
+  lean ahead on too few trades. The Skate tab's best-expiry ranking now says it is not a tested
+  edge, the wheel view's `ROLL_OR_CLOSE` is unchanged, and rolling a tested put is recorded as
+  payoff shaping that did not pay. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item25/results.json`).
 - **Clarified 2026-10-28, while building the replay, before any fetch or run**
   (`scripts/skate_expiry_item25.py`). Where the declaration was silent:
   - **The roll arm keeps the $0.03 buy-back.** The educator places it at the fill and rolls only
