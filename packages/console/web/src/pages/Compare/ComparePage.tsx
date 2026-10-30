@@ -239,10 +239,12 @@ function ModuleSection({
   onSort: (key: string) => void;
   onOpen: (id: string) => void;
 }) {
-  const own = columns.filter((c) => c.group === undefined);
-  const vs = columns.filter((c) => c.group === "vs");
+  const row = columns.filter((c) => c.secondary !== true);
+  const secondary = columns.filter((c) => c.secondary === true);
+  const own = row.filter((c) => c.group === undefined);
+  const vs = row.filter((c) => c.group === "vs");
   const arms = sortArms(m.arms, sortKey, sortDir, columns);
-  const span = 1 + columns.length;
+  const span = 1 + row.length;
 
   const th = (id: string, header: string, title: string, sortable: boolean, num: boolean) => {
     const active = sortKey === id;
@@ -296,7 +298,7 @@ function ModuleSection({
                   </tr>
                   <tr>
                     {th(ARM_COL, "arm", "the configured variant, run as its own portfolio; select one for its per-trade net histogram", true, false)}
-                    {columns.map((c) => th(c.id, c.header, c.title, c.sort !== undefined, c.num === true))}
+                    {row.map((c) => th(c.id, c.header, c.title, c.sort !== undefined, c.num === true))}
                   </tr>
                 </thead>
                 <tbody>
@@ -320,8 +322,8 @@ function ModuleSection({
                             {a.experiment_status !== null && <span className="muted cmp-sub"> experiment {a.experiment_status}</span>}
                             {note !== "" && <div className="muted cmp-sub">{note}</div>}
                           </td>
-                          {columns.map((c) => (
-                            <td key={c.id} className={c.num === true ? "num" : undefined}>
+                          {row.map((c) => (
+                            <td key={c.id} className={c.num === true ? "num" : undefined} data-col={c.id}>
                               {c.render(a)}
                             </td>
                           ))}
@@ -329,6 +331,26 @@ function ModuleSection({
                         {open && (
                           <tr className="cmp-hist-row">
                             <td colSpan={span}>
+                              <table className="data-table secondary-cells">
+                                <thead>
+                                  <tr>
+                                    {secondary.map((c) => (
+                                      <th key={c.id} title={c.title} className={c.num === true ? "num" : undefined}>
+                                        {c.group === "vs" ? `vs control: ${c.header}` : c.header}
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  <tr>
+                                    {secondary.map((c) => (
+                                      <td key={c.id} className={c.num === true ? "num" : undefined} data-col={c.id}>
+                                        {c.render(a)}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                </tbody>
+                              </table>
                               <div className="cmp-hist-head muted">
                                 {a.arm}: net per closed trade, {a.trades} trade{a.trades === 1 ? "" : "s"}
                                 {a.first !== null && a.last !== null ? `, ${a.first} to ${a.last}` : ""}. Bars are toned by which side of

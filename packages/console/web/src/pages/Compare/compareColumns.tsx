@@ -22,6 +22,9 @@ export interface CompareColumn {
   /** Right-aligned figure. */
   num?: boolean;
   group?: "vs";
+  /** In the arm's expanded line, above its histogram, rather than the row (2026-10-30,
+   *  docs/console-review-plan.md batch 3). Gross, costs and net stay together in the row. */
+  secondary?: boolean;
 }
 
 /** Signed dollars, toned by sign; a null is an em dash with no tone. */
@@ -41,14 +44,14 @@ const dash = (v: number | null | undefined, f: (n: number) => string): string =>
 export function compareColumns(costsNote: string, levelPct: string): CompareColumn[] {
   return [
     {
-      id: "control",
+      id: "control", secondary: true,
       header: "control",
       title: "the arm this one is paired against: control in the module, an advised book's experiment base, <prefix>:control for a <prefix>:<arm>",
       sort: (a) => a.control,
       render: (a) => (a.control === null ? <span className="muted">—</span> : a.control),
     },
     { id: "trades", header: "trades", title: "closed trades in scope", sort: (a) => a.trades, render: (a) => fmtCount(a.trades), num: true },
-    { id: "sessions", header: "sessions", title: "sessions with at least one closed trade in scope", sort: (a) => a.sessions, render: (a) => fmtCount(a.sessions), num: true },
+    { id: "sessions", secondary: true, header: "sessions", title: "sessions with at least one closed trade in scope", sort: (a) => a.sessions, render: (a) => fmtCount(a.sessions), num: true },
     {
       id: "gross",
       header: "gross",
@@ -67,7 +70,7 @@ export function compareColumns(costsNote: string, levelPct: string): CompareColu
     },
     { id: "net", header: "net", title: "gross − costs: the P&L, whole-position dollars", sort: (a) => a.net, render: (a) => <SignedCash v={a.net} />, num: true },
     {
-      id: "win",
+      id: "win", secondary: true,
       header: "win rate",
       title: "share of closed trades whose net was above zero",
       sort: (a) => a.win_rate,
@@ -75,7 +78,7 @@ export function compareColumns(costsNote: string, levelPct: string): CompareColu
       num: true,
     },
     {
-      id: "dd",
+      id: "dd", secondary: true,
       header: "max dd",
       title: "maximum drawdown: the largest peak-to-trough fall of the per-SESSION net equity path, in dollars (sessions, not trades)",
       sort: (a) => a.max_drawdown,
@@ -83,7 +86,7 @@ export function compareColumns(costsNote: string, levelPct: string): CompareColu
       num: true,
     },
     {
-      id: "mean",
+      id: "mean", secondary: true,
       header: "mean / session",
       title: `mean net per session, with its ${levelPct} session-bootstrap interval beneath`,
       sort: (a) => a.mean_session_net,
@@ -96,7 +99,7 @@ export function compareColumns(costsNote: string, levelPct: string): CompareColu
       num: true,
     },
     {
-      id: "per_entry",
+      id: "per_entry", secondary: true,
       header: "net / entry",
       title: "net ÷ closed trades: what one entry made, so arms of different size read on one footing; beneath, entries per session",
       sort: (a) => a.net_per_entry ?? null,
@@ -127,7 +130,7 @@ export function compareColumns(costsNote: string, levelPct: string): CompareColu
       num: true,
     },
     {
-      id: "more",
+      id: "more", secondary: true,
       header: "sessions until",
       title: "further sessions until the arm's own interval would exclude zero, IF the observed mean and spread held — a projection, not a forecast; 0 when it already does",
       sort: (a) => a.sessions_to_exclude_zero,
@@ -158,7 +161,7 @@ export function compareColumns(costsNote: string, levelPct: string): CompareColu
       group: "vs",
     },
     {
-      id: "vs_per_entry",
+      id: "vs_per_entry", secondary: true,
       header: "diff / entry",
       title: `mean of (arm − control) net PER ENTRY per paired session, dollars, with its ${levelPct} session-bootstrap interval beneath: the dollar difference with the books' size taken out (a capped arm beside a 270-entry control reads as size in dollars)`,
       sort: (a) => a.vs_control?.per_entry?.mean_diff ?? null,
@@ -172,7 +175,7 @@ export function compareColumns(costsNote: string, levelPct: string): CompareColu
       group: "vs",
     },
     {
-      id: "vs_per_risk",
+      id: "vs_per_risk", secondary: true,
       header: "diff / $100 risk",
       title: `mean of (arm − control) net per $100 of recorded capital at risk per paired session, with its ${levelPct} session-bootstrap interval beneath; — where either ledger records no capital`,
       sort: (a) => a.vs_control?.per_100_risk?.mean_diff ?? null,
@@ -195,7 +198,7 @@ export function compareColumns(costsNote: string, levelPct: string): CompareColu
       group: "vs",
     },
     {
-      id: "vs_p",
+      id: "vs_p", secondary: true,
       header: "sign test",
       title: "exact two-sided binomial sign test p over the paired sessions, ties dropped; beneath, sessions the arm did better / the control did better",
       sort: (a) => a.vs_control?.sign_test_p ?? null,
@@ -216,7 +219,7 @@ export function compareColumns(costsNote: string, levelPct: string): CompareColu
       group: "vs",
     },
     {
-      id: "vs_more",
+      id: "vs_more", secondary: true,
       header: "sessions until",
       title: "further paired sessions until the difference's interval would exclude zero, IF the observed mean and spread held — a projection, not a forecast; 0 when it already does",
       sort: (a) => a.vs_control?.sessions_to_exclude_zero ?? null,
@@ -225,7 +228,7 @@ export function compareColumns(costsNote: string, levelPct: string): CompareColu
       group: "vs",
     },
     {
-      id: "vs_unpaired",
+      id: "vs_unpaired", secondary: true,
       header: "arm / ctl only",
       title: "sessions only the arm closed / only the control closed: counted, never filled with zero, and not in the paired figures",
       sort: (a) => (a.vs_control === null ? null : a.vs_control.arm_only_sessions + a.vs_control.control_only_sessions),

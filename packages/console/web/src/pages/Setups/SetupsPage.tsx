@@ -390,6 +390,9 @@ function compare(sort: Sort, dir: Dir) {
   };
 }
 
+/** The row's columns, the expander included (2026-10-30: 10 of what were 18). */
+const COLUMNS = 10;
+
 export function SetupsPage() {
   const [params, setParams] = useSearchParams();
   const { data, isLoading, isError } = useSetupsWatchlist();
@@ -583,30 +586,17 @@ export function SetupsPage() {
               <tr>
                 <th aria-label="read" />
                 {sortHead("symbol", "Symbol", undefined, false)}
-                <th>Setup</th>
-                <th>Side</th>
+                <th title="The setup, and its side">Setup</th>
                 <th>{view === "open" ? "Status" : "Event"}</th>
-                <th>{view === "open" ? "Entered" : "Date"}</th>
-                {sortHead("recent", "Ago", "Sessions since the event")}
-                {sortHead("price", view === "open" ? "Entry" : "Price", view === "open" ? "The entry close" : "The close that fired it")}
-                {sortHead("last", "Last", "The last close")}
+                {sortHead("recent", view === "open" ? "Entered" : "Date", "The event's date, and sessions since it; sorts by sessions since", false)}
                 {sortHead(
                   "move",
                   "Move",
                   "Close to close in the trade's direction: exit against entry, or the last close against entry while open; a fall is positive for a short. Not P&L: no fills, no costs.",
                 )}
-                {view === "open" ? (
-                  <th className="num" title="The pullback's target: the prior 20-session high (long) or low (short)">
-                    Target
-                  </th>
-                ) : (
-                  <th>Status</th>
-                )}
                 {sortHead("t1m", "1M", "Our 1-month trend score and label", false)}
-                {sortHead("t6m", "6M", "Our 6-month trend score and label", false)}
                 {sortHead("rs", "RS", "Relative strength 1-10: a decile across the whole US market of half the 1-month return plus the 6-month return. Not a comparison with SPY.")}
-                {sortHead("spy", "1M vs SPY", "The 21-session return less SPY's over the same sessions, in points")}
-                {sortHead("dvol", "$ Vol", "The 50-session median of close × volume, to the session before the entry")}
+                {tested && sortHead("dvol", "$ Vol", "The 50-session median of close × volume, to the session before the entry: what the tested rule filters on")}
                 {sortHead("support", "Support", "The nearest of our own support levels (swing lows in our bars) below the last close; sorts nearest first")}
                 {sortHead("resistance", "Resistance", "The nearest of our own resistance levels (swing highs in our bars) above the last close; sorts nearest first")}
               </tr>
@@ -648,28 +638,64 @@ export function SetupsPage() {
                         </span>
                       )}
                     </td>
-                    <td>{FAMILY_SHORT[r.family] ?? r.setupName}</td>
-                    <td className="muted">{r.side}</td>
-                    <td>{eventText(l)}</td>
-                    <td>{l.date}</td>
-                    <td className="num">{l.ago ?? "—"}</td>
-                    <td className="num">{money(l.price)}</td>
-                    <td className="num">{money(r.lastClose)}</td>
-                    <td className={`num ${tone(r.movePct)}`}>{pct(r.movePct)}</td>
-                    {view === "open" ? <td className="num">{money(r.target)}</td> : <td className="muted">{r.status}</td>}
-                    <TrendCell label={r.trend1mLabel} score={r.trend1m} />
-                    <TrendCell label={r.trend6mLabel} score={r.trend6m} />
-                    <td className="num">{r.rs ?? "—"}</td>
-                    <td className={`num ${tone(r.vsSpy1m)}`}>
-                      {r.vsSpy1m === null ? "—" : `${r.vsSpy1m > 0 ? "+" : r.vsSpy1m < 0 ? "−" : ""}${Math.abs(r.vsSpy1m).toFixed(1)} pts`}
+                    <td>
+                      {FAMILY_SHORT[r.family] ?? r.setupName} <span className="muted">· {r.side}</span>
                     </td>
-                    <td className="num">{dollars(r.dollarVolume)}</td>
+                    <td>{eventText(l)}</td>
+                    <td>
+                      {l.date} <span className="muted">{l.ago === null ? "" : `${String(l.ago)}d`}</span>
+                    </td>
+                    <td className={`num ${tone(r.movePct)}`}>{pct(r.movePct)}</td>
+                    <TrendCell label={r.trend1mLabel} score={r.trend1m} />
+                    <td className="num">{r.rs ?? "—"}</td>
+                    {tested && <td className="num">{dollars(r.dollarVolume)}</td>}
                     <LevelCell near={r.support} />
                     <LevelCell near={r.resistance} />
                   </tr>
                   {isOpen && (
                     <tr>
-                      <td colSpan={18}>
+                      <td colSpan={COLUMNS + (tested ? 1 : 0)}>
+                        {/* Out of the row since 2026-10-30 (docs/console-review-plan.md batch 3). */}
+                        <table className="data-table secondary-cells" aria-label={`${r.symbol} prices and context`}>
+                          <thead>
+                            <tr>
+                              <th className="num" title={view === "open" ? "The entry close" : "The close that fired it"}>
+                                {view === "open" ? "Entry" : "Price"}
+                              </th>
+                              <th className="num" title="The last close">
+                                Last
+                              </th>
+                              {view === "open" ? (
+                                <th className="num" title="The pullback's target: the prior 20-session high (long) or low (short)">
+                                  Target
+                                </th>
+                              ) : (
+                                <th>Status</th>
+                              )}
+                              <th title="Our 6-month trend score and label">6M</th>
+                              <th className="num" title="The 21-session return less SPY's over the same sessions, in points">
+                                1M vs SPY
+                              </th>
+                              {!tested && (
+                                <th className="num" title="The 50-session median of close × volume, to the session before the entry">
+                                  $ Vol
+                                </th>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td className="num">{money(l.price)}</td>
+                              <td className="num">{money(r.lastClose)}</td>
+                              {view === "open" ? <td className="num">{money(r.target)}</td> : <td className="muted">{r.status}</td>}
+                              <TrendCell label={r.trend6mLabel} score={r.trend6m} />
+                              <td className={`num ${tone(r.vsSpy1m)}`}>
+                                {r.vsSpy1m === null ? "—" : `${r.vsSpy1m > 0 ? "+" : r.vsSpy1m < 0 ? "−" : ""}${Math.abs(r.vsSpy1m).toFixed(1)} pts`}
+                              </td>
+                              {!tested && <td className="num">{dollars(r.dollarVolume)}</td>}
+                            </tr>
+                          </tbody>
+                        </table>
                         <ReadDetail r={r} />
                       </td>
                     </tr>

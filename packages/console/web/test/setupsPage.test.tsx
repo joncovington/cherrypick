@@ -192,10 +192,10 @@ describe("the setups watchlist page", () => {
     // An exit line sorts by its exit close, not the entry's.
     payload = { ...payload, rows: [row({ symbol: "AAA", entryPrice: 10, exitDate: "2026-10-02", exitPrice: 99, exitAgo: 0, entryAgo: 30, status: "closed" }), row({ symbol: "BBB", entryPrice: 50 })] };
     expect(symbols(render("/charts/setups?sort=price"))).toEqual(["AAA:trend", "BBB:trend"]);
-    // Price and Last are column-header buttons.
+    // Entry and Last left the row for its expanded line on 2026-10-30; the URL still sorts by them.
     const html = render("/charts/setups?view=open");
-    expect(html).toMatch(/<button[^>]*>Entry<\/button>/);
-    expect(html).toMatch(/<button[^>]*>Last<\/button>/);
+    expect(html).not.toMatch(/<button[^>]*>Entry<\/button>/);
+    expect(html).not.toMatch(/<button[^>]*>Last<\/button>/);
   });
 
   it("sorts by symbol, by trend score, and by a level's distance from the close, nearest first", () => {
