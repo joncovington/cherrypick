@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 
 import pytest
 
 from cherrypick.core import settlement
+
+# Past the web fallbacks' grace: a Yahoo or Barchart quote read now is the close.
+AFTER = datetime(2026, 10, 26, 16, 25)
 
 
 def test_long_shares_earn_the_rise():
@@ -68,7 +72,7 @@ def test_official_index_close_prefers_tastytrade(monkeypatch):
     monkeypatch.setattr(settlement, "_yahoo_index_price", lambda s: (_ for _ in ()).throw(AssertionError))
     monkeypatch.setattr(settlement, "_barchart_index_price", lambda s: (_ for _ in ()).throw(AssertionError))
 
-    price, source = asyncio.run(settlement.official_index_close(object(), "XSP"))
+    price, source = asyncio.run(settlement.official_index_close(object(), "XSP", now=AFTER))
     # A posted CLOSE is the one genuinely-official reading -- tagged as such, and neither web
     # fallback is consulted (both raise if touched).
     assert price == 743.76 and source == "tastytrade_close"
@@ -88,7 +92,7 @@ def test_official_index_close_falls_back_to_last_or_mark_when_close_is_unset(mon
     # With no posted close, the web sources (whose post-close quote IS the closing print) are
     # preferred over tastytrade's intraday mark...
     monkeypatch.setattr(settlement, "_yahoo_index_price", lambda s: 744.10)
-    price, source = asyncio.run(settlement.official_index_close(object(), "XSP"))
+    price, source = asyncio.run(settlement.official_index_close(object(), "XSP", now=AFTER))
     assert price == 744.10 and source == "yahoo"
 
 
@@ -108,7 +112,7 @@ def test_official_index_close_marks_an_intraday_tick_provisional(monkeypatch):
     monkeypatch.setattr(md, "get_market_data_by_type", fake_get_market_data_by_type)
     monkeypatch.setattr(settlement, "_yahoo_index_price", lambda s: None)
     monkeypatch.setattr(settlement, "_barchart_index_price", lambda s: None)
-    price, source = asyncio.run(settlement.official_index_close(object(), "XSP"))
+    price, source = asyncio.run(settlement.official_index_close(object(), "XSP", now=AFTER))
     assert price == 750.46
     assert source == "tastytrade_last_provisional"
     assert not settlement.is_official_source(source)
@@ -123,13 +127,34 @@ def test_official_index_close_falls_back_to_yahoo_then_barchart(monkeypatch):
     monkeypatch.setattr(md, "get_market_data_by_type", empty)
     monkeypatch.setattr(settlement, "_yahoo_index_price", lambda s: 743.76)
     monkeypatch.setattr(settlement, "_barchart_index_price", lambda s: (_ for _ in ()).throw(AssertionError))
-    price, source = asyncio.run(settlement.official_index_close(object(), "XSP"))
+    price, source = asyncio.run(settlement.official_index_close(object(), "XSP", now=AFTER))
     assert price == 743.76 and source == "yahoo"
 
     monkeypatch.setattr(settlement, "_yahoo_index_price", lambda s: None)
     monkeypatch.setattr(settlement, "_barchart_index_price", lambda s: 743.76)
-    price2, source2 = asyncio.run(settlement.official_index_close(object(), "XSP"))
+    price2, source2 = asyncio.run(settlement.official_index_close(object(), "XSP", now=AFTER))
     assert price2 == 743.76 and source2 == "barchart"
+
+
+@pytest.mark.parametrize("hhmm, official", [((16, 0), False), ((16, 19), False), ((16, 20), True)])
+def test_a_web_quote_is_the_close_only_after_the_grace(monkeypatch, hhmm, official):
+    """2026-10-26: Yahoo's quote 48 s after the bell (7681.19) settled MEIC live against a 7676.77
+    close. Before 16:20 ET a web quote is provisional, so the caller retries. Shown to fail by
+    dropping the clock check."""
+    from tastytrade import market_data as md
+
+    async def empty(session, indices=None, **kw):
+        return []
+
+    monkeypatch.setattr(md, "get_market_data_by_type", empty)
+    for yahoo, barchart, name in ((7681.19, None, "yahoo"), (None, 7681.19, "barchart")):
+        monkeypatch.setattr(settlement, "_yahoo_index_price", lambda s, v=yahoo: v)
+        monkeypatch.setattr(settlement, "_barchart_index_price", lambda s, v=barchart: v)
+        now = datetime(2026, 10, 26, *hhmm)
+        price, source = asyncio.run(settlement.official_index_close(object(), "SPX", now=now))
+        assert price == 7681.19
+        assert settlement.is_official_source(source) is official
+        assert source == (name if official else f"{name}_provisional")
 
 
 def test_official_index_close_reports_no_source_when_every_source_fails(monkeypatch):
@@ -141,7 +166,7 @@ def test_official_index_close_reports_no_source_when_every_source_fails(monkeypa
     monkeypatch.setattr(md, "get_market_data_by_type", boom)
     monkeypatch.setattr(settlement, "_yahoo_index_price", lambda s: None)
     monkeypatch.setattr(settlement, "_barchart_index_price", lambda s: None)
-    price, reason = asyncio.run(settlement.official_index_close(object(), "XSP"))
+    price, reason = asyncio.run(settlement.official_index_close(object(), "XSP", now=AFTER))
     assert price is None and reason == "no_source_available"
 
 
