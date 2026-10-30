@@ -20,6 +20,7 @@ import type {
   FlowEvent,
   FlowBirdseyeRow,
   FlowName,
+  FlowRejected,
   FlowSide,
   FlowSpread,
   FlowTrade,
@@ -330,16 +331,48 @@ export function shapeFlowDay(session: string, doc: Record<string, unknown>): Opt
   };
 }
 
+const REJECTED_FILE = /^(\d{4}-\d{2}-\d{2})\.rejected\.json$/;
+
+/**
+ * The newest `.rejected` capture later than every capture that passed, with the identities it
+ * failed, or null. Its tables are never read: the page says the day was refused and why, so the
+ * latest passed session is not taken for the latest session.
+ */
+export function readRejectedFlow(config: ConsoleConfig, sessions: string[]): FlowRejected | null {
+  let files: string[];
+  try {
+    files = fs.readdirSync(flowDir(config));
+  } catch {
+    return null;
+  }
+  const latest = sessions[sessions.length - 1] ?? "";
+  const newest = files
+    .map((f) => REJECTED_FILE.exec(f)?.[1])
+    .filter((d): d is string => d !== undefined && d > latest)
+    .sort()
+    .pop();
+  if (newest === undefined) return null;
+  const doc = readJson(path.join(flowDir(config), `${newest}.rejected.json`));
+  return { session: newest, savedAt: doc && str(doc["saved_at"]), problems: doc ? strList(doc["problems"]) : [] };
+}
+
 export function readOptionsFlow(config: ConsoleConfig, session?: string): OptionsFlowPayload {
   const sessions = listFlowSessions(config);
+  const rejected = readRejectedFlow(config, sessions);
   if (sessions.length === 0) {
-    return { sessions, current: null, degraded: { reason: "no capture yet (scripts/fetch_quikoptions.py hot-options)" } };
+    return {
+      sessions,
+      current: null,
+      rejected,
+      degraded: { reason: "no capture yet (scripts/fetch_quikoptions.py hot-options)" },
+    };
   }
   const chosen = session !== undefined && sessions.includes(session) ? session : sessions[sessions.length - 1]!;
   const doc = readDoc(config, chosen);
-  if (doc === null) return { sessions, current: null, degraded: { reason: `the ${chosen} capture could not be read` } };
+  if (doc === null) return { sessions, current: null, rejected, degraded: { reason: `the ${chosen} capture could not be read` } };
   return {
     sessions,
+    rejected,
     current: { ...shapeFlowDay(chosen, doc), derived: readDerived(config, chosen), events: readEvents(config, chosen) },
   };
 }

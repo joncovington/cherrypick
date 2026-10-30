@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import type { ModuleSummarySlice, SummaryBreakdown, SummaryTile, SummaryUnit, TradingMode } from "@console/shared";
+import { TESTED_STATUS } from "../../lib/testedStatus";
 import { SortTh, sortRows, useSort } from "../DataTable";
+import { etToday } from "../table/DateRange";
 import { FaceSwitch, Gauge, NetHero, RangeToolbar, TsCard, TsEmpty, WinRateArcs, fmtUsd, fmtUsdPlain, sessionLabel, useFace, useSummaryRange } from "./kit";
 
 /**
@@ -206,6 +208,39 @@ function ByArm({ s, arm }: { s: ModuleSummarySlice; arm?: string | null }) {
   );
 }
 
+/**
+ * The line above the numbers: which ledger this is, whether live has traded at all, and what history
+ * says about the strategy. A day window older than today says "last traded" so it never reads as today.
+ */
+export function StatusLine({
+  module,
+  mode,
+  neverLive = false,
+  lastTraded = null,
+}: {
+  module: string;
+  mode: TradingMode;
+  /** Live, and the live ledger has no row at all. */
+  neverLive?: boolean;
+  /** The latest window is a day before today: that day. */
+  lastTraded?: string | null;
+}) {
+  const tested = TESTED_STATUS[module];
+  return (
+    <p className="ts-muted ts-status" role="note">
+      <strong>{mode === "live" ? "Live" : "Paper"}.</strong>
+      {neverLive && <> Live has not traded yet.</>}
+      {lastTraded !== null && <> Nothing traded today; this is the last traded day, {sessionLabel(lastTraded)}.</>}
+      {tested && (
+        <>
+          {" "}
+          {tested.words} <span title={tested.source}>({tested.source})</span>
+        </>
+      )}
+    </p>
+  );
+}
+
 export function ModuleSummary({
   module,
   mode,
@@ -249,7 +284,14 @@ export function ModuleSummary({
     next.set("day", target);
     setParams(next, { replace: true });
   };
-  const label = s === null ? "…" : s.window.label === "day" && s.window.from !== null ? sessionLabel(s.window.from) : s.window.label;
+  const today = etToday();
+  const stale = s !== null && effectiveDay === null && s.window.label === "day" && s.window.from !== null && s.window.from < today;
+  const label =
+    s === null
+      ? "…"
+      : s.window.label === "day" && s.window.from !== null
+        ? `${stale ? "last traded " : ""}${sessionLabel(s.window.from)}`
+        : s.window.label;
   return (
     <div className="ts-root">
       <RangeToolbar
@@ -264,6 +306,12 @@ export function ModuleSummary({
       {q.isLoading && <p className="ts-empty">reading the ledger…</p>}
       {s !== null && (
         <>
+          <StatusLine
+            module={module}
+            mode={s.mode}
+            neverLive={s.mode === "live" && s.window.from === null && s.hero.trades === 0 && s.hero.open === 0}
+            lastTraded={stale ? s.window.from : null}
+          />
           {s.unit && <p className="ts-muted ts-unit">one trade here is {s.unit}</p>}
           {s.hero.trades === 0 && s.hero.open === 0 ? (
             <p className="ts-empty">no settled trades in this window</p>

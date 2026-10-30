@@ -634,7 +634,11 @@ export function DataTab() {
       <div className="cards cards-wide">
         <Section
           title="storage"
-          note={data.storesMeasuredAt !== null ? `Sizes measured ${agoIso(data.storesMeasuredAt)} ago; the walk repeats every 15 minutes.` : "Measuring sizes in the background — this fills in within a minute."}
+          note={
+            data.storesMeasuredAt !== null
+              ? `Sizes measured ${agoIso(data.storesMeasuredAt)} ago; opening this page re-measures them once they are 15 minutes old.`
+              : "Measuring sizes in the background after the console started; the walk takes a few minutes."
+          }
         >
           {data.disk !== null && (
             <div className="system-disk">
@@ -646,6 +650,9 @@ export function DataTab() {
               </span>
             </div>
           )}
+          {stores.length === 0 ? (
+            <p className="muted">{data.storesMeasuredAt !== null ? "No store under ~/.cherrypick/data." : "Not measured yet."}</p>
+          ) : (
           <div className="table-scroll">
           <table className="data-table">
             <thead>
@@ -666,6 +673,7 @@ export function DataTab() {
             </tbody>
           </table>
           </div>
+          )}
         </Section>
         <Section title="reader failures" note="Stores whose reads have thrown since the console started. A failing store is served as empty, so this is the only place it shows.">
           {data.readerFailures.length === 0 ? (

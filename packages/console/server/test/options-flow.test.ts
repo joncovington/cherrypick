@@ -80,6 +80,25 @@ describe("options flow reader", () => {
     expect(readOptionsFlow(config, "2026-10-05").current?.session).toBe("2026-10-02"); // rejected: not a day
   });
 
+  it("says when a later capture was refused, with the checks it failed, and forgets an older one", () => {
+    fs.mkdirSync(dir, { recursive: true });
+    write("2026-10-01.json", capture("2026-10-01"));
+    write("2026-10-02.json", capture("2026-10-02"));
+    expect(readOptionsFlow(config).rejected).toBeNull();
+    write("2026-09-30.rejected.json", { ...capture("2026-09-30"), problems: ["older"] });
+    expect(readOptionsFlow(config).rejected).toBeNull(); // a later day passed since
+    write("2026-10-05.rejected.json", {
+      ...capture("2026-10-05"),
+      saved_at: "2026-10-05T20:39:27+00:00",
+      problems: ["spreads GE: 4.34 x 10000 x 100 != premium 2,170,217"],
+    });
+    expect(readOptionsFlow(config).rejected).toEqual({
+      session: "2026-10-05",
+      savedAt: "2026-10-05T20:39:27+00:00",
+      problems: ["spreads GE: 4.34 x 10000 x 100 != premium 2,170,217"],
+    });
+  });
+
   it("passes the capture's derived fields through and never turns a missing cell into 0", () => {
     fs.mkdirSync(dir, { recursive: true });
     write("2026-10-02.json", capture("2026-10-02"));

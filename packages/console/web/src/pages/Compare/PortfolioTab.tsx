@@ -261,7 +261,11 @@ export function PortfolioTab() {
             <option value="booked">as booked</option>
           </select>
         </div>
-        {arms.length === 0 ? (
+        {calendar.isLoading ? (
+          <span className="skeleton skeleton-text" style={{ width: "50%" }} />
+        ) : modules.size === 0 ? (
+          <p className="muted">{calendar.isError ? "the arms could not be read" : `no arm has closed a ${mode} trade yet`}</p>
+        ) : arms.length === 0 ? (
           <p className="muted">choose at least one arm</p>
         ) : isLoading || data === undefined ? (
           <span className="skeleton skeleton-text" style={{ width: "50%" }} />
