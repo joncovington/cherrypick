@@ -838,6 +838,26 @@ export function RunPlainEnglish({ r, study }: { r: BacktestRunReport; study?: { 
   );
 }
 
+/**
+ * The trials the DSR deflates by, and the provisional looks that are not trials. With looks and no
+ * trials, a provisional run's DSR is deflated by nothing, so it reads no stricter than its PSR; the
+ * line says so rather than let "trials 1" pass for one look.
+ */
+export function trialsLine(d: BacktestOverview): string {
+  const list = (r: Record<string, number> | undefined) =>
+    Object.entries(r ?? {})
+      .map(([m, n]) => `${m} ${String(n)}`)
+      .join(", ");
+  const trials = list(d.trials);
+  const looks = list(d.provisional_looks);
+  const head = `Trials recorded: ${trials || "none"}.`;
+  if (!looks) return head;
+  return (
+    `${head} Provisional looks, distinct specs run before validation unlocked: ${looks}. ` +
+    `A look is not a trial, so ${trials ? "a provisional run's DSR is deflated by the trials alone" : "a provisional run's DSR is deflated by nothing and reads no stricter than its PSR"}.`
+  );
+}
+
 export function BacktestRunsTab() {
   const [params, setParams] = useSearchParams();
   const selected = params.get("run");
@@ -854,11 +874,7 @@ export function BacktestRunsTab() {
         <div className="cards cards-wide">
           <Card title="runs" updatedAt={updatedAt}>
             <p className="muted" style={{ fontSize: 12 }}>
-              Trials recorded:{" "}
-              {Object.entries(d.trials)
-                .map(([m, n]) => `${m} ${String(n)}`)
-                .join(", ") || "none"}
-              . Select a run to read its report.
+              {trialsLine(d)} Select a run to read its report.
             </p>
             {d.runs.length === 0 ? (
               <p className="muted">No runs yet.</p>
