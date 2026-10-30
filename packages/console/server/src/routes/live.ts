@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { ConsoleConfig } from "../config.js";
 import { readFliesLive } from "../readers/fliesLive.js";
 import { readMeicLive } from "../readers/meicLive.js";
+import { readMeicLiveGap } from "../readers/meicLiveGap.js";
 import { readLiveToday } from "../readers/liveToday.js";
 import { readExecution } from "../services/executionBridge.js";
 
@@ -22,6 +23,8 @@ export function registerLiveRoutes(app: FastifyInstance, config: ConsoleConfig):
   // MEIC's live loop (the Live page's meic tab): arming, halt, orphans, held submissions, open ICs
   // and resolved history, from files only (`readers/meicLive.ts`). Nothing here touches an order.
   app.get("/api/live/meic", async () => readMeicLive(config));
+  // MEIC live against its paper twin (`live-shadow`), paired per session (`readers/meicLiveGap.ts`).
+  app.get("/api/live/meic/gap", async () => readMeicLiveGap(config));
   // Every live loop's day on one payload (the Live page's today tab), composed from the per-loop
   // readers above plus bwb's (`readers/liveToday.ts`). Nothing here touches an order.
   app.get("/api/live/today", async () => readLiveToday(config));
