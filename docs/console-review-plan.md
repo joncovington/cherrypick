@@ -141,7 +141,7 @@ holds them.
 | arms | trim to about 8 columns (arm, trades, net, net per $100 risk, difference against control, t lower bound, verdict), paired statistics behind an expand; retired flies arms hidden by default |
 | risk | merge into arms as a column set |
 | calendar | keep as the drill-down |
-| portfolio | give it a default arm set (one per live-capable module); it is empty on open today |
+| portfolio | keep; it reads as empty while the arms load (fixed in batch 1) |
 | slices | keep (moved here 2026-10-30, fails closed on the backtest feature) |
 
 ### Backtest (4 tabs)
@@ -162,7 +162,7 @@ Paused, with no measured experiment. Until it is unpaused: a status line at the 
 | health | keep as the landing; the per-module "live trading posture" table merges with `modules` here |
 | supervisor | trim the 9-column, 114-row jobs table: jobs needing attention by default, all on a toggle; the stale-process table from environment joins it |
 | modules | merge into health (it is the third per-module table) |
-| data | keep freshness and stream; the storage table is empty (no store measurement recorded): fix or drop; evidence cards move to Backtest |
+| data | keep freshness and stream; storage is empty until the first size walk after a restart (now said; batch 1); evidence cards move to Backtest |
 | environment, logs | keep as detail |
 
 ### Config (7 tabs)
@@ -182,13 +182,19 @@ rename it `alerts`.
 
 ## Batches, in order
 
-1. **Say what is true** (small, highest value):
-   - the tested-status line on each module's today tab, and in the head of each income list
-   - Flow says when the latest capture was rejected
-   - a stale window is labelled "last traded 10-19", never shown as today
-   - BWB says live has not traded yet
-   - Compare portfolio gets a default arm set
-   - the empty System storage table is fixed or removed
+1. **Say what is true** (small, highest value). Landed 2026-10-30:
+   - the tested-status line on each module's summary (`web/src/lib/testedStatus.ts`, words and
+     where the verdict is written); the income lists' notes now carry the 2026-10-23 check on full
+     option history, and covered calls read "not refuted, not an edge" (it passed the declared test,
+     carried by 2022)
+   - Flow says when a later capture was refused, with the checks it failed
+   - a stale window is labelled "last traded", never shown as today
+   - BWB says live has not traded yet (any live summary with no row at all)
+   - Compare portfolio already had a default arm per module; what read as empty was the loading
+     state, which now shows as loading, and a mode with no closed trade says so
+   - System storage was never broken: sizes are walked when the page is read, and the first walk
+     after a restart takes minutes. The note says so, and an unmeasured table says "not measured
+     yet" instead of showing empty headers
 2. **Fold the duplicates:**
    - every module: summary + session into one today tab
    - module `advisor` and `arms` tabs leave the module pages

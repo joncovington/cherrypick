@@ -1,10 +1,32 @@
 import type { ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { OptionsFlowDay } from "@console/shared";
+import type { FlowRejected, OptionsFlowDay } from "@console/shared";
 import { useOptionsFlow } from "../../lib/api";
 import { FlowBirdseye, FlowDerived, FlowSpreads, FlowToday, FlowTrades, FlowVolOi } from "../../pages/Flow/FlowPage";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
+
+/** A later capture the integrity check refused, so the latest day shown is not the latest session. */
+export function RejectedNotice({ rejected, shown }: { rejected: FlowRejected; shown: string | null }) {
+  return (
+    <section className="card" role="status" style={{ borderLeft: "3px solid var(--warn)", marginBottom: 12 }}>
+      <div className="card-head">
+        <h2>The {rejected.session} capture was refused</h2>
+      </div>
+      <p className="muted">
+        Its figures failed the page&rsquo;s own checks, so it is not shown
+        {shown !== null ? `; ${shown} is the latest capture that passed` : ""}.
+      </p>
+      {rejected.problems.length > 0 && (
+        <ul className="muted">
+          {rejected.problems.map((p) => (
+            <li key={p}>{p}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 /**
  * Options flow (2026-10-03): QuikOptions' Hot Options Report, one capture a session. The session is
@@ -34,8 +56,23 @@ export function FlowLightbox({ slide }: { slide: string }) {
     );
   };
 
+  const sessions = data?.sessions ?? [];
+  const rejected = data?.rejected ?? null;
+  // Shown beside the latest passed session (or none), never on an older day picked by hand.
+  const latest = day === null || day.session === sessions[sessions.length - 1];
+  const notice = rejected !== null && latest ? <RejectedNotice rejected={rejected} shown={day?.session ?? null} /> : null;
+
   const slides: SlideDef[] = [
-    { id: "today", label: "today", render: body((d) => <FlowToday day={d} />) },
+    {
+      id: "today",
+      label: "today",
+      render: () => (
+        <>
+          {notice}
+          {body((d) => <FlowToday day={d} />)()}
+        </>
+      ),
+    },
     { id: "derived", label: "derived flow", render: body((d) => <FlowDerived day={d} />) },
     { id: "birdseye", label: "birdseye", render: body((d) => <FlowBirdseye day={d} />) },
     { id: "trades", label: "trades", render: body((d) => <FlowTrades day={d} />) },
@@ -43,7 +80,6 @@ export function FlowLightbox({ slide }: { slide: string }) {
     { id: "voloi", label: "vol / OI", render: body((d) => <FlowVolOi day={d} />) },
   ];
 
-  const sessions = data?.sessions ?? [];
   const headerControls =
     sessions.length > 0 ? (
       <select

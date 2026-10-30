@@ -199,10 +199,20 @@ export interface OptionsFlowDay {
   events: FlowEvent[] | null;
 }
 
+/** A capture the integrity check refused: the page's own identities did not hold. */
+export interface FlowRejected {
+  session: string;
+  savedAt: string | null;
+  /** Each identity that failed, as the capture wrote it. */
+  problems: string[];
+}
+
 export interface OptionsFlowPayload {
   /** Every captured session, oldest first. */
   sessions: string[];
   current: OptionsFlowDay | null;
+  /** The newest refused capture later than every session above, or null. */
+  rejected?: FlowRejected | null;
   /** Why there is nothing to show, when there is nothing: never captured, or a capture unreadable. */
   degraded?: { reason: string };
 }

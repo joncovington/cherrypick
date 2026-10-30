@@ -34,6 +34,8 @@ import { useMeicSummary } from "../../lib/api";
 import type { MeicSummarySlice } from "@console/shared";
 import type { TradingMode } from "@console/shared";
 import type { MeicScope } from "./MeicTables";
+import { StatusLine } from "../../components/summary/ModuleSummary";
+import { etToday } from "../../components/table/DateRange";
 import { SortTh, sortRows, useSort } from "../../components/DataTable";
 import { RANGES, type Range, fmtUsd, sessionLabel, TsCard, TsEmpty, Gauge, NetHero, FaceSwitch, useFace, WinRateArcs as KitWinRateArcs } from "../../components/summary/kit";
 
@@ -612,8 +614,14 @@ export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSum
   }
   const s = q.data ?? null;
   const loading = q.isLoading;
+  const lastTraded =
+    s !== null && (day ?? null) === null && s.window.label === "day" && s.window.from !== null && s.window.from < etToday()
+      ? s.window.from
+      : null;
   const windowLabel =
-    (s?.window.label === "day" && s.window.from !== null ? sessionLabel(s.window.from) : s?.window.label) || "…";
+    (s?.window.label === "day" && s.window.from !== null
+      ? `${lastTraded !== null ? "last traded " : ""}${sessionLabel(s.window.from)}`
+      : s?.window.label) || "…";
   return (
     <div className="ts-root">
       <Toolbar
@@ -630,6 +638,7 @@ export function MeicSummary({ mode, scope, day, onDayStep, canStepDay }: MeicSum
       {s === null && <p className="ts-empty">no rows in this window</p>}
       {s !== null && (
       <>
+      <StatusLine module="meic" mode={mode} lastTraded={lastTraded} />
       {/* Rows group by the question they answer: money; the trade as built and how it ended
           (leg outcomes + the two geometry cards beside it); the gate's ledger and the arms; when
           we trade (the day's clock beside the era's week); then the ledger itself. */}

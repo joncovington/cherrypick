@@ -22,13 +22,17 @@ const NOTE: Record<IncomeList, string> = {
     "In the history study (52 names, 2020–2026, at this working price, after costs) a 16-delta put on " +
     "the 45–60 day monthly earned about what its market exposure earned and close to nothing beyond it; buying it " +
     "back at half the credit did a little better, about +1% a year at the median. It is the least-bad rule tested, " +
-    "not an edge, and it has not yet been checked against full option history.",
+    "not an edge. Checked again on full option history (2025–26 and 2022, 2026-10-23): still no tested edge; what " +
+    "gain there was came from the rising year.",
   "covered-calls":
     "In the history study (16 names, 2020–2026, after costs) writing a call against the shares lost " +
     "to simply holding them on most names, worse at higher deltas and on 45–60 day expiries; a 16-delta call on the " +
-    "30–45 day monthly lost least, and SPY was the only name with a consistent gain. It is the least-bad rule tested, " +
-    "not an edge, and it has not yet been checked against full option history.",
+    "30–45 day monthly lost least, and SPY was the only name with a consistent gain. On full option history " +
+    "(2025–26 and 2022, 2026-10-23) that call passed the declared test, but 2022 carried it and 2025–26 was a coin " +
+    "flip: the overlay pays in falling years by giving up the upside. Read it as not refuted, not as an edge.",
 };
+
+const HEAD: Record<IncomeList, string> = { "short-puts": "No tested edge.", "covered-calls": "Not refuted, not an edge." };
 
 function money(v: number | null): string {
   return v === null ? "—" : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -259,7 +263,7 @@ export function OwnListTab({ list }: { list: IncomeList }) {
       </div>
 
       <p className="muted" style={{ margin: "0 0 10px" }}>
-        <strong>No tested edge.</strong> {NOTE[list]}
+        <strong>{HEAD[list]}</strong> {NOTE[list]}
       </p>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
