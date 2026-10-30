@@ -393,9 +393,11 @@ export function QueueTable({ q, nowMs = etNowMs(), status = "all", study = "" }:
   const [historyOpen, setHistoryOpen] = useState(false);
   const shown = { ...q, tasks: q.tasks.filter((t) => keep(t, status, study)) };
   const p = plan(shown, nowMs);
+  // A run started by hand has no queue status: its live rows pass "all" and "active", its finished ones only "all".
   const hand = study === "" && (status === "all" || status === "active");
+  const handFinished = study === "" && status === "all";
   const nowCount = p.running.length + p.queued.length + (hand ? p.byHandLive.length : 0);
-  const recentCount = p.recent.length + (hand ? p.byHandRecent.length : 0);
+  const recentCount = p.recent.length + (handFinished ? p.byHandRecent.length : 0);
   const historyCount = p.history.reduce((n, [, ts]) => n + ts.length, 0);
   if (nowCount + recentCount + historyCount === 0) {
     return <p className="muted">{q.tasks.length === 0 && q.byHand.length === 0 ? "The queue is empty." : "Nothing matches the filter."}</p>;
@@ -430,12 +432,14 @@ export function QueueTable({ q, nowMs = etNowMs(), status = "all", study = "" }:
               </tr>
             ) : null}
           </Section>
-          <Section title={`Recent (${RECENT_DAYS} days)`} count={recentCount}>
-            {p.recent.map((t) => (
-              <TaskRows key={t.id} t={t} nowMs={nowMs} />
-            ))}
-            {hand ? p.byHandRecent.map((x) => <ByHandRows key={x.file} p={x} />) : null}
-          </Section>
+          {status === "active" ? null : (
+            <Section title={`Recent (${RECENT_DAYS} days)`} count={recentCount}>
+              {p.recent.map((t) => (
+                <TaskRows key={t.id} t={t} nowMs={nowMs} />
+              ))}
+              {handFinished ? p.byHandRecent.map((x) => <ByHandRows key={x.file} p={x} />) : null}
+            </Section>
+          )}
           {historyCount > 0 ? (
             <>
               <tr className="row-group">
