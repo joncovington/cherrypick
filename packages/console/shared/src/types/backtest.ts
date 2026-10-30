@@ -132,6 +132,12 @@ export interface BacktestOverview {
   validation: BacktestValidation[];
   runs: BacktestRunListing[];
   trials: Record<string, number>;
+  /**
+   * Distinct specs run as provisional looks, per module (2026-10-30). A provisional run records no
+   * trial, so this is how much the history has been looked at while `trials` still reads zero. For
+   * the reader only: no statistic is deflated by it. Absent from an older module.
+   */
+  provisional_looks?: Record<string, number>;
 }
 
 /** An arm's whole-run summary: per-session net figures, in whole-position dollars. */

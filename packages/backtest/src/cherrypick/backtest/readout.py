@@ -5,7 +5,7 @@ machine (127.0.0.1); nothing is published. The console hides the page unless the
 `features.backtest` is true, and its server routes refuse on their own, so this verb is never the
 gate: it answers whoever asks on this machine, as every other read verb does.
 
-`overview` -> {ok, license, windows, stores, validation, runs, trials}
+`overview` -> {ok, license, windows, stores, validation, runs, trials, provisional_looks}
 `run --id X [--capital N]` -> {ok, report, cards} (the run's own report, as written, and its cards:
 cards.py, each arm on its own peak session risk unless one capital is chosen for all)
 `stores` -> {ok, dir, files} (where the declared vendor stores live; the research queue's check)
@@ -97,9 +97,9 @@ def _validation(settings: dict) -> list[dict]:
     return sorted(out, key=lambda v: (v["module"], v["cadence"] or 0))
 
 
-def _runs() -> tuple[list[dict], dict]:
+def _runs() -> tuple[list[dict], dict, dict]:
     if not paths.results_db().exists():
-        return [], {}
+        return [], {}, {}
     conn = results.connect()
     try:
         runs = [
@@ -118,9 +118,19 @@ def _runs() -> tuple[list[dict], dict]:
             for r in conn.execute("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (RUNS_LISTED,))
         ]
         trials = {r[0]: r[1] for r in conn.execute("SELECT module, COUNT(*) FROM trials GROUP BY module")}
+        # A provisional run records no trial (runner._summarise: a look, not an evaluation), so the
+        # trial count can read zero after many looks at the same history. The distinct specs those
+        # looks ran are counted here, for the reader only; no statistic is deflated by it.
+        looks = {
+            r[0]: r[1]
+            for r in conn.execute(
+                "SELECT r.module, COUNT(DISTINCT s.spec_hash) FROM session_results s "
+                "JOIN runs r ON r.run_id = s.run_id WHERE r.status = 'provisional' GROUP BY r.module"
+            )
+        }
     finally:
         conn.close()
-    return runs, trials
+    return runs, trials, looks
 
 
 def _stores_inventory(settings: dict) -> dict:
@@ -133,7 +143,7 @@ def _stores_inventory(settings: dict) -> dict:
 
 
 def overview(settings: dict) -> dict:
-    runs, trials = _runs()
+    runs, trials, looks = _runs()
     return {
         "ok": True,
         "license": licensing.status(settings),
@@ -144,6 +154,7 @@ def overview(settings: dict) -> dict:
         "validation": _validation(settings),
         "runs": runs,
         "trials": trials,
+        "provisional_looks": looks,
     }
 
 

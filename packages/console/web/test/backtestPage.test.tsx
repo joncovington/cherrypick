@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BacktestArmCards, BacktestOverview, BacktestRunCards, BacktestRunReport, BridgedResult } from "@console/shared";
-import { BacktestDataTab, BacktestRunsTab, BacktestValidationTab } from "../src/pages/Backtest/BacktestPage";
+import { BacktestDataTab, BacktestRunsTab, BacktestValidationTab, trialsLine } from "../src/pages/Backtest/BacktestPage";
 
 /**
  * The Backtest page's three tabs, rendered with the bridge's documents already in the query cache
@@ -279,5 +279,18 @@ describe("runs", () => {
       c.setQueryData(["bridged", "backtest", "run", RUN_ID], { ok: false, data: null, error: `no run '${RUN_ID}'` });
     });
     expect(html).toContain(`no run &#x27;${RUN_ID}&#x27;`);
+  });
+});
+
+describe("trials and provisional looks", () => {
+  it("says a provisional run's DSR is deflated by nothing while looks are not trials", () => {
+    const d = { ...OVERVIEW, trials: {}, provisional_looks: { flies: 41, meic: 26 } };
+    expect(trialsLine(d)).toBe(
+      "Trials recorded: none. Provisional looks, distinct specs run before validation unlocked: flies 41, meic 26. " +
+        "A look is not a trial, so a provisional run's DSR is deflated by nothing and reads no stricter than its PSR.",
+    );
+    expect(trialsLine({ ...d, trials: { flies: 4 } })).toContain("deflated by the trials alone");
+    // An older module sends no looks: the line is the trials alone.
+    expect(trialsLine(OVERVIEW)).toBe("Trials recorded: flies 4.");
   });
 });

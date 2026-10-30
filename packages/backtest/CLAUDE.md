@@ -209,6 +209,9 @@ The console's Backtest page reads `python -m cherrypick.backtest read overview|r
 and is **fail-closed**: shown only when the orchestrator's `features.backtest` is true
 (`orchestrator/backtestgate.py`: the operator's config enabled, the licence active, the key in the
 keyring, a complete session in the store), with its server routes refusing on their own.
+`overview` carries `provisional_looks` beside `trials` (2026-10-30): the distinct specs run as
+provisional looks, per module. A look records no trial, so it never enters a DSR; the count is for
+the reader, who would otherwise see "trials: none" after dozens of looks at the same history.
 
 **The run cards** (`cards.py`, 2026-10-26): `read run` also returns each arm's path, drawdown
 periods, month and year rows, session and trade anatomy, premium (fee drag, and capture rate from
