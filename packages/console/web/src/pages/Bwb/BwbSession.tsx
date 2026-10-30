@@ -125,23 +125,8 @@ export function BwbSession({
       />
 
       <GridCard
-        label="closed net by arm"
-        span={6}
-        h={304}
-        to="/bwb/history"
-        toLabel="the completed positions behind net by arm"
-        foot="after every cost · concurrent positions share regime context, so rows are not independent samples"
-      >
-        <DivergingBars
-          rows={armRows.map(([arm, t]) => ({ label: arm, value: t.net, title: `${arm}: ${String(t.positions)} positions` }))}
-          format={fmtMoney}
-          emptyText={loading ? "reading…" : "nothing has settled yet"}
-        />
-      </GridCard>
-
-      <GridCard
         label="add-on fire rate by arm"
-        span={6}
+        span={12}
         h={304}
         to="/bwb/arms"
         toLabel="fire counts and the arm comparison"

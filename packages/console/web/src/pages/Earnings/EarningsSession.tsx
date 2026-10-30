@@ -1,5 +1,4 @@
 import { BarChart } from "../../components/Charts";
-import { DivergingBars } from "../../components/grid/DivergingBars";
 import { GridCard, StatTile } from "../../components/grid/GridCard";
 import { fmtMoney } from "../../lib/format";
 
@@ -89,20 +88,6 @@ export function EarningsSession({
         )}
       </GridCard>
 
-      <GridCard
-        label="net by strategy"
-        span={4}
-        h={304}
-        to="/earnings/strategies"
-        toLabel="the strategy verdict"
-        foot="net of costs · this era · control arms only"
-      >
-        <DivergingBars
-          rows={(a?.strategies ?? []).map((s) => ({ label: s.strategy, value: s.net, title: `${s.strategy}: ${String(s.trades)} trades` }))}
-          format={fmtMoney}
-          emptyText={loading ? "reading…" : "nothing closed in this era yet"}
-        />
-      </GridCard>
     </div>
   );
 }

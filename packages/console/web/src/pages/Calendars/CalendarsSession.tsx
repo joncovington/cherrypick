@@ -80,23 +80,8 @@ export function CalendarsSession({ data, loading }: { data: CalendarsPayload | u
       />
 
       <GridCard
-        label="closed net by arm"
-        span={6}
-        h={304}
-        to="/calendars/arms"
-        toLabel="the arm comparison"
-        foot="finished weeks · same entry plan, so the difference is exit policy"
-      >
-        <DivergingBars
-          rows={armRows.map(([arm, t]) => ({ label: arm, value: t.net, title: `${arm}: ${String(t.weeks)} weeks` }))}
-          format={fmtMoney}
-          emptyText={loading ? "reading…" : "no week has finished yet"}
-        />
-      </GridCard>
-
-      <GridCard
         label="why today went the way it did"
-        span={6}
+        span={12}
         h={304}
         to="/calendars/decisions"
         toLabel="today's decision journal"

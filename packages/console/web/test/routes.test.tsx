@@ -196,8 +196,10 @@ describe("the module frame", () => {
   });
 
   it("MEIC's renamed tabs reach their replacements", () => {
-    expect(text(render("/meic"))).toContain("MEIC / session");
-    expect(text(render("/meic/now"))).toContain("MEIC / session");
+    expect(text(render("/meic"))).toContain("MEIC / today");
+    expect(text(render("/meic/now"))).toContain("MEIC / today");
+    // `session` folded into the summary, labelled today (2026-10-30).
+    expect(text(render("/meic/session"))).toContain("MEIC / today");
     expect(text(render("/meic/trades"))).toContain("MEIC / history");
     expect(text(render("/meic/sessions"))).toContain("MEIC / sessions");
   });
@@ -357,8 +359,8 @@ describe("a page the suite has turned off", () => {
 
   it("an experimental module that is on carries the chip in its title", () => {
     // The chip follows the breadcrumb; the rail carries it beside each experimental module's link.
-    expect(text(renderWith("/curve", base))).toMatch(/curve \/ session\s*experimental/);
-    expect(text(renderWith("/meic", base))).not.toMatch(/MEIC \/ session\s*experimental/);
+    expect(text(renderWith("/curve", base))).toMatch(/curve \/ today\s*experimental/);
+    expect(text(renderWith("/meic", base))).not.toMatch(/MEIC \/ today\s*experimental/);
     expect(text(renderWith("/meic", base))).toMatch(/Calendars\s*experimental/);
   });
 
@@ -399,7 +401,7 @@ describe("a page the suite has turned off", () => {
 
   it("a failed features read shows everything (fail open)", () => {
     const html = text(renderWith("/pmcc", { ok: false, error: "bridge down" }));
-    expect(html).toContain("PMCC / session");
+    expect(html).toContain("PMCC / today");
     expect(html).not.toContain("turned off");
   });
 

@@ -110,15 +110,20 @@ export function EarningsLightbox({ slide }: { slide: string }) {
   const a = analytics.data;
 
   const slides: Array<SlideDef & { id: EarningsSlideId }> = [
-    { id: "summary", label: EARNINGS_LABEL.summary, render: () => <ModuleSummary module="earnings" mode={mode} /> },
     {
-      id: "session",
-      label: EARNINGS_LABEL.session,
+      id: "summary",
+      label: EARNINGS_LABEL.summary,
       render: () => (
-        <EarningsSession
-          analytics={a}
-          loading={analytics.isLoading}
-          recommended={upcoming.data === undefined ? null : upcoming.data.rows.filter((r) => r.tier === "recommended").length}
+        <ModuleSummary
+          module="earnings"
+          mode={mode}
+          today={
+            <EarningsSession
+              analytics={a}
+              loading={analytics.isLoading}
+              recommended={upcoming.data === undefined ? null : upcoming.data.rows.filter((r) => r.tier === "recommended").length}
+            />
+          }
         />
       ),
     },

@@ -1,7 +1,6 @@
 import { feeDragPct, type TradingMode } from "@console/shared";
 import { useAttempts } from "../../components/Attempts";
-import { DivergingBars } from "../../components/grid/DivergingBars";
-import { GridCard, StatTile } from "../../components/grid/GridCard";
+import { StatTile } from "../../components/grid/GridCard";
 import { useMeic } from "../../lib/api";
 import { fmtMoney } from "../../lib/format";
 import type { MeicScope } from "./MeicTables";
@@ -89,36 +88,6 @@ export function MeicSession({ mode, scope }: { mode: TradingMode; scope: MeicSco
         foot={armRows.length === 0 ? "no attempts recorded on this session" : `over ${String(armRows.length)} arms · ${refusedTotal.toLocaleString()} refused`}
       />
 
-      <GridCard
-        label="net by arm"
-        span={6}
-        h={304}
-        to="/meic/history"
-        toLabel="the closed trades behind net by arm"
-        foot={t === undefined ? (closed.isLoading ? "reading…" : "—") : `${String(t.trades)} closed trades · net of fees and settlement`}
-      >
-        <DivergingBars
-          rows={(t?.byArm ?? []).map((r) => ({ label: r.arm, value: r.net, title: `${r.arm}: ${String(r.trades)} trades` }))}
-          format={fmtMoney}
-          emptyText={closed.isLoading ? "reading…" : "nothing closed on this session yet — 0DTE positions resolve at the close"}
-        />
-      </GridCard>
-
-      <GridCard
-        label="why entries were refused"
-        span={6}
-        h={304}
-        to="/meic/attempts"
-        toLabel="every refusal, arm by arm"
-        foot={armRows.length === 0 ? "no attempts recorded on this session" : `${refusedTotal.toLocaleString()} refused evaluations · summed over ${String(armRows.length)} arms`}
-      >
-        <DivergingBars
-          rows={refusalRows.map(([reason, n]) => ({ label: reason, value: n }))}
-          format={(v) => v.toLocaleString()}
-          tone="none"
-          emptyText={attempts.isLoading ? "reading…" : "nothing refused on this session"}
-        />
-      </GridCard>
     </div>
   );
 }

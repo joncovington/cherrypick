@@ -30,8 +30,7 @@ export function CurveLightbox({ slide }: { slide: string }) {
   const todayRegime = data?.regimeSeries.find((r) => r.tradeDate === data.session);
 
   const slides: Array<SlideDef & { id: CurveSlideId }> = [
-    { id: "summary", label: CURVE_LABEL.summary, render: () => <ModuleSummary module="curve" mode={"paper"} /> },
-    { id: "session", label: CURVE_LABEL.session, render: () => <CurveSession data={data} loading={isLoading} /> },
+    { id: "summary", label: CURVE_LABEL.summary, render: () => <ModuleSummary module="curve" mode={"paper"} today={<CurveSession data={data} loading={isLoading} />} /> },
     {
       id: "regime",
       label: CURVE_LABEL.regime,
