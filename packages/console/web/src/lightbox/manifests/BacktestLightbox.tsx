@@ -11,10 +11,11 @@ import type { SlideDef } from "../types";
  * nothing else.
  */
 export const slides: SlideDef[] = [
+  // The queue first (2026-10-29): what is running and what just finished is what the page is opened for.
+  { id: "queue", label: "queue", render: () => <BacktestQueueTab /> },
   { id: "data", label: "data", render: () => <BacktestDataTab /> },
   { id: "validation", label: "validation", render: () => <BacktestValidationTab /> },
   { id: "runs", label: "runs", render: () => <BacktestRunsTab /> },
-  { id: "queue", label: "queue", render: () => <BacktestQueueTab /> },
   // B5: an arm's in-sample slice report (`technicals slices`); never a gate.
   { id: "slices", label: "slices", render: () => <BacktestSlicesTab /> },
 ];

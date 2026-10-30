@@ -356,7 +356,7 @@ cherrypick.backtest read overview|run --id`, async, memoised 30 s) each 404 with
 unless the features answer says `backtest: true`; a run id is checked against the runner's shape
 (`BACKTEST_RUN_ID` in `@console/shared`) and anything else is a 400 that spawns nothing. A bridge,
 not a mirror: the unlock verdict, every check, the paired interval and `no_exposure` are the module's.
-Tabs: `data` (licence clock, stores with refusals), `validation` (per cadence: the unlock verdict, the
+Tabs (`queue` first, and the landing tab, from 2026-10-29): `data` (licence clock, stores with refusals), `validation` (per cadence: the unlock verdict, the
 vendor-against-recorder checks, per-session quote and profile agreement), `runs` (the list; `?run=`
 reads one report: each arm's summary, the pairing with control, trials, fill model, code commit, data
 fingerprint, refused sessions, and the run cards, 2026-10-26, `pages/Backtest/RunCards.tsx`: per arm
