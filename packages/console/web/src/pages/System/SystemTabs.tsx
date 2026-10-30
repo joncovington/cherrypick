@@ -208,6 +208,16 @@ export function HealthTab() {
         ))}
       </div>
 
+      <ModulesSection
+        armDates={Object.fromEntries(data.live.modules.map((m) => [m.id, m.armDate]))}
+        posture={
+          <p>
+            <span className={data.live.halted ? "chip chip-missing" : "chip chip-ok"}>{data.live.halted ? "LIVE HALTED (flag present)" : "halt flag clear"}</span>{" "}
+            {data.live.alertDaemon !== null && <span className="chip">alert daemon {data.live.alertDaemon.state}</span>}
+          </p>
+        }
+      />
+
       <FindingsCard title="supervisor & jobs" findings={supervisorFindings} />
       <FindingsCard
         title="everything else"
@@ -216,34 +226,6 @@ export function HealthTab() {
       />
 
       <div className="cards cards-wide">
-        <Section title="live trading posture">
-          <p>
-            <span className={data.live.halted ? "chip chip-missing" : "chip chip-ok"}>{data.live.halted ? "LIVE HALTED (flag present)" : "halt flag clear"}</span>{" "}
-            {data.live.alertDaemon !== null && <span className="chip">alert daemon {data.live.alertDaemon.state}</span>}
-          </p>
-          <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>module</th>
-                <th>live gate</th>
-                <th>armed today</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.live.modules.map((m) => (
-                <tr key={m.id}>
-                  <td>
-                    <ModuleCellLink id={m.id}>{m.id}</ModuleCellLink>
-                  </td>
-                  <td className={m.liveEnabled === true ? "pnl-neg" : "muted"}>{m.liveEnabled === null ? "—" : m.liveEnabled ? "ENABLED" : "paper only"}</td>
-                  <td className={m.armedToday ? "pnl-neg" : "muted"}>{m.armedToday ? "ARMED" : m.armDate !== null ? `last ${m.armDate}` : "no"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-        </Section>
         <Section title="notifications" note={data.notify.webhookNote}>
           <dl className="system-dl">
             <dt>channels</dt>
@@ -456,15 +438,21 @@ export function SupervisorTab() {
 
 // --------------------------------------------------------------------------- modules
 
-export function ModulesTab() {
+/**
+ * Every module's state in one table, on health (2026-10-30: it was its own tab, and health carried a
+ * second, smaller table of the same modules' live gates). `posture` is the suite-wide halt flag and
+ * alert daemon, which sit above it.
+ */
+export function ModulesSection({ posture, armDates = {} }: { posture?: ReactNode; armDates?: Record<string, string | null> }) {
   const { data, isError } = useSystemModules();
   if (data === undefined) return <Loading isError={isError} />;
   return (
-    <div className="system-page">
+    <div className="cards cards-wide">
       <Section
-        title="modules"
-        note="Heartbeat is the module's own state/<module>.heartbeat; the ledger is its paper_trades.db; the stream request is what it asked the streamer for (state/stream_requests). Watchdog chips are its task and freshness findings."
+        title="modules and live posture"
+        note="Live gate and arming are each module's own; heartbeat is its state/<module>.heartbeat; the ledger is its paper_trades.db; the stream request is what it asked the streamer for (state/stream_requests). Watchdog chips are its task and freshness findings."
       >
+        {posture}
         <div className="table-scroll">
           <table className="data-table">
             <thead>
@@ -489,6 +477,7 @@ export function ModulesTab() {
                   <td className={m.enabled ? "" : "muted"}>{m.enabled ? "yes" : "no"}</td>
                   <td className={m.liveEnabled === true ? "pnl-neg" : "muted"}>
                     {m.liveEnabled === null ? "—" : m.liveEnabled ? (m.armedToday ? "ENABLED · ARMED" : "ENABLED") : "paper only"}
+                    {!m.armedToday && armDates[m.id] != null && <span className="muted"> · last armed {armDates[m.id]}</span>}
                   </td>
                   <td>
                     {m.jobs.length === 0 ? (

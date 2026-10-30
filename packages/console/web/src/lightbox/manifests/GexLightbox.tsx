@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import type { GexPayload } from "@console/shared";
 import { useGex, useGexIntegrity } from "../../lib/api";
-import { DataCard, fmtNum } from "../../components/DataTable";
+import { fmtNum } from "../../components/DataTable";
+import { Spark } from "../../components/chart/Spark";
 import { IntegrityStrip, gexHasAttention } from "../../pages/Gex/IntegrityStrip";
-import { Pager, usePage } from "../../components/ScopeBar";
 import { useFlashOnChange } from "../../lib/useFlashOnChange";
 import {
   GexProfileChart,
@@ -141,6 +142,15 @@ function etDay(d: Date): string {
   return d.toLocaleDateString("en-US", { timeZone: ET });
 }
 
+/** Today's time, or the ET date of an older recording, so a stale symbol never reads as current. */
+export function fmtRecorded(iso: string, now: Date = new Date()): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso;
+  const d = new Date(t);
+  if (etDay(d) === etDay(now)) return d.toLocaleTimeString("en-US", { timeZone: ET, hour: "2-digit", minute: "2-digit", hour12: false });
+  return d.toLocaleDateString("en-CA", { timeZone: ET });
+}
+
 export function asOfIsToday(epochSeconds: number): boolean {
   return etDay(new Date(epochSeconds * 1000)) === etDay(new Date());
 }
@@ -159,12 +169,61 @@ export function formatAsOf(epochSeconds: number): string {
   return asOfIsToday(epochSeconds) ? time : `${etDay(d)} ${time}`;
 }
 
+/** The whole of today's recorded regime, not a page of it: one sparkline wants every point. */
+const DAY_PAGE = { offset: 0, limit: 500 };
+
+/**
+ * Net GEX as the recorder wrote it through today, for the chosen symbol, and when each symbol was
+ * last recorded. It replaced the `history` tab's two tables (2026-10-30): a 77-row snapshot table
+ * read as one line on a chart, and the latest-per-symbol table was mostly a staleness check.
+ */
+export function RecordedToday({ symbol, data }: { symbol: string; data: GexPayload | undefined }) {
+  if (data === undefined) return null;
+  const rows = data.recent.rows.filter((r) => r.symbol === symbol && r.netGex !== null).reverse();
+  const first = rows[0];
+  const last = rows[rows.length - 1];
+  const capped = data.recent.total > data.recent.rows.length;
+  return (
+    <section className="card view-fade">
+      <div className="card-head">
+        <h2>Net GEX recorded today — {symbol}</h2>
+        {first !== undefined && last !== undefined && (
+          <span className="card-asof">
+            {rows.length} snapshots, {fmtEt(first.ts)} to {fmtEt(last.ts)}
+            {capped ? ` (the day's first ${String(data.recent.rows.length)} of ${String(data.recent.total)} rows)` : ""}
+          </span>
+        )}
+      </div>
+      {rows.length >= 2 ? (
+        <>
+          <Spark values={rows.map((r) => r.netGex!)} height={48} tone="sign" title="net GEX through the day" />
+          <p className="muted">
+            {fmtGex(first!.netGex)} at the first snapshot, {fmtGex(last!.netGex)} at the last; zero gamma {fmtNum(last!.zeroGamma, 0)},
+            walls {fmtNum(last!.putWall, 0)} / {fmtNum(last!.callWall, 0)}.
+          </p>
+        </>
+      ) : (
+        <p className="muted">The recorder has written {rows.length === 0 ? "nothing" : "one snapshot"} for {symbol} today.</p>
+      )}
+      <p className="muted">
+        Last recorded:{" "}
+        {data.latest.map((g, i) => (
+          <span key={g.symbol}>
+            {i > 0 ? " · " : ""}
+            {g.symbol} {fmtRecorded(g.ts)}
+          </span>
+        ))}
+      </p>
+    </section>
+  );
+}
+
 function isGexSlideId(v: string): v is GexSlideId {
   return GEX_SLIDES.some((s) => s.id === v);
 }
 
 /**
- * GEX on the module frame (2026-09-25; a lightbox before that). Its four former page tabs
+ * GEX on the module frame (2026-09-25; a lightbox before that). Its former page tabs
  * (GEX/IV Skew/Volume/History) are its pages, declared in `navGroups.ts`, and the integrity strip --
  * which used to sit above every tab's cards on the standalone page -- rides the same chip-plus-
  * drawer slot every other module manifest uses (`integrity`/`integrityAttention`), collapsed by
@@ -176,11 +235,10 @@ export function GexLightbox({ slide }: { slide: string }) {
   const [symbol, setSymbol] = useState("SPX");
   const [view, setView] = useState<GexView>("oivol");
   const activeSlide: GexSlideId = isGexSlideId(slide) ? slide : "gex";
-  const { page, setOffset, setLimit } = usePage();
-  const { data, isLoading, isError } = useGex(activeSlide === "history", page);
+  const { data } = useGex(activeSlide === "gex", DAY_PAGE);
   const integrity = useGexIntegrity();
   const symbols = useGexSymbols();
-  const profile = useGexProfile(symbol, activeSlide !== "history");
+  const profile = useGexProfile(symbol, true);
   const p = profile.data;
 
   const slides: SlideDef[] = [
@@ -235,6 +293,7 @@ export function GexLightbox({ slide }: { slide: string }) {
               <p className="muted">{p?.error ?? "no profile"}</p>
             )}
           </section>
+          <RecordedToday symbol={symbol} data={data} />
         </div>
       ),
     },
@@ -269,14 +328,7 @@ export function GexLightbox({ slide }: { slide: string }) {
               <span className="skeleton skeleton-text" style={{ width: "40%" }} />
             )}
           </section>
-        </div>
-      ),
-    },
-    {
-      id: "volume",
-      label: "volume",
-      render: () => (
-        <div className="cards cards-wide">
+
           <section className="card view-fade">
             <h2>Volume by strike (calls vs puts)</h2>
             {p?.ok && p.series && p.spot !== undefined ? (
@@ -292,71 +344,6 @@ export function GexLightbox({ slide }: { slide: string }) {
               <span className="skeleton skeleton-text" style={{ width: "40%" }} />
             )}
           </section>
-        </div>
-      ),
-    },
-    {
-      id: "history",
-      label: "history",
-      render: () => (
-        <div className="cards cards-wide">
-          <DataCard
-            title="Latest regime per symbol"
-            headers={["sym", "as of", "spot", "net GEX", "net GEX (vol)", "zero gamma", "call wall", "put wall"]}
-            numFrom={1}
-            loading={isLoading}
-            isError={isError}
-            rowCount={data?.latest.length ?? 0}
-            skeletonRows={3}
-            className="view-fade"
-          >
-            {data?.latest.map((g) => (
-              <tr key={g.symbol}>
-                <td>{g.symbol}</td>
-                <td className="muted">{fmtEt(g.ts)}</td>
-                <td>{fmtNum(g.spot, 2)}</td>
-                <td>{fmtGex(g.netGex)}</td>
-                <td>{fmtGex(g.netGexVol)}</td>
-                <td>{fmtNum(g.zeroGamma, 0)}</td>
-                <td>{fmtNum(g.callWall, 0)}</td>
-                <td>{fmtNum(g.putWall, 0)}</td>
-              </tr>
-            ))}
-          </DataCard>
-
-          <DataCard
-            title="Today's regime snapshots"
-            headers={["time", "sym", "spot", "net GEX", "zero gamma", "call wall", "put wall"]}
-            numFrom={1}
-            loading={isLoading}
-            isError={isError}
-            rowCount={data?.recent.rows.length ?? 0}
-            skeletonRows={10}
-            className="view-fade"
-            footer={
-              data !== undefined && (
-                <Pager
-                  offset={data.recent.offset}
-                  limit={data.recent.limit}
-                  total={data.recent.total}
-                  onOffset={setOffset}
-                  onLimit={setLimit}
-                />
-              )
-            }
-          >
-            {data?.recent.rows.map((g, i) => (
-              <tr key={`${g.symbol}-${g.ts}-${i}`}>
-                <td className="muted">{fmtEt(g.ts)}</td>
-                <td>{g.symbol}</td>
-                <td>{fmtNum(g.spot, 2)}</td>
-                <td>{fmtGex(g.netGex)}</td>
-                <td>{fmtNum(g.zeroGamma, 0)}</td>
-                <td>{fmtNum(g.callWall, 0)}</td>
-                <td>{fmtNum(g.putWall, 0)}</td>
-              </tr>
-            ))}
-          </DataCard>
         </div>
       ),
     },

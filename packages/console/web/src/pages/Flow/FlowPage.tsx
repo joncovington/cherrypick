@@ -863,14 +863,14 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         value={top !== undefined ? top.symbol : null}
         span={2}
         foot={top !== undefined ? `${top.shown["total"] ?? fmtCount(top.total)} trades` : "no Birdseye rows"}
-        to="/flow/birdseye"
+        to="/flow/tables?table=birdseye"
       />
       <StatTile
         label="Largest trade"
         value={big !== null ? fmtDollarsShort(big.premium) : null}
         span={2}
         foot={big !== null ? `${big.symbol ?? "?"} · ${TABLE_LABEL[big.table] ?? big.table}` : "no premium read"}
-        to={big?.table === "spreads" ? "/flow/spreads" : "/flow/trades"}
+        to={big?.table === "spreads" ? "/flow/tables?table=spreads" : "/flow/tables?table=trades"}
       />
       <StatTile
         label="Bullish premium"
@@ -878,7 +878,7 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         tone="pos"
         span={2}
         foot={`${String(nBull)} trades, by the reported side`}
-        to="/flow/trades"
+        to="/flow/tables?table=trades"
       />
       <StatTile
         label="Bearish premium"
@@ -886,7 +886,7 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         tone="neg"
         span={2}
         foot={`${String(nBear)} trades · neutral ${fmtDollarsShort(neutral)} (${String(nNeutral)})`}
-        to="/flow/trades"
+        to="/flow/tables?table=trades"
       />
       <StatTile
         label="Names across tables"
@@ -901,7 +901,7 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         label={`Trades — ${asOf(day)}`}
         span={8}
         h={304}
-        to="/flow/birdseye"
+        to="/flow/tables?table=birdseye"
         toLabel="the full Birdseye table"
         foot="trades (not contracts), the ten most traded names; counts as reported"
       >
@@ -913,12 +913,12 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         label={`Largest by contracts — ${asOf(day)}`}
         span={6}
         h={304}
-        to="/flow/trades"
+        to="/flow/tables?table=trades"
         foot="single-leg trades, ranked by contracts · * premium derived"
       >
         <TradesTable rows={day.outrights} limit={7} showTime={false} />
       </GridCard>
-      <GridCard label={`Top sweeps — ${asOf(day)}`} span={6} h={304} to="/flow/trades" foot="side as reported">
+      <GridCard label={`Top sweeps — ${asOf(day)}`} span={6} h={304} to="/flow/tables?table=trades" foot="side as reported">
         <TradesTable rows={day.sweeps} limit={7} showTime={false} />
       </GridCard>
 
@@ -926,12 +926,12 @@ export function FlowToday({ day }: { day: OptionsFlowDay }) {
         label={`Top spreads — ${asOf(day)}`}
         span={6}
         h={304}
-        to="/flow/spreads"
+        to="/flow/tables?table=spreads"
         foot="⛓ printed together (same time and size); direction from the price sign, checked against delta"
       >
         <SpreadsTable rows={day.spreads} limit={7} full={false} derived={day.derived} />
       </GridCard>
-      <GridCard label={`Vol / OI — ${asOf(day)}`} span={6} h={304} to="/flow/voloi" foot="volume against open interest; OI > 100">
+      <GridCard label={`Vol / OI — ${asOf(day)}`} span={6} h={304} to="/flow/tables?table=voloi" foot="volume against open interest; OI > 100">
         <VolOiTable rows={day.voloi} limit={7} />
       </GridCard>
     </div>
@@ -1038,7 +1038,7 @@ export function FlowSpreads({ day }: { day: OptionsFlowDay }) {
   );
 }
 
-export function FlowVolOi({ day }: { day: OptionsFlowDay }) {
+export function FlowVolOiTables({ day }: { day: OptionsFlowDay }) {
   return (
     <div className="cards cards-pairs">
       <section className="card view-fade">
@@ -1057,5 +1057,43 @@ export function FlowVolOi({ day }: { day: OptionsFlowDay }) {
         <p className="muted">New strikes: no open interest before the session, so V/OI is the volume itself.</p>
       </section>
     </div>
+  );
+}
+
+/** The four site tables, one at a time (2026-10-30: they were four tabs). The table rides `?table=`. */
+export const FLOW_TABLES = [
+  { id: "birdseye", label: "by size" },
+  { id: "trades", label: "trades" },
+  { id: "spreads", label: "spreads" },
+  { id: "voloi", label: "vol / OI" },
+] as const;
+
+export type FlowTableId = (typeof FLOW_TABLES)[number]["id"];
+
+export function flowTableId(v: string | null | undefined): FlowTableId {
+  return FLOW_TABLES.find((t) => t.id === v)?.id ?? "birdseye";
+}
+
+export function FlowTables({ day, table, onTable }: { day: OptionsFlowDay; table: FlowTableId; onTable: (t: FlowTableId) => void }) {
+  return (
+    <>
+      <div className="mode-toggle" role="group" aria-label="table" style={{ marginBottom: 12 }}>
+        {FLOW_TABLES.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={`mode-btn ${t.id === table ? "active" : ""}`}
+            aria-pressed={t.id === table}
+            onClick={() => onTable(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {table === "birdseye" && <FlowBirdseye day={day} />}
+      {table === "trades" && <FlowTrades day={day} />}
+      {table === "spreads" && <FlowSpreads day={day} />}
+      {table === "voloi" && <FlowVolOiTables day={day} />}
+    </>
   );
 }

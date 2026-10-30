@@ -12,7 +12,7 @@ import type { ConfigTargetId, ConfigTargetModel } from "@console/shared";
  * Everything else stays where it already works — a text editor, with the config's own notes in view.
  */
 
-export type FieldSection = "arms" | "modules" | "timing" | "notify" | "rules" | "dev";
+export type FieldSection = "arms" | "modules" | "timing" | "notify" | "rules";
 export type FieldType = "boolean" | "number" | "string" | "time" | "stringList" | "enum";
 
 export interface FieldMeta {
@@ -46,8 +46,10 @@ export interface SectionMeta {
 
 export const SECTIONS: SectionMeta[] = [
   {
+    // "Arms" alone (2026-10-30): `profile` is a word the suite keeps for other things; MEIC's
+    // registry is still spelled `profiles` in its file, and the toggle's own label says so.
     id: "arms",
-    title: "Arms & profiles",
+    title: "Arms",
     blurb: "Which experiments run each session. Every enabled arm is evaluated on every tick.",
   },
   {
@@ -60,20 +62,14 @@ export const SECTIONS: SectionMeta[] = [
     title: "Timing & cadence",
     blurb: "Entry windows and loop pacing. A change lands on the next supervisor pass — no reinstall.",
   },
-  { id: "notify", title: "Notifications & jobs", blurb: "Where alerts go, and how often the scheduled checks run." },
+  // "Alerts" (2026-10-30): "jobs" already means the supervisor's jobs and the research queue's.
+  { id: "notify", title: "Alerts", blurb: "Where alerts go, and how often the scheduled checks run." },
   {
     id: "rules",
     title: "Position rules",
     blurb:
       "The daily position evaluation (Live → positions and portfolio): when it runs, and the thresholds it judges the live " +
       "account by. Advice only — it never places an order. A change applies at the next evaluation.",
-  },
-  {
-    id: "dev",
-    title: "Dev knobs",
-    blurb:
-      "Temporary switches. If one of these has outlived its reason, delete it — advise.enabled did, " +
-      "when the advice producer went with the 2026-08-13 EOD cutover, and is no longer offered here.",
   },
 ];
 
@@ -413,14 +409,14 @@ export const FIELDS: FieldMeta[] = [
     section: "rules",
   },
 
-  // --- dev knobs ---------------------------------------------------------------------------
+  // --- the console's own pacing (the `dev` section until 2026-10-30, its only field) ---------
   {
     target: "orchestrator",
     pointer: "/console/dev_backoff_seconds",
     label: "Console crash backoff",
     type: "number",
     min: 1,
-    section: "dev",
+    section: "timing",
   },
 ];
 

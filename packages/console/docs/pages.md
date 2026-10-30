@@ -646,8 +646,8 @@ module, is the "live shadow" table in the Paper view, read off the same file.
 - A pack is served as the model saw it, `_` keys removed as `intraday_pack.for_model` removes them.
   A close is a tag priced at natural, never a fill, and the page says so.
 
-**GEX** (`/gex`, four tabs: gex, iv skew, volume, history) computes its profile in TypeScript,
-mirroring `core.gex`: `analytics/gex.ts`'s `strikeGamma` (one gamma per strike, the OTM side's) and
+**GEX** (`/gex`, two tabs since 2026-10-30: gex, with the recorded day as a sparkline, and iv
+skew, with volume) computes its profile in TypeScript, mirroring `core.gex`: `analytics/gex.ts`'s `strikeGamma` (one gamma per strike, the OTM side's) and
 `netWalls` (no wall without a strike on its own side of zero) are the core's `strike_gamma` and
 `net_walls`, and `services/gexProfile.ts`'s `LEFTOVER_ROW_SECONDS` is `core.gex.LEFTOVER_ROW_SECONDS`.
 Change each pair together or not at all. `wallAlternates` (`contestedWalls`: a runner-up whose net is

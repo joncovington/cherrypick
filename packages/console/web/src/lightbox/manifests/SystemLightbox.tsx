@@ -1,4 +1,4 @@
-import { DataTab, EnvironmentTab, HealthTab, LogsTab, ModulesTab, SupervisorTab } from "../../pages/System/SystemTabs";
+import { DataTab, EnvironmentTab, HealthTab, LogsTab, SupervisorTab } from "../../pages/System/SystemTabs";
 import { useSystemHealth } from "../../lib/api";
 import { DataEvidenceCards } from "../../pages/System/DataEvidenceCards";
 import { ModuleFrame } from "../ModuleFrame";
@@ -12,7 +12,6 @@ import type { SlideDef } from "../types";
 export const slides: SlideDef[] = [
   { id: "health", label: "health", render: () => <HealthTab /> },
   { id: "supervisor", label: "supervisor", render: () => <SupervisorTab /> },
-  { id: "modules", label: "modules", render: () => <ModulesTab /> },
   {
     id: "data",
     label: "data",
