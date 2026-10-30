@@ -637,6 +637,48 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 27,
+      "study": "item27",
+      "title": "Getting the share ladder out of multi-year holds: averaging down, a decaying target, a time stop, a trend check, a confirmation",
+      "status": "declared",
+      "legacy": false,
+      "setup": "dip-buy",
+      "side": "bullish",
+      "structure": "shares",
+      "window": "multi-day",
+      "measure": "per name and arm, paired against item 26's once-3: log ratio of the longest hold, % of budget a year, drawdown; also p90 hold, capital-days, cap-full share, lots; arms avg-5, decay, avg-5-decay, time-120, trend, confirm",
+      "expected": "a shorter longest hold at no more than 2 points a year of return",
+      "sample": "item 26's judged names, windows and costs; design 2011-01-03..2019-12-31, holdout 2020-01-02..2026-10-28 counting only after a design pass; < 8 names or < 300 closed lots in arm or base = no verdict",
+      "rule": "per arm: mean log ratio of longest hold < 0 with one-sided t < -2, Holm across six arms, below zero on more than half the names and in both halves; mean return difference >= -2 points at 0.05% and 0.15% a side; mean drawdown difference <= 0; then holdout log ratio < 0 and the return condition",
+      "mechanism": "payoff shaping: long holds come from lots bought early in a long fall and a 3x fund's larger needed rebound; each arm buys less early in a fall or needs less rebound to exit",
+      "rivals": [
+        {
+          "explanation": "shorter holds by selling losers",
+          "check": "return non-inferiority; realised losses reported"
+        },
+        {
+          "explanation": "fewer lots, not better ones",
+          "check": "lots opened reported beside every figure"
+        },
+        {
+          "explanation": "more capital at risk (avg-5)",
+          "check": "drawdown on its own budget and peak capital reported"
+        },
+        {
+          "explanation": "one era",
+          "check": "both design halves must agree"
+        },
+        {
+          "explanation": "searching a grid",
+          "check": "Holm across six arms; schedule fixed in the declaration"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#27-getting-the-share-ladder-out-of-multi-year-holds-averaging-down-a-decaying-target-a-time-stop-a-trend-check-a-confirmation",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
