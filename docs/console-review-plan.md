@@ -219,10 +219,15 @@ rename it `alerts`.
    - module open-position tables: BWB's 14 columns to 8 with an expanded line (landed). MEIC (10)
      and Earnings (8) were already short; PMCC, Calendars, Curve and Contango wait for the
      Experiments page (batch 4)
-4. **Experiments and Flies:**
-   - the Experiments page
-   - the Flies record page
-   - the rail regrouped; fixed module keys
+4. **Experiments and Flies** (landed 2026-10-30):
+   - the Experiments page (`/experiments`, key `4`): a card per experiment from its own summary
+     read (status line with the tested verdict and last traded day, all-time net, open now, links
+     to today / open / closed / performance). The module pages stay whole and reachable; the rail
+     opens one out under Experiments while you are on it
+   - Flies is a record card on the same page, in the repo's words (retired 2026-10-19, may be
+     reinstated), with paper and live all-time nets. No flies tab was removed: it may come back
+   - the rail: MEIC 1, BWB 2, Earnings 3, Experiments 4, fixed (an off module's digit does nothing);
+     Config is `g o`; the Suite header goes when Config is all it would hold
 5. **Fill the gaps:**
    - on Live: premium-income pace, delta and theta bands over time, and "what to do today" (actions, candidates that fit the room, expiring and earnings exposure)
    - MEIC live against paper

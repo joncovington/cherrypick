@@ -231,6 +231,17 @@ function CompareIcon() {
   );
 }
 
+/** A flask: the paper-only experiments (2026-10-30). */
+function ExperimentsIcon() {
+  return (
+    <Svg>
+      <path d="M9.5 4h5" />
+      <path d="M10.5 4v5.5L6 18.2A1.3 1.3 0 0 0 7.2 20h9.6a1.3 1.3 0 0 0 1.2-1.8L13.5 9.5V4" />
+      <path d="M8 15h8" opacity="0.55" />
+    </Svg>
+  );
+}
+
 /* A clock hand turning back — the backtest's replay of the strategies over history. */
 function BacktestIcon() {
   return (
@@ -250,6 +261,7 @@ const ICONS: Record<string, (p: NavIconProps) => ReactNode> = {
   "/flow": FlowIcon,
   "/reports": ReportsIcon,
   "/compare": CompareIcon,
+  "/experiments": ExperimentsIcon,
   "/advisor": AdvisorIcon,
   "/live": LiveIcon,
   "/system": SystemIcon,

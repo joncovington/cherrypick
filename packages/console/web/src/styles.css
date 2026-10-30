@@ -1349,6 +1349,16 @@ select.text-input {
   font-variant-numeric: tabular-nums;
   font-size: 1.05rem;
 }
+/* A tile's one line beneath its figure (the Experiments cards, 2026-10-30). */
+.stat-tile .stat-foot {
+  display: block;
+  font-size: 11px;
+  margin-top: 0.15rem;
+}
+.experiment-links {
+  margin: 0.7rem 0 0;
+  font-size: 12px;
+}
 
 .log-line {
   display: flex;

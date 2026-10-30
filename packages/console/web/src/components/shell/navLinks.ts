@@ -52,21 +52,33 @@ export function railHalves<T extends NavLinkDef>(links: readonly T[]): { above: 
   return { above, below: links.filter((l) => !above.includes(l)) };
 }
 
-/** The module pages, in the order the suite lists them everywhere (`TRADING_MODULE_ORDER`). Hand-kept
- *  for its labels and keys, so `test/navLinks.test.ts` fails when a trading module has no link here:
- *  contango shipped 2026-10-05 with a route and no way to reach it. */
+/**
+ * The rail's Modules section (2026-10-30, docs/console-review-plan.md batch 4): the live-capable
+ * modules, then the Experiments page. Each keeps its digit whether or not another is on: `2` is BWB
+ * every day, so a module switched off no longer moves the others' keys.
+ */
 export const MODULE_LINKS: readonly NavLinkDef[] = [
-  { to: "/flies", label: "Flies", key: "1" },
-  { to: "/meic", label: "MEIC", key: "2" },
-  { to: "/bwb", label: "BWB", key: "3" },
-  { to: "/earnings", label: "Earnings", key: "4" },
-  { to: "/pmcc", label: "PMCC", key: "5" },
-  { to: "/calendars", label: "Calendars", key: "6" },
-  { to: "/curve", label: "Curve", key: "7" },
-  { to: "/contango", label: "Contango", key: "8" },
+  { to: "/meic", label: "MEIC", key: "1" },
+  { to: "/bwb", label: "BWB", key: "2" },
+  { to: "/earnings", label: "Earnings", key: "3" },
+  { to: "/experiments", label: "Experiments", key: "4" },
 ];
 
-export const CONFIG_LINK: NavLinkDef = { to: "/config", label: "Config" };
+/**
+ * The modules the Experiments page holds: the paper-only experiments and the retired flies. Off the
+ * rail; the rail opens one out under Experiments while you are on it. With MODULE_LINKS, every trading
+ * module has a link (`test/navLinks.test.ts`): contango shipped 2026-10-05 with a route and no way to
+ * reach it.
+ */
+export const EXPERIMENT_LINKS: readonly NavLinkDef[] = [
+  { to: "/pmcc", label: "PMCC" },
+  { to: "/calendars", label: "Calendars" },
+  { to: "/curve", label: "Curve" },
+  { to: "/contango", label: "Contango" },
+  { to: "/flies", label: "Flies" },
+];
+
+export const CONFIG_LINK: NavLinkDef = { to: "/config", label: "Config", key: "o" };
 
 /** Suite pages the SIMPLE view leaves off the rail: the experiment comparison, the backtest, the
  *  advisor and the suite's own health are developer surfaces. Still reachable by URL and shortcut,
@@ -79,22 +91,24 @@ export function suiteLinksFor<T extends NavLinkDef>(links: readonly T[], view: "
   return links.filter((l) => !SIMPLE_HIDDEN_PAGES.includes(l.to) || l.to.slice(1) === current);
 }
 
-export const ALL_NAV_LINKS: readonly NavLinkDef[] = [...SUITE_LINKS, ...MODULE_LINKS, CONFIG_LINK];
+export const ALL_NAV_LINKS: readonly NavLinkDef[] = [...SUITE_LINKS, ...MODULE_LINKS, ...EXPERIMENT_LINKS, CONFIG_LINK];
 
 /**
  * The links a reader can actually use right now: an off module (or the advisor, or GEX with its
- * recorder off) is left out of every nav, and the digit shortcuts are renumbered over what is left,
- * so `1`–`n` always name the modules the menu shows in the order it shows them. Unknown features
+ * recorder off) is left out of every nav. The digits are fixed (2026-10-30): an off module leaves
+ * its key unbound rather than renumbering the rest. Unknown features
  * keep every link (`visibility.ts`: unknown is visible) -- except Backtest, which fails closed and is
  * listed only once the suite says `backtest: true`.
  */
 export function visibleNavLinks(features: SuiteFeatures | undefined): {
   suite: NavLinkDef[];
   modules: NavLinkDef[];
+  experiments: NavLinkDef[];
 } {
   const shown = (l: NavLinkDef) => isModuleVisible(l.to.slice(1), features);
   return {
     suite: SUITE_LINKS.filter(shown),
-    modules: MODULE_LINKS.filter(shown).map((l, i) => ({ ...l, key: String(i + 1) })),
+    modules: MODULE_LINKS.filter(shown),
+    experiments: EXPERIMENT_LINKS.filter(shown),
   };
 }

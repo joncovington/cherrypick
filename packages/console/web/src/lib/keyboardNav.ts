@@ -1,5 +1,5 @@
 import type { SuiteFeatures } from "@console/shared";
-import { visibleNavLinks } from "../components/shell/navLinks";
+import { CONFIG_LINK, visibleNavLinks } from "../components/shell/navLinks";
 
 /**
  * The keyboard shortcuts the rail advertises in its link tooltips (`ModuleNav.shortcutTitle`).
@@ -49,14 +49,16 @@ export function reduceKey(state: KeyState, ev: KeyEvent): { state: KeyState; act
   // must not turn an `o` into a navigation.
   const links = visibleNavLinks(ev.features);
   if (state.pendingG !== null && ev.now - state.pendingG <= CHORD_MS) {
-    const hit = links.suite.find((l) => l.key === ev.key);
+    // Config is never filtered, so its `g o` (2026-10-30) holds whatever else is off.
+    const hit = [...links.suite, CONFIG_LINK].find((l) => l.key === ev.key);
     return { state: idle, action: hit === undefined ? null : { kind: "navigate", to: hit.to } };
   }
 
   if (ev.key === "g") return { state: { pendingG: ev.now }, action: null };
 
+  // A digit is the module's own, fixed key (2026-10-30); an off module's key does nothing.
   if (/^[1-9]$/.test(ev.key)) {
-    const hit = links.modules[Number(ev.key) - 1];
+    const hit = links.modules.find((l) => l.key === ev.key);
     return { state: idle, action: hit === undefined ? null : { kind: "navigate", to: hit.to } };
   }
 

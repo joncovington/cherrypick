@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { NavLink, useSearchParams } from "react-router-dom";
 import { type ModuleId, isExperimental } from "../../lightbox/moduleOrder";
 import { NAV_DECL, navGroups, viewSlides } from "../../lightbox/navGroups";
@@ -66,6 +66,9 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
   const visible = visibleNavLinks(features);
   const suite = suiteLinksFor(visible.suite, view, module);
   const { modules } = visible;
+  // An experiment (or the retired flies) is off the rail; while you are on one it opens out under
+  // Experiments, so its tabs have a place (2026-10-30).
+  const openExperiment = module === null ? undefined : visible.experiments.find((l) => l.to.slice(1) === module);
   // Real money and the market reads above the modules; research and the suite's own pages below.
   const { above, below } = railHalves(suite);
   // A paused advisor is a status to check, not research to read (2026-10-30): it sits with System.
@@ -172,10 +175,15 @@ export function ModuleNav({ module, slide }: { module: ModuleId | null; slide: s
       <div id="mf-nav-links" hidden={!expanded}>
         {above.map((l) => link(l))}
         <div className="mf-nav-section">Modules</div>
-        {modules.map((l) => link(l))}
+        {modules.map((l) => (
+          <Fragment key={l.to}>
+            {link(l)}
+            {l.to === "/experiments" && openExperiment !== undefined && link(openExperiment)}
+          </Fragment>
+        ))}
         {research.length > 0 && <div className="mf-nav-section">Research</div>}
         {research.map((l) => link(l))}
-        <div className="mf-nav-section">Suite</div>
+        {suitePages.length > 0 && <div className="mf-nav-section">Suite</div>}
         {suitePages.map((l) => link(l))}
         {link(
           CONFIG_LINK,
