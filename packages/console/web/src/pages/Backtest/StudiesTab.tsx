@@ -89,7 +89,7 @@ export function contextLine(o: BacktestOverview | null): string | null {
   const windows =
     w.design && w.holdout ? `Design window ${w.design[0]} to ${w.design[1]}; holdout ${w.holdout[0]} to ${w.holdout[1]}.` : "";
   const locked = o.validation.length > 0 && o.validation.every((v) => !v.unlocks_history);
-  const why = locked ? " MEIC and flies replays are provisional: validation has not unlocked their history (see the validation tab)." : "";
+  const why = locked ? " MEIC and flies replays are provisional: validation has not unlocked their history (see “is history trusted?” on the data tab)." : "";
   return windows + why || null;
 }
 

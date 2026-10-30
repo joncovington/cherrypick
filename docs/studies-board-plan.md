@@ -110,9 +110,17 @@ No fixture in a test carries a licensed figure.
 
 ## Decisions (2026-10-29)
 
-1. **Slices moves to Review.** It reads paper trades, and a reader looks for it beside paper and
+1. **Slices moves out of Backtest.** It reads paper trades, and a reader looks for it beside paper and
    live results. A report may still come from a licensed replay, so it needs a fail-closed gate per
    tab (`FAIL_CLOSED_PAGES` is per page today); that gate lands with the move, shown to fail first.
+   *Landed 2026-10-30 under Compare*, the console having no Review page: a slice report compares
+   groups of one arm's trades, beside Compare's arms, risk and calendar.
+
+## Status (2026-10-30)
+
+Phases 1-5 have landed: the register caught up and checked (#677, #679 for item 22), the board
+reader (#677), the studies tab (#678), the cross-links (#680), and the tidy (data with "is history
+trusted?", one store table, slices to Compare). The trial count is next, in its own PR.
 2. **The trial count is its own PR.** `trials` in the overview is empty, so the DSR on every run
    deflates by nothing. Recording trials per study fixes a number recorded wrong, so it lands
    immediately and apart from this board.

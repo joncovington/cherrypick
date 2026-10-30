@@ -2,6 +2,7 @@ import { ComparePage } from "../../pages/Compare/ComparePage";
 import { RiskTab } from "../../pages/Compare/RiskTab";
 import { CalendarTab } from "../../pages/Compare/CalendarTab";
 import { PortfolioTab } from "../../pages/Compare/PortfolioTab";
+import { SlicesTab } from "../../pages/Compare/SlicesTab";
 import { ModuleFrame } from "../ModuleFrame";
 import { ModeToggle } from "../../components/ModeToggle";
 import { useMode } from "../../lib/useMode";
@@ -17,6 +18,8 @@ export const slides: SlideDef[] = [
   { id: "risk", label: "risk", render: () => <RiskTab /> },
   { id: "calendar", label: "calendar", render: () => <CalendarTab /> },
   { id: "portfolio", label: "portfolio", render: () => <PortfolioTab /> },
+  // B5: an arm's in-sample slice report (`technicals slices`); never a gate. Fails closed on backtest.
+  { id: "slices", label: "slices", render: () => <SlicesTab /> },
 ];
 
 export function CompareLightbox({ slide }: { slide: string }) {

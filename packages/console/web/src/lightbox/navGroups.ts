@@ -332,6 +332,9 @@ export const COMPARE_SLIDES = [
   { id: "calendar", label: "calendar" },
   // 2026-10-17: one chosen arm per module held together -- correlation, effective arms, drawdown benefit.
   { id: "portfolio", label: "portfolio" },
+  // 2026-10-30, from Backtest: an arm's in-sample slice report (B5). Fails closed on the backtest
+  // feature (`FAIL_CLOSED_SLIDES`): a report may come from a licensed replay.
+  { id: "slices", label: "slices" },
 ] as const satisfies readonly NavSlide[];
 
 /**
@@ -381,16 +384,14 @@ export const ADVISOR_SLIDES = [{ id: "advisor", label: "advisor" }] as const sat
  * Backtest (2026-10-17): `packages/backtest`'s replays over licensed vendor history. Shown only
  * while the suite says `backtest: true` (it fails closed, `visibility.ts`). `queue` is the research
  * tasks the supervisor runs (2026-10-24; first, and the landing tab, from 2026-10-29), `studies`
- * what we tested and found (2026-10-29), `runs` the replays, `data` the licence clock and the
- * stores, `validation` the vendor against the recorder.
+ * what we tested and found (2026-10-29), `runs` the replays, `data` whether history is trusted
+ * (validation, folded in 2026-10-30), the licence and the stores. `slices` moved to Compare.
  */
 export const BACKTEST_SLIDES = [
   { id: "queue", label: "queue" },
   { id: "studies", label: "studies" },
   { id: "runs", label: "runs" },
   { id: "data", label: "data" },
-  { id: "validation", label: "validation" },
-  { id: "slices", label: "slices" },
 ] as const satisfies readonly NavSlide[];
 
 /**
@@ -555,7 +556,8 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   reports: { slides: REPORTS_SLIDES },
   compare: { slides: COMPARE_SLIDES },
-  backtest: { slides: BACKTEST_SLIDES },
+  // `validation` folded into `data` (2026-10-30); `/backtest/slices` is a route to Compare (App.tsx).
+  backtest: { slides: BACKTEST_SLIDES, legacy: { validation: "data" } },
   advisor: { slides: ADVISOR_SLIDES },
   system: { slides: SYSTEM_SLIDES },
   config: { slides: CONFIG_SLIDES },
