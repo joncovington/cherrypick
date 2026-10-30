@@ -44,17 +44,22 @@ describe("the g chord", () => {
 
 describe("the module digits", () => {
   it("names the same modules the menu advertises, in the same order", () => {
-    // 2026-10-18: the live-capable modules first, flies leading, then the paper-only ones.
-    expect(press(IDLE, "1").action).toEqual({ kind: "navigate", to: "/flies" });
-    expect(press(IDLE, "2").action).toEqual({ kind: "navigate", to: "/meic" });
-    expect(press(IDLE, "5").action).toEqual({ kind: "navigate", to: "/pmcc" });
-    expect(press(IDLE, "8").action).toEqual({ kind: "navigate", to: "/contango" });
+    // 2026-10-30: the live-capable modules, then the Experiments page that holds the rest.
+    expect(press(IDLE, "1").action).toEqual({ kind: "navigate", to: "/meic" });
+    expect(press(IDLE, "2").action).toEqual({ kind: "navigate", to: "/bwb" });
+    expect(press(IDLE, "3").action).toEqual({ kind: "navigate", to: "/earnings" });
+    expect(press(IDLE, "4").action).toEqual({ kind: "navigate", to: "/experiments" });
   });
 
   it("ignores a digit no module claims", () => {
-    // Eight trading modules since GEX joined the market reads (2026-10-18): 9 and 0 are nobody's.
+    expect(press(IDLE, "5").action).toBeNull();
     expect(press(IDLE, "9").action).toBeNull();
     expect(press(IDLE, "0").action).toBeNull();
+  });
+
+  it("g o reaches Config, whatever else is off", () => {
+    const first = press(IDLE, "g");
+    expect(press(first.state, "o", { now: 1100 }).action).toEqual({ kind: "navigate", to: "/config" });
   });
 
   it("g g reaches GEX, now a suite page among the market reads", () => {
@@ -62,18 +67,17 @@ describe("the module digits", () => {
     expect(press(first.state, "g", { now: 1100 }).action).toEqual({ kind: "navigate", to: "/gex" });
   });
 
-  it("name the VISIBLE modules: an off module's digit goes to the next one shown", () => {
-    // pmcc off: 5 is calendars now, 7 is contango, and 8 (contango's old digit) is nobody's.
+  it("keep their keys when a module is off: the off module's digit does nothing, the rest do not move", () => {
+    // Fixed since 2026-10-30; before, bwb off made 2 earnings.
     const features = {
       ok: true as const,
       capabilities: {},
-      modules: { pmcc: { configured: false, enabled: false, missing: [] } },
+      modules: { bwb: { configured: false, enabled: false, missing: [] } },
       services: {},
       features: {},
     };
-    expect(press(IDLE, "5", { features }).action).toEqual({ kind: "navigate", to: "/calendars" });
-    expect(press(IDLE, "7", { features }).action).toEqual({ kind: "navigate", to: "/contango" });
-    expect(press(IDLE, "8", { features }).action).toBeNull();
+    expect(press(IDLE, "2", { features }).action).toBeNull();
+    expect(press(IDLE, "3", { features }).action).toEqual({ kind: "navigate", to: "/earnings" });
   });
 
   it("a chord to a hidden page does nothing", () => {
@@ -92,7 +96,7 @@ describe("the module digits", () => {
   });
 
   it("show every module when the bridge failed", () => {
-    expect(press(IDLE, "5", { features: { ok: false, error: "bridge down" } }).action).toEqual({ kind: "navigate", to: "/pmcc" });
+    expect(press(IDLE, "2", { features: { ok: false, error: "bridge down" } }).action).toEqual({ kind: "navigate", to: "/bwb" });
   });
 });
 

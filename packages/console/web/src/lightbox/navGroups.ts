@@ -370,6 +370,9 @@ export type FlowSlideId = (typeof FLOW_SLIDES)[number]["id"];
 
 export const ADVISOR_SLIDES = [{ id: "advisor", label: "advisor" }] as const satisfies readonly NavSlide[];
 
+// 2026-10-30 (docs/console-review-plan.md batch 4): the paper-only experiments and the flies record, one page.
+export const EXPERIMENTS_SLIDES = [{ id: "experiments", label: "experiments" }] as const satisfies readonly NavSlide[];
+
 /**
  * Backtest (2026-10-17): `packages/backtest`'s replays over licensed vendor history. Shown only
  * while the suite says `backtest: true` (it fails closed, `visibility.ts`). `queue` is the research
@@ -549,6 +552,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   // `validation` folded into `data` (2026-10-30); `/backtest/slices` is a route to Compare (App.tsx).
   backtest: { slides: BACKTEST_SLIDES, legacy: { validation: "data" } },
   advisor: { slides: ADVISOR_SLIDES },
+  experiments: { slides: EXPERIMENTS_SLIDES },
   system: { slides: SYSTEM_SLIDES, legacy: { modules: "health" } },
   config: { slides: CONFIG_SLIDES, legacy: { dev: "timing" } },
 };

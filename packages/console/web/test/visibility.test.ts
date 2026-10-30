@@ -150,7 +150,8 @@ describe("fail open", () => {
     expect(isSlideVisible("flies", "advisor", undefined)).toBe(true);
     expect(isFeatureOn("technicals", undefined)).toBe(true);
     expect(offReason("earnings", undefined)).toBeNull();
-    expect(visibleNavLinks(undefined).modules).toHaveLength(8);
+    expect(visibleNavLinks(undefined).modules).toHaveLength(4);
+    expect(visibleNavLinks(undefined).experiments).toHaveLength(5);
     expect(visibleNavLinks(undefined).suite.map((l) => l.to)).toContain("/gex");
   });
 
@@ -160,7 +161,8 @@ describe("fail open", () => {
     expect(isFeatureOn("advisor", failed)).toBe(true);
     expect(isSlideVisible("charts", "technicals", failed)).toBe(true);
     expect(offReason("earnings", failed)).toBeNull();
-    expect(visibleNavLinks(failed).modules).toHaveLength(8);
+    expect(visibleNavLinks(failed).modules).toHaveLength(4);
+    expect(visibleNavLinks(failed).experiments).toHaveLength(5);
   });
 });
 
@@ -181,17 +183,16 @@ describe("why a module is off", () => {
 });
 
 describe("the nav lists", () => {
-  it("drop an off module and renumber the digits over what is left", () => {
-    const { modules } = visibleNavLinks(pmccSwitchedOff);
+  it("drop an off module, keep every other module's digit, and list the experiments apart", () => {
+    // Fixed keys since 2026-10-30: nothing renumbers.
+    const { modules, experiments } = visibleNavLinks(pmccSwitchedOff);
     expect(modules.map((l) => [l.to, l.key])).toEqual([
-      ["/flies", "1"],
-      ["/meic", "2"],
-      ["/bwb", "3"],
-      ["/earnings", "4"],
-      ["/calendars", "5"],
-      ["/curve", "6"],
-      ["/contango", "7"],
+      ["/meic", "1"],
+      ["/bwb", "2"],
+      ["/earnings", "3"],
+      ["/experiments", "4"],
     ]);
+    expect(experiments.map((l) => l.to)).toEqual(["/calendars", "/curve", "/contango", "/flies"]);
   });
 
   it("drop the advisor from the suite links when it is off", () => {

@@ -363,7 +363,11 @@ describe("a page the suite has turned off", () => {
     // The chip follows the breadcrumb; the rail carries it beside each experimental module's link.
     expect(text(renderWith("/curve", base))).toMatch(/curve \/ today\s*experimental/);
     expect(text(renderWith("/meic", base))).not.toMatch(/MEIC \/ today\s*experimental/);
-    expect(text(renderWith("/meic", base))).toMatch(/Calendars\s*experimental/);
+    // Off the rail since 2026-10-30: the rail lists Experiments, and opens an experiment out under
+    // it only while you are on one.
+    expect(text(renderWith("/meic", base))).not.toContain("Calendars");
+    expect(text(renderWith("/meic", base))).toContain("Experiments");
+    expect(text(renderWith("/calendars", base))).toMatch(/Experiments[\s\S]*Calendars\s*experimental/);
   });
 
   it("Options flow is a turned-off card while the capture is off, and leaves the rail", () => {
