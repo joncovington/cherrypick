@@ -280,8 +280,10 @@ export function meicExitKind(
   settlementFees: number | null,
   putSettle: number | null,
   callSettle: number | null,
+  status: string | null = null,
 ): MeicTradeRow["exitKind"] {
-  if (pnl === null) return null;
+  // A partial condor's pnl is its stopped side alone; the held side has not resolved yet.
+  if (pnl === null || status === "partial") return null;
   const reason = exitReason ?? "";
   const expired = reason.includes("expire");
   const itm = (settlementFees ?? 0) > 0 || (putSettle ?? 0) > 0 || (callSettle ?? 0) > 0;
@@ -312,7 +314,14 @@ export function meicTradeCash(r: Record<string, unknown>): Pick<
   return {
     entryCash,
     exitCash: closed && entryCash !== null ? round2(gross - entryCash) : null,
-    exitKind: meicExitKind(gross, str(r["exit_reason"]), settlementFees, num(r["put_settle_value"]), num(r["call_settle_value"])),
+    exitKind: meicExitKind(
+      gross,
+      str(r["exit_reason"]),
+      settlementFees,
+      num(r["put_settle_value"]),
+      num(r["call_settle_value"]),
+      str(r["status"]),
+    ),
     gross,
     fees: total !== null && settlementFees !== null ? round2(total - settlementFees) : total,
     settlementFees: closed ? settlementFees : null,
@@ -1354,7 +1363,18 @@ export function readMeicAnalytics(
 export interface MeicForestArm {
   arm: string;
   /** One entry per open IC, so a nested condor reads as nested rather than as one lumpy line. */
-  positions: Array<{ icOrderId: string; putStrike: number; callStrike: number; wingWidth: number; putWing: number | null; callWing: number | null; netCredit: number; quantity: number }>;
+  positions: Array<{
+    icOrderId: string;
+    putStrike: number;
+    callStrike: number;
+    wingWidth: number;
+    putWing: number | null;
+    callWing: number | null;
+    netCredit: number;
+    quantity: number;
+    /** A `partial` condor's side still on the book (see `meicHeldSide`); null on a whole condor. */
+    held: "put" | "call" | null;
+  }>;
   /** The arm's aggregate curve: P&L at expiry across the price grid. */
   prices: number[];
   pnl: number[];
@@ -1466,6 +1486,41 @@ function icLegs(row: {
   ];
 }
 
+/**
+ * The side of a `partial` condor still on the book. MEIC stops each side on its own; a condor with
+ * one side stopped is `partial` (paper and live alike) and stays open on the side whose stop cost
+ * is unset until settlement. Null for any other status, or a partial row that names no single
+ * stopped side. Until 2026-10-30 the console read only `open` as open, so a live condor with its
+ * put stopped read "no position is open" and "expired OTM" while its call side was still held.
+ */
+export function meicHeldSide(r: Record<string, unknown>): "put" | "call" | null {
+  if (str(r["status"]) !== "partial") return null;
+  const putOff = num(r["put_stop_cost"]) !== null;
+  const callOff = num(r["call_stop_cost"]) !== null;
+  if (putOff === callOff) return null;
+  return putOff ? "call" : "put";
+}
+
+/** The held side's vertical, priced at that side's own credit. */
+function sideLegs(
+  row: { putStrike: number; callStrike: number; wingWidth: number; putWing?: number | null; callWing?: number | null },
+  side: "put" | "call",
+  credit: number,
+): Leg[] {
+  if (side === "put") {
+    const w = row.putWing ?? row.wingWidth;
+    return [
+      { kind: "put", quantity: -1, price: credit, strike: row.putStrike },
+      { kind: "put", quantity: 1, price: 0, strike: row.putStrike - w },
+    ];
+  }
+  const w = row.callWing ?? row.wingWidth;
+  return [
+    { kind: "call", quantity: -1, price: credit, strike: row.callStrike },
+    { kind: "call", quantity: 1, price: 0, strike: row.callStrike + w },
+  ];
+}
+
 /** The price grid the forest is drawn on: every strike in play plus a margin either side. */
 export function forestGrid(strikes: number[]): number[] {
   if (strikes.length === 0) return [];
@@ -1474,13 +1529,17 @@ export function forestGrid(strikes: number[]): number[] {
   // Priced at the strikes' own step (the smallest gap between distinct strikes: 5 on SPX, 1 on
   // XSP), so every kink of every condor lands on a grid point. 121 points spread over the whole
   // span drew a 5-wide SPX condor as a spike, and across two symbols the span was thousands wide.
-  const distinct = [...new Set(strikes.map((k) => Math.round(k * 100) / 100))].sort((a, b) => a - b);
-  let step = Infinity;
-  for (let i = 1; i < distinct.length; i++) step = Math.min(step, distinct[i]! - distinct[i - 1]!);
-  if (!Number.isFinite(step) || step <= 0) step = Math.max(hi * 0.001, 0.5);
+  // The step is the gaps' greatest common divisor, not the smallest gap, and the grid is anchored on
+  // a strike: 7520/7530 with 7595/7605 have a smallest gap of 10, and a 10-step grid from 7520
+  // never touched the call strikes (2026-10-30 drew that call side's kinks at 7590 and 7610).
+  const cents = [...new Set(strikes.map((k) => Math.round(k * 100)))].sort((a, b) => a - b);
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  let stepCents = 0;
+  for (let i = 1; i < cents.length; i++) stepCents = gcd(stepCents, cents[i]! - cents[i - 1]!);
+  let step = stepCents > 0 ? stepCents / 100 : Math.max(hi * 0.001, 0.5);
   const pad = Math.max((hi - lo) * 0.35, hi * 0.01);
-  const start = Math.floor((lo - pad) / step) * step;
-  const end = Math.ceil((hi + pad) / step) * step;
+  const start = lo - Math.ceil(pad / step) * step;
+  const end = hi + Math.ceil(pad / step) * step;
   // A wide book on a fine step: coarsen by whole multiples so the payload stays bounded.
   while ((end - start) / step > 1500) step *= 2;
   const n = Math.floor((end - start) / step) + 1;
@@ -1531,6 +1590,9 @@ export function readMeicForest(
         `SELECT ic_order_id, ${armColumnOf(db, "ic_trades")} AS arm, symbol, put_strike, call_strike, wing_width,
                 ${hasColumn(db, "ic_trades", "put_wing") ? "put_wing" : "NULL AS put_wing"},
                 ${hasColumn(db, "ic_trades", "call_wing") ? "call_wing" : "NULL AS call_wing"},
+                ${["put_credit", "call_credit", "put_stop_cost", "call_stop_cost"]
+                  .map((c) => (hasColumn(db, "ic_trades", c) ? c : `NULL AS ${c}`))
+                  .join(", ")},
                 net_credit, quantity, status, underlying_price_entry,
                 ${hasColumn(db, "ic_trades", "settle_underlying") ? "settle_underlying" : "NULL AS settle_underlying"},
                 pnl, COALESCE(fees, 0) AS fees
@@ -1553,8 +1615,9 @@ export function readMeicForest(
       scope.symbol ?? (forestSymbol !== null && counts.has(forestSymbol) ? forestSymbol : (symbols[0] ?? null));
     const rows = chosen === null ? allRows : allRows.filter((r) => str(r["symbol"]) === chosen);
 
-    // Open positions build the live curves; the whole day builds the as-entered view.
-    const open = rows.filter((r) => str(r["status"]) === "open");
+    // Open positions build the live curves (a partial condor is open on its held side); the whole
+    // day builds the as-entered view.
+    const open = rows.filter((r) => str(r["status"]) === "open" || str(r["status"]) === "partial");
     const entered = rows.filter((r) => str(r["status"]) !== "cancelled");
     // One builder, run over whichever row set is being drawn. The grid is derived from the SAME
     // rows as the curves — a grid built from the open book while the curves came from the whole day
@@ -1590,11 +1653,24 @@ export function readMeicForest(
             callWing: num(r["call_wing"]),
             netCredit: num(r["net_credit"]) ?? 0,
             quantity: num(r["quantity"]) ?? 1,
+            held: meicHeldSide(r),
           }));
-          const perPosition = positions.map((pp) => ({
-            icOrderId: pp.icOrderId,
-            pnl: prices.map((sp) => payoffAt(icLegs(pp), sp) * pp.quantity),
-          }));
+          // A partial condor is its held side to expiry plus what the stopped side already booked
+          // (the row's gross pnl), so the curve at the settle reads what the trade will end on.
+          // Without that side's own credit it falls back to the whole condor.
+          const perPosition = positions.map((pp, i) => {
+            const r = list[i]!;
+            const credit = pp.held === null ? null : num(r[`${pp.held}_credit`]);
+            const booked = num(r["pnl"]) ?? 0;
+            return {
+              icOrderId: pp.icOrderId,
+              pnl: prices.map((sp) =>
+                pp.held !== null && credit !== null
+                  ? payoffAt(sideLegs(pp, pp.held, credit), sp) * pp.quantity + booked
+                  : payoffAt(icLegs(pp), sp) * pp.quantity,
+              ),
+            };
+          });
           const pnl = prices.map((_, i) => perPosition.reduce((sum, pp) => sum + (pp.pnl[i] ?? 0), 0));
           // What these trades actually did, beside what the curve says they would have done.
           const statusOf = (r: Record<string, unknown>) => str(r["status"]) ?? "";
@@ -1602,7 +1678,7 @@ export function readMeicForest(
             entered: list.length,
             stopped: list.filter((r) => statusOf(r) === "stopped").length,
             expired: list.filter((r) => statusOf(r) === "expired").length,
-            open: list.filter((r) => statusOf(r) === "open").length,
+            open: list.filter((r) => statusOf(r) === "open" || statusOf(r) === "partial").length,
             // pnl - fees, the same net every other MEIC surface reports.
             realisedNet: list.reduce(
               (sum, r) => sum + (num(r["pnl"]) === null ? 0 : (num(r["pnl"]) ?? 0) - (num(r["fees"]) ?? 0)),
@@ -1641,11 +1717,13 @@ export function readMeicForest(
       const callWing = num(r["call_wing"]) ?? w;
       const p = num(r["put_strike"]);
       const c = num(r["call_strike"]);
-      if (p !== null) {
+      // A partial condor has released only its stopped side.
+      const held = meicHeldSide(r);
+      if (p !== null && held !== "put") {
         pushReleased(arm, p, "P");
         if (putWing) pushReleased(arm, p - putWing, "P");
       }
-      if (c !== null) {
+      if (c !== null && held !== "call") {
         pushReleased(arm, c, "C");
         if (callWing) pushReleased(arm, c + callWing, "C");
       }
@@ -2365,6 +2443,8 @@ export function readMeicSummary(
                 status, pnl, fees, ${settleCol} AS settlement,
                 ${meicCol(db, "put_settle_value")} AS put_settle_value,
                 ${meicCol(db, "call_settle_value")} AS call_settle_value,
+                ${meicCol(db, "put_stop_cost")} AS put_stop_cost,
+                ${meicCol(db, "call_stop_cost")} AS call_stop_cost,
                 exit_reason
            FROM ic_trades WHERE ${where} AND pnl IS NOT NULL ORDER BY id DESC
           LIMIT ? OFFSET ?`,
@@ -2377,7 +2457,15 @@ export function readMeicSummary(
         const feeTotal = toNum(r["fees"]) ?? 0;
         const setFees = toNum(r["settlement"]) ?? 0;
         const net = gross === null ? null : Math.round((gross - feeTotal) * 100) / 100;
-        const exitKind = meicExitKind(gross, str(r["exit_reason"]), setFees, toNum(r["put_settle_value"]), toNum(r["call_settle_value"]));
+        const exitKind = meicExitKind(
+          gross,
+          str(r["exit_reason"]),
+          setFees,
+          toNum(r["put_settle_value"]),
+          toNum(r["call_settle_value"]),
+          str(r["status"]),
+        );
+        const held = meicHeldSide(r);
         return {
           time: str(r["entry_time"]) === null ? null : (str(r["entry_time"]) ?? "").slice(11, 16),
           arm: str(r["arm"]) ?? "—",
@@ -2390,7 +2478,9 @@ export function readMeicSummary(
                 ? "stopped/closed"
                 : exitKind === "expired"
                   ? "expired OTM"
-                  : str(r["status"]) ?? "open",
+                  : held !== null
+                    ? `${held === "put" ? "call" : "put"} stopped, ${held} open`
+                    : str(r["status"]) ?? "open",
           net: net ?? 0,
           provisional: exitKind === null,
         };

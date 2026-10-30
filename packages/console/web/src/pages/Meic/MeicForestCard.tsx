@@ -36,6 +36,8 @@ interface ForestPosition {
   wingWidth: number;
   netCredit: number;
   quantity: number;
+  /** A condor with one side stopped: the side still held. */
+  held?: "put" | "call" | null;
 }
 
 interface ForestArm {
@@ -134,6 +136,7 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
   const realisedNet = shown.length > 0 ? shown.reduce((sum, a) => sum + (a.outcome?.realisedNet ?? 0), 0) : null;
   const stopped = shown.reduce((n, a) => n + (a.outcome?.stopped ?? 0), 0);
   const expired = shown.reduce((n, a) => n + (a.outcome?.expired ?? 0), 0);
+  const halfOpen = live ? shown.reduce((n, a) => n + a.positions.filter((p) => p.held != null).length, 0) : 0;
 
   let body = null;
   let hoverPrice: number | null = null;
@@ -442,6 +445,13 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
           <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
             Expiry payoff, not an intraday mark — nothing here is quoted live. Faint lines are the individual condors
             behind each arm's aggregate; dashed ticks on the axis are strikes a stop has released back for re-entry.
+            {halfOpen > 0 && (
+              <>
+                {" "}
+                {halfOpen === 1 ? "One condor has" : `${halfOpen} condors have`} had one side stopped: each is drawn as
+                its held side to expiry plus what the stop already booked.
+              </>
+            )}
             {!live && (
               <>
                 {" "}
