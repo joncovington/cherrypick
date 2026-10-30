@@ -236,8 +236,9 @@ rename it `alerts`.
      income trades fit the room. It never says "nothing to do" for positions it has not read
    - on Live portfolio: bands over time (landed 2026-10-30), under the guidance: delta, theta and
      buying power per stored evaluation, each against the band that day's evaluation judged it by
-   - on Live, still open: premium-income pace against a theta target of 0.2% of net liq a day
-     (agreed 2026-10-30; set in config), beside premium collected and net kept on closed trades
+   - on Live portfolio: the premium pace (landed 2026-10-30), above the bands: theta against a
+     target of 0.2% of net liq a day (agreed 2026-10-30; `portfolio.theta.target_pct_nlv` in
+     manage.json), and premium collected beside premium kept per month from the account-wide history
    - MEIC live against paper
    - the user's short strikes against the GEX walls
 

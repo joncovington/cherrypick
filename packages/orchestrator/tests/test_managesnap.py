@@ -53,7 +53,7 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 14
+    assert snap["snapshot_version"] == 15
     assert snap["underlying_history"] == {} and snap["underlying_history_error"] is None  # no long call
     assert snap["roll_chains"] == {}  # no short strangle held, no chain read
     assert not any("get_option_chain" in c[0] and "GLD" in c[0] for c in calls)
@@ -959,3 +959,34 @@ def test_a_failed_or_timed_out_roll_out_read_is_recorded_not_fatal(monkeypatch):
     assert snap["positions"]["ok"] and ro["chains"] == {}
     assert "timed out" in ro["listings"]["SOFI"]["error"]
     assert all(a["wanted"] == [] and "no listed expiry" in a["why"] for a in ro["anchors"])
+
+
+def test_the_snapshot_carries_the_account_wide_history(monkeypatch):
+    # v15: the whole account's history in one list beside the per-underlying read, so the premium
+    # pace sees trades on names no longer held. The per-underlying read is still taken first.
+    def tx(argv):
+        if "--account_wide" in argv:
+            return {"ok": True, "account": [{"order_id": 7, "underlying_symbol": "OLD"}]}
+        return {"ok": True, "transactions": {"GLD": [{"order_id": 1}]}}
+
+    calls = _fake(monkeypatch, {"get_market_overview": {"ok": True, "metrics": []}, "get_transactions": tx})
+    snap = managesnap.build({})
+    assert snap["account_transactions"] == [{"order_id": 7, "underlying_symbol": "OLD"}]
+    assert snap["account_transactions_error"] is None
+    assert snap["transactions"] == {"GLD": [{"order_id": 1}]}
+    wide = [c for c in calls if "--account_wide" in c[0]]
+    assert len(wide) == 1 and "--underlyings" not in wide[0][0] and wide[0][1] == 180
+
+
+def test_an_account_wide_answer_without_a_list_is_an_error_not_an_empty_history(monkeypatch):
+    # An older broker tool ignores the flag and answers per underlying: that is no history, said so.
+    _fake(
+        monkeypatch,
+        {
+            "get_market_overview": {"ok": True, "metrics": []},
+            "get_transactions": {"ok": True, "transactions": {}},
+        },
+    )
+    snap = managesnap.build({})
+    assert snap["account_transactions"] == []
+    assert "without an account-wide list" in snap["account_transactions_error"]

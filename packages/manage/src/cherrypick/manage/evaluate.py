@@ -31,6 +31,7 @@ from cherrypick.manage import explain as _explain
 from cherrypick.manage import hedge as _hedge
 from cherrypick.manage import pmcc as _pmcc
 from cherrypick.manage import portfolio as _portfolio
+from cherrypick.manage import premium as _premium
 from cherrypick.manage import pricing
 from cherrypick.manage import rules as _rules
 from cherrypick.manage import shapes as _shapes
@@ -2388,6 +2389,21 @@ def evaluate(
             # What the Screeners trades are judged to fit against (`candidates.screen_fit`).
             available_bp=_f(balances.get("derivative_buying_power")),
         )
+        # The account-wide history is the broker tool's designated account's, so only that account
+        # (or the only one) gets a pace; another account's would be someone else's trades.
+        n_accounts = len(positions.get("accounts") or [])
+        premium = (
+            _premium.reading(
+                snapshot.get("account_transactions") if "account_transactions" in snapshot else None,
+                snapshot.get("account_transactions_error"),
+                session,
+                book,
+                net_liq,
+                rules,
+            )
+            if account.get("designated") or n_accounts == 1
+            else None
+        )
         _link_wheel(wheel_view, trades)
         _link_pmcc(pmcc_view, trades)
         accounts.append(
@@ -2405,6 +2421,7 @@ def evaluate(
                 "pnl_gross": sum(t["pnl_gross"] for t in trades if t["pnl_gross"] is not None),
                 "counts": counts,
                 "portfolio": book,
+                "premium": premium,
                 "trades": trades,
                 "excluded": excluded,
             }

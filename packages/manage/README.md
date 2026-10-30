@@ -455,6 +455,32 @@ expiry for a diagonal). One earnings trade with no bounded loss refuses the whol
 freeing part of it. Only buying power is freed: their theta and delta still count. The console's
 income card switches between the two lists with a checkbox.
 
+## The premium pace
+
+`premium.py` reads three figures side by side for the broker tool's designated account (the
+account-wide history is that account's), as the evaluation's `premium`:
+
+- **Theta against its target:** `portfolio.theta.target_pct_nlv` of net liq a day (default 0.2%, the
+  middle of the theta band, agreed with the operator 2026-10-30), on the band's own figure (without
+  the legs `front_dte` days or less from expiry). It is a pace to hold, not a quantity to maximise:
+  theta is paid for by gamma, and the short-put studies found extra premium from higher delta was
+  market drift, not edge.
+- **Collected:** each order that opened something, at its whole net before fees, when that is a
+  credit, in the month it filled. A roll is one order, so it counts at its net credit, never at the
+  new short's price.
+- **Kept:** each option leg's net cash after fees from flat to flat, in the month it went flat:
+  bought back, expired, exercised, assigned (the premium; the shares delivered are outside it) or
+  cash settled (the cash row joins the leg its quantity row closed).
+
+Six calendar months (ET) and the current week. Two things are left out of both and stated with their
+count and net: 0DTE legs on `exclude.zero_dte_underlyings` (the live loops' own books) and legs the
+history entered by a close (opened before the 400 days it reaches). Only option legs count. The
+history is the snapshot's `account_transactions` (v15); a snapshot without it, or a failed read,
+gives the target alone and the reason.
+
+Collected and kept are timed differently, so one month's pair is not a ratio; the months together
+are the comparison. A book that keeps far less than it collects is paying for its premium in losses.
+
 ## Known limits
 
 - **Marks are mids** and the payoff model is Black-Scholes at today's IV per leg, with no dividends.

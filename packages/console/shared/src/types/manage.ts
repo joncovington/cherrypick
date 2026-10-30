@@ -772,6 +772,46 @@ export interface ManageAccount {
   wheel: ManageWheel | null;
   /** The PMCC view; null on an evaluation written before it existed (no `pmcc` key). */
   pmcc: ManagePmcc | null;
+  /** The premium pace; null before it existed (2026-10-30) and on an account that is not the broker
+   *  tool's designated one (its history is that account's). */
+  premium: ManagePremium | null;
+}
+
+/** One calendar month of the premium pace (packages/manage `premium.py`). */
+export interface ManagePremiumMonth {
+  /** `YYYY-MM`. */
+  month: string;
+  /** Net credit of the orders that opened something and took in a credit, before fees. */
+  collected: number | null;
+  orders: number;
+  /** Net cash, after fees, of the option legs that went flat this month. */
+  kept: number | null;
+  closed: number;
+}
+
+/**
+ * The premium pace, as manage read it: theta against its target, and premium collected beside
+ * premium kept. Every figure is manage's; the page computes nothing but the share kept.
+ */
+export interface ManagePremium {
+  target: {
+    /** The target as a share of net liq a day (`portfolio.theta.target_pct_nlv`). */
+    pctNlv: number | null;
+    dollars: number | null;
+    /** The book's theta in dollars a day, on the band's own figure (without the front legs). */
+    theta: number | null;
+    ratio: number | null;
+  };
+  /** Why there are no months: no account-wide history, or the broker read failed. */
+  error: string | null;
+  historyFrom: string | null;
+  /** Oldest first, the session's month last. */
+  months: ManagePremiumMonth[];
+  week: { from: string | null; collected: number | null; orders: number; kept: number | null; closed: number } | null;
+  /** Left out of `kept` over the months shown: legs opened before the history begins. */
+  unmatched: { legs: number; net: number | null } | null;
+  /** Left out of `kept` and `collected`: the live loops' 0DTE legs. */
+  zeroDte: { legs: number; net: number | null; underlyings: string[] } | null;
 }
 
 export interface ManagePayload {

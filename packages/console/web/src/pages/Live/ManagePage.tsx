@@ -11,6 +11,7 @@ import { Tile } from "../Flies/PerformanceTab";
 import { ActionChip, DetailCard, Kv, Money, ageText, etStamp, tone } from "./manageParts";
 import { BandsHistoryCard } from "./BandsHistory";
 import { PortfolioCards } from "./PortfolioCards";
+import { PremiumPaceCard } from "./PremiumPace";
 import { ScenarioCards } from "./ScenarioCards";
 import { PmccCards } from "./PmccCards";
 import { WheelCards } from "./WheelCards";
@@ -449,6 +450,7 @@ function PortfolioAccount({ a, oversize }: { a: ManageAccount; oversize: number 
           p={a.portfolio}
           scenarios={<ScenarioCards p={a.portfolio} />}
           history={<BandsHistoryCard account={a.account} />}
+          pace={<PremiumPaceCard premium={a.premium} thetaBand={a.portfolio.bands?.theta ?? null} />}
         />
       ) : (
         <p className="muted" style={{ margin: 0 }}>
