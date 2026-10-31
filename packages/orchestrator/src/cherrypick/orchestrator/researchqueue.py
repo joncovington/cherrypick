@@ -8,9 +8,9 @@ the supervisor's `research-queue` job takes the oldest ready row every few minut
 **What a row may run is an allow-list, never a command line** (`KINDS`). The supervisor is a Windows
 service with the broker credentials in reach, so a row that could name any command would be
 unreviewed code run by it. A kind builds its own argv from the row's arguments:
-- `fetch-chains` / `fetch-chain-paths` / `fetch-intraday-chains` / `fetch-flow` / `fetch-oi`: the
-  backtest package's resumable ThetaData fetches, given a request or plan file. Each is bounded by
-  `--stop-by`, and a fetch that stops is queued again to resume.
+- `fetch-chains` / `fetch-chain-paths` / `fetch-intraday-chains` / `fetch-addon-weeklies` /
+  `fetch-flow` / `fetch-oi`: the backtest package's resumable ThetaData fetches, given a request or
+  plan file. Each is bounded by `--stop-by`, and a fetch that stops is queued again to resume.
 - `script`: a Python file checked into the repo's `scripts/` (git must know it), with string
   arguments, no shell. It may not need the ThetaData session: it cannot be stopped mid-run.
 
@@ -203,6 +203,8 @@ KINDS: dict[str, tuple[tuple[str, ...], bool]] = {
     "fetch-chain-paths": ((THETADATA,), True),
     # A single name's chain at intraday bars (backtest `fetch-intraday-chains`, item 31): the same session.
     "fetch-intraday-chains": ((THETADATA,), True),
+    # SPXW weekly minute greeks over each position's life (backtest `fetch-addon-weeklies`, item 35).
+    "fetch-addon-weeklies": ((THETADATA,), True),
     "fetch-flow": ((THETADATA,), True),
     # Open interest per contract per name-day (backtest `fetch-oi`, item 30): the same session.
     "fetch-oi": ((THETADATA,), True),
@@ -217,6 +219,7 @@ FETCH_STORES = {
     "fetch-chains": "eod_chains.db",
     "fetch-chain-paths": "eod_chains.db",
     "fetch-intraday-chains": "intraday_chains.db",
+    "fetch-addon-weeklies": "addon_weeklies.db",
     "fetch-flow": "flow store",
     "fetch-oi": "open_interest.db",
 }
@@ -234,7 +237,7 @@ def build_argv(
     tracked: Callable[[Path, Path], bool] | None = None,
 ) -> list[str]:
     """The task's command, built by its kind from its arguments; `Refused` for anything else."""
-    if kind in ("fetch-chains", "fetch-chain-paths", "fetch-intraday-chains"):
+    if kind in ("fetch-chains", "fetch-chain-paths", "fetch-intraday-chains", "fetch-addon-weeklies"):
         argv = [python, "-m", "cherrypick.backtest", kind]
         argv += ["--requests", _file_arg(args, "requests"), "--workers", _workers(args, 3)]
     elif kind in ("fetch-flow", "fetch-oi"):

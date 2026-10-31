@@ -20,6 +20,11 @@ The interface every client provides (rows are plain dicts, dates ISO strings, `t
   expiry's chain at each bar of a window of one session (the intraday chain fetch,
   `intradayfetch.py`)
 
+- ``minute_span(root, expiration, first, last, *, right, start_time, end_time, strike_range) ->
+  list[dict]`` with keys ``day, ts, strike, right ("P"/"C"), bid, ask, delta, iv, underlying``: one
+  expiry's minute greeks for one side over several sessions (the add-on weeklies fetch,
+  `addonfetch.py`)
+
 A request the vendor refuses raises `VendorRefusal` with a short, stable reason.
 """
 

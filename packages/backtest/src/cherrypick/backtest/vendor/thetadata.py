@@ -319,6 +319,55 @@ class ThetaDataClient:
             )
         return out
 
+    def minute_span(
+        self,
+        root: str,
+        expiration: str,
+        first: str,
+        last: str,
+        *,
+        right: str,
+        start_time: str,
+        end_time: str,
+        strike_range: int,
+    ) -> list[dict]:
+        """One expiry's minute greeks for one side over the sessions `first` through `last`, each
+        session from `start_time` to `end_time` ("HH:MM:SS", ET), `strike_range` strikes either side
+        of the money (the add-on weeklies fetch, `addonfetch.py`). Rows leave with ``day`` (the ET
+        session), ``ts`` (epoch seconds), ``strike``, ``right`` ("P"/"C"), ``bid``, ``ask``,
+        ``delta``, ``iv`` and ``underlying``, missing values as None, never NaN."""
+        df = self._call(
+            "option_history_greeks_first_order",
+            symbol=root,
+            expiration=date.fromisoformat(expiration),
+            interval="1m",
+            right=right,
+            start_date=date.fromisoformat(first),
+            end_date=date.fromisoformat(last),
+            start_time=start_time,
+            end_time=end_time,
+            strike_range=strike_range,
+        )
+        out = []
+        for r in df.itertuples(index=False):
+            stamp = r.timestamp
+            if getattr(stamp, "tzinfo", None) is not None:
+                stamp = stamp.astimezone(_ET)
+            out.append(
+                {
+                    "day": stamp.date().isoformat(),
+                    "ts": int(stamp.timestamp()),
+                    "strike": float(r.strike),
+                    "right": right[0].upper(),
+                    "bid": _num(r.bid),
+                    "ask": _num(r.ask),
+                    "delta": _num(r.delta),
+                    "iv": _num(r.implied_vol),
+                    "underlying": _num(r.underlying_price),
+                }
+            )
+        return out
+
     def eod_chain(self, root: str, day: str, expiration: str) -> list[dict]:
         """One expiry's whole chain as the session closed: every strike and side, end-of-day bid and
         ask (the account's Standard tier serves single stocks from 2016). Missing values leave as

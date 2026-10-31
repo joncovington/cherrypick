@@ -29,7 +29,7 @@ export interface ResearchTask {
   step: string;
   /** `study/step`: the one display name. */
   name: string;
-  /** The allow-listed kind: fetch-chains, fetch-intraday-chains, fetch-flow, fetch-oi or script. */
+  /** The allow-listed kind: fetch-chains, fetch-intraday-chains, fetch-addon-weeklies, fetch-flow, fetch-oi or script. */
   kind: string;
   /** A script's declared conclusion file. */
   output: string | null;
