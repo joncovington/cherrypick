@@ -6,7 +6,7 @@ import { useBridged } from "../../lib/bridged";
 import { MiniMarkdown } from "../../lib/miniMarkdown";
 import { writePref } from "../../lib/prefs";
 import { FILTER_KEY, ago, etMs, etNowMs, stamp } from "./QueueTab";
-import { useStudies } from "./studyIndex";
+import { studyHref, useStudies } from "./studyIndex";
 
 /**
  * The Backtest page's studies tab (2026-10-29, docs/studies-board-plan.md): what we tested and what
@@ -184,15 +184,48 @@ export function StudyDetail({ row }: { row: StudyRow }) {
             </a>
           </Field>
         ) : null}
+        {row.results
+          .filter((r) => r.notes !== null)
+          .map((r) => (
+            <Field key={`notes-${r.name}`} k={notesName(r.name)}>
+              <Link to={notesHref(row.study, r.name)}>open the write-up</Link>{" "}
+              <span className="muted">— the study's own figures, on this machine only</span>
+            </Field>
+          ))}
       </dl>
-      {row.results
-        .filter((r) => r.notes !== null)
-        .map((r) => (
-          <details key={r.name} className="study-notes">
-            <summary>{r.name.replace(/\.json$/, ".md")}: the study's own figures, on this machine only</summary>
-            <MiniMarkdown source={r.notes!} />
-          </details>
-        ))}
+    </div>
+  );
+}
+
+/** `results.json` -> `results.md`: the file a study's notes sit in. */
+export function notesName(resultName: string): string {
+  return resultName.replace(/\.json$/, "") + ".md";
+}
+
+/** The studies tab showing one result file's notes full width (`?study=&notes=`). */
+export function notesHref(study: string, resultName: string): string {
+  return `/backtest/studies?study=${encodeURIComponent(study)}&notes=${encodeURIComponent(resultName)}`;
+}
+
+/** One study's notes, full width, with the way back to its row. */
+export function StudyNotes({ board, study, resultName }: { board: StudiesBoard; study: string; resultName: string }) {
+  const row = board.rows.find((r) => r.study === study);
+  const result = row?.results.find((r) => r.name === resultName);
+  return (
+    <div className="study-notes-page">
+      <p style={{ margin: "0 0 8px" }}>
+        <Link to={studyHref(study)}>← back to {row ? `${row.id} ${row.title}` : study}</Link>
+      </p>
+      {result?.notes ? (
+        <>
+          <p className="muted" style={{ margin: "0 0 8px" }}>
+            {notesName(resultName)}, beside {resultName} on this machine. Licensed figures: never shared.
+          </p>
+          <MiniMarkdown source={result.notes} />
+        </>
+      ) : (
+        <p className="muted">No {notesName(resultName)} for {study} on this machine.</p>
+      )}
     </div>
   );
 }
@@ -281,7 +314,9 @@ export function BacktestStudiesTab() {
   if (isLoading) body = <span className="skeleton skeleton-text" style={{ width: "40%" }} />;
   else if (isError) body = <p className="muted">{(error as Error).message}</p>;
   else if (data === undefined || !data.ok || data.data === null) body = <p className="muted">{data?.error ?? "studies board read unavailable"}</p>;
-  else {
+  else if (params.get("study") && params.get("notes")) {
+    body = <StudyNotes board={data.data} study={params.get("study")!} resultName={params.get("notes")!} />;
+  } else {
     const b = data.data;
     body = (
       <>

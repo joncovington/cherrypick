@@ -367,7 +367,8 @@ opens to the decision taken, each result file's verdict as the study wrote it (a
 says "see plan", never a guess), the pass test, rivals with their checks, per-arm verdicts, its run,
 its queue rows and the plan section on GitHub (2026-10-30: as columns, the prose ran the table off
 the card). A study may leave Markdown beside a result file (`results.json` -> `results.md`, its own
-figures, written under the home and never committed); the opened row shows it, rendered as elements
+figures, written under the home and never committed); the opened row links to it, opening full width
+on the tab (`?study=&notes=<result file>`), rendered as elements
 by `lib/miniMarkdown.tsx`, never as HTML. A result file is shown by its name only. `?study=` opens one
 row. The other tabs point back (2026-10-30, `pages/Backtest/studyIndex.ts`, one shared fetch): a
 queue row carries its study's verdict as a chip linking to the board, the runs list has a `study`

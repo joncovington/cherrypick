@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import type { BacktestOverview, BacktestRunReport, StudiesBoard, StudyRow } from "@console/shared";
 import { RunPlainEnglish } from "../src/pages/Backtest/BacktestPage";
 import { StudyChip, etMs } from "../src/pages/Backtest/QueueTab";
-import { StudiesTable, StudyDetail, contextLine, headline, planUrl, resultLabel, resultsLine } from "../src/pages/Backtest/StudiesTab";
+import { StudiesTable, StudyDetail, StudyNotes, contextLine, headline, notesHref, planUrl, resultLabel, resultsLine } from "../src/pages/Backtest/StudiesTab";
 import { indexStudies, studyHref } from "../src/pages/Backtest/studyIndex";
 
 /**
@@ -145,16 +145,26 @@ describe("studies tab", () => {
     expect(html(<StudyDetail row={row({ legacy: true, rule: null, rivals: [] })} />)).toContain("before the register");
   });
 
-  it("an opened row shows the study's Markdown beside its result file, as elements, never as HTML", () => {
+  it("an opened row links to the study's Markdown beside its result file; none, no link", () => {
+    const r = row({}).results[0]!;
+    const out = html(<StudyDetail row={row({ results: [{ ...r, notes: "# x" }] })} />);
+    expect(out).toContain("<dt>study-design.md</dt>");
+    expect(out).toContain(`href="${notesHref("item23", "study-design.json").replace(/&/g, "&amp;")}"`);
+    expect(html(<StudyDetail row={row({})} />)).not.toContain("open the write-up");
+  });
+
+  it("the write-up opens full width, as elements, never as HTML, with the way back", () => {
     const r = row({}).results[0]!;
     const md = "# Design\n\n| arm | win % | P&L |\n|---|---|---|\n| d12 | 45% | −$3,221 |\n\n- **close** loses\n\n<script>x</script>";
-    const out = html(<StudyDetail row={row({ results: [{ ...r, notes: md }] })} />);
+    const board: StudiesBoard = { unregistered: [], rows: [row({ results: [{ ...r, notes: md }] })] };
+    const out = html(<StudyNotes board={board} study="item23" resultName="study-design.json" />);
     expect(out).toContain("<h4>Design</h4>");
     expect(out).toContain('<td class="num pnl-neg">−$3,221</td>');
     expect(out).toContain('<td class="num">45%</td>');
     expect(out).toContain("<strong>close</strong>");
     expect(out).not.toContain("<script>");
-    expect(html(<StudyDetail row={row({})} />)).not.toContain("study-notes");
+    expect(out).toContain(`href="${studyHref("item23")}"`);
+    expect(html(<StudyNotes board={board} study="item23" resultName="gone.json" />).replace(/<!-- -->/g, "")).toContain("No gone.md for item23");
   });
 
   it("says why replays are provisional only while validation has not unlocked", () => {
