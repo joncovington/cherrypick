@@ -173,15 +173,21 @@ def decision_check(
     day: str, arms: list[str], *, history_db=None, paper_db=None, settle_price=None, delta_source=None
 ) -> dict:
     """The replay's decisions against paper's on `day`, each from paper's own book (module docstring).
-    `delta_source` replays on that delta whatever the session ran with: backtest's validation passes
-    "computed" to both its sources, since the feed's lag is in the recording and not in a vendor's
-    history, and one shared source is what makes the two replays comparable."""
+    `delta_source` replays on that delta: backtest's validation passes "computed" to both its sources,
+    since the feed's lag is in the recording and not in a vendor's history, and one shared source is
+    what makes the two replays comparable. A session paper ran on another delta is skipped (not ok):
+    its strikes were picked on that delta, so every replay on this one disagrees with it by
+    construction (2026-10-30: the 10-27 computed check compared ten feed-delta sessions and failed on
+    entries, while the as-run replay of the same sessions matched)."""
     cfg, profiles = replay.replay_profiles(arms)
     if delta_source is not None and delta_source not in paper_loop.DELTA_SOURCES:
         raise ValueError(f"delta_source must be one of {paper_loop.DELTA_SOURCES}, not {delta_source!r}")
     # By default the delta that session ran with: the check asks whether the replay reproduces
     # paper's own decisions, so a session before `delta_source_since` is replayed on the feed's delta.
-    source = delta_source or paper_loop.delta_source_for(cfg, day)
+    ran = paper_loop.delta_source_for(cfg, day)
+    source = delta_source or ran
+    if source != ran:
+        return {"ok": False, "day": day, "error": f"paper ran on the {ran} delta that session, not {source}"}
     rday = replay.ReplayDay(day, cfg, profiles, history_db=history_db, delta_source=source)
     if not rday.recorded.samples:
         return {"ok": False, "day": day, "error": "no recorded samples"}

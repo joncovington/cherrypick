@@ -114,10 +114,15 @@ def test_a_validation_replays_a_session_on_the_delta_it_ran_with(monkeypatch):
         with pytest.raises(Stop):
             replay_check.decision_check(day, ["control"])
         assert seen["source"] == expected, day
-    # A chosen source replaces the session's own: backtest's validation runs both of its sources on
-    # "computed", because the feed's lag is in the recording and not in a vendor's history.
+    # A chosen source: backtest's validation runs both of its sources on "computed", because the
+    # feed's lag is in the recording and not in a vendor's history. A session paper ran on the feed's
+    # delta is skipped, never replayed: its strikes were picked on the other delta, so its entries
+    # could only disagree (2026-10-30).
+    seen.clear()
+    skipped = replay_check.decision_check("2026-10-26", ["control"], delta_source="computed")
+    assert skipped["ok"] is False and "stream" in skipped["error"] and "source" not in seen
     with pytest.raises(Stop):
-        replay_check.decision_check("2026-10-26", ["control"], delta_source="computed")
+        replay_check.decision_check("2026-10-28", ["control"], delta_source="computed")
     assert seen["source"] == "computed"
     with pytest.raises(ValueError, match="delta_source"):
         replay_check.decision_check("2026-10-26", ["control"], delta_source="vendor")
