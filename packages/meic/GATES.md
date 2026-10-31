@@ -203,7 +203,8 @@ regime-coverage read has enough tagged, non-degenerate sessions to say more.
 - **Trigger**: `stabilization_entry` on, and the completed-bar stabilization oracle does not read
   STABLE this tick
 - **Effect**: Wait (`stabilization_wait`, attempts outcome `gate_blocked`) — re-read every tick;
-  never touches the entry cadence and never blocks open-position management
+  never touches the entry cadence and never blocks open-position management. Checked after the
+  window, cadence, cap and event gates, so their refusals keep their own reasons
 - **Config**: `stabilization_entry` (default off), `stabilization_oracle` (`multi`, the
   cross-session Wilder roll, or `perday`, today's bars only), `stabilization_threshold_mode`
   (`atr`, the script's default, or `iv`, its alternate — IV read from the recorded `atm_iv`
@@ -212,9 +213,11 @@ regime-coverage read has enough tagged, non-degenerate sessions to say more.
   (`gex_spot_history`, read-only): the last two consecutive COMPLETED 5-min bars' total range
   within the adaptive threshold AND Wilder ATR(5) at or below its 20-bar average — the
   Thinkorswim "Universal Adaptive Market Stabilization Indicator" rule, the strategy's
-  "two or three flat five-minute candles" made deterministic
-- **Fail-closed**: no trail, no completed bars, unwarm ATR, or (in `iv` mode) no recorded IV —
-  the arm waits; it never fires on a read it does not have
+  "two or three flat five-minute candles" made deterministic. The `multi` roll carries the last
+  five NYSE trading sessions. The paper loop, the live loop and the replay all compute it
+- **Fail-closed**: no trail, no completed bars, a window that does not end on the newest
+  scheduled close or holds a gap, unwarm ATR, or (in `iv` mode) no recorded IV — the arm waits;
+  it never fires on a read it does not have
 - **IC Impact**: Waits, per arm; arms without the key evaluate exactly as before
 
 ### Live-only gates (`live_loop.py`)

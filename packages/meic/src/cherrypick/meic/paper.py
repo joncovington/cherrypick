@@ -880,35 +880,6 @@ def evaluate_entry(
         if not deep_positive:
             return False, "regime_gex_flip_too_close", None
 
-    # Stabilization entry gate (2026-10-31, `stabilization_entry`): opt-in per profile, default
-    # OFF -- every arm without this key evaluates exactly as before. On, entry additionally
-    # requires the completed-bar stabilization oracle named by `stabilization_oracle`
-    # ("multi" (default): the cross-session Wilder roll -- what a chart of the indicator shows;
-    # "perday": today's bars only, the colder read) to read STABLE this tick, per
-    # `cherrypick.meic.stabilization_gate`: the last two consecutive COMPLETED 5-min bars'
-    # total range within 1.25x Wilder ATR(5) AND ATR at or below its 20-bar average -- the
-    # Thinkorswim "Universal Adaptive Market Stabilization Indicator" rule, the strategy's
-    # "wait until I see two or three flat five-minute candles" made deterministic
-    # (docs/theta-profits-be-condor.md). The verdicts ride the snapshot under
-    # `stabilization_verdicts`, computed by the loop BEFORE entries -- the paper loop and the
-    # live loop (run_once) both populate them, so a live arm and its paper twin read the same
-    # rule from the same recorded trail. The refusal is a WAIT, not a rejection: the next tick
-    # re-reads. A missing or unverified verdict (trail not warm, no completed bars, feed
-    # failure) FAILS CLOSED for a trigger arm: it must not fire entries on a read it does not
-    # have. Open-position management never reads the verdicts; they gate ENTRIES only.
-    if params.get("stabilization_entry"):
-        oracle = str(params.get("stabilization_oracle", "multi")).lower()
-        mode = str(params.get("stabilization_threshold_mode", "atr")).lower()
-        # ATR mode reads the plain oracle keys; an "iv" arm reads the -iv keys the loop's
-        # iv-mode call writes, so two arms on the same tick (or one arm mid-change) can want
-        # different modes from one shared verdict dict. An unknown mode composes a key nobody
-        # writes: the same fail-closed wait as a missing verdict -- never a threshold basis
-        # the arm did not choose.
-        key = oracle if mode == "atr" else f"{oracle}-iv"
-        verdicts = snapshot.get("stabilization_verdicts")
-        if not (isinstance(verdicts, dict) and verdicts.get(key) is True):
-            return False, "stabilization_wait", None
-
     now_min = _time_to_minutes(snapshot["now_et"])
 
     # Daily target is GUIDANCE, not a hard cap (matching docs/agent-loop.md): once a portfolio has reached
@@ -1017,6 +988,36 @@ def evaluate_entry(
             )
             if iv_rank < params.get("fomc_post_blackout_min_iv_rank", 0.40) or range_blown:
                 return False, "fomc_post_blackout_insufficient_premium", None
+
+    # Stabilization entry gate (2026-10-31, `stabilization_entry`): opt-in per profile, default
+    # OFF -- every arm without this key evaluates exactly as before. On, entry additionally
+    # requires the completed-bar stabilization oracle named by `stabilization_oracle`
+    # ("multi" (default): the cross-session Wilder roll -- what a chart of the indicator shows;
+    # "perday": today's bars only, the colder read) to read STABLE this tick, per
+    # `cherrypick.meic.stabilization_gate`: the last two consecutive COMPLETED 5-min bars'
+    # total range within the threshold AND Wilder ATR(5) at or below its 20-bar average -- the
+    # Thinkorswim "Universal Adaptive Market Stabilization Indicator" rule, the strategy's
+    # "wait until I see two or three flat five-minute candles" made deterministic
+    # (docs/theta-profits-be-condor.md). The verdicts ride the snapshot under
+    # `stabilization_verdicts`, computed BEFORE entries by the paper loop, the live loop
+    # (run_once) and the replay, so a live arm, its paper twin and its history read the same rule.
+    # The refusal is a WAIT, not a rejection: the next tick re-reads. A missing or unverified
+    # verdict (trail not warm, stale bars, feed failure) FAILS CLOSED for a trigger arm: it must
+    # not fire entries on a read it does not have. It sits after the window, cadence, cap and
+    # event gates so a tick those refuse keeps their reason in entry_attempts, and before the
+    # candidate scan. Open-position management never reads the verdicts; they gate ENTRIES only.
+    if params.get("stabilization_entry"):
+        oracle = str(params.get("stabilization_oracle", "multi")).lower()
+        mode = str(params.get("stabilization_threshold_mode", "atr")).lower()
+        # ATR mode reads the plain oracle keys; an "iv" arm reads the -iv keys the loop's
+        # iv-mode call writes, so two arms on the same tick (or one arm mid-change) can want
+        # different modes from one shared verdict dict. An unknown mode composes a key nobody
+        # writes: the same fail-closed wait as a missing verdict -- never a threshold basis
+        # the arm did not choose.
+        key = oracle if mode == "atr" else f"{oracle}-iv"
+        verdicts = snapshot.get("stabilization_verdicts")
+        if not (isinstance(verdicts, dict) and verdicts.get(key) is True):
+            return False, "stabilization_wait", None
 
     # `put_strike`/`call_strike` are the SHORT strikes; the longs live in the *_symbol columns.
     open_strikes = set()

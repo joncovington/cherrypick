@@ -1063,7 +1063,7 @@ def test_live_wires_the_stabilization_verdicts_before_entries(tmp_path, monkeypa
     # NO: the arm must wait, exactly as it does in paper.
     class NoGate:
         @staticmethod
-        def snapshot_verdicts(*a, **k):
+        def all_verdicts(*a, **k):
             return {"multi": False, "perday": False}
 
     monkeypatch.setattr(live_loop, "_stabilization_gate", NoGate)
@@ -1075,7 +1075,7 @@ def test_live_wires_the_stabilization_verdicts_before_entries(tmp_path, monkeypa
     # YES: the gate satisfied, the entry path runs past the gate.
     class YesGate:
         @staticmethod
-        def snapshot_verdicts(*a, **k):
+        def all_verdicts(*a, **k):
             return {"multi": True, "perday": True}
 
     monkeypatch.setattr(live_loop, "_stabilization_gate", YesGate)
@@ -1086,7 +1086,7 @@ def test_live_wires_the_stabilization_verdicts_before_entries(tmp_path, monkeypa
     # RAISES: the oracle must not take the tick down; the arm waits instead.
     class BoomGate:
         @staticmethod
-        def snapshot_verdicts(*a, **k):
+        def all_verdicts(*a, **k):
             raise RuntimeError("feed down")
 
     monkeypatch.setattr(live_loop, "_stabilization_gate", BoomGate)
@@ -1107,7 +1107,7 @@ def test_live_ignores_stabilization_when_the_arm_does_not_opt_in(tmp_path, monke
 
     class SpyGate:
         @staticmethod
-        def snapshot_verdicts(*a, **k):
+        def all_verdicts(*a, **k):
             calls.append(1)
             raise AssertionError("oracle must not be consulted without opt-in")
 

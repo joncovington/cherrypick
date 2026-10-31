@@ -198,15 +198,6 @@ def _symbols(cfg):
     return ["XSP"]
 
 
-def _profiles_wanting_stabilization(profiles: dict) -> bool:
-    """True when any enabled registry/advice profile opts into the stabilization entry gate, so
-    the loop only pays the oracle read on sessions where a trigger arm is live."""
-    for name, pdef in (profiles or {}).items():
-        if isinstance(pdef, dict) and not str(name).startswith("_") and pdef.get("stabilization_entry"):
-            return True
-    return False
-
-
 # ---------------------------------------------------------------------------
 # Market-data → snapshot
 # ---------------------------------------------------------------------------
@@ -1164,20 +1155,9 @@ def run_iteration(cfg, force=False):
         # without a verified read (the arm waits -- it never fires on a guess), and an oracle
         # failure never takes the tick down. `now` is passed through so a pinned-clock run
         # reads the same verdicts a live session at that instant would.
-        if _profiles_wanting_stabilization(all_profiles):
+        if stabilization_gate.wanted(all_profiles):
             try:
-                # Both threshold modes' verdicts in one pass: ATR mode's plain keys plus IV
-                # mode's "-iv" keys, so differently-configured arms on the same symbol share
-                # one dict without double reads.
-                snapshot["stabilization_verdicts"] = {
-                    **stabilization_gate.snapshot_verdicts(symbol, today, now),
-                    **{
-                        f"{k}-iv": v
-                        for k, v in stabilization_gate.snapshot_verdicts(
-                            symbol, today, now, threshold_mode="iv"
-                        ).items()
-                    },
-                }
+                snapshot["stabilization_verdicts"] = stabilization_gate.all_verdicts(symbol, today, now)
             except Exception as exc:  # noqa: BLE001 -- the oracle must not take the tick down
                 snapshot["stabilization_verdicts"] = {}
                 logger.warning("stabilization oracle failed for %s: %s: %s", symbol, type(exc).__name__, exc)
