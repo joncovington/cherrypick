@@ -85,6 +85,7 @@ from cherrypick.meic import (
 )
 from cherrypick.meic import paths as _paths  # noqa: E402
 from cherrypick.meic import regime as _regime  # noqa: E402
+from cherrypick.meic import stabilization_gate as _stabilization_gate  # noqa: E402
 from cherrypick.meic import stream_request as _stream_request  # noqa: E402
 
 
@@ -1179,6 +1180,26 @@ def run_once(
     `paper.live_params`: `live.arm` (the top level when unset) with the live block's overrides."""
     symbol = (config.get("live") or {}).get("symbol")
     params = paper.live_params(config)
+    # Stabilization trigger verdicts (2026-10-31): when the live arm opts into the stabilization
+    # entry gate, the loop computes them BEFORE the entry branch -- the identical call the paper
+    # loop makes, so a live arm and its paper twin read the same rule from the same recorded
+    # trail. Best-effort and fail-closed: the gate returns None per oracle without a verified
+    # read (the arm waits), an exception logs a warning and clears the verdicts (the arm waits),
+    # and nothing here can take the tick down. The verdicts gate ENTRIES only -- open-position
+    # management below never reads them.
+    if params.get("stabilization_entry"):
+        try:
+            snapshot["stabilization_verdicts"] = _stabilization_gate.snapshot_verdicts(
+                symbol, str(snapshot["date"]), _pl._now_et()
+            )
+        except Exception as exc:  # noqa: BLE001 -- the oracle must not take the tick down
+            snapshot["stabilization_verdicts"] = {}
+            log(
+                "stabilization oracle failed for %s: %s: %s",
+                symbol,
+                type(exc).__name__,
+                exc,
+            )
     # Broker truth against ledger belief, before anything else (2026-10-14, the flies/bwb sweep):
     # a working order this ledger never recorded is the one crash window nothing else covers.
     # Unknown (None) blocks entries exactly as a found orphan does; neither touches a close.

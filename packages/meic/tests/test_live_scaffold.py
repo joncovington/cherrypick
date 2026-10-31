@@ -1024,3 +1024,97 @@ def test_a_quantity_one_row_is_charged_exactly_as_before(tmp_path):
     assert done["pnl"] == round((0.52 - 1.10) * 100, 2)
     assert done["fees"] == paper.close_fees_one_side("XSP")
     assert done["slippage_dollars"] == 0.25
+
+
+
+# ---------------------------------------------------------------------------
+# Stabilization entry gate, live wiring (2026-10-31): run_once computes the same verdicts the
+# paper loop does, before the entry branch, fail-closed. The gate module is stubbed at the
+# seam (monkeypatched on live_loop._stabilization_gate) so these exercise the WIRING; the
+# module's own rule is covered in test_paper_engine.py. Opt-in rides the REGISTRY ARM (a live
+# arm trades its arm def plus the live block's narrow overrides) — never the live block, which
+# narrows but does not enable gates, exactly as every other profile key.
+# ---------------------------------------------------------------------------
+
+STAB_REGISTRY = {
+    "control": {"min_iv_rank": 0.0},
+    "stab-live": {
+        "enabled": True,
+        "min_iv_rank": 0.3,
+        "paper_entry_window_start": "09:45",
+        "entry_window_end": "15:30",
+        "stabilization_entry": True,
+        "stabilization_oracle": "multi",
+    },
+}
+
+
+def test_live_wires_the_stabilization_verdicts_before_entries(tmp_path, monkeypatch):
+    """With the arm opted in, run_once consults the oracle before the entry branch: a gate that
+    says NO leaves nothing placed (the wait is the engine's own `stabilization_wait`); one that
+    says YES lets the entry proceed; one that RAISES never takes the tick down — the verdicts
+    clear, the arm waits, and the tick survives."""
+    from cherrypick.meic import stabilization_gate as real_gate
+
+    db_path = _init_db(tmp_path)
+    snap = _entry_snapshot()
+    cfg = _config(arm="stab-live")
+    monkeypatch.setattr(paper, "load_profiles", lambda: STAB_REGISTRY)
+
+    # NO: the arm must wait, exactly as it does in paper.
+    class NoGate:
+        @staticmethod
+        def snapshot_verdicts(*a, **k):
+            return {"multi": False, "perday": False}
+
+    monkeypatch.setattr(live_loop, "_stabilization_gate", NoGate)
+    summary = live_loop.run_once(cfg, snap, db_path, FakeBroker(), live=True, log=lambda *_: None)
+    assert summary["entry"]["entry"] == "skipped"
+    assert summary["entry"]["reason"] == "stabilization_wait"
+    assert "stabilization_verdicts" in snap  # the wiring populated the snapshot
+
+    # YES: the gate satisfied, the entry path runs past the gate.
+    class YesGate:
+        @staticmethod
+        def snapshot_verdicts(*a, **k):
+            return {"multi": True, "perday": True}
+
+    monkeypatch.setattr(live_loop, "_stabilization_gate", YesGate)
+    broker = FakeBroker()
+    summary = live_loop.run_once(cfg, snap, db_path, broker, live=True, log=lambda *_: None)
+    assert summary["entry"]["entry"] == "placed", summary["entry"]
+
+    # RAISES: the oracle must not take the tick down; the arm waits instead.
+    class BoomGate:
+        @staticmethod
+        def snapshot_verdicts(*a, **k):
+            raise RuntimeError("feed down")
+
+    monkeypatch.setattr(live_loop, "_stabilization_gate", BoomGate)
+    broker = FakeBroker()
+    db2 = _init_db(tmp_path, name="live2.db")  # fresh ledger: this branch tests the oracle contract, not the cap
+    summary = live_loop.run_once(cfg, snap, db2, broker, live=True, log=lambda *_: None)
+    assert summary["entry"]["reason"] == "stabilization_wait"
+    assert broker.placed == []
+    monkeypatch.setattr(live_loop, "_stabilization_gate", real_gate)
+
+
+def test_live_ignores_stabilization_when_the_arm_does_not_opt_in(tmp_path, monkeypatch):
+    """Default-off is a live invariant too: without `stabilization_entry` on the arm the loop
+    never calls the oracle (a raising stub proves it) and the tick evaluates exactly as before."""
+    calls = []
+
+    class SpyGate:
+        @staticmethod
+        def snapshot_verdicts(*a, **k):
+            calls.append(1)
+            raise AssertionError("oracle must not be consulted without opt-in")
+
+    monkeypatch.setattr(live_loop, "_stabilization_gate", SpyGate)
+    db_path = _init_db(tmp_path)
+    broker = FakeBroker()
+    summary = live_loop.run_once(
+        _config(), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None
+    )
+    assert calls == []
+    assert summary["entry"]["entry"] in ("placed", "dry_run")

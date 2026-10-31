@@ -880,6 +880,28 @@ def evaluate_entry(
         if not deep_positive:
             return False, "regime_gex_flip_too_close", None
 
+    # Stabilization entry gate (2026-10-31, `stabilization_entry`): opt-in per profile, default
+    # OFF -- every arm without this key evaluates exactly as before. On, entry additionally
+    # requires the completed-bar stabilization oracle named by `stabilization_oracle`
+    # ("multi" (default): the cross-session Wilder roll -- what a chart of the indicator shows;
+    # "perday": today's bars only, the colder read) to read STABLE this tick, per
+    # `cherrypick.meic.stabilization_gate`: the last two consecutive COMPLETED 5-min bars'
+    # total range within 1.25x Wilder ATR(5) AND ATR at or below its 20-bar average -- the
+    # Thinkorswim "Universal Adaptive Market Stabilization Indicator" rule, the strategy's
+    # "wait until I see two or three flat five-minute candles" made deterministic
+    # (docs/theta-profits-be-condor.md). The verdicts ride the snapshot under
+    # `stabilization_verdicts`, computed by the loop BEFORE entries -- the paper loop and the
+    # live loop (run_once) both populate them, so a live arm and its paper twin read the same
+    # rule from the same recorded trail. The refusal is a WAIT, not a rejection: the next tick
+    # re-reads. A missing or unverified verdict (trail not warm, no completed bars, feed
+    # failure) FAILS CLOSED for a trigger arm: it must not fire entries on a read it does not
+    # have. Open-position management never reads the verdicts; they gate ENTRIES only.
+    if params.get("stabilization_entry"):
+        oracle = str(params.get("stabilization_oracle", "multi")).lower()
+        verdicts = snapshot.get("stabilization_verdicts")
+        if not (isinstance(verdicts, dict) and verdicts.get(oracle) is True):
+            return False, "stabilization_wait", None
+
     now_min = _time_to_minutes(snapshot["now_et"])
 
     # Daily target is GUIDANCE, not a hard cap (matching docs/agent-loop.md): once a portfolio has reached
@@ -1776,6 +1798,7 @@ def _update_trade(ic_order_id: str, fields: dict, db_path: str) -> dict:
 # `gate_blocked` with the raw reason preserved in `block_detail`, so a reason added later degrades to
 # "some gate refused it" rather than vanishing from the read side.
 _ATTEMPT_OUTCOMES = {
+    "stabilization_wait": "gate_blocked",
     "entry_cadence_wait": "cadence_blocked",
     "entry_spacing_wait": "cadence_blocked",
     "sign_rule_conflict": "sign_rule_blocked",

@@ -199,6 +199,22 @@ regime-coverage read has enough tagged, non-degenerate sessions to say more.
   which can only narrow it
 - **IC Impact**: Hard block for the candidate
 
+### 13d. Stabilization Entry Gate (Per Arm, Opt-In)
+- **Trigger**: `stabilization_entry` on, and the completed-bar stabilization oracle does not read
+  STABLE this tick
+- **Effect**: Wait (`stabilization_wait`, attempts outcome `gate_blocked`) — re-read every tick;
+  never touches the entry cadence and never blocks open-position management
+- **Config**: `stabilization_entry` (default off), `stabilization_oracle` (`multi`, the
+  cross-session Wilder roll, or `perday`, today's bars only)
+- **Data**: `cherrypick.meic.stabilization_gate` over the recorded spot trail
+  (`gex_spot_history`, read-only): the last two consecutive COMPLETED 5-min bars' total range
+  within the adaptive threshold AND Wilder ATR(5) at or below its 20-bar average — the
+  Thinkorswim "Universal Adaptive Market Stabilization Indicator" rule, the strategy's
+  "two or three flat five-minute candles" made deterministic
+- **Fail-closed**: no trail, no completed bars, unwarm ATR, or (in `iv` mode) no recorded IV —
+  the arm waits; it never fires on a read it does not have
+- **IC Impact**: Waits, per arm; arms without the key evaluate exactly as before
+
 ### Live-only gates (`live_loop.py`)
 Checked by the deterministic live loop on top of the arm's own gates; each blocks NEW entries only,
 never a stop or a force-close:
