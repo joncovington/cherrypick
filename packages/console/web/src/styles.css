@@ -5020,17 +5020,11 @@ select.text-input {
   white-space: normal;
 }
 
-/* A study's own Markdown beside its result file (lib/miniMarkdown.tsx), opened under its fields.
-   Its tables hold figures, so their cells keep the table's nowrap and scroll inside the card. */
-.study-notes {
-  margin-top: 8px;
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
-}
-
-.study-notes > summary {
-  cursor: pointer;
-  color: var(--text-muted);
+/* A study's own Markdown beside its result file (lib/miniMarkdown.tsx), on its own full-width view
+   of the studies tab (`?study=&notes=`). Its tables hold figures, so their cells keep the table's
+   nowrap and scroll inside the card. */
+.study-notes-page {
+  padding: 4px 0;
 }
 
 .mini-md {
