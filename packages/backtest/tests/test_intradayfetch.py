@@ -224,3 +224,61 @@ def test_chain_window_asks_for_the_expiry_and_window_and_returns_et_bars_with_no
     assert rows[1]["iv"] is None and rows[1]["bid"] is None
     client.chain_window("AAPL", "2024-02-02", "2024-02-09", "15:35", "15:50", strike_range=20)
     assert seen["strike_range"] == 20
+
+
+# --------------------------------------------------------------------------- strike_range (item 38)
+
+
+def _write(tmp_path, items, name="req.json"):
+    path = tmp_path / name
+    path.write_text(json.dumps({"requests": items}), encoding="utf-8")
+    return path
+
+
+def _item(**over):
+    base = {"symbol": "SPY", "session": "2024-02-05", "expiration": "2024-02-09", "start": "10:00",
+            "end": "10:15", "interval": "15m"}  # fmt: skip
+    base.update(over)
+    return base
+
+
+class RecordingWindows(FakeWindows):
+    def __init__(self):
+        super().__init__()
+        self.ranges = []
+
+    def chain_window(self, root, day, expiration, start, end, *, interval="5m", strike_range=None):
+        self.ranges.append(strike_range)
+        return super().chain_window(root, day, expiration, start, end, interval=interval)
+
+
+def test_a_request_may_name_a_strike_range_and_the_client_is_asked_for_exactly_that(tmp_path):
+    path = _write(tmp_path, [_item(strike_range=50), _item(session="2024-02-06")])
+    keys, ranges = ix.read_request_file(path)
+    assert len(keys) == 2 and ranges == {keys[0]: 50}
+    assert ix.read_requests(path) == keys, "the plain reader is unchanged for item 31's files"
+    fake = RecordingWindows()
+    ix.fetch_windows(_settings(tmp_path), fake, keys, strike_ranges=ranges, log=lambda m: None)
+    assert fake.ranges == [50, None], "one asked for 50 strikes, the other for the whole chain"
+
+
+def test_a_file_without_ranges_asks_for_the_whole_chain_as_before(tmp_path):
+    keys, ranges = ix.read_request_file(_write(tmp_path, [_item()]))
+    assert ranges == {}
+    fake = RecordingWindows()
+    ix.fetch_windows(_settings(tmp_path), fake, keys, strike_ranges=ranges, log=lambda m: None)
+    assert fake.ranges == [None]
+
+
+@pytest.mark.parametrize("bad", [0, -3, 2.5, "50", True])
+def test_a_strike_range_that_is_not_a_positive_whole_number_is_refused_before_any_request(tmp_path, bad):
+    with pytest.raises(ValueError, match="strike_range"):
+        ix.read_request_file(_write(tmp_path, [_item(strike_range=bad)]))
+
+
+def test_the_same_window_with_two_ranges_is_refused_not_fetched_with_the_first(tmp_path):
+    with pytest.raises(ValueError, match="two strike ranges"):
+        ix.read_request_file(_write(tmp_path, [_item(strike_range=50), _item(strike_range=10)]))
+    # the same range twice is one request
+    keys, ranges = ix.read_request_file(_write(tmp_path, [_item(strike_range=50), _item(strike_range=50)]))
+    assert len(keys) == 1 and list(ranges.values()) == [50]

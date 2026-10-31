@@ -1379,7 +1379,9 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#38-the-calendars-modules-own-rule-at-real-quotes-does-the-weekly-spy-double-calendar-earn-after-costs-entered-monday-or-the-friday-before",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item38/results.json"
+      ],
       "retest": null,
       "retests": []
     },

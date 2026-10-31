@@ -265,3 +265,10 @@ start, end, interval?}]}` file as `fetch-chains` reads. Its own store, `intraday
 marked licensed directory; resumable, a refusal recorded and retried, `--stop-by` bounds a run, so the
 research queue runs it. The coverage pilot that decides item 31's basis is `scripts/earnings_item31.py`
 (`plan`, `pilot`); it reads presence and counts, never a price.
+
+A request may also carry `strike_range` (a positive whole number of strikes either side of the money; item
+38 asks for 50, its listing probes 2); absent means the whole chain, as item 31's files always have. The
+range is no part of a request's identity, so two requests for overlapping bars of one expiry should ask for
+the same range, and a file repeating a window with two ranges is refused. Item 38 (the calendars module's
+own rule, `scripts/calendars_item38.py`) finds its start with the same verb: its listing step is a file of
+one-bar probes, not a call to the vendor's expirations list, which a `script` row may not make.

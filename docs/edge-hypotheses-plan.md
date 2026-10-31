@@ -3995,6 +3995,22 @@ has been computed.*
   - Weekly sampling stands in for 252 daily readings in the IV rank.
   - The historical ex-dividend dates are declared from the issuer's schedule and are only as good as
     that declaration.
+- **Settled with the build, before the first read (2026-10-31, `scripts/calendars_item38.py`):**
+  - **The trim check is judged both ways.** Removing the five worst weeks can only raise a mean, so on
+    its own it can never fail; the check that shows a mean living in a few big weeks is the five best
+    removed. Both are judged; the best-removed one is the one that bites.
+  - The start is found by a one-bar probe of each Monday's front and back expiries (a vendor call, so
+    run as a fetch row), then a 40-week pilot sets the first year from which every later year is at
+    least 90% complete. Chain requests carry a 50-strike range; item 31's files are unchanged.
+  - The implied-vol rank is a weekly series fetched from 52 weeks before the start; a rank needs 45 of
+    52 readings and the current one. The bracketing monthlies are the third Friday (the session
+    before if a holiday), the lower 1 to 30 days out.
+  - Weeks, strikes, the paired debit, costs, share delivery, the exit gate and the exits are the
+    module's own (`exit_policies.derive` on week records in its own shape). The exit gate acts on the
+    whole structure. A Friday entry may use only bars after the prior week's control exit.
+  - Settlement closes are the broker's daily bars where they reach, the local history before. Weeks
+    that cannot be resolved are counted and dropped, never read as zero. `study` refuses until the
+    replay's entries match paper's.
 - **Decides** (the user decides everything about retirement and live; this item only supplies evidence):
   - **An arm passes:** that arm continues in paper as calendars' base, a paper check begins from a
     declared boundary (`dc_4_7` and `dc_7_10` still never pooled), and calendars' paper config is

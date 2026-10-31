@@ -7,8 +7,12 @@ on a 5-minute grid, so it needs the quote, the delta, the implied volatility and
 price at each bar. That is `ThetaDataClient.chain_window`; this module is what keeps its answers.
 
 **The request file** is JSON: ``{"requests": [{"symbol", "session", "expiration", "start", "end",
-"interval"?}, ...]}`` (a bare list also reads). ``start`` and ``end`` are "HH:MM" ET, ``interval``
-defaults to ``5m``. Its order is kept; a repeated request is fetched once.
+"interval"?, "strike_range"?}, ...]}`` (a bare list also reads). ``start`` and ``end`` are "HH:MM" ET,
+``interval`` defaults to ``5m``, ``strike_range`` (item 38: 50) bounds the strikes either side of the
+money and is absent for the whole chain. Its order is kept; a repeated request is fetched once.
+The range is not part of a request's identity: a store holds what became of a window, so two
+requests for overlapping bars of one expiry should ask for the same range (a later, narrower write
+of the same bars replaces the wider rows).
 
 **The store** is `intraday_chains.db` in the licensed vendor directory (`paths.ensure_vendor_dir`,
 marker first): `intraday_chain_quotes` holds the rows, `intraday_chain_requests` what became of each
@@ -82,12 +86,25 @@ def _hhmm(text: str) -> str:
     return f"{int(hh):02d}:{mm}"
 
 
-def read_requests(path: Path) -> list[Key]:
-    """(SYMBOL, session, expiration, start, end, interval) in file order, each once. A window that
-    ends before it starts is refused here, before any request is sent."""
+def _strike_range(value: Any) -> int | None:
+    """A request's optional `strike_range`: strikes either side of the money the vendor is asked
+    for. Absent or null asks for the whole chain, as item 31's requests always have."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"strike_range must be a positive whole number of strikes: {value!r}")
+    return value
+
+
+def read_request_file(path: Path) -> tuple[list[Key], dict[Key, int]]:
+    """(requests, strike ranges): the requests as `read_requests` reads them, and, for those that
+    name one, the `strike_range` to ask the vendor for. The range is no part of a request's identity
+    (the store keeps what became of a window, not how wide a chain it asked for), so a file that
+    repeats a window with two different ranges is refused here rather than fetched with the first."""
     doc = json.loads(Path(path).read_text(encoding="utf-8"))
     items = doc["requests"] if isinstance(doc, dict) else doc
     seen: dict[Key, None] = {}
+    ranges: dict[Key, int | None] = {}
     for it in items:
         key = (
             str(it["symbol"]).upper(),
@@ -99,8 +116,18 @@ def read_requests(path: Path) -> list[Key]:
         )
         if key[3] > key[4]:
             raise ValueError(f"request window ends before it starts: {key}")
+        width = _strike_range(it.get("strike_range"))
+        if key in ranges and ranges[key] != width:
+            raise ValueError(f"request repeated with two strike ranges: {key}")
+        ranges[key] = width
         seen.setdefault(key, None)
-    return list(seen)
+    return list(seen), {k: w for k, w in ranges.items() if w is not None}
+
+
+def read_requests(path: Path) -> list[Key]:
+    """(SYMBOL, session, expiration, start, end, interval) in file order, each once. A window that
+    ends before it starts is refused here, before any request is sent."""
+    return read_request_file(path)[0]
 
 
 def _done(conn: sqlite3.Connection) -> set[Key]:
@@ -159,10 +186,14 @@ def fetch_windows(
     limit: int | None = None,
     stop=None,
     log=print,
+    strike_ranges: dict[Key, int] | None = None,
 ) -> dict[str, Any]:
     """Fetch every request not already complete or empty (all of them with `refetch`). `stop`, if
     given, is asked before each new request: once it says so, nothing more is started, the requests
-    in flight finish and are kept, and the report says `stopped` -- a re-run resumes from there."""
+    in flight finish and are kept, and the report says `stopped` -- a re-run resumes from there.
+    `strike_ranges` bounds the strikes either side of the money for the requests that name one (the
+    others ask for the whole chain)."""
+    strike_ranges = strike_ranges or {}
     conn = connect(settings)
     try:
         done = set() if refetch else _done(conn)
@@ -195,8 +226,18 @@ def fetch_windows(
                 if key is None:
                     return False
                 sym, day, exp, start, end, interval = key
+                extra = {"strike_range": strike_ranges[key]} if key in strike_ranges else {}
                 running[
-                    ex.submit(client.chain_window, vendor_root(sym), day, exp, start, end, interval=interval)
+                    ex.submit(
+                        client.chain_window,
+                        vendor_root(sym),
+                        day,
+                        exp,
+                        start,
+                        end,
+                        interval=interval,
+                        **extra,
+                    )
                 ] = key
                 return True
 
