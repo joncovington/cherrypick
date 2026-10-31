@@ -5020,6 +5020,59 @@ select.text-input {
   white-space: normal;
 }
 
+/* A study's own Markdown beside its result file (lib/miniMarkdown.tsx), opened under its fields.
+   Its tables hold figures, so their cells keep the table's nowrap and scroll inside the card. */
+.study-notes {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.study-notes > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.mini-md {
+  max-width: 72rem;
+  line-height: 1.5;
+}
+
+.mini-md h4 {
+  margin: 14px 0 6px;
+  font-size: 15px;
+}
+
+.mini-md h5,
+.mini-md h6 {
+  margin: 16px 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.mini-md p,
+.mini-md ul {
+  margin: 6px 0;
+}
+
+.mini-md li + li {
+  margin-top: 4px;
+}
+
+.mini-md .table-scroll {
+  margin: 6px 0 10px;
+}
+
+.mini-md .data-table {
+  width: auto;
+}
+
+.mini-md .data-table tbody tr:nth-child(even) td {
+  background: var(--surface-raised);
+}
+
 .queue-detail {
   display: flex;
   flex-direction: column;

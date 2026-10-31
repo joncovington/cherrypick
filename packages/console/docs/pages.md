@@ -362,10 +362,13 @@ redirected): `studies` (2026-10-29, `pages/Backtest/StudiesTab.tsx`, `GET /api/b
 `services/studiesBridge.ts` → `python -m cherrypick.cli hypotheses-board`, behind the same gate
 because the verdicts are read from licensed result files; docs/studies-board-plan.md): what we
 tested and what we found. One row per hypothesis-register item, grouped in progress / declared /
-finished / observations, with its status (the register's), each result file's verdict as the study
-wrote it (a file with no word says "see plan", never a guess), the decision taken and when it last
-moved. A row opens to the pass test, rivals with their checks, per-arm verdicts, its run, its queue
-rows and the plan section on GitHub. A result file is shown by its name only. `?study=` opens one
+finished / observations, with its title, its status (the register's) and when it last moved. A row
+opens to the decision taken, each result file's verdict as the study wrote it (a file with no word
+says "see plan", never a guess), the pass test, rivals with their checks, per-arm verdicts, its run,
+its queue rows and the plan section on GitHub (2026-10-30: as columns, the prose ran the table off
+the card). A study may leave Markdown beside a result file (`results.json` -> `results.md`, its own
+figures, written under the home and never committed); the opened row shows it, rendered as elements
+by `lib/miniMarkdown.tsx`, never as HTML. A result file is shown by its name only. `?study=` opens one
 row. The other tabs point back (2026-10-30, `pages/Backtest/studyIndex.ts`, one shared fetch): a
 queue row carries its study's verdict as a chip linking to the board, the runs list has a `study`
 column, a run report opens with an "in plain English" card (what ran, the study it answers and

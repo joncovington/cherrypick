@@ -83,6 +83,7 @@ function toResult(v: unknown): StudyResult | null {
     provisional: typeof r["provisional"] === "boolean" ? r["provisional"] : null,
     verdicts: toVerdicts(r["verdicts"]),
     summary: s(r["summary"]),
+    notes: s(r["notes"]),
   };
 }
 

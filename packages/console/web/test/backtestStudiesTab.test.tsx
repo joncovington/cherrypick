@@ -44,6 +44,7 @@ function row(over: Partial<StudyRow>): StudyRow {
           { arm: "d20", verdict: "fail" },
         ],
         summary: "fail",
+        notes: null,
       },
       {
         name: "study-holdout.json",
@@ -55,6 +56,7 @@ function row(over: Partial<StudyRow>): StudyRow {
         provisional: true,
         verdicts: [{ arm: null, verdict: "fail" }],
         summary: "fail",
+        notes: null,
       },
     ],
     queueActive: false,
@@ -141,6 +143,18 @@ describe("studies tab", () => {
     expect(out).toContain("its queue rows");
     // A pre-register item points to its prose.
     expect(html(<StudyDetail row={row({ legacy: true, rule: null, rivals: [] })} />)).toContain("before the register");
+  });
+
+  it("an opened row shows the study's Markdown beside its result file, as elements, never as HTML", () => {
+    const r = row({}).results[0]!;
+    const md = "# Design\n\n| arm | win % | P&L |\n|---|---|---|\n| d12 | 45% | −$3,221 |\n\n- **close** loses\n\n<script>x</script>";
+    const out = html(<StudyDetail row={row({ results: [{ ...r, notes: md }] })} />);
+    expect(out).toContain("<h4>Design</h4>");
+    expect(out).toContain('<td class="num pnl-neg">−$3,221</td>');
+    expect(out).toContain('<td class="num">45%</td>');
+    expect(out).toContain("<strong>close</strong>");
+    expect(out).not.toContain("<script>");
+    expect(html(<StudyDetail row={row({})} />)).not.toContain("study-notes");
   });
 
   it("says why replays are provisional only while validation has not unlocked", () => {

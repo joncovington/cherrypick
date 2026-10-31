@@ -5,6 +5,7 @@ of the same entry delta over the same closes.
     python scripts/share_ladder_item29.py expirations          # each name's listed expiries (network, once)
     python scripts/share_ladder_item29.py plan [--out FILE]    # the expiry paths to fetch (local)
     python scripts/share_ladder_item29.py study [--json PATH] [--names A,B]
+    python scripts/share_ladder_item29.py report [--json PATH] # results.md from results.json (local)
 
 `expirations` asks the vendor once for SOXL's and TQQQ's listed expiries. `plan` reads those and the
 technicals history's raw daily bars, and writes every (name, expiry, start, through) path any trigger
@@ -739,9 +740,176 @@ def cmd_study(args) -> int:
     result["verdict"] = judge(result["windows"]["design"], result["windows"]["holdout"])
     out = Path(args.json) if args.json else _out_dir() / "results.json"
     out.write_text(json.dumps(result, default=str), encoding="utf-8")
+    out.with_suffix(".md").write_text(report(result), encoding="utf-8")
     for arm, v in result["verdict"].items():
         failed = [k for k, x in v.get("checks", {}).items() if not x]
         print(arm, v["verdict"], failed or "", v.get("why", ""))
+    return 0
+
+
+def _money(x: float) -> str:
+    return f"{'−' if round(x) < 0 else '+' if round(x) > 0 else ''}${abs(x):,.0f}"
+
+
+def _pct(k: int, n: int) -> str:
+    return f"{100 * k / n:.0f}%"
+
+
+def _label(arm: str) -> str:
+    """`call-spread-7d-close` -> `Call spread 7d, close`."""
+    structure, tenor, rule = arm.rsplit("-", 2)
+    name = "ZEBRA" if structure == "zebra" else structure.replace("-", " ").capitalize()
+    return f"{name} {'60–90d' if tenor == '75d' else tenor}, {rule}"
+
+
+def tally(trades: list[dict]) -> dict:
+    """One arm's trades in one window, as the report reads them. A win is a net above zero."""
+    n = len(trades)
+    return {
+        "n": n,
+        "win": sum(t["net"] > 0 for t in trades),
+        "pl": sum(t["net"] for t in trades),
+        "lot_win": sum(t["lot_net"] > 0 for t in trades),
+        "lot_pl": sum(t["lot_net"] for t in trades),
+        "beat": sum(t["net"] > t["lot_net"] for t in trades),
+    }
+
+
+def findings(result: dict) -> list[str]:
+    """The plain-English reading, worked out from the figures each time so it stays true if the
+    study is re-run. Judged arms only, except the last line on the reported exercise."""
+    out = []
+    tallies = {w: {a: tally(ts) for a, ts in result["trades"][w].items()} for w in result["trades"]}
+    judged = {w: {a: t for a, t in ts.items() if a in ARMS and t["n"]} for w, ts in tallies.items()}
+
+    def span(vals: list[float]) -> str:
+        lo, hi = round(min(vals)), round(max(vals))
+        return f"{lo}%" if lo == hi else f"{lo}–{hi}%"
+
+    for w, ts in judged.items():
+        if not ts:
+            continue
+        lot = [100 * t["lot_win"] / t["n"] for t in ts.values()]
+        own = [100 * t["win"] / t["n"] for t in ts.values()]
+        beat = max(100 * t["beat"] / t["n"] for t in ts.values())
+        made = [_label(a) for a, t in ts.items() if t["pl"] > 0]
+        out.append(
+            f"**{w.capitalize()}:** the share lot wins {span(lot)} of trades, the structures"
+            f" {span(own)}. No structure beat its lot in more than {beat:.0f}% of trades. "
+            + (
+                "Every arm loses money overall."
+                if not made
+                else f"Arms that made money overall: {'; '.join(made)}."
+            )
+        )
+    zero = [_label(a) for a, t in judged.get("design", {}).items() if t["win"] == 0]
+    if zero:
+        out.append(
+            f"**No winning trade at all** in the design window: {'; '.join(zero)}. The 4% move"
+            " comes within days, while a long-dated spread has months left, so it has gained only"
+            " a small part of its width, less than what crossing its legs' spreads costs."
+        )
+    mids = [
+        (v["mean"], v["mid"])
+        for w in ("design", "holdout")
+        for a, v in result["windows"][w].items()
+        if a in ARMS and v.get("n") and v.get("mean") is not None and v.get("mid") is not None
+    ]
+    near = sum(abs(mid) < abs(mean) / 4 for mean, mid in mids)
+    if mids:
+        out.append(
+            f"**Why:** marked at the mid instead of the natural, the gap to the share lot shrinks"
+            f" to under a quarter of its size in {near} of {len(mids)} arm-windows. What the"
+            " structures lose is mostly the cost of crossing their spreads, which is large next to"
+            " a 4% move."
+        )
+    few = [
+        f"{_label(a)} ({v.get('why', '')})"
+        for a, v in result["verdict"].items()
+        if v.get("verdict") == "no verdict"
+    ]
+    if few:
+        out.append(
+            f"**No verdict** (under {MIN_TRADES} closed trades in a window): {'; '.join(few)}. A"
+            " roll opened in a long drawdown stays open for months, and each arm holds one"
+            " position at a time."
+        )
+    d = tallies.get("design", {})
+    pairs = [(f"zebra-{t}-exercise", f"zebra-{t}-close") for t in TENORS]
+    pairs = [(e, c) for e, c in pairs if d.get(e, {}).get("n") and d.get(c, {}).get("n")]
+    if pairs:
+        bits = [
+            f"{'60–90d' if e.split('-')[1] == '75d' else e.split('-')[1]}"
+            f" {_pct(d[e]['win'], d[e]['n'])} won and {_money(d[e]['pl'])}"
+            f" (closing: {_pct(d[c]['win'], d[c]['n'])}, {_money(d[c]['pl'])})"
+            for e, c in pairs
+        ]
+        out.append("**Exercising the ZEBRA** (reported, not judged), design window: " + "; ".join(bits) + ".")
+    return out
+
+
+def report(result: dict) -> str:
+    """results.md beside results.json, for the console's studies tab: the verdict, the reading in
+    words, then per arm and window the trades, win rate and P&L for the structure and its share
+    lot, and how often the structure beat the lot. Derived from licensed chains, so it stays where
+    the JSON is and never enters the repo."""
+    words = [v.get("verdict") for a, v in result["verdict"].items() if a in ARMS]
+    counts = {w: words.count(w) for w in ("pass", "fail", "no verdict")}
+    overall = "pass" if counts["pass"] else "fail" if counts["fail"] else "no verdict"
+    lines = [
+        "# Item 29: the share ladder in options",
+        "",
+        f"**Verdict: {overall}.** Of the {len(words)} judged arms, {counts['pass']} pass,"
+        f" {counts['fail']} fail and {counts['no verdict']} have no verdict.",
+        "",
+        "Each trade is one call spread, put spread or ZEBRA bought on a trigger day (the low 7%"
+        " under the previous close), set against shares of the same entry delta over the same"
+        " closes. P&L is whole-position dollars after fees, the options filled at the natural.",
+        "",
+        "## What it says",
+        "",
+        *[f"- {x}" for x in findings(result)],
+        "",
+        "## How to read the tables",
+        "",
+        "- **win %**: the share of trades that made money after costs.",
+        "- **P&L**: all the arm's trades added up.",
+        "- **lot**: the same trades done in shares of the same delta instead.",
+        "- **beat the lot**: the share of trades where the structure made more than its shares.",
+        "- **close / roll**: at expiry (or 21 days left, for 60–90d), close the trade, or roll it"
+        " to the same structure and tenor until the target is met.",
+        "- **exercise**: ZEBRA only, reported not judged: take the shares through the long calls"
+        " instead of selling them.",
+    ]
+    titles = {
+        "design": f"Design: 7d and 21d {WEEKLY[0]} to {WEEKLY[1]}; 60–90d {LONG[0]} to {LONG[1]}",
+        "holdout": f"Holdout: {HOLDOUT[0]} to {HOLDOUT[1]}",
+    }
+    for wname in result["trades"]:
+        lines += [
+            "",
+            f"## {titles.get(wname, wname.capitalize())}",
+            "",
+            "| arm | verdict | trades | win % | P&L | lot win % | lot P&L | beat the lot |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        for arm, ts in result["trades"][wname].items():
+            v = result["verdict"].get(arm, {}).get("verdict", "reported")
+            t = tally(ts)
+            if not t["n"]:
+                lines.append(f"| {_label(arm)} | {v} | 0 | | | | | |")
+                continue
+            n = t["n"]
+            lines.append(
+                f"| {_label(arm)} | {v} | {n} | {_pct(t['win'], n)} | {_money(t['pl'])}"
+                f" | {_pct(t['lot_win'], n)} | {_money(t['lot_pl'])} | {_pct(t['beat'], n)} |"
+            )
+    return "\n".join(lines) + "\n"
+
+
+def cmd_report(args) -> int:
+    src = Path(args.json) if args.json else _out_dir() / "results.json"
+    src.with_suffix(".md").write_text(report(json.loads(src.read_text(encoding="utf-8"))), encoding="utf-8")
     return 0
 
 
@@ -756,6 +924,9 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--json")
     s.add_argument("--names", help="comma-separated, for a quick look; the verdict needs both names")
     s.set_defaults(fn=cmd_study)
+    r = sub.add_parser("report", help="results.md from an existing results.json (local)")
+    r.add_argument("--json")
+    r.set_defaults(fn=cmd_report)
     args = ap.parse_args(argv)
     return args.fn(args)
 

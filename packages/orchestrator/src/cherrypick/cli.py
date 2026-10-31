@@ -1934,8 +1934,16 @@ def cmd_hypotheses_board() -> None:
             return None, None
         return data, mtime
 
+    def notes(path: str):
+        # The study's own Markdown beside its result file, capped: it rides in every board read.
+        p = Path(path.replace("{home}", home.as_posix())).with_suffix(".md")
+        try:
+            return p.read_text(encoding="utf-8")[:65536]
+        except OSError:
+            return None
+
     reg = hypotheses.load()
-    out = hypotheses.board(reg, _queue_rows(), read)
+    out = hypotheses.board(reg, _queue_rows(), read, notes)
     out["unregistered"] = hypotheses.unregistered(reg, set(out["unregistered"]) | _study_folders())
     _emit({"ok": True, **out})
 
