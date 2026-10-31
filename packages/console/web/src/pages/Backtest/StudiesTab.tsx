@@ -10,8 +10,9 @@ import { useStudies } from "./studyIndex";
 /**
  * The Backtest page's studies tab (2026-10-29, docs/studies-board-plan.md): what we tested and what
  * we found. One row per hypothesis-register item, read through `/api/backtest/studies` (the
- * orchestrator's `hypotheses-board`): its status, each result file's verdict, the decision taken,
- * and links to its plan section, its queue rows and its run.
+ * orchestrator's `hypotheses-board`): its title and status on the row; the decision taken, each
+ * result file's verdict and links to its plan section, its queue rows and its run when opened
+ * (2026-10-30: as columns they ran the table off the card).
  *
  * Every word is the orchestrator's: the register's status, the study's own verdict, the group. A
  * file with no verdict word says so; nothing is worked out here from figures.
@@ -35,7 +36,7 @@ const STATUS_CHIP: Record<string, string> = {
   observation: "chip muted",
 };
 
-const COLS = 6;
+const COLS = 4;
 
 /** The register's status in words: `no_verdict` -> "no verdict". */
 export function statusWord(status: string): string {
@@ -131,6 +132,8 @@ export function StudyDetail({ row }: { row: StudyRow }) {
   return (
     <div className="queue-detail">
       <dl className="queue-fields">
+        {row.outcome ? <Field k="outcome">{row.outcome}</Field> : null}
+        {row.results.length > 0 ? <Field k="verdicts">{resultsLine(row)}</Field> : null}
         {row.legacy ? (
           <Field k="declared">before the register: the question, test and rivals are in the plan section</Field>
         ) : null}
@@ -198,7 +201,7 @@ function StudyRows({ row, nowMs, focus = false }: { row: StudyRow; nowMs: number
         <td>
           <Toggle open={open} label={row.study} onClick={() => setOpen(!open)} />
         </td>
-        <td>
+        <td className="studies-title">
           <span className="muted">{row.id}</span> {row.title}
         </td>
         <td>
@@ -210,8 +213,6 @@ function StudyRows({ row, nowMs, focus = false }: { row: StudyRow; nowMs: number
             <span className="chip"> task queued</span>
           ) : null}
         </td>
-        <td>{resultsLine(row)}</td>
-        <td>{row.outcome ?? <span className="muted">—</span>}</td>
         <td className="muted" title={stamp(row.lastActivity)}>
           {ago(etMs(row.lastActivity), nowMs)}
         </td>
@@ -238,8 +239,6 @@ export function StudiesTable({ board, nowMs = etNowMs(), focus = null }: { board
             <th aria-label="Open" />
             <th>Study</th>
             <th title="The register's status">Status</th>
-            <th title="Each result file's verdict, as the study wrote it">Verdicts</th>
-            <th title="The decision taken">Outcome</th>
             <th title="The last queue task or result file, ET">When</th>
           </tr>
         </thead>
