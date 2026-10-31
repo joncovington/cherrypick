@@ -1111,6 +1111,78 @@
       ],
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 33,
+      "study": "item33",
+      "title": "MEIC on Fed decision days: does entering at the 14:00 statement cost more than other days?",
+      "status": "declared",
+      "legacy": false,
+      "setup": "event-gate",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "per session, pm-200's replay net; the mean on scheduled FOMC decision days against the other sessions, and the whole-window net with Fed days removed against without",
+      "expected": "Fed-day mean net below zero and below the other sessions' mean",
+      "sample": "the 60-second store; design 2022-05-16..2025-06-30 (about 25 Fed days), holdout 2025-07-01..2026-10-12 (about 10); every scheduled decision day from 2026-11-01 in the ledgers as the untouched check; < 20 design Fed days = no verdict; runs after MEIC validation unlocks or is provisional",
+      "rule": "design: Fed-day mean net < 0 and below the other sessions' mean with a one-sided permutation p < 0.05 (10,000 seeded draws); below in each half; then holdout Fed-day mean below the other sessions'",
+      "mechanism": "the Fed's statement lands at 14:00, the minute the live rule enters, and the press conference follows at 14:30, so a short condor opened then takes the release at once",
+      "rivals": [
+        {
+          "explanation": "Fed days fall in volatile periods",
+          "check": "permutation over the same window; against the five sessions either side, reported"
+        },
+        {
+          "explanation": "one meeting or one year",
+          "check": "both halves; without the worst Fed day, reported"
+        },
+        {
+          "explanation": "the replay is not yet trusted",
+          "check": "runs after the MEIC validation unlock, or is recorded as provisional"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#33-meic-on-fed-decision-days-does-entering-at-the-1400-statement-cost-more-than-other-days",
+      "results": null,
+      "retest": null,
+      "retests": []
+    },
+    {
+      "id": 34,
+      "study": "item34",
+      "title": "The option-to-stock premium ratio: does heavy option trading foretell weaker returns?",
+      "status": "declared",
+      "legacy": false,
+      "setup": "options-flow",
+      "side": "directional",
+      "structure": "shares",
+      "window": "multi-day",
+      "measure": "per grid session, the lowest-decile less highest-decile mean excess return (D+1 close to D+6 close, minus SPY) of single-leg option premium over stock dollar volume, less 0.10% a side each leg",
+      "expected": "a positive spread: heavy option trading foretells weaker returns",
+      "sample": "item 32's fetched grid and universe; design 2022-05-16..2025-06-30; holdout 2025-07-01..2026-10-12 read once; < 100 sessions with both deciles = no verdict",
+      "rule": "design: mean session spread > 0 with stationary-bootstrap one-sided 95% lower bound > 0; positive in each half and each name-half; positive at 1.5x costs and with report windows removed; then holdout mean > 0",
+      "mechanism": "traders with bad news facing short-sale costs use options, so heavy option trading carries negative information the share price absorbs later",
+      "rivals": [
+        {
+          "explanation": "size or liquidity",
+          "check": "within dollar-volume terciles, reported"
+        },
+        {
+          "explanation": "momentum or reversal",
+          "check": "within prior five-session return terciles, reported"
+        },
+        {
+          "explanation": "reports",
+          "check": "judged with report windows removed"
+        },
+        {
+          "explanation": "the short leg is untradable",
+          "check": "the long-only half reported; no borrow charged, a limit"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#34-the-option-to-stock-premium-ratio-does-heavy-option-trading-foretell-weaker-returns",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
