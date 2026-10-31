@@ -125,3 +125,13 @@ def test_holm_across_the_four_arms_rejects_what_one_test_alone_would_pass():
     tests = {**{a: _passing_but_for(0.02) for a in st.GRID}, "d20": _passing_but_for(0.001)}
     st.judge(tests)
     assert tests["d20"]["verdict"] == "pass" and tests["d30"]["verdict"] == "fail"
+
+
+def test_the_grid_block_lines_up_every_arm_the_study_runs_with_d16_as_live():
+    doc = {
+        "arms": {a: {"own": {"mean_net": 1.0, "n": 100}, "verdict": "fail"} for a in st.GRID},
+        "reference": {st.BASE: {"mean_net": 2.0, "n": 100}},
+    }
+    g = st.grid_block(doc)
+    assert [r["arm"] for r in g["rows"]] == ["d12", "d16", "d20", "d25", "d30"]
+    assert g["declared"] == "d16" and all(r["mean"] is not None for r in g["rows"])

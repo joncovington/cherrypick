@@ -2,6 +2,7 @@
 a day, 14:00-14:30, at 15, 20, 25 and 30 points wide, each paired with the same rule at its own 10.
 
     python scripts/meic_wing_width_item43.py --window design|holdout [--workers 8] [--json PATH]
+    python scripts/meic_wing_width_item43.py --annotate FILE [FILE ...]
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine over the 60 s
 vendor store), provisionally because MEIC history has not unlocked. The holdout is spent by this run,
@@ -39,7 +40,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from cherrypick.backtest import paths, results, runner
+from cherrypick.backtest import grid, paths, results, runner
 from cherrypick.backtest import settings as _settings
 from cherrypick.core import home, robustness
 from cherrypick.core import stats as core_stats
@@ -47,6 +48,7 @@ from cherrypick.core import stats as core_stats
 BASE_ARM = "pm-200"
 LIVE = "live-1400"
 BASE = "w10"
+BASE_WIDTH = 10
 GRID = {"w15": 15, "w20": 20, "w25": 25, "w30": 30}
 REPORTED = {"w5": 5}
 WINDOW = ("14:00", "14:30")
@@ -253,12 +255,25 @@ def coverage(rows: list[dict], per_arm: dict[str, dict[str, dict]], arms: list[s
     }
 
 
+def grid_block(doc: dict) -> dict:
+    """The settings side by side for the studies board: `w10` is the live width, `w5` reported."""
+    return grid.block(doc, "wing width", {BASE: BASE_WIDTH, **GRID, **REPORTED}, BASE)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--window", required=True, choices=("design", "holdout"))
+    ap.add_argument("--window", choices=("design", "holdout"))
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--json", default=None)
+    ap.add_argument(
+        "--annotate", nargs="+", metavar="FILE", help="add the grid block to result files; no replay"
+    )
     args = ap.parse_args(argv)
+    if args.annotate:
+        print(json.dumps({"annotated": grid.annotate(args.annotate, grid_block)}, indent=1))
+        return 0
+    if not args.window:
+        ap.error("--window is required unless --annotate")
 
     out_dir = paths.results_dir() / "research" / "item43"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -324,6 +339,7 @@ def main(argv: list[str] | None = None) -> int:
         "arms": tests,
         "verdict": "pass" if any(v.get("verdict") == "pass" for v in tests.values()) else "fail",
     }
+    doc["grid"] = grid_block(doc)
     path = Path(args.json) if args.json else out_dir / f"study-{args.window}-{start}-{end}.json"
     path.write_text(json.dumps(doc, indent=1, default=str), encoding="utf-8")
     print(json.dumps({"written": str(path), "verdict": doc["verdict"],

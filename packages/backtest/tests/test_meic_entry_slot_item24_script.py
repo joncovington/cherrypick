@@ -125,3 +125,13 @@ def test_holm_across_the_four_slots_rejects_what_one_test_alone_would_pass():
 def test_own_reports_years_and_the_worst_session():
     o = st.own(sessions([5.0, -50.0, 3.0, 4.0]), START, END)
     assert set(o["years"]) == {"2022", "2023"} and o["worst"]["net"] == -50.0
+
+
+def test_the_grid_block_orders_slots_by_the_clock_with_the_morning_reported_beside_them():
+    doc = {
+        "arms": {a: {"own": {"mean_net": 1.0, "n": 100}, "verdict": "fail"} for a in st.SLOTS},
+        "reference": {st.BASE: {"mean_net": 2.0}, **{a: {"own": {"mean_net": 0.5}} for a in st.MORNING}},
+    }
+    g = st.grid_block(doc)
+    assert [r["label"] for r in g["rows"]] == ["10:00", "11:00", "12:00", "12:30", "13:00", "13:30", "14:00"]
+    assert g["declared"] == "s1400" and all(r["mean"] is not None for r in g["rows"])

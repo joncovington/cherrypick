@@ -234,6 +234,14 @@ percentages only, and is one account for every arm. Absent, each arm reads again
 session risk (MEIC's condors' max losses summed, flies' book peak risk), never one shared peak, which
 MEIC's control sampling stream would set for every arm; a schema with neither has no account.
 
+**The grid block** (`grid.py`, 2026-10-31): a study that tests one parameter at several values (items
+23, 24, 43) writes `grid` into its result file: each setting's own mean net per session, and a label
+for the live setting and each passing one (`core.robustness.neighbourhood`, with `not_positive` and
+`neighbour_better` taken first because the core's two words misdescribe them). The studies board
+draws it. Description only: it never re-chooses a setting or moves a verdict. A finished study gains
+the block with its script's `--annotate FILE`, which reads the file and replays nothing, so no holdout
+is spent twice.
+
 **The advisor's specs** (`run-advised`, `advised.py`): the advisor queues `backtest_spec` replies it
 admitted against flies' own advice bounds (off until `advisor.backtest_proposals`); this reads the
 queue by subprocess, turns each into a config-defined arm `advised:<name>-<id>` (the base arm's params

@@ -116,6 +116,17 @@ const STUDIES = {
           provisional: true,
           verdicts: [{ arm: "d20", verdict: "fail" }],
           summary: "fail",
+          grid: {
+            parameter: "short delta",
+            measure: "mean net per session",
+            declared: "d16",
+            rows: [
+              { arm: "d16", setting: 0.16, label: "0.16", mean: 5, n: 120, verdict: null, declared: true },
+              { arm: "d20", setting: 0.2, label: "0.2", mean: 3, n: 120, verdict: "fail", declared: false },
+              { arm: "bad", label: "no setting" },
+            ],
+            neighbourhood: { d16: "plateau", d20: 7 },
+          },
           notes: "| arm | win % |",
         },
       ],
@@ -327,6 +338,17 @@ describe("the gate is open", () => {
       provisional: true,
       verdicts: [{ arm: "d20", verdict: "fail" }],
       summary: "fail",
+      // A row without a setting and a label that is not a word are dropped, not guessed.
+      grid: {
+        parameter: "short delta",
+        measure: "mean net per session",
+        declared: "d16",
+        rows: [
+          { arm: "d16", setting: 0.16, label: "0.16", mean: 5, n: 120, verdict: null, declared: true },
+          { arm: "d20", setting: 0.2, label: "0.2", mean: 3, n: 120, verdict: "fail", declared: false },
+        ],
+        neighbourhood: { d16: "plateau" },
+      },
       notes: "| arm | win % |",
     });
     expect(r.body).not.toContain("{home}");
