@@ -1183,6 +1183,56 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 35,
+      "study": "item35",
+      "title": "The bwb module's whole rule at real quotes: does the put broken-wing butterfly or any add-on arm earn after costs?",
+      "status": "declared",
+      "legacy": false,
+      "setup": "bwb-whole-rule",
+      "side": "neutral",
+      "structure": "broken-wing-butterfly",
+      "window": "weekly",
+      "measure": "per trade (one entry of one arm, one lot, whole position), net dollars after the suite's fees and the paper ledger's slippage basis, for the SPX put broken-wing butterfly entered at 10:00 ET for the next weekly expiry and held to settlement, bare (control) or with a put credit-spread add-on on bounce, flip, delta, delta-dte3 (add-on only with 3 or more calendar days left) or delta-shortstop (add-on bought back when spot reaches its short strike), each ungated and gated to days with VIX9D below VIX at the open",
+      "expected": "a positive mean net per trade after costs in both time-halves, and for an add-on arm above the bare fly's on the same entries",
+      "sample": "minute store of 222 Friday weekly expiries; design 2022-05-13..2024-12-31 (about 650 entries, halves split 2023-09-29/2023-10-02), holdout 2025-01-02..2026-08-21 (about 415); paper entries from 2026-08-24 used for replay validation only; fewer than 300 design entries (250 gated), 150 holdout (125), or 40 fires in distinct weeks for an add-on arm is no verdict",
+      "rule": "design: mean net per trade > 0 with a one-sided week-clustered bootstrap p, Holm across 12 tests (6 arms x gate state); add-on arms also above control on the same entries; positive in each time-half; positive at halfway-to-natural fills and at 1.5x fees; positive with the five worst weeks removed; then holdout mean > 0 (and above control for add-on arms)",
+      "mechanism": "the butterfly's short body sold one expected move below spot earns the implied-over-realised move premium; the add-on sells more premium after a fall on a reversal read, the shortstop caps its tail and dte3 avoids near-expiry gamma; the VIX9D/VIX gate avoids stress, when the premium is least likely to be harvested",
+      "rivals": [
+        {
+          "explanation": "one regime (the 2024-25 rebound)",
+          "check": "both time-halves then the holdout; net by year and quarter; with 2022 removed and with 2025 removed, reported"
+        },
+        {
+          "explanation": "a few tail weeks decide the mean",
+          "check": "five worst settlement weeks removed in the rule; share of net lost in the worst 5% of weeks reported"
+        },
+        {
+          "explanation": "model against real fills",
+          "check": "real minute quotes validated against paper entries on overlapping dates (90% within a tick or the study stops); halfway-to-natural and 1.5x fee stresses; natural side and live basis reported; minute-stamp quote age is a stated limit"
+        },
+        {
+          "explanation": "trigger timing at the minute against the module's tick",
+          "check": "triggers read one minute late; fire-or-not and fire-day agreement with paper reported"
+        },
+        {
+          "explanation": "the gate was chosen by looking",
+          "check": "one threshold (the live bar of 1.0) declared before any read, both states judged in the Holm family; prior-close ratio reported beside the open-based one"
+        },
+        {
+          "explanation": "ladder rows counted as independent",
+          "check": "bootstrap resamples settlement weeks; fires counted by distinct expiry week"
+        },
+        {
+          "explanation": "the flip input is not the module's",
+          "check": "weekly-chain flip recomputed and validated against the flips paper recorded (within 5 points on 80% of ticks) before any outcome is read, else flip is no verdict (input)"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#35-the-bwb-modules-whole-rule-at-real-quotes-does-the-put-broken-wing-butterfly-or-any-add-on-arm-earn-after-costs",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []

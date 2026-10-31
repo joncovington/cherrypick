@@ -2936,6 +2936,216 @@ flow store's outcomes has been read.*
 - **Decides:** **a pass** makes the ratio a candidate board method beside item 32's tags (read from
   the broker's nightly data, as item 32's would be); **a fail** closes it for this store and grid.
 
+### 35. The bwb module's whole rule at real quotes: does the put broken-wing butterfly or any add-on arm earn after costs?
+
+*Source: the user, 2026-10-30. Their standing rule is that no module is retired without a backtest of
+its own rule; this is bwb's. They approved it with bwb's paper loop kept running and live off (bwb has
+never traded live). The retired `delta` arm was added to the judged set the same day, with two variants.
+**Look-alikes, said out loud.** (1) The modelled two-year backtest (`scripts/bwb_history_backtest.py`,
+2024-10 to 2026-10) priced the same rule off a fitted smile and daily bars: control and `delta` lost,
+`bounce` was about flat, and the paper window's `delta` lead was a rebound. (2) Its 2011-onward extension
+found the VIX9D/VIX gate roughly halves the losses and that no arm was profitable out of sample, a
+modelled result. (3) The add-on standalone study (2026-10-23) replayed the add-on put spread alone, at
+real quotes, on this same minute store: no trigger arm passed in design or holdout. That study
+traded the add-on without the fly; this one trades the whole position, so the fly, its credit and
+its tail are priced for the first time at real quotes. (4) Item 6 (a down-day entry filter) failed.
+(5) The GEX sign gate (2026-10-15) was not adopted for bwb. (6) The advisor's paper experiment
+`delta-trigger-early` (an earlier trigger) never armed (its base was `control`, which has no trigger)
+and measured nothing; the variants below are not that experiment and no other trigger level
+(no 60 or 70 delta) is added, since that would be a search. **Seen before declaring, honestly:** the
+modelled results above; the add-on study's verdict (qualitatively, not its figures); and the paper
+ledger's outcomes by arm to 2026-10-14, which have been read. The `delta` arm's paper record
+(2026-08-24 to 2026-10-14) sits in a rebound and is not a clean check for it, and none of the paper
+ledger is a clean holdout. No real-quote result for the base fly or for any whole arm has been
+computed.*
+
+- **Question:** does the module's rule, the SPX put broken-wing butterfly entered once a session at
+  10:00 ET for the next weekly expiry and held to expiry, earn more than zero per trade after the
+  suite's costs, alone (`control`) or with an add-on put spread (`bounce`, `flip`, `delta` and two
+  `delta` variants), and does it do so if entries are kept to days when VIX9D is below VIX?
+- **Where the edge would live:** a **risk premium**: the implied move the body is sold one expected
+  move below overstates the realised move, and the butterfly's short body earns the difference. The
+  add-on is **payoff shaping** and a **timing signal** at once: it sells more premium after the market
+  has fallen toward the far wing, on the reading that a reversal follows. The VIX9D/VIX gate is a
+  **selection signal**: an inverted short-dated term structure marks stress, when the premium is
+  least likely to be harvested. **What would falsify it:** mean net per trade zero or negative after
+  costs in a half, or a positive mean that lives in a few tail weeks, or one that needs the
+  gate to be chosen after seeing the result.
+- **The rule, from the module's own code.** Expiry `clock.target_expiration` (the next PM-settled weekly
+  strictly after the entry day, a holiday Friday shifted back to Thursday: 1 to 7 days, 8 after a
+  holiday-shifted Thursday). Expected move `core.structures.expected_move` from the ATM call and put
+  mids. Strikes `engine.select_strikes` ($5 increment: body at spot less the move, near wing one
+  increment above, far wing two below, body sold twice). Gates as `engine.plan_entry`: a leg spread
+  over 25% of mid refuses `spread_too_wide`, a credit at mid of zero or less refuses `no_credit`. Fees
+  and slippage from `engine` and `core.fees`, the $5 settlement fee per distinct in-the-money
+  symbol. The replay calls these functions over chain rows read from the store; the chain readers are
+  the only things replaced. One lot.
+- **The add-on** (`engine.plan_addon`): a put credit spread, sell one increment above the far wing, buy
+  one below, which must price as a credit at mid (floor zero); once armed it re-prices each minute
+  and fires on the first credit minute; one per position; held to expiry.
+- **The arms judged (six, each ungated and gated, twelve judged tests).**
+  - `control`: no add-on.
+  - `bounce`: arms when the near wing's absolute delta has reached 0.50 and fires when it is back at
+    0.45 or below.
+  - `flip`: arms when spot has traded below the gamma flip, fires when it reclaims 1.001 times the flip.
+  - `delta` (retired 2026-10-15): fires once the near wing's absolute delta reaches 0.50, as bwb ran it.
+  - `delta-dte3`: `delta`, but the add-on opens only while at least 3 calendar days remain to expiry (the
+    expiry date less the day of the opening minute); a trigger met later opens no add-on and the
+    position is the bare fly. **Mechanism:** an add-on sold near expiry carries the most gamma and the
+    least premium to absorb a further fall, and the standalone study's add-on losses were tail-driven.
+  - `delta-shortstop`: `delta`, but the add-on alone (never the fly) is bought back at the first minute
+    after it opens that spot is at or below the add-on's short strike, at that minute's real quotes.
+    **Mechanism:** it caps the tail that decided the add-on's losses. It is expected to change the shape
+    more than the mean, so it must still pass the full rule below.
+  - **Reported, not judged:** `wall` (retired; a call-side structure, and the store holds no call chain
+    beyond a 10:00 ATM strip, so it cannot be replayed at all, said here so its absence is not read as
+    a pass); the live pilot's shape (`bounce`, gated, entries on Tuesdays only, one lot, with the live
+    quarter-end skip) as a slice of the `bounce` gated arm; the advised twins (none can arm).
+- **The VIX9D/VIX gate, declared now, both states judged.** Gated: an entry day counts only when the
+  day's VIX9D opening print divided by VIX's opening print is below 1.0 (the live bar, `vix9d_vix_max`,
+  which refuses at or above it); a day missing either print is refused, as live refuses
+  `regime_unmeasured`. The prints are the exchange's public daily files (open values are known before
+  10:00; the module reads the intraday prints at the tick, which the store cannot reproduce). Reported
+  beside it: the prior close's ratio, and, on the paper ledger's recorded ratios (from 2026-10-09), how
+  often the open-based gate agrees with the one the tick saw. Paper never gated; live-only.
+- **The entry.** The 10:00 ET minute stamp's quotes and index price. A paper entry is also dropped when
+  the minute lacks a two-sided quote on any needed leg, the ATM call mid, or the index price; counted
+  by reason, year and arm. Refusals are not trades, as in paper.
+- **The triggers**, on the minute series, as the module defines them: latches advance only on a
+  measured minute (a missing quote, a zero implied volatility or a boundary delta of exactly minus one
+  is unmeasured and evaluates nothing), never carried on a guess. Delta is the store's near-wing put
+  delta at the minute. The module ticks every 60 s on its own cache, so the minute store is the same
+  cadence but a different feed (the feed's delta has run about a minute behind the cache's); the
+  rival below stresses it.
+- **The gamma flip (`flip` only).** A historical flip series exists in the 60-second store
+  (`gex_regime_history.zero_gamma`, about every five minutes, 2022-05-16 on), but it is the 0DTE
+  chain's flip, and the module computes `flip` from the position's **own weekly expiry** chain and
+  open interest. They are different numbers, so that series is not used for the judged arm. The
+  judged `flip` is **recomputed** each minute from the weekly chain in the minute store (the put
+  implied volatility gives each strike's gamma; call gamma at a strike equals the put's) and the
+  weekly open interest of that morning, fetched by the same vendor path as the open-interest store
+  (to be queued; availability for the SPXW weeklies is **not yet verified**). **Validation before
+  any outcome is read:** the recomputed flip against the flip the paper loop recorded in
+  `bwb_trigger_ticks` since 2026-08-24; within 5 index points on at least 80% of measured ticks, or the
+  `flip` arms are recorded **no verdict (input)** and nothing about them is read. They stay in the
+  twelve for Holm either way.
+- **Settlement.** Index close for the expiry day (the PM weekly settles on it), from the exchange's
+  public daily file, cross-checked against the store's 16:00 index price (differences reported); the
+  module's paper settles on the last cached tick and its live ledger on the official print, so this is
+  nearer the live basis. Intrinsic per leg, the $5 settlement fee per distinct in-the-money symbol.
+- **Fills and costs.** The paper ledger's basis, so the replay and the paper check read the same fills:
+  each leg filled at mid, plus slippage of 12.5% of its quoted spread (capped at 15% of mid) on
+  every opening leg, which is 25% of the way from mid to the natural side, plus `core.fees` opening
+  fees (`ic_open_fee`: 4 legs and 2 sells for the fly, 2 legs and 1 sell for the add-on) and the
+  settlement fee. **Verdict basis: this one.** Stressed (the pass must survive each): halfway to the
+  natural side (25% of the spread, uncapped) and 1.5 times the fees. Reported: the natural side, and
+  the live basis (mid less 0.05 on the fly's net credit and on the add-on's).
+  - **The `delta-shortstop` exit.** bwb has no closing order in paper or live (positions settle), so
+    the exit basis is declared here: the suite's close schedule (`ic_close_fee`, 2 legs) and slippage
+    of 12.5% of each leg's spread, at the quotes of the first minute the condition holds; a minute
+    without two-sided quotes on both legs waits for the next. Stressed with the fill one minute later.
+- **Measured,** per trade (one entry of one arm, the whole position): net dollars in columns that add
+  up (fly gross, add-on gross, entry fees and slippage, exit fees and slippage, settlement), and the
+  number of fires. Per arm: the mean, its week-clustered bootstrap, the win rate, the worst trade, the
+  largest five losses, the fire count by distinct expiry week (never by position), and net by year.
+- **Windows** (the store covers expiries 2022-05-20 to 2026-10-16, entries from 2022-05-13):
+  - **Design:** 2022-05-13 to 2024-12-31 (about 650 entries). Halves: 2022-05-13 to 2023-09-29 and
+    2023-10-02 to 2024-12-31.
+  - **Holdout:** 2025-01-02 to 2026-08-21 (about 415 entries), run after the design whatever it shows,
+    counting only after a design pass.
+  - **The paper ledger** (entries from 2026-08-24; the store runs to the 2026-10-16 expiry) is used
+    **for validation of the replay's entries only**: same expiry, same strikes and entry credit within
+    a tick (0.05) on at least 90% of the paper entries on overlapping dates, below which the study
+    stops and the replay is fixed first; add-on fire-or-not and fire day agreement is reported, not
+    gated. Paper outcomes have been read (by the coordinator on 2026-10-30), so paper is not a
+    holdout, and nothing in the replay reads a paper outcome.
+  - **Minimum trades:** 300 entries per arm in the design window (250 gated), 150 (125 gated) in the
+    holdout; an add-on arm also needs at least 40 fires in distinct expiry weeks in the design window.
+    Fewer is no verdict for that arm and state.
+- **Pass-or-fail rule,** per arm and gate state (twelve tests), all in the design window:
+  - the mean net per trade above zero, with a one-sided week-clustered bootstrap p (resampling
+    settlement weeks, 2,000 resamples, seeded), **Holm across the twelve** at 0.05;
+  - for the five add-on arms, the mean net per trade also above `control`'s on the **same entries in
+    the same gate state** (paired, all entries, week-clustered, one-sided p under 0.05). This is the
+    unconditional pairing: the add-on study's pairing over fired cohorts only was selected by
+    construction (triggers fire on down weeks, where a daily trade loses) and is not reused. A variant
+    (`delta-dte3`, `delta-shortstop`) is also reported against `delta`, not judged on it;
+  - the mean net positive in each time-half;
+  - still positive at halfway-to-natural fills and at 1.5 times fees (each);
+  - still positive with the five worst settlement weeks removed;
+  - then, in the holdout, the mean net above zero and (for an add-on arm) above `control`'s.
+  - **Reading a partial pass.** A gated arm passing while its ungated arm fails is recorded as that, and
+    never as the structure passing. An add-on arm that is positive but not above `control` is recorded
+    "pays, not for the add-on".
+- **Rival explanations, each with its check:**
+  - *One regime (the 2024-25 rebound):* both time-halves, then the holdout; net by year and by
+    calendar quarter reported; the result with the 2022 drawdown removed and with 2025 removed, reported.
+  - *Tail weeks decide the mean:* the five-worst-weeks removal in the rule; the share of net lost in
+    the worst 5% of weeks reported.
+  - *Model against real fills:* the earlier modelled credit missed the recorded entry credits by about
+    14 cents; here quotes are real and the same-date paper entries validate them. The stresses above
+    and the natural side bound what fill quality alone can do; the quote age of a minute stamp is nil,
+    so the replay is kinder than a cache that is up to 300 s old, reported as a limit.
+  - *Trigger timing at the minute against the module's tick:* the same series run with the trigger read
+    one minute late, and the validation's fire-day agreement against paper.
+  - *The gate chosen by looking:* declared now, one threshold (the live bar), both states judged, the
+    open-based ratio with the prior-close reading reported beside it. No other threshold is run.
+  - *A fire on one ladder row counted many times:* fires counted by distinct expiry week; the
+    bootstrap resamples weeks.
+  - *The `flip` input is not the module's:* the recomputed-flip validation above gates its verdict.
+  - *A thin start or refusals dropping the big losers:* refusals and drops counted by reason, year and
+    arm; a drop rate that differs by more than 5 points between the halves, or is highest in the
+    worst years, is reported with the result.
+- **Minimum detectable effect (B12), with the twelve tests.** Holm over twelve puts the first test's bar
+  at one-sided p of about 0.004 (z about 2.6), against 2.4 for six tests: about 8% more effect
+  needed than the six-test family the arms would otherwise carry, and the gated tests keep fewer
+  trades (a further few per cent). The spread is an **assumption** until the design window's own
+  replaces it before the holdout is read: the per-trade standard deviation about $200 (the structure's
+  worst case is a few hundred dollars a lot and most trades win a little), and an effective sample
+  about 0.4 of the trades because five ladder rows share each expiry week. On those, 650 design
+  trades (about 260 effective) detect a mean of about $45 a trade at the Holm bar (about $40 at
+  six tests, about $31 unadjusted), and a gated arm with 85% of the trades about $48. An add-on arm's
+  paired difference concerns only the fired rows and is detected only if it is larger; a fail reads "no
+  edge larger than about $45 a trade", which is about as large as the costs. The `flip` and `delta`
+  variants with few fires will often be no verdict.
+- **Name split (B9):** does not apply (one underlying).
+- **Declared limits (B11):**
+  - The 7 holiday-Thursday expiries (2023-04-06, 2024-03-28, 2025-04-17, 2025-07-03, 2026-04-02, 2026-06-18,
+    2026-07-02) and the Thursday before each holiday (8-day entries for the next expiry) are
+    not in the store (it was fetched for Friday expiries only); they need a fetch by the same
+    committed code (`scripts/fetch_addon_weeklies.py`, registered in `stores.STORES`, extended to take
+    those dates). Until fetched, those entries drop and are counted. Two Fridays (2024-06-21, 2024-06-28)
+    were refused by the vendor and cannot be fetched; their entries (about ten) drop.
+  - Minute quotes, not the module's cache ticks; the vendor's delta feed lags the cache's.
+  - The store holds puts at all strikes and calls only as a 10:00 ATM strip (enough for the expected
+    move); no call-side structure can be replayed.
+  - About 0.4% of put rows carry no index price and 0.8% a zero implied volatility; they are
+    unmeasured, not repaired.
+  - The VIX9D/VIX gate is read from daily opening prints, not the tick.
+  - The cost and exit bases are declared stand-ins where bwb has no rule (the close of the add-on).
+  - Early exercise is not an issue (cash-settled, European). The SET-print AM monthly is not traded.
+  - The `flip` input is recomputed from end-of-previous-day open interest; the module's cache refuses
+    `flip` until open interest arrives.
+  - One lot of a $5/$10 structure at index levels from about 3,700 to 7,000; the wings are fixed in
+    points, so the same rule is a different trade in 2022 and 2026. Reported by year, not scaled.
+- **Data:** the minute store `addon_weeklies.db` (registered in `stores.STORES`, built by
+  `scripts/fetch_addon_weeklies.py`; 222 Friday expiries with 5 entries each, minute stamps from 09:30
+  to 16:15, puts at all strikes in a band around spot), the 60-second store for the paper-validation
+  gamma series, the exchange's public daily volatility and index files under `~/.cherrypick`, the
+  paper ledger (validation only), `cherrypick.core.fees`. Everything fetched and derived stays under
+  `~/.cherrypick/data/backtest/results/research/item35/`; this plan records the verdict without figures.
+  The study is a new script (`scripts/bwb_item35.py`), run as `item35/plan`, `item35/fetch`,
+  `item35/validate` and `item35/study`, queued as research-queue rows.
+- **Decides** (the user decides everything about retirement and live; this item only supplies evidence):
+  - **An arm passes:** bwb continues in paper with that arm, a paper check begins from the declared
+    boundary, and the live pilot may be reconsidered by the user. It is *eligible to be considered*:
+    nothing about live gates changes here.
+  - **Every arm fails or has no verdict:** the evidence the user's rule needs before any retirement
+    decision is in hand (the real-quote record of the whole rule, arm by arm, with the minimum
+    detectable effect), and the retirement decision stays the user's. Paper keeps running meanwhile.
+  - **A variant passes where `delta` fails:** recorded as the variant only, a new arm at a declared
+    boundary, never `delta` itself brought back.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
