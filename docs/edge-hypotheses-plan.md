@@ -3012,6 +3012,12 @@ flow store's outcomes has been read.*
   study is `scripts/option_stock_ratio_item34.py`, run as `item34/study`.
 - **Decides:** **a pass** makes the ratio a candidate board method beside item 32's tags (read from
   the broker's nightly data, as item 32's would be); **a fail** closes it for this store and grid.
+- **Result (2026-10-31): fail; the holdout is not read.** The spread between the lowest and highest
+  deciles of the premium ratio runs the wrong way (light option trading foretells weaker returns, not
+  stronger), before costs as well as after, and fails every condition, in both halves and with report
+  windows removed. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item34/`).
+- **What this decides:** the fail branch: the ratio is closed for this store and grid.
 
 ### 35. The bwb module's whole rule at real quotes: does the put broken-wing butterfly or any add-on arm earn after costs?
 
@@ -4228,6 +4234,17 @@ VIX9D and SPX refresh done.
 | Other ratio thresholds (0.90, 0.95, 1.05) | A search the sample cannot afford under a Holm of four | This item |
 | A `/VXM` arm | Another instrument; the plan awaits the user's decisions | `docs/vxm-plan.md` |
 | Leveraged short-volatility funds | Hard to borrow, worse risk-adjusted | 2026-10-05 notes |
+- **Result (2026-10-31): fail, every arm; the holdout is not read.** Each gate holds SVXY for less of
+  the time and cuts the maximum drawdown well below holding it, but gives up far more return than the
+  3-point floor allows, and each has a lower Sharpe than holding, in both halves and with the 2020
+  crash removed. Most of the gap is cost: the gates switch often and many switches reverse within a
+  week. At the module's own 2-bps cost (reported), two arms come near holding on return with a much
+  smaller drawdown, still below it on Sharpe. No gate avoids the worst single day, which arrives
+  overnight. The replay agrees with paper's decision on every paper session. Every figure is in the
+  local result (`~/.cherrypick/data/research/item39/`).
+- **What this decides:** the fail branch: paper keeps running unchanged, and this is the backtest the
+  user's retirement rule asks for; retiring contango or an arm is the user's decision.
+
 
 ## Not worth revisiting
 

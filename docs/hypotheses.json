@@ -1154,7 +1154,7 @@
       "id": 34,
       "study": "item34",
       "title": "The option-to-stock premium ratio: does heavy option trading foretell weaker returns?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "options-flow",
       "side": "directional",
@@ -1188,7 +1188,8 @@
         "{home}/data/backtest/results/research/item34/results-design.json"
       ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "the premium ratio's spread runs the wrong way and fails every condition; closed for this store and grid"
     },
     {
       "id": 35,
@@ -1384,7 +1385,7 @@
       "id": 39,
       "study": "item39",
       "title": "The contango module's own rule on real daily prices: the switch, a 9-day exit and a realised-volatility gate",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "contango-own-rule",
       "side": "bullish",
@@ -1422,7 +1423,8 @@
         "{home}/data/research/item39/results.json"
       ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "no gate beats holding SVXY: each cuts drawdown but gives up far more return than the floor and has a lower Sharpe, mostly through whipsaw costs; paper unchanged, retirement the user's call"
     }
   ],
   "rule_changes": []
