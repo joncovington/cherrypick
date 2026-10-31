@@ -42,6 +42,12 @@ STORES: list[dict[str, str]] = [
         "used_by": "credit-spread items 14-17 (credit_spread_plan, credit_spread_item17); income checks",
     },
     {
+        "file": "intraday_chains.db",
+        "holds": "single-name option chains at intraday bars (quote, delta, implied vol, underlying)",
+        "built_by": "python -m cherrypick.backtest fetch-intraday-chains --requests FILE",
+        "used_by": "item 31, the earnings module's paper rule (scripts/earnings_item31.py)",
+    },
+    {
         "file": "flow.db",
         "holds": "large options orders per name and session",
         "built_by": "python -m cherrypick.backtest fetch-flow --plan FILE",

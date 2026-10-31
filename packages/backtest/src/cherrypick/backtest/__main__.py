@@ -9,6 +9,8 @@ python -m cherrypick.backtest fetch-vix --from 2022-05-16 --to 2025-06-30   # VI
 python -m cherrypick.backtest fetch-chains --requests FILE [--workers 3] [--limit N]   # end-of-day chains
 python -m cherrypick.backtest fetch-chain-paths --requests FILE [--workers 3]   # each expiry's daily path
 python -m cherrypick.backtest chains-status        # what the end-of-day chain store holds
+python -m cherrypick.backtest fetch-intraday-chains --requests FILE [--workers 1] [--limit N]   # item 31
+python -m cherrypick.backtest intraday-status      # what the intraday chain store holds
 python -m cherrypick.backtest coverage [--dataset SPX]
 python -m cherrypick.backtest derive-regimes [--dataset SPX]   # regime rows from stored profiles
 python -m cherrypick.backtest validate [--module flies|meic] [--dates a,b,...]   # against the recorder
@@ -261,6 +263,40 @@ def cmd_chains_status(args) -> int:
     from . import chainfetch
 
     _emit(chainfetch.status(settings.load(args.config)))
+    return 0
+
+
+def cmd_fetch_intraday_chains(args) -> int:
+    """Intraday chains for a study's list of (name, session, expiry, window) requests
+    (intradayfetch.py): a network verb, refused on the same terms as `fetch`."""
+    from pathlib import Path
+
+    from . import intradayfetch
+    from .vendor import VendorRefusal, client_for
+
+    s = settings.load(args.config)
+    refusal = _fetch_refusal(s)
+    if refusal:
+        print(f"fetch-intraday-chains refused: {refusal}", file=sys.stderr)
+        return 2
+    requests = intradayfetch.read_requests(Path(args.requests))
+    try:
+        client = client_for(s)
+    except VendorRefusal as exc:
+        print(f"fetch-intraday-chains refused: {exc}", file=sys.stderr)
+        return 2
+    report = intradayfetch.fetch_windows(
+        s, client, requests, workers=args.workers, refetch=args.refetch, limit=args.limit,
+        stop=_stop_by(args.stop_by), log=lambda m: print(m, file=sys.stderr),
+    )  # fmt: skip
+    _emit(report)
+    return 1 if report.get("aborted") else 0
+
+
+def cmd_intraday_status(args) -> int:
+    from . import intradayfetch
+
+    _emit(intradayfetch.status(settings.load(args.config)))
     return 0
 
 
@@ -564,6 +600,22 @@ def main(argv: list[str] | None = None) -> int:
     fc.add_argument("--refetch", action="store_true", help="replace requests already complete or empty")
     fc.add_argument("--stop-by", help="ET wall clock, YYYY-MM-DDTHH:MM: start no request after it")
     fc.set_defaults(fn=cmd_fetch_chains)
+    fi = sub.add_parser(
+        "fetch-intraday-chains", help="intraday chains for a study's request list (a network verb)"
+    )
+    fi.add_argument(
+        "--requests",
+        required=True,
+        help='JSON: {"requests": [{"symbol","session","expiration","start","end","interval"?}]}',
+    )
+    fi.add_argument("--workers", type=int, default=1, help="concurrent requests on the one session")
+    fi.add_argument("--limit", type=int, help="fetch at most this many requests this run")
+    fi.add_argument("--refetch", action="store_true", help="replace requests already complete or empty")
+    fi.add_argument("--stop-by", help="ET wall clock, YYYY-MM-DDTHH:MM: start no request after it")
+    fi.set_defaults(fn=cmd_fetch_intraday_chains)
+    sub.add_parser("intraday-status", help="what the intraday chain store holds").set_defaults(
+        fn=cmd_intraday_status
+    )
     cp = sub.add_parser("chain-progress", help="how far the chain store is through a request list")
     cp.add_argument("--requests", required=True)
     cp.set_defaults(fn=cmd_chain_progress)
