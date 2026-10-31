@@ -929,7 +929,7 @@
       "id": 29,
       "study": "item29",
       "title": "The share ladder in options: a call debit spread, a put credit spread or a ZEBRA in place of the share lot",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "dip-buy",
       "side": "bullish",
@@ -963,9 +963,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#29-the-share-ladder-in-options-a-call-debit-spread-a-put-credit-spread-or-a-zebra-in-place-of-the-share-lot",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item29/results.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "every structure trails the same-delta share lot by about its crossing costs; the ladder module trades shares only"
     },
     {
       "id": 30,
