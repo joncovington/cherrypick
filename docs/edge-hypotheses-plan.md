@@ -2759,6 +2759,40 @@ paper ledger has been running since 2026-07-15, and it is the thing asked about.
     answer.
   - **"Pays, not for the report"** is reported as it is, not as a pass, and the premium is then looked for
     in the overnight alone (item 22's condor and item 19's flies are the nearest done).
+- **Settled with the build, before the first read (2026-10-30, `scripts/earnings_item31.py`).** The pilot
+  chose the end-of-day basis, so the study is "The end-of-day fallback" for the whole window. Nothing
+  below has read an outcome.
+  - **The module's own code runs**: `fetch_price_and_term_structure`, `apply_tiering`, the three order
+    builders, `sizing`, `management.evaluate` and `execution_gate`, `compute_generic_exit_debit` and the
+    cost stack. Only the readers that do I/O are replaced (the broker's chain and quote, the IV/RV
+    reader, the winrate reader, the exit-basis clock, the strategies' "today"), so a changed gate changes
+    the replay.
+  - **Inputs the end-of-day store lacks**: the underlying is Dolt's close; the forward (put-call parity),
+    implied volatility and delta are computed from each chain's own mids at the close. The front expiry is
+    the weekly Friday (the Thursday when it is a holiday) and the back expiry the module's own rule over
+    that list; Monday and Wednesday listings are not seen.
+  - **Floors not reproduced**: the 2,000-contract open interest floor (the store holds none; set to 0 in
+    the study's copy of the file) and the option volume floor, as declared. The realised-move dispersion
+    ceiling is in the deployed rule but not in this declaration, so it is not applied; each trade carries
+    its dispersion and the result reports the arm split by it.
+  - **Marks**: one a later session at 16:00 ET, so the first-morning loser close is the first mark of each
+    later session, a refused close waits for the next mark (the 30-minute patience is within a session
+    and does not apply), an expiry day closes at its mark, a leg without a quote is carried at its last
+    earlier quote (counted) or, on its expiry day, taken at intrinsic, and an expiry day with no rows at
+    all settles at intrinsic with the $5 settlement fee. A split (a close factor under 0.52 or over 1.9)
+    ends the trade at the session before, or drops it if it falls on the first later session.
+  - **Requests**: for each event the front expiry's daily path from the entry session through the expiry
+    (`fetch-chain-paths`) and the back expiry's entry chain (`fetch-chains`); for each event's control the
+    front path. The control session is chosen from the calendar alone (all report rows, blank timings
+    included) before any chain is read.
+  - **Tests**: the net is tested on every closed event trade (the unpaired reading keeps an event whose
+    control is missing) and the paired difference on the pairs; the minimum trades are paired. Holm runs
+    over the nine arms for each of the two tests, an arm under its minimum counting p = 1. A gated arm
+    that passes while its ungated arm does not is recorded as the gate's pass. FOMC and CPI weeks come
+    from `macro_calendar.json` beside the other inputs (the curated FOMC years are used when it is
+    absent, and the CPI split is then omitted).
+  - **The replay check on paper entries** (`replay-check`) reads entry columns only; a test fails if an
+    outcome column is added. It is implemented and has not been run.
 
 ### 32. Large options orders as a signal: the flow plan's declared test, registered
 
@@ -2897,6 +2931,19 @@ Its sessions have never been split by Fed day.*
 - **Data:** the 60-second store, MEIC's replay, the Fed's calendar (public). Results stay under
   `~/.cherrypick/data/backtest/results/research/item33/`; this plan records the verdict without
   figures. The study is `scripts/meic_fomc_item33.py`, run as `item33/study`.
+- **Settled with the build, before the first read (2026-10-30, `scripts/meic_fomc_item33.py`):**
+  - **The arm is the live rule's single 14:00 entry,** item 23's `live-1400`, read from its stored
+    design and holdout runs; the registry's `pm-200` enters every 30 minutes from 12:00 and is not
+    the live rule. No replay is run and no holdout is spent by this item.
+  - The Fed's scheduled decision day is the second day of each meeting, from the Fed's published
+    calendar (25 in the design window, 10 in the holdout). Unscheduled actions are reported only.
+    CPI dates are read from a saved list of the BLS schedule (the page refuses scripted requests);
+    without it, CPI days are reported as not read.
+  - The permutation redraws as many sessions as there are Fed days; the observed labelling counts as
+    a draw. The halves split at the window's date midpoint; a half with no Fed day cannot pass. The
+    holdout is read whatever the design shows, and a design fail stays a fail.
+  - The study refuses while MEIC's history is locked unless run as provisional, which the result then
+    states.
 - **Decides:**
   - **A pass:** a Fed-day skip is proposed for MEIC paper at a declared boundary; live follows only on
     the user's word.
@@ -2943,11 +2990,34 @@ flow store's outcomes has been read.*
     reported; no borrow cost is charged, a declared limit.
 - **Declared limits (B11):** premium, not contracts; single-leg orders only; the histogram's buckets
   are coarse; grid sessions only; no borrow cost on the short leg.
+- **Settled with the build, before the first read (2026-10-30, `scripts/option_stock_ratio_item34.py`,
+  `cherrypick.backtest.ratiostudy`):**
+  - **The premium** counts each histogram bucket at its geometric midpoint; the underflow bucket
+    (under $100) at $50 and the overflow bucket (over $10M) at its floor. The histogram holds every
+    single-leg order of the name-day, whatever its size or side. A name-day with no single-leg
+    premium is dropped from that session's ranking (it is not light trading, it is no signal), and
+    the count is reported.
+  - **Deciles** are by rank within the session, `n // 10` names at each end, ties by symbol; a session
+    under 10 names has none. **Costs** are 0.10% a side, four sides (two legs, each entered and
+    exited), 0.40% a session; the long-only half pays two sides. Terciles redraw the deciles inside
+    each third.
+  - **The bound** is the lower end of a two-sided 90% stationary bootstrap interval, which is the
+    one-sided 95% bound. **Halves** are the first and second half of the design sessions in time.
+    **Name-halves** redraw the deciles inside each half. **Reports removed** drops the name-sessions
+    before ranking, using item 32's reaction-day window (D+2 to D+6).
+  - **The holdout** passes on a mean net spread above zero over at least 30 sessions (the plan states
+    no holdout floor; item 32's is used), and is refused without a design pass or once spent.
 - **Data:** the flow store (design fetched; holdout by item 32's row) and the local bars. Results stay
   under `~/.cherrypick/data/backtest/results/research/item34/`, verdict here without figures. The
   study is `scripts/option_stock_ratio_item34.py`, run as `item34/study`.
 - **Decides:** **a pass** makes the ratio a candidate board method beside item 32's tags (read from
   the broker's nightly data, as item 32's would be); **a fail** closes it for this store and grid.
+- **Result (2026-10-31): fail; the holdout is not read.** The spread between the lowest and highest
+  deciles of the premium ratio runs the wrong way (light option trading foretells weaker returns, not
+  stronger), before costs as well as after, and fails every condition, in both halves and with report
+  windows removed. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item34/`).
+- **What this decides:** the fail branch: the ratio is closed for this store and grid.
 
 ### 35. The bwb module's whole rule at real quotes: does the put broken-wing butterfly or any add-on arm earn after costs?
 
@@ -3188,7 +3258,7 @@ or outcome). No real-quote outcome of any arm below has been computed.*
   the 45-day close; any arm that merely adds net long delta in a rising market will look good against
   the put, so the long-alone baseline is the one that isolates the short.
 
-## The arms (six judged, Holm across them)
+#### The arms (six judged, Holm across them)
 
 Rules are read from `packages/pmcc/src/cherrypick/pmcc/engine.py` (`ARM_RULES`, `select_long`,
 `select_short_by_delta`) and `management.py` (`evaluate`, `assignment_exposed`), not restated from
@@ -3222,7 +3292,7 @@ account policy is `ira` (an expiring short is bought back at the close at any mo
   clears every declared ex-dividend date and, for single stocks, report date (pmcc's refusals); if none in
   the band clears, no short that cycle, counted.
 
-## The baselines every arm must beat
+#### The baselines every arm must beat
 
 - **`long-alone`:** the same long, no short, under pmcc's own long management (45-DTE close and the -30%
   stop on the long's own P&L). It isolates what the short adds. Also reported without the stop (a rival).
@@ -3230,7 +3300,7 @@ account policy is `ira` (an expiring short is bought back at the close at any mo
   long uses, sold on the day the long is bought, held to 45 DTE, re-sold the next session. No stop. It
   shares the long's chain path, so it costs no extra fetch.
 
-## Symbols and the XSP choice
+#### Symbols and the XSP choice
 
 - **Symbols:** the eleven in the deployed config. Funds (judged): XSP, QQQ, GLD, IWM, SLV, SMH. Stocks
   (reported, not judged): AMZN, TSLA, AMD, NVDA, PLTR.
@@ -3254,7 +3324,7 @@ account policy is `ira` (an expiring short is bought back at the close at any mo
   expiries before 2023 are unconfirmed; the first fetch pass finds out, and a SMH short-less stretch
   counts against it under the floor, not as a zero.
 
-## Measured
+#### Measured
 
 Everything per symbol, per arm and per baseline, on a weekly grid (Friday close to Friday close), one
 contract, marked from the stored closing bid and ask each session.
@@ -3280,7 +3350,7 @@ contract, marked from the stored closing bid and ask each session.
   underlying's weekly return, per symbol. Reported. It tells a reader whether a failure of the raw
   rule is lost equity beta or lost premium; it does not change the verdict.
 
-## Fills, fees, assignment and dividends (pmcc's basis)
+#### Fills, fees, assignment and dividends (pmcc's basis)
 
 - **Fills and fees:** pmcc's paper basis, imported not rewritten: mid of the stored closing bid and ask
   with slippage as the suite's cost model charges it (`engine.leg_costs` over `cherrypick.core.fees`,
@@ -3309,7 +3379,7 @@ contract, marked from the stored closing bid and ask each session.
   delta, which on American deep-in-the-money calls runs below parity). A strike with no solvable
   implied volatility is skipped as pmcc skips a strike with no delta.
 
-## Windows and the pass rule
+#### Windows and the pass rule
 
 - **Design:** 2016-01-01 to 2021-12-31 (six years, the bull market, the 2018 fourth-quarter fall and the
   2020 crash). **Holdout:** 2022-01-01 to 2026-10-23 (the 2022 bear, then the recovery), read once.
@@ -3340,7 +3410,7 @@ contract, marked from the stored closing bid and ask each session.
   half as much, are measured somewhat more tightly. **A fail reads "no edge of detectable size", not "no
   edge".**
 
-## Rival explanations, each with its check
+#### Rival explanations, each with its check
 
 - **One regime (a 2016-2021 bull).** Two halves with different regimes, per-year pooled tables, the
   best-year-removed clause, and the 2020 crash weeks reported with and without.
@@ -3361,7 +3431,7 @@ contract, marked from the stored closing bid and ask each session.
   the 0.30-delta arms are compared with each other as well as the baselines in the report (reported, not
   judged).
 
-## Guards, each shown to fail
+#### Guards, each shown to fail
 
 Before an arm is read, and each broken on purpose to see the check fail:
 - **Reproduction:** the replay's chosen long and short strikes match the paper ledger's recorded legs on
@@ -3373,7 +3443,7 @@ Before an arm is read, and each broken on purpose to see the check fail:
   deleting one quote.
 - **The WPUT check** above, on SPY.
 
-## Data and the fetch
+#### Data and the fetch
 
 All options history is the licensed store's end-of-day chains (`eod_chain_quotes`), fetched by
 `fetch-chain-paths` and `fetch-chains` into the marked vendor directory; the store is already declared in
@@ -3409,7 +3479,7 @@ study is `scripts/pmcc_item36.py`, run as `item36/plan` (writes the request file
   for about 315 sessions a cycle); the order of 2 to 3 GB in all, estimated, not measured. The SPY rows
   now stored are 1.5 million.
 
-## Declared limits (B11)
+#### Declared limits (B11)
 
 Close-of-day quotes, not the intraday tape pmcc trades on; one contract, so lot-size effects on spreads
 are invisible; delta computed, without early-exercise premium; early assignment unmodelled, counted;
@@ -3417,7 +3487,7 @@ an expiry not listed is a week without a short; `XSP(SPY)` is a stand-in; stocks
 and reports; the three variants and `shield_guard` have no paper twin before a boundary and so no
 live-fill check; an unlisted arm (other deltas, other expiries) is outside the sample by design.
 
-## Decides
+#### Decides
 
 - **A pass:** the passing arm or arms continue in paper as pmcc's base, and a variant joins as a paper arm
   at a declared boundary (a measurement-affecting change, batched). The shield arms pass or fail by this
@@ -3595,6 +3665,22 @@ outcome of any arm has been read. `hook` is retired (it never fired) and is not 
   replay is `scripts/curve_item37.py`, run as `item37/plan`, `item37/fetch-chain-paths`,
   `item37/fetch-intraday` and `item37/study`. Results are derived from licensed data and stay under
   `~/.cherrypick/data/backtest/results/research/item37/`; this plan records the verdict without figures.
+- **Settled with the build, before the first read (2026-10-30, `scripts/curve_item37.py`):**
+  - The replay calls the module's own entry planner, management, exit-spread gate, costs, assignment
+    and expiry code; it reimplements none of them. Each arm is the module's defaults with its one
+    change; `hold-expiry` keeps the flip.
+  - Each session: when flat, entry is tried first, then a position from an earlier session is managed,
+    so a position entered on a session is first managed the next one.
+  - An entry the session before a split is refused; a split on the next session closes the trade at
+    that session's quotes, ahead of the other exits and the spread gate, at the last priced quotes
+    (flagged) if that session has none. A chain on the adjusted basis is refused.
+  - On the expiry day a position settles at the raw close and no exit is tried; in-the-money legs
+    deliver shares, disposed at the next session's open.
+  - The bootstrap p is the add-one share of resamples at or below zero; an arm without 30 trades
+    takes p = 1 in the Holm family of five. A half under 10 trades is not read. The holdout is run only
+    for an arm that passed the design.
+  - The gated short-share reference is short at a close with the ratio under 0.97, held to the next
+    close, 0.05% a side on a change. Net by year groups by entry year.
 - **Decides:**
   - **A pass:** that arm continues in paper as curve's base, proposed for a declared boundary (a width,
     exit or delta change is measurement-affecting). If more than one passes they are all reported and the
@@ -3936,7 +4022,7 @@ declaration.***
   the `/VXM` plan (`docs/vxm-plan.md`, CFE settlements, awaiting the user's decisions, not built);
   item 26-27 (a leveraged-fund rule with a long-hold problem, the same family of funds).
 
-## The arms (four judged, Holm across them)
+#### The arms (four judged, Holm across them)
 
 Rules are the module's own (`regime.target_state`, `replay.run`), not restated from memory; the script
 imports them. A decision is a state, SVXY or SHV; `control` and the gates are stateless, `flipexit`
@@ -3961,14 +4047,14 @@ holds through the band.
   Holm of four); the `/VXM` plan (another instrument); leveraged short-volatility funds (borrow, and
   worse risk-adjusted in the 2026-10-05 notes); SVIX (-1x, replayed worse).
 
-## The baselines
+#### The baselines
 
 - **`hold-svxy`:** SVXY bought on the first session and held, one side of cost. The comparison every
   arm is judged against.
 - **`hold-shv`:** SHV held; reported, not judged. Excess return over the T-bill is measured against
   SHV's own total return, so an arm sitting in SHV earns an excess of zero by construction.
 
-## Measured
+#### Measured
 
 Daily, for each arm and baseline, in each window and half: the Sharpe ratio (mean daily return in
 excess of SHV's, over its standard deviation, times the square root of 252), the CAGR, the maximum
@@ -3977,7 +4063,7 @@ week, the share of sessions in SVXY, the number of switches, the **whipsaw count
 by the opposite switch within 5 sessions), and the costs paid as points a year. Each arm's difference
 from `hold-svxy` is a paired daily series.
 
-## Fills and costs
+#### Fills and costs
 
 - **The decision is approximated by the close.** The module reads the ratio at 15:50 and fills inside
   an 8-minute window; the replay reads the close's ratio and fills at the close, as
@@ -3995,7 +4081,7 @@ from `hold-svxy` is a paired daily series.
   distributions credited on the ex-date (the technicals store's `dividends`, as the module credits
   them). A session missing any input for an arm is skipped and counted, never filled with a zero.
 
-## Data
+#### Data
 
 All on disk, nothing licensed, nothing fetched. Results and any derived series stay under
 `~/.cherrypick/data/research/item39/`; this plan records the verdict without figures.
@@ -4021,7 +4107,7 @@ All on disk, nothing licensed, nothing fetched. Results and any derived series s
     2026-10-29, the last stored session (today's bar is not yet in the store).
   - **More than 1% of a window's sessions missing an input for an arm is no verdict for that arm.**
 
-## Windows and the pass rule
+#### Windows and the pass rule
 
 - **Design:** 2018-03-01 to 2022-12-30 (1,216 sessions), split at 2020-07-01 into 2018-03 to
   2020-06 (the 2018 fourth-quarter fall and the 2020 crash) and 2020-07 to 2022 (the recovery and
@@ -4063,7 +4149,7 @@ All on disk, nothing licensed, nothing fetched. Results and any derived series s
   and the return floor are descriptive: a gate can pass them and fail the Sharpe clause for want of
   power, and the report says which.
 
-## Rival explanations, each with its check
+#### Rival explanations, each with its check
 
 - **One crash decides (2020-03).** The not-one-crash clause above, the per-year table, and the
   worst-day and worst-week columns with and without the window. A gate that works only in 2020 is
@@ -4085,7 +4171,7 @@ All on disk, nothing licensed, nothing fetched. Results and any derived series s
   fixed values (1.0, 10 sessions) and no grid; the thresholds of `control` and `flipexit` were chosen
   with the data in sight, which the report states beside their results.
 
-## Guards, each shown to fail
+#### Guards, each shown to fail
 
 Before an arm is read, each broken on purpose to see the check fail:
 - **Reproduction:** `control` and `flipexit` from the script equal `contango_replay.py` and
@@ -4099,7 +4185,7 @@ Before an arm is read, each broken on purpose to see the check fail:
 - **Coverage:** a session missing an input is counted and skipped, never a zero return. Broken by
   deleting a VIX3M row.
 
-## Declared limits (B11)
+#### Declared limits (B11)
 
 Daily closes, not the 15:50 print; the decision and fill both at the close, which uses ten minutes of
 information the module did not have (the lag clause bounds it); one fund (SVXY) and one cash fund
@@ -4108,7 +4194,7 @@ the rules judged here are the module's, at thresholds seen before; four arms and
 independent volatility shocks in the design window, so low power (see the MDE); `hold-svxy` is the
 only judged baseline, and SHV is reported.
 
-## Data and the run
+#### Data and the run
 
 A script, `scripts/contango_item39.py`, importing `contango_replay.py`'s readers and the module's
 `regime` and `replay` for `control` and `flipexit`, and run as `item39/plan` (the coverage counts and
@@ -4116,7 +4202,22 @@ the listed skipped dates, no returns) and `item39/study` (queue rows, supervisor
 `~/.cherrypick/data/research/item39/results.json`. The plan step runs first and must report the
 VIX9D and SPX refresh done.
 
-## Decides
+- **Settled with the build, before the first read (2026-10-30, `scripts/contango_item39.py`):**
+  - The design window holds 1,215 sessions, not 1,216: the count above included a store row on a
+    day that was not a session (2020-02-17), which is skipped.
+  - The VIX files carry rows on some exchange holidays, so the realised-volatility window and the lag
+    run read SPX's own dates as the calendar; an SVXY session absent from SPX counts as missing for
+    those two runs.
+  - The crash-removed reading drops that window's daily returns from each full run and joins the
+    rest; it does not re-run the switching path. The lag run lags the final daily signal one session
+    (the same as lagging each input), with the fill at the same close.
+  - Each arm is paired with holding SVXY over the arm's own usable sessions. The first day's return is
+    the opening side of the cost. The halves are slices of the one design run. Holding SHV has no
+    Sharpe, its excess being zero by construction.
+  - If any declared guard fails, every arm reads no verdict and none is read. VIX9D and SPX were
+    refreshed from the exchange's public files to 2026-10-30 before the run.
+
+#### Decides
 
 - **A pass:** the passing arm (the higher design Sharpe difference if two) becomes contango's base
   in paper at a declared boundary: a measurement-affecting change (which arms exist), batched, with a
@@ -4126,13 +4227,24 @@ VIX9D and SPX refresh done.
   note beside it. Paper keeps running unchanged. Retiring the module, or either arm, stays the
   user's decision.
 
-## Not worth revisiting
+#### Not worth revisiting
 
 | Idea | Why not | Evidence |
 |---|---|---|
 | Other ratio thresholds (0.90, 0.95, 1.05) | A search the sample cannot afford under a Holm of four | This item |
 | A `/VXM` arm | Another instrument; the plan awaits the user's decisions | `docs/vxm-plan.md` |
 | Leveraged short-volatility funds | Hard to borrow, worse risk-adjusted | 2026-10-05 notes |
+- **Result (2026-10-31): fail, every arm; the holdout is not read.** Each gate holds SVXY for less of
+  the time and cuts the maximum drawdown well below holding it, but gives up far more return than the
+  3-point floor allows, and each has a lower Sharpe than holding, in both halves and with the 2020
+  crash removed. Most of the gap is cost: the gates switch often and many switches reverse within a
+  week. At the module's own 2-bps cost (reported), two arms come near holding on return with a much
+  smaller drawdown, still below it on Sharpe. No gate avoids the worst single day, which arrives
+  overnight. The replay agrees with paper's decision on every paper session. Every figure is in the
+  local result (`~/.cherrypick/data/research/item39/`).
+- **What this decides:** the fail branch: paper keeps running unchanged, and this is the backtest the
+  user's retirement rule asks for; retiring contango or an arm is the user's decision.
+
 
 ## Not worth revisiting
 
