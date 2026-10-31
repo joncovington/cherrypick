@@ -1233,6 +1233,48 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 36,
+      "study": "item36",
+      "title": "pmcc's own rule on real quotes: the shield, three variants and two baselines",
+      "status": "declared",
+      "legacy": false,
+      "setup": "pmcc-own-rule",
+      "side": "bullish",
+      "structure": "pmcc",
+      "window": "weekly",
+      "measure": "per fund and week, the arm's marked weekly return on capital (the long's debit) less costs, minus each baseline's (the long held alone; a 20-delta year-long short put held to 45 DTE); the pooled equal-weight mean of the per-fund means, as % a year, with drawdown and per five-year window reported",
+      "expected": "a positive paired difference against both baselines: the short call earns more than it costs in unrewarded equity-reversal exposure",
+      "sample": "chains from the licensed end-of-day store, 2016-01..2026-10 on XSP(SPY), QQQ, GLD, IWM, SLV, SMH judged, AMZN, TSLA, AMD, NVDA, PLTR reported; design 2016-01-01..2021-12-31, holdout 2022-01-01..2026-10-23 read once; a symbol needs 4 long cycles and 120 (design) or 90 (holdout) priced weeks per half; < 4 judged funds = no verdict; about 28,200 requests, 7.8 hours serial",
+      "rule": "design, per arm against both baselines: pooled mean paired difference > 0 with stationary-bootstrap one-sided 95% lower bound > 0 over weeks (block 8, 20,000 draws, seeded), p = the larger of the two, Holm 0.05 across six arms; > 0 on two thirds of judged funds; > 0 in each time-half, at 1.5x costs and with the best year removed; then holdout pooled > 0 against both, on two thirds of funds, at 1.5x costs, and ahead in two thirds of the five-year symbol-window cells",
+      "mechanism": "a short call earns the variance premium but sells equity-reversal exposure that grows with moneyness (Israelov and Nielsen, 2015); pmcc's 0.70-delta short is deep in the money, so a far out-of-the-money short, a monthly short with a quarter of the trades, or a short sold only when implied volatility exceeds realised may keep the premium with less of it",
+      "rivals": [
+        {
+          "explanation": "one regime: the design half is a 2016-21 bull market",
+          "check": "two halves of different regimes, best-year-removed clause, per-year pooled tables, 2020 crash weeks reported with and without"
+        },
+        {
+          "explanation": "the long carries everything",
+          "check": "the long held alone is a baseline in the pass rule; the short's contribution shown on its own; beta-adjusted alpha reported"
+        },
+        {
+          "explanation": "costs",
+          "check": "fees, settlement and slippage in their own columns; 1.5x clause; trade counts of weekly arms beside the monthly arm"
+        },
+        {
+          "explanation": "skew or quote quality, no longer modelled",
+          "check": "real chains replace the model's uncalibrated skew; close-quote fills handled by costs and the 1.5x clause; WPUT sanity check on SPY before any arm is read"
+        },
+        {
+          "explanation": "stocks against funds",
+          "check": "stocks tabulated separately with no verdict; the pass must hold on the funds alone; split and report cycles dropped and counted"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#36-pmccs-own-rule-on-real-quotes-the-shield-three-variants-and-two-baselines",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []

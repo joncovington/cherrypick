@@ -3146,6 +3146,273 @@ computed.*
   - **A variant passes where `delta` fails:** recorded as the variant only, a new arm at a declared
     boundary, never `delta` itself brought back.
 
+### 36. pmcc's own rule on real quotes: the shield, three variants and two baselines
+
+*Source: the user, 2026-10-30. The rule: no module is retired without a backtest of its own rule. The
+user approved keeping pmcc paper running unchanged and declaring this backtest, with these variants.
+**Look-alikes, said out loud.** Item 5 (the EMA-driven short delta) failed, and is not retried. The
+2026-10-12 roll-policy replay found the early roll losing on five of six symbols, so the early-roll
+policy is not varied here (`shield` carries it as pmcc runs it). The 2026-10-19 covered-call delta study
+(shares, 16 names, daily paths) found the call overlay trailing the shares on most names with the index
+the exception; it is the closest prior for `hold-30d` and `hold-30d-monthly`, and it did not use a
+year-long long. The 2026-10-04 shield study priced everything off a model and said so: its short-premium
+edge flipped sign within a tenth of the implied-volatility level, and the skew was uncalibrated. This
+item replaces the model with quoted chains. **Seen before declaring:** the model replay's aggregate
+tables for the shield arms (2011 to 2026, modelled prices), the three paper arms' first weeks (the
+ledger is not read for this item), and the stored chain coverage (counts of what is fetched; no price
+or outcome). No real-quote outcome of any arm below has been computed.*
+
+- **Question:** does pmcc's own rule, a year-long deep in-the-money call with a weekly short call sold
+  against it, earn more than the long held alone, and more than a one-trade-a-year short put, once costs
+  are paid on quoted prices? And does any of three declared changes to the short earn more than the
+  rule as run?
+- **Where the edge would live:** **the variance premium in the short call, net of the exposure it
+  takes on.** A short call earns the premium option buyers pay for variance. It also sells equity
+  reversal exposure the market does not reward (Israelov and Nielsen, "Covered Calls Uncovered", Financial
+  Analysts Journal, 2015), and that exposure grows with how far in the money the strike sits. pmcc's
+  0.70-delta short sits deep in the money. **What would falsify it:** the arm earns no more than the long
+  alone after costs. The long alone carries equity beta, the year-long call's own variance cost and
+  the 45-day close; any arm that merely adds net long delta in a rising market will look good against
+  the put, so the long-alone baseline is the one that isolates the short.
+
+## The arms (six judged, Holm across them)
+
+Rules are read from `packages/pmcc/src/cherrypick/pmcc/engine.py` (`ARM_RULES`, `select_long`,
+`select_short_by_delta`) and `management.py` (`evaluate`, `assignment_exposed`), not restated from
+memory; the replay imports their parameters. What they share: the long is the third-Friday monthly nearest
+360 days in [240, 540], chosen by delta in 0.88 to 0.92, no extrinsic fallback; held to 45 DTE, then closed
+and re-bought the next session; closed early if P&L to date falls to -30% of the long's cost; the
+account policy is `ira` (an expiring short is bought back at the close at any moneyness).
+
+| arm | short | management of the short |
+|---|---|---|
+| `shield` | 0.70 delta (band 0.65 to 0.78), soonest Friday 5 to 11 DTE, above the long's strike | rolled on its expiry day; also early at 85% of its sale extrinsic decayed, or when spot reaches its strike; at most once a session |
+| `shield_hold` | as `shield` | rolled on its expiry day only |
+| `shield_guard` | as `shield` | `shield_hold` plus: an in-the-money short whose extrinsic is under 0.05 a share is rolled, at most once a session, never on a cash-settled leg |
+| `hold-30d` | 0.30 delta (band 0.25 to 0.35), soonest Friday 5 to 11 DTE | `shield_hold`'s long and management |
+| `hold-30d-monthly` | 0.30 delta (band 0.25 to 0.35), the listed expiry nearest 37 DTE within [30, 45] | held to its expiry, bought back at the close that day, the next sold |
+| `hold-vrp` | `shield_hold`'s short | sold only on a Friday when the at-the-money implied volatility at about 30 days exceeds the underlying's realised volatility over the last 20 sessions; otherwise no short that week and the long runs alone |
+
+- **Mechanisms, one each.** *`hold-30d`:* a far out-of-the-money short keeps the volatility premium with
+  less of the equity-reversal exposure (the paper above). *`hold-30d-monthly`:* costs. Weekly rolling paid
+  about $3k in fees over two months of paper; a monthly short collects its premium with about a quarter of
+  the trades. *`hold-vrp`:* pmcc's own shield study found the short's edge flipping sign within a tenth
+  of the implied-volatility level, so the short is sold only when implied volatility is above
+  realised. The gate follows from that finding; it is one declared rule, not a search over thresholds.
+- **Not included, said out loud.** Item 5's EMA-driven short delta (it failed); the early-roll policy
+  (it lost five of six symbols in the 2026-10-12 replay); other delta levels such as 0.20 or 0.40 (a
+  search the sample cannot afford under a Holm of six).
+- **Measured arms' definitions that need a rule.** *Strict greater-than* in `hold-vrp`'s gate, no margin.
+  *Implied volatility* for the gate: the Friday chain's expiry nearest 30 DTE within [21, 38], the mean of
+  the call and put implied volatilities at the strike nearest the forward. *Realised:* annualised
+  close-to-close over 20 sessions ending that day. The monthly arm takes the nearest-37 expiry that
+  clears every declared ex-dividend date and, for single stocks, report date (pmcc's refusals); if none in
+  the band clears, no short that cycle, counted.
+
+## The baselines every arm must beat
+
+- **`long-alone`:** the same long, no short, under pmcc's own long management (45-DTE close and the -30%
+  stop on the long's own P&L). It isolates what the short adds. Also reported without the stop (a rival).
+- **`put-benchmark`:** pmcc's own put benchmark: a short put nearest 20 delta at the same expiry the
+  long uses, sold on the day the long is bought, held to 45 DTE, re-sold the next session. No stop. It
+  shares the long's chain path, so it costs no extra fetch.
+
+## Symbols and the XSP choice
+
+- **Symbols:** the eleven in the deployed config. Funds (judged): XSP, QQQ, GLD, IWM, SLV, SMH. Stocks
+  (reported, not judged): AMZN, TSLA, AMD, NVDA, PLTR.
+- **XSP is replayed on SPY's chains**, labelled `XSP(SPY)` everywhere. Reasons: (1) XSP is absent from the
+  fetched store, and the account's tier refuses index endpoints, so SPX has no underlying price to
+  select strikes against; (2) SPY's chains are listed weekly for the whole window and are the deepest
+  there are, where XSP's early years are thin and a thin chain's closing quotes would measure the
+  spread, not the strategy; (3) the shield study already replays XSP on SPY. **What is lost and how it is
+  handled:** SPY is American with dividends. The `XSP(SPY)` row is treated as cash-settled as pmcc
+  treats XSP (no ex-dividend refusal, no assignment flags, `shield_guard` never rolls), so on that row
+  `shield_guard` is identical to `shield_hold` by construction and is dropped from that row's
+  comparison; it is not independent evidence. SPY's would-be flags and ex-dates are still counted and
+  reported, as what an SPY holder would have met. One request at build time may check whether
+  the options store serves a clean XSP chain; if it does, a 2023-2026 side check on XSP's own chain is
+  open, but the declaration does not depend on it.
+- **Minimum data (per symbol, per half):** a symbol is judged only with at least 4 completed long cycles
+  and at least 120 priced weeks in the design half and 90 in the holdout (monthly arm: 25 and 18 priced
+  cycles), and with no more than 20% of the half's weeks missing for unlisted expiries or unusable
+  quotes. A symbol below the floor is reported, not judged; PLTR (listed 2020-09) cannot meet the design
+  floor and is reported only. **Fewer than 4 judged funds is no verdict for any arm.** SMH's weekly
+  expiries before 2023 are unconfirmed; the first fetch pass finds out, and a SMH short-less stretch
+  counts against it under the floor, not as a zero.
+
+## Measured
+
+Everything per symbol, per arm and per baseline, on a weekly grid (Friday close to Friday close), one
+contract, marked from the stored closing bid and ask each session.
+
+- **% a year on capital.** Capital is the arm's cash tied up: the long's debit at each long entry, held
+  fixed through the cycle (the put's is its cash-secured strike). The weekly return is the week's marked
+  change in the whole position less that week's costs, over capital; a year is 52 weeks. Interest on the
+  idle cash is left out of the primary measure; it earns the same rate per dollar posted in every
+  arm and baseline and cancels in a paired difference. Reported beside it: the same difference per dollar
+  of underlying notional (the put posts about three times the shield's capital, so the notional basis is
+  the like-for-like one against it, the long-alone baseline the like-for-like one in capital).
+- **Paired difference.** Per symbol and week: the arm's weekly return minus the baseline's. The pooled
+  measure is the equal-weight mean across judged funds of each symbol's mean paired difference. Both
+  baselines are subtracted separately.
+- **Windows.** Reported per symbol and pooled, per half, and per five-year window starting each January
+  2016 to 2021 (six overlapping windows; the shield study's 11-of-15 framing). The windows read the
+  holdout, so they are tabulated only at the holdout read.
+- **Drawdown.** Maximum peak-to-trough of the cumulative weekly return on capital, per symbol and arm,
+  against the baselines'. Reported and read, not a gate (see the rule).
+- **The short's contribution** (arm less `long-alone`) split into premium collected, the short's
+  mark-to-market, fees, settlement and slippage, in their own columns (the money layout).
+- **Beta-adjusted alpha.** The regression intercept of the paired difference against `long-alone` on the
+  underlying's weekly return, per symbol. Reported. It tells a reader whether a failure of the raw
+  rule is lost equity beta or lost premium; it does not change the verdict.
+
+## Fills, fees, assignment and dividends (pmcc's basis)
+
+- **Fills and fees:** pmcc's paper basis, imported not rewritten: mid of the stored closing bid and ask
+  with slippage as the suite's cost model charges it (`engine.leg_costs` over `cherrypick.core.fees`,
+  the module's `tastytrade_costs` overrides), commissions per its stack, $5 settlement event on every
+  in-the-money expiry. An action is refused, not filled, on a missing side, a crossed quote, or a leg
+  spread over `max_leg_spread_pct` (0.25), as pmcc refuses it; refusals are counted per arm. Everything
+  happens at the close's quotes: pmcc rolls at the close minus 60 minutes with a buyback deadline 20
+  minutes from the bell, so the replay is a close-quote approximation (a declared limit).
+- **1.5x costs:** slippage, commissions and settlement all scaled by 1.5.
+- **Early assignment: measured, never modelled.** No exercise is simulated. On every held in-the-money
+  short on a physical-settlement symbol the daily mark is tested with `management.assignment_exposed`
+  (extrinsic under 0.05 a share) and the sessions and weeks flagged are counted per arm and symbol. Only
+  `shield_guard` acts on the flag. Pin risk is not modelled.
+- **Dividends:** a short whose life [sale day, expiry] spans a declared ex-date is refused, on physical
+  symbols only, via `core.settlement.ex_date_in_span`; in the replay the ex-dates are the dividend history
+  already on disk (GLD and SLV pay none), and the weeks without a short are counted. For single stocks,
+  report dates from the local earnings calendar likewise refuse a short across an announcement (the
+  `earnings_span` refusal).
+- **Splits:** a cycle that spans a split of its underlying (NVDA, AMZN, TSLA) is dropped from every arm
+  and baseline and counted, as pmcc treats a split mid-position as a measurement break. Spot is the
+  unadjusted close; where only an adjusted series is at hand, spot comes from put-call parity at the
+  strike nearest the forward on the shortest expiry, and is checked against the bar on unsplit days.
+- **Greeks.** The store holds bid, ask, close and volume, no implied volatility or delta. Delta is
+  computed from the mid's implied volatility by Black-Scholes with the 3-month T-bill rate and the
+  trailing dividend yield, no early-exercise premium (a declared limit: pmcc selects on the broker's
+  delta, which on American deep-in-the-money calls runs below parity). A strike with no solvable
+  implied volatility is skipped as pmcc skips a strike with no delta.
+
+## Windows and the pass rule
+
+- **Design:** 2016-01-01 to 2021-12-31 (six years, the bull market, the 2018 fourth-quarter fall and the
+  2020 crash). **Holdout:** 2022-01-01 to 2026-10-23 (the 2022 bear, then the recovery), read once.
+  The split is the only calendar one that gives each half a drawdown and the long cycles their floor.
+  There is no untouched forward check for the three variants (they have no paper twin); a passing
+  variant would get one by joining paper at a declared boundary.
+- **Pass rule, in the design window, per arm, against each of the two baselines (an arm passes only if
+  every clause holds against both):**
+  - the pooled mean paired difference above zero, with the one-sided 95% lower bound above zero from a
+    stationary bootstrap over calendar weeks (mean block 8 weeks, weeks resampled jointly across
+    symbols, 20,000 resamples, seeded);
+  - the arm's p-value is the larger of its two baseline p-values; **Holm at 0.05 across the six arms**;
+  - above zero on at least two thirds of the judged funds (rounded up);
+  - above zero in each time-half of the design window (2016-18 and 2019-21), pooled;
+  - above zero, pooled and on at least two thirds of the judged funds, at 1.5x costs;
+  - above zero, pooled, with the best calendar year of the design window removed.
+- **Then the holdout, read once, for the arms that pass the design:** the pooled mean paired difference
+  above zero against both baselines, above zero on at least two thirds of the judged funds, and at 1.5x
+  costs; and the six five-year windows' symbol-by-window cells (cells with under 40 weeks dropped)
+  showing the arm ahead in at least two thirds of them against each baseline.
+- **Drawdown reading, not a gate.** A pass whose maximum drawdown on capital is deeper than
+  `long-alone`'s on a majority of symbols is reported to the user as a pass with that caveat.
+- **Minimum detectable effect (B12).** Estimated from the volatility arithmetic of a 0.70-delta weekly short
+  on a capital base of about a third of notional, not from any outcome: one symbol's mean paired
+  difference over six years has a standard error of several points a year on capital, and pooling six
+  correlated funds does not remove most of it. Only a difference of roughly the size of the whole
+  premium collected can be told from zero in the design window; the 0.30-delta arms, whose short moves
+  half as much, are measured somewhat more tightly. **A fail reads "no edge of detectable size", not "no
+  edge".**
+
+## Rival explanations, each with its check
+
+- **One regime (a 2016-2021 bull).** Two halves with different regimes, per-year pooled tables, the
+  best-year-removed clause, and the 2020 crash weeks reported with and without.
+- **The long carries everything.** The `long-alone` baseline is in the pass rule itself; the short's
+  contribution is shown on its own; the beta-adjusted alpha is reported.
+- **Costs.** Fees, settlement and slippage in their own columns; the 1.5x clause; the weekly arms'
+  trade counts beside the monthly arm's.
+- **Skew.** The 2026-10-04 study's uncalibrated skew is replaced by the real chains' own: the short and
+  the long are priced where the market quotes them. What replaces it is a different limit, the close's
+  quote as a fill, handled by costs and the 1.5x clause. The replay's own WPUT check (the weekly
+  at-the-money put on SPY, costs removed) is re-run on quotes, tolerance 2 points a year as a
+  data-and-engine sanity check, before any arm is read.
+- **Stocks against funds.** The stocks are tabulated on their own with the same statistics and no
+  verdict: the 2026-10-05 study found every tested stock negative on a model, and a stock cycle that
+  spans a split or a report is thrown out, so a stock result rests on less. A pass that holds on the funds
+  alone is the pass; the stocks are the measurement they were added as.
+- **The gate and the cadence are not independent of the delta.** `hold-vrp` is `shield_hold`'s delta, and
+  the 0.30-delta arms are compared with each other as well as the baselines in the report (reported, not
+  judged).
+
+## Guards, each shown to fail
+
+Before an arm is read, and each broken on purpose to see the check fail:
+- **Reproduction:** the replay's chosen long and short strikes match the paper ledger's recorded legs on
+  the sessions both cover (since 2026-10-06), within one strike on at least 80% of entries. Broken by
+  moving the long's delta band to 0.80 to 0.84.
+- **Accounting:** each arm's P&L equals `long-alone`'s plus the short's, less costs, to the cent; rows add
+  up. Broken by dropping a cost.
+- **Coverage:** a week with a missing leg quote is a counted refusal, never a zero return. Broken by
+  deleting one quote.
+- **The WPUT check** above, on SPY.
+
+## Data and the fetch
+
+All options history is the licensed store's end-of-day chains (`eod_chain_quotes`), fetched by
+`fetch-chain-paths` and `fetch-chains` into the marked vendor directory; the store is already declared in
+`stores.STORES`. Nothing licensed enters the repo, a PR or an issue. Underlying closes and rates come
+from the local bar store and the T-bill series on disk. Results stay under
+`~/.cherrypick/data/backtest/results/research/item36/`; this plan records the verdict without figures. The
+study is `scripts/pmcc_item36.py`, run as `item36/plan` (writes the request files and counts),
+`item36/pilot` (SPY first: the fetch, the guards, no arm read), and `item36/study`.
+
+**What a full test needs, per symbol** (about 564 Fridays, 2016-01 to 2026-10):
+
+| request | unit | per full-history symbol |
+|---|---|---|
+| weekly short: each Friday expiry's path from 11 days out to expiry (covers entry, roll and early-roll sessions) | 2 seven-day calls per expiry | 1,128 |
+| monthly short: the same expiries' earlier days, chosen by nearest-37 within [30, 45] (about 113 expiries) | 4 calls each | 452 |
+| `hold-vrp` gate: the Friday chain of the expiry about 28 days out, each Friday | 1 call each | 564 |
+| year-long long, its put and the long-alone baseline: one path from entry to 45 DTE, about 315 days, per long (about 13 cycles, 17 with stop re-entries) | 45 seven-day calls each | 765 |
+| **gross** | | **about 2,900** |
+
+- **Already stored** (counted, not assumed): about 108 Friday expiries per symbol of 2022 onward on the
+  nine names the store holds for other items (a 14-to-18-day path each, which covers the 11-day need), about 23
+  to 70 of the 28-day chains, about 23 to 73 of the monthly stretch, and no chain beyond 66 days to
+  expiry, so **no year-long long is stored for any symbol**. SMH and PLTR have none of the weekly paths.
+- **Net requests:** about 2,650 per full-history symbol (SPY, QQQ, IWM, GLD, SLV, AMZN, TSLA, AMD, NVDA:
+  about 23,800), SMH about 2,900, PLTR about 1,560 (listed 2020-09), **about 28,200 in all**. Allow 10% more
+  for expiries a symbol did not yet list (recorded `empty`, still one call each).
+- **Time:** at about one second a request, the basis `chainfetch.py` states for the account's tier on
+  single-name chains, 28,200 requests is **about 7.8 hours serial**; the fetcher takes up to three
+  workers on one client, which if the tier lets them overlap would shorten it to a few hours, unverified,
+  so budget the serial figure. Run it as research-queue rows, one per symbol, SPY first and the
+  stocks last, resumable (the store skips complete requests).
+- **Disk:** the year-long paths dominate (an ETF's long-dated chain is several hundred rows a session
+  for about 315 sessions a cycle); the order of 2 to 3 GB in all, estimated, not measured. The SPY rows
+  now stored are 1.5 million.
+
+## Declared limits (B11)
+
+Close-of-day quotes, not the intraday tape pmcc trades on; one contract, so lot-size effects on spreads
+are invisible; delta computed, without early-exercise premium; early assignment unmodelled, counted;
+an expiry not listed is a week without a short; `XSP(SPY)` is a stand-in; stocks lose cycles to splits
+and reports; the three variants and `shield_guard` have no paper twin before a boundary and so no
+live-fill check; an unlisted arm (other deltas, other expiries) is outside the sample by design.
+
+## Decides
+
+- **A pass:** the passing arm or arms continue in paper as pmcc's base, and a variant joins as a paper arm
+  at a declared boundary (a measurement-affecting change, batched). The shield arms pass or fail by this
+  same rule; one passing makes it the base, none passing leaves paper running unchanged.
+- **A fail or no verdict:** the evidence the retirement rule needs, with the minimum-detectable-effect
+  note beside it. Any retirement of the module or removal of a symbol stays the user's decision; paper
+  keeps running unchanged until then.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
