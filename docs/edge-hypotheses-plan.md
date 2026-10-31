@@ -2943,6 +2943,23 @@ flow store's outcomes has been read.*
     reported; no borrow cost is charged, a declared limit.
 - **Declared limits (B11):** premium, not contracts; single-leg orders only; the histogram's buckets
   are coarse; grid sessions only; no borrow cost on the short leg.
+- **Settled with the build, before the first read (2026-10-30, `scripts/option_stock_ratio_item34.py`,
+  `cherrypick.backtest.ratiostudy`):**
+  - **The premium** counts each histogram bucket at its geometric midpoint; the underflow bucket
+    (under $100) at $50 and the overflow bucket (over $10M) at its floor. The histogram holds every
+    single-leg order of the name-day, whatever its size or side. A name-day with no single-leg
+    premium is dropped from that session's ranking (it is not light trading, it is no signal), and
+    the count is reported.
+  - **Deciles** are by rank within the session, `n // 10` names at each end, ties by symbol; a session
+    under 10 names has none. **Costs** are 0.10% a side, four sides (two legs, each entered and
+    exited), 0.40% a session; the long-only half pays two sides. Terciles redraw the deciles inside
+    each third.
+  - **The bound** is the lower end of a two-sided 90% stationary bootstrap interval, which is the
+    one-sided 95% bound. **Halves** are the first and second half of the design sessions in time.
+    **Name-halves** redraw the deciles inside each half. **Reports removed** drops the name-sessions
+    before ranking, using item 32's reaction-day window (D+2 to D+6).
+  - **The holdout** passes on a mean net spread above zero over at least 30 sessions (the plan states
+    no holdout floor; item 32's is used), and is refused without a design pass or once spent.
 - **Data:** the flow store (design fetched; holdout by item 32's row) and the local bars. Results stay
   under `~/.cherrypick/data/backtest/results/research/item34/`, verdict here without figures. The
   study is `scripts/option_stock_ratio_item34.py`, run as `item34/study`.

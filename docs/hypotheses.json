@@ -1180,7 +1180,9 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#34-the-option-to-stock-premium-ratio-does-heavy-option-trading-foretell-weaker-returns",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item34/results-design.json"
+      ],
       "retest": null,
       "retests": []
     },
