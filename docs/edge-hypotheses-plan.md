@@ -545,6 +545,15 @@ below. The test plan there supersedes this section.*
   strike, against its distance from the 13:30 spot, as in 12(a). Price the fly only if the signal
   exists.
 - **Build only if:** as 12, then positive after costs with his take-profit.
+- **Retired, not run (2026-10-30, the user's call).** Despite its name it is no gamma scalp: nothing
+  is long gamma and nothing is hedged. It is a short 1DTE iron fly, so its only possible edge is
+  pinning carried overnight, which is 12(a) held for a night. That read was invalidated rather than
+  answered, and no corrected pin test has been declared. The nearest evidence that exists is against
+  it: the prior-close pin fly (10) failed, and the overnight 1DTE SPX premium is about fair at mid,
+  with the spread and fees taking the rest (19 and 22, design and holdout). Running it would need
+  tomorrow's expiry and its open interest from 13:30, which no store holds, and a full pass rule,
+  to test a mechanism with no new reason to expect an edge. Reopen only with a new mechanism and a
+  newly declared test, as 12 says.
 
 ### 12. GEX levels, revisited with history
 
@@ -2479,6 +2488,293 @@ horizon: walls from the monthly a 20-60 day trade sells, read over 5 to 20 sessi
     `results.md` beside it.
 - **What this decides:** the fail branch. The walls stay a 0DTE read, the view of short strikes
   against the walls stays dropped, and Test B is not declared.
+
+### 31. The earnings module's paper rule: does any strategy it opens earn after costs?
+
+*Source: the user, 2026-10-30. They are not going live on earnings and asked whether the module's paper
+rule has an edge at all, before live is ever considered. They approved this design on 2026-10-30, with the
+pilot run first and reported before the full fetch. **Look-alikes, said out loud.** Item 1 (the put spread on post-earnings drift)
+failed; it traded the drift after the report, not the premium into it. The 2026-10-13 expected-move fly
+study found a debit fly fair at mid and its costs too large; that is a different structure and the
+module's `expected_move_butterfly` stays outside this item for that reason. The 2026-10-17 navigator
+history priced a credit or debit spread off a direction read and found nothing after costs; here the
+side of the one-sided arm comes from skew, and the two other arms take no side. The time-spread plan's
+step 0 scored the retired calendars and found nothing made money. None of these ran the module's
+whole rule: its screens, its strike and wing choice from the credit received, and its management (a
+loser closed the first morning, a winner carried up to three sessions). That whole rule is what the
+paper ledger has been running since 2026-07-15, and it is the thing asked about.*
+
+- **Question:** does the iron fly, the iron condor or the directional credit spread, entered at 15:40 ET
+  the session before a report and managed as the module manages it, earn more than zero after the
+  suite's costs, and more than the same structure opened on the same name on an ordinary session?
+- **Where the edge would live:** a **risk premium**: the options' implied move into a report exceeds
+  the move that follows, and the seller of the event is paid for carrying it. The module's screens
+  (an inverted term structure, an expected move above a floor) are a **selection signal** aimed at the
+  same premium. Its management (the first-morning loser close, the three-session cap, the targets and
+  stops) is **payoff shaping**, expected to move the win rate and not the expectancy, so it is
+  measured last and reported beside the unmanaged readings. **What would falsify it:** the mean net on
+  capital at risk is zero or negative after costs, or it is positive and the control earns as much
+  (the premium would then be ordinary overnight theta, not the report).
+- **What is judged.** The three strategies that still open and can be ranked in `strat_test`:
+  `iron_fly`, `iron_condor` and `directional_credit_spread`, one arm each. Not judged, with the
+  reason: `expected_move_butterfly` (paper only, never ranked, already studied above); `atm_calendar`
+  and `double_calendar` (retired from the harness 2026-10-15; the time-spread plan covers them);
+  `broken_wing_butterfly` (retired 2026-10-26, costs about half its premium). Their paper rows run
+  off as they are.
+- **The structures, built by the module's own code.** Thresholds are the deployed file's at the
+  declaration date, copied here so a later edit cannot move the test: profit target 50% of the credit
+  and stop at 1.5x the credit for all three (the example config and the strategy guide say 25% for the
+  fly and a 2.0x stop for the spread; the deployed file is what the ledger ran, so it is what is
+  tested); wing width the credit times 2.5, 3.0 or 3.5 by the name's IV/RV band (1.25 and 1.75), the
+  ratio read from Dolt's `volatility_history` as of the entry date, as the module's own pre-gate does.
+  - **iron_fly:** short the at-the-money call and put; longs at the strikes nearest the short strike
+    plus and minus the wing width.
+  - **iron_condor:** shorts at the strikes nearest the spot plus and minus the expected move (0.85 x
+    the front straddle's mid); longs one wing width beyond each.
+  - **directional_credit_spread:** the side with the richer 25-delta implied volatility (calls or
+    puts), skew at least 0.02; the short strike is the candidate whose break-even lands nearest the
+    expected-move boundary; the long a wing width (the short's mid times the multiple) beyond it.
+  - **Expiry:** the nearest on or after the reaction date (the report date for a pre-market report,
+    the next session for an after-close one). **Size:** one contract a leg; a structure whose one
+    contract risks more than the deployed paper budget (5% of the paper capital) is skipped and
+    counted.
+  - The replay calls the module's pure functions (`_select_short_strike`, `select_side`'s arithmetic,
+    `compute_expected_move_and_term_structure`, `management.evaluate`, `evaluate_credit_spread_exit`,
+    `compute_generic_exit_debit`, `exit_debit_bounds`, `sizing.per_contract_max_loss`) over chain rows
+    read from the store in the broker-chain shape, so a changed gate changes the replay too. The chain
+    readers, which do I/O, are the only things replaced.
+- **The entry.** The 15:40 ET bar of the entry session (the scan starts at 15:35 and orders land
+  through 15:55; 15:35 and 15:50 are read from the same fetch and reported). One entry per name and
+  event per arm, an after-close report entered that day and a pre-market report entered the session
+  before it, as the module's calendar admits both. **Events:** Dolt `earnings_calendar` rows whose
+  timing is stated ('After market close' or 'Before market open'); a blank timing is not read as
+  after-close here, as the module does live, because history can be exact (it is 94 rows of the
+  universe, counted below, and all are dropped).
+- **The admission,** applied point in time to each event:
+  - *Universe.* The names the suite's liquidity verdict calls `tradable` today (158 on 2026-10-30), the
+    list the module has been restricted to since 2026-10-28. That list is **hindsight**: it says
+    which names are liquid now. It is reported apart. The point-in-time versions of its tests are also
+    applied: the stock's 50-session median dollar volume at or above the verdict's bar (Dolt bars),
+    a listed weekly (a chain for a weekly expiry within 9 days exists in the store), and the at-the-money
+    spread at the entry bar at most 7.5% of mid.
+  - *Hard filters,* as `screening-criteria.md` Layer 1, read from the entry-bar quotes: price at least
+    $10; front expiry at most 9 days out; front-month open interest at least 2,000 (the options
+    history's open interest of the entry morning); term structure at most -0.004; at-the-money delta
+    at most 0.57; expected move at least $0.90 for the fly and 4% of spot for the other two; the
+    front at-the-money spread at most 15% of mid.
+  - *Soft criteria.* Of the five, the deployed file has winrate, IV/RV and market cap **off**, so they
+    are not applied; the 30-day average volume (at least 1.5 million shares, Dolt) is applied; the
+    combined option volume floor (500 contracts) is **not reproduced** (the entry bar's volume is not in
+    the store; the open interest floor stands in) and is a declared limit.
+- **The management,** on a 5-minute grid from 09:45 to 15:55 of each session after entry, through
+  `management.evaluate` exactly (the live loop marks each minute and acts from 09:40; the grid is the
+  declared simplification):
+  - nothing acts on the entry session except the expiry close and the pin guard;
+  - the strategy's target and stop on the mid mark; the PEAD gate on the first bar of each morning (a
+    position at or below breakeven closes); the three-trading-session cap; the pin guard (a short
+    strike within $1.00 of spot in the last 60 minutes of its expiry day); the expiry close at 15:30 of
+    any leg's expiry day;
+  - the spread gate: a close decided on a leg wider than 35% of mid and $0.05 waits for the next bar,
+    except the expiry close;
+  - a position still open after a leg's expiry settles at intrinsic against the stock's close.
+- **The fills and costs.** Entry and exit at each leg's mid on the bar, the exit clamped to the
+  structure's payoff range, then `cherrypick.core.fees`: the commission to open ($1.00 a contract, none to
+  close, $10 a leg cap), the clearing and regulatory pass-throughs, the slippage haircut of 12.5% of each
+  leg's spread (capped at 15% of its mid) on **both** sides, and the settlement fee on legs that
+  expire. This is the paper ledger's own basis for positions entered from 2026-10-26, so the replay and
+  the paper check read the same fills. **Verdict basis: the module's working price** (above).
+  **Reported beside it:** the natural side both ways (shorts bought at the ask, longs sold at the bid),
+  the mid with fees only, and the stress below. (The user's choice, 2026-10-30, over the house habit
+  of judging at the natural: the replay then reads the same fills as the paper ledger.)
+- **The control.** The same structure on the same name at an ordinary session, paired with the event
+  trade:
+  - **Which session:** the session on the same weekday four weeks earlier (so the same days to
+    expiry at the same weekly cadence), kept only if Dolt lists no report for the name from that
+    session to the control's expiry and none within three sessions before it; else the same weekday
+    four weeks later under the same test; else five weeks earlier; else the event is dropped from the
+    paired readings (the unpaired reading keeps it) and counted.
+  - **What is built:** the same code, from the control bar's quotes, with the screens not applied (an
+    ordinary session fails the term-structure and expected-move floors by design). Same expiry rule
+    (the nearest at the event's days-to-expiry), same management, same fills and costs.
+  - **What the pair isolates:** the report, together with the screen's pick of a name whose front
+    month is rich. A control's own IV is read, so the wing sizing and strikes follow its quotes.
+- **Measured,** per trade: net dollars for the whole position, in columns that add up (gross, entry
+  fees and slippage, exit fees and slippage, settlement), and net as a share of capital at risk (the
+  widest wing less the credit, times 100). Per arm: the mean and its date-clustered bootstrap, the
+  win rate, the hold, the exit reasons, and the paired difference (event net share minus its
+  control's). Reported, not judged, from the same data: the exit read three ways (closed at the first
+  morning's first bar regardless; held to the expiry close with no target, stop or gate; the managed
+  rule without the PEAD gate), which separates the overnight premium from the management.
+- **Windows** (the paper ledger began 2026-07-15, so nothing here reads its era):
+  - **Design:** 2020-01-22 (the calendar's first row) to 2023-12-31. Halves: 2020-01-22 to 2021-12-31
+    and 2022-01-03 to 2023-12-31.
+  - **Holdout:** 2024-01-02 to 2026-07-14, run after the design whatever it shows, counting only after a
+    design pass.
+  - **The later check, untouched:** the paper ledger's entries from 2026-10-28 (after both the exit
+    basis of 10-26 and the liquidity verdict of 10-28 bind). Nothing here reads a paper trade's
+    outcome. The replay is validated on paper entries from 2026-07-15 to 2026-10-23 for the
+    *entries* only: the same structures, strikes and credits to within a tick on at least 20 events
+    (the share agreeing is reported, and below 90% the study stops and the replay is fixed first). The
+    outcomes of those rows are not read.
+  - **Minimum trades:** fewer than 150 closed, paired trades in an arm in the design window, or 100 in the
+    holdout, is no verdict for that arm.
+- **Pass-or-fail rule,** per arm, all must hold in the design window:
+  - the mean net share of capital at risk above zero, with a one-sided date-clustered bootstrap t above
+    2 (resampling entry sessions, 2,000 resamples, seeded), Holm across the three arms;
+  - the mean paired difference above zero on the same test;
+  - the mean net positive in each time-half and in each name-half (`name_half`, B9), and the paired
+    difference positive in each time-half;
+  - still positive with fees at 1.5x and the slippage haircut at 25% of spread (double);
+  - still positive with the best 5 trades removed (a win rate this structure earns on small credits
+    and an occasional full wing makes the tail the whole story);
+  - then, in the holdout, both the mean net and the mean paired difference above zero.
+  - **Reading a partial pass.** Net positive and the pair not: the premium is ordinary overnight
+    theta, not the report; recorded as "pays, not for the report" and not a pass. Net negative and the pair
+    positive: the report is worth something but the costs eat it; a fail.
+- **Rival explanations, each with its check:**
+  - *One era:* both time-halves, then the holdout (which holds 2024's and 2025's calm and 2026's moves
+    that 2020-23 did not). The 2020 spring is in the first half, flagged, and the result is reported
+    with 2020-02 to 2020-06 removed.
+  - *One name or a few:* both name-halves; no name above 8% of an arm's trades, the top five names'
+    share and the result without them reported.
+  - *Costs read too kindly:* the stress above; the natural side reported; the entry-bar quote ages and
+    spreads reported by year.
+  - *The report itself against ordinary overnight theta:* the paired control; the three exit readings.
+  - *A selection effect of the screen:* the result by term-structure tercile and by the at-the-money
+    spread, reported (the module's own 2026-10 test of term structure as a covariate stays its own
+    declaration and is not scored here).
+  - *Survivorship:* the universe is today's liquid list. The point-in-time tests are applied and the
+    result is also split by the measured spread tercile, so a result that lives only in names that
+    were illiquid then and liquid since shows up there. It cannot be removed, and a pass says so.
+  - *Missing quotes drop the big losers:* a leg with no two-sided quote at entry drops the event; the
+    drops are counted by year and arm and a drop rate that differs by more than 5 points between the
+    paired halves, or that is largest in the years with the worst results, is reported with the
+    result. At an exit bar a leg with no two-sided quote is marked at its last earlier quote in the
+    trade, counted.
+  - *Many events on one night:* the bootstrap resamples entry sessions, and the event counts per
+    session are reported. The module's correlation block list is not applied (the harness does not
+    apply it either).
+- **Minimum detectable effect (B12):** a credit structure's net on capital at risk spreads widely, a
+  small win most nights and a loss near the full wing on a few. The per-trade standard deviation is
+  taken as about 0.8 of capital at risk, **an assumption** until the design window's own spread
+  replaces it in the local result before the holdout is read. At the Holm-adjusted bar (t about 2.4)
+  and an effective sample of 0.7 of the trades (sessions cluster), 600 trades detect about 9 points of
+  capital at risk per trade, 1,000 about 7, and 300 about 13; the paired difference, with a wider
+  spread, needs about a third more. A no-verdict or fail then reads "no edge larger than about X
+  points of capital at risk".
+- **Name split (B9):** applies; 158 names split by `name_half`.
+- **Declared limits (B11):**
+  - The universe is today's liquid list, hindsight, reported apart.
+  - The deployed screens are applied as the file stands now; the thresholds before it were not journalled.
+  - The combined option volume floor is not reproduced.
+  - The management is on a 5-minute grid, not each minute, so a target or stop touched between bars is
+    seen at the next bar, which understates stops and targets alike.
+  - The wing multiple's IV/RV band uses Dolt's `volatility_history` (the module's fallback source), not
+    the broker's 30-day figures.
+  - Early assignment is not modelled; the module closes before an expiry anyway.
+  - A position open at a name's last bar settles at that session's mid mark; a position past a leg's
+    expiry settles at intrinsic on the stock's close. A split between entry and exit ends the trade
+    at the session before and is counted.
+  - A trade with no usable chain (an empty request, a refusal, no weekly) is dropped and counted by
+    reason, year and arm.
+  - Dolt's calendar is the only source of dates and timings. A report that was moved, or listed on the
+    wrong day, is an error the study cannot see. The paired control would show it as an event with no
+    event premium, so the share of events whose front straddle is not richer than its control's is
+    reported.
+- **Data:**
+  - *Events (counted, nothing priced):* of Dolt's explicit-timing reports for the 158 names, 923 after
+    the close and 919 before the open in the design window, 685 and 664 in the holdout, 3,191 in all,
+    and 94 with no stated timing (dropped). Dolt's calendar starts 2020-01-22.
+  - *What is fetched from the options history:* for every event, the entry bar's front chain (a
+    15:35-15:50 window, quotes, delta and implied volatility, the underlying price in the rows), the
+    back month's (term structure), and the open interest of the front expiry; then, for the events
+    that pass the admission, the front chain on each later session through the expiry or the third
+    session (09:40 to 15:55 at 5 minutes), and the same for the control session. A request is a name,
+    a session and an expiry, resumable in the store beside `eod_chains.db` (a new intraday store,
+    registered in `stores.STORES`), by a `fetch-chains`-style queue row with `--stop-by`.
+  - *Count:* about 3 requests for each of the 3,191 events before admission (about 9,600), and about
+    5.4 for each that passes (2.2 exit sessions, one control entry bar and 2.2 control exit sessions).
+    If 40% pass (to be counted from the entry bars, not assumed), another 6,900, in all about 16,500
+    requests.
+  - *Pace:* not measured for a single name's intraday history. The only basis is the store's
+    end-of-day chain fetch, which `packages/backtest/CLAUDE.md` puts at about a second a request;
+    an intraday window returns more rows, so 1 to 4 seconds is the range assumed: **about 4.5 to 18
+    hours**, in the supervisor's research queue, holding the account's one vendor session throughout
+    (nothing else may use the options history meanwhile). A first step of 20 requests measures the real
+    pace and replaces this estimate.
+  - *The pilot, a coverage test, run before anything else:* 30 events a year for 2020-2025 drawn by a
+    seeded hash of name and date (never by outcome), the entry bar and one later session each. It
+    reads row counts and whether both bars and the delta and implied volatility came back, never a
+    price into a result. **The basis is chosen by a rule declared now:** if at least 90% of the
+    pilot's requests are complete in every year, the intraday basis above is used for the whole study;
+    if not, the **end-of-day fallback** below is used for the whole study (one basis for all years,
+    never mixed), and the intraday reading is run on the years it covers as a reported sensitivity.
+  - *The end-of-day fallback:* entry at the entry session's end-of-day quotes (about 16:00, against the
+    15:40 bar), marks at each later session's end-of-day quotes only, so the PEAD gate is the first
+    mark after the report (the reaction session's close, not its first minutes), a target or stop is
+    seen only at a close, and an expiry day closes at its end-of-day mark (not 15:30). The direction of
+    the bias is not known in advance. The requests are the store's existing `fetch-chains`, about a
+    second each, 16,500 requests.
+  - *Other inputs:* Dolt `earnings_calendar`, `stocks.ohlcv` (price, 30-day average volume, dollar
+    volume, expiry settlement) and `options.volatility_history`, all local. `cherrypick.core.fees`
+    for costs. The suite's liquidity verdict file for the pool.
+  - *Licence.* Everything fetched and everything derived from it stays under
+    `~/.cherrypick/data/backtest/results/research/item31/`, and this plan records the verdict without
+    figures. The replay is `scripts/earnings_item31.py`, run as `item31/plan`, `item31/pilot`,
+    `item31/fetch-chains` and `item31/study`.
+- **Decides** (the user is not going live; paper continues whatever this shows):
+  - **An arm passes:** it is marked *eligible to be considered for live later*: that is all. The paper
+    ledger's entries from 2026-10-28 are then its untouched later check, with a pass requiring the
+    mean net above zero once it has 100 closed trades since that date. Live stays off; the module's
+    gate, per-day arm and the rest are untouched.
+  - **An arm fails:** it stops opening in `strat_test` from the next declared boundary (a dated entry in
+    `STRAT_TEST_RETIRED` with its own `strat_test_strategies` break, batched, never mid-measurement);
+    its open rows run off; its paper rows stay in the ledger and the reports. If the module is left with
+    no tested edge in any arm, that is reported as the finding, and what to do with the module is the
+    user's call, not this item's.
+  - **A no-verdict arm:** it keeps opening unchanged, with "no edge larger than X" written beside it,
+    and the question is asked again when the paper trades since 2026-10-28 add enough to change the
+    answer.
+  - **"Pays, not for the report"** is reported as it is, not as a pass, and the premium is then looked for
+    in the overnight alone (item 22's condor and item 19's flies are the nearest done).
+
+### 32. Large options orders as a signal: the flow plan's declared test, registered
+
+*Source: [flow-signal-plan.md](flow-signal-plan.md), declared 2026-10-24 with its fetch, and never run.
+Registered here on 2026-10-30, when the user asked for it to run. The method, the three tags, the
+three cuts, the matched baseline, the trials and the pass rule are that plan's, unchanged. This entry
+records only what had to be settled before the first read, and nothing here has read an outcome.*
+
+- **Question:** does a large, opened options order (a call bought, a put sold, a put bought) predict
+  the stock's next five sessions against stocks in the same relative-strength stage without one?
+- **Where the edge would live:** **flow**: a buyer who pays the spread to open a large position may
+  carry information, or hedging demand, the share price absorbs over the following sessions.
+- **The test:** as declared in [the flow plan](flow-signal-plan.md#the-declared-test): nine trials
+  (three tags by three cuts), deflated by nine, the larger cuts at least as good as the smaller; then
+  once on the holdout. The second family (40 trials) and the earnings test (two) are counted apart,
+  as the plan declares.
+- **Settled before the first read (2026-10-30):**
+  - **The top-1% rule's look-back.** The plan reads a name's previous 20 sessions, but the fetch holds
+    only the grid's every fifth session and the sessions before a report. The rule is read over the
+    name's last 20 *fetched* sessions before the tag session, at least 4 of them; a name with fewer
+    carries no tag that session.
+  - **Thin sessions.** About 21 grid sessions from 2025-01-16 hold far fewer names than the roughly
+    600 elsewhere. The plan's fetch is complete, so this is the universe's membership in the local
+    bar store, diagnosed before the run. The verdict is read with and without those sessions, and
+    both are reported.
+  - **Reported, not judged:** a stale-tag placebo (the previous grid session's tags against this
+    session's outcome window); the reading with name-sessions whose outcome window holds a report
+    dropped; and the reading with the five most frequent names removed.
+  - **The holdout fetch:** the grid rule carried on over 2025-07-01 to 2026-10-12 (every fifth session,
+    counted on from the design grid), with the sessions before each report for the earnings test, by
+    `scripts/flow_fetch_plan.py` extended to the holdout. Fetching reads no outcome; the holdout is
+    still read once, after the design results.
+- **Data:** the flow store (`flow.db`, 2022-05-16 to 2025-06-26 fetched) and the local bars. Results
+  stay under `~/.cherrypick/data/backtest/results/research/item32/`, and this plan records the verdict
+  without figures.
+- **Decides:** as the flow plan's build: a tag that passes on the holdout becomes a board method, read
+  from the broker's nightly orders (its steps 3 and 4); a tag that fails never enters the board, and
+  the board keeps saying flow is not counted.
 
 ## Not worth revisiting
 

@@ -28,7 +28,9 @@ from cherrypick.core import home as core_home
 
 from .researchqueue import repo_root
 
-STATUSES = ("observation", "declared", "running", "passed", "failed", "no_verdict")
+#: `retired` (2026-10-30): declared and closed without a run, its reason in the plan section. It has
+#: no verdict and no result files, sits with the finished rows, and is never re-tested.
+STATUSES = ("observation", "declared", "running", "passed", "failed", "no_verdict", "retired")
 REJECTED = ("failed",)
 RETESTABLE = ("declared", "passed", "failed", "no_verdict")
 MATCH_ON = ("setup", "side", "structure", "window")
@@ -194,7 +196,7 @@ def board(reg: dict, queue_rows: list[dict], read, notes=lambda path: None) -> d
         results = [_result(p, read, notes) for p in r.get("results") or []]
         active = any(q.get("status") in ACTIVE for q in tasks)
         status = r.get("status")
-        if status in VERDICTS:
+        if status in VERDICTS or status == "retired":
             group = "finished"
         elif status == "observation":
             group = "observation"

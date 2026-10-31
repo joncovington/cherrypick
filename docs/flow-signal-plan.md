@@ -207,6 +207,14 @@ report pointed the right way 53% of the time for bullish orders and 64% for bear
 - **Two trials** (bullish, bearish). **Pass:** the hit-rate interval excludes 50% and the mean signed
   excess is above zero after an assumed 1% round-trip cost on the move. Then once on the holdout.
 
+## Registered and settled before the first read, 2026-10-30
+
+Registered as item 32 in [edge-hypotheses-plan.md](edge-hypotheses-plan.md), which records what had
+to be settled before any outcome was read: the top-1% rule reads a name's last 20 fetched sessions
+(at least 4), the thin 2025 grid sessions are read with and without, three readings are reported
+beside the verdict (a stale-tag placebo, report windows dropped, the five most frequent names
+removed), and the holdout is fetched on the same grid rule. Nothing else here changes.
+
 ## The build, in pull requests
 
 1. **The fetch** (`packages/backtest`): per stock and session, trade-with-quote for every expiry,

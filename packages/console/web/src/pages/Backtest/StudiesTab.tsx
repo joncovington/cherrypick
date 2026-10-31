@@ -35,6 +35,7 @@ const STATUS_CHIP: Record<string, string> = {
   running: "chip chip-ok",
   declared: "chip muted",
   observation: "chip muted",
+  retired: "chip muted",
 };
 
 const COLS = 4;
@@ -71,7 +72,7 @@ export function resultsLine(row: StudyRow): string {
 export function headline(board: StudiesBoard): string {
   const count = (g: StudyGroup) => board.rows.filter((r) => r.group === g).length;
   const finished = board.rows.filter((r) => r.group === "finished");
-  const by = ["passed", "failed", "no_verdict"]
+  const by = ["passed", "failed", "no_verdict", "retired"]
     .map((s) => [s, finished.filter((r) => r.status === s).length] as const)
     .filter(([, n]) => n > 0)
     .map(([s, n]) => `${n} ${statusWord(s)}`);

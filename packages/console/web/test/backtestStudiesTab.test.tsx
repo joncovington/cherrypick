@@ -91,6 +91,9 @@ const html = (node: React.ReactNode) => renderToString(<MemoryRouter>{node}</Mem
 describe("studies tab", () => {
   it("heads with the counts the user asks for first", () => {
     expect(headline(BOARD)).toBe("4 studies: 1 in progress, 0 declared, 2 finished (1 failed, 1 no verdict), 1 observation.");
+    // A study retired unrun is finished, counted by its own word.
+    const withRetired = { ...BOARD, rows: [...BOARD.rows, row({ id: 11, study: "item11", status: "retired", results: [] })] };
+    expect(headline(withRetired)).toBe("5 studies: 1 in progress, 0 declared, 3 finished (1 failed, 1 no verdict, 1 retired), 1 observation.");
   });
 
   it("groups rows and shows title and status; verdicts and outcome wait for the row to open", () => {
