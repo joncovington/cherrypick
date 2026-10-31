@@ -101,7 +101,15 @@ def test_the_eta_comes_from_the_overall_fraction(tmp_path, monkeypatch):
     clock.t = 1600.0
     rep.advance("sessions")  # a quarter done in 600 s
     view = progress.read_job("q6", tmp_path, now=clock.t)
-    assert view["eta_s"] == 1800 and "~30 min left" in view["line"]
+    assert view["eta_s"] == 1800 and "~00:30 remaining" in view["line"]
+
+
+def test_the_eta_reads_as_hours_and_minutes():
+    def line(eta_s):
+        return progress.summary_line({"phases": [], "eta_s": eta_s})
+
+    assert line(5 * 3600 + 7 * 60) == "~05:07 remaining"
+    assert line(29) == "<00:01 remaining"
 
 
 def test_a_live_job_with_no_update_reads_stalled_and_a_dead_one_orphaned(tmp_path, monkeypatch):

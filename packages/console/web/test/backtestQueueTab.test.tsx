@@ -47,7 +47,7 @@ function byHand(over: Partial<ResearchProgress>): ResearchProgress {
     fraction: 0.3,
     etaSeconds: 600,
     ageSeconds: 2,
-    line: "sessions 3/10 days (2026-10-14) · ~10 min left",
+    line: "sessions 3/10 days (2026-10-14) · ~00:10 remaining",
     note: null,
     startedAt: Date.now() / 1000 - 300,
     updatedAt: Date.now() / 1000 - 2,

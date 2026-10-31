@@ -247,7 +247,7 @@ def _view(doc: dict, children: list[dict], now: float) -> dict:
 
 
 def summary_line(view: dict) -> str:
-    """ "decisions 2/3 sources · sessions 3/4 · 2026-10-15 · ~12 min left"."""
+    """ "decisions 2/3 sources · sessions 3/4 · 2026-10-15 · ~01:12 remaining"."""
     parts = []
     for p in view.get("phases") or []:
         count = f"{p.get('done', 0)}/{p['total']}" if p.get("total") else str(p.get("done", 0))
@@ -256,8 +256,8 @@ def summary_line(view: dict) -> str:
             part += f" ({p['current']})"
         parts.append(part)
     if view.get("eta_s") is not None:
-        mins = view["eta_s"] / 60
-        parts.append(f"~{mins:.0f} min left" if mins >= 1 else "<1 min left")
+        mins = round(view["eta_s"] / 60)
+        parts.append(f"~{mins // 60:02d}:{mins % 60:02d} remaining" if mins >= 1 else "<00:01 remaining")
     if view.get("state") in ("stalled", "orphaned"):
         parts.append(view["state"])
     return " · ".join(parts)

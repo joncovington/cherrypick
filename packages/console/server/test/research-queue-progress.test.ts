@@ -12,7 +12,7 @@ const view = {
   fraction: 0.5,
   eta_s: 1800,
   age_s: 4,
-  line: "decisions 1/3 replays (vendor) · sessions 2/4 days (2026-10-15) · ~30 min left",
+  line: "decisions 1/3 replays (vendor) · sessions 2/4 days (2026-10-15) · ~00:30 remaining",
   note: null,
   started_at: 1000,
   updated_at: 1600,
