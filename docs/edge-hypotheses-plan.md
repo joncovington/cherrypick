@@ -2797,6 +2797,39 @@ records only what had to be settled before the first read, and nothing here has 
   plan's earnings test asks apart; without them the tag asks about information outside reports.
   F7 on three tags at three cuts adds nine trials, so the second family is 49, deflated together.
   It replaces the reported reading with report windows dropped, which is now judged.
+- **Settled with the build, before the first read (2026-10-30, `scripts/flow_signal_item32.py`,
+  `cherrypick.backtest.flowstudy`):**
+  - **The thin 2025 sessions were a calendar change, not missing data.** 2025-01-09 (a national day of
+    mourning) became a closed day in the suite's calendar on 2026-10-25, after the grid was fetched,
+    so a grid recounted today drifts by one session from 2025-01-16. The study reads the fetched grid
+    from the plan file and never recounts it. The with-and-without reading is kept (a session under
+    80% of the median fetched name count is flagged); it should flag none.
+  - **The outcome** runs from the close of the session the tag is known on (D+1) to the close five
+    sessions later (D+6), name minus SPY, signed. "A report in the window" for F7 is a reaction day
+    from D+2 to D+6.
+  - **The top-1% rule** pools the histograms of the name's previous 20 fetched sessions, the
+    pre-report ones included, at least 4.
+  - **The baseline** is the same-stage names fetched whole that session, with the look-back and an
+    outcome, without the tag; a name with no stage verdict is its own stage; a tagged name whose
+    stage has no baseline name is dropped. The stage is the board's channel rule on adjusted closes;
+    the adjustment uses dividends known later, a small look-ahead, declared here as a limit.
+  - **Each session's value** is the tagged mean less its matched baseline's, sessions weighted
+    equally. **The interval** is the stationary bootstrap over grid sessions (mean block 5, 20,000
+    resamples) at a level of 1 − 0.05 divided by the family's trials. **A pass** needs the lower
+    bound above zero. **No verdict:** fewer than 30 sessions holding the tag (a floor the plan did not
+    state, set here).
+  - **Larger cuts:** each larger cut's mean at least this cut's; a larger cut with no reading fails it.
+  - **Second family:** F2 judged on D's raw close; F3 replaces the premium cut only, against the
+    $100,000 put sale; F4's partner is sought among stored orders ($50,000 and up), so straddles are
+    undercounted; F5 at the same cut on the same session; F6 over the previous 10 sessions, among
+    those fetched. A filtered tag shares its unfiltered tag's baseline and must beat its mean.
+  - **The earnings test:** a report with at least one first-family tag at $100,000 or more in the 10
+    sessions before its reaction day; the reaction-day close against the previous close, less SPY,
+    signed; a bootstrap over reports, deflated by two; a pass needs the hit-rate bound above 50% and the
+    mean above the assumed 1%; at least 30 reports.
+  - **The holdout** reads each design pass at its own cut, deflated by the number carried in its
+    family, and is refused without a design pass list or once a spent marker exists. Its grid is the
+    holdout plan's (about 65 sessions from 2025-07-03), fetched by a `fetch-flow` row.
 - **Data:** the flow store (`flow.db`, 2022-05-16 to 2025-06-26 fetched) and the local bars. Results
   stay under `~/.cherrypick/data/backtest/results/research/item32/`, and this plan records the verdict
   without figures.
