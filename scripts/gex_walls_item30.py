@@ -503,7 +503,183 @@ def cmd_study(args) -> int:
     result["run_id"] = f"item30-{date.today().isoformat()}"
     path = Path(args.json) if args.json else _out_dir() / "results.json"
     path.write_text(json.dumps(result, indent=1, default=str), encoding="utf-8")
+    path.with_suffix(".md").write_text(report(result), encoding="utf-8")
     print(json.dumps({"verdict": result["verdict"], "file": str(path)}))
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------
+# results.md beside results.json, for the console's studies tab.
+
+CHECKS = (
+    ("mean_at_or_below_effect", "Size of the effect", "−5 points or lower"),
+    ("upper_bound_below_zero", "95% upper bound", "below 0"),
+    ("negative_each_cell", "Each name and side", "all negative"),
+    ("negative_each_half", "Each half of the window", "both negative"),
+    ("below_placebo", "Against the placebo", "below the placebo"),
+)
+
+
+def _pts(x: float | None) -> str:
+    """A d as points of crossing rate, signed: -0.0044 -> −0.4."""
+    if x is None:
+        return ""
+    v = round(100 * x, 1)
+    return f"{'−' if v < 0 else '+' if v > 0 else ''}{abs(v):.1f}"
+
+
+def _cells_line(cells: dict) -> str:
+    return ", ".join(f"{c.replace('/', ' ')} {_pts(v)}" for c, v in cells.items())
+
+
+def findings(result: dict) -> list[str]:
+    """The plain-English reading, worked out from the figures each time the study runs."""
+    out = []
+    d = result["windows"]["design"]["by_h"][str(H)]["net"]
+    failed = [label.lower() for key, label, _ in CHECKS if not d["conditions"][key]]
+    m = round(100 * d["mean_d"], 1)
+    out.append(
+        f"**The judged reading** (net walls, {H} sessions, design window): price reached a wall"
+        f" {abs(m):.1f} points {'less' if m < 0 else 'more'} often than any level the same distance"
+        f" away; the test needed {_pts(EFFECT)} or lower. "
+        + (f"It misses on: {'; '.join(failed)}." if failed else "Every design check holds.")
+    )
+    neg = [c.replace("/", " ") for c, v in d["cells"].items() if v is not None and v < 0]
+    pos = [c.replace("/", " ") for c, v in d["cells"].items() if v is not None and v >= 0]
+    if neg and pos:
+        out.append(
+            f"**By name and side:** {_cells_line(d['cells'])}. Walls reached less often on"
+            f" {', '.join(neg)} and more often on {', '.join(pos)}; a barrier on one side only is"
+            " not the barrier the test asked about, and the sides cancel in the pooled mean."
+        )
+    hold = result["windows"].get("holdout", {}).get("by_h", {}).get(str(H), {}).get("net")
+    if hold:
+        out.append(
+            f"**Holdout** (reported, the design having "
+            f"{'passed' if d['passes'] else 'failed'}): {_pts(hold['mean_d'])} points."
+        )
+    near = [
+        (w, h, kind, r)
+        for w, win in result["windows"].items()
+        for h, by in win["by_h"].items()
+        for kind, r in by.items()
+        if kind in ("net", "peak")
+        and not (w == "design" and h == str(H) and kind == "net")
+        and not r["conditions"]["mean_at_or_below_effect"]
+        and all(v for k, v in r["conditions"].items() if k != "mean_at_or_below_effect")
+    ]
+    passing = [
+        (w, h, kind)
+        for w, win in result["windows"].items()
+        for h, by in win["by_h"].items()
+        for kind, r in by.items()
+        if kind in ("net", "peak") and r["passes"] and not (w == "design" and h == str(H) and kind == "net")
+    ]
+    bits = [f"{w} {h} sessions, {kind} walls ({_pts(r['mean_d'])})" for w, h, kind, r in near]
+    out.append(
+        "**The reported readings** (5 and 20 sessions, and the single-side peak walls): "
+        + (f"{len(passing)} meet every check." if passing else "none meets every check.")
+        + (f" Closest, failing only on size: {'; '.join(bits)}." if bits else "")
+    )
+    out.append(
+        "**What the sample could see:** as declared, only an effect of about 7 points or larger."
+        " A fail reads as no barrier that strong, not proof of none at all."
+    )
+    weeks = result.get("daily_expiry_weeks") or {}
+    if weeks:
+        out.append(
+            "**Expiries:** weeks listing more than one expiry: "
+            + ", ".join(f"{s} {n}" for s, n in weeks.items())
+            + ". SPY's dailies were expected; AAPL's weekly listing is what makes its count small."
+        )
+    return out
+
+
+def report(result: dict) -> str:
+    word = {"PASS": "pass", "FAIL": "fail"}.get(result["verdict"], "no verdict")
+    d = result["windows"]["design"]["by_h"][str(H)]["net"]
+    lines = [
+        "# Item 30: GEX walls on the monthly expiry",
+        "",
+        f"**Verdict: {word}.** Test A asks whether price reaches a wall built from the monthly"
+        f" expiry's open interest less often over the next {H} sessions than it reaches any level"
+        " the same distance away. Test B (whether a short strike behind a wall earns more) is"
+        " declared only after Test A passes.",
+        "",
+        "Each reading is a session on SPY or AAPL with a wall on a side: d is 1 if the path reached"
+        " the wall, else 0, less the share of all that name's and side's sessions whose path reached"
+        " the same distance (in sigma). With no barrier d averages zero; a wall that holds makes it"
+        " negative. Below, d is in points of crossing rate: −5 means 5 points fewer crossings.",
+        "",
+        "## The judged checks",
+        "",
+        "| check | needed | result | |",
+        "|---|---|---|---|",
+    ]
+    shown = {
+        "mean_at_or_below_effect": _pts(d["mean_d"]),
+        "upper_bound_below_zero": _pts(d["upper_bound"]),
+        "negative_each_cell": _cells_line(d["cells"]),
+        "negative_each_half": " / ".join(_pts(x) for x in d["halves"]),
+        "below_placebo": f"{_pts(d['mean_d'])} against {_pts(d['placebo_mean_d'])}",
+    }
+    for key, label, needed in CHECKS:
+        lines.append(f"| {label} | {needed} | {shown[key]} | {'pass' if d['conditions'][key] else 'fail'} |")
+    lines += [
+        "",
+        "## What it says",
+        "",
+        *[f"- {x}" for x in findings(result)],
+        "",
+        "## How to read the tables",
+        "",
+        "- **net walls**: the GEX module's own, assuming dealers short puts and long calls. **peak"
+        " walls**: the single strike with the most call or put gamma, assuming nothing; reported.",
+        f"- **sessions ahead**: how far the path is read. {H} is judged; 5 and 20 are reported.",
+        "- **mean d**: the pooled mean, points of crossing rate. **bound**: its 95% one-sided upper"
+        " bound by stationary bootstrap. **placebo**: the same reading with the wall distance from"
+        f" {PLACEBO_LAG} sessions earlier, which the walls must beat.",
+        "- **half 1 / half 2**, and each **name and side**: the mean d in that part alone.",
+        "- **wall-days**: sessions with a wall on at least one side, per name.",
+    ]
+    for wname, win in result["windows"].items():
+        lines += [
+            "",
+            f"## {wname.capitalize()}: {win['from']} to {win['to']}",
+            "",
+            "| walls | sessions ahead | verdict | sessions | mean d | bound | placebo | half 1 | half 2"
+            " | SPY call | SPY put | AAPL call | AAPL put |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        for h in sorted(win["by_h"], key=int):
+            for kind in ("net", "peak"):
+                r = win["by_h"][h][kind]
+                judged = wname == "design" and h == str(H) and kind == "net"
+                v = ("pass" if r["passes"] else "fail") if judged else "reported"
+                c = r["cells"]
+                lines.append(
+                    f"| {kind} | {h} | {v} | {r['sessions']} | {_pts(r['mean_d'])}"
+                    f" | {_pts(r['upper_bound'])} | {_pts(r['placebo_mean_d'])}"
+                    f" | {_pts(r['halves'][0])} | {_pts(r['halves'][1])}"
+                    f" | {_pts(c.get('SPY/call'))} | {_pts(c.get('SPY/put'))}"
+                    f" | {_pts(c.get('AAPL/call'))} | {_pts(c.get('AAPL/put'))} |"
+                )
+        days = win["by_h"][str(H)]["wall_days"]
+        miss = {s: sum(m.values()) for s, m in win.get("missing", {}).items()}
+        lines += [
+            "",
+            f"Wall-days at {H} sessions: "
+            + ", ".join(f"{s} {n}" for s, n in days.items())
+            + ". Sessions skipped for a missing chain or open interest: "
+            + ", ".join(f"{s} {n}" for s, n in miss.items())
+            + ".",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def cmd_report(args) -> int:
+    src = Path(args.json) if args.json else _out_dir() / "results.json"
+    src.with_suffix(".md").write_text(report(json.loads(src.read_text(encoding="utf-8"))), encoding="utf-8")
     return 0
 
 
@@ -519,6 +695,9 @@ def main(argv: list[str] | None = None) -> int:
     st = sub.add_parser("study", help="read both stores and state the verdict")
     st.add_argument("--json")
     st.set_defaults(fn=cmd_study)
+    rp = sub.add_parser("report", help="results.md from an existing results.json (local)")
+    rp.add_argument("--json")
+    rp.set_defaults(fn=cmd_report)
     args = p.parse_args(argv)
     return args.fn(args)
 

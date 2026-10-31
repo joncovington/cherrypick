@@ -974,7 +974,7 @@
       "id": 30,
       "study": "item30",
       "title": "GEX walls on the monthly expiry: does price stop short of them over the next two weeks?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "gex-levels",
       "side": "neutral",
@@ -1004,9 +1004,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#30-gex-walls-on-the-monthly-expiry-does-price-stop-short-of-them-over-the-next-two-weeks",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item30/results.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "no barrier at monthly walls; walls stay a 0DTE read, the strikes-against-walls view stays dropped, Test B is not declared"
     }
   ],
   "rule_changes": []
