@@ -46,6 +46,42 @@ DEFAULTS = {
 }
 
 ORACLE_MODES = ("multi", "perday")
+THRESHOLD_MODES = ("atr", "iv")
+
+# The ToS script's SPX IV sensitivity (its "IV sensitivity" input for the SPX symbol class);
+# XSP/SPY take a tenth of it, exactly as the script scales them.
+IV_SENSITIVITY = 0.006
+
+
+def _is_xsp_spy(symbol: str) -> bool:
+    return (symbol or "").strip().upper() in ("XSP", "$XSP", "SPY", "$SPY")
+
+
+def _auto_iv_sensitivity(symbol: str, base: float = IV_SENSITIVITY) -> float:
+    return base / 10.0 if _is_xsp_spy(symbol) else base
+
+
+def _iv_at(con: sqlite3.Connection, symbol: str, trade_date: str, ts: float) -> float | None:
+    """The recorded atm_iv reading at or before `ts` for `symbol` on `trade_date` -- the same
+    trail the recorder keeps for the regime engine. No table, no rows, no reading yet: None
+    (the caller fails closed)."""
+    try:
+        rows = con.execute(
+            "SELECT ts, value FROM market_regime_history WHERE trade_date=? AND reading='atm_iv' "
+            "AND symbol=? AND value IS NOT NULL ORDER BY ts",
+            (trade_date, symbol.upper()),
+        ).fetchall()
+    except sqlite3.Error:
+        return None
+    lo, hi, ans = 0, len(rows) - 1, None
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if float(rows[mid][0]) <= ts:
+            ans = float(rows[mid][1])
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return ans
 
 
 def _bars_from_rows(rows: list, last_ts: float) -> list[dict]:
@@ -106,12 +142,14 @@ def _wilder_state(bars_list: list[dict], period: int):
     return atrs, avgs
 
 
-def _stable(win: list[dict], atr: float | None, avg: float | None, mult: float) -> bool:
-    """The stability predicate over the last `consecutive_bars` completed bars."""
-    if atr is None or atr <= 0:
+def _stable(win: list[dict], atr: float | None, avg: float | None, thr: float | None) -> bool:
+    """The stability predicate over the last `consecutive_bars` completed bars against an
+    already-computed threshold. A missing ATR or threshold reads not-stable (a cold read),
+    never stable."""
+    if atr is None or atr <= 0 or thr is None or thr <= 0:
         return False
     total = max(b["high"] for b in win) - min(b["low"] for b in win)
-    if total > atr * mult + 1e-12:
+    if total > thr + 1e-12:
         return False
     if avg is None or atr > avg + 1e-12:
         return False
@@ -172,19 +210,26 @@ def snapshot_verdicts(
     trade_date: str,
     now: datetime | None = None,
     trail_path: Path | None = None,
+    threshold_mode: str = "atr",
 ) -> dict[str, bool | None]:
     """Both oracles' verdict for `symbol` at `now` (last COMPLETED bar close <= now).
 
-    Returns {"multi": bool|None, "perday": bool|None}; None = no verified read (no trail, no
-    rows, no completed bars) -- callers fail closed on None. Decisions keyed by bar CLOSE: a
-    stable bar at close C covers C-5..C."""
+    `threshold_mode` picks the adaptive threshold's basis: "atr" (default, 1.25 x ATR) or "iv"
+    (close x IV x sensitivity, the script's alternate mode). An unknown mode returns all-None:
+    fail closed. Returns {"multi": bool|None, "perday": bool|None}; None = no verified read (no
+    trail, no rows, no completed bars, or -- in "iv" mode -- no recorded IV); callers fail
+    closed on None. Decisions keyed by bar CLOSE: a stable bar at close C covers C-5..C."""
     now_dt = now or datetime.now(ET)
     if now_dt.tzinfo is None:
         now_dt = now_dt.replace(tzinfo=ET)
     now_ts = now_dt.timestamp()
     symbol = str(symbol).upper()
+    mode = str(threshold_mode or "atr").lower().strip()
+    if mode not in THRESHOLD_MODES:
+        return {m: None for m in ORACLE_MODES}
+    suffix = "" if mode == "atr" else "-iv"
     path = Path(trail_path) if trail_path else DEFAULT_TRAIL
-    out: dict[str, bool | None] = {m: None for m in ORACLE_MODES}
+    out: dict[str, bool | None] = {f"{m}{suffix}": None for m in ORACLE_MODES}
     if not path.exists():
         return out
     try:
@@ -200,6 +245,23 @@ def snapshot_verdicts(
         if len(bars) < DEFAULTS["consecutive_bars"]:
             return out
         win = bars[-DEFAULTS["consecutive_bars"] :]
+        last_close = win[-1]["end_ts"]
+        # The threshold. "atr": 1.25 x Wilder ATR(5). "iv": close x IV x sensitivity, the IV
+        # read at-or-before the last completed bar's close (the same as-of rule the spot rows
+        # get); no reading, no threshold. Fallback thresholds are a binding-path hazard: a gate
+        # that silently substitutes ATR for a missing IV would bless ticks on a basis the arm
+        # never chose.
+        thr_iv: float | None = None
+        if mode == "iv":
+            iv = _iv_at(con, symbol, trade_date, last_close)
+            if iv is not None and iv > 0:
+                thr_iv = float(win[-1]["close"]) * (iv / 100.0) * _auto_iv_sensitivity(symbol)
+            if thr_iv is None:
+                # No recorded IV: no verified read in this mode -- None for both oracles (the
+                # arm waits). Distinct from a verified not-stable: there is no ATR fallback on
+                # a binding path, a gate that silently substitutes ATR for a missing IV would
+                # bless ticks on a basis the arm never chose.
+                return out
         # multi: seeded by the cached cross-session warmup. The cached state is IMMUTABLE input:
         # the day's recursion works on copies, so no call can contaminate another's warmup (a
         # mutation here silently shifted every later call's index window).
@@ -237,10 +299,17 @@ def snapshot_verdicts(
         # perday: today's bars only (state resets at each session start).
         atrs, avgs = _wilder_state(bars, DEFAULTS["atr_period"])
         a_per, avg_per = atrs[-1], avgs[-1]
-        out["multi"] = _stable(win, a_multi, avg_multi, DEFAULTS["atr_multiplier"])
-        out["perday"] = _stable(win, a_per, avg_per, DEFAULTS["atr_multiplier"])
+        suffix = "" if mode == "atr" else "-iv"
+        thr = a_multi * DEFAULTS["atr_multiplier"] if a_multi else None
+        thr_per = a_per * DEFAULTS["atr_multiplier"] if a_per else None
+        out[f"multi{suffix}"] = _stable(
+            win, a_multi, avg_multi, thr if mode == "atr" else thr_iv
+        )
+        out[f"perday{suffix}"] = _stable(
+            win, a_per, avg_per, thr_per if mode == "atr" else thr_iv
+        )
         return out
     except sqlite3.Error:
-        return {m: None for m in ORACLE_MODES}
+        return {f"{m}{suffix}": None for m in ORACLE_MODES}
     finally:
         con.close()

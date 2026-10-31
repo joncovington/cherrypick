@@ -898,8 +898,15 @@ def evaluate_entry(
     # have. Open-position management never reads the verdicts; they gate ENTRIES only.
     if params.get("stabilization_entry"):
         oracle = str(params.get("stabilization_oracle", "multi")).lower()
+        mode = str(params.get("stabilization_threshold_mode", "atr")).lower()
+        # ATR mode reads the plain oracle keys; an "iv" arm reads the -iv keys the loop's
+        # iv-mode call writes, so two arms on the same tick (or one arm mid-change) can want
+        # different modes from one shared verdict dict. An unknown mode composes a key nobody
+        # writes: the same fail-closed wait as a missing verdict -- never a threshold basis
+        # the arm did not choose.
+        key = oracle if mode == "atr" else f"{oracle}-iv"
         verdicts = snapshot.get("stabilization_verdicts")
-        if not (isinstance(verdicts, dict) and verdicts.get(oracle) is True):
+        if not (isinstance(verdicts, dict) and verdicts.get(key) is True):
             return False, "stabilization_wait", None
 
     now_min = _time_to_minutes(snapshot["now_et"])

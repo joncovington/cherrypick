@@ -195,8 +195,11 @@ gates, SPX-only, same engine): hourly-vs-14:00-only, 25–40-vs-10-wide, 1.0-vs-
    completed-bar form of the Thinkorswim "Universal Adaptive Market Stabilization Indicator" the
    read mirrors: the last two consecutive COMPLETED 5-min bars' total range within 1.25 × Wilder
    ATR(5) and ATR at or below its 20-bar average; `stabilization_oracle` picks the warmup
-   semantics ("multi" — the roll carries across sessions, what a chart shows — or "perday").
-   Wired into the paper loop and the live loop; a missing read fails closed (the arm waits). The
+   semantics ("multi" — the roll carries across sessions, what a chart shows — or "perday");
+   `stabilization_threshold_mode` picks the threshold basis ("atr", the script's default — or
+   its "iv" alternate, close × IV × 0.006, /10 for XSP/SPY, IV from the recorded `atm_iv`
+   trail, missing IV fails closed). Wired into the paper loop and the live loop; a missing read
+   fails closed (the arm waits). The
    be-* arms still enter on the first passing tick — the gate is opt-in so the comparison keeps
    its foil.
 3. **The 5-cent buy-back and long re-use.** MEIC has no profit target by design (cash-settled SPX
