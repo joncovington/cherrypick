@@ -1,19 +1,27 @@
 """Write the flow fetch's plan: which names on which sessions, as `docs/flow-signal-plan.md` declares.
 
-**Sessions.** The backtest design window, thinned on a fixed rule: every 5th session counted from
-the window's first. Plus, for the earnings family, the 10 sessions before each report's reaction
-day (the report session itself for one before the open, the next for one after the close), from
-the local Dolt earnings calendar.
+**Sessions.** A backtest window, thinned on a fixed rule: every 5th session counted from the design
+window's first. The holdout carries that count on (item 32), so its grid is the same rule and the
+two never overlap an outcome window. Plus, for the earnings family, the 10 sessions before each
+report's reaction day (the report session itself for one before the open, the next for one after
+the close), from the local Dolt earnings calendar. Reports are the window's own, and so are the
+sessions before them: a report in the holdout's first fortnight loses the sessions that fall before
+it, as the design window's first reports do.
 
 **Names.** On each session, the stocks (Dolt lists them as operating companies, not funds) whose raw
 close was at least $5 and whose 50-session median dollar volume was at least $100M, both up to the
 session before. The technicals universe rule at the options-tradable bar, so 2022 is not chosen
 from 2026's survivors. An earnings window takes a name only on the sessions it passes the same bar.
 
+**The file is the declaration.** The grid is counted on the calendar as it stands when the plan is
+written, so a calendar fix moves later grid sessions (the 2025-01-09 closure did, on 2026-10-25).
+The study therefore reads its grid sessions from the plan file, never from the calendar.
+
 Local reads only (the technicals history store and the Dolt clone), deterministic: the same stores
 give the same file. The fetch reads it with `python -m cherrypick.backtest fetch-flow --plan FILE`.
+With no output path the file goes under `~/.cherrypick/data/backtest/flow/`.
 
-    python scripts/flow_fetch_plan.py ~/.cherrypick/data/backtest/flow-plan.json
+    python scripts/flow_fetch_plan.py [--window design|holdout] [FILE]
 """
 
 from __future__ import annotations
@@ -23,6 +31,7 @@ import json
 from datetime import date
 from pathlib import Path
 
+from cherrypick.backtest import paths as bt_paths
 from cherrypick.backtest import settings as bt_settings
 from cherrypick.core import calendar as cal
 from cherrypick.technicals import earnings_calendar as ec
@@ -31,8 +40,9 @@ from cherrypick.technicals import land as _land
 
 MIN_PRICE = universe.MIN_PRICE
 FLOOR = 100e6  # the options-tradable stock bar
-STEP = 5  # every 5th design session
+STEP = 5  # every 5th session, counted from the design window's first
 PRE_SESSIONS = 10  # sessions before a report's reaction day
+FILES = {"design": "flow-plan.json", "holdout": "flow-plan-holdout.json"}
 
 
 def trading_days(start: str, end: str) -> list[str]:
@@ -63,10 +73,17 @@ def members(conn, start: str, end: str) -> dict[str, set[str]]:
     return out
 
 
-def build(design: list[str], days: list[str], member: dict[str, set[str]], reports) -> dict:
-    """The plan: pure over the session lists, the membership and the (symbol, date, timing) reports."""
-    lo, hi = design[0], design[-1]
-    grid = design[::STEP]
+def grid_sessions(count_from: str, lo: str, hi: str) -> list[str]:
+    """Every STEP-th trading day counted from `count_from`, kept when it falls in [lo, hi]. The design
+    window counts from its own first session; the holdout carries the same count on from the
+    design's first, so the two grids are one rule whatever session the holdout opens on."""
+    return [d for i, d in enumerate(trading_days(count_from, hi)) if i % STEP == 0 and lo <= d <= hi]
+
+
+def build(span: list[str], days: list[str], member: dict[str, set[str]], reports, grid: list[str]) -> dict:
+    """The plan: pure over the window's sessions, the calendar, the membership, the (symbol, date,
+    timing) reports and the grid sessions."""
+    lo, hi = span[0], span[-1]
     plan: dict[str, set[str]] = {d: {s for s, m in member.items() if d in m} for d in grid}
     idx = {d: i for i, d in enumerate(days)}
     events = 0
@@ -88,7 +105,7 @@ def build(design: list[str], days: list[str], member: dict[str, set[str]], repor
             "min_price": MIN_PRICE,
             "step": STEP,
             "pre_sessions": PRE_SESSIONS,
-            "design": [lo, hi],
+            "window": [lo, hi],
         },  # fmt: skip
         "grid_sessions": grid,
         "earnings_events": events,
@@ -98,10 +115,14 @@ def build(design: list[str], days: list[str], member: dict[str, set[str]], repor
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("out", help="the plan file to write")
+    ap.add_argument("out", nargs="?", help="the plan file to write (default: under the backtest flow dir)")
+    ap.add_argument("--window", choices=sorted(FILES), default="design")
     args = ap.parse_args()
-    lo, hi = bt_settings.load()["windows"]["design"]
-    design = trading_days(lo, hi)
+    windows = bt_settings.load()["windows"]
+    lo, hi = windows[args.window]
+    first = windows["design"][0]
+    span = trading_days(lo, hi)
+    grid = grid_sessions(first, lo, hi)
     # Reaction days fall up to a session past the window, and windows reach back before it.
     days = trading_days(f"{int(lo[:4]) - 1}-01-01", f"{hi[:4]}-12-31")
     member = members(history.connect(), lo, hi)
@@ -116,13 +137,16 @@ def main() -> int:
         ]
     finally:
         dolt.close()
-    plan = build(design, days, member, reports)
-    Path(args.out).expanduser().write_text(json.dumps(plan), encoding="utf-8")
+    plan = build(span, days, member, reports, grid)
+    out = Path(args.out).expanduser() if args.out else bt_paths.data_dir() / "flow" / FILES[args.window]
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(plan), encoding="utf-8")
     pairs = sum(len(v) for v in plan["sessions"].values())
-    grid = sum(len(plan["sessions"].get(d, [])) for d in plan["grid_sessions"])
+    on_grid = sum(len(plan["sessions"].get(d, [])) for d in plan["grid_sessions"])
     print(
-        f"{len(member)} names ever in; {len(plan['grid_sessions'])} grid sessions, {grid} name-days; "
-        f"{plan['earnings_events']} reports; {len(plan['sessions'])} sessions, {pairs} name-days in all"
+        f"{args.window}: {len(member)} names ever in; {len(plan['grid_sessions'])} grid sessions, "
+        f"{on_grid} name-days; {plan['earnings_events']} reports; {len(plan['sessions'])} sessions, "
+        f"{pairs} name-days in all -> {out}"
     )
     return 0
 
