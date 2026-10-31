@@ -1317,6 +1317,102 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 38,
+      "study": "item38",
+      "title": "The calendars module's own rule at real quotes: does the weekly SPY double calendar earn after costs, entered Monday or the Friday before?",
+      "status": "declared",
+      "legacy": false,
+      "setup": "calendars-whole-rule",
+      "side": "neutral",
+      "structure": "double-calendar",
+      "window": "weekly",
+      "measure": "per trade (one week of one arm, the double calendar, one lot each side), net dollars after the suite's fees and the paper ledger's slippage basis, for the SPY weekly double calendar at about 0.85 expected moves either side, short legs on the week's last trading day and long legs on the following Monday: control (Monday entry from 10:00 ET, all legs closed 15:45-15:55 Friday), friday:control (entered the previous Friday 15:50-16:00), low-ivr (control entered only when the 30-day at-the-money implied volatility is in the lowest third of its trailing 52-week range) and noon-friday (control closed at Friday 12:00); path and friday:path reported, not judged",
+      "expected": "a positive mean net per trade after costs in both time-halves, and for noon-friday above control's on the same weeks and for low-ivr above control's on the weeks it did not enter",
+      "sample": "intraday chain store (intraday_chains.db), 11 requests a week for about 42 candidate weeks a year from the first Monday with both a Friday and a following-Monday SPY expiry (found by a listing step, not assumed; coverage pilot rule moves the start to the first year with 90% complete requests), holdout 2024-01-02..2026-08-21 (design to 2023-12-29, halves at the median week; after 2019-12-31 the split is 2025-01-02), paper entries from 2026-08-24 used for replay validation only; fewer than 150 design weeks (50 low-ivr) or 60 holdout weeks (20) is no verdict",
+      "rule": "design: mean net per trade > 0 with a one-sided week-bootstrap p, Holm across 4 arms; positive in each time-half; positive at 1.5x all costs; positive with the five worst weeks removed; noon-friday also above control on the same weeks (paired p < 0.05); low-ivr also above control on the weeks it did not enter (p < 0.05); then holdout mean > 0 (and above the comparator for noon-friday and low-ivr)",
+      "mechanism": "a calendar sells the front week's time value and buys the back week's, so it earns when the front decays faster and spot stays inside the strikes; the Friday-close entrance owns the weekend's differential decay (Jones and Shemesh 2018 find lower weekend option returns, little in index options); a low-vol entry gives the long back-week vega a mean-reversion tailwind; an earlier Friday close avoids the short legs' steepest gamma in the last hours",
+      "rivals": [
+        {
+          "explanation": "one regime (a trending decade or a volatility regime)",
+          "check": "both time-halves then the holdout; net by year and quarter; each calendar year removed in turn, worst two reported; low-rank weeks counted by year"
+        },
+        {
+          "explanation": "a few big-move weeks decide the mean",
+          "check": "five worst weeks removed in the rule; share of net lost in the worst 5% of weeks and the win rate reported"
+        },
+        {
+          "explanation": "the intraday bar choice",
+          "check": "10:30, 11:30 and 12:00 entry bars, 15:50 and 15:55 Friday entries and each exit bar reported as sensitivities of the same weeks; the first-passing-bar entry is the judged one"
+        },
+        {
+          "explanation": "the module's existing exit-policy replay already answers the exit question",
+          "check": "exit_policies.derive (control, time-fri-noon, expiry-longs-mon) reused on week records built from the stored bars if it fits, else its pure helpers; validate_against_control confirms it reads a paper overlap week to the cent"
+        },
+        {
+          "explanation": "model against real fills",
+          "check": "real quotes validated against paper entries on overlapping dates (same strikes and debit within $0.10 on 75% of weeks or the study stops); 1.5x costs required, halfway-to-natural and natural side reported; early thin Monday expiries shown by year; quote age of a bar is a stated limit"
+        },
+        {
+          "explanation": "the Friday arm's strikes differ from the Monday arm's",
+          "check": "the paired-debit read at the Monday bar prices the Friday arm's strikes at Monday and is reported beside the judged mean; difference to control on common weeks reported"
+        },
+        {
+          "explanation": "the signal was chosen by looking",
+          "check": "one threshold (one third of the trailing 52-week rank) and one reading declared before any look; the public volatility-index rank reported beside it; no other threshold run"
+        },
+        {
+          "explanation": "refusals or the dividend skip drop the bad weeks",
+          "check": "refusals and fall-through exits counted by reason, year and arm and compared with paper's; a rate that differs by more than 5 points between halves reported; the ex-dividend skip is the module's own and the judged population is ordinary weeks"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#38-the-calendars-modules-own-rule-at-real-quotes-does-the-weekly-spy-double-calendar-earn-after-costs-entered-monday-or-the-friday-before",
+      "results": null,
+      "retest": null,
+      "retests": []
+    },
+    {
+      "id": 39,
+      "study": "item39",
+      "title": "The contango module's own rule on real daily prices: the switch, a 9-day exit and a realised-volatility gate",
+      "status": "declared",
+      "legacy": false,
+      "setup": "contango-own-rule",
+      "side": "bullish",
+      "structure": "shares",
+      "window": "daily",
+      "measure": "per arm, daily returns in excess of SHV's total return at 10 bps a side: Sharpe ratio, CAGR, maximum drawdown, Calmar, worst day and week, share of sessions in SVXY, switches and whipsaws, each as a paired difference from holding SVXY",
+      "expected": "a higher Sharpe ratio and a smaller maximum drawdown than holding SVXY, for no more than 3 points a year of return given up: the gate sidesteps curve inversions at the price of quiet days",
+      "sample": "daily SVXY and SHV from the technicals store and VIX, VIX3M, VIX9D and SPX closes from the public index files; design 2018-03-01..2022-12-30 (1,216 sessions, halves split 2020-07-01), holdout 2023-01-03..last stored session read once, paper from 2026-10-06 untouched; VIX9D and SPX refreshed first (they stop 2026-10-16); >1% of a window's sessions missing an input = no verdict for that arm",
+      "rule": "design, per arm against holding SVXY at 10 bps a side: Sharpe difference > 0 with stationary-bootstrap one-sided 95% lower bound > 0 (paired daily returns, block 20, 20,000 resamples, seed 39), Holm 0.05 across four arms; shallower maximum drawdown; CAGR no more than 3 points a year below; Sharpe > 0 and drawdown no deeper in each half; Sharpe still > 0 with 2020-02-19..2020-04-30 removed and with the inputs lagged one session; then holdout Sharpe above holding SVXY's and the return floor met",
+      "mechanism": "SVXY earns the curve's roll yield in contango and gives it back when the curve inverts; vix9d-exit leaves when the front of the curve inverts before the 30-day ratio does; rv-gate stays out when realised volatility exceeds implied, when the variance premium is negative",
+      "rivals": [
+        {
+          "explanation": "one crash decides (2020-03)",
+          "check": "Sharpe difference must hold with 2020-02-19..2020-04-30 removed; per-year table; worst day and week with and without the window"
+        },
+        {
+          "explanation": "costs",
+          "check": "judged at 10 bps a side, reported at 2; switches, whipsaw count and costs as points a year beside every figure"
+        },
+        {
+          "explanation": "the ratio read at the close, not at 15:50",
+          "check": "lag clause (prior close's inputs, same-day fill) must hold; paper-days decision agreement from the validation reported"
+        },
+        {
+          "explanation": "one regime, or a holdout too calm to test a gate",
+          "check": "two design halves with different events, per-year tables; a holdout with the arm out of SVXY under 5% of sessions is reported as uninformative"
+        },
+        {
+          "explanation": "thresholds chosen with the data in sight",
+          "check": "the exploratory replay and its aggregates are disclosed; new arms use fixed values (1.0, 10 sessions) with no grid; Holm across four"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#39-the-contango-modules-own-rule-on-real-daily-prices-the-switch-a-9-day-exit-and-a-realised-volatility-gate",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
