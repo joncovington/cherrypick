@@ -193,7 +193,7 @@
     {
       "id": 8,
       "study": "item8",
-      "title": "Chris Pulver's daily routine",
+      "title": "A trader's daily SPX 0DTE routine",
       "status": "failed",
       "legacy": true,
       "setup": "daily-routine",
@@ -206,7 +206,7 @@
       "rule": null,
       "mechanism": null,
       "rivals": [],
-      "pointer": "docs/edge-hypotheses-plan.md#8-chris-pulvers-daily-routine",
+      "pointer": "docs/edge-hypotheses-plan.md#8-a-traders-daily-spx-0dte-routine",
       "results": null,
       "retest": {
         "kind": "script",
@@ -742,7 +742,8 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#24-the-entry-slot-of-meics-live-rule-1200-to-1330-against-1400",
       "results": [
-        "{home}/data/backtest/results/research/item24/study-design-2022-05-16-2025-06-30-d16.json"
+        "{home}/data/backtest/results/research/item24/study-design-2022-05-16-2025-06-30-d16.json",
+        "{home}/data/backtest/results/research/item24/study-holdout-2025-07-01-2026-10-12-d16.json"
       ],
       "outcome": "live stays at 14:00; the afternoon slot is closed as a lever",
       "retest": null,

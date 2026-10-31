@@ -95,7 +95,7 @@ Five of the eight have been tested against their declared pass tests
 - 6, the BWB down-day filter: closed.
 
 That leaves 2 (MEIC afternoon entries), 3 (the mid-morning iron fly) and 7 (MEIC stop mechanics). 3
-and 7 depend on an intraday fill model that is no longer being built for Pulver's sake, so each now
+and 7 depend on an intraday fill model that is no longer being built for that routine's sake, so each now
 has to justify that build on its own.
 
 **Added 2026-10-18:**
@@ -436,10 +436,10 @@ all-time highs).*
 - **Build only if:** net improves, not just drawdown. A drawdown-only improvement is a sizing choice,
   and should be argued as one.
 
-### 8. Chris Pulver's daily routine
+### 8. A trader's daily SPX 0DTE routine
 
 *Source: video 14. Reconstructed from five daily sessions (10-12 to 10-16) in
-[pulver-daily-profit-play.md](pulver-daily-profit-play.md). The finding is that the condor is a
+[daily-0dte-routine.md](daily-0dte-routine.md). The finding is that the condor is a
 resting order far above the market, which fills only when price runs toward a box edge. So the edge
 claim is reversion at the expected-move box edge, not the open-to-close variance premium assumed
 below. The test plan there supersedes this section.*
@@ -1087,6 +1087,18 @@ does. Declared here before any of it is run.*
   each trade's net over its own max loss less the mean of each baseline's net over that baseline's
   own max loss. The two differ only where a baseline's max loss differs from its trade's. The run and
   its verdict stand as run, and the script keeps that measure for item 17 so the run reproduces.
+- **Result (2026-10-25, recorded here 2026-10-30): fail.** Of the 32 tests, none passes; 24 fail
+  and 8 have no verdict (every breakout cell, too few trades).
+  - **The closest cell,** mean-reversion put spreads, clears the t bar in both halves but fails
+    Holm. Its excess over the random entries comes mostly from the baselines losing, not from
+    the cell earning: on its own it sits near breakeven, its slippage is about its mean net,
+    and only a minority of its entries have tradable legs.
+  - **Per-symbol widths:** no per-symbol pick earns its place over the default.
+  - **Call side:** mean-reversion call spreads clear the t bar but lose money in the second
+    half.
+  - The closest cell was tested once more on the holdout as item 18 (no verdict, too few liquid
+    trades). Every figure is in the local result
+    (`~/.cherrypick/data/backtest/results/research/item17/study.json`).
 
 ### 18. Mean-reversion put spreads, tested once on the holdout
 
@@ -1753,6 +1765,10 @@ of it is run, and run after item 23's verdict.*
   because `control`, which runs beside every arm and is never judged, was spent there by item 23.
   The runner now exempts `control` from the spent check; the consistency check is reported here
   when it runs, and cannot change the verdict.
+- **Holdout, reported (run 2026-10-29, recorded 2026-10-30):** a consistency check only. Two
+  slots lean ahead of 14:00 there and two behind, and none is far from it: no slot's paired
+  difference has a t near 1. Nothing in it argues against the design's fail. The figures are in
+  `~/.cherrypick/data/backtest/results/research/item24/study-holdout-2025-07-01-2026-10-12-d16.json`.
 
 ### 25. The skate put's expiry and management: 14 days against the monthly, held, halved or rolled
 

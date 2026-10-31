@@ -66,7 +66,7 @@ years is positive, and the drift is not positive in both halves.
 ## 2. The expected-move box edge, and two direction reads (`scripts/box_touch_history.py`)
 
 **The question.** The reconstructed Daily Profit Play
-([pulver-daily-profit-play.md](pulver-daily-profit-play.md)) earns only if SPX closes back inside the
+([daily-0dte-routine.md](daily-0dte-routine.md)) earns only if SPX closes back inside the
 gap-adjusted expected-move box after touching its edge more often than chance. The same sessions also
 answer hypothesis 4:
 - *the fade:* does price move back after touching the expected move early in the day?
@@ -89,7 +89,7 @@ figures are kept under `~/.cherrypick/data/backtest/results/research/` (`box-tou
 enough sessions carry opening quotes (from 2026-10-13).
 
 **The decision** (stated here because it is ours, not the vendor's): the resting-order fill model
-(step 3 of the Pulver plan) and the fade and trend pricing are **not being built**; the reasoning is
+(step 3 of the routine's plan) and the fade and trend pricing are **not being built**; the reasoning is
 with the local results. Hypotheses 4 and 8 stay set aside unless a new, declared question reopens them.
 
 ## 3. A down-day entry filter for the put BWB (`scripts/bwb_entry_split.py`): no filter, closed
