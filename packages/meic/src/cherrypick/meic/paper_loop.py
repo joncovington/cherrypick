@@ -53,6 +53,7 @@ from cherrypick.core.clock import ET as _ET  # noqa: E402
 from cherrypick.meic import (
     paper,
     regime,  # market-dimension tagging for the per-iteration (uncensored) regime row
+    stabilization_gate,  # completed-bar stabilization oracle for `stabilization_entry` arms
     stream_request,  # declares symbols + open paper legs to the streamer
 )
 from cherrypick.meic import paths as _paths  # ~/.cherrypick/data/meic or MEIC_DATA_DIR
@@ -1147,6 +1148,19 @@ def run_iteration(cfg, force=False):
             "candidates": candidates,
             "leg_quotes": leg_quotes,
         }
+        # Stabilization trigger verdicts (2026-10-31): computed BEFORE entries when any enabled
+        # profile opted into `stabilization_entry`, from `cherrypick.meic.stabilization_gate` --
+        # the completed-bar oracle (the Thinkorswim "Universal Adaptive Market Stabilization
+        # Indicator" rule). Best-effort and fail-closed: the module returns None per oracle
+        # without a verified read (the arm waits -- it never fires on a guess), and an oracle
+        # failure never takes the tick down. `now` is passed through so a pinned-clock run
+        # reads the same verdicts a live session at that instant would.
+        if stabilization_gate.wanted(all_profiles):
+            try:
+                snapshot["stabilization_verdicts"] = stabilization_gate.all_verdicts(symbol, today, now)
+            except Exception as exc:  # noqa: BLE001 -- the oracle must not take the tick down
+                snapshot["stabilization_verdicts"] = {}
+                logger.warning("stabilization oracle failed for %s: %s: %s", symbol, type(exc).__name__, exc)
         result = paper.process_symbol(snapshot, _PAPER_DB, "paper", extra_profiles=advice_profiles)
         # Per-profile outcome for the log - fills and exits made to stand out from skips.
         outcomes = {}

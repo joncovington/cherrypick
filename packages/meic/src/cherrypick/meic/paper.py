@@ -63,6 +63,7 @@ from cherrypick.core import profiles as _profiles  # noqa: E402
 from cherrypick.meic import db as _meic_db  # noqa: E402
 from cherrypick.meic import paths as _paths  # noqa: E402
 from cherrypick.meic import regime as _regime  # noqa: E402
+from cherrypick.meic import stabilization_gate as _stabilization_gate  # noqa: E402
 
 
 def _is_event_day(today, predicate) -> bool:
@@ -989,6 +990,49 @@ def evaluate_entry(
             if iv_rank < params.get("fomc_post_blackout_min_iv_rank", 0.40) or range_blown:
                 return False, "fomc_post_blackout_insufficient_premium", None
 
+    # Stabilization entry gate (2026-10-31, `stabilization_entry`): opt-in per profile, default
+    # OFF -- every arm without this key evaluates exactly as before. On, entry additionally
+    # requires the completed-bar stabilization oracle named by `stabilization_oracle`
+    # ("multi" (default): the cross-session Wilder roll -- what a chart of the indicator shows;
+    # "perday": today's bars only, the colder read) to read STABLE this tick, per
+    # `cherrypick.meic.stabilization_gate`: the last two consecutive COMPLETED 5-min bars'
+    # total range within the threshold AND Wilder ATR(5) at or below its 20-bar average -- the
+    # Thinkorswim "Universal Adaptive Market Stabilization Indicator" rule, the strategy's
+    # "wait until I see two or three flat five-minute candles" made deterministic
+    # (docs/theta-profits-be-condor.md). The verdicts ride the snapshot under
+    # `stabilization_verdicts`, computed BEFORE entries by the paper loop, the live loop
+    # (run_once) and the replay, so a live arm, its paper twin and its history read the same rule.
+    # The refusal is a WAIT, not a rejection: the next tick re-reads. A missing or unverified
+    # verdict (trail not warm, stale bars, feed failure) FAILS CLOSED for a trigger arm: it must
+    # not fire entries on a read it does not have. It sits after the window, cadence, cap and
+    # event gates so a tick those refuse keeps their reason in entry_attempts, and before the
+    # candidate scan. Open-position management never reads the verdicts; they gate ENTRIES only.
+    if params.get("stabilization_entry"):
+        oracle = str(params.get("stabilization_oracle", "multi")).lower()
+        mode = str(params.get("stabilization_threshold_mode", "atr")).lower()
+        bars = params.get("stabilization_bars", 2)
+        # One shared verdict dict holds every mode and bar count (`all_verdicts`); the arm reads
+        # the key its own oracle, mode and `stabilization_bars` (2 or 3) compose. An unknown
+        # value composes a key nobody writes: the same fail-closed wait as a missing verdict --
+        # never a rule the arm did not choose.
+        key = _stabilization_gate.verdict_key(oracle, mode, bars)
+        verdicts = snapshot.get("stabilization_verdicts")
+        if not (isinstance(verdicts, dict) and verdicts.get(key) is True):
+            return False, "stabilization_wait", None
+
+    # The stabilization gate's random-skip control (`stabilization_placebo_rate`, default off):
+    # refuses a fixed share of ticks chosen by a hash of the session and minute, never by the
+    # market, so an arm can be read against the gate at the gate's own refusal rate. It answers
+    # "fewer, later entries" against "better-timed entries". A measurement control, not a rule.
+    placebo_rate = params.get("stabilization_placebo_rate")
+    if placebo_rate and _stabilization_gate.placebo_skips(
+        str(snapshot.get("date")),
+        str(snapshot["now_et"]),
+        float(placebo_rate),
+        int(params.get("stabilization_placebo_seed", 0)),
+    ):
+        return False, "stabilization_placebo_wait", None
+
     # `put_strike`/`call_strike` are the SHORT strikes; the longs live in the *_symbol columns.
     open_strikes = set()
     open_short_pairs = set()
@@ -1776,6 +1820,8 @@ def _update_trade(ic_order_id: str, fields: dict, db_path: str) -> dict:
 # `gate_blocked` with the raw reason preserved in `block_detail`, so a reason added later degrades to
 # "some gate refused it" rather than vanishing from the read side.
 _ATTEMPT_OUTCOMES = {
+    "stabilization_wait": "gate_blocked",
+    "stabilization_placebo_wait": "gate_blocked",
     "entry_cadence_wait": "cadence_blocked",
     "entry_spacing_wait": "cadence_blocked",
     "sign_rule_conflict": "sign_rule_blocked",

@@ -62,7 +62,7 @@ from cherrypick.core import quotehistory
 from cherrypick.core.clock import ET
 
 from cherrypick.meic import db as meic_db
-from cherrypick.meic import paper, paper_loop
+from cherrypick.meic import paper, paper_loop, stabilization_gate
 
 SYMBOL = "SPX"
 #: The first session the gex recorder kept quotes for.
@@ -214,6 +214,11 @@ class ReplayDay:
         lookback = int(cfg.get("regime_atr_lookback_days", 5))
         trs = prior_true_ranges(self.recorded.history_db, SYMBOL, day, lookback)
         self.atr = round(sum(trs) / len(trs), 4) if len(trs) >= lookback else None
+        # The stabilization gate reads the same store the replay prices from, at each tick's time,
+        # so a `stabilization_entry` arm replays its rule instead of waiting on a verdict nobody wrote.
+        self.stabilization = stabilization_gate.wanted(
+            {name: paper._merged_params(cfg, p) for name, p in profiles.items()}
+        )
         self.widths = paper.union_widths_for_symbol(SYMBOL, cfg, profiles)
         self.extra_deltas = paper.union_short_deltas_for_symbol(SYMBOL, cfg, profiles)
 
@@ -271,7 +276,13 @@ class ReplayDay:
             gex = {"ok": False}
         bounds = self.recorded.bounds(sample["ts"])
         rng = (bounds["day_high"] - bounds["day_low"]) if bounds else None
+        extra = {}
+        if self.stabilization:
+            extra["stabilization_verdicts"] = stabilization_gate.all_verdicts(
+                SYMBOL, self.day, when, trail_path=self.recorded.history_db
+            )
         return {
+            **extra,
             "ok": True,
             "symbol": SYMBOL,
             "date": self.day,
