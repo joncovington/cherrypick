@@ -105,6 +105,38 @@ def test_ratio_is_premium_over_raw_close_times_volume():
     assert ratiostudy.ratio_of(h, 50.0, None) is None
 
 
+def test_a_zero_premium_name_day_has_no_ratio_and_never_enters_a_decile(monkeypatch):
+    empty = [0] * flow.N_BUCKETS
+    assert ratiostudy.ratio_of(empty, 50.0, 1e6) is None
+    assert ratiostudy.ratio_of(hist((1000.0, 1)), 50.0, 1e6) > 0
+
+    # the rule as the script applies it: ratio None means the row is never built, so the decile is
+    # drawn from the 20 names that traded; 5 inactive names would otherwise fill the low decile
+    def build(k):
+        rows = effect_rows(k, n=20)
+        for r in rows:
+            r["ratio"] += 1.0
+        for j in range(5):
+            r0 = ratiostudy.ratio_of(empty, 50.0, 1e6)
+            if r0 is not None:
+                rows.append(row(f"Z{j}", r0, 0.0))
+        return rows
+
+    scan = make_scan(3, build)
+    low, _ = ratiostudy.deciles(scan.rows["s000"])
+    assert not any(r["sym"].startswith("Z") for r in low) and len(scan.rows["s000"]) == 20
+    # break the rule (zero premium read as ratio 0): the inactive names crowd the lowest decile
+    monkeypatch.setattr(ratiostudy, "premium_of", lambda h: 0.0 if not any(h) else 1.0)
+    monkeypatch.setattr(
+        ratiostudy,
+        "ratio_of",
+        lambda h, c, v: 0.0 if not any(h) else 1.0,
+    )
+    scan = make_scan(3, build)
+    low, _ = ratiostudy.deciles(scan.rows["s000"])
+    assert any(r["sym"].startswith("Z") for r in low)
+
+
 # ---- deciles within a session ----
 
 

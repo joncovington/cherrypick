@@ -65,7 +65,10 @@ def ratio_of(histogram: Sequence[int], close: float | None, volume: float | None
     """Premium over dollar volume (raw close times volume); None without a positive dollar volume."""
     if not close or not volume or close <= 0 or volume <= 0:
         return None
-    return premium_of(histogram) / (close * volume)
+    premium = premium_of(histogram)
+    if premium <= 0:  # no single-leg orders: not "light" trading, no signal
+        return None
+    return premium / (close * volume)
 
 
 # ------------------------------------------------------------------------------------------------

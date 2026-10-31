@@ -2947,7 +2947,9 @@ flow store's outcomes has been read.*
   `cherrypick.backtest.ratiostudy`):**
   - **The premium** counts each histogram bucket at its geometric midpoint; the underflow bucket
     (under $100) at $50 and the overflow bucket (over $10M) at its floor. The histogram holds every
-    single-leg order of the name-day, whatever its size or side; a name-day with none has ratio 0.
+    single-leg order of the name-day, whatever its size or side. A name-day with no single-leg
+    premium is dropped from that session's ranking (it is not light trading, it is no signal), and
+    the count is reported.
   - **Deciles** are by rank within the session, `n // 10` names at each end, ties by symbol; a session
     under 10 names has none. **Costs** are 0.10% a side, four sides (two legs, each entered and
     exited), 0.40% a session; the long-only half pays two sides. Terciles redraw the deciles inside

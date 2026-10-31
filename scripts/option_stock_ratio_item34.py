@@ -77,7 +77,14 @@ def build_scan(window: str, plan: dict, flow_db: Path) -> tuple[ratiostudy.Scan,
     conn.close()
 
     rows: dict[str, list] = {s: [] for s in grid}
-    counts = {"names": len(by_sym), "grid_name_days": 0, "no_ratio": 0, "no_outcome": 0, "rows": 0}
+    counts = {
+        "names": len(by_sym),
+        "grid_name_days": 0,
+        "no_premium": 0,
+        "no_ratio": 0,
+        "no_outcome": 0,
+        "rows": 0,
+    }
     for sym, days in by_sym.items():
         raw = {b.date: b for b in store.raw_bars(hist, sym)}
         adj = {b.date: b.close for b in store.adjusted_bars(hist, sym)}
@@ -85,6 +92,9 @@ def build_scan(window: str, plan: dict, flow_db: Path) -> tuple[ratiostudy.Scan,
         for s, h in days:
             counts["grid_name_days"] += 1
             bar = raw.get(s)
+            if ratiostudy.premium_of(h) <= 0:  # no single-leg orders: dropped from the ranking
+                counts["no_premium"] += 1
+                continue
             ratio = ratiostudy.ratio_of(h, bar.close if bar else None, bar.volume if bar else None)
             if ratio is None:
                 counts["no_ratio"] += 1
