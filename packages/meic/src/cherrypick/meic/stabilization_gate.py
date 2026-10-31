@@ -14,7 +14,7 @@ candles on more or less the same level", made deterministic):
     verdict reading bars from half an hour ago; that is no verified read, so it is None;
   - Wilder ATR(5) (seed = mean of the first 5 true ranges, then (atr*4 + tr)/5) and its
     20-bar trailing average;
-  - STABLE = the last `consecutive_bars` (2) completed bars' total range <= the threshold, and
+  - STABLE = the last 2 (or, per arm, 3) completed bars' total range <= the threshold, and
     ATR <= its 20-bar average. Missing ATR or average fails closed (not stable);
   - two warmup modes: `perday` (state resets at each session start) and `multi` (the ATR/average
     roll carries across prior sessions -- what a chart of the indicator shows). Both are computed
@@ -37,6 +37,7 @@ does the same in run_once (live_loop), and the replay passes its own history sto
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from datetime import date, datetime, time
 from pathlib import Path
@@ -48,7 +49,6 @@ from cherrypick.core import quotehistory as _quotehistory
 ET = ZoneInfo("America/New_York")
 
 DEFAULTS = {
-    "consecutive_bars": 2,
     "atr_multiplier": 1.25,
     "atr_period": 5,
     "avg_atr_period": 20,
@@ -56,6 +56,7 @@ DEFAULTS = {
 
 ORACLE_MODES = ("multi", "perday")
 THRESHOLD_MODES = ("atr", "iv")
+BAR_COUNTS = (2, 3)
 
 BAR_SECONDS = 300
 SESSION_OPEN_MIN = 570  # 09:30 ET
@@ -224,24 +225,26 @@ def snapshot_verdicts(
     now: datetime | None = None,
     trail_path: Path | None = None,
     threshold_mode: str = "atr",
+    bars: int = 2,
 ) -> dict[str, bool | None]:
     """Both oracles' verdict for `symbol` at `now` (last COMPLETED bar close <= now).
 
     `threshold_mode` picks the adaptive threshold's basis: "atr" (default, 1.25 x ATR) or "iv"
-    (close x IV x 0.006, the script's alternate mode). Returns {"multi": bool|None, "perday":
-    bool|None} for "atr" and the same under "-iv" keys for "iv"; an unknown mode returns the plain
-    keys all None. None = no verified read (no trail, no rows, stale or non-adjacent bars, or -- in
-    "iv" mode -- no recorded IV); callers fail closed on None. Decisions keyed by bar CLOSE: a
-    stable bar at close C covers C-5..C."""
+    (close x IV x 0.006, the script's alternate mode). `bars` is how many consecutive completed
+    bars must sit inside it: 2 (the default) or 3 (the strategy's "two or three candles").
+    Returns {"multi": bool|None, "perday": bool|None} under the keys `verdict_key` composes; an
+    unknown mode or bar count returns the plain keys all None. None = no verified read (no trail,
+    no rows, stale or non-adjacent bars, or -- in "iv" mode -- no recorded IV); callers fail
+    closed on None. Decisions keyed by bar CLOSE: a stable bar at close C covers C-5..C."""
     now_dt = now or datetime.now(ET)
     if now_dt.tzinfo is None:
         now_dt = now_dt.replace(tzinfo=ET)
     now_ts = now_dt.timestamp()
     symbol = str(symbol).upper()
     mode = str(threshold_mode or "atr").lower().strip()
-    if mode not in THRESHOLD_MODES:
+    if mode not in THRESHOLD_MODES or bars not in BAR_COUNTS:
         return {m: None for m in ORACLE_MODES}
-    suffix = "" if mode == "atr" else "-iv"
+    suffix = verdict_key("", mode, bars)
     path = Path(trail_path) if trail_path else default_trail()
     out: dict[str, bool | None] = {f"{m}{suffix}": None for m in ORACLE_MODES}
     if not path.exists():
@@ -255,11 +258,11 @@ def snapshot_verdicts(
             "SELECT ts, spot FROM gex_spot_history WHERE symbol=? AND trade_date=? ORDER BY ts",
             (symbol, trade_date),
         ).fetchall()
-        bars = _bars_from_rows(rows, trade_date, now_ts)
-        n = DEFAULTS["consecutive_bars"]
-        if len(bars) < n:
+        day_bars = _bars_from_rows(rows, trade_date, now_ts)
+        n = bars
+        if len(day_bars) < n:
             return out
-        win = bars[-n:]
+        win = day_bars[-n:]
         # Current and adjacent, or no read: the window must end on the newest scheduled close and
         # hold no missing bar. A gap would join two bars that were never consecutive.
         if abs(win[-1]["end_ts"] - _latest_close_ts(trade_date, now_ts)) > 0.5:
@@ -283,7 +286,7 @@ def snapshot_verdicts(
         avg_n = DEFAULTS["avg_atr_period"]
         multi = _multi_roll(con, path, symbol, trade_date)
         per = _Roll(DEFAULTS["atr_period"])
-        for bar in bars:
+        for bar in day_bars:
             multi.push(bar)
             per.push(bar)
         for name, roll in (("multi", multi), ("perday", per)):
@@ -309,12 +312,27 @@ def wanted(profiles: dict) -> bool:
     )
 
 
+def verdict_key(oracle: str, mode: str = "atr", bars: int = 2) -> str:
+    """The key an arm's verdict sits under: the oracle, "-iv" in IV mode, "-3b" for three bars.
+    The engine composes it from the arm's own keys; an unknown oracle or mode makes a key nobody
+    writes, so the arm waits."""
+    return f"{oracle}{'' if mode == 'atr' else '-' + mode}{'' if bars == 2 else f'-{bars}b'}"
+
+
 def all_verdicts(
     symbol: str, trade_date: str, now: datetime | None = None, trail_path: Path | None = None
 ) -> dict[str, bool | None]:
-    """The one dict every caller puts under `snapshot["stabilization_verdicts"]`: ATR mode's plain
-    keys and IV mode's "-iv" keys, so arms on either mode share it."""
-    return {
-        **snapshot_verdicts(symbol, trade_date, now, trail_path),
-        **snapshot_verdicts(symbol, trade_date, now, trail_path, threshold_mode="iv"),
-    }
+    """The one dict every caller puts under `snapshot["stabilization_verdicts"]`: every mode and
+    bar count under its `verdict_key`, so arms configured any way share it."""
+    out: dict[str, bool | None] = {}
+    for mode in THRESHOLD_MODES:
+        for bars in BAR_COUNTS:
+            out.update(snapshot_verdicts(symbol, trade_date, now, trail_path, threshold_mode=mode, bars=bars))
+    return out
+
+
+def placebo_skips(trade_date: str, now_et: str, rate: float, seed: int = 0) -> bool:
+    """The random-skip control: True on a share `rate` of ticks, the same ticks on every run (a
+    hash of the session, the tick's minute and `seed`, never the clock or a process RNG)."""
+    digest = hashlib.sha256(f"{trade_date}|{now_et}|{seed}".encode()).digest()
+    return int.from_bytes(digest[:8], "big") / 2**64 < rate

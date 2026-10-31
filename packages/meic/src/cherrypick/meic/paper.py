@@ -63,6 +63,7 @@ from cherrypick.core import profiles as _profiles  # noqa: E402
 from cherrypick.meic import db as _meic_db  # noqa: E402
 from cherrypick.meic import paths as _paths  # noqa: E402
 from cherrypick.meic import regime as _regime  # noqa: E402
+from cherrypick.meic import stabilization_gate as _stabilization_gate  # noqa: E402
 
 
 def _is_event_day(today, predicate) -> bool:
@@ -1009,15 +1010,28 @@ def evaluate_entry(
     if params.get("stabilization_entry"):
         oracle = str(params.get("stabilization_oracle", "multi")).lower()
         mode = str(params.get("stabilization_threshold_mode", "atr")).lower()
-        # ATR mode reads the plain oracle keys; an "iv" arm reads the -iv keys the loop's
-        # iv-mode call writes, so two arms on the same tick (or one arm mid-change) can want
-        # different modes from one shared verdict dict. An unknown mode composes a key nobody
-        # writes: the same fail-closed wait as a missing verdict -- never a threshold basis
-        # the arm did not choose.
-        key = oracle if mode == "atr" else f"{oracle}-iv"
+        bars = params.get("stabilization_bars", 2)
+        # One shared verdict dict holds every mode and bar count (`all_verdicts`); the arm reads
+        # the key its own oracle, mode and `stabilization_bars` (2 or 3) compose. An unknown
+        # value composes a key nobody writes: the same fail-closed wait as a missing verdict --
+        # never a rule the arm did not choose.
+        key = _stabilization_gate.verdict_key(oracle, mode, bars)
         verdicts = snapshot.get("stabilization_verdicts")
         if not (isinstance(verdicts, dict) and verdicts.get(key) is True):
             return False, "stabilization_wait", None
+
+    # The stabilization gate's random-skip control (`stabilization_placebo_rate`, default off):
+    # refuses a fixed share of ticks chosen by a hash of the session and minute, never by the
+    # market, so an arm can be read against the gate at the gate's own refusal rate. It answers
+    # "fewer, later entries" against "better-timed entries". A measurement control, not a rule.
+    placebo_rate = params.get("stabilization_placebo_rate")
+    if placebo_rate and _stabilization_gate.placebo_skips(
+        str(snapshot.get("date")),
+        str(snapshot["now_et"]),
+        float(placebo_rate),
+        int(params.get("stabilization_placebo_seed", 0)),
+    ):
+        return False, "stabilization_placebo_wait", None
 
     # `put_strike`/`call_strike` are the SHORT strikes; the longs live in the *_symbol columns.
     open_strikes = set()
@@ -1807,6 +1821,7 @@ def _update_trade(ic_order_id: str, fields: dict, db_path: str) -> dict:
 # "some gate refused it" rather than vanishing from the read side.
 _ATTEMPT_OUTCOMES = {
     "stabilization_wait": "gate_blocked",
+    "stabilization_placebo_wait": "gate_blocked",
     "entry_cadence_wait": "cadence_blocked",
     "entry_spacing_wait": "cadence_blocked",
     "sign_rule_conflict": "sign_rule_blocked",

@@ -3534,7 +3534,12 @@ def test_stabilization_gate_iv_mode_reads_stable_and_looser(tmp_path):
     # all_verdicts is the dict the loops and the replay write: exactly four keys, each mode's
     # verdicts under the key the engine composes (an "-iv-iv" key would leave iv arms waiting).
     both = stabilization_gate.all_verdicts("SPX", day, now, trail_path=db)
-    assert both == {"multi": True, "perday": True, "multi-iv": True, "perday-iv": True}
+    assert {k: both[k] for k in ("multi", "perday", "multi-iv", "perday-iv")} == {
+        "multi": True,
+        "perday": True,
+        "multi-iv": True,
+        "perday-iv": True,
+    }
     snap = _base_snapshot(now_et="13:00", stabilization_verdicts=both)
     entered, _, _ = paper.evaluate_entry(snap, _stab_params(stabilization_threshold_mode="iv"), [])
     assert entered is True
@@ -3657,6 +3662,64 @@ def test_stabilization_warmup_reads_recent_trading_days_only(tmp_path):
     assert hist(noisy) == hist(plain)
     # 5 sessions x 25 bars, less the 4 the seed spends before the first ATR.
     assert len(hist(plain)) == sg.WARMUP_SESSIONS * 25 - 4
+
+
+def test_stabilization_three_bars_needs_the_third_flat_bar(tmp_path):
+    """`stabilization_bars: 3` needs three adjacent flat bars: two flat after a wide run reads
+    STABLE for 2 and not for 3; a third flat bar makes 3 STABLE too. Its key carries "-3b"."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.meic import stabilization_gate as sg
+
+    et = ZoneInfo("America/New_York")
+    two, three = tmp_path / "two.db", tmp_path / "three.db"
+    day = _synthetic_trail(str(two), wide_bars=23, flat_bars=2)  # last close 11:35
+    _synthetic_trail(str(three), wide_bars=22, flat_bars=3)
+    now = datetime.fromisoformat(f"{day}T11:35:00").replace(tzinfo=et)
+    assert sg.snapshot_verdicts("SPX", day, now, trail_path=two)["perday"] is True
+    assert sg.snapshot_verdicts("SPX", day, now, trail_path=two, bars=3) == {
+        "perday-3b": False,
+        "multi-3b": False,
+    }
+    assert sg.snapshot_verdicts("SPX", day, now, trail_path=three, bars=3)["perday-3b"] is True
+    assert sg.snapshot_verdicts("SPX", day, now, trail_path=two, bars=4) == {"multi": None, "perday": None}
+    both = sg.all_verdicts("SPX", day, now, trail_path=two)
+    assert set(both) == {
+        "multi",
+        "perday",
+        "multi-iv",
+        "perday-iv",
+        "multi-3b",
+        "perday-3b",
+        "multi-iv-3b",
+        "perday-iv-3b",
+    }
+    snap = _base_snapshot(now_et="13:00", stabilization_verdicts=both)
+    entered, reason, _ = paper.evaluate_entry(snap, _stab_params(stabilization_bars=3), [])
+    assert entered is False and reason == "stabilization_wait"
+    entered, _, _ = paper.evaluate_entry(snap, _stab_params(), [])
+    assert entered is True
+
+
+def test_stabilization_placebo_skips_a_fixed_share_of_ticks():
+    """The placebo refuses about `rate` of ticks, the same ticks every run, and the engine maps
+    it to its own reason; with no rate set nothing is refused."""
+    from cherrypick.meic import stabilization_gate as sg
+
+    minutes = [f"{h:02d}:{m:02d}" for h in range(10, 15) for m in range(60)]
+    days = ["2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16"]
+    hits = [sg.placebo_skips(d, t, 0.6) for d in days for t in minutes]
+    assert abs(sum(hits) / len(hits) - 0.6) < 0.05
+    assert hits == [sg.placebo_skips(d, t, 0.6) for d in days for t in minutes]
+    assert sg.placebo_skips("2026-10-13", "10:00", 0.0) is False
+    t = next(t for t in minutes if t < "14:30" and sg.placebo_skips("2026-07-09", t, 0.5))
+    p = _window_params(
+        {**CONSERVATIVE, **WIDEST_FIRST}, stabilization_placebo_rate=0.5, late_entry_bias_enabled=False
+    )
+    entered, reason, _ = paper.evaluate_entry(_base_snapshot(now_et=t), p, [])
+    assert entered is False and reason == "stabilization_placebo_wait"
+    assert paper._ATTEMPT_OUTCOMES["stabilization_placebo_wait"] == "gate_blocked"
 
 
 def test_stabilization_wanted_skips_disabled_arms():
