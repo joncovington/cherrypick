@@ -1,6 +1,8 @@
 import type {
   BridgedResult,
   StudiesBoard,
+  StudyGrid,
+  StudyGridRow,
   StudyGroup,
   StudyResult,
   StudyRival,
@@ -67,6 +69,35 @@ function toVerdicts(v: unknown): StudyVerdict[] | null {
   return out;
 }
 
+function toGridRow(v: unknown): StudyGridRow | null {
+  const r = rec(v);
+  const arm = s(r["arm"]);
+  const setting = n(r["setting"]);
+  if (arm === null || setting === null) return null;
+  return {
+    arm,
+    setting,
+    label: s(r["label"]) ?? String(setting),
+    mean: n(r["mean"]),
+    n: n(r["n"]),
+    verdict: s(r["verdict"]),
+    declared: r["declared"] === true,
+  };
+}
+
+/** A grid block as the study wrote it; null unless it names a parameter and at least one setting. */
+function toGrid(v: unknown): StudyGrid | null {
+  const g = rec(v);
+  const parameter = s(g["parameter"]);
+  const rows = list(g["rows"]).map(toGridRow).filter((x): x is StudyGridRow => x !== null);
+  if (parameter === null || rows.length === 0) return null;
+  const neighbourhood: Record<string, string> = {};
+  for (const [arm, word] of Object.entries(rec(g["neighbourhood"]))) {
+    if (typeof word === "string") neighbourhood[arm] = word;
+  }
+  return { parameter, measure: s(g["measure"]) ?? "", declared: s(g["declared"]) ?? "", rows, neighbourhood };
+}
+
 function toResult(v: unknown): StudyResult | null {
   const r = rec(v);
   const name = s(r["name"]);
@@ -83,6 +114,7 @@ function toResult(v: unknown): StudyResult | null {
     provisional: typeof r["provisional"] === "boolean" ? r["provisional"] : null,
     verdicts: toVerdicts(r["verdicts"]),
     summary: s(r["summary"]),
+    grid: toGrid(r["grid"]),
     notes: s(r["notes"]),
   };
 }

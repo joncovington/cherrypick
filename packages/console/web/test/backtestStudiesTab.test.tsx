@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import type { BacktestOverview, BacktestRunReport, StudiesBoard, StudyRow } from "@console/shared";
+import type { BacktestOverview, BacktestRunReport, StudiesBoard, StudyGrid, StudyRow } from "@console/shared";
 import { RunPlainEnglish } from "../src/pages/Backtest/BacktestPage";
+import { neighbourhoodLine } from "../src/pages/Backtest/GridBars";
 import { StudyChip, etMs } from "../src/pages/Backtest/QueueTab";
 import { StudiesTable, StudyDetail, StudyNotes, contextLine, headline, notesHref, planUrl, resultLabel, resultsLine } from "../src/pages/Backtest/StudiesTab";
 import { indexStudies, studyHref } from "../src/pages/Backtest/studyIndex";
@@ -44,6 +45,7 @@ function row(over: Partial<StudyRow>): StudyRow {
           { arm: "d20", verdict: "fail" },
         ],
         summary: "fail",
+        grid: null,
         notes: null,
       },
       {
@@ -56,6 +58,7 @@ function row(over: Partial<StudyRow>): StudyRow {
         provisional: true,
         verdicts: [{ arm: null, verdict: "fail" }],
         summary: "fail",
+        grid: null,
         notes: null,
       },
     ],
@@ -146,6 +149,27 @@ describe("studies tab", () => {
     expect(out).toContain("its queue rows");
     // A pre-register item points to its prose.
     expect(html(<StudyDetail row={row({ legacy: true, rule: null, rivals: [] })} />)).toContain("before the register");
+  });
+
+  it("a grid result draws a bar per setting with the live one outlined, and the study's own labels", () => {
+    const grid: StudyGrid = {
+      parameter: "short delta",
+      measure: "mean net per session",
+      declared: "d16",
+      rows: [
+        { arm: "d12", setting: 0.12, label: "0.12", mean: 4, n: 120, verdict: "fail", declared: false },
+        { arm: "d16", setting: 0.16, label: "0.16", mean: 5, n: 120, verdict: null, declared: true },
+        { arm: "d20", setting: 0.2, label: "0.2", mean: -2, n: 120, verdict: "pass", declared: false },
+      ],
+      neighbourhood: { d16: "plateau", d20: "not_positive" },
+    };
+    expect(neighbourhoodLine(grid)).toBe("live 0.16: on a plateau · 0.2 (pass): not positive");
+    const r = row({}).results[0]!;
+    const out = html(<StudyDetail row={row({ results: [{ ...r, grid }] })} />);
+    expect(out.match(/<rect /g)).toHaveLength(3);
+    expect(out).toContain("short delta 0.16 (live)");
+    expect(out).toContain("var(--neg)");
+    expect(html(<StudyDetail row={row({})} />)).not.toContain("<svg");
   });
 
   it("an opened row links to the study's Markdown beside its result file; none, no link", () => {

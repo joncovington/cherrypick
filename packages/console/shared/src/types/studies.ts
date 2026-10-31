@@ -14,6 +14,34 @@ export interface StudyVerdict {
   verdict: string;
 }
 
+/** One tested setting of a grid study (packages/backtest `grid.block`). */
+export interface StudyGridRow {
+  arm: string;
+  setting: number;
+  /** As the study names it: "0.16", "14:00". */
+  label: string;
+  /** The arm's own mean net per session; null when the file has none. */
+  mean: number | null;
+  n: number | null;
+  /** The arm's verdict word; null for a reference arm (the live setting, a reported one). */
+  verdict: string | null;
+  /** The live setting. */
+  declared: boolean;
+}
+
+/**
+ * A grid study's settings side by side, as the study wrote them. `neighbourhood` labels the live
+ * setting and each passing one: "plateau", "lone_peak", "not_positive", "neighbour_better",
+ * "no_neighbours" or "unmeasured". Description only; it never moves a verdict.
+ */
+export interface StudyGrid {
+  parameter: string;
+  measure: string;
+  declared: string;
+  rows: StudyGridRow[];
+  neighbourhood: Record<string, string>;
+}
+
 export interface StudyResult {
   /** The file's name only; the full path stays on the Python side. */
   name: string;
@@ -29,6 +57,8 @@ export interface StudyResult {
   verdicts: StudyVerdict[] | null;
   /** The one word when every arm agrees, "mixed" when not, null when there is none. */
   summary: string | null;
+  /** A grid study's settings side by side; null when the file has none. */
+  grid: StudyGrid | null;
   /** The Markdown the study left beside the file (`results.md`), as written; null when none. */
   notes: string | null;
 }

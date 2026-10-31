@@ -157,6 +157,13 @@ def verdicts(data) -> list[dict] | None:
     return out
 
 
+def grid(data) -> dict | None:
+    """A grid study's `grid` block (`cherrypick.backtest.grid`) as the study wrote it, or None when
+    the file has none or its rows are not a list. Passed through, never recomputed here."""
+    g = data.get("grid") if isinstance(data, dict) else None
+    return g if isinstance(g, dict) and isinstance(g.get("rows"), list) else None
+
+
 def _result(path: str, read, notes) -> dict:
     data, mtime = read(path)
     words = verdicts(data) if data is not None else None
@@ -174,6 +181,7 @@ def _result(path: str, read, notes) -> dict:
         "run_id": (data or {}).get("run_id"),
         "provisional": (data or {}).get("provisional"),
         "verdicts": words,
+        "grid": grid(data),
         "summary": None if not distinct else distinct[0] if len(distinct) == 1 else "mixed",
         "notes": notes(path),
     }

@@ -5,6 +5,7 @@ import { Card } from "../../components/DataTable";
 import { useBridged } from "../../lib/bridged";
 import { MiniMarkdown } from "../../lib/miniMarkdown";
 import { writePref } from "../../lib/prefs";
+import { GridBars } from "./GridBars";
 import { FILTER_KEY, ago, etMs, etNowMs, stamp } from "./QueueTab";
 import { studyHref, useStudies } from "./studyIndex";
 
@@ -171,6 +172,7 @@ export function StudyDetail({ row }: { row: StudyRow }) {
               </>
             ) : null}
             {r.provisional ? <span className="chip chip-warn"> provisional</span> : null}
+            {r.grid ? <GridBars grid={r.grid} /> : null}
           </Field>
         ))}
         {row.tasks.length > 0 ? (

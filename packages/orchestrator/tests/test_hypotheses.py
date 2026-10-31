@@ -76,6 +76,14 @@ def test_verdicts_reads_the_three_shapes_and_never_guesses():
     assert hy.verdicts({"tests": []}) is None
 
 
+def test_grid_passes_a_studys_block_through_and_nothing_else():
+    block = {"parameter": "short delta", "rows": [{"arm": "d16", "mean": 1.0}], "neighbourhood": {}}
+    assert hy.grid({"grid": block}) is block
+    assert hy.grid({"grid": {"rows": "d16"}}) is None
+    assert hy.grid({"verdict": "fail"}) is None
+    assert hy.grid(None) is None
+
+
 def test_board_joins_results_and_queue_and_groups_rows():
     done = {
         **NEW,

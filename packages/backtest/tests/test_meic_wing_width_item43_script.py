@@ -196,3 +196,13 @@ def test_the_holdout_reference_reads_item_23s_recorded_sessions(tmp_path, monkey
     assert st.item23_live_holdout() == (rows["r23"]["live-1400"], "r23")
     (item23 / "study-holdout-2025-07-01-2026-10-12.json").unlink()
     assert st.item23_live_holdout() == ({}, None)
+
+
+def test_the_grid_block_lines_up_every_width_with_w5_reported_and_w10_as_live():
+    doc = {
+        "arms": {a: {"own": {"mean_net": 1.0, "n": 100}, "verdict": "fail"} for a in st.GRID},
+        "reference": {st.BASE: {"mean_net": 2.0}, **{a: {"own": {"mean_net": 0.5}} for a in st.REPORTED}},
+    }
+    g = st.grid_block(doc)
+    assert [r["setting"] for r in g["rows"]] == [5, 10, 15, 20, 25, 30]
+    assert g["declared"] == "w10" and all(r["mean"] is not None for r in g["rows"])
