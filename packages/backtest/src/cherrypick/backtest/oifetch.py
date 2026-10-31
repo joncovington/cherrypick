@@ -65,13 +65,34 @@ def status(conn, symbol: str, session: str) -> str | None:
     return row["status"] if row else None
 
 
-def keep(report: dict, session: str) -> list[tuple[str, str, float, int]]:
+#: Index roots whose chain lists an expiry every session: only the weekly expiries within `WEEKLY_DAYS`
+#: are kept (item 35 wants SPXW's flip from the position's own weekly; a hundred days of dailies is
+#: tens of millions of rows nobody reads). A weekly is the Friday, or the Thursday before a Friday the
+#: exchange is shut.
+WEEKLY_ONLY = {"SPXW": 10}
+
+
+def is_weekly(expiration: str) -> bool:
+    """Whether the date is a weekly expiry: a Friday, or the Thursday before a Friday holiday."""
+    from cherrypick.core import calendar as cal
+
+    d = date.fromisoformat(expiration)
+    if d.weekday() == 4:
+        return True
+    return d.weekday() == 3 and not cal.is_trading_day(d + timedelta(days=1))
+
+
+def keep(report: dict, session: str, symbol: str | None = None) -> list[tuple[str, str, float, int]]:
     """The report's contracts that expire from `session` through `MAX_DAYS` on, rights as one letter:
-    pure. [(expiration, right, strike, open_interest)]."""
+    pure. [(expiration, right, strike, open_interest)]. For a `WEEKLY_ONLY` root, only its weekly
+    expiries and only through that root's shorter horizon."""
     first = date.fromisoformat(session)
-    last = (first + timedelta(days=MAX_DAYS)).isoformat()
+    weekly_days = WEEKLY_ONLY.get((symbol or "").upper())
+    last = (first + timedelta(days=weekly_days or MAX_DAYS)).isoformat()
     return sorted(
-        (exp, right[0], strike, n) for (exp, right, strike), n in report.items() if session <= exp <= last
+        (exp, right[0], strike, n)
+        for (exp, right, strike), n in report.items()
+        if session <= exp <= last and (weekly_days is None or is_weekly(exp))
     )
 
 
@@ -179,7 +200,7 @@ def fetch_plan(
                         counts["refused"] += 1
                         log(f"{sym} {session}: refused ({refusal.reason})")
                     else:
-                        rows = keep(report, session)
+                        rows = keep(report, session, sym)
                         write_day(conn, sym, session, rows, took)
                         counts["complete" if rows else "empty"] += 1
                         seconds.append(took)

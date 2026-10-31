@@ -1237,7 +1237,9 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#35-the-bwb-modules-whole-rule-at-real-quotes-does-the-put-broken-wing-butterfly-or-any-add-on-arm-earn-after-costs",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item35/results.json"
+      ],
       "retest": null,
       "retests": []
     },

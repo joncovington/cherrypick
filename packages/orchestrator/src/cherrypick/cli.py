@@ -83,7 +83,7 @@ Subcommands:
   secrets-delete       Remove a stored secret (--channel).
   queue-add            Queue a research task (orchestrator/researchqueue.py), named --study/--step
                        (slugs; step defaults to the kind): --task
-                       fetch-chains|fetch-chain-paths|fetch-intraday-chains|fetch-flow|fetch-oi|
+                       fetch-chains|fetch-chain-paths|fetch-intraday-chains|fetch-addon-weeklies|fetch-flow|fetch-oi|
                        script, --task-args JSON,
                        --output (a script's conclusion file), --not-before / --stop-by (ET,
                        YYYY-MM-DDTHH:MM). Allow-listed kinds only.
@@ -2468,8 +2468,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--task",
         default=None,
         help=(
-            "For queue-add: fetch-chains, fetch-chain-paths, fetch-intraday-chains, fetch-flow, "
-            "fetch-oi, script or validate"
+            "For queue-add: fetch-chains, fetch-chain-paths, fetch-intraday-chains, "
+            "fetch-addon-weeklies, fetch-flow, fetch-oi, script or validate"
         ),
     )
     parser.add_argument(

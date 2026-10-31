@@ -11,6 +11,8 @@ python -m cherrypick.backtest fetch-chain-paths --requests FILE [--workers 3]   
 python -m cherrypick.backtest chains-status        # what the end-of-day chain store holds
 python -m cherrypick.backtest fetch-intraday-chains --requests FILE [--workers 1] [--limit N]   # item 31
 python -m cherrypick.backtest intraday-status      # what the intraday chain store holds
+python -m cherrypick.backtest fetch-addon-weeklies --requests FILE [--workers 1] [--limit N]   # item 35
+python -m cherrypick.backtest addon-weeklies-status   # what the add-on weeklies store holds
 python -m cherrypick.backtest coverage [--dataset SPX]
 python -m cherrypick.backtest derive-regimes [--dataset SPX]   # regime rows from stored profiles
 python -m cherrypick.backtest validate [--module flies|meic] [--dates a,b,...]   # against the recorder
@@ -291,6 +293,40 @@ def cmd_fetch_intraday_chains(args) -> int:
     )  # fmt: skip
     _emit(report)
     return 1 if report.get("aborted") else 0
+
+
+def cmd_fetch_addon_weeklies(args) -> int:
+    """SPXW weekly minute greeks for a study's list of (expiry, first session, last session) requests
+    (addonfetch.py): a network verb, refused on the same terms as `fetch`."""
+    from pathlib import Path
+
+    from . import addonfetch
+    from .vendor import VendorRefusal, client_for
+
+    s = settings.load(args.config)
+    refusal = _fetch_refusal(s)
+    if refusal:
+        print(f"fetch-addon-weeklies refused: {refusal}", file=sys.stderr)
+        return 2
+    requests = addonfetch.read_requests(Path(args.requests))
+    try:
+        client = client_for(s)
+    except VendorRefusal as exc:
+        print(f"fetch-addon-weeklies refused: {exc}", file=sys.stderr)
+        return 2
+    report = addonfetch.fetch_spans(
+        s, client, requests, workers=args.workers, refetch=args.refetch, limit=args.limit,
+        stop=_stop_by(args.stop_by), log=lambda m: print(m, file=sys.stderr),
+    )  # fmt: skip
+    _emit(report)
+    return 1 if report.get("aborted") else 0
+
+
+def cmd_addon_weeklies_status(args) -> int:
+    from . import addonfetch
+
+    _emit(addonfetch.status(settings.load(args.config)))
+    return 0
 
 
 def cmd_intraday_status(args) -> int:
@@ -613,6 +649,18 @@ def main(argv: list[str] | None = None) -> int:
     fi.add_argument("--refetch", action="store_true", help="replace requests already complete or empty")
     fi.add_argument("--stop-by", help="ET wall clock, YYYY-MM-DDTHH:MM: start no request after it")
     fi.set_defaults(fn=cmd_fetch_intraday_chains)
+    fa = sub.add_parser(
+        "fetch-addon-weeklies", help="SPXW weekly minute greeks for a study's request list (a network verb)"
+    )
+    fa.add_argument("--requests", required=True, help='JSON: {"requests": [{"expiration","first","last"}]}')
+    fa.add_argument("--workers", type=int, default=1, help="concurrent requests on the one session")
+    fa.add_argument("--limit", type=int, help="fetch at most this many requests this run")
+    fa.add_argument("--refetch", action="store_true", help="replace requests already complete")
+    fa.add_argument("--stop-by", help="ET wall clock, YYYY-MM-DDTHH:MM: start no request after it")
+    fa.set_defaults(fn=cmd_fetch_addon_weeklies)
+    sub.add_parser("addon-weeklies-status", help="what the add-on weeklies store holds").set_defaults(
+        fn=cmd_addon_weeklies_status
+    )
     sub.add_parser("intraday-status", help="what the intraday chain store holds").set_defaults(
         fn=cmd_intraday_status
     )

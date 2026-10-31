@@ -1,114 +1,203 @@
-"""Fetch SPXW weekly (PM Friday) put minute greeks for each expiry's whole bwb life, plus the ATM
-calls at 10:00 for the expected move. Study store: <vendor_dir>/addon_weeklies.db (licensed dir).
-Resumable: an expiry marked complete is skipped.
+"""SPXW weekly put minute greeks for each bwb position's whole life, plus the ATM calls at 10:00 for the
+expected move. Study store: <vendor_dir>/addon_weeklies.db (licensed dir; packages/backtest `stores.STORES`).
 
-    python scripts/fetch_addon_weeklies.py [START END]   # expiries, default 2022-05-20 2026-10-16
+    python scripts/fetch_addon_weeklies.py requests [--start D] [--end D] [--out FILE]
+    python scripts/fetch_addon_weeklies.py fetch [START END]        # the old Friday-only run
 
-The store the bwb add-on standalone study read (2026-10-23; packages/backtest `stores.STORES`).
-Committed 2026-10-25 from the session scratch it was written in, its behaviour unchanged, so
-the store can be rebuilt. It holds the vendor session while it runs; queue it, or run it outside the
-backtest fetch window.
+`requests` works out which (expiry, session) pairs the module's ladder needs and the store lacks, and
+writes the input of `python -m cherrypick.backtest fetch-addon-weeklies` (the research queue's
+`fetch-addon-weeklies` kind). It reads the store's presence, never a price. A pair is needed for every
+trading day the ladder enters an expiry (`clock.target_expiration`, as the module computes it) and every
+day after, through the expiry's own: a Friday's first entry is the Friday before (7 days), but the next
+Friday after a holiday-shifted Thursday is also entered from that Thursday (8 days), and a Thursday
+expiry (the Friday was a holiday) is a weekly of its own. The store was first built for Fridays only
+(2026-10-23), so those two cases are what `requests` finds. An expiry the vendor refused before
+(`fetched.status = 'refused'`, sub-minute history not served for that date) is not asked for again
+unless `--retry-refused`; its entries are counted as unfetchable.
+
+`fetch` is the old command, kept so the store can be rebuilt: every Friday expiry the vendor lists in
+START..END (default 2022-05-20 2026-10-16), each from the Friday before. It holds the vendor session,
+so queue the `requests` file through the research queue instead, or run it outside the backtest fetch
+window.
 """
 
-import math
+from __future__ import annotations
+
+import argparse
+import json
 import sqlite3
 import sys
-import time
 from datetime import date, timedelta
+from pathlib import Path
 
-from cherrypick.backtest import paths
-from cherrypick.backtest import settings as _settings
-from cherrypick.backtest.vendor import FATAL, VendorRefusal, client_for
-
-START = sys.argv[1] if len(sys.argv) > 1 else "2022-05-20"
-END = sys.argv[2] if len(sys.argv) > 2 else "2026-10-16"
-STRIKE_RANGE = 60
-
-s = _settings.load()
-db = paths.vendor_dir(s) / "addon_weeklies.db"
-conn = sqlite3.connect(db)
-conn.executescript(
-    """
-CREATE TABLE IF NOT EXISTS q (expiration TEXT, day TEXT, ts INTEGER, right TEXT, strike REAL,
-  bid REAL, ask REAL, delta REAL, iv REAL, spot REAL);
-CREATE INDEX IF NOT EXISTS q_ix ON q (expiration, ts);
-CREATE TABLE IF NOT EXISTS fetched (expiration TEXT PRIMARY KEY, status TEXT, rows INTEGER,
-  detail TEXT, at REAL);
-"""
-)
+START = "2022-05-13"  # the first entry day: the ladder's entry into the first stored expiry
+END = "2026-10-16"  # the last expiry the store reaches
 
 
-def num(v):
+def sessions(a: date, b: date) -> list[date]:
+    """Trading days from a through b."""
+    from cherrypick.core import calendar as cal
+
+    out, d = [], a
+    while d <= b:
+        if cal.is_trading_day(d):
+            out.append(d)
+        d += timedelta(days=1)
+    return out
+
+
+def entry_pairs(a: date, b: date, last_expiry: date) -> list[tuple[date, date]]:
+    """(entry day, expiry) for each trading day in a..b whose expiry the module's clock puts on or before
+    `last_expiry`."""
+    from cherrypick.bwb import clock
+
+    out = []
+    for d in sessions(a, b):
+        plan = clock.target_expiration(d)
+        if plan is not None and date.fromisoformat(plan["expiration"]) <= last_expiry:
+            out.append((d, date.fromisoformat(plan["expiration"])))
+    return out
+
+
+def lives(pairs: list[tuple[date, date]]) -> dict[date, list[date]]:
+    """Each expiry's sessions: its first entry day through the expiry itself, trading days only."""
+    first: dict[date, date] = {}
+    for entry, exp in pairs:
+        first[exp] = min(entry, first.get(exp, entry))
+    return {exp: sessions(f, exp) for exp, f in sorted(first.items())}
+
+
+def runs(days: list[date], missing: set[date]) -> list[tuple[date, date]]:
+    """The missing sessions as runs of consecutive sessions of `days`: [(first, last)]."""
+    out: list[list[date]] = []
+    prev_missing = False
+    for d in days:
+        if d in missing:
+            if prev_missing:
+                out[-1][1] = d
+            else:
+                out.append([d, d])
+        prev_missing = d in missing
+    return [(a, b) for a, b in out]
+
+
+def needed_spans(
+    life: dict[date, list[date]], held: dict[str, set[str]], refused: set[str]
+) -> tuple[list[dict], dict]:
+    """The requests the store still needs, and the counts behind them. `held` is {expiry: sessions the
+    store has rows for}; `refused` the expiries the vendor will not serve. Pure."""
+    spans, counts = [], {"expiries_new": 0, "expiries_topped_up": 0, "sessions": 0, "refused_expiries": 0}
+    for exp, days in life.items():
+        have = held.get(exp.isoformat(), set())
+        if exp.isoformat() in refused and not have:
+            counts["refused_expiries"] += 1
+            continue
+        missing = {d for d in days if d.isoformat() not in have}
+        if not missing:
+            continue
+        counts["expiries_new" if not have else "expiries_topped_up"] += 1
+        counts["sessions"] += len(missing)
+        spans += [
+            {"expiration": exp.isoformat(), "first": a.isoformat(), "last": b.isoformat()}
+            for a, b in runs(days, missing)
+        ]
+    return spans, counts
+
+
+def store_state(path: Path) -> tuple[dict[str, set[str]], set[str]]:
+    """({expiry: sessions held}, expiries the vendor refused), read-only; empty when there is no store."""
+    if not path.exists():
+        return {}, set()
+    conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
     try:
-        v = float(v)
-    except (TypeError, ValueError):
-        return None
-    return v if math.isfinite(v) else None
+        held: dict[str, set[str]] = {}
+        for exp, day in conn.execute("SELECT DISTINCT expiration, day FROM q"):
+            held.setdefault(exp, set()).add(day)
+        refused = {r[0] for r in conn.execute("SELECT expiration FROM fetched WHERE status = 'refused'")}
+        return held, refused
+    finally:
+        conn.close()
 
 
-client = client_for(s)
-exps = [e for e in client.expirations("SPXW") if START <= e <= END and date.fromisoformat(e).weekday() == 4]
-done = {r[0] for r in conn.execute("SELECT expiration FROM fetched WHERE status='complete'")}
-print(f"{len(exps)} Friday expiries, {len(done)} done", flush=True)
-prev = None
-for e in exps:
-    f = date.fromisoformat(e)
-    first = f - timedelta(days=7)  # the prior Friday enters this expiry
-    if e in done:
-        continue
-    t0 = time.time()
+def build_requests(start: date, end: date, held, refused, *, retry_refused: bool = False) -> dict:
+    """The request file's body and the counts, from the calendar and what the store holds."""
+    pairs = entry_pairs(start, end, end)
+    spans, counts = needed_spans(lives(pairs), held, set() if retry_refused else refused)
+    unfetchable = sum(1 for _, exp in pairs if exp.isoformat() in refused and not held.get(exp.isoformat()))
+    return {
+        "requests": spans,
+        "counts": {
+            **counts,
+            "requests": len(spans),
+            "vendor_calls": 2 * len(spans),
+            "entries": len(pairs),
+            "entries_unfetchable": 0 if retry_refused else unfetchable,
+        },
+    }
+
+
+def cmd_requests(args) -> int:
+    from cherrypick.backtest import addonfetch, settings
+
+    held, refused = store_state(addonfetch.db_path(settings.load(None)))
+    body = build_requests(
+        date.fromisoformat(args.start),
+        date.fromisoformat(args.end),
+        held,
+        refused,
+        retry_refused=args.retry_refused,
+    )
+    if args.out:
+        out = Path(args.out)
+    else:
+        from cherrypick.backtest import paths
+
+        out = paths.results_dir() / "research" / "item35" / "addon_requests.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"requests": body["requests"]}, indent=1), encoding="utf-8")
+    print(json.dumps({**body["counts"], "file": str(out)}))
+    return 0
+
+
+def cmd_fetch(args) -> int:
+    """The old run: every Friday expiry the vendor lists in START..END, from the Friday before."""
+    from cherrypick.backtest import addonfetch, settings
+    from cherrypick.backtest.vendor import client_for
+
+    s = settings.load(None)
+    client = client_for(s)
     try:
-        rows = []
-        for right, st, et, rng in (
-            ("put", "09:30:00", "16:15:00", STRIKE_RANGE),
-            ("call", "10:00:00", "10:01:00", 3),
-        ):
-            df = client._call(
-                "option_history_greeks_first_order",
-                symbol="SPXW",
-                expiration=f,
-                interval="1m",
-                right=right,
-                start_date=first,
-                end_date=f,
-                start_time=st,
-                end_time=et,
-                strike_range=rng,
-            )
-            for r in df.itertuples(index=False):
-                spot = num(r.underlying_price)
-                k = float(r.strike)
-                if right == "put" and spot and k > spot + 50:
-                    continue
-                ts = r.timestamp
-                rows.append(
-                    (
-                        e,
-                        ts.date().isoformat(),
-                        int(ts.timestamp()),
-                        right[0].upper(),
-                        k,
-                        num(r.bid),
-                        num(r.ask),
-                        num(r.delta),
-                        num(r.implied_vol),
-                        spot,
-                    )
-                )
-        conn.execute("DELETE FROM q WHERE expiration=?", (e,))
-        conn.executemany("INSERT INTO q VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
-        conn.execute(
-            "INSERT OR REPLACE INTO fetched VALUES (?,?,?,?,?)", (e, "complete", len(rows), None, time.time())
-        )
-        conn.commit()
-        print(f"{e} {len(rows)} rows {time.time() - t0:.0f}s", flush=True)
-    except VendorRefusal as ref:
-        conn.execute(
-            "INSERT OR REPLACE INTO fetched VALUES (?,?,?,?,?)",
-            (e, "refused", 0, f"{ref.reason}: {ref.detail[:300]}", time.time()),
-        )
-        conn.commit()
-        print(f"{e} refused {ref.reason}", flush=True)
-        if ref.reason in FATAL:
-            break
-client.close()
+        exps = [
+            e
+            for e in client.expirations("SPXW")
+            if args.begin <= e <= args.finish and date.fromisoformat(e).weekday() == 4
+        ]
+        spans = [
+            (e, (date.fromisoformat(e) - timedelta(days=addonfetch.LEGACY_LEAD_DAYS)).isoformat(), e)
+            for e in exps
+        ]
+        print(json.dumps(addonfetch.fetch_spans(s, client, spans, log=lambda m: print(m, flush=True))))
+    finally:
+        client.close()
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = p.add_subparsers(dest="cmd", required=True)
+    rq = sub.add_parser("requests", help="the request file for the sessions the store lacks")
+    rq.add_argument("--start", default=START, help="first entry day")
+    rq.add_argument("--end", default=END, help="last expiry")
+    rq.add_argument("--out")
+    rq.add_argument("--retry-refused", action="store_true", help="ask again for expiries the vendor refused")
+    rq.set_defaults(fn=cmd_requests)
+    fe = sub.add_parser("fetch", help="the old Friday-only run (holds the vendor session)")
+    fe.add_argument("begin", nargs="?", default="2022-05-20")
+    fe.add_argument("finish", nargs="?", default=END)
+    fe.set_defaults(fn=cmd_fetch)
+    args = p.parse_args(argv)
+    return args.fn(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -90,6 +90,16 @@ def test_an_intraday_chain_fetch_takes_requests_needs_the_vendor_session_and_is_
     assert out["input"] == "req.json" and out["store"] == "backtest intraday_chains.db"
 
 
+def test_an_addon_weeklies_fetch_takes_requests_needs_the_vendor_session_and_is_bounded(files):
+    argv = rq.build_argv("fetch-addon-weeklies", {"requests": str(files["req"])}, PY, "2026-11-02T18:30")
+    cmd = [PY, "-m", "cherrypick.backtest", "fetch-addon-weeklies", "--requests", str(files["req"])]
+    assert argv == [*cmd, "--workers", "3", "--stop-by", "2026-11-02T18:30"]
+    assert rq.KINDS["fetch-addon-weeklies"] == ((rq.THETADATA,), True)
+    row = {"kind": "fetch-addon-weeklies", "args": json.dumps({"requests": "req.json"})}
+    out = rq.result_of(row, {"complete": 2}, Path("q.log"))
+    assert out["input"] == "req.json" and out["store"] == "backtest addon_weeklies.db"
+
+
 def test_an_open_interest_fetch_takes_a_plan_needs_the_vendor_session_and_is_bounded(files):
     argv = rq.build_argv("fetch-oi", {"plan": str(files["req"])}, PY, "2026-11-02T18:30")
     assert argv == [PY, "-m", "cherrypick.backtest", "fetch-oi", "--plan", str(files["req"])] + [

@@ -272,3 +272,12 @@ range is no part of a request's identity, so two requests for overlapping bars o
 the same range, and a file repeating a window with two ranges is refused. Item 38 (the calendars module's
 own rule, `scripts/calendars_item38.py`) finds its start with the same verb: its listing step is a file of
 one-bar probes, not a call to the vendor's expirations list, which a `script` row may not make.
+
+**The add-on weeklies fetch** (`fetch-addon-weeklies`, `addonfetch.py`; item 35): SPXW weekly put minute
+greeks over a bwb position's life, plus a 10:00 strip of ATM calls, from a `{requests: [{expiration, first,
+last}]}` file (an expiry and a span of sessions, so a Thursday entry into a Friday is a one-session
+request). It writes `addon_weeklies.db`, the add-on standalone study's store, in the shape that study
+read; `fetched_spans` records each request and a span replaces only its own sessions. The research queue
+runs it as a `fetch-addon-weeklies` row; `scripts/fetch_addon_weeklies.py requests` works out what the
+store lacks. `fetch-oi` keeps only an SPXW weekly's expiries within ten days (`oifetch.WEEKLY_ONLY`),
+not the hundred days of dailies the other roots keep.

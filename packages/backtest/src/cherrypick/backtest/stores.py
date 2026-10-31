@@ -67,8 +67,10 @@ STORES: list[dict[str, str]] = [
     {
         "file": "addon_weeklies.db",
         "holds": "SPXW weekly put minute greeks over each bwb life, and 10:00 ATM calls",
-        "built_by": "scripts/fetch_addon_weeklies.py",
-        "used_by": "the bwb add-on standalone study (2026-10-23)",
+        "built_by": "python -m cherrypick.backtest fetch-addon-weeklies --requests FILE "
+        "(scripts/fetch_addon_weeklies.py requests)",
+        "used_by": "the bwb add-on standalone study (2026-10-23); item 35, the bwb module's whole rule "
+        "(scripts/bwb_item35.py)",
     },
     {
         "file": "SPY-monthly-1545.db",

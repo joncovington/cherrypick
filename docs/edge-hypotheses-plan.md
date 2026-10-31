@@ -3219,6 +3219,23 @@ computed.*
   `~/.cherrypick/data/backtest/results/research/item35/`; this plan records the verdict without figures.
   The study is a new script (`scripts/bwb_item35.py`), run as `item35/plan`, `item35/fetch`,
   `item35/validate` and `item35/study`, queued as research-queue rows.
+- **Settled with the build, before the first read (2026-10-31, `scripts/bwb_item35.py`):**
+  - The replay uses bwb's own entry planner, add-on planner, trigger management, execution gate and
+    costs; only the chain reader is replaced. **The module's execution gate is applied** (a fire is
+    held while any fly leg is missing or wider than 25% of its mid), as paper applies it.
+  - Arming and firing are separate minutes, as in the module, evaluated from the entry minute through
+    15:59 of the expiry day. A minute whose near wing has no usable quote, no implied volatility or a
+    boundary delta is unmeasured and advances nothing. `delta-dte3` counts a fire only with at least 3
+    days left; `delta-shortstop` closes the add-on at the first minute after the fire with spot at or
+    below its short strike, with ic_close_fee and 12.5% slippage, and once more a minute later
+    (reported).
+  - The add-on bracket is placeable only at exactly the far wing plus and minus 5; an entry whose
+    strikes land off the module's spacing is dropped and counted. The flip is recomputed from the put
+    implied volatility at zero rate and that morning's open interest, and must match paper's flips on
+    80% of at least 500 measured ticks or the flip arms read no verdict (input).
+  - The fetches run as a new queue kind (`fetch-addon-weeklies`) and the existing open-interest fetch,
+    kept to weekly SPXW expiries. The bootstrap clusters by expiry; its p is the smoothed share at or
+    below zero. An entry whose expiry has no published SPX close is dropped for every arm.
 - **Decides** (the user decides everything about retirement and live; this item only supplies evidence):
   - **An arm passes:** bwb continues in paper with that arm, a paper check begins from the declared
     boundary, and the live pilot may be reconsidered by the user. It is *eligible to be considered*:
