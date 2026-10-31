@@ -274,7 +274,7 @@
       "id": 11,
       "study": "item11",
       "title": "The overnight gamma scalper (1DTE)",
-      "status": "declared",
+      "status": "retired",
       "legacy": true,
       "setup": "overnight-gamma",
       "side": "neutral",
@@ -289,7 +289,8 @@
       "pointer": "docs/edge-hypotheses-plan.md#11-the-overnight-gamma-scalper-1dte",
       "results": null,
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "retired unrun: 12(a)'s pin held overnight, with 10, 19 and 22 against it and no store holding a 13:30 1DTE entry"
     },
     {
       "id": 12,
@@ -1011,6 +1012,102 @@
       "retest": null,
       "retests": [],
       "outcome": "no barrier at monthly walls; walls stay a 0DTE read, the strikes-against-walls view stays dropped, Test B is not declared"
+    },
+    {
+      "id": 31,
+      "study": "item31",
+      "title": "The earnings module's paper rule: does any strategy it opens earn after costs?",
+      "status": "declared",
+      "legacy": false,
+      "setup": "earnings-premium",
+      "side": "neutral",
+      "structure": "iron-fly",
+      "window": "earnings",
+      "measure": "per trade, net dollars for the whole position and net as a share of capital at risk, for the iron fly, iron condor and directional credit spread built by the module's own code at the 15:40 ET bar the session before a stated-timing report and managed by management.evaluate on a 5-minute grid (50% target, 1.5x stop, first-morning loser close, three-session cap, expiry close at 15:30), at mid with the suite's 12.5% haircut and fees on both sides; paired with the same structure on the same name four weeks away with no report",
+      "expected": "a positive mean net share of capital at risk after costs, and a positive paired difference over the no-report control",
+      "sample": "158 names the liquidity verdict calls tradable on 2026-10-30 (hindsight, reported apart); Dolt explicit-timing reports, design 2020-01-22..2023-12-31 (1,842 events), holdout 2024-01-02..2026-07-14 (1,349) run after the design whatever it shows, counting only after a design pass; paper entries from 2026-10-28 are the untouched later check; < 150 paired trades in an arm in the design window or < 100 in the holdout = no verdict",
+      "rule": "per arm in the design window: mean net share of capital at risk > 0 with a one-sided date-clustered bootstrap t > 2, Holm across the three arms; mean paired difference > 0 on the same test; positive in each time-half and each name-half; positive at 1.5x fees and 25%-of-spread slippage and with the best 5 trades removed; then holdout mean net > 0 and paired difference > 0",
+      "mechanism": "implied volatility into a report overstates the move that follows, so the seller of the event is paid for carrying it; the module's term-structure and expected-move screens select names where that premium is richest",
+      "rivals": [
+        {
+          "explanation": "ordinary overnight theta, not the report",
+          "check": "paired control: same structure, same name, same weekday four weeks away with no report; net positive with the pair not positive is 'pays, not for the report', not a pass"
+        },
+        {
+          "explanation": "one era",
+          "check": "both design time-halves, then the holdout; 2020-02..06 removed and reported"
+        },
+        {
+          "explanation": "one name or a few",
+          "check": "both name-halves; no name above 8% of an arm's trades; the top five names removed and reported"
+        },
+        {
+          "explanation": "costs read too kindly",
+          "check": "1.5x fees with the haircut at 25% of spread must stay positive; natural side and mid reported"
+        },
+        {
+          "explanation": "a few full-wing losses or wins decide the mean",
+          "check": "positive with the best 5 trades removed; bootstrap on entry sessions; worst trades reported"
+        },
+        {
+          "explanation": "hindsight universe",
+          "check": "point-in-time dollar volume, weekly and measured at-the-money spread applied; result split by spread tercile; limit stated with any pass"
+        },
+        {
+          "explanation": "missing quotes drop the big losers",
+          "check": "drops counted by year and arm; exits marked at the last earlier quote; drop-rate gap and its year pattern reported"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#31-the-earnings-modules-paper-rule-does-any-strategy-it-opens-earn-after-costs",
+      "results": null,
+      "retest": null,
+      "retests": []
+    },
+    {
+      "id": 32,
+      "study": "item32",
+      "title": "Large options orders as a signal: the flow plan's declared test, registered",
+      "status": "declared",
+      "legacy": false,
+      "setup": "options-flow",
+      "side": "directional",
+      "structure": "shares",
+      "window": "multi-day",
+      "measure": "per tag (large opened call bought, put sold, put bought) and premium cut ($50k, $100k, $250k, plus the top 1% of the name's own orders over its last 20 fetched sessions), the tagged stocks' mean signed 5-session excess return over SPY from the session after the tag is known, against same-stage stocks without the tag on the same session",
+      "expected": "a signed excess above the matched baseline's, with larger cuts doing at least as well as smaller",
+      "sample": "point-in-time universe (raw close >= $5, 50-session median dollar volume >= $100M), every 5th design session 2022-05-16..2025-06-30; holdout 2025-07-01..2026-10-12 read once; thin 2025 grid sessions read with and without",
+      "rule": "a tag passes at a cut when its stationary-bootstrap interval over sessions excludes zero after deflation by nine and the larger cuts do at least as well; then once on the holdout; second family (40 trials) and earnings test (2) counted apart as docs/flow-signal-plan.md declares",
+      "mechanism": "a buyer who pays the spread to open a large option position carries information, or hedging demand, that the share price absorbs over the following sessions",
+      "rivals": [
+        {
+          "explanation": "the tag only marks leaders",
+          "check": "baseline matched on the board's relative-strength stage, same session"
+        },
+        {
+          "explanation": "size is not what carries it",
+          "check": "larger cuts must do at least as well as smaller"
+        },
+        {
+          "explanation": "a persistent name effect, not a flow event",
+          "check": "stale-tag placebo reported"
+        },
+        {
+          "explanation": "flow ahead of reports",
+          "check": "reading with report windows dropped reported; the earnings test counted apart"
+        },
+        {
+          "explanation": "one name or a few",
+          "check": "the five most frequent names removed, reported"
+        },
+        {
+          "explanation": "survivorship",
+          "check": "point-in-time universe by price and dollar volume, not today's list"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#32-large-options-orders-as-a-signal-the-flow-plans-declared-test-registered",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []

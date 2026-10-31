@@ -52,7 +52,7 @@ export interface StudyRow {
   /** The research queue's study slug: item23. */
   study: string;
   title: string;
-  /** The register's: observation, declared, running, passed, failed, no_verdict. */
+  /** The register's: observation, declared, running, passed, failed, no_verdict, retired (closed unrun). */
   status: string;
   /** Items 1-17: their four parts live in the plan section, not the register. */
   legacy: boolean;

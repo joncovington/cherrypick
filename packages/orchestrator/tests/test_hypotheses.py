@@ -124,6 +124,12 @@ def test_board_joins_results_and_queue_and_groups_rows():
     notes = {"{home}/r/design.json": "| arm | P&L |"}
     out = hy.board({"hypotheses": [done]}, [], lambda p: files.get(p, (None, None)), notes.get)
     assert [x["notes"] for x in out["rows"][0]["results"]] == ["| arm | P&L |", None]
+    # A retired row closed without a run: finished, no results, never re-tested.
+    retired = {**NEW, "id": 11, "study": "item11", "status": "retired", "legacy": True}
+    out = hy.board({"hypotheses": [retired]}, [], lambda p: (None, None))
+    assert out["rows"][0]["group"] == "finished" and out["rows"][0]["results"] == []
+    assert not [p for p in hy.check({"hypotheses": [retired]}) if "status" in p]
+    assert "retired" not in hy.RETESTABLE
 
 
 def test_similar_lists_only_rejected_matches_on_stated_tags():
