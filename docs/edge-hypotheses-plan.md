@@ -3590,6 +3590,537 @@ outcome of any arm has been read. `hook` is retired (it never fired) and is not 
     the retirement rule needs. Retirement stays the user's decision.
   - Curve's paper config is not changed while this item is open.
 
+### 38. The calendars module's own rule at real quotes: does the weekly SPY double calendar earn after costs, entered Monday or the Friday before?
+
+*Source: the user, 2026-10-30. Their standing rule is that no module is retired without a backtest of
+its own rule; this is calendars'. They approved it with calendars' paper loop kept running unchanged.
+The module is a forward exit-parameter experiment, so its paper ledger answers "which exit is least
+bad"; it has never been asked whether the entry it holds every week, with the best of those exits,
+earns anything after costs. **Published mechanism the Friday arm tests:** Jones and Shemesh (2018,
+Journal of Finance, "Option Mispricing around Nontrading Periods") find option returns lower over
+weekends, with little effect in S&P 500 index options. A calendar is short the front week and long
+the back, so a weekend of differential decay is the thing the Friday-close entrance would own and the
+Monday entrance forgoes; the paper's index-option null is the reason to expect SPY to show little,
+and the test is whether it does. **Look-alikes, said out loud.** (1) The module's own read-side
+exit-policy table (`exit_policies.py`), which replays a Friday-noon exit, profit targets, stops and
+the strike-touch close over `path`'s recorded marks in paper; it has ranked exits, never the entry's
+sign. (2) The advisor's paper experiments on a noon exit (`time_exit: fri_noon`, concluded by advisor
+kill and removed from the bounds on 2026-10-15): the `noon-friday` arm below is that exit again,
+at real quotes over years rather than a few paper weeks, not a new idea. (3) Step 0 of the time-spread
+plan scored the retired calendars and found nothing that made money; it was a modelled read, not this
+module's rule at real quotes. (4) Item 31 (the earnings module) and item 35 (bwb) are the same kind
+of study for other modules and share this item's fetcher and fee code. **Seen before declaring,
+honestly:** the paper ledger since 2026-08-24, whose outcomes the coordinator read on 2026-10-30; the
+hold-to-settlement `path` arm loses in nearly every paper week, which is why `noon-friday` was
+chosen, and no paper figure is used here. None of it is a holdout. No real-quote result for any arm
+has been computed.*
+
+- **Question:** does the module's double calendar earn more than zero per trade after the suite's
+  costs, entered on Monday morning (`control`) or at the previous Friday's close (`friday:control`),
+  and does it do so if entered only when SPY's implied volatility is low (`low-ivr`) or if it is closed
+  at Friday noon instead of the last fifteen minutes (`noon-friday`)?
+- **Where the edge would live:** a **risk premium and a decay differential at once**. A calendar sells
+  the front week's time value and buys the back week's, so it earns when the front decays faster than
+  the back and spot stays near the strikes. The strikes sit about 0.85 expected moves either side, so
+  the structure is a bet that the week is quieter than the straddle priced, and that the term structure
+  is not already pricing the difference. The Friday arm adds a **calendar effect** (the weekend's
+  decay, the published mechanism above). `low-ivr` is a **selection signal**: a calendar is long the
+  back week's vega, implied volatility mean-reverts, so an entry when it is low gives that vega a
+  tailwind and one when it is high fights it. `noon-friday` is **payoff shaping and timing**: the
+  short legs' gamma is steepest in Friday's last hours near the short strikes, so an earlier close
+  avoids the steepest part of the path (its price is the extra spread paid at noon on the long legs and
+  the theta given up). **What would falsify it:** a mean net per trade of zero or less after costs in
+  a half; or a positive mean that lives in a few big-move weeks; or a gate or an exit that helps only
+  because it was chosen after the result.
+- **The rule, from the module's own code** (`clock.py`, `engine.py`, `management.py`, the deployed
+  config):
+  - **Week and expiries.** The entry session is the week's Monday (the next trading day of that week if
+    Monday is closed). Front (short) legs expire on the week's last trading day; back (long) legs on
+    the first trading day of the following week. The ordinary week is tagged `dc_4_7`
+    (`dc_7_10` for the Friday arm). The module never pools tags; **judged here: ordinary-tag weeks
+    only** (`dc_4_7` for the Monday arms, `dc_7_10` for the Friday arm). Holiday-shifted weeks
+    (`dc_3_6`, `dc_4_8`, Thursday fronts) are counted and reported, not judged and not fetched.
+  - **Expected move and strikes.** `core.structures.expected_move` from the front expiry's ATM call and
+    put mids with the 0.85 factor; put strike at spot less the move, call strike at spot plus it, each
+    the strike quoted on **both** expiries nearest the target (`engine.plan_entry`). A side whose debit
+    (back mid less front mid) is zero or less refuses the week (`non_positive_debit`); no common
+    strike refuses (`no_intersection_strike`); no ATM quote refuses (`no_em_quotes`). One lot of each
+    side (the double is two positions).
+  - **Entry time.** Monday arms: the first bar from 10:00 ET whose chain meets the entry rules, through
+    12:15 (the module retries each tick to the window's end; at real quotes the 10:00 bar will almost
+    always pass). Friday arm: the first passing bar from 15:50 to 16:00 on the previous trading day,
+    **only after** that session's Monday-regime exits are done (the module's state gate; the replay
+    enforces it by order: the exit marks are fixed before the Friday entry bar is read).
+  - **Exits.** `control`: every leg closed in the window 15:45 to 15:55 on the front expiry, each bar
+    gated by `core.spreadbook.exit_spread_blocks` (a leg is too wide only when wide in percent,
+    over 25% of mid, **and** in money, over $0.05, per leg); a window with no passing bar falls through
+    as in the module: shorts settle, longs are sold at the Monday disposition (09:45, bars to 09:55).
+    `path`: nothing closes; shorts settle on the Friday close, longs are sold at the Monday
+    disposition. `friday:control` and `friday:path` close the same way on the same expiries.
+  - **Ex-dividend weeks.** A week with a declared SPY ex-date in `[entry session, back expiry]`
+    (Friday arm: from the entry Friday) is skipped, as the module skips it. The historical dates are
+    declared from the issuer's distribution schedule and written to the run card before any fetch
+    (see the open choices in the plan step); they are never computed.
+- **The arms judged (four; Holm across four).**
+  - `control`: the Monday entry above, all legs closed in the Friday window.
+  - `friday:control`: the Friday-close entry above, all legs closed in the following Friday's window.
+    Its strikes are its own (the module's design: a seven-day expected move at the Friday close), so it
+    is judged on its own mean. Reported beside it, not judged: the difference to `control` on the
+    weeks both traded (the two skip different weeks, so no surface assumes a match), and the module's
+    paired-debit read, the Monday-moment price of the strikes the Friday arm bought, which needs no
+    extra request (the Monday bar is already fetched).
+  - `low-ivr`: `control`, entered only when SPY's 30-day at-the-money implied volatility is in the
+    lowest third of its trailing range. **The reading, declared:** each Friday at the 15:55 bar (known
+    before Monday), the two standard monthly expiries bracketing 30 calendar days give the vendor's
+    at-the-money implied volatility (call and put mean at the strike nearest spot), interpolated in
+    total variance to exactly 30 days; the **rank** is (reading less the trailing minimum) divided by
+    (maximum less minimum) over the trailing 52 weekly readings (the same 252-session window at weekly
+    sampling, a declared saving: daily readings would add about 5,000 requests); entered when the rank
+    is **at or below one third**, one threshold, no other run. A week with a missing reading is
+    refused as the live module would refuse an unmeasured regime. Reported beside it: the same rank
+    from the public 30-day volatility index (zero requests), and the agreement of the two.
+  - `noon-friday`: `control`'s entry; every leg closed at the first passing bar from 12:00 ET on the
+    front expiry's day, the same gate, falling through to the `control` window if no bar to 12:10 passes.
+  - **Reported, not judged (recording arms):** `path` and `friday:path`, with settlement and the
+    delivered shares' disposal as below.
+  - **Not included, said out loud.** Other strike distances (a search over a parameter the module
+    does not vary); event skipping around Fed days, CPI or earnings (there is no clear sign for a
+    calendar: a long back week gains from a vol rise, a short front loses from a move, and the sign
+    depends on which dominates); the read-side grid's profit targets, stops, strike-touch and
+    Thursday-close exits (they need the whole week's path, which this fetch does not hold, and they stay
+    a forward paper question); the advised twins (they cannot arm in a replay).
+- **Data.** Everything comes through the intraday chain fetcher built for item 31
+  (`packages/backtest`: `intradayfetch.py`, `fetch-intraday-chains`, store `intraday_chains.db`,
+  client `ThetaDataClient.chain_window`, already registered in `stores.STORES`). A request is a symbol,
+  a session, an expiry and a window; SPY, one request returns every strike and both sides at each bar
+  with the bid, ask, delta, implied volatility and the underlying's price. Per fetched week:
+
+  | request | session and expiry | window |
+  |---|---|---|
+  | Monday entry, front | entry session, front expiry | 10:00 to 12:15, 15-minute bars (10 bars) |
+  | Monday entry, back | entry session, back expiry | the same |
+  | Friday noon, front and back | front expiry's day, each expiry | 12:00 to 12:10, 5-minute bars |
+  | Friday close, front and back | front expiry's day, each expiry | 15:45 to 15:55, 5-minute bars |
+  | Monday disposition (`path`, and any fall-through) | back expiry's day, back expiry | 09:45 to 09:55, 5-minute bars |
+  | Friday entry, front and back | previous trading day, each expiry | 15:50 to 16:00, 5-minute bars |
+  | 30-day reading, the two bracketing monthlies | previous Friday, each | the 15:55 bar |
+
+  That is 11 requests a week. **The bar choice, stated:** the judged Monday entry is the 10:00 bar (the
+  first bar the module's window opens on); the 10:30, 11:30 and 12:00 bars of the same request are
+  reported as sensitivities at no extra request. The 16:00 bar of the Friday window may not exist;
+  the 15:50 and 15:55 bars are the judged ones and a request with no 15:50 or 15:55 bar is counted by
+  reason. Settlement spot is the official SPY close (broker daily bars first, the history's end-of-day
+  file as the cross-check, differences reported); the 15:55 bar's underlying is the sensitivity.
+  Other inputs: the public 30-day volatility index file, the declared ex-dividend dates, the paper
+  ledger (validation only), `cherrypick.core.fees` and `core.structures`.
+  - **Window start, found not assumed.** The structure needs a Friday and a following-Monday SPY
+    expiry in the same week. Monday and Wednesday SPY expiries are believed to date from somewhere
+    between 2016 and 2022; this is **not verified**. A listing step (one expirations call a year, about
+    11 calls, counting nothing else) finds the first Monday for which both exist in the vendor's
+    history; the start **S** is that Monday, written to the run card before any chain is fetched. A
+    **coverage pilot** then draws 40 weeks by a seeded hash of the date (never by outcome), across the
+    years from S, and fetches their 11 requests; the declared rule is that S moves to the first year
+    from which **every** later year has at least 90% of the pilot's requests complete (rows at the
+    needed bars, with delta, implied volatility and the underlying present), and the study runs on
+    that one basis, never mixed. The pilot reads row counts and bar presence, never a price into a
+    result. It also tests the 15-minute interval and the 16:00 bar.
+  - **Request count and time.** About 42 judged-candidate weeks a year (52 less holiday-shifted weeks,
+    ex-dividend weeks and Good Friday), 11 requests each, plus the 52 weeks of warm-up readings (104
+    requests), plus about 10% for retries and refusals.
+    - **If S is September 2016** (the optimistic reading): about 424 weeks to the week of 2026-10-19,
+      4,660 requests, 4,800 with warm-up, about **5,300** with retries. At the pace item 31's smoke test
+      saw (about 0.4 to 1.0 seconds a request) that is **35 minutes to 1.5 hours**, in the research
+      queue, holding the one vendor session (nothing else may use the options history meanwhile).
+    - **If S is May 2022** (the pessimistic reading, with item 35's store): about 186 weeks, 2,050
+      requests, 2,150 with warm-up, about **2,400** with retries, **16 to 40 minutes**. This window
+      cannot meet the minimum below, so the study would read no verdict; it is stated now so that is
+      not a surprise.
+    - Rows: strikes are bounded either side of spot as the minute store does (50), about 200 rows a
+      bar-chain; about 43 bar-chains a week, about 8,600 rows a week, about 3.8 million rows over ten
+      years. Unbounded, about five times that.
+    - The exact count and the pace replace these figures after the listing step and the pilot's first
+      20 requests.
+  - Everything fetched and derived stays under `~/.cherrypick/data/backtest/results/research/item38/`;
+    this plan records the verdict without figures. The study is a new script
+    (`scripts/calendars_item38.py`), run as `item38/plan`, `item38/pilot`, `item38/fetch`,
+    `item38/validate` and `item38/study`, queued as research-queue rows.
+- **Fills and costs: the paper ledger's basis,** so the replay and the paper check read the same fills.
+  Each opening and closing leg at mid plus slippage of 12.5% of its quoted spread, capped at 15% of
+  mid (`core.fees` default, calendars' config sets no override): that is 25% of the way from mid to the
+  natural side. Fees from `engine.entry_cost` and `engine.close_cost` (`core.fees.spread_entry_cost`
+  and `spread_close_cost`: SPY carries no index exchange fee), the $5 settlement event per in-the-money
+  symbol (`ic_expire_fee`), and for `path` the physical-settlement terms below. **Verdict basis:
+  this one.** Stressed (the pass must survive): **1.5 times all modelled costs** (fees and slippage
+  together). Reported, not required: halfway to the natural side (25% of the spread, uncapped, twice
+  the paper's slippage), the natural side, and mid with no slippage.
+  - **The spread gate and the strike window,** applied to the stored quotes as the module applies
+    them. Entry: `strike_window_pct` 0.04 admits only strikes within 4% of spot into the entry
+    snapshot; the module has **no** spread gate at entry (its gate acts on exits), so an entry leg
+    wider than 25% of mid is counted and reported, not refused. Exit: a leg wide in percent and in
+    money blocks that bar; the next bar in the window is tried; none passing means the fall-through
+    above. Stored quotes have no age; the module's quote-age test (300 seconds) cannot bind and its
+    absence is a stated limit, kinder than a cache.
+  - **Settlement (`path`, `friday:path`, and a fall-through).** SPY is physical: an in-the-money short
+    hands over 100 shares per contract at the Friday close; the shares are booked at the settlement
+    spot and disposed at the Monday 09:45 bar's underlying, with the module's share-disposal costs and
+    the $5 event (`engine.assignment_from`, `core.fees.assignment_fee`); the long legs are sold at
+    the Monday bar's quotes through the close cost. Calendars' dividend skip stands in for early
+    assignment, as in paper.
+  - **Refusals.** Refused weeks are not trades, as in paper. Counted by reason (`no_em_quotes`,
+    `no_intersection_strike`, `non_positive_debit`, no usable bar, ex-dividend, calendar shift), by
+    year and by arm; exits that fell through counted by arm and year. **Compared with paper's:** the
+    paper ledger's skipped-week reasons since 2026-08-24 (its first Monday took no position on a
+    stale cache) are tallied by the same names. The replay has real minute-stamped quotes, so
+    feed refusals (`no_fresh_quotes`) have no counterpart and the comparison is on the reasons that do:
+    the debit and strike refusals and the exit-gate fall-throughs. A rate that differs by more than
+    5 points between the halves, or is highest in the worst years, is reported with the result.
+- **Measured,** per trade (one week of one arm: the double, both sides, one lot each): net dollars in
+  columns that add up: gross at the entry and exit marks, entry fees, entry slippage, exit fees, exit
+  slippage, settlement and share-disposal costs, and the net. Per arm: the mean, its week bootstrap,
+  the win rate, the worst trade, the largest five losses, net by year and by quarter, and the entry
+  debit (so net is also reported as a share of the debit; SPY roughly tripled over the window, so the
+  dollar size of a lot differs by year and the share is the scale-free check, **not scaled**).
+- **Windows** (S per the listing step and pilot; end: the week of 2026-10-19, whose Monday
+  disposition falls on 2026-10-26; the week of 2026-10-26 is not included):
+  - **Holdout:** entries 2024-01-02 to 2026-08-21 (about 105 judged weeks), run after the design
+    whatever it shows, counting only after a design pass.
+  - **Design:** S to 2023-12-29. Halves: at the median judged week, the date written to the run card.
+  - **If S is after 2019-12-31,** the split moves before any quote is read to design S to 2024-12-31
+    and holdout 2025-01-02 to 2026-08-21 (about 75 weeks), so the design is as long as the history
+    allows; the minimums below then decide whether there is a verdict.
+  - **The paper ledger** (entries from 2026-08-24, to the week of 2026-10-19) is used **for
+    validation of the replay's entries only**, since it is not a clean holdout and its outcomes have
+    been read. Rule: the same expiries, and on at least **75% of the overlapping Monday weeks and of
+    the overlapping Friday weeks** the same strikes on both sides and each side's debit within $0.10
+    (the paper's 30-second tick against a 15-minute or 5-minute bar moves spot; the strike is the
+    check, the debit the tolerance), else the study stops and the replay is fixed first. With about
+    ten Monday weeks and seven Friday weeks this is a coarse check and is said to be one; the entry
+    bar nearest the paper's recorded entry time is also run and reported. Exit and
+    settlement agreement on those weeks is **reported, not gated**, and nothing in the replay reads a
+    paper outcome.
+  - **Minimum weeks:** 150 judged weeks per arm in the design window (50 for `low-ivr`) and 60 in the
+    holdout (20 for `low-ivr`). Fewer is no verdict for that arm. If S is September 2016 the design
+    holds about 290 weeks; `low-ivr` about a third of that.
+- **Pass-or-fail rule,** per arm (four tests), all in the design window:
+  - the mean net per trade above zero, with a one-sided bootstrap p resampling **weeks** (one trade per
+    arm per week; 2,000 resamples, seeded) and the lower bound of the 95% interval above zero,
+    **Holm across the four** at 0.05;
+  - the mean net positive in each time-half;
+  - still positive at **1.5 times the costs**;
+  - still positive with the five worst weeks removed;
+  - `noon-friday`: the mean net also above `control`'s on the same weeks (paired, one-sided p under
+    0.05);
+  - `low-ivr`: the mean net also above the mean of `control` on the weeks it did **not** enter
+    (two-sample, week bootstrap, one-sided p under 0.05); a `low-ivr` that is positive but not above
+    those weeks is recorded "pays, not for the gate" and means `control` itself is the thing;
+  - `friday:control`: no pairing is required; the difference to `control` is reported;
+  - then, in the holdout, read once: the mean net above zero and, for `noon-friday` and `low-ivr`,
+    above their comparators.
+  - **Reading a partial pass.** An arm passing while `control` fails is recorded as that arm only;
+    `control` failing and `friday:control` passing is recorded as the Friday entry only.
+- **Rival explanations, each with its check:**
+  - *One regime (a single volatility regime, a trending decade):* both time-halves, then the holdout;
+    net by year and by calendar quarter; the result with each calendar year removed in turn (the
+    worst two reported); the low-rank weeks counted by year for `low-ivr`.
+  - *A few big-move weeks decide the mean:* the five-worst-weeks removal in the rule; the share of net
+    lost in the worst 5% of weeks reported; the win rate beside the mean (a calendar wins small and
+    loses on a move).
+  - *The intraday bar choice:* the 10:30, 11:30 and 12:00 entry bars, the Friday entry at 15:50 and at
+    15:55, the exit at each bar of its window, all reported as sensitivities of the same weeks; the
+    sign must not depend on a bar the module did not name. The first-passing-bar entry is the judged
+    one.
+  - *The module's own exit-policy replay (`exit_policies.py`):* it already derives `control`, the
+    Friday-noon exit and `path` (`expiry-longs-mon`) through the live cost stack and validates itself
+    against the recorded arms to the cent. **Reused if it fits:** the replay builds week records
+    in the shape `week_data` returns, from the stored bars (ticks at the fetched bars only), and calls
+    `derive` for the three policies that need no other tick (`control`, `time-fri-noon`,
+    `expiry-longs-mon`) and `validate_against_control` against a paper week to confirm the code reads
+    it the same way. If `derive` cannot be fed without the ledger, its pure helpers
+    (`_close_roles`, `_settle_shorts`) are reused and the validation is the cent check on the paper
+    overlap weeks. A second derivation of the same rule would drift where nothing could see it.
+  - *Model against real fills:* quotes are real, and the same-date paper entries validate them; the
+    stresses above and the natural side bound what fill quality alone can do. Early SPY Monday
+    expiries were thin, so the back leg's spread by year is reported and a mid-fill result in
+    those years is not read as a fill.
+  - *The entry quote is stale or one-sided:* a bar with a zero bid or ask on a needed leg is a usable
+    bar only if the module would price it (`mid` from a two-sided quote); counted by year.
+  - *Selecting the Friday arm's strikes by a seven-day move:* the paired-debit read at the Monday
+    bar isolates what each entrance paid for the same strikes; reported beside the judged mean.
+  - *The signal chosen by looking:* one threshold (one third), one reading declared; the public-index
+    rank beside it; no other threshold is run.
+  - *Dividend skips bias the sample:* the skipped weeks (about four a year) are the quarterly
+    expirations; the judged population is ordinary weeks and says so, the same as the module's.
+  - *Multiple comparison:* four tests under Holm; the sensitivities are reported and none is judged.
+- **Minimum detectable effect (B12).** Holm over four puts the first test's bar at a one-sided p of
+  about 0.0125 (z about 2.24). The trade-to-trade spread is an **assumption** until the design
+  window's own replaces it before the holdout is read: per-week net standard deviation of one double
+  about $90, weeks independent (one trade per arm a week). On those, 290 design weeks detect a mean of
+  about **$12 a trade** at the Holm bar (about $9 unadjusted, and about **$16** at 80% power at the
+  Holm bar); `low-ivr` with about 95 weeks about **$22** (about $29 at 80% power); `noon-friday`'s
+  paired gap, with a smaller spread on the difference, is detected if larger than about $8 (an
+  assumption: the paired spread is taken as half the unpaired). A fail reads "no edge larger than about
+  $15 a trade", which is smaller than the calendar's costs, a figure that depends on the debit (the
+  costs are the second number to read it against). If S is later and the design shorter, the same
+  formula gives the larger figure the run card records.
+- **Name split (B9):** does not apply (one underlying).
+- **Declared limits (B11):**
+  - Bars, not the module's 30-second cache ticks; the Monday entry is read at 15-minute bars and the
+    Friday windows at 5 minutes.
+  - The vendor's delta and implied volatility are used only for the `low-ivr` reading and the
+    delta in reporting; the module's entry rule needs neither.
+  - Calendars before the weekly structure existed on both expiries cannot be built; the start is the
+    listing step's, not chosen.
+  - Early assignment is not modelled (the module does not model it either; a skipped week stands in
+    for ex-dividend risk, a real-money module would need the live prerequisites in the module file).
+  - Settlement is the official close, the paper's is the last cached trade, so replay is nearer the
+    live basis.
+  - SPY's level changed about threefold, so a lot's dollar size differs by year; reported by year and
+    as a share of debit, not scaled.
+  - Weekly sampling stands in for 252 daily readings in the IV rank.
+  - The historical ex-dividend dates are declared from the issuer's schedule and are only as good as
+    that declaration.
+- **Decides** (the user decides everything about retirement and live; this item only supplies evidence):
+  - **An arm passes:** that arm continues in paper as calendars' base, a paper check begins from a
+    declared boundary (`dc_4_7` and `dc_7_10` still never pooled), and calendars' paper config is
+    changed only at that boundary. No live prerequisite in the module file is touched; a pass makes
+    the arm *eligible to be considered*.
+  - **Every arm fails or has no verdict:** the evidence the user's rule needs before any retirement
+    decision is in hand (the real-quote record of the module's rule, arm by arm, with the minimum
+    detectable effect and the weeks that decided it), and retirement stays the user's. Paper keeps
+    running meanwhile, unchanged.
+  - **Only `noon-friday` passes:** recorded as the exit only, the finding the module's grid already
+    carries (a Friday-noon row) confirmed or refuted at real quotes, over years.
+  - **Only `friday:control` passes:** recorded as the Friday entrance only, and Jones and Shemesh's
+    weekend effect found in SPY where the paper found little in the index.
+
+### 39. The contango module's own rule on real daily prices: the switch, a 9-day exit and a realised-volatility gate
+
+*Source: the user, 2026-10-30. The rule: no module is retired without a backtest of its own rule. The
+user approved keeping contango's paper running unchanged and declaring this backtest, with these two
+variants. **Seen before declaring, said out loud.** `scripts/contango_replay.py` ran over SVXY and SHV
+from 2018-03 to 2026-10 before the module was built (2026-10-05), and its aggregate table (CAGR,
+maximum drawdown, switches, at 2 and at 10 bps a side, for `control`, `flipexit` and holding SVXY) is
+in the module's CLAUDE.md. It was exploratory: the 0.97 and 1.0 thresholds were chosen having seen it,
+it was never a declared test, it had no holdout (its span covers both windows below) and no stress
+beyond the 10 bps line. So for `control`, `flipexit` and the SVXY baseline the holdout below is not
+clean; the clean checks are paper (from 2026-10-06, untouched) and, for the two new arms, which have
+never been run, the holdout. The same aggregate table is why the return floor below is a live
+question for `control` at 10 bps rather than a formality. Also seen: the stored coverage (counts of
+sessions and dates, no return or outcome). **No outcome of any arm below has been computed under this
+declaration.***
+
+- **Question:** does contango's own rule, holding SVXY while VIX/VIX3M is below 0.97 and SHV
+  otherwise, earn a better risk-adjusted return than holding SVXY, once switching costs are paid? And
+  does either of two declared changes to the exit do better than the rule as run?
+- **Where the edge would live:** **premium, timed by a regime filter.** SVXY (-0.5x short VIX futures)
+  earns the roll yield while the curve is in contango and gives it back, with interest, when the curve
+  inverts. The gate claims to sidestep the inversions at the price of the quiet days it sits out. The
+  edge is the *avoided loss*, not extra return, which is why the judgement is risk-adjusted. **What
+  would falsify it:** the gate's Sharpe ratio is not above holding SVXY's, or it is only above in one
+  crash, or the return it gives up exceeds 3 points a year. The 2026-10-05 notes are the prior: the gate
+  bought drawdown, not return.
+- **Look-alikes:** curve (the same signal on VXX call spreads; costs take about half the credit);
+  the `/VXM` plan (`docs/vxm-plan.md`, CFE settlements, awaiting the user's decisions, not built);
+  item 26-27 (a leveraged-fund rule with a long-hold problem, the same family of funds).
+
+## The arms (four judged, Holm across them)
+
+Rules are the module's own (`regime.target_state`, `replay.run`), not restated from memory; the script
+imports them. A decision is a state, SVXY or SHV; `control` and the gates are stateless, `flipexit`
+holds through the band.
+
+| arm | holds SVXY when | otherwise |
+|---|---|---|
+| `control` | VIX/VIX3M < 0.97 | SHV |
+| `flipexit` | VIX/VIX3M < 0.97 to enter; stays in until it reaches 1.0 | SHV |
+| `vix9d-exit` | `control`'s test holds **and** VIX9D/VIX < 1.0 | SHV (both conditions must clear to re-enter) |
+| `rv-gate` | `control`'s test holds **and** VIX > SPX's 10-session realised volatility | SHV |
+
+- **Mechanisms, one each.** *`vix9d-exit`:* the 9-day index reacts to a shock before the 30-day one
+  does; the front of the curve inverts first, so the exit can come a session or two earlier than the
+  30-day ratio's. *`rv-gate`:* SVXY earns the variance premium (implied over realised). When
+  realised volatility runs above implied, the premium is negative whatever the curve's shape.
+- **Definitions that need a rule.** *Realised volatility:* the sample standard deviation of 10
+  daily SPX log returns ending on the decision day's close, times the square root of 252, times 100,
+  in volatility points beside VIX. Strict greater-than in the gate, no margin. *VIX9D/VIX:* both at
+  the same close, strict less-than 1.0. The gates add no state: a day either clears them or not.
+- **Not included, said out loud.** Other ratio thresholds (a search the sample cannot afford under a
+  Holm of four); the `/VXM` plan (another instrument); leveraged short-volatility funds (borrow, and
+  worse risk-adjusted in the 2026-10-05 notes); SVIX (-1x, replayed worse).
+
+## The baselines
+
+- **`hold-svxy`:** SVXY bought on the first session and held, one side of cost. The comparison every
+  arm is judged against.
+- **`hold-shv`:** SHV held; reported, not judged. Excess return over the T-bill is measured against
+  SHV's own total return, so an arm sitting in SHV earns an excess of zero by construction.
+
+## Measured
+
+Daily, for each arm and baseline, in each window and half: the Sharpe ratio (mean daily return in
+excess of SHV's, over its standard deviation, times the square root of 252), the CAGR, the maximum
+drawdown, the Calmar ratio (CAGR over the absolute drawdown), the worst day and worst five-session
+week, the share of sessions in SVXY, the number of switches, the **whipsaw count** (a switch followed
+by the opposite switch within 5 sessions), and the costs paid as points a year. Each arm's difference
+from `hold-svxy` is a paired daily series.
+
+## Fills and costs
+
+- **The decision is approximated by the close.** The module reads the ratio at 15:50 and fills inside
+  an 8-minute window; the replay reads the close's ratio and fills at the close, as
+  `cherrypick.contango.replay` does. Reasons: the daily index files carry no 15:50 print, the
+  stream cache has no history before 2026-10-05, and the module's own replay is the one the paper loop
+  is validated against (`contango_replay.py --validate`). **What is lost:** the close can sit on
+  the other side of a threshold from 15:50's reading, and it uses ten minutes of information the module
+  did not have. Two handlings: the **lag clause** below (the prior close's ratio, same-day close
+  fill, which uses less information than the module had), and the validation's per-session decision
+  agreement on the paper days, reported.
+- **Costs:** 10 bps of NAV a side, two sides per switch, and one side to open. Judged at 10 bps;
+  reported at 2 bps (the module's slippage floor). The two funds trade at a few basis points in the
+  sizes this suite runs, so 10 bps is a stress, not an estimate.
+- **Returns:** SVXY from the store's raw bars, split-adjusted; SHV total return with its
+  distributions credited on the ex-date (the technicals store's `dividends`, as the module credits
+  them). A session missing any input for an arm is skipped and counted, never filled with a zero.
+
+## Data
+
+All on disk, nothing licensed, nothing fetched. Results and any derived series stay under
+`~/.cherrypick/data/research/item39/`; this plan records the verdict without figures.
+
+- **Prices:** SVXY and SHV daily bars from the technicals store (`history.db`), through
+  `pmcc_shield_replay.closes(total_return=True)`, the reader `contango_replay.py` uses.
+- **Indexes:** VIX, VIX3M, VIX9D and SPX daily closes from the exchange's public files in
+  `~/.cherrypick/data/market-files/`.
+- **Coverage, counted 2026-10-30 (no returns):**
+  - SVXY has bars from 2011-10-04 to 2026-10-29 and **one split, 2024-04-11, 2 for 1** (a forward
+    split, which the adjustment carries). No dividends. The 2018-02-27 change from -1x to -0.5x is a
+    change of objective, not a split, so the store has no marker for it: **the start is 2018-03-01**.
+  - SHV has bars from 2011-01-03 and 184 recorded distributions to 2026-10-01.
+  - VIX has 2018-03 onward complete. VIX3M starts 2009-09 and has no gap in either window. VIX9D
+    starts 2011-01-04. SPX is complete through 2026-10-16.
+  - **VIX9D and SPX stop at 2026-10-16**, nine sessions short of VIX and VIX3M. They are refreshed
+    before the study runs; if they are not, the two arms that need them end at 2026-10-16 and the
+    report says so. `control` and `flipexit` need only VIX and VIX3M.
+  - 2020-02-17 (Presidents' Day) is a row in the SVXY store but in none of the index files. It is
+    skipped and counted as a non-session; seven session dates differ between the SVXY and SHV
+    stores in all, listed by the plan step and skipped the same way.
+  - Session counts, 2018-03-01 on: design 1,216; first half 586, second half 630; holdout 960 to
+    2026-10-29, the last stored session (today's bar is not yet in the store).
+  - **More than 1% of a window's sessions missing an input for an arm is no verdict for that arm.**
+
+## Windows and the pass rule
+
+- **Design:** 2018-03-01 to 2022-12-30 (1,216 sessions), split at 2020-07-01 into 2018-03 to
+  2020-06 (the 2018 fourth-quarter fall and the 2020 crash) and 2020-07 to 2022 (the recovery and
+  the 2022 bear). **Holdout:** 2023-01-03 to the last stored session (2026-10-29 at drafting), read
+  once, run after the design. **Paper** from 2026-10-06 is the untouched later check, read with
+  `contango_replay.py --validate` and the console's `tracking`; it has no say in the verdict.
+  The 2020-07-01 split is the only date that puts a different volatility event in each half; the
+  crash sits in the first, the 2022 rise in rates in the second.
+- **Pass rule, per arm, all at 10 bps a side, in the design window against `hold-svxy`:**
+  1. **Sharpe:** the arm's Sharpe ratio above `hold-svxy`'s, with the one-sided 95% lower bound of
+     the difference above zero from a stationary bootstrap of paired daily returns (mean block 20
+     sessions, 20,000 resamples, seed 39, the difference in Sharpe ratios recomputed on each
+     resample). The arm's p-value is the share of resamples with a difference at or below zero;
+     **Holm at 0.05 across the four arms.**
+  2. **Drawdown:** a smaller maximum drawdown than `hold-svxy`'s.
+  3. **Return floor:** CAGR no more than 3 points a year below `hold-svxy`'s. A non-inferiority
+     floor: item 27's margin was 2 points for a rule that changed an exit; this rule gives up
+     exposure by design and the seen aggregates had it giving up several, so 3 is the declared
+     price of the drawdown, and it is set here, before any run.
+  4. **Both halves:** in each half separately, the Sharpe difference above zero and a drawdown no
+     deeper than `hold-svxy`'s.
+  5. **Not one crash:** with 2020-02-19 to 2020-04-30 removed from every series (sessions dropped,
+     the rest joined), the Sharpe difference still above zero.
+  6. **Not the close:** with the ratio (and the 9-day and realised-volatility inputs) lagged one
+     session and the fill still at the same-day close, the Sharpe difference still above zero.
+- **Then the holdout, read once, for the arms that pass the design, at 10 bps:** the arm's Sharpe
+  above `hold-svxy`'s and the return floor met (CAGR no more than 3 points below). A holdout cannot
+  overturn a design fail.
+- **If more than one arm passes,** the one with the higher design Sharpe difference becomes the base
+  candidate; the others are reported.
+- **Minimum detectable effect (B12), an assumption, not an outcome.** Taking SVXY's volatility as
+  roughly 45 to 50% a year, an arm that is in SVXY about two thirds of the time (correlation with
+  holding about 0.8), and 1,216 daily sessions, the standard error of the Sharpe difference is of
+  the order of 0.3, and clearing a Holm-of-four one-sided bound needs a difference of roughly
+  0.6 to 0.7. Volatility shocks cluster, and the design window holds about three independent ones
+  (2018 fourth quarter, 2020, 2022), so the effective sample is smaller than the session count and
+  the bootstrap's block of 20 only partly allows for it. **A Sharpe difference under about 0.5 cannot
+  be told from zero here, so a fail reads "no edge of detectable size", not "no edge".** Drawdown
+  and the return floor are descriptive: a gate can pass them and fail the Sharpe clause for want of
+  power, and the report says which.
+
+## Rival explanations, each with its check
+
+- **One crash decides (2020-03).** The not-one-crash clause above, the per-year table, and the
+  worst-day and worst-week columns with and without the window. A gate that works only in 2020 is
+  not a rule.
+- **Costs.** Judged at 10 bps, reported at 2; switches, whipsaw count and costs as points a year
+  beside every figure. `flipexit` switches about half as often as `control`; `vix9d-exit` and
+  `rv-gate` add switches, so they are expected to pay more, and the count shows it.
+- **The ratio read at the close against at 15:50.** The lag clause, and the paper-days decision
+  agreement from `--validate`, reported. A rule that flips on a one-session lag was reading the
+  close's noise.
+- **One regime.** Two design halves with different events, the holdout's own run, and per-year
+  tables. The holdout is a low-volatility stretch for most of its length; a gate that sits in SVXY
+  almost always has little to show there, so a holdout in which the arm is out of SVXY for under
+  5% of sessions is reported as uninformative about the gate rather than as a pass.
+- **The fund, not the rule.** SVXY is a fund, not the futures: the roll, rebalancing and fees are
+  inside its price; the fund's own history is what an account holds, so it is the right test, and
+  it is a single fund (a declared limit).
+- **Tuning.** The 0.97 and 1.0 thresholds were seen (above). The two new arms add one test each at
+  fixed values (1.0, 10 sessions) and no grid; the thresholds of `control` and `flipexit` were chosen
+  with the data in sight, which the report states beside their results.
+
+## Guards, each shown to fail
+
+Before an arm is read, each broken on purpose to see the check fail:
+- **Reproduction:** `control` and `flipexit` from the script equal `contango_replay.py` and
+  `replay.run` NAV for NAV on the same inputs. Broken by moving a threshold to 0.98.
+- **Accounting:** each NAV is the product of the held fund's daily returns less costs, to 1e-9; the
+  cost column equals switches times two sides. Broken by dropping a side of cost.
+- **No look-ahead:** the ratio, the VIX9D/VIX ratio and the realised volatility on day t use closes
+  through day t only. Broken by shifting the inputs back one day: the result must change.
+- **Split:** SVXY's return across 2024-04-11 is an ordinary day's, not a halving. Broken by using
+  the raw closes.
+- **Coverage:** a session missing an input is counted and skipped, never a zero return. Broken by
+  deleting a VIX3M row.
+
+## Declared limits (B11)
+
+Daily closes, not the 15:50 print; the decision and fill both at the close, which uses ten minutes of
+information the module did not have (the lag clause bounds it); one fund (SVXY) and one cash fund
+(SHV); costs a flat fraction of NAV, no spread or size effects; whole shares ignored; taxes ignored;
+the rules judged here are the module's, at thresholds seen before; four arms and about three
+independent volatility shocks in the design window, so low power (see the MDE); `hold-svxy` is the
+only judged baseline, and SHV is reported.
+
+## Data and the run
+
+A script, `scripts/contango_item39.py`, importing `contango_replay.py`'s readers and the module's
+`regime` and `replay` for `control` and `flipexit`, and run as `item39/plan` (the coverage counts and
+the listed skipped dates, no returns) and `item39/study` (queue rows, supervisor-run). It writes
+`~/.cherrypick/data/research/item39/results.json`. The plan step runs first and must report the
+VIX9D and SPX refresh done.
+
+## Decides
+
+- **A pass:** the passing arm (the higher design Sharpe difference if two) becomes contango's base
+  in paper at a declared boundary: a measurement-affecting change (which arms exist), batched, with a
+  `measurement_breaks` row. `control` and `flipexit` passing keeps the module as it is, with that arm
+  named the base.
+- **A fail or no verdict:** the evidence the retirement rule needs, with the minimum-detectable-effect
+  note beside it. Paper keeps running unchanged. Retiring the module, or either arm, stays the
+  user's decision.
+
+## Not worth revisiting
+
+| Idea | Why not | Evidence |
+|---|---|---|
+| Other ratio thresholds (0.90, 0.95, 1.05) | A search the sample cannot afford under a Holm of four | This item |
+| A `/VXM` arm | Another instrument; the plan awaits the user's decisions | `docs/vxm-plan.md` |
+| Leveraged short-volatility funds | Hard to borrow, worse risk-adjusted | 2026-10-05 notes |
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
