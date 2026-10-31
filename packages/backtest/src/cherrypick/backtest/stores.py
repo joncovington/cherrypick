@@ -45,7 +45,10 @@ STORES: list[dict[str, str]] = [
         "file": "intraday_chains.db",
         "holds": "single-name option chains at intraday bars (quote, delta, implied vol, underlying)",
         "built_by": "python -m cherrypick.backtest fetch-intraday-chains --requests FILE",
-        "used_by": "item 31, the earnings module's paper rule (scripts/earnings_item31.py)",
+        "used_by": (
+            "item 31, the earnings module's paper rule (scripts/earnings_item31.py); "
+            "item 38, the calendars module's rule (scripts/calendars_item38.py)"
+        ),
     },
     {
         "file": "flow.db",
