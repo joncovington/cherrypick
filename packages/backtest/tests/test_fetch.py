@@ -279,3 +279,38 @@ def test_a_stop_by_cancels_the_sessions_not_yet_pulled_and_says_stopped():
     assert report["stopped"] and report["fetched"] == 1, "the session in flight is kept, the rest wait"
     again = fetch.fetch(s, FakeClient(days), "SPX", "2026-10-13", DAY, cadence=60, log=lambda _m: None)
     assert again["skipped"] == 1 and again["fetched"] == 3 and not again.get("stopped")
+
+
+def test_workers_up_to_the_concurrent_limit_pull_that_many_sessions_at_once():
+    """A session's two requests run one after the other, so four workers is four requests in flight,
+    Standard's limit; more workers than the limit are held to it."""
+    import threading
+
+    days = {f"2026-10-{d:02d}": _rows(f"2026-10-{d:02d}", cadence=60) for d in (5, 6, 7, 8, 9, 13)}
+
+    class Counting(FakeClient):
+        def __init__(self, sessions):
+            super().__init__(sessions)
+            self.lock, self.now, self.most = threading.Lock(), 0, 0
+            self.gate = threading.Barrier(4, timeout=5)
+
+        def greeks(self, root, day, **kw):
+            with self.lock:
+                self.now += 1
+                self.most = max(self.most, self.now)
+            try:
+                if self.most <= 4 and len(self.calls) < 4:
+                    self.gate.wait()  # the first four only finish once all four are in flight
+            except threading.BrokenBarrierError:
+                pass
+            finally:
+                rows = super().greeks(root, day, **kw)
+                with self.lock:
+                    self.now -= 1
+            return rows
+
+    client = Counting(days)
+    fetch.fetch(
+        _settings(), client, "SPX", "2026-10-05", "2026-10-13", cadence=60, workers=8, log=lambda _m: None
+    )
+    assert client.most == 4

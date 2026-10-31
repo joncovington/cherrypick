@@ -117,10 +117,10 @@ def test_an_open_interest_fetch_takes_a_plan_needs_the_vendor_session_and_is_bou
 
 
 def test_a_session_fetch_writes_only_a_declared_store_variant_and_is_bounded():
-    args = {"store_tag": "wide", "from": "2022-05-16", "to": "2026-10-30", "workers": 2}
+    args = {"store_tag": "wide", "from": "2022-05-16", "to": "2026-10-30", "workers": 4}
     argv = rq.build_argv("fetch-sessions", args, PY, "2026-11-02T18:30")
     assert argv == [PY, "-m", "cherrypick.backtest", "fetch", "--store-tag", "wide", "--cadence", "60"] + [
-        "--from", "2022-05-16", "--to", "2026-10-30", "--workers", "2", "--stop-by", "2026-11-02T18:30",
+        "--from", "2022-05-16", "--to", "2026-10-30", "--workers", "4", "--stop-by", "2026-11-02T18:30",
     ]  # fmt: skip
     assert rq.KINDS["fetch-sessions"] == ((rq.THETADATA,), True)
     for bad, why in [
@@ -128,7 +128,7 @@ def test_a_session_fetch_writes_only_a_declared_store_variant_and_is_bounded():
         ({**args, "store_tag": "huge"}, "store_tag"),
         ({**args, "from": "2022-13-01"}, "from"),
         ({**args, "from": "2026-11-01"}, "after"),
-        ({**args, "workers": 3}, "workers"),
+        ({**args, "workers": 5}, "workers"),  # past Standard's four concurrent requests
         ({**args, "cadence": "60"}, "cadence"),
     ]:
         with pytest.raises(rq.Refused, match=why):

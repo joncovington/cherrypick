@@ -256,9 +256,9 @@ def _sessions_argv(args: dict, python: str) -> list[str]:
     lo, hi = _day_arg(args, "from"), _day_arg(args, "to")
     if lo > hi:
         raise Refused("fetch-sessions' 'from' is after its 'to'")
-    # Two requests a session against four concurrent: two sessions at most (backtest fetch.fetch).
+    # One request in flight a session against Standard's four concurrent (backtest fetch.fetch).
     return [python, "-m", "cherrypick.backtest", "fetch", "--store-tag", tag, "--cadence", str(cadence),
-            "--from", lo, "--to", hi, "--workers", _workers(args, 1, most=2)]  # fmt: skip
+            "--from", lo, "--to", hi, "--workers", _workers(args, 1, most=4)]  # fmt: skip
 
 
 def build_argv(
