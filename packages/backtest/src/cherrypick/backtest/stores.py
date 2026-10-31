@@ -39,7 +39,8 @@ STORES: list[dict[str, str]] = [
         "file": "eod_chains.db",
         "holds": "end-of-day option chains per (name, session, expiry), and daily expiry paths",
         "built_by": "python -m cherrypick.backtest fetch-chains --requests FILE; fetch-chain-paths",
-        "used_by": "credit-spread items 14-17 (credit_spread_plan, credit_spread_item17); income checks",
+        "used_by": "credit-spread items 14-17 (credit_spread_plan, credit_spread_item17); "
+        "item 37 (curve_item37); income checks",
     },
     {
         "file": "intraday_chains.db",
@@ -47,6 +48,7 @@ STORES: list[dict[str, str]] = [
         "built_by": "python -m cherrypick.backtest fetch-intraday-chains --requests FILE",
         "used_by": (
             "item 31, the earnings module's paper rule (scripts/earnings_item31.py); "
+            "item 37 morning sample (scripts/curve_item37.py); "
             "item 38, the calendars module's rule (scripts/calendars_item38.py)"
         ),
     },
