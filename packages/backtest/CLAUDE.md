@@ -233,6 +233,9 @@ is a lens, not a replay**: fixed lots, never compounded, so a chosen capital (`-
 percentages only, and is one account for every arm. Absent, each arm reads against its own peak
 session risk (MEIC's condors' max losses summed, flies' book peak risk), never one shared peak, which
 MEIC's control sampling stream would set for every arm; a schema with neither has no account.
+`read trades --id --arm` (2026-10-31) lists one arm's trades from the same ledgers (`trade_log`):
+each trade's times, its exit reason in the module's words and its money columns as `core.ledgers`
+names them, a field the schema does not record as null. Its own read, so `read run` stays light.
 
 **The grid block** (`grid.py`, 2026-10-31): a study that tests one parameter at several values (items
 23, 24, 43) writes `grid` into its result file: each setting's own mean net per session, and a label

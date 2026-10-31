@@ -175,6 +175,20 @@ def run_report(run_id: str, capital: float | None = None) -> dict:
     return {"ok": True, "report": report, "cards": _cards(run_id, report, capital)}
 
 
+def run_trades(run_id: str, arm: str) -> dict:
+    """One arm's trade log from a run (cards.trades_for_run): every trade with its own exit reason."""
+    from . import cards, runner
+
+    path = paths.results_dir() / "runs" / f"{run_id}.json"
+    if not run_id.replace("-", "").isalnum() or not path.exists():
+        return {"ok": False, "error": f"no run {run_id!r}"}
+    report = json.loads(path.read_text(encoding="utf-8"))
+    if arm not in (report.get("arms") or {}):
+        return {"ok": False, "error": f"run {run_id} has no arm {arm!r}"}
+    mod = runner.MODULES[report.get("module") or runner.MODULE]
+    return {"ok": True, "run_id": run_id, "arm": arm, "trades": cards.trades_for_run(run_id, mod.schema, arm)}
+
+
 def _cards(run_id: str, report: dict, capital: float | None) -> dict:
     """The run's cards (cards.py). A failure here is the cards' own error, never the report's."""
     from . import cards, runner

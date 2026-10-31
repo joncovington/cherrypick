@@ -1,15 +1,17 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import {
+  isBacktestArm,
   isBacktestCapital,
   isBacktestRunId,
   type BacktestOverview,
   type BacktestRunReport,
+  type BacktestTradeLog,
   type BridgedResult,
   type ResearchQueue,
   type StudiesBoard,
 } from "@console/shared";
 import { backtestOn, getFeatures } from "../services/featuresBridge.js";
-import { readBacktestOverview, readBacktestRun } from "../services/backtestBridge.js";
+import { readBacktestOverview, readBacktestRun, readBacktestTrades } from "../services/backtestBridge.js";
 import { readResearchQueue } from "../services/researchQueueBridge.js";
 import { readStudies } from "../services/studiesBridge.js";
 import type { ConsoleConfig } from "../config.js";
@@ -17,8 +19,8 @@ import { readSlices } from "../readers/slices.js";
 import { readQueueLog } from "../readers/logs.js";
 
 /**
- * `GET /api/backtest/overview`, `GET /api/backtest/runs/:id`, `GET /api/backtest/queue` and
- * `GET /api/backtest/studies` — the Backtest page.
+ * `GET /api/backtest/overview`, `GET /api/backtest/runs/:id`, `GET /api/backtest/runs/:id/trades`,
+ * `GET /api/backtest/queue` and `GET /api/backtest/studies` — the Backtest page.
  *
  * **Each route refuses on its own, fail closed.** Unless the orchestrator's features answer was read
  * and says `backtest: true` (`featuresBridge.backtestOn`), the answer is the same 404 an unknown API
@@ -53,6 +55,19 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
         return reply.code(400).send({ error: "capital must be whole dollars" });
       }
       return readBacktestRun(req.params.id, capital === undefined ? undefined : Number(capital));
+    },
+  );
+
+  // One arm's trade log, asked for when it is opened. Both the id and the arm are checked for shape
+  // before anything is spawned; the module refuses an arm the run does not have.
+  app.get<{ Params: { id: string }; Querystring: { arm?: string } }>(
+    "/api/backtest/runs/:id/trades",
+    async (req, reply): Promise<BridgedResult<BacktestTradeLog> | FastifyReply> => {
+      if (!backtestOn(getFeatures())) return refuse(reply);
+      if (!isBacktestRunId(req.params.id)) return reply.code(400).send({ error: "not a run id" });
+      const arm = req.query.arm;
+      if (arm === undefined || !isBacktestArm(arm)) return reply.code(400).send({ error: "not an arm name" });
+      return readBacktestTrades(req.params.id, arm);
     },
   );
 

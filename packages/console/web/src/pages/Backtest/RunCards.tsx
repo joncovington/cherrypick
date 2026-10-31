@@ -5,6 +5,7 @@ import { Tile } from "../../components/performance/Tile";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { signTone } from "../../lib/bridged";
 import { fmtCash, fmtCount, fmtNum } from "../../lib/format";
+import { TradeLog } from "./TradeLog";
 
 /**
  * A run's cards (`packages/backtest` `cards.py`, 2026-10-26): the path an arm took, its drawdowns,
@@ -341,10 +342,12 @@ function ExitTable({ c }: { c: BacktestArmCards }) {
 }
 
 export function RunCards({
+  runId,
   cards,
   capital,
   onCapital,
 }: {
+  runId: string;
   cards: BacktestRunCards | undefined;
   capital: number | null;
   onCapital: (capital: number | null) => void;
@@ -399,6 +402,8 @@ export function RunCards({
           <PremiumTiles c={c} />
           <div className="card-subhead">how trades ended</div>
           <ExitTable c={c} />
+          <div className="card-subhead">trade log</div>
+          <TradeLog runId={runId} arm={arm!} />
         </>
       )}
     </>

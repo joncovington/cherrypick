@@ -342,3 +342,36 @@ export const BACKTEST_CAPITAL = /^[1-9][0-9]{0,9}$/;
 export function isBacktestCapital(v: string): boolean {
   return BACKTEST_CAPITAL.test(v);
 }
+
+/** An arm's name as a run records it (`pm-200`, `live-1400`, `advised:x-1`). Checked on the server
+ *  before it is handed to the subprocess, which also refuses an arm the run does not have. */
+export const BACKTEST_ARM = /^[A-Za-z0-9][A-Za-z0-9:._+-]{0,79}$/;
+
+export function isBacktestArm(v: string): boolean {
+  return BACKTEST_ARM.test(v);
+}
+
+/** One trade in a run's trade log (`cards.trade_log`): the ledger's own fields, as
+ *  `core.ledgers` names them. A field the module does not record is null, never zero. */
+export interface BacktestTrade {
+  session: string;
+  entry_time: string | null;
+  exit_time: string | null;
+  /** How it ended, in the module's own words. */
+  outcome: string | null;
+  gross_pnl: number | null;
+  fees: number | null;
+  settlement: number | null;
+  slippage: number | null;
+  net_pnl: number | null;
+  entry_credit: number | null;
+  capital: number | null;
+  position_id: string | null;
+}
+
+/** `read trades --id --arm`: one arm's trades, oldest first. */
+export interface BacktestTradeLog {
+  run_id: string;
+  arm: string;
+  trades: BacktestTrade[];
+}

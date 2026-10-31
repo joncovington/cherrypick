@@ -564,6 +564,10 @@ def cmd_read(args) -> int:
     if args.what == "stores":
         _emit(readout.store_locations(settings.load(args.config)))
         return 0
+    if args.what == "trades":
+        out = readout.run_trades(args.id or "", args.arm or "")
+        _emit(out)
+        return 0 if out["ok"] else 1
     from .cards import parse_capital
 
     try:
@@ -735,8 +739,9 @@ def main(argv: list[str] | None = None) -> int:
     ra.add_argument("--workers", type=int, default=4)
     ra.set_defaults(fn=cmd_run_advised)
     rd = sub.add_parser("read", help="the console's read surface: JSON, read-only")
-    rd.add_argument("what", choices=("overview", "run", "stores"))
-    rd.add_argument("--id", default=None, help="with `run`: the run id")
+    rd.add_argument("what", choices=("overview", "run", "trades", "stores"))
+    rd.add_argument("--id", default=None, help="with `run` or `trades`: the run id")
+    rd.add_argument("--arm", default=None, help="with `trades`: the arm whose trades to list")
     rd.add_argument(
         "--capital",
         default=None,

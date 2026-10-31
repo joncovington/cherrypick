@@ -1,4 +1,4 @@
-import type { BacktestOverview, BacktestRunReport, BridgedResult } from "@console/shared";
+import type { BacktestOverview, BacktestRunReport, BacktestTradeLog, BridgedResult } from "@console/shared";
 import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
@@ -9,8 +9,10 @@ import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
  * - `read run --id <run_id> [--capital <dollars>]`: one run's report, with its cards (`cards.py`)
  *   attached as `cards`, on the chosen account or the run's own peak risk. An unknown id is the
  *   module's own `{"ok": false, "error"}` on stdout with exit 1, which is passed on as that error.
+ * - `read trades --id <run_id> --arm <arm>`: one arm's trade log (`cards.trade_log`), asked for only
+ *   when the trade log is opened, so the run report stays light.
  *
- * Both are read-only on the Python side and neither contacts the vendor. Every verdict on the page
+ * All are read-only on the Python side and neither contacts the vendor. Every verdict on the page
  * (the unlock, each check, the paired interval) is the module's; nothing here recomputes one.
  *
  * Async (`spawnModuleCliAsync`, the sync spawner's parse): the overview opens every store, and a
@@ -23,11 +25,18 @@ import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 const UNAVAILABLE = "backtest read unavailable — cherrypick-backtest must be installed";
 
-export type BacktestRequest = { kind: "overview" } | { kind: "run"; id: string; capital?: number };
+export type BacktestRequest =
+  | { kind: "overview" }
+  | { kind: "run"; id: string; capital?: number }
+  | { kind: "trades"; id: string; arm: string };
 
 function spawnRequest(req: BacktestRequest): Promise<SpawnedJson> {
   if (req.kind === "overview") {
     return spawnModuleCliAsync(["-m", "cherrypick.backtest", "read", "overview"], UNAVAILABLE);
+  }
+  if (req.kind === "trades") {
+    // Exit 1 is the module's refusal (no such run or arm), read as an answer.
+    return spawnModuleCliAsync(["-m", "cherrypick.backtest", "read", "trades", "--id", req.id, "--arm", req.arm], UNAVAILABLE, [0, 1]);
   }
   const args = ["-m", "cherrypick.backtest", "read", "run", "--id", req.id];
   if (req.capital !== undefined) args.push("--capital", String(req.capital));
@@ -51,7 +60,8 @@ export function resetBacktestCache(): void {
 }
 
 function memo(req: BacktestRequest, now: number): Promise<SpawnedJson> {
-  const key = req.kind === "overview" ? "overview" : `run|${req.id}|${String(req.capital ?? "")}`;
+  const key =
+    req.kind === "overview" ? "overview" : req.kind === "trades" ? `trades|${req.id}|${req.arm}` : `run|${req.id}|${String(req.capital ?? "")}`;
   const hit = cache.get(key);
   if (hit !== undefined && now - hit.at < TTL_MS) return hit.value;
   // Expired entries go when anything is read, so the map holds at most a window's worth of ids.
@@ -85,4 +95,11 @@ export async function readBacktestRun(
     if (report === null || typeof report !== "object") return null;
     return j["cards"] === undefined ? report : { ...report, cards: j["cards"] };
   });
+}
+
+/** One arm's trade log. The caller has already checked `id` and `arm` against their shapes. */
+export async function readBacktestTrades(id: string, arm: string, now = Date.now()): Promise<BridgedResult<BacktestTradeLog>> {
+  return shape<BacktestTradeLog>(await memo({ kind: "trades", id, arm }, now), (j) =>
+    Array.isArray(j["trades"]) ? { run_id: j["run_id"], arm: j["arm"], trades: j["trades"] } : null,
+  );
 }
