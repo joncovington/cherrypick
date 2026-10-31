@@ -68,9 +68,9 @@ def test_the_two_arms_are_control_plus_their_one_lever_and_nothing_else():
     arms = st.study_config(BASE)["arms"]
     assert arms["gex"] == {"enabled": False} and arms["control"] == BASE["arms"]["control"]
     control = {k: v for k, v in BASE["arms"]["control"].items() if not k.startswith("_")}
-    assert arms["strand-stop"] == {**control, "strand_stop": {"multiple": 3.0}}
+    assert arms["strand-stop"] == {**control, "strand_stop": {"max_loss_fraction": 0.5}}
     assert arms["whole-fly"] == {**control, "whole_fly": True}
-    assert st.STOP_MULTIPLE == 3.0 and st.ARMS == ("strand-stop", "whole-fly")
+    assert st.STOP_FRACTION == 0.5 and st.ARMS == ("strand-stop", "whole-fly")
 
 
 def test_a_missing_control_refuses():
@@ -82,7 +82,7 @@ def test_the_config_keys_are_the_ones_flies_reads():
     engine = pytest.importorskip("cherrypick.flies.engine")
     arms = st.study_config(BASE)["arms"]
     params = {**BASE["defaults"], **arms["strand-stop"]}
-    assert engine.strand_stop_settings(params) == {"multiple": 3.0}
+    assert engine.strand_stop_settings(params) == {"max_loss_fraction": 0.5}
     assert engine.whole_fly_enabled({**BASE["defaults"], **arms["whole-fly"]})
     assert "strand-stop" in engine.ARMS and "whole-fly" in engine.ARMS
 

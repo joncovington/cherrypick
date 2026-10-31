@@ -30,9 +30,9 @@ def puts(p6000, p5995, p6005=None):
 
 
 #: A cheap entry: mid credit 1.10, 1.075 after the 0.125 haircut (the 20% floor is 1.00). The natural
-#: to buy it back is 1.20; three times the credit is 3.225.
+#: to buy it back is 1.20; half the maximum loss (3.925) puts the stop at a natural of 3.0375.
 CHEAP = puts((3.6, 3.7), (2.5, 2.6))
-NEAR = puts((4.8, 5.0), (1.8, 2.0))  # natural 3.20: under the stop
+NEAR = puts((4.6, 4.8), (1.8, 2.0))  # natural 3.00: under the stop
 OVER = puts((4.9, 5.1), (1.8, 2.0))  # natural 3.30: over it
 #: The completing spread cheapens (debit 0.65 against the 1.075 credit): control completes.
 CHEAP_COMPLETION = puts((3.6, 3.7), (2.5, 2.6), (4.2, 4.3))
@@ -50,7 +50,7 @@ def config(arm, **block):
 
 
 def stop_config(arm="strand-stop"):
-    return config(arm, strand_stop={"multiple": 3.0})
+    return config(arm, strand_stop={"max_loss_fraction": 0.5})
 
 
 def whole_config(arm="whole-fly"):
@@ -86,12 +86,29 @@ def test_both_arms_are_registered_and_in_no_config():
 def test_the_settings_are_off_unless_an_arm_sets_them_and_a_bad_multiple_raises():
     assert engine.strand_stop_settings(params()) is None
     assert engine.strand_stop_settings(params(strand_stop={})) is None
-    assert engine.strand_stop_settings(params(strand_stop={"multiple": 3})) == {"multiple": 3.0}
+    assert engine.strand_stop_settings(params(strand_stop={"max_loss_fraction": 0.5})) == {
+        "max_loss_fraction": 0.5
+    }
     assert engine.whole_fly_enabled(params()) is False
     assert engine.whole_fly_enabled(params(whole_fly=True)) is True
-    for bad in (1.0, 0.5, -3):
+    for bad in (0.0, 1.0, 1.5, -0.5):
         with pytest.raises(ValueError):
-            engine.strand_stop_settings(params(strand_stop={"multiple": bad}))
+            engine.strand_stop_settings(params(strand_stop={"max_loss_fraction": bad}))
+
+
+def test_the_stop_can_fire_at_every_credit_the_arm_enters_at_where_three_times_the_credit_could_not():
+    """Credits 1.00 to 3.00 on a 5-wide. Half the maximum loss is reachable at each (the natural never
+    needs to exceed the width); the corrected-away form, three times the credit, is beyond the width
+    for every credit over a third of it, so it could not fire there."""
+    for credit in (1.0, 1.5, 1.8, 2.0, 2.2, 2.5, 3.0):
+        threshold = credit + 0.5 * (5.0 - credit)
+        assert threshold < 5.0
+        under = snapshot(puts={6000: q(threshold - 0.02 + 1.0, threshold - 0.02 + 1.0), 5995: q(1.0, 1.1)})
+        at = snapshot(puts={6000: q(threshold + 1.0, threshold + 1.0), 5995: q(1.0, 1.1)})
+        assert engine.strand_stop_hit(under, vertical(credit), 0.5) is None, credit
+        assert engine.strand_stop_hit(at, vertical(credit), 0.5) is not None, credit
+        if credit > 5.0 / 3.0 + 1e-9:
+            assert 3.0 * credit > 5.0  # the old form: a buy-back beyond the width, never quoted
 
 
 # --------------------------------------------------------------------------- the stop
@@ -102,16 +119,16 @@ def vertical(credit, **over):
     }  # fmt: skip
 
 
-def test_the_stop_fires_at_exactly_three_times_the_credit_and_not_below():
+def test_the_stop_fires_at_exactly_half_the_maximum_loss_and_not_below():
     """Natural 2.99 / 3.00 / 3.01 against a 1.00 credit."""
     for natural, fires in ((2.99, False), (3.00, True), (3.01, True)):
         snap = snapshot(puts={6000: q(natural + 1.0, natural + 1.0), 5995: q(1.0, 1.1)})
-        assert (engine.strand_stop_hit(snap, vertical(1.0), 3.0) is not None) is fires, natural
+        assert (engine.strand_stop_hit(snap, vertical(1.0), 0.5) is not None) is fires, natural
 
 
 def test_the_stop_prices_the_natural_and_adds_no_second_slippage():
     snap = snapshot(puts={6000: q(4.9, 5.1), 5995: q(1.8, 2.0)})
-    hit = engine.strand_stop_hit(snap, vertical(1.0), 3.0)
+    hit = engine.strand_stop_hit(snap, vertical(1.0), 0.5)
     assert hit["natural"] == pytest.approx(3.3)  # the short's ask less the long's bid
     assert hit["mid"] == pytest.approx(3.1)
     assert hit["conceded"] == pytest.approx(0.2)  # a measure of mid to natural, not a cost to add
@@ -119,19 +136,19 @@ def test_the_stop_prices_the_natural_and_adds_no_second_slippage():
 
 def test_a_vertical_with_no_quote_or_not_open_or_not_a_vertical_is_never_stopped():
     holed = snapshot(puts={6000: q(4.9, 5.1)})
-    assert engine.strand_stop_hit(holed, vertical(1.0), 3.0) is None
+    assert engine.strand_stop_hit(holed, vertical(1.0), 0.5) is None
     snap = snapshot(puts={6000: q(4.9, 5.1), 5995: q(1.8, 2.0)})
-    assert engine.strand_stop_hit(snap, vertical(1.0), 3.0) is not None
-    assert engine.strand_stop_hit(snap, vertical(1.0, status="settled"), 3.0) is None
-    assert engine.strand_stop_hit(snap, vertical(1.0, kind="fly"), 3.0) is None
+    assert engine.strand_stop_hit(snap, vertical(1.0), 0.5) is not None
+    assert engine.strand_stop_hit(snap, vertical(1.0, status="settled"), 0.5) is None
+    assert engine.strand_stop_hit(snap, vertical(1.0, kind="fly"), 0.5) is None
 
 
-def test_an_uncompleted_vertical_is_bought_back_at_the_first_tick_over_three_times_its_credit(conn):
+def test_an_uncompleted_vertical_is_bought_back_at_the_first_tick_half_its_maximum_loss_is_lost(conn):
     cfg = stop_config()
     tick(conn, cfg, "strand-stop", 0, CHEAP)
     (pos,) = rows(conn, "strand-stop")
     assert pos["credit"] == pytest.approx(1.075) and pos["status"] == "open"
-    tick(conn, cfg, "strand-stop", 60, NEAR)  # natural 3.20 < 3.225
+    tick(conn, cfg, "strand-stop", 60, NEAR)  # natural 3.00 < 3.0375
     assert rows(conn, "strand-stop")[0]["status"] == "open"
     out = tick(conn, cfg, "strand-stop", 120, OVER)  # natural 3.30
     assert [a["action"] for a in out["actions"] if a["action"] == "strand_stopped"] == ["strand_stopped"]
@@ -193,7 +210,7 @@ def test_a_completed_fly_is_not_a_strand_and_is_never_stopped(conn):
 
 
 def test_a_vertical_that_completes_on_the_tick_its_cost_is_over_is_a_fly_not_a_stop(conn):
-    """Completion runs first. A tick that both completes and is over the multiple completes."""
+    """Completion runs first. A tick that both completes and is over the stop completes."""
     cfg = stop_config()
     tick(conn, cfg, "strand-stop", 0, CHEAP)
     both = puts((4.9, 5.1), (1.8, 2.0), (5.3, 5.4))  # natural 3.30; completing debit 5.4 - 4.9 ~ 0.5

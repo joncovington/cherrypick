@@ -11,7 +11,7 @@ only for the arms that passed the design window. Everything is written under the
 (results/research/item40/), never into the repo: the inputs are licensed.
 
 **The arms, as declared.** `strand-stop` is `control` plus: a vertical not yet completed is bought back
-at the natural, with the module's fees, on the first tick its cost reaches 3x the credit received.
+at the natural, with the module's fees, on the first tick its loss reaches half its maximum loss.
 `whole-fly` is `control`, but where it would sell its vertical it buys the butterfly it would complete
 to (same body and wings) in one order at the module's entry price, held to settlement. Both are
 registered in `cherrypick.flies.engine.ARMS` and set in a scratch copy of the machine's config.
@@ -42,7 +42,7 @@ from cherrypick.core import home, robustness
 from cherrypick.core import stats as core_stats
 
 ARMS = ("strand-stop", "whole-fly")
-STOP_MULTIPLE = 3.0
+STOP_FRACTION = 0.5
 CADENCE = 60
 MIN_ENTRY_SESSIONS = 300
 BLOCK = 5
@@ -64,7 +64,7 @@ def study_config(base: dict) -> dict:
     if not isinstance(arms.get("control"), dict):
         raise SystemExit("the flies config has no 'control' arm to build on")
     control = {k: v for k, v in arms["control"].items() if not k.startswith("_")}
-    arms["strand-stop"] = {**control, "enabled": True, "strand_stop": {"multiple": STOP_MULTIPLE}}
+    arms["strand-stop"] = {**control, "enabled": True, "strand_stop": {"max_loss_fraction": STOP_FRACTION}}
     arms["whole-fly"] = {**control, "enabled": True, "whole_fly": True}
     return {**base, "arms": arms}
 
@@ -480,7 +480,7 @@ def report(doc: dict) -> str:
         "**Verdict:** " + "; ".join(f"{a} {_word(verdicts.get(a, 'no verdict'))}" for a in ARMS) + ".",
         "",
         "Two levers on flies' control, each beside it on the same sessions. **strand-stop** buys back a"
-        f" vertical still uncompleted when its cost reaches {STOP_MULTIPLE:g}x the credit received."
+        f" vertical still uncompleted once its loss reaches {STOP_FRACTION:g} of its maximum loss."
         " **whole-fly** buys the butterfly control would complete to, in one order, and holds it. The runs"
         " are provisional: flies' replay cannot be validated, so they carry the vendor data's own"
         " unchecked error.",

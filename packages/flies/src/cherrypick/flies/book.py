@@ -804,12 +804,12 @@ def _process_snapshot(
         )
 
     # --- 1a. the `strand-stop` arm (research item 40): close any vertical still uncompleted after the
-    # completion step, at the natural, on the first tick its cost to buy back reaches the declared
-    # multiple of its credit. After step 1 so a vertical that completes this tick is a fly, not a
+    # completion step, at the natural, on the first tick its loss reaches the declared share
+    # of its maximum loss. After step 1 so a vertical that completes this tick is a fly, not a
     # strand; the closed row is written as a settled one, because nothing is left to settle.
     stop_cfg = engine.strand_stop_settings(params)
     for pos in [p for p in positions if stop_cfg and p["kind"] == "short_vertical" and p["status"] == "open"]:
-        hit = engine.strand_stop_hit(snapshot, pos, stop_cfg["multiple"])
+        hit = engine.strand_stop_hit(snapshot, pos, stop_cfg["max_loss_fraction"])
         if hit is None:
             continue
         qty = pos.get("quantity", 1)

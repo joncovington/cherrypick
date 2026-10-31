@@ -175,7 +175,7 @@ ARMS = (
     "limit-010-rh",
     # Research item 40 (declared 2026-10-31, history only; never in paper). `strand-stop`: control,
     # but a vertical still uncompleted is bought back at the natural on the first tick its cost
-    # reaches `strand_stop.multiple` times the credit (`strand_stop_hit`). `whole-fly`: control, but
+    # has lost `strand_stop.max_loss_fraction` of its maximum loss (`strand_stop_hit`). `whole-fly`: control, but
     # where it would sell its vertical it buys the fly it would complete to in one order, held to
     # settlement (`evaluate_whole_fly`). In no config; the study script adds them to a scratch copy.
     "strand-stop",
@@ -1697,7 +1697,7 @@ def entry_limit_touched(snapshot: dict, resting: dict) -> bool:
 
 # --------------------------------------------------------------------------- strand stop and whole fly
 # Research item 40 (2026-10-31). Two levers on control's strand tail, each a one-key block an arm
-# sets: `strand_stop` closes an uncompleted vertical at a fixed multiple of its credit, `whole_fly`
+# sets: `strand_stop` closes an uncompleted vertical once it has lost a fixed share of its maximum loss, `whole_fly`
 # buys the butterfly in one order instead of legging into it.
 def strand_stop_settings(params: dict) -> dict | None:
     """An arm's strand-stop settings, or None (every other arm). A malformed block raises: an arm
@@ -1705,16 +1705,18 @@ def strand_stop_settings(params: dict) -> dict | None:
     cfg = params.get("strand_stop")
     if not cfg:
         return None
-    multiple = float(cfg.get("multiple", 3.0))
-    if multiple <= 1.0:
-        raise ValueError("strand_stop.multiple must exceed 1: at 1 the stop would fire on the entry tick")
-    return {"multiple": multiple}
+    fraction = float(cfg.get("max_loss_fraction", 0.5))
+    if not 0.0 < fraction < 1.0:
+        raise ValueError("strand_stop.max_loss_fraction must lie strictly between 0 and 1")
+    return {"max_loss_fraction": fraction}
 
 
-def strand_stop_hit(snapshot: dict, position: dict, multiple: float) -> dict | None:
+def strand_stop_hit(snapshot: dict, position: dict, fraction: float) -> dict | None:
     """The close an uncompleted short vertical takes on this snapshot, or None. The cost to buy it
     back is the NATURAL (pay the short's ask, take the long's bid), `close_tags.natural_close`; the
-    stop fires when that reaches `multiple` times the credit received. The natural is the whole
+    stop fires when the loss reaches `fraction` of the maximum loss (width less credit), that is when
+    the natural reaches credit + fraction x (width - credit). A multiple of the credit could not fire
+    above a credit of a third of the width (corrected 2026-10-31). The natural is the whole
     spread already conceded, so no further slippage is added on top (it is recorded as a measure,
     mid to natural, like every modelled fill's)."""
     from cherrypick.flies import close_tags  # function-local: close_tags imports this module
@@ -1725,7 +1727,10 @@ def strand_stop_hit(snapshot: dict, position: dict, multiple: float) -> dict | N
     if price is None:
         return None
     credit = float(position["net"])
-    if credit <= 0 or price["natural"] + 1e-9 < multiple * credit:
+    width = float(position["wing_width"])
+    if credit <= 0 or credit >= width:
+        return None
+    if price["natural"] + 1e-9 < credit + fraction * (width - credit):
         return None
     return {
         "natural": price["natural"],

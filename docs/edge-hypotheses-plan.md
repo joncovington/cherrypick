@@ -4320,8 +4320,9 @@ either rule below.*
 - **The arms**, each beside `control` on the same sessions (`control` runs beside every arm, as the
   runner does):
   - `strand-stop`: `control`, plus: a vertical not yet completed is closed at the first tick its cost
-    to buy back reaches three times the credit received (a loss of twice the credit), at the natural
-    with the module's slippage and fees. One multiple, fixed here; no grid.
+    to buy back reaches the credit plus half the vertical's maximum loss (the width less the credit),
+    that is, the first tick its loss is half its maximum, at the natural with the module's slippage and
+    fees. One fraction, fixed here; no grid.
   - `whole-fly`: at each tick `control` would sell its vertical, buy instead the butterfly `control`
     would complete to (the same body and wings), in one order at mid less the module's entry
     concession, held to settlement. No legging, no completion step.
@@ -4357,16 +4358,17 @@ either rule below.*
   a fail closes these two levers, and with the 10-17 sweep leaves no tested way round the strand.
 - **Settled with the build, before the first read (2026-10-31, `scripts/flies_item40.py`, flies
   `engine.strand_stop_*` and `evaluate_whole_fly`).** Nothing below has read an outcome.
-  - **The stop's reach.** Three times the credit is a buy-back cost above the 5-point width for any
-    credit over about 1.67 (a third of the width), and `control` enters at 1.00 to 3.00. The rule stays
-    as declared: it can fire only on the cheaper entries (plus the odd wide quote), and the number of
-    fires is reported beside the verdict. An arm whose stop never fired
-    equals `control` on every session and says nothing; the runner's `no_exposure` flag shows it.
+  - **The stop's rule was corrected on 2026-10-31, before any read.** The declaration first said three
+    times the credit received. That is a buy-back cost above the 5-point width for any credit over a
+    third of the width (about 1.67), and `control` enters at 1.00 to 3.00, so it could not fire on most
+    entries. It is now half the maximum loss (`strand_stop: {"max_loss_fraction": 0.5}`), reachable at
+    every credit. The number of fires is reported beside the verdict; an arm whose stop never fired
+    equals `control` on every session and says nothing, which the runner's `no_exposure` flag shows.
   - **The stop's price** is the natural (the short's ask less the long's bid, `close_tags.natural_close`),
     which already concedes the whole spread, so no slippage fraction is added on top; mid to natural is
     recorded as the slippage measure. Fees are the vertical's close (two legs, one sold) on top of its
     open. It is checked after the completion step on the same tick, so a vertical that completes on the
-    tick its cost is over the multiple is a fly, not a stop. The closed row is written settled, with
+    tick its loss is over the stop is a fly, not a stop. The closed row is written settled, with
     `close_tag_source = 'stop'`, nothing to settle and no exercise fee.
   - **A stop frees its position slot but not its centre.** `max_positions` counts open positions, so a
     stopped vertical lets the arm enter again where `control` could not; the duplicate-structure rule
