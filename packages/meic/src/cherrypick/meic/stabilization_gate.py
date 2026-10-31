@@ -90,9 +90,9 @@ def _bars_from_rows(rows: list, last_ts: float) -> list[dict]:
     if not rows:
         return []
     first_ts = float(rows[0][0])
-    midnight = datetime.fromtimestamp(first_ts, ET).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    ).timestamp()
+    midnight = (
+        datetime.fromtimestamp(first_ts, ET).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    )
     buckets: dict[int, dict] = {}
     for ts, spot in rows:
         if spot is None or float(spot) <= 0:
@@ -187,8 +187,8 @@ def _multi_warmup(con: sqlite3.Connection, symbol: str, trade_date: str, period:
         bars = _bars_from_rows(rows, float(rows[-1][0]) if rows else 0.0)
         for bar in bars:
             hi, lo, cl = bar["high"], bar["low"], bar["close"]
-            tr = hi - lo if carry_close is None else max(
-                hi - lo, abs(hi - carry_close), abs(lo - carry_close)
+            tr = (
+                hi - lo if carry_close is None else max(hi - lo, abs(hi - carry_close), abs(lo - carry_close))
             )
             carry_close = cl
             if atr is None:
@@ -265,16 +265,14 @@ def snapshot_verdicts(
         # multi: seeded by the cached cross-session warmup. The cached state is IMMUTABLE input:
         # the day's recursion works on copies, so no call can contaminate another's warmup (a
         # mutation here silently shifted every later call's index window).
-        carry_close, atr, seed, hist = _multi_warmup(
-            con, symbol, trade_date, DEFAULTS["atr_period"]
-        )
+        carry_close, atr, seed, hist = _multi_warmup(con, symbol, trade_date, DEFAULTS["atr_period"])
         seed, hist = list(seed), list(hist)
         cum0 = len(hist)
         per = DEFAULTS["atr_period"]
         for bar in bars:
             hi, lo, cl = bar["high"], bar["low"], bar["close"]
-            tr = hi - lo if carry_close is None else max(
-                hi - lo, abs(hi - carry_close), abs(lo - carry_close)
+            tr = (
+                hi - lo if carry_close is None else max(hi - lo, abs(hi - carry_close), abs(lo - carry_close))
             )
             carry_close = cl
             if atr is None:
@@ -289,11 +287,7 @@ def snapshot_verdicts(
         if idx < len(hist):
             a_multi = hist[idx]
             window = hist[max(0, idx + 1 - DEFAULTS["avg_atr_period"]) : idx + 1]
-            avg_multi = (
-                sum(window) / len(window)
-                if len(window) >= DEFAULTS["avg_atr_period"]
-                else None
-            )
+            avg_multi = sum(window) / len(window) if len(window) >= DEFAULTS["avg_atr_period"] else None
         else:
             a_multi, avg_multi = None, None
         # perday: today's bars only (state resets at each session start).
@@ -302,12 +296,8 @@ def snapshot_verdicts(
         suffix = "" if mode == "atr" else "-iv"
         thr = a_multi * DEFAULTS["atr_multiplier"] if a_multi else None
         thr_per = a_per * DEFAULTS["atr_multiplier"] if a_per else None
-        out[f"multi{suffix}"] = _stable(
-            win, a_multi, avg_multi, thr if mode == "atr" else thr_iv
-        )
-        out[f"perday{suffix}"] = _stable(
-            win, a_per, avg_per, thr_per if mode == "atr" else thr_iv
-        )
+        out[f"multi{suffix}"] = _stable(win, a_multi, avg_multi, thr if mode == "atr" else thr_iv)
+        out[f"perday{suffix}"] = _stable(win, a_per, avg_per, thr_per if mode == "atr" else thr_iv)
         return out
     except sqlite3.Error:
         return {f"{m}{suffix}": None for m in ORACLE_MODES}

@@ -1180,9 +1180,7 @@ def run_iteration(cfg, force=False):
                 }
             except Exception as exc:  # noqa: BLE001 -- the oracle must not take the tick down
                 snapshot["stabilization_verdicts"] = {}
-                logger.warning(
-                    "stabilization oracle failed for %s: %s: %s", symbol, type(exc).__name__, exc
-                )
+                logger.warning("stabilization oracle failed for %s: %s: %s", symbol, type(exc).__name__, exc)
         result = paper.process_symbol(snapshot, _PAPER_DB, "paper", extra_profiles=advice_profiles)
         # Per-profile outcome for the log - fills and exits made to stand out from skips.
         outcomes = {}

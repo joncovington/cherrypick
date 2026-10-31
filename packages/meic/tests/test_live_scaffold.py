@@ -1026,7 +1026,6 @@ def test_a_quantity_one_row_is_charged_exactly_as_before(tmp_path):
     assert done["slippage_dollars"] == 0.25
 
 
-
 # ---------------------------------------------------------------------------
 # Stabilization entry gate, live wiring (2026-10-31): run_once computes the same verdicts the
 # paper loop does, before the entry branch, fail-closed. The gate module is stubbed at the
@@ -1092,7 +1091,9 @@ def test_live_wires_the_stabilization_verdicts_before_entries(tmp_path, monkeypa
 
     monkeypatch.setattr(live_loop, "_stabilization_gate", BoomGate)
     broker = FakeBroker()
-    db2 = _init_db(tmp_path, name="live2.db")  # fresh ledger: this branch tests the oracle contract, not the cap
+    db2 = _init_db(
+        tmp_path, name="live2.db"
+    )  # fresh ledger: this branch tests the oracle contract, not the cap
     summary = live_loop.run_once(cfg, snap, db2, broker, live=True, log=lambda *_: None)
     assert summary["entry"]["reason"] == "stabilization_wait"
     assert broker.placed == []

@@ -3363,9 +3363,7 @@ def test_candidates_from_chain_builds_tagged_width_pairs():
 
 def _stab_params(**over):
     """CONSERVATIVE plus the stabilization trigger keys, window pinned like the gate tests."""
-    return _window_params(
-        {**CONSERVATIVE, **WIDEST_FIRST, "stabilization_entry": True}, **over
-    )
+    return _window_params({**CONSERVATIVE, **WIDEST_FIRST, "stabilization_entry": True}, **over)
 
 
 def test_stabilization_entry_gate_defaults_off():
@@ -3399,15 +3397,11 @@ def test_stabilization_entry_gate_reads_the_named_oracle_only():
     by multi's True, and an unknown oracle name can never fire (it reads a verdict nobody wrote)."""
     snap = _base_snapshot(now_et="13:00")
     snap["stabilization_verdicts"] = {"multi": True, "perday": False}
-    entered, reason, _ = paper.evaluate_entry(
-        snap, _stab_params(stabilization_oracle="perday"), []
-    )
+    entered, reason, _ = paper.evaluate_entry(snap, _stab_params(stabilization_oracle="perday"), [])
     assert entered is False and reason == "stabilization_wait"
     # Unknown oracle: fail closed even when both real oracles read stable.
     snap["stabilization_verdicts"] = {"multi": True, "perday": True}
-    entered, reason, _ = paper.evaluate_entry(
-        snap, _stab_params(stabilization_oracle="weekly"), []
-    )
+    entered, reason, _ = paper.evaluate_entry(snap, _stab_params(stabilization_oracle="weekly"), [])
     assert entered is False and reason == "stabilization_wait"
 
 
@@ -3428,9 +3422,7 @@ def _synthetic_trail(path, wide_bars=23, flat_bars=2, base=590.0):
     et = _Zone("America/New_York")
     day = "2026-10-13"
     con = _sqlite3.connect(path)
-    con.execute(
-        "CREATE TABLE gex_spot_history (symbol TEXT, trade_date TEXT, ts REAL, spot REAL)"
-    )
+    con.execute("CREATE TABLE gex_spot_history (symbol TEXT, trade_date TEXT, ts REAL, spot REAL)")
     rows = []
     for b in range(wide_bars + flat_bars):
         start_min = 570 + b * 5
@@ -3439,8 +3431,7 @@ def _synthetic_trail(path, wide_bars=23, flat_bars=2, base=590.0):
         for i, spot in enumerate(samples):
             t = _dt.datetime.combine(
                 _dt.date.fromisoformat(day),
-                _dt.time(0, 0)
-                .replace(hour=(start_min + i) // 60, minute=(start_min + i) % 60),
+                _dt.time(0, 0).replace(hour=(start_min + i) // 60, minute=(start_min + i) % 60),
             ).replace(tzinfo=et)
             rows.append(("SPX", day, t.timestamp() + 0.05 * i, spot))
     con.executemany("INSERT INTO gex_spot_history VALUES (?,?,?,?)", rows)
@@ -3465,8 +3456,8 @@ def test_stabilization_gate_module_reads_stable_after_flat_bars(tmp_path):
     # close is 11:35 and the second-widest bar (last of the wide run) closes at 11:25.
     now = datetime.fromisoformat(f"{day}T11:35:00").replace(tzinfo=et)
     out = stabilization_gate.snapshot_verdicts("SPX", day, now, trail_path=db)
-    assert out["perday"] is True   # flat tail, ATR cooled under its average
-    assert out["multi"] is False   # cold trail: warmup unseeded
+    assert out["perday"] is True  # flat tail, ATR cooled under its average
+    assert out["multi"] is False  # cold trail: warmup unseeded
     # One completed-close earlier (11:25), the 2-bar window is still the wide pair.
     now = datetime.fromisoformat(f"{day}T11:25:00").replace(tzinfo=et)
     out = stabilization_gate.snapshot_verdicts("SPX", day, now, trail_path=db)
@@ -3476,9 +3467,7 @@ def test_stabilization_gate_module_reads_stable_after_flat_bars(tmp_path):
 def test_stabilization_gate_module_fails_closed_without_trail(tmp_path):
     from cherrypick.meic import stabilization_gate
 
-    out = stabilization_gate.snapshot_verdicts(
-        "SPX", "2026-10-13", trail_path=tmp_path / "missing.db"
-    )
+    out = stabilization_gate.snapshot_verdicts("SPX", "2026-10-13", trail_path=tmp_path / "missing.db")
     assert out == {"multi": None, "perday": None}
 
 
@@ -3490,7 +3479,7 @@ def _synthetic_trail_with_iv(path, wide_bars=23, flat_bars=2):
     from zoneinfo import ZoneInfo as _Zone
 
     et = _Zone("America/New_York")
-    day = _synthetic_trail(path)   # builds gex_spot_history, returns the day
+    day = _synthetic_trail(path)  # builds gex_spot_history, returns the day
     con = _sqlite3.connect(path)
     con.execute(
         "CREATE TABLE IF NOT EXISTS market_regime_history ("
@@ -3500,7 +3489,9 @@ def _synthetic_trail_with_iv(path, wide_bars=23, flat_bars=2):
     rows = []
     iv_by_minute = {570: 40.0, 600: 38.0, 630: 36.0, 660: 34.0, 690: 32.0, 695: 30.0}
     for minute, iv in iv_by_minute.items():
-        t = _dt.datetime.combine(_dt.date.fromisoformat(day), _dt.time(0, 0).replace(hour=minute // 60, minute=minute % 60)).replace(tzinfo=et)
+        t = _dt.datetime.combine(
+            _dt.date.fromisoformat(day), _dt.time(0, 0).replace(hour=minute // 60, minute=minute % 60)
+        ).replace(tzinfo=et)
         rows.append((t.timestamp(), "atm_iv", "SPX", iv, None, day))
     con.executemany("INSERT INTO market_regime_history VALUES (?,?,?,?,?,?)", rows)
     con.commit()
@@ -3561,20 +3552,14 @@ def test_stabilization_engine_key_composes_the_mode():
     key nobody writes and fails closed even with every verdict True."""
     snap = _base_snapshot(now_et="13:00")
     snap["stabilization_verdicts"] = {"multi": True, "perday": True, "multi-iv": False}
-    entered, reason, _ = paper.evaluate_entry(
-        snap, _stab_params(stabilization_threshold_mode="iv"), []
-    )
+    entered, reason, _ = paper.evaluate_entry(snap, _stab_params(stabilization_threshold_mode="iv"), [])
     assert entered is False and reason == "stabilization_wait"
     snap["stabilization_verdicts"]["multi-iv"] = True
-    entered, _, _ = paper.evaluate_entry(
-        snap, _stab_params(stabilization_threshold_mode="iv"), []
-    )
+    entered, _, _ = paper.evaluate_entry(snap, _stab_params(stabilization_threshold_mode="iv"), [])
     assert entered is True
     # Unknown mode: fail closed.
     snap["stabilization_verdicts"] = {"multi": True, "weekly": True}
-    entered, reason, _ = paper.evaluate_entry(
-        snap, _stab_params(stabilization_threshold_mode="weekly"), []
-    )
+    entered, reason, _ = paper.evaluate_entry(snap, _stab_params(stabilization_threshold_mode="weekly"), [])
     assert entered is False and reason == "stabilization_wait"
 
 
