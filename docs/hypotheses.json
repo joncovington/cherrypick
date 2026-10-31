@@ -1182,7 +1182,9 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#34-the-option-to-stock-premium-ratio-does-heavy-option-trading-foretell-weaker-returns",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item34/results-design.json"
+      ],
       "retest": null,
       "retests": []
     },
@@ -1316,7 +1318,9 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#37-a-real-quote-test-of-curves-own-rule-the-contango-gated-vxx-call-spread-with-two-variants",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item37/results.json"
+      ],
       "retest": null,
       "retests": []
     },
@@ -1412,7 +1416,9 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#39-the-contango-modules-own-rule-on-real-daily-prices-the-switch-a-9-day-exit-and-a-realised-volatility-gate",
-      "results": null,
+      "results": [
+        "{home}/data/research/item39/results.json"
+      ],
       "retest": null,
       "retests": []
     }
