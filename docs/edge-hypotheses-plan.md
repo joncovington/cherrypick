@@ -2336,6 +2336,24 @@ trip at the natural cost a sixth to a half of a spread's best case.*
     paper first, its legs placed in regular hours only.
   - **A fail or no verdict:** the module trades shares only, and the option versions are closed as
     specified.
+- **Result (2026-10-30): fail; twelve arms fail and six have no verdict.** None passes.
+  - **The twelve:** every `close` arm, and the 60-90-day `roll` arms. Each fails every check: the
+    mean paired difference is negative, its t is strongly negative, Holm passes none, and both
+    design halves, both names and the stress are negative too. So each structure did measurably
+    worse than the share lot, not merely no better.
+  - **The six:** the 7- and 21-day `roll` arms closed too few trades in the design window. A roll
+    held from early 2022 stays open for most of the window, and each arm holds one position at a
+    time. Their holdout, reported, is negative.
+  - **Why, reported:** marked at the mid, the paired difference sits near zero for every arm. What
+    the structures lose to the share lot is about the cost of crossing their spreads, which over a
+    4% move outweighs what the defined loss, convexity or premium returns. The same holds in the
+    holdout.
+  - **The ZEBRA exercise, reported:** taking the shares through the long calls instead of closing
+    them changes little; it is negative in both windows.
+  - Every figure is in the local result
+    (`~/.cherrypick/data/backtest/results/research/item29/results.json`).
+- **What this decides:** the fail branch. The `ladder` module trades shares only, and the option
+  versions are closed as specified.
 
 ### 30. GEX walls on the monthly expiry: does price stop short of them over the next two weeks?
 
