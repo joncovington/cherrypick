@@ -3595,6 +3595,22 @@ outcome of any arm has been read. `hook` is retired (it never fired) and is not 
   replay is `scripts/curve_item37.py`, run as `item37/plan`, `item37/fetch-chain-paths`,
   `item37/fetch-intraday` and `item37/study`. Results are derived from licensed data and stay under
   `~/.cherrypick/data/backtest/results/research/item37/`; this plan records the verdict without figures.
+- **Settled with the build, before the first read (2026-10-30, `scripts/curve_item37.py`):**
+  - The replay calls the module's own entry planner, management, exit-spread gate, costs, assignment
+    and expiry code; it reimplements none of them. Each arm is the module's defaults with its one
+    change; `hold-expiry` keeps the flip.
+  - Each session: when flat, entry is tried first, then a position from an earlier session is managed,
+    so a position entered on a session is first managed the next one.
+  - An entry the session before a split is refused; a split on the next session closes the trade at
+    that session's quotes, ahead of the other exits and the spread gate, at the last priced quotes
+    (flagged) if that session has none. A chain on the adjusted basis is refused.
+  - On the expiry day a position settles at the raw close and no exit is tried; in-the-money legs
+    deliver shares, disposed at the next session's open.
+  - The bootstrap p is the add-one share of resamples at or below zero; an arm without 30 trades
+    takes p = 1 in the Holm family of five. A half under 10 trades is not read. The holdout is run only
+    for an arm that passed the design.
+  - The gated short-share reference is short at a close with the ratio under 0.97, held to the next
+    close, 0.05% a side on a change. Net by year groups by entry year.
 - **Decides:**
   - **A pass:** that arm continues in paper as curve's base, proposed for a declared boundary (a width,
     exit or delta change is measurement-affecting). If more than one passes they are all reported and the

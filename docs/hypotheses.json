@@ -1314,7 +1314,9 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#37-a-real-quote-test-of-curves-own-rule-the-contango-gated-vxx-call-spread-with-two-variants",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item37/results.json"
+      ],
       "retest": null,
       "retests": []
     },
