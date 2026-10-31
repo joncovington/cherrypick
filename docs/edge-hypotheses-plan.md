@@ -4410,6 +4410,136 @@ either rule below.*
 - **What this decides:** the fail branch. With the 10-17 sweep, no tested lever gets round the
   strand; flies stays retired.
 
+### 41. The stabilization entry gate at real quotes: does waiting for flat five-minute bars improve the break-even condor or the 14:00 rule?
+
+*Source: the user, 2026-10-31, after reviewing a contributor's gate (PRs #723, #728): "I would also
+like to create a backtest of this strategy/arm", then four variants and one control chosen from a
+list. The gate is `cherrypick.meic.stabilization_gate` (docs/theta-profits-be-condor.md, gap 2).
+Declared here before any of it is run. Item 42 tests the strategy at its own wing widths, once the
+store holds them.*
+
+- **Question:** does entering only when the last completed five-minute bars are flat and the ATR
+  sits at or below its 20-bar average earn more per session than entering on the first tick the
+  other gates allow?
+- **Where the edge would live:** **timing**, a signal. A condor sold after a move has spent itself
+  would face less of the next hour's range than one sold mid-move. Against it: the wait moves
+  entries later in each hour and drops some altogether, and fewer or later trades can look better
+  for reasons that have nothing to do with the signal.
+- **Look-alikes:** the contributor's paired paper arms (2026-10-28..30, three sessions, `multi`
+  ahead), outside this window and not evidence here; item 24 (the entry slot, which closed time of
+  day as a lever for the 14:00 rule); MEIC's `session_quality` pauses, which time by the clock, not
+  by the tape.
+- **Rival explanations, each with its check:**
+  - *Fewer, later entries, not better-timed ones:* **Check:** `be10-skip`, the same arm refusing
+    ticks at random at the gate's own refusal rate, is reported beside every judged `be10` arm,
+    with trades per session and net per trade for each. A gate that does no better than its
+    placebo is reported as such, whatever its own verdict.
+  - *A calm span:* **Check:** the paired difference must be positive in both time-halves; net by
+    year and the worst session are reported.
+  - *Fees:* **Check:** the arm's own net is still positive at 1.5× fees.
+  - *Four looks:* **Check:** Holm across the four judged arms; the variants are fixed here.
+  - *The store's coarser spot:* the vendor store has one spot print a minute (five per bar), the
+    recorder four times that, so bars here are a little narrower and the gate a little more willing
+    than live. **Check:** the refusal rate here is reported beside paper's over 2026-10-28..30.
+- **The structure:** every arm is SPX, one condor per entry, 12 delta, per-side stop at 1.0× the
+  whole credit, entries 09:45–15:30 at least 55 minutes apart, up to seven a session, 5% credit
+  floor, the regime gates neutralised: the `be-hourly-1x` profile in
+  docs/theta-profits-be-condor.md, except that both wings are **10 points wide** (`equalize_credit`
+  off). The store holds only about 100 points of strikes either side of spot, and a 12-delta short
+  with a 25–40-point wing falls outside it on most mornings (item 42).
+  - `be10` is that arm without the gate: the base for the first three judged arms.
+  - **Judged:** `be10-multi` (`stabilization_entry`, oracle `multi`, ATR threshold, 2 bars),
+    `be10-perday` (oracle `perday`) and `be10-multi-3b` (`multi`, 3 bars), each against `be10`;
+    and `live-1400-multi`, item 23's `live-1400` (the registry's `pm-200` entering 14:00–14:30, all
+    its gates) with the gate (`multi`, 2 bars), against `live-1400`. A gated arm that sees no
+    stable bar in its window does not enter that session, and the session counts at zero.
+  - **Reported, never judged:** `be10-skip` (`stabilization_placebo_rate` set to the rate the plan
+    step measures, seed 41), `live-1400`, and `control`, which the runner requires.
+  - **IV mode is not tested.** The vendor store has no recorded `atm_iv`, so an IV arm would never
+    enter.
+- **Costs:** MEIC paper's own model: fees from `core.fees`, stops filled under the replay's fill
+  model, cash settlement at the store's close.
+- **Measured:** each session's summed net per arm, in dollars at one condor.
+- **Window and sample:** the backtest's own windows over the 60 s vendor store (`SPX-60s.db`).
+  - **Plan step first** (no P&L read): over the design window's sessions, the share of 60 s ticks
+    from 09:45 to 15:30 on which `multi` (2 bars) does not read STABLE. That rate is `be10-skip`'s,
+    written to the plan file before the study step runs.
+  - **Design:** 2022-05-16 to 2025-06-30. **Holdout:** 2025-07-01 to 2026-10-12, run straight after
+    the design whatever it shows, as item 23's. It counts toward a pass only after a design pass.
+  - The gate and every gated arm have never run before 2026-10-28, so both windows are out of
+    sample for them. `live-1400` was chosen with the holdout dates seen; it is the base there, not
+    a judged arm. Item 23 spent `live-1400`'s holdout, so the runner will not run it there again:
+    the holdout pair reads item 23's recorded `live-1400` sessions (its run id from item 23's
+    result file), and is no verdict if that run's arm spec differs from this one's.
+  - **Both runs are provisional:** MEIC validation has not unlocked. The holdout spends once per
+    arm through `unvalidated_holdout`. Results carry the vendor data's own unchecked error.
+  - Fewer than 100 sessions in a window is no verdict.
+- **Pass-or-fail rule**, per judged arm, all must hold:
+  - the paired difference against its base (one session one observation) has a mean above zero and
+    a one-sided t above 2;
+  - Holm across the four arms;
+  - the paired difference positive in each time-half of the window;
+  - the arm's own mean net above zero, and still positive at **1.5× fees**;
+  - then the holdout: the paired difference with a mean above zero and a one-sided t above 2.
+- **Declared limits (B11):** 60 s ticks and one spot print a minute; 10-point wings, not his 25–40;
+  strikes beyond the stored ~100 points do not exist here, so high-volatility mornings may offer no
+  candidate to any arm (counted per arm and reported by hour); stops under the fill model; ATR
+  threshold only.
+- **Name split (B9):** does not apply; one symbol.
+- **Data:** no new store. Needs PR #728 merged (the replay computes the verdicts, and the
+  `stabilization_bars` and placebo keys exist); the script refuses to run without them.
+  `scripts/meic_stabilization_item41.py --step plan|study --window design|holdout` builds a scratch
+  MEIC arm registry from the machine's (the arms above added) and runs `cherrypick.backtest.runner`.
+  Results go under the backtest data directory only; this plan records the verdict.
+- **Decides:**
+  - **A `be10` pass:** the gate earns a paper arm on the break-even condor at a declared boundary,
+    and item 42 runs with the passing oracle and bar count named its first judged arm.
+  - **A `live-1400-multi` pass:** a proposal to add the gate to live's 14:00 rule at a declared
+    boundary, after MEIC validation unlocks, with the kill criteria re-derived and fresh sessions
+    after 2026-10-12 read first.
+  - **A fail or no verdict:** the gate stays off every arm, and the contributor's paper arms are
+    read as exploratory. Item 42 still runs, to test the strategy itself.
+
+### 42. The break-even condor at its own wing widths, with and without the stabilization gate
+
+*Source: the user, 2026-10-31, choosing "both, in order" over testing at 10 points alone. The
+strategy's 25–40-point wings need strikes the vendor store does not hold. Declared here before the
+store is fetched or any of it is run.*
+
+- **Question:** does the break-even condor as he describes it (docs/theta-profits-be-condor.md, the
+  `be-hourly-1x` profile) earn after costs, and does the stabilization gate improve it?
+- **Where the edge would live:** **premium**, for the condor: hourly 12-delta condors whose
+  per-side stop at the whole credit turns one tested side into a near-flat trade, so the edge is
+  surviving trades outweighing double stops (his ~8%). **Timing**, for the gate, as item 41.
+- **Look-alikes:** item 41 (the same gate at 10 points); items 23 and 24 (MEIC's live rule, which
+  earns at 16 delta and 14:00); the 10-18 condor study; `be-hourly-1x`'s paper run from 2026-10-20,
+  outside these windows.
+- **Rival explanations, each with its check:** as item 41's (placebo `be-skip` at the gate's rate,
+  both halves, 1.5× fees, Holm), plus *the wings decide, not the rule*: **Check:** `be` against item
+  40's `be10` over the same sessions is reported.
+- **The structure:** `be` is the `be-hourly-1x` profile exactly as the doc gives it (25, 30, 35, 40
+  wing search with `equalize_credit`). **Judged:** `be` itself (own net against zero), `be-multi`
+  and `be-perday` (each against `be`); if item 41's `be10` arms pass, the passing variant replaces
+  the one it matches. **Reported:** `be-skip`, `control`.
+- **Costs, measured, window and sample:** as item 41, over the wider store. The design window
+  decides. The gate's holdout was spent by item 41, so item 42's holdout is a consistency check for
+  the gated arms; for `be` alone it counts after a design pass.
+- **Pass-or-fail rule:** `be`: own mean net above zero with a one-sided t above 2, positive in both
+  halves, still positive at 1.5× fees. `be-multi`, `be-perday`: item 41's rule against `be`. Holm
+  across the three.
+- **Prerequisite, a new store:** `SPX-60s-wide`, the same 60 s SPX 0DTE fetch with
+  `strikes_each_side` 40 (about 200 points either side), declared in `stores.STORES` with its
+  fetch code committed, fetched over 2022-05-16..2026-10-12 as research-queue rows. The fetch is
+  its own PR, and nothing is run until it lands and the store's coverage is reported (sessions,
+  and the share of 12-delta shorts whose 40-point wing is inside it).
+- **Declared limits (B11):** item 41's, less the wing limit; his 5-cent buy-back, hand-managed
+  longs and dynamic stop tightening are not modelled (the doc's gaps 3, 4 and 7).
+- **Decides:**
+  - **`be` passes:** the break-even condor earns a place as a paper arm at a declared boundary,
+    with the gate if a gated arm also passes.
+  - **`be` fails:** the strategy as described does not earn after costs here, whatever the gate
+    does. That is the evidence for closing it as a MEIC arm; closing it stays the user's decision.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
