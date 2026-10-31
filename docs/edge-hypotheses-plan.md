@@ -2759,6 +2759,40 @@ paper ledger has been running since 2026-07-15, and it is the thing asked about.
     answer.
   - **"Pays, not for the report"** is reported as it is, not as a pass, and the premium is then looked for
     in the overnight alone (item 22's condor and item 19's flies are the nearest done).
+- **Settled with the build, before the first read (2026-10-30, `scripts/earnings_item31.py`).** The pilot
+  chose the end-of-day basis, so the study is "The end-of-day fallback" for the whole window. Nothing
+  below has read an outcome.
+  - **The module's own code runs**: `fetch_price_and_term_structure`, `apply_tiering`, the three order
+    builders, `sizing`, `management.evaluate` and `execution_gate`, `compute_generic_exit_debit` and the
+    cost stack. Only the readers that do I/O are replaced (the broker's chain and quote, the IV/RV
+    reader, the winrate reader, the exit-basis clock, the strategies' "today"), so a changed gate changes
+    the replay.
+  - **Inputs the end-of-day store lacks**: the underlying is Dolt's close; the forward (put-call parity),
+    implied volatility and delta are computed from each chain's own mids at the close. The front expiry is
+    the weekly Friday (the Thursday when it is a holiday) and the back expiry the module's own rule over
+    that list; Monday and Wednesday listings are not seen.
+  - **Floors not reproduced**: the 2,000-contract open interest floor (the store holds none; set to 0 in
+    the study's copy of the file) and the option volume floor, as declared. The realised-move dispersion
+    ceiling is in the deployed rule but not in this declaration, so it is not applied; each trade carries
+    its dispersion and the result reports the arm split by it.
+  - **Marks**: one a later session at 16:00 ET, so the first-morning loser close is the first mark of each
+    later session, a refused close waits for the next mark (the 30-minute patience is within a session
+    and does not apply), an expiry day closes at its mark, a leg without a quote is carried at its last
+    earlier quote (counted) or, on its expiry day, taken at intrinsic, and an expiry day with no rows at
+    all settles at intrinsic with the $5 settlement fee. A split (a close factor under 0.52 or over 1.9)
+    ends the trade at the session before, or drops it if it falls on the first later session.
+  - **Requests**: for each event the front expiry's daily path from the entry session through the expiry
+    (`fetch-chain-paths`) and the back expiry's entry chain (`fetch-chains`); for each event's control the
+    front path. The control session is chosen from the calendar alone (all report rows, blank timings
+    included) before any chain is read.
+  - **Tests**: the net is tested on every closed event trade (the unpaired reading keeps an event whose
+    control is missing) and the paired difference on the pairs; the minimum trades are paired. Holm runs
+    over the nine arms for each of the two tests, an arm under its minimum counting p = 1. A gated arm
+    that passes while its ungated arm does not is recorded as the gate's pass. FOMC and CPI weeks come
+    from `macro_calendar.json` beside the other inputs (the curated FOMC years are used when it is
+    absent, and the CPI split is then omitted).
+  - **The replay check on paper entries** (`replay-check`) reads entry columns only; a test fails if an
+    outcome column is added. It is implemented and has not been run.
 
 ### 32. Large options orders as a signal: the flow plan's declared test, registered
 

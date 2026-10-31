@@ -333,8 +333,9 @@ def test_unfetched_requests_and_runs_that_could_not_ask_leave_the_decision_pendi
 
 
 def test_the_script_computes_no_price_anywhere():
-    """The pilot reads presence and counts. No arithmetic on bid, ask, mid or underlying exists in it."""
-    src = SCRIPT.read_text(encoding="utf-8")
+    """The pilot reads presence and counts. No arithmetic on bid, ask, mid or underlying exists in it.
+    (The study section, which prices the declared replay, begins at its own banner and is not run here.)"""
+    src = SCRIPT.read_text(encoding="utf-8").split("# THE STUDY (end-of-day basis")[0]
     for needle in ("(bid + ask)", "bid + ask", "mid =", "pnl", "- entry", "net ="):
         assert needle not in src
     # the only reads of the quotes table test a column for being there
