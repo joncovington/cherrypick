@@ -15,6 +15,10 @@ The interface every client provides (rows are plain dicts, dates ISO strings, `t
 - ``eod_chain(root, day, expiration) -> list[dict]`` with keys ``strike, right ("CALL"/"PUT"),
   bid, ask, close, volume, bid_size, ask_size``: one expiry's whole chain at the session's end
   (the end-of-day chain fetch, `chainfetch.py`)
+- ``chain_window(root, day, expiration, start, end, *, interval, strike_range) -> list[dict]`` with
+  keys ``bar ("HH:MM" ET), strike, right ("CALL"/"PUT"), bid, ask, delta, iv, underlying``: one
+  expiry's chain at each bar of a window of one session (the intraday chain fetch,
+  `intradayfetch.py`)
 
 A request the vendor refuses raises `VendorRefusal` with a short, stable reason.
 """
