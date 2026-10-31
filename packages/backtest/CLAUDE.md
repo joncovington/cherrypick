@@ -71,7 +71,10 @@ from each side, because CI runs only changed packages' tests.
 One file per dataset, not per month: the replay's trailing-range input reads earlier sessions from the
 same file, and a month boundary would leave each month's first sessions without one. One file per
 cadence, too: the replay ticks once per stored sample, so a mixed file would replay some days at 15 s
-and some at 60 s.
+and some at 60 s. And one file per strike count: a declared store tag (`store.TAGS`; `wide` keeps 40
+strikes each side for items 42 and 44) is its own file (`SPX-60s-wide.db`), fetched by the research
+queue's `fetch-sessions`, never by the nightly job. A study points the runner at it with
+`store.tagged(settings, tag)`; such a store is never validated, so its runs are provisional.
 
 **History is 1-minute; the recorder era is 15 s (2026-10-17).** The vendor drops every sub-minute
 history request at 60 s before 2026 (15 s, 30 s and tick alike, even ten minutes of two strikes, by

@@ -219,13 +219,15 @@ def fetch(
     refetch: bool = False,
     cadence: float | None = None,
     workers: int = 1,
+    stop=None,
     log=print,
 ) -> dict:
     """Fetch every 0DTE session of `symbol`'s dataset in [start, end] not already complete, at
     `cadence` (default the store's). `workers` sessions are pulled at a time (two requests each, so
     never more than half `max_concurrent_requests`); writes happen here, one session per transaction.
     A fatal refusal (`vendor.FATAL`) stops the fetch rather than recording every remaining session
-    as refused.
+    as refused. `stop`, asked as each session lands, cancels the sessions not yet pulled; those in
+    flight are still written, and the report says `stopped` so a queued fetch resumes later.
 
     One worker by default; two is measured to work. What first looked like the vendor stalling under
     concurrency (2026-10-17) was this loop: a session that failed to write ended it, and the pool
@@ -285,8 +287,13 @@ def fetch(
             futures = {pool.submit(pull, d): d for d in todo}
             for fut in as_completed(futures):
                 day = futures[fut]
-                if report.get("aborted"):
+                if report.get("aborted") or fut.cancelled():
                     continue
+                if stop is not None and not report.get("stopped") and stop():
+                    report["stopped"] = True
+                    for other in futures:
+                        other.cancel()
+                    log(f"stop-by reached at {day}: the sessions not yet pulled wait for the next run")
                 try:
                     rows, oi = fut.result()
                     built = build_session(rows, oi, day=day, each_side=int(st["strikes_each_side"]))
