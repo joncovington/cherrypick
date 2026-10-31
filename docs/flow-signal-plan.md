@@ -186,13 +186,14 @@ with the same matched baseline, and with the unfiltered tag:
 | F4 no straddle | all three | dropped when an order of the other right at the same strike and expiry, the same side and size within 10%, starts within 60 s of it: a volatility bet, no direction |
 | F5 protection beside a sale | put buying | not tagged on a session the name also carries a large opened put sale |
 | F6 repeat | all three | needs a second large opened order of the same tag in the name within the previous 10 sessions |
+| F7 no report ahead (added 2026-10-30, before any read; item 32) | all three | not counted when the name's next report has its reaction day inside the 5-session outcome window |
 
 The vendor's call-to-put premium ratio (2:1) is not tested: the stored histogram does not split by
 right or side, and adding it would change the fetch after it started. Funds are outside the
 universe already, so its "index puts are protection" rule needs no test.
 
-**Trials:** F1, F2, F4 and F6 on three tags at three cuts (36), F5 on one tag at three cuts (3), F3
-once (it replaces the cut): **40**, deflated as one family, apart from the first. **Pass** as above,
+**Trials:** F1, F2, F4, F6 and F7 on three tags at three cuts (45), F5 on one tag at three cuts (3),
+F3 once (it replaces the cut): **49** (40 until F7 was added on 2026-10-30), deflated as one family, apart from the first. **Pass** as above,
 and a filter must also beat its unfiltered tag, or it adds nothing.
 
 **The earnings test.** The vendor's claim: over 63 reports, a large bet in the 10 sessions before a
@@ -212,7 +213,7 @@ report pointed the right way 53% of the time for bullish orders and 64% for bear
 Registered as item 32 in [edge-hypotheses-plan.md](edge-hypotheses-plan.md), which records what had
 to be settled before any outcome was read: the top-1% rule reads a name's last 20 fetched sessions
 (at least 4), the thin 2025 grid sessions are read with and without, three readings are reported
-beside the verdict (a stale-tag placebo, report windows dropped, the five most frequent names
+beside the verdict (a stale-tag placebo, report windows dropped (judged as F7 from 2026-10-30), the five most frequent names
 removed), and the holdout is fetched on the same grid rule. Nothing else here changes.
 
 ## The build, in pull requests

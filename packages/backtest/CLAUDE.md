@@ -257,3 +257,11 @@ contract per session, every expiry from the session through `MAX_DAYS` (100) cal
 vendor call a name-day, from a `{sessions: {session: [symbols]}}` plan as `fetch-flow` reads. Its own
 store, `open_interest.db`, in the marked licensed directory. Session D's row is the vendor's morning
 report, the previous close's figure, so a reading at D's close uses nothing published after it.
+
+**The intraday chain fetch** (`fetch-intraday-chains`, `intradayfetch.py`; item 31): a single name's expiry
+chain at the bars of a window of one session (`ThetaDataClient.chain_window`: quote, delta, implied
+volatility and the underlying's price per contract), from a `{requests: [{symbol, session, expiration,
+start, end, interval?}]}` file as `fetch-chains` reads. Its own store, `intraday_chains.db`, in the
+marked licensed directory; resumable, a refusal recorded and retried, `--stop-by` bounds a run, so the
+research queue runs it. The coverage pilot that decides item 31's basis is `scripts/earnings_item31.py`
+(`plan`, `pilot`); it reads presence and counts, never a price.

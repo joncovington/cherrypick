@@ -18,6 +18,7 @@ import sys
 import time
 from datetime import date, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as _home
 from cherrypick.core import looplock
@@ -91,6 +92,7 @@ def release_session(path: Path | None = None) -> None:
         looplock.release(path)
 
 
+_ET = ZoneInfo("America/New_York")
 RETRY_DELAYS = (2.0, 5.0, 15.0)
 #: The vendor refuses an end-of-day range over this many days ("max 365 days allowed").
 MAX_RANGE_DAYS = 365
@@ -258,6 +260,61 @@ class ThetaDataClient:
                     "delta": _num(r.delta),
                     "iv": _num(r.implied_vol),
                     "underlying": _num(r.underlying_price),
+                }
+            )
+        return out
+
+    def chain_window(
+        self,
+        root: str,
+        day: str,
+        expiration: str,
+        start: str,
+        end: str,
+        *,
+        interval: str = "5m",
+        strike_range: int | None = None,
+    ) -> list[dict]:
+        """One expiry's chain through a time window of one session: every strike and side at each
+        `interval` bar from `start` to `end` ("HH:MM", ET), with the vendor's bid, ask, delta and
+        implied volatility and the underlying's price (a general form of `greeks`, which is fixed to
+        a 0DTE expiry of the day asked for). `strike_range` bounds the strikes either side of the
+        money; None asks for the whole chain. Rows leave with ``bar`` ("HH:MM", the vendor's own
+        stamp read as ET wall clock) and missing values as None, never NaN. The vendor's `no_data`
+        reaches the caller as a refusal (an empty list, as an empty answer), and either is recorded
+        as empty.
+
+        The window's end bar is inclusive (checked 2026-10-30 on a 15:35-15:50 window at 5 minutes:
+        four bars). Single stocks answer at 5 minutes before 2026 (checked for 2021 and 2025); how
+        completely, across names and years, is the item 31 pilot's measurement. A refusal or an
+        empty answer is recorded as what it is, never guessed around."""
+        d = date.fromisoformat(day)
+        kw = {
+            "symbol": root,
+            "expiration": date.fromisoformat(expiration),
+            "date": d,
+            "interval": interval,
+            "start_time": f"{start}:00",
+            "end_time": f"{end}:00",
+        }
+        if strike_range is not None:
+            kw["strike_range"] = strike_range
+        df = self._call("option_history_greeks_first_order", **kw)
+        out = []
+        for r in df.itertuples(index=False):
+            stamp = r.timestamp
+            if getattr(stamp, "tzinfo", None) is not None:
+                stamp = stamp.astimezone(_ET)
+            out.append(
+                {
+                    "bar": f"{stamp.hour:02d}:{stamp.minute:02d}",
+                    "strike": float(r.strike),
+                    "right": str(r.right).upper(),
+                    "bid": _num(getattr(r, "bid", None)),
+                    "ask": _num(getattr(r, "ask", None)),
+                    "delta": _num(getattr(r, "delta", None)),
+                    "iv": _num(getattr(r, "implied_vol", None)),
+                    "underlying": _num(getattr(r, "underlying_price", None)),
                 }
             )
         return out

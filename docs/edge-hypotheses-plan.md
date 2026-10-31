@@ -2618,9 +2618,30 @@ paper ledger has been running since 2026-07-15, and it is the thing asked about.
     outcomes of those rows are not read.
   - **Minimum trades:** fewer than 150 closed, paired trades in an arm in the design window, or 100 in the
     holdout, is no verdict for that arm.
+- **Gates, added 2026-10-30, before anything was fetched or read** (the user asked whether trades
+  could be narrowed to perform better; only gates with a stated mechanism are taken, and each is
+  counted as its own arm). Each gate is applied to each of the three strategies, so there are nine
+  judged arms: three ungated, three under G1, three under G2.
+  - **G1, a rich premium.** The entry bar's expected move (the module's own, 0.85 x the front
+    straddle's mid) is at least 1.2 times the name's mean absolute reaction move over its previous
+    eight stated-timing reports (the reaction session's close against the last close before the
+    report, from Dolt's `stocks.ohlcv`). A name with fewer than four earlier reports in the calendar
+    carries no G1 trade, so G1's design sample starts later than the others'. **Mechanism:** the seller
+    is paid only when the implied move overstates the realised one, and the name's own history is the
+    plainest estimate of whether it does.
+  - **G2, a credit that can pay its costs.** The entry's round-trip crossing cost (each leg's full
+    quoted spread, summed, times 100) is at most 25% of the credit received (times 100). **Mechanism:**
+    in the paper ledger, costs were about the whole loss; a credit that small against its own spreads
+    cannot pay them whatever the report does.
+  - **Reported, not judged:** each arm split by whether the report falls in a week with a scheduled
+    FOMC decision or CPI release, from the public calendars.
+  - Each gated arm has its own minimum trades (as below) and its own paired control (the control is
+    gated on its own bar's quotes for G2; G1 is a property of the name and report, so the control keeps
+    the event's G1 status). A gated arm passes on the full rule below; one that passes while its
+    ungated arm fails is recorded as such, never as the strategy passing.
 - **Pass-or-fail rule,** per arm, all must hold in the design window:
   - the mean net share of capital at risk above zero, with a one-sided date-clustered bootstrap t above
-    2 (resampling entry sessions, 2,000 resamples, seeded), Holm across the three arms;
+    2 (resampling entry sessions, 2,000 resamples, seeded), Holm across the nine arms;
   - the mean paired difference above zero on the same test;
   - the mean net positive in each time-half and in each name-half (`name_half`, B9), and the paired
     difference positive in each time-half;
@@ -2654,7 +2675,8 @@ paper ledger has been running since 2026-07-15, and it is the thing asked about.
   - *Many events on one night:* the bootstrap resamples entry sessions, and the event counts per
     session are reported. The module's correlation block list is not applied (the harness does not
     apply it either).
-- **Minimum detectable effect (B12):** a credit structure's net on capital at risk spreads widely, a
+- **Minimum detectable effect (B12):** (the figures below are for an ungated arm; a gated arm keeps
+  fewer trades and detects only a larger effect, recorded with the design result.) a credit structure's net on capital at risk spreads widely, a
   small win most nights and a loss near the full wing on a few. The per-trade standard deviation is
   taken as about 0.8 of capital at risk, **an assumption** until the design window's own spread
   replaces it in the local result before the holdout is read. At the Holm-adjusted bar (t about 2.4)
@@ -2769,6 +2791,12 @@ records only what had to be settled before the first read, and nothing here has 
     counted on from the design grid), with the sessions before each report for the earnings test, by
     `scripts/flow_fetch_plan.py` extended to the holdout. Fetching reads no outcome; the holdout is
     still read once, after the design results.
+- **A gate, added 2026-10-30 before anything was read:** the second family gains **F7, no report
+  ahead**: a tag is not counted when the name's next report has its reaction day inside the outcome
+  window. **Mechanism:** an order placed ahead of a report may be a bet on the report, which the
+  plan's earnings test asks apart; without them the tag asks about information outside reports.
+  F7 on three tags at three cuts adds nine trials, so the second family is 49, deflated together.
+  It replaces the reported reading with report windows dropped, which is now judged.
 - **Data:** the flow store (`flow.db`, 2022-05-16 to 2025-06-26 fetched) and the local bars. Results
   stay under `~/.cherrypick/data/backtest/results/research/item32/`, and this plan records the verdict
   without figures.
