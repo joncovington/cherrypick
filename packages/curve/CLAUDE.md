@@ -45,9 +45,10 @@ Suite-wide context: the root [documentation index](../../docs/README.md).
 ## The experiment design
 
 - **`control`** — enter on a contango day (`ratio < contango_max`, a buffer below 1.0), close at
-  `profit_take_pct` of entry credit, OR the **regime-flip hard exit** (a MEASURED ratio crossing
-  >= 1.0 mid-trade closes next tick regardless of P&L — never on an unmeasured or stale read), OR
-  `close_dte`.
+  `profit_take_pct` of entry credit, OR the **regime-flip hard exit** (a MEASURED ratio at or above
+  `contango_max`, 0.97, mid-trade closes next tick regardless of P&L — never on an unmeasured or
+  stale read; the code has always used `contango_max`, and the 1.0 these docs once said was corrected
+  2026-10-30 to match it), OR `close_dte`.
 - **`noflip`** — control's entry EXACTLY (same tick, same fills), minus the flip exit. Until a flip
   fires the two are byte-identical — an expected `find_identical_readings` collision. Every read
   surface shows `flip_divergence_count` beside the pair: that, not trade count, is the effective

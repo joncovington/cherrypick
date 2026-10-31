@@ -1275,6 +1275,48 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 37,
+      "study": "item37",
+      "title": "A real-quote test of curve's own rule: the contango-gated VXX call spread, with two variants",
+      "status": "declared",
+      "legacy": false,
+      "setup": "contango-gate",
+      "side": "directional",
+      "structure": "credit-spread",
+      "window": "monthly",
+      "measure": "per trade, net dollars and net as a share of max loss for curve's VXX call credit spread run by its own plan_entry and management rules on end-of-day quotes (mid with the suite's slippage and fees, physical settlement); arms control, noflip, near (0.40 delta), hold-expiry (no profit take, no 7-DTE close) and wide5 ($5 wide); refusals counted by reason against paper's; gated short VXX shares as a reference",
+      "expected": "a positive mean net share of max loss per trade after costs, in each design half and then in the holdout",
+      "sample": "monthly VXX expiries, entries on every session the VIX/VIX3M gate (< 0.97) allows with no position open; design 2019-05-13..2022-12-30, holdout 2023-01-03..2026-10-28; < 30 closed trades an arm in a window = no verdict; a split ex-date inside a trade (2021-04-23, 2023-03-07, 2024-07-24) ends it the session before",
+      "rule": "per arm: design mean net share of max loss > 0 with a stationary-bootstrap one-sided p (mean block 3, 20,000 seeded resamples) passing Holm across five arms at 0.05; positive in each design half and at 1.5x costs; then holdout mean > 0",
+      "mechanism": "VXX decays in contango, so a call credit spread gated on VIX/VIX3M sells the roll yield with a defined loss; the variants test whether holding to expiry (no exit spread) or a $5 width (fixed dollar costs over a larger credit) keeps more of it after costs",
+      "rivals": [
+        {
+          "explanation": "one spike decides (2020-03, 2024-08)",
+          "check": "both episodes sit inside a window; trades open in each are listed and the mean reported without them"
+        },
+        {
+          "explanation": "refusals differ at the close from 10:00 to 10:30",
+          "check": "refusal rate by reason against paper's; one session in 25 re-planned from the intraday chain, with our delta against the vendor's"
+        },
+        {
+          "explanation": "reverse splits",
+          "check": "three ex-dates end trades the session before; verdict with the split-ended trades kept and removed"
+        },
+        {
+          "explanation": "the signal without the spread",
+          "check": "gated short VXX shares reported as a reference per window"
+        },
+        {
+          "explanation": "costs read too kindly",
+          "check": "1.5x fees and slippage in the rule; natural-fill and no-cost means reported"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#37-a-real-quote-test-of-curves-own-rule-the-contango-gated-vxx-call-spread-with-two-variants",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []

@@ -3413,6 +3413,183 @@ live-fill check; an unlisted arm (other deltas, other expiries) is outside the s
   note beside it. Any retirement of the module or removal of a symbol stays the user's decision; paper
   keeps running unchanged until then.
 
+### 37. A real-quote test of curve's own rule: the contango-gated VXX call spread, with two variants
+
+*Source: the user, 2026-10-30. Their rule: no module is retired without a backtest of its own rule. They
+approved keeping curve's paper unchanged and declaring this test. **Look-alikes, said out loud.** The
+2026-10 history studies replayed curve on VXX's closes with a modelled mark path; the modelled `control`
+and `noflip` lost after costs and the modelled `hook` could only lose its costs (`docs/history-studies-2026-10-b.md`).
+A separate replay at recorded credits, held 20 sessions, put the $2 width slightly ahead. Both used
+modelled option prices; this is the first test on real end-of-day quotes. **Seen before declaring:** those
+aggregate verdicts and the module's own paper record (a handful of sessions, three arms). No real-quote
+outcome of any arm has been read. `hook` is retired (it never fired) and is not tested.*
+
+- **Question:** run exactly as curve runs it, on every session the gate allows, does the VXX call credit
+  spread make money per trade after fees and slippage? And do two changes to its exits and its width
+  make it do so where the base does not?
+- **Where the edge would live:** **premium (the term-structure roll yield) and execution.** VXX decays in
+  contango, so the underlying drifts down and a short call spread sells that drift with a defined loss.
+  The gate (VIX/VIX3M under 0.97) is the signal; the spread is the structure. The earlier replays say the
+  signal is real and the costs eat it. **What would falsify it:** a mean net per trade at or below zero
+  after costs, or one that only holds in a window without a volatility spike.
+- **The arms (judged, Holm across five):**
+  - **`control`, `noflip`, `near`:** as curve runs them, read from `engine.py`, `management.py`,
+    `regime.py` and the deployed config (below). `noflip` is `control` without the regime-flip exit;
+    `near` is `control` on a 0.40-delta short.
+  - **`hold-expiry`:** `control` without the profit take and without the 7-DTE close; held to expiry,
+    or out on the flip exit. **Mechanism:** costs. Each early close pays the exit spread, and VXX's wing
+    spreads run near half of mid. Most spreads expire worthless, so holding avoids that cost on most
+    trades, at the price of exposure to a late spike, which the worst trade, the drawdown and the
+    assignment count measure.
+  - **`wide5`:** `control` at $5 wide. **Mechanism:** VXX's option costs are close to fixed dollars a
+    leg, so a wider spread's costs are a smaller share of its credit and of its max loss. The $2 width was
+    chosen from one day's quotes (2026-10-05) and a modelled mark path.
+  - **Not tested, said out loud:** a 0.90 gate (worse in the 10-05 replay); UVXY options (the same trade
+    at a fair price, no cost edge); entry time of day (end-of-day quotes cannot test it); other widths
+    ($1, $3, $10: a search); `hook`.
+- **The rule as curve runs it** (`packages/curve`, the deployed config; every number below is the
+  config's, none is chosen here):
+  - **Gate:** the day's VIX/VIX3M ratio under `contango_max` 0.97. A missing ratio is a refusal
+    (`regime_unmeasured`), never an entry.
+  - **Expiry:** the monthly-cycle Friday (holiday-shifted back) inside 25 to 60 days, the one nearest
+    35 (`clock.target_expiration`). No candidate is a refusal.
+  - **Short:** the call above spot whose delta is nearest `short_delta_target` (0.30; 0.40 in `near`).
+  - **Wing:** the lowest listed strike at or above the short plus the width ($2; $5 in `wide5`).
+  - **Quotes and refusals,** applied in the module's order:
+    - a leg quote is usable when its ask is above zero and its bid is not above its ask
+      (`core.streamcache.usable_quote`);
+    - the short leg is refused when its spread exceeds 30% of mid;
+    - the wing is refused only when its spread exceeds 30% of mid and also $0.25;
+    - the entry is refused when its net credit after entry costs is under 10% of max loss
+      (`min_net_credit_to_max_loss`, with quantity 2). The percentage-of-width floors are not applied
+      because the deployed config declares the net floor;
+    - no strike with a delta, no wing strike, or no chain, are refusals with their own reasons.
+  - **Size and holding:** quantity 2, one open position an arm. Within a session curve enters first and
+    manages second, so a close frees the slot for the next session's entry.
+  - **Exits** (`management.evaluate`, in this order, then the exit-spread gate):
+    - `close_dte`: 7 or fewer calendar days to expiry;
+    - the **flip:** the session's ratio at or above `contango_max`. **The code closes on 0.97, not the
+      1.0 the module's CLAUDE.md and config text say;** the test follows the code and the docs are
+      corrected separately;
+    - the **profit take:** the cost to close at mid at or under half the entry credit;
+    - an exit is refused when any leg is wider than 30% of mid and also $0.05 (`exit_spread_blocks`), and
+      is tried at the next session's quotes.
+- **How the test runs it,** each session `D` in the window, in date order, one arm at a time:
+  1. Spot is the raw VXX close from the technicals history; the ratio is that session's VIX and VIX3M
+     closes (the exchange's public files already under `~/.cherrypick`).
+  2. Open positions are marked at `D`'s end-of-day chain quotes and managed by the rule above. A close is
+     at `D`'s quotes.
+  3. If no position is open and the gate is open, the entry is planned on `D`'s chain by `engine.plan_entry`
+     itself (the module's own function, fed the stored chain), so the selection and every refusal are the
+     module's code, not a reimplementation.
+  4. The entry check precedes management, as in the loop, so a position entered on `D` is first managed
+     on `D+1`.
+- **The delta:** the stored chain has bid, ask and last, not the feed's delta or IV. Each call's IV is
+  inverted from its mid by Black-Scholes at rate 0 and no dividend, and its delta is
+  `engine.bs_call_delta`, the module's own fallback (`short_selected_by = delta_computed`). A strike whose
+  mid is at or under intrinsic has no IV and is skipped, as a strike with no delta is in the module.
+- **Costs and fills (curve's paper basis, unchanged):**
+  - Legs are priced at mid. The suite's cost model is charged on top, as the paper ledger charges it:
+    `cherrypick.core.fees` defaults (`tastytrade_costs` is empty in the deployed config), meaning $1.00 a
+    contract to open, clearing and regulatory fees on every contract, nothing to close, and slippage of
+    0.125 of each leg's spread (capped at 0.15 of its mid) on each fill. VXX carries no index exchange fee.
+  - **Settlement:** a spread that reaches expiry is settled at the raw expiry-day close. The paper
+    ledger's physical decomposition applies: intrinsic value, $5 for each in-the-money symbol, and the
+    delivered shares disposed at the next session's open with their share-side fees
+    (`core.fees.assignment_fee`, `core.settlement`).
+  - **Early assignment is measured, not modelled,** as the module does. Each session a short leg's
+    extrinsic value is under `assignment_exposure_tv` ($0.05) it is counted as exposed. Reported: exposed
+    sessions and trades per arm, and a sensitivity that closes each exposed trade at that session's
+    natural fill. The verdict is the unadjusted paper basis, an upper bound (honesty rule 2).
+  - **Stress:** every fee and slippage figure at 1.5x. Reported beside it, not judged: fills at the
+    natural (buying at the ask, selling at the bid) and fills at mid with no cost.
+- **Splits:** VXX's raw closes jump on three ex-dates in the local technicals history, each a one-for-four
+  reverse split: **2021-04-23, 2023-03-07 and 2024-07-24.** No other day in 2019-05 to 2026-10 moves by
+  more than a factor of 1.6 either way. A split ex-date inside a trade ends it at the session before, at
+  that session's quotes, because an adjusted contract's deliverable and strikes change (as item 29).
+  Those trades are counted and are kept in the verdict; the result without them is reported. An entry
+  needs a short strike above the raw close and a chain that lists the strikes the plan reads, which turns
+  away a session whose chain is the adjusted series. Share-side data (the reference below) is adjusted by
+  the three ratios.
+- **Measured,** per arm, per trade: net dollars for the whole position (credit, less exit cost or plus
+  settlement, less every fee and slippage, in separate columns: fees, slippage, settlement) and net as a
+  share of the position's max loss at entry. Per arm and window: the trade count, the mean and the median,
+  net per calendar year, the worst trade, and the maximum drawdown of cumulative net dollars over closed
+  trades, in dollars and in units of the arm's mean max loss. Quantity is held at 2 in every arm, so
+  dollars are not comparable between widths; shares of max loss are.
+- **Windows** (entries; a trade is followed to its close wherever that falls):
+  - **Design:** 2019-05-13 to 2022-12-30. It holds 2020-02 to 2020-04 and 2022.
+  - **Holdout:** 2023-01-03 to 2026-10-28, run flat from its first session, counting only after a design
+    pass. It holds 2024-08 and 2025-04. A position still open on 2026-10-28 is left out and counted.
+  - The window starts at 2019-05-13 because the local VXX history has no bars from 2019-01-30 to
+    2019-05-10; filling the hole is a declared limit (below), not part of this test.
+- **Pass-or-fail rule,** per arm, all must hold:
+  - in the design window, the mean net share of max loss above zero, with the stationary-bootstrap
+    one-sided p (trades in entry order, mean block 3, 20,000 resamples, seeded) passing **Holm across the
+    five arms at 0.05**. One trade is one observation;
+  - positive in each design half (2019-05-13 to 2021-02-26, and 2021-03-01 to 2022-12-30);
+  - still positive at 1.5x costs;
+  - then the holdout's mean net share of max loss above zero. The holdout's interval is reported.
+  - **Minimum trades:** an arm with fewer than 30 closed trades in a window has **no verdict** for that
+    window, and a half with fewer than 10 is not read. A no-verdict from refusals is stated as such, is
+    not a fail, and means that arm's holdout is not read. `noflip` and `control` share every trade until a
+    flip fires, so `flip_divergence_count` is reported beside the pair as their real difference.
+- **Reported, not judged:** the refusal rate and the refusals by reason and year (below); the worst
+  trade; the arm with each pre-declared episode removed; natural-fill and no-cost mean; the exposure
+  counts; the sensitivity without the split-ended trades.
+- **Rival explanations, each with its check:**
+  - *One spike decides (2020-03, 2024-08):* both episodes are inside a window, so a pass cannot be
+    "no spike in the sample". Each arm's trades open during 2020-02-19 to 2020-04-30, 2024-07-31 to
+    2024-08-30 and 2025-04-01 to 2025-04-30 are listed with their nets and the mean is reported with
+    them removed. A verdict that turns on one of them is called that.
+  - *Refusals differ at the close from 10:00 to 10:30:* curve enters in the morning and the stored quotes
+    are the day's last. The refusal rate by reason is reported against paper's (the share of sessions with
+    the gate open and no fill, from `curve_entry_attempts`, read when the study runs). **A sample check:**
+    one session in every 25 of the sessions the gate allows has the target expiry's chain fetched at
+    10:00 to 10:30 from the intraday chain store, and `plan_entry` is run on it. Reported: how often the
+    refusal and the strikes differ from the close's, and the vendor's own delta against ours on the
+    short. Not judged. If the morning refuses much more or less often than the close, the verdict says
+    how far it can be carried.
+  - *Splits:* above, with the split-ended trades kept and removed.
+  - *The signal without the spread:* gated short VXX shares are the reference. Short at the close of the
+    session after a close with the ratio under 0.97, flat otherwise, close to close on the split-adjusted
+    series, 0.05% a side, no borrow, no dividends. CAGR, drawdown and worst day per window, reported next
+    to the arms. If the shares make money and the spreads do not, the cost is the structure's.
+  - *Costs read too kindly:* the 1.5x stress is in the rule; the natural fill is reported.
+  - *The Holm family is too narrow:* four of the five arms share the gate and most of their sessions, so
+    the correction is conservative. It is kept.
+- **Minimum detectable effect (B12):** recorded in the local result before the holdout is read: each arm's
+  design standard error of the mean and the mean it would need for the bound to clear zero. With a few
+  dozen trades whose outcomes run from small wins to a full loss, the standard error is several points of
+  max loss, so only a mean well above the modelled replay's reading is detectable. **A fail reads "no edge
+  that large", not "no edge".**
+- **Declared limits (B11):**
+  - end-of-day quotes: curve enters from 10:00 to 10:30 and acts on 60-second marks, so entry, profit take
+    and flip are read once a day, and a profit take is found a session late;
+  - delta and IV are ours, not the feed's;
+  - the gate reads the day's closing ratio; the loop reads it at the entry tick (the 27 recorded paper
+    sessions matched the close within a few hundredths);
+  - early assignment is measured, not modelled, so the result is an upper bound;
+  - ETN risks (the 2022 creation halt, issuer risk) are not modelled;
+  - the local VXX history has no bars from 2019-01-30 to 2019-05-10 (about 72 sessions), so they are out;
+  - no more than about 90 monthly expiries, so the design holds few trades.
+- **Settled with the replay, before the history was fetched (2026-10-30):** none yet. Anything found
+  while building the replay is written here before the first result is read.
+- **Data:** the licensed end-of-day chain store (`eod_chains.db`), daily paths for the monthly VXX expiries
+  from 2019-06-21 to 2026-12-18, each from the first session it can be the target to its expiry (or the
+  last stored session). Fetched by research-queue `fetch-chain-paths` rows, not by hand. The sample check
+  uses `fetch-intraday-chains`. Spot from the technicals bars, ratio from the public index files. The
+  replay is `scripts/curve_item37.py`, run as `item37/plan`, `item37/fetch-chain-paths`,
+  `item37/fetch-intraday` and `item37/study`. Results are derived from licensed data and stay under
+  `~/.cherrypick/data/backtest/results/research/item37/`; this plan records the verdict without figures.
+- **Decides:**
+  - **A pass:** that arm continues in paper as curve's base, proposed for a declared boundary (a width,
+    exit or delta change is measurement-affecting). If more than one passes they are all reported and the
+    user picks; `control` stays unless a variant's design mean is higher.
+  - **A fail or no verdict:** curve stays as it is in paper, unchanged, and this section is the evidence
+    the retirement rule needs. Retirement stays the user's decision.
+  - Curve's paper config is not changed while this item is open.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
