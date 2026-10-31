@@ -10,7 +10,7 @@ Same three layers as pmcc/calendars, kept apart on purpose:
 
 Arm semantics:
 - `control` — close at `profit_take_pct` of the entry credit, OR the regime-flip hard exit
-  (measured ratio crosses >= 1.0 mid-trade -> close next tick regardless of P&L), OR `close_dte`.
+  (measured ratio at or above `contango_max` mid-trade -> close next tick regardless of P&L), OR `close_dte`.
 - `noflip` — control's exit MINUS the flip rule: holds through backwardation to target or
   `close_dte`. Its entry is identical to control's, same tick, same fills (the pairing).
 - `hook` — control's exit rules, entered only on the two-day-confirmed hook signal.
