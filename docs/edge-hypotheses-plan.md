@@ -2837,6 +2837,105 @@ records only what had to be settled before the first read, and nothing here has 
   from the broker's nightly orders (its steps 3 and 4); a tag that fails never enters the board, and
   the board keeps saying flow is not counted.
 
+### 33. MEIC on Fed decision days: does entering at the 14:00 statement cost more than other days?
+
+*Source: the user, 2026-10-30, asking whether gates could make the studies perform better, then for
+outside sources. The published pre-FOMC drift (Lucca and Moench, 2015) largely disappeared after 2015,
+so it is not used as a direction signal. This item takes a different mechanism: the Fed's statement
+is released at 14:00 ET, the minute MEIC's live rule starts entering, and the press conference
+follows at 14:30. **Look-alikes, said out loud.** Item 24 tested the entry slot and closed it; the
+MEIC VIX-expiry gate (2026-10-21) found no edge; items 23 and 24 found no lever larger than the
+sample could see. **Seen before declaring:** `pm-200`'s replay over both windows, in aggregate only.
+Its sessions have never been split by Fed day.*
+
+- **Question:** on scheduled FOMC decision days, does `pm-200` (the live rule: SPX, 10 wide, 16 delta,
+  entering from 14:00) net less than on other days, enough that skipping those days raises its net?
+- **Where the edge would live:** **avoiding a scheduled volatility release** at the moment of entry. A
+  short condor opened as the statement lands takes the jump at once and the press conference's moves
+  after. The premium may already price it (implied volatility rises into the release), which is what
+  the test asks. **What would falsify it:** Fed-day nets no lower than other days', after costs.
+- **The days:** the Fed's published calendar of scheduled FOMC decisions (unscheduled meetings are
+  not counted), fetched by a script into `~/.cherrypick` as public data. **Reported, not judged:**
+  CPI release days (08:30, before entry) and the days with an unscheduled Fed action.
+- **Measured,** per session: `pm-200`'s net (its replay, the live rule's own engine and fills). The
+  gate's effect is the mean net of Fed days against the mean of the other sessions, and the gated
+  rule's whole-window net (Fed days removed) against the ungated rule's.
+- **Windows:** the backtest's own over the 60-second store: **design** 2022-05-16 to 2025-06-30 (about
+  25 decision days), **holdout** 2025-07-01 to 2026-10-12 (about 10). **The untouched check:** every
+  scheduled decision day from 2026-11-01 on, in the paper and live ledgers.
+- **Pass-or-fail rule,** in the design window:
+  - the mean Fed-day net below zero, and below the other sessions' mean, with a one-sided
+    permutation p under 0.05 (the Fed-day label redrawn at random over the window's sessions,
+    10,000 draws, seeded);
+  - below the other sessions' mean in each half of the window;
+  - then, in the holdout, the Fed-day mean below the other sessions' mean.
+  - Fewer than 20 Fed days in the design window is no verdict.
+- **Minimum detectable effect (B12):** with about 25 Fed days against a session spread of several
+  hundred dollars, only a Fed-day loss of roughly the size of a typical losing session is
+  detectable. A fail reads "no Fed-day cost that large", not "Fed days are safe".
+- **Rival explanations, each with its check:**
+  - *Fed days fall in volatile months anyway:* the permutation draws from the same window; the result
+    is also reported against the five sessions either side of each Fed day.
+  - *One meeting or one year:* both halves; the result without the worst Fed day reported.
+  - *Replay not yet trusted:* MEIC's replay is provisional until validation unlocks (row 46, not
+    before 2026-11-09). This item runs after that unlock, or is recorded as provisional.
+- **Declared limits (B11):** 60-second ticks; entries and stops by the replay's fill model; about 35 Fed
+  days in all, so the holdout alone cannot confirm a small effect.
+- **Data:** the 60-second store, MEIC's replay, the Fed's calendar (public). Results stay under
+  `~/.cherrypick/data/backtest/results/research/item33/`; this plan records the verdict without
+  figures. The study is `scripts/meic_fomc_item33.py`, run as `item33/study`.
+- **Decides:**
+  - **A pass:** a Fed-day skip is proposed for MEIC paper at a declared boundary; live follows only on
+    the user's word.
+  - **A fail or no verdict:** no gate. A hand-set Fed-day skip remains the user's risk choice, labelled
+    untested.
+
+### 34. The option-to-stock premium ratio: does heavy option trading foretell weaker returns?
+
+*Source: Johnson and So (2012), "The option to stock volume ratio and future returns", reported a
+weekly spread between the lowest and highest deciles of option volume over stock volume, largest
+where short sales are costly. Proposed 2026-10-30 from the user's request for outside sources.
+**Look-alike:** item 32 reads large opened orders from the same store; this reads total option
+trading, a different signal, and shares item 32's grid, windows and holdout fetch. Nothing in the
+flow store's outcomes has been read.*
+
+- **Question:** do stocks whose options trade heavily relative to their shares underperform, over the
+  next five sessions, those whose options trade lightly?
+- **Where the edge would live:** **information in where trading goes**: a trader with bad news, facing
+  short-sale costs, uses options, so heavy option trading carries negative information the share
+  price absorbs later.
+- **The signal,** per name and grid session D (item 32's fetched grid, names fetched whole that
+  session): the premium of the day's single-leg option orders, summed from the store's premium
+  histogram at each bucket's geometric midpoint, over the stock's dollar volume that session (raw
+  close times volume). Contract volume is not in the store, so this is a premium ratio, not the
+  paper's contract ratio, declared as such. Known at D's close.
+- **The outcome:** item 32's: the close of D+1 to the close of D+6, name minus SPY.
+- **Measured,** per session: the mean outcome of the lowest decile of the ratio less that of the highest
+  (long the lowest, short the highest), less 0.10% a side on each leg. Sessions weighted equally.
+- **Pass-or-fail rule,** in the design window (2022-05-16 to 2025-06-30, the fetched grid):
+  - the mean session spread above zero, with the stationary-bootstrap one-sided 95% lower bound above
+    zero (grid sessions, mean block 5, 20,000 resamples, seeded);
+  - positive in each time-half and in each name-half (`name_half`, B9);
+  - positive at 1.5x the costs;
+  - positive with name-sessions whose outcome window holds a report's reaction day removed;
+  - then the holdout (item 32's fetch, 2025-07-01 to 2026-10-12), read once: the mean spread above zero.
+  - Fewer than 100 grid sessions with both deciles filled is no verdict.
+- **Rival explanations, each with its check:**
+  - *Size or liquidity:* the ratio falls with share volume; the spread is also read within terciles of
+    dollar volume, reported.
+  - *Momentum or reversal:* the spread read within terciles of the prior five sessions' return,
+    reported.
+  - *Reports:* judged with report windows removed (above).
+  - *The short leg is untradable:* the long-only half (lowest decile against the session's mean) is
+    reported; no borrow cost is charged, a declared limit.
+- **Declared limits (B11):** premium, not contracts; single-leg orders only; the histogram's buckets
+  are coarse; grid sessions only; no borrow cost on the short leg.
+- **Data:** the flow store (design fetched; holdout by item 32's row) and the local bars. Results stay
+  under `~/.cherrypick/data/backtest/results/research/item34/`, verdict here without figures. The
+  study is `scripts/option_stock_ratio_item34.py`, run as `item34/study`.
+- **Decides:** **a pass** makes the ratio a candidate board method beside item 32's tags (read from
+  the broker's nightly data, as item 32's would be); **a fail** closes it for this store and grid.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
