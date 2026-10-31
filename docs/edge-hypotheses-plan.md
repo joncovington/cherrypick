@@ -4516,7 +4516,7 @@ store is fetched or any of it is run.*
   outside these windows.
 - **Rival explanations, each with its check:** as item 41's (placebo `be-skip` at the gate's rate,
   both halves, 1.5× fees, Holm), plus *the wings decide, not the rule*: **Check:** `be` against item
-  40's `be10` over the same sessions is reported.
+  41's `be10` over the same sessions is reported.
 - **The structure:** `be` is the `be-hourly-1x` profile exactly as the doc gives it (25, 30, 35, 40
   wing search with `equalize_credit`). **Judged:** `be` itself (own net against zero), `be-multi`
   and `be-perday` (each against `be`); if item 41's `be10` arms pass, the passing variant replaces
@@ -4532,6 +4532,13 @@ store is fetched or any of it is run.*
   fetch code committed, fetched over 2022-05-16..2026-10-12 as research-queue rows. The fetch is
   its own PR, and nothing is run until it lands and the store's coverage is reported (sessions,
   and the share of 12-delta shorts whose 40-point wing is inside it).
+- **Settled with the build, before any read (2026-10-31):** the store is built (#744, #745) and
+  fetched as research-queue row `item42/fetch-wide-store` over 2022-05-16..2026-10-30.
+  `scripts/meic_be_condor_item42.py --step coverage` reports that reach for the wide store and the
+  plain one side by side, so what the wider fetch adds is on record; `--step study --window
+  design|holdout` refuses until coverage has run and the wide store holds the window's sessions.
+  `be-skip` uses item 41's measured refusal rate (the spot is the same in both stores), seed 42.
+  `be10` runs beside `be` in the design window only: item 41 spent its holdout.
 - **Declared limits (B11):** item 41's, less the wing limit; his 5-cent buy-back, hand-managed
   longs and dynamic stop tightening are not modelled (the doc's gaps 3, 4 and 7).
 - **Decides:**
