@@ -1166,9 +1166,18 @@ def run_iteration(cfg, force=False):
         # reads the same verdicts a live session at that instant would.
         if _profiles_wanting_stabilization(all_profiles):
             try:
-                snapshot["stabilization_verdicts"] = stabilization_gate.snapshot_verdicts(
-                    symbol, today, now
-                )
+                # Both threshold modes' verdicts in one pass: ATR mode's plain keys plus IV
+                # mode's "-iv" keys, so differently-configured arms on the same symbol share
+                # one dict without double reads.
+                snapshot["stabilization_verdicts"] = {
+                    **stabilization_gate.snapshot_verdicts(symbol, today, now),
+                    **{
+                        f"{k}-iv": v
+                        for k, v in stabilization_gate.snapshot_verdicts(
+                            symbol, today, now, threshold_mode="iv"
+                        ).items()
+                    },
+                }
             except Exception as exc:  # noqa: BLE001 -- the oracle must not take the tick down
                 snapshot["stabilization_verdicts"] = {}
                 logger.warning(

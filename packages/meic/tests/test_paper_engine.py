@@ -3480,3 +3480,113 @@ def test_stabilization_gate_module_fails_closed_without_trail(tmp_path):
         "SPX", "2026-10-13", trail_path=tmp_path / "missing.db"
     )
     assert out == {"multi": None, "perday": None}
+
+
+def _synthetic_trail_with_iv(path, wide_bars=23, flat_bars=2):
+    """The flat-tail trail plus an atm_iv regime trail: 40% early, easing to 25% by the tail —
+    IV stays well above ATR/(close*0.006) throughout, so the IV threshold is the looser one."""
+    import datetime as _dt
+    import sqlite3 as _sqlite3
+    from zoneinfo import ZoneInfo as _Zone
+
+    et = _Zone("America/New_York")
+    day = _synthetic_trail(path)   # builds gex_spot_history, returns the day
+    con = _sqlite3.connect(path)
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS market_regime_history ("
+        "ts REAL, reading TEXT, symbol TEXT, value REAL, basis_ts REAL, trade_date TEXT)"
+    )
+    # at 11:35 the flat-bars close ~590; give the day a mid-30s IV trail from the open.
+    rows = []
+    iv_by_minute = {570: 40.0, 600: 38.0, 630: 36.0, 660: 34.0, 690: 32.0, 695: 30.0}
+    for minute, iv in iv_by_minute.items():
+        t = _dt.datetime.combine(_dt.date.fromisoformat(day), _dt.time(0, 0).replace(hour=minute // 60, minute=minute % 60)).replace(tzinfo=et)
+        rows.append((t.timestamp(), "atm_iv", "SPX", iv, None, day))
+    con.executemany("INSERT INTO market_regime_history VALUES (?,?,?,?,?,?)", rows)
+    con.commit()
+    con.close()
+    return day
+
+
+def test_stabilization_gate_iv_mode_reads_stable_and_looser(tmp_path):
+    """IV mode on the flat-tail trail: threshold = close x IV x 0.006 (~14 pts at 590/32%),
+    well above the 2-bar range (0) and the ATR threshold — STABLE where ATR mode also reads
+    STABLE, and its composite key is the \"-iv\" one."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.meic import stabilization_gate
+
+    et = ZoneInfo("America/New_York")
+    db = tmp_path / "gex.db"
+    day = _synthetic_trail_with_iv(str(db))
+    now = datetime.fromisoformat(f"{day}T11:35:00").replace(tzinfo=et)
+    out = stabilization_gate.snapshot_verdicts("SPX", day, now, trail_path=db, threshold_mode="iv")
+    assert out == {"multi-iv": False, "perday-iv": True}  # multi still cold on a solitary day
+    # And the ATR verdicts arrive under the plain keys, from one call each.
+    out_atr = stabilization_gate.snapshot_verdicts("SPX", day, now, trail_path=db)
+    assert out_atr == {"multi": False, "perday": True}
+
+
+def test_stabilization_gate_iv_mode_fails_closed_without_iv(tmp_path):
+    """No atm_iv trail, no verdict in 'iv' mode: None (the arm waits), and no ATR fallback —
+    the binding path never silently switches basis."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.meic import stabilization_gate
+
+    et = ZoneInfo("America/New_York")
+    db = tmp_path / "gex.db"
+    day = _synthetic_trail(str(db))  # gex_spot_history only; no market_regime_history rows
+    now = datetime.fromisoformat(f"{day}T11:35:00").replace(tzinfo=et)
+    out = stabilization_gate.snapshot_verdicts("SPX", day, now, trail_path=db, threshold_mode="iv")
+    assert out == {"multi-iv": None, "perday-iv": None}
+
+
+def test_stabilization_gate_iv_sensitivity_halves_for_xsp(tmp_path):
+    """The script's XSP/SPY sensitivity: the threshold in 'iv' mode is close x IV x 0.0006 for
+    XSP (a tenth of SPX's 0.006) — asserted at the module level."""
+    import pytest as _pytest
+
+    from cherrypick.meic import stabilization_gate as sg
+
+    assert sg._auto_iv_sensitivity("SPX") == _pytest.approx(0.006)
+    assert sg._auto_iv_sensitivity("XSP") == _pytest.approx(0.0006)
+    assert sg._auto_iv_sensitivity("SPY") == _pytest.approx(0.0006)
+
+
+def test_stabilization_engine_key_composes_the_mode():
+    """An 'iv' arm reads the -iv verdict key an ATR arm never would; an unknown mode composes a
+    key nobody writes and fails closed even with every verdict True."""
+    snap = _base_snapshot(now_et="13:00")
+    snap["stabilization_verdicts"] = {"multi": True, "perday": True, "multi-iv": False}
+    entered, reason, _ = paper.evaluate_entry(
+        snap, _stab_params(stabilization_threshold_mode="iv"), []
+    )
+    assert entered is False and reason == "stabilization_wait"
+    snap["stabilization_verdicts"]["multi-iv"] = True
+    entered, _, _ = paper.evaluate_entry(
+        snap, _stab_params(stabilization_threshold_mode="iv"), []
+    )
+    assert entered is True
+    # Unknown mode: fail closed.
+    snap["stabilization_verdicts"] = {"multi": True, "weekly": True}
+    entered, reason, _ = paper.evaluate_entry(
+        snap, _stab_params(stabilization_threshold_mode="weekly"), []
+    )
+    assert entered is False and reason == "stabilization_wait"
+
+
+def test_stabilization_gate_unknown_threshold_mode_fails_closed(tmp_path):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.meic import stabilization_gate
+
+    et = ZoneInfo("America/New_York")
+    db = tmp_path / "gex.db"
+    day = _synthetic_trail(str(db))
+    now = datetime.fromisoformat(f"{day}T11:35:00").replace(tzinfo=et)
+    out = stabilization_gate.snapshot_verdicts("SPX", day, now, trail_path=db, threshold_mode="weekly")
+    assert out == {"multi": None, "perday": None}

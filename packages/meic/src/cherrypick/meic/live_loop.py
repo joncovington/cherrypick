@@ -1189,9 +1189,19 @@ def run_once(
     # management below never reads them.
     if params.get("stabilization_entry"):
         try:
-            snapshot["stabilization_verdicts"] = _stabilization_gate.snapshot_verdicts(
-                symbol, str(snapshot["date"]), _pl._now_et()
-            )
+            # Both modes in one pass, the same dict the paper loop writes: ATR mode's plain keys
+            # plus IV mode's "-iv" keys.
+            snapshot["stabilization_verdicts"] = {
+                **_stabilization_gate.snapshot_verdicts(
+                    symbol, str(snapshot["date"]), _pl._now_et()
+                ),
+                **{
+                    f"{k}-iv": v
+                    for k, v in _stabilization_gate.snapshot_verdicts(
+                        symbol, str(snapshot["date"]), _pl._now_et(), threshold_mode="iv"
+                    ).items()
+                },
+            }
         except Exception as exc:  # noqa: BLE001 -- the oracle must not take the tick down
             snapshot["stabilization_verdicts"] = {}
             log(
