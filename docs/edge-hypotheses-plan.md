@@ -4547,6 +4547,153 @@ store is fetched or any of it is run.*
   - **`be` fails:** the strategy as described does not earn after costs here, whatever the gate
     does. That is the evidence for closing it as a MEIC arm; closing it stays the user's decision.
 
+### 43. The wing width of MEIC's live rule: 15, 20, 25 and 30 against 10
+
+*Source: the user, 2026-10-31: "did we ever test wider wings?", then "I'd like to complete a test of
+several wing widths", choosing to run up to 30 on the current store and 35 and 40 separately (item
+44). No MEIC backtest has run a wing wider than 10. The 2026-10-19 `pm-200-1400-w5` run tried only 5,
+which did worse; the 2026-07/08 width arms were paper-only and retired without a reading; item 42
+(PR #742) tests the break-even condor's own 25-40 search, a different rule. Declared here before any
+of it is run.*
+
+- **Question:** does a wider wing raise the expected value per session of the rule live trades,
+  `pm-200` entering once a day 14:00–14:30, without simply risking more for it?
+- **Where the edge would live:** **premium**, with width as payoff shaping. A wider wing buys a
+  cheaper long, so the condor collects more credit for the same short and fees take a smaller share;
+  the 2× stop sits further away in dollars. Against it, the maximum loss grows faster than the
+  credit, and a stopped side loses more. Which wins is the question.
+- **Look-alikes:** `pm-200-1400-w5` (5 against 10, full vendor history, 10 ahead in nearly every
+  quarter); item 23 (the delta of the same rule: no lever away from 16); the flies width question in
+  docs/quote-history-replay-plan.md, a different module.
+- **Rival explanations, each with its check:**
+  - *Paying more by risking more:* a wider condor holds more buying power, so a larger net per
+    session can be a larger bet. **Check:** the arm's net over buying power (summed net over the
+    summed `(width − credit) × 100` of its entries) must be at least `w10`'s over the same sessions.
+  - *A gate, not the width:* the credit floor is 15% of the width, so it would refuse more of the
+    wide condors. **Check:** the judged arms carry no credit floor and no call-delta ceiling, as item
+    23's; a session with no entry counts at zero, and trades per arm are reported.
+  - *The store, not the width:* the store keeps about 20 strikes, roughly 100 points, either side of
+    spot. A wing beyond that is MEIC's own "no candidate", and a leg that leaves it while open holds
+    `quotes_unavailable`. **Check:** per arm, sessions entered, sessions `w10` entered and the arm did
+    not, and entries with an unquoted tick are reported; and the paired difference over only the
+    sessions both arms entered is reported beside the verdict.
+  - *A calm span:* **Check:** the paired difference must be positive in both time-halves.
+  - *Fees:* **Check:** the arm's own net is still positive at 1.5× fees.
+  - *Searching a grid:* **Check:** Holm across the four arms; the grid is fixed here.
+- **The structure:**
+  - `live-1400` is item 23's: the registry's `pm-200` (SPX, 16 delta, 10 wide, per-side stop at 2×
+    the whole credit, 30-minute spacing) with entries 14:00–14:30, so one condor a session, all its
+    gates.
+  - `w10` is `live-1400` with no credit floor (`min_credit_pct_of_width` and the low-IV relief floor
+    both 0) and no call-delta entry ceiling (all three set to 1): item 23's `d16`.
+  - `w15`, `w20`, `w25` and `w30` are `w10` with `wing_width_points` changed. Nothing else differs.
+  - **Reported, never judged:** `w5` (already answered on 2026-10-19), `live-1400`, and `control`,
+    which the runner requires. `w10` against `live-1400` is reported.
+  - The stabilization gate (#728) is off in every arm: it is item 41's question, and item 44 crosses
+    it with width.
+- **Costs:** MEIC paper's own model: fees from `core.fees`, stops filled under the replay's fill
+  model, cash settlement at the store's close.
+- **Measured:** each session's summed net per arm, in dollars at one condor; each session's buying
+  power per arm from the run's ledgers.
+- **Window and sample:** the backtest's own windows over the 60 s vendor store (`SPX-60s.db`).
+  - **Design:** 2022-05-16 to 2025-06-30. **Holdout:** 2025-07-01 to 2026-10-12, run straight after
+    the design whatever it shows, as item 23's. It counts toward a pass only after a design pass.
+  - No arm wider than 10 has run on either window, so both are out of sample for the grid.
+  - **Both runs are provisional:** MEIC validation has not unlocked. The holdout spends once per arm
+    through `unvalidated_holdout`. Results carry the vendor data's own unchecked error.
+  - Fewer than 100 sessions in a window is no verdict.
+- **Pass-or-fail rule**, per grid arm, all must hold:
+  - the paired difference against `w10` (one session one observation) has a mean above zero and a
+    one-sided t above 2;
+  - Holm across the four arms;
+  - the paired difference positive in each time-half of the window;
+  - the arm's own mean net above zero, and still positive at **1.5× fees**;
+  - its net over buying power at least `w10`'s over the same sessions;
+  - then the holdout: the paired difference with a mean above zero and a one-sided t above 2.
+- **Declared limits (B11):** 60 s ticks; strikes beyond the stored ~100 points do not exist here; a
+  stop fills under the fill model, not a recorded fill; one width per arm, never a per-side pair.
+- **Name split (B9):** does not apply; one symbol.
+- **Data:** no new store. `scripts/meic_wing_width_item43.py --window design|holdout` builds a scratch
+  MEIC arm registry from the machine's (the arms above added) and runs `cherrypick.backtest.runner`.
+  Results go under the backtest data directory only; this plan records the verdict.
+- **Decides:**
+  - **A pass:** a proposal to move `live.arm`'s width to the passing one at a declared boundary,
+    after MEIC validation unlocks, with the kill criteria and live's buying-power cap re-derived from
+    that arm's replay. Whether the floor and ceiling come with it is read from `w10` against
+    `live-1400`, not decided here.
+  - **A fail or no verdict:** live stays at 10 wide, and width up to 30 is closed as a lever for the
+    14:00 rule. Item 44 still runs.
+
+### 44. The stabilization gate across wing widths 10 to 40 on MEIC's live rule
+
+*Source: the user, 2026-10-31, after item 43 was scoped: "I do want to backtest the stabilization
+gate with the wing widths up to 40 if possible". Wings past 30 need strikes the 60 s store does not
+hold; item 42 already declares the wider store. Declared here before the store is fetched or any of
+it is run.*
+
+- **Questions:**
+  - **(a)** at each width from 10 to 40, does the stabilization gate raise the expected value per
+    session of item 43's rule?
+  - **(b)** do 35- and 40-point wings beat 10 on that rule, ungated, as item 43 asks of 15–30?
+- **Where the edge would live:** **timing** for (a), as item 41: a condor sold after the move has
+  spent itself faces less of the remaining range. A wider wing tolerates a larger move before the
+  long pays, so the gate's value may change with width; that interaction is why widths are crossed
+  with it. **Premium** for (b), as item 43.
+- **Look-alikes:** item 41 (the gate at 10 wide, including `live-1400-multi`, the same rule with all
+  its gates); item 42 (the gate on the break-even condor at 25–40); item 43 (width without the gate,
+  up to 30).
+- **Rival explanations, each with its check:** item 43's for (b), the buying-power bar included;
+  item 41's for (a), and:
+  - *Fewer, later entries, not better-timed ones:* **Check:** `w10-skip`, `w10` refusing ticks at
+    random at the gate's own refusal rate over 14:00–14:30 (measured by a plan step before the study,
+    seed 44), is reported beside every gated arm. The gate reads spot only, so one placebo serves
+    every width.
+  - *Item 43's store, not the wider one:* **Check:** `w10` through `w30` ungated are rerun on the
+    wide store, and their result against item 43's is reported; a difference beyond noise is listed
+    and the wide store's arms are read first.
+- **The structure:** item 43's `w10` rule, widths 10, 15, 20, 25, 30, 35 and 40.
+  - `wN` is item 43's arm at width N, ungated.
+  - `wN-multi` is `wN` with `stabilization_entry` on, oracle `multi`, ATR threshold, 2 bars: item
+    41's `live-1400-multi` gate exactly. A gated arm that sees no stable bar in its window does not
+    enter that session, and the session counts at zero.
+  - **Judged, (a):** each `wN-multi` against its own `wN`, seven tests. **Judged, (b):** `w35` and
+    `w40` against `w10`, two tests.
+  - **Reported, never judged:** `w10-skip`, `w15`–`w30` (the store check), `live-1400`, `control`.
+  - If item 41's `live-1400-multi` is still to run when this does, both run unchanged; neither's
+    verdict decides the other.
+- **Costs and measured:** item 43's.
+- **Window and sample:** the backtest's own windows, over `SPX-60s-wide`.
+  - **Design:** 2022-05-16 to 2025-06-30; it decides.
+  - **Holdout:** 2025-07-01 to 2026-10-12, run straight after. For (b) it counts after a design
+    pass, as item 43's. For (a) it is a consistency check only: item 41 reads the gate on this rule
+    over the same dates first, so they are no longer unseen for the gate.
+  - **Provisional,** as item 43. Fewer than 100 sessions in a window is no verdict.
+- **Pass-or-fail rule:**
+  - **(a), per gated arm:** item 41's rule against its own `wN` (paired mean above zero with a
+    one-sided t above 2, positive in both halves, own net above zero and at 1.5× fees), Holm across
+    the seven; and the gated arm's paired difference must exceed `w10-skip`'s against `w10` by the
+    same t bar. A gate no better than its placebo fails.
+  - **(b), per arm:** item 43's rule against `w10`, net over buying power included, Holm across the
+    two.
+- **Prerequisite, the store:** item 42's `SPX-60s-wide` (the same 60 s SPX 0DTE fetch with
+  `strikes_each_side` 40, about 200 points either side), declared in `stores.STORES` with its fetch
+  code, fetched over 2022-05-16..2026-10-12 as research-queue rows, in its own PR. One fetch serves
+  both items. Nothing here runs until it lands and its coverage is reported: sessions, and the share
+  of 14:00 16-delta shorts whose 40-point wing is inside it.
+- **Declared limits (B11):** item 43's, with ~200 points of strikes in place of ~100; item 41's for
+  the gate (one spot print a minute, ATR threshold only, no IV mode).
+- **Name split (B9):** does not apply; one symbol.
+- **Data:** the script (`scripts/meic_wing_width_item44.py --step plan|study --window design|holdout`)
+  is written after the store lands, in its own PR, and implements exactly the arms above. Results go
+  under the backtest data directory only; this plan records the verdict.
+- **Decides:**
+  - **An (a) pass at some width:** with item 41's verdict, a proposal to add the gate to live's rule
+    at that width at a declared boundary, after MEIC validation unlocks, fresh sessions after
+    2026-10-12 read first.
+  - **A (b) pass:** joins item 43's pass branch; the width proposal names the widest passing arm
+    only if it also beats item 43's best on net over buying power.
+  - **Fails:** the gate stays off the live rule at every width, and 35–40 wings are closed for it.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
