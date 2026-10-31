@@ -2897,6 +2897,19 @@ Its sessions have never been split by Fed day.*
 - **Data:** the 60-second store, MEIC's replay, the Fed's calendar (public). Results stay under
   `~/.cherrypick/data/backtest/results/research/item33/`; this plan records the verdict without
   figures. The study is `scripts/meic_fomc_item33.py`, run as `item33/study`.
+- **Settled with the build, before the first read (2026-10-30, `scripts/meic_fomc_item33.py`):**
+  - **The arm is the live rule's single 14:00 entry,** item 23's `live-1400`, read from its stored
+    design and holdout runs; the registry's `pm-200` enters every 30 minutes from 12:00 and is not
+    the live rule. No replay is run and no holdout is spent by this item.
+  - The Fed's scheduled decision day is the second day of each meeting, from the Fed's published
+    calendar (25 in the design window, 10 in the holdout). Unscheduled actions are reported only.
+    CPI dates are read from a saved list of the BLS schedule (the page refuses scripted requests);
+    without it, CPI days are reported as not read.
+  - The permutation redraws as many sessions as there are Fed days; the observed labelling counts as
+    a draw. The halves split at the window's date midpoint; a half with no Fed day cannot pass. The
+    holdout is read whatever the design shows, and a design fail stays a fail.
+  - The study refuses while MEIC's history is locked unless run as provisional, which the result then
+    states.
 - **Decides:**
   - **A pass:** a Fed-day skip is proposed for MEIC paper at a declared boundary; live follows only on
     the user's word.
