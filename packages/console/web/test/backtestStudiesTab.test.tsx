@@ -91,15 +91,18 @@ describe("studies tab", () => {
     expect(headline(BOARD)).toBe("4 studies: 1 in progress, 0 declared, 2 finished (1 failed, 1 no verdict), 1 observation.");
   });
 
-  it("groups rows and shows status, verdicts and outcome in one line each", () => {
+  it("groups rows and shows title and status; verdicts and outcome wait for the row to open", () => {
     const out = html(<StudiesTable board={BOARD} nowMs={NOW} />);
     const order = ["In progress", "Finished", "Observations"].map((t) => out.indexOf(t));
     expect(order.every((i, k) => i > -1 && (k === 0 || i > order[k - 1]!))).toBe(true);
     expect(out).not.toContain("Declared, not started");
-    expect(out).toContain("design fail · holdout fail");
-    expect(out).toContain("live stays at 16 delta");
     expect(out).toContain("task running");
     expect(out).toContain("no verdict");
+    expect(out).not.toContain("design fail · holdout fail");
+    expect(out).not.toContain("live stays at 16 delta");
+    const opened = html(<StudyDetail row={row({})} />);
+    expect(opened).toContain("design fail · holdout fail");
+    expect(opened).toContain("live stays at 16 delta");
   });
 
   it("a study whose tasks are only queued says queued, not running", () => {

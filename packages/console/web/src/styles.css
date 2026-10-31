@@ -5011,6 +5011,13 @@ select.text-input {
 /* The queue's expanded row: the fields that do not fit a five-column row, then the log's tail. */
 .queue-detail-row > td {
   background: var(--surface-sunken);
+  /* Prose, not figures: wraps inside the card instead of widening the table. */
+  white-space: normal;
+}
+
+/* The studies tab's title is prose too. */
+.data-table td.studies-title {
+  white-space: normal;
 }
 
 .queue-detail {
