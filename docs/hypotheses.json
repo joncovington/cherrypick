@@ -1272,7 +1272,9 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#36-pmccs-own-rule-on-real-quotes-the-shield-three-variants-and-two-baselines",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item36/results.json"
+      ],
       "retest": null,
       "retests": []
     },
