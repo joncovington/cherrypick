@@ -2833,6 +2833,19 @@ records only what had to be settled before the first read, and nothing here has 
 - **Data:** the flow store (`flow.db`, 2022-05-16 to 2025-06-26 fetched) and the local bars. Results
   stay under `~/.cherrypick/data/backtest/results/research/item32/`, and this plan records the verdict
   without figures.
+- **Result (2026-10-30): fail; no cell passes in the design window, so the holdout is not read.**
+  - **First family:** none of the nine tag-and-cut cells has a deflated interval above zero. Call
+    buying and put selling lean positive and put buying negative, as the tags' sides would have it,
+    but each is small against a session's noise.
+  - **The placebo reads as high as the tags:** last grid session's tags, set against this session's
+    outcomes, do about as well as this session's. What the tags pick up is mostly a persistent
+    difference between the names that draw large orders and their same-stage peers, not the orders.
+  - **Second family (49 trials, F7 included):** none passes; several filters fail to beat their
+    unfiltered tag.
+  - **The earnings test:** neither side's hit rate clears 50% by its interval, and neither covers an
+    assumed 1% round trip.
+  - **Thin sessions:** none; the calendar change was handled by reading the fetched grid.
+  - Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item32/`).
 - **Decides:** as the flow plan's build: a tag that passes on the holdout becomes a board method, read
   from the broker's nightly orders (its steps 3 and 4); a tag that fails never enters the board, and
   the board keeps saying flow is not counted.
