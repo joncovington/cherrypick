@@ -1552,6 +1552,98 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 43,
+      "study": "item43",
+      "title": "The wing width of MEIC's live rule: 15, 20, 25 and 30 against 10",
+      "status": "declared",
+      "legacy": false,
+      "setup": "wing-width",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "summed net per session in $ at one condor, and buying power per session, per arm: pm-200 entering 14:00-14:30 with no credit floor and no call-delta ceiling at 10 wide (w10), and the same at 15, 20, 25 and 30",
+      "expected": "a positive paired difference per session against w10, at no worse net over buying power",
+      "sample": "design 2022-05-16..2025-06-30, holdout 2025-07-01..2026-10-12 run straight after, counting only after a design pass; 60 s vendor store (~100 points of strikes either side); both provisional, MEIC history being unvalidated; < 100 sessions = no verdict",
+      "rule": "per arm: paired difference against w10 with mean > 0 and one-sided t > 2, Holm across the four arms, positive in both time-halves, own mean net > 0 and still positive at 1.5x fees, net over buying power >= w10's; then holdout mean > 0 with t > 2",
+      "mechanism": "a wider wing collects more credit for the same short, so fees take a smaller share and the 2x stop sits further away in dollars, if that outweighs a maximum loss growing faster than the credit",
+      "rivals": [
+        {
+          "explanation": "paying more by risking more",
+          "check": "net over buying power at least w10's"
+        },
+        {
+          "explanation": "a gate, not the width",
+          "check": "judged arms carry no credit floor or call ceiling; sessions with no entry count at zero"
+        },
+        {
+          "explanation": "the store's strike window, not the width",
+          "check": "sessions entered, sessions w10 entered and the arm did not, unquoted-tick entries, and the paired difference over both-entered sessions, all reported"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "paired difference positive in both time-halves"
+        },
+        {
+          "explanation": "fees",
+          "check": "own net positive at 1.5x fees"
+        },
+        {
+          "explanation": "searching a grid",
+          "check": "Holm across the four arms; grid fixed before any look"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#43-the-wing-width-of-meics-live-rule-15-20-25-and-30-against-10",
+      "results": [],
+      "retest": null,
+      "retests": []
+    },
+    {
+      "id": 44,
+      "study": "item44",
+      "title": "The stabilization gate across wing widths 10 to 40 on MEIC's live rule",
+      "status": "declared",
+      "legacy": false,
+      "setup": "entry-filter",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "summed net per session in $ at one condor per arm: item 43's w10 rule at widths 10-40 in steps of 5, each ungated and with the stabilization gate (multi, ATR, 2 bars); a random-skip placebo at w10",
+      "expected": "(a) a gated arm beats its own width ungated and the placebo; (b) w35 or w40 beats w10 at no worse net over buying power",
+      "sample": "the SPX-60s-wide store (strikes_each_side 40) fetched first, shared with item 42; design 2022-05-16..2025-06-30 decides; holdout counts for (b) after a design pass and is a consistency check for (a), item 41 reading the gate on these dates first; provisional; < 100 sessions = no verdict",
+      "rule": "(a) per gated arm: item 41's rule against its own width, Holm across seven, and its paired difference beats the placebo's by t > 2; (b) per arm: item 43's rule against w10, Holm across two",
+      "mechanism": "a condor sold after the move has spent itself faces less of the remaining range, and a wider wing changes how much a move costs, so the gate's value may depend on width",
+      "rivals": [
+        {
+          "explanation": "fewer, later entries, not better-timed ones",
+          "check": "w10-skip placebo at the gate's refusal rate over 14:00-14:30, seed 44"
+        },
+        {
+          "explanation": "paying more by risking more",
+          "check": "net over buying power at least w10's for (b)"
+        },
+        {
+          "explanation": "the wide store differs from item 43's",
+          "check": "w10-w30 rerun on the wide store, compared with item 43, reported"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "paired difference positive in both time-halves"
+        },
+        {
+          "explanation": "fees",
+          "check": "own net positive at 1.5x fees"
+        },
+        {
+          "explanation": "nine looks",
+          "check": "Holm across seven for (a) and two for (b); arms fixed before any look"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#44-the-stabilization-gate-across-wing-widths-10-to-40-on-meics-live-rule",
+      "results": [],
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
