@@ -1192,9 +1192,7 @@ def run_once(
             # Both modes in one pass, the same dict the paper loop writes: ATR mode's plain keys
             # plus IV mode's "-iv" keys.
             snapshot["stabilization_verdicts"] = {
-                **_stabilization_gate.snapshot_verdicts(
-                    symbol, str(snapshot["date"]), _pl._now_et()
-                ),
+                **_stabilization_gate.snapshot_verdicts(symbol, str(snapshot["date"]), _pl._now_et()),
                 **{
                     f"{k}-iv": v
                     for k, v in _stabilization_gate.snapshot_verdicts(
