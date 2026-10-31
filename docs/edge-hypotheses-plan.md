@@ -4355,6 +4355,45 @@ either rule below.*
   `~/.cherrypick/data/backtest/results/research/item40/`; this plan records the verdict without figures.
 - **Decides:** a pass is evidence for reinstating flies with that arm, paper first, the user's decision;
   a fail closes these two levers, and with the 10-17 sweep leaves no tested way round the strand.
+- **Settled with the build, before the first read (2026-10-31, `scripts/flies_item40.py`, flies
+  `engine.strand_stop_*` and `evaluate_whole_fly`).** Nothing below has read an outcome.
+  - **The stop's reach.** Three times the credit is a buy-back cost above the 5-point width for any
+    credit over about 1.67 (a third of the width), and `control` enters at 1.00 to 3.00. The rule stays
+    as declared: it can fire only on the cheaper entries (plus the odd wide quote), and the number of
+    fires is reported beside the verdict. An arm whose stop never fired
+    equals `control` on every session and says nothing; the runner's `no_exposure` flag shows it.
+  - **The stop's price** is the natural (the short's ask less the long's bid, `close_tags.natural_close`),
+    which already concedes the whole spread, so no slippage fraction is added on top; mid to natural is
+    recorded as the slippage measure. Fees are the vertical's close (two legs, one sold) on top of its
+    open. It is checked after the completion step on the same tick, so a vertical that completes on the
+    tick its cost is over the multiple is a fly, not a stop. The closed row is written settled, with
+    `close_tag_source = 'stop'`, nothing to settle and no exercise fee.
+  - **A stop frees its position slot but not its centre.** `max_positions` counts open positions, so a
+    stopped vertical lets the arm enter again where `control` could not; the duplicate-structure rule
+    still sees its centre. This is part of the arm, and is why the stopped verticals' later effect on
+    entries is reported as entries per arm.
+  - **The whole fly's price** is flies' own `fly_debit`: the fly's mid plus the slippage fraction on all
+    four leg-spreads, the entry concession paid on a debit (what "mid less the concession" means as a net
+    credit), with `fly_open_fee`, four legs at once. It books on the ticks `control`'s entry gates admit
+    (window, caps, centre, side, credit floor and ceiling, cadence, duplicate and sign rules), and it is
+    refused, without spending the cadence slot, when any of the three strikes has no quote or the
+    price is not positive. Its ledger rows are `entry_mode = 'whole_fly'`, kind fly, never completed;
+    the backtest's outcome label for a fly reads "completed" for them.
+  - **The sessions** are every replayed session for both arms and `control`; a session with no entry
+    nets zero. The paired difference, the own mean net and the bootstrap run over all of them. "With an
+    entry" (the 300 floor) counts sessions where the arm held at least one trade.
+  - **Holm and the bootstrap.** The p-value is the add-one share of stationary-bootstrap resample means at
+    or below zero, and Holm at 0.05 across the two arms is applied once, to the whole design window. The
+    halves and the 1.5x stress each require the paired difference's 95% lower bound and the own mean above
+    zero, without a second Holm. The stress charges half again on fees (settlement included) and on the
+    slippage the fills conceded, read from each session's ledger; a session whose ledger is missing is
+    counted and reads zero slippage.
+  - **The holdout** is read once, only for an arm that passed the design window, and then needs the mean
+    paired difference and the own mean above zero. An arm that passed the design waits as "no verdict"
+    until its holdout is read. A design rerun starts `results.json` over.
+  - **The minimum detectable effect** is written in `results.json` from the design window's spread of
+    paired differences, at the design window's sessions and at 320 for the holdout, before the holdout
+    is read.
 
 ## Not worth revisiting
 

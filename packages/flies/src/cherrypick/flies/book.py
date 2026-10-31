@@ -294,7 +294,15 @@ def _to_position(row: dict) -> dict:
         "shadow_entry_path": fill_model.load_entry_path(dict(row).get("shadow_entry_path")),
         # The selector arm's positions complete under the params of the source that proposed them.
         "selected_from": dict(row).get("selected_from"),
+        # A `strand-stop` close (research item 40): the row was bought back, so `fly.position_pnl`
+        # reads its net and fees and nothing else.
+        "stopped": dict(row).get("close_tag_source") == STRAND_STOP,
     }
+
+
+#: `close_tag_source` on a vertical the `strand-stop` arm closed. Tags (close_tags.RULE, AGENT) only
+#: record a close that never happened; this one is a close that did.
+STRAND_STOP = "stop"
 
 
 def shadow_completion_limit(position: dict, symbol: str, params: dict) -> float | None:
@@ -795,6 +803,67 @@ def _process_snapshot(
             }
         )
 
+    # --- 1a. the `strand-stop` arm (research item 40): close any vertical still uncompleted after the
+    # completion step, at the natural, on the first tick its cost to buy back reaches the declared
+    # multiple of its credit. After step 1 so a vertical that completes this tick is a fly, not a
+    # strand; the closed row is written as a settled one, because nothing is left to settle.
+    stop_cfg = engine.strand_stop_settings(params)
+    for pos in [p for p in positions if stop_cfg and p["kind"] == "short_vertical" and p["status"] == "open"]:
+        hit = engine.strand_stop_hit(snapshot, pos, stop_cfg["multiple"])
+        if hit is None:
+            continue
+        qty = pos.get("quantity", 1)
+        credit = pos["net"]
+        close_fee = fly.vertical_close_fee(symbol, qty)
+        net = round(credit - hit["natural"], 4)
+        fees = round(pos["fees"] + close_fee, 4)
+        gross = round(net * fly.CONTRACT_MULTIPLIER * qty, 2)
+        prior = pos.get("slippage_dollars")
+        slippage = (
+            None if prior is None else round(prior + hit["conceded"] * fly.CONTRACT_MULTIPLIER * qty, 2)
+        )
+        pos.update(net=net, fees=fees, slippage_dollars=slippage, status="settled", stopped=True)
+        dbmod.save_position(
+            conn,
+            {
+                "position_id": pos["position_id"],
+                "net": net,
+                "fees": fees,
+                "slippage_dollars": slippage,
+                "status": "settled",
+                "closed_before_expiry": 1,
+                "close_tag_at": now,
+                "close_tag_source": STRAND_STOP,
+                "close_tag_natural": hit["natural"],
+                "close_tag_mid": hit["mid"],
+                "close_tag_spot": snapshot.get("underlying_price"),
+                "close_tag_fees": round(close_fee, 4),
+                "exit_time": now,
+                # The realised value of the structure, not an expiry value: the buy-back, negative.
+                "expiry_payoff": -hit["natural"],
+                "gross_pnl": gross,
+                "settlement_fees": 0.0,
+                "pnl": round(gross - fees, 2),
+                "pinned": 0,
+            },
+        )
+        journal(
+            "strand_stop",
+            "stopped",
+            accepted=True,
+            center=pos["center"],
+            position_id=pos["position_id"],
+            detail=f"bought back at {hit['natural']:.2f} against a {credit:.2f} credit",
+        )
+        actions.append(
+            {
+                "action": "strand_stopped",
+                "position_id": pos["position_id"],
+                "natural": hit["natural"],
+                "net": net,
+            }
+        )
+
     # --- 1b. complete any open `debit_first` long vertical whose completing sale has richened
     # enough to beat the debit already paid -- the same idea as step 1, direction reversed.
     for pos in [p for p in positions if p["kind"] == "long_vertical" and p["status"] == "open"]:
@@ -1092,6 +1161,65 @@ def _process_snapshot(
             }
         )
 
+    def book_whole_fly(plan):
+        """Book the whole butterfly the engine has priced (`engine.evaluate_whole_fly`) -- the
+        `whole-fly` arm. A fly from the first tick: `completed_at` stays empty because nothing was
+        completed, and the row's outcome reads from its payoff at settlement."""
+        position_id = f"FLY-{arm}-{symbol}-{clock.stamp_et().strftime('%Y%m%d%H%M%S%f')}-W"
+        pos = {
+            "kind": "fly",
+            "side": plan["side"],
+            "center": plan["center"],
+            "wing_width": plan["wing_width"],
+            "net": -plan["debit"],
+            "quantity": plan["quantity"],
+            "fees": plan["open_fee"],
+            "slippage_dollars": _entry_slippage(plan),
+            "entry_mode": "whole_fly",
+            "status": "open",
+            "position_id": position_id,
+            "entry_window": plan["entry_window"],
+            "entry_time_min": _minute_of_day(now),
+        }
+        positions.append(pos)
+        open_positions.append(pos)
+        dbmod.save_position(
+            conn,
+            {
+                **entry_row_base("whole_fly", "fly", position_id, plan),
+                "net": -plan["debit"],
+                "debit": plan["debit"],
+                "entry_center_delta": plan.get("center_delta"),
+                **leg_symbol_columns(
+                    snapshot,
+                    plan["side"],
+                    **entry_leg_strikes("short_vertical", plan["side"], plan["center"], plan["wing_width"]),
+                    completing=completing_strike(
+                        "short_vertical", plan["side"], plan["center"], plan["wing_width"]
+                    ),
+                ),
+                "floor_dollars": fly.position_floor(pos),
+                "risk_free": int(fly.is_risk_free(pos)),
+            },
+        )
+        record_attempt("whole_fly", "entered", accepted=True, plan=plan, position_id=position_id)
+        journal(
+            "whole_fly",
+            "entered",
+            accepted=True,
+            center=plan["center"],
+            position_id=position_id,
+            detail=f"{plan['side']} fly bought whole for {plan['debit']:.2f} debit",
+        )
+        actions.append(
+            {
+                "action": "fly_bought",
+                "position_id": position_id,
+                "center": plan["center"],
+                "debit": plan["debit"],
+            }
+        )
+
     def book_debit_first(plan, extra=None):
         """Book a debit-first entry the engine has already approved -- step 2.5's booking, split out for
         the same reason as `book_legged`."""
@@ -1229,6 +1357,16 @@ def _process_snapshot(
             )
             journal("legged", "entry_limit_placed", center=plan["center"], detail=f"limit {limit:.2f} credit")
             actions.append({"action": "entry_limit_placed", "side": plan["side"], "center": plan["center"]})
+        elif enter and engine.whole_fly_enabled(params):
+            # The `whole-fly` arm (research item 40): the tick control would sell its vertical on,
+            # buy the fly it would complete to, in one order. No strand, no completion step.
+            fly_ok, fly_reason, fly_plan = engine.evaluate_whole_fly(snapshot, plan, params)
+            if fly_ok:
+                book_whole_fly(fly_plan)
+            else:
+                journal("whole_fly", fly_reason, center=wanted_center)
+                record_attempt("whole_fly", fly_reason, plan=plan, center=wanted_center)
+                actions.append({"action": "entry_skipped", "mode": "whole_fly", "reason": fly_reason})
         elif enter:
             book_legged(plan)
         else:

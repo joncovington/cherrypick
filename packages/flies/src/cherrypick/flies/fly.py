@@ -249,6 +249,12 @@ def single_leg_close_fee(symbol: str, quantity: int = 1) -> float:
     return _fees.ic_close_fee(symbol, quantity, legs=1, sell_legs=1, ndigits=4)
 
 
+def vertical_close_fee(symbol: str, quantity: int = 1) -> float:
+    """Buy a 2-leg vertical back (1 sell leg, the long wing sold) -- the `strand-stop` arm's close.
+    The mirror of `vertical_open_fee`, and the close half of `close_tags.round_trip_fees`."""
+    return _fees.ic_close_fee(symbol, quantity, legs=2, sell_legs=1, ndigits=4)
+
+
 def fly_open_fee(symbol: str, quantity: int = 1) -> float:
     """Open a fly outright. Priced as 4 contracts / 2 sell contracts: the middle strike trades twice
     and tastytrade fees per CONTRACT, not per price level, so the doubled centre must be counted."""
@@ -422,6 +428,10 @@ def position_pnl(position: dict, underlying: float) -> float:
                     prices would have charged $25 (-$219.11).
     """
     qty = position.get("quantity", 1)
+    if position.get("stopped"):
+        # Closed at the `strand-stop` rule: `net` is the credit less the buy-back and `fees` hold the
+        # round trip, so nothing is left to settle and no exercise fee can follow.
+        return position["net"] * CONTRACT_MULTIPLIER * qty - position.get("fees", 0.0)
     w = position["wing_width"]
     kind = position["kind"]
     if kind == "fly":

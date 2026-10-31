@@ -1466,7 +1466,9 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#40-legged-flies-without-the-strand-tail-a-fixed-stop-on-an-uncompleted-vertical-and-the-whole-fly-bought-at-once",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item40/results.json"
+      ],
       "retest": null,
       "retests": []
     }

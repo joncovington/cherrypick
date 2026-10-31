@@ -173,6 +173,13 @@ ARMS = (
     "limit-000-rh",
     "limit-005-rh",
     "limit-010-rh",
+    # Research item 40 (declared 2026-10-31, history only; never in paper). `strand-stop`: control,
+    # but a vertical still uncompleted is bought back at the natural on the first tick its cost
+    # reaches `strand_stop.multiple` times the credit (`strand_stop_hit`). `whole-fly`: control, but
+    # where it would sell its vertical it buys the fly it would complete to in one order, held to
+    # settlement (`evaluate_whole_fly`). In no config; the study script adds them to a scratch copy.
+    "strand-stop",
+    "whole-fly",
 )
 
 # The live loop's completion cutoff when its block names none (`live_loop.DEFAULT_CUTOFF`).
@@ -1686,6 +1693,79 @@ def entry_limit_touched(snapshot: dict, resting: dict) -> bool:
     """Whether this snapshot's market reaches a resting entry's limit on its basis."""
     prices = entry_spread_prices(snapshot, resting["side"], resting["center"], resting["wing_width"])
     return prices is not None and prices[resting["basis"]] >= resting["limit_credit"] - 1e-9
+
+
+# --------------------------------------------------------------------------- strand stop and whole fly
+# Research item 40 (2026-10-31). Two levers on control's strand tail, each a one-key block an arm
+# sets: `strand_stop` closes an uncompleted vertical at a fixed multiple of its credit, `whole_fly`
+# buys the butterfly in one order instead of legging into it.
+def strand_stop_settings(params: dict) -> dict | None:
+    """An arm's strand-stop settings, or None (every other arm). A malformed block raises: an arm
+    silently holding to settlement would measure nothing."""
+    cfg = params.get("strand_stop")
+    if not cfg:
+        return None
+    multiple = float(cfg.get("multiple", 3.0))
+    if multiple <= 1.0:
+        raise ValueError("strand_stop.multiple must exceed 1: at 1 the stop would fire on the entry tick")
+    return {"multiple": multiple}
+
+
+def strand_stop_hit(snapshot: dict, position: dict, multiple: float) -> dict | None:
+    """The close an uncompleted short vertical takes on this snapshot, or None. The cost to buy it
+    back is the NATURAL (pay the short's ask, take the long's bid), `close_tags.natural_close`; the
+    stop fires when that reaches `multiple` times the credit received. The natural is the whole
+    spread already conceded, so no further slippage is added on top (it is recorded as a measure,
+    mid to natural, like every modelled fill's)."""
+    from cherrypick.flies import close_tags  # function-local: close_tags imports this module
+
+    if position.get("kind") != "short_vertical" or position.get("status") != "open":
+        return None
+    price = close_tags.natural_close(snapshot, position)
+    if price is None:
+        return None
+    credit = float(position["net"])
+    if credit <= 0 or price["natural"] + 1e-9 < multiple * credit:
+        return None
+    return {
+        "natural": price["natural"],
+        "mid": price["mid"],
+        "conceded": round(price["natural"] - price["mid"], 4),
+    }
+
+
+def whole_fly_enabled(params: dict) -> bool:
+    return bool(params.get("whole_fly"))
+
+
+def evaluate_whole_fly(snapshot: dict, plan: dict, params: dict) -> tuple:
+    """Price the butterfly control's vertical `plan` would complete to (same side, body and wings:
+    +1 wing, -2 centre, +1 far strike) as one order. Returns (ok, reason, fly_plan).
+
+    The price is `fly.fly_debit`: the fly's mid plus the module's slippage fraction on all four
+    leg-spreads, which is the entry concession paid on a debit (a debit at "mid less the concession"
+    in net-credit terms). Four legs of fees at once (`fly.fly_open_fee`). A hole in any of the three
+    strikes refuses, and so does a non-positive price, which is a crossed quote and not free money."""
+    side, center, width = plan["side"], plan["center"], plan["wing_width"]
+    lower, upper = center - width, center + width
+    if not _have(snapshot, side, [lower, center, upper]):
+        return False, "whole_fly_unpriced", None
+    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    legs = (quote(snapshot, side, lower), quote(snapshot, side, center), quote(snapshot, side, upper))
+    debit = fly.fly_debit(*legs, slip)
+    if debit <= 0:
+        return False, "implausible_fly_quote", None
+    qty = plan["quantity"]
+    return (
+        True,
+        "ok",
+        {
+            **plan,
+            "debit": round(debit, 4),
+            "slippage": fly.conceded(fly.fly_debit, *legs, slippage_frac=slip),
+            "open_fee": fly.fly_open_fee(snapshot["symbol"], qty),
+        },
+    )
 
 
 # --------------------------------------------------------------------------- legged entry (step 2)
