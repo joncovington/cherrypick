@@ -1472,6 +1472,86 @@
       "retest": null,
       "retests": [],
       "outcome": "both lose more than control (itself losing): the stop closes many verticals that would have completed; the whole fly pays more than legging; no tested way round the strand; flies stays retired"
+    },
+    {
+      "id": 41,
+      "study": "item41",
+      "title": "The stabilization entry gate at real quotes: does waiting for flat five-minute bars improve the break-even condor or the 14:00 rule?",
+      "status": "declared",
+      "legacy": false,
+      "setup": "entry-filter",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "summed net per session in $ at one condor, per arm: the break-even condor at 10-point wings (be10) gated by the stabilization oracle (multi, perday, multi with 3 bars) against be10, and live-1400 gated (multi) against live-1400",
+      "expected": "a positive paired difference per session against the ungated base",
+      "sample": "design 2022-05-16..2025-06-30, holdout 2025-07-01..2026-10-12 run straight after, counting only after a design pass; 60 s vendor store; provisional, MEIC history being unvalidated; < 100 sessions = no verdict; needs PR #728",
+      "rule": "per judged arm: paired difference against its base with mean > 0 and one-sided t > 2, Holm across the four arms, positive in both time-halves, own mean net > 0 and still positive at 1.5x fees; then holdout mean > 0 with t > 2",
+      "mechanism": "a condor sold after a move has spent itself faces less of the next hour's range than one sold mid-move",
+      "rivals": [
+        {
+          "explanation": "fewer, later entries, not better-timed ones",
+          "check": "be10-skip refuses ticks at random at the gate's own refusal rate (measured in the plan step, no P&L); reported beside each be10 arm with trades and net per trade"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "paired difference positive in both time-halves; net by year and worst session reported"
+        },
+        {
+          "explanation": "fees",
+          "check": "own net positive at 1.5x fees"
+        },
+        {
+          "explanation": "four looks",
+          "check": "Holm across the four judged arms; variants fixed before any look"
+        },
+        {
+          "explanation": "the store's one-a-minute spot makes bars narrower than live",
+          "check": "the gate's refusal rate here reported beside paper's over 2026-10-28..30"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#41-the-stabilization-entry-gate-at-real-quotes-does-waiting-for-flat-five-minute-bars-improve-the-break-even-condor-or-the-1400-rule",
+      "results": null,
+      "retest": null,
+      "retests": []
+    },
+    {
+      "id": 42,
+      "study": "item42",
+      "title": "The break-even condor at its own wing widths, with and without the stabilization gate",
+      "status": "declared",
+      "legacy": false,
+      "setup": "break-even-condor",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "summed net per session in $ per arm: be-hourly-1x as documented (25-40 wings, equalized), and the same gated by the stabilization oracle (multi, perday)",
+      "expected": "be earns after costs; a gated arm earns more than be",
+      "sample": "as item 41, over a new SPX-60s-wide store (strikes_each_side 40) fetched first; design decides; holdout counts for be after a design pass and is a consistency check for the gated arms (item 41 spent it)",
+      "rule": "be: own mean net > 0 with one-sided t > 2, positive in both halves, positive at 1.5x fees; gated arms: item 41's rule against be; Holm across the three",
+      "mechanism": "hourly 12-delta condors with a per-side stop at the whole credit make one tested side near-flat, so surviving trades must outweigh double stops; the gate as item 41",
+      "rivals": [
+        {
+          "explanation": "the wings decide, not the rule",
+          "check": "be against item 41's be10 over the same sessions reported"
+        },
+        {
+          "explanation": "fewer, later entries",
+          "check": "be-skip placebo at the gate's refusal rate reported"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "positive in both time-halves"
+        },
+        {
+          "explanation": "fees",
+          "check": "positive at 1.5x fees"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#42-the-break-even-condor-at-its-own-wing-widths-with-and-without-the-stabilization-gate",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
