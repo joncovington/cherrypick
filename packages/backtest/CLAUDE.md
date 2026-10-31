@@ -237,6 +237,15 @@ MEIC's control sampling stream would set for every arm; a schema with neither ha
 each trade's times, its exit reason in the module's words and its money columns as `core.ledgers`
 names them, a field the schema does not record as null. Its own read, so `read run` stays light.
 
+**The trade path** (`tradepath.py`, `read path --id --arm --session --position`, 2026-10-31): one MEIC
+condor through its session, re-read from the store the run read: each side's cost to close at mid at
+every stored sample until its own exit, then its recorded exit price; the position's P&L at those
+marks; spot and VIX at or before each sample. At mid and before any fill model, so it shows the market
+the trade sat in, not a second replay. A leg outside the stored strike band is a gap, never a
+neighbour's quote. MEIC only: other schemas name no strikes in their ledgers. A run report records
+its store file as `store` from this date; an older report is read against the untagged file at its
+cadence.
+
 **The grid block** (`grid.py`, 2026-10-31): a study that tests one parameter at several values (items
 23, 24, 43) writes `grid` into its result file: each setting's own mean net per session, and a label
 for the live setting and each passing one (`core.robustness.neighbourhood`, with `not_positive` and

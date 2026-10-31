@@ -568,6 +568,12 @@ def cmd_read(args) -> int:
         out = readout.run_trades(args.id or "", args.arm or "")
         _emit(out)
         return 0 if out["ok"] else 1
+    if args.what == "path":
+        from . import tradepath
+
+        out = tradepath.for_trade(args.id or "", args.arm or "", args.session or "", args.position or "")
+        _emit(out)
+        return 0 if out["ok"] else 1
     from .cards import parse_capital
 
     try:
@@ -739,9 +745,11 @@ def main(argv: list[str] | None = None) -> int:
     ra.add_argument("--workers", type=int, default=4)
     ra.set_defaults(fn=cmd_run_advised)
     rd = sub.add_parser("read", help="the console's read surface: JSON, read-only")
-    rd.add_argument("what", choices=("overview", "run", "trades", "stores"))
-    rd.add_argument("--id", default=None, help="with `run` or `trades`: the run id")
-    rd.add_argument("--arm", default=None, help="with `trades`: the arm whose trades to list")
+    rd.add_argument("what", choices=("overview", "run", "trades", "path", "stores"))
+    rd.add_argument("--id", default=None, help="with `run`, `trades` or `path`: the run id")
+    rd.add_argument("--arm", default=None, help="with `trades` or `path`: the arm")
+    rd.add_argument("--session", default=None, help="with `path`: the trade's session (YYYY-MM-DD)")
+    rd.add_argument("--position", default=None, help="with `path`: the trade's position id")
     rd.add_argument(
         "--capital",
         default=None,

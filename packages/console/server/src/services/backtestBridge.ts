@@ -1,4 +1,4 @@
-import type { BacktestOverview, BacktestRunReport, BacktestTradeLog, BridgedResult } from "@console/shared";
+import type { BacktestOverview, BacktestRunReport, BacktestTradeLog, BacktestTradePath, BridgedResult } from "@console/shared";
 import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
@@ -11,6 +11,8 @@ import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
  *   module's own `{"ok": false, "error"}` on stdout with exit 1, which is passed on as that error.
  * - `read trades --id <run_id> --arm <arm>`: one arm's trade log (`cards.trade_log`), asked for only
  *   when the trade log is opened, so the run report stays light.
+ * - `read path --id --arm --session --position`: one MEIC condor's marks through its session
+ *   (`tradepath.py`), asked for when a trade in the log is opened.
  *
  * All are read-only on the Python side and neither contacts the vendor. Every verdict on the page
  * (the unlock, each check, the paired interval) is the module's; nothing here recomputes one.
@@ -28,7 +30,8 @@ const UNAVAILABLE = "backtest read unavailable — cherrypick-backtest must be i
 export type BacktestRequest =
   | { kind: "overview" }
   | { kind: "run"; id: string; capital?: number }
-  | { kind: "trades"; id: string; arm: string };
+  | { kind: "trades"; id: string; arm: string }
+  | { kind: "path"; id: string; arm: string; session: string; position: string };
 
 function spawnRequest(req: BacktestRequest): Promise<SpawnedJson> {
   if (req.kind === "overview") {
@@ -37,6 +40,11 @@ function spawnRequest(req: BacktestRequest): Promise<SpawnedJson> {
   if (req.kind === "trades") {
     // Exit 1 is the module's refusal (no such run or arm), read as an answer.
     return spawnModuleCliAsync(["-m", "cherrypick.backtest", "read", "trades", "--id", req.id, "--arm", req.arm], UNAVAILABLE, [0, 1]);
+  }
+  if (req.kind === "path") {
+    const args = ["-m", "cherrypick.backtest", "read", "path", "--id", req.id, "--arm", req.arm];
+    args.push("--session", req.session, "--position", req.position);
+    return spawnModuleCliAsync(args, UNAVAILABLE, [0, 1]);
   }
   const args = ["-m", "cherrypick.backtest", "read", "run", "--id", req.id];
   if (req.capital !== undefined) args.push("--capital", String(req.capital));
@@ -61,7 +69,13 @@ export function resetBacktestCache(): void {
 
 function memo(req: BacktestRequest, now: number): Promise<SpawnedJson> {
   const key =
-    req.kind === "overview" ? "overview" : req.kind === "trades" ? `trades|${req.id}|${req.arm}` : `run|${req.id}|${String(req.capital ?? "")}`;
+    req.kind === "overview"
+      ? "overview"
+      : req.kind === "trades"
+        ? `trades|${req.id}|${req.arm}`
+        : req.kind === "path"
+          ? `path|${req.id}|${req.arm}|${req.session}|${req.position}`
+          : `run|${req.id}|${String(req.capital ?? "")}`;
   const hit = cache.get(key);
   if (hit !== undefined && now - hit.at < TTL_MS) return hit.value;
   // Expired entries go when anything is read, so the map holds at most a window's worth of ids.
@@ -102,4 +116,19 @@ export async function readBacktestTrades(id: string, arm: string, now = Date.now
   return shape<BacktestTradeLog>(await memo({ kind: "trades", id, arm }, now), (j) =>
     Array.isArray(j["trades"]) ? { run_id: j["run_id"], arm: j["arm"], trades: j["trades"] } : null,
   );
+}
+
+/** One trade's path. The caller has already checked every argument against its shape. */
+export async function readBacktestPath(
+  id: string,
+  arm: string,
+  session: string,
+  position: string,
+  now = Date.now(),
+): Promise<BridgedResult<BacktestTradePath>> {
+  return shape<BacktestTradePath>(await memo({ kind: "path", id, arm, session, position }, now), (j) => {
+    if (!Array.isArray(j["points"])) return null;
+    const { ok: _ok, ...rest } = j;
+    return rest;
+  });
 }

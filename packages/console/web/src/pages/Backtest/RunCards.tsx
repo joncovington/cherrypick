@@ -343,11 +343,14 @@ function ExitTable({ c }: { c: BacktestArmCards }) {
 
 export function RunCards({
   runId,
+  module,
   cards,
   capital,
   onCapital,
 }: {
   runId: string;
+  /** The run's module: MEIC's trades can open their path. */
+  module?: string;
   cards: BacktestRunCards | undefined;
   capital: number | null;
   onCapital: (capital: number | null) => void;
@@ -403,7 +406,7 @@ export function RunCards({
           <div className="card-subhead">how trades ended</div>
           <ExitTable c={c} />
           <div className="card-subhead">trade log</div>
-          <TradeLog runId={runId} arm={arm!} />
+          <TradeLog runId={runId} arm={arm!} pathable={module === "meic"} />
         </>
       )}
     </>
