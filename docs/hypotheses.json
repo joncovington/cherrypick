@@ -1059,7 +1059,9 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#31-the-earnings-modules-paper-rule-does-any-strategy-it-opens-earn-after-costs",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item31/results.json"
+      ],
       "retest": null,
       "retests": []
     },
