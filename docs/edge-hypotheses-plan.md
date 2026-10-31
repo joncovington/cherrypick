@@ -3188,7 +3188,7 @@ or outcome). No real-quote outcome of any arm below has been computed.*
   the 45-day close; any arm that merely adds net long delta in a rising market will look good against
   the put, so the long-alone baseline is the one that isolates the short.
 
-## The arms (six judged, Holm across them)
+#### The arms (six judged, Holm across them)
 
 Rules are read from `packages/pmcc/src/cherrypick/pmcc/engine.py` (`ARM_RULES`, `select_long`,
 `select_short_by_delta`) and `management.py` (`evaluate`, `assignment_exposed`), not restated from
@@ -3222,7 +3222,7 @@ account policy is `ira` (an expiring short is bought back at the close at any mo
   clears every declared ex-dividend date and, for single stocks, report date (pmcc's refusals); if none in
   the band clears, no short that cycle, counted.
 
-## The baselines every arm must beat
+#### The baselines every arm must beat
 
 - **`long-alone`:** the same long, no short, under pmcc's own long management (45-DTE close and the -30%
   stop on the long's own P&L). It isolates what the short adds. Also reported without the stop (a rival).
@@ -3230,7 +3230,7 @@ account policy is `ira` (an expiring short is bought back at the close at any mo
   long uses, sold on the day the long is bought, held to 45 DTE, re-sold the next session. No stop. It
   shares the long's chain path, so it costs no extra fetch.
 
-## Symbols and the XSP choice
+#### Symbols and the XSP choice
 
 - **Symbols:** the eleven in the deployed config. Funds (judged): XSP, QQQ, GLD, IWM, SLV, SMH. Stocks
   (reported, not judged): AMZN, TSLA, AMD, NVDA, PLTR.
@@ -3254,7 +3254,7 @@ account policy is `ira` (an expiring short is bought back at the close at any mo
   expiries before 2023 are unconfirmed; the first fetch pass finds out, and a SMH short-less stretch
   counts against it under the floor, not as a zero.
 
-## Measured
+#### Measured
 
 Everything per symbol, per arm and per baseline, on a weekly grid (Friday close to Friday close), one
 contract, marked from the stored closing bid and ask each session.
@@ -3280,7 +3280,7 @@ contract, marked from the stored closing bid and ask each session.
   underlying's weekly return, per symbol. Reported. It tells a reader whether a failure of the raw
   rule is lost equity beta or lost premium; it does not change the verdict.
 
-## Fills, fees, assignment and dividends (pmcc's basis)
+#### Fills, fees, assignment and dividends (pmcc's basis)
 
 - **Fills and fees:** pmcc's paper basis, imported not rewritten: mid of the stored closing bid and ask
   with slippage as the suite's cost model charges it (`engine.leg_costs` over `cherrypick.core.fees`,
@@ -3309,7 +3309,7 @@ contract, marked from the stored closing bid and ask each session.
   delta, which on American deep-in-the-money calls runs below parity). A strike with no solvable
   implied volatility is skipped as pmcc skips a strike with no delta.
 
-## Windows and the pass rule
+#### Windows and the pass rule
 
 - **Design:** 2016-01-01 to 2021-12-31 (six years, the bull market, the 2018 fourth-quarter fall and the
   2020 crash). **Holdout:** 2022-01-01 to 2026-10-23 (the 2022 bear, then the recovery), read once.
@@ -3340,7 +3340,7 @@ contract, marked from the stored closing bid and ask each session.
   half as much, are measured somewhat more tightly. **A fail reads "no edge of detectable size", not "no
   edge".**
 
-## Rival explanations, each with its check
+#### Rival explanations, each with its check
 
 - **One regime (a 2016-2021 bull).** Two halves with different regimes, per-year pooled tables, the
   best-year-removed clause, and the 2020 crash weeks reported with and without.
@@ -3361,7 +3361,7 @@ contract, marked from the stored closing bid and ask each session.
   the 0.30-delta arms are compared with each other as well as the baselines in the report (reported, not
   judged).
 
-## Guards, each shown to fail
+#### Guards, each shown to fail
 
 Before an arm is read, and each broken on purpose to see the check fail:
 - **Reproduction:** the replay's chosen long and short strikes match the paper ledger's recorded legs on
@@ -3373,7 +3373,7 @@ Before an arm is read, and each broken on purpose to see the check fail:
   deleting one quote.
 - **The WPUT check** above, on SPY.
 
-## Data and the fetch
+#### Data and the fetch
 
 All options history is the licensed store's end-of-day chains (`eod_chain_quotes`), fetched by
 `fetch-chain-paths` and `fetch-chains` into the marked vendor directory; the store is already declared in
@@ -3409,7 +3409,7 @@ study is `scripts/pmcc_item36.py`, run as `item36/plan` (writes the request file
   for about 315 sessions a cycle); the order of 2 to 3 GB in all, estimated, not measured. The SPY rows
   now stored are 1.5 million.
 
-## Declared limits (B11)
+#### Declared limits (B11)
 
 Close-of-day quotes, not the intraday tape pmcc trades on; one contract, so lot-size effects on spreads
 are invisible; delta computed, without early-exercise premium; early assignment unmodelled, counted;
@@ -3417,7 +3417,7 @@ an expiry not listed is a week without a short; `XSP(SPY)` is a stand-in; stocks
 and reports; the three variants and `shield_guard` have no paper twin before a boundary and so no
 live-fill check; an unlisted arm (other deltas, other expiries) is outside the sample by design.
 
-## Decides
+#### Decides
 
 - **A pass:** the passing arm or arms continue in paper as pmcc's base, and a variant joins as a paper arm
   at a declared boundary (a measurement-affecting change, batched). The shield arms pass or fail by this
