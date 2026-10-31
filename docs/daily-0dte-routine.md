@@ -1,4 +1,4 @@
-# Chris Pulver's Daily Profit Play: rules reconstructed from five sessions
+# A daily SPX 0DTE routine: rules reconstructed from five sessions
 
 *Drafted 2026-10-17 from his live streams for Monday 2026-10-12 to Friday 2026-10-16 (YouTube, "Daily
 Profit Plan"), read in full and checked against screenshots of his broker's order panel and charts.

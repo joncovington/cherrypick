@@ -3,7 +3,7 @@
     python scripts/box_touch_history.py [--history-db PATH] [--em-factor 0.85] [--start D] [--end D]
         [--allow-holdout] [--json FILE]
 
-Step 2 of hypothesis 8 in docs/edge-hypotheses-plan.md (docs/pulver-daily-profit-play.md), with the
+Step 2 of hypothesis 8 in docs/edge-hypotheses-plan.md (docs/daily-0dte-routine.md), with the
 direction tests of hypothesis 4 alongside, because they read the same sessions. Read-only.
 
 **Why this question.** The reconstructed Daily Profit Play is a condor order resting far above the
