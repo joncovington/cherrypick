@@ -103,6 +103,7 @@ python -m cherrypick.contango.paper_loop --status      # one JSON health object 
 python run.py status | nav [--arm A] [--limit N] | stints [--arm A] | metrics
 python ../../scripts/contango_replay.py [--start 2018-03-01] [--cost-bps 2]
 python ../../scripts/contango_replay.py --validate [--ledger PATH]   # the replay against the ledger, read-only
+python ../../scripts/contango_item39.py refresh | plan | study   # item 39, the declared test of this rule
 python -m pytest
 ```
 
