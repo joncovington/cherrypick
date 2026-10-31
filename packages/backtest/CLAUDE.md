@@ -188,7 +188,10 @@ backfilled; and the vendor store carries no volume, so the regime rows' flow col
 
 Built: the config, the key verbs, the licence clock, purge, the backup skip, the fence, the store, the
 fetch (SPXW 0DTE, any cadence the profile cadence divides), regime rows, validation and the flies
-and MEIC runners with their statistics, and the flow fetch (below); its test is not built yet.
+and MEIC runners with their statistics, and the flow fetch (below). Its declared test (item 32) is built, not yet run: the rules are
+`flowstudy.py` (pure), the stores are read by `scripts/flow_signal_item32.py`, which reads its grid
+from the plan file (`scripts/flow_fetch_plan.py`, never recounted from the calendar) and spends the
+holdout once (a marker is written before the read).
 **The end-of-day chain fetch** (`chainfetch.py`, `fetch-chains`, `chains-status`, 2026-10-20):
 - **Event-driven:** a study writes the (name, session, expiry) requests it needs, and this fetches
   exactly those, one session-chain a request, into `vendor/<name>/eod_chains.db` beside the marker.

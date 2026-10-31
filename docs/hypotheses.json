@@ -1105,7 +1105,10 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#32-large-options-orders-as-a-signal-the-flow-plans-declared-test-registered",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item32/results-design.json",
+        "{home}/data/backtest/results/research/item32/results-holdout.json"
+      ],
       "retest": null,
       "retests": []
     }
