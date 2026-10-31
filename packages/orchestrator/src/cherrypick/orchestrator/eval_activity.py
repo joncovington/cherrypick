@@ -66,6 +66,10 @@ _BENIGN_REASON = frozenset(
         "quarterly_intraday_range_exceeded",
         "fomc_blackout",
         "fomc_post_blackout_insufficient_premium",
+        # The stabilization gate (#728) and its random-skip placebo: opt-in arms waiting for flat
+        # five-minute bars. Either can dominate a choppy day by design.
+        "stabilization_wait",
+        "stabilization_placebo_wait",
         # --- per-candidate wing-width scan: every width cleared no gate, so the profile skips ---
         "no_candidate_cleared_all_gates",
         "short_pair_occupied",
