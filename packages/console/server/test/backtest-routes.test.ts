@@ -216,6 +216,8 @@ describe("the gate is closed", () => {
       const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}/trades?arm=${encodeURIComponent(arm)}` });
       expect(r.statusCode, arm).toBe(404);
     }
+    const path = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}/path?arm=d16&session=2024-01-02&position=P-1` });
+    expect(path.statusCode).toBe(404);
     expect(spawned).toEqual([]);
   });
 });
@@ -306,6 +308,44 @@ describe("the gate is open", () => {
     }
     expect((await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}/trades` })).statusCode).toBe(400);
     expect((await app.inject({ method: "GET", url: `/api/backtest/runs/latest/trades?arm=x` })).statusCode).toBe(400);
+    expect(spawned).toEqual([]);
+  });
+
+  it("serves one trade's path with every argument handed to the module, and its refusal as an error", async () => {
+    setBridgeCaller(() => features({ backtest: true }));
+    const path = { run_id: RUN_ID, arm: "d16", session: "2024-01-02", position_id: "PAPER-d16-SPX-1", store: "SPX-60s.db", points: [], gaps: 0 };
+    stubBacktest((req) =>
+      req.kind === "path" && req.position === "PAPER-d16-SPX-1"
+        ? { ok: true, json: { ok: true, ...path }, error: null }
+        : { ok: true, json: { ok: false, error: "no trade 'other'" }, error: null },
+    );
+    const q = (position: string) => `/api/backtest/runs/${RUN_ID}/path?arm=d16&session=2024-01-02&position=${position}`;
+    expect((await app.inject({ method: "GET", url: q("PAPER-d16-SPX-1") })).json()).toEqual({ ok: true, data: path, error: null });
+    expect((await app.inject({ method: "GET", url: q("other") })).json()).toEqual({ ok: false, data: null, error: "no trade 'other'" });
+    expect(spawned[0]).toEqual({ kind: "path", id: RUN_ID, arm: "d16", session: "2024-01-02", position: "PAPER-d16-SPX-1" });
+  });
+
+  it("refuses a path whose arm, session or position is missing or malformed, spawning nothing", async () => {
+    setBridgeCaller(() => features({ backtest: true }));
+    stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
+    const ok = { arm: "d16", session: "2024-01-02", position: "PAPER-d16-SPX-1" };
+    const bad: Array<Partial<Record<keyof typeof ok, string>>> = [
+      { arm: "../x" },
+      { session: "2024-1-2" },
+      { session: "../2024-01-02" },
+      { position: "--id" },
+      { position: "a b" },
+      { position: "x".repeat(121) },
+    ];
+    for (const over of bad) {
+      const q = new URLSearchParams({ ...ok, ...over });
+      const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}/path?${q.toString()}` });
+      expect(r.statusCode, JSON.stringify(over)).toBe(400);
+    }
+    for (const drop of Object.keys(ok)) {
+      const q = new URLSearchParams(Object.entries(ok).filter(([k]) => k !== drop));
+      expect((await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}/path?${q.toString()}` })).statusCode, drop).toBe(400);
+    }
     expect(spawned).toEqual([]);
   });
 

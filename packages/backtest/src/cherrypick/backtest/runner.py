@@ -576,6 +576,9 @@ def run(
             "provisional": provisional,
             "span": [lo, hi],
             "cadence": cadence,
+            # The store file read (its name only): a tagged study's differs from the default, and the
+            # trade path re-reads its quotes from the same file.
+            "store": history_db.name,
             "fill_model": mod.fill_model,
             "config_files": {k: str(p) for k, p in config_paths.items()},
             "config_snapshot": str(snapshot),

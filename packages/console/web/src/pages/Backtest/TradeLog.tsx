@@ -2,13 +2,15 @@ import { useState } from "react";
 import type { BacktestTrade, BacktestTradeLog } from "@console/shared";
 import { signTone, useBridged } from "../../lib/bridged";
 import { fmtCash, fmtCount } from "../../lib/format";
+import { TradePath } from "./TradePath";
 
 /**
  * One arm's trade log (`read trades`, `cards.trade_log`, 2026-10-31): every trade the run kept, with
  * when it opened and closed, how it ended in the module's own words, and its money in the suite's
  * columns (gross, fees, settlement and slippage apart, net). Closed until asked for: a run's arm
  * can hold a thousand trades, and the report stays light without them. Sorting and the
- * winners/losers filter reorder the module's rows; nothing here computes a figure.
+ * winners/losers filter reorder the module's rows; nothing here computes a figure. A MEIC trade
+ * opens its path through the session (`TradePath`).
  */
 
 export type TradeSort = "closed" | "net-desc" | "net-asc";
@@ -34,13 +36,23 @@ function when(v: string | null): string {
   return v === null ? "—" : v.replace("T", " ").slice(0, 16);
 }
 
-export function TradeTable({ log }: { log: BacktestTradeLog }) {
+/** `pathable`: the run's module has a trade path (MEIC), so a row with a position id can open one. */
+export function TradeTable({ log, pathable = false }: { log: BacktestTradeLog; pathable?: boolean }) {
   const [sort, setSort] = useState<TradeSort>("closed");
   const [filter, setFilter] = useState<TradeFilter>("all");
+  const [opened, setOpened] = useState<BacktestTrade | null>(null);
   const rows = arrangeTrades(log.trades, sort, filter);
   const show = (k: keyof BacktestTrade) => log.trades.some((t) => t[k] !== null);
   return (
     <>
+      {opened !== null && opened.position_id !== null && (
+        <div>
+          <button type="button" className="btn btn-quiet" onClick={() => setOpened(null)}>
+            ✕ close the path
+          </button>
+          <TradePath runId={log.run_id} arm={log.arm} session={opened.session} position={opened.position_id} />
+        </div>
+      )}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", margin: "6px 0", fontSize: 12 }}>
         <label className="muted">
           sort{" "}
@@ -73,6 +85,7 @@ export function TradeTable({ log }: { log: BacktestTradeLog }) {
               {show("slippage") && <th className="num">slippage</th>}
               <th className="num">net</th>
               {show("capital") && <th className="num">at risk</th>}
+              {pathable && <th aria-label="path" />}
             </tr>
           </thead>
           <tbody>
@@ -87,6 +100,15 @@ export function TradeTable({ log }: { log: BacktestTradeLog }) {
                 {show("slippage") && <td className="num">{fmtCash(t.slippage)}</td>}
                 <td className={`num ${signTone(t.net_pnl)}`}>{fmtCash(t.net_pnl)}</td>
                 {show("capital") && <td className="num">{fmtCash(t.capital)}</td>}
+                {pathable && (
+                  <td>
+                    {t.position_id !== null && (
+                      <button type="button" className="btn btn-quiet" aria-pressed={opened === t} onClick={() => setOpened(t)}>
+                        path
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -96,7 +118,7 @@ export function TradeTable({ log }: { log: BacktestTradeLog }) {
   );
 }
 
-function LoadedLog({ runId, arm }: { runId: string; arm: string }) {
+function LoadedLog({ runId, arm, pathable }: { runId: string; arm: string; pathable: boolean }) {
   const url = `/api/backtest/runs/${runId}/trades?arm=${encodeURIComponent(arm)}`;
   // A finished run's trades do not change: read once, no polling.
   const { data, isLoading, isError, error } = useBridged<BacktestTradeLog>(["backtest", "trades", runId, arm], url, 0);
@@ -104,17 +126,17 @@ function LoadedLog({ runId, arm }: { runId: string; arm: string }) {
   if (isError) return <p className="pnl-neg">Trade log unavailable: {String(error)}</p>;
   if (!data?.ok || data.data === null) return <p className="pnl-neg">Trade log unavailable: {data?.error ?? "no answer"}</p>;
   if (data.data.trades.length === 0) return <p className="muted">This arm kept no trades.</p>;
-  return <TradeTable log={data.data} />;
+  return <TradeTable log={data.data} pathable={pathable} />;
 }
 
-export function TradeLog({ runId, arm }: { runId: string; arm: string }) {
+export function TradeLog({ runId, arm, pathable = false }: { runId: string; arm: string; pathable?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <div>
       <button type="button" className="btn btn-quiet" aria-expanded={open} onClick={() => setOpen(!open)}>
         {open ? "▾ hide the trades" : "▸ every trade"}
       </button>
-      {open && <LoadedLog key={`${runId}|${arm}`} runId={runId} arm={arm} />}
+      {open && <LoadedLog key={`${runId}|${arm}`} runId={runId} arm={arm} pathable={pathable} />}
     </div>
   );
 }

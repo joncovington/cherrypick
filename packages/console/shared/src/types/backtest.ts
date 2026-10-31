@@ -375,3 +375,46 @@ export interface BacktestTradeLog {
   arm: string;
   trades: BacktestTrade[];
 }
+
+/** A trade's session (`YYYY-MM-DD`) and position id (`PAPER-d16-SPX-2022...`), checked for shape on
+ *  the server before the trade path is spawned. */
+export const BACKTEST_SESSION = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+export const BACKTEST_POSITION = /^[A-Za-z0-9][A-Za-z0-9:._+-]{0,119}$/;
+
+export function isBacktestSession(v: string): boolean {
+  return BACKTEST_SESSION.test(v);
+}
+
+export function isBacktestPosition(v: string): boolean {
+  return BACKTEST_POSITION.test(v);
+}
+
+/** One stored sample of a trade's path (`tradepath.path`): each side's cost to close at mid (its exit
+ *  price once closed), the position's P&L at those marks, spot and VIX at or before the sample. A
+ *  missing leg quote leaves the mark and the P&L null: a gap, never a neighbour's value. */
+export interface BacktestPathPoint {
+  ts: number;
+  time: string;
+  spot: number | null;
+  put_mark: number | null;
+  call_mark: number | null;
+  pnl: number | null;
+  vix: number | null;
+}
+
+/** `read path`: one MEIC condor through its session, from entry to its last exit. */
+export interface BacktestTradePath {
+  run_id: string;
+  arm: string;
+  session: string;
+  position_id: string;
+  /** The store file the quotes were re-read from. */
+  store: string;
+  /** [long, short] for the put side, [short, long] for the call side. */
+  strikes: { put: [number, number]; call: [number, number] };
+  credit: { put: number; call: number };
+  entry_time: string | null;
+  exits: { side: string; time: string | null; reason: string | null; price: number | null }[];
+  points: BacktestPathPoint[];
+  gaps: number;
+}

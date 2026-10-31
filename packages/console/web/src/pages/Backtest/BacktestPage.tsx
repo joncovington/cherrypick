@@ -747,7 +747,13 @@ function RunReport({ id, study }: { id: string; study?: { row: StudyRow; result:
           <div className="card-subhead">paired with control, by session</div>
           <PairingTable arms={Object.entries(r.arms)} />
           <div className="card-subhead">run cards</div>
-          <RunCards runId={id} cards={r.cards} capital={capital} onCapital={pickCapital} />
+          <RunCards
+            runId={id}
+            module={typeof r["module"] === "string" ? r["module"] : undefined}
+            cards={r.cards}
+            capital={capital}
+            onCapital={pickCapital}
+          />
           <div className="card-subhead">refused sessions</div>
           {Object.keys(r.refused).length === 0 ? (
             <p className="muted">None.</p>

@@ -2,16 +2,19 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   isBacktestArm,
   isBacktestCapital,
+  isBacktestPosition,
   isBacktestRunId,
+  isBacktestSession,
   type BacktestOverview,
   type BacktestRunReport,
   type BacktestTradeLog,
+  type BacktestTradePath,
   type BridgedResult,
   type ResearchQueue,
   type StudiesBoard,
 } from "@console/shared";
 import { backtestOn, getFeatures } from "../services/featuresBridge.js";
-import { readBacktestOverview, readBacktestRun, readBacktestTrades } from "../services/backtestBridge.js";
+import { readBacktestOverview, readBacktestPath, readBacktestRun, readBacktestTrades } from "../services/backtestBridge.js";
 import { readResearchQueue } from "../services/researchQueueBridge.js";
 import { readStudies } from "../services/studiesBridge.js";
 import type { ConsoleConfig } from "../config.js";
@@ -20,7 +23,8 @@ import { readQueueLog } from "../readers/logs.js";
 
 /**
  * `GET /api/backtest/overview`, `GET /api/backtest/runs/:id`, `GET /api/backtest/runs/:id/trades`,
- * `GET /api/backtest/queue` and `GET /api/backtest/studies` — the Backtest page.
+ * `GET /api/backtest/runs/:id/path`, `GET /api/backtest/queue` and `GET /api/backtest/studies` — the
+ * Backtest page.
  *
  * **Each route refuses on its own, fail closed.** Unless the orchestrator's features answer was read
  * and says `backtest: true` (`featuresBridge.backtestOn`), the answer is the same 404 an unknown API
@@ -68,6 +72,21 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
       const arm = req.query.arm;
       if (arm === undefined || !isBacktestArm(arm)) return reply.code(400).send({ error: "not an arm name" });
       return readBacktestTrades(req.params.id, arm);
+    },
+  );
+
+  // One trade's path through its session (MEIC's condors), asked for when a trade is opened. Every
+  // argument is checked for shape before anything is spawned; the module refuses one it cannot find.
+  app.get<{ Params: { id: string }; Querystring: { arm?: string; session?: string; position?: string } }>(
+    "/api/backtest/runs/:id/path",
+    async (req, reply): Promise<BridgedResult<BacktestTradePath> | FastifyReply> => {
+      if (!backtestOn(getFeatures())) return refuse(reply);
+      if (!isBacktestRunId(req.params.id)) return reply.code(400).send({ error: "not a run id" });
+      const { arm, session, position } = req.query;
+      if (arm === undefined || !isBacktestArm(arm)) return reply.code(400).send({ error: "not an arm name" });
+      if (session === undefined || !isBacktestSession(session)) return reply.code(400).send({ error: "not a session date" });
+      if (position === undefined || !isBacktestPosition(position)) return reply.code(400).send({ error: "not a position id" });
+      return readBacktestPath(req.params.id, arm, session, position);
     },
   );
 
