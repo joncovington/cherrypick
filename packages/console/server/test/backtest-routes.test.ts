@@ -208,6 +208,16 @@ describe("the gate is closed", () => {
     const r = await app.inject({ method: "GET", url: "/api/backtest/runs/..%2F..%2Fetc" });
     expect(r.statusCode).toBe(404);
   });
+
+  it("the trade log is a 404 while closed, whatever the arm, and nothing is spawned", async () => {
+    setBridgeCaller(() => features({ backtest: false }));
+    stubBacktest(() => ({ ok: true, json: { ok: true, trades: [] }, error: null }));
+    for (const arm of ["pm-200", "../x"]) {
+      const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}/trades?arm=${encodeURIComponent(arm)}` });
+      expect(r.statusCode, arm).toBe(404);
+    }
+    expect(spawned).toEqual([]);
+  });
 });
 
 describe("the gate is open", () => {
@@ -266,6 +276,36 @@ describe("the gate is open", () => {
       const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${bad}` });
       expect(r.statusCode, bad).toBe(400);
     }
+    expect(spawned).toEqual([]);
+  });
+
+  it("serves one arm's trade log, and passes the module's refusal of an unknown arm on as an error", async () => {
+    setBridgeCaller(() => features({ backtest: true }));
+    const trade = { session: "2024-01-02", outcome: "per_side_stop", net_pnl: -50 };
+    stubBacktest((req) =>
+      req.kind === "trades" && req.arm === "pm-200"
+        ? { ok: true, json: { ok: true, run_id: RUN_ID, arm: "pm-200", trades: [trade] }, error: null }
+        : { ok: true, json: { ok: false, error: "run has no arm 'other'" }, error: null },
+    );
+    const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}/trades?arm=pm-200` });
+    expect(r.json()).toEqual({ ok: true, data: { run_id: RUN_ID, arm: "pm-200", trades: [trade] }, error: null });
+    const other = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}/trades?arm=other` });
+    expect(other.json()).toEqual({ ok: false, data: null, error: "run has no arm 'other'" });
+    expect(spawned).toEqual([
+      { kind: "trades", id: RUN_ID, arm: "pm-200" },
+      { kind: "trades", id: RUN_ID, arm: "other" },
+    ]);
+  });
+
+  it("refuses a missing or malformed arm with 400 and spawns nothing", async () => {
+    setBridgeCaller(() => features({ backtest: true }));
+    stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
+    for (const bad of ["", "--id", "../x", "a b", "x".repeat(81)]) {
+      const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}/trades?arm=${encodeURIComponent(bad)}` });
+      expect(r.statusCode, bad).toBe(400);
+    }
+    expect((await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}/trades` })).statusCode).toBe(400);
+    expect((await app.inject({ method: "GET", url: `/api/backtest/runs/latest/trades?arm=x` })).statusCode).toBe(400);
     expect(spawned).toEqual([]);
   });
 

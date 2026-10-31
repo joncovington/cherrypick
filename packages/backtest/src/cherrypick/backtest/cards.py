@@ -329,10 +329,18 @@ def for_run(run_id: str, schema: str, arms: list[str], capital: float | None = N
             )
     finally:
         conn.close()
+    sessions = sorted({s["session"] for series in series_by_arm.values() for s in series})
+    trades_by_arm = _ledger_trades(run_id, schema, list(series_by_arm), sessions)
+    return cards(series_by_arm, trades_by_arm, capital)
+
+
+def _ledger_trades(
+    run_id: str, schema: str, arms: list[str], sessions: list[str]
+) -> dict[str, dict[str, list[dict]]]:
+    """{arm: {session: [trade, ...]}} from the ledgers a run keeps, read through `core.ledgers`."""
     reader = core_ledgers.READERS[schema]
     ledger_dir = paths.results_dir() / "runs" / run_id
-    trades_by_arm: dict[str, dict[str, list[dict]]] = {a: {} for a in series_by_arm}
-    sessions = sorted({s["session"] for series in series_by_arm.values() for s in series})
+    trades_by_arm: dict[str, dict[str, list[dict]]] = {a: {} for a in arms}
     for day in sessions:
         db = ledger_dir / f"{day}.db"
         if not db.exists():
@@ -346,7 +354,47 @@ def for_run(run_id: str, schema: str, arms: list[str], capital: float | None = N
         for r in rows:
             if r["session"] == day and r["arm"] in trades_by_arm:
                 trades_by_arm[r["arm"]].setdefault(day, []).append(r)
-    return cards(series_by_arm, trades_by_arm, capital)
+    return trades_by_arm
+
+
+#: A trade's fields the trade log shows, as `core.ledgers` names them. Nothing is computed here.
+TRADE_LOG_FIELDS = (
+    "session",
+    "entry_time",
+    "exit_time",
+    "outcome",
+    "gross_pnl",
+    "fees",
+    "settlement",
+    "slippage",
+    "net_pnl",
+    "entry_credit",
+    "capital",
+    "position_id",
+)
+
+
+def trade_log(by_session: dict[str, list[dict]]) -> list[dict]:
+    """One arm's trades, oldest first by session then exit time: each trade's own recorded fields,
+    a field the schema does not record as None (never zero)."""
+    rows = [{k: t.get(k) for k in TRADE_LOG_FIELDS} for day in sorted(by_session) for t in by_session[day]]
+    return sorted(rows, key=lambda t: (t["session"] or "", t["exit_time"] or ""))
+
+
+def trades_for_run(run_id: str, schema: str, arm: str) -> list[dict]:
+    """One arm's trade log, read from the run's per-session results and the ledgers it kept."""
+    conn = _ro(paths.results_db())
+    try:
+        sessions = [
+            r["session"]
+            for r in conn.execute(
+                "SELECT session FROM session_results WHERE run_id = ? AND arm = ? ORDER BY session",
+                (run_id, arm),
+            )
+        ]
+    finally:
+        conn.close()
+    return trade_log(_ledger_trades(run_id, schema, [arm], sessions)[arm])
 
 
 def parse_capital(raw: str | None) -> float | None:

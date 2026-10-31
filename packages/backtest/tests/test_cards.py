@@ -222,3 +222,60 @@ def test_the_report_still_reads_when_its_cards_cannot_be_built():
     out = readout.run_report(RUN)
     assert out["ok"] and out["report"] == {"run_id": RUN, "module": "meic"}
     assert out["cards"]["ok"] is False and out["cards"]["error"]
+
+
+def test_the_trade_log_is_oldest_first_and_leaves_an_unrecorded_field_as_none():
+    log = cards.trade_log(
+        {
+            "2024-01-03": [{"session": "2024-01-03", "exit_time": "2024-01-03T13:00", "net_pnl": -5.0}],
+            "2024-01-02": [
+                {
+                    "session": "2024-01-02",
+                    "exit_time": "2024-01-02T16:00",
+                    "net_pnl": 2.0,
+                    "outcome": "expired",
+                },
+                {"session": "2024-01-02", "exit_time": "2024-01-02T11:00", "net_pnl": 1.0, "outcome": "stop"},
+            ],
+        }
+    )
+    assert [(t["exit_time"], t["outcome"]) for t in log] == [
+        ("2024-01-02T11:00", "stop"),
+        ("2024-01-02T16:00", "expired"),
+        ("2024-01-03T13:00", None),
+    ]
+    assert set(log[0]) == set(cards.TRADE_LOG_FIELDS) and log[0]["capital"] is None
+
+
+def test_one_arms_trades_are_read_back_from_the_runs_ledgers_and_another_arms_are_not():
+    runs = paths.results_dir() / "runs"
+    (runs / RUN).mkdir(parents=True)
+    report = {"run_id": RUN, "module": "meic", "arms": {"control": {}, "other": {}}}
+    (runs / f"{RUN}.json").write_text(json.dumps(report), encoding="utf-8")
+    conn = results.connect()
+    for arm in ("control", "other"):
+        conn.execute(
+            "INSERT INTO session_results VALUES (?,?,?,?,?,?,?,?)",
+            (RUN, arm, "h", "2024-01-02", 1.0, 1.0, 1.0, 1),
+        )
+    conn.commit()
+    conn.close()
+    _meic_ledger(
+        runs / RUN / "2024-01-02.db",
+        [
+            ("SPX", "control", -49.0, 1.0, "2024-01-02T13:00", 5.0, 1.0, 1, 100.0, "per_side_stop"),
+            ("SPX", "other", 21.0, 1.0, "2024-01-02T16:00", 5.0, 1.0, 1, 100.0, "expired_settlement"),
+        ],
+    )
+    out = readout.run_trades(RUN, "control")
+    assert out["ok"] and out["arm"] == "control"
+    (t,) = out["trades"]
+    assert (t["outcome"], t["gross_pnl"], t["net_pnl"], t["capital"]) == (
+        "per_side_stop",
+        -49.0,
+        -50.0,
+        400.0,
+    )
+    assert readout.run_trades(RUN, "nope") == {"ok": False, "error": f"run {RUN} has no arm 'nope'"}
+    assert readout.run_trades("not a run", "control")["ok"] is False
+    assert cli.main(["read", "trades", "--id", RUN, "--arm", "nope"]) == 1
