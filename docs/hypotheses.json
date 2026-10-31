@@ -1067,7 +1067,7 @@
       "id": 32,
       "study": "item32",
       "title": "Large options orders as a signal: the flow plan's declared test, registered",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "options-flow",
       "side": "directional",
@@ -1106,11 +1106,11 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#32-large-options-orders-as-a-signal-the-flow-plans-declared-test-registered",
       "results": [
-        "{home}/data/backtest/results/research/item32/results-design.json",
-        "{home}/data/backtest/results/research/item32/results-holdout.json"
+        "{home}/data/backtest/results/research/item32/results-design.json"
       ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "no tag passes in the design window (first family, second family with F7, earnings test); tags track a persistent name effect, the stale-tag placebo reading as high; holdout not read; flow stays off the board"
     },
     {
       "id": 33,
