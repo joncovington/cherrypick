@@ -469,9 +469,12 @@ def test_build_scan_reads_an_invented_flow_store_and_bar_store(tmp_path, monkeyp
     from types import SimpleNamespace
 
     from cherrypick.core import calendar as cal
-    from cherrypick.technicals import history, store
 
     from cherrypick.backtest import flowfetch
+
+    # The bar store is technicals'; backtest's own CI job does not install it.
+    history = pytest.importorskip("cherrypick.technicals.history")
+    store = pytest.importorskip("cherrypick.technicals.store")
 
     days, d = [], date(2024, 1, 2)
     while len(days) < 130:
