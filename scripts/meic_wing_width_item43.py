@@ -194,6 +194,21 @@ def session_rows(run_id: str) -> dict[str, dict[str, dict]]:
         conn.close()
 
 
+def run_arms(holdout: bool) -> list[str]:
+    """The arms one run replays. `live-1400` is a reference only, and item 23 spent its holdout, which
+    the runner will not spend twice: in the holdout it is read from item 23's run instead."""
+    return ([] if holdout else [LIVE]) + [BASE, *GRID, *REPORTED]
+
+
+def item23_live_holdout() -> tuple[dict[str, dict], str | None]:
+    """Item 23's recorded `live-1400` holdout sessions, with that run's id."""
+    files = sorted((paths.results_dir() / "research" / "item23").glob("study-holdout-*.json"))
+    if not files:
+        return {}, None
+    run_id = json.loads(files[-1].read_text(encoding="utf-8")).get("run_id")
+    return (session_rows(run_id).get(LIVE, {}) if run_id else {}), run_id
+
+
 def ledger_rows(ledger_dir: Path) -> list[dict]:
     """Every entry the run's per-session ledgers hold: arm, session, width, credit and how many ticks a
     leg went unquoted."""
@@ -254,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
 
     s = _settings.load(None)
     holdout = args.window == "holdout"
-    arms = [LIVE, BASE, *GRID, *REPORTED]
+    arms = run_arms(holdout)
     report = runner.run(
         s,
         arms,
@@ -269,6 +284,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     start, end = s["windows"][args.window]
     per_arm = session_rows(report["run_id"])
+    live, live_run = item23_live_holdout() if holdout else (per_arm.get(LIVE, {}), report["run_id"])
     rows = ledger_rows(paths.results_dir() / "runs" / report["run_id"])
     risk = risk_by_session(rows)
     base = per_arm.get(BASE, {})
@@ -294,14 +310,15 @@ def main(argv: list[str] | None = None) -> int:
         "window": args.window,
         "span": [start, end],
         "run_id": report["run_id"],
+        "live_1400_run_id": live_run,
         "provisional": True,
         "refused_sessions": len(report.get("refused") or {}),
         "vix_fallback_sessions": report.get("vix_fallback_sessions"),
         "coverage": coverage(rows, per_arm, arms),
         "reference": {
             BASE: own(base, start, end),
-            LIVE: own(per_arm.get(LIVE, {}), start, end),
-            f"{BASE}_vs_{LIVE}": paired(base, per_arm.get(LIVE, {}), start, end),
+            LIVE: own(live, start, end),
+            f"{BASE}_vs_{LIVE}": paired(base, live, start, end),
             **tests_for(REPORTED),
         },
         "arms": tests,
