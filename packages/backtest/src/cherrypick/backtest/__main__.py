@@ -111,10 +111,10 @@ def recent_span(n: int, today=None) -> tuple[str, str]:
 
 
 def cmd_fetch(args) -> int:
-    from . import fetch
+    from . import fetch, store
     from .vendor import VendorRefusal, client_for
 
-    s = settings.load(args.config)
+    s = store.tagged(settings.load(args.config), args.store_tag)
     refusal = _fetch_refusal(s)
     if refusal:
         print(f"fetch refused: {refusal}", file=sys.stderr)
@@ -138,9 +138,10 @@ def cmd_fetch(args) -> int:
         refetch=args.refetch,
         workers=args.workers,
         cadence=args.cadence,
+        stop=_stop_by(args.stop_by),
         log=lambda m: print(m, file=sys.stderr),
     )
-    if not report.get("aborted"):
+    if not report.get("aborted") and not report.get("stopped"):
         # The same sessions' VIX minute series, on the session already held (vixfetch).
         from . import vixfetch
 
@@ -158,10 +159,10 @@ def cmd_fetch(args) -> int:
 def cmd_fetch_vix(args) -> int:
     """VIX minute series for sessions already in the store (vixfetch.py): a network verb, refused on
     the same terms as `fetch`."""
-    from . import vixfetch
+    from . import store, vixfetch
     from .vendor import VendorRefusal, client_for
 
-    s = settings.load(args.config)
+    s = store.tagged(settings.load(args.config), args.store_tag)
     refusal = _fetch_refusal(s)
     if refusal:
         print(f"fetch-vix refused: {refusal}", file=sys.stderr)
@@ -433,7 +434,7 @@ def cmd_flow_coverage(args) -> int:
 def cmd_coverage(args) -> int:
     from . import store
 
-    s = settings.load(args.config)
+    s = store.tagged(settings.load(args.config), args.store_tag)
     path = store.db_path(s, args.dataset, args.cadence)
     if not path.exists():
         _emit({"symbol": args.dataset.upper(), "complete": 0, "span": None, "refused": [], "store": None})
@@ -450,7 +451,7 @@ def cmd_derive_regimes(args) -> int:
     """Backfill `gex_regime_history` for every complete session from its stored profile (no vendor call)."""
     from . import regimes, store
 
-    s = settings.load(args.config)
+    s = store.tagged(settings.load(args.config), args.store_tag)
     if not store.db_path(s, args.dataset, args.cadence).exists():
         _emit({"sessions": 0, "rows": 0})
         return 0
@@ -618,6 +619,7 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument(
         "--workers", type=int, default=1, help="sessions pulled at a time (default 1; see fetch.fetch)"
     )
+    f.add_argument("--stop-by", help="ET wall clock, YYYY-MM-DDTHH:MM: pull no new session after it")
     f.set_defaults(fn=cmd_fetch)
     fv = sub.add_parser(
         "fetch-vix", help="the VIX minute series for stored sessions, from VIX options (network)"
@@ -750,6 +752,15 @@ def main(argv: list[str] | None = None) -> int:
             type=int,
             default=None,
             help="seconds between samples (default store.cadence_seconds); each cadence is its own file",
+        )
+    from .store import TAGS
+
+    for sp in (f, fv, cv, dr):
+        sp.add_argument(
+            "--store-tag",
+            default=None,
+            choices=tuple(TAGS),
+            help="a declared store variant (store.TAGS, e.g. wide): its own file and strike count",
         )
     va.add_argument("--dates", default=None, help="comma-separated; default: every session in both")
     va.add_argument(

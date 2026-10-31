@@ -86,10 +86,30 @@ def cadence_of(settings: dict, cadence: float | None = None) -> int:
     return int(cadence if cadence is not None else settings["store"]["cadence_seconds"])
 
 
+#: Declared variants of a store, each its own file (`SPX-60s-wide.db`) with its own strike count. A tag
+#: is the only way to change how many strikes a session keeps: two strike counts in one file would
+#: give some sessions wings the others cannot quote. `wide` is items 42 and 44's, wings to 40 points.
+TAGS: dict[str, dict[str, int]] = {"wide": {"strikes_each_side": 40}}
+
+
+def tagged(settings: dict, tag: str | None) -> dict:
+    """The settings pointed at a declared store variant (`TAGS`), or unchanged without one."""
+    if tag is None:
+        return settings
+    if tag not in TAGS:
+        raise ValueError(f"unknown store tag {tag!r}; declared: {', '.join(TAGS)}")
+    out = {**settings, "store": {**settings["store"], **TAGS[tag], "tag": tag}}
+    if int(out["store"]["request_strike_range"]) < int(out["store"]["strikes_each_side"]):
+        raise ValueError(f"store tag {tag!r} keeps more strikes than request_strike_range asks for")
+    return out
+
+
 def db_path(settings: dict, symbol: str, cadence: float | None = None) -> Path:
-    """One file per (dataset, cadence). Sessions at different cadences never share a file: the replay
-    ticks once per stored sample, so a mixed file would replay some days at 15 s and some at 60 s."""
-    return paths.vendor_dir(settings) / f"{symbol.upper()}-{cadence_of(settings, cadence)}s.db"
+    """One file per (dataset, cadence, tag). Sessions at different cadences never share a file: the
+    replay ticks once per stored sample, so a mixed file would replay some days at 15 s and some at 60 s."""
+    tag = settings["store"].get("tag")
+    suffix = f"-{tag}" if tag else ""
+    return paths.vendor_dir(settings) / f"{symbol.upper()}-{cadence_of(settings, cadence)}s{suffix}.db"
 
 
 def connect(settings: dict, symbol: str, cadence: float | None = None) -> sqlite3.Connection:

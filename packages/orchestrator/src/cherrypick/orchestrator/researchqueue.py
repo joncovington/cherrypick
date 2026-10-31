@@ -11,6 +11,8 @@ unreviewed code run by it. A kind builds its own argv from the row's arguments:
 - `fetch-chains` / `fetch-chain-paths` / `fetch-intraday-chains` / `fetch-addon-weeklies` /
   `fetch-flow` / `fetch-oi`: the backtest package's resumable ThetaData fetches, given a request or
   plan file. Each is bounded by `--stop-by`, and a fetch that stops is queued again to resume.
+  `fetch-sessions` is the 0DTE store's own `fetch` over a date span, into a declared store variant
+  (`store_tag`, e.g. items 42 and 44's wide store); the nightly job stays the plain store's writer.
 - `script`: a Python file checked into the repo's `scripts/` (git must know it), with string
   arguments, no shell. It may not need the ThetaData session: it cannot be stopped mid-run.
 
@@ -208,6 +210,8 @@ KINDS: dict[str, tuple[tuple[str, ...], bool]] = {
     "fetch-flow": ((THETADATA,), True),
     # Open interest per contract per name-day (backtest `fetch-oi`, item 30): the same session.
     "fetch-oi": ((THETADATA,), True),
+    # 0DTE sessions over a span into a declared store variant (backtest `fetch --store-tag`, item 42).
+    "fetch-sessions": ((THETADATA,), True),
     "script": ((), False),
     # A module's replay validated against the recording (backtest `validate`): local stores only, no
     # vendor session. Its report is what unlocks that module's history runs (2026-10-25).
@@ -222,10 +226,39 @@ FETCH_STORES = {
     "fetch-addon-weeklies": "addon_weeklies.db",
     "fetch-flow": "flow store",
     "fetch-oi": "open_interest.db",
+    "fetch-sessions": "0DTE store variant",
 }
 
 #: The modules `validate` knows (backtest `validate.CHECKS`), checked here so a typo never queues.
 VALIDATE_MODULES = ("flies", "meic")
+
+#: The store variants `fetch-sessions` may write (backtest `store.TAGS`). Never the plain store: the
+#: nightly `backtest-fetch` is its writer.
+STORE_TAGS = ("wide",)
+
+
+def _day_arg(args: dict, key: str) -> str:
+    v = args.get(key)
+    try:
+        date.fromisoformat(v)
+    except (TypeError, ValueError):
+        raise Refused(f"needs {key!r}, a date YYYY-MM-DD") from None
+    return v
+
+
+def _sessions_argv(args: dict, python: str) -> list[str]:
+    tag = args.get("store_tag")
+    if tag not in STORE_TAGS:
+        raise Refused(f"fetch-sessions needs 'store_tag', one of {', '.join(STORE_TAGS)}")
+    cadence = args.get("cadence", 60)
+    if type(cadence) is not int or not 1 <= cadence <= 3600:
+        raise Refused("fetch-sessions' 'cadence' is whole seconds, 1 to 3600")
+    lo, hi = _day_arg(args, "from"), _day_arg(args, "to")
+    if lo > hi:
+        raise Refused("fetch-sessions' 'from' is after its 'to'")
+    # Two requests a session against four concurrent: two sessions at most (backtest fetch.fetch).
+    return [python, "-m", "cherrypick.backtest", "fetch", "--store-tag", tag, "--cadence", str(cadence),
+            "--from", lo, "--to", hi, "--workers", _workers(args, 1, most=2)]  # fmt: skip
 
 
 def build_argv(
@@ -243,6 +276,8 @@ def build_argv(
     elif kind in ("fetch-flow", "fetch-oi"):
         argv = [python, "-m", "cherrypick.backtest", kind]
         argv += ["--plan", _file_arg(args, "plan"), "--workers", _workers(args, 3)]
+    elif kind == "fetch-sessions":
+        argv = _sessions_argv(args, python)
     elif kind == "script":
         return [python, *_tracked_script(args, root or repo_root(), tracked or git_tracked)]
     elif kind == "validate":
@@ -572,10 +607,14 @@ def result_of(row: dict, report: dict, log: Path) -> dict:
     args = json.loads(row["args"]) if isinstance(row.get("args"), str) else (row.get("args") or {})
     out: dict[str, Any] = {"log": str(log)}
     keys = ("asked", "already", "todo", "complete", "empty", "refused", "rows", "seconds", "stopped")
+    keys += ("fetched", "skipped")  # fetch-sessions' own counts
     counts = {k: report[k] for k in keys if k in report}
     if counts:
         out["report"] = counts
-    if row["kind"] in FETCH_STORES:
+    if row["kind"] == "fetch-sessions":
+        out["input"] = f"{args.get('from')}..{args.get('to')}"
+        out["store"] = f"backtest {args.get('store_tag')} 0DTE store"
+    elif row["kind"] in FETCH_STORES:
         out["input"] = args.get("requests") or args.get("plan")
         out["store"] = "backtest " + FETCH_STORES[row["kind"]]
     if row.get("output"):

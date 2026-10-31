@@ -234,3 +234,48 @@ def test_the_request_asks_for_the_session_s_own_close():
     fetch.fetch(s, client, "SPX", EARLY, EARLY, log=lambda _m: None)
     ((_day, kw),) = client.calls
     assert kw["end_time"] == "13:00:00" and kw["interval"] == "15s" and kw["strike_range"] == 50
+
+
+def _kept_each_side(s, cadence=60):
+    conn = sqlite3.connect(store.db_path(s, "SPX", cadence))
+    try:
+        (n,) = conn.execute(
+            "SELECT COUNT(*) FROM gex_quotes WHERE sample_id = (SELECT MIN(sample_id) FROM gex_quotes) "
+            "AND side = ?",
+            (store.SIDES["CALL"],),
+        ).fetchone()
+    finally:
+        conn.close()
+    return n // 2
+
+
+def test_the_wide_tag_keeps_forty_strikes_each_side_in_its_own_file():
+    plain, wide = _settings(), store.tagged(_settings(), "wide")
+    fetch.fetch(
+        plain, FakeClient({DAY: _rows(DAY, cadence=60)}), "SPX", DAY, DAY, cadence=60, log=lambda _m: None
+    )
+    fetch.fetch(
+        wide, FakeClient({DAY: _rows(DAY, cadence=60)}), "SPX", DAY, DAY, cadence=60, log=lambda _m: None
+    )
+    assert store.db_path(wide, "SPX", 60).name == "SPX-60s-wide.db"
+    assert store.db_path(plain, "SPX", 60).name == "SPX-60s.db"
+    assert (_kept_each_side(plain), _kept_each_side(wide)) == (20, 40)
+
+
+def test_an_undeclared_tag_or_one_wider_than_the_request_refuses():
+    with pytest.raises(ValueError, match="unknown store tag"):
+        store.tagged(_settings(), "huge")
+    narrow = settings.resolve({**_settings(), "store": {**_settings()["store"], "request_strike_range": 30}})
+    with pytest.raises(ValueError, match="request_strike_range"):
+        store.tagged(narrow, "wide")
+
+
+def test_a_stop_by_cancels_the_sessions_not_yet_pulled_and_says_stopped():
+    s = _settings()
+    days = {d: _rows(d, cadence=60) for d in ("2026-10-13", "2026-10-14", "2026-10-15", DAY)}
+    report = fetch.fetch(
+        s, FakeClient(days), "SPX", "2026-10-13", DAY, cadence=60, stop=lambda: True, log=lambda _m: None
+    )
+    assert report["stopped"] and report["fetched"] == 1, "the session in flight is kept, the rest wait"
+    again = fetch.fetch(s, FakeClient(days), "SPX", "2026-10-13", DAY, cadence=60, log=lambda _m: None)
+    assert again["skipped"] == 1 and again["fetched"] == 3 and not again.get("stopped")
