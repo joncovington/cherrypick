@@ -1412,7 +1412,9 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#39-the-contango-modules-own-rule-on-real-daily-prices-the-switch-a-9-day-exit-and-a-realised-volatility-gate",
-      "results": null,
+      "results": [
+        "{home}/data/research/item39/results.json"
+      ],
       "retest": null,
       "retests": []
     }
