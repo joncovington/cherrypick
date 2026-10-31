@@ -124,6 +124,31 @@ def test_a_design_fail_stays_a_fail_whatever_the_holdout_shows():
     assert s30.verdict(good, None, False) == "NO VERDICT"
 
 
+def test_report_states_the_verdict_checks_and_a_reading_from_the_figures():
+    mid = date(2022, 6, 1)
+    split = _cells(-0.02)
+    split["SPY/put"] = [dict(r, d=0.04) for r in split["SPY/put"]]
+    reading = {
+        "net": s30.judge(split, mid, 10),
+        "peak": s30.judge(_cells(-0.10), mid, 10),
+        "wall_days": {"SPY": 300},
+    }
+    win = {
+        "from": "2022-01-03",
+        "to": "2024-12-31",
+        "missing": {"SPY": {"no_bar": 2}},
+        "by_h": {"10": reading},
+    }
+    md = s30.report({"windows": {"design": win}, "verdict": "FAIL", "daily_expiry_weeks": {"SPY": 5}})
+    assert "**Verdict: fail.**" in md
+    assert "| Size of the effect | −5 points or lower |" in md and "| fail |" in md
+    assert "more often on SPY put" in md
+    # The peak reading passes every check, so the reading names it as meeting them.
+    assert "1 meet every check" in md
+    assert "| net | 10 | fail |" in md and "| peak | 10 | reported |" in md
+    assert "Sessions skipped for a missing chain or open interest: SPY 2." in md
+
+
 def test_more_than_one_expiry_in_a_week_counts_as_a_daily_expiry_week():
     weekly = {date(2024, 1, 2): {date(2024, 1, 5), date(2024, 1, 12)}}
     assert s30.daily_expiry_weeks(weekly) == 0

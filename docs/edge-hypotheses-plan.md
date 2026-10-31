@@ -2446,6 +2446,23 @@ horizon: walls from the monthly a 20-60 day trade sells, read over 5 to 20 sessi
     after costs), and the console's dropped view is reconsidered only if Test B passes.
   - **A fail or no verdict:** the walls stay a 0DTE read, the view stays dropped, and the barrier read
     is closed for monthly expiries too.
+- **Result (2026-10-30): fail.** Both names cleared the 200 wall-day floor in both windows.
+  - **The judged reading:** walls are reached barely less often than any level at the same
+    distance, far short of the declared effect, and the bootstrap bound sits above zero. Only the
+    placebo check holds.
+  - **By side:** the call walls on both names are reached somewhat less often than distance alone
+    predicts, and the put walls more often, so the sides cancel. A barrier on one side only is not
+    the barrier declared. The halves disagree too.
+  - **Reported:** at 5 and 20 sessions, and on the single-side peak walls, no reading meets every
+    check. The nearest, the holdout's 5-session peak walls, fails only on size. The holdout's judged
+    reading is below zero but small; it does not count after a design fail.
+  - **Expiries:** SPY lists more than one expiry in most weeks of both windows, as expected; AAPL in
+    few.
+  - Every figure is in the local result
+    (`~/.cherrypick/data/backtest/results/research/item30/results.json`), with its reading in
+    `results.md` beside it.
+- **What this decides:** the fail branch. The walls stay a 0DTE read, the view of short strikes
+  against the walls stays dropped, and Test B is not declared.
 
 ## Not worth revisiting
 
