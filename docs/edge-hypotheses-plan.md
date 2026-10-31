@@ -3487,6 +3487,23 @@ an expiry not listed is a week without a short; `XSP(SPY)` is a stand-in; stocks
 and reports; the three variants and `shield_guard` have no paper twin before a boundary and so no
 live-fill check; an unlisted arm (other deltas, other expiries) is outside the sample by design.
 
+- **Settled with the build, before the first read (2026-10-31, `scripts/pmcc_item36.py`):**
+  - The replay imports pmcc's own long and short selection, entry planning, management (stop, rolls,
+    assignment roll, decay and breach rolls in pmcc's order), expirations and costs; it reimplements
+    none of them. Delta is computed from each chain's mids with the T-bill rate and trailing dividend
+    yield.
+  - The fetch follows the long's no-stop cycle; a stop re-entry onto a long that was not fetched is a
+    counted refusal. The three weekly arms and `hold-30d` need a short to enter, as pmcc does; the
+    monthly arm, `hold-vrp` and the baselines may enter long-only.
+  - A measured week is one the arm held at the previous Friday close with every leg quoted at both
+    closes; flat and unpriced weeks are counted, never zero. An expiring short whose buyback the
+    spread gate blocks settles at intrinsic; early assignment is counted only.
+  - The monthly arm is judged on priced monthly cycles (25 in the design, 18 in the holdout). The
+    holdout's 1.5x-cost clause is the pooled mean above zero at 1.5x. The holdout, even per half, is
+    withheld for any arm that did not pass the design.
+  - The strike-reproduction guard excludes XSP(SPY), whose strikes are not SPY's; with no ledger
+    overlap it reads as failed. The stocks run only if the earnings calendar can be read.
+
 #### Decides
 
 - **A pass:** the passing arm or arms continue in paper as pmcc's base, and a variant joins as a paper arm
