@@ -179,3 +179,20 @@ def test_coverage_counts_what_the_store_cost_each_arm(tmp_path):
         "w10_entered_arm_did_not": 0,
         "entries_with_unquoted_ticks": 0,
     }
+
+
+def test_the_holdout_run_leaves_out_live_1400_whose_holdout_item_23_spent():
+    assert st.run_arms(False) == ["live-1400", "w10", "w15", "w20", "w25", "w30", "w5"]
+    assert st.run_arms(True) == ["w10", "w15", "w20", "w25", "w30", "w5"]
+
+
+def test_the_holdout_reference_reads_item_23s_recorded_sessions(tmp_path, monkeypatch):
+    item23 = tmp_path / "research" / "item23"
+    item23.mkdir(parents=True)
+    (item23 / "study-holdout-2025-07-01-2026-10-12.json").write_text('{"run_id": "r23"}', encoding="utf-8")
+    monkeypatch.setattr(st.paths, "results_dir", lambda: tmp_path)
+    rows = {"r23": {"live-1400": {"2025-07-01": {"net": 5.0, "fees": 1.0, "trades": 1}}}}
+    monkeypatch.setattr(st, "session_rows", lambda run_id: rows.get(run_id, {}))
+    assert st.item23_live_holdout() == (rows["r23"]["live-1400"], "r23")
+    (item23 / "study-holdout-2025-07-01-2026-10-12.json").unlink()
+    assert st.item23_live_holdout() == ({}, None)
