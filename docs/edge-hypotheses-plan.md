@@ -4296,6 +4296,66 @@ VIX9D and SPX refresh done.
   user's retirement rule asks for; retiring contango or an arm is the user's decision.
 
 
+### 40. Legged flies without the strand tail: a fixed stop on an uncompleted vertical, and the whole fly bought at once
+
+*Source: the user, 2026-10-31, asking for flies variations not yet tested. flies is retired
+(2026-10-19); a pass is evidence for reinstating it, which stays the user's decision. **Look-alikes,
+said out loud.** The 10-17 history sweep (18 rule arms and 5 entry-credit filters, entry windows among
+them) found no arm positive per trade in either half, and found that completing more flies loses
+slightly more at every step: completion is a symptom, and any edge must come from the price paid.
+Item 21's resting entry limits failed. The closing agent's shadow closes (2026-10-06/07) were 8 tags,
+too few to read; the funded debit hedge cost more on completed trades than it saved on strands. Late
+entries are not retested here: the entry-window arms covered them. **Seen before declaring:** the
+design-window control run (2026-10-17) and item 21's runs, in aggregate; no session has been split by
+either rule below.*
+
+- **Question:** does capping an uncompleted vertical's loss, or buying the whole butterfly in one order
+  instead of legging into it, earn more per session than flies' `control`?
+- **Where the edge would live:**
+  - `strand-stop`: **payoff shaping**, removing the full-width losses on trend days that decide the
+    result, at the cost of stopping verticals that would later have completed.
+  - `whole-fly`: a test of **where the price paid comes from**. Legging sells the vertical first and
+    buys the completing vertical later, hoping to finish at a net credit; a whole fly pays the fly's
+    market price and carries no strand. If the whole fly does as well, legging buys nothing but risk.
+- **The arms**, each beside `control` on the same sessions (`control` runs beside every arm, as the
+  runner does):
+  - `strand-stop`: `control`, plus: a vertical not yet completed is closed at the first tick its cost
+    to buy back reaches three times the credit received (a loss of twice the credit), at the natural
+    with the module's slippage and fees. One multiple, fixed here; no grid.
+  - `whole-fly`: at each tick `control` would sell its vertical, buy instead the butterfly `control`
+    would complete to (the same body and wings), in one order at mid less the module's entry
+    concession, held to settlement. No legging, no completion step.
+- **Measured,** per session: each arm's net (fees, slippage, settlement), and the paired difference
+  against `control` on the same session.
+- **Windows:** the backtest's own over the 60-second store: design 2022-05-16 to 2025-06-30, holdout
+  2025-07-01 to 2026-10-12, read once after a design pass. **Provisional:** flies' replay cannot be
+  validated (validation needs 10 sessions of paper's book; paper stopped at 5 when flies was retired),
+  so both readings are provisional, as items 21 and 23 were, and the result says so.
+- **Pass-or-fail rule,** per arm, in the design window:
+  - the mean paired difference against `control` above zero with a stationary-bootstrap one-sided
+    95% lower bound above zero (sessions, mean block 5, 20,000 resamples, seeded), Holm across the two;
+  - the arm's own mean net per session above zero (beating a losing `control` is not enough);
+  - both of the above in each half of the window, and at 1.5x fees and slippage;
+  - then the holdout: the mean paired difference and the own mean net above zero.
+  - Fewer than 300 sessions with an entry in an arm is no verdict.
+- **Rival explanations, each with its check:**
+  - *Fewer trades, not better ones* (`strand-stop` stops; `whole-fly` may refuse when the fly's quote is
+    unusable): sessions and entries per arm reported beside every figure.
+  - *One trend regime:* both halves; the result without the five worst `control` sessions reported.
+  - *Costs read too kindly:* the 1.5x stress; the whole fly's four legs pay four legs of fees at once.
+  - *The stop fires on noise:* the stop's fires and how many of the stopped verticals `control`
+    completed later, reported.
+- **Minimum detectable effect (B12):** from the design window's own spread of paired session
+  differences, recorded locally before the holdout is read.
+- **Declared limits (B11):** 60-second ticks; fills under the runner's fill model; a provisional replay;
+  the whole fly's fill at mid less the concession, not a resting order's path.
+- **Data and the run:** the 60-second store; the arms registered in flies' `engine.ARMS` (in no config,
+  as item 21's), run by `python -m cherrypick.backtest run flies --arms strand-stop,whole-fly --window
+  design --cadence 60 --provisional`, then the holdout with `--unvalidated-holdout`. Results stay under
+  `~/.cherrypick/data/backtest/results/research/item40/`; this plan records the verdict without figures.
+- **Decides:** a pass is evidence for reinstating flies with that arm, paper first, the user's decision;
+  a fail closes these two levers, and with the 10-17 sweep leaves no tested way round the strand.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

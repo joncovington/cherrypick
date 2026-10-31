@@ -1431,6 +1431,44 @@
       "retest": null,
       "retests": [],
       "outcome": "no gate beats holding SVXY: each cuts drawdown but gives up far more return than the floor and has a lower Sharpe, mostly through whipsaw costs; paper unchanged, retirement the user's call"
+    },
+    {
+      "id": 40,
+      "study": "item40",
+      "title": "Legged flies without the strand tail: a fixed stop on an uncompleted vertical, and the whole fly bought at once",
+      "status": "declared",
+      "legacy": false,
+      "setup": "0dte-fly",
+      "side": "neutral",
+      "structure": "butterfly",
+      "window": "0dte",
+      "measure": "per session, each arm's net and its paired difference against flies' control on the same session: strand-stop (an uncompleted vertical closed when its buy-back cost reaches 3x the credit) and whole-fly (the completed fly bought in one order at mid less the entry concession, held)",
+      "expected": "a positive paired difference against control and a positive own net per session",
+      "sample": "the 60-second store; design 2022-05-16..2025-06-30, holdout 2025-07-01..2026-10-12 read once after a design pass; provisional (flies' replay cannot be validated); < 300 sessions with an entry = no verdict",
+      "rule": "per arm: mean paired difference vs control > 0 with stationary-bootstrap one-sided 95% lower bound > 0, Holm across two; own mean net > 0; both in each half and at 1.5x costs; then holdout paired difference and own net > 0",
+      "mechanism": "strands decide flies' result; a fixed stop caps the full-width trend-day loss, and a whole fly removes strand risk entirely, testing whether legging adds value or only risk",
+      "rivals": [
+        {
+          "explanation": "fewer trades, not better ones",
+          "check": "sessions and entries per arm reported"
+        },
+        {
+          "explanation": "one trend regime",
+          "check": "both halves; without the five worst control sessions, reported"
+        },
+        {
+          "explanation": "costs read too kindly",
+          "check": "1.5x fees and slippage"
+        },
+        {
+          "explanation": "the stop fires on noise",
+          "check": "fires and the share of stopped verticals control later completed, reported"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#40-legged-flies-without-the-strand-tail-a-fixed-stop-on-an-uncompleted-vertical-and-the-whole-fly-bought-at-once",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
