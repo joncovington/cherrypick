@@ -4397,6 +4397,19 @@ either rule below.*
     paired differences, at the design window's sessions and at 320 for the holdout, before the holdout
     is read.
 
+- **Result (2026-10-31, provisional): fail, both arms; the holdout is not read.** Over the design
+  window both lose more per session than `control`, which itself loses, in both halves, at 1.5x costs
+  and without `control`'s five worst sessions.
+  - `strand-stop` is the worse of the two. Over a third of the verticals it stopped were ones
+    `control` went on to complete, so it turns recoverable positions into closed losses more often
+    than it saves a full-width one.
+  - `whole-fly` loses less than the stop but still trails `control`: buying the fly whole costs more
+    than legging into it. So legging does add some value against the fly's market price; it is the
+    strands that take more than it adds.
+  - Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item40/`).
+- **What this decides:** the fail branch. With the 10-17 sweep, no tested lever gets round the
+  strand; flies stays retired.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

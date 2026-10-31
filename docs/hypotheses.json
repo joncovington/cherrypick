@@ -1436,7 +1436,7 @@
       "id": 40,
       "study": "item40",
       "title": "Legged flies without the strand tail: a fixed stop on an uncompleted vertical, and the whole fly bought at once",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "0dte-fly",
       "side": "neutral",
@@ -1470,7 +1470,8 @@
         "{home}/data/backtest/results/research/item40/results.json"
       ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "both lose more than control (itself losing): the stop closes many verticals that would have completed; the whole fly pays more than legging; no tested way round the strand; flies stays retired"
     }
   ],
   "rule_changes": []
