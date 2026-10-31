@@ -9,7 +9,7 @@ const p = {
   fraction: 0.5,
   etaSeconds: 600,
   ageSeconds: 3,
-  line: "sessions 2/4 days (2026-10-15) · ~10 min left",
+  line: "sessions 2/4 days (2026-10-15) · ~00:10 remaining",
   note: null,
   startedAt: 1000,
   updatedAt: 1600,
@@ -17,7 +17,7 @@ const p = {
 
 describe("the queue's progress meter", () => {
   it("states the overall share and the job's own reading", () => {
-    expect(progressLine(p)).toBe("50.0% · sessions 2/4 days (2026-10-15) · ~10 min left");
+    expect(progressLine(p)).toBe("50.0% · sessions 2/4 days (2026-10-15) · ~00:10 remaining");
   });
 
   it("says how a finished job ended, and its note", () => {
