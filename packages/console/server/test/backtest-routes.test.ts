@@ -116,6 +116,7 @@ const STUDIES = {
           provisional: true,
           verdicts: [{ arm: "d20", verdict: "fail" }],
           summary: "fail",
+          notes: "| arm | win % |",
         },
       ],
       queue: { active: false, tasks: [{ id: 24, step: "holdout", status: "done", finished_at: "2026-10-28T23:38:59" }] },
@@ -326,6 +327,7 @@ describe("the gate is open", () => {
       provisional: true,
       verdicts: [{ arm: "d20", verdict: "fail" }],
       summary: "fail",
+      notes: "| arm | win % |",
     });
     expect(r.body).not.toContain("{home}");
     expect(studiesSpawns).toBe(1);

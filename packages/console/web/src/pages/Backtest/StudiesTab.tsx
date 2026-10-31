@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { BacktestOverview, StudiesBoard, StudyGroup, StudyResult, StudyRow } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { useBridged } from "../../lib/bridged";
+import { MiniMarkdown } from "../../lib/miniMarkdown";
 import { writePref } from "../../lib/prefs";
 import { FILTER_KEY, ago, etMs, etNowMs, stamp } from "./QueueTab";
 import { useStudies } from "./studyIndex";
@@ -184,6 +185,14 @@ export function StudyDetail({ row }: { row: StudyRow }) {
           </Field>
         ) : null}
       </dl>
+      {row.results
+        .filter((r) => r.notes !== null)
+        .map((r) => (
+          <details key={r.name} className="study-notes">
+            <summary>{r.name.replace(/\.json$/, ".md")}: the study's own figures, on this machine only</summary>
+            <MiniMarkdown source={r.notes!} />
+          </details>
+        ))}
     </div>
   );
 }

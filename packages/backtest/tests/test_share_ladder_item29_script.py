@@ -296,3 +296,34 @@ def test_judge_needs_holm_across_the_18():
 def test_arms_are_the_declared_18():
     assert len(s29.ARMS) == 18 and len(set(s29.ARMS)) == 18
     assert all(not a.endswith("exercise") for a in s29.ARMS)
+
+
+def _result(net, lot_net, mid=0.0, mean=-1.0, verdict="fail"):
+    arms = s29.ARMS + s29.REPORTED
+    trades = [{"net": n, "lot_net": m} for n, m in zip(net, lot_net, strict=True)]
+    window = {a: {"n": len(trades), "mean": mean, "mid": mid} for a in arms}
+    return {
+        "trades": {"design": {a: list(trades) for a in arms}, "holdout": {a: [] for a in arms}},
+        "windows": {"design": window, "holdout": {a: {"n": 0} for a in arms}},
+        "verdict": {a: {"verdict": verdict} for a in s29.ARMS},
+    }
+
+
+def test_tally_counts_wins_pl_and_beats():
+    t = s29.tally([{"net": 10, "lot_net": 5}, {"net": -4, "lot_net": 2}, {"net": 0, "lot_net": -1}])
+    assert t == {"n": 3, "win": 1, "pl": 6, "lot_win": 2, "lot_pl": 6, "beat": 2}
+
+
+def test_report_states_the_verdict_tables_and_a_reading_worked_from_the_figures():
+    md = s29.report(_result([-100, -50], [20, 30]))
+    assert "**Verdict: fail.** Of the 18 judged arms, 0 pass, 18 fail" in md
+    assert "| Call spread 7d, close | fail | 2 | 0% | −$150 | 100% | +$50 | 0% |" in md
+    assert "| ZEBRA 60–90d, exercise | reported | 2 |" in md
+    assert "Every arm loses money overall." in md
+    assert "**No winning trade at all**" in md
+    assert "in 36 of 36 arm-windows" not in md and "in 18 of 18 arm-windows" in md
+    # The reading follows the figures: a winning arm is named, and no zero-win line is written.
+    md = s29.report(_result([100, -50], [20, 30], mid=-0.9))
+    assert "Arms that made money overall: Call spread 7d, close;" in md
+    assert "No winning trade at all" not in md
+    assert "in 0 of 18 arm-windows" in md

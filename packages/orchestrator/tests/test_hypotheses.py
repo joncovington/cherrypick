@@ -119,6 +119,11 @@ def test_board_joins_results_and_queue_and_groups_rows():
     # The register decides the status: a queued task moves the group, never the status.
     assert out["rows"][0]["status"] == "declared" and out["rows"][0]["queue"]["active"] is True
     assert out["unregistered"] == ["item22"]
+    # A study's Markdown beside its result file rides along; none is None.
+    assert d21["results"][0]["notes"] is None
+    notes = {"{home}/r/design.json": "| arm | P&L |"}
+    out = hy.board({"hypotheses": [done]}, [], lambda p: files.get(p, (None, None)), notes.get)
+    assert [x["notes"] for x in out["rows"][0]["results"]] == ["| arm | P&L |", None]
 
 
 def test_similar_lists_only_rejected_matches_on_stated_tags():

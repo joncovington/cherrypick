@@ -29,6 +29,8 @@ export interface StudyResult {
   verdicts: StudyVerdict[] | null;
   /** The one word when every arm agrees, "mixed" when not, null when there is none. */
   summary: string | null;
+  /** The Markdown the study left beside the file (`results.md`), as written; null when none. */
+  notes: string | null;
 }
 
 export interface StudyTask {
