@@ -3936,7 +3936,7 @@ declaration.***
   the `/VXM` plan (`docs/vxm-plan.md`, CFE settlements, awaiting the user's decisions, not built);
   item 26-27 (a leveraged-fund rule with a long-hold problem, the same family of funds).
 
-## The arms (four judged, Holm across them)
+#### The arms (four judged, Holm across them)
 
 Rules are the module's own (`regime.target_state`, `replay.run`), not restated from memory; the script
 imports them. A decision is a state, SVXY or SHV; `control` and the gates are stateless, `flipexit`
@@ -3961,14 +3961,14 @@ holds through the band.
   Holm of four); the `/VXM` plan (another instrument); leveraged short-volatility funds (borrow, and
   worse risk-adjusted in the 2026-10-05 notes); SVIX (-1x, replayed worse).
 
-## The baselines
+#### The baselines
 
 - **`hold-svxy`:** SVXY bought on the first session and held, one side of cost. The comparison every
   arm is judged against.
 - **`hold-shv`:** SHV held; reported, not judged. Excess return over the T-bill is measured against
   SHV's own total return, so an arm sitting in SHV earns an excess of zero by construction.
 
-## Measured
+#### Measured
 
 Daily, for each arm and baseline, in each window and half: the Sharpe ratio (mean daily return in
 excess of SHV's, over its standard deviation, times the square root of 252), the CAGR, the maximum
@@ -3977,7 +3977,7 @@ week, the share of sessions in SVXY, the number of switches, the **whipsaw count
 by the opposite switch within 5 sessions), and the costs paid as points a year. Each arm's difference
 from `hold-svxy` is a paired daily series.
 
-## Fills and costs
+#### Fills and costs
 
 - **The decision is approximated by the close.** The module reads the ratio at 15:50 and fills inside
   an 8-minute window; the replay reads the close's ratio and fills at the close, as
@@ -3995,7 +3995,7 @@ from `hold-svxy` is a paired daily series.
   distributions credited on the ex-date (the technicals store's `dividends`, as the module credits
   them). A session missing any input for an arm is skipped and counted, never filled with a zero.
 
-## Data
+#### Data
 
 All on disk, nothing licensed, nothing fetched. Results and any derived series stay under
 `~/.cherrypick/data/research/item39/`; this plan records the verdict without figures.
@@ -4021,7 +4021,7 @@ All on disk, nothing licensed, nothing fetched. Results and any derived series s
     2026-10-29, the last stored session (today's bar is not yet in the store).
   - **More than 1% of a window's sessions missing an input for an arm is no verdict for that arm.**
 
-## Windows and the pass rule
+#### Windows and the pass rule
 
 - **Design:** 2018-03-01 to 2022-12-30 (1,216 sessions), split at 2020-07-01 into 2018-03 to
   2020-06 (the 2018 fourth-quarter fall and the 2020 crash) and 2020-07 to 2022 (the recovery and
@@ -4063,7 +4063,7 @@ All on disk, nothing licensed, nothing fetched. Results and any derived series s
   and the return floor are descriptive: a gate can pass them and fail the Sharpe clause for want of
   power, and the report says which.
 
-## Rival explanations, each with its check
+#### Rival explanations, each with its check
 
 - **One crash decides (2020-03).** The not-one-crash clause above, the per-year table, and the
   worst-day and worst-week columns with and without the window. A gate that works only in 2020 is
@@ -4085,7 +4085,7 @@ All on disk, nothing licensed, nothing fetched. Results and any derived series s
   fixed values (1.0, 10 sessions) and no grid; the thresholds of `control` and `flipexit` were chosen
   with the data in sight, which the report states beside their results.
 
-## Guards, each shown to fail
+#### Guards, each shown to fail
 
 Before an arm is read, each broken on purpose to see the check fail:
 - **Reproduction:** `control` and `flipexit` from the script equal `contango_replay.py` and
@@ -4099,7 +4099,7 @@ Before an arm is read, each broken on purpose to see the check fail:
 - **Coverage:** a session missing an input is counted and skipped, never a zero return. Broken by
   deleting a VIX3M row.
 
-## Declared limits (B11)
+#### Declared limits (B11)
 
 Daily closes, not the 15:50 print; the decision and fill both at the close, which uses ten minutes of
 information the module did not have (the lag clause bounds it); one fund (SVXY) and one cash fund
@@ -4108,7 +4108,7 @@ the rules judged here are the module's, at thresholds seen before; four arms and
 independent volatility shocks in the design window, so low power (see the MDE); `hold-svxy` is the
 only judged baseline, and SHV is reported.
 
-## Data and the run
+#### Data and the run
 
 A script, `scripts/contango_item39.py`, importing `contango_replay.py`'s readers and the module's
 `regime` and `replay` for `control` and `flipexit`, and run as `item39/plan` (the coverage counts and
@@ -4116,7 +4116,22 @@ the listed skipped dates, no returns) and `item39/study` (queue rows, supervisor
 `~/.cherrypick/data/research/item39/results.json`. The plan step runs first and must report the
 VIX9D and SPX refresh done.
 
-## Decides
+- **Settled with the build, before the first read (2026-10-30, `scripts/contango_item39.py`):**
+  - The design window holds 1,215 sessions, not 1,216: the count above included a store row on a
+    day that was not a session (2020-02-17), which is skipped.
+  - The VIX files carry rows on some exchange holidays, so the realised-volatility window and the lag
+    run read SPX's own dates as the calendar; an SVXY session absent from SPX counts as missing for
+    those two runs.
+  - The crash-removed reading drops that window's daily returns from each full run and joins the
+    rest; it does not re-run the switching path. The lag run lags the final daily signal one session
+    (the same as lagging each input), with the fill at the same close.
+  - Each arm is paired with holding SVXY over the arm's own usable sessions. The first day's return is
+    the opening side of the cost. The halves are slices of the one design run. Holding SHV has no
+    Sharpe, its excess being zero by construction.
+  - If any declared guard fails, every arm reads no verdict and none is read. VIX9D and SPX were
+    refreshed from the exchange's public files to 2026-10-30 before the run.
+
+#### Decides
 
 - **A pass:** the passing arm (the higher design Sharpe difference if two) becomes contango's base
   in paper at a declared boundary: a measurement-affecting change (which arms exist), batched, with a
@@ -4126,7 +4141,7 @@ VIX9D and SPX refresh done.
   note beside it. Paper keeps running unchanged. Retiring the module, or either arm, stays the
   user's decision.
 
-## Not worth revisiting
+#### Not worth revisiting
 
 | Idea | Why not | Evidence |
 |---|---|---|
