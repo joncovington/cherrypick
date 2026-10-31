@@ -3352,3 +3352,131 @@ def test_candidates_from_chain_builds_tagged_width_pairs():
     p510 = next(c for c in pairs if (c["put_wing"], c["call_wing"]) == (5, 10))
     assert p510["wing_width"] == 10  # wider wing is the scalar
     assert p510["long_put"]["strike"] == 580 and p510["long_call"]["strike"] == 605
+
+
+# ---------------------------------------------------------------------------
+# Stabilization entry gate (`stabilization_entry`, 2026-10-31) — opt-in per profile, default
+# off, wired in both loops; the oracle is `cherrypick.meic.stabilization_gate` over the
+# recorded spot trail. Every guard here was shown failing before it was shown passing.
+# ---------------------------------------------------------------------------
+
+
+def _stab_params(**over):
+    """CONSERVATIVE plus the stabilization trigger keys, window pinned like the gate tests."""
+    return _window_params(
+        {**CONSERVATIVE, **WIDEST_FIRST, "stabilization_entry": True}, **over
+    )
+
+
+def test_stabilization_entry_gate_defaults_off():
+    """Every arm without the key evaluates exactly as before — the gate must not even look at
+    the snapshot for it (a snapshot with NO verdicts at all still enters normally)."""
+    entered, reason, _ = paper.evaluate_entry(
+        _base_snapshot(now_et="13:00"), _window_params(CONSERVATIVE), []
+    )
+    assert entered is True and reason != "stabilization_wait"
+
+
+def test_stabilization_entry_gate_fails_closed_on_missing_verdict():
+    """No read, no entry: a trigger arm whose oracle did not produce a verdict this tick (trail
+    not warm, no completed bars, feed failure) waits — it must not fire on a guess."""
+    entered, reason, _ = paper.evaluate_entry(_base_snapshot(now_et="13:00"), _stab_params(), [])
+    assert entered is False and reason == "stabilization_wait"
+
+
+def test_stabilization_entry_gate_waits_until_stable():
+    snap = _base_snapshot(now_et="13:00")
+    snap["stabilization_verdicts"] = {"multi": False, "perday": False}
+    entered, reason, _ = paper.evaluate_entry(snap, _stab_params(), [])
+    assert entered is False and reason == "stabilization_wait"
+    snap["stabilization_verdicts"] = {"multi": True, "perday": False}
+    entered, _, _ = paper.evaluate_entry(snap, _stab_params(), [])
+    assert entered is True
+
+
+def test_stabilization_entry_gate_reads_the_named_oracle_only():
+    """`stabilization_oracle` names which verdict binds. perday set to True must not be satisfied
+    by multi's True, and an unknown oracle name can never fire (it reads a verdict nobody wrote)."""
+    snap = _base_snapshot(now_et="13:00")
+    snap["stabilization_verdicts"] = {"multi": True, "perday": False}
+    entered, reason, _ = paper.evaluate_entry(
+        snap, _stab_params(stabilization_oracle="perday"), []
+    )
+    assert entered is False and reason == "stabilization_wait"
+    # Unknown oracle: fail closed even when both real oracles read stable.
+    snap["stabilization_verdicts"] = {"multi": True, "perday": True}
+    entered, reason, _ = paper.evaluate_entry(
+        snap, _stab_params(stabilization_oracle="weekly"), []
+    )
+    assert entered is False and reason == "stabilization_wait"
+
+
+def test_stabilization_wait_maps_to_gate_blocked_attempts_outcome():
+    assert paper._ATTEMPT_OUTCOMES["stabilization_wait"] == "gate_blocked"
+
+
+def _synthetic_trail(path, wide_bars=23, flat_bars=2, base=590.0):
+    """A gex_spot_history-shaped DB: wide bars then flat `flat_bars` at the end.
+
+    Bars are keyed like the gate's bucketing: 5-min session buckets from 09:30, four samples
+    per bar. The last two bars' total range is ~0 with the Wilder ATR cooled under its average,
+    so perday must read STABLE at the last bar's close and NOT stable one wide bar earlier."""
+    import datetime as _dt
+    import sqlite3 as _sqlite3
+    from zoneinfo import ZoneInfo as _Zone
+
+    et = _Zone("America/New_York")
+    day = "2026-10-13"
+    con = _sqlite3.connect(path)
+    con.execute(
+        "CREATE TABLE gex_spot_history (symbol TEXT, trade_date TEXT, ts REAL, spot REAL)"
+    )
+    rows = []
+    for b in range(wide_bars + flat_bars):
+        start_min = 570 + b * 5
+        flat = b >= wide_bars
+        samples = [590.0] * 4 if flat else [592.5, 587.5, 592.5, 590.0]
+        for i, spot in enumerate(samples):
+            t = _dt.datetime.combine(
+                _dt.date.fromisoformat(day),
+                _dt.time(0, 0)
+                .replace(hour=(start_min + i) // 60, minute=(start_min + i) % 60),
+            ).replace(tzinfo=et)
+            rows.append(("SPX", day, t.timestamp() + 0.05 * i, spot))
+    con.executemany("INSERT INTO gex_spot_history VALUES (?,?,?,?)", rows)
+    con.commit()
+    con.close()
+    return day
+
+
+def test_stabilization_gate_module_reads_stable_after_flat_bars(tmp_path):
+    """The module's rule on a hand-built trail: two consecutive completed flat bars with the
+    Wilder ATR below its average read STABLE (perday); one bar earlier, still wide, does not;
+    multi on a COLD trail (no prior sessions) cannot fire — the warmup has not seeded."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from cherrypick.meic import stabilization_gate
+
+    et = ZoneInfo("America/New_York")
+    db = tmp_path / "gex.db"
+    day = _synthetic_trail(str(db))
+    # 25 bars total (23 wide + 2 flat): bar b closes at 570 + (b+1)*5 minutes, so the last
+    # close is 11:35 and the second-widest bar (last of the wide run) closes at 11:25.
+    now = datetime.fromisoformat(f"{day}T11:35:00").replace(tzinfo=et)
+    out = stabilization_gate.snapshot_verdicts("SPX", day, now, trail_path=db)
+    assert out["perday"] is True   # flat tail, ATR cooled under its average
+    assert out["multi"] is False   # cold trail: warmup unseeded
+    # One completed-close earlier (11:25), the 2-bar window is still the wide pair.
+    now = datetime.fromisoformat(f"{day}T11:25:00").replace(tzinfo=et)
+    out = stabilization_gate.snapshot_verdicts("SPX", day, now, trail_path=db)
+    assert out["perday"] is False
+
+
+def test_stabilization_gate_module_fails_closed_without_trail(tmp_path):
+    from cherrypick.meic import stabilization_gate
+
+    out = stabilization_gate.snapshot_verdicts(
+        "SPX", "2026-10-13", trail_path=tmp_path / "missing.db"
+    )
+    assert out == {"multi": None, "perday": None}

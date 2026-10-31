@@ -116,6 +116,7 @@ change the trade's shape, only its measurement fidelity.
 | Per-side stop = total credit | `per_side_stop_management` + `stop_trigger_ratio` — engine semantics are literally "side's cost reaches X of the total IC credit" | `true`, `1.0` |
 | ~1 entry/hour, 6–7/day | `stagger_entries` (target = hard cap) + `daily_ic_trade_target` + `min_minutes_between_entries` (5-min loop → 55 ≈ hourly) | `true`, `7`, `55` |
 | Sessions 09:45 → last hour | `paper_entry_window_start` / `entry_window_end` | `09:45` / `15:30` |
+| Entry trigger — stabilization, not the clock ("two or three flat five-minute candles") | `stabilization_entry` + `stabilization_oracle` — the completed-bar ToS "Universal Adaptive Market Stabilization Indicator" rule (`cherrypick.meic.stabilization_gate`); opt-in per arm, default off, so the arms measuring it keep the ungated foil | `true`, `multi` (as the stab arms) |
 | 10–15 delta shorts | `delta_target` flat (he does not VIX-band; mid of his range) | `0.12` |
 | 30-wide wings, adjusted until the premiums match | `wing_widths_by_symbol` as a search list + `equalize_credit` — the most credit-balanced clearing candidate wins instead of the widest-first one (`max_wing_width` is documentation only — the width resolver never clamps) | `[25, 30, 35, 40]`, `true` |
 | $100–200/side ≈ 3–7% of width | `min_credit_pct_of_width` — control's `0.15` would reject nearly every one of his trades on 30-wide wings; his floor is the credit itself | `0.05` |
@@ -189,11 +190,15 @@ gates, SPX-only, same engine): hourly-vs-14:00-only, 25–40-vs-10-wide, 1.0-vs-
    dollars of each other, and the break-even stop identity never depended on the split (trigger =
    ratio × total credit either way) — so the closure buys fidelity to his stated practice, not a
    different P&L shape.
-2. **The stabilization read** (2–3 flat 5-min candles). No gate exists; the arm enters on the first
-   passing 5-min tick after the cadence wait — in or out of a live move. Impact: moderate and the
-   most interesting gap: his entry *filter* is arguably the discretionary edge, and the arm would
-   measure the mechanical residue without it. A `session_quality`-style pause gate would close this
-   later.
+2. **The stabilization read** (2–3 flat 5-min candles). CLOSED 2026-10-31: the gate exists —
+   `stabilization_entry` (per arm, default off) + `cherrypick.meic.stabilization_gate`, the
+   completed-bar form of the Thinkorswim "Universal Adaptive Market Stabilization Indicator" the
+   read mirrors: the last two consecutive COMPLETED 5-min bars' total range within 1.25 × Wilder
+   ATR(5) and ATR at or below its 20-bar average; `stabilization_oracle` picks the warmup
+   semantics ("multi" — the roll carries across sessions, what a chart shows — or "perday").
+   Wired into the paper loop and the live loop; a missing read fails closed (the arm waits). The
+   be-* arms still enter on the first passing tick — the gate is opt-in so the comparison keeps
+   its foil.
 3. **The 5-cent buy-back and long re-use.** MEIC has no profit target by design (cash-settled SPX
    rides to 16:00 settlement; the module's rule is explicit that this is not to be added as a
    key). Terminal P&L on the *short* is the same (5c ≈ worthless), but the arm keeps the
