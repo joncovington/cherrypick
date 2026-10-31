@@ -281,7 +281,7 @@ def cmd_fetch_intraday_chains(args) -> int:
     if refusal:
         print(f"fetch-intraday-chains refused: {refusal}", file=sys.stderr)
         return 2
-    requests = intradayfetch.read_requests(Path(args.requests))
+    requests, ranges = intradayfetch.read_request_file(Path(args.requests))
     try:
         client = client_for(s)
     except VendorRefusal as exc:
@@ -289,7 +289,7 @@ def cmd_fetch_intraday_chains(args) -> int:
         return 2
     report = intradayfetch.fetch_windows(
         s, client, requests, workers=args.workers, refetch=args.refetch, limit=args.limit,
-        stop=_stop_by(args.stop_by), log=lambda m: print(m, file=sys.stderr),
+        stop=_stop_by(args.stop_by), log=lambda m: print(m, file=sys.stderr), strike_ranges=ranges,
     )  # fmt: skip
     _emit(report)
     return 1 if report.get("aborted") else 0
