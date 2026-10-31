@@ -1142,7 +1142,9 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#33-meic-on-fed-decision-days-does-entering-at-the-1400-statement-cost-more-than-other-days",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item33/results.json"
+      ],
       "retest": null,
       "retests": []
     },
