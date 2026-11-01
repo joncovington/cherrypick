@@ -215,8 +215,10 @@ def _fraction(phases: list[dict]) -> float | None:
 
 
 def _rate(phases: list[dict], now: float) -> dict | None:
-    """The innermost phase that has counted something: its seconds per item since it opened. A
-    phase reopened for each outer item restarts its clock, so this is the current pace."""
+    """The innermost phase that has counted something: its average seconds per item since it
+    opened. An average, not the last item's time, so request jitter does not move it; a phase
+    reopened for each outer item restarts its clock, so there it is that item's average. Items a
+    resumed job skips count as done, so a resume reads fast until real work dominates."""
     for p in reversed(phases):
         done, started = int(p.get("done") or 0), p.get("started_at")
         if done > 0 and started is not None and now > started:
