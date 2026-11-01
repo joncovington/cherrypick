@@ -3520,6 +3520,22 @@ live-fill check; an unlisted arm (other deltas, other expiries) is outside the s
     withheld for any arm that did not pass the design.
   - The strike-reproduction guard excludes XSP(SPY), whose strikes are not SPY's; with no ledger
     overlap it reads as failed. The stocks run only if the earnings calendar can be read.
+- **Fixed after the first run, before any arm was read (2026-11-01).** The first `item36/study` stopped
+  at its guards: no arm was judged and the holdout was not read, so nothing is spent. Two of the
+  failures were the plumbing's, not the rule's:
+  - **Reproduction had nothing to compare.** The fetch followed the replay's own long cycles and
+    ended with the holdout, so no paper entry's legs were in the store, and each uncovered entry
+    counted as a miss. The plan now also writes `chain_requests_ledger.json` (each paper entry's long
+    and short expiry on its entry session), and the guard compares on the sessions the store covers,
+    as declared above, counting the rest as uncovered. A refused selector is still a miss, and
+    nothing covered is still a fail.
+  - **The rate read zero before 2025.** Treasury's curve files held 2025-26 only, and the reader fell
+    back to zero, so every computed delta for 2016-24 used a zero rate. The past years are seeded
+    once (`scripts/fetch_market_files.py treasury-history --since 2015`), and a session with no
+    3-month yield within seven days now stops the run.
+  - **The WPUT check failed, and still does with the rate fixed.** The replay's weekly at-the-money
+    put beats the index in nearly every year. That is an open question about the replay or its
+    quotes, looked into before any arm is read. The tolerance is unchanged.
 
 #### Decides
 

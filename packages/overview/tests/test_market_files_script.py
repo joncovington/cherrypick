@@ -81,6 +81,38 @@ def test_only_the_declared_releases_are_kept():
     assert fmf.fred_releases(body) == [{"name": "Consumer Price Index", "at": "2026-10-14", "source": "FRED"}]
 
 
+TREASURY_CSV = 'Date,"3 Mo","10 Yr"\n12/30/{y},1.50,2.50\n12/29/{y},1.40,2.40\n'
+
+
+def test_treasury_history_writes_each_missing_past_year_and_skips_one_on_disk(tmp_path, monkeypatch, capsys):
+    """The daily fetch keeps only this year and last, so a replay over 2016-2024 read a zero rate.
+    The seed writes every missing past year once and never this year (the daily fetch's file)."""
+    import json
+
+    from cherrypick.overview import files
+
+    monkeypatch.setattr(files._treasury._home, "data_dir", lambda name: tmp_path / name)
+    asked = []
+
+    def get(url: str) -> bytes:
+        year = int(url.split("field_tdr_date_value=")[1].split("&")[0])
+        asked.append(year)
+        return TREASURY_CSV.format(y=year).encode()
+
+    monkeypatch.setattr(fmf, "_get", get)
+    this_year = fmf.datetime.now(files.ET).date().year
+    files.treasury_path(this_year - 2).parent.mkdir(parents=True)
+    files.treasury_path(this_year - 2).write_text(TREASURY_CSV.format(y=this_year - 2), encoding="utf-8")
+    assert fmf.main(["treasury-history", "--since", str(this_year - 4)]) == 0
+    assert asked == [this_year - 4, this_year - 3, this_year - 1]
+    assert json.loads(capsys.readouterr().out)["ok"]
+    assert not files.treasury_path(this_year).exists()
+    assert (
+        files.parse_treasury(files.treasury_path(this_year - 4).read_text(encoding="utf-8"))[-1][1]["3m"]
+        == 1.5
+    )
+
+
 def test_each_fetch_folds_into_a_history_that_never_drops_a_date(tmp_path, monkeypatch):
     """fred.json is replaced every run with the window ahead, so a past release date used to vanish
     the day after it. The history keeps every date and the ranges FRED was asked about."""
