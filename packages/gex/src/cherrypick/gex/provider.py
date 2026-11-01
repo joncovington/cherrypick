@@ -214,6 +214,42 @@ def read_spots(
     return out
 
 
+def prints_since(db_path: Path | str, symbol: str, received_after: float) -> list[dict]:
+    """The underlying's options prints (`stream_time_and_sale`) the producer received after
+    `received_after`, each joined to its chain row for expiration, strike and right, read-only.
+    Raw, as the cache holds them. A print whose option the cache no longer lists a chain row for is
+    skipped (nothing to say what it was). Empty when the cache, or the table, is absent."""
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return []
+    conn = _connect_ro(db_path)
+    try:
+        if not conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'stream_time_and_sale'"
+        ).fetchone():
+            return []
+        rows = conn.execute(
+            "SELECT t.*, c.expiration AS expiration, c.data_json AS data_json FROM stream_time_and_sale t "
+            "JOIN stream_chain c ON c.streamer_symbol = t.symbol "
+            "WHERE c.underlying_symbol = ? AND t.received_at > ? ORDER BY t.received_at",
+            (symbol.strip().upper(), received_after),
+        ).fetchall()
+    finally:
+        conn.close()
+    out = []
+    for r in rows:
+        try:
+            meta = json.loads(r["data_json"])
+            strike = float(meta["strike_price"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        right = "call" if "C" in str(meta.get("option_type", "")).upper() else "put"
+        row = {k: r[k] for k in r.keys() if k != "data_json"}
+        row.update(strike=strike, side=right)
+        out.append(row)
+    return out
+
+
 def chain_from_stream_cache(db_path: Path | str, symbol: str, today: str | None = None) -> GexSnapshot:
     """The chain ``snapshot_from_stream_cache`` would pick -- spot, expiration and chain entries, by
     the same rule -- without the greeks, open interest and volume behind a profile. What the quote

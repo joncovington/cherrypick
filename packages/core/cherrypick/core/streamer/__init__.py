@@ -42,7 +42,7 @@ from cherrypick.core import streamcache
 
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET
-from cherrypick.core.streamrequests import WINDOW_EVENTS
+from cherrypick.core.streamrequests import OPT_IN_EVENTS, WINDOW_EVENTS
 
 _RECONNECT_BASE = 2.0
 _RECONNECT_MAX = 60.0
@@ -315,7 +315,7 @@ class ChainStreamer:
 
     def _total_subscribed(self, state: _State) -> int:
         total = 0
-        for key in ("Trade", "Quote", "Greeks", "Summary"):
+        for key in ("Trade", "Quote", "Greeks", "Summary", *OPT_IN_EVENTS):
             window_union: set[str] = set()
             for window_key, syms in state.window_syms.items():
                 if key in self._window_events(window_key):
@@ -329,7 +329,11 @@ class ChainStreamer:
         `SYMBOL@date`; both share the underlying's set. Anything the hook cannot answer -- no hook,
         an error, an empty or junk answer -- is all four: the failure mode of a wrong guess here is a
         reader with no open interest, so the default is to pay for a subscription, never to starve
-        one (the same posture as `streamcache.publishes_quotes`)."""
+        one (the same posture as `streamcache.publishes_quotes`).
+
+        An opt-in event (`OPT_IN_EVENTS`: TimeAndSale) is added only when declared, and only to the
+        nearest window (`SYMBOL`, never `SYMBOL@date`): the prints gex records are the session's
+        chain, and another module's calendar dates should not cost a tape nobody reads."""
         if self._window_events_for is None:
             return WINDOW_EVENTS
         try:
@@ -337,8 +341,14 @@ class ChainStreamer:
         except Exception as exc:  # consumer policy reading registry files: cost the answer, not the task
             self.log.warning("[%s] window_events_for error: %s", window_key, exc)
             return WINDOW_EVENTS
-        events = tuple(e for e in WINDOW_EVENTS if e in wanted)
-        return events or WINDOW_EVENTS
+        events = tuple(e for e in WINDOW_EVENTS if e in wanted) or WINDOW_EVENTS
+        if "@" in window_key:
+            return events
+        return events + tuple(e for e in OPT_IN_EVENTS if e in wanted)
+
+    def _wants_time_and_sale(self) -> bool:
+        """Whether any underlying's nearest window carries TimeAndSale (its listener is started)."""
+        return any("TimeAndSale" in self._window_events(s) for s in self.symbols)
 
     def _nearest_window(self, symbol: str) -> bool:
         """Whether this symbol keeps its nearest-expiration window. False only when the hook says so
@@ -354,15 +364,31 @@ class ChainStreamer:
     async def _window_subs(
         self, streamer, window_key: str, syms, classes: dict, *, remove: bool = False
     ) -> None:
-        """Subscribe (or unsubscribe) a window's options to exactly its declared event set."""
+        """Subscribe (or unsubscribe) a window's options to exactly its declared event set. An event
+        the caller holds no class for (an opt-in one on a path that never serves it) is skipped."""
         for name in self._window_events(window_key):
-            await self._send_subs(streamer, classes[name], syms, remove=remove)
+            cls = classes.get(name)
+            if cls is not None:
+                await self._send_subs(streamer, cls, syms, remove=remove)
 
     # -- connection lifetime ---------------------------------------------------------------------
     async def _run_stream(self, state: _State) -> None:
         from tastytrade import DXLinkStreamer
-        from tastytrade.dxfeed import Candle, Greeks, Quote, Summary, Trade
+        from tastytrade.dxfeed import Candle, Greeks, Quote, Summary, TimeAndSale, Trade
 
+        prints = self._wants_time_and_sale()
+        if prints:
+            try:
+                removed = streamcache.prune_time_and_sale(state.conn, now_ts=time.time())
+                state.conn.commit()
+                if removed:
+                    self.log.info(
+                        "Pruned %d options prints older than %d days",
+                        removed,
+                        streamcache.TIME_AND_SALE_KEEP_DAYS,
+                    )
+            except Exception as exc:  # maintenance: never the reason a connection fails
+                self.log.warning("TimeAndSale prune error: %s", exc)
         session = self.session_factory()
         self.log.info("Connecting DXLinkStreamer…")
         async with DXLinkStreamer(session) as streamer:
@@ -383,6 +409,8 @@ class ChainStreamer:
                 tg.create_task(self._listen_quote(streamer, state, Quote))
                 tg.create_task(self._listen_greeks(streamer, state, Greeks))
                 tg.create_task(self._listen_summary(streamer, state, Summary))
+                if prints:
+                    tg.create_task(self._listen_time_and_sale(streamer, state, TimeAndSale))
                 tg.create_task(self._poll_subscriptions(streamer, state, Trade, Quote, Greeks, Summary))
                 tg.create_task(self._flush_status(state))
                 tg.create_task(self._checkpoint_wal(state))
@@ -393,7 +421,16 @@ class ChainStreamer:
                     tg.create_task(self._backfill_history(streamer, state, Candle))
                 for sym in self.symbols:
                     tg.create_task(
-                        self._symbol_refresher(streamer, state, sym, Quote, Greeks, Summary, Trade)
+                        self._symbol_refresher(
+                            streamer,
+                            state,
+                            sym,
+                            Quote,
+                            Greeks,
+                            Summary,
+                            Trade,
+                            TimeAndSale=TimeAndSale if prints else None,
+                        )
                     )
 
     async def _send_subs(self, streamer, cls, symbols, *, remove: bool = False) -> None:
@@ -405,6 +442,11 @@ class ChainStreamer:
         if not syms:
             return
         op = streamer.unsubscribe if remove else streamer.subscribe
+        if not remove and getattr(cls, "__name__", "") == "TimeAndSale":
+
+            async def op(cls, chunk):
+                await self._subscribe_time_and_sale(streamer, cls, chunk)
+
         for i in range(0, len(syms), self.subscribe_chunk):
             chunk = syms[i : i + self.subscribe_chunk]
             if self.subscribe_pace_s:
@@ -415,6 +457,35 @@ class ChainStreamer:
             await op(cls, chunk)
             self._last_subscribe_at = time.monotonic()
             self._record_sent(len(chunk))
+
+    @staticmethod
+    def _session_open_ms(now_ts: float | None = None) -> int:
+        """09:30 ET on the ET date of `now_ts`, epoch milliseconds."""
+        now_et = datetime.fromtimestamp(now_ts if now_ts is not None else time.time(), tz=_ET)
+        return int(now_et.replace(hour=9, minute=30, second=0, microsecond=0).timestamp() * 1000)
+
+    async def _subscribe_time_and_sale(self, streamer, cls, symbols) -> None:
+        """Add TimeAndSale as a TIME SERIES from today's open, so a connection made mid-session also
+        receives the prints it missed -- up to the feed's per-symbol cap (about 1,000, the most
+        recent; measured 2026-10-31 with scripts/probe_time_and_sale.py), so a long gap is only
+        partly filled. The SDK exposes `fromTime` only for candles, so the channel is opened the
+        SDK's way and the add is sent as the protocol's own message; on an SDK without those
+        internals it degrades to a plain subscribe (live prints only)."""
+        await streamer.subscribe(cls, [])
+        channels = getattr(streamer, "_channels", None)
+        socket = getattr(streamer, "_websocket", None)
+        channel = channels.get("TimeAndSale") if isinstance(channels, dict) else None
+        if channel is None or socket is None:
+            await streamer.subscribe(cls, symbols)
+            return
+        since = self._session_open_ms()
+        await socket.send_json(
+            {
+                "type": "FEED_SUBSCRIPTION",
+                "channel": channel,
+                "add": [{"symbol": s, "type": "TimeAndSale", "fromTime": since} for s in symbols],
+            }
+        )
 
     def _refill(self, now: float) -> None:
         if now - self._last_rate_cut_at >= _SUBSCRIBE_RECOVERY_S and (
@@ -735,6 +806,62 @@ class ChainStreamer:
                 self.log.warning("Summary write error: %s", exc)
 
     @staticmethod
+    def time_and_sale_row(event, received_at: float) -> dict | None:
+        """One TimeAndSale event as a `stream_time_and_sale` row, raw. None for an event with no
+        index (nothing to key a later correction on). An event the feed withdraws (the REMOVE event
+        flag) is kept as kind REMOVED, so a reader sees the print was withdrawn rather than missing."""
+        idx = getattr(event, "index", None)
+        if idx is None:
+            return None
+        flags = int(getattr(event, "event_flags", 0) or 0)
+        raw_type = str(getattr(event, "type", "") or "")
+        kind = streamcache.TIME_AND_SALE_KINDS.get(raw_type, raw_type.upper() or "NEW")
+        if flags & 0x02:
+            kind = "REMOVED"
+
+        def _flag(name: str) -> int | None:
+            value = getattr(event, name, None)
+            return None if value is None else int(bool(value))
+
+        size = getattr(event, "size", None)
+        return {
+            "symbol": str(event.event_symbol),
+            "idx": int(idx),
+            "event_ms": int(event.time) if getattr(event, "time", None) else None,
+            "received_at": received_at,
+            "price": streamcache.to_float(getattr(event, "price", None)),
+            "size": int(size) if size is not None else None,
+            "bid": streamcache.to_float(getattr(event, "bid_price", None)),
+            "ask": streamcache.to_float(getattr(event, "ask_price", None)),
+            "aggressor": str(getattr(event, "aggressor_side", "") or "") or None,
+            "spread_leg": _flag("spread_leg"),
+            "eth": _flag("extended_trading_hours"),
+            "valid_tick": _flag("valid_tick"),
+            "kind": kind,
+            "conditions": getattr(event, "exchange_sale_conditions", None),
+            "exchange": str(getattr(event, "exchange_code", "") or "") or None,
+        }
+
+    async def _listen_time_and_sale(self, streamer, state: _State, TimeAndSale) -> None:
+        """Every options print on an opted-in window, appended to `stream_time_and_sale`. A write
+        error costs that print, never the listener: the quote and greek listeners beside it are
+        what every trading module prices off."""
+        conn = state.conn
+        async for event in streamer.listen(TimeAndSale):
+            if state.stop_event.is_set():
+                break
+            ts = time.time()
+            try:
+                row = self.time_and_sale_row(event, ts)
+                if row is None:
+                    continue
+                streamcache.write_time_and_sale(conn, row)
+                self._maybe_commit(state)
+                self._touch(state, ts)
+            except Exception as exc:
+                self.log.warning("TimeAndSale write error: %s", exc)
+
+    @staticmethod
     def _previous_session(today: str) -> str:
         """The most recent completed trading day before `today` -- what a current series must reach.
 
@@ -1001,7 +1128,7 @@ class ChainStreamer:
         return None  # unreachable, but keeps type-checkers honest
 
     async def _symbol_refresher(
-        self, streamer, state: _State, symbol: str, Quote, Greeks, Summary, Trade
+        self, streamer, state: _State, symbol: str, Quote, Greeks, Summary, Trade, TimeAndSale=None
     ) -> None:
         chain = await self._fetch_dte0_chain_with_retry(symbol, state)
         if chain is None:
@@ -1011,6 +1138,8 @@ class ChainStreamer:
 
         state.window_syms.setdefault(symbol, [])
         classes = {"Quote": Quote, "Greeks": Greeks, "Summary": Summary, "Trade": Trade}
+        if TimeAndSale is not None:
+            classes["TimeAndSale"] = TimeAndSale
         # A symbol every declarer reads only through its requested expirations keeps the chain (the
         # fetch, the session-date roll, the stale-chain health row) but subscribes no nearest window.
         nearest_on = self._nearest_window(symbol)

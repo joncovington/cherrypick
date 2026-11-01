@@ -60,6 +60,14 @@ Config: copy `config.example.json` → `config.json` (git-ignored, machine-local
     window's unsubscribe must match its subscribe — so growth recycles the producer
     (`streamrequests.subscription_snapshot`) and a reduction waits for the next restart. With the
     nearest window declined, a requested date equal to it is still served as an extra window.
+  - **`TimeAndSale` (options prints) is opt-in, never default** (2026-11-01,
+    `streamrequests.OPT_IN_EVENTS`): a window carries it only when some declarer names it, naming it
+    alone keeps the four (`window_event_set`), and it rides the **nearest window only**. Each add is
+    a time series from 09:30 ET, so a mid-session connect gets the prints it missed, up to the feed's
+    cap of about 1,000 per symbol (`scripts/probe_time_and_sale.py`). Prints land raw in the cache's
+    `stream_time_and_sale`, keyed by the feed's index (a correction replaces), and are pruned to three
+    days on each connect; gex's recorder keeps the history. Its listener starts only when a window
+    wants it, and a write error costs that print, never the quote listeners beside it.
   - **A confirmed session value is never erased by a later event that omits it.** The `stream_summary`
     upsert COALESCEs every OHLC field against what is stored; a bare overwrite once let late Summary
     events null out 22 sessions of SPX/XSP closes. A value only gets more known through a session.

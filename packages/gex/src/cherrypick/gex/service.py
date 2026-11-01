@@ -144,6 +144,33 @@ def quote_history_settings(cfg: dict) -> dict:
     return out
 
 
+# The config block (`prints`, 2026-11-01): record every options print of the nearest chain (DXLink
+# TimeAndSale) into `gex_prints`, for a flow-adjusted GEX that moves with the session's trades rather
+# than the overnight open interest alone. OFF unless a machine's config turns it on: turning it on
+# declares the event to the producer (`stream_request`), which recycles to subscribe it. `symbols`
+# null means the recorder's own `symbols`.
+PRINTS_DEFAULTS = {"enabled": False, "symbols": None}
+# A copy re-reads this much before the last print it holds: a print the producer wrote in the same
+# instant as the last copy's read is not lost to a strict `>`, and an upsert makes the overlap free.
+PRINTS_COPY_OVERLAP_S = 2.0
+
+
+def prints_settings(cfg: dict) -> dict:
+    """The `prints` block over its defaults; a malformed value keeps its default (telemetry, like
+    `quote_history_settings`). Only symbols the recorder records are kept."""
+    raw = cfg.get("prints") or {}
+    out = dict(PRINTS_DEFAULTS)
+    recorded = [str(s).strip().upper() for s in (cfg.get("symbols") or [])]
+    if not isinstance(raw, dict):
+        out["symbols"] = []
+        return out
+    out["enabled"] = raw.get("enabled") is True
+    syms = raw.get("symbols")
+    wanted = [str(s).strip().upper() for s in syms] if isinstance(syms, list) and syms else recorded
+    out["symbols"] = [s for s in wanted if s in recorded]
+    return out
+
+
 def _ensure_history_table(conn: sqlite3.Connection, db_path: Path | str | None = None) -> None:
     """Create the history tables if absent. Idempotent, and skipped once a given file has been
     prepared in this process — the recorder calls this every tick for the life of the daemon, and
@@ -214,6 +241,21 @@ def _ensure_history_table(conn: sqlite3.Connection, db_path: Path | str | None =
         and not conn.execute("SELECT 1 FROM gex_quote_history LIMIT 1").fetchone()
     ):
         conn.execute("DROP TABLE gex_quote_history")
+    # Options prints (2026-11-01), copied raw from the cache's tape (`record_prints`): one row per
+    # print, keyed by the option and the feed's index, so a correction or cancellation the producer
+    # later receives replaces the row it names. `side` is QUOTE_SIDES'. Nothing here classifies a
+    # print: which count as customer buying is a read-side rule (`core.gex`), and the raw fields are
+    # what let a different rule be tried on a past session.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS gex_prints ("
+        "symbol TEXT NOT NULL, trade_date TEXT NOT NULL, expiration TEXT NOT NULL, side INTEGER NOT NULL, "
+        "strike REAL NOT NULL, idx INTEGER NOT NULL, event_ms INTEGER, received_at REAL NOT NULL, "
+        "price REAL, size INTEGER, bid REAL, ask REAL, aggressor TEXT, spread_leg INTEGER, eth INTEGER, "
+        "valid_tick INTEGER, kind TEXT NOT NULL, conditions TEXT, exchange TEXT, "
+        "PRIMARY KEY (symbol, expiration, side, strike, idx)) WITHOUT ROWID"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gpr_sym_date ON gex_prints(symbol, trade_date)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gpr_sym_received ON gex_prints(symbol, received_at)")
     have = {r[1] for r in conn.execute("PRAGMA table_info(gex_regime_history)")}
     for column in FLOW_COLUMNS:
         if column not in have:
@@ -446,10 +488,11 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
             n = record_spots(cfg, conn=conn)
             r = record_regimes(cfg, conn=conn)
             qn = record_quotes(cfg, conn=conn)
+            pn = record_prints(cfg, conn=conn)
             m = _regime.sample(cfg, conn=conn)
         print(
             f"recorded spot for {n}/{len(syms)} symbols, {r} gex regime row(s), {qn} quote row(s), "
-            f"market regime: {m['status']} ({m['usable']}/{m['written']} usable)"
+            f"{pn} print row(s), market regime: {m['status']} ({m['usable']}/{m['written']} usable)"
         )
         return 0
 
@@ -513,6 +556,7 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
                     n = record_spots(cfg, conn=conn)
                     record_regimes(cfg, conn=conn)  # internally throttled to ~5-minute rows
                     record_quotes(cfg, conn=conn)  # every tick (~15 s), RTH-gated
+                    record_prints(cfg, conn=conn)  # every tick, off unless `prints.enabled`
                     _regime.sample(cfg, conn=conn)  # throttled to ~1-minute rows, RTH-gated
                 ticks += 1
                 if ticks % heartbeat_every == 0:
@@ -735,6 +779,70 @@ def record_quotes(
                 _note_record_failure("quote sample", sym, exc)
                 continue  # one symbol's hiccup must not lose the others
         return written
+
+
+def record_prints(cfg: dict, *, conn: sqlite3.Connection | None = None) -> int:
+    """Copy each enabled symbol's options prints from the cache's tape into `gex_prints`, as the
+    config's `prints` block says (off unless enabled). Every tick, not RTH-gated: what the producer
+    received is copied whenever it arrived, `eth` says which were extended hours, and the cache only
+    keeps a few days. Incremental from the last print held (less `PRINTS_COPY_OVERLAP_S`), upserted,
+    so a re-read or a later correction replaces rather than duplicates. Best-effort per symbol.
+    Returns rows written."""
+    settings = prints_settings(cfg)
+    if not settings["enabled"] or not settings["symbols"]:
+        return 0
+    db_path = Path(cfg["history_db_path"])
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
+    with _historydb.step(db_path, conn) as conn:
+        _ensure_history_table(conn, db_path)
+        for sym in settings["symbols"]:
+            try:
+                last = conn.execute(
+                    "SELECT MAX(received_at) FROM gex_prints WHERE symbol = ?", (sym,)
+                ).fetchone()
+                since = (last[0] - PRINTS_COPY_OVERLAP_S) if last and last[0] is not None else 0.0
+                prints = _provider.prints_since(cfg["stream_cache_db"], sym, since)
+                if not prints:
+                    continue
+                conn.executemany(
+                    "INSERT OR REPLACE INTO gex_prints (symbol, trade_date, expiration, side, strike, idx, "
+                    "event_ms, received_at, price, size, bid, ask, aggressor, spread_leg, eth, valid_tick, "
+                    "kind, conditions, exchange) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    [
+                        (
+                            sym,
+                            datetime.fromtimestamp(
+                                (p["event_ms"] / 1000.0) if p["event_ms"] else p["received_at"], _ET
+                            )
+                            .date()
+                            .isoformat(),
+                            str(p["expiration"]),
+                            QUOTE_SIDES[p["side"]],
+                            p["strike"],
+                            p["idx"],
+                            p["event_ms"],
+                            p["received_at"],
+                            p["price"],
+                            p["size"],
+                            p["bid"],
+                            p["ask"],
+                            p["aggressor"],
+                            p["spread_leg"],
+                            p["eth"],
+                            p["valid_tick"],
+                            p["kind"],
+                            p["conditions"],
+                            p["exchange"],
+                        )
+                        for p in prints
+                    ],
+                )
+                written += len(prints)
+            except Exception as exc:  # noqa: BLE001
+                _note_record_failure("prints", sym, exc)
+                continue
+    return written
 
 
 def _held_legs() -> frozenset[str]:
