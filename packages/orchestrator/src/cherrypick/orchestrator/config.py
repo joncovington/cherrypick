@@ -806,6 +806,18 @@ def research_queue_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def reminders_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Dated reminders (`reminders`, orchestrator/reminders.py). On by default: with no rows it does
+    nothing. `channels` default to the suite's `notify.channels`, so a reminder reaches wherever the
+    suite's alerts do. Its own job, never a watchdog-tick call: it pushes to a webhook."""
+    r = cfg.get("reminders", {}) or {}
+    return {
+        "enabled": bool(r.get("enabled", True)),
+        "interval_seconds": int(r.get("interval_seconds", 900)),
+        "channels": r.get("channels") or (cfg.get("notify") or {}).get("channels") or ["log"],
+    }
+
+
 def backtest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """The nightly vendor fetch for packages/backtest (`backtest-fetch`). OFF by default: it needs a
     vendor subscription, its key in the keyring and the package's own config, none of which a fresh

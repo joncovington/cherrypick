@@ -333,6 +333,7 @@ def test_derive_full_suite_job_table():
         "backtest-fetch",
         "backtest-inventory",
         "research-queue",
+        "reminders",
         "technicals-land",
         "technicals-dividends",
         "technicals-index-bars",

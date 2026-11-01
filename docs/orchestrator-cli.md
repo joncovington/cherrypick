@@ -132,6 +132,29 @@ does not repeat it); `queue-list` and the console show the reason. To release a 
 the prerequisite**: the new row is the newest of that name, so the held row waits for it and runs once
 it is done. There is no need to cancel and re-queue the held row itself.
 
+## Reminders (`orchestrator/reminders.py`, 2026-11-01)
+
+A dated note to the user, kept as a row (`state/reminders.db`) so it outlives the session that set
+it. The supervisor's `reminders` job, every 900 s (`reminders.*`), pushes each due row through the
+suite's notifier (`reminders.channels`, default `notify.channels`: Discord where the suite's alerts
+go). A row closes itself when its **`done_when`** conditions all hold: with no push if they held
+before it fell due, with one "done" push if it had already been sent. Until then it pushes again
+every `renotify_hours` (default 24). A row with no `done_when` is done once its push lands. A push
+that reaches no channel changes nothing, so the next tick tries again.
+
+Conditions are an allow-list, never a command line: `module-disabled` (`{"module": name}`: the
+module's `enabled` is false in config.json, or it is absent) and `module-status` (`{"module", "field",
+"equals"}`: that field of the module's paper `--status` JSON, read by subprocess; unreadable is
+unknown, never met). `--checks` takes the same kinds and is only reported in the push.
+
+| Command | What it does | Flags |
+|---|---|---|
+| `remind-add` | Add one reminder; everything is checked now, so a row the job would refuse is never added. | `--title`, `--file` (the message, as `notify-send`'s), `--due` (ET, `YYYY-MM-DDTHH:MM`), `--done-when <json list>`, `--checks <json list>`, `--renotify-hours` |
+| `remind-list` | Every reminder, soonest first; each live one with its conditions as read now. | — |
+| `remind-done` | Close a live reminder by hand. | `--reminder-id`, `--note` |
+| `remind-cancel` | Drop a live reminder. | `--reminder-id` |
+| `remind-run` | The `reminders` job: push the due rows, close the met ones. | — |
+
 ## Global flags
 
 `--date YYYY-MM-DD` (report) · `--eod` (report — scope to one

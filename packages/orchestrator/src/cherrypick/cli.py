@@ -92,6 +92,13 @@ Subcommands:
                        waits, and where a finished one's result is.
   queue-cancel         Cancel a queued task (--task-id).
   queue-run            Run the oldest ready task to its end (the supervisor's research-queue job).
+  remind-add           Add a dated reminder (orchestrator/reminders.py): --title, --file (the
+                       message), --due (ET, YYYY-MM-DDTHH:MM), --done-when / --checks (JSON lists of
+                       allow-listed conditions), --renotify-hours. Pushed until --done-when holds.
+  remind-list          The reminders, with each live one's conditions as read now.
+  remind-done          Close a reminder by hand (--reminder-id, --note).
+  remind-cancel        Drop a reminder (--reminder-id).
+  remind-run           Push the due reminders, close the met ones (the supervisor's reminders job).
 """
 
 from __future__ import annotations
@@ -1710,6 +1717,61 @@ def cmd_queue_run(cfg) -> None:
         sys.exit(1)
 
 
+def cmd_remind_add(args) -> None:
+    """Add one dated reminder (orchestrator/reminders.py). The message comes from --file, as
+    notify-send's, so nothing a shell would expand is lost. Refused rows are never added."""
+    from cherrypick.orchestrator import reminders
+
+    try:
+        if not args.file:
+            raise ValueError("remind-add needs --file (the message)")
+        out = reminders.add(
+            args.title or "",
+            Path(args.file).read_text(encoding="utf-8"),
+            args.due or "",
+            done_when=json.loads(args.done_when),
+            checks=json.loads(args.checks),
+            renotify_hours=args.renotify_hours,
+        )
+    except (reminders.Refused, ValueError, OSError) as exc:
+        _emit({"ok": False, "error": str(exc)})
+        sys.exit(2)
+    _emit({"ok": True, **out})
+
+
+def cmd_remind_list(cfg) -> None:
+    """Every reminder, soonest first; each live one with its conditions as read now."""
+    from cherrypick.orchestrator import reminders
+
+    out = reminders.rows()
+    for r in out:
+        if r["status"] in reminders.LIVE:
+            r["now"] = {
+                "done_when": [reminders.evaluate(c, cfg)[1] for c in r["done_when"]],
+                "checks": [reminders.evaluate(c, cfg)[1] for c in r["checks"]],
+            }
+    _emit({"ok": True, "reminders": out})
+
+
+def cmd_remind_close(args, *, done: bool) -> None:
+    from cherrypick.orchestrator import reminders
+
+    if args.reminder_id is None:
+        _emit({"ok": False, "error": f"remind-{'done' if done else 'cancel'} needs --reminder-id"})
+        sys.exit(2)
+    out = reminders.mark_done(args.reminder_id, args.note) if done else reminders.cancel(args.reminder_id)
+    _emit(out)
+    if not out["ok"]:
+        sys.exit(1)
+
+
+def cmd_remind_run(cfg) -> None:
+    """The supervisor's reminders job: push the due reminders, close the met ones."""
+    from cherrypick.orchestrator import reminders
+
+    _emit(reminders.run(cfg))
+
+
 def cmd_power_watch(cfg) -> None:
     """Notify every channel while this machine is on battery (orchestrator/powerwatch.py)."""
     from cherrypick.orchestrator import powerwatch
@@ -2230,6 +2292,11 @@ def build_parser() -> argparse.ArgumentParser:
             "queue-list",
             "queue-cancel",
             "queue-run",
+            "remind-add",
+            "remind-list",
+            "remind-done",
+            "remind-cancel",
+            "remind-run",
         ],
     )
     parser.add_argument(
@@ -2405,7 +2472,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="For sent: only this kind (notify, digest, report, morning, weekly, payoff, payoff-intraday, "
         "correction, note). For notify-send: correction or note (default note)",
     )
-    parser.add_argument("--file", default=None, help="For notify-send: the message text, from a file")
+    parser.add_argument(
+        "--file", default=None, help="For notify-send and remind-add: the message text, from a file"
+    )
     parser.add_argument(
         "--image", action="append", default=None, help="For notify-send: attach an image (repeatable)"
     )
@@ -2502,6 +2571,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="For queue-add: wait for this row (study/step) to finish done; held if it fails",
     )
     parser.add_argument("--task-id", type=int, default=None, help="For queue-cancel: the row to cancel")
+    parser.add_argument("--title", default=None, help="For remind-add: the reminder's title")
+    parser.add_argument(
+        "--due", default=None, help="For remind-add: when it falls due (ET, YYYY-MM-DDTHH:MM)"
+    )
+    parser.add_argument(
+        "--done-when",
+        default="[]",
+        help='For remind-add: conditions that close it, as JSON, e.g. [{"kind": "module-disabled", '
+        '"module": "curve"}]',
+    )
+    parser.add_argument(
+        "--checks", default="[]", help="For remind-add: conditions reported in the push, as JSON"
+    )
+    parser.add_argument(
+        "--renotify-hours", type=float, default=None, help="For remind-add: push again this often while open"
+    )
+    parser.add_argument("--reminder-id", type=int, default=None, help="For remind-done/remind-cancel")
+    parser.add_argument("--note", default=None, help="For remind-done: why it is closed")
     return parser
 
 
@@ -2610,6 +2697,11 @@ def main() -> None:
         "queue-list": lambda: cmd_queue_list(cfg, args),
         "queue-cancel": lambda: cmd_queue_cancel(args),
         "queue-run": lambda: cmd_queue_run(cfg),
+        "remind-add": lambda: cmd_remind_add(args),
+        "remind-list": lambda: cmd_remind_list(cfg),
+        "remind-done": lambda: cmd_remind_close(args, done=True),
+        "remind-cancel": lambda: cmd_remind_close(args, done=False),
+        "remind-run": lambda: cmd_remind_run(cfg),
     }
     dispatch[args.command]()
 
