@@ -257,7 +257,13 @@ def coverage(rows: list[dict], per_arm: dict[str, dict[str, dict]], arms: list[s
 
 def grid_block(doc: dict) -> dict:
     """The settings side by side for the studies board: `w10` is the live width, `w5` reported."""
-    return grid.block(doc, "wing width", {BASE: BASE_WIDTH, **GRID, **REPORTED}, BASE)
+    return grid.block(
+        doc,
+        "wing width",
+        {BASE: BASE_WIDTH, **GRID, **REPORTED},
+        BASE,
+        sessions=grid.run_sessions(doc.get("run_id")),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

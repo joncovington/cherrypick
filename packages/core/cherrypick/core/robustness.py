@@ -6,11 +6,12 @@
 - **B12, minimum detectable effect** (`planned_mde`): the smallest edge the planned sample can detect
   at the pass bar, from the spread of comparable past results, so a "no verdict" says what it rules
   out. Paired by default; the arithmetic is `core.stats.minimum_detectable_effect`.
-- **B13, robustness report** (`neighbourhood`, `cost_stress`, `drawdown_range`, `max_size`): beside
-  every PASSING result -- the parameter neighbourhood as description (a plateau, or a lone peak
-  flagged), the result at 1.5x and 2x costs against a declared stress, the B1 bootstrap of its
-  drawdown, and the largest size whose 99th-percentile drawdown stays inside a declared share of
-  the account. Never used to re-choose the declared setting.
+- **B13, robustness report** (`neighbourhood`, `best_sessions`, `cost_stress`, `drawdown_range`,
+  `max_size`): beside every PASSING result -- the parameter neighbourhood as description (a
+  plateau, or a lone peak flagged), how much of the net its few best sessions carry, the result at
+  1.5x and 2x costs against a declared stress, the B1 bootstrap of its drawdown, and the largest
+  size whose 99th-percentile drawdown stays inside a declared share of the account. Never used to
+  re-choose the declared setting.
 - **B9, replication across names** (`name_half`): a fixed hash of the symbol splits the universe in
   two, so a pass can be required in both name-halves as well as both time-halves.
 
@@ -29,6 +30,8 @@ DEFAULT_STRESSES = (1.5, 2.0)
 DEFAULT_PASS_STRESS = 1.5
 #: A neighbour keeping at least this share of the declared setting's mean counts as on the plateau.
 PLATEAU_SHARE = 0.5
+#: How many of a result's best sessions `best_sessions` sets aside.
+BEST_SESSIONS = 5
 NAME_SALT = "cherrypick-b9"
 
 
@@ -98,6 +101,33 @@ def neighbourhood(
     else:
         verdict = "plateau" if all(holds(k) for k in near) else "lone_peak"
     return {"declared": declared, "verdict": verdict, "neighbours": near, "rows": rows}
+
+
+def best_sessions(session_nets: Mapping[str, float], *, k: int = BEST_SESSIONS) -> dict:
+    """How much of a result its `k` best sessions carry. `session_nets` maps each session to its
+    net. `rest_mean` is the mean of every other session: zero or below means the result is those
+    few days, which a one-session check misses when the best day alone is not decisive. `share` is
+    the best sessions' part of a positive total, None when the total is zero or below. Ties go to
+    the earlier session, so the same nets always name the same days. Description only."""
+    if k < 1:
+        raise ValueError("k must be at least 1")
+    ranked = sorted(session_nets.items(), key=lambda kv: (-kv[1], kv[0]))
+    if len(ranked) <= k:
+        return {"k": k, "n": len(ranked), "insufficient": True}
+    best, rest = ranked[:k], [v for _, v in ranked[k:]]
+    total = sum(v for _, v in ranked)
+    best_net = sum(v for _, v in best)
+    rest_mean = sum(rest) / len(rest)
+    return {
+        "k": k,
+        "n": len(ranked),
+        "sessions": [s for s, _ in best],
+        "best_net": round(best_net, 2),
+        "total_net": round(total, 2),
+        "share": round(best_net / total, 4) if total > 0 else None,
+        "rest_mean": round(rest_mean, 4),
+        "rests_on_best": rest_mean <= 0,
+    }
 
 
 def cost_stress(

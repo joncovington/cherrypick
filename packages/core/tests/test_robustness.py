@@ -39,6 +39,32 @@ def test_neighbourhood_flags_a_lone_peak_and_a_plateau():
     assert rb.neighbourhood({10: 1.0}, 20)["verdict"] == "unmeasured"
 
 
+def test_best_sessions_sees_a_result_that_survives_losing_its_best_day_but_not_its_best_five():
+    # 5 big days and 95 small losers: drop any one big day and the total stays positive.
+    nets = {f"2024-01-{d:02d}": 1000.0 for d in range(1, 6)}
+    nets.update({f"2024-{m:02d}-{d:02d}": -40.0 for m in range(2, 7) for d in range(1, 20)})
+    b = rb.best_sessions(nets)
+    assert b["n"] == 100 and b["k"] == 5
+    assert b["sessions"] == [f"2024-01-{d:02d}" for d in range(1, 6)]
+    assert b["total_net"] == 5000 - 95 * 40 and b["best_net"] == 5000
+    assert b["share"] == round(5000 / 1200, 4)  # over 1: the rest lose money
+    assert b["rest_mean"] == -40 and b["rests_on_best"] is True
+
+
+def test_best_sessions_reads_a_broad_result_as_not_resting_on_its_best():
+    nets = {f"s{i:03d}": 10.0 + (i % 7) for i in range(60)}
+    b = rb.best_sessions(nets, k=3)
+    assert b["rests_on_best"] is False and 0 < b["share"] < 0.1
+
+
+def test_best_sessions_ties_go_to_the_earlier_session_and_short_results_are_insufficient():
+    assert rb.best_sessions({"b": 5.0, "a": 5.0, "c": 1.0, "d": 0.0}, k=1)["sessions"] == ["a"]
+    assert rb.best_sessions({"a": 1.0, "b": 2.0}, k=2) == {"k": 2, "n": 2, "insufficient": True}
+    assert rb.best_sessions({"a": -1.0, "b": -2.0, "c": -3.0}, k=1)["share"] is None
+    with pytest.raises(ValueError):
+        rb.best_sessions({"a": 1.0}, k=0)
+
+
 def test_cost_stress_must_survive_the_declared_multiplier():
     nets, costs = [10.0, 10.0], [8.0, 8.0]
     out = rb.cost_stress(nets, costs)

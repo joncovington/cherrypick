@@ -191,7 +191,14 @@ def grid_block(doc: dict) -> dict:
         h, m = hhmm.split(":")
         return int(h) * 60 + int(m)
 
-    return grid.block(doc, "entry slot", {a: minute(t) for a, t in slots.items()}, BASE, labels=slots)
+    return grid.block(
+        doc,
+        "entry slot",
+        {a: minute(t) for a, t in slots.items()},
+        BASE,
+        labels=slots,
+        sessions=grid.run_sessions(doc.get("run_id")),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
