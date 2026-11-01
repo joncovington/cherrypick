@@ -1,5 +1,11 @@
 # cherrypick-curve
 
+**Retired on 2026-11-01.** Research item 37 (docs/edge-hypotheses-plan.md) tested this module's own
+rule at real quotes, and every arm failed after costs. Every arm and `advice` are off in
+`curve.json`, so nothing new opens; the open spreads are managed from the ledger to their 2026-11-20
+expiry, and then `modules.curve.enabled` goes off. The code, ledgers and docs remain, and backtest
+research still reads them. Reinstating it means turning those keys back on.
+
 > **Vocabulary.** This module's **book** is the suite's **arm** (root `CLAUDE.md`). The column
 > (`curve_positions.book`) moves with the rest of the schema; prose and the console already say `arm`.
 

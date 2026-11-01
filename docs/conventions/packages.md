@@ -35,7 +35,10 @@ what it may write. The package's own CLAUDE.md holds the detail.
   an ex-date is. SLV is the intended first live symbol. **Early assignment
   is measured, never modelled**: ex-dividend spans refused, near-zero-extrinsic marks flagged
   assignment-exposed, so the paper result is an explicit upper bound. No live path yet.
-- **packages/curve** — VXX call-credit spreads gated by a daily VIX/VIX3M regime read; **paper-only,
+- **packages/curve** — VXX call-credit spreads gated by a daily VIX/VIX3M regime read. **Retired on
+  2026-11-01** after research item 37 failed every arm after costs: every arm and `advice` are off in
+  `curve.json`, so nothing new opens; the open spreads run to their 2026-11-20 expiry, then
+  `modules.curve.enabled` goes off. Was **paper-only,
   credential-free**. Books `control`, `noflip` (byte-identical to control until a flip fires),
   `hook` (retired from 2026-10-15) and (from 2026-10-06) `near`, a 0.40-delta short, differ in entry gate, exit rule or short
   delta; $2-wide from 2026-10-06, its credit floor net of entry costs against max loss. The daily classification is recorded every session,
