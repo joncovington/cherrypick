@@ -10,7 +10,8 @@ A **print** is a dict: ``expiration`` (ISO date), ``strike``, ``right`` ("CALL"/
 ``kind``: what its trade condition says it is (`print_kind`).
 
 - **Excluded:** every leg of a multi-leg or stock-and-option order (a spread's legs are not two
-  opinions) and every cancelled print.
+  opinions) and every cancel print. Not the trade a cancel withdraws: the vendor's history does not
+  link the two, so it still counts (a known gap, see the plan).
 - **An order** is a run of prints in one contract, on one side, each within `ORDER_GAP_S` of the one
   before: an intermarket sweep across exchanges at one instant, or an algorithm slicing a block.
 - **Its side** is read from where each print filled against the quote: edge = (price - mid) / half

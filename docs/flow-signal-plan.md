@@ -68,6 +68,13 @@ by the board and shown by the console, never published.
 **Excluded outright:** every leg of a multi-leg order (the `MULTI_LEG_*`, `ML_*` and stock-options
 conditions). A spread's legs are not two opinions. Cancelled prints are dropped.
 
+**Known gap (2026-11-01, not a rule change):** "dropped" means the cancel prints (conditions 40-44)
+only. The trade each one cancels stays in and counts as an order. ThetaData's history carries no
+link from a cancel to its original (`sequence` is 0), so removing it means matching on contract,
+exchange, price and size, which is ambiguous when several earlier prints match. Item 32 ran with
+the gap. Any new test on this history declares a matching rule first, before results are read. The
+broker's prints have no gap: a cancel there names the print it replaces.
+
 **Its side** comes from where it filled against the quote standing then: edge = (price − mid) / half
 the spread. At or past +0.5 it is **bought**; at or past −0.5 **sold**; between, **unread** and
 never tagged. That is the QuikOptions scorer's `READ_EDGE`, kept so the two reads agree on what
