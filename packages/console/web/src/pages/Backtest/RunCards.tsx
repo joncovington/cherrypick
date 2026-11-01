@@ -1,5 +1,5 @@
 import type { BacktestArmCards, BacktestRunCards, ManagePayload } from "@console/shared";
-import { BACKTEST_DEFAULT_RISK_PCT, isBacktestRiskPct, type BacktestRiskUnit } from "@console/shared";
+import { BACKTEST_DEFAULT_DD_PCT, BACKTEST_DEFAULT_RISK_PCT, isBacktestRiskPct, type BacktestRiskUnit } from "@console/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { EquityUnderwater } from "../../components/EquityUnderwater";
@@ -237,6 +237,93 @@ export function CompoundedLens({ c }: { c: BacktestArmCards }) {
   );
 }
 
+/** A percent the package already states as a percent, `5.4%`. */
+function pctOf(v: number | null | undefined): string {
+  return v === null || v === undefined ? "—" : `${v.toFixed(1)}%`;
+}
+
+/** The sizing check (`cards.sizing`): how many units the drawdown cap allows on the chosen account, and
+ *  what that size risks a session. A check, never a verdict, and never a change to live config. */
+export function SizingCheck({
+  c,
+  module,
+  onLensAt,
+}: {
+  c: BacktestArmCards;
+  module?: string;
+  onLensAt?: (riskPct: number, unit: BacktestRiskUnit) => void;
+}) {
+  const s = c.sizing;
+  if (s === undefined) return <p className="muted">No sizing check: the backtest package predates it.</p>;
+  if (s === null) return <p className="muted">Choose an account above (your current one, or an amount) to size against it.</p>;
+  if (s.insufficient) {
+    return (
+      <p className="muted">
+        {`Too little history to size: ${String(s.evidence ?? 0)} traded sessions, the bootstrap needs ${String(s.min_evidence ?? "more")}.`}
+      </p>
+    );
+  }
+  const units = s.units ?? 0;
+  const stop = module === "meic" && s.risk_pct_stop_tail !== null && s.risk_pct_stop_tail !== undefined;
+  const lensRisk = stop ? s.risk_pct_stop_tail : s.risk_pct_max_loss;
+  const ddPerUnitPct = s.drawdown_p99_per_unit === undefined ? null : (100 * s.drawdown_p99_per_unit) / s.account;
+  return (
+    <>
+      <p className="muted" style={{ fontSize: 12 }}>
+        <span className="chip chip-warn">check</span>
+        {` The most units whose 99th-percentile drawdown over ${String(s.horizon_sessions ?? 100)} sessions stays within ${String(s.dd_pct)}% of ${dollars(s.account)}, from this run's own sessions. Provisional where the run is, never a verdict, and never a change to live config.`}
+      </p>
+      <TileGrid count={6}>
+        <Tile
+          label="units allowed"
+          value={String(units)}
+          tone={units === 0 ? "neg" : undefined}
+          title="whole units of the lots the replay held each session"
+        />
+        <Tile
+          label="p99 drawdown / unit"
+          value={ddPerUnitPct === null ? "—" : `${ddPerUnitPct.toFixed(1)}%`}
+          title={`of the account, one unit, over ${String(s.horizon_sessions ?? 100)} sessions`}
+        />
+        <Tile label="drawdown cap" value={`${String(s.dd_pct)}%`} />
+        <Tile
+          label="risk / session (max loss)"
+          value={pctOf(s.risk_pct_max_loss)}
+          title="the allowed units' median session max loss, of the account"
+        />
+        {module === "meic" && (
+          <Tile
+            label="risk / session (stop + overshoot)"
+            value={pctOf(s.risk_pct_stop_tail)}
+            title={
+              s.overshoot
+                ? `both sides stopped, filled ${((s.overshoot.p95 - 1) * 100).toFixed(0)}% past the trigger (the 95th percentile of ${String(s.overshoot.n)} recorded stops)`
+                : "no stop fills recorded"
+            }
+          />
+        )}
+        {module === "meic" && s.overshoot && (
+          <Tile
+            label="stop overshoot p50 / p95"
+            value={`${((s.overshoot.p50 - 1) * 100).toFixed(0)}% / ${((s.overshoot.p95 - 1) * 100).toFixed(0)}%`}
+            title={`past the trigger; p99 ${((s.overshoot.p99 - 1) * 100).toFixed(0)}%`}
+          />
+        )}
+      </TileGrid>
+      {units === 0 && (
+        <p className="muted" style={{ fontSize: 12 }}>
+          One unit&apos;s bad-tail drawdown is larger than the cap on this account: none fits.
+        </p>
+      )}
+      {onLensAt !== undefined && units > 0 && lensRisk !== null && lensRisk !== undefined && lensRisk > 0 && (
+        <button type="button" className="btn btn-quiet" onClick={() => onLensAt(Math.min(100, Math.round(lensRisk * 100) / 100), stop ? "stop" : "max_loss")}>
+          {`show the compounded lens at this risk (${pctOf(lensRisk)}${stop ? ", stop distance" : ""})`}
+        </button>
+      )}
+    </>
+  );
+}
+
 /** One masked account's current net liq, from manage's latest evaluation. */
 export interface CurrentAccount {
   account: string;
@@ -292,19 +379,44 @@ export function UnitPicker({ unit, onPick }: { unit: BacktestRiskUnit; onPick: (
 
 /** The lens's risk per session, in percent: an input applied on Enter or blur. */
 export function RiskPicker({ risk, onPick }: { risk: number | null; onPick: (risk: number | null) => void }) {
+  return (
+    <PercentPicker
+      label="lens risk / session"
+      aria="compounded lens risk per session, percent"
+      value={risk}
+      fallback={BACKTEST_DEFAULT_RISK_PCT}
+      onPick={onPick}
+    />
+  );
+}
+
+/** A percent above 0 and at most 100, applied on Enter or blur; the package's default reads as null. */
+export function PercentPicker({
+  label,
+  aria,
+  value,
+  fallback,
+  onPick,
+}: {
+  label: string;
+  aria: string;
+  value: number | null;
+  fallback: number;
+  onPick: (v: number | null) => void;
+}) {
   const [draft, setDraft] = useState("");
   const apply = () => {
     const v = draft.trim().replace(/%$/, "");
     if (v === "") return;
-    if (isBacktestRiskPct(v)) onPick(Number(v) === BACKTEST_DEFAULT_RISK_PCT ? null : Number(v));
+    if (isBacktestRiskPct(v)) onPick(Number(v) === fallback ? null : Number(v));
     setDraft("");
   };
   return (
     <label className="muted" style={{ fontSize: 12 }}>
-      lens risk / session{" "}
+      {label}{" "}
       <input
-        aria-label="compounded lens risk per session, percent"
-        placeholder={`${String(risk ?? BACKTEST_DEFAULT_RISK_PCT)}%`}
+        aria-label={aria}
+        placeholder={`${String(value ?? fallback)}%`}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
@@ -519,6 +631,9 @@ export function RunCards({
   onRisk,
   unit = "max_loss",
   onUnit,
+  dd = null,
+  onDd,
+  onLensAt,
 }: {
   runId: string;
   /** The run's module: MEIC's trades can open their path. */
@@ -532,6 +647,11 @@ export function RunCards({
   /** The lens's risk unit; the stop unit is offered for MEIC only, whose ledger records its stops. */
   unit?: BacktestRiskUnit;
   onUnit?: (unit: BacktestRiskUnit) => void;
+  /** The sizing check's drawdown cap in percent, or null for the default. */
+  dd?: number | null;
+  onDd?: (dd: number | null) => void;
+  /** Point the lens at a risk and unit: the sizing check's "show the lens at this size". */
+  onLensAt?: (riskPct: number, unit: BacktestRiskUnit) => void;
 }) {
   const names = Object.keys(cards?.arms ?? {});
   const [picked, setPicked] = useState<string | null>(null);
@@ -558,6 +678,15 @@ export function RunCards({
         <AccountPicker capital={capital} peakRisk={c?.peak_risk ?? null} onPick={onCapital} current={current} />
         {onRisk !== undefined && <RiskPicker risk={risk ?? null} onPick={onRisk} />}
         {onUnit !== undefined && module === "meic" && <UnitPicker unit={unit} onPick={onUnit} />}
+        {onDd !== undefined && (
+          <PercentPicker
+            label="drawdown cap"
+            aria="sizing check drawdown cap, percent of the account"
+            value={dd}
+            fallback={BACKTEST_DEFAULT_DD_PCT}
+            onPick={onDd}
+          />
+        )}
       </div>
       {!cards.ok ? (
         <p className="muted">Cards unavailable: {cards.error ?? "unknown error"}</p>
@@ -572,6 +701,8 @@ export function RunCards({
               : " Account: this arm's own peak session risk, so arms differ; pick an amount to compare them."}
           </p>
           <AccountTiles c={c} />
+          <div className="card-subhead">sizing check</div>
+          <SizingCheck c={c} module={module} onLensAt={onLensAt} />
           <div className="card-subhead">compounded lens</div>
           <CompoundedLens c={c} />
           <SessionTiles c={c} />

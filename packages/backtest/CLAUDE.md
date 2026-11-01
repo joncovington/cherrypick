@@ -243,6 +243,14 @@ without stops sizes nothing under it). Whole units floored as
 the headline, fractional beside as the upper bound; a session that floors to none or has no recorded
 risk is counted, not hidden. It assumes P&L, fills and fees scale with size, and it is never an input
 to a verdict, a trial or the advisor.
+**The sizing check** (`sizing`, `read run --capital --dd-pct`, 2026-10-31) answers how many units a
+chosen account can carry: the most whole units whose 99th-percentile drawdown over 100 sessions
+(`core.robustness.drawdown_range`, the B1 bootstrap) stays within `dd_pct` of the account (default
+30%, the operator's choice of 2026-10-31), via `robustness.max_size`. It reports what that size
+risks a session two ways: max loss, and for MEIC both sides stopped with fills at the 95th percentile
+of how far its recorded stops landed past their trigger (cost / trigger, from MEIC's own ledger),
+capped at max loss. Only against a chosen capital; a check, never a verdict, and it never writes live
+config: a size change stays the operator's, through the module's `live` block.
 `read trades --id --arm` (2026-10-31) lists one arm's trades from the same ledgers (`trade_log`):
 each trade's times, its exit reason in the module's words and its money columns as `core.ledgers`
 names them, a field the schema does not record as null. Its own read, so `read run` stays light.

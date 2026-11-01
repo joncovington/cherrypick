@@ -138,7 +138,13 @@ def test_each_arm_defaults_to_its_own_peak_risk_and_a_chosen_capital_is_one_acco
         "narrow": {"2024-01-01": [{"capital": 400.0}, {"capital": 500.0}]},
     }
     out = cards.cards(series, trades)
-    assert out["account"] == {"capital": None, "basis": "peak_risk", "risk_pct": 2.0, "risk_unit": "max_loss"}
+    assert out["account"] == {
+        "capital": None,
+        "basis": "peak_risk",
+        "risk_pct": 2.0,
+        "risk_unit": "max_loss",
+        "dd_pct": 30.0,
+    }
     assert out["arms"]["control"]["peak_risk"] == 10000.0
     # The narrow arm reads against what IT needed, not the widest arm's peak.
     assert out["arms"]["narrow"]["account"]["capital"] == 900.0
@@ -148,6 +154,7 @@ def test_each_arm_defaults_to_its_own_peak_risk_and_a_chosen_capital_is_one_acco
         "basis": "chosen",
         "risk_pct": 2.0,
         "risk_unit": "max_loss",
+        "dd_pct": 30.0,
     }
     assert {a["account"]["capital"] for a in chosen["arms"].values()} == {50000.0}
     assert chosen["arms"]["narrow"]["peak_risk"] == 900.0
@@ -216,6 +223,7 @@ def test_a_run_is_read_back_with_its_cards():
         "basis": "peak_risk",
         "risk_pct": 2.0,
         "risk_unit": "max_loss",
+        "dd_pct": 30.0,
     }
     arm = c["arms"]["control"]
     assert arm["peak_risk"] == 400.0 and arm["account"]["capital"] == 400.0
@@ -226,6 +234,7 @@ def test_a_run_is_read_back_with_its_cards():
     assert cli.main(["read", "run", "--id", RUN, "--risk-pct", "0"]) == 1
     assert cli.main(["read", "run", "--id", RUN, "--risk-pct", "101"]) == 1
     assert cli.main(["read", "run", "--id", RUN, "--risk-unit", "delta"]) == 1
+    assert cli.main(["read", "run", "--id", RUN, "--capital", "50000", "--dd-pct", "0"]) == 1
 
 
 def test_the_report_still_reads_when_its_cards_cannot_be_built():
@@ -370,3 +379,78 @@ def test_a_risk_unit_that_is_not_declared_is_refused():
     assert cards.parse_risk_unit(None) == "max_loss" and cards.parse_risk_unit("stop") == "stop"
     with pytest.raises(ValueError, match="risk unit"):
         cards.parse_risk_unit("delta")
+
+
+def _year(nets_cycle, n=150):
+    """`n` sessions, each one traded condor with a recorded stop: credit $200, ratio 1.0, max loss $800."""
+    series = [
+        {
+            "session": f"2024-{1 + i // 28:02d}-{1 + i % 28:02d}",
+            "net": nets_cycle[i % len(nets_cycle)],
+            "trades": 1,
+        }
+        for i in range(n)
+    ]
+    rows = {
+        s["session"]: [
+            {"capital": 800.0, "stop_ratio": 1.0, "credit_dollars": 200.0, "overshoots": [1.0, 1.5]}
+        ]
+        for s in series
+    }
+    return series, rows
+
+
+def test_the_sizing_check_sizes_to_the_drawdown_cap_and_reads_what_that_risks():
+    series, rows = _year([50.0, 50.0, -100.0])
+    s = cards.sizing(series, rows, account=100_000, dd_pct=25)
+    assert s["insufficient"] is False and s["dd_pct"] == 25
+    assert s["units"] == int(100_000 * 0.25 // s["drawdown_p99_per_unit"])  # robustness.max_size
+    # Overshoots 1.0 and 1.5 on every condor: the 95th percentile is 1.5, so both sides stopped lose
+    # (2 x 1.0 x 1.5 - 1) x 200 = 400 a condor, under its 800 max loss.
+    assert (
+        s["overshoot"]["p95"] == 1.5
+        and s["unit_risk_stop_tail"] == 400.0
+        and s["unit_risk_max_loss"] == 800.0
+    )
+    assert s["risk_pct_stop_tail"] == round(100 * s["units"] * 400 / 100_000, 2)
+
+
+def test_the_stop_tail_never_reads_above_the_max_loss():
+    series, rows = _year([50.0, 50.0, -100.0])
+    for r in rows.values():
+        r[0]["overshoots"] = [9.0]
+    assert cards.sizing(series, rows, account=100_000)["unit_risk_stop_tail"] == 800.0
+
+
+def test_too_little_history_gives_no_size_and_says_so():
+    series, rows = _year([50.0, -100.0], n=40)
+    s = cards.sizing(series, rows, account=100_000)
+    assert s["insufficient"] is True and s["evidence"] == 40 and "units" not in s
+
+
+def test_a_condors_overshoot_is_its_stopped_sides_cost_over_their_trigger():
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE ic_trades (ic_order_id TEXT, net_credit REAL, stop_trigger_original REAL, "
+        "put_stop_cost REAL, call_stop_cost REAL, quantity INTEGER, dollar_multiplier REAL)"
+    )
+    conn.execute("CREATE TABLE ic_spread_legs (ic_order_id TEXT, side TEXT, exit_reason TEXT)")
+    conn.executemany(
+        "INSERT INTO ic_trades VALUES (?,?,?,?,?,?,?)",
+        [("a", 2.0, 1.0, None, 2.6, 1, 100.0), ("b", 2.0, 1.0, None, None, 1, 100.0)],
+    )
+    conn.executemany(
+        "INSERT INTO ic_spread_legs VALUES (?,?,?)",
+        [
+            ("a", "call", "per_side_stop"),
+            ("a", "put", "expired_settlement"),
+            ("b", "put", "expired_settlement"),
+        ],
+    )
+    d = cards._meic_stop_detail(conn)
+    assert d["a"] == {
+        "stop_ratio": 1.0,
+        "credit_dollars": 200.0,
+        "overshoots": [1.3],
+    }  # 2.60 over a 2.00 trigger
+    assert d["b"]["overshoots"] == []

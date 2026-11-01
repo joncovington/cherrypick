@@ -549,13 +549,23 @@ function ValidationCard({ v, updatedAt }: { v: BacktestValidation; updatedAt: nu
 
 // ------------------------------------------------------------------ runs
 
-function useRun(id: string | null, capital: number | null, risk: number | null = null, unit: BacktestRiskUnit | null = null) {
-  // The default account (the run's peak risk) and default lens keep the plain key; a chosen account,
-  // then a chosen risk or unit, extend it.
+/** The cards' choices beyond the run: the account, the lens's risk and unit, the sizing check's cap.
+ *  Null is the package's default for each, and keeps it out of the URL and the query key. */
+interface RunChoices {
+  capital: number | null;
+  risk?: number | null;
+  unit?: BacktestRiskUnit | null;
+  dd?: number | null;
+}
+
+function useRun(id: string | null, { capital, risk = null, unit = null, dd = null }: RunChoices) {
+  // The default account (the run's peak risk) and defaults elsewhere keep the plain key; a chosen
+  // account, then each other choice, extend it.
   const key: unknown[] = ["bridged", "backtest", "run", id];
-  if (capital !== null || risk !== null || unit !== null) key.push(capital);
+  if (capital !== null || risk !== null || unit !== null || dd !== null) key.push(capital);
   if (risk !== null) key.push("risk", risk);
   if (unit !== null) key.push("unit", unit);
+  if (dd !== null) key.push("dd", dd);
   return useQuery<BridgedResult<BacktestRunReport>>({
     queryKey: key,
     enabled: id !== null,
@@ -566,6 +576,7 @@ function useRun(id: string | null, capital: number | null, risk: number | null =
       if (capital !== null) params.set("capital", String(capital));
       if (risk !== null) params.set("risk", String(risk));
       if (unit !== null) params.set("unit", unit);
+      if (dd !== null) params.set("dd", String(dd));
       const q = params.size === 0 ? "" : `?${params.toString()}`;
       const res = await fetch(`/api/backtest/runs/${encodeURIComponent(id ?? "")}${q}`);
       if (!res.ok) throw new Error(`run ${id ?? ""}: HTTP ${String(res.status)}`);
@@ -721,14 +732,16 @@ function RunReport({ id, study }: { id: string; study?: { row: StudyRow; result:
   const rawUnit = params.get("unit");
   // Max loss is the default and keeps the plain URL; only `stop` is carried.
   const unit = rawUnit !== null && isBacktestRiskUnit(rawUnit) && rawUnit !== "max_loss" ? rawUnit : null;
-  const pick = (key: "capital" | "risk" | "unit", v: number | string | null) => {
+  // The sizing check's drawdown cap; the package's default keeps the plain URL.
+  const dd = riskParam(params.get("dd"));
+  const pick = (key: "capital" | "risk" | "unit" | "dd", v: number | string | null) => {
     const next = new URLSearchParams(params);
     if (v === null) next.delete(key);
     else next.set(key, String(v));
     setParams(next, { replace: true });
   };
   const pickCapital = (c: number | null) => pick("capital", c);
-  const { data, isLoading, isError, error, dataUpdatedAt } = useRun(id, capital, risk, unit);
+  const { data, isLoading, isError, error, dataUpdatedAt } = useRun(id, { capital, risk, unit, dd });
   const r = data?.data ?? null;
   return (
     <Card title={`run ${id}`} updatedAt={dataUpdatedAt} isError={isError || (data !== undefined && !data.ok)}>
@@ -776,6 +789,15 @@ function RunReport({ id, study }: { id: string; study?: { row: StudyRow; result:
             onRisk={(v) => pick("risk", v)}
             unit={unit ?? "max_loss"}
             onUnit={(u) => pick("unit", u === "max_loss" ? null : u)}
+            dd={dd}
+            onDd={(v) => pick("dd", v)}
+            onLensAt={(riskPct, u) => {
+              const next = new URLSearchParams(params);
+              next.set("risk", String(riskPct));
+              if (u === "max_loss") next.delete("unit");
+              else next.set("unit", u);
+              setParams(next, { replace: true });
+            }}
           />
           <div className="card-subhead">refused sessions</div>
           {Object.keys(r.refused).length === 0 ? (
