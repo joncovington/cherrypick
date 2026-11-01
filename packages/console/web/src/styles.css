@@ -1331,6 +1331,18 @@ select.text-input {
 .gexp-amber {
   color: var(--amber-line);
 }
+.gexp-accent {
+  color: var(--accent);
+}
+/* The three moves, one per line: each value is a width and a range. */
+.gexp-moves {
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--border);
+}
+.gexp-moves .gexp-row > :last-child {
+  white-space: pre;
+}
 .gexp-empty,
 .gexp-foot {
   font-family: inherit;

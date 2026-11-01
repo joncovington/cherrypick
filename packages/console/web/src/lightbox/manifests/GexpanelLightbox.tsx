@@ -8,11 +8,18 @@ import type { SlideDef } from "../types";
 
 interface PanelWall {
   strike: number;
-  netGex: number;
+  /** The side's GEX: call positive, put negative. */
+  gex: number;
   share: number;
   oi: number;
   volume: number;
   volOi: number | null;
+}
+
+interface Band {
+  move: number;
+  low: number;
+  high: number;
 }
 
 interface GexPanelPayload {
@@ -23,19 +30,22 @@ interface GexPanelPayload {
   expiration?: string;
   sessionMode?: "live" | "last_session";
   chainAsOf?: number | null;
+  secondsToExpiry?: number;
+  lateSession?: boolean;
   netGex?: number;
   grossGex?: number;
   zeroGamma?: number | null;
   putCall?: { oi: number | null; volume: number | null };
   walls?: { call: PanelWall[]; put: PanelWall[] };
   maxPain?: number | null;
-  atmIv?: { strike: number; iv: number } | null;
-  expectedMove?: { move: number; low: number; high: number } | null;
-  straddle?: { strike: number; callMid: number; putMid: number; mid: number; asOf: number; band: number; low: number; high: number } | null;
-  magnet?: { strike: number; share: number; basis: "straddle" | "expected_move" } | null;
+  atmIv?: number | null;
+  straddle?: { mid: number; strikes: number[]; asOf: number } | null;
+  moves?: { straddle: Band | null; iv: Band | null; ruleOfThumb: (Band & { factor: number }) | null };
+  magnet?: { strike: number; share: number; oi: number; gammaSign: 1 | -1 | 0; basis: "straddle" | "iv" } | null;
   spotHistory?: Array<{ ts: number; spot: number }>;
 }
 
+/** Every 15 s, the console's quote cadence: the moves follow each quote and the clock to expiry. */
 function useGexPanel() {
   return useQuery<GexPanelPayload>({
     queryKey: ["gex-panel"],
@@ -52,6 +62,7 @@ const fmtPct = (v: number) => `${(v * 100).toFixed(1)}%`;
 const fmtPx = (v: number | null | undefined, dp = 2) => (v === null || v === undefined ? "—" : v.toFixed(dp));
 const fmtInt = (v: number) => v.toLocaleString("en-US");
 const fmtRatio = (v: number | null) => (v === null ? "—" : v >= 10 ? ">10x" : `${v.toFixed(1)}x`);
+const fmtBand = (b: Band | null | undefined) => (b == null ? "—" : `±${b.move.toFixed(2)}  ${b.low.toFixed(2)} – ${b.high.toFixed(2)}`);
 
 function WallRows({ walls, side }: { walls: PanelWall[]; side: "call" | "put" }) {
   if (walls.length === 0) return <p className="muted gexp-empty">no {side} wall {side === "call" ? "above" : "below"} spot</p>;
@@ -68,7 +79,7 @@ function WallRows({ walls, side }: { walls: PanelWall[]; side: "call" | "put" })
             </td>
             <td className={tone}>{fmtPct(w.share)}</td>
             <td className="muted">{fmtInt(w.oi)} OI</td>
-            <td className={tone}>{fmtGexDollars(w.netGex)}</td>
+            <td className={tone}>{fmtGexDollars(w.gex)}</td>
             <td className="gexp-volchip" title="the side's volume today over its open interest">vol {fmtRatio(w.volOi)}</td>
           </tr>
         ))}
@@ -86,7 +97,7 @@ function Row({ label, value, tone, title }: { label: string; value: string; tone
   );
 }
 
-/** The chart's levels: walls, zero gamma, magnet, max pain, the straddle band and the 1-sigma move. */
+/** The chart's levels: walls, zero gamma, magnet, max pain, both 1-sigma moves and the 0.85 band. */
 function levelsOf(p: GexPanelPayload): Level[] {
   const out: Level[] = [];
   p.walls?.call.forEach((w, i) => out.push({ price: w.strike, title: `CW${i + 1}`, token: "--pos", style: i === 0 ? "solid" : "dashed" }));
@@ -94,20 +105,23 @@ function levelsOf(p: GexPanelPayload): Level[] {
   if (p.zeroGamma != null) out.push({ price: p.zeroGamma, title: "ZG", token: "--chart-special", style: "solid" });
   if (p.magnet != null) out.push({ price: p.magnet.strike, title: "MAG", token: "--amber-line", style: "solid" });
   if (p.maxPain != null) out.push({ price: p.maxPain, title: "MP", token: "--text-muted", style: "dotted" });
-  if (p.straddle != null) {
-    out.push({ price: p.straddle.high, title: `+STDL ${p.straddle.band}x`, token: "--accent", style: "dotted" });
-    out.push({ price: p.straddle.low, title: `-STDL ${p.straddle.band}x`, token: "--accent", style: "dotted" });
-  }
-  if (p.expectedMove != null) {
-    out.push({ price: p.expectedMove.high, title: "+EM", token: "--chart-special-2", style: "dotted" });
-    out.push({ price: p.expectedMove.low, title: "-EM", token: "--chart-special-2", style: "dotted" });
-  }
+  const pair = (b: Band | null | undefined, title: string, token: string, style: Level["style"]) => {
+    if (b == null) return;
+    out.push({ price: b.high, title: `+${title}`, token, style });
+    out.push({ price: b.low, title: `-${title}`, token, style });
+  };
+  pair(p.moves?.straddle, "1σ stdl", "--accent", "dashed");
+  pair(p.moves?.iv, "1σ IV", "--chart-special-2", "dotted");
+  pair(p.moves?.ruleOfThumb, `${p.moves?.ruleOfThumb?.factor ?? 0.85}x`, "--text-dim", "dotted");
   return out;
 }
+
+const SIGN_LABEL = { 1: "+γ", [-1]: "−γ", 0: "0γ" } as const;
 
 function Panel({ p }: { p: GexPanelPayload }) {
   const spot = p.spot!;
   const aboveFlip = p.zeroGamma != null ? spot > p.zeroGamma : null;
+  const mag = p.magnet;
   return (
     <section className="card view-fade gexp-card">
       <div className="gexp-head">
@@ -119,6 +133,11 @@ function Panel({ p }: { p: GexPanelPayload }) {
             {aboveFlip ? "above flip" : "below flip"}
           </span>
         )}
+        {p.lateSession === true && (
+          <span className="chip chip-warn" title="the last 30 minutes: 0DTE quotes thin and widen, so the moves are mostly spread">
+            late session
+          </span>
+        )}
       </div>
       <div className="gexp-grid">
         <Row label="net GEX" value={fmtGexDollars(p.netGex ?? 0)} tone={(p.netGex ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"} />
@@ -127,9 +146,9 @@ function Panel({ p }: { p: GexPanelPayload }) {
         <Row label="P/C vol" value={fmtPx(p.putCall?.volume)} />
       </div>
 
-      <h3 className="gexp-section pnl-pos">call walls (above spot)</h3>
+      <h3 className="gexp-section pnl-pos" title="ranked by call gamma (call gamma x call OI), SpotGamma's call wall">call walls (above spot)</h3>
       <WallRows walls={p.walls?.call ?? []} side="call" />
-      <h3 className="gexp-section pnl-neg">put walls (below spot)</h3>
+      <h3 className="gexp-section pnl-neg" title="ranked by put gamma (put gamma x put OI), SpotGamma's put wall">put walls (below spot)</h3>
       <WallRows walls={p.walls?.put ?? []} side="put" />
 
       <div className="gexp-grid gexp-levels">
@@ -140,26 +159,35 @@ function Panel({ p }: { p: GexPanelPayload }) {
         />
         <Row
           label="magnet"
-          value={p.magnet != null ? `${p.magnet.strike.toFixed(2)} (${fmtPct(p.magnet.share)})` : "—"}
+          value={mag != null ? `${mag.strike.toFixed(2)} (${fmtPct(mag.share)}, ${SIGN_LABEL[mag.gammaSign]})` : "—"}
           tone="gexp-amber"
-          title={`largest |net GEX| inside the ${p.magnet?.basis === "expected_move" ? "1-sigma move" : "straddle band"}, and its share of that band's |net GEX|: our definition, not the copied panel's`}
+          title={`most open interest inside the ${mag?.basis === "iv" ? "IV" : "straddle"} 1-sigma band, its share of the band's OI, and the sign of its net gamma (positive is said to pin, negative to push away): our definition, there is no standard one`}
         />
         <Row label="max pain" value={fmtPx(p.maxPain)} title="the strike that pays the chain's open interest least at expiry" />
-        <Row label="ATM IV" value={p.atmIv != null ? fmtPct(p.atmIv.iv) : "—"} title={p.atmIv != null ? `mean of call and put IV at ${p.atmIv.strike}` : undefined} />
+        <Row label="ATM IV" value={p.atmIv != null ? fmtPct(p.atmIv) : "—"} title="mean of call and put IV, interpolated to spot between the strikes either side" />
+      </div>
+      <div className="gexp-moves">
         <Row
-          label="EM (1σ to expiry)"
-          value={p.expectedMove != null ? `${p.expectedMove.low.toFixed(2)} – ${p.expectedMove.high.toFixed(2)}` : "—"}
-          title="spot x ATM IV x sqrt(time left to the 16:00 expiry); none once it has passed"
+          label="1σ straddle"
+          value={fmtBand(p.moves?.straddle)}
+          tone="gexp-accent"
+          title={
+            p.straddle != null
+              ? `straddle ${p.straddle.mid.toFixed(2)} at spot (from ${p.straddle.strikes.join(" / ")}, as of ${formatAsOf(p.straddle.asOf)} ET) / 0.798: the market's 1-sigma move to expiry`
+              : "no usable straddle quote around spot, or the chain has expired"
+          }
         />
+        <Row label="1σ IV" value={fmtBand(p.moves?.iv)} title="spot x ATM IV x sqrt(time left to the 16:00 expiry)" />
         <Row
-          label={`stdl ${p.straddle?.band ?? 0.85}x`}
-          value={p.straddle != null ? `${p.straddle.low.toFixed(2)} – ${p.straddle.high.toFixed(2)}` : "—"}
-          title={p.straddle != null ? `ATM ${p.straddle.strike} straddle ${p.straddle.mid.toFixed(2)} at mid, as of ${formatAsOf(p.straddle.asOf)} ET` : "no ATM quote on both sides"}
+          label={`${p.moves?.ruleOfThumb?.factor ?? 0.85}x stdl (≈0.68σ)`}
+          value={fmtBand(p.moves?.ruleOfThumb)}
+          title="the copied panel's band: 0.85 x the straddle, a rule of thumb that is about 0.68 sigma, not 1"
         />
       </div>
       <p className="muted gexp-foot">
-        Levels from open interest as the broker reports it (once a day), with today&apos;s volume beside each wall. No tape or
-        depth feed here, so the copied panel&apos;s order-flow rows are left out. Untested: display only.
+        Broker data only. Open interest as the broker reports it (once a day), with today&apos;s volume beside each wall; the moves
+        follow each quote and the clock to expiry, and show nothing once the chain has expired. No tape or depth feed here, so the
+        copied panel&apos;s order-flow rows are left out. Untested: display only.
       </p>
     </section>
   );
@@ -174,7 +202,8 @@ export function GexpanelLightbox({ slide }: { slide: string }) {
   const q = useGexPanel();
   const p = q.data;
   const levels = useMemo(() => (p?.ok ? levelsOf(p) : []), [p]);
-  const fit = p?.expectedMove != null ? p.expectedMove.move * 1.5 : (p?.spot ?? 0) * 0.01;
+  const sigma = p?.moves?.straddle ?? p?.moves?.iv ?? null;
+  const fit = sigma !== null ? sigma.move * 1.5 : (p?.spot ?? 0) * 0.01;
 
   const slides: SlideDef[] = [
     {
