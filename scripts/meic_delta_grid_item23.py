@@ -169,7 +169,9 @@ def session_rows(run_id: str) -> dict[str, dict[str, dict]]:
 
 def grid_block(doc: dict) -> dict:
     """The settings side by side for the studies board: `d16` is the live delta."""
-    return grid.block(doc, "short delta", {BASE: BASE_DELTA, **GRID}, BASE)
+    return grid.block(
+        doc, "short delta", {BASE: BASE_DELTA, **GRID}, BASE, sessions=grid.run_sessions(doc.get("run_id"))
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

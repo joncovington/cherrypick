@@ -89,6 +89,71 @@ def test_annotate_adds_the_block_and_keeps_every_other_key(tmp_path):
     assert back["grid"]["neighbourhood"] == {"d16": "plateau"}
 
 
+def nets(best: list[str], *, big: float = 500.0, filler: float = -20.0, n: int = 40) -> dict[str, float]:
+    """An arm's session nets: `big` on each of `best`, `filler` on n other days of its own."""
+    out = {f"2025-{i:03d}": filler for i in range(n)}
+    out.update({d: big for d in best})
+    return out
+
+
+SHARED = ["2024-04-15", "2024-12-18", "2023-12-20", "2025-04-04", "2025-04-10"]
+
+
+def test_a_plateau_whose_neighbours_win_on_the_same_days_reads_same_days():
+    d = doc({"d12": 4.0, "d16": 5.0, "d20": 3.0, "d25": 1.0})
+    sessions = {a: nets(SHARED) for a in SETTINGS}
+    b = grid.block(d, "short delta", SETTINGS, "d16", sessions=sessions)
+    assert b["neighbourhood"] == {"d16": "plateau"}
+    bd = b["best_days"]["d16"]
+    assert bd["shared_with_neighbours"] == {"d12": 5, "d20": 5}
+    assert bd["same_days"] is True and bd["rests_on_best"] is True
+
+
+def test_neighbours_that_win_on_their_own_days_do_not_read_same_days():
+    d = doc({"d12": 4.0, "d16": 5.0, "d20": 3.0, "d25": 1.0})
+    own = {a: [f"{a}-day{i}" for i in range(5)] for a in SETTINGS}
+    sessions = {a: nets(own[a], filler=5.0) for a in SETTINGS}
+    bd = grid.block(d, "short delta", SETTINGS, "d16", sessions=sessions)["best_days"]["d16"]
+    assert bd["shared_with_neighbours"] == {"d12": 0, "d20": 0}
+    assert bd["same_days"] is False and bd["rests_on_best"] is False
+
+
+def test_best_days_covers_every_labelled_arm_and_skips_a_neighbour_with_too_few_sessions():
+    d = doc({"d12": 1.0, "d16": 2.0, "d20": 9.0, "d25": 1.0}, {"d20": "pass"})
+    sessions = {a: nets(SHARED) for a in SETTINGS}
+    sessions["d25"] = {"x": 1.0}
+    bd = grid.block(d, "short delta", SETTINGS, "d16", sessions=sessions)["best_days"]
+    assert set(bd) == {"d16", "d20"}
+    assert bd["d20"]["shared_with_neighbours"] == {"d16": 5}
+    sessions["d16"] = {}
+    bd = grid.block(d, "short delta", SETTINGS, "d16", sessions=sessions)["best_days"]
+    assert bd["d16"]["insufficient"]
+
+
+def test_without_sessions_the_block_is_as_before():
+    b = grid.block(doc({"d12": 4.0, "d16": 5.0}), "short delta", {"d12": 0.12, "d16": 0.16}, "d16")
+    assert "best_days" not in b
+
+
+def test_run_sessions_reads_a_run_from_the_results_store_and_none_without_a_run():
+    from cherrypick.backtest import results
+
+    conn = results.connect()
+    conn.executemany(
+        "INSERT INTO session_results (run_id, arm, spec_hash, session, net, fees, trades)"
+        " VALUES (?, ?, 'h', ?, ?, 0, 1)",
+        [
+            ("r1", "d16", "2025-01-02", 12.5),
+            ("r1", "d12", "2025-01-02", -3.0),
+            ("r2", "d16", "2025-01-03", 9.0),
+        ],
+    )
+    conn.commit()
+    conn.close()
+    assert grid.run_sessions("r1") == {"d16": {"2025-01-02": 12.5}, "d12": {"2025-01-02": -3.0}}
+    assert grid.run_sessions(None) is None
+
+
 def test_a_declared_arm_outside_the_grid_is_refused():
     with pytest.raises(ValueError, match="not in the grid"):
         grid.block(doc({"d12": 1.0}), "short delta", {"d12": 0.12}, "d16")
