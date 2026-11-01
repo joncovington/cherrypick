@@ -8,7 +8,7 @@ changing a package you don't know. The text as it stood before the 2026-09-29 co
 
 Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packages/gex`,
 `packages/streamer`, `packages/flies` (retired 2026-10-19), `packages/calendars`, `packages/pmcc`,
-`packages/curve`, `packages/contango`, `packages/bwb`, `packages/overview`, `packages/technicals`, `packages/fundamentals`,
+`packages/curve` (retired 2026-11-01), `packages/contango`, `packages/bwb`, `packages/overview`, `packages/technicals`, `packages/fundamentals`,
 `packages/console`, `packages/review`, `packages/manage`, `packages/advisor`, `packages/backtest`,
 `packages/desk`. `cherrypick.core` is `packages/core`, an editable dependency of each. Users install with the root
 `install.*`; developers run `scripts/dev-install.ps1`/`.sh`.
