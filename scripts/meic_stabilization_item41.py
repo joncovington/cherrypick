@@ -146,7 +146,9 @@ def study_registry(registry: dict, placebo_rate: float) -> dict:
 # ── plan step ────────────────────────────────────────────────────────────────
 
 
-def plan(settings: dict) -> dict:
+def refusals(settings: dict, window: tuple[str, str] = WINDOW) -> tuple[list[str], int, int]:
+    """Over the design window's sessions in `settings`' store: the sessions, and the five-minute
+    intervals inside `window` (ET) on which `multi` (2 bars, ATR) is and is not STABLE."""
     gate = require_gate()
     start, end = settings["windows"]["design"]
     db = store.db_path(settings, SYMBOL, CADENCE)
@@ -155,8 +157,8 @@ def plan(settings: dict) -> dict:
         days = [d for d, _ in runner.sessions_in(vconn, SYMBOL, start, end)]
     finally:
         vconn.close()
-    lo = datetime.strptime(WINDOW[0], "%H:%M")
-    hi = datetime.strptime(WINDOW[1], "%H:%M")
+    lo = datetime.strptime(window[0], "%H:%M")
+    hi = datetime.strptime(window[1], "%H:%M")
     stable = refused = 0
     for day in days:
         t = lo
@@ -169,6 +171,12 @@ def plan(settings: dict) -> dict:
             else:
                 refused += 1
             t += timedelta(minutes=5)
+    return days, stable, refused
+
+
+def plan(settings: dict) -> dict:
+    start, end = settings["windows"]["design"]
+    days, stable, refused = refusals(settings)
     total = stable + refused
     doc = {
         "item": ITEM,
