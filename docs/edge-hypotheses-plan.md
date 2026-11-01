@@ -4886,8 +4886,10 @@ Declared before any of its inputs are fetched.*
   delta times each session's forward change. A session missing from the path carries the last hedge
   through without a rebalance; the count is reported.
 - **Exit:** held to expiry, settled at intrinsic against the expiry session's forward. An
-  in-the-money ETF leg pays `cherrypick.core.fees`' share-side delivery costs. SPX settles in cash.
-  Early assignment is not modelled, so an ETF put cell is an upper bound.
+  in-the-money ETF leg pays `cherrypick.core.fees`' share-side delivery costs. SPX settles in cash,
+  and each in-the-money SPX leg still pays `core.fees`' $5 settlement charge (added 2026-11-01 with
+  the study step, before any result was read). Early assignment is not modelled, so an ETF put cell
+  is an upper bound.
 - **Costs:** the option side uses `cherrypick.core.fees`: commission, pass-throughs, the
   per-symbol index fee for SPX, and slippage at 0.125 of the quoted spread from mid on entry. The
   hedge pays 0.5 bp of the notional it trades at each rebalance, about a cent a share on the funds
