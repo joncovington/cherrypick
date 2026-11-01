@@ -39,6 +39,7 @@ export const SUITE_LINKS: readonly NavLinkDef[] = [
   { to: "/charts", label: "Charts", key: "c", section: "market" },
   { to: "/flow", label: "Options flow", key: "f", section: "market" },
   { to: "/gex", label: "GEX", key: "g", section: "market" },
+  { to: "/gexpanel", label: "GEX panel", section: "market" },
   { to: "/screeners", label: "Screeners", key: "i", section: "market" },
   { to: "/compare", label: "Compare", key: "m", section: "research" },
   { to: "/backtest", label: "Backtest", key: "b", section: "research" },

@@ -290,6 +290,9 @@ export const GEX_SLIDES = [
 
 export type GexSlideId = (typeof GEX_SLIDES)[number]["id"];
 
+// The experimental GEX panel (2026-10-31): one page, SPX only.
+export const GEX_PANEL_SLIDES = [{ id: "panel", label: "panel" }] as const satisfies readonly NavSlide[];
+
 // `today` (2026-10-15): every live loop on one page, first. Then the account-wide views from the
 // manage evaluation (2026-10-18: `manage` split into `positions`, each trade's action, and
 // `portfolio`, the account as one book), then each live loop's tab, named for its module (flies'
@@ -527,6 +530,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     legacy: { session: "summary", now: "summary" },
   },
   gex: { slides: GEX_SLIDES, legacy: { volume: "skew", history: "gex" } },
+  gexpanel: { slides: GEX_PANEL_SLIDES },
   flow: {
     slides: FLOW_SLIDES,
     simple: ["today"],

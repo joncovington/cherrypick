@@ -673,6 +673,18 @@ Change each pair together or not at all. `wallAlternates` (`contestedWalls`: a r
 above `WALL_NEAR_TIE`, 80%, of the wall's) is display only; the recorded walls and the wall-clear arm's read are
 unchanged by it.
 
+**GEX panel** (`/gexpanel`, 2026-10-31, experimental, SPX only) copies a third-party 0DTE walls panel
+over the GEX page's own profile (`GET /api/gex/panel` → `services/gexPanel.ts`, which calls
+`buildGexProfile` and adds the ATM straddle from `stream_quotes`), beside today's spot trail with the
+levels drawn on it. The levels are defined in `analytics/gexPanel.ts`, since the panel it copies
+defines none: walls are the three strongest net strikes above spot (call) and below it (put), with
+the side's volume over its OI; the expected move is spot x ATM IV x sqrt(time to the 16:00 expiry),
+none once it has passed; the straddle band is 0.85x the ATM straddle at mid; the magnet (our
+definition) is the largest |net GEX| inside that band; max pain is the strike paying the chain's OI
+least. Display only: nothing records, gates on or is tested against these levels, and the walls
+the recorder and the wall-clear arm read are still `netWalls`. The copied panel's order-flow rows
+are left out (no tape or depth feed). Shown while the GEX recorder is on, as GEX is.
+
 **Regime-cuts slide** (flies and MEIC) — `components/RegimeCutsTab.tsx` over
 `GET /api/<module>/regime-cuts[?session=YYYY-MM-DD]` (`routes/modules.ts` → `readers/regimeCuts.ts`).
 The module writes the artifact nightly (contract: `cherrypick.core.regimecuts`); the reader derives

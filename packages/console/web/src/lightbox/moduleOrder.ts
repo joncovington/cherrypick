@@ -10,7 +10,7 @@ export type TradingModuleId = (typeof TRADING_MODULE_ORDER)[number];
  * The suite-level surfaces: not module books, but pages on the same frame as the trading modules
  * (since 2026-09-25) -- a rail of tabs and a content pane -- rather than a separate page style.
  */
-export const SUITE_ORDER = ["live", "reports", "charts", "flow", "gex", "screeners", "experiments", "compare", "backtest", "advisor", "system", "config"] as const;
+export const SUITE_ORDER = ["live", "reports", "charts", "flow", "gex", "gexpanel", "screeners", "experiments", "compare", "backtest", "advisor", "system", "config"] as const;
 
 export type SuiteId = (typeof SUITE_ORDER)[number];
 
@@ -37,6 +37,7 @@ export const MODULE_LABEL: Record<ModuleId, string> = {
   calendars: "Calendars",
   earnings: "Earnings",
   gex: "GEX",
+  gexpanel: "GEX panel",
   flow: "Options flow",
   live: "Live",
   charts: "Charts",
@@ -51,11 +52,12 @@ export const MODULE_LABEL: Record<ModuleId, string> = {
 };
 
 /**
- * The modules the suite calls EXPERIMENTAL (2026-10-01): paper-only designs still being shaped.
+ * The pages the suite calls EXPERIMENTAL (2026-10-01): paper-only designs still being shaped, and
+ * (2026-10-31) the GEX panel, a copy of a third-party read whose levels are untested.
  * One list, read by the rail, the header menu and each page's title, so the chip cannot appear in
  * one place and not another.
  */
-export const EXPERIMENTAL_MODULES: ReadonlySet<string> = new Set<ModuleId>(["calendars", "pmcc", "curve", "contango"]);
+export const EXPERIMENTAL_MODULES: ReadonlySet<string> = new Set<ModuleId>(["calendars", "pmcc", "curve", "contango", "gexpanel"]);
 
 export function isExperimental(id: string): boolean {
   return EXPERIMENTAL_MODULES.has(id);

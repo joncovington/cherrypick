@@ -20,7 +20,7 @@ import {
 } from "../analytics/gex.js";
 
 /** Epoch seconds of an ET wall-clock time on a date, DST-aware via Intl. */
-function etEpoch(date: string, time: string): number {
+export function etEpoch(date: string, time: string): number {
   const probe = new Date(`${date}T12:00:00Z`);
   const offsetPart = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",

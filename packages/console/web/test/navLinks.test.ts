@@ -27,7 +27,7 @@ describe("module nav links", () => {
 describe("the rail's order (2026-10-18)", () => {
   it("puts real money first and the market reads above the modules", () => {
     const { above } = railHalves(SUITE_LINKS);
-    expect(above.map((l) => l.to)).toEqual(["/live", "/reports", "/charts", "/flow", "/gex", "/screeners"]);
+    expect(above.map((l) => l.to)).toEqual(["/live", "/reports", "/charts", "/flow", "/gex", "/gexpanel", "/screeners"]);
   });
 
   it("puts research and the suite's own pages below the modules", () => {
