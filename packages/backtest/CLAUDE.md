@@ -272,6 +272,15 @@ draws it. Description only: it never re-chooses a setting or moves a verdict. A 
 the block with its script's `--annotate FILE`, which reads the file and replays nothing, so no holdout
 is spent twice.
 
+**The gates-off oracle** (`gateoracle.py`, `scripts/meic_gate_oracle.py --arm A`, 2026-10-31): what
+each switchable entry gate a MEIC arm has on adds over the trigger it gates. One provisional run
+replays the arm, `A-open` (every listed gate off) and `A-no-<gate>` (each gate off alone); the read
+pairs each `-no-` arm with `A` per session (leave-one-out), and credits every `-open` trade to the
+gate `A`'s `entry_attempts` refused on the same tick (first refusal only, so overlapping gates go to
+the earlier; a spacing or capacity refusal is `path`). MEIC's reasons and keys are spelt here, since
+the package may not import it; a test holds them to `paper.py`'s source. A read, never a verdict: the
+holdout is refused, nothing is a trial, and no live gate moves.
+
 **The advisor's specs** (`run-advised`, `advised.py`): the advisor queues `backtest_spec` replies it
 admitted against flies' own advice bounds (off until `advisor.backtest_proposals`); this reads the
 queue by subprocess, turns each into a config-defined arm `advised:<name>-<id>` (the base arm's params
