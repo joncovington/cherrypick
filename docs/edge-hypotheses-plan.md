@@ -3722,6 +3722,21 @@ outcome of any arm has been read. `hook` is retired (it never fired) and is not 
   - **A fail or no verdict:** curve stays as it is in paper, unchanged, and this section is the evidence
     the retirement rule needs. Retirement stays the user's decision.
   - Curve's paper config is not changed while this item is open.
+- **Result (2026-11-01): fail, all five arms; the holdout is not read.** Every arm has its 30 design
+  trades, so each is a verdict, not a refusal-driven no-verdict.
+  - `control`, `near`, `hold-expiry` and `wide5` lose on the mean net share of max loss before any
+    stress. `noflip` is the only arm above zero, but its p is nowhere near Holm and it turns negative at
+    1.5x costs.
+  - Holding to expiry and the $5 width each lose less than `control`; the 0.40 delta loses more. None
+    of the three changes turns the sign.
+  - Gated short VXX shares make money over the same window, so the signal is there and the spread is
+    where it goes: most gate-open sessions are refused for a credit under the floor, and on every arm
+    but `noflip` fees and slippage take more than the gross of the trades that do open.
+  - No arm's sign turns on the declared spike episodes.
+  - The minimum detectable effect is a few points of max loss, so this reads "no edge that large".
+  - Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item37/`).
+- **What this decides:** the fail branch. Curve stays in paper unchanged; this section is the evidence
+  the retirement rule needs, and retirement is the user's decision.
 
 ### 38. The calendars module's own rule at real quotes: does the weekly SPY double calendar earn after costs, entered Monday or the Friday before?
 

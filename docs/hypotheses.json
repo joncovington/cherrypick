@@ -1291,7 +1291,7 @@
       "id": 37,
       "study": "item37",
       "title": "A real-quote test of curve's own rule: the contango-gated VXX call spread, with two variants",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "contango-gate",
       "side": "directional",
@@ -1329,7 +1329,8 @@
         "{home}/data/backtest/results/research/item37/results.json"
       ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "all five arms fail the design window: none clears Holm or stays positive at 1.5x costs, and four lose before stress; gated short shares pay, so the spread (refusals under the credit floor, fees and slippage) is what loses it; curve stays in paper unchanged, retirement the user's call"
     },
     {
       "id": 38,
