@@ -6,6 +6,8 @@
 
 export interface GexStrikeRow {
   strike: number;
+  /** The strike's one gamma (`strikeGamma`), which every dollar figure on the row is built on. */
+  gamma: number;
   call_iv: number;
   put_iv: number;
   call_oi: number;
@@ -213,6 +215,7 @@ export function computeGexProfile(
       const netVol = d.call_gex_vol + d.put_gex_vol;
       return {
         strike,
+        gamma: strikeGamma(strike, spot, d.call_gamma, d.put_gamma),
         call_iv: d.call_iv,
         put_iv: d.put_iv,
         call_oi: d.call_oi,

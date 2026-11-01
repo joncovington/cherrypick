@@ -673,6 +673,40 @@ Change each pair together or not at all. `wallAlternates` (`contestedWalls`: a r
 above `WALL_NEAR_TIE`, 80%, of the wall's) is display only; the recorded walls and the wall-clear arm's read are
 unchanged by it.
 
+**GEX panel** (`/gexpanel`, 2026-10-31, experimental, SPX only) copies a third-party 0DTE walls panel
+over the GEX page's own profile (`GET /api/gex/panel` → `services/gexPanel.ts`, which calls
+`buildGexProfile` and adds the chain's straddles from `stream_quotes`), beside today's spot trail with
+the levels drawn on it. Broker data only. Recomputed on every request (the page polls every 15 s), so
+the moves follow each quote and the clock to expiry. The levels are defined in `analytics/gexPanel.ts`,
+since the panel it copies defines none (common usage researched 2026-10-31):
+
+- **Walls** are SpotGamma's: the three largest call-gamma strikes above spot and put-gamma strikes below
+  it, with the side's volume over its OI. Ranking on net left a put-heavy chain with no call wall.
+- **The 1-sigma move to expiry**, two ways: the straddle interpolated to spot between the strikes
+  either side, over sqrt(2/pi) = 0.798 (an ATM straddle prices the mean absolute move), and spot x ATM
+  IV x sqrt(time to the 16:00 expiry, 365-day year). Live quotes older than 120 s
+  (`usable_quote`'s age) are not used; neither move is shown once the chain has expired, and the last
+  30 minutes are chipped "late session". **The copied panel's 0.85 x straddle band is about 0.68
+  sigma, not 1**; it is drawn, labelled so.
+- **Magnet** (ours; there is no standard one): the most open interest inside the straddle's 1-sigma
+  band (IV's when there is no straddle), with its share and the sign of its net gamma.
+- **Max pain** is the strike paying the chain's OI least at expiry; **zero gamma** is the GEX page's.
+- **Flow** (2026-11-01): the session's prints from gex's `gex_prints` (broker TimeAndSale, recorded when
+  gex's `prints` block is on), each signed by the feed's aggressor side, else the quote at the print
+  (between bid and ask: unsigned, never guessed). Spread legs, extended hours, cancelled and invalid
+  prints are excluded and counted. A customer's net buy of either right leaves the dealer that much
+  shorter: flow GEX = -gamma x net bought, added to the OI net. The rule is `core.gex.print_sign` /
+  `signed_flow` / `flow_adjusted`; `analytics/gexFlow.ts` mirrors it in SQL (summed per strike in the
+  database, never fetched), pinned by `gex-flow.test.ts` to core's hand-worked
+  `tests/fixtures/gex_flow_cases.json`. Change both or neither. With no table or no prints the
+  section says why.
+
+Display only: nothing records, gates on or is tested against these levels, and the walls the recorder
+and the wall-clear arm read are still `netWalls`. The recorder already keeps every input (quote history
+with IV every ~15 s, the per-strike profile, spot), so any level can be rebuilt for a past minute. The
+copied panel's order-flow rows are left out (no tape or depth feed). Shown while the GEX recorder is on,
+as GEX is.
+
 **Regime-cuts slide** (flies and MEIC) — `components/RegimeCutsTab.tsx` over
 `GET /api/<module>/regime-cuts[?session=YYYY-MM-DD]` (`routes/modules.ts` → `readers/regimeCuts.ts`).
 The module writes the artifact nightly (contract: `cherrypick.core.regimecuts`); the reader derives

@@ -1238,6 +1238,121 @@ select.text-input {
   font-weight: 700;
 }
 
+/* The experimental GEX panel (/gexpanel): the compact card beside the levels chart. */
+.gexp-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 33rem) minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .gexp-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.gexp-card,
+.gexp-chart {
+  min-width: 0;
+}
+.gexp-card {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+}
+.gexp-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+.gexp-sym {
+  font-weight: 700;
+  font-size: 15px;
+}
+.gexp-spot {
+  font-weight: 700;
+  font-size: 18px;
+}
+.gexp-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 1.2rem;
+}
+.gexp-levels {
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border);
+}
+.gexp-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.1rem 0;
+  white-space: nowrap;
+}
+.gexp-row > :last-child {
+  font-weight: 600;
+}
+.gexp-section {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0.6rem 0 0.2rem;
+}
+.gexp-walls {
+  width: 100%;
+  border-collapse: collapse;
+}
+.gexp-walls td {
+  padding: 0.12rem 0.3rem;
+  white-space: nowrap;
+}
+.gexp-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.gexp-strike {
+  font-weight: 700;
+}
+.gexp-bar {
+  width: 22%;
+}
+.gexp-bar > span {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: currentColor;
+}
+.gexp-volchip {
+  font-size: 10.5px;
+  color: var(--warn);
+}
+.gexp-amber {
+  color: var(--amber-line);
+}
+.gexp-accent {
+  color: var(--accent);
+}
+/* The three moves, one per line: each value is a width and a range. */
+.gexp-moves {
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--border);
+}
+.gexp-moves .gexp-row > :last-child {
+  white-space: pre;
+}
+.gexp-empty,
+.gexp-foot {
+  font-family: inherit;
+  font-size: 11.5px;
+  white-space: normal;
+}
+.gexp-foot {
+  margin-top: 0.6rem;
+}
+
 .forest-legend {
   display: flex;
   gap: 1rem;

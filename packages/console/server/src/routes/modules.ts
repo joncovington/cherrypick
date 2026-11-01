@@ -70,6 +70,7 @@ import { readEarningsLive } from "../readers/earningsLive.js";
 import { readScreenMetrics } from "../services/screenBridge.js";
 import { readGex } from "../readers/gex.js";
 import { buildGexProfile, gexSymbols } from "../services/gexProfile.js";
+import { buildGexPanel } from "../services/gexPanel.js";
 import { readLogTail } from "../readers/logs.js";
 import { getFeatures } from "../services/featuresBridge.js";
 import { readSystemPanel } from "../services/suite.js";
@@ -549,6 +550,11 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       return reply.code(404).send({ error: `no recorded GEX for ${wanted}` });
     }
     return buildGexProfile(config, wanted);
+  });
+  // The experimental GEX panel (`/gexpanel`): SPX only, the one symbol the recorder writes.
+  app.get("/api/gex/panel", async (_req, reply) => {
+    if (!gexSymbols(config).includes("SPX")) return reply.code(404).send({ error: "no recorded GEX for SPX" });
+    return buildGexPanel(config, "SPX");
   });
   app.get<{ Querystring: { source?: string; limit?: string } }>("/api/logs", async (req) => {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit ?? "", 10) || 50, 1), 1000);
