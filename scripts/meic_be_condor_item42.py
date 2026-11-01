@@ -106,27 +106,32 @@ def study_registry(registry: dict, placebo_rate: float, variants: dict[str, tupl
 # ── coverage step ────────────────────────────────────────────────────────────
 
 
-def wing_inside(quotes: list[tuple[int, float, float | None]]) -> dict[str, bool | None]:
+def wing_inside(
+    quotes: list[tuple[int, float, float | None]], short_delta: float = SHORT_DELTA, widest: int = WIDEST
+) -> dict[str, bool | None]:
     """For one sample's quotes (side, strike, delta): whether the 12-delta put's and call's 40-point
-    wings are quoted in it. None for a side with no delta to pick a short by."""
+    wings (or `short_delta`'s and `widest`'s) are quoted in it. None for a side with no delta to pick a
+    short by."""
     out: dict[str, bool | None] = {}
     for name, side, sign in (("put", store.SIDES["PUT"], -1), ("call", store.SIDES["CALL"], 1)):
         legs = [(k, d) for s, k, d in quotes if s == side and d is not None]
         if not legs:
             out[name] = None
             continue
-        short = min(legs, key=lambda kd: abs(abs(kd[1]) - SHORT_DELTA))[0]
+        short = min(legs, key=lambda kd: abs(abs(kd[1]) - short_delta))[0]
         have = {k for s, k, _ in quotes if s == side}
-        out[name] = (short + sign * WIDEST) in have
+        out[name] = (short + sign * widest) in have
     return out
 
 
-def _session_coverage(conn: sqlite3.Connection, day: str) -> list[dict[str, bool | None]]:
+def _session_coverage(
+    conn: sqlite3.Connection, day: str, hours=HOURS, short_delta: float = SHORT_DELTA, widest: int = WIDEST
+) -> list[dict[str, bool | None]]:
     samples = conn.execute(
         "SELECT id, ts FROM gex_quote_samples WHERE symbol = ? AND trade_date = ? ORDER BY ts", (SYMBOL, day)
     ).fetchall()
     out = []
-    for hh in HOURS:
+    for hh in hours:
         target = datetime.fromisoformat(day).replace(hour=hh, tzinfo=ET).timestamp()
         sid = next((i for i, ts in samples if ts >= target), None)
         if sid is None:
@@ -134,7 +139,7 @@ def _session_coverage(conn: sqlite3.Connection, day: str) -> list[dict[str, bool
         quotes = conn.execute(
             "SELECT side, strike, delta FROM gex_quotes WHERE sample_id = ?", (sid,)
         ).fetchall()
-        out.append(wing_inside(quotes))
+        out.append(wing_inside(quotes, short_delta, widest))
     return out
 
 
@@ -143,12 +148,10 @@ def _share(xs: list[bool | None]) -> float | None:
     return round(sum(known) / len(known), 4) if known else None
 
 
-def coverage(settings: dict) -> dict:
-    doc: dict = {
-        "item": ITEM,
-        "step": "coverage",
-        "store": str(store.db_path(wide(settings), SYMBOL, CADENCE)),
-    }
+def reach(settings: dict, hours=HOURS, short_delta: float = SHORT_DELTA, widest: int = WIDEST) -> dict:
+    """Per window: each store's complete sessions, and the share of `short_delta` shorts at `hours`
+    whose `widest`-point wing is quoted in the same sample."""
+    doc: dict = {}
     for window, (start, end) in settings["windows"].items():
         row: dict = {"span": [start, end]}
         for label, s in (("plain", settings), ("wide", wide(settings))):
@@ -161,13 +164,23 @@ def coverage(settings: dict) -> dict:
                 days = [d for d, _ in runner.sessions_in(conn, SYMBOL, start, end)]
                 row[f"{label}_sessions"] = len(days)
                 # Both stores: what the wide fetch adds over the plain one's 20 strikes.
-                marks = [m for d in days for m in _session_coverage(conn, d)]
+                marks = [m for d in days for m in _session_coverage(conn, d, hours, short_delta, widest)]
                 row[f"{label}_hourly_marks"] = len(marks)
                 row[f"{label}_put_wing_inside"] = _share([m["put"] for m in marks])
                 row[f"{label}_call_wing_inside"] = _share([m["call"] for m in marks])
             finally:
                 conn.close()
         doc[window] = row
+    return doc
+
+
+def coverage(settings: dict) -> dict:
+    doc: dict = {
+        "item": ITEM,
+        "step": "coverage",
+        "store": str(store.db_path(wide(settings), SYMBOL, CADENCE)),
+        **reach(settings),
+    }
     doc["note"] = (
         f"share of hourly {SHORT_DELTA:g}-delta shorts ({HOURS[0]}:00-{HOURS[-1]}:00) whose {WIDEST}-point "
         "wing is quoted in the same sample; quotes only, no P&L"

@@ -4701,6 +4701,24 @@ it is run.*
 - **Data:** the script (`scripts/meic_wing_width_item44.py --step plan|study --window design|holdout`)
   is written after the store lands, in its own PR, and implements exactly the arms above. Results go
   under the backtest data directory only; this plan records the verdict.
+- **Settled with the build, before any read (2026-11-01):**
+  - The store's code landed (#744, #745) and its fetch is research-queue row
+    `item42/fetch-wide-store`; the script is built before that fetch ends and refuses until it has.
+  - A third step, `--step coverage`, comes first. It reports each store's sessions per window and the
+    share of 14:00 16-delta shorts whose 40-point wing is quoted, beside the plain store's. The plan and
+    study steps refuse until it shows wide sessions in their window.
+  - The plan step reads the gate's refusal share over 14:00-14:30 on the wide store, five-minute
+    intervals as item 41's (one shared count).
+  - (a)'s placebo bar: per session, the gated arm's net less its own width's, less `w10-skip`'s net
+    less `w10`'s; mean above zero and one-sided t above 2. It applies in the holdout too.
+  - **The holdout reads `w10`-`w30` from item 43.** The runner spends the holdout once per arm spec,
+    and a spec does not name its store, so these five arms here are item 43's specs. The holdout
+    refuses until item 43's holdout result exists. Each of those arms whose holdout is already spent is
+    read from the run that spent it (plain store); one whose spec has changed since is replayed here.
+    In the holdout, then, (a)'s pairs at 10-30 and (b)'s base are plain-store sessions against
+    wide-store gated arms; the design window's store check is what says how far that matters. The
+    store check runs in the design window only.
+  - `w5` is not run; item 43 reports it.
 - **Decides:**
   - **An (a) pass at some width:** with item 41's verdict, a proposal to add the gate to live's rule
     at that width at a declared boundary, after MEIC validation unlocks, fresh sessions after
