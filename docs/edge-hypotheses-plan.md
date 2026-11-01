@@ -4989,6 +4989,83 @@ Declared before any of its inputs are fetched.*
     survive costs. The question is closed for the suite, and the income lists keep their
     near-zero note.
 
+### 47. Selling a report when its implied move is above its past moves: a monthly strangle closed the next day
+
+*Source: the user, 2026-11-01, after reviewing a Theta Live video. A trader sells a short strangle
+across an earnings report on names whose implied move is above both their long-run and recent average
+moves, on the monthly expiry, with strikes outside the worst move the name has made on a report, and
+buys it back the session after. Declared before any of its inputs are fetched.*
+
+- **Question:** does a short strangle sold the session before a report, on names whose expected move
+  is above their own past reaction moves, earn after costs when closed at the next session's close,
+  more than the same strangle on the same name four weeks from any report, and more than on the reports
+  the selector turns down?
+- **Where the edge would live:** a **risk premium** (the report's implied move overstates the move that
+  follows), picked by a **selection signal** (the implied move against the name's own history).
+  **What would falsify it:** the mean net at or below zero after costs; or positive, but the no-report
+  control earns as much (the premium is ordinary theta and the fall in implied volatility of a
+  three-week option, not the report); or the selected reports earn no more than the rejected ones.
+- **Look-alikes, said out loud:** item 31 (the earnings module's weekly fly, condor and spread at the
+  15:40 bar), whose G1 gate is nearly this selector (expected move at least 1.2 times the mean of the
+  last eight reaction moves). This item differs in the structure (an undefined-risk strangle), the
+  expiry (the monthly, about three weeks out, so most of the premium is not the report's) and the
+  strikes (beyond the worst past extreme). The 2026-10-13 expected-move fly study and the 2026-10-17
+  navigator history found single-name event premium about fair at mid and costs too large for a debit
+  fly or a direction read. The 2026-10-20 strangle-management test closed rolls and stops; neither is
+  modelled here.
+- **Events:** item 31's list: the 158 names the liquidity verdict calls tradable (hindsight, B11), Dolt
+  `earnings_calendar` rows with a stated timing, item 31's entry session (an after-close report enters
+  that day, a pre-market one the session before) and reaction session. Item 31's functions are imported,
+  so the two cannot drift.
+- **The past moves:** from Dolt's calendar and `stocks.ohlcv`: for each earlier stated-timing report of
+  the name, the reaction close against the entry close (the close move) and the larger of the reaction
+  session's high and low against that close (the extreme). Ratios that look like a split are left out,
+  as in item 31. The calendar begins 2020-01-22, so the video's ten-year average is not reachable: the
+  long average is every earlier report since then. That is a declared departure.
+- **The expected move:** 0.85 times the front weekly's at-the-money straddle mid at the entry session's
+  close, over the stock's close (the module's definition; item 31's stored front path).
+- **The selector (`rich`, judged):** at least 4 earlier reports, and the expected move above both the
+  mean close move of the last 8 and the mean of every earlier one.
+- **The strangle:** the first standard monthly at least 14 calendar days after the entry session; the
+  call at the lowest listed strike at or above the close times (1 + W), the put at the highest at or
+  below the close times (1 − W), with W the largest extreme of the last 8 reports. Both legs need a
+  two-sided quote at entry, or the event is dropped and counted. One contract a leg.
+- **The fills:** sold at the entry session's end-of-day quotes at mid less the suite's slippage (0.125 of
+  the spread, `fees.slippage_dollars`); bought back at the reaction session's end-of-day quotes at mid
+  plus the same; `fees.ic_open_fee` and `fees.ic_close_fee` for two legs. A leg with no two-sided exit
+  quote is bought back at its intrinsic value against the reaction close plus its entry spread, and the
+  count is reported. Stress: 1.5x fees and a quarter of the spread.
+- **Measured:** net per trade in basis points of the stock's notional (100 times the entry close); the
+  net in dollars, the credit and the worst trade are reported beside it.
+- **The control:** item 31's control session (the same weekday four weeks earlier, then later, then five
+  weeks earlier, with no report from three sessions before it through its expiry), the same strangle
+  rule with the event's W on its own monthly, closed at the next session's close. Paired per event.
+- **Arms:** `rich`, judged. `unselected` (eligible events the selector turns down) and `all`, reported;
+  `unselected` sets the selector check.
+- **Windows:** item 31's: design 2020-01-22 to 2023-12-31, holdout 2024-01-02 to 2026-07-14. With four
+  earlier reports needed, the design's first trades fall in 2021. Time-halves split at 2022-07-01;
+  name-halves by `name_half`.
+- **Pass-or-fail rule:** in the design window, `rich`'s mean net above zero with a one-sided
+  date-clustered t above 2; the paired difference over the control above zero with a t above 2; above
+  zero in both time-halves and both name-halves; above zero at the stress and with the best five trades
+  removed; and above `unselected`'s mean. Then, in the holdout, the mean net and the paired difference
+  are both above zero. Fewer than 150 design trades or 100 holdout trades is no verdict. The holdout is
+  read after the design whatever the design shows, and counts only after a design pass.
+- **Declared limits (B11):** end-of-day quotes, not the trader's mid-session close; no profit target
+  inside the session, no holding a pinned position longer, no rolls, no share hedge (his defences are
+  not modelled; a next-day close takes the loss); the margin of a naked strangle is not charged; the
+  tradable label is hindsight; the long average spans the calendar's years, not ten.
+- **Data:** `scripts/earnings_strangle_item47.py requests|study`. `requests` writes the end-of-day
+  singles not already stored (the monthly on the entry and reaction sessions, for the events and the
+  controls; about 9,200 on 2026-11-01). They are fetched as a research-queue row, and the study runs
+  after them. Results stay under the backtest data directory.
+- **Decides:**
+  - **Pass:** a paper arm in the earnings module (a strangle there is its own change), read on reports
+    after 2026-07-14 first.
+  - **Fail:** selling single-name report premium through a strangle is closed with the fly and navigator
+    results, and implied-against-past moves as a selector is closed for the module's G1 too, if item 31
+    finds the same.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

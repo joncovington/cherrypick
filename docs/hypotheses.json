@@ -1737,6 +1737,52 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 47,
+      "study": "item47",
+      "title": "Selling a report when its implied move is above its past moves: a monthly strangle closed the next day",
+      "status": "declared",
+      "legacy": false,
+      "setup": "earnings-premium",
+      "side": "neutral",
+      "structure": "short-strangle",
+      "window": "earnings",
+      "measure": "net per trade in bp of 100 x the entry close: a one-lot short strangle on the first standard monthly at least 14 days out, strikes beyond W (the largest reaction-session extreme of the last 8 reports), sold at the entry session's end-of-day mid less 0.125 of the spread and bought back at the reaction session's, core.fees for two legs each way; paired with the same strangle on item 31's no-report control session",
+      "expected": "a positive mean net after costs on rich reports, above the control and above the reports the selector turns down",
+      "sample": "item 31's events (158 names the liquidity verdict calls tradable on 2026-10-30, hindsight; Dolt stated-timing reports), with at least 4 earlier reports; design 2020-01-22..2023-12-31, holdout 2024-01-02..2026-07-14 read after the design whatever it shows; < 150 design or < 100 holdout trades = no verdict",
+      "rule": "rich (expected move, 0.85 x the front weekly straddle over spot, above both the mean close move of the last 8 reports and of every earlier one) in the design window: mean net > 0 with a one-sided date-clustered t > 2; paired difference over the control > 0 with t > 2; > 0 in each time-half (split 2022-07-01) and name-half; > 0 at 1.5x fees and a quarter of the spread and with the best 5 removed; above the unselected reports' mean; then holdout mean net > 0 and paired difference > 0",
+      "mechanism": "the report's implied move overstates the move that follows, and is most overstated where it runs above the name's own past moves",
+      "rivals": [
+        {
+          "explanation": "ordinary theta and the fall in a three-week option's implied volatility, not the report",
+          "check": "paired control: the same strangle on the same name four weeks from any report, closed the next session"
+        },
+        {
+          "explanation": "the selector adds nothing",
+          "check": "rich must beat the reports it turns down (unselected), reported beside it"
+        },
+        {
+          "explanation": "costs take the premium",
+          "check": "net of core.fees and slippage; still above zero at 1.5x fees and a quarter of the spread"
+        },
+        {
+          "explanation": "a few calm reports carry it and the tail is unpaid",
+          "check": "above zero with the best five removed; worst trade reported; both time-halves"
+        },
+        {
+          "explanation": "one name or one report day carries it",
+          "check": "name-halves; t clustered by entry session"
+        },
+        {
+          "explanation": "today's liquid names are hindsight",
+          "check": "said as a limit; item 31's universe, unchanged"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#47-selling-a-report-when-its-implied-move-is-above-its-past-moves-a-monthly-strangle-closed-the-next-day",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
