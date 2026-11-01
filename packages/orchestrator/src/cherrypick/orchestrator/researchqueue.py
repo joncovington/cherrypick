@@ -3,7 +3,7 @@
 A study's fetch can take nine hours and wants the vendor account's one session; run by hand from a
 terminal or an assistant's session, it dies with that session and collides with the nightly
 `backtest-fetch`. Here a task is a ROW (`state/research_queue.db`), added with `run.py queue-add`, and
-the supervisor's `research-queue` job takes the oldest ready row every few minutes and runs it.
+the supervisor's `research-queue` job takes the oldest ready row every minute and runs it.
 
 **What a row may run is an allow-list, never a command line** (`KINDS`). The supervisor is a Windows
 service with the broker credentials in reach, so a row that could name any command would be
