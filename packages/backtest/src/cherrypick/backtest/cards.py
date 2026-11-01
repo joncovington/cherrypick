@@ -16,6 +16,11 @@ neither has no default, and the account cards are absent until a capital is chos
 
 Sessions are the unit throughout (`stats.py`'s rule): a drawdown's length is counted in sessions,
 and the one annualised figure is the account's simple annual return (return / years), named so.
+
+**Health checks** (`health`, 2026-11-01) put the warnings a reader would otherwise assemble from the
+cards first, each against a bar declared here: the result rests on its best few sessions, few
+sessions win, a long losing run, a long drawdown, a decaying edge, heavy fees. Description only:
+a flag never changes a result or a verdict.
 """
 
 from __future__ import annotations
@@ -370,6 +375,105 @@ def compounded(
     }
 
 
+#: The health checks' bars. A session win rate under this means long losing runs are normal.
+HEALTH_WIN_RATE = 0.25
+#: This many losing sessions in a row (sessions with no trade neither break nor extend a run).
+HEALTH_LOSING_RUN = 10
+#: A drawdown lasting this many sessions from its peak to its recovery, or to the run's end.
+HEALTH_DRAWDOWN_SESSIONS = 60
+#: Trading fees at this share of the premium collected.
+HEALTH_FEE_DRAG = 0.25
+
+
+def longest_losing_run(series: list[dict]) -> int:
+    """The most traded sessions in a row that lost. A session with no trade is skipped: it is neither
+    a win nor a loss, so it neither breaks a run nor extends it."""
+    best = run = 0
+    for s in series:
+        if not s["trades"]:
+            continue
+        run = run + 1 if s["net"] < 0 else 0
+        best = max(best, run)
+    return best
+
+
+def longest_drawdown(path: list[dict]) -> dict:
+    """The drawdown that lasted longest, in sessions from its peak to the session it got back (or to
+    the run's last session, `recovered` False). Zero sessions when the run never fell below a peak."""
+    longest = {"sessions": 0, "recovered": True}
+    start = None
+    peak = 0.0
+    for i, p in enumerate(path):
+        if p["cum"] >= peak:
+            if start is not None and i - start > longest["sessions"]:
+                longest = {"sessions": i - start, "recovered": True}
+            peak, start = p["cum"], None
+        elif start is None:
+            start = i - 1
+    if start is not None and len(path) - 1 - start > longest["sessions"]:
+        longest = {"sessions": len(path) - 1 - start, "recovered": False}
+    return longest
+
+
+def health(series: list[dict], out: dict) -> dict:
+    """The arm's health checks from its own cards (`out`, as `arm_cards` built them) and series. Each
+    check is {check, flag, bar, ...its numbers}; a check without the numbers it needs is left out, not
+    passed. Description only."""
+    checks = []
+    best = robustness.best_sessions({s["session"]: s["net"] for s in series if s["trades"]})
+    if not best.get("insufficient"):
+        checks.append(
+            {
+                "check": "best_sessions",
+                "flag": best["rests_on_best"],
+                "bar": "the other sessions average above zero",
+                "k": best["k"],
+                "share": best["share"],
+                "rest_mean": best["rest_mean"],
+            }
+        )
+    win = out["sessions"].get("win_rate")
+    if win is not None:
+        checks.append(
+            {"check": "win_rate", "flag": win < HEALTH_WIN_RATE, "bar": HEALTH_WIN_RATE, "value": win}
+        )
+    losing = longest_losing_run(series)
+    checks.append(
+        {
+            "check": "losing_run",
+            "flag": losing >= HEALTH_LOSING_RUN,
+            "bar": HEALTH_LOSING_RUN,
+            "value": losing,
+        }
+    )
+    dd = longest_drawdown(out["equity"])
+    checks.append(
+        {
+            "check": "drawdown_length",
+            "flag": dd["sessions"] >= HEALTH_DRAWDOWN_SESSIONS,
+            "bar": HEALTH_DRAWDOWN_SESSIONS,
+            "value": dd["sessions"],
+            "recovered": dd["recovered"],
+        }
+    )
+    trend = out.get("edge_trend")
+    if trend is not None and trend.get("verdict") is not None:
+        checks.append(
+            {
+                "check": "edge_trend",
+                "flag": trend["verdict"] == "decaying",
+                "bar": "the second half's interval is not below the first",
+                "value": trend["verdict"],
+            }
+        )
+    drag = (out.get("premium") or {}).get("fee_drag")
+    if drag is not None:
+        checks.append(
+            {"check": "fee_drag", "flag": drag >= HEALTH_FEE_DRAG, "bar": HEALTH_FEE_DRAG, "value": drag}
+        )
+    return {"flags": sum(1 for c in checks if c["flag"]), "checks": checks}
+
+
 def arm_cards(
     series: list[dict],
     trades: list[dict],
@@ -385,7 +489,7 @@ def arm_cards(
         for d in periods:
             peak_equity = capital + d["peak_cum"]
             d["depth_pct"] = _r(d["depth"] / peak_equity, 4) if peak_equity > 0 else None
-    return {
+    out = {
         "equity": path,
         "max_drawdown": _r(max((p["drawdown"] for p in path), default=0.0)),
         "drawdowns": periods,
@@ -400,6 +504,8 @@ def arm_cards(
         if capital is None
         else compounded(series, by_session or {}, capital, risk_pct, risk_unit),
     }
+    out["health"] = health(series, out)
+    return out
 
 
 def cards(
