@@ -139,7 +139,65 @@ CREATE TABLE IF NOT EXISTS stream_expirations (
     fetched_at        REAL NOT NULL,
     PRIMARY KEY (underlying_symbol, expiration)
 );
+CREATE TABLE IF NOT EXISTS stream_time_and_sale (
+    symbol      TEXT NOT NULL,
+    idx         INTEGER NOT NULL,
+    event_ms    INTEGER,
+    received_at REAL NOT NULL,
+    price       REAL,
+    size        INTEGER,
+    bid         REAL,
+    ask         REAL,
+    aggressor   TEXT,
+    spread_leg  INTEGER,
+    eth         INTEGER,
+    valid_tick  INTEGER,
+    kind        TEXT NOT NULL,
+    conditions  TEXT,
+    exchange    TEXT,
+    PRIMARY KEY (symbol, idx)
+);
+CREATE INDEX IF NOT EXISTS idx_tas_received ON stream_time_and_sale(received_at);
 """
+
+# Options prints (DXLink `TimeAndSale`, 2026-11-01), for a window whose declarers opted in
+# (`streamrequests.OPT_IN_EVENTS`). Unlike every other table here this is not a latest-value row but
+# the session's tape: one row per print, keyed by the feed's per-symbol `idx`, which is what a
+# correction or a cancellation later names. Raw, as the feed sent it -- `aggressor` (BUY / SELL /
+# UNDEFINED), the `bid`/`ask` at the print, `spread_leg` (a leg of a multi-leg order), `eth`,
+# `valid_tick` and `kind` (NEW, CORRECTION, CANCEL, or REMOVED for an event the feed withdrew) -- so
+# a reader decides what counts. `received_at` moves on every rewrite, which is how a recorder copying
+# this table picks up a correction. Pruned by the producer to the last `TIME_AND_SALE_KEEP_DAYS`: the
+# gex recorder keeps the history.
+TIME_AND_SALE_KEEP_DAYS = 3
+TIME_AND_SALE_KINDS = {"0": "NEW", "1": "CORRECTION", "2": "CANCEL"}
+
+
+def write_time_and_sale(conn: sqlite3.Connection, row: dict) -> None:
+    """Upsert one print by `(symbol, idx)`: a correction or cancellation replaces the row it names."""
+    conn.execute(
+        "INSERT INTO stream_time_and_sale (symbol, idx, event_ms, received_at, price, size, bid, ask, "
+        "aggressor, spread_leg, eth, valid_tick, kind, conditions, exchange) "
+        "VALUES (:symbol, :idx, :event_ms, :received_at, :price, :size, :bid, :ask, :aggressor, "
+        ":spread_leg, :eth, :valid_tick, :kind, :conditions, :exchange) "
+        "ON CONFLICT(symbol, idx) DO UPDATE SET event_ms=excluded.event_ms, "
+        "received_at=excluded.received_at, price=excluded.price, size=excluded.size, bid=excluded.bid, "
+        "ask=excluded.ask, aggressor=excluded.aggressor, spread_leg=excluded.spread_leg, eth=excluded.eth, "
+        "valid_tick=excluded.valid_tick, kind=excluded.kind, conditions=excluded.conditions, "
+        "exchange=excluded.exchange",
+        row,
+    )
+
+
+def prune_time_and_sale(
+    conn: sqlite3.Connection, *, now_ts: float, keep_days: int = TIME_AND_SALE_KEEP_DAYS
+) -> int:
+    """Delete prints received more than `keep_days` ago. Returns the rows removed."""
+    cur = conn.execute(
+        "DELETE FROM stream_time_and_sale WHERE received_at < ?", (now_ts - keep_days * 86_400,)
+    )
+    return cur.rowcount or 0
+
 
 # Every expiration the broker LISTS for an underlying, written whole each time the producer fetches
 # its full chain (2026-10-04). `stream_chain` only ever holds the slices somebody asked for, so a

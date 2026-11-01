@@ -145,6 +145,15 @@ def clean_expirations(expirations) -> dict[str, list[str]]:
 # The event types a window option can be subscribed to, in the order the producer sends them.
 WINDOW_EVENTS = ("Quote", "Greeks", "Summary", "Trade")
 
+# Event types a window carries only when some module ASKS for them (2026-11-01): never part of the
+# default set, so a silent declarer never pays for one, and declaring one alone does not narrow the
+# four above. `TimeAndSale` is every options print with its aggressor side and the quote at the print
+# (gex's flow-adjusted GEX); the producer serves it on the nearest-expiration window only.
+OPT_IN_EVENTS = ("TimeAndSale",)
+
+#: Every event a declaration may name, in send order.
+KNOWN_WINDOW_EVENTS = WINDOW_EVENTS + OPT_IN_EVENTS
+
 
 def clean_window_events(window_events) -> dict[str, list[str]]:
     """Validated ``{symbol: [event types]}`` in canonical order. Unknown event names are dropped; a
@@ -155,10 +164,19 @@ def clean_window_events(window_events) -> dict[str, list[str]]:
         if not (isinstance(symbol, str) and symbol.strip()) or not isinstance(events, (list, tuple)):
             continue
         wanted = {str(e).strip() for e in events if isinstance(e, str)}
-        kept = [e for e in WINDOW_EVENTS if e in wanted]
+        kept = [e for e in KNOWN_WINDOW_EVENTS if e in wanted]
         if kept:
             out[symbol.strip().upper()] = kept
     return out
+
+
+def window_event_set(declared) -> list[str]:
+    """One declarer's events for a symbol, as the union counts them: its default-set events, or all
+    four when it names none of them (a declaration of only opt-in events says nothing about the
+    four), plus whatever opt-in events it names. `declared` None is a silent declarer."""
+    named = set(declared or ())
+    base = [e for e in WINDOW_EVENTS if e in named] or list(WINDOW_EVENTS)
+    return base + [e for e in OPT_IN_EVENTS if e in named]
 
 
 def clean_nearest_window(nearest_window) -> dict[str, bool]:
@@ -410,13 +428,14 @@ def union_window_events(seed_symbols=None) -> dict[str, list[str]]:
     four. So a symbol narrows only when every one of its declarers says so -- SPX, declared by six
     modules and read for gamma x OI by four of them, keeps everything unless all six opt down.
 
-    Seed symbols (the operator's base set) count as an undeclared declarer: full events."""
+    Seed symbols (the operator's base set) count as an undeclared declarer: full events. An opt-in
+    event (`OPT_IN_EVENTS`) is in the union when ANY declarer names it, and never otherwise."""
     out: dict[str, set[str]] = {s: set(WINDOW_EVENTS) for s in clean_symbols(seed_symbols)}
     for data in read_all():
         declared = clean_window_events(data.get("window_events"))
         for symbol in clean_symbols(data.get("symbols")):
-            out.setdefault(symbol, set()).update(declared.get(symbol, WINDOW_EVENTS))
-    return {s: [e for e in WINDOW_EVENTS if e in events] for s, events in sorted(out.items())}
+            out.setdefault(symbol, set()).update(window_event_set(declared.get(symbol)))
+    return {s: [e for e in KNOWN_WINDOW_EVENTS if e in events] for s, events in sorted(out.items())}
 
 
 def union_nearest_window(seed_symbols=None) -> dict[str, bool]:
@@ -505,9 +524,15 @@ def estimate_subscriptions(
         hint_down, hint_up = hints.get(symbol, (0, 0))
         below = max(int(default_strike_count), hint_down)
         above = max(int(default_strike_count), hint_up)
-        per_window = (below + above + 1) * _RIGHTS * len(events.get(symbol, WINDOW_EVENTS))
-        n_windows = (1 if nearest.get(symbol, True) else 0) + len(expirations.get(symbol, []))
-        cost = per_window * n_windows
+        symbol_events = events.get(symbol, WINDOW_EVENTS)
+        options = (below + above + 1) * _RIGHTS
+        per_window = options * len(symbol_events)
+        # An opt-in event rides the nearest window only (the producer's `_window_events`).
+        per_extra = options * len([e for e in symbol_events if e not in OPT_IN_EVENTS])
+        has_nearest = nearest.get(symbol, True)
+        n_extra = len(expirations.get(symbol, []))
+        n_windows = (1 if has_nearest else 0) + n_extra
+        cost = (per_window if has_nearest else 0) + per_extra * n_extra
         by_symbol[symbol] = {
             # `strike_count` stays the widest side, so a reader that only wants "how deep is this
             # window" keeps working; `span` is the honest answer once a hint is directional.

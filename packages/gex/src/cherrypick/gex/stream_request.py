@@ -48,24 +48,38 @@ def regime_legs(symbols) -> list[str]:
     return sorted(wanted - declared)
 
 
-def write(symbols) -> Path:
+def write(symbols, prints_symbols=()) -> Path:
     """Atomically (over)write this module's request file — delegated to core (write-then-rename, so a
     concurrent reader in the streamer never sees a partial file).
 
     ``entry_symbols=[]`` (2026-10-15): gex computes and records, and enters nothing. Its roster is
     what the suite's same-index lint judges, and SPX beside XSP -- recorded together for MEIC's
-    replay -- is two instruments watched, not one directional bet held twice."""
+    replay -- is two instruments watched, not one directional bet held twice.
+
+    ``prints_symbols`` (2026-11-01) declares the opt-in ``TimeAndSale`` event on those symbols'
+    windows, for the print recorder (`service.record_prints`). Naming only the opt-in event keeps
+    the four default events (`streamrequests.window_event_set`), so this never narrows what gex's
+    profile reads; the producer serves prints on the nearest window only."""
     legs = regime_legs(symbols)
     return _sr.write_request(
         _MODULE,
         symbols,
         legs=legs,
         history_days={leg: _HISTORY_DAYS for leg in legs},
+        window_events={s: ["TimeAndSale"] for s in prints_symbols},
         entry_symbols=[],
     )
 
 
 def register(config: dict) -> None:
-    """Best-effort: declare the configured ``symbols`` + the regime legs to the streamer. Never
-    raises into the caller."""
-    _sr.register_best_effort(write, config.get("symbols") or [], log=_log)
+    """Best-effort: declare the configured ``symbols`` + the regime legs to the streamer, and the
+    print event when the ``prints`` block is on. Never raises into the caller."""
+    from cherrypick.gex import service as _service  # local: service imports this module's caller
+
+    prints = _service.prints_settings(config)
+    _sr.register_best_effort(
+        write,
+        config.get("symbols") or [],
+        prints["symbols"] if prints["enabled"] else [],
+        log=_log,
+    )

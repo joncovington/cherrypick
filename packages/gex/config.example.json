@@ -15,5 +15,10 @@
     "symbols": ["SPX"],
     "strikes_each_side": 20,
     "interval_seconds": 10
+  },
+  "_prints_note": "Options prints (2026-11-01): every print of the nearest chain (DXLink TimeAndSale: aggressor side, the bid/ask at the print, spread-leg, valid-tick, correction/cancel), copied raw each tick from the stream cache into gex_history.db's gex_prints, for a flow-adjusted GEX. OFF by default. Turning it on declares the event in this module's stream request, and the orchestrator recycles the streamer to subscribe it (one more event per option on the nearest window). symbols null = this file's symbols. A change takes a recorder restart.",
+  "prints": {
+    "enabled": false,
+    "symbols": ["SPX"]
   }
 }

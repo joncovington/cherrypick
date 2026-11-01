@@ -80,6 +80,22 @@ recorder rather than one per module; a replay of a rule a module never ran price
   recorded chain that a module declares it holds (`core.streamrequests.union_legs`, the open legs the
   streamer keeps subscribed), on both rights, so a stranded vertical past the 20 is still recorded.
   Content, not measurement: nothing reads it yet.
+
+**The chain's prints are kept too** (from 2026-11-01, `gex_prints`, `service.record_prints`): every
+options print of the nearest chain, from the broker's DXLink `TimeAndSale`, copied raw from the cache's
+tape every tick, for a flow-adjusted GEX that moves with the session's trades rather than the overnight
+open interest alone. Off unless the `prints` block turns it on; turning it on declares the opt-in event
+in this module's stream request (`stream_request.write`), which recycles the producer.
+- **Raw, keyed by the option and the feed's index**: price, size, the bid/ask at the print, the
+  aggressor side (BUY / SELL / UNDEFINED), `spread_leg`, `eth`, `valid_tick`, and `kind` (NEW,
+  CORRECTION, CANCEL, REMOVED). A correction the producer receives later replaces the row it names.
+  **Nothing here classifies a print**: which prints count as customer buying is a read-side rule, so a
+  different rule can be tried on a past session.
+- **Incremental and idempotent**: each copy starts a couple of seconds before the last print held and
+  upserts, so the overlap costs nothing and a correction is picked up. Not RTH-gated (the cache keeps
+  only three days); `eth` says which prints were extended hours.
+- **The feed backfills a reconnect only partly** (about 1,000 most recent prints per option), so a
+  long producer outage is a gap in this series, not a delay.
 - **The history DB is WAL** (`historydb`, asked for once per process), so the recorder's ~15 s
   writes never block flies' `gex_at` or the console. A tick opens it once and commits once; each
   series writes in its own savepoint, so one that raises loses only its own rows.
