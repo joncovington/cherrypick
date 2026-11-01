@@ -314,3 +314,21 @@ def test_workers_up_to_the_concurrent_limit_pull_that_many_sessions_at_once():
         _settings(), client, "SPX", "2026-10-05", "2026-10-13", cadence=60, workers=8, log=lambda _m: None
     )
     assert client.most == 4
+
+
+def test_a_session_fetch_reports_its_progress_counting_sessions_already_held(tmp_path, monkeypatch):
+    """The queue's meter reads this file (core.progress): a resumed fetch starts where it stopped."""
+    import json
+
+    s = _settings()
+    days = ["2026-10-15", DAY]
+    fetch.fetch(s, FakeClient({d: _rows(d) for d in days}), "SPX", DAY, DAY, log=lambda _m: None)
+    target = tmp_path / "q11.json"
+    monkeypatch.setenv("CHERRYPICK_PROGRESS_FILE", str(target))
+    client = FakeClient({d: _rows(d) for d in days})
+    fetch.fetch(s, client, "SPX", days[0], DAY, log=lambda _m: None)
+    doc = json.loads(target.read_text(encoding="utf-8"))
+    assert doc["job"] == "backtest-fetch-sessions" and doc["state"] == "done"
+    (phase,) = doc["phases"]
+    assert (phase["name"], phase["done"], phase["total"]) == ("sessions", 2, 2)
+    assert [c[0] for c in client.calls] == ["2026-10-15"] and phase["current"] == "2026-10-15"
