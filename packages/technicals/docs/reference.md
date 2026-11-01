@@ -390,8 +390,14 @@ gross, and ranking by net is the user's decision.
 its 50/200-day, the name's ATR %, relative volume, sector, entry time and holding period, always
 as of the close BEFORE the entry session (a test breaks it to `<=` and fails). It reads; nothing
 trades on it. The `environment` column is `core.environment`'s label (B8), never a
-per-study regime.
+per-study regime. The CLI also tags `event_day` (2026-11-01): the entry day's scheduled events from
+`core.events`, reduced by `event_label` to one of `FOMC`, `CPI`, `NFP`, `other_major`, `opex` or
+`none`, in that order, and `unknown` where the local calendar files cannot speak for the day. A
+calendar fact known before the open, so it keeps the rule above.
 
 **Slice report (B5, 2026-10-24).** `slices` runs `core.slices` over an arm's trades with this
 package's entry context: mean R per cell, n, interval, cells under 30 greyed. In-sample description
 only; a cell is never a gate, and a good one is declared in `docs/hypotheses.json` and tested.
+Since 2026-11-01 it also cuts by weekday and event day. Those are whole-day cuts, so each ranked
+cell carries a `placebo`: its per-session mean against random sets of as many sessions
+(`core.stats.day_placebo`), where `beaten_by` near 0.5 is what chance gives.

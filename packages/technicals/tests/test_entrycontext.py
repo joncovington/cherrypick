@@ -59,6 +59,38 @@ def test_holding_period():
     assert ec.holding(rec) == {"holding_days": 0, "holding_minutes": 90}
 
 
+def _day(known=True, *labels, major=False):
+    return {"known": known, "events": [{"label": x, "major": major} for x in labels]}
+
+
+def test_event_label_takes_the_first_named_event_then_other_majors_then_expiry():
+    assert ec.event_label(_day(True, "OPEX", "CPI", "FOMC")) == "FOMC"
+    assert ec.event_label(_day(True, "NFP", "CPI")) == "CPI"
+    assert ec.event_label(_day(True, "OPEX", "ISM-Mfg", major=True)) == "other_major"
+    assert ec.event_label(_day(True, "OPEX", "Claims")) == "opex"
+    assert ec.event_label(_day(True, "Claims")) == "none"
+    assert ec.event_label(_day(True)) == "none"
+
+
+def test_a_day_the_calendar_cannot_speak_for_is_unknown_never_none():
+    assert ec.event_label(_day(False)) == "unknown"
+    assert ec.event_label(None) is None
+
+
+def test_annotate_tags_the_event_day_once_per_day_and_only_when_asked():
+    recs = [{"symbol": "SPX", "session": "2026-12-28"}] * 3 + [{"symbol": "SPX", "session": "2026-12-29"}]
+    calls = []
+
+    def events_of(day):
+        calls.append(day)
+        return "CPI" if day == "2026-12-28" else "none"
+
+    rows = ec.annotate(recs, _of, {}, events_of)
+    assert [r["event_day"] for r in rows] == ["CPI", "CPI", "CPI", "none"]
+    assert calls == ["2026-12-28", "2026-12-29"]
+    assert all("event_day" not in r for r in ec.annotate(recs, _of, {}))
+
+
 def test_annotate_reads_each_symbol_once():
     calls = []
 

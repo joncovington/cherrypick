@@ -49,7 +49,9 @@ def cmd_entry_context(args) -> int:
 
 
 def _context_rows(db: str, schema: str, arm: str | None) -> list[dict]:
-    from cherrypick.core import killcriteria
+    from datetime import date
+
+    from cherrypick.core import events, killcriteria
 
     from . import entrycontext, fundamentals
 
@@ -58,7 +60,12 @@ def _context_rows(db: str, schema: str, arm: str | None) -> list[dict]:
         records = [r for r in records if r.get("arm") == arm]
     conn = store.connect()
     sectors = {s: v[0] for s, v in fundamentals.sector_sources().items()}
-    return entrycontext.annotate(records, lambda s: store.adjusted_bars(conn, s), sectors)
+    return entrycontext.annotate(
+        records,
+        lambda s: store.adjusted_bars(conn, s),
+        sectors,
+        lambda d: entrycontext.event_label(events.day_events(date.fromisoformat(d))),
+    )
 
 
 def cmd_slices(args) -> int:

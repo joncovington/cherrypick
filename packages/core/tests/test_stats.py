@@ -120,6 +120,37 @@ def test_bootstrap_interval_is_pinned_to_the_regimecuts_stamps():
     assert (round(lo, 2), round(hi, 2)) == (-618.5, 806.0)
 
 
+def test_day_placebo_one_good_day_of_four_is_matched_by_a_quarter_of_random_days():
+    # Keeping 1 session of 4 where only that one made money: a random 1-of-4 pick matches it 1/4 of
+    # the time (the binomial by hand).
+    out = stats.day_placebo({"a": 1.0, "b": 0.0, "c": 0.0, "d": 0.0}, ["a"], draws=20000)
+    assert out["sessions"] == 1 and out["of"] == 4 and out["mean"] == 1.0
+    assert abs(out["beaten_by"] - 0.25) < 0.01
+
+
+def test_day_placebo_reads_the_best_days_near_zero_and_the_worst_at_one():
+    values = {f"s{i:03d}": float(i % 17) - 8.0 for i in range(120)}
+    ranked = sorted(values, key=values.get)
+    assert stats.day_placebo(values, ranked[-12:])["beaten_by"] < 0.01
+    assert stats.day_placebo(values, ranked[:12])["beaten_by"] == 1.0
+
+
+def test_day_placebo_counts_an_identical_mean_as_at_least_and_is_seeded():
+    flat = {f"s{i}": 0.1 for i in range(30)}
+    assert stats.day_placebo(flat, ["s1", "s2", "s3"])["beaten_by"] == 1.0
+    values = {f"s{i}": math.sin(i) for i in range(50)}
+    kept = [f"s{i}" for i in range(0, 50, 5)]
+    assert stats.day_placebo(values, kept) == stats.day_placebo(values, kept)
+    assert stats.day_placebo(values, kept, seed=1) != stats.day_placebo(values, kept, seed=2)
+
+
+def test_day_placebo_has_nothing_to_say_when_a_split_keeps_no_day_or_every_day():
+    values = {"a": 1.0, "b": 2.0}
+    assert stats.day_placebo(values, []) is None
+    assert stats.day_placebo(values, ["zz"]) is None  # sessions outside the arm are ignored
+    assert stats.day_placebo(values, ["a", "b"]) is None
+
+
 def test_stationary_indices_wrap_and_are_seeded():
     a = stats.stationary_indices(50, 10, random.Random(1))
     assert a == stats.stationary_indices(50, 10, random.Random(1))
