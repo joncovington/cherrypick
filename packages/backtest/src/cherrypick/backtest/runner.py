@@ -670,6 +670,9 @@ def _summarise(rconn, run_id, arms, specs, hashes, per_arm, window, *, provision
         values = [v["net"] for _, v in sorted(per_arm[arm].items())]
         entry = {
             "spec_hash": hashes[arm],
+            # What decided the arm's trades, so a report reads its own settings (2026-11-01); a
+            # provisional run records no trial row to look them up in.
+            "spec": specs[arm],
             "summary": stats.summary(
                 values, trials=trials if window != "validation" else 1, trial_sharpes=sharpes
             ),

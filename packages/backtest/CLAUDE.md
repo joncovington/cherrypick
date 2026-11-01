@@ -237,6 +237,10 @@ MEIC's control sampling stream would set for every arm; a schema with neither ha
 `cards.py`: the result rests on its best five sessions (`core.robustness.best_sessions`), session
 win rate under 25%, a losing run of 10+ sessions, a drawdown of 60+ sessions, a decaying edge trend,
 fees at 25%+ of premium. A check missing its numbers is left out, never passed. Description only.
+**The settings strip** (`arm_settings`, 2026-11-01): each arm's cadence, fill model and the params
+that differ from control's, so a grid arm reads as the setting it tests. A report stores each arm's
+spec from 2026-11-01; an older one reads it from `trials` by hash, and a provisional run (no trial
+row) reads `recorded: false`, never "no difference".
 **The compounded lens** (`compounded`, `read run --risk-pct`, 2026-10-31) is the one exception to
 "never compounded", and is labelled a lens wherever it is shown: the same sessions re-sized each
 session to put a share of the equity at that point at risk (default 2%), one unit being the lots the

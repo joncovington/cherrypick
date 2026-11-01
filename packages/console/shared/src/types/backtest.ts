@@ -290,7 +290,24 @@ export interface BacktestArmCards {
   sizing?: BacktestSizing | null;
   /** The health checks (2026-11-01); absent from an older backtest package. */
   health?: BacktestHealth;
+  /** The arm's settings strip (2026-11-01); absent from an older backtest package. */
+  settings?: BacktestArmSettings;
 }
+
+/**
+ * `cards.arm_settings`: what decided the arm's trades. `differs` holds every param that differs from
+ * `base`'s (control), so a grid arm reads as the one setting it tests. `recorded: false` when the run
+ * kept no spec (a provisional run written before 2026-11-01): unknown, never "no difference".
+ */
+export type BacktestArmSettings =
+  | { recorded: false }
+  | {
+      recorded: true;
+      cadence: number | null;
+      fill_model: string | null;
+      base: string | null;
+      differs: Record<string, { arm: unknown; base: unknown }>;
+    };
 
 /**
  * `cards.health`: warnings put first, each against a bar `cards.py` declares. Description only. A

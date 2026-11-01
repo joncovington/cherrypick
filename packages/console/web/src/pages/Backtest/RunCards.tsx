@@ -1,4 +1,4 @@
-import type { BacktestArmCards, BacktestHealthCheck, BacktestRunCards, ManagePayload } from "@console/shared";
+import type { BacktestArmCards, BacktestArmSettings, BacktestHealthCheck, BacktestRunCards, ManagePayload } from "@console/shared";
 import { BACKTEST_DEFAULT_DD_PCT, BACKTEST_DEFAULT_RISK_PCT, isBacktestRiskPct, type BacktestRiskUnit } from "@console/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -429,6 +429,36 @@ export function PercentPicker({
   );
 }
 
+/** A setting's value as the strip shows it: absent reads "unset". */
+function settingValue(v: unknown): string {
+  if (v === null || v === undefined) return "unset";
+  return typeof v === "string" ? v : JSON.stringify(v);
+}
+
+/** How many differing params the strip names before "+N more". */
+const STRIP_DIFFS = 6;
+
+/** The arm's settings on one line: cadence, fill model, and what it changes from control. */
+export function settingsLine(arm: string, s: BacktestArmSettings | undefined): string | null {
+  if (s === undefined) return null;
+  if (!s.recorded) return `${arm}: settings not recorded for this run.`;
+  const head = [s.cadence === null ? null : `${String(s.cadence)} s ticks`, s.fill_model ? `fill model ${s.fill_model}` : null]
+    .filter((x) => x !== null)
+    .join(" · ");
+  const keys = Object.keys(s.differs);
+  let tail = "";
+  if (s.base === null) tail = arm === "control" ? " · the base every other arm is read against" : "";
+  else if (keys.length === 0) tail = ` · same settings as ${s.base}`;
+  else {
+    const named = keys
+      .slice(0, STRIP_DIFFS)
+      .map((k) => `${k} ${settingValue(s.differs[k]!.arm)} (${s.base} ${settingValue(s.differs[k]!.base)})`);
+    const more = keys.length > STRIP_DIFFS ? `, +${String(keys.length - STRIP_DIFFS)} more` : "";
+    tail = ` · vs ${s.base}: ${named.join(", ")}${more}`;
+  }
+  return `${arm}: ${head}${tail}`;
+}
+
 /** One health check in a sentence: what it measured, against its bar. */
 export function healthSentence(h: BacktestHealthCheck): string {
   switch (h.check) {
@@ -743,6 +773,11 @@ export function RunCards({
               ? " One account for every arm, so arms read side by side."
               : " Account: this arm's own peak session risk, so arms differ; pick an amount to compare them."}
           </p>
+          {settingsLine(arm!, c.settings) !== null && (
+            <p className="mono" style={{ fontSize: 12, margin: "4px 0" }} title={c.settings?.recorded ? JSON.stringify(c.settings.differs) : undefined}>
+              {settingsLine(arm!, c.settings)}
+            </p>
+          )}
           <HealthChecks c={c} />
           <AccountTiles c={c} />
           <div className="card-subhead">sizing check</div>

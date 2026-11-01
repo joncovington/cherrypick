@@ -90,6 +90,9 @@ def test_the_validation_window_always_runs_and_counts_no_trial(world):
     s, _ = world
     report = _run(s, "validation")
     assert report["arms"]["control"]["summary"]["sessions"] == 2  # 10-14, 10-15
+    # The report carries what decided each arm's trades, hashed to the recorded spec_hash.
+    spec = report["arms"]["control"]["spec"]
+    assert spec["arm"] == "control" and runner.spec_hash(spec) == report["arms"]["control"]["spec_hash"]
     assert report["arms"]["range-high"]["vs_control"] is not None
     conn = results.connect()
     assert results.trial_count(conn, "flies") == 0

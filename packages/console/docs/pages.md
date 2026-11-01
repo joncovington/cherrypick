@@ -385,7 +385,9 @@ the store's name, and "count pending" on a store changed since the `backtest-inv
 counted it, because the read never counts; the old fetch-record table only when the inventory cannot be read), `runs` (the list; `?run=`
 reads one report: each arm's summary, the pairing with control, trials, fill model, code commit, data
 fingerprint, refused sessions, and the run cards, 2026-10-26, `pages/Backtest/RunCards.tsx`: per arm
-the health checks first (2026-11-01, flagged ones on top, each a sentence against its bar), the
+a one-line settings strip (2026-11-01: cadence, fill model, and the params that differ from
+control, or "settings not recorded" for an older provisional run), the health checks (2026-11-01,
+flagged ones on top, each a sentence against its bar), the
 account, equity and drawdown, edge trend, deepest drawdowns, month-by-year grid, trades, premium
 (fee drag, capture rate) and how trades ended, all the module's `cards.py`. `?capital=` (whole
 dollars, `BACKTEST_CAPITAL`, else a 400 that spawns nothing) picks one account for every arm; absent,
