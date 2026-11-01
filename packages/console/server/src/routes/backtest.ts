@@ -49,7 +49,7 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
     return readBacktestOverview();
   });
 
-  app.get<{ Params: { id: string }; Querystring: { capital?: string; risk?: string; unit?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { capital?: string; risk?: string; unit?: string; dd?: string } }>(
     "/api/backtest/runs/:id",
     async (req, reply): Promise<BridgedResult<BacktestRunReport> | FastifyReply> => {
       if (!backtestOn(getFeatures())) return refuse(reply);
@@ -70,11 +70,17 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
       if (unit !== undefined && !isBacktestRiskUnit(unit)) {
         return reply.code(400).send({ error: "unit must be max_loss or stop" });
       }
+      // The sizing check's drawdown cap, in percent: the same shape as the risk percent.
+      const dd = req.query.dd;
+      if (dd !== undefined && !isBacktestRiskPct(dd)) {
+        return reply.code(400).send({ error: "dd must be a percent above 0 and at most 100" });
+      }
       return readBacktestRun(
         req.params.id,
         capital === undefined ? undefined : Number(capital),
         risk === undefined ? undefined : Number(risk),
         unit,
+        dd === undefined ? undefined : Number(dd),
       );
     },
   );

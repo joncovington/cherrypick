@@ -22,12 +22,14 @@ from __future__ import annotations
 
 import math
 import sqlite3
+import statistics
 from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
 from cherrypick.core import ledgers as core_ledgers
 from cherrypick.core import metrics as core_metrics
+from cherrypick.core import robustness
 
 from . import paths, stats
 
@@ -275,6 +277,10 @@ def account(path: list[dict], capital: float) -> dict | None:
 
 #: The compounded lens's default share of equity put at risk each session, in percent.
 DEFAULT_RISK_PCT = 2.0
+#: The sizing check's defaults: the drawdown a size may reach at the 99th percentile, as a share of the
+#: account, in percent; and the overshoot percentile the stop-plus-overshoot risk is read at.
+DEFAULT_DD_PCT = 30.0
+OVERSHOOT_QUANTILE = 0.95
 
 
 def _mode_summary(start: float, path: list[float], years: float | None) -> dict:
@@ -402,11 +408,13 @@ def cards(
     capital: float | None = None,
     risk_pct: float = DEFAULT_RISK_PCT,
     risk_unit: str = "max_loss",
+    dd_pct: float = DEFAULT_DD_PCT,
 ) -> dict:
     """Every arm's cards. `trades_by_arm` is {arm: {session: [trade, ...]}}. A chosen capital is one
     account for every arm, so arms read side by side; with none, each arm reads against its own peak
     session risk (an arm whose schema records none has no account cards). Not one shared peak: a
-    run's widest arm, MEIC's control sampling stream, would set every other arm's account."""
+    run's widest arm, MEIC's control sampling stream, would set every other arm's account. The sizing
+    check reads against a chosen capital only: sizing to the arm's own peak risk answers nothing."""
     arms = {}
     for arm, series in series_by_arm.items():
         by_session = trades_by_arm.get(arm, {})
@@ -415,6 +423,7 @@ def cards(
         trades = [t for rows in by_session.values() for t in rows]
         out = arm_cards(series, trades, capital or peak_risk, by_session, risk_pct, risk_unit)
         out["peak_risk"] = _r(peak_risk)
+        out["sizing"] = None if capital is None else sizing(series, by_session, capital, dd_pct)
         arms[arm] = out
     return {
         "account": {
@@ -422,6 +431,7 @@ def cards(
             "basis": "chosen" if capital is not None else "peak_risk",
             "risk_pct": risk_pct,
             "risk_unit": risk_unit,
+            "dd_pct": dd_pct,
         },
         "arms": arms,
     }
@@ -443,8 +453,19 @@ def for_run(
     capital: float | None = None,
     risk_pct: float = DEFAULT_RISK_PCT,
     risk_unit: str = "max_loss",
+    dd_pct: float = DEFAULT_DD_PCT,
 ) -> dict:
     """Read one run's per-session results and its kept ledgers, and build its cards."""
+    series_by_arm, trades_by_arm = arm_inputs(run_id, schema, arms)
+    return cards(series_by_arm, trades_by_arm, capital, risk_pct, risk_unit, dd_pct)
+
+
+def arm_inputs(
+    run_id: str, schema: str, arms: list[str]
+) -> tuple[dict[str, list[dict]], dict[str, dict[str, list[dict]]]]:
+    """What the cards are built from, for a study script to build its own views on: each arm's
+    per-session series ([{session, net, trades}], in session order) and its trades by session, read
+    from the run's results and the ledgers it kept. Arms the run did not record read as empty."""
     conn = _ro(paths.results_db())
     try:
         series_by_arm: dict[str, list[dict]] = {a: [] for a in arms}
@@ -458,8 +479,7 @@ def for_run(
     finally:
         conn.close()
     sessions = sorted({s["session"] for series in series_by_arm.values() for s in series})
-    trades_by_arm = _ledger_trades(run_id, schema, list(series_by_arm), sessions)
-    return cards(series_by_arm, trades_by_arm, capital, risk_pct, risk_unit)
+    return series_by_arm, _ledger_trades(run_id, schema, list(series_by_arm), sessions)
 
 
 def _ledger_trades(
@@ -477,6 +497,7 @@ def _ledger_trades(
         try:
             rows = reader(lconn)
             stops = _meic_stop_risk(lconn) if schema == "meic_ic" else {}
+            detail = _meic_stop_detail(lconn) if schema == "meic_ic" else {}
         finally:
             lconn.close()
         # The runner's own attribution: an arm's rows that settled in this session.
@@ -484,6 +505,8 @@ def _ledger_trades(
             if r["session"] == day and r["arm"] in trades_by_arm:
                 if stops:
                     r = {**r, "stop_risk": stops.get(r.get("position_id"))}
+                if detail:
+                    r = {**r, **detail.get(r.get("position_id"), {})}
                 trades_by_arm[r["arm"]].setdefault(day, []).append(r)
     return trades_by_arm
 
@@ -508,6 +531,109 @@ def _meic_stop_risk(conn: sqlite3.Connection) -> dict[str, float]:
         if risk > 0:
             out[oid] = round(risk, 2)
     return out
+
+
+def _meic_stop_detail(conn: sqlite3.Connection) -> dict[str, dict]:
+    """Each MEIC condor's stop terms and how far its stopped sides filled past their trigger, by order
+    id: `stop_ratio`, `credit_dollars` (the credit in whole-position dollars) and `overshoots`, one
+    stopped side's cost to close over its trigger level (>= 1; 1.29 is 29% past it). The sizing
+    check's stop-plus-overshoot risk is read from these."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(ic_trades)")}
+    need = {"ic_order_id", "net_credit", "stop_trigger_original", "put_stop_cost", "call_stop_cost"}
+    have_legs = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'ic_spread_legs'").fetchone()
+    if not need <= cols or not have_legs:
+        return {}
+    qty = "quantity" if "quantity" in cols else "1"
+    mult = "dollar_multiplier" if "dollar_multiplier" in cols else "100"
+    stopped: dict[str, set[str]] = defaultdict(set)
+    for oid, side in conn.execute(
+        "SELECT ic_order_id, side FROM ic_spread_legs WHERE exit_reason = 'per_side_stop'"
+    ):
+        stopped[oid].add(side)
+    out = {}
+    for oid, credit, ratio, q, m, put_cost, call_cost in conn.execute(
+        f"SELECT ic_order_id, net_credit, stop_trigger_original, {qty}, {mult}, "
+        "put_stop_cost, call_stop_cost FROM ic_trades"
+    ):
+        if oid is None or credit is None or ratio is None or credit <= 0 or ratio <= 0:
+            continue
+        trigger = float(ratio) * float(credit)
+        costs = {"put": put_cost, "call": call_cost}
+        out[oid] = {
+            "stop_ratio": float(ratio),
+            "credit_dollars": float(credit) * float(m or 100) * float(q or 1),
+            "overshoots": [
+                round(costs[s] / trigger, 4) for s in sorted(stopped.get(oid, ())) if costs.get(s)
+            ],
+        }
+    return out
+
+
+def _quantile(xs: list[float], q: float) -> float | None:
+    if not xs:
+        return None
+    s = sorted(xs)
+    return s[min(len(s) - 1, int(q * len(s)))]
+
+
+def sizing(
+    series: list[dict], by_session: dict[str, list[dict]], account: float, dd_pct: float = DEFAULT_DD_PCT
+) -> dict | None:
+    """A SIZING CHECK for one arm, never a verdict: the most whole units of the replay's lots whose
+    99th-percentile drawdown over the bootstrap's horizon (`core.robustness.drawdown_range`, the B1
+    kill-criteria bootstrap) stays within `dd_pct` percent of `account` (`robustness.max_size`), and what
+    that size risks a session. A unit's risk is read two ways: its max loss, and for MEIC its stops
+    filled at the trigger plus the `OVERSHOOT_QUANTILE` of how far recorded stops filled past it (both
+    sides stopped, capped at the max loss). The sessions' median of each is reported, as a share of
+    the account at the recommended size."""
+    if not series or account <= 0 or dd_pct <= 0:
+        return None
+    nets = [s["net"] for s in series if s.get("trades")]
+    dd = robustness.drawdown_range(nets, sessions=len(series))
+    out: dict = {"account": _r(account), "dd_pct": dd_pct}
+    if dd.get("insufficient"):
+        return {
+            **out,
+            "insufficient": True,
+            "evidence": dd.get("evidence_trades"),
+            "min_evidence": dd.get("min_evidence"),
+        }
+    units = robustness.max_size(dd["drawdown_block"], account, dd_pct / 100.0)
+    trades = [t for rows in by_session.values() for t in rows]
+    overshoots = [o for t in trades for o in (t.get("overshoots") or [])]
+    tail = _quantile(overshoots, OVERSHOOT_QUANTILE)
+    max_loss, stop_tail = [], []
+    for rows in by_session.values():
+        if (ml := session_risk(rows)) is not None:
+            max_loss.append(ml)
+        if tail is not None and rows and all(t.get("stop_ratio") is not None for t in rows):
+            per = [
+                min(t.get("capital") or math.inf, (2 * t["stop_ratio"] * tail - 1) * t["credit_dollars"])
+                for t in rows
+            ]
+            stop_tail.append(sum(per))
+    ml_med = statistics.median(max_loss) if max_loss else None
+    st_med = statistics.median(stop_tail) if stop_tail else None
+    return {
+        **out,
+        "insufficient": False,
+        "units": units,
+        "drawdown_p99_per_unit": _r(dd["drawdown_block"]),
+        "horizon_sessions": dd["horizon"],
+        "evidence_sessions": len(nets),
+        "overshoot": None
+        if not overshoots
+        else {
+            "n": len(overshoots),
+            "p50": _r(_quantile(overshoots, 0.5), 3),
+            "p95": _r(_quantile(overshoots, 0.95), 3),
+            "p99": _r(_quantile(overshoots, 0.99), 3),
+        },
+        "unit_risk_max_loss": _r(ml_med),
+        "unit_risk_stop_tail": _r(st_med),
+        "risk_pct_max_loss": None if ml_med is None else _r(100 * units * ml_med / account, 2),
+        "risk_pct_stop_tail": None if st_med is None else _r(100 * units * st_med / account, 2),
+    }
 
 
 #: A trade's fields the trade log shows, as `core.ledgers` names them. Nothing is computed here.

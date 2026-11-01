@@ -286,6 +286,32 @@ export interface BacktestArmCards {
   account: BacktestAccountRead | null;
   /** The compounded lens; null without an account, absent from an older backtest package. */
   compounded?: BacktestCompounded | null;
+  /** The sizing check; null unless an account was chosen, absent from an older backtest package. */
+  sizing?: BacktestSizing | null;
+}
+
+/**
+ * `cards.sizing`: a SIZING CHECK, never a verdict. The most whole units of the replay's lots whose
+ * 99th-percentile bootstrapped drawdown over `horizon_sessions` stays within `dd_pct` of the account,
+ * and what that size risks a session. Percents are percents here (5.4 is 5.4%).
+ */
+export interface BacktestSizing {
+  account: number;
+  dd_pct: number;
+  /** Under the bootstrap's minimum evidence: no size is given. */
+  insufficient: boolean;
+  evidence?: number;
+  min_evidence?: number;
+  units?: number;
+  drawdown_p99_per_unit?: number;
+  horizon_sessions?: number;
+  evidence_sessions?: number;
+  /** How far recorded stops filled past their trigger, as cost / trigger (1.29 = 29% past). */
+  overshoot?: { n: number; p50: number; p95: number; p99: number } | null;
+  unit_risk_max_loss?: number | null;
+  unit_risk_stop_tail?: number | null;
+  risk_pct_max_loss?: number | null;
+  risk_pct_stop_tail?: number | null;
 }
 
 /** One curve of the compounded lens. Fractions, not percents. */
@@ -337,7 +363,7 @@ export interface BacktestPremium {
 export interface BacktestRunCards {
   ok: boolean;
   error?: string;
-  account?: { capital: number | null; basis: "chosen" | "peak_risk"; risk_pct?: number };
+  account?: { capital: number | null; basis: "chosen" | "peak_risk"; risk_pct?: number; risk_unit?: string; dd_pct?: number };
   arms?: Record<string, BacktestArmCards>;
 }
 
@@ -385,6 +411,10 @@ export function isBacktestRiskPct(v: string): boolean {
 
 /** The lens's default risk per session, in percent: the backtest package's own default. */
 export const BACKTEST_DEFAULT_RISK_PCT = 2;
+
+/** The sizing check's default drawdown cap, in percent of the account: the backtest package's own. Its
+ *  shape is checked as a risk percent is (`isBacktestRiskPct`). */
+export const BACKTEST_DEFAULT_DD_PCT = 30;
 
 /** The lens's risk units, as the backtest package names them (`cards.RISK_UNITS`). */
 export const BACKTEST_RISK_UNITS = ["max_loss", "stop"] as const;

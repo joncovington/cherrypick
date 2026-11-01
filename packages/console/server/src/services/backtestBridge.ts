@@ -8,8 +8,9 @@ import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
  *   per cadence, the run list and the trial counts.
  * - `read run --id <run_id> [--capital <dollars>] [--risk-pct <percent>]`: one run's report, with its
  *   cards (`cards.py`) attached as `cards`, on the chosen account or the run's own peak risk, the
- *   compounded lens sized at the chosen risk per session (`--risk-unit`: max loss or stop distance). An unknown id is the
- *   module's own `{"ok": false, "error"}` on stdout with exit 1, which is passed on as that error.
+ *   compounded lens sized at the chosen risk per session (`--risk-unit`: max loss or stop distance),
+ *   and with a chosen capital the sizing check at its drawdown cap (`--dd-pct`). An unknown id is
+ *   the module's own `{"ok": false, "error"}` on stdout with exit 1, which is passed on as that error.
  * - `read trades --id <run_id> --arm <arm>`: one arm's trade log (`cards.trade_log`), asked for only
  *   when the trade log is opened, so the run report stays light.
  * - `read path --id --arm --session --position`: one MEIC condor's marks through its session
@@ -30,7 +31,7 @@ const UNAVAILABLE = "backtest read unavailable — cherrypick-backtest must be i
 
 export type BacktestRequest =
   | { kind: "overview" }
-  | { kind: "run"; id: string; capital?: number; riskPct?: number; riskUnit?: string }
+  | { kind: "run"; id: string; capital?: number; riskPct?: number; riskUnit?: string; ddPct?: number }
   | { kind: "trades"; id: string; arm: string }
   | { kind: "path"; id: string; arm: string; session: string; position: string };
 
@@ -51,6 +52,7 @@ function spawnRequest(req: BacktestRequest): Promise<SpawnedJson> {
   if (req.capital !== undefined) args.push("--capital", String(req.capital));
   if (req.riskPct !== undefined) args.push("--risk-pct", String(req.riskPct));
   if (req.riskUnit !== undefined) args.push("--risk-unit", req.riskUnit);
+  if (req.ddPct !== undefined) args.push("--dd-pct", String(req.ddPct));
   // Exit 1 carries the module's own refusal on stdout ("no run ..."): read it as an answer.
   return spawnModuleCliAsync(args, UNAVAILABLE, [0, 1]);
 }
@@ -78,7 +80,7 @@ function memo(req: BacktestRequest, now: number): Promise<SpawnedJson> {
         ? `trades|${req.id}|${req.arm}`
         : req.kind === "path"
           ? `path|${req.id}|${req.arm}|${req.session}|${req.position}`
-          : `run|${req.id}|${String(req.capital ?? "")}|${String(req.riskPct ?? "")}|${req.riskUnit ?? ""}`;
+          : `run|${req.id}|${String(req.capital ?? "")}|${String(req.riskPct ?? "")}|${req.riskUnit ?? ""}|${String(req.ddPct ?? "")}`;
   const hit = cache.get(key);
   if (hit !== undefined && now - hit.at < TTL_MS) return hit.value;
   // Expired entries go when anything is read, so the map holds at most a window's worth of ids.
@@ -107,6 +109,7 @@ export async function readBacktestRun(
   capital?: number,
   riskPct?: number,
   riskUnit?: string,
+  ddPct?: number,
   now = Date.now(),
 ): Promise<BridgedResult<BacktestRunReport>> {
   const req: BacktestRequest = {
@@ -115,6 +118,7 @@ export async function readBacktestRun(
     ...(capital === undefined ? {} : { capital }),
     ...(riskPct === undefined ? {} : { riskPct }),
     ...(riskUnit === undefined ? {} : { riskUnit }),
+    ...(ddPct === undefined ? {} : { ddPct }),
   };
   return shape<BacktestRunReport>(await memo(req, now), (j) => {
     const report = j["report"];

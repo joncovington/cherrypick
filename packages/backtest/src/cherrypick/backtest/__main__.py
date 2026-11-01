@@ -574,16 +574,18 @@ def cmd_read(args) -> int:
         out = tradepath.for_trade(args.id or "", args.arm or "", args.session or "", args.position or "")
         _emit(out)
         return 0 if out["ok"] else 1
-    from .cards import parse_capital, parse_risk_pct, parse_risk_unit
+    from .cards import DEFAULT_DD_PCT, parse_capital, parse_risk_pct, parse_risk_unit
 
     try:
         capital = parse_capital(args.capital)
         risk_pct = parse_risk_pct(args.risk_pct)
         risk_unit = parse_risk_unit(args.risk_unit)
+        # The same rule as the risk percent: above 0, at most 100.
+        dd_pct = DEFAULT_DD_PCT if args.dd_pct in (None, "") else parse_risk_pct(args.dd_pct)
     except ValueError as exc:
         _emit({"ok": False, "error": str(exc)})
         return 1
-    out = readout.run_report(args.id or "", capital, risk_pct, risk_unit)
+    out = readout.run_report(args.id or "", capital, risk_pct, risk_unit, dd_pct)
     _emit(out)
     return 0 if out["ok"] else 1
 
@@ -766,6 +768,11 @@ def main(argv: list[str] | None = None) -> int:
         "--risk-unit",
         default=None,
         help="with `run`: the lens's risk per unit, `max_loss` (default) or `stop` (MEIC's stops at trigger)",
+    )
+    rd.add_argument(
+        "--dd-pct",
+        default=None,
+        help="with `run` and a capital: the sizing check's p99 drawdown cap, % of it (default 30)",
     )
     rd.set_defaults(fn=cmd_read)
     sub.add_parser(

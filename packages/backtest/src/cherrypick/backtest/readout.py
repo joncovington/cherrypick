@@ -168,13 +168,21 @@ def store_locations(settings: dict) -> dict:
 
 
 def run_report(
-    run_id: str, capital: float | None = None, risk_pct: float | None = None, risk_unit: str = "max_loss"
+    run_id: str,
+    capital: float | None = None,
+    risk_pct: float | None = None,
+    risk_unit: str = "max_loss",
+    dd_pct: float | None = None,
 ) -> dict:
     path = paths.results_dir() / "runs" / f"{run_id}.json"
     if not run_id.replace("-", "").isalnum() or not path.exists():
         return {"ok": False, "error": f"no run {run_id!r}"}
     report = json.loads(path.read_text(encoding="utf-8"))
-    return {"ok": True, "report": report, "cards": _cards(run_id, report, capital, risk_pct, risk_unit)}
+    return {
+        "ok": True,
+        "report": report,
+        "cards": _cards(run_id, report, capital, risk_pct, risk_unit, dd_pct),
+    }
 
 
 def run_trades(run_id: str, arm: str) -> dict:
@@ -197,6 +205,7 @@ def _cards(
     capital: float | None,
     risk_pct: float | None = None,
     risk_unit: str = "max_loss",
+    dd_pct: float | None = None,
 ) -> dict:
     """The run's cards (cards.py). A failure here is the cards' own error, never the report's."""
     from . import cards, runner
@@ -205,6 +214,7 @@ def _cards(
         mod = runner.MODULES[report.get("module") or runner.MODULE]
         arms = list(report.get("arms") or {})
         pct = cards.DEFAULT_RISK_PCT if risk_pct is None else risk_pct
-        return {"ok": True, **cards.for_run(run_id, mod.schema, arms, capital, pct, risk_unit)}
+        dd = cards.DEFAULT_DD_PCT if dd_pct is None else dd_pct
+        return {"ok": True, **cards.for_run(run_id, mod.schema, arms, capital, pct, risk_unit, dd)}
     except Exception as exc:  # noqa: BLE001 -- the report still reads without its cards
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
