@@ -638,6 +638,44 @@ def test_reproduction_guard_matches_the_recorded_legs_and_fails_with_the_long_ba
     assert not s36.reproduction_check([], probe)["ok"]  # nothing to compare is not a pass
 
 
+def test_reproduction_leaves_out_a_session_the_store_does_not_cover_and_nothing_covered_fails(mkt):
+    """The 2026-11-01 run read 0 of 28: no paper session was in the store, and each counted as a miss.
+    The declaration compares on the sessions both cover; a refused selector still counts as a miss."""
+    markets = {"QQQ": mkt}
+    params = s36.spec_params(s36.SPECS["shield_hold"])
+    day = mkt.sessions[30]
+    sexp = date.fromisoformat(s36.clock.short_expiration(day, params)["short_expiration"])
+    row = {"symbol": "QQQ", "session": day.isoformat(), "long_exp": s36.leap_for(day).isoformat(),
+           "short_exp": sexp.isoformat()}  # fmt: skip
+    row["long"], row["short"] = s36.select_for(markets, params)(dict(row))
+    unstored = {**row, "session": "2018-06-01"}  # after the invented market's last close
+    unlisted = {**row, "symbol": "TSLA"}
+    got = s36.reproduction_check([dict(row), dict(unstored), dict(unlisted)], s36.select_for(markets, params))
+    assert got["ok"] and got["entries"] == 1 and got["uncovered"] == 2
+    only = s36.reproduction_check([dict(unstored), dict(unlisted)], s36.select_for(markets, params))
+    assert not only["ok"] and only["entries"] == 0 and only["ratio"] is None
+    moved = {**params, "long_delta_min": 0.80, "long_delta_max": 0.84}
+    refused = s36.reproduction_check([dict(row)], s36.select_for(markets, moved))
+    assert refused["entries"] == 1 and not refused["ok"]
+
+
+def test_the_rate_is_the_3_month_yield_before_the_session_and_a_gap_stops_the_run():
+    curves = {date(2023, 6, 1): 5.25, date(2023, 5, 31): 5.20}
+
+    def lookup(session, tenor):
+        assert tenor == "3m"
+        before = [d for d in curves if d.isoformat() < session]
+        return (max(before), curves[max(before)]) if before else None
+
+    rate = s36.rate_reader(lookup)
+    assert rate(date(2023, 6, 2)) == pytest.approx(0.0525)
+    assert rate(date(2023, 6, 8)) == pytest.approx(0.0525)  # seven days on: still the last curve
+    with pytest.raises(SystemExit):
+        rate(date(2023, 6, 9))  # eight days without a curve is a gap in the files
+    with pytest.raises(SystemExit):
+        s36.rate_reader(lambda session, tenor: None)(date(2019, 3, 1))  # no file at all, never zero
+
+
 def test_wput_guard_matches_a_put_write_index_and_fails_when_the_index_disagrees():
     m = make_market("XSP(SPY)", style="cash", end=date(2016, 12, 30))
     lo, hi = date(2016, 1, 4), date(2016, 12, 30)
@@ -722,8 +760,9 @@ def test_plan_orders_spy_first_stocks_last_and_reports_counts(tmp_path, monkeypa
     conn.commit()
     conn.close()
     monkeypatch.setattr(s36, "_chain_db", lambda: db)
-    assert s36.main(["plan", "--out-dir", str(tmp_path / "out")]) == 0
+    assert s36.main(["plan", "--out-dir", str(tmp_path / "out"), "--ledger", str(tmp_path / "none.db")]) == 0
     out = json.loads(capsys.readouterr().out)
+    assert out["ledger"] == {"paths": 0, "paths_net": 0}
     order = list(out["per_symbol"])
     assert order[0] == "XSP(SPY)" and order[-5:] == ["AMZN", "TSLA", "AMD", "NVDA", "PLTR"]
     spy = out["per_symbol"]["XSP(SPY)"]
@@ -735,6 +774,59 @@ def test_plan_orders_spy_first_stocks_last_and_reports_counts(tmp_path, monkeypa
     from cherrypick.backtest import chainfetch as cf
 
     assert len(cf.read_path_requests(tmp_path / "out" / "chain_requests_SPY.json")) == spy["paths_net"]
+
+
+def _ledger_db(path: Path, entries: list[tuple]) -> Path:
+    """A paper ledger with pmcc's two tables, only the columns `read_ledger` reads."""
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        "CREATE TABLE pmcc_positions (position_id INTEGER, symbol TEXT, arm TEXT, entry_session TEXT);"
+        "CREATE TABLE pmcc_legs (position_id INTEGER, leg_role TEXT, expiration TEXT, strike REAL);"
+    )
+    for i, (sym, arm, session, lexp, lk, sexp, sk) in enumerate(entries):
+        conn.execute("INSERT INTO pmcc_positions VALUES (?, ?, ?, ?)", (i, sym, arm, session))
+        conn.execute("INSERT INTO pmcc_legs VALUES (?, 'long_call', ?, ?)", (i, lexp, lk))
+        conn.execute("INSERT INTO pmcc_legs VALUES (?, 'short_call_1', ?, ?)", (i, sexp, sk))
+    conn.commit()
+    conn.close()
+    return path
+
+
+def test_the_plan_requests_each_paper_entrys_own_legs_on_its_session(tmp_path, monkeypatch, capsys):
+    """The skeleton follows the replay's cycles and ends with the holdout, so the paper's longs (a
+    year out, bought on other days) were never fetched. The plan asks for each entry's two legs on its
+    entry session, once each, less what the store holds; XSP is left out as the guard leaves it out."""
+    from cherrypick.backtest import chainfetch
+
+    ledger = _ledger_db(tmp_path / "paper.db", [
+        ("QQQ", "shield", "2026-10-06", "2027-09-17", 455.0, "2026-10-16", 749.0),
+        ("QQQ", "shield_hold", "2026-10-06", "2027-09-17", 455.0, "2026-10-16", 749.0),
+        ("GLD", "shield_guard", "2026-10-26", "2027-11-19", 215.0, "2026-11-06", 355.0),
+        ("XSP", "shield_guard", "2026-10-27", "2027-10-15", 580.0, "2026-11-06", 759.0),
+        ("QQQ", "hold-30d", "2026-10-07", "2027-09-17", 455.0, "2026-11-06", 700.0),  # not a shield arm
+        ("QQQ", "shield", "2026-09-30", "2027-09-17", 455.0, "2026-10-09", 740.0),  # before the ledger window
+    ])  # fmt: skip
+    reqs = s36.ledger_requests(s36.read_ledger(ledger))
+    assert sorted((r["symbol"], r["expiration"], r["start"]) for r in reqs) == [
+        ("GLD", "2026-11-06", "2026-10-26"), ("GLD", "2027-11-19", "2026-10-26"),
+        ("QQQ", "2026-10-16", "2026-10-06"), ("QQQ", "2027-09-17", "2026-10-06"),
+    ]  # fmt: skip
+    assert all(r["start"] == r["through"] and r["kind"] == "ledger" for r in reqs)
+    db = tmp_path / "eod_chains.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(chainfetch.SCHEMA)
+    conn.execute(  # the weekly short's stored path from 11 days out answers the 10-06 session
+        "INSERT INTO eod_chain_paths VALUES (?, ?, ?, ?, 'complete', 8, 100, NULL, 0)",
+        ("QQQ", "2026-10-16", "2026-10-05", "2026-10-16"),
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(s36, "_chain_db", lambda: db)
+    assert s36.main(["plan", "--out-dir", str(tmp_path / "out"), "--ledger", str(ledger)]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["ledger"] == {"paths": 4, "paths_net": 3}  # the stored weekly path answers one
+    written = chainfetch.read_path_requests(tmp_path / "out" / "chain_requests_ledger.json")
+    assert ("QQQ", "2026-10-16", "2026-10-06", "2026-10-06") not in written and len(written) == 3
 
 
 def test_the_sql_quote_reader_returns_bid_ask_by_strike_and_right(tmp_path):

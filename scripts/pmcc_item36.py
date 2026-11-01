@@ -1,7 +1,7 @@
 """Item 36, pmcc's own rule at real quotes (docs/edge-hypotheses-plan.md, section 36).
 
     python scripts/pmcc_item36.py plan [--out-dir DIR]     # the fetch-chain-paths request files, with counts
-    python scripts/pmcc_item36.py pilot [--symbol XSP(SPY)] # the guards on one symbol, no arm read
+    python scripts/pmcc_item36.py pilot [--symbol XSP(SPY)|all] # the guards on one symbol or all, no arm read
     python scripts/pmcc_item36.py study [--json PATH]      # guards, six arms, two baselines, the verdict
     python scripts/pmcc_item36.py report [--json PATH]     # results.md from an existing results.json
 
@@ -125,6 +125,7 @@ CRASH = (date(2020, 2, 21), date(2020, 4, 17))
 PATH_CALL_DAYS = 7
 SHORT_LEAD = 11  # a weekly short's path starts this many days before its expiry
 LEDGER_FROM = "2026-10-06"
+RATE_STALE_DAYS = 7  # a 3-month yield older than this before a session is a gap in the files, not a rate
 COMPONENTS = ("long", "premium", "short_mtm", "fees", "slippage", "settlement")
 
 
@@ -1039,15 +1040,22 @@ def judged_status(
 # Guards.
 
 
-def reproduction_check(rows: list[dict], select: Callable[[dict], tuple[float, float] | None]) -> dict:
-    """Selection against the paper ledger: for each recorded entry the replay's chosen long and short
-    strike must each sit within one listed strike of the recorded one, on at least 80% of entries.
-    `select(row)` returns the replay's (long, short) strikes with the row's `strikes` list in play."""
-    n = ok = 0
+def reproduction_check(
+    rows: list[dict], select: Callable[[dict], tuple[float | None, float | None] | None]
+) -> dict:
+    """Selection against the paper ledger, on the sessions both cover: for each recorded entry the
+    replay's chosen long and short strike must each sit within one listed strike of the recorded one,
+    on at least 80% of entries. `select(row)` returns the replay's (long, short) strikes with the
+    row's `strikes` list in play, a None strike where its selector refused (a miss), or None when the
+    store does not cover the row's session (left out, counted). Nothing covered is not a pass."""
+    n = ok = uncovered = 0
     for row in rows:
         got = select(row)
-        n += 1
         if got is None:
+            uncovered += 1
+            continue
+        n += 1
+        if None in got:
             continue
         strikes = row["strikes"]
         if all(
@@ -1059,6 +1067,7 @@ def reproduction_check(rows: list[dict], select: Callable[[dict], tuple[float, f
     return {
         "entries": n,
         "matched": ok,
+        "uncovered": uncovered,
         "ratio": ratio,
         "ok": ratio is not None and ratio >= REPRODUCTION_FLOOR,
     }
@@ -1241,11 +1250,37 @@ def stored_for(conn: sqlite3.Connection, chain_symbol: str) -> tuple[set, list]:
     return answered, paths
 
 
+def ledger_requests(ledger: list[dict]) -> list[dict]:
+    """The reproduction guard's own requests: each paper entry's long and short expiry on its entry
+    session, one session each. The skeleton follows the replay's cycles, not the paper's, and ends with
+    the holdout, so without these the guard has nothing to compare (it read 0 of 28 on 2026-11-01).
+    XSP(SPY) is left out, as the guard leaves it out."""
+    out, seen = [], set()
+    for row in ledger:
+        if row["symbol"] not in SYMBOLS or row["symbol"] == "XSP(SPY)":
+            continue
+        for exp in (row["long_exp"], row["short_exp"]):
+            key = (SYMBOLS[row["symbol"]][0], exp, row["session"])
+            if key not in seen:
+                seen.add(key)
+                out.append({"symbol": key[0], "expiration": exp, "start": row["session"],
+                            "through": row["session"], "kind": "ledger"})  # fmt: skip
+    return out
+
+
 def cmd_plan(args) -> int:
     out_dir = Path(args.out_dir) if args.out_dir else _out_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
     db = _chain_db()
     conn = _ro(db) if db.exists() else None
+    ledger = ledger_requests(read_ledger(Path(args.ledger) if args.ledger else _ledger_path()))
+    ledger_net = [
+        r for sym in sorted({r["symbol"] for r in ledger})
+        for r in (stored_filter([x for x in ledger if x["symbol"] == sym], *stored_for(conn, sym))
+                  if conn else [x for x in ledger if x["symbol"] == sym])
+    ]  # fmt: skip
+    ledger_path = out_dir / "chain_requests_ledger.json"
+    ledger_path.write_text(json.dumps({"requests": ledger_net}, indent=1), encoding="utf-8")
     order = ["XSP(SPY)", "QQQ", "IWM", "GLD", "SLV", "SMH", *STOCKS]
     per_symbol, files = {}, {}
     for name in order:
@@ -1266,7 +1301,13 @@ def cmd_plan(args) -> int:
         files[name] = str(path)
     if conn:
         conn.close()
-    print(json.dumps({"per_symbol": per_symbol, "total": plan_counts(per_symbol), "files": files}, indent=1))
+    files["ledger"] = str(ledger_path)
+    print(json.dumps({
+        "per_symbol": per_symbol,
+        "total": plan_counts(per_symbol),
+        "ledger": {"paths": len(ledger), "paths_net": len(ledger_net)},
+        "files": files,
+    }, indent=1))  # fmt: skip
     return 0
 
 
@@ -1284,21 +1325,37 @@ def load_market(name: str, vend: sqlite3.Connection, hist: sqlite3.Connection, r
     sessions = [d for d in sessions_between(a, b) if d in closes]
     divs = [(date.fromisoformat(x.ex_date), x.amount) for x in store.dividends(hist, chain_symbol)[0]]
     splits = [date.fromisoformat(x.ex_date) for x in store.splits(hist, chain_symbol)]
-    rates: dict = {}
-
-    def rate(day: date) -> float:
-        if day not in rates:
-            got = treasury.yield_before(day.isoformat(), "3m")
-            rates[day] = got[1] / 100.0 if got else 0.0
-        return rates[day]
-
     return Market(
-        name, chain_symbol, style, fee_symbol, kind, sessions, closes, sql_quote_fn(vend, chain_symbol), rate,
+        name, chain_symbol, style, fee_symbol, kind, sessions, closes, sql_quote_fn(vend, chain_symbol),
+        rate_reader(),
         ex_dates=sorted(d for d, _ in divs),
         dividends=divs,
         report_dates=sorted(report_dates or []),
         split_days=sorted(splits),
     )  # fmt: skip
+
+
+def rate_reader(
+    lookup: Callable[[str, str], tuple[date, float] | None] | None = None,
+) -> Callable[[date], float]:
+    """The session's T-bill rate: Treasury's 3-month yield strictly before it, cached. A session with no
+    yield within `RATE_STALE_DAYS` stops the run: the curve files held 2025-26 only, and reading zero
+    for 2016-24 moved every computed delta without a word."""
+    lookup = lookup or treasury.yield_before
+    rates: dict[date, float] = {}
+
+    def rate(day: date) -> float:
+        if day not in rates:
+            got = lookup(day.isoformat(), "3m")
+            if got is None or (day - got[0]).days > RATE_STALE_DAYS:
+                raise SystemExit(
+                    f"no Treasury 3-month yield within {RATE_STALE_DAYS} days before {day}; seed the "
+                    "curve files: python scripts/fetch_market_files.py treasury-history --since 2015"
+                )
+            rates[day] = got[1] / 100.0
+        return rates[day]
+
+    return rate
 
 
 def read_report_dates(symbols) -> dict[str, list[date]]:
@@ -1341,10 +1398,14 @@ def read_ledger(path: Path) -> list[dict]:
     ]
 
 
-def select_for(markets: dict[str, Market], params: dict) -> Callable[[dict], tuple[float, float] | None]:
-    """The replay's choice on a ledger row's session, from the stored chains; fills the row's strikes."""
+def select_for(
+    markets: dict[str, Market], params: dict
+) -> Callable[[dict], tuple[float | None, float | None] | None]:
+    """The replay's choice on a ledger row's session, from the stored chains; fills the row's strikes.
+    None when the store does not cover the session (no market, close or chain for either expiry); a
+    None strike where pmcc's selector refused."""
 
-    def go(row: dict) -> tuple[float, float] | None:
+    def go(row: dict) -> tuple[float | None, float | None] | None:
         m = markets.get(row["symbol"])
         if m is None:
             return None
@@ -1359,9 +1420,9 @@ def select_for(markets: dict[str, Market], params: dict) -> Callable[[dict], tup
         row["strikes"] = sorted(e["strike_price"] for e in le + se)
         lp = engine.select_long(le, lq, lg, s, params)
         if not lp["ok"]:
-            return None
+            return (None, None)
         sp = engine.select_short_by_delta(se, sq, sg, s, params, floor_strike=lp["strike"])
-        return (lp["strike"], sp["strike"]) if sp["ok"] else None
+        return (lp["strike"], sp["strike"] if sp["ok"] else None)
 
     return go
 
@@ -1616,7 +1677,8 @@ def cmd_study(args, guards_only: bool = False) -> int:
 
     db = _chain_db()
     vend, hist = _ro(db), store.connect(tpaths.history_db())
-    names = [args.symbol] if guards_only and getattr(args, "symbol", None) else list(SYMBOLS)
+    one = getattr(args, "symbol", None)
+    names = [one] if guards_only and one and one != "all" else list(SYMBOLS)
     try:
         reports = read_report_dates(STOCKS)
     except Exception as exc:  # noqa: BLE001 -- stocks are reported only; funds do not need it
@@ -1793,9 +1855,10 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     pl = sub.add_parser("plan", help="the fetch-chain-paths request files and counts")
     pl.add_argument("--out-dir")
+    pl.add_argument("--ledger")
     pl.set_defaults(fn=cmd_plan)
-    pi = sub.add_parser("pilot", help="the guards on one symbol, no arm read")
-    pi.add_argument("--symbol", default="XSP(SPY)")
+    pi = sub.add_parser("pilot", help="the guards on one symbol (or all), no arm read")
+    pi.add_argument("--symbol", default="XSP(SPY)", help="a row label, or all")
     pi.add_argument("--ledger")
     pi.set_defaults(fn=lambda a: cmd_study(a, guards_only=True))
     st = sub.add_parser("study", help="guards, arms, baselines and the verdict")

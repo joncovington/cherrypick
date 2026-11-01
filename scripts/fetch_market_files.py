@@ -27,6 +27,7 @@ A handful of requests per run, a few seconds apart.
 
     python scripts/fetch_market_files.py [fetch]     # everything
     python scripts/fetch_market_files.py fred-key    # store a FRED API key once
+    python scripts/fetch_market_files.py treasury-history --since 2015   # past years' curves, once
 """
 
 from __future__ import annotations
@@ -500,6 +501,32 @@ def cmd_fred_history(args) -> int:
     return 0
 
 
+def cmd_treasury_history(args) -> int:
+    """Seed the Treasury curve files from `--since` (a year) through last year, one file a year,
+    skipping a year already on disk. Needed once: the daily fetch keeps this year and last current
+    after that, and a replay reading a rate before then refuses rather than reading zero."""
+    today = datetime.now(files.ET).date()
+    report: dict = {"treasury": {}, "problems": []}
+    years = [y for y in range(args.since, today.year) if not files.treasury_path(y).exists()]
+    for i, year in enumerate(years):
+        if i:
+            _pause()
+        try:
+            text = _get(files.TREASURY_URL.format(year=year)).decode("utf-8", errors="replace")
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            report["problems"].append(f"Treasury {year}: {exc}")
+            continue
+        refused = _replace_history(files.treasury_path(year), text, files.parse_treasury)
+        if refused:
+            report["problems"].append(f"Treasury {year} not written: {refused}")
+        else:
+            rows = files.parse_treasury(text)
+            report["treasury"][str(year)] = {"rows": len(rows), "last": rows[-1][0].isoformat()}
+    report["ok"] = not report["problems"]
+    print(json.dumps(report, indent=1))
+    return 0 if report["ok"] else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     sub = ap.add_subparsers(dest="cmd")
@@ -508,6 +535,9 @@ def main(argv: list[str] | None = None) -> int:
     hist = sub.add_parser("fred-history", help="seed the FRED release history back to --since (once)")
     hist.add_argument("--since", required=True, help="YYYY-MM-DD")
     hist.set_defaults(fn=cmd_fred_history)
+    tre = sub.add_parser("treasury-history", help="seed the Treasury curve files back to --since (once)")
+    tre.add_argument("--since", required=True, type=int, help="the first year, e.g. 2015")
+    tre.set_defaults(fn=cmd_treasury_history)
     args = ap.parse_args(argv)
     return (getattr(args, "fn", None) or cmd_fetch)(args)
 
