@@ -215,6 +215,33 @@ def _cards(
         arms = list(report.get("arms") or {})
         pct = cards.DEFAULT_RISK_PCT if risk_pct is None else risk_pct
         dd = cards.DEFAULT_DD_PCT if dd_pct is None else dd_pct
-        return {"ok": True, **cards.for_run(run_id, mod.schema, arms, capital, pct, risk_unit, dd)}
+        out = {"ok": True, **cards.for_run(run_id, mod.schema, arms, capital, pct, risk_unit, dd)}
+        strips = cards.arm_settings(_arm_specs(report, mod.name))
+        for arm, c in (out.get("arms") or {}).items():
+            c["settings"] = strips.get(arm, {"recorded": False})
+        return out
     except Exception as exc:  # noqa: BLE001 -- the report still reads without its cards
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _arm_specs(report: dict, module: str) -> dict[str, dict | None]:
+    """Each arm's spec: the report's own (runs from 2026-11-01), else the trial row its hash
+    recorded (a design run that was not provisional), else None."""
+    specs: dict[str, dict | None] = {}
+    wanted: dict[str, str] = {}
+    for arm, entry in (report.get("arms") or {}).items():
+        spec = (entry or {}).get("spec")
+        specs[arm] = spec if isinstance(spec, dict) else None
+        if specs[arm] is None and (entry or {}).get("spec_hash"):
+            wanted[arm] = entry["spec_hash"]
+    if wanted:
+        conn = results.connect()
+        try:
+            for arm, h in wanted.items():
+                row = conn.execute(
+                    "SELECT spec FROM trials WHERE module = ? AND spec_hash = ?", (module, h)
+                ).fetchone()
+                specs[arm] = json.loads(row[0]) if row else None
+        finally:
+            conn.close()
+    return specs

@@ -543,6 +543,38 @@ def cards(
     }
 
 
+#: The arm every other arm's settings are read against.
+SETTINGS_BASE = "control"
+
+
+def arm_settings(specs: dict[str, dict | None], base: str = SETTINGS_BASE) -> dict[str, dict]:
+    """Each arm's settings strip from its spec (`runner.*_spec_for`): cadence, fill model, and every
+    param that differs from `base`'s, as {param: {"arm", "base"}}, so a grid arm reads as the one
+    setting it tests. A spec that was never recorded reads `recorded: False`, never as no difference.
+    `base` is None for the base arm itself, or where the base's own spec is not recorded."""
+    ref = (specs.get(base) or {}).get("params")
+    out: dict[str, dict] = {}
+    for arm, spec in specs.items():
+        if not spec:
+            out[arm] = {"recorded": False}
+            continue
+        params = spec.get("params") or {}
+        compare = arm != base and isinstance(ref, dict)
+        differs = {}
+        if compare:
+            for k in sorted(set(params) | set(ref)):
+                if params.get(k) != ref.get(k):
+                    differs[k] = {"arm": params.get(k), "base": ref.get(k)}
+        out[arm] = {
+            "recorded": True,
+            "cadence": spec.get("cadence"),
+            "fill_model": spec.get("fill_model"),
+            "base": base if compare else None,
+            "differs": differs,
+        }
+    return out
+
+
 # ------------------------------------------------------------------------------------------- reading
 
 

@@ -286,11 +286,65 @@ def test_a_run_is_read_back_with_its_cards():
     assert arm["premium"]["premium"] == 200.0 and arm["premium"]["fee_drag"] == 0.01
     assert [e["outcome"] for e in arm["exits"]] == ["expired_settlement", "per_side_stop"]
     assert arm["max_drawdown"] == 50.0 and arm["account"]["max_drawdown"] == 0.119  # 50 / 420
+    assert arm["settings"] == {"recorded": False}  # no spec in the report, no trial row for it
     assert cli.main(["read", "run", "--id", RUN, "--capital", "-1"]) == 1
     assert cli.main(["read", "run", "--id", RUN, "--risk-pct", "0"]) == 1
     assert cli.main(["read", "run", "--id", RUN, "--risk-pct", "101"]) == 1
     assert cli.main(["read", "run", "--id", RUN, "--risk-unit", "delta"]) == 1
     assert cli.main(["read", "run", "--id", RUN, "--capital", "50000", "--dd-pct", "0"]) == 1
+
+
+def _spec(**params):
+    base = {"short_delta_target": 0.16, "entry_window_end": "14:00", "stop": 1.0}
+    return {
+        "module": "meic",
+        "arm": "x",
+        "params": {**base, **params},
+        "cadence": 60,
+        "fill_model": "mid-haircut",
+    }
+
+
+def test_a_grid_arm_reads_as_the_one_setting_it_tests():
+    s = cards.arm_settings({"control": _spec(), "d20": _spec(short_delta_target=0.2), "same": _spec()})
+    assert s["control"] == {
+        "recorded": True,
+        "cadence": 60,
+        "fill_model": "mid-haircut",
+        "base": None,
+        "differs": {},
+    }
+    assert s["d20"]["base"] == "control"
+    assert s["d20"]["differs"] == {"short_delta_target": {"arm": 0.2, "base": 0.16}}
+    assert s["same"]["differs"] == {}
+
+
+def test_a_param_only_one_side_has_differs_and_an_unrecorded_spec_is_not_no_difference():
+    extra = _spec(gate="vix")
+    s = cards.arm_settings({"control": _spec(), "gated": extra, "lost": None})
+    assert s["gated"]["differs"] == {"gate": {"arm": "vix", "base": None}}
+    assert s["lost"] == {"recorded": False}
+    alone = cards.arm_settings({"d20": _spec(short_delta_target=0.2)})  # no control spec to read against
+    assert alone["d20"]["base"] is None and alone["d20"]["differs"] == {}
+
+
+def test_a_report_reads_its_own_specs_and_an_older_one_its_trial_rows():
+    runs = paths.results_dir() / "runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    old = {
+        "run_id": RUN,
+        "module": "meic",
+        "arms": {"control": {"spec_hash": "hc"}, "d20": {"spec_hash": "hx"}},
+    }
+    conn = results.connect()
+    results.record_trial(conn, module="meic", spec_hash="hc", arm="control", spec=_spec(), run_id="r0",
+                         sessions=10, sharpe=None)  # fmt: skip
+    conn.commit()
+    conn.close()
+    specs = readout._arm_specs(old, "meic")
+    assert specs["control"]["params"]["short_delta_target"] == 0.16 and specs["d20"] is None
+    new = {"arms": {"d20": {"spec_hash": "hx", "spec": _spec(short_delta_target=0.2)}}}
+    assert readout._arm_specs(new, "meic")["d20"]["params"]["short_delta_target"] == 0.2
 
 
 def test_the_report_still_reads_when_its_cards_cannot_be_built():
