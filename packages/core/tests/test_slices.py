@@ -72,6 +72,26 @@ def test_weekday_and_event_day_are_day_cells_with_a_placebo():
     assert ev["none"]["placebo"]["sessions"] == 70 - fomc
 
 
+def test_a_day_cell_with_many_trades_from_few_days_is_greyed_and_a_trade_cell_is_not():
+    # MEIC-like: 40 trades on each of 2 NFP days (80 trades, 2 sessions) and 40 quiet days of 3.
+    recs = []
+    for d in _days("2026-03-02", 42):
+        many = d in ("2026-03-06", "2026-04-03")
+        recs += [_rec(0.5 if many else 0.1, entry_day=d, event_day="NFP" if many else "none",
+                      environment="uptrend")] * (40 if many else 3)  # fmt: skip
+    out = slices.report(recs)
+    nfp = out["dimensions"]["event_day"]["NFP"]
+    assert nfp["n"] == 80 and nfp["sessions"] == 2
+    assert nfp["greyed"] and "placebo" not in nfp
+    none = out["dimensions"]["event_day"]["none"]
+    assert none["sessions"] == 40 and not none["greyed"] and none["placebo"]["sessions"] == 40
+    env = out["dimensions"]["environment"]["uptrend"]
+    assert env["sessions"] == 42 and not env["greyed"]  # trade cuts keep the trade-count rule
+    assert out["ranked_cells"] == sum(
+        1 for d in out["dimensions"].values() for c in d.values() if not c["greyed"]
+    )
+
+
 def test_a_trade_dimension_never_carries_a_placebo():
     recs = [_rec(0.2, entry_day=d, environment="uptrend") for d in _days("2026-02-02", 40)]
     recs += [_rec(-0.2, entry_day=d, environment="downtrend") for d in _days("2026-04-02", 40)]
