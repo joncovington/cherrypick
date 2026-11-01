@@ -3,7 +3,8 @@
 A study's fetch can take nine hours and wants the vendor account's one session; run by hand from a
 terminal or an assistant's session, it dies with that session and collides with the nightly
 `backtest-fetch`. Here a task is a ROW (`state/research_queue.db`), added with `run.py queue-add`, and
-the supervisor's `research-queue` job takes the oldest ready row every minute and runs it.
+the supervisor's `research-queue` job takes the oldest ready row every minute and runs it, then the
+next ready row straight away (`run_ready`), so a chain of rows has no gap between them.
 
 **What a row may run is an allow-list, never a command line** (`KINDS`). The supervisor is a Windows
 service with the broker credentials in reach, so a row that could name any command would be
@@ -819,6 +820,28 @@ def run_next(
         }
     finally:
         conn.close()
+
+
+def run_ready(
+    load_cfg: Callable[[], dict[str, Any]],
+    *,
+    run: Callable[[dict[str, Any]], dict] | None = None,
+) -> dict:
+    """Run ready rows one after another until none is ready: the `research-queue` job. Config is
+    read again before each row, so a blackout or interval changed mid-chain applies to the next one.
+    It stops after a row put back to `queued` (a fetch stopped for the blackout), so a row is never
+    retried in a loop; every other outcome is final, and a finished row is never picked again."""
+    run = run or run_next
+    ran: list[dict] = []
+    while True:
+        out = run(load_cfg())
+        if out.get("ran") is None:
+            break
+        ran.append(out)
+        if out.get("status") == "queued":
+            break
+    ok = all(r.get("ok", True) for r in ran)
+    return {"ok": ok, "ran": [r["ran"] for r in ran], "runs": ran, "last": out}
 
 
 def _summary(report: dict) -> str:

@@ -308,6 +308,47 @@ def test_one_run_takes_the_oldest_ready_row_and_notifies(files, tmp_path, monkey
     assert statuses == {"first": "done", "second": "queued"}
 
 
+def test_the_job_runs_ready_rows_back_to_back_reading_config_before_each(files, tmp_path, monkeypatch):
+    monkeypatch.setattr(rq, "session_held", lambda state_dir=None: False)
+    monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
+    db = tmp_path / "q.db"
+    rq.add("item17", "fetch-chains", {"requests": str(files["req"])}, step="first", path=db)
+    rq.add("item17", "fetch-chains", {"requests": str(files["req"])}, step="second", path=db)
+    loads = []
+
+    def load():
+        loads.append(1)
+        return {}
+
+    def run(cfg):
+        return rq.run_next(
+            cfg,
+            path=db,
+            now=lambda: _at("2026-10-24T20:00"),
+            is_trading_day=_weekday,
+            spawn=lambda argv, **kw: _Proc(0, '{"complete": 1}'),
+            notify=lambda *a: None,
+        )
+
+    out = rq.run_ready(load, run=run)
+    assert out["ok"] and out["ran"] == [1, 2] and out["last"]["ran"] is None
+    assert len(loads) == 3  # each row, then the pass that found none ready
+    assert {r["status"] for r in rq.rows(db)} == {"done"}
+
+
+def test_the_chain_stops_after_a_row_put_back_and_carries_on_past_a_failure():
+    replies = iter(
+        [
+            {"ok": False, "ran": 1, "status": "failed"},
+            {"ok": True, "ran": 2, "status": "queued"},  # a fetch stopped for the blackout
+            {"ok": True, "ran": 2, "status": "done"},  # never reached: no retry in a loop
+        ]
+    )
+    out = rq.run_ready(dict, run=lambda cfg: next(replies))
+    assert out["ran"] == [1, 2] and out["ok"] is False
+    assert next(replies)["status"] == "done"
+
+
 def test_a_finished_fetch_points_to_its_counts_its_input_and_its_log(files, tmp_path, monkeypatch):
     monkeypatch.setattr(rq, "session_held", lambda state_dir=None: False)
     monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
