@@ -91,7 +91,7 @@ Subcommands:
   queue-list           The research queue's rows, newest first (--study narrows), why a queued one
                        waits, and where a finished one's result is.
   queue-cancel         Cancel a queued task (--task-id).
-  queue-run            Run the oldest ready task to its end (the supervisor's research-queue job).
+  queue-run            Run ready tasks one after another, each to its end (the research-queue job).
   remind-add           Add a dated reminder (orchestrator/reminders.py): --title, --file (the
                        message), --due (ET, YYYY-MM-DDTHH:MM), --done-when / --checks (JSON lists of
                        allow-listed conditions), --renotify-hours. Pushed until --done-when holds.
@@ -1708,10 +1708,12 @@ def cmd_queue_cancel(args) -> None:
 
 
 def cmd_queue_run(cfg) -> None:
-    """The supervisor's research-queue job: run the oldest ready task to its end."""
+    """The supervisor's research-queue job: run ready tasks one after another, each to its end, until
+    none is ready. The config is read again before each later task."""
     from cherrypick.orchestrator import researchqueue as rq
 
-    out = rq.run_next(cfg)
+    loads = iter([cfg])
+    out = rq.run_ready(lambda: next(loads, None) or cfgmod.load_config())
     _emit(out)
     if not out.get("ok", True):
         sys.exit(1)
