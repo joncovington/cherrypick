@@ -739,8 +739,9 @@ const DRIVER_FIGURES: Record<string, readonly ManageDriverKind[]> = {
   "portfolio.theta": ["theta"],
   "portfolio.delta": ["bwd"],
   "portfolio.concentration": ["bwd_share", "theta_share"],
+  "portfolio.vol_expansion": ["vega_30"],
 };
-const DRIVER_KINDS: readonly ManageDriverKind[] = ["bwd", "theta", "bwd_share", "theta_share"];
+const DRIVER_KINDS: readonly ManageDriverKind[] = ["bwd", "theta", "bwd_share", "theta_share", "vega_30"];
 
 /** One driver row with its figures by kind. A rule this reader does not know keeps every figure it
  *  recognises; a key it does not know is dropped rather than shown in a guessed unit. */
@@ -749,7 +750,7 @@ function drivers(rule: string | null, row: Record<string, unknown>): ManageGuida
   return { underlying: str(row["underlying"]) ?? "?", figures: kinds.map((kind) => ({ kind, value: num(row[kind]) })) };
 }
 
-const PORTFOLIO_RULES = ["theta", "delta", "breakeven", "buying_power", "concentration"] as const;
+const PORTFOLIO_RULES = ["theta", "delta", "breakeven", "buying_power", "concentration", "vol_expansion"] as const;
 
 /** The range of confidences the evaluation's own ruleset gives the portfolio rules; null when the
  *  evaluation embeds no ruleset (the caption then names no number rather than a stale one). */

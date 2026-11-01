@@ -282,6 +282,30 @@ def test_breakeven_under_the_expected_move_fires():
     assert "portfolio.breakeven" in _rules_fired(r)
 
 
+def test_a_short_vega_book_fires_vol_expansion_and_a_long_one_does_not():
+    # Five short 30-day SPY strangles on $10,000 lose well over 10% when SPY falls 5% and IV rises
+    # 10 points; the same book long gains on both and stays inside.
+    short = [_trade("SPY", 500.0, [_leg(-5, "P", 480.0), _leg(-5, "C", 520.0)])]
+    r = _read(short)
+    assert r["vol_expansion"]["pnl"] < 0
+    assert r["bands"]["vol_expansion"]["inside"] is False
+    (g,) = [g for g in r["guidance"] if g["rule"] == "portfolio.vol_expansion"]
+    assert g["drivers"] == [{"underlying": "SPY", "vega_30": r["underlyings"][0]["vega_30"]}]
+    long = [_trade("SPY", 500.0, [_leg(5, "P", 480.0), _leg(5, "C", 520.0)])]
+    out = _read(long)
+    assert out["vol_expansion"]["pnl"] > 0 and out["bands"]["vol_expansion"]["inside"] is True
+    assert "portfolio.vol_expansion" not in _rules_fired(out)
+
+
+def test_vol_expansion_raises_iv_beyond_the_stress_line():
+    # The stress line holds IV still; the expansion adds the vol leg, so a short option loses more.
+    trades = [_trade("SPY", 500.0, [_leg(-1, "P", 480.0)])]
+    rules = copy.deepcopy(RULES)
+    rules["portfolio"]["vol_expansion"]["iv_shift"] = 0.0
+    flat = _read(trades, rules=rules)["vol_expansion"]["pnl"]
+    assert _read(trades)["vol_expansion"]["pnl"] < flat < 0
+
+
 def test_concentration_fires_and_a_position_can_be_excused():
     trades = [_trade(s, 50.0, [_leg(q)]) for s, q in (("XYZ", 300), ("ABC", 100), ("DEF", 100), ("GHI", 100))]
     metrics = _metrics(XYZ=(1.0, 0.9), ABC=(1.0, 0.9), DEF=(1.0, 0.9), GHI=(1.0, 0.9))

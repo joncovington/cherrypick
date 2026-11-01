@@ -384,14 +384,16 @@ describe("readManage", () => {
           reason: "over 25%",
           drivers: [{ underlying: "SPY", theta_share: 0.128, bwd_share: 0.31 }],
         },
+        { rule: "portfolio.vol_expansion", confidence: 30, reason: "over 10%", drivers: [{ underlying: "SPY", vega_30: -412.5 }] },
       ],
     };
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-19.json"), JSON.stringify(doc));
-    const [delta, conc] = readManage(config).accounts[0]!.portfolio!.guidance;
+    const [delta, conc, vol] = readManage(config).accounts[0]!.portfolio!.guidance;
     expect(delta!.drivers).toEqual([{ underlying: "META", figures: [{ kind: "bwd", value: 6.22 }] }]);
     expect(conc!.drivers).toEqual([
       { underlying: "SPY", figures: [{ kind: "bwd_share", value: 0.31 }, { kind: "theta_share", value: 0.128 }] },
     ]);
+    expect(vol!.drivers).toEqual([{ underlying: "SPY", figures: [{ kind: "vega_30", value: -412.5 }] }]);
   });
 
   it("reads the caption figures from the evaluation's own ruleset, and none where it embeds none", () => {

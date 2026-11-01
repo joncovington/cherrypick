@@ -485,7 +485,7 @@ export interface ManageBand {
  * What a guidance driver's figure measures, so the page states it in its own unit: `bwd` in benchmark
  * shares, `theta` in dollars a day, and the two shares of the book as fractions (0.30 = 30%).
  */
-export type ManageDriverKind = "bwd" | "theta" | "bwd_share" | "theta_share";
+export type ManageDriverKind = "bwd" | "theta" | "bwd_share" | "theta_share" | "vega_30";
 
 export interface ManageGuidanceFigure {
   kind: ManageDriverKind;

@@ -341,7 +341,8 @@ partial. A leg expiring today is taken at its moneyness, with its remaining time
 theta.
 
 The bands are retail heuristics. None has published out-of-sample evidence, so each runs at
-confidence 40. Each fires REVIEW and names what drives it:
+confidence 40, and the vol-expansion cap, which is ours alone, at 30. Each fires REVIEW and names
+what drives it:
 
 | Rule | Default | Source | Outside evidence |
 |---|---|---|---|
@@ -350,6 +351,7 @@ confidence 40. Each fires REVIEW and names what drives it:
 | `portfolio.breakeven` | short gamma, with a break-even move under SPY's implied one-day move | option theory: theta = −½ Γ S² σ² | The identity is exact; whether acting on it pays is untested |
 | `portfolio.concentration` | one name over 25% of gross theta or gross BWD | convention | None |
 | `portfolio.buying_power` | buying power used over a cap set by VIX: 25% under 15, 30% under 20, 35% under 30, 40% under 40, 50% above | retail options education (more room when premium is rich) | None. On 2026-10-18 the account used 53% against a 30% cap at VIX 20 |
+| `portfolio.vol_expansion` | SPY −5% with IVs up 10 points (term-weighted, time held still) losing over 10% of net liq; the drivers are the names shortest 30-day vega | ours (2026-10-31): a spike moves price and vol together, and the stress line holds IV still | None. Vol is easy to forecast and hard to profit from, but the expansion half cannot be timed, so this bounds it rather than predicting it |
 
 Each band is written into the reading with the figure's place in it (`bands`), so the console draws
 the band manage used and never works one out itself.
