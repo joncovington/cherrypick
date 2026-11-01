@@ -31,7 +31,7 @@ from __future__ import annotations
 import math
 import random
 import statistics
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 DEFAULT_SEED = 20261012
 DEFAULT_RESAMPLES = 2000
@@ -122,6 +122,42 @@ def bootstrap_ci(
     lo = draws[int(tail * resamples)]
     hi = draws[math.ceil((1 - tail) * resamples) - 1]
     return lo, hi
+
+
+# --------------------------------------------------------------------------- placebo
+def day_placebo(
+    values: Mapping[str, float],
+    kept: Iterable[str],
+    *,
+    draws: int = DEFAULT_RESAMPLES,
+    seed: int = DEFAULT_SEED,
+) -> dict | None:
+    """Where a whole-day split lands among random splits of its size. `values` maps every session
+    to its value; `kept` names the sessions the split keeps (a weekday, an event day). Each draw
+    keeps as many sessions chosen at random, without replacement, and `beaten_by` is the share of
+    draws whose mean is at least the kept sessions' mean. Near 0.5 is what any day of the week
+    would show; a split worth declaring sits near 0 (or near 1, for one worth avoiding). It
+    answers "were these days different from days at random", which a t interval over trades
+    overstates when a few days carry the result. None when the split keeps no session or all of
+    them. Seeded."""
+    pool = sorted(values)
+    keep = sorted(set(kept) & set(values))
+    k = len(keep)
+    if k == 0 or k == len(pool):
+        return None
+    data = [float(values[s]) for s in pool]
+    mean = statistics.fmean(float(values[s]) for s in keep)
+    rng = random.Random(seed)
+    # A draw that picks the same sessions must count as "at least", whatever the summation order.
+    tol = 1e-9 * max(1.0, abs(mean))
+    at_least = sum(1 for _ in range(draws) if statistics.fmean(rng.sample(data, k)) >= mean - tol)
+    return {
+        "sessions": k,
+        "of": len(pool),
+        "mean": round(mean, 4),
+        "draws": draws,
+        "beaten_by": round(at_least / draws, 4),
+    }
 
 
 def stationary_indices(

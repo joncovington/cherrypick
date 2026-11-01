@@ -45,6 +45,40 @@ def test_bins_are_fixed():
     assert set(d["entry_hour"]) == {"14:00", "09:00"}
 
 
+def _days(start: str, n: int) -> list[str]:
+    from datetime import date, timedelta
+
+    d0 = date.fromisoformat(start)
+    return [(d0 + timedelta(days=i)).isoformat() for i in range(n)]
+
+
+def test_weekday_and_event_day_are_day_cells_with_a_placebo():
+    # 70 calendar days from a Monday: 10 of each weekday. Thursdays earn 1R, every other day loses
+    # 0.1R, so Thursday is the best set of days and the placebo says chance rarely matches it.
+    recs = []
+    for d in _days("2026-01-05", 70):
+        r = 1.0 if slices._weekday({"entry_day": d}) == "Thu" else -0.1
+        recs += [_rec(r, entry_day=d, event_day="FOMC" if d.endswith("-14") else "none")] * 3
+    out = slices.report(recs)
+    wd = out["dimensions"]["weekday"]
+    assert set(wd) == {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+    thu = wd["Thu"]
+    assert thu["n"] == 30 and thu["placebo"]["sessions"] == 10 and thu["placebo"]["of"] == 70
+    assert thu["placebo"]["beaten_by"] < 0.01
+    assert wd["Mon"]["placebo"]["beaten_by"] > 0.5
+    ev = out["dimensions"]["event_day"]
+    fomc = sum(d.endswith("-14") for d in _days("2026-01-05", 70))
+    assert ev["FOMC"]["greyed"] and "placebo" not in ev["FOMC"]  # a few days, under 30 trades: unread
+    assert ev["none"]["placebo"]["sessions"] == 70 - fomc
+
+
+def test_a_trade_dimension_never_carries_a_placebo():
+    recs = [_rec(0.2, entry_day=d, environment="uptrend") for d in _days("2026-02-02", 40)]
+    recs += [_rec(-0.2, entry_day=d, environment="downtrend") for d in _days("2026-04-02", 40)]
+    env = slices.report(recs)["dimensions"]["environment"]
+    assert all("placebo" not in c for c in env.values())
+
+
 def test_a_schema_without_r_reports_net_and_says_so():
     recs = [{"net_pnl": 10.0, "r_multiple": None, "environment": "sideways"}] * 2
     out = slices.report(recs)

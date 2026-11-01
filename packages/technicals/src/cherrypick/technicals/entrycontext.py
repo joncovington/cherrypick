@@ -13,6 +13,10 @@ hold, or a window it does not cover, reads None -- unknown, never a guess.
 
 An index option's underlying reads as its index (`XSP`, `SPXW` -> `SPX`). An index or fund has no
 sector and reads None.
+
+The entry day's scheduled events (`event_day`) are a calendar fact known before the open, so they
+break no rule above. `event_label` reduces `core.events.day_events` to one label in a fixed order;
+a day the calendar cannot speak for reads `unknown`, never `none`.
 """
 
 from __future__ import annotations
@@ -26,6 +30,28 @@ from . import indicators
 #: The underlying whose bars stand for an option root's.
 BAR_SYMBOL = {"XSP": "SPX", "SPXW": "SPX", "$SPX": "SPX", "NDXP": "NDX", "RUTW": "RUT"}
 MARKET = "SPX"
+#: `core.events` labels named on their own, first match wins. Then any other major release
+#: (`other_major`), then monthly options expiry (`opex`), else `none`.
+EVENT_ORDER = ("FOMC", "CPI", "NFP")
+
+
+def event_label(day_doc: dict | None) -> str | None:
+    """One label for a day's scheduled events (`core.events.day_events` shape). None without a
+    document; `unknown` where the calendar cannot speak for the day."""
+    if day_doc is None:
+        return None
+    if not day_doc.get("known"):
+        return "unknown"
+    events = day_doc.get("events") or []
+    labels = {e.get("label") for e in events}
+    for label in EVENT_ORDER:
+        if label in labels:
+            return label
+    if any(e.get("major") for e in events):
+        return "other_major"
+    if "OPEX" in labels:
+        return "opex"
+    return "none"
 
 
 def entry_day(record: dict) -> str | None:
@@ -110,13 +136,24 @@ def context(record: dict, bars_of, sector_of: dict[str, str]) -> dict:
     return {**out, **market_context(bars_of(MARKET), day), **name_context(bars_of(base) if base else [], day)}
 
 
-def annotate(records: list[dict], bars_of, sector_of: dict[str, str]) -> list[dict]:
-    """`records` with their context merged in, bars read once per symbol."""
+def annotate(records: list[dict], bars_of, sector_of: dict[str, str], events_of=None) -> list[dict]:
+    """`records` with their context merged in, bars read once per symbol. `events_of(day)` returns
+    the day's `event_label`, read once per day; without it no record carries `event_day`."""
     cache: dict[str, list] = {}
+    labels: dict[str, str | None] = {}
 
     def cached(sym: str):
         if sym not in cache:
             cache[sym] = bars_of(sym)
         return cache[sym]
 
-    return [{**r, **context(r, cached, sector_of)} for r in records]
+    out = []
+    for r in records:
+        row = {**r, **context(r, cached, sector_of)}
+        day = row.get("entry_day")
+        if events_of is not None and day:
+            if day not in labels:
+                labels[day] = events_of(day)
+            row["event_day"] = labels[day]
+        out.append(row)
+    return out
