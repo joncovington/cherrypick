@@ -678,10 +678,18 @@ over the GEX page's own profile (`GET /api/gex/panel` → `services/gexPanel.ts`
 `buildGexProfile` and adds the chain's straddles from `stream_quotes`), beside today's spot trail with
 the levels drawn on it. Broker data only. Recomputed on every request (the page polls every 15 s), so
 the moves follow each quote and the clock to expiry. The levels are defined in `analytics/gexPanel.ts`,
-since the panel it copies defines none (common usage researched 2026-10-31):
+since the panel it copies defines none (common usage researched 2026-10-31). Off-hours (2026-11-01) it
+shows the **next session's** chain (`buildGexProfile(..., "next_session")`: today's before the open,
+else the next weekday's, and only that date's expiration, never another module's later window),
+chipped, with its greeks' time; the GEX page keeps the last session's. The last session's chain at its
+close had every wall on the strikes beside spot and no move left. Without the next session's chain
+(a holiday, or nothing streaming it) the last session's shows, as before.
 
 - **Walls** are SpotGamma's: the three largest call-gamma strikes above spot and put-gamma strikes below
-  it, with the side's volume over its OI. Ranking on net left a put-heavy chain with no call wall.
+  it, with the side's volume over its OI. Ranking on net left a put-heavy chain with no call wall. A
+  toggle weights the gamma by **open interest** (the broker's once-a-day count) or **the session's
+  volume** (the GEX page's flow basis): a 0DTE chain trades many times its OI (SPX 2026-10-30's walls
+  17x to 560x). Net GEX is shown on both bases.
 - **The 1-sigma move to expiry**, two ways: the straddle interpolated to spot between the strikes
   either side, over sqrt(2/pi) = 0.798 (an ATM straddle prices the mean absolute move), and spot x ATM
   IV x sqrt(time to the 16:00 expiry, 365-day year). Live quotes older than 120 s
@@ -690,7 +698,12 @@ since the panel it copies defines none (common usage researched 2026-10-31):
   sigma, not 1**; it is drawn, labelled so.
 - **Magnet** (ours; there is no standard one): the most open interest inside the straddle's 1-sigma
   band (IV's when there is no straddle), with its share and the sign of its net gamma.
-- **Max pain** is the strike paying the chain's OI least at expiry; **zero gamma** is the GEX page's.
+- **Max pain** is the strike paying the OI least at expiry, over every strike of the expiration the
+  stream cache holds OI for on the newest OI's date (wider than the profile, which drops a leftover
+  strike's OI with its frozen gamma); the put/call OI ratio is over the same. OI outside that coverage
+  adds a straight line to every payout, so a max pain within two held strikes of either end is marked
+  "(edge)". The whole chain's OI would take a Summary subscription per option, not wanted for this.
+  **Zero gamma** is the GEX page's.
 - **Flow** (2026-11-01): the session's prints from gex's `gex_prints` (broker TimeAndSale, recorded when
   gex's `prints` block is on), each signed by the feed's aggressor side, else the quote at the print
   (between bid and ask: unsigned, never guessed). Spread legs, extended hours, cancelled and invalid
