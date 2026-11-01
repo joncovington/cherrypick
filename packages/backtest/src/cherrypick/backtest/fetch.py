@@ -35,6 +35,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 
 from cherrypick.core import calendar as _cal
+from cherrypick.core import progress as core_progress
 from cherrypick.core.clock import ET
 from cherrypick.core.streamcache import usable_quote
 
@@ -281,6 +282,11 @@ def fetch(
             "refused": 0,
             "skipped": len(days) - len(todo),
         }
+        # Of every session in the span, the complete ones counted as done: a resumed fetch starts where
+        # the last one stopped rather than at zero.
+        rep = core_progress.Reporter("backtest-fetch-sessions")
+        rep.phase("sessions", total=len(days), unit="sessions")
+        rep.advance("sessions", report["skipped"])
         cap = max(1, int(settings["vendor"]["max_concurrent_requests"]))  # one request in flight a session
         pool = ThreadPoolExecutor(max_workers=max(1, min(int(workers), cap)))
         # Shut down cancelling what is queued, whatever ends the loop. A plain `with` waits for every
@@ -327,9 +333,13 @@ def fetch(
                     res = {"status": store.REFUSED, "reason": bad.reason, "detail": bad.detail}
                 conn.commit()
                 report["fetched" if res["status"] == store.COMPLETE else "refused"] += 1
+                rep.advance("sessions", current=day)
                 log(f"{day} {res}")
         finally:
             pool.shutdown(wait=True, cancel_futures=True)
+        if report.get("stopped"):
+            rep.note("stopped: resumes from here on the next run")
+        rep.finish("failed" if report.get("aborted") else "done")
         report["coverage"] = store.coverage(conn, symbol)
         return report
     finally:

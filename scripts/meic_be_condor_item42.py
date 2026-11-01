@@ -42,6 +42,7 @@ from zoneinfo import ZoneInfo
 from cherrypick.backtest import paths, runner, store
 from cherrypick.backtest import settings as _settings
 from cherrypick.core import home
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 ITEM = 42
@@ -152,25 +153,35 @@ def reach(settings: dict, hours=HOURS, short_delta: float = SHORT_DELTA, widest:
     """Per window: each store's complete sessions, and the share of `short_delta` shorts at `hours`
     whose `widest`-point wing is quoted in the same sample."""
     doc: dict = {}
-    for window, (start, end) in settings["windows"].items():
-        row: dict = {"span": [start, end]}
-        for label, s in (("plain", settings), ("wide", wide(settings))):
-            path = store.db_path(s, SYMBOL, CADENCE)
-            if not path.exists():
-                row[f"{label}_sessions"] = 0
-                continue
-            conn = store.connect(s, SYMBOL, CADENCE)
-            try:
-                days = [d for d, _ in runner.sessions_in(conn, SYMBOL, start, end)]
-                row[f"{label}_sessions"] = len(days)
-                # Both stores: what the wide fetch adds over the plain one's 20 strikes.
-                marks = [m for d in days for m in _session_coverage(conn, d, hours, short_delta, widest)]
-                row[f"{label}_hourly_marks"] = len(marks)
-                row[f"{label}_put_wing_inside"] = _share([m["put"] for m in marks])
-                row[f"{label}_call_wing_inside"] = _share([m["call"] for m in marks])
-            finally:
-                conn.close()
-        doc[window] = row
+    reads = [(w, label) for w in settings["windows"] for label in ("plain", "wide")]
+    with core_progress.Reporter("wing-coverage") as rep:  # items 42 and 44 both read through here
+        rep.phase("stores", total=len(reads), unit="window-stores")
+        for window, (start, end) in settings["windows"].items():
+            row: dict = {"span": [start, end]}
+            for label, s in (("plain", settings), ("wide", wide(settings))):
+                path = store.db_path(s, SYMBOL, CADENCE)
+                if not path.exists():
+                    row[f"{label}_sessions"] = 0
+                    rep.advance("stores", current=f"{window} {label}")
+                    continue
+                conn = store.connect(s, SYMBOL, CADENCE)
+                try:
+                    days = [d for d, _ in runner.sessions_in(conn, SYMBOL, start, end)]
+                    row[f"{label}_sessions"] = len(days)
+                    # Both stores: what the wide fetch adds over the plain one's 20 strikes.
+                    rep.phase("sessions", total=len(days), unit="sessions")
+                    marks = []
+                    for d in days:
+                        marks += _session_coverage(conn, d, hours, short_delta, widest)
+                        rep.advance("sessions", current=d)
+                    rep.close_phase("sessions")
+                    row[f"{label}_hourly_marks"] = len(marks)
+                    row[f"{label}_put_wing_inside"] = _share([m["put"] for m in marks])
+                    row[f"{label}_call_wing_inside"] = _share([m["call"] for m in marks])
+                finally:
+                    conn.close()
+                rep.advance("stores", current=f"{window} {label}")
+            doc[window] = row
     return doc
 
 

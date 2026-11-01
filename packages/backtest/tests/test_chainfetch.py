@@ -265,3 +265,26 @@ def test_the_path_request_file_reads_each_once_and_refuses_a_backwards_range(tmp
         pass
     else:
         raise AssertionError("a range ending before it starts must be refused")
+
+
+def test_a_path_fetch_reports_its_progress_counting_paths_already_held(tmp_path, monkeypatch):
+    """The queue's meter reads this file (core.progress): a resumed fetch starts where it stopped."""
+    s = _settings(tmp_path)
+    chainfetch.fetch_paths(s, FakePaths(), PATHS[:1], log=lambda m: None)
+    target = tmp_path / "q9.json"
+    monkeypatch.setenv("CHERRYPICK_PROGRESS_FILE", str(target))
+    chainfetch.fetch_paths(s, FakePaths(), PATHS, log=lambda m: None)
+    doc = json.loads(target.read_text(encoding="utf-8"))
+    assert doc["job"] == "backtest-fetch-chain-paths" and doc["state"] == "done"
+    (phase,) = doc["phases"]
+    assert (phase["name"], phase["done"], phase["total"]) == ("paths", 2, 2)
+    assert phase["current"] == "MSFT 2024-03-15"
+
+
+def test_a_path_fetch_stopped_by_a_fatal_refusal_reports_failed(tmp_path, monkeypatch):
+    target = tmp_path / "q10.json"
+    monkeypatch.setenv("CHERRYPICK_PROGRESS_FILE", str(target))
+    many = [(f"N{k:03d}", "2024-03-15", "2024-02-02", "2024-03-15") for k in range(10)]
+    chainfetch.fetch_paths(_settings(tmp_path), FakePaths(fatal_at=2), many, workers=1, log=lambda m: None)
+    doc = json.loads(target.read_text(encoding="utf-8"))
+    assert doc["state"] == "failed" and doc["phases"][0]["done"] == 2

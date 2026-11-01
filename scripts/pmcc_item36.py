@@ -59,6 +59,7 @@ import numpy as np
 from cherrypick.core import bs, treasury
 from cherrypick.core import calendar as cal
 from cherrypick.core import fees as core_fees
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 from cherrypick.pmcc import clock, engine, management
 
@@ -1621,18 +1622,29 @@ def cmd_study(args, guards_only: bool = False) -> int:
     except Exception as exc:  # noqa: BLE001 -- stocks are reported only; funds do not need it
         reports, names = {}, [n for n in names if SYMBOLS[n][3] == "fund"]
         print(f"earnings calendar unreadable ({exc}); stocks left out", file=sys.stderr)
-    markets = {n: load_market(n, vend, hist, reports.get(n)) for n in names}
+    rep = core_progress.Reporter("item36-study")
+    rep.phase("markets", total=len(names), unit="symbols")
+    markets = {}
+    for n in names:
+        markets[n] = load_market(n, vend, hist, reports.get(n))
+        rep.advance("markets", current=n)
+    rep.close_phase("markets")
     costs = costs_config()
     ledger = read_ledger(Path(args.ledger) if getattr(args, "ledger", None) else _ledger_path())
     guards = run_guards(markets, costs, ledger, load_wput())
     if guards_only:
+        rep.finish("done")
         print(json.dumps(guards, indent=1, default=str))
         return 0 if guards["ok"] else 1
+    specs = (*ARM_NAMES, *BASELINES, *REPORTED_ONLY)
+    rep.phase("replays", total=len(markets) * len(specs) * len(COST_SCALES), unit="runs")
     runs = {}
     for n, m in markets.items():
-        for spec in (*ARM_NAMES, *BASELINES, *REPORTED_ONLY):
+        for spec in specs:
             for sc in COST_SCALES:
                 runs[(n, spec, sc)] = simulate(m, SPECS[spec], scale=sc, costs=costs)
+                rep.advance("replays", current=f"{n} {spec}")
+    rep.finish("done")
     problems = run_checks(runs, markets)
     if problems:
         guards["accounting"] = {"ok": False, "problems": (guards["accounting"]["problems"] + problems)[:20]}

@@ -39,6 +39,7 @@ from zoneinfo import ZoneInfo
 from cherrypick.backtest import paths, results, runner, store
 from cherrypick.backtest import settings as _settings
 from cherrypick.core import home, robustness
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 ITEM = 41
@@ -160,17 +161,20 @@ def refusals(settings: dict, window: tuple[str, str] = WINDOW) -> tuple[list[str
     lo = datetime.strptime(window[0], "%H:%M")
     hi = datetime.strptime(window[1], "%H:%M")
     stable = refused = 0
-    for day in days:
-        t = lo
-        while t < hi:
-            # The verdict holding over the interval [t, t+5): read at t, after the bar closing at t.
-            now = datetime.combine(date.fromisoformat(day), t.time(), tzinfo=ET)
-            v = gate.snapshot_verdicts(SYMBOL, day, now, trail_path=db)["multi"]
-            if v is True:
-                stable += 1
-            else:
-                refused += 1
-            t += timedelta(minutes=5)
+    with core_progress.Reporter("stabilization-refusals") as rep:  # items 41 and 44's plan steps
+        rep.phase("sessions", total=len(days), unit="sessions")
+        for day in days:
+            t = lo
+            while t < hi:
+                # The verdict holding over the interval [t, t+5): read at t, after the bar closing at t.
+                now = datetime.combine(date.fromisoformat(day), t.time(), tzinfo=ET)
+                v = gate.snapshot_verdicts(SYMBOL, day, now, trail_path=db)["multi"]
+                if v is True:
+                    stable += 1
+                else:
+                    refused += 1
+                t += timedelta(minutes=5)
+            rep.advance("sessions", current=day)
     return days, stable, refused
 
 

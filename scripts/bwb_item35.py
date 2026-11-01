@@ -62,6 +62,7 @@ from cherrypick.core import calendar as cal
 from cherrypick.core import fees, streamcache
 from cherrypick.core import gex as core_gex
 from cherrypick.core import home as core_home
+from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
 
 ET = ZoneInfo("America/New_York")
@@ -1046,12 +1047,15 @@ def simulate_all(inp: Inputs, days: list[tuple[str, str, int]], log=print) -> di
     for d, e, dte in days:
         by_exp[e].append((d, dte))
     out = {}
-    for n, (exp, items) in enumerate(sorted(by_exp.items())):
-        data = load_expiry(inp.conn, exp, inp.oi.oi_of(exp))
-        for d, dte in items:
-            out[d] = simulate_entry(data, d, exp, dte)
-        if n % 25 == 0:
-            log(f"simulated {n}/{len(by_exp)} expiries")
+    with core_progress.Reporter("item35-simulate") as rep:
+        rep.phase("expiries", total=len(by_exp), unit="expiries")
+        for n, (exp, items) in enumerate(sorted(by_exp.items())):
+            data = load_expiry(inp.conn, exp, inp.oi.oi_of(exp))
+            for d, dte in items:
+                out[d] = simulate_entry(data, d, exp, dte)
+            rep.advance("expiries", current=exp)
+            if n % 25 == 0:
+                log(f"simulated {n}/{len(by_exp)} expiries")
     return out
 
 
