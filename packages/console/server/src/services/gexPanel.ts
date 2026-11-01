@@ -11,13 +11,16 @@ import type { ConsoleConfig } from "../config.js";
 import type { GexStrikeRow } from "../analytics/gex.js";
 import {
   STRADDLE_BAND,
+  atCoverageEdge,
   atSpot,
   expectedMove,
   magnet,
   maxPain,
+  oiCoverage,
   panelWalls,
   putCallRatios,
   straddleMove,
+  type StrikeOi,
 } from "../analytics/gexPanel.js";
 import { buildGexProfile, etEpoch, etParts } from "./gexProfile.js";
 import path from "node:path";
@@ -152,6 +155,53 @@ function chainStraddles(config: ConsoleConfig, symbol: string, expiration: strin
   }
 }
 
+/**
+ * Open interest at every strike of `expiration` the stream cache holds, not just the profile's:
+ * the profile drops a leftover strike's OI with its frozen gamma, but OI is a once-a-day count, so
+ * a strike the window re-centred away from still has the day's. Only rows stamped on the same ET
+ * date as the newest are kept; older ones are another day's count. Null when the cache has none.
+ */
+function chainOi(config: ConsoleConfig, symbol: string, expiration: string): StrikeOi[] | null {
+  const p = config.paths.streamCacheDb;
+  if (!fs.existsSync(p)) return null;
+  let db: Database.Database | null = null;
+  try {
+    db = new Database(p, { readonly: true, fileMustExist: true });
+    db.pragma("busy_timeout = 2000");
+    const rows = db
+      .prepare<[string, string], { data_json: string; open_interest: number | null; updated_at: number | null }>(
+        `SELECT ch.data_json, o.open_interest, o.updated_at FROM stream_chain ch
+           JOIN stream_oi o ON o.symbol = ch.streamer_symbol
+          WHERE ch.underlying_symbol = ? AND ch.expiration = ?`,
+      )
+      .all(symbol, expiration);
+    const stamped = rows.filter((r) => typeof r.updated_at === "number" && typeof r.open_interest === "number");
+    if (stamped.length === 0) return null;
+    const day = etParts(Math.max(...stamped.map((r) => r.updated_at!)) * 1000).date;
+    const byStrike = new Map<number, StrikeOi>();
+    for (const r of stamped) {
+      if (etParts(r.updated_at! * 1000).date !== day) continue;
+      let meta: Record<string, unknown>;
+      try {
+        meta = JSON.parse(r.data_json) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      const strike = Number(meta["strike_price"]);
+      if (!Number.isFinite(strike)) continue;
+      const row = byStrike.get(strike) ?? { strike, call_oi: 0, put_oi: 0 };
+      if (String(meta["option_type"] ?? "").toUpperCase().includes("C")) row.call_oi = r.open_interest!;
+      else row.put_oi = r.open_interest!;
+      byStrike.set(strike, row);
+    }
+    return [...byStrike.values()].sort((a, b) => a.strike - b.strike);
+  } catch {
+    return null;
+  } finally {
+    db?.close();
+  }
+}
+
 /** The two strikes either side of spot (one when spot is on a strike or past the end), nearest first. */
 function bracket<T extends { strike: number }>(rows: T[], spot: number): T[] {
   const sorted = [...rows].sort((a, b) => a.strike - b.strike);
@@ -165,16 +215,23 @@ function band(spot: number, move: number | null): { move: number; low: number; h
 }
 
 export function buildGexPanel(config: ConsoleConfig, symbol: string, nowMs: number = Date.now()): Record<string, unknown> {
-  const profile = buildGexProfile(config, symbol, nowMs);
+  // Off-hours the panel shows the next session's chain, a plan for the open; the last session's,
+  // at its close, had every wall on the strikes beside spot and no move left to show.
+  const profile = buildGexProfile(config, symbol, nowMs, "next_session");
   if (profile["ok"] !== true) return profile;
   const series = profile["series"] as GexStrikeRow[];
   const spot = profile["spot"] as number;
   const expiration = profile["expiration"] as string;
   const live = profile["sessionMode"] === "live";
+  const nextSession = profile["sessionMode"] === "next_session";
   const totals = profile["totals"] as { total_call_gex: number; total_put_gex: number; net_gex: number; zero_gamma: number | null };
+  const volTotals = profile["volumeTotals"] as { net_gex_vol: number };
+  const oiRows = chainOi(config, symbol, expiration) ?? series;
+  const mp = maxPain(oiRows);
 
   // Time left from the reading to the expiry's 16:00 ET: now in session, the chain's newest greeks
-  // off-hours (which fall after the close, so the last session shows no move rather than a stale one).
+  // off-hours. The last session's fall after its close, so it shows no move rather than a stale
+  // one; the next session's IV and the time it is scaled by are then read at the same instant.
   const asOf = live ? nowMs / 1000 : ((profile["chainAsOf"] as number | null) ?? nowMs / 1000);
   const secondsToExpiry = etEpoch(expiration, "16:00") - asOf;
 
@@ -204,11 +261,14 @@ export function buildGexPanel(config: ConsoleConfig, symbol: string, nowMs: numb
     secondsToExpiry,
     lateSession: secondsToExpiry > 0 && secondsToExpiry < LATE_SESSION_SECONDS,
     netGex: totals.net_gex,
+    netGexVolume: volTotals.net_gex_vol,
     grossGex: totals.total_call_gex + totals.total_put_gex,
     zeroGamma: totals.zero_gamma,
-    putCall: putCallRatios(series),
-    walls: panelWalls(series, spot),
-    maxPain: maxPain(series),
+    putCall: putCallRatios(oiRows, series),
+    walls: { oi: panelWalls(series, spot, "oi"), volume: panelWalls(series, spot, "volume") },
+    maxPain: mp,
+    maxPainAtEdge: mp !== null && atCoverageEdge(oiRows, mp),
+    oiCoverage: oiCoverage(oiRows),
     atmIv: iv,
     // The straddle at spot, from the strikes either side (`strikes`), and the older quote's time.
     straddle:
@@ -218,7 +278,9 @@ export function buildGexPanel(config: ConsoleConfig, symbol: string, nowMs: numb
     moves: { straddle: sigma, iv: sigmaIv, ruleOfThumb: ruleOfThumb === null ? null : { ...ruleOfThumb, factor: STRADDLE_BAND } },
     magnet: m === null ? null : { ...m, basis: magnetBasis },
     // The session the chain's prints belong to: the ET date of the reading.
-    flow: flowLayer(series, spot, readFlow(config, symbol, expiration, etParts(asOf * 1000).date)),
+    flow: nextSession
+      ? { status: "empty", reason: `the ${expiration} session has not opened` }
+      : flowLayer(series, spot, readFlow(config, symbol, expiration, etParts(asOf * 1000).date)),
     spotHistory: profile["spotHistory"],
     spotSession: profile["spotSession"],
   };

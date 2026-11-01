@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fmtGexDollars } from "../../pages/Gex/GexProfileChart";
 import { LevelsChart, type Level } from "../../pages/GexPanel/LevelsChart";
@@ -16,6 +16,9 @@ interface PanelWall {
   volOi: number | null;
 }
 
+/** What the walls' gamma is weighted by (server `analytics/gexPanel.ts` `WallBasis`). */
+type Basis = "oi" | "volume";
+
 interface Band {
   move: number;
   low: number;
@@ -28,16 +31,19 @@ interface GexPanelPayload {
   spot?: number;
   spotUpdatedAt?: number | null;
   expiration?: string;
-  sessionMode?: "live" | "last_session";
+  sessionMode?: "live" | "last_session" | "next_session";
   chainAsOf?: number | null;
   secondsToExpiry?: number;
   lateSession?: boolean;
   netGex?: number;
+  netGexVolume?: number;
   grossGex?: number;
   zeroGamma?: number | null;
   putCall?: { oi: number | null; volume: number | null };
-  walls?: { call: PanelWall[]; put: PanelWall[] };
+  walls?: Record<Basis, { call: PanelWall[]; put: PanelWall[] }>;
   maxPain?: number | null;
+  maxPainAtEdge?: boolean;
+  oiCoverage?: { low: number; high: number; strikes: number } | null;
   atmIv?: number | null;
   straddle?: { mid: number; strikes: number[]; asOf: number } | null;
   moves?: { straddle: Band | null; iv: Band | null; ruleOfThumb: (Band & { factor: number }) | null };
@@ -181,10 +187,10 @@ function Row({ label, value, tone, title }: { label: string; value: string; tone
 }
 
 /** The chart's levels: walls, zero gamma, magnet, max pain, both 1-sigma moves and the 0.85 band. */
-function levelsOf(p: GexPanelPayload): Level[] {
+function levelsOf(p: GexPanelPayload, basis: Basis): Level[] {
   const out: Level[] = [];
-  p.walls?.call.forEach((w, i) => out.push({ price: w.strike, title: `CW${i + 1}`, token: "--pos", style: i === 0 ? "solid" : "dashed" }));
-  p.walls?.put.forEach((w, i) => out.push({ price: w.strike, title: `PW${i + 1}`, token: "--neg", style: i === 0 ? "solid" : "dashed" }));
+  p.walls?.[basis].call.forEach((w, i) => out.push({ price: w.strike, title: `CW${i + 1}`, token: "--pos", style: i === 0 ? "solid" : "dashed" }));
+  p.walls?.[basis].put.forEach((w, i) => out.push({ price: w.strike, title: `PW${i + 1}`, token: "--neg", style: i === 0 ? "solid" : "dashed" }));
   if (p.zeroGamma != null) out.push({ price: p.zeroGamma, title: "ZG", token: "--chart-special", style: "solid" });
   if (p.flow?.status === "ok" && p.flow.zeroGammaFlow != null) {
     out.push({ price: p.flow.zeroGammaFlow, title: "ZG+flow", token: "--chart-special", style: "dashed" });
@@ -204,10 +210,18 @@ function levelsOf(p: GexPanelPayload): Level[] {
 
 const SIGN_LABEL = { 1: "+γ", [-1]: "−γ", 0: "0γ" } as const;
 
-function Panel({ p }: { p: GexPanelPayload }) {
+const BASIS_TITLE: Record<Basis, string> = {
+  oi: "gamma x open interest: the broker's once-a-day count, positioning as of the open",
+  volume: "gamma x the session's volume: what has traded since the open, which a 0DTE chain does many times over",
+};
+
+function Panel({ p, basis, setBasis }: { p: GexPanelPayload; basis: Basis; setBasis: (b: Basis) => void }) {
   const spot = p.spot!;
   const aboveFlip = p.zeroGamma != null ? spot > p.zeroGamma : null;
   const mag = p.magnet;
+  const walls = p.walls?.[basis];
+  const cov = p.oiCoverage;
+  const by = basis === "oi" ? "OI" : "volume";
   return (
     <section className="card view-fade gexp-card">
       <div className="gexp-head">
@@ -226,16 +240,33 @@ function Panel({ p }: { p: GexPanelPayload }) {
         )}
       </div>
       <div className="gexp-grid">
-        <Row label="net GEX" value={fmtGexDollars(p.netGex ?? 0)} tone={(p.netGex ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"} />
-        <Row label="gross" value={fmtGexDollars(p.grossGex ?? 0)} />
-        <Row label="P/C OI" value={fmtPx(p.putCall?.oi)} />
+        <Row label="net GEX, OI" value={fmtGexDollars(p.netGex ?? 0)} tone={(p.netGex ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"} />
+        <Row
+          label="net GEX, volume"
+          value={fmtGexDollars(p.netGexVolume ?? 0)}
+          tone={(p.netGexVolume ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}
+          title={BASIS_TITLE.volume}
+        />
+        <Row label="gross, OI" value={fmtGexDollars(p.grossGex ?? 0)} />
+        <Row
+          label="P/C OI"
+          value={fmtPx(p.putCall?.oi)}
+          title={cov != null ? `over the ${cov.strikes} strikes with open interest in the stream, ${cov.low}–${cov.high}` : undefined}
+        />
         <Row label="P/C vol" value={fmtPx(p.putCall?.volume)} />
       </div>
 
-      <h3 className="gexp-section pnl-pos" title="ranked by call gamma (call gamma x call OI), SpotGamma's call wall">call walls (above spot)</h3>
-      <WallRows walls={p.walls?.call ?? []} side="call" />
-      <h3 className="gexp-section pnl-neg" title="ranked by put gamma (put gamma x put OI), SpotGamma's put wall">put walls (below spot)</h3>
-      <WallRows walls={p.walls?.put ?? []} side="put" />
+      <div className="mode-toggle gexp-basis" role="group" aria-label="wall basis">
+        {(["oi", "volume"] as const).map((b) => (
+          <button key={b} type="button" className={basis === b ? "mode-btn active" : "mode-btn"} aria-pressed={basis === b} title={BASIS_TITLE[b]} onClick={() => setBasis(b)}>
+            walls by {b === "oi" ? "OI" : "volume"}
+          </button>
+        ))}
+      </div>
+      <h3 className="gexp-section pnl-pos" title={`ranked by call gamma (call gamma x call ${by}), SpotGamma's call wall`}>call walls (above spot)</h3>
+      <WallRows walls={walls?.call ?? []} side="call" />
+      <h3 className="gexp-section pnl-neg" title={`ranked by put gamma (put gamma x put ${by}), SpotGamma's put wall`}>put walls (below spot)</h3>
+      <WallRows walls={walls?.put ?? []} side="put" />
 
       <div className="gexp-grid gexp-levels">
         <Row
@@ -249,7 +280,18 @@ function Panel({ p }: { p: GexPanelPayload }) {
           tone="gexp-amber"
           title={`most open interest inside the ${mag?.basis === "iv" ? "IV" : "straddle"} 1-sigma band, its share of the band's OI, and the sign of its net gamma (positive is said to pin, negative to push away): our definition, there is no standard one`}
         />
-        <Row label="max pain" value={fmtPx(p.maxPain)} title="the strike that pays the chain's open interest least at expiry" />
+        <Row
+          label="max pain"
+          value={p.maxPain != null && p.maxPainAtEdge === true ? `${fmtPx(p.maxPain)} (edge)` : fmtPx(p.maxPain)}
+          tone={p.maxPainAtEdge === true ? "gexp-amber" : undefined}
+          title={
+            `the strike that pays the open interest least at expiry, over the strikes the stream covers` +
+            (cov != null ? ` (${cov.strikes}, ${cov.low}–${cov.high})` : "") +
+            (p.maxPainAtEdge === true
+              ? ": it sits at the edge of that coverage, where open interest beyond it could move it, so do not trust it"
+              : "; open interest beyond them could still shift it")
+          }
+        />
         <Row label="ATM IV" value={p.atmIv != null ? fmtPct(p.atmIv) : "—"} title="mean of call and put IV, interpolated to spot between the strikes either side" />
       </div>
       <div className="gexp-moves">
@@ -288,7 +330,8 @@ function Panel({ p }: { p: GexPanelPayload }) {
 export function GexpanelLightbox({ slide }: { slide: string }) {
   const q = useGexPanel();
   const p = q.data;
-  const levels = useMemo(() => (p?.ok ? levelsOf(p) : []), [p]);
+  const [basis, setBasis] = useState<Basis>("oi");
+  const levels = useMemo(() => (p?.ok ? levelsOf(p, basis) : []), [p, basis]);
   const sigma = p?.moves?.straddle ?? p?.moves?.iv ?? null;
   const fit = sigma !== null ? sigma.move * 1.5 : (p?.spot ?? 0) * 0.01;
 
@@ -299,7 +342,7 @@ export function GexpanelLightbox({ slide }: { slide: string }) {
       render: () =>
         p?.ok && p.spot !== undefined ? (
           <div className="gexp-layout">
-            <Panel p={p} />
+            <Panel p={p} basis={basis} setBasis={setBasis} />
             <section className="card view-fade gexp-chart">
               <h2>SPX today, with the panel&apos;s levels</h2>
               {(p.spotHistory?.length ?? 0) > 1 ? (
@@ -325,6 +368,15 @@ export function GexpanelLightbox({ slide }: { slide: string }) {
       session={null}
       headerControls={
         <>
+          {p?.ok && p.sessionMode === "next_session" && (
+            <span
+              className="chip chip-warn"
+              title="outside regular hours: the next session's chain, priced off the last session's close; the trail is that last session's"
+            >
+              next session · {p.expiration}
+              {p.chainAsOf != null ? ` · greeks as of ${formatAsOf(p.chainAsOf)} ET` : ""}
+            </span>
+          )}
           {p?.ok && p.sessionMode === "last_session" && (
             <span className="chip chip-warn" title="outside regular hours: the last session's chain, not a live reading">
               last session{p.chainAsOf != null ? ` · as of ${formatAsOf(p.chainAsOf)} ET` : ""}

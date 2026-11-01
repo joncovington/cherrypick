@@ -2,8 +2,8 @@
  * GEX profile assembled entirely from the shared stream cache read-only —
  * same source and expiration-pick discipline as the gex module's provider
  * in session (the nearest expiration that actually has live greeks), the
- * last session's chain off-hours (labelled), and the same leftover-strike
- * cut either way.
+ * last session's chain off-hours (labelled; the GEX panel may ask for the
+ * next session's), and the same leftover-strike cut either way.
  */
 
 import fs from "node:fs";
@@ -107,6 +107,29 @@ export function candidateExpirations(
   return { mode: "last_session", order: afterBell ? [date, ...past] : past };
 }
 
+/**
+ * What a reader shows outside the session: the last session's chain (the GEX page, a record of what
+ * happened) or the next session's (the GEX panel, a plan for the open).
+ */
+export type OffHours = "last_session" | "next_session";
+
+/**
+ * The next session's date off-hours: today before the 09:30 open on a weekday, otherwise the next
+ * weekday. No NYSE holiday calendar, as `candidateExpirations`; SPX lists an expiration every
+ * weekday, so a holiday shows no next-session chain and the reader falls back to the last session.
+ * Null in session.
+ */
+export function nextSessionDate(nowMs: number): string | null {
+  const { date, minutes, weekday } = etParts(nowMs);
+  const weekdayNow = weekday >= 1 && weekday <= 5;
+  if (weekdayNow && minutes >= 9 * 60 + 30 && minutes < 16 * 60) return null;
+  if (weekdayNow && minutes < 9 * 60 + 30) return date;
+  const d = new Date(`${date}T12:00:00Z`);
+  do d.setUTCDate(d.getUTCDate() + 1);
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+  return d.toISOString().slice(0, 10);
+}
+
 /** The streamer symbols to drop as leftovers, given each strike's greeks `updated_at`. */
 export function leftoverSymbols(stamps: Map<string, number>): Set<string> {
   let newest = -Infinity;
@@ -119,6 +142,7 @@ export function buildGexProfile(
   config: ConsoleConfig,
   symbol: string,
   nowMs: number = Date.now(),
+  offHours: OffHours = "last_session",
 ): Record<string, unknown> {
   const p = config.paths.streamCacheDb;
   if (!fs.existsSync(p)) return { ok: false, error: "stream cache missing" };
@@ -155,8 +179,15 @@ export function buildGexProfile(
     );
 
     // "Today" is the ET date: this read `toISOString()`, the UTC date, which turns over at 20:00 ET.
-    const { mode, order } = candidateExpirations(expirations, nowMs);
-    for (const expiration of order) {
+    const picked = candidateExpirations(expirations, nowMs);
+    // The next session's chain is only ever its own date's expiration, never a later one that
+    // another module's extra window happens to stream; without it, the last session's.
+    const next = offHours === "next_session" ? nextSessionDate(nowMs) : null;
+    const plans: Array<{ mode: "live" | "last_session" | "next_session"; expiration: string }> = [
+      ...(next !== null && expirations.includes(next) ? [{ mode: "next_session" as const, expiration: next }] : []),
+      ...picked.order.map((expiration) => ({ mode: picked.mode, expiration })),
+    ];
+    for (const { mode, expiration } of plans) {
       const rows = db
         .prepare<[string, string], { streamer_symbol: string; data_json: string }>(
           "SELECT streamer_symbol, data_json FROM stream_chain WHERE underlying_symbol = ? AND expiration = ?",
@@ -230,7 +261,8 @@ export function buildGexProfile(
         spotUpdatedAt,
         expiration,
         // "live" in session; "last_session" off-hours, when the chart is the last session's chain
-        // as of `chainAsOf` (its newest greeks) and must say so rather than read as now.
+        // as of `chainAsOf` (its newest greeks) and must say so rather than read as now;
+        // "next_session" off-hours when the caller asked for the next session's chain and it streams.
         sessionMode: mode,
         chainAsOf,
         leftoverRowsDropped: leftovers.size,
