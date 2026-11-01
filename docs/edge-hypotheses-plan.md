@@ -4694,6 +4694,125 @@ it is run.*
     only if it also beats item 43's best on net over buying power.
   - **Fails:** the gate stays off the live rule at every width, and 35–40 wings are closed for it.
 
+### 45. A published GEX share strategy, out of sample: buy the calm after an implied-vol spike
+
+*Source: the user, 2026-10-31, after reviewing a public repository shared in a trading Discord: a
+long-only share strategy on 15 large US names that buys after a put implied-vol spike has halved,
+near the put wall, with ATR stops and a wall-trailing stop. Its author reports a full-period
+backtest from 2018 and says every parameter was tuned on that whole period. The repository is
+licensed CC BY-NC-SA, so nothing of its code comes here: the rule below is restated from its
+documentation and its published default values, and implemented fresh. Declared before any of its
+inputs are fetched.*
+
+- **Question:** does the rule as published, at its own defaults, make money after its own costs on
+  data its author could not have tuned on: the sessions after its release, and names it dropped?
+- **Where the edge would live:** the author's account is **flow**: dealers short puts hedge into an
+  IV spike and buy back stock as IV compresses. Two rivals sit inside the rule itself. Its IV gauge
+  is the highest IV of any put within 5% of spot across every expiry from 0 to 60 days, so an
+  expiring contract's IV, or IV into an earnings report and its crush after, reads as a spike and a
+  compression. And a long-only buy after a fall in large names over 2018-2026 is short-term
+  reversal in a rising market. The arms below separate the three.
+- **Look-alikes:** item 12 and item 30 (GEX levels and monthly walls, both failed: no barrier at
+  walls away from 0DTE); item 26 (a dip-buying share ladder). This is a retest of walls as support
+  inside a different rule, said out loud.
+- **The rule, restated** (`shipped`), on 15-minute bars from 10:30 to 15:00 ET:
+  - *Gauge and walls:* each bar's put IV gauge as above; a five-session EMA of its end-of-day value
+    is the baseline, frozen on a spike day. Walls are the strikes with the most gamma times open
+    interest on each side, at least 3% out of the money, smoothed with a 25-bar half-life; gamma is
+    computed from the vendor's IV (`greeks.bs_gamma`), open interest is the vendor's morning report.
+  - *Spike:* the day's running high of the gauge above 3.5 times the baseline (scaled with the ATR
+    regime as the source does), price at or below the smoothed put wall, and 15-minute ATR at least
+    0.30% of price. A 50-bar window opens.
+  - *Entry:* the first bar in the window where the gauge has fallen to half its spike peak, ATR is
+    between 0.30% and 0.50% of price (the slow ATR under 0.55%), the walls are present with their
+    spread under 10 ATR, the call wall at least 0.5 ATR above its smoothed level for 5 bars, the put
+    wall no more than 1.5 ATR under its smoothed level, normalised net GEX under 2, and the TSI
+    dead-zone and ADX checks pass. The order fills 3 minutes after the bar closes.
+  - *Exits:* stop 4.5 ATR under entry, adapted by TSI (factor 1.625); the target as the source
+    derives it from ATR, scaled with the regime; a wall-trailing stop 3 ATR under the highest put
+    wall once the trade is well up, a Hurst-exhaustion trail (Hurst under 0.45 for 4 bars) and the
+    early exit at 85% of the target. Each derived level is restated in the script's docstring.
+  - *Book:* three slots of a third of equity, candidates ranked by TSI, at most 10 entries a day, a
+    15% daily loss halt. Costs as published: $0.005 a share, $1 minimum, 1% cap, and $0.10 a share
+    slippage each way.
+  - Where the documentation and the defaults disagree, the defaults rule, and each such case is
+    listed in the result file. JPM's calm-path entry (WallBounce) is out: the author runs it on one
+    name only.
+- **Arms:**
+  - `shipped`, the rule above. **Judged.**
+  - `cleaned`, `shipped` with the gauge taken over puts 3 or more calendar days from expiry, and no
+    spike counted from five sessions before a report to one after (Dolt `earnings_calendar`, as item
+    31). **Judged, for the mechanism.**
+  - `placebo`, the dip control: for each `shipped` trade, one entry on the same name, at the same ET
+    bar, on a session drawn with seed 45 from that name's sessions in the window with no `shipped`
+    entry within 10 sessions, and whose 10-session return to that bar falls in the same quintile of
+    the name's window distribution as the real entry's. It is managed by the same exits. **Paired
+    with `shipped`.**
+  - Reported, never judged: the author's own 15 names in his three-slot book, and that book over 200
+    seeded shufflings of the candidate order (seed 45). The author says 78% of signals are dropped for
+    want of a slot and the ranking predicts nothing, so a single path is one draw.
+- **Measured:** per trade, net return on the position's cost after commissions and slippage, with
+  one position per name at a time and **no slot cap**, so the measure does not depend on which
+  candidate a full book happened to drop.
+- **Universe:** the options-tradable rule (2026-10-27). The author's names that the liquidity
+  verdict calls tradable (AAPL, GOOG, MSFT, JPM, WMT, HD, DIS, KO, CAT, MS, MCD, COST; GS, NRG and SO
+  read thin and are reported only). His source lists 24 names he does not trade; the 17 of them the
+  verdict calls tradable, ranked by sha256 of `item45:<symbol>`, give the first ten: NEE, JNJ, BAC,
+  CCJ, V, PFE, UNH, PEP, C, XOM. The label is today's (hindsight, B11).
+- **Windows:**
+  - *Cell P, after release:* the 12 tradable names, 2026-04-13 to 2026-10-30. Out of sample in time.
+  - *Cell N, new names:* the ten, 2018-01-16 to 2026-04-10. Out of sample in names, not in time: his
+    tuning saw these years on other names. **It decides.**
+- **The stock bars, and the pilot that decides their basis.** The vendor tier is options only and
+  the broker's 15-minute candles reach back only to 2026-08-02, so the bars are built from the
+  underlying price the chain fetch returns at each sampled minute. Before any rule output is read,
+  a pilot on AAPL, JPM and KO:
+  - fetches cell P's chains for the three, the underlying sampled each minute (one far-dated contract
+    at a one-strike range, beyond the 60 days the gauge reads, so it never overlaps a wide request),
+    and a coverage probe of one name on five sessions spread over 2018-2025 at 5 minutes;
+  - compares 15-minute bars built from those samples, at 1-minute and at 5-minute sampling, with the
+    broker's own 15-minute bars over 2026-08-03 to 2026-10-30: the median ratio of built to true
+    14-bar ATR, and the share of bars whose built high or low misses the true one by more than 0.1
+    ATR;
+  - accepts a sampling if that median ratio is within 0.95 to 1.05 and the miss share is 10% or less.
+    If 5-minute sampling is accepted, cell N runs on it. If only 1-minute is, cell N is dropped (the
+    vendor serves single stocks no finer than 5 minutes before 2026) and cell P alone runs, read as
+    below. If neither is, the study ends with no verdict for want of data.
+- **Pass-or-fail rule:**
+  - *Cell N (decides):* `shipped`'s mean net per trade above zero with a one-sided t above 2; above
+    zero in both time-halves (split at 2022-03-01) and both name-halves (`name_half`); still above
+    zero at 1.5x costs; and the paired difference `shipped` minus `placebo` above zero with a t above 2.
+    Fewer than 150 trades is no verdict.
+  - *Cell P:* a consistency check. With 20 or more trades, its mean net per trade must be above zero
+    for a pass to stand; fewer is reported only. If cell N was dropped by the pilot, cell P is the
+    only read: a mean at or below zero over 20 or more trades is a fail; anything else is no verdict.
+  - *Mechanism:* `cleaned` is held to the same rule. A `shipped` pass with a `cleaned` fail reads
+    "the edge is in expiry and earnings readings, not dealer fear"; it still records a `shipped`
+    pass, and no flow claim is made.
+- **Minimum detectable effect (B12):** computed in the plan step from the spread of `placebo`'s
+  per-trade returns, before `shipped` is read, and recorded in the result file.
+- **Robustness (B13), reported beside a pass:** the three parameters the author flags as sharp
+  (`exit_width_atr`, `spike_min_atr_pct`, `vf_max_atr_pct`) at ±0.05 and ±0.10, read as a plateau
+  or a lone peak; costs at 1.5x and 2x; `drawdown_range` on the trades.
+- **Declared limits (B11):** stops and targets are checked on the sampled prints, not a full tape:
+  a stop fills at the print that crossed it (the session's first print on a gap), a target at its
+  level. A position open at a window's end settles at the last print. A session missing any wide
+  chain request has no gauge or walls, so no entry, and the count is reported. Prices are as the
+  vendor reports them, so a position spanning a split is adjusted by its ratio (NEE, 2020-10-27,
+  4:1). Dividends are ignored, as the source does. The tradable label is hindsight.
+- **Name split (B9):** applies in cell N (ten names); not in cell P, whose names are the author's.
+- **Data:** `scripts/gex_strategy_item45.py plan|requests|bars|pilot|study --cell pilot|P|N`.
+  `plan` writes the open-interest plan, `requests` the chain requests (wide, the minute samples and
+  the probe), `bars` the broker's 15-minute candles for the pilot (read-only, the shared credential),
+  `pilot` the basis decision, `study` the arms. Inputs are fetched as research-queue rows; results
+  stay under the backtest data directory. Cell N's fetch, about 220,000 chain requests, is queued
+  only after the pilot accepts 5-minute bars.
+- **Decides:**
+  - **Pass:** the rule earns a paper arm proposal (a share module does not exist; that is its own
+    declaration), sessions after 2026-10-30 read first.
+  - **Fail:** published rules of this kind are closed for the suite; the walls-as-support thread
+    stays closed with items 12 and 30.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
