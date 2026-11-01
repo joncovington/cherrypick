@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ResearchProgress, ResearchQueue, ResearchTask } from "@console/shared";
-import { QueueTable, TaskDetail, ago, argsLine, etMs, headline, keep, plan, resultLine, stamp } from "../src/pages/Backtest/QueueTab";
+import { QueueTable, TaskDetail, ago, argsLine, etMs, headline, keep, plan, queuePollMs, resultLine, stamp } from "../src/pages/Backtest/QueueTab";
 
 /**
  * The Backtest page's queue tab (laid out again 2026-10-27): now / recent (30 days) / history, five
@@ -185,6 +185,16 @@ describe("the research queue tab: helpers", () => {
   it("shows a file argument by its name, never its full path", () => {
     expect(argsLine({ requests: "C:\\a\\b\\requests.json", workers: 3 })).toBe("requests requests.json · workers 3");
     expect(argsLine({ path: "scripts/study.py", args: ["--item", "17"] })).toBe("path study.py · args --item 17");
+  });
+
+  it("polls every 2 s while anything runs, 5 s while rows wait, 30 s otherwise", () => {
+    const ok = (q: ResearchQueue) => ({ ok: true as const, data: q, error: null });
+    expect(queuePollMs(ok(queue([task({ status: "running", waits: null }), task({ id: 2 })])))).toBe(2_000);
+    expect(queuePollMs(ok(queue([], [byHand({})])))).toBe(2_000);
+    expect(queuePollMs(ok(queue([task({})], [byHand({ state: "done" })])))).toBe(5_000);
+    expect(queuePollMs(ok(queue([task({ status: "done" })])))).toBe(30_000);
+    expect(queuePollMs(undefined)).toBe(30_000);
+    expect(queuePollMs({ ok: false, data: null, error: "down" })).toBe(30_000);
   });
 
   it("formats ET stamps without a timezone shift", () => {
