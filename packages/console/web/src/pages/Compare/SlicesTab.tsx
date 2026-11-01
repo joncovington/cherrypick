@@ -6,8 +6,9 @@ import { useBridged } from "../../lib/bridged";
 /**
  * The Compare page's slices tab (B5, docs/trading-book-review-plan.md): an arm's in-sample slice
  * report from `python -m cherrypick.technicals slices`. Each cell shows n, its mean and a 95%
- * interval; a cell under 30 trades is greyed and never ranked. The header says how many cells there
- * are, so one strong cell reads in context. A good cell is a hypothesis to declare and test on held-out
+ * interval; a cell under 30 trades (or a weekday or event-day cell under 10 days) is greyed and never
+ * ranked. Whole-day cells also show their days and the share of random day sets that did as well
+ * (2026-11-01). The header says how many cells there are, so one strong cell reads in context. A good cell is a hypothesis to declare and test on held-out
  * data -- never a gate -- and the page says so first.
  *
  * Moved from Backtest 2026-10-30: the reports read paper and live ledgers, so a reader looks for them
@@ -34,7 +35,26 @@ const DIMENSION_WORDS: Record<string, string> = {
   entry_hour: "The hour of the day the trade was entered (Eastern time)",
   holding: "How long the trade was held",
   setup: "The chart setup behind the entry",
+  weekday: "The day of the week the trade was entered",
+  event_day: "The scheduled news on the entry day (a Fed decision, CPI, the jobs report, another major release, monthly expiry, or none)",
 };
+
+/** "15%" for a placebo's share of random day sets that did at least as well. */
+export function fmtShare(v: number): string {
+  return `${Math.round(v * 100)}%`;
+}
+
+/** The random-day reading of a dimension's best whole-day group, or "" where it has none. Under 5% is
+ *  the only reading that says the days differ; the trade interval alone overstates it, because a
+ *  day's trades move together. */
+export function placeboSentence(d: SliceDimensionRead): string {
+  const p = d.best?.placebo;
+  if (!d.best || !p) return "";
+  const head = ` Against random days, ${fmtShare(p.beatenBy)} of random sets of ${p.sessions} of the ${p.of} days did at least as well as ${d.best.value}`;
+  return p.beatenBy < 0.05
+    ? `${head}, so those days do look different.`
+    : `${head}, so they may be no different from any other days.`;
+}
 
 export function dimensionLabel(name: string): string {
   return DIMENSION_WORDS[name] ?? name.replace(/_/g, " ");
@@ -64,7 +84,7 @@ export function dimensionSentence(d: SliceDimensionRead, unit: string): string {
     return `Every trade fell in one group${d.best ? ` (${d.best.value})` : ""}, so there is nothing to compare here.`;
   }
   if (d.read === "too-few") {
-    return "Only one group has the 30 trades needed for a comparison, so this says nothing yet.";
+    return "Only one group has enough trades (30), and for a weekday or news-day group enough days (10), for a comparison, so this says nothing yet.";
   }
   const best = d.best!;
   const worst = d.worst!;
@@ -105,6 +125,7 @@ export function PlainEnglish({ r }: { r: SliceReport }) {
         {a.dimensions.map((d) => (
           <li key={d.name}>
             <strong>{dimensionLabel(d.name)}.</strong> {dimensionSentence(d, r.unit)}
+            {placeboSentence(d)}
           </li>
         ))}
       </ul>
@@ -121,7 +142,9 @@ export function PlainEnglish({ r }: { r: SliceReport }) {
         more likely one looks good by luck. A difference here gets written down as a hypothesis (docs/hypotheses.json) and
         tested on data this report never saw before anything changes. The ranges are also a little narrower than they should
         be, because trades on the same day move together.
-        {a.greyedCells > 0 ? ` ${a.greyedCells} group${a.greyedCells === 1 ? " has" : "s have"} under 30 trades and ${a.greyedCells === 1 ? "is" : "are"} shown faded, left out of every comparison.` : ""}
+        {a.greyedCells > 0
+          ? ` ${a.greyedCells} group${a.greyedCells === 1 ? " has" : "s have"} too few trades (under 30) or, for a weekday or news-day group, too few days (under 10), and ${a.greyedCells === 1 ? "is" : "are"} shown faded, left out of every comparison.`
+          : ""}
       </p>
     </Card>
   );
@@ -136,34 +159,46 @@ function cellTone(c: SliceCell): string | undefined {
 
 function Report({ r }: { r: SliceReport }) {
   return (
-    <Card title={`${r.label} · ${r.trades} trades · ${r.cells} cells (${r.rankedCells} with 30+)`}>
+    <Card title={`${r.label} · ${r.trades} trades · ${r.cells} cells (${r.rankedCells} ranked)`}>
       <p className="muted">
         In-sample. Overall {fmtMean(r.overall, r.unit)} ({fmtCi(r.overall, r.unit)}). {r.note}
       </p>
-      {r.dimensions.map((d) => (
-        <div className="table-scroll" key={d.name}>
-          <table className="data-table num-from-2">
-            <thead>
-              <tr>
-                <th>{d.name.replace(/_/g, " ")}</th>
-                <th className="num">n</th>
-                <th className="num">Mean</th>
-                <th className="num">95% interval</th>
-              </tr>
-            </thead>
-            <tbody>
-              {d.cells.map((c) => (
-                <tr key={c.value} className={c.greyed ? "muted" : undefined} title={c.greyed ? "under 30 trades: shown, not ranked" : undefined}>
-                  <td>{c.value}</td>
-                  <td className="num">{c.n}</td>
-                  <td className={cellTone(c)}>{fmtMean(c, r.unit)}</td>
-                  <td className="num">{fmtCi(c, r.unit)}</td>
+      {r.dimensions.map((d) => {
+        const days = d.cells.some((c) => c.sessions !== null);
+        const placebo = d.cells.some((c) => c.placebo !== null);
+        return (
+          <div className="table-scroll" key={d.name}>
+            <table className="data-table num-from-2">
+              <thead>
+                <tr>
+                  <th>{d.name.replace(/_/g, " ")}</th>
+                  <th className="num">n</th>
+                  {days && <th className="num">Days</th>}
+                  <th className="num">Mean</th>
+                  <th className="num">95% interval</th>
+                  {placebo && (
+                    <th className="num" title="Of random sets of as many days, the share that did at least as well. Near 50% is chance.">
+                      Random days as good
+                    </th>
+                  )}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
+              </thead>
+              <tbody>
+                {d.cells.map((c) => (
+                  <tr key={c.value} className={c.greyed ? "muted" : undefined} title={c.greyed ? "too few trades or days: shown, not ranked" : undefined}>
+                    <td>{c.value}</td>
+                    <td className="num">{c.n}</td>
+                    {days && <td className="num">{c.sessions ?? "—"}</td>}
+                    <td className={cellTone(c)}>{fmtMean(c, r.unit)}</td>
+                    <td className="num">{fmtCi(c, r.unit)}</td>
+                    {placebo && <td className="num">{c.placebo ? fmtShare(c.placebo.beatenBy) : "—"}</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
     </Card>
   );
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ExecutionModule, ExecutionWeek, SliceCell, SliceDimensionRead, SliceReport } from "@console/shared";
 import { gapLine, overrideLine, windowLine } from "../src/pages/Live/ExecutionTab";
-import { dimensionLabel, dimensionSentence, fmtCi, fmtMean, overallSentence } from "../src/pages/Compare/SlicesTab";
+import { dimensionLabel, dimensionSentence, fmtCi, fmtMean, fmtShare, overallSentence, placeboSentence } from "../src/pages/Compare/SlicesTab";
 
 const week = (over: Partial<ExecutionWeek>): ExecutionWeek => ({
   week: "2026-W42",
@@ -40,7 +40,7 @@ describe("the execution tab's lines", () => {
 });
 
 describe("the slices tab's figures", () => {
-  const c: SliceCell = { value: "uptrend", n: 35, mean: 0.0512, ci95: [-0.1, 0.2], greyed: false };
+  const c: SliceCell = { value: "uptrend", n: 35, mean: 0.0512, ci95: [-0.1, 0.2], greyed: false, sessions: null, placebo: null };
   it("reads R to three places and dollars to cents", () => {
     expect(fmtMean(c, "R")).toBe("0.051R");
     expect(fmtMean({ ...c, mean: 12.5 }, "net $")).toBe("$12.50");
@@ -50,7 +50,15 @@ describe("the slices tab's figures", () => {
 });
 
 describe("the slices tab's plain-English card", () => {
-  const cell = (value: string, mean: number, lo: number, hi: number): SliceCell => ({ value, n: 500, mean, ci95: [lo, hi], greyed: false });
+  const cell = (value: string, mean: number, lo: number, hi: number): SliceCell => ({
+    value,
+    n: 500,
+    mean,
+    ci95: [lo, hi],
+    greyed: false,
+    sessions: null,
+    placebo: null,
+  });
   const read = (r: SliceDimensionRead["read"], best: SliceCell | null, worst: SliceCell | null): SliceDimensionRead => ({
     name: "entry_hour",
     read: r,
@@ -94,6 +102,18 @@ describe("the slices tab's plain-English card", () => {
     expect(overallSentence({ ...base, analysis: { ...base.analysis, overall: "unclear" } })).toContain("breaking even");
     expect(dimensionLabel("entry_hour")).toBe("The hour of the day the trade was entered (Eastern time)");
     expect(dimensionLabel("new_thing")).toBe("new thing");
+  });
+
+  it("adds the random-day reading to a whole-day dimension, and nothing to one without it", () => {
+    const tue = { ...cell("Tue", 0.17, 0.15, 0.19), sessions: 10, placebo: { sessions: 10, of: 48, beatenBy: 0.0945 } };
+    expect(placeboSentence(read("separated", tue, cell("Mon", 0.09, 0.07, 0.11)))).toBe(
+      " Against random days, 9% of random sets of 10 of the 48 days did at least as well as Tue, so they may be no different from any other days.",
+    );
+    const rare = { ...tue, placebo: { sessions: 10, of: 48, beatenBy: 0.004 } };
+    expect(placeboSentence(read("separated", rare, null))).toContain("so those days do look different.");
+    expect(placeboSentence(read("separated", cell("13:00", 0.18, 0.17, 0.19), null))).toBe("");
+    expect(fmtShare(0.5)).toBe("50%");
+    expect(dimensionLabel("weekday")).toBe("The day of the week the trade was entered");
   });
 });
 

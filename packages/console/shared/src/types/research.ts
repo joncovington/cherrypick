@@ -55,12 +55,24 @@ export interface ExecutionRecord {
 }
 
 /** B5: one cell of a slice report. */
+/** A whole-day cell against random days (`core.stats.day_placebo`): of the random sets of as many
+ *  sessions, the share that did at least as well. Near 0.5 is chance. */
+export interface SlicePlacebo {
+  sessions: number;
+  of: number;
+  beatenBy: number;
+}
+
 export interface SliceCell {
   value: string;
   n: number;
   mean: number | null;
   ci95: [number, number] | null;
   greyed: boolean;
+  /** Sessions behind the cell; null in reports written before 2026-11-01. */
+  sessions: number | null;
+  /** Only on ranked weekday and event-day cells. */
+  placebo: SlicePlacebo | null;
 }
 
 export interface SliceReport {
