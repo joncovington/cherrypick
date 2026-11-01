@@ -26,6 +26,7 @@ from datetime import date
 from pathlib import Path
 
 from cherrypick.backtest import paths
+from cherrypick.core import db as core_db
 from cherrypick.core import home
 
 #: Stopped sides the live ledger needs before its distribution is compared at all.
@@ -40,7 +41,7 @@ def overshoots(conn: sqlite3.Connection, arm: str | None = None) -> list[dict]:
     have_legs = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'ic_spread_legs'").fetchone()
     if not need <= cols or not have_legs:
         return []
-    arm_col = "arm" if "arm" in cols else "risk_profile"
+    arm_col = core_db.arm_column(conn, "ic_trades")
     trig = (
         "COALESCE(t.stop_trigger_current, t.stop_trigger_original)"
         if "stop_trigger_current" in cols
