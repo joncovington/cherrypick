@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timedelta
 
 import pytest
+from cherrypick.core.clock import ET
 from test_book import one_arm_config
 from test_engine import q, snapshot
 from test_live_scaffold import (
@@ -21,6 +22,11 @@ from cherrypick.flies import analytics, clock, fill_facts, live_loop, live_order
 from cherrypick.flies import book as bookmod
 from cherrypick.flies import db as dbmod
 from cherrypick.flies import fill_model as fm
+
+# DAY is today's ET date (test_live_scaffold), so its UTC offset is -04:00 in summer and -05:00 in
+# winter. The times below were written at -04:00 and failed from the first EST day (2026-11-01); they
+# are ET wall-clock times, so they take the offset DAY actually has.
+OFF = datetime.fromisoformat(f"{DAY}T12:00:00").replace(tzinfo=ET).isoformat()[-6:]
 
 
 @pytest.fixture
@@ -308,8 +314,8 @@ def _seed_history(conn):
             "debit": 2.25,
             "net": 0.25,
             "status": "settled",
-            "entry_time": f"{DAY}T11:10:47-04:00",
-            "completed_at": f"{DAY}T11:24:52-04:00",
+            "entry_time": f"{DAY}T11:10:47{OFF}",
+            "completed_at": f"{DAY}T11:24:52{OFF}",
             "entry_order_id": "100",
             "completion_order_id": "101",
             "completion_fill_status": "filled",
@@ -327,14 +333,14 @@ def _seed_history(conn):
             "credit": 2.40,
             "net": 2.40,
             "status": "settled",
-            "entry_time": f"{DAY}T13:00:00-04:00",
+            "entry_time": f"{DAY}T13:00:00{OFF}",
             "entry_order_id": "200",
         },
     )
     for pid, reason, when in (
-        ("H1", "placed", f"{DAY}T11:10:55-04:00"),
-        ("H2", "placed", f"{DAY}T13:00:10-04:00"),
-        ("H2", "cutoff_cancelled", f"{DAY}T15:30:03-04:00"),
+        ("H1", "placed", f"{DAY}T11:10:55{OFF}"),
+        ("H2", "placed", f"{DAY}T13:00:10{OFF}"),
+        ("H2", "cutoff_cancelled", f"{DAY}T15:30:03{OFF}"),
     ):
         dbmod.record_decision(
             conn,
@@ -367,36 +373,36 @@ def test_backfill_recovers_broker_times_prices_and_spot_distances(live_conn):
                 "transaction_type": "Trade",
                 "order_id": 100,
                 "value": "-252.0",
-                "executed_at": f"{DAY}T15:10:50+00:00",
+                "executed_at": f"{DAY}T11:10:50{OFF}",
             },
             {
                 "transaction_type": "Trade",
                 "order_id": 100,
                 "value": "502.0",
-                "executed_at": f"{DAY}T15:10:50+00:00",
+                "executed_at": f"{DAY}T11:10:50{OFF}",
             },
             {
                 "transaction_type": "Trade",
                 "order_id": 101,
                 "value": "-410.0",
-                "executed_at": f"{DAY}T15:24:40+00:00",
+                "executed_at": f"{DAY}T11:24:40{OFF}",
             },
             {
                 "transaction_type": "Trade",
                 "order_id": 101,
                 "value": "190.0",
-                "executed_at": f"{DAY}T15:24:41+00:00",
+                "executed_at": f"{DAY}T11:24:41{OFF}",
             },
             {"transaction_type": "Receive Deliver", "order_id": None, "value": "0"},
         ]
     )
     trail = _trail(
         [
-            (f"{DAY}T11:15:00-04:00", 7712.0),
-            (f"{DAY}T11:24:30-04:00", 7704.43),  # 11s before the broker's 11:24:41 ET fill
-            (f"{DAY}T11:24:45-04:00", 7690.0),  # after the fill: never used
-            (f"{DAY}T13:30:00-04:00", 7745.0),
-            (f"{DAY}T14:00:00-04:00", 7736.0),
+            (f"{DAY}T11:15:00{OFF}", 7712.0),
+            (f"{DAY}T11:24:30{OFF}", 7704.43),  # 11s before the broker's 11:24:41 ET fill
+            (f"{DAY}T11:24:45{OFF}", 7690.0),  # after the fill: never used
+            (f"{DAY}T13:30:00{OFF}", 7745.0),
+            (f"{DAY}T14:00:00{OFF}", 7736.0),
         ]
     )
     plan = fill_facts.backfill_rows(live_conn, fills=fills, trail_path=trail)
@@ -404,9 +410,9 @@ def test_backfill_recovers_broker_times_prices_and_spot_distances(live_conn):
 
     comp = by_id["101"]
     assert comp["outcome"] == "filled" and comp["fill_time_source"] == "transactions"
-    assert comp["broker_filled_at"] == f"{DAY}T11:24:41-04:00", "re-stamped in ET, the ledger's convention"
+    assert comp["broker_filled_at"] == f"{DAY}T11:24:41{OFF}", "re-stamped in ET, the ledger's convention"
     assert comp["broker_fill_price"] == pytest.approx(2.20)  # 2.25 limit: 0.05 improvement
-    assert comp["placed_at"] == f"{DAY}T11:10:55-04:00"
+    assert comp["placed_at"] == f"{DAY}T11:10:55{OFF}"
     assert comp["fill_spot"] == pytest.approx(7704.43) and comp["fill_spot_source"] == "trail"
     assert comp["fill_dist_center"] == pytest.approx(10.57)
     assert comp["fill_dist_long"] == pytest.approx(5.57)
@@ -417,7 +423,7 @@ def test_backfill_recovers_broker_times_prices_and_spot_distances(live_conn):
 
     # The unfilled completion is keyed by the external identifier its order carried.
     miss = by_id["H2-completion"]
-    assert miss["outcome"] == "cutoff_cancelled" and miss["resolved_at"] == f"{DAY}T15:30:03-04:00"
+    assert miss["outcome"] == "cutoff_cancelled" and miss["resolved_at"] == f"{DAY}T15:30:03{OFF}"
     assert [s for _, s in [(r["observed_at"], r["spot"]) for r in plan["paths"]["H2-completion"]]] == [
         7745.0,
         7736.0,
@@ -436,9 +442,9 @@ def test_backfilled_orders_feed_the_distance_rule_fit(live_conn):
     _seed_history(live_conn)
     trail = _trail(
         [
-            (f"{DAY}T11:15:00-04:00", 7712.0),
-            (f"{DAY}T11:24:30-04:00", 7704.43),
-            (f"{DAY}T13:30:00-04:00", 7745.0),
+            (f"{DAY}T11:15:00{OFF}", 7712.0),
+            (f"{DAY}T11:24:30{OFF}", 7704.43),
+            (f"{DAY}T13:30:00{OFF}", 7745.0),
         ]
     )
     fill_facts.write_backfill(live_conn, fill_facts.backfill_rows(live_conn, fills={}, trail_path=trail))
@@ -540,7 +546,7 @@ def test_shadow_entry_splits_paper_net_by_what_live_would_have_filled(tmp_path):
                 "fees": 6.88,
                 "pnl": pnl,
                 "status": "settled",
-                "entry_time": f"{DAY}T10:30:00-04:00",
+                "entry_time": f"{DAY}T10:30:00{OFF}",
                 "shadow_entry_limit": 1.20,
                 "shadow_entry_path": path,
             },
@@ -563,7 +569,7 @@ def test_live_entry_paths_come_from_the_spot_trail_for_fills_and_misses_alike(li
                 "position_id": f"P-{oid}",
                 "leg": fm.ENTRY,
                 "side": side,
-                "placed_at": f"{DAY}T11:00:00-04:00",
+                "placed_at": f"{DAY}T11:00:00{OFF}",
                 "spot_at_submit": 7500.0,
                 "outcome": outcome,
                 "source": "live",
@@ -571,10 +577,10 @@ def test_live_entry_paths_come_from_the_spot_trail_for_fills_and_misses_alike(li
         )
     trail = _trail(
         [
-            (f"{DAY}T10:59:50-04:00", 7499.0),  # before placement: never a look
-            (f"{DAY}T11:00:15-04:00", 7500.6),
-            (f"{DAY}T11:00:30-04:00", 7501.2),
-            (f"{DAY}T11:01:10-04:00", 7505.0),  # past the minute
+            (f"{DAY}T10:59:50{OFF}", 7499.0),  # before placement: never a look
+            (f"{DAY}T11:00:15{OFF}", 7500.6),
+            (f"{DAY}T11:00:30{OFF}", 7501.2),
+            (f"{DAY}T11:01:10{OFF}", 7505.0),  # past the minute
         ]
     )
     orders = {o["order_id"]: o for o in fill_facts.entry_spot_paths(live_conn, trail)}
@@ -593,7 +599,7 @@ def test_live_entry_paths_come_from_the_spot_trail_for_fills_and_misses_alike(li
 def test_shadow_completion_reads_settled_rows_per_arm(tmp_path):
     conn = dbmod.connect(str(tmp_path / "paper_trades.db"))
     k = fm.grid_key(0.10)
-    for pid, kind, touched in (("P1", "fly", f"{DAY}T11:00:00-04:00"), ("P2", "short_vertical", None)):
+    for pid, kind, touched in (("P1", "fly", f"{DAY}T11:00:00{OFF}"), ("P2", "short_vertical", None)):
         dbmod.save_position(
             conn,
             {
@@ -614,7 +620,7 @@ def test_shadow_completion_reads_settled_rows_per_arm(tmp_path):
                 "pnl": 10.0,
                 "status": "settled",
                 "settlement_price": 7495.0,
-                "entry_time": f"{DAY}T10:30:00-04:00",
+                "entry_time": f"{DAY}T10:30:00{OFF}",
                 "shadow_completion_limit": 1.00,
                 "shadow_touches": json.dumps({"mid": {k: touched}} if touched else {"mid": {}}),
             },
