@@ -18,6 +18,11 @@ menu ("skip Mondays", "skip CPI days"), and enough of them will flatter some cel
 ranked cell of a day dimension carries `placebo` (`core.stats.day_placebo`): its per-session mean
 against random sets of as many sessions. A Thursday cell whose `beaten_by` is near 0.5 is what any
 weekday would show.
+
+**A day cell is greyed under `MIN_SESSIONS` days as well as under `MIN_N` trades.** An arm that
+enters many times a session fills a day cell with hundreds of trades from two or three days: MEIC
+paper's control arm put 554 trades in its NFP cell from 2 sessions, and a trade count read it as
+ranked. Every cell says how many sessions stand behind it.
 """
 
 from __future__ import annotations
@@ -29,6 +34,8 @@ from datetime import date
 from cherrypick.core.stats import day_placebo, mean_sd, t_quantile
 
 MIN_N = 30
+#: Fewest sessions behind a whole-day cell before it is ranked: under this, one or two days carry it.
+MIN_SESSIONS = 10
 _WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
@@ -121,8 +128,10 @@ def report(records: Sequence[dict], *, label: str = "") -> dict:
                     days.setdefault(v, set()).add(s)
         if groups:
             dims[dim] = {v: cell(xs) for v, xs in sorted(groups.items())}
-            if dim in DAY_DIMENSIONS:
-                for v, c in dims[dim].items():
+            for v, c in dims[dim].items():
+                c["sessions"] = len(days.get(v, ()))
+                if dim in DAY_DIMENSIONS:
+                    c["greyed"] = c["greyed"] or c["sessions"] < MIN_SESSIONS
                     if not c["greyed"]:
                         c["placebo"] = day_placebo(by_session, days.get(v, ()))
     cells = sum(len(v) for v in dims.values())
@@ -140,6 +149,7 @@ def report(records: Sequence[dict], *, label: str = "") -> dict:
             "is greyed, never ranked. A good-looking cell is a hypothesis to declare and test on held-out "
             "data, corrected for the cells looked at; it is never a gate. Trades in one session share a "
             "tape and the interval treats them as independent, so it reads narrower than it is. A weekday "
-            "or event-day cell's placebo compares its days with random days: beaten_by near 0.5 is chance."
+            f"or event-day cell is also greyed under {MIN_SESSIONS} sessions, and its placebo compares its "
+            "days with random days: beaten_by near 0.5 is chance."
         ),
     }

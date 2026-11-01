@@ -400,4 +400,6 @@ package's entry context: mean R per cell, n, interval, cells under 30 greyed. In
 only; a cell is never a gate, and a good one is declared in `docs/hypotheses.json` and tested.
 Since 2026-11-01 it also cuts by weekday and event day. Those are whole-day cuts, so each ranked
 cell carries a `placebo`: its per-session mean against random sets of as many sessions
-(`core.stats.day_placebo`), where `beaten_by` near 0.5 is what chance gives.
+(`core.stats.day_placebo`), where `beaten_by` near 0.5 is what chance gives. A whole-day cell is
+also greyed under 10 sessions, since an arm that enters many times a day can fill one with hundreds
+of trades from two days; every cell carries its `sessions`.
