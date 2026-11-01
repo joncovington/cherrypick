@@ -1,0 +1,37 @@
+{
+  "_note": "Signed options flow and the flow-adjusted GEX (core.gex.signed_flow / flow_adjusted), worked by hand. Read by packages/core/tests/test_gex_flow.py and by the console's server/test/gex-flow.test.ts, which pins its SQL mirror to the same answers. Change both implementations or neither. Dollar gamma here is gamma x quantity x 100 x 100^2 x 0.01 = gamma x quantity x 10,000.",
+  "spot": 100,
+  "multiplier": 100,
+  "strikes": [
+    {"strike": 95, "gamma": 0.02, "call_oi": 10, "put_oi": 50},
+    {"strike": 100, "gamma": 0.05, "call_oi": 40, "put_oi": 40},
+    {"strike": 105, "gamma": 0.02, "call_oi": 60, "put_oi": 5}
+  ],
+  "prints": [
+    {"_why": "aggressor buy", "side": "call", "strike": 100, "size": 5, "price": 2.0, "bid": 1.9, "ask": 2.0, "aggressor": "BUY", "spread_leg": 0, "eth": 0, "valid_tick": 1, "kind": "NEW"},
+    {"_why": "aggressor sell", "side": "call", "strike": 100, "size": 2, "price": 1.9, "bid": 1.9, "ask": 2.0, "aggressor": "SELL", "spread_leg": 0, "eth": 0, "valid_tick": 1, "kind": "NEW"},
+    {"_why": "no aggressor, at the ask: a buy by quote", "side": "put", "strike": 95, "size": 4, "price": 1.2, "bid": 1.0, "ask": 1.2, "aggressor": null, "spread_leg": 0, "eth": 0, "valid_tick": 1, "kind": "NEW"},
+    {"_why": "undefined aggressor, at the bid: a sell by quote", "side": "put", "strike": 95, "size": 3, "price": 1.0, "bid": 1.0, "ask": 1.2, "aggressor": "UNDEFINED", "spread_leg": 0, "eth": 0, "valid_tick": 1, "kind": "NEW"},
+    {"_why": "between bid and ask: unclassified, never guessed", "side": "put", "strike": 95, "size": 6, "price": 1.1, "bid": 1.0, "ask": 1.2, "aggressor": "UNDEFINED", "spread_leg": 0, "eth": 0, "valid_tick": 1, "kind": "NEW"},
+    {"_why": "a spread leg: excluded", "side": "call", "strike": 105, "size": 10, "price": 0.5, "bid": 0.4, "ask": 0.5, "aggressor": "BUY", "spread_leg": 1, "eth": 0, "valid_tick": 1, "kind": "NEW"},
+    {"_why": "extended hours: excluded", "side": "call", "strike": 105, "size": 7, "price": 0.5, "bid": 0.4, "ask": 0.5, "aggressor": "BUY", "spread_leg": 0, "eth": 1, "valid_tick": 1, "kind": "NEW"},
+    {"_why": "cancelled: never traded", "side": "call", "strike": 105, "size": 8, "price": 0.5, "bid": 0.4, "ask": 0.5, "aggressor": "BUY", "spread_leg": 0, "eth": 0, "valid_tick": 1, "kind": "CANCEL"},
+    {"_why": "invalid tick: excluded", "side": "call", "strike": 105, "size": 9, "price": 0.5, "bid": 0.4, "ask": 0.5, "aggressor": "BUY", "spread_leg": 0, "eth": 0, "valid_tick": 0, "kind": "NEW"},
+    {"_why": "a correction counts", "side": "put", "strike": 100, "size": 3, "price": 2.1, "bid": 2.0, "ask": 2.1, "aggressor": "BUY", "spread_leg": 0, "eth": 0, "valid_tick": 1, "kind": "CORRECTION"},
+    {"_why": "withdrawn: never traded", "side": "call", "strike": 105, "size": 1, "price": 0.4, "bid": 0.4, "ask": 0.5, "aggressor": "SELL", "spread_leg": 0, "eth": 0, "valid_tick": 1, "kind": "REMOVED"}
+  ],
+  "expected_flow": {
+    "strikes": [
+      {"side": "put", "strike": 95, "bought": 4, "sold": 3, "unclassified": 6, "net": 1},
+      {"side": "call", "strike": 100, "bought": 5, "sold": 2, "unclassified": 0, "net": 3},
+      {"side": "put", "strike": 100, "bought": 3, "sold": 0, "unclassified": 0, "net": 3}
+    ],
+    "classified_by": {"aggressor": 10, "quote": 7, "unclassified": 6},
+    "excluded": {"not_traded": 9, "invalid": 9, "extended_hours": 7, "spread_leg": 10}
+  },
+  "expected_adjusted": [
+    {"_why": "OI 0.02 x (10 - 50) x 1e4 = -8,000; 1 bought net: -200", "strike": 95, "net_gex": -8000, "flow_gex": -200, "net_gex_flow": -8200},
+    {"_why": "OI balanced; 3 calls + 3 puts bought net: -0.05 x 6 x 1e4", "strike": 100, "net_gex": 0, "flow_gex": -3000, "net_gex_flow": -3000},
+    {"_why": "OI 0.02 x 55 x 1e4; every print here excluded", "strike": 105, "net_gex": 11000, "flow_gex": 0, "net_gex_flow": 11000}
+  ]
+}

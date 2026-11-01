@@ -691,6 +691,15 @@ since the panel it copies defines none (common usage researched 2026-10-31):
 - **Magnet** (ours; there is no standard one): the most open interest inside the straddle's 1-sigma
   band (IV's when there is no straddle), with its share and the sign of its net gamma.
 - **Max pain** is the strike paying the chain's OI least at expiry; **zero gamma** is the GEX page's.
+- **Flow** (2026-11-01): the session's prints from gex's `gex_prints` (broker TimeAndSale, recorded when
+  gex's `prints` block is on), each signed by the feed's aggressor side, else the quote at the print
+  (between bid and ask: unsigned, never guessed). Spread legs, extended hours, cancelled and invalid
+  prints are excluded and counted. A customer's net buy of either right leaves the dealer that much
+  shorter: flow GEX = -gamma x net bought, added to the OI net. The rule is `core.gex.print_sign` /
+  `signed_flow` / `flow_adjusted`; `analytics/gexFlow.ts` mirrors it in SQL (summed per strike in the
+  database, never fetched), pinned by `gex-flow.test.ts` to core's hand-worked
+  `tests/fixtures/gex_flow_cases.json`. Change both or neither. With no table or no prints the
+  section says why.
 
 Display only: nothing records, gates on or is tested against these levels, and the walls the recorder
 and the wall-clear arm read are still `netWalls`. The recorder already keeps every input (quote history

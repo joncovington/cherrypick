@@ -19,7 +19,67 @@ import {
   putCallRatios,
   straddleMove,
 } from "../analytics/gexPanel.js";
-import { buildGexProfile, etEpoch } from "./gexProfile.js";
+import { buildGexProfile, etEpoch, etParts } from "./gexProfile.js";
+import path from "node:path";
+import { nearestZeroGamma } from "../analytics/gex.js";
+import { flowAdjusted, readSignedFlow, type SignedFlow } from "../analytics/gexFlow.js";
+
+/** How many of the strikes the flow moved most the panel lists. */
+export const FLOW_TOP_STRIKES = 5;
+
+type FlowRead =
+  | { status: "absent" | "empty"; reason: string }
+  | { status: "failed"; reason: string }
+  | { status: "ok"; flow: SignedFlow };
+
+/** One session's signed flow from gex's `gex_prints`, read-only; says why when there is none. */
+function readFlow(config: ConsoleConfig, symbol: string, expiration: string, tradeDate: string): FlowRead {
+  const p = path.join(config.paths.gexDir, "gex_history.db");
+  if (!fs.existsSync(p)) return { status: "absent", reason: "no gex history database" };
+  let db: Database.Database | null = null;
+  try {
+    db = new Database(p, { readonly: true, fileMustExist: true });
+    db.pragma("busy_timeout = 2000");
+    const has = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'gex_prints'").get();
+    if (has === undefined) return { status: "absent", reason: "the gex recorder has never recorded prints (prints.enabled)" };
+    const flow = readSignedFlow(db, symbol, expiration, tradeDate);
+    const counted = flow.classified_by.aggressor + flow.classified_by.quote + flow.classified_by.unclassified;
+    if (counted === 0 && Object.values(flow.excluded).every((n) => n === 0)) {
+      return { status: "empty", reason: `no prints recorded for ${symbol} ${expiration} on ${tradeDate}` };
+    }
+    return { status: "ok", flow };
+  } catch (err) {
+    return { status: "failed", reason: (err as Error).message };
+  } finally {
+    db?.close();
+  }
+}
+
+/** The panel's flow layer: what the session's prints did to the OI profile. */
+function flowLayer(series: GexStrikeRow[], spot: number, read: FlowRead): Record<string, unknown> {
+  if (read.status !== "ok") return { status: read.status, reason: read.reason };
+  const { flow } = read;
+  const adjusted = flowAdjusted(series, flow.strikes, spot);
+  const sum = (f: (r: (typeof adjusted)[number]) => number) => adjusted.reduce((s, r) => s + f(r), 0);
+  const netBought = (side: "call" | "put") => flow.strikes.filter((s) => s.side === side).reduce((s, r) => s + r.net, 0);
+  const counted = flow.classified_by.aggressor + flow.classified_by.quote + flow.classified_by.unclassified;
+  const excluded = Object.values(flow.excluded).reduce((s, n) => s + n, 0);
+  // The flip of the adjusted profile, by the GEX page's own rule (nearest per-strike sign change).
+  const asRows = adjusted.map((r) => ({ ...r, net_gex: r.net_gex_flow }) as unknown as GexStrikeRow);
+  return {
+    status: "ok",
+    contracts: { counted, excluded, classifiedBy: flow.classified_by, excludedBy: flow.excluded },
+    netBought: { call: netBought("call"), put: netBought("put") },
+    netGexOi: sum((r) => r.net_gex),
+    netGexFlow: sum((r) => r.net_gex_flow),
+    flowGex: sum((r) => r.flow_gex),
+    zeroGammaFlow: nearestZeroGamma(asRows, spot, "net_gex"),
+    topStrikes: [...adjusted]
+      .filter((r) => r.flow_gex !== 0)
+      .sort((a, b) => Math.abs(b.flow_gex) - Math.abs(a.flow_gex))
+      .slice(0, FLOW_TOP_STRIKES),
+  };
+}
 
 /**
  * The oldest quote a live straddle may use: `core.streamcache.usable_quote`'s 120 s, the age the gex
@@ -157,6 +217,8 @@ export function buildGexPanel(config: ConsoleConfig, symbol: string, nowMs: numb
         : { mid: straddle, strikes: used.map((s) => s.strike), asOf: Math.min(...used.map((s) => s.asOf)) },
     moves: { straddle: sigma, iv: sigmaIv, ruleOfThumb: ruleOfThumb === null ? null : { ...ruleOfThumb, factor: STRADDLE_BAND } },
     magnet: m === null ? null : { ...m, basis: magnetBasis },
+    // The session the chain's prints belong to: the ET date of the reading.
+    flow: flowLayer(series, spot, readFlow(config, symbol, expiration, etParts(asOf * 1000).date)),
     spotHistory: profile["spotHistory"],
     spotSession: profile["spotSession"],
   };

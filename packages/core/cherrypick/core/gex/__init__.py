@@ -383,3 +383,118 @@ def volume_totals(series: list[dict]) -> dict:
         "total_put_gex_vol": round(total_put),
         "net_gex_vol": round(net),
     }
+
+
+# --------------------------------------------------------------------------- signed flow (2026-11-01)
+#
+# Open interest is a once-a-day snapshot, so a 0DTE profile built on it misses every position the
+# session opens. These sign each recorded print (gex's `gex_prints`, the broker's TimeAndSale) by who
+# initiated it and adjust the profile with the net, as the third-party panels do. Display only: the
+# assumption under every GEX number -- customers long puts and short calls, dealers the other side --
+# is unchanged and still unmeasured here, and an initiating buyer may be closing rather than opening.
+# The console's `analytics/gexFlow.ts` (and its SQL) mirror this; `tests/fixtures/gex_flow_cases.json`
+# pins both. Change both or neither.
+
+#: The print kinds a count includes: a CANCEL or a withdrawn (REMOVED) print never traded.
+FLOW_COUNTED_KINDS = ("NEW", "CORRECTION")
+
+
+def print_sign(p: dict) -> int | None:
+    """+1 for a customer buy, -1 for a sell, 0 when it cannot be told, None when the print does not
+    count at all.
+
+    Not counted: a cancelled or withdrawn print, an invalid tick, extended hours, a spread leg (a
+    multi-leg order prints each leg; signing a condor's legs one by one reads a sold condor as two
+    puts bought and two sold), or no size. The side is the feed's aggressor side when it gives one,
+    else the quote at the print -- at or above the ask a buy, at or below the bid a sell, anything
+    between unclassified (0), never guessed from the mid."""
+    if p.get("kind") not in FLOW_COUNTED_KINDS:
+        return None
+    if p.get("valid_tick") == 0 or p.get("eth") == 1 or p.get("spread_leg") == 1:
+        return None
+    if not p.get("size") or p["size"] <= 0:
+        return None
+    aggressor = str(p.get("aggressor") or "").upper()
+    if aggressor == "BUY":
+        return 1
+    if aggressor == "SELL":
+        return -1
+    bid, ask, price = p.get("bid"), p.get("ask"), p.get("price")
+    if bid is None or ask is None or price is None or ask <= bid:
+        return 0
+    if price >= ask:
+        return 1
+    if price <= bid:
+        return -1
+    return 0
+
+
+def signed_flow(prints: list[dict]) -> dict:
+    """Per (side, strike), contracts customers bought, sold and could not be told, and the net
+    bought; plus what was excluded and why. `side` is the print's own ("call"/"put"); the counts are
+    contracts (sizes), not prints."""
+    strikes: dict[tuple[str, float], dict] = {}
+    excluded = {"not_traded": 0, "invalid": 0, "extended_hours": 0, "spread_leg": 0}
+    by = {"aggressor": 0, "quote": 0, "unclassified": 0}
+    for p in prints:
+        sign = print_sign(p)
+        size = int(p.get("size") or 0)
+        if sign is None:
+            if p.get("kind") not in FLOW_COUNTED_KINDS:
+                excluded["not_traded"] += size
+            elif p.get("valid_tick") == 0:
+                excluded["invalid"] += size
+            elif p.get("eth") == 1:
+                excluded["extended_hours"] += size
+            elif p.get("spread_leg") == 1:
+                excluded["spread_leg"] += size
+            continue
+        row = strikes.setdefault((p["side"], float(p["strike"])), {"bought": 0, "sold": 0, "unclassified": 0})
+        if sign > 0:
+            row["bought"] += size
+        elif sign < 0:
+            row["sold"] += size
+        else:
+            row["unclassified"] += size
+        if sign == 0:
+            by["unclassified"] += size
+        elif str(p.get("aggressor") or "").upper() in ("BUY", "SELL"):
+            by["aggressor"] += size
+        else:
+            by["quote"] += size
+    rows = [
+        {"side": side, "strike": strike, **row, "net": row["bought"] - row["sold"]}
+        for (side, strike), row in sorted(strikes.items(), key=lambda kv: (kv[0][1], kv[0][0]))
+    ]
+    return {"strikes": rows, "classified_by": by, "excluded": excluded}
+
+
+def flow_adjusted(
+    strikes: list[dict], flow: list[dict], spot: float, multiplier: float = DEFAULT_MULTIPLIER
+) -> list[dict]:
+    """Per strike, the OI net GEX, the flow's GEX and their sum. `strikes` carry `strike`, `gamma`
+    (the strike's one gamma, `strike_gamma`), `call_oi` and `put_oi`; `flow` is `signed_flow`'s rows.
+
+    The OI net is gamma x (call OI - put OI): customers short the calls, long the puts. A customer's
+    net buy of EITHER right leaves the dealer that much shorter, so the flow's GEX is
+    -gamma x (calls bought net + puts bought net), whichever right was bought."""
+    net_bought: dict[float, int] = {}
+    for f in flow:
+        net_bought[float(f["strike"])] = net_bought.get(float(f["strike"]), 0) + int(f["net"])
+    out = []
+    for s in strikes:
+        k = float(s["strike"])
+        g = float(s["gamma"] or 0.0)
+        oi_net = dollar_gamma(g, s["call_oi"], multiplier, spot) - dollar_gamma(
+            g, s["put_oi"], multiplier, spot
+        )
+        flow_gex = -dollar_gamma(g, net_bought.get(k, 0), multiplier, spot)
+        out.append(
+            {
+                "strike": k,
+                "net_gex": round(oi_net),
+                "flow_gex": round(flow_gex),
+                "net_gex_flow": round(oi_net + flow_gex),
+            }
+        )
+    return out

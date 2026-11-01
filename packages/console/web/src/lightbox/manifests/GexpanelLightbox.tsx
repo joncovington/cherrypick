@@ -42,7 +42,90 @@ interface GexPanelPayload {
   straddle?: { mid: number; strikes: number[]; asOf: number } | null;
   moves?: { straddle: Band | null; iv: Band | null; ruleOfThumb: (Band & { factor: number }) | null };
   magnet?: { strike: number; share: number; oi: number; gammaSign: 1 | -1 | 0; basis: "straddle" | "iv" } | null;
+  flow?: FlowLayer;
   spotHistory?: Array<{ ts: number; spot: number }>;
+}
+
+/** The session's prints, signed (server `analytics/gexFlow.ts`, mirroring `core.gex`). */
+type FlowLayer =
+  | { status: "absent" | "empty" | "failed"; reason: string }
+  | {
+      status: "ok";
+      contracts: {
+        counted: number;
+        excluded: number;
+        classifiedBy: { aggressor: number; quote: number; unclassified: number };
+        excludedBy: { not_traded: number; invalid: number; extended_hours: number; spread_leg: number };
+      };
+      netBought: { call: number; put: number };
+      netGexOi: number;
+      netGexFlow: number;
+      flowGex: number;
+      zeroGammaFlow: number | null;
+      topStrikes: Array<{ strike: number; net_gex: number; flow_gex: number; net_gex_flow: number }>;
+    };
+
+const fmtSigned = (v: number) => `${v > 0 ? "+" : ""}${fmtInt(v)}`;
+
+function FlowSection({ flow }: { flow: FlowLayer | undefined }) {
+  if (flow === undefined) return null;
+  if (flow.status !== "ok") {
+    return (
+      <>
+        <h3 className="gexp-section">flow (today&apos;s prints)</h3>
+        <p className={`gexp-empty ${flow.status === "failed" ? "pnl-neg" : "muted"}`}>{flow.reason}</p>
+      </>
+    );
+  }
+  const c = flow.contracts;
+  const classified = c.classifiedBy.aggressor + c.classifiedBy.quote;
+  const pctOf = (n: number, of: number) => (of > 0 ? fmtPct(n / of) : "—");
+  return (
+    <>
+      <h3 className="gexp-section" title="each print signed by who initiated it: the feed's aggressor side, else the quote at the print">
+        flow (today&apos;s prints)
+      </h3>
+      <div className="gexp-grid">
+        <Row label="net GEX, OI + flow" value={fmtGexDollars(flow.netGexFlow)} tone={flow.netGexFlow >= 0 ? "pnl-pos" : "pnl-neg"} />
+        <Row label="flow's GEX" value={fmtGexDollars(flow.flowGex)} tone={flow.flowGex >= 0 ? "pnl-pos" : "pnl-neg"} />
+        <Row label="calls bought net" value={fmtSigned(flow.netBought.call)} />
+        <Row label="puts bought net" value={fmtSigned(flow.netBought.put)} />
+        <Row
+          label="zero gamma, + flow"
+          value={fmtPx(flow.zeroGammaFlow)}
+          title="nearest strike where the flow-adjusted per-strike net changes sign"
+        />
+        <Row
+          label="signed"
+          value={`${pctOf(classified, c.counted)} of ${fmtInt(c.counted)}`}
+          title={`contracts signed: ${fmtInt(c.classifiedBy.aggressor)} by the feed's aggressor side, ${fmtInt(c.classifiedBy.quote)} by the quote at the print; ${fmtInt(c.classifiedBy.unclassified)} traded between bid and ask and are left unsigned`}
+        />
+      </div>
+      {flow.topStrikes.length > 0 && (
+        <table className="gexp-walls">
+          <tbody>
+            {flow.topStrikes.map((s) => (
+              <tr key={s.strike}>
+                <td className="gexp-strike">{s.strike.toFixed(2)}</td>
+                <td className="muted">{fmtGexDollars(s.net_gex)}</td>
+                <td className="muted">→</td>
+                <td className={s.net_gex_flow >= 0 ? "pnl-pos" : "pnl-neg"}>{fmtGexDollars(s.net_gex_flow)}</td>
+                <td className={s.flow_gex >= 0 ? "pnl-pos" : "pnl-neg"} title="this strike's flow GEX">
+                  ({fmtGexDollars(s.flow_gex)})
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="muted gexp-foot">
+        Excluded {fmtInt(c.excluded)} contracts: {fmtInt(c.excludedBy.spread_leg)} spread legs (a multi-leg order prints each
+        leg), {fmtInt(c.excludedBy.extended_hours)} extended hours, {fmtInt(c.excludedBy.not_traded + c.excludedBy.invalid)}{" "}
+        cancelled or invalid. A customer&apos;s net buy of either right is taken to leave the dealer that much shorter; an
+        initiating buyer may be closing, not opening.
+      </p>
+    </>
+  );
 }
 
 /** Every 15 s, the console's quote cadence: the moves follow each quote and the clock to expiry. */
@@ -103,6 +186,9 @@ function levelsOf(p: GexPanelPayload): Level[] {
   p.walls?.call.forEach((w, i) => out.push({ price: w.strike, title: `CW${i + 1}`, token: "--pos", style: i === 0 ? "solid" : "dashed" }));
   p.walls?.put.forEach((w, i) => out.push({ price: w.strike, title: `PW${i + 1}`, token: "--neg", style: i === 0 ? "solid" : "dashed" }));
   if (p.zeroGamma != null) out.push({ price: p.zeroGamma, title: "ZG", token: "--chart-special", style: "solid" });
+  if (p.flow?.status === "ok" && p.flow.zeroGammaFlow != null) {
+    out.push({ price: p.flow.zeroGammaFlow, title: "ZG+flow", token: "--chart-special", style: "dashed" });
+  }
   if (p.magnet != null) out.push({ price: p.magnet.strike, title: "MAG", token: "--amber-line", style: "solid" });
   if (p.maxPain != null) out.push({ price: p.maxPain, title: "MP", token: "--text-muted", style: "dotted" });
   const pair = (b: Band | null | undefined, title: string, token: string, style: Level["style"]) => {
@@ -184,10 +270,11 @@ function Panel({ p }: { p: GexPanelPayload }) {
           title="the copied panel's band: 0.85 x the straddle, a rule of thumb that is about 0.68 sigma, not 1"
         />
       </div>
+      <FlowSection flow={p.flow} />
       <p className="muted gexp-foot">
         Broker data only. Open interest as the broker reports it (once a day), with today&apos;s volume beside each wall; the moves
-        follow each quote and the clock to expiry, and show nothing once the chain has expired. No tape or depth feed here, so the
-        copied panel&apos;s order-flow rows are left out. Untested: display only.
+        follow each quote and the clock to expiry, and show nothing once the chain has expired. No depth feed here, so the copied
+        panel&apos;s DOM rows are left out. Untested: display only.
       </p>
     </section>
   );
