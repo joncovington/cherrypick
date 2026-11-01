@@ -12,7 +12,7 @@ import type {
   StudyResult,
   StudyRow,
 } from "@console/shared";
-import { isBacktestCapital } from "@console/shared";
+import { isBacktestCapital, isBacktestRiskPct, isBacktestRiskUnit, type BacktestRiskUnit } from "@console/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import type { ReactNode } from "react";
@@ -549,15 +549,24 @@ function ValidationCard({ v, updatedAt }: { v: BacktestValidation; updatedAt: nu
 
 // ------------------------------------------------------------------ runs
 
-function useRun(id: string | null, capital: number | null) {
+function useRun(id: string | null, capital: number | null, risk: number | null = null, unit: BacktestRiskUnit | null = null) {
+  // The default account (the run's peak risk) and default lens keep the plain key; a chosen account,
+  // then a chosen risk or unit, extend it.
+  const key: unknown[] = ["bridged", "backtest", "run", id];
+  if (capital !== null || risk !== null || unit !== null) key.push(capital);
+  if (risk !== null) key.push("risk", risk);
+  if (unit !== null) key.push("unit", unit);
   return useQuery<BridgedResult<BacktestRunReport>>({
-    // The default account (the run's peak risk) keeps the plain key; a chosen one is its own entry.
-    queryKey: capital === null ? ["bridged", "backtest", "run", id] : ["bridged", "backtest", "run", id, capital],
+    queryKey: key,
     enabled: id !== null,
     // Keep the last account's cards on screen while another loads.
     placeholderData: (prev) => prev,
     queryFn: async () => {
-      const q = capital === null ? "" : `?capital=${String(capital)}`;
+      const params = new URLSearchParams();
+      if (capital !== null) params.set("capital", String(capital));
+      if (risk !== null) params.set("risk", String(risk));
+      if (unit !== null) params.set("unit", unit);
+      const q = params.size === 0 ? "" : `?${params.toString()}`;
       const res = await fetch(`/api/backtest/runs/${encodeURIComponent(id ?? "")}${q}`);
       if (!res.ok) throw new Error(`run ${id ?? ""}: HTTP ${String(res.status)}`);
       return (await res.json()) as BridgedResult<BacktestRunReport>;
@@ -700,16 +709,26 @@ function capitalParam(raw: string | null): number | null {
   return raw !== null && isBacktestCapital(raw) ? Number(raw) : null;
 }
 
+/** The compounded lens's risk per session from the URL, in percent, or null for the default. */
+function riskParam(raw: string | null): number | null {
+  return raw !== null && isBacktestRiskPct(raw) ? Number(raw) : null;
+}
+
 function RunReport({ id, study }: { id: string; study?: { row: StudyRow; result: StudyResult } }) {
   const [params, setParams] = useSearchParams();
   const capital = capitalParam(params.get("capital"));
-  const pickCapital = (c: number | null) => {
+  const risk = riskParam(params.get("risk"));
+  const rawUnit = params.get("unit");
+  // Max loss is the default and keeps the plain URL; only `stop` is carried.
+  const unit = rawUnit !== null && isBacktestRiskUnit(rawUnit) && rawUnit !== "max_loss" ? rawUnit : null;
+  const pick = (key: "capital" | "risk" | "unit", v: number | string | null) => {
     const next = new URLSearchParams(params);
-    if (c === null) next.delete("capital");
-    else next.set("capital", String(c));
+    if (v === null) next.delete(key);
+    else next.set(key, String(v));
     setParams(next, { replace: true });
   };
-  const { data, isLoading, isError, error, dataUpdatedAt } = useRun(id, capital);
+  const pickCapital = (c: number | null) => pick("capital", c);
+  const { data, isLoading, isError, error, dataUpdatedAt } = useRun(id, capital, risk, unit);
   const r = data?.data ?? null;
   return (
     <Card title={`run ${id}`} updatedAt={dataUpdatedAt} isError={isError || (data !== undefined && !data.ok)}>
@@ -753,6 +772,10 @@ function RunReport({ id, study }: { id: string; study?: { row: StudyRow; result:
             cards={r.cards}
             capital={capital}
             onCapital={pickCapital}
+            risk={risk}
+            onRisk={(v) => pick("risk", v)}
+            unit={unit ?? "max_loss"}
+            onUnit={(u) => pick("unit", u === "max_loss" ? null : u)}
           />
           <div className="card-subhead">refused sessions</div>
           {Object.keys(r.refused).length === 0 ? (

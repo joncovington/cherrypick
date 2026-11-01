@@ -1,4 +1,6 @@
-import type { BacktestArmCards, BacktestRunCards } from "@console/shared";
+import type { BacktestArmCards, BacktestRunCards, ManagePayload } from "@console/shared";
+import { BACKTEST_DEFAULT_RISK_PCT, isBacktestRiskPct, type BacktestRiskUnit } from "@console/shared";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { EquityUnderwater } from "../../components/EquityUnderwater";
 import { Tile } from "../../components/performance/Tile";
@@ -14,7 +16,11 @@ import { TradeLog } from "./TradeLog";
  *
  * The account is a lens, not a replay: the runner replays fixed lots, so choosing a capital changes
  * only the percentages, never a dollar. It defaults to the run's own peak session risk; the choice
- * lives in the URL (`capital`), so a link keeps it.
+ * lives in the URL (`capital`), so a link keeps it. "Current account" offers the net liq manage last
+ * evaluated, account masked.
+ *
+ * The compounded lens (2026-10-31) re-sizes each session to a share of equity at risk (`risk` in
+ * the URL, default 2%): labelled a lens, kept beneath the fixed-lot figures, never in a verdict.
  */
 
 export const CAPITAL_PRESETS = [25_000, 50_000, 100_000] as const;
@@ -47,11 +53,14 @@ export function AccountPicker({
   capital,
   peakRisk,
   onPick,
+  current = [],
 }: {
   /** The chosen capital, or null for the run's peak risk. */
   capital: number | null;
   peakRisk: number | null;
   onPick: (capital: number | null) => void;
+  /** Each account's net liq as manage last evaluated it, offered as "current". */
+  current?: CurrentAccount[];
 }) {
   const [draft, setDraft] = useState("");
   const apply = () => {
@@ -73,6 +82,18 @@ export function AccountPicker({
       >
         peak risk{peakRisk === null ? " (n/r)" : ` (${dollars(peakRisk)})`}
       </button>
+      {current.map((a) => (
+        <button
+          key={a.account}
+          type="button"
+          className={capital === a.netLiq ? "mode-btn active" : "mode-btn"}
+          aria-pressed={capital === a.netLiq}
+          onClick={() => onPick(a.netLiq)}
+          title="this account's net liq as manage last evaluated it"
+        >
+          {`current ${a.account} (${dollars(a.netLiq)})`}
+        </button>
+      ))}
       {CAPITAL_PRESETS.map((c) => (
         <button
           key={c}
@@ -146,6 +167,153 @@ function AccountTileRow({ a }: { a: NonNullable<BacktestArmCards["account"]> }) 
         title="annual return / max drawdown: return per unit of the worst fall"
       />
     </TileGrid>
+  );
+}
+
+/** The lens's equity as an underwater pair: the running peak is drawing, not a statistic. */
+export function lensPoints(path: { session: string; whole: number }[]): { date: string; equity: number; drawdown: number }[] {
+  let peak = -Infinity;
+  return path.map((p) => {
+    peak = Math.max(peak, p.whole);
+    return { date: p.session, equity: p.whole, drawdown: peak - p.whole };
+  });
+}
+
+/** The compounded lens (`cards.compounded`): labelled as what it is, kept apart from the replay's own. */
+export function CompoundedLens({ c }: { c: BacktestArmCards }) {
+  const k = c.compounded;
+  if (k === undefined) return <p className="muted">No compounded lens: the backtest package predates it.</p>;
+  if (k === null) return <p className="muted">No compounded lens without an account: choose one above.</p>;
+  const w = k.whole;
+  const f = k.fractional;
+  return (
+    <>
+      <p className="muted" style={{ fontSize: 12 }}>
+        <span className="chip chip-warn">lens</span> Not what the replay ran, and never part of a verdict. Each
+        session is re-sized to put {String(k.risk_pct)}% of the equity at that point at risk, one unit being the lots
+        the replay held that session,{" "}
+        {k.unit === "stop"
+          ? "its risk what its stops lose at the trigger with both sides stopped (a gap through the trigger loses more)"
+          : "its risk their max loss"}
+        . Assumes P&amp;L, fills and fees scale with size.
+      </p>
+      {w.stopped_on !== null && (
+        <p>
+          <span className="chip chip-missing">{`stopped ${w.stopped_on}`}</span>{" "}
+          <span className="muted">At whole contracts the account reached zero there; nothing after it traded.</span>
+        </p>
+      )}
+      <TileGrid count={6}>
+        <Tile label="start" value={dollars(k.start)} title={`risk ${String(k.risk_pct)}% of equity per session`} />
+        <Tile label="ending (whole)" value={dollars(w.ending)} tone={tone(w.ending - k.start)} afterFees />
+        <Tile label="CAGR (whole)" value={pct(w.cagr)} tone={tone(w.cagr)} n={k.years} nUnit="years" title="compounded annual growth at whole contracts" />
+        <Tile
+          label="max drawdown (whole)"
+          value={pct(w.max_drawdown_pct)}
+          tone={w.max_drawdown_pct > 0 ? "neg" : undefined}
+          title={`${dollars(w.max_drawdown)} from the peak`}
+        />
+        <Tile
+          label="size (whole)"
+          value={w.units_max === 0 ? "none" : w.units_min === w.units_max ? `${String(w.units_max)}×` : `${String(w.units_min)}–${String(w.units_max)}×`}
+          title="units of the replay's lots held per session, smallest to largest"
+        />
+        <Tile
+          label="CAGR (fractional)"
+          value={pct(f.cagr)}
+          tone={tone(f.cagr)}
+          title={`the upper bound: ending ${dollars(f.ending)}, max drawdown ${pct(f.max_drawdown_pct)}`}
+        />
+      </TileGrid>
+      {(w.sessions_rounded_to_none > 0 || k.sessions_unsized > 0) && (
+        <p className="muted" style={{ fontSize: 12 }}>
+          {w.sessions_rounded_to_none > 0 &&
+            `${fmtCount(w.sessions_rounded_to_none)} session(s) left out at whole contracts: ${String(k.risk_pct)}% of the equity then was under one unit. `}
+          {k.sessions_unsized > 0 && `${fmtCount(k.sessions_unsized)} session(s) traded with no recorded risk and could not be sized.`}
+        </p>
+      )}
+      <EquityUnderwater equity={lensPoints(k.path)} />
+    </>
+  );
+}
+
+/** One masked account's current net liq, from manage's latest evaluation. */
+export interface CurrentAccount {
+  account: string;
+  netLiq: number;
+}
+
+/** The accounts manage last evaluated, with their net liq: the "current account" choices. */
+function useCurrentAccounts(): CurrentAccount[] {
+  const { data } = useQuery<ManagePayload>({
+    queryKey: ["manage", "current-accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/manage");
+      if (!res.ok) throw new Error(`manage: HTTP ${String(res.status)}`);
+      return (await res.json()) as ManagePayload;
+    },
+    staleTime: 5 * 60_000,
+  });
+  return (data?.accounts ?? [])
+    .filter((a): a is typeof a & { account: string; netLiq: number } => a.account !== null && a.netLiq !== null && a.netLiq > 0)
+    .map((a) => ({ account: a.account, netLiq: Math.round(a.netLiq) }));
+}
+
+const UNIT_LABEL: Record<BacktestRiskUnit, { text: string; title: string }> = {
+  max_loss: { text: "max loss", title: "a unit's risk is its positions' max loss: the most it can lose" },
+  stop: {
+    text: "stop distance",
+    title: "a unit's risk is what its stops lose at the trigger, both sides stopped; a gap through the trigger loses more",
+  },
+};
+
+/** The lens's risk unit, max loss or stop distance. */
+export function UnitPicker({ unit, onPick }: { unit: BacktestRiskUnit; onPick: (unit: BacktestRiskUnit) => void }) {
+  return (
+    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+      <span className="muted" style={{ fontSize: 12 }}>
+        risk unit
+      </span>
+      {(Object.keys(UNIT_LABEL) as BacktestRiskUnit[]).map((u) => (
+        <button
+          key={u}
+          type="button"
+          className={unit === u ? "mode-btn active" : "mode-btn"}
+          aria-pressed={unit === u}
+          onClick={() => onPick(u)}
+          title={UNIT_LABEL[u].title}
+        >
+          {UNIT_LABEL[u].text}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+/** The lens's risk per session, in percent: an input applied on Enter or blur. */
+export function RiskPicker({ risk, onPick }: { risk: number | null; onPick: (risk: number | null) => void }) {
+  const [draft, setDraft] = useState("");
+  const apply = () => {
+    const v = draft.trim().replace(/%$/, "");
+    if (v === "") return;
+    if (isBacktestRiskPct(v)) onPick(Number(v) === BACKTEST_DEFAULT_RISK_PCT ? null : Number(v));
+    setDraft("");
+  };
+  return (
+    <label className="muted" style={{ fontSize: 12 }}>
+      lens risk / session{" "}
+      <input
+        aria-label="compounded lens risk per session, percent"
+        placeholder={`${String(risk ?? BACKTEST_DEFAULT_RISK_PCT)}%`}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") apply();
+        }}
+        onBlur={apply}
+        style={{ width: 56 }}
+      />
+    </label>
   );
 }
 
@@ -347,6 +515,10 @@ export function RunCards({
   cards,
   capital,
   onCapital,
+  risk = null,
+  onRisk,
+  unit = "max_loss",
+  onUnit,
 }: {
   runId: string;
   /** The run's module: MEIC's trades can open their path. */
@@ -354,9 +526,16 @@ export function RunCards({
   cards: BacktestRunCards | undefined;
   capital: number | null;
   onCapital: (capital: number | null) => void;
+  /** The compounded lens's risk per session in percent, or null for the default. */
+  risk?: number | null;
+  onRisk?: (risk: number | null) => void;
+  /** The lens's risk unit; the stop unit is offered for MEIC only, whose ledger records its stops. */
+  unit?: BacktestRiskUnit;
+  onUnit?: (unit: BacktestRiskUnit) => void;
 }) {
   const names = Object.keys(cards?.arms ?? {});
   const [picked, setPicked] = useState<string | null>(null);
+  const current = useCurrentAccounts();
   if (cards === undefined) return <p className="muted">No cards: the backtest package predates them.</p>;
   const arm = picked !== null && names.includes(picked) ? picked : names.includes("control") ? "control" : names[0];
   const c = arm === undefined ? undefined : cards.arms?.[arm];
@@ -376,7 +555,9 @@ export function RunCards({
           </label>
         )}
         {/* Shown even when the cards failed, so a chosen account can always be undone. */}
-        <AccountPicker capital={capital} peakRisk={c?.peak_risk ?? null} onPick={onCapital} />
+        <AccountPicker capital={capital} peakRisk={c?.peak_risk ?? null} onPick={onCapital} current={current} />
+        {onRisk !== undefined && <RiskPicker risk={risk ?? null} onPick={onRisk} />}
+        {onUnit !== undefined && module === "meic" && <UnitPicker unit={unit} onPick={onUnit} />}
       </div>
       {!cards.ok ? (
         <p className="muted">Cards unavailable: {cards.error ?? "unknown error"}</p>
@@ -391,6 +572,8 @@ export function RunCards({
               : " Account: this arm's own peak session risk, so arms differ; pick an amount to compare them."}
           </p>
           <AccountTiles c={c} />
+          <div className="card-subhead">compounded lens</div>
+          <CompoundedLens c={c} />
           <SessionTiles c={c} />
           <div className="card-subhead">equity and drawdown</div>
           <EquityUnderwater equity={c.equity.map((p) => ({ date: p.session, equity: p.cum, drawdown: p.drawdown }))} />

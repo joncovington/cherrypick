@@ -271,6 +271,37 @@ describe("the gate is open", () => {
     expect(spawned).toEqual([]);
   });
 
+  it("hands the compounded lens's risk percent to the module beside the account", async () => {
+    setBridgeCaller(() => features({ backtest: true }));
+    stubBacktest(() => ({ ok: true, json: { ok: true, report: { run_id: RUN_ID, arms: {} } }, error: null }));
+    await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}?capital=50000&risk=1.5` });
+    await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}?risk=3&unit=stop` });
+    expect(spawned).toEqual([
+      { kind: "run", id: RUN_ID, capital: 50000, riskPct: 1.5 },
+      { kind: "run", id: RUN_ID, riskPct: 3, riskUnit: "stop" },
+    ]);
+  });
+
+  it("refuses a risk unit the package does not declare with 400 and spawns nothing", async () => {
+    setBridgeCaller(() => features({ backtest: true }));
+    stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
+    for (const bad of ["delta", "STOP", "", "--id", "max_loss "]) {
+      const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}?unit=${encodeURIComponent(bad)}` });
+      expect(r.statusCode, bad).toBe(400);
+    }
+    expect(spawned).toEqual([]);
+  });
+
+  it("refuses a risk percent outside (0, 100] or not a plain number with 400 and spawns nothing", async () => {
+    setBridgeCaller(() => features({ backtest: true }));
+    stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));
+    for (const bad of ["0", "0.00", "-2", "100.01", "101", "1e1", "2%", "abc", "", "--id", "2.555"]) {
+      const r = await app.inject({ method: "GET", url: `/api/backtest/runs/${RUN_ID}?risk=${encodeURIComponent(bad)}` });
+      expect(r.statusCode, bad).toBe(400);
+    }
+    expect(spawned).toEqual([]);
+  });
+
   it("refuses a malformed run id with 400 and spawns nothing", async () => {
     setBridgeCaller(() => features({ backtest: true }));
     stubBacktest(() => ({ ok: true, json: OVERVIEW, error: null }));

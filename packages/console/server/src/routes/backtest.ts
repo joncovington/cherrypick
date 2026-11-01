@@ -3,6 +3,8 @@ import {
   isBacktestArm,
   isBacktestCapital,
   isBacktestPosition,
+  isBacktestRiskPct,
+  isBacktestRiskUnit,
   isBacktestRunId,
   isBacktestSession,
   type BacktestOverview,
@@ -47,7 +49,7 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
     return readBacktestOverview();
   });
 
-  app.get<{ Params: { id: string }; Querystring: { capital?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { capital?: string; risk?: string; unit?: string } }>(
     "/api/backtest/runs/:id",
     async (req, reply): Promise<BridgedResult<BacktestRunReport> | FastifyReply> => {
       if (!backtestOn(getFeatures())) return refuse(reply);
@@ -58,7 +60,22 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
       if (capital !== undefined && !isBacktestCapital(capital)) {
         return reply.code(400).send({ error: "capital must be whole dollars" });
       }
-      return readBacktestRun(req.params.id, capital === undefined ? undefined : Number(capital));
+      // The compounded lens's risk per session, in percent, or nothing (the package's default).
+      const risk = req.query.risk;
+      if (risk !== undefined && !isBacktestRiskPct(risk)) {
+        return reply.code(400).send({ error: "risk must be a percent above 0 and at most 100" });
+      }
+      // The lens's risk unit: one of the package's declared names, or nothing (max loss).
+      const unit = req.query.unit;
+      if (unit !== undefined && !isBacktestRiskUnit(unit)) {
+        return reply.code(400).send({ error: "unit must be max_loss or stop" });
+      }
+      return readBacktestRun(
+        req.params.id,
+        capital === undefined ? undefined : Number(capital),
+        risk === undefined ? undefined : Number(risk),
+        unit,
+      );
     },
   );
 

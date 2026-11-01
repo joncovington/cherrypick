@@ -284,6 +284,38 @@ export interface BacktestArmCards {
   /** The most any one of this arm's sessions held at risk; null when its schema records none. */
   peak_risk: number | null;
   account: BacktestAccountRead | null;
+  /** The compounded lens; null without an account, absent from an older backtest package. */
+  compounded?: BacktestCompounded | null;
+}
+
+/** One curve of the compounded lens. Fractions, not percents. */
+export interface BacktestCompoundedMode {
+  ending: number;
+  /** Null when the run spans no time. -1 when the account stopped. */
+  cagr: number | null;
+  max_drawdown: number;
+  max_drawdown_pct: number;
+  /** The session the equity reached zero: the account would have stopped there. */
+  stopped_on: string | null;
+}
+
+/**
+ * `cards.compounded`: a LENS, not what the replay ran, never an input to a verdict. The same sessions
+ * re-sized each session to put `risk_pct` percent of equity at risk, a unit being the lots the replay
+ * held that session, its risk the session's own recorded risk. Assumes P&L, fills and fees scale with
+ * size. `whole` floors to whole units (how it would trade); `fractional` is the upper bound.
+ */
+export interface BacktestCompounded {
+  start: number;
+  risk_pct: number;
+  /** What a unit's risk is: the positions' max loss, or what their stops lose at the trigger (MEIC). */
+  unit?: BacktestRiskUnit;
+  years: number;
+  whole: BacktestCompoundedMode & { units_min: number; units_max: number; sessions_rounded_to_none: number };
+  fractional: BacktestCompoundedMode;
+  /** Sessions that traded with no recorded risk: they cannot be sized and are left out of both curves. */
+  sessions_unsized: number;
+  path: { session: string; whole: number; fractional: number }[];
 }
 
 /** Premium collected and kept, over the trades that carry a credit. Fractions, not percents. */
@@ -305,7 +337,7 @@ export interface BacktestPremium {
 export interface BacktestRunCards {
   ok: boolean;
   error?: string;
-  account?: { capital: number | null; basis: "chosen" | "peak_risk" };
+  account?: { capital: number | null; basis: "chosen" | "peak_risk"; risk_pct?: number };
   arms?: Record<string, BacktestArmCards>;
 }
 
@@ -341,6 +373,25 @@ export const BACKTEST_CAPITAL = /^[1-9][0-9]{0,9}$/;
 
 export function isBacktestCapital(v: string): boolean {
   return BACKTEST_CAPITAL.test(v);
+}
+
+/** The compounded lens's risk per session, in percent: above 0, at most 100, two decimals at most.
+ *  Checked on the server before it is handed to the subprocess. */
+export const BACKTEST_RISK_PCT = /^(100|[1-9]?[0-9])(\.[0-9]{1,2})?$/;
+
+export function isBacktestRiskPct(v: string): boolean {
+  return BACKTEST_RISK_PCT.test(v) && Number(v) > 0 && Number(v) <= 100;
+}
+
+/** The lens's default risk per session, in percent: the backtest package's own default. */
+export const BACKTEST_DEFAULT_RISK_PCT = 2;
+
+/** The lens's risk units, as the backtest package names them (`cards.RISK_UNITS`). */
+export const BACKTEST_RISK_UNITS = ["max_loss", "stop"] as const;
+export type BacktestRiskUnit = (typeof BACKTEST_RISK_UNITS)[number];
+
+export function isBacktestRiskUnit(v: string): v is BacktestRiskUnit {
+  return (BACKTEST_RISK_UNITS as readonly string[]).includes(v);
 }
 
 /** An arm's name as a run records it (`pm-200`, `live-1400`, `advised:x-1`). Checked on the server

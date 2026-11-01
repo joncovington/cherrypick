@@ -574,14 +574,16 @@ def cmd_read(args) -> int:
         out = tradepath.for_trade(args.id or "", args.arm or "", args.session or "", args.position or "")
         _emit(out)
         return 0 if out["ok"] else 1
-    from .cards import parse_capital
+    from .cards import parse_capital, parse_risk_pct, parse_risk_unit
 
     try:
         capital = parse_capital(args.capital)
+        risk_pct = parse_risk_pct(args.risk_pct)
+        risk_unit = parse_risk_unit(args.risk_unit)
     except ValueError as exc:
         _emit({"ok": False, "error": str(exc)})
         return 1
-    out = readout.run_report(args.id or "", capital)
+    out = readout.run_report(args.id or "", capital, risk_pct, risk_unit)
     _emit(out)
     return 0 if out["ok"] else 1
 
@@ -754,6 +756,16 @@ def main(argv: list[str] | None = None) -> int:
         "--capital",
         default=None,
         help="with `run`: the cards' account in dollars (default: peak session risk)",
+    )
+    rd.add_argument(
+        "--risk-pct",
+        default=None,
+        help="with `run`: the compounded lens's share of equity at risk each session, in percent (default 2)",
+    )
+    rd.add_argument(
+        "--risk-unit",
+        default=None,
+        help="with `run`: the lens's risk per unit, `max_loss` (default) or `stop` (MEIC's stops at trigger)",
     )
     rd.set_defaults(fn=cmd_read)
     sub.add_parser(

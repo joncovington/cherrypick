@@ -233,6 +233,16 @@ is a lens, not a replay**: fixed lots, never compounded, so a chosen capital (`-
 percentages only, and is one account for every arm. Absent, each arm reads against its own peak
 session risk (MEIC's condors' max losses summed, flies' book peak risk), never one shared peak, which
 MEIC's control sampling stream would set for every arm; a schema with neither has no account.
+**The compounded lens** (`compounded`, `read run --risk-pct`, 2026-10-31) is the one exception to
+"never compounded", and is labelled a lens wherever it is shown: the same sessions re-sized each
+session to put a share of the equity at that point at risk (default 2%), one unit being the lots the
+replay held that session at its own risk, known at entry: `--risk-unit max_loss` (default) reads the
+positions' max loss; `stop` reads what MEIC's stops lose at the trigger with both sides stopped,
+(2 x `stop_trigger_original` - 1) x credit, read from MEIC's own ledger (a gap loses more; a schema
+without stops sizes nothing under it). Whole units floored as
+the headline, fractional beside as the upper bound; a session that floors to none or has no recorded
+risk is counted, not hidden. It assumes P&L, fills and fees scale with size, and it is never an input
+to a verdict, a trial or the advisor.
 `read trades --id --arm` (2026-10-31) lists one arm's trades from the same ledgers (`trade_log`):
 each trade's times, its exit reason in the module's words and its money columns as `core.ledgers`
 names them, a field the schema does not record as null. Its own read, so `read run` stays light.
