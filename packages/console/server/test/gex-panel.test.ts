@@ -1,13 +1,16 @@
 import { describe, it, expect } from "vitest";
 import type { GexStrikeRow } from "../src/analytics/gex.js";
 import {
+  COVERAGE_EDGE_STRIKES,
   STRADDLE_BAND,
   STRADDLE_PER_SIGMA,
   WALLS_PER_SIDE,
+  atCoverageEdge,
   atSpot,
   expectedMove,
   magnet,
   maxPain,
+  oiCoverage,
   panelWalls,
   putCallRatios,
   straddleMove,
@@ -102,7 +105,53 @@ describe("magnet", () => {
 
 describe("put/call ratios", () => {
   it("is put over call for OI and volume, null with no calls", () => {
-    expect(putCallRatios([row(1, { call_oi: 4, put_oi: 2, call_vol: 1, put_vol: 3 })])).toEqual({ oi: 0.5, volume: 3 });
-    expect(putCallRatios([row(1, { put_oi: 2 })])).toEqual({ oi: null, volume: null });
+    const r = [row(1, { call_oi: 4, put_oi: 2, call_vol: 1, put_vol: 3 })];
+    expect(putCallRatios(r, r)).toEqual({ oi: 0.5, volume: 3 });
+    expect(putCallRatios([row(1, { put_oi: 2 })], [row(1)])).toEqual({ oi: null, volume: null });
+  });
+
+  it("takes OI over the covered strikes and volume over the live window", () => {
+    const covered = [row(1, { call_oi: 4, put_oi: 2 }), row(2, { call_oi: 0, put_oi: 6 })];
+    const window = [row(1, { call_vol: 2, put_vol: 1 })];
+    expect(putCallRatios(covered, window)).toEqual({ oi: 2, volume: 0.5 });
+  });
+});
+
+describe("walls by volume", () => {
+  // OI says 7800, the session's volume says 7850: the basis decides the wall.
+  const series = [
+    row(7700, { put_gex: -100, put_gex_vol: -900, put_oi: 10, put_vol: 900 }),
+    row(7650, { put_gex: -800, put_gex_vol: -50, put_oi: 800, put_vol: 50 }),
+    row(7800, { call_gex: 600, call_gex_vol: 10, call_oi: 600, call_vol: 10 }),
+    row(7850, { call_gex: 50, call_gex_vol: 700, call_oi: 5, call_vol: 700 }),
+  ];
+
+  it("ranks on the basis asked for, and shares each wall of that basis's total", () => {
+    expect(panelWalls(series, 7720).call[0]!.strike).toBe(7800);
+    expect(panelWalls(series, 7720, "volume").call[0]!.strike).toBe(7850);
+    expect(panelWalls(series, 7720).put[0]!.strike).toBe(7650);
+    const v = panelWalls(series, 7720, "volume");
+    expect(v.put[0]!.strike).toBe(7700);
+    expect(v.put[0]!.gex).toBe(-900);
+    expect(v.call[0]!.share).toBeCloseTo(700 / 710);
+  });
+});
+
+describe("open interest coverage", () => {
+  const rows = [90, 95, 100, 105, 110, 115, 120].map((k) => row(k, { call_oi: 1 }));
+
+  it("spans the strikes holding open interest", () => {
+    expect(oiCoverage([...rows, row(200)])).toEqual({ low: 90, high: 120, strikes: 7 });
+    expect(oiCoverage([row(1)])).toBeNull();
+  });
+
+  it("flags max pain within two held strikes of either end, not inside", () => {
+    expect(COVERAGE_EDGE_STRIKES).toBe(2);
+    expect(atCoverageEdge(rows, 90)).toBe(true);
+    expect(atCoverageEdge(rows, 95)).toBe(true);
+    expect(atCoverageEdge(rows, 100)).toBe(false);
+    expect(atCoverageEdge(rows, 110)).toBe(false);
+    expect(atCoverageEdge(rows, 115)).toBe(true);
+    expect(atCoverageEdge(rows, 120)).toBe(true);
   });
 });

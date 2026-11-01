@@ -10,6 +10,7 @@ import {
   etParts,
   leftoverSymbols,
   LEFTOVER_ROW_SECONDS,
+  nextSessionDate,
 } from "../src/services/gexProfile.js";
 
 /**
@@ -63,6 +64,17 @@ describe("candidateExpirations", () => {
 
   it("on a weekend, the latest past expiration", () => {
     expect(candidateExpirations(EXPS, SATURDAY).order[0]).toBe("2026-10-02");
+  });
+});
+
+describe("nextSessionDate", () => {
+  it("is today before the open, the next weekday after the bell, Monday over a weekend, null in session", () => {
+    expect(nextSessionDate(PRE_OPEN)).toBe("2026-10-01");
+    expect(nextSessionDate(AFTER_BELL)).toBe("2026-10-01");
+    expect(nextSessionDate(LATE_EVENING)).toBe("2026-10-01");
+    expect(nextSessionDate(SATURDAY)).toBe("2026-10-05");
+    expect(nextSessionDate(ms("2026-10-02T21:00:00Z"))).toBe("2026-10-05"); // Fri 17:00 EDT
+    expect(nextSessionDate(IN_SESSION)).toBeNull();
   });
 });
 
@@ -129,6 +141,20 @@ describe("buildGexProfile", () => {
     expect(out["expiration"]).toBe("2026-09-30");
     expect(out["sessionMode"]).toBe("last_session");
     expect(out["chainAsOf"]).toBe(chainNow);
+  });
+
+  it("asked for the next session off-hours, shows only that session's own chain", () => {
+    // After the 09-30 bell the next session is 10-01, which nothing streams: the 10-02 extra
+    // window must not stand in for it, so the last session's chain shows.
+    const out = buildGexProfile(config, "SPX", AFTER_BELL, "next_session");
+    expect(out["expiration"]).toBe("2026-09-30");
+    expect(out["sessionMode"]).toBe("last_session");
+    // Pre-open on 10-02 that day's chain is the next session's.
+    const pre = buildGexProfile(config, "SPX", ms("2026-10-02T12:45:00Z"), "next_session");
+    expect(pre["expiration"]).toBe("2026-10-02");
+    expect(pre["sessionMode"]).toBe("next_session");
+    // The GEX page's default is unchanged: the last session's.
+    expect(buildGexProfile(config, "SPX", ms("2026-10-02T12:45:00Z"))["sessionMode"]).toBe("last_session");
   });
 
   it("drops the leftover strike's gamma from the profile", () => {

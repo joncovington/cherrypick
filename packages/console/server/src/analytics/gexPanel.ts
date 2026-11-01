@@ -46,40 +46,57 @@ export interface PanelWall {
 }
 
 /**
- * Up to `WALLS_PER_SIDE` call walls above spot, ranked by CALL gamma (call gamma x call OI), and put
- * walls below it, ranked by PUT gamma: SpotGamma's call and put wall, not the net walls. Ranking on
- * net (call minus put) left a put-heavy chain with no call wall at all (SPX, 2026-10-30). Above and
- * below spot, as the copied panel lists them.
+ * What a wall's gamma is weighted by: open interest (the broker's once-a-day count, positioning as
+ * of the open) or the session's volume (what traded since, the GEX page's flow basis). A 0DTE chain
+ * trades many times its open interest (SPX 2026-10-30: the walls 17x to 560x), so the two can
+ * disagree.
  */
-export function panelWalls(series: GexStrikeRow[], spot: number): { call: PanelWall[]; put: PanelWall[] } {
-  const totalCall = series.reduce((s, r) => s + Math.max(r.call_gex, 0), 0);
-  const totalPut = series.reduce((s, r) => s + Math.max(-r.put_gex, 0), 0);
+export type WallBasis = "oi" | "volume";
+
+/**
+ * Up to `WALLS_PER_SIDE` call walls above spot, ranked by CALL gamma (call gamma x call OI, or x
+ * call volume), and put walls below it, ranked by PUT gamma: SpotGamma's call and put wall, not the
+ * net walls. Ranking on net (call minus put) left a put-heavy chain with no call wall at all (SPX,
+ * 2026-10-30). Above and below spot, as the copied panel lists them.
+ */
+export function panelWalls(series: GexStrikeRow[], spot: number, basis: WallBasis = "oi"): { call: PanelWall[]; put: PanelWall[] } {
+  const callGex = (r: GexStrikeRow) => (basis === "oi" ? r.call_gex : r.call_gex_vol);
+  const putGex = (r: GexStrikeRow) => (basis === "oi" ? r.put_gex : r.put_gex_vol);
+  const totalCall = series.reduce((s, r) => s + Math.max(callGex(r), 0), 0);
+  const totalPut = series.reduce((s, r) => s + Math.max(-putGex(r), 0), 0);
   const wall = (r: GexStrikeRow, side: "call" | "put"): PanelWall => {
     const oi = side === "call" ? r.call_oi : r.put_oi;
     const volume = side === "call" ? r.call_vol : r.put_vol;
-    const gex = side === "call" ? r.call_gex : r.put_gex;
+    const gex = side === "call" ? callGex(r) : putGex(r);
     const total = side === "call" ? totalCall : totalPut;
     return { strike: r.strike, gex, share: total > 0 ? Math.abs(gex) / total : 0, oi, volume, volOi: oi > 0 ? volume / oi : null };
   };
   const call = series
-    .filter((r) => r.strike > spot && r.call_gex > 0)
-    .sort((a, b) => b.call_gex - a.call_gex)
+    .filter((r) => r.strike > spot && callGex(r) > 0)
+    .sort((a, b) => callGex(b) - callGex(a))
     .slice(0, WALLS_PER_SIDE)
     .map((r) => wall(r, "call"));
   const put = series
-    .filter((r) => r.strike < spot && r.put_gex < 0)
-    .sort((a, b) => a.put_gex - b.put_gex)
+    .filter((r) => r.strike < spot && putGex(r) < 0)
+    .sort((a, b) => putGex(a) - putGex(b))
     .slice(0, WALLS_PER_SIDE)
     .map((r) => wall(r, "put"));
   return { call, put };
 }
 
+/** Open interest at one strike, both rights. */
+export type StrikeOi = Pick<GexStrikeRow, "strike" | "call_oi" | "put_oi">;
+
 /**
  * Max pain: the strike at which the chain's open interest would pay holders least at expiry
  * (calls `max(0, P - K)`, puts `max(0, K - P)`, each times OI; premiums paid are sunk and ignored).
  * Candidates are the listed strikes; the lower strike wins a tie. Null with no open interest.
+ *
+ * Over the strikes the stream covers, never the whole chain: open interest outside them adds a
+ * straight line to every candidate's payout (deep calls below pull the answer down, deep puts above
+ * push it up), so an answer near the edge of the coverage is not to be trusted (`atCoverageEdge`).
  */
-export function maxPain(series: GexStrikeRow[]): number | null {
+export function maxPain(series: StrikeOi[]): number | null {
   if (!series.some((r) => r.call_oi > 0 || r.put_oi > 0)) return null;
   let best: { strike: number; payout: number } | null = null;
   for (const p of series) {
@@ -90,6 +107,26 @@ export function maxPain(series: GexStrikeRow[]): number | null {
     if (best === null || payout < best.payout) best = { strike: p.strike, payout };
   }
   return best!.strike;
+}
+
+/** Within this many strikes of either end of the open interest's coverage, max pain is flagged. */
+export const COVERAGE_EDGE_STRIKES = 2;
+
+/** The strikes with open interest: lowest, highest, how many. Null with none. */
+export function oiCoverage(rows: StrikeOi[]): { low: number; high: number; strikes: number } | null {
+  const held = rows.filter((r) => r.call_oi + r.put_oi > 0).map((r) => r.strike);
+  if (held.length === 0) return null;
+  return { low: Math.min(...held), high: Math.max(...held), strikes: held.length };
+}
+
+/** Whether `strike` is within `COVERAGE_EDGE_STRIKES` held strikes of either end of the coverage. */
+export function atCoverageEdge(rows: StrikeOi[], strike: number): boolean {
+  const held = rows
+    .filter((r) => r.call_oi + r.put_oi > 0)
+    .map((r) => r.strike)
+    .sort((a, b) => a - b);
+  const i = held.indexOf(strike);
+  return i >= 0 && (i < COVERAGE_EDGE_STRIKES || i >= held.length - COVERAGE_EDGE_STRIKES);
 }
 
 /**
@@ -144,13 +181,15 @@ export function magnet(
   return { strike: top.strike, share: oiOf(top) / total, oi: oiOf(top), gammaSign: Math.sign(top.net_gex) as 1 | -1 | 0 };
 }
 
-/** Put/call ratios over the chain: open interest and today's volume. Null on a zero call side. */
-export function putCallRatios(series: GexStrikeRow[]): { oi: number | null; volume: number | null } {
-  const sum = (f: (r: GexStrikeRow) => number) => series.reduce((s, r) => s + f(r), 0);
-  const callOi = sum((r) => r.call_oi);
-  const callVol = sum((r) => r.call_vol);
+/**
+ * Put/call ratios: open interest over `oiRows` (every covered strike) and the session's volume over
+ * `series` (the live window). Null on a zero call side.
+ */
+export function putCallRatios(oiRows: StrikeOi[], series: GexStrikeRow[]): { oi: number | null; volume: number | null } {
+  const callOi = oiRows.reduce((s, r) => s + r.call_oi, 0);
+  const callVol = series.reduce((s, r) => s + r.call_vol, 0);
   return {
-    oi: callOi > 0 ? sum((r) => r.put_oi) / callOi : null,
-    volume: callVol > 0 ? sum((r) => r.put_vol) / callVol : null,
+    oi: callOi > 0 ? oiRows.reduce((s, r) => s + r.put_oi, 0) / callOi : null,
+    volume: callVol > 0 ? series.reduce((s, r) => s + r.put_vol, 0) / callVol : null,
   };
 }

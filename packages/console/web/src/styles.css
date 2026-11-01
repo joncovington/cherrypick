@@ -1294,6 +1294,10 @@ select.text-input {
 .gexp-row > :last-child {
   font-weight: 600;
 }
+.gexp-basis {
+  margin: 0.6rem 0 0;
+  width: fit-content;
+}
 .gexp-section {
   font-size: 11.5px;
   text-transform: uppercase;
