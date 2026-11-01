@@ -4,11 +4,12 @@ volatility say, where the levels sit, and the kind of option trade the read poin
 Written into each row of the setups watchlist (`watchlist.py`) as `read`, so the console lays out
 cards and decides nothing. A pure function of data the suite already holds: the chart file (rule,
 bars, levels, trend, rank), the historical study's published results, the signal board, the broker's
-nightly IV reading and the skate bands. No broker call, no network.
+nightly IV reading, the skate bands and the nightly chain listings. No broker call, no network.
 
 **The structure lean is a kind of trade, never a contract.** Direction x volatility regime x the
 earnings calendar picks a family (a debit spread toward the target, a credit spread past a level),
-with the levels it would be built against. Every lean restates the setup's own record beside it:
+with the levels it would be built against, each leg on a strike the cycle expiry lists (a level is
+a price; a strike is what can be traded). Every lean restates the setup's own record beside it:
 most of these setups tested no better than random entry (docs/setups.md), and a lean on a rule with
 no edge is a structure for the read, not a reason to trade.
 
@@ -234,10 +235,42 @@ def levels(row: dict, atr14: float | None, move: dict | None) -> dict[str, Any]:
     }
 
 
+def nearest(price: float, strikes: list[float]) -> float:
+    """The listed strike nearest a price; the lower on a tie."""
+    return min(strikes, key=lambda k: (abs(k - price), k))
+
+
+def debit_strikes(
+    close: float, far: float, long_: bool, strikes: list[float]
+) -> tuple[float, float, bool] | None:
+    """A debit spread's (bought, sold, reaches) on listed strikes: bought nearest the money, sold at
+    the last strike short of `far` so the target is the spread's full value. When `far` sits inside
+    one strike of the bought leg, sold is the next strike out and `reaches` is False: the narrowest
+    spread listed overshoots the target."""
+    buy = nearest(close, strikes)
+    out = (
+        sorted(k for k in strikes if k > buy)
+        if long_
+        else sorted((k for k in strikes if k < buy), reverse=True)
+    )
+    if not out:
+        return None
+    inside = [k for k in out if (k <= far if long_ else k >= far)]
+    return (buy, inside[-1], True) if inside else (buy, out[0], False)
+
+
 def lean(
-    row: dict, vol: dict, dirn: dict, lv: dict, band: dict | None, record: dict | None
+    row: dict,
+    vol: dict,
+    dirn: dict,
+    lv: dict,
+    band: dict | None,
+    record: dict | None,
+    strikes: list[float] | None = None,
 ) -> dict[str, Any]:
-    """The kind of option trade the read points to, with the levels it would be built against."""
+    """The kind of option trade the read points to, with the levels it would be built against.
+    `strikes` are the cycle expiry's listed strikes; with them every leg names a listed strike, and
+    without them a leg states the price it would be built against, saying so."""
     long_ = row["side"] == "long"
     reg = vol["regime"]
     cautions: list[str] = []
@@ -274,21 +307,49 @@ def lean(
     legs: list[str] = []
     move = vol.get("expected_move")
     close = row.get("last_close")
-    if structure and "debit" in structure:
+    right = "call" if long_ else "put"
+    credit_right = "put" if long_ else "call"
+    if structure and "debit" in structure and close:
+        far, aim = None, None
         if target:
-            legs.append(f"buy near the money, sell at {target['value']:.2f} ({target['pct']:+.1f}%)")
-        elif move and close:
+            far, aim = target["value"], f"target {target['value']:.2f} ({target['pct']:+.1f}%)"
+        elif move:
             # No target and no level in the way: the expected move is the natural width.
-            far = close + move["dollars"] if long_ else close - move["dollars"]
             sign = "+" if long_ else "−"
-            legs.append(f"buy near the money, sell near {sign}1σ, {far:.2f} ({sign}{move['pct']:.1f}%)")
+            far = close + move["dollars"] if long_ else close - move["dollars"]
+            aim = f"{sign}1σ {far:.2f} ({sign}{move['pct']:.1f}%)"
+        picked = debit_strikes(close, far, long_, strikes) if far is not None and strikes else None
+        if picked:
+            buy, sell, reaches = picked
+            legs.append(f"buy the {buy:g} {right}, sell the {sell:g} {right}, toward {aim}")
+            if not reaches:
+                cautions.append(
+                    f"the {aim.split(' (')[0]} sits inside one strike of the money: the narrowest "
+                    f"listed spread runs past it"
+                )
+        elif aim:
+            legs.append(
+                f"buy near the money, sell at {aim} (no listed strikes on file: a price, not a strike)"
+            )
     if structure and "credit" in structure:
         if band:
-            legs.append(f"sell at or past the skate band, {band['band']:.2f}, for {band['expiry']}")
+            k = skate.snap(band["band"], credit_right[0].upper(), strikes) if strikes else None
+            legs.append(
+                f"sell the {k:g} {credit_right}, at or past the skate band {band['band']:.2f}"
+                if k is not None
+                else f"sell at or past the skate band, {band['band']:.2f}"
+            )
         if level:
             name = "support" if long_ else "resistance"
-            legs.append(f"short strike past {name} {level['value']:.2f} ({level['pct']:+.1f}%)")
-    return {"structure": structure, "why": why, "legs": legs, "cautions": cautions}
+            k = skate.snap(level["value"], credit_right[0].upper(), strikes) if strikes else None
+            legs.append(
+                f"sell the {k:g} {credit_right}, past {name} {level['value']:.2f} ({level['pct']:+.1f}%)"
+                if k is not None
+                else f"short strike past {name} {level['value']:.2f} ({level['pct']:+.1f}%)"
+                " (no listed strikes on file: a price, not a strike)"
+            )
+    expiry = (vol.get("cycle") or {}).get("expiry") if strikes else None
+    return {"structure": structure, "why": why, "legs": legs, "cautions": cautions, "expiry": expiry}
 
 
 def skate_band(doc: dict | None, symbol: str, side: str, expiry: str | None) -> dict | None:
@@ -315,7 +376,10 @@ def read(row: dict, ctx: dict) -> dict[str, Any]:
     vol = volatility(row.get("last_close"), iv, day, ctx["cfg"])
     dirn = direction(row, ctx["board"].get(sym))
     lv = levels(row, row.get("atr14"), vol["expected_move"])
-    band = skate_band(ctx["skate"], sym, row["side"], (vol["cycle"] or {}).get("expiry"))
+    expiry = (vol["cycle"] or {}).get("expiry")
+    band = skate_band(ctx["skate"], sym, row["side"], expiry)
+    chains = ctx.get("chains") or {}
+    strikes = (chains.get(sym) or chains.get(sym.replace(".", "/")) or {}).get(expiry)
     return {
         "setup": {
             "rule": row.get("rule"),
@@ -326,7 +390,7 @@ def read(row: dict, ctx: dict) -> dict[str, Any]:
         "direction": dirn,
         "volatility": vol,
         "levels": lv,
-        "lean": lean(row, vol, dirn, lv, band, record),
+        "lean": lean(row, vol, dirn, lv, band, record, strikes),
     }
 
 
@@ -343,6 +407,32 @@ def _board(day: str) -> dict[str, dict]:
         return {r["symbol"]: r for r in json.loads(files[-1].read_text(encoding="utf-8")).get("rows") or []}
     except (OSError, ValueError):
         return {}
+
+
+CHAIN_LISTINGS = ("universe/chains", "screener-greeks/chains", "screener-greeks/skate/chains")
+
+
+def chain_strikes(day: str, root: Path | None = None) -> dict[str, dict[str, list[float]]]:
+    """Every listed strike by symbol and expiry, from the newest chain listing on or before `day` in
+    each place the nightly fetches write one (`{symbol: [{"expiration", "strikes": [[k, call, put],
+    ...]}]}`). The listing names strikes, not quotes: re-quote before acting."""
+    root = root or paths.market_report_dir()
+    out: dict[str, dict[str, list[float]]] = {}
+    for sub in CHAIN_LISTINGS:
+        files = [p for p in sorted((root / sub).glob("????-??-??.json")) if p.stem <= day]
+        if not files:
+            continue
+        try:
+            doc = json.loads(files[-1].read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for sym, exps in doc.items():
+            for e in exps or []:
+                if e.get("expiration") and e.get("strikes"):
+                    out.setdefault(sym, {}).setdefault(
+                        e["expiration"], sorted({float(s[0]) for s in e["strikes"]})
+                    )
+    return out
 
 
 def hold_spans(doc: dict) -> dict[str, list[int]]:
@@ -375,6 +465,7 @@ def annotate(
         "board": _board(session),
         "skate": skate.latest_doc(session, skate_root),
         "holds": holds or {},
+        "chains": chain_strikes(session),
     }
     for r in rows:
         r["read"] = read(r, ctx)

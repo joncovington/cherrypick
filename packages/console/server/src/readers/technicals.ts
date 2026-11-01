@@ -357,7 +357,7 @@ function shapeRead(r: Record<string, unknown>): SetupRead {
       resistance: shapeReadLevel(lv["resistance"]),
       target: shapeReadLevel(lv["target"]),
     },
-    lean: { structure: str(ln["structure"]), why: str(ln["why"]) ?? "", legs: strs(ln["legs"]), cautions: strs(ln["cautions"]) },
+    lean: { structure: str(ln["structure"]), why: str(ln["why"]) ?? "", legs: strs(ln["legs"]), cautions: strs(ln["cautions"]), expiry: str(ln["expiry"]) },
   };
 }
 
