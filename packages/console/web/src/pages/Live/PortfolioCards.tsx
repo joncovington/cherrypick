@@ -375,6 +375,7 @@ const GUIDANCE_TOPIC: Record<string, string> = {
   "portfolio.concentration": "concentration",
   "portfolio.earnings_exposure": "earnings",
   "portfolio.expiry_concentration": "one expiry",
+  "portfolio.vol_expansion": "vol expansion",
 };
 
 function guidanceTopic(rule: string): string {
@@ -394,6 +395,8 @@ function driverFigure(f: ManageGuidanceFigure, benchmark: string | null): string
     case "theta_share":
       // The band's theta: without the legs about to expire, so it is not the theta card's share.
       return `${pctOf(f.value, 0)} of theta past the expiring legs`;
+    case "vega_30":
+      return f.value === null ? "—" : `${fmtCash(f.value)}/vol pt`;
   }
 }
 

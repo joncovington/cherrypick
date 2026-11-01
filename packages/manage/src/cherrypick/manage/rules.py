@@ -316,6 +316,18 @@ DEFAULT_RULES: dict[str, Any] = {
         "beta_doubt": {"min_abs_corr": 0.3, "near_zero_beta": 0.1},
         # Benchmark shocks the stress line reprices the book at, each underlying moved by beta x shock.
         "stress": {"shocks": [-0.10, 0.05]},
+        # The book repriced at a vol expansion: the benchmark moved by `move` (each name by beta x
+        # move) with IVs up `iv_shift` vol points for a 30-day option, scaled to each leg as the risk
+        # matrix's term weighting does, time held still. A short-premium book loses on the move and
+        # on the vol at once, and the stress line holds IV still. Over `max_loss_pct_nlv` of net liq
+        # is a REVIEW. No published band exists for this: the shock and the cap are ours (2026-10-31).
+        "vol_expansion": {
+            "enabled": True,
+            "move": -0.05,
+            "iv_shift": 0.10,
+            "max_loss_pct_nlv": 0.10,
+            "confidence": 30,
+        },
         # Buying power used against a ceiling that rises with VIX: [VIX under, cap], the last bound
         # null for "anything above". The common retail table (more room when premium is rich).
         "buying_power": {
@@ -427,6 +439,7 @@ RULE_IDS = (
     "portfolio.buying_power",
     "portfolio.earnings_exposure",
     "portfolio.expiry_concentration",
+    "portfolio.vol_expansion",
 )
 
 
