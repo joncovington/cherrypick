@@ -1644,6 +1644,52 @@
       "results": [],
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 45,
+      "study": "item45",
+      "title": "A published GEX share strategy, out of sample: buy the calm after an implied-vol spike",
+      "status": "declared",
+      "legacy": false,
+      "setup": "iv-spike-reversal",
+      "side": "bullish",
+      "structure": "shares",
+      "window": "multi-day",
+      "measure": "net return per trade on the position's cost after the source's commissions and $0.10 a share slippage each way, one position per name, no slot cap, per arm: shipped (the published rule at its defaults, restated), cleaned (gauge from puts 3+ days out, no spike from 5 sessions before a report to 1 after), placebo (a matched-dip entry per shipped trade)",
+      "expected": "shipped's mean net per trade above zero and above its matched-dip placebo",
+      "sample": "cell N decides: ten dropped names (NEE, JNJ, BAC, CCJ, V, PFE, UNH, PEP, C, XOM) 2018-01-16..2026-04-10; cell P checks: the author's 12 tradable names 2026-04-13..2026-10-30; bars built from the chain fetch's sampled underlying, basis chosen by a declared pilot against the broker's 15-minute bars before any rule output is read; < 150 trades in cell N = no verdict",
+      "rule": "cell N: mean net per trade > 0 with one-sided t > 2, > 0 in both time-halves and both name-halves, > 0 at 1.5x costs, paired shipped - placebo > 0 with t > 2; cell P mean > 0 if >= 20 trades; if the pilot drops cell N, cell P alone: mean <= 0 over >= 20 trades fails, else no verdict; cleaned held to the same rule for the mechanism",
+      "mechanism": "dealers short puts buy back their hedges as implied vol compresses after a spike, lifting the stock",
+      "rivals": [
+        {
+          "explanation": "the gauge reads expiring contracts and earnings run-ups as spikes",
+          "check": "cleaned: the gauge from puts 3+ calendar days out, no spike around reports"
+        },
+        {
+          "explanation": "short-term reversal after a fall in a rising market",
+          "check": "placebo: same name and bar, a session with the same 10-session return quintile, same exits; paired"
+        },
+        {
+          "explanation": "parameters and names tuned on the full period",
+          "check": "cell N on names the author dropped, cell P on sessions after release"
+        },
+        {
+          "explanation": "which candidates a full three-slot book dropped",
+          "check": "no slot cap in the judged measure; the book over 200 shuffled orders reported"
+        },
+        {
+          "explanation": "one era or a few names",
+          "check": "both time-halves and both name-halves in cell N"
+        },
+        {
+          "explanation": "costs",
+          "check": "mean still above zero at 1.5x costs"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#45-a-published-gex-share-strategy-out-of-sample-buy-the-calm-after-an-implied-vol-spike",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
