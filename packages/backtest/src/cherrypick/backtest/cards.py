@@ -229,6 +229,18 @@ def session_risk(trades: list[dict]) -> float | None:
     return sum(caps) if caps else None
 
 
+def stop_session_risk(trades: list[dict]) -> float | None:
+    """What one arm's session would lose if every position's stops fired at their triggers
+    (`stop_risk`, MEIC's condors). None unless every position records one: a session half sized by
+    its stops and half by nothing is not a session's risk."""
+    risks = [t.get("stop_risk") for t in trades]
+    return sum(risks) if risks and all(r is not None for r in risks) else None
+
+
+#: How the compounded lens measures a unit's risk: the positions' max loss, or their stop distance.
+RISK_UNITS = {"max_loss": session_risk, "stop": stop_session_risk}
+
+
 def account(path: list[dict], capital: float) -> dict | None:
     """The same dollars against a starting capital, never compounded: return, simple annual return
     over the calendar span the sessions cover, max drawdown as a share of peak equity, and their
@@ -261,7 +273,105 @@ def account(path: list[dict], capital: float) -> dict | None:
     }
 
 
-def arm_cards(series: list[dict], trades: list[dict], capital: float | None) -> dict:
+#: The compounded lens's default share of equity put at risk each session, in percent.
+DEFAULT_RISK_PCT = 2.0
+
+
+def _mode_summary(start: float, path: list[float], years: float | None) -> dict:
+    end = path[-1] if path else start
+    peak, worst_d, worst_p = start, 0.0, 0.0
+    for eq in path:
+        peak = max(peak, eq)
+        worst_d = max(worst_d, peak - eq)
+        worst_p = max(worst_p, (peak - eq) / peak if peak > 0 else 0.0)
+    cagr = None
+    if years and years > 0:
+        cagr = -1.0 if end <= 0 else (end / start) ** (1 / years) - 1
+    return {
+        "ending": _r(end),
+        "cagr": _r(cagr, 4),
+        "max_drawdown": _r(worst_d),
+        "max_drawdown_pct": _r(worst_p, 4),
+    }
+
+
+def compounded(
+    series: list[dict],
+    by_session: dict[str, list[dict]],
+    start: float,
+    risk_pct: float = DEFAULT_RISK_PCT,
+    unit: str = "max_loss",
+) -> dict | None:
+    """A LENS, not what the replay ran, and never an input to a verdict: the same sessions re-sized
+    each session to put `risk_pct` percent of the equity at that point at risk. A unit is the set of
+    lots the replay held that session, its risk the session's own, known at entry, so sizing never
+    borrows a later session's: `unit` "max_loss" reads the positions' max losses (`session_risk`),
+    "stop" what their stops would lose at the trigger (`stop_session_risk`; a gap loses more). Each
+    session's net is scaled by the units, which assumes P&L, fills and per-contract fees scale with size.
+
+    Two curves: whole units, floored (how it would trade; a small account can floor to none, a session
+    then left out), and fractional (the upper bound). A session that traded with no recorded risk cannot
+    be sized and is left out of both, counted. An account that reaches zero stops there."""
+    if not series or start <= 0 or risk_pct <= 0:
+        return None
+    measure = RISK_UNITS[unit]
+    share = risk_pct / 100.0
+    eq = {"whole": start, "fractional": start}
+    stopped = {"whole": None, "fractional": None}
+    units_whole: list[int] = []
+    path: list[dict] = []
+    unsized = rounded_to_none = 0
+    for s in series:
+        day, net = s["session"], s["net"]
+        risk = measure(by_session.get(day, []))
+        if s.get("trades") and (risk is None or risk <= 0):
+            unsized += 1
+        elif s.get("trades"):
+            for mode in eq:
+                if stopped[mode] is not None:
+                    continue
+                units = eq[mode] * share / risk
+                if mode == "whole":
+                    units = math.floor(units)
+                    units_whole.append(units)
+                    if units == 0:
+                        rounded_to_none += 1
+                eq[mode] += net * units
+                if eq[mode] <= 0:
+                    eq[mode], stopped[mode] = 0.0, day
+        path.append({"session": day, "whole": _r(eq["whole"]), "fractional": _r(eq["fractional"])})
+    days = (date.fromisoformat(series[-1]["session"]) - date.fromisoformat(series[0]["session"])).days + 1
+    years = days / 365.25
+    traded = [u for u in units_whole if u > 0]
+    return {
+        "start": _r(start),
+        "risk_pct": risk_pct,
+        "unit": unit,
+        "years": _r(years, 2),
+        "whole": {
+            **_mode_summary(start, [p["whole"] for p in path], years),
+            "stopped_on": stopped["whole"],
+            "units_min": min(traded) if traded else 0,
+            "units_max": max(traded) if traded else 0,
+            "sessions_rounded_to_none": rounded_to_none,
+        },
+        "fractional": {
+            **_mode_summary(start, [p["fractional"] for p in path], years),
+            "stopped_on": stopped["fractional"],
+        },
+        "sessions_unsized": unsized,
+        "path": path,
+    }
+
+
+def arm_cards(
+    series: list[dict],
+    trades: list[dict],
+    capital: float | None,
+    by_session: dict[str, list[dict]] | None = None,
+    risk_pct: float = DEFAULT_RISK_PCT,
+    risk_unit: str = "max_loss",
+) -> dict:
     path = equity_path(series)
     periods = drawdown_periods(path)
     acct = None if capital is None else account(path, capital)
@@ -280,6 +390,9 @@ def arm_cards(series: list[dict], trades: list[dict], capital: float | None) -> 
         "exits": exits(trades),
         "edge_trend": edge_trend(series),
         "account": acct,
+        "compounded": None
+        if capital is None
+        else compounded(series, by_session or {}, capital, risk_pct, risk_unit),
     }
 
 
@@ -287,6 +400,8 @@ def cards(
     series_by_arm: dict[str, list[dict]],
     trades_by_arm: dict[str, dict[str, list[dict]]],
     capital: float | None = None,
+    risk_pct: float = DEFAULT_RISK_PCT,
+    risk_unit: str = "max_loss",
 ) -> dict:
     """Every arm's cards. `trades_by_arm` is {arm: {session: [trade, ...]}}. A chosen capital is one
     account for every arm, so arms read side by side; with none, each arm reads against its own peak
@@ -297,11 +412,17 @@ def cards(
         by_session = trades_by_arm.get(arm, {})
         risks = [r for rows in by_session.values() if (r := session_risk(rows)) is not None]
         peak_risk = max(risks) if risks else None
-        out = arm_cards(series, [t for rows in by_session.values() for t in rows], capital or peak_risk)
+        trades = [t for rows in by_session.values() for t in rows]
+        out = arm_cards(series, trades, capital or peak_risk, by_session, risk_pct, risk_unit)
         out["peak_risk"] = _r(peak_risk)
         arms[arm] = out
     return {
-        "account": {"capital": _r(capital), "basis": "chosen" if capital is not None else "peak_risk"},
+        "account": {
+            "capital": _r(capital),
+            "basis": "chosen" if capital is not None else "peak_risk",
+            "risk_pct": risk_pct,
+            "risk_unit": risk_unit,
+        },
         "arms": arms,
     }
 
@@ -315,7 +436,14 @@ def _ro(path: Path) -> sqlite3.Connection:
     return conn
 
 
-def for_run(run_id: str, schema: str, arms: list[str], capital: float | None = None) -> dict:
+def for_run(
+    run_id: str,
+    schema: str,
+    arms: list[str],
+    capital: float | None = None,
+    risk_pct: float = DEFAULT_RISK_PCT,
+    risk_unit: str = "max_loss",
+) -> dict:
     """Read one run's per-session results and its kept ledgers, and build its cards."""
     conn = _ro(paths.results_db())
     try:
@@ -331,7 +459,7 @@ def for_run(run_id: str, schema: str, arms: list[str], capital: float | None = N
         conn.close()
     sessions = sorted({s["session"] for series in series_by_arm.values() for s in series})
     trades_by_arm = _ledger_trades(run_id, schema, list(series_by_arm), sessions)
-    return cards(series_by_arm, trades_by_arm, capital)
+    return cards(series_by_arm, trades_by_arm, capital, risk_pct, risk_unit)
 
 
 def _ledger_trades(
@@ -348,13 +476,38 @@ def _ledger_trades(
         lconn = _ro(db)
         try:
             rows = reader(lconn)
+            stops = _meic_stop_risk(lconn) if schema == "meic_ic" else {}
         finally:
             lconn.close()
         # The runner's own attribution: an arm's rows that settled in this session.
         for r in rows:
             if r["session"] == day and r["arm"] in trades_by_arm:
+                if stops:
+                    r = {**r, "stop_risk": stops.get(r.get("position_id"))}
                 trades_by_arm[r["arm"]].setdefault(day, []).append(r)
     return trades_by_arm
+
+
+def _meic_stop_risk(conn: sqlite3.Connection) -> dict[str, float]:
+    """Each MEIC condor's loss if both sides stop at their trigger, by its order id: a side stops when
+    its cost to close reaches `stop_trigger_original` x the condor's credit, so both stopping loses
+    (2 x ratio - 1) x credit, in whole-position dollars. The stop model's own figure: a gap through the
+    trigger loses more. A condor without a recorded trigger or credit is left out (None)."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(ic_trades)")}
+    if not {"ic_order_id", "net_credit", "stop_trigger_original"} <= cols:
+        return {}
+    qty = "quantity" if "quantity" in cols else "1"
+    mult = "dollar_multiplier" if "dollar_multiplier" in cols else "100"
+    out = {}
+    for oid, credit, ratio, q, m in conn.execute(
+        f"SELECT ic_order_id, net_credit, stop_trigger_original, {qty}, {mult} FROM ic_trades"
+    ):
+        if oid is None or credit is None or ratio is None or credit <= 0:
+            continue
+        risk = (2 * float(ratio) - 1) * float(credit) * float(m or 100) * float(q or 1)
+        if risk > 0:
+            out[oid] = round(risk, 2)
+    return out
 
 
 #: A trade's fields the trade log shows, as `core.ledgers` names them. Nothing is computed here.
@@ -405,3 +558,22 @@ def parse_capital(raw: str | None) -> float | None:
     if not math.isfinite(value) or value <= 0:
         raise ValueError(f"capital must be a positive number of dollars, not {raw!r}")
     return value
+
+
+def parse_risk_pct(raw: str | None) -> float:
+    """The compounded lens's risk per session, in percent: above 0 and at most 100, else the default."""
+    if raw is None or raw == "":
+        return DEFAULT_RISK_PCT
+    value = float(raw)
+    if not math.isfinite(value) or not 0 < value <= 100:
+        raise ValueError(f"risk percent must be above 0 and at most 100, not {raw!r}")
+    return value
+
+
+def parse_risk_unit(raw: str | None) -> str:
+    """The compounded lens's risk unit (`RISK_UNITS`), else max loss."""
+    if raw is None or raw == "":
+        return "max_loss"
+    if raw not in RISK_UNITS:
+        raise ValueError(f"risk unit must be one of {', '.join(RISK_UNITS)}, not {raw!r}")
+    return raw

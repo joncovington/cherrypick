@@ -167,12 +167,14 @@ def store_locations(settings: dict) -> dict:
     return {"ok": True, "dir": str(paths.vendor_dir(settings)), "files": [e["file"] for e in stores.STORES]}
 
 
-def run_report(run_id: str, capital: float | None = None) -> dict:
+def run_report(
+    run_id: str, capital: float | None = None, risk_pct: float | None = None, risk_unit: str = "max_loss"
+) -> dict:
     path = paths.results_dir() / "runs" / f"{run_id}.json"
     if not run_id.replace("-", "").isalnum() or not path.exists():
         return {"ok": False, "error": f"no run {run_id!r}"}
     report = json.loads(path.read_text(encoding="utf-8"))
-    return {"ok": True, "report": report, "cards": _cards(run_id, report, capital)}
+    return {"ok": True, "report": report, "cards": _cards(run_id, report, capital, risk_pct, risk_unit)}
 
 
 def run_trades(run_id: str, arm: str) -> dict:
@@ -189,12 +191,20 @@ def run_trades(run_id: str, arm: str) -> dict:
     return {"ok": True, "run_id": run_id, "arm": arm, "trades": cards.trades_for_run(run_id, mod.schema, arm)}
 
 
-def _cards(run_id: str, report: dict, capital: float | None) -> dict:
+def _cards(
+    run_id: str,
+    report: dict,
+    capital: float | None,
+    risk_pct: float | None = None,
+    risk_unit: str = "max_loss",
+) -> dict:
     """The run's cards (cards.py). A failure here is the cards' own error, never the report's."""
     from . import cards, runner
 
     try:
         mod = runner.MODULES[report.get("module") or runner.MODULE]
-        return {"ok": True, **cards.for_run(run_id, mod.schema, list(report.get("arms") or {}), capital)}
+        arms = list(report.get("arms") or {})
+        pct = cards.DEFAULT_RISK_PCT if risk_pct is None else risk_pct
+        return {"ok": True, **cards.for_run(run_id, mod.schema, arms, capital, pct, risk_unit)}
     except Exception as exc:  # noqa: BLE001 -- the report still reads without its cards
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}

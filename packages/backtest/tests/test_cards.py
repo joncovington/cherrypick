@@ -138,12 +138,17 @@ def test_each_arm_defaults_to_its_own_peak_risk_and_a_chosen_capital_is_one_acco
         "narrow": {"2024-01-01": [{"capital": 400.0}, {"capital": 500.0}]},
     }
     out = cards.cards(series, trades)
-    assert out["account"] == {"capital": None, "basis": "peak_risk"}
+    assert out["account"] == {"capital": None, "basis": "peak_risk", "risk_pct": 2.0, "risk_unit": "max_loss"}
     assert out["arms"]["control"]["peak_risk"] == 10000.0
     # The narrow arm reads against what IT needed, not the widest arm's peak.
     assert out["arms"]["narrow"]["account"]["capital"] == 900.0
     chosen = cards.cards(series, trades, capital=50000.0)
-    assert chosen["account"] == {"capital": 50000.0, "basis": "chosen"}
+    assert chosen["account"] == {
+        "capital": 50000.0,
+        "basis": "chosen",
+        "risk_pct": 2.0,
+        "risk_unit": "max_loss",
+    }
     assert {a["account"]["capital"] for a in chosen["arms"].values()} == {50000.0}
     assert chosen["arms"]["narrow"]["peak_risk"] == 900.0
     bare = cards.cards({"control": _series([1.0])}, {"control": {}})
@@ -206,13 +211,21 @@ def test_a_run_is_read_back_with_its_cards():
     out = readout.run_report(RUN)
     assert out["ok"] and out["report"] == report
     c = out["cards"]
-    assert c["ok"] and c["account"] == {"capital": None, "basis": "peak_risk"}
+    assert c["ok"] and c["account"] == {
+        "capital": None,
+        "basis": "peak_risk",
+        "risk_pct": 2.0,
+        "risk_unit": "max_loss",
+    }
     arm = c["arms"]["control"]
     assert arm["peak_risk"] == 400.0 and arm["account"]["capital"] == 400.0
     assert arm["premium"]["premium"] == 200.0 and arm["premium"]["fee_drag"] == 0.01
     assert [e["outcome"] for e in arm["exits"]] == ["expired_settlement", "per_side_stop"]
     assert arm["max_drawdown"] == 50.0 and arm["account"]["max_drawdown"] == 0.119  # 50 / 420
     assert cli.main(["read", "run", "--id", RUN, "--capital", "-1"]) == 1
+    assert cli.main(["read", "run", "--id", RUN, "--risk-pct", "0"]) == 1
+    assert cli.main(["read", "run", "--id", RUN, "--risk-pct", "101"]) == 1
+    assert cli.main(["read", "run", "--id", RUN, "--risk-unit", "delta"]) == 1
 
 
 def test_the_report_still_reads_when_its_cards_cannot_be_built():
@@ -279,3 +292,81 @@ def test_one_arms_trades_are_read_back_from_the_runs_ledgers_and_another_arms_ar
     assert readout.run_trades(RUN, "nope") == {"ok": False, "error": f"run {RUN} has no arm 'nope'"}
     assert readout.run_trades("not a run", "control")["ok"] is False
     assert cli.main(["read", "trades", "--id", RUN, "--arm", "nope"]) == 1
+
+
+def _risked(series, risk=1000.0):
+    """Each session that traded held one condor with `risk` max loss (`capital`, as core.ledgers names it)."""
+    return {s["session"]: [{"capital": risk}] for s in series if s["trades"]}
+
+
+def test_the_compounded_lens_resizes_each_session_on_the_equity_at_that_point():
+    series = _series([100.0, 100.0])
+    c = cards.compounded(series, _risked(series), start=100_000, risk_pct=2.0)
+    # 2% of 100,000 = 2,000 at risk = 2 units; then 2% of 100,200 still floors to 2 whole units.
+    assert [p["whole"] for p in c["path"]] == [100_200.0, 100_400.0]
+    assert c["fractional"]["ending"] == round(100_000 + 200 + 100 * (100_200 * 0.02 / 1000), 2)
+    assert c["whole"]["units_min"] == 2 and c["whole"]["units_max"] == 2
+    assert c["start"] == 100_000 and c["risk_pct"] == 2.0
+
+
+def test_a_small_account_floors_to_no_trade_and_the_session_is_counted_not_hidden():
+    series = _series([100.0, -50.0])
+    c = cards.compounded(series, _risked(series), start=10_000, risk_pct=2.0)  # 200 at risk < one unit
+    assert c["whole"]["ending"] == 10_000 and c["whole"]["sessions_rounded_to_none"] == 2
+    assert c["fractional"]["ending"] != 10_000
+
+
+def test_a_session_with_no_recorded_risk_cannot_be_sized_and_is_left_out_of_both_curves():
+    series = _series([100.0, 100.0])
+    risks = {"2024-01-01": [{"capital": 1000.0}], "2024-01-02": [{"capital": None}]}
+    c = cards.compounded(series, risks, start=100_000)
+    assert c["sessions_unsized"] == 1 and c["whole"]["ending"] == 100_200.0
+
+
+def test_an_account_that_reaches_zero_stops_there():
+    series = _series([-60_000.0, 50_000.0])
+    c = cards.compounded(series, _risked(series), start=100_000, risk_pct=2.0)
+    assert c["whole"]["stopped_on"] == "2024-01-01" and c["whole"]["ending"] == 0.0
+    assert c["whole"]["cagr"] == -1.0 and c["whole"]["max_drawdown_pct"] == 1.0
+
+
+def test_the_lens_needs_a_positive_start_and_risk():
+    series = _series([1.0])
+    assert cards.compounded(series, _risked(series), start=0) is None
+    assert cards.compounded(series, _risked(series), start=1000, risk_pct=0) is None
+    assert cards.compounded([], {}, start=1000) is None
+
+
+def test_the_stop_unit_sizes_by_what_the_stops_would_lose_and_needs_every_position_to_record_it():
+    series = _series([100.0, 100.0])
+    rows = {
+        "2024-01-01": [{"capital": 1000.0, "stop_risk": 250.0}],
+        "2024-01-02": [{"capital": 1000.0, "stop_risk": 250.0}, {"capital": 1000.0, "stop_risk": None}],
+    }
+    c = cards.compounded(series, rows, start=100_000, risk_pct=2.0, unit="stop")
+    assert c["unit"] == "stop" and c["whole"]["units_max"] == 8  # 2,000 at risk / 250 a unit
+    assert c["sessions_unsized"] == 1  # a session one position of which records no stop
+    assert cards.compounded(series, rows, start=100_000, risk_pct=2.0)["whole"]["units_max"] == 2
+
+
+def test_a_meic_condors_stop_risk_is_both_sides_stopping_at_the_trigger():
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE ic_trades (ic_order_id TEXT, net_credit REAL, stop_trigger_original REAL, "
+        "quantity INTEGER, dollar_multiplier REAL)"
+    )
+    conn.executemany(
+        "INSERT INTO ic_trades VALUES (?,?,?,?,?)",
+        [("a", 2.0, 0.95, 1, 100.0), ("b", 2.0, None, 1, 100.0), ("c", 2.0, 2.0, 2, 100.0)],
+    )
+    # (2 x 0.95 - 1) x 2.00 x 100 = 180; (2 x 2 - 1) x 2 x 100 x 2 = 1,200; no trigger, no figure.
+    assert cards._meic_stop_risk(conn) == {"a": 180.0, "c": 1200.0}
+    bare = sqlite3.connect(":memory:")
+    bare.execute("CREATE TABLE ic_trades (ic_order_id TEXT, net_credit REAL)")
+    assert cards._meic_stop_risk(bare) == {}
+
+
+def test_a_risk_unit_that_is_not_declared_is_refused():
+    assert cards.parse_risk_unit(None) == "max_loss" and cards.parse_risk_unit("stop") == "stop"
+    with pytest.raises(ValueError, match="risk unit"):
+        cards.parse_risk_unit("delta")
