@@ -21,6 +21,8 @@ display will differ a little (it models American exercise and dividends). What i
   the benchmark's implied one-day move, on the same calendar-day footing as theta.
 - **A stress line**: each position repriced at its beta-scaled share of a benchmark shock, at its own
   IV with time held still.
+- **A vol expansion**: the same repricing with every IV raised as well (term-weighted, as the risk
+  matrix is), since a spike moves both at once and a short-premium book loses on each.
 
 A leg the model cannot price (unpriced, no IV, past expiry) is left out and NAMED; an underlying with
 no beta has no BWD and is named. Neither is ever counted as zero. A leg expiring today is taken at its
@@ -417,6 +419,7 @@ def reading(
         "buying_power_used": used,
         "buying_power_used_pct": _round(used / net_liq, 4) if used is not None and net_liq else None,
         "stress": _stress(rows, bench_spot, rate, cfg["stress"]["shocks"], net_liq),
+        "vol_expansion": _vol_expansion(rows, bench_spot, rate, cfg["vol_expansion"], net_liq),
         "beta_doubts": [
             {"underlying": u["underlying"], "reason": u["beta_doubt"], "bwd_share": u["bwd_share"]}
             for u in underlyings
@@ -599,6 +602,7 @@ def bands(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
             "front_dte": r["front_dte"],
         },
         "buying_power": _bp_band(r, cfg["buying_power"]),
+        "vol_expansion": _vol_band(r, cfg["vol_expansion"]),
     }
 
 
@@ -623,6 +627,13 @@ def _bp_band(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
         "vix": r.get("vix"),
         "inside": (used <= cap) if cap is not None and used is not None else None,
     }
+
+
+def _vol_band(r: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
+    """The vol-expansion loss against its cap, both as signed shares of net liq: a gain is inside."""
+    cap = -float(cfg["max_loss_pct_nlv"])
+    value = (r.get("vol_expansion") or {}).get("pct_net_liq")
+    return {"low": cap, "high": None, "value": value, "inside": (value >= cap) if value is not None else None}
 
 
 def _breakeven(theta: float, gamma: float | None, bench_spot: float | None) -> dict[str, Any] | None:
@@ -657,6 +668,24 @@ def _stress(
             }
         )
     return out
+
+
+def _vol_expansion(
+    rows: list[dict[str, Any]],
+    bench_spot: float | None,
+    rate: float,
+    cfg: dict[str, Any],
+    net_liq: float | None,
+) -> dict[str, Any]:
+    move, shift = float(cfg["move"]), float(cfg["iv_shift"])
+    total, left_out = book_pnl(rows, bench_spot, rate, move, shift, 0.0, True)
+    return {
+        "move": move,
+        "iv_shift": shift,
+        "pnl": round(total, 2),
+        "pct_net_liq": round(total / net_liq, 4) if net_liq else None,
+        "left_out": left_out,
+    }
 
 
 # --------------------------------------------------------------------------- guidance
@@ -810,6 +839,22 @@ def guidance(r: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
                 cfg["buying_power"]["confidence"],
                 f"buying power used is {shown} of net liq, over the {bound} the VIX at "
                 f"{bp['vix']:.1f} allows: less room to adjust, and more to lose if the market gaps",
+            )
+        )
+
+    vb = (r.get("bands") or {}).get("vol_expansion") or {}
+    if not off("portfolio.vol_expansion") and vb.get("inside") is False:
+        x = r["vol_expansion"]
+        shown, bound = _apart(-vb["value"], -vb["low"], 0, "%")
+        short = " (partial: some names have no beta)" if x["left_out"] else partial
+        fired.append(
+            _fire(
+                "portfolio.vol_expansion",
+                cfg["vol_expansion"]["confidence"],
+                f"{r['benchmark']} {x['move']:+.0%} with IV up {x['iv_shift'] * 100:.0f} points would lose "
+                f"${-x['pnl']:,.0f}, {shown} of net liq, over the {bound} cap: the book is short the vol "
+                f"a spike brings{short}",
+                _drivers(r, "vega_30", -1.0),
             )
         )
 

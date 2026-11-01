@@ -297,6 +297,14 @@
       "_comment": "SPY shocks the book is repriced at, each underlying moved by beta x shock, IV and time held still.",
       "shocks": [-0.1, 0.05]
     },
+    "vol_expansion": {
+      "_comment": "The book repriced at a vol expansion: SPY moved by move (each name by beta x move) with IVs up iv_shift vol points for a 30-day option, term-weighted as the risk matrix is, time held still. Over max_loss_pct_nlv of net liq is a REVIEW naming the names shortest vega. No published band exists: the shock and the cap are ours, hence confidence 30.",
+      "enabled": true,
+      "move": -0.05,
+      "iv_shift": 0.1,
+      "max_loss_pct_nlv": 0.1,
+      "confidence": 30
+    },
     "buying_power": {
       "_comment": "Buying power used against a ceiling that rises with VIX: [VIX under, cap] pairs, the last bound null for anything above. The common retail table. No VIX, no band.",
       "enabled": true,
@@ -340,6 +348,6 @@
       "bp_warn_over": 0.1
     }
   },
-  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. intent \"pmcc\" recognises a call diagonal as a PMCC, \"diagonal\" keeps it out. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.time_exit, legs.short_take_profit, legs.long_vertical, roll.naked_put, roll.diagonal_short, roll.fly_off, roll.untested_side, wheel.take_profit, wheel.tested, wheel.next_leg, pmcc.width, pmcc.assignment, pmcc.roll_long, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power, portfolio.earnings_exposure, portfolio.expiry_concentration",
+  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. intent \"pmcc\" recognises a call diagonal as a PMCC, \"diagonal\" keeps it out. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.time_exit, legs.short_take_profit, legs.long_vertical, roll.naked_put, roll.diagonal_short, roll.fly_off, roll.untested_side, wheel.take_profit, wheel.tested, wheel.next_leg, pmcc.width, pmcc.assignment, pmcc.roll_long, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power, portfolio.earnings_exposure, portfolio.expiry_concentration, portfolio.vol_expansion",
   "positions": {}
 }
