@@ -4,9 +4,14 @@ import type { BridgedResult } from "@console/shared";
 /**
  * One bridged read: a module's own JSON through a server bridge (`BridgedResult`). A failed read
  * comes back as `{ok: false, error}` and is shown as that error, never as an empty table -- the
- * subprocess not running and the module answering "nothing yet" are different facts.
+ * subprocess not running and the module answering "nothing yet" are different facts. `refetchMs`
+ * may read the last answer, so a page can poll fast only while something is moving.
  */
-export function useBridged<T>(key: readonly unknown[], url: string, refetchMs = 60_000) {
+export function useBridged<T>(
+  key: readonly unknown[],
+  url: string,
+  refetchMs: number | ((data: BridgedResult<T> | undefined) => number) = 60_000,
+) {
   return useQuery<BridgedResult<T>>({
     queryKey: ["bridged", ...key],
     queryFn: async () => {
@@ -14,7 +19,7 @@ export function useBridged<T>(key: readonly unknown[], url: string, refetchMs = 
       if (!res.ok) throw new Error(`${url}: HTTP ${String(res.status)}`);
       return (await res.json()) as BridgedResult<T>;
     },
-    refetchInterval: refetchMs,
+    refetchInterval: typeof refetchMs === "number" ? refetchMs : (query) => refetchMs(query.state.data),
   });
 }
 

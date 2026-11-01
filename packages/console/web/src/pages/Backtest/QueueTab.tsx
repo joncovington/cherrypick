@@ -1,6 +1,6 @@
 import { Fragment, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import type { ResearchProgress, ResearchQueue, ResearchTask } from "@console/shared";
+import type { BridgedResult, ResearchProgress, ResearchQueue, ResearchTask } from "@console/shared";
 import { VERDICT_STATUSES, indexStudies, studyHref, useStudies, type StudyIndex } from "./studyIndex";
 import { Card } from "../../components/DataTable";
 import { useBridged } from "../../lib/bridged";
@@ -42,6 +42,16 @@ const PROGRESS_CHIP: Record<ResearchProgress["state"], string> = {
 
 export const RECENT_DAYS = 30;
 const DAY_MS = 86_400_000;
+
+/** How often the tab re-reads the queue: every 2 s while a row or a by-hand job runs (its progress
+ *  file changes at most once a second), 5 s while rows wait (the next can start within the
+ *  research-queue job's minute), else 30 s. */
+export function queuePollMs(data: BridgedResult<ResearchQueue> | undefined): number {
+  const q = data?.ok ? data.data : null;
+  if (q === null || q === undefined) return 30_000;
+  if (q.tasks.some((t) => t.status === "running") || q.byHand.some((p) => p.state === "running")) return 2_000;
+  return q.tasks.some((t) => t.status === "queued") ? 5_000 : 30_000;
+}
 
 /** "2026-10-26T18:30:05" -> "Oct 26 18:30" (ET, as the orchestrator records it). */
 export function stamp(iso: string | null): string {
@@ -530,7 +540,7 @@ function Filters({ q, value, onChange }: { q: ResearchQueue; value: { status: St
 }
 
 export function BacktestQueueTab() {
-  const { data, isLoading, isError, error, dataUpdatedAt } = useBridged<ResearchQueue>(["backtest", "queue"], "/api/backtest/queue", 30_000);
+  const { data, isLoading, isError, error, dataUpdatedAt } = useBridged<ResearchQueue>(["backtest", "queue"], "/api/backtest/queue", queuePollMs);
   const [filter, setFilter] = useFilter();
   const studies = useStudies();
   const index = indexStudies(studies.data?.ok ? studies.data.data : null);

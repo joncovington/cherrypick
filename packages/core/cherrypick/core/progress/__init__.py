@@ -21,7 +21,8 @@ job's own phases with its live children's, outermost first, so a validation read
 "decisions 2/3 · sessions 3/4 · 2026-10-15".
 
 **Reading it** costs file reads only. The view adds what a job cannot say about itself: the overall
-fraction and ETA across nested phases, ``stalled`` (alive, no update for `STALL_SECONDS`) and
+fraction and ETA across nested phases, the innermost counted phase's rate (``8.2 s/path``),
+``stalled`` (alive, no update for `STALL_SECONDS`) and
 ``orphaned`` (the process is gone and never wrote a final state).
 
 Telemetry, never a dependency: a write that fails is skipped, and nothing here raises into the job.
@@ -213,6 +214,21 @@ def _fraction(phases: list[dict]) -> float | None:
     return share
 
 
+def _rate(phases: list[dict], now: float) -> dict | None:
+    """The innermost phase that has counted something: its seconds per item since it opened. A
+    phase reopened for each outer item restarts its clock, so this is the current pace."""
+    for p in reversed(phases):
+        done, started = int(p.get("done") or 0), p.get("started_at")
+        if done > 0 and started is not None and now > started:
+            return {"phase": p["name"], "seconds_each": round((now - started) / done, 2)}
+    return None
+
+
+def _per_item(name: str) -> str:
+    """'paths' -> 'path', 'symbol-days' -> 'symbol-day': phase names are plural nouns."""
+    return name[:-1] if name.endswith("s") and not name.endswith("ss") else name
+
+
 def _view(doc: dict, children: list[dict], now: float) -> dict:
     live = [c for c in children if c.get("state") == "running" and _pid_alive(c.get("pid"))]
     phases = list(doc.get("phases") or [])
@@ -240,6 +256,7 @@ def _view(doc: dict, children: list[dict], now: float) -> dict:
         "phases": phases,
         "fraction": None if share is None else round(share, 4),
         "eta_s": None if eta is None else round(eta),
+        "rate": _rate(phases, now) if state == "running" else None,
         "note": doc.get("note"),
     }
     view["line"] = summary_line(view)
@@ -247,7 +264,7 @@ def _view(doc: dict, children: list[dict], now: float) -> dict:
 
 
 def summary_line(view: dict) -> str:
-    """ "decisions 2/3 sources · sessions 3/4 · 2026-10-15 · ~01:12 remaining"."""
+    """ "decisions 2/3 sources · sessions 3/4 · 2026-10-15 · 41.0 s/session · ~01:12 remaining"."""
     parts = []
     for p in view.get("phases") or []:
         count = f"{p.get('done', 0)}/{p['total']}" if p.get("total") else str(p.get("done", 0))
@@ -255,6 +272,10 @@ def summary_line(view: dict) -> str:
         if p.get("current"):
             part += f" ({p['current']})"
         parts.append(part)
+    rate = view.get("rate")
+    if rate and rate.get("seconds_each"):
+        each, name = rate["seconds_each"], rate["phase"]
+        parts.append(f"{each:.1f} s/{_per_item(name)}" if each >= 1 else f"{1 / each:.1f} {name}/s")
     if view.get("eta_s") is not None:
         mins = round(view["eta_s"] / 60)
         parts.append(f"~{mins // 60:02d}:{mins % 60:02d} remaining" if mins >= 1 else "<00:01 remaining")

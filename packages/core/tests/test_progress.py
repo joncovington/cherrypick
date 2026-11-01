@@ -104,6 +104,30 @@ def test_the_eta_comes_from_the_overall_fraction(tmp_path, monkeypatch):
     assert view["eta_s"] == 1800 and "~00:30 remaining" in view["line"]
 
 
+def test_the_rate_is_the_innermost_counted_phase_per_item(tmp_path, monkeypatch):
+    monkeypatch.setattr(progress, "_pid_alive", lambda pid: True)
+    clock = Clock(1000.0)
+    path = tmp_path / "q9.json"
+    rep = progress.Reporter("run", path=path, clock=clock, throttle_s=0)
+    rep.phase("days", total=10)
+    clock.t = 1100.0
+    rep.phase("paths", total=50, unit="expiries")  # nested; its own clock starts here
+    clock.t = 1182.0
+    rep.advance("paths", 10, current="TSLA 2018-12-28")
+    view = progress.read_job("q9", tmp_path, now=clock.t)
+    assert view["rate"] == {"phase": "paths", "seconds_each": 8.2}
+    assert "(TSLA 2018-12-28) · 8.2 s/path · ~" in view["line"]
+
+
+def test_a_fast_phase_reads_as_items_per_second_and_an_uncounted_one_has_no_rate():
+    def line(rate):
+        return progress.summary_line({"phases": [], "eta_s": None, "rate": rate})
+
+    assert line({"phase": "symbol-days", "seconds_each": 0.25}) == "4.0 symbol-days/s"
+    assert line({"phase": "symbol-days", "seconds_each": 2.0}) == "2.0 s/symbol-day"
+    assert line(None) == ""
+
+
 def test_the_eta_reads_as_hours_and_minutes():
     def line(eta_s):
         return progress.summary_line({"phases": [], "eta_s": eta_s})

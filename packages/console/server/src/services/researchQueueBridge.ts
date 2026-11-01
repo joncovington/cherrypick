@@ -14,7 +14,8 @@ import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
  * each queued one waits. Read-only on the Python side; it adds, cancels and runs nothing. Every rule
  * is the orchestrator's: this renames the reply and decides nothing.
  *
- * Memoised ~30 s, as the backtest reads are. The caller is NOT the gate: the route refuses before
+ * Memoised 2 s: the page polls every 2 s while a row runs and a job writes its progress at most once
+ * a second, so the memo only folds together tabs polling at once (`queue-list` costs ~0.3 s). The caller is NOT the gate: the route refuses before
  * reaching here unless the suite says `backtest: true`.
  */
 
@@ -28,7 +29,7 @@ export function setResearchQueueCaller(fn?: () => Promise<SpawnedJson>): void {
   caller = fn ?? (() => spawnModuleCliAsync(["-m", "cherrypick.cli", "queue-list"], UNAVAILABLE));
 }
 
-export const TTL_MS = 30_000;
+export const TTL_MS = 2_000;
 let cached: { at: number; value: Promise<SpawnedJson> } | null = null;
 
 /** Drop the memoised response. Tests only. */
