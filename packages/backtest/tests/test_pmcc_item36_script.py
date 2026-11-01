@@ -701,6 +701,52 @@ def test_wput_guard_matches_a_put_write_index_and_fails_when_the_index_disagrees
     assert not s36.wput_check(thin, index, lo, hi)["ok"]  # half the weeks have no chain
 
 
+def test_parity_guard_passes_quotes_at_the_close_and_fails_calls_quoted_off_it():
+    lo, hi = date(2016, 1, 4), date(2016, 12, 30)
+    m = make_market("XSP(SPY)", style="cash", end=hi)
+    ok = s36.parity_check(m, lo, hi)
+    assert ok["ok"] and ok["median_abs_gap"] < 0.001
+
+    def late(day, exp, q):  # every call quoted as if spot were 0.5% higher than the close
+        bump = 0.005 * 100.0
+        return {kr: ((b + bump, a + bump) if kr[1] == "C" else (b, a)) for kr, (b, a) in q.items()}
+
+    bad = s36.parity_check(make_market("XSP(SPY)", style="cash", end=hi, hook=late), lo, hi)
+    assert not bad["ok"] and bad["median_abs_gap"] > s36.PARITY_TOL
+    thin = make_market("XSP(SPY)", style="cash", end=hi, hook=lambda d, e, q: {} if d.month % 2 else q)
+    assert not s36.parity_check(thin, lo, hi)["ok"]  # half the weeks have no chain
+
+
+def test_iv_guard_wants_the_put_a_little_under_vix9d_and_fails_either_side_of_the_band():
+    lo, hi = date(2016, 1, 4), date(2016, 12, 30)
+    m = make_market("XSP(SPY)", style="cash", end=hi, vol=0.20)
+    days = s36.sessions_between(lo, hi)
+    ok = s36.iv_check(m, {d: 21.0 for d in days}, lo, hi)
+    assert ok["ok"] and ok["median_iv_less_vix9d"] == pytest.approx(-0.01, abs=0.002)
+    assert not s36.iv_check(m, {d: 30.0 for d in days}, lo, hi)["ok"]  # premium 10 points cheap
+    assert not s36.iv_check(m, {d: 18.0 for d in days}, lo, hi)["ok"]  # premium 2 points rich
+    assert not s36.iv_check(m, {}, lo, hi)["ok"]
+
+
+def test_wput_is_reported_and_the_quote_guards_gate(monkeypatch):
+    m = make_market("XSP(SPY)", style="cash", end=date(2016, 12, 30))
+    passing = {"ok": True}
+    for name in ("parity_check", "iv_check", "reproduction_check"):
+        monkeypatch.setattr(s36, name, lambda *a, **k: dict(passing))
+    monkeypatch.setattr(s36, "wput_check", lambda *a, **k: {"ok": False, "diff": 0.04})
+    monkeypatch.setattr(s36, "simulate", lambda *a, **k: None)
+    monkeypatch.setattr(s36, "identity_check", lambda *a, **k: [])
+    monkeypatch.setattr(s36, "run_checks", lambda *a, **k: [])
+    ledger = [{"symbol": "QQQ", "session": "2016-06-01", "long_exp": "2017-06-16", "short_exp": "2016-06-10",
+               "long": 1.0, "short": 2.0}]  # fmt: skip
+    markets = {"XSP(SPY)": m, "QQQ": m}
+    g = s36.run_guards(markets, {}, ledger, {date(2016, 1, 1): 1.0}, {date(2016, 1, 4): 15.0})
+    assert g["ok"] and not g["wput"]["ok"] and g["wput"]["gates"] is False
+    monkeypatch.setattr(s36, "iv_check", lambda *a, **k: {"ok": False})
+    assert not s36.run_guards(markets, {}, ledger, {date(2016, 1, 1): 1.0}, {date(2016, 1, 4): 15.0})["ok"]
+    assert not s36.run_guards(markets, {}, ledger, {}, None)["iv"]["ok"]  # no VIX9D file is a failed guard
+
+
 # ---------------------------------------------------------------- the plan
 
 

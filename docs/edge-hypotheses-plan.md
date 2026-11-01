@@ -3236,6 +3236,22 @@ computed.*
   - The fetches run as a new queue kind (`fetch-addon-weeklies`) and the existing open-interest fetch,
     kept to weekly SPXW expiries. The bootstrap clusters by expiry; its p is the smoothed share at or
     below zero. An entry whose expiry has no published SPX close is dropped for every arm.
+- **The entry check split in two (2026-11-01, the user's decision, before any outcome was read).**
+  The first `item35/study` stopped at the entry check with 12 of 37 exact matches.
+  - **Why it failed:** nearly every miss had all three strikes one $5 step over, or a credit a few
+    cents off. The body is spot less the expected move rounded to $5. Paper read spot from the
+    streamer's cache at about 10:00:30; the store's minute is a different feed. No store minute lines
+    up better: at 10:01, 20 of 37 are within a point.
+  - **What gates now, each on at least 90% of the overlapping entries:**
+    - **Rule:** paper's own entry spot and expected move through `engine.select_strikes`, on the
+      strikes the store lists that minute, give paper's three strikes, and the replay's expiry is
+      paper's.
+    - **Feed:** the store's 10:00 spot is within 5 index points of paper's.
+  - **Reported, not gating:** the exact match and the credit agreement.
+  - **Before any outcome:** the 5-point bound was set after reading those spot gaps. On the first
+    run, the rule check matched 37 of 37 and the feed check 33 of 37, one entry short of 90%, so the
+    study still stops. The bound is not moved after that reading. What to do with the feed check is
+    the user's call.
 - **Decides** (the user decides everything about retirement and live; this item only supplies evidence):
   - **An arm passes:** bwb continues in paper with that arm, a paper check begins from the declared
     boundary, and the live pilot may be reconsidered by the user. It is *eligible to be considered*:
@@ -3536,6 +3552,21 @@ live-fill check; an unlisted arm (other deltas, other expiries) is outside the s
   - **The WPUT check failed, and still does with the rate fixed.** The replay's weekly at-the-money
     put beats the index in nearly every year. That is an open question about the replay or its
     quotes, looked into before any arm is read. The tolerance is unchanged.
+- **The WPUT check replaced as the gate (2026-11-01, the user's decision, before any arm was read).**
+  Looked into, the gap is the index's construction rather than the replay's quotes:
+  - The index takes the strike at or below the level before 11:00 and sells at a midday traded price,
+    on one-month bills. The replay sells at the close's mid.
+  - At the close, the quotes sit where the bar close says. The spot implied by put-call parity at the
+    at-the-money weekly is within a few hundredths of a percent of the close in every year.
+  - The put's implied vol sits one to three points under VIX9D, which carries the skew.
+  
+  Two quote guards over the WPUT check's weeks and coverage floor now gate in its place:
+  - **Parity:** the median absolute gap between the parity spot and the close is at most 0.25%.
+  - **Implied vol:** the median of the at-the-money put's implied vol less VIX9D is between -5 and +1
+    points.
+  
+  WPUT is computed and reported, not gating. Both bounds were set after reading those per-year quote
+  readings (no arm, no outcome), and on the full span both guards pass.
 
 #### Decides
 

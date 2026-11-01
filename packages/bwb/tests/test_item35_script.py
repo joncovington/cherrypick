@@ -215,12 +215,15 @@ def test_a_wide_leg_spread_and_a_credit_that_is_not_one_are_the_modules_refusals
     bid, ask, delta, iv = m.puts[plan["body_strike"]]
     m.puts[plan["body_strike"]] = (bid, bid * 1.5 + 0.2, delta, iv)  # over 25% of the mid
     d._snap.clear()
-    assert b35.plan_at_entry(d, ENTRY, 4) == {"status": "refused", "reason": "spread_too_wide"}
+    assert b35.plan_at_entry(d, ENTRY, 4) == {"status": "refused", "reason": "spread_too_wide", "minute": m}
     d = build()
     m = d.by_ts[at(ENTRY, 10, 0)]
     mid = (m.puts[plan["body_strike"]][0] + m.puts[plan["body_strike"]][1]) / 2
     m.puts[plan["body_strike"]] = (round(mid / 4, 2), round(mid / 4, 2) + 0.01, -0.1, 0.18)  # a cheap body
-    assert b35.plan_at_entry(d, ENTRY, 4) == {"status": "refused", "reason": "no_credit"}
+    out = b35.plan_at_entry(d, ENTRY, 4)
+    assert (out["status"], out["reason"], out["minute"]) == ("refused", "no_credit", m)  # the minute is kept
+    rec = b35.simulate_entry(d, ENTRY, EXP, 4)
+    assert rec["spot"] == m.spot and rec["listed"] == sorted(m.puts)  # the entry check's inputs
 
 
 # ------------------------------------------------------------------------------------------------
@@ -776,31 +779,68 @@ def test_year_and_removal_cuts_and_the_minimum_detectable_effect_are_reported():
 # The paper checks.
 
 
-def paper_row(day, credit, *, arm="control", body=4935.0, exp=EXP, fired=None):
+LISTED = [4800.0 + 5 * i for i in range(61)]
+
+
+def paper_row(day, credit, *, arm="control", body=4935.0, exp=EXP, fired=None, spot=5000.0, move=65.0):
     return {"entry_session": day, "arm": arm, "expiration": exp, "body_strike": body, "near_strike": body + 5,
             "far_strike": body - 10, "entry_credit": credit, "addon_fired_at": fired, "addon_missed_at": None,
-            "entry_vix9d": 14.0, "entry_vix": 15.0}  # fmt: skip
+            "entry_vix9d": 14.0, "entry_vix": 15.0, "entry_spot": spot,
+            "entry_expected_move": move}  # fmt: skip
 
 
-def replay_rec(day, credit, *, body=4935.0, status="entered", reason=None):
+def replay_rec(day, credit, *, body=4935.0, status="entered", reason=None, spot=5000.0, listed=LISTED):
     plan = {"body_strike": body, "near_strike": body + 5, "far_strike": body - 10, "credit": credit}
     rec = {"entry": day, "exp": EXP, "status": status, "reason": reason}
+    if listed is not None:
+        rec |= {"spot": spot, "listed": listed}
     return rec | ({"plan": plan, "arms": {a: {0: None} for a in b35.ARMS}} if status == "entered" else {})
 
 
-def test_the_entry_check_needs_ninety_percent_of_paper_entries_to_match_within_a_tick():
+def test_the_rule_check_runs_paper_spot_and_move_through_the_module_and_needs_ninety_percent():
+    """2026-11-01: 12 of 37 matched exactly, nearly every miss one $5 strike over, because the store's
+    10:00 spot is a point or so off the feed paper read. The rule is checked on paper's own inputs."""
     days = [f"2024-01-{d:02d}" for d in range(2, 12)]
-    records = {d: replay_rec(d, 0.80) for d in days}
+    records = {d: replay_rec(d, 0.80, body=4940.0, spot=5003.0) for d in days}  # the feed's own strike
     paper = [paper_row(d, 0.83) for d in days]
-    ok = b35.validate_entries(records, paper)
-    assert ok["passed"] and ok["share"] == 1.0
-    records[days[0]] = replay_rec(days[0], 0.80, body=4930.0)  # one strike differs: 9/10 still passes
-    assert b35.validate_entries(records, paper)["passed"]
-    records[days[1]] = replay_rec(days[1], 0.95)  # a credit 12 cents off: 8/10 fails
+    out = b35.validate_entries(records, paper)
+    assert out["rule"]["passed"] and out["rule"]["share"] == 1.0 and out["passed"]
+    assert out["matched"] == 0  # the exact match is reported, not gated
+    paper[0] = paper_row(days[0], 0.83, body=4930.0)  # paper recorded a strike its inputs do not give
+    assert b35.validate_entries(records, paper)["rule"]["passed"]  # 9/10 still passes
+    paper[1] = paper_row(days[1], 0.83, exp="2024-01-19")  # a different expiry: 8/10 fails
     bad = b35.validate_entries(records, paper)
-    assert not bad["passed"] and bad["matched"] == 8 and len(bad["misses"]) == 2
-    records[days[2]] = replay_rec(days[2], None, status="dropped", reason="no_atm_quote")
-    assert b35.validate_entries(records, paper)["matched"] == 7  # a drop is a miss, not an excuse
+    assert not bad["rule"]["passed"] and bad["rule"]["matched"] == 8 and not bad["passed"]
+    assert len(bad["rule"]["misses"]) == 2
+
+
+def test_the_rule_check_leaves_out_an_unreadable_minute_and_nothing_readable_fails():
+    records = {
+        "2024-01-02": replay_rec("2024-01-02", 0.8),
+        "2024-01-03": replay_rec("2024-01-03", None, status="dropped", reason="no_entry_minute", listed=None),
+    }
+    paper = [paper_row("2024-01-02", 0.8), paper_row("2024-01-03", 0.8)]
+    out = b35.validate_entries(records, paper)["rule"]
+    assert out["entries"] == 1 and out["unreadable"] == 1 and out["passed"]
+    none = {"2024-01-03": records["2024-01-03"]}
+    assert not b35.validate_entries(none, paper)["rule"]["passed"]
+    no_inputs = [paper_row("2024-01-02", 0.8) | {"entry_spot": None}]
+    assert not b35.validate_entries(records, no_inputs)["rule"]["passed"]
+
+
+def test_the_feed_check_wants_the_store_spot_within_five_points_on_ninety_percent():
+    days = [f"2024-01-{d:02d}" for d in range(2, 12)]
+    records = {d: replay_rec(d, 0.80, spot=5004.0) for d in days}
+    paper = [paper_row(d, 0.80) for d in days]
+    assert b35.validate_entries(records, paper)["feed"]["passed"]
+    records[days[0]] = replay_rec(days[0], 0.80, spot=5007.0)  # 7 points off: 9/10 passes
+    assert b35.validate_entries(records, paper)["feed"]["passed"]
+    records[days[1]] = replay_rec(days[1], 0.80, spot=4990.0)  # 10 points off: 8/10 fails
+    bad = b35.validate_entries(records, paper)
+    assert not bad["feed"]["passed"] and bad["feed"]["within"] == 8 and not bad["passed"]
+    refused = {d: replay_rec(d, None, status="refused", reason="no_credit", spot=5001.0) for d in days}
+    assert b35.validate_entries(refused, paper)["feed"]["passed"]  # a refusal still read the minute
+    assert not b35.validate_entries({}, paper)["feed"]["passed"]
 
 
 def test_paper_dates_the_store_does_not_cover_are_left_out_of_the_entry_check():

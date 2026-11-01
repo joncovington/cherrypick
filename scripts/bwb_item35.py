@@ -92,6 +92,10 @@ ALPHA, RESAMPLES, SEED = 0.05, 2000, 35
 WORST_WEEKS = 5
 POWER = 0.80
 ENTRY_MATCH_MIN, ENTRY_CREDIT_TOL = 0.90, 0.05
+# The entry check split in two on 2026-11-01, before any outcome was read: the rule (paper's own
+# spot and expected move through `engine.select_strikes` on the store's listed strikes) and the feed
+# (the store's 10:00 spot against paper's), each on at least `ENTRY_MATCH_MIN` of the entries.
+FEED_SPOT_TOL = 5.0  # index points
 FLIP_TOL, FLIP_MATCH_MIN, FLIP_MIN_TICKS = 5.0, 0.80, 500
 BOUNDARY_DELTA = 0.99999  # the vendor's rounding of a delta of exactly minus one
 
@@ -299,10 +303,11 @@ def plan_at_entry(data: ExpiryData | None, day: str, dte: int) -> dict:
     if not res["ok"]:
         reason = res["reason"]
         if reason in REFUSALS:
-            return {"status": "refused", "reason": reason}
+            return {"status": "refused", "reason": reason, "minute": minute}
         return {
             "status": "dropped",
             "reason": {"no_expected_move": "no_atm_quote"}.get(reason, "leg_unquoted"),
+            "minute": minute,
         }
     plan = res["plan"]
     body, near, far = plan["body_strike"], plan["near_strike"], plan["far_strike"]
@@ -436,6 +441,9 @@ def simulate_entry(data: ExpiryData | None, day: str, exp: str, dte: int) -> dic
     opened (and, for `delta-shortstop`, when it closed). No price of an outcome is read here."""
     entry = plan_at_entry(data, day, dte)
     rec = {"entry": day, "exp": exp, "dte": dte, "status": entry["status"], "reason": entry.get("reason")}
+    if entry.get("minute") is not None:  # the entry check's inputs: the store's spot and listed strikes
+        rec["spot"] = entry["minute"].spot
+        rec["listed"] = sorted(entry["minute"].puts)
     if entry["status"] != "entered":
         return rec
     plan = entry["plan"]
@@ -838,14 +846,62 @@ def reported(rows: dict, by_gate: dict) -> dict:
 # Pure: the paper checks.
 
 
+def rule_check(overlap: dict[str, dict], records: dict[str, dict]) -> dict:
+    """The module's rule on paper's own inputs: paper's entry spot and expected move through
+    `engine.select_strikes` on the strikes the store lists that minute must give paper's three strikes,
+    and the replay's expiry paper's, on at least `ENTRY_MATCH_MIN` of the entries. An entry without a
+    readable minute or without paper's inputs is left out and counted; nothing compared is a fail."""
+    n = ok = unreadable = 0
+    misses = []
+    for d, p in overlap.items():
+        r = records[d]
+        if not r.get("listed") or p.get("entry_spot") is None or p.get("entry_expected_move") is None:
+            unreadable += 1
+            continue
+        n += 1
+        sel = engine.select_strikes(float(p["entry_spot"]), float(p["entry_expected_move"]), {}, r["listed"])
+        good = (
+            sel["ok"]
+            and (sel["body"], sel["near"], sel["far"])
+            == (p["body_strike"], p["near_strike"], p["far_strike"])
+            and r["exp"] == p["expiration"]
+        )
+        ok += good
+        if not good:
+            misses.append({"entry": d, "selected": sel.get("body"), "paper": p["body_strike"],
+                           "exp": r["exp"] == p["expiration"]})  # fmt: skip
+    share = ok / n if n else 0.0
+    return {"entries": n, "matched": ok, "unreadable": unreadable, "share": round(share, 4),
+            "passed": n > 0 and share >= ENTRY_MATCH_MIN, "misses": misses}  # fmt: skip
+
+
+def feed_check(overlap: dict[str, dict], records: dict[str, dict]) -> dict:
+    """The store against the feed paper read: the store's 10:00 spot within `FEED_SPOT_TOL` index
+    points of paper's entry spot on at least `ENTRY_MATCH_MIN` of the entries with both."""
+    gaps = [
+        abs(float(records[d]["spot"]) - float(p["entry_spot"]))
+        for d, p in overlap.items()
+        if records[d].get("spot") is not None and p.get("entry_spot") is not None
+    ]
+    within = sum(g <= FEED_SPOT_TOL for g in gaps)
+    share = within / len(gaps) if gaps else 0.0
+    return {"entries": len(gaps), "within": within, "tolerance": FEED_SPOT_TOL, "share": round(share, 4),
+            "median_gap": sorted(gaps)[len(gaps) // 2] if gaps else None,
+            "passed": bool(gaps) and share >= ENTRY_MATCH_MIN}  # fmt: skip
+
+
 def validate_entries(records: dict[str, dict], paper: list[dict]) -> dict:
-    """The replay's entries against the paper ledger's on the dates both cover: same expiry, same
-    strikes and an entry credit within a tick. `records` is {entry day: simulate_entry's record}."""
+    """The replay's entries against the paper ledger's on the dates both cover. Gating: `rule_check`
+    and `feed_check`. Reported: the exact match it gated on until 2026-11-01 (same expiry, same
+    strikes, entry credit within a tick), which two feeds a second or a point apart cannot meet: the
+    body is spot less the move rounded to $5, so a point's difference moves all three legs.
+    `records` is {entry day: simulate_entry's record}."""
     by_day: dict[str, dict] = {}
     for p in paper:
         by_day.setdefault(p["entry_session"], p)
     # Dates the store covers: a paper entry whose expiry the store does not hold is not comparable.
     overlap = {d: p for d, p in by_day.items() if d in records and records[d].get("reason") != "not_in_store"}
+    rule, feed = rule_check(overlap, records), feed_check(overlap, records)
     matched, misses = 0, []
     for d, p in overlap.items():
         r = records[d]
@@ -869,10 +925,12 @@ def validate_entries(records: dict[str, dict], paper: list[dict]) -> dict:
     return {
         "paper_entries": len(by_day),
         "overlapping": len(overlap),
-        "matched": matched,
+        "matched": matched,  # the exact match, reported
         "share": round(share, 4),
-        "passed": bool(overlap) and share >= ENTRY_MATCH_MIN,
         "misses": misses,
+        "rule": rule,
+        "feed": feed,
+        "passed": rule["passed"] and feed["passed"],
     }
 
 
@@ -1133,6 +1191,8 @@ PAPER_COLS = (
     "near_strike",
     "far_strike",
     "entry_credit",
+    "entry_spot",
+    "entry_expected_move",
     "addon_fired_at",
     "entry_vix9d",
     "entry_vix",
@@ -1340,10 +1400,20 @@ def findings(result: dict) -> list[str]:
     val = result.get("validation") or {}
     if val:
         e, f = val["entries"], val["flip"]
-        out.append(
-            f"**Entries against paper:** {e['matched']} of {e['overlapping']} paper entries on covered"
-            f" dates match the replay (needed {ENTRY_MATCH_MIN:.0%})."
-        )
+        if "rule" in e:
+            r, fd = e["rule"], e["feed"]
+            out.append(
+                f"**Entries against paper:** the rule on paper's own spot and move gives paper's strikes on"
+                f" {r['matched']} of {r['entries']} entries; the store's spot is within {fd['tolerance']:g}"
+                f" points of paper's on {fd['within']} of {fd['entries']} (each needed"
+                f" {ENTRY_MATCH_MIN:.0%}). Reported: {e['matched']} of {e['overlapping']} match exactly"
+                " (strikes and credit within a tick)."
+            )
+        else:  # a results.json from before the split
+            out.append(
+                f"**Entries against paper:** {e['matched']} of {e['overlapping']} paper entries on covered"
+                f" dates match the replay (needed {ENTRY_MATCH_MIN:.0%})."
+            )
         out.append(
             f"**Flip against paper:** {f['within_tolerance']} of {f['ticks']} ticks within"
             f" {f['tolerance']:g} points ({f['share']:.0%}, needed {FLIP_MATCH_MIN:.0%}); the flip arms are"
