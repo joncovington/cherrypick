@@ -1,6 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { BridgedResult, SliceAnalysis, SliceCell, SliceDimensionRead, SliceReport, SliceReports } from "@console/shared";
+import type {
+  BridgedResult,
+  SliceAnalysis,
+  SliceCell,
+  SliceDimensionRead,
+  SlicePlacebo,
+  SliceReport,
+  SliceReports,
+} from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 
 /**
@@ -14,6 +22,14 @@ function rec(v: unknown): Record<string, unknown> {
 }
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
+function toPlacebo(v: unknown): SlicePlacebo | null {
+  const p = rec(v);
+  const sessions = num(p["sessions"]);
+  const of = num(p["of"]);
+  const beatenBy = num(p["beaten_by"]);
+  return sessions === null || of === null || beatenBy === null ? null : { sessions, of, beatenBy };
+}
+
 function toCell(value: string, v: unknown): SliceCell {
   const r = rec(v);
   const ci = r["ci95"];
@@ -23,6 +39,8 @@ function toCell(value: string, v: unknown): SliceCell {
     mean: num(r["mean"]),
     ci95: Array.isArray(ci) && ci.length === 2 && ci.every((x) => typeof x === "number") ? [ci[0] as number, ci[1] as number] : null,
     greyed: r["greyed"] !== false,
+    sessions: num(r["sessions"]),
+    placebo: toPlacebo(r["placebo"]),
   };
 }
 

@@ -77,7 +77,15 @@ describe("the slice reports", () => {
   });
 
   it("read each dimension in plain terms: one group, too few, separated or overlapping", () => {
-    const cell = (value: string, mean: number, lo: number, hi: number, greyed = false) => ({ value, n: 100, mean, ci95: [lo, hi] as [number, number], greyed });
+    const cell = (value: string, mean: number, lo: number, hi: number, greyed = false) => ({
+      value,
+      n: 100,
+      mean,
+      ci95: [lo, hi] as [number, number],
+      greyed,
+      sessions: null,
+      placebo: null,
+    });
     expect(readDimension("holding", [cell("same day", 0.1, 0.05, 0.15)]).read).toBe("one-group");
     expect(readDimension("environment", [cell("uptrend", 0.1, 0, 0.2), cell("sideways", 0.3, 0.1, 0.5, true)]).read).toBe("too-few");
     const sep = readDimension("entry_hour", [cell("09:00", 0.05, 0.02, 0.08), cell("13:00", 0.18, 0.17, 0.19), cell("11:00", 0.08, 0.06, 0.1)]);
@@ -92,6 +100,23 @@ describe("the slice reports", () => {
     expect(r.analysis.dimensions[0]).toMatchObject({ name: "environment", read: "too-few", ranked: 1, greyed: 1 });
     const pos = shapeSlice("c.json", { ...SLICE, label: "meic_ic/control/2026-10", overall: { n: 9, mean: 0.1, ci95: [0.05, 0.15], greyed: false } })!;
     expect(pos.analysis).toMatchObject({ arm: "control", month: "2026-10", overall: "positive" });
+  });
+
+  it("carry a cell's days and its random-day placebo, and null where an older report has neither", () => {
+    const withDays = {
+      ...SLICE,
+      dimensions: {
+        weekday: {
+          Tue: { n: 40, mean: 0.2, ci95: [0.1, 0.3], greyed: false, sessions: 12, placebo: { sessions: 12, of: 60, mean: 0.8, draws: 2000, beaten_by: 0.031 } },
+          Mon: { n: 30, mean: 0.1, ci95: [0.0, 0.2], greyed: true, sessions: 4 },
+        },
+      },
+    };
+    const [tue, mon] = shapeSlice("d.json", withDays)!.dimensions[0]!.cells;
+    expect(tue).toMatchObject({ sessions: 12, placebo: { sessions: 12, of: 60, beatenBy: 0.031 } });
+    expect(mon).toMatchObject({ sessions: 4, placebo: null, greyed: true });
+    const old = shapeSlice("a.json", SLICE)!.dimensions[0]!.cells[0]!;
+    expect([old.sessions, old.placebo]).toEqual([null, null]);
   });
 
   it("reads every report in the directory and skips a broken file", () => {
