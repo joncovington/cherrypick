@@ -115,6 +115,12 @@ MIN_CELL_WEEKS = 40
 REPRODUCTION_FLOOR = 0.80
 WPUT_TOLERANCE = 0.02
 WPUT_COVERAGE = 0.90  # the share of the span's weeks with a weekly put chain, else the check is not run
+# The quote guards that replaced WPUT as the gate (2026-11-01, before any arm was read): the spot the
+# at-the-money weekly's put-call parity implies against the bar close, and its put's implied vol
+# against VIX9D. Both over the WPUT check's weeks and with its coverage floor.
+PARITY_TOL = 0.0025  # median |parity spot / close - 1|
+IV_BAND = (-0.05, 0.01)  # median (put implied vol - VIX9D), in vol: the 9-day index carries the skew
+GATING_GUARDS = ("parity", "iv", "reproduction", "accounting")
 PUT_DELTA = 0.20
 LONG_CLOSE_DTE = 45
 MONTHLY_DTE = (30, 45, 37)
@@ -1112,6 +1118,73 @@ def wput_check(
     }
 
 
+def weekly_atm(m: Market, lo: date, hi: date):
+    """(week end, expiry, spot, strike) for each week end in [lo, hi] whose next weekly expiry has a
+    usable at-the-money put: the WPUT check's weeks, and the count of week ends possible."""
+    ends = week_ends([s for s in m.sessions if lo <= s <= hi])
+    out = []
+    for d in ends:
+        e = clock.weekly_expiration(d, 1)
+        if e is None or e not in m.closes:
+            continue
+        puts = sorted(k for (k, r), q in m.chain(d, e).items() if r == "P" and usable(*q))
+        if puts:
+            out.append((d, e, m.closes[d], puts[nearest_strike_index(puts, m.closes[d])]))
+    return out, len(ends)
+
+
+def _median(xs: list[float]) -> float:
+    s = sorted(xs)
+    n = len(s)
+    return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+
+
+def parity_check(m: Market, lo: date, hi: date, tolerance: float = PARITY_TOL) -> dict:
+    """Do the close's option quotes sit at the bar close? The spot put-call parity implies at the
+    at-the-money weekly (call mid - put mid + K e^-rT) against the close, median absolute gap within
+    `tolerance`, on at least the WPUT coverage of the span's weeks."""
+    weeks, possible = weekly_atm(m, lo, hi)
+    gaps = []
+    for d, e, s, k in weeks:
+        p, c = m.quote(d, e, k, "P"), m.quote(d, e, k, "C")
+        if p and c:
+            t = (e - d).days / 365.0
+            gaps.append((c["mid"] - p["mid"] + k * math.exp(-m.rate_fn(d) * t)) / s - 1)
+    if not gaps:
+        return {"ok": False, "reason": "no at-the-money pairs", "weeks": 0}
+    med = _median([abs(g) for g in gaps])
+    return {
+        "ok": med <= tolerance and len(gaps) >= WPUT_COVERAGE * possible,
+        "weeks": len(gaps),
+        "weeks_possible": possible,
+        "median_abs_gap": med,
+        "median_gap": _median(gaps),
+    }
+
+
+def iv_check(m: Market, vix9d: dict[date, float], lo: date, hi: date, band: tuple = IV_BAND) -> dict:
+    """Is the premium priced like the market's 9-day vol? The at-the-money weekly put's implied vol
+    from its mid less VIX9D that session, median within `band`, on at least the WPUT coverage."""
+    weeks, possible = weekly_atm(m, lo, hi)
+    diffs = []
+    for d, e, s, k in weeks:
+        q = m.quote(d, e, k, "P")
+        if q is None or d not in vix9d:
+            continue
+        iv = bs.implied_vol(s, k, (e - d).days / 365.0, q["mid"], "P", m.rate_fn(d))
+        if iv is not None:
+            diffs.append(iv - vix9d[d] / 100.0)
+    if not diffs:
+        return {"ok": False, "reason": "no implied vols against VIX9D", "weeks": 0}
+    med = _median(diffs)
+    return {
+        "ok": band[0] <= med <= band[1] and len(diffs) >= WPUT_COVERAGE * possible,
+        "weeks": len(diffs),
+        "weeks_possible": possible,
+        "median_iv_less_vix9d": med,
+    }
+
+
 # ------------------------------------------------------------------------------------------------
 # The plan: the fetch-chain-paths request files.
 
@@ -1435,6 +1508,14 @@ def load_wput() -> dict[date, float]:
     return dict(files.parse_cboe(p.read_text(encoding="utf-8"))) if p.exists() else {}
 
 
+def load_vix9d() -> dict[date, float]:
+    """Cboe's VIX9D closes from the market files (`scripts/fetch_market_files.py`), or {}."""
+    from cherrypick.overview import files
+
+    p = files.store_dir() / "cboe" / "VIX9D.csv"
+    return dict(files.parse_cboe(p.read_text(encoding="utf-8"))) if p.exists() else {}
+
+
 def run_checks(runs: dict, markets: dict[str, Market]) -> list[str]:
     """The accounting and coverage guards over finished runs."""
     out = []
@@ -1444,15 +1525,26 @@ def run_checks(runs: dict, markets: dict[str, Market]) -> list[str]:
     return out
 
 
-def run_guards(markets: dict[str, Market], costs: dict, ledger: list[dict], wput: dict) -> dict:
-    """The four guards, before any arm is read. Reproduction rows exclude XSP(SPY) (its strikes are
-    XSP's, a tenth of the index, not SPY's)."""
+def run_guards(
+    markets: dict[str, Market], costs: dict, ledger: list[dict], wput: dict, vix9d: dict | None = None
+) -> dict:
+    """The guards, before any arm is read: `GATING_GUARDS` gate, WPUT is reported (it gated until
+    2026-11-01; the index sells at a midday traded price, the replay at the close's mid). Reproduction
+    rows exclude XSP(SPY) (its strikes are XSP's, a tenth of the index, not SPY's)."""
     out: dict = {}
     spy = markets.get("XSP(SPY)")
     out["wput"] = (
-        wput_check(spy, wput, DESIGN[0], HOLDOUT[1])
+        wput_check(spy, wput, DESIGN[0], HOLDOUT[1]) | {"gates": False}
         if spy and wput
-        else {"ok": False, "reason": "unavailable"}
+        else {"ok": False, "reason": "unavailable", "gates": False}
+    )
+    out["parity"] = (
+        parity_check(spy, DESIGN[0], HOLDOUT[1]) if spy else {"ok": False, "reason": "no XSP(SPY) row"}
+    )
+    out["iv"] = (
+        iv_check(spy, vix9d, DESIGN[0], HOLDOUT[1])
+        if spy and vix9d
+        else {"ok": False, "reason": "no XSP(SPY) row or no VIX9D file"}
     )
     rows = [dict(r) for r in ledger if r["symbol"] in markets and r["symbol"] != "XSP(SPY)"]
     out["reproduction"] = (
@@ -1467,7 +1559,7 @@ def run_guards(markets: dict[str, Market], costs: dict, ledger: list[dict], wput
         problems += [f"{name}: {x}" for x in identity_check(arm, base)[:3]]
         problems += run_checks({(name, "long-alone", 1.0): base}, markets)
     out["accounting"] = {"ok": not problems, "problems": problems[:20]}
-    out["ok"] = all(out[k]["ok"] for k in ("wput", "reproduction", "accounting"))
+    out["ok"] = all(out[k]["ok"] for k in GATING_GUARDS)
     return out
 
 
@@ -1693,7 +1785,7 @@ def cmd_study(args, guards_only: bool = False) -> int:
     rep.close_phase("markets")
     costs = costs_config()
     ledger = read_ledger(Path(args.ledger) if getattr(args, "ledger", None) else _ledger_path())
-    guards = run_guards(markets, costs, ledger, load_wput())
+    guards = run_guards(markets, costs, ledger, load_wput(), load_vix9d())
     if guards_only:
         rep.finish("done")
         print(json.dumps(guards, indent=1, default=str))
@@ -1761,9 +1853,12 @@ def report(result: dict) -> str:
         "",
     ]
     g = result["guards"]
-    for k in ("wput", "reproduction", "accounting"):
-        detail = json.dumps({x: y for x, y in g[k].items() if x != "ok"}, default=str)
-        lines.append(f"- **{k}**: {'ok' if g[k].get('ok') else 'failed'} {detail}")
+    for k in (*GATING_GUARDS, "wput"):
+        if k not in g:  # a results.json from before the quote guards
+            continue
+        detail = json.dumps({x: y for x, y in g[k].items() if x not in ("ok", "gates")}, default=str)
+        tag = " (reported, not gating)" if k not in GATING_GUARDS else ""
+        lines.append(f"- **{k}**{tag}: {'ok' if g[k].get('ok') else 'failed'} {detail}")
     lines += [
         "", "## Design window", "",
         "| arm | verdict | baseline | pooled | lower bound | funds ahead | each half | 1.5x costs "
