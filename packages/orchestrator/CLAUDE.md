@@ -200,6 +200,10 @@ filename; override with `paper.sla_state_prefix`.
 
 ## Invariants (do not violate — the reasons are load-bearing)
 
+- **A reminder reads an allow-list and acts on nothing** (`reminders.py`, 2026-11-01). Its conditions
+  are `KINDS` (config's module switch, a module's own `--status` field), never a command, and a
+  reminder only tells a person: it never changes config itself (`test_reminders.py`; each guard was
+  shown to fail).
 - **A research-queue row never names a command** (`researchqueue.py`, 2026-10-24). The supervisor is a
   service with the broker credentials in reach, so a row is an allow-listed kind (`KINDS`) whose argv
   the kind builds: a resumable backtest fetch, or a `scripts/` file git knows, with string arguments
