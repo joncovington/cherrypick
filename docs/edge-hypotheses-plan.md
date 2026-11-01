@@ -4813,6 +4813,100 @@ inputs are fetched.*
   - **Fail:** published rules of this kind are closed for the suite; the walls-as-support thread
     stays closed with items 12 and 30.
 
+### 46. Where implied runs above realised: the variance premium by underlying, tenor and strike
+
+*Source: the user, 2026-10-31, asking which options' implied volatility is most likely to run above
+the volatility that follows. The published answer is index options, their out-of-the-money puts,
+and short-to-mid tenors. The suite's own single-name tests found no premium after costs, but SPY
+was the one name positive in every Dolt test. Index options have never been tested on full chains.
+Declared before any of its inputs are fetched.*
+
+- **Question:** on which underlyings, tenors and strikes does a short option, delta-hedged daily and
+  held to expiry, make money after costs? That is the variance premium measured by itself, with no
+  management rule on top.
+- **Where the edge would live:** a **risk premium**. Buyers pay above expected variance for
+  insurance against the index falling, and most of all for the stocks falling together. The
+  non-equity funds are the control: their options carry no correlation premium, so a premium there
+  would need a different explanation.
+- **Look-alikes:** item 16 (put credit spreads on metals funds, failed), item 14 (credit-spread
+  selection, failed) and item 22 (an overnight SPX condor, premium about fair at mid). The Dolt
+  income-screen tests, which predate the register, delta-hedged short puts on 52 single names. GLD and
+  SLV are a retest of item 16's funds, as a hedged premium instead of a spread, said out loud. SPY,
+  QQQ, IWM and GLD from 2021-12 have been read before as unhedged single legs (the income
+  confirmation run), so the 2016-2021 half is the cleaner of the two.
+- **Names and groups:** *equity index*: SPX (the SPXW third-Friday expiry, PM-settled, cash),
+  SPY, QQQ, IWM. *Non-equity*: GLD, SLV, TLT. Every one was listed and liquid throughout the window,
+  but choosing these seven is today's choice (hindsight, B11).
+- **Cycles:** each standard monthly expiry (the third Friday, the session before it when that is a
+  holiday) from 2016-03-18 to 2026-10-16, each fetched as a daily end-of-day path from 66 days before
+  expiry, the convention the store already holds.
+- **Entries:** in each cycle, one per tenor of 60, 45, 30, 14 and 7 calendar days: the first session
+  on or after expiry minus the tenor, at its end-of-day quotes.
+- **Legs (four), one contract each:**
+  - `straddle`: the call and the put at the strike nearest the forward;
+  - `put25`, `put10`, `call25`: the strike whose Black delta is nearest 0.25, 0.10 and 0.25.
+  - The forward on each session is put-call parity at the strike where the call and put mids are
+    closest, F = K + C − P, undiscounted. Delta and IV are Black's on that forward from the mid, at
+    zero rate.
+- **The hedge:** at every session's close until expiry, the position is hedged to zero delta in
+  that expiry's forward, a futures-style hedge, so dividends and carry drop out. The hedge earns the
+  delta times each session's forward change. A session missing from the path carries the last hedge
+  through without a rebalance; the count is reported.
+- **Exit:** held to expiry, settled at intrinsic against the expiry session's forward. An
+  in-the-money ETF leg pays `cherrypick.core.fees`' share-side delivery costs. SPX settles in cash.
+  Early assignment is not modelled, so an ETF put cell is an upper bound.
+- **Costs:** the option side uses `cherrypick.core.fees`: commission, pass-throughs, the
+  per-symbol index fee for SPX, and slippage at 0.125 of the quoted spread from mid on entry. The
+  hedge pays 0.5 bp of the notional it trades at each rebalance, about a cent a share on the funds
+  and the half-tick plus fees on /MES. The 2x stress equals the 1/4-spread working price the income
+  studies used.
+- **Measured:** net P&L per trade in basis points of the forward notional at entry (100 x F a
+  contract, the straddle counted once). Per cycle and group: the equal-weight mean over the group's
+  names present that cycle, so SPX and SPY are one market and count once. **Cycles are the unit,
+  not name-cycles.**
+- **Pass-or-fail rule, per cell (group x tenor x leg, 40 cells):**
+  - the mean over cycles is above zero, with the one-sided p of a Newey-West t (lag = tenor ÷ 30,
+    rounded up, since 45- and 60-day trades in neighbouring cycles overlap) passing Holm at 0.025
+    across all 40 cells;
+  - above zero in both time-halves (cycles expiring before 2021-06-01, and from it);
+  - still above zero at 1.5x costs;
+  - above zero on at least 3 of the 4 equity-index names, or 2 of the 3 non-equity names, each on its
+    own cycles;
+  - fewer than 80 cycles with a trade is no verdict for that cell.
+  - The study **passes** if any cell passes; it **fails** if every cell with a verdict fails; with no
+    cell holding a verdict, it is no verdict.
+- **Reported, never judged:**
+  - *IV against realised:* per name and tenor, the model-free implied variance at entry
+    (`cherrypick.core.impliedvar`) against the realised variance of daily forward log returns to
+    expiry: the share of cycles implied ran above, and the mean gap in vol points.
+  - *Regime:* for any cell that passes, the result split by the VIX term structure at entry (VIX
+    over VIX3M below 1 or not, from Cboe's public files) and by VIX's one-year rank tercile.
+  - The per-name tables, and each cell's worst cycle.
+- **Minimum detectable effect (B12):** computed in the coverage step, before any P&L is read. It uses
+  the per-cycle spread of each cell's realised-variance term: half the entry dollar gamma times the
+  squared daily forward moves, summed to expiry. That term reads only the underlying's path and the
+  entry quotes, never an option's exit. `planned_mde` at the pass bar is recorded in the result file.
+- **Robustness (B13), reported beside a pass:** neighbours in tenor (the adjacent tenor cells) and
+  in strike (20 and 30 delta beside 25, 8 and 12 beside 10), read as a plateau or a lone peak; costs
+  at 1.5x and 2x; `drawdown_range` on the per-cycle nets; `max_size` at 10% of the account.
+- **Declared limits (B11):** only finished cycles count, so no position is open at the window's
+  end. A trade whose entry or expiry session is missing from the path is dropped and counted. A crash
+  the sample does not hold is not priced: the worst cycle and the drawdown range are shown, and the
+  peso explanation cannot be ruled out from history. The names are today's choice.
+- **Name split (B9):** does not apply: four index names that are one market, and three funds. The
+  per-name breadth rule above stands in for it.
+- **Data:** `scripts/variance_premium_item46.py plan|coverage|study`. `plan` writes the chain-path
+  requests (each name's monthly cycles; paths the store already holds are skipped by the fetch).
+  `coverage` and `study` land in their own changes, before any P&L is read. Inputs are fetched as a
+  research-queue row; results stay under the backtest data directory.
+- **Decides:**
+  - **Pass:** the passing cell becomes a proposal for a paper arm, declared as its own item: an
+    index premium sold monthly and hedged, or unhedged with the hedge's absence tested. Sessions
+    after 2026-10-30 are read first.
+  - **Fail:** the variance premium on monthly index and fund options at these tenors does not
+    survive costs. The question is closed for the suite, and the income lists keep their
+    near-zero note.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
