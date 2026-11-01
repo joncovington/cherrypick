@@ -71,13 +71,17 @@ def _row(**over):
     return {**row, **over}
 
 
-def _ctx(iv=None, board=None):
+STRIKES = [float(k) for k in range(80, 121, 5)]  # 80, 85, ... 120
+
+
+def _ctx(iv=None, board=None, strikes=STRIKES):
     return {
         "cfg": CFG,
         "iv": {"XYZ": iv or {}},
         "board": {"XYZ": board} if board else {},
         "skate": None,
         "holds": {"pullback": 8},
+        "chains": {"XYZ": {"2026-11-20": strikes}} if strikes else {},
     }
 
 
@@ -89,13 +93,62 @@ def test_rich_vol_on_a_long_leans_to_a_put_credit_spread_past_support():
     r = setup_read.read(_row(), _ctx(IV_RICH))
     assert r["volatility"]["regime"] == "rich" and r["volatility"]["iv_hv"] == pytest.approx(1.6)
     assert r["lean"]["structure"] == "put credit spread"
-    assert any("past support 95.00" in leg for leg in r["lean"]["legs"])
+    assert r["lean"]["legs"] == ["sell the 95 put, past support 95.00 (-5.0%)"]
+    below = setup_read.read(_row(support={"value": 93.4}), _ctx(IV_RICH))
+    assert below["lean"]["legs"] == ["sell the 90 put, past support 93.40 (-6.6%)"]
 
 
 def test_cheap_vol_on_a_long_leans_to_a_call_debit_spread_toward_the_target():
     r = setup_read.read(_row(), _ctx(IV_CHEAP))
     assert r["lean"]["structure"] == "call debit spread"
-    assert r["lean"]["legs"] == ["buy near the money, sell at 106.00 (+6.0%)"]
+    # Sold at the last listed strike short of the target, so the target is the spread's full value.
+    assert r["lean"]["legs"] == ["buy the 100 call, sell the 105 call, toward target 106.00 (+6.0%)"]
+    assert r["lean"]["expiry"] == "2026-11-20"
+
+
+def test_a_target_inside_one_strike_names_the_narrowest_listed_spread_and_says_so():
+    # The GM read of 2026-10-30: close 87.40, target 87.86, strikes every 2.50. "Sell at 87.86" was
+    # no strike at all.
+    gm = [75.0, 77.5, 80.0, 82.5, 85.0, 87.5, 90.0, 92.5, 95.0]
+    row = _row(last_close=87.4, target=87.86, support={"value": 83.42})
+    r = setup_read.read(row, _ctx(IV_CHEAP, strikes=gm))
+    assert r["lean"]["legs"][0] == "buy the 87.5 call, sell the 90 call, toward target 87.86 (+0.5%)"
+    assert any("target 87.86 sits inside one strike" in c for c in r["lean"]["cautions"])
+    rich = setup_read.read(row, _ctx({**IV_RICH, "earnings_date": None}, strikes=gm))
+    assert rich["lean"]["legs"] == ["sell the 82.5 put, past support 83.42 (-4.5%)"]
+
+
+def test_a_short_debit_spread_mirrors_the_long():
+    row = _row(side="short", target=93.0, resistance={"value": 104.0})
+    r = setup_read.read(row, _ctx(IV_CHEAP))
+    assert r["lean"]["legs"] == ["buy the 100 put, sell the 95 put, toward target 93.00 (-7.0%)"]
+    sold = setup_read.read(row, _ctx({**IV_RICH, "earnings_date": None}))
+    assert sold["lean"]["legs"] == ["sell the 105 call, past resistance 104.00 (+4.0%)"]
+
+
+def test_without_a_chain_listing_a_leg_says_it_is_a_price():
+    r = setup_read.read(_row(), _ctx(IV_CHEAP, strikes=None))
+    assert r["lean"]["legs"] == [
+        "buy near the money, sell at target 106.00 (+6.0%) (no listed strikes on file: a price, not a strike)"
+    ]
+    assert r["lean"]["expiry"] is None
+
+
+def test_chain_strikes_reads_the_newest_listing_on_or_before_the_day(tmp_path):
+    def put(sub, day, doc):
+        (tmp_path / sub).mkdir(parents=True, exist_ok=True)
+        (tmp_path / sub / f"{day}.json").write_text(json.dumps(doc), encoding="utf-8")
+
+    xyz = [{"expiration": "2026-11-20", "strikes": [[105, "c", "p"], [100, "c", "p"]]}]
+    put("universe/chains", "2026-10-29", {"XYZ": xyz})
+    put("universe/chains", "2026-10-31", {"XYZ": [{"expiration": "2026-11-20", "strikes": [[1, "c", "p"]]}]})
+    put(
+        "screener-greeks/chains",
+        "2026-10-30",
+        {"ABC": [{"expiration": "2026-11-20", "strikes": [[50, "c", "p"]]}]},
+    )
+    got = setup_read.chain_strikes("2026-10-30", tmp_path)
+    assert got == {"XYZ": {"2026-11-20": [100.0, 105.0]}, "ABC": {"2026-11-20": [50.0]}}
 
 
 def test_a_report_inside_the_cycle_never_sells_premium():
@@ -133,7 +186,8 @@ def test_no_target_and_no_level_falls_back_to_the_expected_move():
     r = setup_read.read(_row(target=None, resistance=None), _ctx(IV_CHEAP))
     move = r["volatility"]["expected_move"]
     assert move["pct"] == pytest.approx(40 * (35 / 365) ** 0.5, abs=0.01)
-    assert r["lean"]["legs"][0].startswith("buy near the money, sell near +1σ")
+    # 100 + 12.39: the last listed strike short of +1σ is 110.
+    assert r["lean"]["legs"][0].startswith("buy the 100 call, sell the 110 call, toward +1σ 112.39 (+12.4%)")
 
 
 def test_levels_are_stated_in_atrs_and_sigmas():

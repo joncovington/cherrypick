@@ -176,7 +176,7 @@ export interface SetupRead {
     exDividend: string | null;
   };
   levels: { atr14: number | null; support: SetupReadLevel | null; resistance: SetupReadLevel | null; target: SetupReadLevel | null };
-  lean: { structure: string | null; why: string; legs: string[]; cautions: string[] };
+  lean: { structure: string | null; why: string; legs: string[]; cautions: string[]; expiry: string | null };
 }
 
 export interface TechnicalsWatchlistRow {

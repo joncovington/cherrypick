@@ -287,7 +287,9 @@ export function ReadDetail({ r }: { r: TechnicalsWatchlistRow }) {
             </ul>
           )}
           <p className="muted" style={{ margin: "4px 0 0" }}>
-            From end-of-day data: re-quote before acting. No contract is chosen here.
+            {rd.lean.expiry
+              ? `Strikes listed for ${rd.lean.expiry}, from end-of-day data: re-quote before acting.`
+              : "From end-of-day data: re-quote before acting. No contract is chosen here."}
           </p>
         </Card>
       </div>

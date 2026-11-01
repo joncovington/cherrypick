@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { ValuationModel, ValuationPayload, ValuationRow } from "@console/shared";
 import { AXIS_FONT, CHART_GRID, CHART_GRID_STRONG, niceTicks } from "../../components/Charts";
+import { useMeasure } from "../../lib/useMeasure";
 
 /**
  * What opens beneath a fair-value row (2026-10-28, the user's choice of what to show): a sentence on
@@ -215,7 +216,9 @@ export function Dial({
 /** The grid's low, base and high on one line, with the price marked: where the price sits against
  *  the range a point of cost of capital and half a point of growth make. */
 export function RangeBar({ low, base, high, price }: { low: number; base: number; high: number; price: number }) {
-  const w = 720;
+  // Drawn at the card's own width (`useMeasure`): a fixed viewBox stretched across a wide card
+  // stretched its labels with it, to three times their size.
+  const [ref, w] = useMeasure(720);
   const h = 100;
   const m = 110; // room for an end label that runs outward from its dot
   const lo = Math.min(low, price);
@@ -226,7 +229,8 @@ export function RangeBar({ low, base, high, price }: { low: number; base: number
   // Three label rows, so a narrow range never stacks its labels: the base above the line; low and
   // high below it, each running away from the other; the price on a row of its own.
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-label="fair value range and price" style={{ width: "100%", height: "auto", display: "block" }}>
+    <div ref={ref}>
+    <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label="fair value range and price" style={{ display: "block" }}>
       <line x1={m - 40} y1={y} x2={w - m + 40} y2={y} stroke={CHART_GRID_STRONG} strokeWidth={1} />
       <line x1={X(low)} y1={y} x2={X(high)} y2={y} stroke="var(--accent)" strokeWidth={6} strokeLinecap="round" opacity={0.25} />
       <circle cx={X(low)} cy={y} r={6} fill="var(--text-muted)" stroke="var(--surface)" strokeWidth={2} />
@@ -246,14 +250,15 @@ export function RangeBar({ low, base, high, price }: { low: number; base: number
         Price ${money(price)}
       </text>
     </svg>
+    </div>
   );
 }
 
 /** The forecast's free cash flow to the firm, one bar a year, labelled first and last. */
 export function ForecastBars({ r }: { r: ValuationRow }) {
+  const [ref, w] = useMeasure(560); // the card's width, as the range above
   const f = r.forecast ?? [];
   if (f.length === 0) return <p className="muted">No forecast in this file (built before 2026-10-28).</p>;
-  const w = 560;
   const h = 200;
   const ml = 58;
   const mr = 10;
@@ -269,7 +274,8 @@ export function ForecastBars({ r }: { r: ValuationRow }) {
   const bw = (w - ml - mr) / f.length;
   const first = r.consensusUsed ? "analyst consensus" : "five-year history";
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-label="free cash flow forecast" style={{ width: "100%", height: "auto", display: "block" }}>
+    <div ref={ref}>
+    <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label="free cash flow forecast" style={{ display: "block" }}>
       <text x={ml + bw / 2} y={12} textAnchor="middle" {...AXIS_FONT}>
         Y1 growth: {first}
       </text>
@@ -308,6 +314,7 @@ export function ForecastBars({ r }: { r: ValuationRow }) {
         );
       })}
     </svg>
+    </div>
   );
 }
 
