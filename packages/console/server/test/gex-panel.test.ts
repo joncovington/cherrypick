@@ -19,7 +19,10 @@ import {
 /** The experimental GEX panel's levels: display only, each with the definition its module states. */
 
 function row(strike: number, o: Partial<GexStrikeRow> = {}): GexStrikeRow {
-  return { strike, net_gex: 0, call_gex: 0, put_gex: 0, call_oi: 0, put_oi: 0, call_vol: 0, put_vol: 0, ...o } as GexStrikeRow;
+  return {
+    strike, net_gex: 0, call_gex: 0, put_gex: 0, call_oi: 0, put_oi: 0, call_vol: 0, put_vol: 0,
+    call_gex_vol: 0, put_gex_vol: 0, net_gex_vol: 0, ...o,
+  } as GexStrikeRow;
 }
 
 describe("panel walls", () => {
