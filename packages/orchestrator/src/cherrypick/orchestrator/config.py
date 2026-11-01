@@ -800,7 +800,7 @@ def research_queue_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     q = cfg.get("research_queue", {}) or {}
     return {
         "enabled": bool(q.get("enabled", True)),
-        "interval_seconds": int(q.get("interval_seconds", 300)),
+        "interval_seconds": int(q.get("interval_seconds", 60)),
         "blackout_before_minutes": int(q.get("blackout_before_minutes", 15)),
         "blackout_after_minutes": int(q.get("blackout_after_minutes", 105)),
     }
