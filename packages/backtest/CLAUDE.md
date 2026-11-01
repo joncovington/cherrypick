@@ -233,6 +233,10 @@ is a lens, not a replay**: fixed lots, never compounded, so a chosen capital (`-
 percentages only, and is one account for every arm. Absent, each arm reads against its own peak
 session risk (MEIC's condors' max losses summed, flies' book peak risk), never one shared peak, which
 MEIC's control sampling stream would set for every arm; a schema with neither has no account.
+**The health checks** (`health`, 2026-11-01) put the warnings first, each against a bar declared in
+`cards.py`: the result rests on its best five sessions (`core.robustness.best_sessions`), session
+win rate under 25%, a losing run of 10+ sessions, a drawdown of 60+ sessions, a decaying edge trend,
+fees at 25%+ of premium. A check missing its numbers is left out, never passed. Description only.
 **The compounded lens** (`compounded`, `read run --risk-pct`, 2026-10-31) is the one exception to
 "never compounded", and is labelled a lens wherever it is shown: the same sessions re-sized each
 session to put a share of the equity at that point at risk (default 2%), one unit being the lots the

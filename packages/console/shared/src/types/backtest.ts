@@ -288,6 +288,25 @@ export interface BacktestArmCards {
   compounded?: BacktestCompounded | null;
   /** The sizing check; null unless an account was chosen, absent from an older backtest package. */
   sizing?: BacktestSizing | null;
+  /** The health checks (2026-11-01); absent from an older backtest package. */
+  health?: BacktestHealth;
+}
+
+/**
+ * `cards.health`: warnings put first, each against a bar `cards.py` declares. Description only. A
+ * check without the numbers it needs is left out (no credit, no fee drag), never passed.
+ */
+export type BacktestHealthCheck =
+  | { check: "best_sessions"; flag: boolean; bar: string; k: number; share: number | null; rest_mean: number }
+  | { check: "win_rate"; flag: boolean; bar: number; value: number }
+  | { check: "losing_run"; flag: boolean; bar: number; value: number }
+  | { check: "drawdown_length"; flag: boolean; bar: number; value: number; recovered: boolean }
+  | { check: "edge_trend"; flag: boolean; bar: string; value: "improving" | "decaying" | "within noise" }
+  | { check: "fee_drag"; flag: boolean; bar: number; value: number };
+
+export interface BacktestHealth {
+  flags: number;
+  checks: BacktestHealthCheck[];
 }
 
 /**

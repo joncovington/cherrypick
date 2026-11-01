@@ -1,4 +1,4 @@
-import type { BacktestArmCards, BacktestRunCards, ManagePayload } from "@console/shared";
+import type { BacktestArmCards, BacktestHealthCheck, BacktestRunCards, ManagePayload } from "@console/shared";
 import { BACKTEST_DEFAULT_DD_PCT, BACKTEST_DEFAULT_RISK_PCT, isBacktestRiskPct, type BacktestRiskUnit } from "@console/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -429,6 +429,49 @@ export function PercentPicker({
   );
 }
 
+/** One health check in a sentence: what it measured, against its bar. */
+export function healthSentence(h: BacktestHealthCheck): string {
+  switch (h.check) {
+    case "best_sessions":
+      return h.flag
+        ? `Rests on its best ${h.k} sessions: without them the rest average ${fmtCash(h.rest_mean)} a session.`
+        : `Not carried by a few days: without its best ${h.k} sessions the rest still average ${fmtCash(h.rest_mean)} a session.`;
+    case "win_rate":
+      return h.flag
+        ? `Only ${pct(h.value)} of sessions win (under ${pct(h.bar, 0)}): long losing runs are normal for it.`
+        : `${pct(h.value)} of sessions win.`;
+    case "losing_run":
+      return `Longest losing run: ${fmtCount(h.value)} sessions${h.flag ? ` (${fmtCount(h.bar)} or more)` : ""}.`;
+    case "drawdown_length":
+      return `Longest drawdown: ${fmtCount(h.value)} sessions${h.recovered ? "" : ", not recovered by the run's end"}${h.flag ? ` (${fmtCount(h.bar)} or more)` : ""}.`;
+    case "edge_trend":
+      return h.flag ? "The edge is decaying: the run's second half earns less than its first, beyond noise." : `Edge trend: ${h.value}.`;
+    case "fee_drag":
+      return h.flag ? `Fees take ${pct(h.value)} of the premium collected (${pct(h.bar, 0)} or more).` : `Fees take ${pct(h.value)} of the premium.`;
+  }
+}
+
+/** The health checks first, flagged ones on top; nothing for a card from an older backtest package. */
+function HealthChecks({ c }: { c: BacktestArmCards }) {
+  const h = c.health;
+  if (h === undefined) return null;
+  const ordered = [...h.checks].sort((a, b) => Number(b.flag) - Number(a.flag));
+  return (
+    <>
+      <div className="card-subhead">
+        health <span className={h.flags > 0 ? "chip chip-warn" : "chip chip-ok"}>{h.flags > 0 ? `${String(h.flags)} flagged` : "no flags"}</span>
+      </div>
+      <ul style={{ margin: "4px 0 8px", paddingLeft: 18 }}>
+        {ordered.map((x) => (
+          <li key={x.check} className={x.flag ? undefined : "muted"}>
+            {healthSentence(x)}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 function SessionTiles({ c }: { c: BacktestArmCards }) {
   const s = c.sessions;
   const net = c.equity.length === 0 ? null : c.equity[c.equity.length - 1]!.cum;
@@ -700,6 +743,7 @@ export function RunCards({
               ? " One account for every arm, so arms read side by side."
               : " Account: this arm's own peak session risk, so arms differ; pick an amount to compare them."}
           </p>
+          <HealthChecks c={c} />
           <AccountTiles c={c} />
           <div className="card-subhead">sizing check</div>
           <SizingCheck c={c} module={module} onLensAt={onLensAt} />

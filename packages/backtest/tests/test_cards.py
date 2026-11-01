@@ -39,6 +39,62 @@ def test_a_drawdown_from_the_start_has_no_peak_and_an_open_one_has_no_recovery()
     assert d["recovered"] is None and d["sessions_to_recover"] is None
 
 
+def _long(nets, trades=1):
+    from datetime import date, timedelta
+
+    d0 = date(2024, 1, 1)
+    return [
+        {"session": (d0 + timedelta(days=i)).isoformat(), "net": n, "trades": trades}
+        for i, n in enumerate(nets)
+    ]
+
+
+def _checks(series):
+    out = cards.arm_cards(series, [], None)
+    return {c["check"]: c for c in out["health"]["checks"]}, out["health"]["flags"]
+
+
+def test_the_longest_losing_run_skips_sessions_that_did_not_trade():
+    s = _series([-1, -1, 0, -1, 2, -1])
+    s[2]["trades"] = 0  # neither breaks nor extends the run
+    assert cards.longest_losing_run(s) == 3
+
+
+def test_the_longest_drawdown_counts_sessions_from_its_peak_to_recovery_or_the_end():
+    path = cards.equity_path(_series([5, -1, -1, -1, 4, -2, -1]))
+    # 5 is the peak; it is regained at the fifth session (4 sessions later); the last fall is open.
+    assert cards.longest_drawdown(path) == {"sessions": 4, "recovered": True}
+    open_ = cards.equity_path(_series([5, -1, -1, -1, -1, -1, 1]))
+    assert cards.longest_drawdown(open_) == {"sessions": 6, "recovered": False}
+    assert cards.longest_drawdown(cards.equity_path(_series([1, 2, 3]))) == {"sessions": 0, "recovered": True}
+
+
+def test_a_result_carried_by_five_rare_wins_is_flagged_on_every_check_it_trips():
+    # The long-shot shape: a big win every 40 sessions, a small loss every other session.
+    nets = [500.0 if i % 40 == 39 else -10.0 for i in range(200)]
+    checks, flags = _checks(_long(nets))
+    assert checks["best_sessions"]["flag"] and checks["best_sessions"]["rest_mean"] == -10.0
+    assert checks["win_rate"]["flag"] and checks["win_rate"]["value"] == 0.025
+    assert checks["losing_run"]["flag"] and checks["losing_run"]["value"] == 39
+    assert not checks["drawdown_length"]["flag"]  # each win recovers the 39 losses before it
+    assert "fee_drag" not in checks  # no trade carries a credit: the check is left out, not passed
+    assert flags == 3
+
+
+def test_a_steady_result_raises_no_flag():
+    nets = [12.0 if i % 3 else -8.0 for i in range(120)]
+    checks, flags = _checks(_long(nets))
+    assert flags == 0 and not any(c["flag"] for c in checks.values())
+    assert checks["edge_trend"]["value"] == "within noise"
+
+
+def test_a_long_drawdown_and_a_decaying_edge_are_flagged():
+    nets = [10.0] * 60 + [-3.0 if i % 4 else 1.0 for i in range(80)]
+    checks, _ = _checks(_long(nets))
+    assert checks["drawdown_length"]["flag"] and checks["drawdown_length"]["recovered"] is False
+    assert checks["edge_trend"]["flag"] and checks["edge_trend"]["value"] == "decaying"
+
+
 def test_only_the_deepest_drawdowns_are_kept():
     nets = [1, -1] * 3 + [1, -9, 20]
     periods = cards.drawdown_periods(cards.equity_path(_series(nets)), top=2)
