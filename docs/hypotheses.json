@@ -1690,6 +1690,52 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 46,
+      "study": "item46",
+      "title": "Where implied runs above realised: the variance premium by underlying, tenor and strike",
+      "status": "declared",
+      "legacy": false,
+      "setup": "variance-premium",
+      "side": "neutral",
+      "structure": "delta-hedged-short-option",
+      "window": "monthly",
+      "measure": "net P&L per trade in bp of the forward notional at entry, a short option delta-hedged daily in its expiry's forward and held to expiry, after core.fees option costs (0.125 of spread) and 0.5 bp of hedge notional a rebalance; per cycle, the equal-weight mean over a group's names; cells: group (equity index SPX/SPY/QQQ/IWM, non-equity GLD/SLV/TLT) x tenor (60/45/30/14/7 days) x leg (straddle, 25-delta put, 10-delta put, 25-delta call)",
+      "expected": "the equity-index short puts at 30-60 days positive after costs; the non-equity funds near zero",
+      "sample": "standard monthly cycles 2016-03-18..2026-10-16 from daily end-of-day chain paths; cycles are the unit; < 80 cycles with a trade in a cell = no verdict for that cell",
+      "rule": "per cell: mean > 0 with the one-sided Newey-West p passing Holm at 0.025 across 40 cells, > 0 in both time-halves (split 2021-06-01), > 0 at 1.5x costs, > 0 on 3 of 4 index names or 2 of 3 funds; the study passes if any cell passes, fails if every cell with a verdict fails",
+      "mechanism": "option buyers pay above expected variance for crash and correlation insurance on the index; the funds carry no correlation premium and are the control",
+      "rivals": [
+        {
+          "explanation": "the premium is real but costs take it",
+          "check": "net of core.fees and the hedge cost; still above zero at 1.5x costs"
+        },
+        {
+          "explanation": "a calm sample without the crash the premium pays for",
+          "check": "both time-halves (2018, 2020 and 2022 inside); worst cycle and drawdown range reported; the peso case is said as a limit"
+        },
+        {
+          "explanation": "fishing across 40 cells",
+          "check": "Holm across all 40 cells, declared before any look"
+        },
+        {
+          "explanation": "SPX and SPY are the same market counted twice",
+          "check": "cycles are the unit, each group's names equal-weighted within a cycle"
+        },
+        {
+          "explanation": "one name carries the group",
+          "check": "above zero on 3 of 4 index names or 2 of 3 funds"
+        },
+        {
+          "explanation": "overlapping 45- and 60-day trades inflate the t",
+          "check": "Newey-West with lag of the tenor over 30 days, rounded up"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#46-where-implied-runs-above-realised-the-variance-premium-by-underlying-tenor-and-strike",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
