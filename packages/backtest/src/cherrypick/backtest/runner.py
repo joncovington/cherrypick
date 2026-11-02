@@ -25,10 +25,16 @@ or a killed supervisor threw it all away: the research queue re-queues the row, 
 from the first session. Now each session that replays and reads back cleanly leaves a marker beside
 its ledger (`<day>.ok.json`), and a run whose every input matches an unfinished one (`_resume_key`:
 module, window, span, cadence, arms and their spec hashes, the module's config, the data fingerprint
-and the code commit) takes over that run's directory and `run_id`, reads the marked sessions back and
+and the replay's code) takes over that run's directory and `run_id`, reads the marked sessions back and
 replays only the rest. Nothing is recorded until the end, so a resumed run's report is the one an
-uninterrupted run would have written. A checkout with uncommitted changes never resumes (the commit
-does not pin its code), nor is a run taken over while its owner is alive.
+uninterrupted run would have written. Uncommitted changes in the replay's code never resume, nor is a
+run taken over while its owner is alive.
+
+**The replay's code is its source trees, not the repo's commit (2026-11-02).** A replay runs the
+runner, `core` and its module (`_code_pin`); it imports nothing else. Pinned by the commit, any merge
+anywhere (a console page, another study's script) meant an interrupted run could not resume: item 41's
+design run lost 147 sessions to a reboot after two unrelated merges. The commit is still recorded on the
+run.
 """
 
 from __future__ import annotations
@@ -112,10 +118,33 @@ def _code_commit() -> str | None:
         return None
 
 
+def _code_pin(module: str) -> str | None:
+    """The replay's code for resuming: the committed tree of each source tree it runs (the runner's,
+    `core`'s and the module's), with `+dirty` when any of them has uncommitted changes. None when a
+    tree cannot be read."""
+    root = Path(__file__).resolve().parents[5]
+    trees = ("packages/backtest/src", "packages/core/cherrypick", f"packages/{module}/src")
+    try:
+        pins = []
+        for tree in trees:
+            r = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", f"HEAD:{tree}"], capture_output=True, text=True
+            )
+            if r.returncode != 0 or not r.stdout.strip():
+                return None
+            pins.append(r.stdout.strip())
+        dirty = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain", "--", *trees], capture_output=True, text=True
+        ).stdout
+    except OSError:
+        return None
+    return ",".join(pins) + ("+dirty" if dirty.strip() else "")
+
+
 def _resume_key(parts: dict) -> str | None:
-    """What an interrupted run must match to be resumed; None when no clean commit pins the code."""
-    commit = parts.get("code_commit")
-    if not commit or commit.endswith("+dirty"):
+    """What an interrupted run must match to be resumed; None when no clean tree pins the code."""
+    code = parts.get("code")
+    if not code or code.endswith("+dirty"):
         return None
     return hashlib.sha256(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
@@ -504,12 +533,12 @@ def run(
         {
             "module": mod.name, "window": window, "span": [lo, hi], "symbol": symbol.upper(),
             "cadence": cadence, "arms": arms, "hashes": hashes, "config": config,
-            "fingerprint": fingerprint, "code_commit": code_commit,
+            "fingerprint": fingerprint, "code": _code_pin(mod.name),
             "provisional": provisional, "unvalidated_holdout": unvalidated_holdout,
         }
     )  # fmt: skip
     if key is None:
-        log("this run cannot resume if interrupted: the checkout has uncommitted changes")
+        log("this run cannot resume if interrupted: the replay's code has uncommitted changes")
     run_id, resumed = _claim(key)
     ledger_dir = paths.results_dir() / "runs" / run_id
     ledger_dir.mkdir(parents=True, exist_ok=True)
