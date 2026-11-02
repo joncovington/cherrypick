@@ -76,10 +76,9 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
   which rows finish FIRST if `entry_scan_budget_seconds` binds. It must never gate admission (that
   gate caused a five-session outage; break `entry_calendar_admissibility_gate_removed`). Why AMC,
   never BMO: `docs/screening-criteria.md` Layer 0.
-- **This module drives that scan itself; the orchestrator's `symbol-watch` job is superseded and
-  must stay disabled** (off by default, absent from the deployed config) or the scan runs twice. Read
-  "off by default" as a constraint, not a feature waiting to be switched on. `symbol_watch.py
-  refresh`, `run_entries` and `run_closes` survive as manual/backfill verbs.
+- **This module drives that scan itself.** The orchestrator's `symbol-watch` job, a second run of
+  the same scan, was removed 2026-11-02; don't bring one back. `symbol_watch.py refresh`,
+  `run_entries` and `run_closes` survive as manual/backfill verbs.
 - **Agent-driven loop (live or paper).** The **Loop Steps** below are executed by you, the agent,
   for live trading and manual sessions — `rank_strategies.py` picks each symbol's single best
   strategy. cherrypick never runs this path and never places live trades.

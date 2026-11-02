@@ -36,7 +36,7 @@ Do this:
    deletions and "not registered" there is a clean no-op).
 
    Every recurring job (watchdog, streamer-health, trade-notify, the module paper loops, the earnings
-   Dolt keep-alive, the morning fact pack, backups, log-archive, opt-in reconcile/symbol-watch/
+   Dolt keep-alive, the morning fact pack, backups, log-archive, opt-in reconcile/
    status-digest) is a **supervisor job derived from `~/.cherrypick/config.json`** — no per-job
    registration exists any more. The end-of-day review runs as two daily jobs (`review-provisional`
    after the close, `review-final` the next morning); they appear in the schedule, and that is correct

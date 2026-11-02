@@ -482,7 +482,6 @@ def cmd_status(cfg) -> None:
         "watchdog.last.json",
         "earnings_entry.last.json",
         "earnings_exit.last.json",
-        "earnings_symbol_watch.last.json",
     ):
         p = cfgmod.STATE_DIR / hb
         if p.exists():
@@ -783,63 +782,6 @@ def _run_earnings(cfg, phase: str) -> None:
             trade_notifier.run(cfg)
         except Exception:
             pass
-    _emit(rec)
-
-
-def _run_earnings_symbol_watch(cfg) -> None:
-    """Invoked by the daily scheduled task (see cfgmod.symbol_watch_settings). Runs packages/
-    earnings' own forward-preview scan (`python -m cherrypick.earnings.symbol_watch refresh`) --
-    the source of scout's read-only Earnings page "Upcoming" section. Purely informational: never
-    touches a paper/live ledger and never places an order, so a failure here is a WARNING, not a
-    CRITICAL -- scout's Upcoming section simply keeps showing its last-known-good watch data (or
-    none) until the next successful pass, same degrade-gracefully posture that page already has
-    for a missing/absent snapshot file."""
-    mcfg = cfg.get("modules", {}).get("earnings")
-    hb_path = cfgmod.state_file("earnings_symbol_watch.last.json")
-    log_path = _module_log("earnings_symbol_watch")
-    sw = cfgmod.symbol_watch_settings(cfg)
-
-    if not mcfg or not mcfg.get("enabled"):
-        _emit({"ok": True, "skipped": "earnings module disabled"})
-        return
-
-    root = cfgmod.module_root(mcfg, "earnings")
-    argv = ["-m", "cherrypick.earnings.symbol_watch", "refresh", "--days", str(sw["days"])]
-
-    try:
-        r = subprocess.run(
-            [cfgmod.python_exe(), *argv],
-            cwd=str(root),
-            capture_output=True,
-            text=True,
-            timeout=1800,
-            creationflags=CREATE_NO_WINDOW,
-        )
-        try:
-            result = json.loads(r.stdout or "{}")
-        except json.JSONDecodeError:
-            result = {"raw": (r.stdout or "")[:2000]}
-        ok = r.returncode == 0 and result.get("ok", True) is not False
-        error = None if ok else (result.get("error") or (r.stderr or "")[:500])
-    except Exception as exc:
-        ok, result, error = False, {}, f"{type(exc).__name__}: {exc}"
-
-    rec = {
-        "ok": ok,
-        "error": error,
-        "total": (result or {}).get("total"),
-        "done": (result or {}).get("done"),
-    }
-    write_json_atomic(hb_path, rec)
-    _append_log(log_path, {**rec, "result": result})
-
-    if not ok:
-        Notifier(cfg.get("notify")).notify(
-            "WARNING",
-            "earnings.symbol_watch",
-            "Earnings symbol-watch scan failed",
-            f"{error or 'see logs/earnings_symbol_watch.log'}",
-        )
     _emit(rec)
 
 
@@ -2331,7 +2273,6 @@ def build_parser() -> argparse.ArgumentParser:
             "retests",
             "run-earnings-entry",
             "run-earnings-exit",
-            "run-earnings-symbol-watch",
             "review",
             "morning",
             "manage",
@@ -2747,7 +2688,6 @@ def main() -> None:
         "sent": lambda: cmd_sent(args),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),
-        "run-earnings-symbol-watch": lambda: _run_earnings_symbol_watch(cfg),
         "review": lambda: _run_review(cfg, final="--final" in sys.argv),
         "morning": lambda: _run_morning(cfg),
         "manage": lambda: _run_manage(cfg),
