@@ -5,6 +5,7 @@ guard is shown to fail by breaking its invariant.
 
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 import json
 import math
@@ -659,6 +660,52 @@ def test_reproduction_leaves_out_a_session_the_store_does_not_cover_and_nothing_
     assert refused["entries"] == 1 and not refused["ok"]
 
 
+def test_selection_greeks_carry_no_rate_and_no_yield_as_the_broker_s_do(mkt):
+    """On the 3-month yield the store's 0.90 long sat ten points shallower than paper's on every entry;
+    with no carry it matched. The rate and the dividends must not reach a delta."""
+    day = mkt.sessions[10]
+    exp = s36.leap_for(day)
+    carried = dataclasses.replace(
+        mkt, rate_fn=lambda d: 0.05, dividends=[(day - timedelta(days=30), 3.0)], _chains={}, _greeks={}
+    )
+    assert carried.greeks(day, exp, "C") == mkt.greeks(day, exp, "C")
+    s, t = mkt.closes[day], (exp - day).days / 365.0
+    k, (d, v) = min(mkt.greeks(day, exp, "C").items(), key=lambda kv: abs(kv[1][0] - 0.90))
+    assert d == pytest.approx(bs.delta(s, k, t, v, "C", 0.0, 0.0))
+
+
+def test_reproduction_selects_at_paper_s_own_spot_with_the_close_s_vols(mkt):
+    """Paper prices its entry intraday; a weekly short near the money moves strikes with the spot. The
+    guard reads paper's spot where the row carries one, the close's where it does not."""
+    markets = {"QQQ": mkt}
+    params = s36.spec_params(s36.SPECS["shield_hold"])
+    day = mkt.sessions[30]
+    sexp = date.fromisoformat(s36.clock.short_expiration(day, params)["short_expiration"])
+    row = {"symbol": "QQQ", "session": day.isoformat(), "long_exp": s36.leap_for(day).isoformat(),
+           "short_exp": sexp.isoformat()}  # fmt: skip
+    pick = s36.select_for(markets, params)
+    at_close = pick(dict(row))
+    moved = pick({**row, "spot": mkt.closes[day] * 1.04})
+    assert moved[0] > at_close[0] and moved[1] > at_close[1]
+    assert pick({**row, "spot": None}) == at_close
+
+
+def test_a_strike_step_is_counted_on_each_leg_s_own_listing_once(mkt):
+    """The long's and short's listings were joined with repeats, so a strike both expiries list
+    counted twice and one step read as two: 13 of 28 on the 2026-11-01 run, 28 of 28 counted once."""
+    markets = {"QQQ": mkt}
+    params = s36.spec_params(s36.SPECS["shield_hold"])
+    day = mkt.sessions[30]
+    sexp = date.fromisoformat(s36.clock.short_expiration(day, params)["short_expiration"])
+    row = {"symbol": "QQQ", "session": day.isoformat(), "long_exp": s36.leap_for(day).isoformat(),
+           "short_exp": sexp.isoformat()}  # fmt: skip
+    long_k, short_k = s36.select_for(markets, params)(dict(row))
+    one = {**row, "long": long_k + 1.0, "short": short_k - 1.0}  # one listed strike each way
+    assert s36.reproduction_check([one], s36.select_for(markets, params))["ok"]
+    two = {**row, "long": long_k + 2.0, "short": short_k}
+    assert not s36.reproduction_check([two], s36.select_for(markets, params))["ok"]
+
+
 def test_the_rate_is_the_3_month_yield_before_the_session_and_a_gap_stops_the_run():
     curves = {date(2023, 6, 1): 5.25, date(2023, 5, 31): 5.20}
 
@@ -826,11 +873,12 @@ def _ledger_db(path: Path, entries: list[tuple]) -> Path:
     """A paper ledger with pmcc's two tables, only the columns `read_ledger` reads."""
     conn = sqlite3.connect(path)
     conn.executescript(
-        "CREATE TABLE pmcc_positions (position_id INTEGER, symbol TEXT, arm TEXT, entry_session TEXT);"
+        "CREATE TABLE pmcc_positions (position_id INTEGER, symbol TEXT, arm TEXT, entry_session TEXT, "
+        "entry_spot REAL);"
         "CREATE TABLE pmcc_legs (position_id INTEGER, leg_role TEXT, expiration TEXT, strike REAL);"
     )
     for i, (sym, arm, session, lexp, lk, sexp, sk) in enumerate(entries):
-        conn.execute("INSERT INTO pmcc_positions VALUES (?, ?, ?, ?)", (i, sym, arm, session))
+        conn.execute("INSERT INTO pmcc_positions VALUES (?, ?, ?, ?, NULL)", (i, sym, arm, session))
         conn.execute("INSERT INTO pmcc_legs VALUES (?, 'long_call', ?, ?)", (i, lexp, lk))
         conn.execute("INSERT INTO pmcc_legs VALUES (?, 'short_call_1', ?, ?)", (i, sexp, sk))
     conn.commit()

@@ -3567,6 +3567,24 @@ live-fill check; an unlisted arm (other deltas, other expiries) is outside the s
   
   WPUT is computed and reported, not gating. Both bounds were set after reading those per-year quote
   readings (no arm, no outcome), and on the full span both guards pass.
+- **Selection greeks in the broker's convention (2026-11-01, the user's decision, before any arm was
+  read).** With paper's entries fetched, reproduction read 0 of 28. Every miss was the long, about ten
+  points shallower than paper's: the store's 0.90 long sat 23-43% in the money, paper's 35-46%.
+  - **Why:** the broker's recorded implied vol at paper's long is 6 to 20 points above the vol the
+    store's mid solves to on the 3-month yield and the trailing yield. Solved with no rate and no
+    yield, the store's mid gives the broker's vol within a few points, and a delta of 0.86-0.91. An
+    American tree on the same mids moved no strike.
+  - **The fix:** the replay's selection deltas carry no rate and no yield (`GREEKS_RATE`,
+    `GREEKS_YIELD`). Prices, costs and the quote guards keep the real rate. No number was fitted.
+  - **The guard reads paper's own entry spot,** with the close's vols. Paper prices its entry
+    intraday, and the hours to the close moved the near-the-money weekly short by several strikes.
+  - **A counting fix:** the guard joined the two legs' strike lists with repeats, so one listed strike
+    counted as two steps. Each leg now counts on its own expiry's strikes, once each.
+  - A depth band read off paper's entries was weighed first, fitted on the entries to 10-22 and
+    checked on the later eight. It matched 5 of the 8 longs and was dropped.
+
+  On the real inputs every gating guard passes. Reproduction reads 28 of 28: 12 on paper's exact
+  strikes in both legs and 16 one listed strike away in a leg.
 
 #### Decides
 

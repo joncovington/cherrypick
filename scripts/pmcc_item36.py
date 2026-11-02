@@ -19,8 +19,9 @@ and the assignment roll fire in pmcc's order); the expirations are `clock.leap_e
 `clock.short_expiration` and `clock.weekly_expiration`; costs are `engine.leg_fee` and
 `core.fees.slippage_dollars` over the module's `tastytrade_costs`; the $5 settlement event is
 `engine.settlement_fee`. What this file adds is the data (a stored chain for a session and an expiry
-in place of the broker's snapshot), Black-Scholes delta from the mid's implied volatility (the store
-holds no greeks), the weekly marking, and the statistics.
+in place of the broker's snapshot), Black-Scholes delta from the mid's implied volatility at no rate
+and no yield, the broker's convention (the store holds no greeks), the weekly marking, and the
+statistics.
 
 **Readings chosen where the declaration is silent** (each also in the report):
 - One evaluation a session, at the close's quotes. An action blocked by the spread gate
@@ -121,6 +122,12 @@ WPUT_COVERAGE = 0.90  # the share of the span's weeks with a weekly put chain, e
 PARITY_TOL = 0.0025  # median |parity spot / close - 1|
 IV_BAND = (-0.05, 0.01)  # median (put implied vol - VIX9D), in vol: the 9-day index carries the skew
 GATING_GUARDS = ("parity", "iv", "reproduction", "accounting")
+# The broker's greeks carry no rate and no yield (2026-11-01). Solved that way, with paper's own entry
+# spot, the store's mids reproduce each of paper's 18 entries, long and short, within one strike; on
+# the 3-month yield and the trailing yield the 0.90 long sat about ten points shallower and none
+# matched. Selection reads these; prices, costs and the quote guards keep the real rate.
+GREEKS_RATE = 0.0
+GREEKS_YIELD = 0.0
 PUT_DELTA = 0.20
 LONG_CLOSE_DTE = 45
 MONTHLY_DTE = (30, 45, 37)
@@ -338,13 +345,18 @@ class Market:
         s = self.closes.get(day)
         return paid / s if s else 0.0
 
-    def greeks(self, day: date, exp: date, right: str) -> dict[float, tuple[float, float]]:
-        """{strike: (delta, implied vol)} for the strikes with a usable quote and a solvable vol."""
-        key = (day, exp, right)
+    def greeks(
+        self, day: date, exp: date, right: str, spot: float | None = None
+    ) -> dict[float, tuple[float, float]]:
+        """{strike: (delta, implied vol)} for the strikes with a usable quote and a solvable vol, in the
+        broker's convention (GREEKS_RATE, GREEKS_YIELD). The vol is the close's; `spot` moves only the
+        delta (the reproduction guard reads paper's entry spot), the close's spot by default."""
+        key = (day, exp, right, spot)
         if key in self._greeks:
             return self._greeks[key]
         s, years = self.closes[day], (exp - day).days / 365.0
-        r, q = self.rate_fn(day), self.div_yield(day)
+        at = s if spot is None else spot
+        r, q = GREEKS_RATE, GREEKS_YIELD
         out = {}
         for (strike, rt), (bid, ask) in self.chain(day, exp).items():
             if rt != right or not usable(bid, ask) or not 0.25 * s <= strike <= 2.0 * s:
@@ -352,7 +364,7 @@ class Market:
             vol = solved_vol(s, strike, years, (bid + ask) / 2.0, right, r, q)
             if vol is None:
                 continue
-            d = bs.delta(s, strike, years, vol, right, r, q)
+            d = bs.delta(at, strike, years, vol, right, r, q)
             if d is not None:
                 out[strike] = (d, vol)
         if len(self._greeks) > 4000:
@@ -360,10 +372,10 @@ class Market:
         self._greeks[key] = out
         return out
 
-    def view(self, day: date, exp: date) -> tuple[list[dict], dict, dict]:
+    def view(self, day: date, exp: date, spot: float | None = None) -> tuple[list[dict], dict, dict]:
         """Calls of one expiry as pmcc's selectors take them: (entries, quotes, greeks)."""
         entries, quotes, greeks = [], {}, {}
-        g = self.greeks(day, exp, "C")
+        g = self.greeks(day, exp, "C", spot)
         for (strike, rt), (bid, ask) in sorted(self.chain(day, exp).items()):
             if rt != "C" or not usable(bid, ask):
                 continue
@@ -1052,8 +1064,9 @@ def reproduction_check(
     """Selection against the paper ledger, on the sessions both cover: for each recorded entry the
     replay's chosen long and short strike must each sit within one listed strike of the recorded one,
     on at least 80% of entries. `select(row)` returns the replay's (long, short) strikes with the
-    row's `strikes` list in play, a None strike where its selector refused (a miss), or None when the
-    store does not cover the row's session (left out, counted). Nothing covered is not a pass."""
+    row's `strikes` in play (each leg's own expiry's listed strikes, once each), a None strike where
+    its selector refused (a miss), or None when the store does not cover the row's session (left out,
+    counted). Nothing covered is not a pass."""
     n = ok = uncovered = 0
     for row in rows:
         got = select(row)
@@ -1063,10 +1076,9 @@ def reproduction_check(
         n += 1
         if None in got:
             continue
-        strikes = row["strikes"]
         if all(
             abs(nearest_strike_index(strikes, a) - nearest_strike_index(strikes, b)) <= 1
-            for a, b in zip(got, (row["long"], row["short"]), strict=True)
+            for strikes, a, b in zip(row["strikes"], got, (row["long"], row["short"]), strict=True)
         ):
             ok += 1
     ratio = ok / n if n else None
@@ -1448,13 +1460,15 @@ def read_report_dates(symbols) -> dict[str, list[date]]:
 
 
 def read_ledger(path: Path) -> list[dict]:
-    """The paper ledger's held-long entries since 2026-10-06: symbol, arm, session, expirations, strikes."""
+    """The paper ledger's held-long entries since 2026-10-06: symbol, arm, session, expirations, strikes
+    and the spot the entry was priced on."""
     if not path.exists():
         return []
     conn = _ro(path)
     try:
         rows = conn.execute(
-            "SELECT p.symbol, p.arm, p.entry_session, l.expiration, l.strike, s.expiration, s.strike "
+            "SELECT p.symbol, p.arm, p.entry_session, l.expiration, l.strike, s.expiration, s.strike, "
+            "p.entry_spot "
             "FROM pmcc_positions p "
             "JOIN pmcc_legs l ON l.position_id = p.position_id AND l.leg_role = 'long_call' "
             "JOIN pmcc_legs s ON s.position_id = p.position_id AND s.leg_role = 'short_call_1' "
@@ -1466,8 +1480,8 @@ def read_ledger(path: Path) -> list[dict]:
     finally:
         conn.close()
     return [
-        {"symbol": a, "arm": b, "session": c, "long_exp": d, "long": e, "short_exp": f, "short": g}
-        for a, b, c, d, e, f, g in rows
+        {"symbol": a, "arm": b, "session": c, "long_exp": d, "long": e, "short_exp": f, "short": g, "spot": h}
+        for a, b, c, d, e, f, g, h in rows
     ]
 
 
@@ -1476,7 +1490,9 @@ def select_for(
 ) -> Callable[[dict], tuple[float | None, float | None] | None]:
     """The replay's choice on a ledger row's session, from the stored chains; fills the row's strikes.
     None when the store does not cover the session (no market, close or chain for either expiry); a
-    None strike where pmcc's selector refused."""
+    None strike where pmcc's selector refused. The spot is the row's own (paper's, priced intraday)
+    where it has one: the close's vols, paper's spot, so the guard reads the rule and not the hours
+    between paper's entry and the close."""
 
     def go(row: dict) -> tuple[float | None, float | None] | None:
         m = markets.get(row["symbol"])
@@ -1485,12 +1501,12 @@ def select_for(
         day, lexp, sexp = (date.fromisoformat(row[k]) for k in ("session", "long_exp", "short_exp"))
         if day not in m.closes:
             return None
-        s = m.closes[day]
-        le, lq, lg = m.view(day, lexp)
-        se, sq, sg = m.view(day, sexp)
+        s = row.get("spot") or m.closes[day]
+        le, lq, lg = m.view(day, lexp, s)
+        se, sq, sg = m.view(day, sexp, s)
         if not le or not se:
             return None
-        row["strikes"] = sorted(e["strike_price"] for e in le + se)
+        row["strikes"] = tuple(sorted({e["strike_price"] for e in leg}) for leg in (le, se))
         lp = engine.select_long(le, lq, lg, s, params)
         if not lp["ok"]:
             return (None, None)
