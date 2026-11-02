@@ -355,6 +355,10 @@ _ORDER_ID_COLUMNS = (
     "call_spread_entry_order_id",
     "put_stop_order_id",
     "call_stop_order_id",
+    # A resting stop is this loop's own working order; unlisted, the sweep would call it an orphan
+    # and block every entry.
+    "put_resting_stop_order_id",
+    "call_resting_stop_order_id",
 )
 
 
@@ -664,6 +668,187 @@ def _submit_close(
     return True
 
 
+# --------------------------------------------------------------------------- resting stops
+# A stop-limit resting at the broker on each side of an open IC (2026-11-02). The loop's own stop
+# lives only while ticks run with fresh quotes; on 2026-11-02 a quote outage held a put side
+# unmanaged for 79 minutes and it was stopped at $7.15 against its $3.60 trigger. A resting order
+# keeps working through that. The loop's stop stays as the backup and the chaser: it cancels the
+# resting order (and confirms the cancel) before it sends a close of its own, so a side never has
+# two closes working. Off unless `live.resting_stop.enabled`.
+RESTING_STOP_DEFAULT_OFFSET_FRAC = 0.10
+
+
+def resting_stop_settings(config: dict) -> dict | None:
+    """`live.resting_stop` resolved, or None when it is off. `limit_offset_frac` is the limit's
+    distance above the trigger as a fraction of the trigger (0.10 puts a $3.60 stop's limit at
+    $4.00, $3.96 ceilinged to the nickel); at least one tick."""
+    rs = _live_cfg(config).get("resting_stop") or {}
+    if not rs.get("enabled"):
+        return None
+    return {"limit_offset_frac": float(rs.get("limit_offset_frac", RESTING_STOP_DEFAULT_OFFSET_FRAC))}
+
+
+def resting_stop_trigger(trade: dict, params: dict) -> float:
+    """The side's stop on the same rule the loop's own stop reads (`paper.evaluate_open_trade`):
+    the row's current trigger ratio times the IC's whole net credit."""
+    ratio = trade.get("stop_trigger_current") or params["stop_trigger_ratio"]
+    return float(ratio) * float(trade["net_credit"])
+
+
+def _open_sides(trade: dict) -> list[str]:
+    """Sides still held: the IC is open or partial and the side has no recorded stop cost."""
+    if trade.get("status") not in ("open", "partial"):
+        return []
+    return [s for s in ("put", "call") if trade.get(f"{s}_stop_cost") is None]
+
+
+def _resting_working(trade: dict, side: str) -> str | None:
+    """The side's resting stop order id while the ledger last saw it working, else None."""
+    if trade.get(f"{side}_resting_stop_status") == "working":
+        return trade.get(f"{side}_resting_stop_order_id") or None
+    return None
+
+
+def _book_resting_fill(trade: dict, side: str, oid: str, status: dict, db_path: str, log) -> None:
+    """A resting stop the broker filled becomes the side's close order, so `_confirm_fills` books
+    it this tick through the one close-fill path, at the broker's leg fills. The stash carries the
+    order's own limit as the bound a fill price must sit within."""
+    limit = None
+    try:
+        limit = abs(float(status.get("price"))) if status.get("price") not in (None, "", "None") else None
+    except (TypeError, ValueError):
+        limit = None
+    decision = {"action": f"stop_{side}", f"{side}_exit_price": limit}
+    paper._update_trade(
+        trade["ic_order_id"],
+        {
+            f"{side}_resting_stop_status": "filled",
+            f"{side}_stop_order_id": oid,
+            f"{side}_stop_fill_status": "pending",
+            "pending_exit_json": json.dumps({"action": f"stop_{side}", "decision": decision}),
+        },
+        db_path,
+    )
+    log(
+        f"{side} resting stop FILLED for {trade['ic_order_id']} (order {oid}) -- booked at the broker's fills"
+    )
+
+
+def _poll_resting_stops(symbol: str, day: str, db_path: str, broker, *, log) -> dict:
+    """Ask the broker about every resting stop the ledger last saw working. Filled: handed to
+    `_confirm_fills` as the side's close. Dead (cancelled, rejected, expired): recorded, so
+    `_place_resting_stops` can place a fresh one. Runs whether or not resting stops are switched
+    on, so one placed before a switch-off is still booked."""
+    counts = {"resting_working": 0, "resting_filled": 0, "resting_dead": 0}
+    for trade in paper._get_open_trades(symbol, EXECUTION_MODE, day, db_path):
+        for side in _open_sides(trade):
+            oid = _resting_working(trade, side)
+            if not oid or trade.get(f"{side}_stop_fill_status") == "pending":
+                continue
+            status = broker.status(oid)
+            state, _ = _execution.fill_state(status)
+            if state == "working":
+                counts["resting_working"] += 1
+            elif state == "filled":
+                _book_resting_fill(trade, side, oid, status, db_path, log)
+                counts["resting_filled"] += 1
+            else:
+                paper._update_trade(trade["ic_order_id"], {f"{side}_resting_stop_status": state}, db_path)
+                log(f"{side} resting stop {state.upper()} for {trade['ic_order_id']} (order {oid})")
+                counts["resting_dead"] += 1
+    return counts
+
+
+def _place_resting_stops(
+    config: dict, symbol: str, snapshot: dict, params: dict, db_path: str, broker, *, live: bool, log
+) -> dict:
+    """Place a resting stop on every held side that has none working and no close of the loop's
+    own working. Not after the settlement time or under a force-close: the loop is closing or
+    settling those itself. A failed placement is CRITICAL and is tried again next tick -- the side
+    is managed by the loop alone until one rests."""
+    counts = {"resting_placed": 0, "resting_failed": 0}
+    rs = resting_stop_settings(config)
+    if rs is None:
+        return counts
+    base_config = paper.load_base_config()
+    is_cash = paper._is_cash_settled(symbol, base_config)
+    if (
+        paper.settlement_active(snapshot, base_config, is_cash)
+        or paper.force_close_active(snapshot, base_config, is_cash)[0]
+    ):
+        return counts
+    for trade in paper._get_open_trades(symbol, EXECUTION_MODE, snapshot["date"], db_path):
+        for side in _open_sides(trade):
+            if _resting_working(trade, side) or trade.get(f"{side}_stop_fill_status") == "pending":
+                continue
+            trigger = resting_stop_trigger(trade, params)
+            try:
+                spec = live_orders.resting_stop_spec(
+                    trade, side, trigger, max(live_orders.TICK, rs["limit_offset_frac"] * trigger)
+                )
+            except ValueError as exc:
+                log(f"CRITICAL: no resting stop for {trade['ic_order_id']} {side}: {exc}")
+                counts["resting_failed"] += 1
+                continue
+            result = broker.place(spec, live=live)
+            if not live:
+                log(
+                    f"resting stop {side} (dry-run) for {trade['ic_order_id']}: {json.dumps(result, default=str)[:300]}"
+                )
+                continue
+            oid = _extract_order_id(result) if result.get("ok") else None
+            if oid is None:
+                paper._update_trade(trade["ic_order_id"], {f"{side}_resting_stop_status": "failed"}, db_path)
+                log(
+                    f"CRITICAL: resting stop {side} for {trade['ic_order_id']} was not placed "
+                    f"({result.get('error') or 'no order id'}) -- the loop's own stop only; retried next tick"
+                )
+                counts["resting_failed"] += 1
+                continue
+            paper._update_trade(
+                trade["ic_order_id"],
+                {f"{side}_resting_stop_order_id": oid, f"{side}_resting_stop_status": "working"},
+                db_path,
+            )
+            log(
+                f"resting stop {side} placed for {trade['ic_order_id']}: stop {spec['stop_trigger']}, "
+                f"limit {spec['price']} (order {oid})"
+            )
+            counts["resting_placed"] += 1
+    return counts
+
+
+def _clear_resting_stop(trade: dict, side: str, broker, db_path: str, log) -> bool:
+    """Make sure `side` has no resting stop working before the loop closes or settles it. True
+    when none is working (never placed, cancelled now, or already dead at the broker); False when
+    it may still close the side -- the cancel was refused and the broker says it is working or
+    filled. A filled one is handed to `_confirm_fills`. On False the caller sends nothing for the
+    side this tick: two closes working on one side could buy it back twice."""
+    oid = _resting_working(trade, side)
+    if not oid:
+        return True
+    cancelled = broker.cancel(oid) if hasattr(broker, "cancel") else {"ok": False, "error": "no cancel"}
+    if cancelled.get("ok"):
+        paper._update_trade(trade["ic_order_id"], {f"{side}_resting_stop_status": "cancelled"}, db_path)
+        log(
+            f"{side} resting stop cancelled for {trade['ic_order_id']} -- the loop closes or settles the side"
+        )
+        return True
+    status = broker.status(oid)
+    state, _ = _execution.fill_state(status)
+    if state == "filled":
+        _book_resting_fill(trade, side, oid, status, db_path, log)
+        return False
+    if state in ("cancelled", "rejected", "expired"):
+        paper._update_trade(trade["ic_order_id"], {f"{side}_resting_stop_status": state}, db_path)
+        return True
+    log(
+        f"{side} resting stop for {trade['ic_order_id']} could not be cancelled "
+        f"({cancelled.get('error')}) -- nothing sent for the side this tick"
+    )
+    return False
+
+
 def _sides_to_close(decision: dict) -> list[str]:
     """Which side(s) an `evaluate_open_trade` decision requires closing -- force_close's
     `put_open`/`call_open` flags mean 'this side is still open', i.e. needs a close order."""
@@ -764,7 +949,12 @@ def _manage_open_trades(
         if action == "expire":
             # Cash-settled left-to-expire: nothing to submit, settlement is automatic. A close
             # still working is cancelled first -- settlement supersedes it (an unfilled end-of-day
-            # close on a cash-settled side falls through to expiry by design).
+            # close on a cash-settled side falls through to expiry by design). A close or resting
+            # stop that will not cancel may have filled: the IC waits a tick for `_confirm_fills`
+            # rather than settling a side the broker already bought back (2026-11-02).
+            unresolved = [
+                s for s in _open_sides(trade) if not _clear_resting_stop(trade, s, broker, db_path, log)
+            ]
             for side in _closing_sides(trade):
                 res = (
                     broker.cancel(trade[f"{side}_stop_order_id"])
@@ -776,6 +966,15 @@ def _manage_open_trades(
                         trade["ic_order_id"], {f"{side}_stop_fill_status": "cancelled"}, db_path
                     )
                     log(f"cancelled working {side} close for {trade['ic_order_id']} -- settling instead")
+                else:
+                    unresolved.append(side)
+            if unresolved:
+                log(
+                    f"settlement of {trade['ic_order_id']} waits: {unresolved} may have filled -- "
+                    "confirmed next tick"
+                )
+                counts["held"] += 1
+                continue
             counts["expired"] += 1
             paper._apply_exit_decision(trade, decision, symbol, db_path)
             continue
@@ -787,6 +986,9 @@ def _manage_open_trades(
         # broker answers.
         closing = _closing_sides(trade)
         sides = [side for side in _sides_to_close(decision) if side not in closing]
+        # A side's resting stop is cancelled, and the cancel confirmed, before the loop's own close
+        # goes out; a side whose resting stop will not cancel gets nothing this tick.
+        sides = [side for side in sides if _clear_resting_stop(trade, side, broker, db_path, log)]
         if not sides:
             counts["closing"] += 1
             continue
@@ -1243,10 +1445,17 @@ def run_once(
         expected_legs(config, db_path, include_pending=True)["legs"],
         now_iso=_pl._now_et().isoformat(timespec="seconds"),
     )
-    # Broker truth first: what filled, what died. Only the live ledger has orders to confirm.
+    # Broker truth first: what filled, what died. Only the live ledger has orders to confirm. A
+    # resting stop the broker filled is handed to `_confirm_fills` as the side's close first, so it
+    # is booked this tick and the side is never evaluated as still open.
+    resting = _poll_resting_stops(symbol, snapshot["date"], db_path, broker, log=log) if live else {}
     fills = _confirm_fills(symbol, snapshot, db_path, broker, log=log, params=params) if live else {}
     manage = _manage_open_trades(
         symbol, snapshot, params, db_path, broker, live=live, log=log, settle_price=settle_price
+    )
+    # After management, so a side the loop is closing this tick never gets a stop placed under it.
+    resting.update(
+        _place_resting_stops(config, symbol, snapshot, params, db_path, broker, live=live, log=log)
     )
     block = list(entry_block or [])
     if orphans is None:
@@ -1284,7 +1493,7 @@ def run_once(
     chosen = entry.pop("_chosen", None)
     if live:
         _record_attempt(config, snapshot, db_path, symbol, entry, chosen)
-    return {"symbol": symbol, "live": live, "orphans": orphans, **fills, **manage, "entry": entry}
+    return {"symbol": symbol, "live": live, "orphans": orphans, **fills, **manage, **resting, "entry": entry}
 
 
 def _record_attempt(config: dict, snapshot: dict, db_path: str, symbol: str, entry: dict, chosen) -> None:
