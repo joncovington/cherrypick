@@ -1,15 +1,18 @@
 """CLI for the daily position-management evaluation.
 
     python -m cherrypick.manage evaluate --snapshot PATH [--rules PATH]
+    python -m cherrypick.manage remark --overlay PATH [--rules PATH]
     python -m cherrypick.manage reevaluate [--session YYYY-MM-DD] [--rules PATH]
     python -m cherrypick.manage rules [--rules PATH]
     python -m cherrypick.manage check-roll --trade ID --close LEG ... --open LEG ...
 
 `evaluate` reads a broker snapshot (written by the orchestrator's `manage` verb, the only caller that
-touches the broker), stores it, and writes the evaluation beside it. `reevaluate` re-runs a stored
-snapshot -- the latest by default -- under the current rules, so a changed threshold can be judged on
-yesterday's positions. `rules` prints the effective ruleset and anything in the override file that
-could not be applied. Every command prints one JSON object.
+touches the broker), stores it, and writes the evaluation beside it. `remark` moves the session's stored
+snapshot to an overlay of newer quotes (the orchestrator's `manage-marks`, once a minute: `remark.py`),
+evaluates that, and stores the overlay, never the snapshot. `reevaluate` re-runs a stored snapshot --
+the latest by default -- under the current rules, moved to its stored overlay when one stands, so a
+changed threshold can be judged on yesterday's positions. `rules` prints the effective ruleset and
+anything in the override file that could not be applied. Every command prints one JSON object.
 """
 
 from __future__ import annotations
@@ -23,16 +26,22 @@ from cherrypick.core.jsonio import write_json_atomic
 
 from cherrypick.manage import evaluate as _evaluate
 from cherrypick.manage import paths as _paths
+from cherrypick.manage import remark as _remark
 from cherrypick.manage import rules as _rules
 from cherrypick.manage import stream_request as _stream_request
 
 
-def _run(snapshot: dict, rules_path: str | None) -> dict:
+def _run(snapshot: dict, rules_path: str | None, *, store: bool = True) -> dict:
+    """Evaluate `snapshot` and write the evaluation. `store` keeps the snapshot itself too, as a new
+    full snapshot, which retires the session's overlay (it was read against the one it replaces)."""
     rules, warnings, source = _rules.load(Path(rules_path) if rules_path else None)
     result = _evaluate.evaluate(snapshot, rules, warnings)
     result["rules_source"] = source
+    result["remark"] = snapshot.get("remark")
     session = result["session"]
-    write_json_atomic(_paths.snapshot_path(session), snapshot)
+    if store:
+        write_json_atomic(_paths.snapshot_path(session), snapshot)
+        _paths.marks_path(session).unlink(missing_ok=True)
     target = _paths.eval_path(session)
     write_json_atomic(target, result)
     # The held legs, declared to the streamer so the console can mark them live until the next run.
@@ -93,16 +102,47 @@ def cmd_evaluate(args) -> dict:
     return _run(snapshot, args.rules)
 
 
-def cmd_reevaluate(args) -> dict:
-    if args.session:
-        path = _paths.snapshot_path(args.session)
+def _stored(session: str | None) -> dict | None:
+    """A session's stored snapshot (the latest by default), moved to its stored overlay when one was
+    read against it; None when there is no snapshot."""
+    if session:
+        path = _paths.snapshot_path(session)
     else:
         found = sorted(_paths.data_dir().glob("snapshot-*.json"))
         if not found:
-            return {"ok": False, "error": "no stored snapshot"}
+            return None
         path = found[-1]
     snapshot = json.loads(path.read_text(encoding="utf-8"))
-    return _run(snapshot, args.rules)
+    marks = _paths.marks_path(snapshot["session"])
+    if marks.exists():
+        overlay = json.loads(marks.read_text(encoding="utf-8"))
+        if overlay.get("base_generated_at") == snapshot.get("generated_at"):
+            return _remark.apply(snapshot, overlay)
+    return snapshot
+
+
+def cmd_remark(args) -> dict:
+    """The session's stored snapshot moved to the overlay's quotes, evaluated; the overlay is stored
+    beside the evaluation, the snapshot is left as it is."""
+    overlay = json.loads(Path(args.overlay).read_text(encoding="utf-8"))
+    base = _paths.snapshot_path(str(overlay.get("session")))
+    if not base.exists():
+        return {"ok": False, "error": f"no stored snapshot for {overlay.get('session')}"}
+    snapshot = json.loads(base.read_text(encoding="utf-8"))
+    try:
+        moved = _remark.apply(snapshot, overlay)
+    except _remark.StaleOverlay as exc:
+        return {"ok": False, "stale": True, "error": str(exc)}
+    out = _run(moved, args.rules, store=False)
+    write_json_atomic(_paths.marks_path(snapshot["session"]), overlay)
+    return {**out, "remark": moved["remark"]}
+
+
+def cmd_reevaluate(args) -> dict:
+    snapshot = _stored(args.session)
+    if snapshot is None:
+        return {"ok": False, "error": "no stored snapshot"}
+    return _run(snapshot, args.rules, store=False)
 
 
 def cmd_rules(args) -> dict:
@@ -116,13 +156,9 @@ def cmd_check_roll(args) -> dict:
 
     from cherrypick.manage import rollcheck as _rollcheck
 
-    path = _paths.snapshot_path(args.session) if args.session else None
-    if path is None:
-        found = sorted(_paths.data_dir().glob("snapshot-*.json"))
-        if not found:
-            return {"ok": False, "error": "no stored snapshot; run `run.py manage` first"}
-        path = found[-1]
-    snapshot = json.loads(path.read_text(encoding="utf-8"))
+    snapshot = _stored(args.session)
+    if snapshot is None:
+        return {"ok": False, "error": "no stored snapshot; run `run.py manage` first"}
     rules, _warnings, _source = _rules.load(Path(args.rules) if args.rules else None)
     result = _evaluate.evaluate(snapshot, rules)
     wanted = args.trade.upper()
@@ -162,6 +198,11 @@ def main() -> None:
     p_eval.add_argument(
         "--rules", default=None, help="override file (default ~/.cherrypick/config/manage.json)"
     )
+    p_mark = sub.add_parser("remark")
+    p_mark.add_argument(
+        "--overlay", required=True, help="the quotes, as the orchestrator's manage-marks read them"
+    )
+    p_mark.add_argument("--rules", default=None)
     p_re = sub.add_parser("reevaluate")
     p_re.add_argument("--session", default=None)
     p_re.add_argument("--rules", default=None)
@@ -180,6 +221,7 @@ def main() -> None:
     args = parser.parse_args()
     commands = {
         "evaluate": cmd_evaluate,
+        "remark": cmd_remark,
         "reevaluate": cmd_reevaluate,
         "rules": cmd_rules,
         "check-roll": cmd_check_roll,

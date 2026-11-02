@@ -36,7 +36,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from cherrypick.core import streamcache
+from cherrypick.core import legmarks, streamcache
 from cherrypick.core.db import connect_ro
 
 from . import config as cfgmod
@@ -52,13 +52,8 @@ from . import reconcile
 # live. A minute is long enough to hit the symbols the producer is actually streaming and far too short
 # for yesterday's to survive.
 REPORT_QUOTE_MAX_AGE_SECONDS = 60.0
-# A leg is "wide" when its bid/ask spread exceeds this fraction of its mid. Chosen from what the marks
-# are used for rather than from a market convention: below roughly a tenth, mid-vs-fill is small against
-# the P/L being reported, and above it the mid stops being a number worth quoting a decision on.
-WIDE_SPREAD_RATIO = 0.10
-# ...but a ratio alone flags every cheap leg (a 0.01/0.03 far wing is 100% wide and $2 of doubt), so a
-# leg must also carry this much absolute spread per contract to be worth a reader's attention.
-WIDE_SPREAD_MIN_DOLLARS = 0.10
+# The wide-spread bounds and the per-leg arithmetic live in `core.legmarks`, shared with manage's
+# re-mark (2026-11-02), so a leg re-marked between snapshots is priced as the next snapshot prices it.
 
 
 def _cache_db_path():
@@ -135,78 +130,23 @@ def _price_leg(position: dict, mark: dict | None) -> dict:
         "expiration": str(position.get("expires_at") or "")[:10] or None,
         "open_price": open_price,
         "prev_close": prev_close,
+        # Kept so a later re-mark (manage, between snapshots) prices the leg as this did.
+        "multiplier": multiplier,
         "priced": False,
     }
     if is_option and len(occ) >= 19:
         leg["right"] = occ[12]
         strike = streamcache.to_float(occ[13:])
         leg["strike"] = strike / 1000.0 if strike is not None else None
-
-    if mark is None or mark.get("mid") is None:
-        return leg
-
-    mid = mark["mid"]
-    bid, ask = mark.get("bid"), mark.get("ask")
-    spread = (ask - bid) if (bid is not None and ask is not None) else None
-    leg.update(
-        {
-            "priced": True,
-            "bid": bid,
-            "ask": ask,
-            "mid": mid,
-            "mark_source": mark.get("source"),
-            "mark_age_seconds": mark.get("age_seconds"),
-            "value": contracts * multiplier * mid,
-            "open_pl": (contracts * multiplier * (mid - open_price)) if open_price is not None else None,
-            "day_pl": (contracts * multiplier * (mid - prev_close)) if prev_close is not None else None,
-            "spread": spread,
-            # What the mid could be wrong by if this leg had to trade at the bad side of its own market.
-            "mark_doubt": (abs(contracts) * multiplier * spread / 2.0) if spread is not None else None,
-            "wide": bool(
-                spread is not None
-                and spread >= WIDE_SPREAD_MIN_DOLLARS
-                and mid > 0
-                and (spread / mid) >= WIDE_SPREAD_RATIO
-            ),
-        }
+    return legmarks.apply_mark(
+        leg, mark, contracts=contracts, multiplier=multiplier, open_price=open_price, prev_close=prev_close
     )
-    return leg
 
 
-def _sum(values) -> float:
-    return sum(v for v in values if v is not None)
+_sum = legmarks.total
 
 
-def _group_by_underlying(legs: list[dict]) -> list[dict]:
-    """Legs collapsed to one row per underlying, sorted by absolute open P/L.
-
-    Sorted by magnitude rather than signed value because the reader's question is "what needs my
-    attention", and a $200 loser and a $200 winner are equally worth seeing before a $3 anything.
-    """
-    groups: dict[str, dict] = {}
-    for leg in legs:
-        group = groups.setdefault(
-            leg["underlying"],
-            {"underlying": leg["underlying"], "legs": [], "unpriced": 0},
-        )
-        group["legs"].append(leg)
-        if not leg["priced"]:
-            group["unpriced"] += 1
-    out = []
-    for group in groups.values():
-        priced = [leg for leg in group["legs"] if leg["priced"]]
-        group.update(
-            {
-                "leg_count": len(group["legs"]),
-                "value": _sum(leg.get("value") for leg in priced),
-                "open_pl": _sum(leg.get("open_pl") for leg in priced),
-                "day_pl": _sum(leg.get("day_pl") for leg in priced),
-                "mark_doubt": _sum(leg.get("mark_doubt") for leg in priced),
-                "wide": any(leg.get("wide") for leg in priced),
-            }
-        )
-        out.append(group)
-    return sorted(out, key=lambda g: -abs(g["open_pl"]))
+_group_by_underlying = legmarks.group_by_underlying
 
 
 # --------------------------------------------------------------------------- entrypoint

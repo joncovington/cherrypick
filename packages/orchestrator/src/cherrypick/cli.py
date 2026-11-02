@@ -1022,6 +1022,49 @@ def _run_manage(cfg) -> None:
     _emit(rec)
 
 
+def _run_manage_marks(cfg) -> None:
+    """The `manage-marks` job, once a minute between the full snapshots: the day's stored snapshot moved
+    to the stream cache's newer quotes and evaluated again (packages/manage `remark`). No broker call,
+    no notification: the full `manage` run posts, and a missed minute costs a minute of freshness. Only
+    a failure is logged, so the manage log keeps one line per full run."""
+    from cherrypick.orchestrator import managesnap
+
+    hb_path = cfgmod.state_file("manage.marks.last.json")
+    now = timeutil.now_et(cfg.get("timezone", "America/New_York"))
+    rec: dict = {"at": now.isoformat(), "ok": True}
+    try:
+        overlay = managesnap.marks_overlay(now.date().isoformat(), now_iso=now.isoformat())
+        if overlay is None:
+            rec["skipped"] = "no stored snapshot today, or no fresh quote for it"
+        else:
+            path = cfgmod.state_file("manage.marks.json")
+            write_json_atomic(path, overlay)
+            r = subprocess.run(
+                [cfgmod.python_exe(), "-m", "cherrypick.manage", "remark", "--overlay", str(path)],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                creationflags=CREATE_NO_WINDOW,
+            )
+            try:
+                result = json.loads(r.stdout or "{}")
+            except json.JSONDecodeError:
+                result = {"raw": (r.stdout or "")[:2000]}
+            rec.update({"remark": result.get("remark"), "counts": result.get("counts")})
+            if result.get("stale"):
+                # A full snapshot landed between the cache read and the evaluation: the next minute
+                # reads against it.
+                rec["skipped"] = "a newer snapshot was stored meanwhile"
+            elif r.returncode != 0 or result.get("ok") is False:
+                rec.update({"ok": False, "error": result.get("error") or (r.stderr or "")[:500]})
+    except Exception as exc:
+        rec.update({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+    write_json_atomic(hb_path, rec)
+    if not rec["ok"]:
+        _append_log(_module_log("manage"), {"job": "manage-marks", **rec})
+    _emit(rec)
+
+
 def _run_morning(cfg) -> None:
     """Invoked by the daily morning-factpack job (see cfgmod.morning_settings). Runs
     packages/overview, a pure stream-cache + GEX-history consumer that writes only into its own
@@ -2292,6 +2335,7 @@ def build_parser() -> argparse.ArgumentParser:
             "review",
             "morning",
             "manage",
+            "manage-marks",
             "restart-console",
             "power-watch",
             "live-positions",
@@ -2707,6 +2751,7 @@ def main() -> None:
         "review": lambda: _run_review(cfg, final="--final" in sys.argv),
         "morning": lambda: _run_morning(cfg),
         "manage": lambda: _run_manage(cfg),
+        "manage-marks": lambda: _run_manage_marks(cfg),
         "restart-console": lambda: cmd_restart_console(cfg),
         "ps": lambda: cmd_ps(cfg),
         "restart": lambda: cmd_restart(cfg, args.name, direct=args.direct, result=args.result),

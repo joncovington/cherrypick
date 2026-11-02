@@ -25,3 +25,8 @@ def eval_path(session: str) -> Path:
 def snapshot_path(session: str) -> Path:
     """The broker snapshot the evaluation was made from, kept so it can be re-run under other rules."""
     return data_dir() / f"snapshot-{session}.json"
+
+
+def marks_path(session: str) -> Path:
+    """The newest quotes the session's snapshot was moved to (`remark`), while that snapshot stands."""
+    return data_dir() / f"marks-{session}.json"

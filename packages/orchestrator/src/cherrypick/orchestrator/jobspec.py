@@ -1718,6 +1718,23 @@ def derive_jobs(
                 enabled_reason="" if mg["enabled"] else "disabled in config (manage)",
             ),
         )
+    # --- manage-marks: between the full runs, the day's snapshot moved to the stream cache's quotes
+    # (packages/manage `remark`). No broker call; stands down until the day's first snapshot is stored.
+    mk = mg["marks"]
+    add(
+        "manage-marks",
+        lambda: JobSpec(
+            id="manage-marks",
+            argv=_run_py(pythonw, launcher, "manage-marks"),
+            kind=KIND_INTERVAL,
+            interval_seconds=mk["interval_seconds"],
+            window_start=mk["start"],
+            window_end=mk["end"],
+            trading_days_only=True,
+            enabled=mk["enabled"],
+            enabled_reason="" if mk["enabled"] else "disabled in config (manage, or manage.marks)",
+        ),
+    )
     add(
         "morning-factpack",
         lambda: JobSpec(

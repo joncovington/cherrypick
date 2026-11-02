@@ -31,6 +31,12 @@ import it. The closing order an evaluation lists is what a person would enter, p
   Live → positions and Live → portfolio tabs). Nothing downstream re-derives a verdict, a level or a confidence.
 - `snapshot-<session>.json` — the snapshot it was judged on, kept so `reevaluate` can re-run a past
   session under changed rules and get the same answer twice.
+- `marks-<session>.json` — between full snapshots (every 30 minutes), the stream cache's quotes the
+  snapshot was last moved to (`remark.py`, the orchestrator's `manage-marks` job, once a minute): held
+  legs and spots re-priced through `core.legmarks`, nothing else re-read. Kept while that snapshot
+  stands and removed by the next full one, so `reevaluate` and `check-roll` read the same quotes the
+  evaluation did. The snapshot is never rewritten by a re-mark; the evaluation's `remark` block says
+  when, against which snapshot and how many legs moved.
 
 The evaluation embeds the **effective ruleset** it was judged by, so a page read later shows the rules
 of that day, not today's.
@@ -87,6 +93,8 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 |---|---|
 | `python run.py manage` (orchestrator) | Take the broker snapshot and evaluate it — what the 10:00 ET `manage-eval` job (and each `manage.also_at` run) runs. |
 | `python -m cherrypick.manage evaluate --snapshot PATH [--rules PATH]` | Evaluate one snapshot file and store both. |
-| `python -m cherrypick.manage reevaluate [--session YYYY-MM-DD] [--rules PATH]` | Re-run a stored snapshot (latest by default) under the current or a trial ruleset. |
+| `python run.py manage-marks` (orchestrator) | Move the day's stored snapshot to the stream cache's quotes and evaluate again — what the minute `manage-marks` job runs. |
+| `python -m cherrypick.manage remark --overlay PATH [--rules PATH]` | Evaluate the session's stored snapshot moved to an overlay of quotes; stores the overlay, never the snapshot. |
+| `python -m cherrypick.manage reevaluate [--session YYYY-MM-DD] [--rules PATH]` | Re-run a stored snapshot (latest by default), moved to its stored overlay, under the current or a trial ruleset. |
 | `python -m cherrypick.manage check-roll --trade ID --close LEG ... --open LEG ... [--session YYYY-MM-DD] [--rules PATH]` | Judge a proposed roll of one trade against the latest snapshot before sending it: credit, shape change, shorts moving into the long's expiry, net-short coverage (shares held on the name cover its calls), breakeven, max loss and earnings. Verdict reject / risky / ok. |
 | `python -m cherrypick.manage rules [--rules PATH]` | Print the effective ruleset and any override that could not be applied. |

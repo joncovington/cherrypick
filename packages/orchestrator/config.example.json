@@ -595,6 +595,13 @@
       "max_short_days": 60,
       "max_calls": 30,
       "max_seconds": 300
+    },
+    "_marks_note": "Between the full runs, the `manage-marks` job moves the day's stored snapshot to the stream cache's quotes every 'interval_seconds' (at least 30) from 'start' to 'end' ET and evaluates it again (packages/manage `remark`): legs and spots re-priced, nothing else re-read. No broker call, no post. On whenever manage is; 'enabled': false turns it off alone.",
+    "marks": {
+      "enabled": true,
+      "interval_seconds": 60,
+      "start": "10:01",
+      "end": "16:10"
     }
   },
   "morning_header": "x",
