@@ -4011,6 +4011,21 @@ has been computed.*
     bar nearest the paper's recorded entry time is also run and reported. Exit and
     settlement agreement on those weeks is **reported, not gated**, and nothing in the replay reads a
     paper outcome.
+  - **The check split into rule and feed (2026-11-01, the user's decision, before any arm was read).**
+    The first `item38/validate` read 5 of 6 Monday weeks and 3 of 5 Friday weeks:
+    - The two Friday misses were a put strike flipped at the half-dollar by a spot 20 and 34 cents
+      off paper's.
+    - The Monday miss had paper's strikes but a put debit of 0.18, against 0.42-0.45 on every replay
+      bar.
+
+    Each regime now gates on two parts, at 75% of its weeks, at the bar nearest paper's entry time:
+    - **Rule:** paper's own entry spot and expected move, through the module's strike choice on the
+      store's listing, give paper's strikes.
+    - **Feed:** the store's spot is within $1.00 of paper's (about one listed strike).
+
+    The full agreement (the replay's own strikes, each debit within $0.10) is reported, not gated. The
+    $1.00 bound was set after reading those gaps. On the real inputs the rule matches 6 of 6 and 5 of 5
+    weeks; the feed gaps run from 0 to 70 cents, all inside the bound.
   - **Minimum weeks:** 150 judged weeks per arm in the design window (50 for `low-ivr`) and 60 in the
     holdout (20 for `low-ivr`). Fewer is no verdict for that arm. If S is September 2016 the design
     holds about 290 weeks; `low-ivr` about a third of that.

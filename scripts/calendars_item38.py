@@ -103,6 +103,12 @@ CLOSE_BARS = ("15:45", "15:50", "15:55")
 DISPO_BARS = ("09:45", "09:50", "09:55")
 SENS_ENTRY_MON = ("10:30", "11:30", "12:00")
 SENS_ENTRY_FRI = ("15:50", "15:55")
+# The validation's two gates (2026-11-01, the user's decision, before any arm was read): the rule, on
+# paper's own spot and expected move, and the feed, the store's spot against paper's at paper's bar.
+# The first run's three misses were a strike flipped by a spot 20-34 cents off and a paper debit no
+# replay bar came near; the bound was set after reading those gaps.
+VALIDATE_SHARE = 0.75
+FEED_SPOT_TOL = 1.00  # dollars of SPY, about one listed strike
 
 #: The calendars config the declaration read (config.example.json `defaults`); the study refuses a
 #: config that differs, since the verdict would then be about another rule.
@@ -1779,10 +1785,46 @@ def exit_ctx(closes: dict) -> dict:
     }
 
 
+def rule_strikes(snap: dict, spot: float, em: float) -> dict[str, float] | None:
+    """The module's strike choice (`engine.plan_entry`'s: the strike quoted in both expiries nearest
+    spot less and plus the expected move) on a given spot and move, over the snapshot's listing."""
+    out = {}
+    for side, target in (("put", spot - em), ("call", spot + em)):
+        shared = set(engine._quoted_strikes(snap["front"], snap["quotes"], side)) & set(
+            engine._quoted_strikes(snap["back"], snap["quotes"], side)
+        )
+        if not shared:
+            return None
+        out[side] = min(shared, key=lambda s: abs(s - target))
+    return out
+
+
+def rule_check(snap: dict | None, sides: dict[str, dict]) -> bool:
+    """Paper's own entry spot and expected move, through the module's choice on the store's listing,
+    give paper's strikes on both sides."""
+    first = next(iter(sides.values()))
+    if snap is None or first.get("entry_spot") is None or first.get("entry_em") is None:
+        return False
+    got = rule_strikes(snap, float(first["entry_spot"]), float(first["entry_em"]))
+    return got is not None and all(got[s] == sides[s]["strike"] for s in sides)
+
+
+def feed_gap(snap: dict | None, sides: dict[str, dict]) -> float | None:
+    """|store spot - paper's entry spot| at paper's bar, or None when either is missing."""
+    spot = next(iter(sides.values())).get("entry_spot")
+    if snap is None or spot is None:
+        return None
+    return round(abs(snap["spot"] - float(spot)), 4)
+
+
 def cmd_validate(args) -> int:
-    """The replay's entries against the paper ledger's, on the overlapping weeks: the same strikes on
-    both sides and each side's debit within $0.10 on at least 75% of the Monday weeks and of the Friday
-    weeks, else the study stops. Exits and settlement are compared and reported, not gated."""
+    """The replay's entries against the paper ledger's, on the overlapping weeks, Monday and Friday
+    separately, each on at least 75% of weeks, else the study stops:
+    - the rule: paper's own entry spot and expected move, through the module's strike choice on the
+      store's listing at paper's bar, give paper's strikes;
+    - the feed: the store's spot at paper's bar is within FEED_SPOT_TOL of paper's.
+    The full agreement (the replay's own strikes and each debit within $0.10), exits and settlement
+    are compared and reported, not gated."""
     from cherrypick.calendars import db as cdb
 
     d = out_dir(args.out_dir)
@@ -1798,7 +1840,8 @@ def cmd_validate(args) -> int:
             (PAPER_FROM.isoformat(),),
         )
     ]
-    result = {"monday": {"weeks": 0, "agree": 0}, "friday": {"weeks": 0, "agree": 0}, "detail": []}
+    result = {r: {"weeks": 0, "agree": 0, "rule": 0, "feed": 0} for r in ("monday", "friday")}
+    result["detail"] = []
     closes = load_closes()[0]
     for w in weeks_between(PAPER_FROM, LAST_WEEK):
         st = week_status(w, divs)
@@ -1813,16 +1856,13 @@ def cmd_validate(args) -> int:
                 continue
             bars = MON_BARS if regime == "monday" else FRI_BARS
             got = attempt_entry(chains, day, w["front"], w["back"], bars)
-            near = None
+            near = snap = None
             et = (next(iter(sides.values())).get("entry_time") or "")[11:16]
             if et:
-                near = attempt_entry(
-                    chains,
-                    day,
-                    w["front"],
-                    w["back"],
-                    bars,
-                    only=min(bars, key=lambda b: abs(_min(b) - _min(et))),
+                bar = min(bars, key=lambda b: abs(_min(b) - _min(et)))
+                near = attempt_entry(chains, day, w["front"], w["back"], bars, only=bar)
+                snap = snapshot(
+                    chains, day, w["front"], w["back"], bar, window_pct=DECLARED["strike_window_pct"]
                 )
             result[regime]["weeks"] += 1
             ok = bool(got["ok"]) and all(
@@ -1830,11 +1870,18 @@ def cmd_validate(args) -> int:
                 and abs(got["plan"]["sides"][s]["debit"] - sides[s]["entry_debit"]) <= 0.10
                 for s in sides
             )
+            rule = rule_check(snap, sides)
+            gap = feed_gap(snap, sides)
+            feed = gap is not None and gap <= FEED_SPOT_TOL
             result[regime]["agree"] += ok
+            result[regime]["rule"] += rule
+            result[regime]["feed"] += feed
             row = {
                 "week": w["week_of"].isoformat(),
                 "regime": regime,
                 "ok": ok,
+                "rule": rule,
+                "feed_gap": gap,
                 "nearest_bar_ok": bool(
                     near
                     and near["ok"]
@@ -1856,14 +1903,14 @@ def cmd_validate(args) -> int:
                 }
             result["detail"].append(row)
     for regime in ("monday", "friday"):
-        n = result[regime]["weeks"]
-        result[regime]["share"] = round(result[regime]["agree"] / n, 4) if n else None
-    result["passed"] = all(
-        result[r]["weeks"] > 0 and result[r]["agree"] / result[r]["weeks"] >= 0.75
-        for r in ("monday", "friday")
-    )
+        r, n = result[regime], result[regime]["weeks"]
+        r["share"] = round(r["agree"] / n, 4) if n else None
+        r["passed"] = n > 0 and r["rule"] / n >= VALIDATE_SHARE and r["feed"] / n >= VALIDATE_SHARE
+    result["passed"] = result["monday"]["passed"] and result["friday"]["passed"]
     result["rule"] = (
-        "same strikes both sides and each debit within $0.10 on at least 75% of overlapping weeks, Monday and Friday separately"  # noqa: E501
+        f"on at least {VALIDATE_SHARE:.0%} of overlapping weeks, Monday and Friday separately: "
+        "paper's spot and expected move give paper's strikes, and the store's spot is within "
+        f"${FEED_SPOT_TOL:.2f} of paper's; the replay's own strikes and debits are reported"
     )
     write_json(d / "validation.json", result)
     print(json.dumps({k: result[k] for k in ("monday", "friday", "passed")}))
