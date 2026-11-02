@@ -518,6 +518,24 @@ class Broker:
             self._reset()
             return {"ok": False, "order_id": order_id, "error": f"{type(exc).__name__}: {exc}"}
 
+    def rest_quotes(self, *, options=(), indices=(), timeout_seconds: float = 10.0) -> dict:
+        """`core.broker.rest_quotes` on this adapter's session: the price path that does not go
+        through DXLink, for managing a position when the stream is down. Fails closed to empty maps
+        on any error or after `timeout_seconds`, which the caller treats as "no price" -- never as
+        a reason to reuse an older one."""
+        empty = {"options": {}, "indices": {}}
+        try:
+            self._ensure()
+            return self.run(
+                asyncio.wait_for(
+                    _broker.rest_quotes(self._session, options=list(options), indices=list(indices)),
+                    timeout_seconds,
+                )
+            )
+        except Exception:  # noqa: BLE001 -- fail-closed, see docstring
+            self._reset()
+            return empty
+
     def working_orders(self) -> list[dict]:
         """Drops the session on any error, then **re-raises** -- deliberately not the `return []`
         every sibling here uses. In flies this was the one method with no try/except at all,

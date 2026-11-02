@@ -358,10 +358,11 @@ class JobSpec:
     enabled: bool = True
     enabled_reason: str = ""
     tags: tuple[str, ...] = field(default=())
-    # None → the supervisor's own default cap (10 min). A per-job override for the one case that
-    # earns it: a resident job under active development, restarted by hand far more often than a
-    # crash backoff was ever sized for. Never widens the general "no broken command hot-loops"
-    # guarantee -- it only ever lowers the cap, and a job with no override behaves exactly as before.
+    # None → the supervisor's own default cap (10 min). A per-job override for the two cases that
+    # earn it: a resident job under active development, restarted by hand far more often than a
+    # crash backoff was ever sized for, and a live loop, capped at its own tick interval. Never
+    # widens the general "no broken command hot-loops" guarantee -- it only ever lowers the cap, and
+    # a job with no override behaves exactly as before.
     backoff_cap_seconds: int | None = None
     # A resident job that binds a known TCP port. None for every job but the console today. Lets the
     # supervisor tell "my own child, restarting" apart from "something else already holds this port" —
@@ -1013,17 +1014,23 @@ def derive_jobs(
         if live and live.get("task_name"):
             armed, why = arm_record_valid(arm_records.get(name), live, now)
             tick_argv = live.get("tick_argv") or ["-m", f"cherrypick.{name}.live_loop", "--once", "--live"]
+            tick_seconds = int(live.get("tick_interval_seconds", 60))
             add(
                 f"{name}-live",
-                lambda name=name, live=live, armed=armed, why=why, tick_argv=tick_argv, root=root: JobSpec(
+                lambda name=name, live=live, armed=armed, why=why, tick_argv=tick_argv, root=root, tick_seconds=tick_seconds: JobSpec(
                     id=f"{name}-live",
                     argv=(pythonw, *tick_argv),
                     kind=KIND_INTERVAL,
                     cwd=root,
-                    interval_seconds=int(live.get("tick_interval_seconds", 60)),
+                    interval_seconds=tick_seconds,
                     enabled=armed,
                     enabled_reason=why,
                     tags=("live",),
+                    # A failing live tick retries at its own cadence, never on the crash ladder: the
+                    # tick is what manages open positions. On 2026-11-02 a quote outage failed every
+                    # MEIC tick and the ladder spaced them to 10 minutes, so a held put side was
+                    # stopped 20 minutes after quotes returned, at $7.15 against a $2.00 trigger.
+                    backoff_cap_seconds=tick_seconds,
                 ),
             )
             # Companions the arm record names (flies' order-alert daemon): one resident job each,

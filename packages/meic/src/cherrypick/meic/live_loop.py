@@ -64,6 +64,7 @@ import json
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import execution as _execution  # noqa: E402
@@ -73,6 +74,7 @@ from cherrypick.core import ledgers as _ledgers  # noqa: E402
 from cherrypick.core import live as _live  # noqa: E402
 from cherrypick.core import livepositions as _livepos  # noqa: E402
 from cherrypick.core import looplock as _looplock  # noqa: E402
+from cherrypick.core import streamcache as _streamcache  # noqa: E402
 from cherrypick.core.streamcache import occ_to_streamer_symbol as _occ_to_streamer  # noqa: E402
 
 from cherrypick.meic import credentials as _creds  # noqa: E402
@@ -892,7 +894,7 @@ def _manage_entry(
     row["fill_confirmed_at"] = None
     row["put_spread_entry_order_id"] = order_id
     row["call_spread_entry_order_id"] = order_id
-    save_result = paper._save_trade(row, db_path)
+    save_result = _save_placed_entry(row, db_path, log)
     return {
         "entry": "placed",
         "ic_order_id": row["ic_order_id"],
@@ -901,6 +903,37 @@ def _manage_entry(
         "save_result": save_result,
         "_chosen": chosen,
     }
+
+
+def _save_placed_entry(row: dict, db_path: str, log) -> dict:
+    """Write a placed entry's row, once more on failure, and raise the halt flag if it still fails.
+
+    The broker has the order by now. A row that never lands leaves a real IC no stop, force-close
+    or settlement reaches, and `entries_today` reads 0, so the window could open a second one. The
+    result was returned unread until 2026-11-02. The halt flag is the suite's own entry stop:
+    every live loop still manages what it holds, nothing new opens, and a person removes it once
+    the order is in the ledger."""
+    result: dict = {}
+    for _ in range(2):
+        try:
+            result = paper._save_trade(row, db_path)
+        except Exception as exc:  # noqa: BLE001 -- a raise is a failed write, same as ok: False
+            result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        if result.get("ok", True) is not False:
+            return result
+    message = (
+        f"CRITICAL: live entry {row.get('ic_order_id')} placed at the broker but its ledger row did "
+        f"not save ({result.get('error')}) -- entries halted until it is recorded"
+    )
+    log(message)
+    _quiet(message)
+    try:
+        flag = Path(halt_flag_path())
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.write_text(message + "\n", encoding="utf-8")
+    except OSError as exc:
+        _quiet(f"CRITICAL: halt flag could not be written: {exc}")
+    return result
 
 
 _EPS = 1e-9
@@ -1522,8 +1555,7 @@ def main(argv=None) -> int:
     designated = _designated_account()
     unmet = readiness(cfg, designated=designated)
     if live and unmet:
-        print(json.dumps({"ok": False, "error": "live gates unmet", "unmet": unmet}))
-        return 1
+        return _fail({"ok": False, "error": "live gates unmet", "unmet": unmet})
     # One tick at a time: a slow broker call must not let the next minute's tick submit beside it.
     if not _looplock.acquire(_once_lock_path(), 180, alive=_looplock.pid_alive):
         return out({"ok": True, "skipped": "another live tick is running"})
@@ -1541,8 +1573,7 @@ def _tick(cfg: dict, designated: str | None, unmet: list[str], live: bool) -> in
 
     symbol = (cfg.get("live") or {}).get("symbol")
     if not symbol:
-        print(json.dumps({"ok": False, "error": "live.symbol is unset"}))
-        return 1
+        return _fail({"ok": False, "error": "live.symbol is unset"})
 
     # Declare the pinned symbol and the LIVE ledger's open legs to the streamer before anything
     # is priced -- best-effort, never fatal (see stream_request.register_live). Dry-run included:
@@ -1550,22 +1581,109 @@ def _tick(cfg: dict, designated: str | None, unmet: list[str], live: bool) -> in
     # dry-run tick that manages real positions needs them fresh exactly as much as a live one.
     _stream_request.register_live(cfg)
 
-    snapshot, err = _build_snapshot(cfg, symbol)
-    if snapshot is None:
-        print(json.dumps({"ok": False, "error": f"no snapshot: {err}"}))
-        return 1
-
     db_path = str(_paths.live_db_path())
+    broker = make_broker(cfg, designated)
+    snapshot, err = _build_snapshot(cfg, symbol)
+    manage_only = None
+    if snapshot is None:
+        # The full snapshot is the ENTRY menu; managing what is held needs only its own four legs
+        # and spot. Until 2026-11-02 this returned here, so a quote outage skipped fill
+        # confirmation and every stop with it: a held put side ran 79 minutes unmanaged and was
+        # stopped at $7.15 against its $3.60 trigger. Now a failed menu blocks entries and the
+        # tick still manages, on the held legs' own quotes (stream cache, then broker REST).
+        snapshot, manage_only = _manage_snapshot(symbol, db_path, broker)
+        if not manage_only["open_trades"]:
+            return _fail({"ok": False, "error": f"no snapshot: {err}"})
+        manage_only["error"] = f"no snapshot: {err}"
     _ensure_live_schema(db_path)
     # The halt flag and the daily-loss breaker stop NEW ICs only; open ones are still managed.
     blockers = entry_blockers(cfg, db_path, snapshot["date"], halt_present=os.path.exists(halt_flag_path()))
-    summary = run_once(cfg, snapshot, db_path, make_broker(cfg, designated), live=live, entry_block=blockers)
-    line = json.dumps(
-        {"ok": True, "at": datetime.now().isoformat(timespec="seconds"), **summary}, default=str
-    )
+    if manage_only is not None:
+        blockers = [*blockers, f"manage_only ({manage_only['error']})"]
+    summary = run_once(cfg, snapshot, db_path, broker, live=live, entry_block=blockers)
+    # A manage-only tick that priced every held leg did its job; one that could not is still a
+    # failure the watchdog must see -- those sides were not managed.
+    ok = manage_only is None or manage_only["unpriced"] == []
+    payload = {"ok": ok, "at": datetime.now().isoformat(timespec="seconds"), **summary}
+    if manage_only is not None:
+        payload["manage_only"] = manage_only
+    if not ok:
+        payload["error"] = f"{manage_only['error']}; held legs unpriced: {manage_only['unpriced']}"
+    line = json.dumps(payload, default=str)
     print(line)
     _append_log(line)
-    return 0
+    if not ok:
+        print(f"CRITICAL: {payload['error']}", file=sys.stderr)
+    return 0 if ok else 1
+
+
+# The chain read's own staleness bound (tt._CACHE_MAX_AGE): a held leg is priced no staler here.
+MANAGE_QUOTE_MAX_AGE_SECONDS = 10.0
+_LEG_KEYS = ("put_symbol", "long_put_symbol", "call_symbol", "long_call_symbol")
+
+
+def _manage_snapshot(symbol: str, db_path: str, broker, *, now=None, cache_path=None) -> tuple[dict, dict]:
+    """The snapshot a tick needs to manage what it holds, built when the full entry snapshot
+    cannot be: today's open live ICs' own legs and spot, each from the stream cache when fresh
+    (`MANAGE_QUOTE_MAX_AGE_SECONDS`), else one broker REST read (`Broker.rest_quotes`), which does
+    not go through DXLink and so survives the outage that takes the stream down. A leg neither
+    source prices is left out, and `evaluate_open_trade` holds that IC on `quotes_unavailable`,
+    exactly as it does on a full snapshot -- never priced off an older quote.
+
+    Returns `(snapshot, report)`. The report names how many ICs and legs were held, which source
+    priced each leg and spot, and the legs nothing priced (`unpriced`), which `_tick` turns into
+    a failed tick."""
+    import time as _time
+
+    now = now or _pl._now_et()
+    today = now.strftime("%Y-%m-%d")
+    trades = paper._get_open_trades(symbol, EXECUTION_MODE, today, db_path)
+    legs = sorted({t[k] for t in trades if t.get("status") != "pending" for k in _LEG_KEYS if t.get(k)})
+    quotes: dict[str, dict] = {}
+    sources = {"stream": 0, "rest": 0}
+    spot, spot_source = None, None
+    cache = Path(cache_path) if cache_path else _paths.stream_cache_path()
+    try:
+        spot = _streamcache.read_spot(cache, symbol, max_age_seconds=MANAGE_QUOTE_MAX_AGE_SECONDS)
+        spot_source = "stream" if spot is not None else None
+        if legs and cache.exists():
+            conn = _streamcache.connect_ro(cache)
+            try:
+                cached, _ = _streamcache.usable_quotes(conn, legs, _time.time(), MANAGE_QUOTE_MAX_AGE_SECONDS)
+            finally:
+                conn.close()
+            quotes.update(cached)
+            sources["stream"] = len(cached)
+    except Exception as exc:  # noqa: BLE001 -- the cache is one source of two
+        _quiet(f"manage snapshot: stream cache read failed: {type(exc).__name__}: {exc}")
+    missing = [s for s in legs if s not in quotes]
+    if missing or (spot is None and legs):
+        by_occ = {_streamcache.streamer_to_occ_symbol(s): s for s in missing}
+        rest = broker.rest_quotes(options=list(by_occ), indices=[symbol] if spot is None else [])
+        for occ, q in (rest.get("options") or {}).items():
+            if occ in by_occ:
+                quotes[by_occ[occ]] = q
+                sources["rest"] += 1
+        if spot is None and (rest.get("indices") or {}).get(symbol) is not None:
+            spot, spot_source = rest["indices"][symbol], "rest"
+    snapshot = {
+        "symbol": symbol,
+        "date": today,
+        "now_et": now.strftime("%H:%M"),
+        "expiration": today,
+        "dte": 0,
+        "underlying_price": spot,
+        "candidates": [],
+        "leg_quotes": quotes,
+    }
+    report = {
+        "open_trades": len(trades),
+        "legs": len(legs),
+        "sources": sources,
+        "spot_source": spot_source,
+        "unpriced": [s for s in legs if s not in quotes],
+    }
+    return snapshot, report
 
 
 def _ensure_live_schema(db_path: str) -> None:
@@ -1581,6 +1699,18 @@ def _ensure_live_schema(db_path: str) -> None:
             _quiet(f"CRITICAL: live schema ensure failed: {res.get('error')}")
     except Exception as exc:  # noqa: BLE001 -- schema maintenance never costs the tick
         _quiet(f"CRITICAL: live schema ensure errored: {type(exc).__name__}: {exc}")
+
+
+def _fail(payload: dict) -> int:
+    """A failed tick's one exit: its JSON on stdout as before, and in the live log and on stderr,
+    which the supervisor keeps. Until 2026-11-02 every failure went to stdout alone, which the
+    supervisor discards, so 79 minutes of failed ticks left no reason anywhere."""
+    payload = {**payload, "at": datetime.now().isoformat(timespec="seconds")}
+    line = json.dumps(payload, default=str)
+    print(line)
+    _append_log(line)
+    print(f"tick failed: {payload.get('error')}", file=sys.stderr)
+    return 1
 
 
 def _quiet(message: str) -> None:

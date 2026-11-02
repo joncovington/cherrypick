@@ -172,6 +172,16 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
   cash-settled side is cancelled at settlement and falls through to expiry. Resubmit-not-escalate,
   re-price-every-tick and settle-not-chase keep live's rule byte-identical to paper's, so the paper↔live
   gap is the measurement.
+- **A failed entry snapshot never skips management (2026-11-02).** The full snapshot is the entry
+  menu. When it fails (no spot, no chain) and the live ledger holds an IC, `_tick` builds a
+  manage-only snapshot from the held legs alone (`_manage_snapshot`): the stream cache within 10 s,
+  else one broker REST read (`core.broker.rest_quotes`, no DXLink). Entries are blocked
+  (`manage_only (...)`) and fill confirmation, stops and force-close run as usual. A held leg neither
+  source prices fails the tick (exit 1, `held legs unpriced`) and is never priced off an older quote.
+  Every failed tick writes its reason to `meic_live.log` and stderr (`_fail`), and a placed entry
+  whose row will not save raises the suite halt flag. The incident: DXLink refused connections for an
+  hour, every tick exited at `no snapshot`, and a put side was stopped 79 minutes late at $7.15
+  against a $3.60 trigger.
 - **Order legs are OCC; ledger legs are streamer symbols.** `live_orders.order_symbol` converts at the
   order boundary (`core.streamcache.streamer_to_occ_symbol`) and refuses a symbol with no OCC form;
   the test `FakeBroker` rejects any non-OCC leg. The agent path's `tt execute_trade` and
