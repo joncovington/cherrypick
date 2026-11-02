@@ -164,7 +164,7 @@ def grid(data) -> dict | None:
     return g if isinstance(g, dict) and isinstance(g.get("rows"), list) else None
 
 
-def _result(path: str, read, notes) -> dict:
+def _result(path: str, read, notes, version=lambda path: None) -> dict:
     data, mtime = read(path)
     words = verdicts(data) if data is not None else None
     window, span = (data or {}).get("window"), (data or {}).get("span")
@@ -184,14 +184,19 @@ def _result(path: str, read, notes) -> dict:
         "grid": grid(data),
         "summary": None if not distinct else distinct[0] if len(distinct) == 1 else "mixed",
         "notes": notes(path),
+        "version": version(path) if data is not None else None,
     }
 
 
-def board(reg: dict, queue_rows: list[dict], read, notes=lambda path: None) -> dict:
+def board(
+    reg: dict, queue_rows: list[dict], read, notes=lambda path: None, version=lambda path: None
+) -> dict:
     """The studies board (docs/studies-board-plan.md): each register row joined with its result
     files' verdicts and its research-queue rows. `read(path)` returns `(data, modified)` for a
     `{home}/...` path, `(None, None)` when the file is absent or unreadable. `notes(path)` returns
     the Markdown a study left beside that file (`results.json` -> `results.md`), or None.
+    `version(path)` returns the file's replay version against its script's correction log
+    (`studyversion.state`), or None when neither is known.
 
     The register decides the status. Where the queue disagrees (a declared row with a task running)
     both are shown; the reader never rewrites the register."""
@@ -201,7 +206,7 @@ def board(reg: dict, queue_rows: list[dict], read, notes=lambda path: None) -> d
     rows = []
     for r in reg.get("hypotheses", []):
         tasks = sorted(by_study.get(r.get("study"), []), key=lambda q: q.get("id") or 0, reverse=True)
-        results = [_result(p, read, notes) for p in r.get("results") or []]
+        results = [_result(p, read, notes, version) for p in r.get("results") or []]
         active = any(q.get("status") in ACTIVE for q in tasks)
         status = r.get("status")
         if status in VERDICTS or status == "retired":

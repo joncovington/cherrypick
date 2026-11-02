@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import type { BacktestOverview, StudiesBoard, StudyGroup, StudyResult, StudyRow } from "@console/shared";
+import type { BacktestOverview, StudiesBoard, StudyGroup, StudyResult, StudyRow, StudyVersion } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { useBridged } from "../../lib/bridged";
 import { MiniMarkdown } from "../../lib/miniMarkdown";
@@ -114,6 +114,35 @@ function Field({ k, children }: { k: string; children: ReactNode }) {
   );
 }
 
+/**
+ * Which version of its script's replay wrote a result. Stale when a correction has landed since: the
+ * file predates it, so its verdict is not the current replay's. Each correction it predates is listed.
+ */
+function VersionNote({ v }: { v: StudyVersion }) {
+  if (v.error) return <span className="pnl-neg"> replay log unreadable: {v.error}</span>;
+  if (!v.stale) {
+    return v.version !== null ? <span className="muted"> · replay v{v.version}</span> : null;
+  }
+  const n = v.since.length;
+  return (
+    <>
+      <span className="chip chip-warn">
+        {" "}
+        stale: {v.version === null ? "written before stamping" : `replay v${v.version}`}, now v{v.current}
+      </span>
+      <ul className="muted" style={{ margin: "0.25em 0 0", paddingLeft: "1.1em" }}>
+        {v.since.map((c) => (
+          <li key={`${c.on} ${c.what}`}>
+            {c.on}: {c.what}
+            {c.beforeRead ? "" : " (made after a read)"}
+          </li>
+        ))}
+      </ul>
+      {n === 0 ? null : <span className="muted"> {n === 1 ? "one correction" : `${n} corrections`} since: rerun for the current replay</span>}
+    </>
+  );
+}
+
 function QueueLink({ study }: { study: string }) {
   const navigate = useNavigate();
   return (
@@ -172,6 +201,7 @@ export function StudyDetail({ row }: { row: StudyRow }) {
               </>
             ) : null}
             {r.provisional ? <span className="chip chip-warn"> provisional</span> : null}
+            {r.version ? <VersionNote v={r.version} /> : null}
             {r.grid ? <GridBars grid={r.grid} /> : null}
           </Field>
         ))}

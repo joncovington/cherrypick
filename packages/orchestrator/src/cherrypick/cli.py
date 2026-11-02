@@ -2008,8 +2008,35 @@ def cmd_hypotheses_board() -> None:
         except OSError:
             return None
 
+    from cherrypick.orchestrator import studyversion
+
+    queue = _queue_rows()
+    root = rq.repo_root()
+
+    def _key(p: str) -> str:
+        return os.path.normcase(str(Path(p.replace("{home}", home.as_posix())).expanduser().resolve()))
+
+    # Which script wrote each output, from the queue: a result written before stamping began has no
+    # stamp to say, and still has a correction log to be measured against.
+    scripts: dict[str, str] = {}
+    for q in sorted(queue, key=lambda q: q.get("id") or 0):
+        args = q.get("args")
+        args = json.loads(args) if isinstance(args, str) else (args or {})
+        if q.get("kind") == "script" and q.get("output") and isinstance(args.get("path"), str):
+            scripts[_key(q["output"])] = args["path"]
+
+    def version(path: str):
+        p = Path(path.replace("{home}", home.as_posix()))
+        stamped = studyversion.read_stamp(p)
+        script = (stamped or {}).get("script") or scripts.get(_key(path))
+        try:
+            log = studyversion.corrections(root / script) if script else None
+        except studyversion.BadLog as exc:
+            return {**(studyversion.state(stamped, []) or {}), "error": str(exc)}
+        return studyversion.state(stamped, log)
+
     reg = hypotheses.load()
-    out = hypotheses.board(reg, _queue_rows(), read, notes)
+    out = hypotheses.board(reg, queue, read, notes, version)
     out["unregistered"] = hypotheses.unregistered(reg, set(out["unregistered"]) | _study_folders())
     _emit({"ok": True, **out})
 

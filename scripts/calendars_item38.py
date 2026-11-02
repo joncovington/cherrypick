@@ -109,6 +109,14 @@ SENS_ENTRY_FRI = ("15:50", "15:55")
 # replay bar came near; the bound was set after reading those gaps.
 VALIDATE_SHARE = 0.75
 FEED_SPOT_TOL = 1.00  # dollars of SPY, about one listed strike
+#: The replay's corrections, oldest first (`orchestrator.studyversion`). A result written before the
+#: last of them is stale on the studies board.
+REPLAY_CORRECTIONS = (
+    {"on": "2026-11-01", "what": "the validation gates on the rule (paper's spot and move) and the "
+     "feed (the store's spot within $1.00); strikes and debits are reported (#787)", "why": "two "
+     "Friday strikes flipped by a spot 20-34 cents off, and one paper debit no bar came near",
+     "decided": "user", "before_read": True},
+)  # fmt: skip
 
 #: The calendars config the declaration read (config.example.json `defaults`); the study refuses a
 #: config that differs, since the verdict would then be about another rule.

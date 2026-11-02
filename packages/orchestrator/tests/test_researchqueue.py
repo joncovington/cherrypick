@@ -401,6 +401,12 @@ def test_a_script_must_write_its_declared_output_to_be_done(files, tmp_path, mon
     assert row["status"] == "done"
     assert json.loads(row["result"])["output"] == str(report) and json.loads(row["result"])["output_exists"]
     assert sent[0][1] == "Research task done: item17/study"
+    # The output is stamped with the version of the script that wrote it (a script with no log: 0).
+    assert json.loads(row["result"])["version"] == 0
+    assert (
+        json.loads(report.with_name(f"{report.stem}.version.json").read_text(encoding="utf-8"))["version"]
+        == 0
+    )
 
 
 def test_a_failure_notifies_and_a_stopped_fetch_goes_back_to_the_queue(files, tmp_path, monkeypatch):

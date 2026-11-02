@@ -94,6 +94,24 @@ FUNDS = tuple(k for k, v in SYMBOLS.items() if v[3] == "fund")
 STOCKS = tuple(k for k, v in SYMBOLS.items() if v[3] == "stock")
 LISTED_FROM = {"PLTR": date(2020, 9, 30)}
 
+#: The replay's corrections, oldest first (`orchestrator.studyversion`). A result written before the
+#: last of them is stale on the studies board.
+REPLAY_CORRECTIONS = (
+    {"on": "2026-11-01", "what": "reproduction compares on the sessions the store covers; the plan "
+     "fetches each paper entry's legs (#774)", "why": "no paper entry was in the store, and each "
+     "uncovered entry counted as a miss", "decided": "user", "before_read": True},
+    {"on": "2026-11-01", "what": "a session with no 3-month yield within seven days stops the run; "
+     "2015-24 curve files seeded (#774)", "why": "the rate read zero before 2025, moving every "
+     "2016-24 delta", "decided": "user", "before_read": True},
+    {"on": "2026-11-01", "what": "put-call parity and implied vol against VIX9D gate; WPUT is "
+     "reported only (#775)", "why": "the WPUT gap is the index's construction, a midday traded "
+     "price, not the replay's quotes", "decided": "user", "before_read": True},
+    {"on": "2026-11-01", "what": "selection deltas carry no rate and no yield; reproduction reads "
+     "paper's entry spot and counts steps per leg (#786)", "why": "the 0.90 long sat ten points "
+     "shallower than paper's; the broker's greeks carry no carry", "decided": "user",
+     "before_read": True},
+)  # fmt: skip
+
 ARM_NAMES = ("shield", "shield_hold", "shield_guard", "hold-30d", "hold-30d-monthly", "hold-vrp")
 BASELINES = ("long-alone", "put-benchmark")
 REPORTED_ONLY = ("long-alone-nostop",)

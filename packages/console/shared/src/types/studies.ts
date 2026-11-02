@@ -61,6 +61,30 @@ export interface StudyResult {
   grid: StudyGrid | null;
   /** The Markdown the study left beside the file (`results.md`), as written; null when none. */
   notes: string | null;
+  /** Which version of its script's replay wrote the file; null when neither is known. */
+  version: StudyVersion | null;
+}
+
+/** A correction to a study's replay, from the script's own log. */
+export interface StudyCorrection {
+  on: string;
+  what: string;
+  /** Made before any arm or outcome was read. */
+  beforeRead: boolean;
+}
+
+export interface StudyVersion {
+  /** The version the file was stamped with; null when it was written before stamping began. */
+  version: number | null;
+  /** The script's version now: the number of corrections in its log. */
+  current: number | null;
+  commit: string | null;
+  /** A correction has landed since the file was written. */
+  stale: boolean;
+  /** The corrections the file predates, oldest first. */
+  since: StudyCorrection[];
+  /** The script's log could not be read. */
+  error: string | null;
 }
 
 export interface StudyTask {
