@@ -1545,6 +1545,41 @@ def _settlement_value(strike, underlying, wing_width, side) -> float:
     return round(min(max(intrinsic, 0.0), wing_width or 0.0), 4)
 
 
+#: A resting stop's limit above its trigger, as a fraction of the trigger (live's default too:
+#: `live_loop.RESTING_STOP_DEFAULT_OFFSET_FRAC`).
+RESTING_STOP_LIMIT_FRAC = 0.10
+
+
+def _resting_stop_fill(
+    short_q: dict, long_q: dict, model_cost: float, trigger: float, wing: float | None, params: dict
+) -> float | None:
+    """What one side's stop-limit resting at the broker pays this tick, or None if it has not fired.
+
+    The live order (`live_loop._place_resting_stops`, 2026-11-02) triggers off the spread's NBBO
+    ask -- short ask less long bid, above the mid-plus-haircut the loop's own stop reads -- and then
+    works as a limit `stop_resting_limit_frac` of the trigger above it, capped at the wing. The
+    loop's own stop stays on as the backup, so a side whose model cost reaches the trigger fires too.
+
+    A minute's quotes cannot say where inside the minute the ask crossed, so the fill is declared,
+    per arm, as one of two bounds (`stop_resting_fill`): "trigger" fills at the trigger, the order
+    working as it should through a continuous move; "tick" (the default, the conservative bound)
+    fills at the tick's ask. An ask already past the limit is a stop the market ran through: it
+    pays that ask, which is what the loop chasing it with its own close would pay."""
+    natural = float(short_q["ask"]) - float(long_q["bid"])
+    if natural < trigger and model_cost < trigger:
+        return None
+    limit = trigger + max(
+        0.05, float(params.get("stop_resting_limit_frac", RESTING_STOP_LIMIT_FRAC)) * trigger
+    )
+    if wing:
+        limit = min(limit, float(wing))
+    if natural > limit:
+        return natural
+    if params.get("stop_resting_fill", "tick") == "trigger":
+        return trigger
+    return max(natural, trigger)
+
+
 def evaluate_open_trade(
     trade: dict,
     leg_quotes: dict,
@@ -1741,6 +1776,24 @@ def evaluate_open_trade(
     stops_on = params.get("per_side_stop_management", True)
     call_trigger = stops_on and call_open and call_cost >= stop_trigger * net_credit
     put_trigger = stops_on and put_open and put_cost >= stop_trigger * net_credit
+    call_exit, put_exit = call_cost, put_cost
+    if stops_on and params.get("stop_resting"):
+        # A stop-limit resting at the broker instead (`stop_resting`, 2026-11-02): see
+        # `_resting_stop_fill`. Opt-in per arm; an arm without it is priced exactly as before.
+        level = stop_trigger * net_credit
+        call_fill = (
+            _resting_stop_fill(cq, lcq, call_cost, level, side_wing(trade, "call"), params)
+            if call_open
+            else None
+        )
+        put_fill = (
+            _resting_stop_fill(sq, lpq, put_cost, level, side_wing(trade, "put"), params)
+            if put_open
+            else None
+        )
+        call_trigger, put_trigger = call_fill is not None, put_fill is not None
+        call_exit = call_fill if call_fill is not None else call_cost
+        put_exit = put_fill if put_fill is not None else put_cost
 
     # Every return carries the per-side cost-to-close observed this iteration, including "hold", so
     # the caller can keep a running maximum. Without it nothing records how far a side ran, and no
@@ -1755,8 +1808,8 @@ def evaluate_open_trade(
     if call_trigger and put_trigger:
         return {
             "action": "stop_both",
-            "put_exit_price": round(put_cost, 4),
-            "call_exit_price": round(call_cost, 4),
+            "put_exit_price": round(put_exit, 4),
+            "call_exit_price": round(call_exit, 4),
             "put_exit_slippage": put_slip,
             "call_exit_slippage": call_slip,
             **marks,
@@ -1764,14 +1817,14 @@ def evaluate_open_trade(
     if call_trigger:
         return {
             "action": "stop_call",
-            "call_exit_price": round(call_cost, 4),
+            "call_exit_price": round(call_exit, 4),
             "call_exit_slippage": call_slip,
             **marks,
         }
     if put_trigger:
         return {
             "action": "stop_put",
-            "put_exit_price": round(put_cost, 4),
+            "put_exit_price": round(put_exit, 4),
             "put_exit_slippage": put_slip,
             **marks,
         }

@@ -5115,6 +5115,69 @@ buys it back the session after. Declared before any of its inputs are fetched.*
     results, and implied-against-past moves as a selector is closed for the module's G1 too, if item 31
     finds the same.
 
+### 48. The stop of MEIC's live rule: 1.8, 1.9, 2.0 and 2.2 times the credit, filled by the loop or resting at the broker
+
+*Source: the user, 2026-11-02. A quote outage held a live put side unmanaged for 79 minutes, and it
+was stopped at $7.15 against its $3.60 trigger; PR #796 added a stop-limit resting at the broker.
+Then: "should we set it to 1.9x?" and "review MEIC backtest stop comparison". The 2026-10-18/19
+stop runs compared hold, 0.95x and 2.0x only, on the five-entry `pm` book, with stops filled by the
+loop. Declared here before any of it is run.*
+
+- **Question:** on the rule live trades, `pm-200` entering once a day 14:00–14:30, does a per-side
+  stop at 1.8, 1.9 or 2.2 times the whole credit earn more per session than 2.0, and does a stop
+  resting at the broker earn more than the loop's own?
+- **Where the edge would live:** **none new**: the stop shapes the variance premium's payoff. The
+  resting stop is an **execution** question. It fills at its trigger instead of at the next minute's
+  quote, which costs less on a continuous move, but it triggers off the spread's ask, earlier than the
+  loop's mid plus haircut, which stops more sides that would have recovered.
+- **Look-alikes:** the 2026-10-18/19 `pm-hold` / `pm-095` / `pm-200` runs (0.95x lost to 2.0x in all
+  three spans, and hold beat 2.0x in two calm spans); the 2026-10-18 condor study (whole-credit 2.0x
+  the only stop rule positive in both halves); item 7 (stop mechanics, never run); the live stop
+  overshoot read (`scripts/meic_stop_overshoot.py`).
+- **Rival explanations, each with its check:**
+  - *A fill model, not a stop:* a minute's quotes cannot say where the ask crossed. **Check:** the
+    resting stop runs at both bounds, `rest-*` (filled at the tick's ask) and `restbest-*` (filled at
+    the trigger), and only the conservative `rest-*` can pass.
+  - *Fewer stops in a calm span:* **Check:** the paired difference must be positive in both
+    time-halves; stopped sides per arm are reported.
+  - *Fees:* **Check:** the arm's own net is still positive at 1.5x fees.
+  - *Searching a grid:* **Check:** Holm across the twelve arms; the grid is fixed here.
+- **The structure:**
+  - `live-1400` is item 23's: the registry's `pm-200` with entries 14:00–14:30, one condor a session,
+    all its gates, its 2.0x stop filled by the loop. It is the reference.
+  - `loop-180`, `loop-190`, `loop-220`: `live-1400` with `stop_trigger_ratio` changed.
+  - `rest-180` to `rest-220`: `live-1400` at that ratio with `stop_resting` (paper's
+    `_resting_stop_fill`: the trigger read off the spread's NBBO ask, the limit 10% of the trigger
+    above it and capped at the wing, filled at the tick's ask; an ask past the limit pays that ask).
+  - `restbest-180` to `restbest-220`: the same, filled at the trigger.
+  - `hold`: `live-1400` with the per-side stop off. Nothing else differs between any two arms.
+- **Costs:** MEIC paper's own model: fees from `core.fees`, cash settlement at the store's close.
+- **Window and sample:** the design window only, 2022-05-16 to 2025-06-30, over the 60 s vendor store.
+  `pm-200-1400`'s holdout dates were seen on 2026-10-19 (this plan's exception), so evidence for any
+  pass has to come from sessions after 2026-10-12. The run is provisional: MEIC validation has not
+  unlocked. Fewer than 100 sessions is no verdict.
+- **Pass-or-fail rule**, per arm, all must hold:
+  - the paired difference against `live-1400` (one session one observation, a session with no entry
+    at zero) has a mean above zero and a one-sided t above 2;
+  - Holm across the twelve arms;
+  - the paired difference positive in each time-half;
+  - the arm's own mean net above zero, still positive at **1.5x fees**;
+  - a `restbest-*` pass decides nothing alone: it is the upper bound of a `rest-*` arm.
+  - Reported beside the verdict, never judged: each model's own ratio pairs (`rest-190` against
+    `rest-200`, and so on), which answer "1.9 or 2.0" within a fill model.
+- **Declared limits (B11):** 60 s ticks; no outage is modelled, so the resting stop's main purpose,
+  protection when the loop cannot run, is not measured here; the store keeps about 100 points either
+  side of spot.
+- **Data:** no new store. `scripts/meic_stop_grid_item48.py --window design` builds a scratch MEIC
+  arm registry from the machine's and runs `cherrypick.backtest.runner`. Results go under the backtest
+  data directory only; this plan records the verdict.
+- **Decides:**
+  - **A `rest-*` pass:** a proposal to switch `live.resting_stop` on with that arm's ratio, at a
+    declared boundary, read on sessions after 2026-10-12 first.
+  - **A `loop-*` pass alone:** a proposal to move `live.arm`'s stop ratio, same boundary.
+  - **A fail:** live keeps 2.0x. The resting stop can still be switched on as outage protection,
+    argued as insurance, not as edge, with this run's `rest-200` against `live-1400` as its cost.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
