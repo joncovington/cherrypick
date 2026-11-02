@@ -1259,25 +1259,27 @@ def _paper(path, rows):
     for r in rows:
         conn.execute(
             "INSERT INTO dc_positions (position_id, week_of, entry_session, arm, side, symbol, structure, "
-            "front_expiration, back_expiration, strike, entry_debit, entry_time, status) "
-            "VALUES (?, ?, ?, ?, ?, 'SPY', ?, '2024-03-08', '2024-03-11', ?, ?, ?, 'open')",
+            "front_expiration, back_expiration, strike, entry_debit, entry_time, entry_spot, entry_em, status) "
+            "VALUES (?, ?, ?, ?, ?, 'SPY', ?, '2024-03-08', '2024-03-11', ?, ?, ?, ?, ?, 'open')",
             r,
         )
     conn.commit()
     conn.close()
 
 
-def _paper_rows(put_strike=495.0, call_strike=505.0, debit_shift=0.0):
+def _paper_rows(put_strike=495.0, call_strike=505.0, debit_shift=0.0, spot=500.0, em=5.0):
+    """Paper's two regimes; `spot` and `em` are the Monday entry's as paper recorded them."""
     out = []
     for arm, entry, tag, when in (("control", "2024-03-04", "dc_4_7", "2024-03-04T10:00:10-05:00"),
                                   ("friday:control", "2024-03-01", "dc_7_10", "2024-03-01T15:50:10-05:00")):  # fmt: skip
         # the Friday regime's straddle is worth 7.0, so its expected move 5.95 reaches 494 and 506
         strikes = (put_strike, call_strike) if arm == "control" else (494.0, 506.0)
+        at, move = (spot, em) if arm == "control" else (500.0, 5.95)
         for side, strike in (("put", strikes[0]), ("call", strikes[1])):
             deb = _mid_of(500, 4.2 if arm == "control" else 4.7, strike, side.upper()) \
                 - _mid_of(500, 3.0 if arm == "control" else 3.5, strike, side.upper())  # fmt: skip
             out.append((f"2024-03-04:{arm}:{side}", "2024-03-04", entry, arm, side, tag, strike,
-                        round(deb + debit_shift, 4), when))  # fmt: skip
+                        round(deb + debit_shift, 4), when, at, move))  # fmt: skip
     return out
 
 
@@ -1303,25 +1305,41 @@ def test_validation_passes_when_the_replays_strikes_and_debits_match_the_papers(
     d, paper = _validate_setup(tmp_path, monkeypatch, _paper_rows())
     assert c38.main(["validate", "--out-dir", str(d), "--paper-db", str(paper)]) == 0
     v = json.loads((d / "validation.json").read_text(encoding="utf-8"))
-    assert v["passed"] and v["monday"] == {"weeks": 1, "agree": 1, "share": 1.0}
+    assert v["passed"] and v["monday"] == {
+        "weeks": 1, "agree": 1, "rule": 1, "feed": 1, "share": 1.0, "passed": True
+    }  # fmt: skip
     assert v["friday"]["agree"] == 1 and all(x["nearest_bar_ok"] for x in v["detail"])
     assert v["detail"][0]["exit"]["paper_net"] is None, "an open paper position has no outcome to compare"
 
 
-def test_validation_fails_and_the_study_stops_when_strikes_or_debits_disagree(tmp_path, monkeypatch):
+def test_validation_fails_and_the_study_stops_when_paper_s_spot_and_move_miss_its_strikes(
+    tmp_path, monkeypatch
+):
+    """Paper's 500 less its 5.00 move is 495; a recorded 494 is a strike the rule did not choose."""
     d, paper = _validate_setup(tmp_path, monkeypatch, _paper_rows(put_strike=494.0))
     assert c38.main(["validate", "--out-dir", str(d), "--paper-db", str(paper)]) == 1
-    assert json.loads((d / "validation.json").read_text(encoding="utf-8"))["passed"] is False
+    v = json.loads((d / "validation.json").read_text(encoding="utf-8"))
+    assert v["passed"] is False and v["monday"]["rule"] == 0 and v["monday"]["feed"] == 1
     with pytest.raises(SystemExit, match="validated"):
         c38.main(["study", "--out-dir", str(d)])
-    # a debit $0.50 off the replay's, strikes right: the tolerance is $0.10
-    (tmp_path / "b").mkdir()
-    d2, paper2 = _validate_setup(tmp_path / "b", monkeypatch, _paper_rows(debit_shift=0.5))
-    assert c38.main(["validate", "--out-dir", str(d2), "--paper-db", str(paper2)]) == 1
-    # and within it, $0.08 off, passes
-    (tmp_path / "c").mkdir()
-    d3, paper3 = _validate_setup(tmp_path / "c", monkeypatch, _paper_rows(debit_shift=0.08))
-    assert c38.main(["validate", "--out-dir", str(d3), "--paper-db", str(paper3)]) == 0
+
+
+def test_validation_fails_when_the_store_s_spot_is_more_than_a_dollar_from_paper_s(tmp_path, monkeypatch):
+    """Paper at 501.50 with a 5.50 move chose 496 and 507, which the rule gives; the store's 500 is
+    $1.50 away, past the feed bound."""
+    rows = _paper_rows(put_strike=496.0, call_strike=507.0, spot=501.5, em=5.5)
+    d, paper = _validate_setup(tmp_path, monkeypatch, rows)
+    assert c38.main(["validate", "--out-dir", str(d), "--paper-db", str(paper)]) == 1
+    v = json.loads((d / "validation.json").read_text(encoding="utf-8"))
+    assert v["monday"]["rule"] == 1 and v["monday"]["feed"] == 0 and v["detail"][0]["feed_gap"] == 1.5
+
+
+def test_a_paper_debit_off_the_replay_s_is_reported_not_gated(tmp_path, monkeypatch):
+    """The first run's Monday miss was paper's own put debit, 0.18 against 0.42-0.45 on every bar."""
+    d, paper = _validate_setup(tmp_path, monkeypatch, _paper_rows(debit_shift=0.5))
+    assert c38.main(["validate", "--out-dir", str(d), "--paper-db", str(paper)]) == 0
+    v = json.loads((d / "validation.json").read_text(encoding="utf-8"))
+    assert v["passed"] and v["monday"]["agree"] == 0 and v["monday"]["rule"] == 1
 
 
 def test_the_study_command_writes_results_json_and_md_once_validated(tmp_path, monkeypatch):
