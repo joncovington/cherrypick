@@ -392,6 +392,15 @@ _ADDED_TRADE_COLUMNS = {
     # every live close was booked at its limit. NULL on paper rows and on sides never closed live.
     "put_exit_fill_source": "TEXT",
     "call_exit_fill_source": "TEXT",
+    # The stop-limit order resting at the broker for each side of a LIVE IC (2026-11-02,
+    # `live_loop._tend_resting_stops`), and what the broker last said of it: 'working', 'filled',
+    # 'cancelled', 'rejected', 'expired', or 'failed' (the placement itself failed). It protects the
+    # side between ticks and through an outage of the loop; the loop's own stop runs as before and
+    # cancels it before sending its own close. NULL on paper rows and with `live.resting_stop` off.
+    "put_resting_stop_order_id": "TEXT",
+    "call_resting_stop_order_id": "TEXT",
+    "put_resting_stop_status": "TEXT",
+    "call_resting_stop_status": "TEXT",
     "dollar_multiplier": "REAL DEFAULT 100",
     # `risk_profile` until 2026-09-24. Only ever ADDED to a ledger that has neither name -- one that
     # still says `risk_profile` is refused by `_refuse_pre_rename` before this list is read.
@@ -1099,6 +1108,10 @@ _UPDATABLE_TRADE_FIELDS = (
     "side_credit_source",
     "put_exit_fill_source",
     "call_exit_fill_source",
+    "put_resting_stop_order_id",
+    "call_resting_stop_order_id",
+    "put_resting_stop_status",
+    "call_resting_stop_status",
     "put_stop_fill_status",
     "call_stop_fill_status",
     "pending_exit_json",

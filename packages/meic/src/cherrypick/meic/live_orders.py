@@ -126,6 +126,38 @@ def stop_close_spec(trade: dict, side: str, leg_quotes: dict, stop_limit_ratio: 
     }
 
 
+def resting_stop_spec(trade: dict, side: str, trigger: float, limit_offset: float) -> dict:
+    """The stop-limit that rests at the broker for one side of an open IC (2026-11-02): BTC the
+    short, STC the long, Day, triggered when the spread's buy-back price reaches `trigger`, then a
+    limit `limit_offset` above it, both ceilinged to the tick. Built from the row alone -- no quote
+    -- so it can be placed and re-placed whatever the feed is doing.
+
+    tastytrade takes stop-limit (never stop-market) orders on spreads, triggers a debit spread off
+    its net NBBO ask, and rejects a trigger at or below the current ask. The limit is capped at the
+    wing width, the most the spread can be worth, so a cap never refuses a fill it could get."""
+    if side == "put":
+        short_sym, long_sym = trade["put_symbol"], trade["long_put_symbol"]
+    elif side == "call":
+        short_sym, long_sym = trade["call_symbol"], trade["long_call_symbol"]
+    else:
+        raise ValueError(f"side must be 'put' or 'call', got {side!r}")
+    stop = tick_ceil(trigger)
+    limit = tick_ceil(stop + limit_offset)
+    width = trade.get(f"{side}_wing") or trade.get("wing_width")
+    if width:
+        limit = min(limit, tick_floor(float(width)))
+    if stop <= 0 or limit <= stop:
+        raise ValueError(f"{side} resting stop {stop!r} / limit {limit!r} is not a submittable stop-limit")
+    return {
+        "time_in_force": "Day",
+        "order_type": "Stop Limit",
+        "stop_trigger": stop,
+        "price": limit,
+        "price_effect": "debit",
+        "legs": _close_legs(short_sym, long_sym, trade.get("quantity", 1)),
+    }
+
+
 def force_close_spec(
     trade: dict,
     leg_quotes: dict,

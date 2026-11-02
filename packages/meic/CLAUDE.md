@@ -182,6 +182,17 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
   whose row will not save raises the suite halt flag. The incident: DXLink refused connections for an
   hour, every tick exited at `no snapshot`, and a put side was stopped 79 minutes late at $7.15
   against a $3.60 trigger.
+- **Resting stops (`live.resting_stop`, off by default, 2026-11-02).** Once an entry's fill is
+  confirmed, each held side gets a Day stop-limit at the broker (`live_orders.resting_stop_spec`):
+  trigger = the row's stop ratio x the whole net credit, limit `limit_offset_frac` of it above,
+  capped at the wing. Each tick polls them first (`_poll_resting_stops`): a fill becomes the side's
+  close and `_confirm_fills` books it at the broker's legs; a dead one is re-placed after management
+  (`_place_resting_stops`). The loop's own stop stays the backup and chaser. Before it closes,
+  force-closes or settles a side it cancels that side's resting stop and needs the cancel confirmed
+  (`_clear_resting_stop`); a refused cancel means nothing is sent and settlement waits a tick, so a
+  side never has two closes. Their ids are in `_ORDER_ID_COLUMNS`, so the orphan sweep knows them.
+  The broker triggers off the spread's NBBO ask, above the loop's mid-plus-haircut, so switching it
+  on is a measurement boundary against live-shadow.
 - **Order legs are OCC; ledger legs are streamer symbols.** `live_orders.order_symbol` converts at the
   order boundary (`core.streamcache.streamer_to_occ_symbol`) and refuses a symbol with no OCC form;
   the test `FakeBroker` rejects any non-OCC leg. The agent path's `tt execute_trade` and
