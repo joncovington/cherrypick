@@ -170,7 +170,9 @@ def test_an_entry_the_ledger_will_not_save_halts_new_entries(tmp_path, monkeypat
 
     monkeypatch.setattr(paper, "_save_trade", refuse)
     lines = []
-    summary = live_loop.run_once(_config(), _entry_snapshot(), db_path, FakeBroker(), live=True, log=lines.append)
+    summary = live_loop.run_once(
+        _config(), _entry_snapshot(), db_path, FakeBroker(), live=True, log=lines.append
+    )
     assert summary["entry"]["entry"] == "placed" and summary["entry"]["save_result"]["ok"] is False
     assert len(attempts) == 2, "one retry before halting"
     assert flag.exists() and "LIVE-XSP-ORD1" in flag.read_text(encoding="utf-8")
