@@ -192,7 +192,9 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
   (`_clear_resting_stop`); a refused cancel means nothing is sent and settlement waits a tick, so a
   side never has two closes. Their ids are in `_ORDER_ID_COLUMNS`, so the orphan sweep knows them.
   The broker triggers off the spread's NBBO ask, above the loop's mid-plus-haircut, so switching it
-  on is a measurement boundary against live-shadow.
+  on is a measurement boundary against live-shadow. The replay models it per arm with `stop_resting`
+  (`paper._resting_stop_fill`: the ask trigger, filled at the tick's ask or, with
+  `stop_resting_fill: "trigger"`, at the trigger); an arm without it is priced as before.
 - **Order legs are OCC; ledger legs are streamer symbols.** `live_orders.order_symbol` converts at the
   order boundary (`core.streamcache.streamer_to_occ_symbol`) and refuses a symbol with no OCC form;
   the test `FakeBroker` rejects any non-OCC leg. The agent path's `tt execute_trade` and
