@@ -96,6 +96,14 @@ ENTRY_MATCH_MIN, ENTRY_CREDIT_TOL = 0.90, 0.05
 # spot and expected move through `engine.select_strikes` on the store's listed strikes) and the feed
 # (the store's 10:00 spot against paper's), each on at least `ENTRY_MATCH_MIN` of the entries.
 FEED_SPOT_TOL = 5.0  # index points
+#: The replay's corrections, oldest first (`orchestrator.studyversion`). A result written before the
+#: last of them is stale on the studies board.
+REPLAY_CORRECTIONS = (
+    {"on": "2026-11-01", "what": "the entry check splits into the rule (paper's spot and move) and "
+     "the feed (the store's spot within 5 points); the exact match is reported (#775)", "why": "12 "
+     "of 37 matched, nearly every miss one $5 strike over from a different spot feed",
+     "decided": "user", "before_read": True},
+)  # fmt: skip
 FLIP_TOL, FLIP_MATCH_MIN, FLIP_MIN_TICKS = 5.0, 0.80, 500
 BOUNDARY_DELTA = 0.99999  # the vendor's rounding of a delta of exactly minus one
 

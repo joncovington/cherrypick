@@ -128,6 +128,14 @@ const STUDIES = {
             neighbourhood: { d16: "plateau", d20: 7 },
           },
           notes: "| arm | win % |",
+          version: {
+            version: 1,
+            current: 2,
+            commit: "abc1234",
+            script: "scripts/meic_delta_grid_item23.py",
+            stale: true,
+            since: [{ on: "2026-11-01", what: "a fix", before_read: true }, { what: "no date" }],
+          },
         },
       ],
       queue: { active: false, tasks: [{ id: 24, step: "holdout", status: "done", finished_at: "2026-10-28T23:38:59" }] },
@@ -473,6 +481,15 @@ describe("the gate is open", () => {
         neighbourhood: { d16: "plateau" },
       },
       notes: "| arm | win % |",
+      // A correction without a date is dropped, not guessed.
+      version: {
+        version: 1,
+        current: 2,
+        commit: "abc1234",
+        stale: true,
+        since: [{ on: "2026-11-01", what: "a fix", beforeRead: true }],
+        error: null,
+      },
     });
     expect(r.body).not.toContain("{home}");
     expect(studiesSpawns).toBe(1);

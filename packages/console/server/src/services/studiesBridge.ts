@@ -7,8 +7,10 @@ import type {
   StudyResult,
   StudyRival,
   StudyRow,
+  StudyCorrection,
   StudyTask,
   StudyVerdict,
+  StudyVersion,
 } from "@console/shared";
 import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
@@ -98,6 +100,28 @@ function toGrid(v: unknown): StudyGrid | null {
   return { parameter, measure: s(g["measure"]) ?? "", declared: s(g["declared"]) ?? "", rows, neighbourhood };
 }
 
+/** A result file's replay version against its script's log; null when neither is known. */
+function toVersion(v: unknown): StudyVersion | null {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return null;
+  const r = rec(v);
+  const since: StudyCorrection[] = [];
+  for (const c of list(r["since"])) {
+    const x = rec(c);
+    const on = s(x["on"]);
+    const what = s(x["what"]);
+    if (on === null || what === null) continue;
+    since.push({ on, what, beforeRead: x["before_read"] === true });
+  }
+  return {
+    version: n(r["version"]),
+    current: n(r["current"]),
+    commit: s(r["commit"]),
+    stale: r["stale"] === true,
+    since,
+    error: s(r["error"]),
+  };
+}
+
 function toResult(v: unknown): StudyResult | null {
   const r = rec(v);
   const name = s(r["name"]);
@@ -116,6 +140,7 @@ function toResult(v: unknown): StudyResult | null {
     summary: s(r["summary"]),
     grid: toGrid(r["grid"]),
     notes: s(r["notes"]),
+    version: toVersion(r["version"]),
   };
 }
 

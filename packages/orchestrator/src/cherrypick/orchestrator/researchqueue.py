@@ -624,6 +624,21 @@ def result_of(row: dict, report: dict, log: Path) -> dict:
     return out
 
 
+def stamp_output(row: dict) -> int | str:
+    """Stamp a script row's output with the version of the script that wrote it
+    (`orchestrator.studyversion`): the version, or why there is no stamp. A stamp that cannot be
+    written leaves the row's outcome as it was."""
+    from cherrypick.orchestrator import studyversion
+
+    args = json.loads(row["args"]) if isinstance(row.get("args"), str) else (row.get("args") or {})
+    root = repo_root()
+    try:
+        doc = studyversion.stamp(Path(row["output"]).expanduser(), root / args["path"], root, now=_now_iso())
+    except (OSError, ValueError, KeyError) as exc:
+        return f"not stamped: {exc}"
+    return doc["version"]
+
+
 def progress_file(task_id: int) -> Path:
     """Where queued task `task_id` reports its progress (`core.progress`)."""
     return _progress.progress_dir() / f"q{task_id}.json"
@@ -792,6 +807,8 @@ def run_next(
         # A script that exits 0 without writing the conclusion it declared has not concluded.
         if status == "done" and result.get("output_exists") is False:
             status, note = "failed", f"exited 0 but its declared output {pick['output']} was not written"
+        if pick["kind"] == "script" and result.get("output_exists"):
+            result["version"] = stamp_output(pick)
         with conn:
             conn.execute(
                 "UPDATE tasks SET status = ?, finished_at = ?, pid = NULL, exit_code = ?, note = ?,"

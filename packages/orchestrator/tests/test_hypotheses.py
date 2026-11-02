@@ -132,6 +132,10 @@ def test_board_joins_results_and_queue_and_groups_rows():
     notes = {"{home}/r/design.json": "| arm | P&L |"}
     out = hy.board({"hypotheses": [done]}, [], lambda p: files.get(p, (None, None)), notes.get)
     assert [x["notes"] for x in out["rows"][0]["results"]] == ["| arm | P&L |", None]
+    # The replay version rides along for a file that is there; a missing file has none.
+    stale = {"version": 1, "current": 2, "stale": True}
+    out = hy.board({"hypotheses": [done]}, [], lambda p: files.get(p, (None, None)), version=lambda p: stale)
+    assert [x["version"] for x in out["rows"][0]["results"]] == [stale, None]
     # A retired row closed without a run: finished, no results, never re-tested.
     retired = {**NEW, "id": 11, "study": "item11", "status": "retired", "legacy": True}
     out = hy.board({"hypotheses": [retired]}, [], lambda p: (None, None))

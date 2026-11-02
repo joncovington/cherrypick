@@ -53,7 +53,7 @@ through to its `enabled` default on `defaults`, and the A/B measures nothing whi
 `cancelled` is British everywhere including stored values.** That is the existing convention
 (`realized_net` in `.py`, `unrealisedNet` in `.ts`); the boundary re-spells, which is not a bug to fix.
 
-## Two working rules, both learned the hard way
+## Three working rules, all learned the hard way
 
 **Measure a duplication before folding it, and normalize the identifier first.** "The same function in
 six places" is the least reliable claim in this repo, both ways: one dedup pass found about ten false
@@ -69,3 +69,11 @@ by breaking the invariant on purpose and watching it report the right thing. Do 
 one, and drive it off what the system itself declares (a module's config example, its own
 `stream_requests` file) rather than a hand-kept list. A green check that cannot fire is worse than no
 check: it reads as coverage.
+
+**A correction to a study's replay is logged in the script.** A research script (`scripts/*_itemNN.py`)
+keeps `REPLAY_CORRECTIONS`: one entry per fix, with the date, the change, the reading that prompted it,
+who decided, and whether it came before any arm or outcome was read. The research queue stamps each
+output with the version that wrote it (`results.version.json`), and the studies board marks a result
+stale once the log grows past its stamp (`orchestrator.studyversion`). A fix to how a replay reads its
+data, chooses a strike or gates a run lands with its entry in the same PR. The plan's prose and the
+commit say why; the log is what lets a result say which replay produced it.

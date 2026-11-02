@@ -79,6 +79,14 @@ PILOT_YEARS = tuple(range(2020, 2026))
 PILOT_PER_YEAR = 30
 THRESHOLD = 0.90
 INTERVAL = "5m"
+#: The replay's corrections, oldest first (`orchestrator.studyversion`). A result written before the
+#: last of them is stale on the studies board.
+REPLAY_CORRECTIONS = (
+    {"on": "2026-11-01", "what": "the replay check builds each paper entry at the intraday bar "
+     "nearest paper's entry time; the close's build is reported (#788)", "why": "the close's build "
+     "missed 100 of 104, every miss on paper's expiry and structure: 15:40 against the close",
+     "decided": "user", "before_read": True},
+)  # fmt: skip
 ENTRY_WINDOW = ("15:35", "15:50")
 ENTRY_BARS = ("15:35", "15:40", "15:50")
 LATER_START, LATER_END = "09:40", "15:55"
