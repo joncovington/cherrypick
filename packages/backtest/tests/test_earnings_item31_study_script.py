@@ -1071,8 +1071,8 @@ def _ledger(tmp_path) -> Path:
 def test_the_replay_check_reads_entry_columns_only_and_only_the_control_arms_in_the_window(tmp_path):
     rows = e31.paper_entries(_ledger(tmp_path))
     assert len(rows) == 1, "the advised twin and the entry before 2026-07-15 are not read"
-    assert set(rows[0]) == {"symbol", "strategy", "session", "expiration", "legs", "credit"}
-    assert rows[0]["session"] == "2026-08-03"
+    assert set(rows[0]) == {"symbol", "strategy", "session", "opened", "expiration", "legs", "credit"}
+    assert rows[0]["session"] == "2026-08-03" and rows[0]["opened"] == "15:40"
     assert not set(e31.ENTRY_COLUMNS) & set(e31.OUTCOME_COLUMNS)
 
 
@@ -1107,6 +1107,57 @@ def test_the_check_stops_the_study_under_twenty_events_or_ninety_percent():
     assert e31.evaluate_replay_check(results(20, 3))["ok"] is False, "17 of 20 is under 90%"
     assert e31.evaluate_replay_check(results(19, 0))["ok"] is False, "19 events is under the minimum"
     assert e31.evaluate_replay_check([])["ok"] is False
+
+
+def test_the_check_reads_the_stored_bar_nearest_paper_s_entry_time_inside_the_window():
+    assert e31.entry_bar("15:41") == "15:40" and e31.entry_bar("15:38") == "15:40"
+    assert e31.entry_bar("15:20") == "15:35" and e31.entry_bar("15:59") == "15:50"
+    assert e31.entry_bar("15:37") == "15:35"
+
+
+def _bar_store(w: World, bar: str, spot: float) -> sqlite3.Connection:
+    """The intraday store holding the entry's front chain at one bar, `spot` its underlying."""
+    from cherrypick.backtest import intradayfetch
+
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(intradayfetch.SCHEMA)
+    yf = (w.front - w.entry_date).days / 365.0
+    day, exp = w.entry_date.isoformat(), w.front.isoformat()
+    conn.executemany(
+        "INSERT INTO intraday_chain_quotes VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)",
+        [(SYM, day, exp, bar, r["strike"], r["right"], r["bid"], r["ask"], spot)
+         for r in _rows(spot, yf, 1.0)],
+    )  # fmt: skip
+    return conn
+
+
+def test_the_gate_builds_at_paper_s_bar_and_the_close_s_build_is_reported_beside_it(earnings):
+    """The close's build missed 100 of 104 paper entries a strike or a few cents off: paper built at
+    15:40, the replay at the close. The gate reads paper's bar; the close is reported, not gated."""
+    w = World()
+    w.lay_entry()  # the close: spot 100
+    bconn = _bar_store(w, "15:40", 104.0)
+    paper_world = World(close=104.0)  # paper's 15:40 market, built the ordinary way
+    paper_world.lay_entry(spot=104.0)
+    built = paper_world.trade(role="replay", entry_only=True)["built"]
+    paper = {"symbol": SYM, "session": w.entry_date.isoformat(), "opened": "15:41", "strategy": "iron_fly",
+             "expiration": w.front.isoformat(), "legs": built["legs"], "credit": built["credit"]}  # fmt: skip
+    report, rows = e31.replay_check([(paper, w.event())], w.data, e31.Chains(w.conn), bconn)
+    assert rows[0]["disagreement"] is None and rows[0]["bar"] == "15:40"
+    assert rows[0]["at_close"] == "structure" and report["at_close"] == {"structure": 1}
+    assert report["basis_gap"]["entries"] == 1 and report["basis_gap"]["legs_differ"] == 1
+
+
+def test_the_check_requests_ask_each_paper_entry_s_own_expiry_once_as_the_fetch_reads_them(tmp_path):
+    from cherrypick.backtest import intradayfetch
+
+    p = {"symbol": "tst", "session": "2026-08-03", "expiration": "2026-08-07"}
+    reqs = e31.check_requests([(p, {}), ({**p, "strategy": "iron_condor"}, {})])
+    assert len(reqs) == 1 and reqs[0]["required"] == list(e31.ENTRY_BARS)
+    (tmp_path / "r.json").write_text(json.dumps({"requests": reqs}), encoding="utf-8")
+    assert intradayfetch.read_requests(tmp_path / "r.json") == [
+        ("TST", "2026-08-03", "2026-08-07", "15:35", "15:50", "5m")
+    ]
 
 
 def test_replay_events_match_a_paper_entry_to_a_stated_timing_report_by_its_entry_session():

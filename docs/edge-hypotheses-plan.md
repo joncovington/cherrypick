@@ -2793,6 +2793,22 @@ paper ledger has been running since 2026-07-15, and it is the thing asked about.
     absent, and the CPI split is then omitted).
   - **The replay check on paper entries** (`replay-check`) reads entry columns only; a test fails if an
     outcome column is added. It is implemented and has not been run.
+  - **The check reads paper's own bar (2026-11-01, the user's decision, before any arm was read).**
+    Built from the close's chains, the first run agreed on 4 of 104 entries.
+    - **Every miss had paper's expiry and structure.** 64 had a strike a step or two out on some legs
+      (median 1.0% of spot, at most 4.3%), 2 of them a directional spread on the other side. 36 had
+      paper's legs with a credit a few cents past the tick.
+    - **That is the basis, not the rule.** Paper builds at about 15:40 from live quotes, and the study
+      builds at the close in every year (the pilot's end-of-day basis). Paper records no spot or
+      expected move, so its own inputs cannot be fed through the rule.
+
+    Now:
+    - **The gate** builds each entry from the intraday chain at the stored bar nearest paper's entry
+      time, 15:35 to 15:50, with that bar's underlying as the spot. The rule is unchanged: 20 events
+      and 90% agreeing.
+    - **The close's build is reported beside it** (`at_close`, `basis_gap`): how often its legs differ
+      from the bar's, and its credit less the bar's. This is what the end-of-day basis does to an
+      entry. It is shown with the verdict, not gated.
 
 ### 32. Large options orders as a signal: the flow plan's declared test, registered
 
