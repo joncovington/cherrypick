@@ -196,7 +196,7 @@ export interface SymbolWatchPayload {
 
 /**
  * The earnings module's forward-preview scan (symbol_watch.json), written by
- * its own scheduled task — read with a plain JSON parse, never written. A
+ * its paper loop's morning forward-scan phase — read with a plain JSON parse, never written. A
  * missing/mid-pass file degrades to an empty result with the pass status.
  */
 export function readSymbolWatch(config: ConsoleConfig): SymbolWatchPayload {

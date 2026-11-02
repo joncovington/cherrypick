@@ -857,12 +857,5 @@
       "task_name": "cherrypick-reconcile",
       "at": "16:30"
     }
-  },
-  "symbol_watch": {
-    "_comment": "SUPERSEDED 2026-08-12 and must stay OFF. The earnings module now runs this scan itself, as the `forward_scan` phase of its own 60-second loop (`symbol_watch.enabled`/`at`/`days` in the EARNINGS config), because it feeds that module's entry pre-filter as well as the console's Upcoming surface -- and a scan whose output gates an entry belongs on the same clock as the entry. Enabling this block would run the same scan a second time: harmless to the data (the snapshot is rewritten wholesale) but a wasted multi-minute broker walk. Kept derivable only so an existing install that had it enabled keeps working until its config is updated.",
-    "enabled": false,
-    "task_name": "cherrypick-earnings-symbol-watch",
-    "at": "06:30",
-    "days": 10
   }
 }

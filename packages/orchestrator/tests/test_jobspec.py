@@ -316,7 +316,6 @@ def test_derive_full_suite_job_table():
         "earnings-entry",
         "earnings-exit",
         "earnings-dolt",
-        "symbol-watch",
         "reconcile",
         "log-archive",
         "config-backup",
@@ -515,8 +514,8 @@ def test_derive_companion_refuses_a_command_outside_its_module(argv):
 def test_derive_disabled_optins_included_disabled():
     """Off-by-choice jobs stay visible (doctor's healthy-disabled distinction), never omitted."""
     jobs, _ = derive(suite_cfg())
-    sw = next(j for j in jobs if j.id == "symbol-watch")
-    assert not sw.enabled
+    recon = next(j for j in jobs if j.id == "reconcile")
+    assert not recon.enabled
 
 
 def test_derive_one_bad_block_disables_one_job_only():

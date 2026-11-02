@@ -42,7 +42,6 @@ KIND_RESIDENT = "resident"
 CATCHUP_MINUTES = {
     "entry": 30,
     "exit": 120,
-    "symbol-watch": 150,  # 06:30 scheduled; still useful until ~09:00
     "reconcile": 240,
     "log-archive": 7 * 24 * 60,
     # A missed night is worth running late in the day rather than not at all; the online backup API
@@ -1103,19 +1102,6 @@ def derive_jobs(
             )
 
     # --- daily/monthly suite jobs
-    sw = cfgmod.symbol_watch_settings(cfg)
-    add(
-        "symbol-watch",
-        lambda: JobSpec(
-            id="symbol-watch",
-            argv=_run_py(pythonw, launcher, "run-earnings-symbol-watch"),
-            kind=KIND_DAILY,
-            at_et=sw["at"],
-            catchup_minutes=CATCHUP_MINUTES["symbol-watch"],
-            enabled=sw["enabled"],
-            enabled_reason="" if sw["enabled"] else "disabled in config (symbol_watch)",
-        ),
-    )
     rv = cfgmod.review_settings(cfg)
     add(
         "review-provisional",

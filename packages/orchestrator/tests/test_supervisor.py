@@ -675,7 +675,7 @@ def test_snapshot_reflects_daemon_state(spawned):
     info = supersnap.job_run_info("watchdog", snap)
     assert info and info["last_run_time"]
     # the disabled opt-in stays visible with its reason
-    assert snap["jobs"]["symbol-watch"]["enabled"] is False
+    assert snap["jobs"]["reconcile"]["enabled"] is False
 
 
 def test_derive_error_disables_one_job_and_is_reported(spawned):

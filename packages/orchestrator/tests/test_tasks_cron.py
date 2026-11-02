@@ -55,16 +55,10 @@ def test_registry_snapshot_omits_log_archive_when_opted_out(monkeypatch):
     assert "cherrypick-log-archive" not in tasks.registry_snapshot(cfg)
 
 
-def test_registry_snapshot_includes_symbol_watch_when_enabled(monkeypatch):
-    monkeypatch.setattr(tasks, "query_verbose", lambda name: {"exists": True})
-    cfg = {"modules": {}, "symbol_watch": {"enabled": True}}
-    assert "cherrypick-earnings-symbol-watch" in tasks.registry_snapshot(cfg)
-
-
-def test_registry_snapshot_omits_symbol_watch_by_default(monkeypatch):
-    monkeypatch.setattr(tasks, "query_verbose", lambda name: {"exists": True})
-    cfg = {"modules": {}}
-    assert "cherrypick-earnings-symbol-watch" not in tasks.registry_snapshot(cfg)
+def test_legacy_task_names_keep_the_removed_symbol_watch_task():
+    """The job left the suite, but a pre-cutover box may still hold its scheduled task; install
+    deletes it only while the name stays on the list."""
+    assert "cherrypick-earnings-symbol-watch" in tasks.legacy_task_names({"modules": {}})
 
 
 def test_allow_on_battery_noop_on_posix(monkeypatch):
