@@ -495,6 +495,62 @@ async def order_status(account: Any, session: Any, order_id: Any) -> dict:
     return _serialize_placed_order(order_id, placed)
 
 
+REST_QUOTE_MAX_AGE_SECONDS = 60.0
+
+
+async def rest_quotes(
+    session: Any,
+    *,
+    options: list[str] | tuple[str, ...] = (),
+    indices: list[str] | tuple[str, ...] = (),
+    max_age_seconds: float = REST_QUOTE_MAX_AGE_SECONDS,
+    now_ts: float | None = None,
+    fetch: Any = None,
+) -> dict:
+    """One REST `GET /market-data/by-type` for OCC option symbols and index roots -- no DXLink
+    handshake, so it answers when the quote websocket does not. On 2026-11-02 DXLink refused every
+    connection for an hour (502), the stream cache and every per-tick websocket read went dark with
+    it, and a live MEIC side was stopped 79 minutes late; this endpoint is the one price path that
+    does not share that failure.
+
+    Returns `{"options": {occ: {bid, ask, mid, age_seconds}}, "indices": {root: last}}`. A row is
+    left out, never degraded, when it is crossed, has no ask, or its `updated_at` is older than
+    `max_age_seconds` -- a broker-side feed that is itself stale says so here, and an old price must
+    not decide a stop. Raises whatever the SDK raises; `execution.Broker.rest_quotes` fails closed.
+    `fetch` replaces the SDK call in tests."""
+    import time as _time
+
+    if not options and not indices:
+        return {"options": {}, "indices": {}}
+    if fetch is None:
+        from tastytrade.market_data import get_market_data_by_type as fetch
+    rows = await fetch(session, options=list(options) or None, indices=list(indices) or None)
+    now_ts = _time.time() if now_ts is None else now_ts
+    wanted_options, wanted_indices = set(options), set(indices)
+    out: dict = {"options": {}, "indices": {}}
+    for row in rows:
+        updated = getattr(row, "updated_at", None)
+        age = None if updated is None else now_ts - updated.timestamp()
+        if age is None or age > max_age_seconds:
+            continue
+        symbol = row.symbol
+        if symbol in wanted_indices:
+            for name in ("last", "mark", "mid"):
+                value = getattr(row, name, None)
+                if value is not None and float(value) > 0:
+                    out["indices"][symbol] = float(value)
+                    break
+            continue
+        if symbol not in wanted_options or row.bid is None or row.ask is None:
+            continue
+        bid, ask = float(row.bid), float(row.ask)
+        if ask <= 0 or bid < 0 or bid > ask:
+            continue
+        mid = float(row.mid) if getattr(row, "mid", None) is not None else (bid + ask) / 2.0
+        out["options"][symbol] = {"bid": bid, "ask": ask, "mid": mid, "age_seconds": round(age, 1)}
+    return out
+
+
 async def transaction_history(
     account: Any,
     session: Any,

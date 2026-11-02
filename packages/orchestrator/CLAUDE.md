@@ -90,6 +90,9 @@ lines through `core.redact` and puts them in `supervisor.log` and the registry a
   exit is logged as requested: no failure, no backoff, no churn count, and `last_exit_requested` rides
   `supersnap.job_run_info` so the live-loop check does not read its code as a failed tick. A request
   older than 10 minutes is ignored, so it cannot excuse a later crash.
+- **A `*-live` job never climbs the crash ladder** (2026-11-02): its backoff cap is its own tick
+  interval, so a failing live tick comes back every tick. The ladder's 10-minute cap held a stopped
+  MEIC put side unmanaged for 20 minutes after quotes returned.
 - **Holds** (`orchestrator/holds.py`, `state/holds.json`): a held name is stopped and never started,
   by the supervisor or the watchdog's auto-restart, and its findings go OK. Two exceptions, on
   purpose: a held LIVE loop is still a WARN in session, and any hold over 12 hours is a WARN.
