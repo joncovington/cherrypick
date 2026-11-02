@@ -1911,8 +1911,8 @@ def assert_entry_only(columns) -> None:
 
 def paper_entries(db: Path, first: date = PAPER_FIRST, last: date = PAPER_LAST) -> list[dict]:
     """The strat_test control arms' entries of the three judged strategies from `first` to `last`
-    (the advised twins are not the module's rule), as {symbol, strategy, session, expiration, legs,
-    credit}. Only `ENTRY_COLUMNS` are selected."""
+    (the advised twins are not the module's rule), as {symbol, strategy, session, opened (HH:MM ET),
+    expiration, legs, credit}. Only `ENTRY_COLUMNS` are selected."""
     assert_entry_only(ENTRY_COLUMNS)
     arms = tuple(f"strat_test:{s}" for s in STRATEGIES)
     lo = datetime.combine(first, time(0, 0), ET).timestamp()
@@ -1934,6 +1934,7 @@ def paper_entries(db: Path, first: date = PAPER_FIRST, last: date = PAPER_LAST) 
                 "strategy": strategy,
                 "expiration": expiration,
                 "session": datetime.fromtimestamp(opened, ET).date().isoformat(),
+                "opened": datetime.fromtimestamp(opened, ET).strftime("%H:%M"),
                 "legs": json.loads(legs_json or "[]"),
                 "credit": credit,
             }
@@ -1981,6 +1982,104 @@ def evaluate_replay_check(results: list[dict]) -> dict:
     }
 
 
+#: The bars the check may read paper's entry at: the entry window at 5 minutes.
+CHECK_BARS = ("15:35", "15:40", "15:45", "15:50")
+
+
+def entry_bar(opened: str) -> str:
+    """The stored bar nearest paper's entry time, inside the entry window."""
+    hh, mm = (int(x) for x in opened.split(":"))
+    return min(CHECK_BARS, key=lambda b: (abs(int(b[:2]) * 60 + int(b[3:]) - hh * 60 - mm), b))
+
+
+class BarChains(Chains):
+    """The intraday store read at one bar per name and session, in `Chains`' row shape (the store
+    holds no volume, so none). `bars` maps (SYMBOL, session) to the bar; `spot` is that bar's
+    underlying price."""
+
+    def __init__(self, conn: sqlite3.Connection, bars: dict[tuple[str, str], str]):
+        super().__init__(conn)
+        self.bars = bars
+
+    def rows(self, symbol: str, session: date, expiration: date) -> list[dict]:
+        key = (symbol.upper(), session.isoformat(), expiration.isoformat())
+        if key not in self._cache:
+            bar = self.bars.get(key[:2])
+            self._cache[key] = (
+                []
+                if bar is None
+                else [
+                    {"strike": k, "right": r[0].upper(), "bid": b, "ask": a, "volume": None}
+                    for k, r, b, a in self.conn.execute(
+                        "SELECT strike, right, bid, ask FROM intraday_chain_quotes WHERE symbol = ? "
+                        "AND session = ? AND expiration = ? AND bar = ? ORDER BY strike, right",
+                        (*key, bar),
+                    )
+                ]
+            )
+        return self._cache[key]
+
+    def spot(self, symbol: str, session: date) -> float | None:
+        bar = self.bars.get((symbol.upper(), session.isoformat()))
+        if bar is None:
+            return None
+        row = self.conn.execute(
+            "SELECT underlying FROM intraday_chain_quotes WHERE symbol = ? AND session = ? AND bar = ? "
+            "AND underlying IS NOT NULL LIMIT 1",
+            (symbol.upper(), session.isoformat(), bar),
+        ).fetchone()
+        return row[0] if row else None
+
+
+class AtBar:
+    """The market data with the entry spot read at the check's bar instead of the session's close."""
+
+    def __init__(self, data, chains: BarChains):
+        self._data, self._chains = data, chains
+
+    def __getattr__(self, name):
+        return getattr(self._data, name)
+
+    def close(self, symbol: str, day: date) -> float | None:
+        return self._chains.spot(symbol, day)
+
+
+def basis_gap(at_bar: list[dict], at_close: list[dict]) -> dict:
+    """Reported, not gated: how the close's build differs from the bar's on the entries both built,
+    the legs and the credit (per share, close less bar). The study prices at the close in every year,
+    so this is what that basis does to an entry."""
+    both = [(a, b) for a, b in zip(at_bar, at_close, strict=True) if a.get("built") and b.get("built")]
+    diffs = sorted(float(b["built"]["credit"]) - float(a["built"]["credit"]) for a, b in both)
+    n = len(diffs)
+    return {
+        "entries": n,
+        "legs_differ": sum(
+            leg_signature(a["built"]["legs"]) != leg_signature(b["built"]["legs"]) for a, b in both
+        ),
+        "credit_close_less_bar": {
+            "median": diffs[n // 2] if n else None,
+            "mean": sum(diffs) / n if n else None,
+            "abs_median": sorted(abs(x) for x in diffs)[n // 2] if n else None,
+        },
+    }
+
+
+def check_requests(pairs: list[tuple[dict, dict]]) -> list[dict]:
+    """The intraday entry-window request for each paper entry's own expiry on its session, once each."""
+    out, seen = [], set()
+    for p, _ev in pairs:
+        key = (p["symbol"].upper(), p["session"], p["expiration"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(
+            {"symbol": key[0], "expiration": key[2], "interval": INTERVAL, "event": f"{key[0]} {key[1]}",
+             "year": int(key[1][:4]), "kind": "entry", "session": key[1], "start": ENTRY_WINDOW[0],
+             "end": ENTRY_WINDOW[1], "required": list(ENTRY_BARS)}
+        )  # fmt: skip
+    return out
+
+
 def replay_events(
     entries: list[dict], reports: dict[str, list[tuple[date, str | None]]]
 ) -> list[tuple[dict, dict]]:
@@ -1997,7 +2096,11 @@ def replay_events(
 
 
 def cmd_replay_check(args) -> int:
-    from cherrypick.backtest import chainfetch, settings
+    """The gate builds each paper entry from the intraday chain at the bar nearest paper's own entry
+    time (2026-11-01, the user's decision, before any arm was read): the close's build disagreed on
+    100 of 104, a strike or a few cents off on the same expiry and structure, which is the 15:40
+    against close basis and not the rule. The close's build is reported beside it (`basis_gap`)."""
+    from cherrypick.backtest import chainfetch, intradayfetch, settings
     from cherrypick.earnings import paths as epaths
 
     d = _out_dir(args.out_dir)
@@ -2006,6 +2109,18 @@ def cmd_replay_check(args) -> int:
     entries = paper_entries(epaths.data_path("paper_trades.db"))
     pairs = replay_events(entries, rows)
     store = chainfetch.db_path(settings.load(None))
+    bar_store = intradayfetch.db_path(settings.load(None))
+    if args.requests_only:
+        bar_todo = check_requests(pairs)
+        if bar_store.exists():
+            bconn = sqlite3.connect(f"file:{bar_store.as_posix()}?mode=ro", uri=True)
+            try:
+                bar_todo = [r for r in bar_todo if judge(bconn, r)["state"] != "complete"]
+            finally:
+                bconn.close()
+        bar_out = d / "intraday-replay-check-requests.json"
+        bar_out.write_text(json.dumps({"requests": bar_todo}), encoding="utf-8")
+        print(json.dumps({"intraday_requests": len(bar_todo), "intraday_file": str(bar_out)}))
     if args.requests_only or not store.exists():
         singles = {}
         for p, ev in pairs:
@@ -2034,22 +2149,42 @@ def cmd_replay_check(args) -> int:
             )
         )
         return 0
+    if not bar_store.exists():
+        raise SystemExit("no intraday store: run replay-check --requests-only and fetch its intraday file")
     names = sorted({p["symbol"] for p, _ in pairs})
     data = load_market_data(names, args.host, args.port)
     conn = sqlite3.connect(f"file:{store.as_posix()}?mode=ro", uri=True)
+    bconn = sqlite3.connect(f"file:{bar_store.as_posix()}?mode=ro", uri=True)
     try:
-        study = Study(data, Chains(conn), study_config(), {})
-        results = []
-        for p, ev in pairs:
-            rec = study.trade(p["strategy"], ev, "replay", None, entry_only=True)
-            results.append({"symbol": p["symbol"], "session": p["session"], "strategy": p["strategy"],
-                            "disagreement": compare_entry(p, rec.get("built"))})  # fmt: skip
+        report_, results = replay_check(pairs, data, Chains(conn), bconn)
     finally:
         conn.close()
-    report_ = evaluate_replay_check(results)
+        bconn.close()
     (d / "replay-check.json").write_text(json.dumps({**report_, "rows": results}, indent=1), encoding="utf-8")
     print(json.dumps(report_, indent=2))
     return 0 if report_["ok"] else 2
+
+
+def replay_check(pairs, data, close_chains: Chains, bar_conn: sqlite3.Connection) -> tuple[dict, list]:
+    """The gate on each entry built at paper's bar; the close's build reported beside it."""
+    bars = {(p["symbol"].upper(), p["session"]): entry_bar(p["opened"]) for p, _ in pairs}
+    bar_chains = BarChains(bar_conn, bars)
+    at_bar = Study(AtBar(data, bar_chains), bar_chains, study_config(), {})
+    at_close = Study(data, close_chains, study_config(), {})
+    results, bar_recs, close_recs = [], [], []
+    for p, ev in pairs:
+        rb = at_bar.trade(p["strategy"], ev, "replay", None, entry_only=True)
+        rc = at_close.trade(p["strategy"], ev, "replay", None, entry_only=True)
+        bar_recs.append(rb)
+        close_recs.append(rc)
+        results.append({"symbol": p["symbol"], "session": p["session"], "strategy": p["strategy"],
+                        "bar": bars[(p["symbol"].upper(), p["session"])],
+                        "disagreement": compare_entry(p, rb.get("built")), "drop": rb.get("drop"),
+                        "at_close": compare_entry(p, rc.get("built"))})  # fmt: skip
+    report_ = evaluate_replay_check(results)
+    report_["at_close"] = dict(Counter(r["at_close"] or "agree" for r in results))
+    report_["basis_gap"] = basis_gap(bar_recs, close_recs)
+    return report_, results
 
 
 # ------------------------------------------------------------------------------------------------
