@@ -369,6 +369,7 @@ def test_derive_full_suite_job_table():
         "morning-factpack",
         "morning-narrative",
         "manage-eval",
+        "manage-marks",
         "advisor-deep",
         *QUIKOPTIONS_JOBS,
     }
@@ -668,6 +669,21 @@ def test_manage_also_at_adds_one_job_per_further_time():
     assert not jobspec.notifies_own_failure("managed-something")
     cfg["manage"]["enabled"] = False
     assert not {j.id: j for j in derive(cfg)[0]}["manage-eval-1230"].enabled
+
+
+def test_manage_marks_runs_each_minute_in_the_session_with_manage_and_can_be_turned_off_alone():
+    """The minute re-mark between full runs: no broker call, so it follows manage's switch."""
+    assert not {j.id: j for j in derive(suite_cfg())[0]}["manage-marks"].enabled
+    cfg = suite_cfg()
+    cfg["manage"] = {"enabled": True}
+    job = {j.id: j for j in derive(cfg)[0]}["manage-marks"]
+    assert job.enabled and job.trading_days_only and job.kind == jobspec.KIND_INTERVAL
+    assert (job.interval_seconds, job.window_start, job.window_end) == (60, "10:01", "16:10")
+    assert job.argv[-1] == "manage-marks"
+    cfg["manage"]["marks"] = {"enabled": False}
+    assert not {j.id: j for j in derive(cfg)[0]}["manage-marks"].enabled
+    cfg["manage"]["marks"] = {"interval_seconds": 5}
+    assert {j.id: j for j in derive(cfg)[0]}["manage-marks"].interval_seconds == 30, "never under 30 s"
 
 
 def test_every_derived_run_py_job_actually_parses():

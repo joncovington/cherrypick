@@ -165,7 +165,9 @@ ledgers copy through SQLite's online backup API and are quick_checked, a night w
   `manage.enabled`), plus a `manage-eval-HHMM` job per `manage.also_at` time, runs `run.py manage`, whose one job here is the snapshot (`managesnap.py`: the
   `positions` read with the account's margin-or-cash kind, each underlying's market metrics with the
   broker's beta, SPY's metrics whether held or not, and each underlying's trade history, all
-  read-only). The rules and verdicts are manage's; the evaluation runs by subprocess.
+  read-only). The rules and verdicts are manage's; the evaluation runs by subprocess. Between the full
+  runs, `manage-marks` (every 60 s, 10:01-16:10 ET) reads the stream cache's quotes for what the day's
+  stored snapshot holds and hands them to manage's `remark`: no broker call, no post.
 - The end-of-day review is `packages/review`: jobs `review-provisional` (16:30 ET) and `review-final`
   (10:15 next morning), trading days only, invoke `python -m cherrypick.review`
   (`cfgmod.review_settings`; on by default, opt out with `"review": {"enabled": false}`).

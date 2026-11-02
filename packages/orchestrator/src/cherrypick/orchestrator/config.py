@@ -446,6 +446,7 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """
     mg = cfg.get("manage", {}) or {}
     ro = mg.get("roll_out") if isinstance(mg.get("roll_out"), dict) else {}
+    mk = mg.get("marks") if isinstance(mg.get("marks"), dict) else {}
     return {
         "enabled": bool(mg.get("enabled", False)),
         # ET. 10:00 leaves the open's first half hour to settle the marks the rules are judged on.
@@ -462,6 +463,16 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # The quoted expiries the snapshot reads past each covered call, PMCC short and short put
         # (managesnap.roll_out_chains), and the cap on the broker reads that costs.
         "roll_out": {k: _int_or(ro.get(k), v) for k, v in ROLL_OUT_DEFAULTS.items()},
+        # The minute re-mark between full runs (`manage-marks`, packages/manage `remark`): the day's
+        # snapshot moved to the stream cache's quotes. No broker call, so on whenever manage is; it
+        # stands down until the day's first full snapshot is stored, and after the close, when the
+        # cache holds no fresh quote.
+        "marks": {
+            "enabled": bool(mg.get("enabled", False)) and bool(mk.get("enabled", True)),
+            "interval_seconds": max(30, _int_or(mk.get("interval_seconds"), 60)),
+            "start": str(mk.get("start", "10:01")),
+            "end": str(mk.get("end", "16:10")),
+        },
     }
 
 

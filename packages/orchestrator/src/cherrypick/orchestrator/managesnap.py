@@ -955,3 +955,57 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "underlying_history": underlying,
         "underlying_history_error": underlying_error,
     }
+
+
+# --------------------------------------------------------------------------- the minute re-mark
+def stored_snapshot_path(session: str):
+    """Where manage keeps a session's snapshot: its own home, read here, never written."""
+    from cherrypick.core import home
+
+    return home.data_dir("manage", env="MANAGE_DATA_DIR") / f"snapshot-{session}.json"
+
+
+def overlay_symbols(snapshot: dict[str, Any]) -> list[str]:
+    """The streamer symbols a re-mark of `snapshot` can use: every held leg and every quoted
+    underlying (manage's `remark.wanted`, which this must not import)."""
+    held = [
+        str(leg["symbol"])
+        for account in (snapshot.get("positions") or {}).get("accounts") or []
+        for u in account.get("underlyings") or []
+        for leg in u.get("legs") or []
+        if leg.get("symbol")
+    ]
+    out = {streamcache.occ_to_streamer_symbol(s) or s.strip() for s in held}
+    out |= {str(s) for s in snapshot.get("metrics") or {}}
+    return sorted(out)
+
+
+def marks_overlay(session: str, *, now_iso: str, cache_path=None) -> dict[str, Any] | None:
+    """The stream cache's fresh quotes for what the session's stored snapshot holds, as manage's
+    `remark` reads them, or None when there is no snapshot yet today or the cache quotes none of it
+    (before the open, after the close, or with the streamer down). A file read and a cache read: no
+    broker call. The freshness bound is the full snapshot's own (`positions.REPORT_QUOTE_MAX_AGE_SECONDS`),
+    so a re-marked leg is never older than a full snapshot would allow."""
+    path = stored_snapshot_path(session)
+    if not path.exists():
+        return None
+    snapshot = json.loads(path.read_text(encoding="utf-8"))
+    cache = cache_path or streamcache.cache_path()
+    if not cache.exists():
+        return None
+    conn = connect_ro(cache)
+    try:
+        quotes = streamcache.quote_mids(
+            conn, overlay_symbols(snapshot), max_age_seconds=positions_mod.REPORT_QUOTE_MAX_AGE_SECONDS
+        )
+    finally:
+        conn.close()
+    if not quotes:
+        return None
+    return {
+        "session": session,
+        "base_generated_at": snapshot.get("generated_at"),
+        "at": now_iso,
+        "max_age_seconds": positions_mod.REPORT_QUOTE_MAX_AGE_SECONDS,
+        "quotes": quotes,
+    }

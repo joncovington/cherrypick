@@ -990,3 +990,50 @@ def test_an_account_wide_answer_without_a_list_is_an_error_not_an_empty_history(
     snap = managesnap.build({})
     assert snap["account_transactions"] == []
     assert "without an account-wide list" in snap["account_transactions_error"]
+
+
+def _cache(path: Path, rows: dict[str, tuple[float, float, float, float]]) -> Path:
+    import sqlite3
+
+    from cherrypick.core import streamcache
+
+    conn = sqlite3.connect(path)
+    conn.executescript(streamcache.DDL)
+    for sym, (bid, ask, mid, at) in rows.items():
+        conn.execute(
+            "INSERT INTO stream_quotes (symbol, bid, ask, mid, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (sym, bid, ask, mid, at),
+        )
+    conn.commit()
+    conn.close()
+    return path
+
+
+def test_the_minute_overlay_reads_fresh_cached_quotes_for_what_the_stored_snapshot_holds(
+    tmp_path, monkeypatch
+):
+    """No broker call: the stored snapshot and the stream cache, quotes no older than the full snapshot's
+    own bound. No snapshot today, or no fresh quote, is no overlay."""
+    import time
+
+    monkeypatch.setenv("MANAGE_DATA_DIR", str(tmp_path))
+    now = time.time()
+    cache = _cache(tmp_path / "cache.db", {
+        ".XYZ261120C105": (0.9, 1.1, 1.0, now - 5), "XYZ": (104.9, 105.1, 105.0, now - 2),
+        "SPY": (599.0, 601.0, 600.0, now - 3600),  # an hour old: not a mark
+        "QQQ": (1.0, 1.2, 1.1, now),  # fresh, but nothing here holds it
+    })  # fmt: skip
+    assert managesnap.marks_overlay("2026-11-02", now_iso="t", cache_path=cache) is None, "no snapshot yet"
+    snapshot = {
+        "session": "2026-11-02", "generated_at": "2026-11-02T10:00:30-0500",
+        "positions": {"accounts": [{"underlyings": [{"underlying": "XYZ", "legs": [
+            {"symbol": "XYZ   261120C00105000"}, {"symbol": "XYZ"}]}]}]},
+        "metrics": {"XYZ": {"last": 100.0}, "SPY": {"last": 600.0}},
+    }  # fmt: skip
+    (tmp_path / "snapshot-2026-11-02.json").write_text(json.dumps(snapshot), encoding="utf-8")
+    out = managesnap.marks_overlay("2026-11-02", now_iso="2026-11-02T10:31:00-05:00", cache_path=cache)
+    assert out["base_generated_at"] == snapshot["generated_at"] and out["session"] == "2026-11-02"
+    assert sorted(out["quotes"]) == [".XYZ261120C105", "XYZ"]
+    assert out["max_age_seconds"] == 60.0
+    stale = _cache(tmp_path / "stale.db", {"XYZ": (1, 2, 1.5, now - 600)})
+    assert managesnap.marks_overlay("2026-11-02", now_iso="t", cache_path=stale) is None, "nothing fresh"
