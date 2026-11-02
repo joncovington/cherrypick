@@ -446,6 +446,16 @@ def test_derive_flies_live_enabled_with_todays_arm_record():
     assert live.argv == ("pythonw", "-m", "cherrypick.flies.live_loop", "--once", "--live")
 
 
+def test_a_failing_live_tick_retries_at_its_own_cadence():
+    """2026-11-02: meic-live failed through a 59-minute data outage on the 10-minute default ladder,
+    so its first good tick came 20 minutes after the data returned, with an IC open. Shown to fail
+    without the cap: the job's `backoff_cap_seconds` is None and the supervisor's 600 s applies."""
+    cfg = suite_cfg()
+    cfg["modules"]["flies"]["live"]["tick_interval_seconds"] = 45
+    jobs, _ = derive(cfg, now=et(2026, 8, 10, 10, 0), arm_records={"flies": {"date": "2026-08-10"}})
+    assert next(j for j in jobs if j.id == "flies-live").backoff_cap_seconds == 45
+
+
 _DAEMON = {
     "argv": ["-m", "cherrypick.flies.alert_daemon"],
     "heartbeat": "/x/live_alert_daemon.status.json",

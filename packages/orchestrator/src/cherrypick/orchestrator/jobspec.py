@@ -1024,6 +1024,10 @@ def derive_jobs(
                     enabled=armed,
                     enabled_reason=why,
                     tags=("live",),
+                    # A failing live tick retries at its own cadence, never slower (2026-11-02):
+                    # on the 10-minute default ladder the first good tick after a 59-minute data
+                    # outage came 20 minutes late, while an open IC's stop waited on it.
+                    backoff_cap_seconds=int(live.get("tick_interval_seconds", 60)),
                 ),
             )
             # Companions the arm record names (flies' order-alert daemon): one resident job each,

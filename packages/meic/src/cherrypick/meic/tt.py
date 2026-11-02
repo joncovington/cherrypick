@@ -682,6 +682,60 @@ async def cmd_get_quote(args) -> dict:
         return _error(exc)
 
 
+async def cmd_get_rest_quotes(args) -> dict:
+    """Bid/ask for option legs and a last for the underlying from tastytrade's REST snapshot
+    (`GET /market-data/by-type`), with no DXLink and no stream cache. Read-only.
+
+    The live loop's fallback when the snapshot cannot be built (2026-11-02). DXLink returned 502
+    from 14:19 to 15:18 ET and every other quote path failed with it, while REST reads kept working.
+    Each tick exited before it managed anything, so a triggered stop waited for the stream.
+
+    Legs go in and come out as streamer symbols, the ledger's own form, and are converted to OCC
+    only for the request. A leg with a crossed, zero-ask or missing quote is left out, never
+    estimated. `updated_at` comes back on each row so the caller can refuse an old one."""
+    from cherrypick.core.streamcache import streamer_to_occ_symbol
+    from tastytrade.market_data import get_market_data_by_type
+
+    try:
+        underlying = (args.underlying or "").strip().upper() or None
+        occ = {}
+        for sym in args.options or []:
+            o = streamer_to_occ_symbol(sym)
+            if o:
+                occ[o] = sym
+        unconverted = [s for s in args.options or [] if s not in occ.values()]
+        kwargs: dict = {}
+        if underlying:
+            kwargs["indices" if args.index else "equities"] = [underlying]
+        if occ:
+            kwargs["options"] = list(occ)
+        if not kwargs:
+            return {"ok": True, "underlying": None, "quotes": {}, "unconverted": unconverted}
+        rows = await get_market_data_by_type(get_session(), **kwargs)
+        quotes, under = {}, None
+        for row in rows:
+            stamp = row.updated_at.isoformat() if row.updated_at else None
+            if row.symbol in occ:
+                if row.bid is None or row.ask is None:
+                    continue
+                bid, ask = float(row.bid), float(row.ask)
+                if ask <= 0 or bid < 0 or bid > ask:
+                    continue
+                quotes[occ[row.symbol]] = {
+                    "bid": bid,
+                    "ask": ask,
+                    "mid": round((bid + ask) / 2, 4),
+                    "updated_at": stamp,
+                }
+            elif underlying and str(row.symbol).upper() == underlying:
+                price = next((float(v) for v in (row.last, row.mark, row.mid) if v is not None), None)
+                if price is not None:
+                    under = {"price": price, "updated_at": stamp}
+        return {"ok": True, "underlying": under, "quotes": quotes, "unconverted": unconverted}
+    except Exception as exc:
+        return _error(exc)
+
+
 async def cmd_get_option_chain(args) -> dict:
     try:
         expiration_filter = getattr(args, "expiration", None)
@@ -1746,6 +1800,11 @@ def main():
     p_gq.add_argument("--symbol", required=True)
     p_gq.add_argument("--timeout", type=float, default=6.0)
 
+    p_rq = sub.add_parser("get_rest_quotes")
+    p_rq.add_argument("--underlying", default=None)
+    p_rq.add_argument("--index", action="store_true", help="the underlying is an index (SPX, XSP)")
+    p_rq.add_argument("--options", nargs="*", default=[], help="streamer symbols")
+
     p_oc = sub.add_parser("get_option_chain")
     p_oc.add_argument("--symbol", required=True)
     p_oc.add_argument("--expiration", default=None)
@@ -1872,6 +1931,7 @@ def main():
         "get_vix1d": cmd_get_vix1d,
         "get_official_close": cmd_get_official_close,
         "get_option_chain": cmd_get_option_chain,
+        "get_rest_quotes": cmd_get_rest_quotes,
         "get_strategies": cmd_get_strategies,
         "get_gex": cmd_get_gex,
         "get_working_orders": cmd_get_working_orders,

@@ -1365,6 +1365,93 @@ def _build_snapshot(cfg: dict, symbol: str):
     return snapshot, None
 
 
+# How old a REST quote may be and still mark a held leg. 0DTE index legs requote every second, so a
+# row this old means the broker's own data has stopped too, and the leg is left unquoted instead.
+REST_QUOTE_MAX_AGE_SECONDS = 120
+
+
+def fallback_snapshot(symbol: str, now: datetime, rest: dict, *, max_age=REST_QUOTE_MAX_AGE_SECONDS):
+    """A management-only snapshot from `tt get_rest_quotes`, for a tick whose normal snapshot could
+    not be built while the live ledger holds an IC (2026-11-02). Pure.
+
+    That day the stream died at 14:19 ET and every tick exited at "no price" before it reached the
+    open IC, so a triggered stop waited until the stream returned an hour later. This snapshot
+    carries only what managing a held IC reads: the held legs' quotes and the underlying. It has no
+    candidates, and the caller blocks entries for the tick. A quote older than `max_age` (or with no
+    timestamp) is dropped, so a stale leg holds exactly as an unquotable one always has. None when
+    no held leg has a fresh quote: the tick then fails as before, and the watchdog still sees it."""
+
+    def fresh(stamp) -> bool:
+        try:
+            at = datetime.fromisoformat(str(stamp))
+        except ValueError:
+            return False
+        return at.tzinfo is not None and (now - at).total_seconds() <= max_age
+
+    quotes = {
+        sym: {"bid": q["bid"], "ask": q["ask"], "mid": q["mid"]}
+        for sym, q in (rest.get("quotes") or {}).items()
+        if fresh(q.get("updated_at"))
+    }
+    if not quotes:
+        return None
+    under = rest.get("underlying") or {}
+    today = now.strftime("%Y-%m-%d")
+    return {
+        "symbol": symbol,
+        "date": today,
+        "now_et": now.strftime("%H:%M"),
+        "expiration": today,
+        "dte": 0,
+        "underlying_price": under.get("price") if fresh(under.get("updated_at")) else None,
+        "iv_rank": None,
+        "iv_pct": None,
+        "iv_rank_source": "native",
+        "vix": None,
+        "vix1d_ratio": None,
+        "atr_5day": None,
+        "intraday_range_pct": None,
+        "session_quality": _pl._session_quality(now),
+        "gex": {"ok": False},
+        "candidates": [],
+        "leg_quotes": quotes,
+        "data_fallback": "broker_rest",
+    }
+
+
+def _held_legs(db_path: str, symbol: str, day: str) -> list[str]:
+    """The streamer symbols of every leg of `symbol`'s ICs held today, in ledger order."""
+    legs: list[str] = []
+    for t in _ledger_rows(
+        db_path,
+        "trade_date = ? AND symbol = ? AND status IN ('open', 'partial', 'partial_entry')",
+        (day, symbol),
+    ):
+        for col in ("put_symbol", "long_put_symbol", "call_symbol", "long_call_symbol"):
+            if t.get(col) and t[col] not in legs:
+                legs.append(t[col])
+    return legs
+
+
+def _rest_fallback_snapshot(cfg: dict, symbol: str, db_path: str):
+    """`fallback_snapshot` over a live REST read, or None when nothing is held or the read failed."""
+    now = _pl._now_et()
+    try:
+        legs = _held_legs(db_path, symbol, now.strftime("%Y-%m-%d"))
+    except LedgerUnreadable:
+        return None
+    if not legs:
+        return None
+    cmd = _pl._TT + ["get_rest_quotes", "--underlying", symbol, "--options", *legs]
+    if paper._is_cash_settled(symbol, cfg):
+        cmd.append("--index")
+    rest = _pl._run_json(cmd, timeout=30)
+    if not rest.get("ok"):
+        _quiet(f"CRITICAL: no snapshot, and the REST quote fallback failed: {rest.get('error')}")
+        return None
+    return fallback_snapshot(symbol, now, rest)
+
+
 def expected_legs(cfg: dict, db_path: str, *, include_pending: bool = False) -> dict:
     """The contracts this LIVE ledger says the broker holds right now, for the orchestrator's
     positions-vs-ledger check (`cherrypick.core.livepositions`, 2026-10-08). Read-only.
@@ -1550,16 +1637,27 @@ def _tick(cfg: dict, designated: str | None, unmet: list[str], live: bool) -> in
     # dry-run tick that manages real positions needs them fresh exactly as much as a live one.
     _stream_request.register_live(cfg)
 
-    snapshot, err = _build_snapshot(cfg, symbol)
-    if snapshot is None:
-        print(json.dumps({"ok": False, "error": f"no snapshot: {err}"}))
-        return 1
-
     db_path = str(_paths.live_db_path())
+    snapshot, err = _build_snapshot(cfg, symbol)
+    fallback = None
+    if snapshot is None:
+        # A held IC is still managed off the broker's REST quotes (2026-11-02); nothing held, or no
+        # fresh quote for any held leg, fails the tick as before.
+        snapshot = _rest_fallback_snapshot(cfg, symbol, db_path)
+        if snapshot is None:
+            print(json.dumps({"ok": False, "error": f"no snapshot: {err}"}))
+            return 1
+        fallback = f"market_data_fallback ({err})"
+        _quiet(f"CRITICAL: no snapshot ({err}) -- held ICs managed off REST quotes, entries blocked")
+
     _ensure_live_schema(db_path)
     # The halt flag and the daily-loss breaker stop NEW ICs only; open ones are still managed.
     blockers = entry_blockers(cfg, db_path, snapshot["date"], halt_present=os.path.exists(halt_flag_path()))
+    if fallback:
+        blockers.append(fallback)
     summary = run_once(cfg, snapshot, db_path, make_broker(cfg, designated), live=live, entry_block=blockers)
+    if fallback:
+        summary["data_fallback"] = snapshot["data_fallback"]
     line = json.dumps(
         {"ok": True, "at": datetime.now().isoformat(timespec="seconds"), **summary}, default=str
     )

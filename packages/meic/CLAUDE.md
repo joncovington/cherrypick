@@ -186,6 +186,13 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 - `get_quote`, `get_option_chain` and `get_strategies` read the shared stream cache
   (`~/.cherrypick/data/marketdata/stream_cache.db`) first when data is < 10s old, before opening a
   DXLink connection; run the streamer during active trading.
+- **A held live IC is never left unmanaged because the stream is down (2026-11-02).** When a live
+  tick cannot build its snapshot (no price, no chain) and the ledger holds an IC today, it marks the
+  held legs off `tt get_rest_quotes` (tastytrade's REST `/market-data/by-type`, no DXLink) and runs
+  fills, stops and force-closes as usual, with new entries blocked (`market_data_fallback`) and
+  `data_fallback` on the tick line. A REST quote over two minutes old is dropped, and with no fresh
+  leg the tick still fails. The supervisor caps a live job's crash backoff at its tick interval.
+  On 2026-11-02 the stream was down 14:19-15:18 ET and no tick managed a held IC in that time.
 
 ## Market data
 
