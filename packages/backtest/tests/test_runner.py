@@ -438,6 +438,7 @@ def _rerun(s):
 @pytest.fixture()
 def clean_commit(monkeypatch):
     monkeypatch.setattr(runner, "_code_commit", lambda: "abc123")
+    monkeypatch.setattr(runner, "_code_pin", lambda module: "t1,t2,t3")
     monkeypatch.setattr(runner.looplock, "pid_alive", lambda pid: False)  # the interrupted owner is gone
 
 
@@ -470,13 +471,37 @@ def test_a_run_is_not_resumed_when_any_input_changed(world, clean_commit):
     assert "resumed" not in report and replayed == ["2026-10-14", "2026-10-15"]
 
 
+def test_a_merge_outside_the_replay_s_code_still_resumes_and_one_inside_does_not(
+    world, clean_commit, monkeypatch
+):
+    """Item 41's design run lost 147 sessions to a reboot after two merges that touched neither the
+    runner, core nor MEIC: the key pinned the repo's commit."""
+    s, _ = world
+    _interrupted_run(s, "2026-10-15")
+    monkeypatch.setattr(runner, "_code_commit", lambda: "def456")  # a console page merged meanwhile
+    report, replayed = _rerun(s)
+    assert report["resumed"] == {"sessions_reused": 1} and replayed == ["2026-10-15"]
+    assert report["code_commit"] == "def456", "the run still records the commit it finished on"
+    _interrupted_run(s, "2026-10-15")
+    monkeypatch.setattr(runner, "_code_pin", lambda module: "t1,t2,t9")  # the module's replay changed
+    report, replayed = _rerun(s)
+    assert "resumed" not in report and len(replayed) == 2
+
+
+def test_the_pin_is_the_runner_s_core_s_and_the_module_s_committed_trees():
+    pin = runner._code_pin("meic")
+    assert pin is not None and len(pin.split("+")[0].split(",")) == 3
+    assert runner._code_pin("flies").split(",")[:2] == pin.split(",")[:2], "the runner and core are shared"
+    assert runner._code_pin("no-such-module") is None, "a tree that cannot be read pins nothing"
+
+
 def test_a_dirty_checkout_or_a_live_owner_is_never_resumed(world, clean_commit, monkeypatch):
     s, _ = world
-    monkeypatch.setattr(runner, "_code_commit", lambda: "abc123+dirty")
+    monkeypatch.setattr(runner, "_code_pin", lambda module: "t1,t2,t3+dirty")
     _interrupted_run(s, "2026-10-15")
     report, replayed = _rerun(s)
     assert "resumed" not in report and len(replayed) == 2
-    monkeypatch.setattr(runner, "_code_commit", lambda: "abc123")
+    monkeypatch.setattr(runner, "_code_pin", lambda module: "t1,t2,t3")
     _interrupted_run(s, "2026-10-15")
     monkeypatch.setattr(runner.looplock, "pid_alive", lambda pid: True)  # its owner still runs
     report, replayed = _rerun(s)
