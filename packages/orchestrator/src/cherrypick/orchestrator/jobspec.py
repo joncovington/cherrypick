@@ -236,6 +236,28 @@ ADVISOR_LIGHT_SLOTS = ("open", "am1", "am2", "midday", "pm1", "pm2", "close")
 # (without stamping it fired) while it needs the network and DNS does not resolve, spaces fixed-time
 # starts apart, never runs two browser jobs at once, and lets a repeatable fetch retry.
 
+# Jobs of retired features, left out of the table while switched off (2026-11-02) rather than listed
+# off: flies (retired 2026-10-19) and the vendor-edition collector (its subscription ended 2026-10-24).
+# Every other switched-off job is still listed off, with its reason, so status can tell off-by-choice
+# from broken. Turning the feature back on derives them again; the supervisor prunes the rows of what it
+# no longer derives (`supervisor._prune_retired`).
+RETIRED_WHEN_OFF = frozenset(
+    {
+        "flies-intraday-agent",
+        "flies-intraday-agent-live",
+        "flies-payoff-post",
+        "flies-payoff-intraday",
+        "report-browser-check",
+        "report-charts",
+        "report-edition",
+        "report-edition-retry",
+        "report-screener-greeks",
+        "report-screener-greeks-late",
+        "report-session-alert",
+        "technicals-screeners",
+    }
+)
+
 # The browser-driven collectors: one browser session on this machine at a time.
 BROWSER_SCRIPTS = frozenset({"fetch_vendor_edition.py", "fetch_quikoptions.py"})
 
@@ -711,12 +733,14 @@ def derive_jobs(
     launcher: str,
     now: datetime,
     arm_records: dict[str, dict[str, Any]] | None = None,
+    include_retired: bool = False,
 ) -> tuple[list[JobSpec], dict[str, str]]:
     """Project config into the supervisor's job table. Returns (jobs, errors) where `errors` maps a
     job id to why its derivation failed (that job is omitted; everything else derives normally).
 
     Disabled-by-config jobs are INCLUDED with enabled=False + a reason, so status/doctor can keep
-    the off-by-choice-is-healthy distinction the schtasks registry had.
+    the off-by-choice-is-healthy distinction the schtasks registry had. The exception is a retired
+    feature's job while it is off (`RETIRED_WHEN_OFF`), left out unless `include_retired`.
     """
     jobs: list[JobSpec] = []
     errors: dict[str, str] = {}
@@ -2322,6 +2346,10 @@ def derive_jobs(
         ),
     )
 
+    # A retired feature's jobs are left out while they are off, so the registry shows what the
+    # supervisor drives rather than every switch ever thrown; the switch still brings them back.
+    if not include_retired:
+        jobs = [j for j in jobs if j.enabled or j.id not in RETIRED_WHEN_OFF]
     return jobs, errors
 
 

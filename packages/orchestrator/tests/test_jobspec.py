@@ -265,14 +265,32 @@ def suite_cfg(**overrides):
     return cfg
 
 
-def derive(cfg, now=None, arm_records=None):
+def derive(cfg, now=None, arm_records=None, include_retired=True):
+    """The full table by default, a retired feature's switched-off jobs included, so their specs stay
+    tested for the day the feature is switched back on."""
     return jobspec.derive_jobs(
         cfg,
         pythonw="pythonw",
         launcher="run.py",
         now=now or et(2026, 8, 10, 12, 0),
         arm_records=arm_records,
+        include_retired=include_retired,
     )
+
+
+def test_a_retired_feature_s_jobs_leave_the_table_while_off_and_come_back_with_their_switch():
+    cfg = suite_cfg()
+    cfg["modules"]["flies"]["enabled"] = False  # as it has been since 2026-10-19
+    full = {j.id for j in derive(cfg)[0]}
+    shown = {j.id for j in derive(cfg, include_retired=False)[0]}
+    assert jobspec.RETIRED_WHEN_OFF <= full, "every retired job still derives"
+    assert not shown & jobspec.RETIRED_WHEN_OFF, "and none is listed while off"
+    assert full - shown == jobspec.RETIRED_WHEN_OFF, "nothing else leaves the table"
+    off_by_choice = {j.id for j in derive(cfg, include_retired=False)[0] if not j.enabled}
+    assert "manage-eval" in off_by_choice, "an ordinary switched-off job is still listed, with its reason"
+    cfg["modules"]["flies"]["enabled"] = True
+    back = {j.id for j in derive(cfg, include_retired=False)[0]}
+    assert {"flies-intraday-agent", "flies-intraday-agent-live"} <= back
 
 
 def test_derive_full_suite_job_table():
