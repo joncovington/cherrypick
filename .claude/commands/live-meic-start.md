@@ -22,7 +22,8 @@ what is already open, it places one four-leg iron condor on `live.symbol` as a l
 width from the `live` block's `wing_widths_by_symbol`, else the arm's (or the top level's). `live.max_structures_per_day` caps new ICs a day (absent: 1; `null`:
 no count cap, sizing by buying power alone; a cancelled entry never counts). Exits depend on
 `per_side_stop_management` -- READ IT from `--status` and say it: when true each side is stopped
-at `stop_trigger_ratio` (re-priced every tick); when false every IC is held to settlement and the
+at `stop_trigger_ratio` (re-priced every tick), also read from `--status`, never from the config's
+top level, which `live.arm` overrides; when false every IC is held to settlement and the
 worst case per IC is its width less its credit. A cash-settled symbol (SPX, XSP) is never
 force-closed at 15:45 -- only on an FOMC day (from 13:30) or a triple-witching/quarterly expiry
 day (from 14:00) -- and a held side settles ONLY on the official closing print (tastytrade's
@@ -59,7 +60,7 @@ holds is refused.
      set it after a failed self-disarm, which is worth understanding before re-arming. Only a
      fresh YES may clear it (step 4).
    - **What live trades, said out loud**: `symbol`, `arm` (null = the top level), `entry_window`,
-     `max_open_bp_dollars`, `max_structures_per_day`, `per_side_stop_management`, the width from
+     `max_open_bp_dollars`, `max_structures_per_day`, `per_side_stop_management` and `stop_trigger_ratio`, the width from
      the `live` block's `wing_widths_by_symbol` (else the arm's or the top level's), and the `daily_loss_halt_dollars` breaker from the
      config's `live` block. If the breaker is unset, say so PROMINENTLY and offer to set it before
      the YES -- with stops off it is the only intraday brake besides the halt flag.
