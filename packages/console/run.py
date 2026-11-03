@@ -28,6 +28,38 @@ SERVER_ENTRY = HERE / "server" / "dist" / "index.js"
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
+def _never_throttle(handle: int) -> bool:
+    """Opt a process out of Windows power throttling (EcoQoS, Task Manager's "efficiency mode").
+
+    The supervisor runs as a service with nobody logged on, so the console is a windowless
+    background process, which is exactly what Windows throttles: on this machine's hybrid CPU the
+    same CPU-bound work ran 6.8x slower with EcoQoS on, and every synchronous read in the served
+    console ran 4-6x slower than the same code from a terminal (2026-11-02). Setting the control bit
+    with the state bit clear tells Windows never to throttle this process. Best effort: False off
+    Windows, or where the call is refused, and the console runs as before.
+    """
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    import ctypes.wintypes as wt
+
+    class _State(ctypes.Structure):
+        _fields_ = [("Version", wt.ULONG), ("ControlMask", wt.ULONG), ("StateMask", wt.ULONG)]
+
+    execution_speed = 0x1  # PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+    state = _State(1, execution_speed, 0)  # version 1; controlled, not throttled
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.SetProcessInformation.argtypes = [wt.HANDLE, ctypes.c_int, ctypes.c_void_p, wt.DWORD]
+    process_power_throttling = 4  # PROCESS_INFORMATION_CLASS.ProcessPowerThrottling
+    try:
+        ok = k32.SetProcessInformation(
+            handle, process_power_throttling, ctypes.byref(state), ctypes.sizeof(state)
+        )
+        return bool(ok)
+    except OSError:
+        return False
+
+
 def _child_env() -> dict[str, str]:
     """The environment node runs in, with THIS interpreter's directory first on PATH.
 
@@ -110,13 +142,19 @@ def main() -> int:
     # node no usable handles: the supervisor's logs/jobs/console.stderr.log received not one line of
     # node's output in 100+ starts, so every crash's stack trace was lost. None (a stream pythonw
     # could not open) falls back to the old implicit behaviour.
-    return subprocess.call(
+    with subprocess.Popen(
         [node, str(SERVER_ENTRY)],
         creationflags=CREATE_NO_WINDOW,
         env=_child_env(),
         stdout=sys.stdout,
         stderr=sys.stderr,
-    )
+    ) as server:
+        if sys.platform == "win32":
+            ok = _never_throttle(int(server._handle))  # type: ignore[attr-defined]
+            if sys.stderr is not None:  # None under pythonw when it could not open the stream
+                said = "off" if ok else "left to Windows"
+                print(f"console: power throttling {said}", file=sys.stderr, flush=True)
+        return server.wait()
 
 
 if __name__ == "__main__":
