@@ -1785,6 +1785,44 @@
       "retests": []
     },
     {
+      "id": 48,
+      "study": "item48",
+      "title": "The stop of MEIC's live rule: 1.8, 1.9, 2.0 and 2.2 times the credit, filled by the loop or resting at the broker",
+      "status": "declared",
+      "legacy": false,
+      "setup": "stop-mechanics",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "summed net per session in $ at one condor, per arm: live-1400 (item 23's pm-200 entering 14:00-14:30, its 2.0x per-side stop filled by the loop) and the same with the stop at 1.8, 1.9 or 2.2x by the loop (loop-*), resting at the broker filled at the tick's ask (rest-*) or at the trigger (restbest-*), and with the stop off (hold)",
+      "expected": "a positive paired difference per session against live-1400 for some ratio or for the resting stop",
+      "sample": "design 2022-05-16..2025-06-30 over the 60 s vendor store; pm-200-1400's holdout dates were seen on 2026-10-19, so a pass is read on sessions after 2026-10-12; provisional, MEIC history being unvalidated; < 100 sessions = no verdict",
+      "rule": "per arm: paired difference against live-1400 (a session with no entry at zero) with mean > 0 and one-sided t > 2, Holm across the twelve arms, positive in each time-half, own mean net > 0 and still positive at 1.5x fees; a restbest-* pass decides nothing alone, being the upper bound of its rest-* arm",
+      "mechanism": "none new: the ratio shapes the variance premium's payoff; the resting stop fills at its trigger instead of the next minute's quote, but triggers off the spread's ask, earlier than the loop's mid plus haircut",
+      "rivals": [
+        {
+          "explanation": "a fill model, not a stop",
+          "check": "the resting stop runs at both bounds, rest-* at the tick's ask and restbest-* at the trigger; only rest-* can pass"
+        },
+        {
+          "explanation": "fewer stops in a calm span",
+          "check": "paired difference positive in both time-halves; stopped sides per arm reported"
+        },
+        {
+          "explanation": "fees",
+          "check": "own net positive at 1.5x fees"
+        },
+        {
+          "explanation": "searching a grid",
+          "check": "Holm across the twelve arms; grid fixed before any look"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#48-the-stop-of-meics-live-rule-18-19-20-and-22-times-the-credit-filled-by-the-loop-or-resting-at-the-broker",
+      "results": null,
+      "retest": null,
+      "retests": []
+    },
+    {
       "id": 49,
       "study": "item49",
       "title": "The \"Crazy Ivan\" on TQQQ: a cash-secured 16-delta put sold by a resting order 20% over the ask",
