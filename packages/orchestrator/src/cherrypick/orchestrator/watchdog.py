@@ -1794,6 +1794,13 @@ def _scheduler_age_minutes(info: dict[str, Any], now_et: datetime) -> float | No
     return (now - ts).total_seconds() / 60
 
 
+def _held(status: dict | None) -> str:
+    """A sentence naming each held IC from the module's status (meic's `open_ics`, 2026-11-02), or
+    the empty string -- so an alert names what is unwatched, not just how many."""
+    ics = (status or {}).get("open_ics") or []
+    return (" Held: " + "; ".join(ics) + ".") if ics else ""
+
+
 def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: bool) -> list[Finding]:
     """Watchdog the module's LIVE loop — active only when the module config carries a `live`
     block with a `task_name`.
@@ -1996,7 +2003,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                             CRITICAL,
                             f"{label} LIVE loop silent",
                             f"supervisor registry reports {shown} while {watched} and the market "
-                            "is open — real working orders may be resting unwatched.",
+                            "is open — real working orders may be resting unwatched." + _held(status),
                         )
                     )
                 else:
@@ -2094,11 +2101,30 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                 f"{label} LIVE positions UNMANAGED",
                 f"{status.get('open_positions') or 0} open live position(s) and {pending} pending order(s), "
                 f"and the loop cannot act: unmet {unmet}. Stops resting at the broker are the only "
-                "protection -- restore the gate, or manage them in the broker UI.",
+                "protection -- restore the gate, or manage them in the broker UI." + _held(status),
             )
         )
     elif status and "unmet_gates" in status:
         findings.append(Finding(f"{name}.live_unmanaged", OK, f"{label} live positions", "managed or flat"))
+
+    # (c8) the loop's own CRITICAL lines today (2026-11-02): a module never talks to a notification
+    # channel, so these reached only its log until the watchdog pushed them. One incident per line,
+    # so each is announced once and the finding clears with the day.
+    criticals = (status or {}).get("criticals_today")
+    if criticals:
+        members = tuple(dict.fromkeys(f"{c.get('at')}|{c.get('message')}" for c in criticals))
+        findings.append(
+            Finding(
+                f"{name}.live_critical",
+                CRITICAL,
+                f"{label} LIVE loop reported CRITICAL",
+                "; ".join(f"{str(c.get('at'))[11:16]} {c.get('message')}" for c in criticals[-3:])
+                + _held(status),
+                members=members,
+            )
+        )
+    elif status and "criticals_today" in status:
+        findings.append(Finding(f"{name}.live_critical", OK, f"{label} live loop", "nothing critical today"))
 
     # (c3) a held submission: the broker seam refuses every live order until a submit of unknown
     # outcome is resolved, or an order found at the broker that nothing recorded is acknowledged.
@@ -2179,7 +2205,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                     WARN,
                     f"{label} LIVE settlement overdue",
                     f"{status.get('open_positions')} open live position(s) past the close still "
-                    "unsettled — run the provisional settle or --settle --price <official>.",
+                    "unsettled — run the provisional settle or --settle --price <official>." + _held(status),
                 )
             )
         else:

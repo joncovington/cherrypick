@@ -246,6 +246,31 @@ def test_holding_with_a_live_gate_unmet_is_critical(monkeypatch, tmp_path):
     assert "enable_live_trading is false" in unmanaged.message
 
 
+def test_an_alert_names_the_held_ic(monkeypatch, tmp_path):
+    """Shown to fail without `_held`: the alert said how many, never which or what was left."""
+    status = {**_HOLDING, "unmet_gates": ["x"], "open_ics": ["LIVE-SPX-14 SPX 7565p/7615c 10w, holds call"]}
+    _setup(monkeypatch, tmp_path, status_obj=status)
+    out = wd._check_live("meic", _mcfg(), _MIDDAY, False)
+    message = next(f for f in out if f.key == "meic.live_unmanaged").message
+    assert message.endswith("Held: LIVE-SPX-14 SPX 7565p/7615c 10w, holds call.")
+
+
+def test_the_loops_critical_lines_are_announced_one_incident_each(monkeypatch, tmp_path):
+    """Shown to fail without (c8): the loop's CRITICALs reached only its own log."""
+    criticals = [
+        {"at": "2026-07-30T14:22:05-04:00", "message": "CRITICAL: held legs unpriced"},
+        {"at": "2026-07-30T14:22:05-04:00", "message": "CRITICAL: held legs unpriced"},  # logged twice
+        {"at": "2026-07-30T14:23:05-04:00", "message": "CRITICAL: close order failed"},
+    ]
+    _setup(monkeypatch, tmp_path, status_obj={**_HOLDING, "criticals_today": criticals})
+    found = next(f for f in wd._check_live("meic", _mcfg(), _MIDDAY, False) if f.key == "meic.live_critical")
+    assert found.status == CRITICAL and len(found.members) == 2
+    assert "14:23 CRITICAL: close order failed" in found.message
+    _setup(monkeypatch, tmp_path, status_obj={**_HOLDING, "criticals_today": []})
+    found = next(f for f in wd._check_live("meic", _mcfg(), _MIDDAY, False) if f.key == "meic.live_critical")
+    assert found.status == OK
+
+
 def test_gates_met_or_a_flat_book_is_not_unmanaged(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path, status_obj=_HOLDING)
     out = wd._check_live("meic", _mcfg(), _MIDDAY, False)

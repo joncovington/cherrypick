@@ -96,7 +96,7 @@ def test_an_unarmed_tick_blocks_entries_but_not_management(monkeypatch):
     monkeypatch.setattr(live_loop._stream_request, "register_live", lambda cfg: None)
     seen = {}
 
-    def run_once(cfg, snapshot, db_path, broker, *, live, entry_block):
+    def run_once(cfg, snapshot, db_path, broker, *, live, entry_block, log=print):
         seen["block"] = entry_block
         return {"entries": 0}
 
