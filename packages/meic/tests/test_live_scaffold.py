@@ -961,7 +961,9 @@ def test_an_unrecorded_live_close_still_lets_an_open_ic_be_closed(tmp_path):
     assert _kill.latched("meic") is None
 
 
-def test_a_reduced_verdict_halves_the_order_and_a_hand_limit_trades_one(tmp_path):
+def test_a_reduced_verdict_halves_the_order_and_a_hand_limit_trades_one(tmp_path, monkeypatch):
+    # The sizing mechanics, for when live trades more than one contract (capped at one, 2026-11-02).
+    monkeypatch.setattr(live_loop, "MAX_LIVE_QUANTITY", 4)
     broker = FakeBroker()
     cfg = {**_config(kill={**KILL, "streak_reduce": 0}), "quantity": 4}
     live_loop.run_once(
@@ -976,10 +978,25 @@ def test_a_reduced_verdict_halves_the_order_and_a_hand_limit_trades_one(tmp_path
     assert [leg["quantity"] for leg in broker.placed[0]["spec"]["legs"]] == [1, 1, 1, 1]
 
 
-def test_a_live_entry_records_the_quantity_its_order_carried(tmp_path):
+def test_live_entries_are_one_contract_until_partial_fills_are_modelled(tmp_path):
+    """Shown to fail without the cap: a two-lot entry went out, and a close cancelled after a partial
+    fill would be re-sent at the full two and over-close."""
+    broker = FakeBroker()
+    cfg = {**_config(), "quantity": 2}
+    summary = live_loop.run_once(
+        cfg, _entry_snapshot(), _init_db(tmp_path), broker, live=True, log=lambda *_: None
+    )
+    assert broker.placed == [] and summary["entry"]["reason"] == "quantity_over_1"
+    verdict = live_loop.arm_verdict({"supervisor_fresh": True, "quantity": 2})
+    assert verdict["blockers"] == ["live quantity 2 is over 1: partial fills are not modelled"]
+    assert live_loop.arm_verdict({"supervisor_fresh": True, "quantity": 1})["ready"]
+
+
+def test_a_live_entry_records_the_quantity_its_order_carried(tmp_path, monkeypatch):
     """Shown to fail before 2026-10-12: the order went out at `quantity: 2` and the row said 1, so
     the ledger held half the position -- its capital, fees, slippage, P&L and the position export
     the account risk layer reads."""
+    monkeypatch.setattr(live_loop, "MAX_LIVE_QUANTITY", 2)  # recording, for past the one-contract cap
     db_path = _init_db(tmp_path)
     cfg = {**_config(), "quantity": 2}
     broker = FakeBroker()
