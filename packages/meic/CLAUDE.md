@@ -154,7 +154,12 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
   `core.settlement.official_index_close` (the posted close, else Yahoo/Barchart); until one is posted
   the IC stays open and the next tick asks again. A past session left open is settled at that day's
   close by `live_loop --settle-overdue` (the hourly `settle-overdue-live` job), or by hand with
-  `--settle --date --price`.
+  `--settle --date --price`. **Either asks the broker first (2026-11-02)** when the session has an
+  order in doubt (a pending entry or close, a resting stop last seen working): the tick's own
+  `_poll_resting_stops` and `_confirm_fills`, through `_SettleBroker`, which reads statuses and
+  refuses to place, replace or cancel. A fill is booked at the broker's legs and a dead order
+  cleared; anything unresolved, or no broker to ask, leaves the session open (`left`). Before, a
+  close that filled unseen was read as cancelled and its side settled at expiry.
 - **The orphan sweep is suite-wide.** flies, bwb and MEIC trade SPX in one account, so each loop
   publishes its ledger's order ids (`core.execution.publish_known_orders`) and counts the others' as
   known; an order none of them records blocks new entries, and a sweep that cannot look does too.
