@@ -52,16 +52,22 @@ def test_a_live_tick_without_an_arm_never_reaches_the_broker(monkeypatch, capsys
     assert "disarmed" in json.loads(capsys.readouterr().out)
 
 
-def _todays_open_ic():
-    """Today's live book holding one open IC, in the managed home's live ledger."""
-    from test_live_scaffold import _open_trade_row
-
+def _empty_live_ledger():
+    """The managed home's live ledger with its schema and nothing in it."""
     from cherrypick.meic import paths
 
     path = paths.live_db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     db_path = _init_db(path.parent, path.name)
     live_loop._ensure_live_schema(db_path)
+    return db_path
+
+
+def _todays_open_ic():
+    """Today's live book holding one open IC, in the managed home's live ledger."""
+    from test_live_scaffold import _open_trade_row
+
+    db_path = _empty_live_ledger()
     today = live_loop._pl._now_et().strftime("%Y-%m-%d")
     paper._save_trade({**_open_trade_row("XSP"), "trade_date": today}, db_path)
     return db_path
@@ -118,13 +124,17 @@ def test_an_unarmed_tick_with_a_live_gate_unmet_touches_nothing(monkeypatch, cap
 
 
 def test_arming_needs_a_supervisor_and_writes_todays_record(monkeypatch):
+    _empty_live_ledger()
     monkeypatch.setattr(live_loop, "_spawn_first_tick", lambda: None)
+    monkeypatch.setattr(live_loop, "readiness", lambda *a, **k: [])
+    monkeypatch.setattr(live_loop, "kill_verdict", lambda *a, **k: {"state": "normal", "reasons": []})
     monkeypatch.setattr(_live, "supervisor_heartbeat_fresh", lambda *a, **k: False)
-    assert live_loop.install_task()["ok"] is False
+    out = live_loop.install_task(_config())
+    assert out["ok"] is False and out["blockers"] == ["the supervisor is not running: nothing would tick"]
     assert live_loop.arm_stamp_date() is None
 
     monkeypatch.setattr(_live, "supervisor_heartbeat_fresh", lambda *a, **k: True)
-    out = live_loop.install_task()
+    out = live_loop.install_task(_config())
     assert out["ok"] is True
     today = live_loop._pl._now_et().strftime("%Y-%m-%d")
     assert live_loop.arm_stamp_date() == today
@@ -132,6 +142,88 @@ def test_arming_needs_a_supervisor_and_writes_todays_record(monkeypatch):
     assert record["armed_by"] == "live-meic-start"
     assert live_loop.uninstall_task()["arm_record_removed"] is True
     assert live_loop.arm_stamp_date() is None
+
+
+# --------------------------------------------------------------------------- the arming verdict
+_CLEAR = {
+    "unmet_gates": [],
+    "ledger_unreadable": None,
+    "orphaned_orders": [],
+    "broker_held": {},
+    "overdue_settlement": [],
+    "supervisor_fresh": True,
+    "kill": {"state": "normal", "reasons": []},
+    "halt_flag": False,
+    "breaker_tripped": False,
+    "daily_loss_halt_dollars": 500,
+    "open_positions": 0,
+    "pending_orders": [],
+}
+
+
+def test_a_clear_status_is_ready_to_arm():
+    assert live_loop.arm_verdict(_CLEAR) == {"ready": True, "blockers": [], "warnings": []}
+
+
+@pytest.mark.parametrize(
+    "change, says",
+    [
+        ({"unmet_gates": ["enable_live_trading is false"]}, "live gate unmet: enable_live_trading is false"),
+        ({"ledger_unreadable": "locked"}, "live ledger unreadable: locked"),
+        ({"orphaned_orders": ["X1"]}, "orphaned orders"),
+        ({"broker_held": {"unresolved": ["cp-1"]}}, "a submission is held"),
+        ({"overdue_settlement": [{"session": "2026-11-02"}]}, "past session 2026-11-02 still open"),
+        ({"supervisor_fresh": False}, "the supervisor is not running"),
+        ({"kill": {"state": "blocked", "reasons": ["drawdown"]}}, "kill criteria blocked: drawdown"),
+    ],
+)
+def test_each_stop_here_state_blocks_arming(change, says):
+    """Each state `/live-meic-start` stops on, as a blocker. Shown to fail by dropping its check."""
+    verdict = live_loop.arm_verdict({**_CLEAR, **change})
+    assert not verdict["ready"] and len(verdict["blockers"]) == 1 and says in verdict["blockers"][0]
+
+
+def test_what_a_yes_may_pass_is_a_warning_not_a_blocker():
+    verdict = live_loop.arm_verdict(
+        {
+            **_CLEAR,
+            "halt_flag": True,
+            "breaker_tripped": True,
+            "daily_loss_halt_dollars": None,
+            "open_positions": 1,
+        }
+    )
+    assert verdict["ready"] and len(verdict["warnings"]) == 4
+    assert verdict["warnings"][0] == "halt flag set: arming with a YES clears it"
+
+
+def test_arming_is_refused_while_a_blocker_stands(monkeypatch):
+    """Shown to fail without the check in install_task: an orphaned order no ledger knows did not
+    stop the arm record being written; only the instructions said to stop."""
+    _empty_live_ledger()
+    monkeypatch.setattr(live_loop, "_spawn_first_tick", lambda: None)
+    monkeypatch.setattr(live_loop, "readiness", lambda *a, **k: [])
+    monkeypatch.setattr(_live, "supervisor_heartbeat_fresh", lambda *a, **k: True)
+    monkeypatch.setattr(live_loop, "read_orphans", lambda: ["ORPHAN1"])
+    out = live_loop.install_task(_config())
+    assert out["ok"] is False and out["error"] == "not ready to arm"
+    assert "orphaned orders at the broker" in out["blockers"][0]
+    assert live_loop.arm_stamp_date() is None
+
+
+def test_the_status_readout_never_latches_the_kill_criteria(monkeypatch):
+    """A readout reports what the next entry would meet and changes nothing: `peek`, never `gate`."""
+    from cherrypick.core import killcriteria as _kill
+
+    _pin_config(monkeypatch)
+    _todays_open_ic()
+    monkeypatch.setattr(_kill, "latch", lambda *a, **k: (_ for _ in ()).throw(AssertionError("latched")))
+    monkeypatch.setattr(
+        _kill, "evaluate", lambda nets, criteria: {"state": _kill.BLOCKED, "reasons": ["drawdown"]}
+    )
+    status = live_loop.run_status(_config(), designated="1234")
+    assert status["kill"]["state"] == _kill.BLOCKED
+    assert "kill criteria blocked: drawdown" in status["arm_ready"]["blockers"]
 
 
 # --------------------------------------------------------------------------- entries per day

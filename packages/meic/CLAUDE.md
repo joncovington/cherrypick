@@ -127,7 +127,12 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
   with a live gate unmet (the master switch off), the tick touches nothing and says `unmanaged`;
   the watchdog's `live_unmanaged` is the CRITICAL. Before this, disarming left an open IC
   unmanaged until the next day's catch-up settle. `--status` is the arming
-  command's and the watchdog's read (no broker). `live.max_structures_per_day` (default 1) caps new
+  command's and the watchdog's read (no broker). Its `arm_ready` (`arm_verdict`, 2026-11-02) is the
+  one answer to "may live arm": `blockers` are the arming command's stop-here states (an unmet
+  gate, orphans, a held submission, an overdue session, an unreadable ledger, no supervisor, kill
+  criteria blocked, read with `killcriteria.peek` so a readout never latches) and `warnings` what
+  a YES may pass (the halt flag, a tripped or unset breaker, positions held). `--install-task`
+  refuses while a blocker stands. `live.max_structures_per_day` (default 1) caps new
   ICs a session (`null` lifts the count cap, so buying power alone sizes); a one-tick lock keeps a
   slow tick from overlapping the next. `live.daily_loss_halt_dollars` and the halt flag block NEW ICs
   only: fills are still confirmed and open ICs still stopped and force-closed. The breaker sums

@@ -156,9 +156,10 @@ def daily_loss_tripped(db_path: str, day: str, limit_dollars: float | None) -> b
     return float(row[0] or 0.0) <= -abs(limit_dollars)
 
 
-def kill_verdict(config: dict, db_path: str) -> dict:
-    """`core.killcriteria.gate` over the live ledger's closed ICs. An unreadable ledger fails CLOSED,
-    as the daily-loss breaker does: it cannot show the arm is inside its criteria.
+def kill_verdict(config: dict, db_path: str, *, latch: bool = True) -> dict:
+    """`core.killcriteria.gate` over the live ledger's closed ICs (`peek` with `latch=False`, for a
+    read surface). An unreadable ledger fails CLOSED, as the daily-loss breaker does: it cannot show
+    the arm is inside its criteria.
 
     A closed live IC since the criteria were written with no net (`pnl` or `fees` NULL -- the
     2026-06-29 stop was recorded that way) also blocks, from 2026-10-25: the verdict skips a row with
@@ -177,7 +178,7 @@ def kill_verdict(config: dict, db_path: str) -> dict:
     except sqlite3.Error as exc:
         return {"state": _kill.BLOCKED, "reasons": [f"live ledger unreadable: {exc}"]}
     criteria = _live_cfg(config).get("kill")
-    verdict = _kill.gate("meic", EXECUTION_MODE, records, criteria)
+    verdict = (_kill.gate if latch else _kill.peek)("meic", EXECUTION_MODE, records, criteria)
     if verdict["state"] == _kill.BLOCKED:
         return verdict
     blind = _kill.unrecorded(records, EXECUTION_MODE, criteria)
@@ -297,11 +298,51 @@ def alert_daemon_companion(config: dict | None) -> dict | None:
     }
 
 
+def arm_verdict(status: dict) -> dict:
+    """Is live ready to arm? A pure reading of `run_status` (2026-11-02): `blockers` are the states
+    `/live-meic-start` stops on, each a reason no new IC should open until a person resolves it;
+    `warnings` are what the arming readout must say out loud but a YES may proceed past. `ready`
+    is no blockers. Computed every `--status`, so the console and the arming command read one answer."""
+    blockers, warnings = [], []
+    for gate in status.get("unmet_gates") or []:
+        blockers.append(f"live gate unmet: {gate}")
+    if status.get("ledger_unreadable"):
+        blockers.append(f"live ledger unreadable: {status['ledger_unreadable']}")
+    if status.get("orphaned_orders"):
+        blockers.append(f"orphaned orders at the broker: {status['orphaned_orders']}")
+    held = status.get("broker_held") or {}
+    if held.get("unresolved") or held.get("unrecorded"):
+        blockers.append(f"a submission is held: {held}")
+    for o in status.get("overdue_settlement") or []:
+        blockers.append(f"past session {o.get('session')} still open in the live ledger")
+    if not status.get("supervisor_fresh"):
+        blockers.append("the supervisor is not running: nothing would tick")
+    kill = status.get("kill") or {}
+    if kill.get("state") == _kill.BLOCKED:
+        blockers.append(f"kill criteria blocked: {'; '.join(kill.get('reasons') or [])}")
+    if status.get("halt_flag"):
+        warnings.append("halt flag set: arming with a YES clears it")
+    if status.get("breaker_tripped"):
+        warnings.append("today's daily-loss breaker has tripped: no new IC today")
+    if status.get("daily_loss_halt_dollars") is None:
+        warnings.append("no daily-loss breaker set (live.daily_loss_halt_dollars)")
+    held_n = (status.get("open_positions") or 0) + len(status.get("pending_orders") or [])
+    if held_n:
+        warnings.append(f"{held_n} live position(s) or order(s) already held")
+    return {"ready": not blockers, "blockers": blockers, "warnings": warnings}
+
+
 def install_task(config: dict | None = None) -> dict:
     """Arm for TODAY: the arm record, under a live supervisor, and nothing else. With the alert daemon
-    on, the record names it as a companion and the supervisor keeps it up too."""
+    on, the record names it as a companion and the supervisor keeps it up too. Refused while
+    `arm_verdict` has a blocker (2026-11-02): the arming command's "stop here" states, enforced
+    rather than only instructed."""
+    config = config if config is not None else paper.load_base_config()
+    verdict = arm_verdict(run_status(config, designated=_designated_account()))
+    if verdict["blockers"]:
+        return {"ok": False, "error": "not ready to arm", "blockers": verdict["blockers"]}
     now = _pl._now_et()
-    companion = alert_daemon_companion(config if config is not None else paper.load_base_config())
+    companion = alert_daemon_companion(config)
     return _live.arm(
         "meic",
         date=now.strftime("%Y-%m-%d"),
@@ -521,7 +562,8 @@ def settle_overdue(config: dict, db_path: str, today: str, *, close_fn=None, log
 def run_status(config: dict, *, designated: str | None) -> dict:
     """One JSON object for the arming command and the watchdog -- files and the ledger only, never
     the broker. Keys the watchdog reads: armed_for, orphaned_orders, broker_held, broker_health,
-    overdue_settlement, session_settled, open_positions."""
+    overdue_settlement, session_settled, open_positions, unmet_gates. `arm_ready` is `arm_verdict`
+    over the rest, the one answer the arming command and the console read."""
     now = _pl._now_et()
     today = now.strftime("%Y-%m-%d")
     db_path = str(_paths.live_db_path())
@@ -539,7 +581,10 @@ def run_status(config: dict, *, designated: str | None) -> dict:
         # Never a clean day: the watchdog reads `ledger_unreadable` as CRITICAL, and `session_settled`
         # stays False so nothing downstream reads the book as flat.
         unreadable, open_rows, pending, overdue = str(exc), [], [], []
-    return {
+    # The kill criteria as the next entry would meet them, never latched from a readout. No ledger yet
+    # holds no closed IC: nothing for the criteria to read.
+    kill = kill_verdict(config, db_path, latch=False) if os.path.exists(db_path) else {"state": None}
+    status = {
         "ok": True,
         "date": today,
         "armed_for": arm_stamp_date(),
@@ -569,8 +614,12 @@ def run_status(config: dict, *, designated: str | None) -> dict:
         "broker_health": _execution.read_broker_health(os.path.join(_data_dir(), _execution.HEALTH_FILENAME)),
         "overdue_settlement": overdue,
         "supervisor_fresh": _live.supervisor_heartbeat_fresh(),
+        "daily_loss_halt_dollars": live.get("daily_loss_halt_dollars"),
+        "kill": {"state": kill.get("state"), "reasons": kill.get("reasons") or []},
         "live_db": db_path,
     }
+    status["arm_ready"] = arm_verdict(status)
+    return status
 
 
 _extract_order_id = _execution.order_id_of  # one reading of a placement result, suite-wide

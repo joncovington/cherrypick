@@ -239,6 +239,15 @@ def gate(module: str, arm: str, records: list[dict], criteria) -> dict:
     return verdict
 
 
+def peek(module: str, arm: str, records: list[dict], criteria) -> dict:
+    """`gate`'s verdict without latching: for a read surface (a status readout, an arming check) that
+    must report what the next entry would meet and change nothing."""
+    held = latched(module)
+    if held is not None:
+        return {"state": BLOCKED, "reasons": [LATCHED, *held.get("reasons", [])], "latched": held}
+    return evaluate(live_nets(records, arm, criteria), criteria)
+
+
 def history_path() -> Path:
     return _home.state_dir() / "kill" / "history.jsonl"
 
