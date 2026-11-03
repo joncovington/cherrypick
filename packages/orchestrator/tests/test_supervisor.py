@@ -197,6 +197,35 @@ def test_finished_child_respawns_when_due(spawned):
     assert st["last_exit_code"] == 0 and st["consecutive_failures"] == 0
 
 
+def test_a_run_request_runs_an_idle_job_early_and_never_stops_a_running_one(spawned):
+    """2026-11-02: what live-fill-alerts asks when a live loop's order fills. Shown to fail without
+    `_apply_run_request`: the idle job waited for its next interval."""
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=MONDAY_NOON)
+    proc = next(p for p in spawned if "watchdog" in p.argv)
+    # Running: the request is spent and nothing is stopped or started beside it.
+    supervisor.request_run("watchdog", by="test")
+    res = sup.pass_once(now=MONDAY_NOON)
+    assert "watchdog" not in res["started"] and proc.poll() is None
+    assert not supervisor.run_request_path("watchdog").exists()
+    # Idle and not yet due: the request runs it now.
+    proc.exit(0)
+    assert "watchdog" not in sup.pass_once(now=MONDAY_NOON)["started"]
+    supervisor.request_run("watchdog", by="test")
+    assert "watchdog" in sup.pass_once(now=MONDAY_NOON)["started"]
+
+
+def test_a_stale_run_request_is_dropped(spawned):
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=MONDAY_NOON)
+    next(p for p in spawned if "watchdog" in p.argv).exit(0)
+    sup.pass_once(now=MONDAY_NOON)
+    supervisor.atomic_write_json(
+        supervisor.run_request_path("watchdog"), {"requested_at": time.time() - 3600, "by": "test"}
+    )
+    assert "watchdog" not in sup.pass_once(now=MONDAY_NOON)["started"]
+
+
 def test_nonzero_exit_backs_off_exponentially(spawned):
     sup = supervisor.Supervisor(base_cfg())
     sup.pass_once(now=MONDAY_NOON)

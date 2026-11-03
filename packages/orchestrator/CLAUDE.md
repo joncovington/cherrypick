@@ -90,6 +90,11 @@ lines through `core.redact` and puts them in `supervisor.log` and the registry a
   exit is logged as requested: no failure, no backoff, no churn count, and `last_exit_requested` rides
   `supersnap.job_run_info` so the live-loop check does not read its code as a failed tick. A request
   older than 10 minutes is ignored, so it cannot excuse a later crash.
+- **An early run is a different request and never stops anything** (`request_run`,
+  `state/run-requested.<job>.json`, 2026-11-02): an idle, enabled interval job runs at the next pass;
+  a running one is left alone and the request spent. `live-fill-alerts` asks it for the owning
+  `<module>-live` when a known order fills or ends, so the loop confirms in seconds. Older than two
+  minutes, it is dropped.
 - **A `*-live` job never climbs the crash ladder** (2026-11-02): its backoff cap is its own tick
   interval, so a failing live tick comes back every tick. The ladder's 10-minute cap held a stopped
   MEIC put side unmanaged for 20 minutes after quotes returned.
