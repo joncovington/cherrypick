@@ -63,12 +63,14 @@ import argparse
 import json
 import os
 import sys
+import uuid
 from datetime import datetime
 from pathlib import Path
 
 from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import execution as _execution  # noqa: E402
 from cherrypick.core import home as _home  # noqa: E402
+from cherrypick.core import jsonio as _jsonio  # noqa: E402
 from cherrypick.core import killcriteria as _kill  # noqa: E402
 from cherrypick.core import ledgers as _ledgers  # noqa: E402
 from cherrypick.core import live as _live  # noqa: E402
@@ -315,6 +317,8 @@ def arm_verdict(status: dict) -> dict:
         blockers.append(f"a submission is held: {held}")
     for o in status.get("overdue_settlement") or []:
         blockers.append(f"past session {o.get('session')} still open in the live ledger")
+    if status.get("entry_intents"):
+        blockers.append(f"an entry sent but not yet reconciled: {status['entry_intents']}")
     if not status.get("supervisor_fresh"):
         blockers.append("the supervisor is not running: nothing would tick")
     kill = status.get("kill") or {}
@@ -588,6 +592,10 @@ def run_status(config: dict, *, designated: str | None) -> dict:
     # The kill criteria as the next entry would meet them, never latched from a readout. No ledger yet
     # holds no closed IC: nothing for the criteria to read.
     kill = kill_verdict(config, db_path, latch=False) if os.path.exists(db_path) else {"state": None}
+    try:
+        intents = sorted(_read_intents(db_path))
+    except IntentsUnreadable as exc:
+        intents = [f"unreadable: {exc}"]
     status = {
         "ok": True,
         "date": today,
@@ -617,6 +625,7 @@ def run_status(config: dict, *, designated: str | None) -> dict:
         "broker_held": _execution.read_hold(_hold_path()),
         "broker_health": _execution.read_broker_health(os.path.join(_data_dir(), _execution.HEALTH_FILENAME)),
         "overdue_settlement": overdue,
+        "entry_intents": intents,
         "supervisor_fresh": _live.supervisor_heartbeat_fresh(),
         "daily_loss_halt_dollars": live.get("daily_loss_halt_dollars"),
         "kill": {"state": kill.get("state"), "reasons": kill.get("reasons") or []},
@@ -1119,24 +1128,10 @@ def _manage_entry(
             "_chosen": chosen,
         }
 
-    result = broker.place(spec, live=live)
-    log(f"entry order ({'LIVE' if live else 'dry-run'}): {json.dumps(result, default=str)[:300]}")
-    if not result.get("ok"):
-        return {"entry": "skipped", "reason": f"broker_rejected: {result.get('error')}", "_chosen": chosen}
-
-    if not live:
-        # A dry-run preflight opened nothing -- the live ledger must stay untouched.
-        return {"entry": "dry_run", "net_credit": spec["price"]}
-
-    order_id = _extract_order_id(result)
     # The row holds what the ORDER holds (2026-10-12): it was always written at quantity 1.
     row = paper.synthetic_entry_fill(
         snapshot, EXECUTION_MODE, chosen, params, EXECUTION_MODE, quantity=quantity
     )
-    if order_id is None:
-        log(f"WARNING: live placement had no extractable order id for {symbol}; keeping synthetic id")
-    else:
-        row["ic_order_id"] = f"LIVE-{symbol}-{order_id}"
     # The price asked for, until the broker says what filled (`_confirm_fills`). The row is
     # PENDING, not open: it holds a slot (a working order is a position at risk) and nothing else.
     row["net_credit"] = spec["price"]
@@ -1147,9 +1142,39 @@ def _manage_entry(
     )
     row["status"] = "pending"
     row["fill_confirmed_at"] = None
-    row["put_spread_entry_order_id"] = order_id
-    row["call_spread_entry_order_id"] = order_id
+
+    # Write-ahead (2026-11-02): the row this entry will need, under the identifier the order is sent
+    # with, BEFORE the order goes out. A process that dies between the submit and the save leaves
+    # the intent, and the next tick finds the order by its identifier and records it
+    # (`_resolve_entry_intents`). An intent that cannot be written sends no order.
+    ext = f"meic-{uuid.uuid4().hex}"
+    spec = {**spec, "external_identifier": ext}
+    if live and not _remember_intent(
+        db_path, ext, {"symbol": symbol, "day": str(snapshot["date"]), "row": row}
+    ):
+        log(f"CRITICAL: entry intent could not be written for {symbol} -- no order sent")
+        return {"entry": "skipped", "reason": "entry_intent_unwritten", "_chosen": chosen}
+
+    result = broker.place(spec, live=live)
+    log(f"entry order ({'LIVE' if live else 'dry-run'}): {json.dumps(result, default=str)[:300]}")
+    if not result.get("ok"):
+        # Definitely not placed: the intent goes. An uncertain outcome keeps it -- the next tick asks
+        # the broker by identifier, as the seam's own hold does.
+        if live and not result.get("uncertain"):
+            _forget_intent(db_path, ext)
+        return {"entry": "skipped", "reason": f"broker_rejected: {result.get('error')}", "_chosen": chosen}
+
+    if not live:
+        # A dry-run preflight opened nothing -- the live ledger must stay untouched.
+        return {"entry": "dry_run", "net_credit": spec["price"]}
+
+    order_id = _extract_order_id(result)
+    if order_id is None:
+        log(f"WARNING: live placement had no extractable order id for {symbol}; keeping synthetic id")
+    row = _placed_row(row, symbol, order_id)
     save_result = _save_placed_entry(row, db_path, log)
+    if save_result.get("ok", True) is not False:
+        _forget_intent(db_path, ext)
     return {
         "entry": "placed",
         "ic_order_id": row["ic_order_id"],
@@ -1158,6 +1183,106 @@ def _manage_entry(
         "save_result": save_result,
         "_chosen": chosen,
     }
+
+
+def _placed_row(row: dict, symbol: str, order_id) -> dict:
+    """A drafted entry row under its broker order id: the ledger key and both sides' entry ids."""
+    row = dict(row)
+    if order_id is not None:
+        row["ic_order_id"] = f"LIVE-{symbol}-{order_id}"
+    row["put_spread_entry_order_id"] = order_id
+    row["call_spread_entry_order_id"] = order_id
+    return row
+
+
+# --------------------------------------------------------------------------- write-ahead entry intents
+class IntentsUnreadable(RuntimeError):
+    """The intents file exists and cannot be read: what was submitted is unknown."""
+
+
+def _intents_path(db_path: str) -> str:
+    return os.path.join(os.path.dirname(db_path) or ".", "entry_intents.json")
+
+
+def _read_intents(db_path: str) -> dict:
+    path = _intents_path(db_path)
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as exc:
+        raise IntentsUnreadable(f"{path}: {type(exc).__name__}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise IntentsUnreadable(f"{path}: not a JSON object")
+    return data
+
+
+def _remember_intent(db_path: str, ext: str, intent: dict) -> bool:
+    """Add one intent; False when it could not be written (or the file could not be read)."""
+    try:
+        intents = _read_intents(db_path)
+        intents[ext] = {**intent, "at": _pl._now_et().isoformat(timespec="seconds")}
+        _jsonio.write_json_atomic(_intents_path(db_path), intents, indent=2, default=str)
+        return True
+    except (IntentsUnreadable, OSError, TypeError, ValueError):
+        return False
+
+
+def _forget_intent(db_path: str, ext: str) -> None:
+    try:
+        intents = _read_intents(db_path)
+        if intents.pop(ext, None) is not None:
+            _jsonio.write_json_atomic(_intents_path(db_path), intents, indent=2, default=str)
+    except (IntentsUnreadable, OSError) as exc:
+        _quiet(f"entry intent {ext} could not be removed ({exc}); the next tick resolves it")
+
+
+def _resolve_entry_intents(db_path: str, broker, today: str, log) -> dict:
+    """Settle every intent a previous tick left: an entry order sent whose row may never have been
+    saved (2026-11-02). One read of today's orders, matched by identifier:
+
+    - found: the order reached the broker. Its row is saved, pending, so `_confirm_fills` books the
+      fill or the death as for any entry; a row already there just clears the intent.
+    - absent from a read that succeeded: the order never arrived; the intent goes.
+    - the read failed, or the intents cannot be read, or an intent is from a past session (today's
+      orders cannot show it): `block` names why, and no new IC opens until it is resolved.
+    """
+    try:
+        intents = _read_intents(db_path)
+    except IntentsUnreadable as exc:
+        return {"intents_block": f"entry intents unreadable: {exc}"}
+    if not intents:
+        return {}
+    out = {"intents_recovered": 0, "intents_dropped": 0}
+    past = sorted(ext for ext, i in intents.items() if i.get("day") != today)
+    todays = sorted(ext for ext in intents if ext not in past)
+    if todays:
+        try:
+            orders = broker.orders_today()
+        except Exception as exc:  # noqa: BLE001 -- unknown is not absent: block, ask next tick
+            return {**out, "intents_block": f"entry intents unresolved, today's orders unreadable ({exc})"}
+        by_ext = {o.get("external_identifier"): o for o in orders if o.get("order_id") is not None}
+        for ext in todays:
+            intent, found = intents[ext], by_ext.get(ext)
+            if found is None:
+                log(f"entry intent {ext}: no such order at the broker -- it was never placed")
+                _forget_intent(db_path, ext)
+                out["intents_dropped"] += 1
+                continue
+            row = _placed_row(intent["row"], intent["symbol"], str(found["order_id"]))
+            if _trade_row(row["ic_order_id"], db_path) is None:
+                if _save_placed_entry(row, db_path, log).get("ok", True) is False:
+                    continue  # halted by the save's own failure path; the intent stays
+                log(
+                    f"CRITICAL: entry order {found['order_id']} ({ext}) reached the broker but was never "
+                    f"recorded -- recorded now as {row['ic_order_id']}, pending its fill confirmation"
+                )
+            _forget_intent(db_path, ext)
+            out["intents_recovered"] += 1
+    if past:
+        out["intents_block"] = f"entry intents from a past session need a person: {past}"
+    return out
 
 
 def _save_placed_entry(row: dict, db_path: str, log) -> dict:
@@ -1488,6 +1613,9 @@ def run_once(
                 type(exc).__name__,
                 exc,
             )
+    # An entry a previous tick sent and may never have recorded (write-ahead, 2026-11-02): recorded
+    # first, so the orphan sweep below knows its order and the confirmation books its fill.
+    intents = _resolve_entry_intents(db_path, broker, str(snapshot["date"]), log) if live else {}
     # Broker truth against ledger belief, before anything else (2026-10-14, the flies/bwb sweep):
     # a working order this ledger never recorded is the one crash window nothing else covers.
     # Unknown (None) blocks entries exactly as a found orphan does; neither touches a close.
@@ -1511,6 +1639,8 @@ def run_once(
         _place_resting_stops(config, symbol, snapshot, params, db_path, broker, live=live, log=log)
     )
     block = list(entry_block or [])
+    if intents.get("intents_block"):
+        block.append(intents["intents_block"])
     if orphans is None:
         block.append("orphan_sweep_failed")
     elif orphans:
@@ -1546,7 +1676,16 @@ def run_once(
     chosen = entry.pop("_chosen", None)
     if live:
         _record_attempt(config, snapshot, db_path, symbol, entry, chosen)
-    return {"symbol": symbol, "live": live, "orphans": orphans, **fills, **manage, **resting, "entry": entry}
+    return {
+        "symbol": symbol,
+        "live": live,
+        "orphans": orphans,
+        **intents,
+        **fills,
+        **manage,
+        **resting,
+        "entry": entry,
+    }
 
 
 def _record_attempt(config: dict, snapshot: dict, db_path: str, symbol: str, entry: dict, chosen) -> None:
@@ -1844,8 +1983,14 @@ def main(argv=None) -> int:
 
 
 def holds_today(db_path: str, today: str) -> bool:
-    """Does today's live book hold anything a tick must manage: an entry still pending, or an IC
-    open or partly closed. Raises `LedgerUnreadable`; a past session is `settle-overdue`'s."""
+    """Does today's live book hold anything a tick must manage: an entry still pending, an IC open or
+    partly closed, or an entry intent not yet reconciled (an order sent whose row may be missing).
+    Raises `LedgerUnreadable`; a past session is `settle-overdue`'s."""
+    try:
+        if _read_intents(db_path):
+            return True
+    except IntentsUnreadable:
+        return True  # cannot show nothing was sent
     return bool(
         _ledger_rows(
             db_path, "trade_date = ? AND status IN ('pending', 'open', 'partial', 'partial_entry')", (today,)

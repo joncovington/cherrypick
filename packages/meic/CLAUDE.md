@@ -167,6 +167,13 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
   included), `adjust_order` and `close_position` resolve through `_trading_account`: no designation
   (unset or unreadable) is `AccountNotDesignated`, never the login's first account, and an explicit
   `--account_number` must be the designated one. Read-only commands keep `resolve_account`'s fallback.
+- **An entry is written ahead of its order (2026-11-02).** The row it will need goes into
+  `entry_intents.json` beside the live ledger under a minted `meic-<uuid>`, sent as the order's
+  `external_identifier`; an intent that cannot be written sends no order. The saved row clears it.
+  A leftover intent (the process died between submit and save, or the submit was uncertain) is
+  resolved first thing in the next live tick against one read of today's orders: found, its row
+  is saved pending; absent, it is dropped; unreadable, or from a past session, it blocks entries.
+  It also keeps an unarmed tick running (`holds_today`) and blocks arming (`entry_intents`).
 - **The live loop records fills only on broker confirmation.** An entry is saved `status='pending'`;
   `_confirm_fills` at the top of each tick flips it to `open` at the ACTUAL net credit
   (`fill_confirmed_at`), or to `cancelled` with zero P&L if it dies unfilled (freeing its slot).
