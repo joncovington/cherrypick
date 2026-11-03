@@ -51,9 +51,17 @@ export interface SignedFlow {
   excluded: { not_traded: number; invalid: number; extended_hours: number; spread_leg: number };
 }
 
+/**
+ * One session's prints of one expiration. `+trade_date` keeps the planner off `idx_gpr_sym_date`:
+ * through it, each of a session's ~1.5M prints cost a seek into the WITHOUT ROWID table (~3 s a
+ * query on 2026-11-02). The table's own key leads with (symbol, expiration), so it reads in place
+ * and filters the date inline (~0.4 s).
+ */
+export const PRINTS_WHERE = "symbol = ? AND expiration = ? AND +trade_date = ?";
+
 /** `signed_flow` over one session's prints of one expiration, summed in SQL. */
 export function readSignedFlow(db: Database.Database, symbol: string, expiration: string, tradeDate: string): SignedFlow {
-  const where = "symbol = ? AND expiration = ? AND trade_date = ?";
+  const where = PRINTS_WHERE;
   const args = [symbol, expiration, tradeDate];
   const rows = db
     .prepare<string[], { side: number; strike: number; bought: number; sold: number; unclassified: number }>(
