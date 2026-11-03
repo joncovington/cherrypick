@@ -5,7 +5,7 @@ import path from "node:path";
 import type { LiveTodayLoop, MeicDivergence, MeicPayload, MeicTradeRow, MeicTradeTotals, MeicSummaryRow, MeicSummarySlice, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
-import { memoReadOnlyDb, readJson, readOnlyDb, withReadOnlyDb, withReadSnapshot, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
+import { memoReadOnlyDb, readJson, readOnlyDb, withReadOnlyDb, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest, type SortAccessors } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
@@ -185,6 +185,21 @@ function latestMeicSessionIn(db: DatabaseHandle, era: string | null = null): str
 
 function meicDbPath(config: ConsoleConfig, mode: TradingMode): string {
   return path.join(config.paths.meicDir, mode === "live" ? "meic_trades.db" : "paper_trades.db");
+}
+
+/**
+ * The ET date, for the memo keys of the page-wide reads below. Those reads depend only on the ledger
+ * and their arguments, so they are memoised on the ledger's stamp (`memoReadOnlyDb`): each took 0.8-5 s
+ * of the event loop on every poll in the served console (2026-11-02), all of them on an unchanged
+ * ledger. The date is in the key as well, so nothing anchored to "today" can outlive its day.
+ */
+function etToday(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+}
+
+/** The page-wide reads' scope, as one key fragment. */
+function scopeKey(scope: MeicScopeFilter): string {
+  return `${scope.symbol ?? ""}|${scope.profile ?? ""}|${scope.era ?? ""}`;
 }
 
 /**
@@ -568,7 +583,7 @@ export function readMeicScope(
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
   const empty: MeicScope = { symbols: [], arms: [], eras: [], currentEra: CURRENT_ERA };
-  return withReadOnlyDb<MeicScope>(dbPath, empty, (db) => {
+  return memoReadOnlyDb<MeicScope>(dbPath, `meic-scope:${dbPath}:${etToday()}:${era ?? ""}`, empty, (db) => {
     const scoped = era !== "ALL" && hasColumn(db, "ic_trades", "era");
     const and = scoped ? " AND era = ?" : "";
     const params: string[] = scoped ? [era ?? CURRENT_ERA] : [];
@@ -783,7 +798,8 @@ export function readMeicPerformance(
     byIvRank: [],
     regimeCoverage: [],
   };
-  return withReadOnlyDb<MeicPerformance>(dbPath, empty, (db) => {
+  const key = `meic-performance:${dbPath}:${etToday()}:${granularity}:${scopeKey({ symbol, profile, era })}`;
+  return memoReadOnlyDb<MeicPerformance>(dbPath, key, empty, (db) => {
     // `risk_profile` until meic's column moves; an old live ledger has neither, and reads untagged.
     const armColumn = findArmColumn(db, "ic_trades");
     const hasProfile = armColumn !== null;
@@ -1087,7 +1103,8 @@ export function readMeicDeepAnalytics(
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
   const empty: MeicDeepAnalytics = { mode, calendar: [], nlv: [], byDelta: [], byWing: [], bySymbol: [], byWeekday: [], byHour: [] };
-  return withReadOnlyDb<MeicDeepAnalytics>(dbPath, empty, (db) => {
+  const key = `meic-deep:${dbPath}:${etToday()}:${scopeKey(scope)}`;
+  return memoReadOnlyDb<MeicDeepAnalytics>(dbPath, key, empty, (db) => {
     const sc = scopeSql(db, scope);
     const calendar = db
       .prepare<string[], Record<string, unknown>>(
@@ -1951,8 +1968,10 @@ export function readMeicSummary(
   // session). The window bounds are computed from the RESOLVED day, so "day" means the session
   // the rest of the page names.
   const resolvedDay = day ?? resolveMeicSession(config, mode, scope.era);
-  // One snapshot: the hero and the arm rows are separate queries, and must sum over the same ledger.
-  return withReadSnapshot<MeicSummarySlice>(dbPath, empty, (db) => {
+  // One snapshot (`withReadSnapshot`'s transaction, inside the memo): the hero and the arm rows are
+  // separate queries, and must sum over the same ledger.
+  const key = `meic-summary:${dbPath}:${etToday()}:${scopeKey(scope)}:${range ?? ""}:${resolvedDay ?? ""}:${entryPage ?? ""}`;
+  return memoReadOnlyDb<MeicSummarySlice>(dbPath, key, empty, (db) => db.transaction(() => {
     const win = summaryWindow(range, resolvedDay);
     const era = scope.era ?? CURRENT_ERA;
     const eraBound = era !== "ALL";
@@ -2511,5 +2530,5 @@ export function readMeicSummary(
       weekday,
       entries,
     };
-  });
+  })());
 }
