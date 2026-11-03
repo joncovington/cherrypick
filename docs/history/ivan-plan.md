@@ -6,8 +6,14 @@ own. The micro contracts can't run the strategy (no roll target past ~8 weeks), 
 overnight session. The research, the example and the streaming design below stand as written; the
 broker's chain endpoints are recorded by `scripts/probe_futures_option_chain.py`.*
 
+***Updated 2026-11-02.** Maria Helmick's own published entry rules are now carried ("Maria's
+written rules"), and the Phase 2 arm follows them. A TQQQ version is proposed in "The TQQQ
+version": one contract is about $5k of notional, and the overnight move reaches a resting order as
+the opening gap. The /NQ design stays shelved.*
+
 *Drafted 2026-09-30. Nothing here is built. **Scope: E-mini Nasdaq-100 (/NQ) futures options only.**
-QQQ, TQQQ and the micro (/MNQ) options were considered and left out (see "Why /NQ"). The module name
+QQQ, TQQQ and the micro (/MNQ) options were considered and left out (see "Why /NQ"); TQQQ was
+reopened on 2026-11-02. The module name
 `ivan` is a working title; the suite names modules after the structure (flies, calendars, curve), and
 `dipput` would follow that.*
 
@@ -40,10 +46,34 @@ Theta Profits' *My Trade* segment recorded 2026-09-14. This is their market and 
 The thresholds are carried as **percentages**. A point threshold loosens as the index rises: 300
 points is about 1% at today's ~30,000, but it was about 1.5% when NQ was near 20,000.
 
-Their "Crazy Ivan" proper is the entry tactic. Before bed they leave a ladder of resting sell orders
-priced well above the current mid. A fill at 03:39 means the market has just dived, so the order
-doubles as the alarm. NQ options trade nearly 23 hours a day, so the ladder can be modelled here
-(Phase 2).
+Their "Crazy Ivan" proper is the entry tactic. Before bed they leave resting sell orders priced well
+above the market. A fill at 03:39 means the market has just dived, so the order doubles as the
+alarm. NQ options trade nearly 23 hours a day, so it can be modelled here (Phase 2).
+
+### Maria's written rules
+
+Maria set the trade out herself in the Math Makes Money newsletter, Issue 32, "Maria's Favorite
+Trade — Crazy Ivans on /NQ" (2026-07-07). Where it differs from the interview, the written version
+wins:
+
+| | Maria, written (2026-07-07) | The interview's `near18` |
+|---|---|---|
+| Expiry | about 24–44 DTE | 21–45 DTE |
+| Strike | 14–18 delta; her example is a 16-delta 27,300 put with NQ near 29,420 | ~18 delta |
+| Entry | **one** resting sell limit "roughly 40 to 50 above the ask" (her example: 255.00) | a −1.7% trigger |
+| Trigger | none; the order fills only on "a sharp drop and volatility expansion" | −1.7% vs prior settlement |
+| Resting | can work overnight; never left over a weekend | — |
+| Take profit | at least 50%; her average close is ~75%, usually within ~14 days | ~50% |
+| Defence | manage within ~500 pts of the strike; roll down and out, "always … for a credit", never a debit | within 250 pts |
+| Sizing | ≤25% of buying power while positions are open, 30% at most | ≤20–25% |
+
+- **The cushion is in index points.** Her "40 to 50" sits on a ~205-point ask, so it is about 20–25%
+  of the premium. The plan carries it as a share of the ask (`cushion`), for the same reason the
+  triggers are percentages.
+- **A real fill** (Issue 33, 2026-07-08): the /NQ Jul 31 27,000 put, sold for 250.00, bought back
+  at 175.00, "$1,500 profit per contract in 8 hours 44 minutes" (75 points × $20).
+- **One order, not a ladder.** The interview's description sounded like several orders. The
+  written rule is a single order, and the Phase 2 arm follows it.
 
 Their record (self-reported): $500k to ~$1.1M in 11 months, 320 trades, about four losses, all
 during a strong Nasdaq run. Whether a rolled trade counts as a loss is not stated, and that is the
@@ -165,7 +195,7 @@ The terminal rule is **ours, not the source's**. Their answer is "keep rolling",
 needs an end. Its frequency is reported, so if it never fires it costs nothing.
 
 `control` and `nodip` share one entry expiry; `near18` needs a second. Both are cheap here (below).
-A `ladder` arm is Phase 2.
+A `maria` arm, her resting order, is Phase 2.
 
 ## Why /NQ
 
@@ -179,7 +209,9 @@ A `ladder` arm is Phase 2.
   series are being delisted, the last quarterly on 2026-12-18.
 - **QQQ and TQQQ are out of scope.** QQQ options trade only in regular hours, so the ladder and the
   overnight triggers don't exist there. TQQQ's −3% days are QQQ's −1% days (1,105 of ~1,120 since
-  2011), with three times the volatility and leveraged decay on top.
+  2011), with three times the volatility and leveraged decay on top. *(2026-11-02: reopened for
+  TQQQ. Maria's resting order needs no overnight session, because the night's move reaches it as
+  the opening gap. See "The TQQQ version".)*
 
 `ivan` and pmcc are both long Nasdaq delta and short volatility. Their drawdowns will arrive on the
 same days, and the review should read them together.
@@ -417,12 +449,161 @@ Dev-install and ci-local discover the package on their own.
    6. **The correlation lint** learns futures legs.
 1. **The NQ paper module** with `control`, `nodip` and `near18`, running the CME session, with the
    daily record, the ledger including delivered futures, and the registrations above.
-2. **The `ladder` arm** — the "Crazy Ivan" proper. At 16:00 ET it rests paper offers at +10/20/30%
-   over the 12-delta mid on that named contract, filled when the bid reaches them at any tick
-   through the night. This is the source's 03:39 fill, measured.
+2. **The `maria` arm** — the "Crazy Ivan" proper, on her written rules. At 16:00 ET it rests one
+   paper offer on the 16-delta put of the 24–44 DTE expiry, priced at its ask × 1.20 (`cushion`,
+   her 40–50 points), and cancels it before the weekend. It fills when the bid reaches it at any
+   tick through the night, at that bid. Take profit at 50%, defence within 1.7% of the strike (her
+   500 points). This is the source's 03:39 fill, measured.
+
+## The TQQQ version (proposed 2026-11-02)
+
+Maria's resting order, moved to TQQQ. Not built, and paper only like the rest of this plan.
+
+### Why it works on TQQQ when the /NQ design was shelved
+
+- **Size.** One contract on a 51 strike is $5,100 of notional, about a hundredth of an NQ contract.
+  Size is what shelved the plan.
+- **The overnight move still arrives.** TQQQ options trade in regular hours only, but a resting
+  order outlives the night. A Nasdaq slide at 03:39 shows up as TQQQ's opening gap, and the order
+  fills at 09:30 rather than 03:39. A gap usually fills it **through** its limit.
+- **Nothing new to build underneath.** TQQQ is an equity option chain the producer already serves
+  (pmcc streams TQQQ). It uses the NYSE calendar and the existing job windows, the equity fee
+  schedule in `cherrypick.core.fees`, and plain cash collateral. None of Phase 0's futures work is needed:
+  no futures chain path, no overnight supervision, no CME calendar, no futures fees.
+- **It can be backtested first.** The backtest store already holds TQQQ's end-of-day chains from
+  2016, fetched for item 29. /NQ has no option history at all.
+
+### The trade
+
+| | Maria on /NQ | On TQQQ |
+|---|---|---|
+| Expiry | 24–44 DTE | 24–44 DTE, the listed expiry nearest 31 |
+| Strike | 14–18 delta | the listed put nearest 16 delta (Black-Scholes, r = q = 0, from the leg's mid) |
+| Order | one sell limit ~40–50 pts above the ask | one sell limit at the ask × 1.20, to the tick (`cushion: 0.20`) |
+| Placed | before bed, works overnight | 15:55 ET, good till cancelled; it can fill only from the next 09:30 |
+| Weekend | never left over a weekend | cancelled at Friday's 15:55; nothing rests over a weekend (`weekend: false`) |
+| Fill | at the limit, during the slide | the first tick from 09:30 where the bid reaches the limit, **at that bid** |
+| Take profit | ≥ 50% | a resting buy at 50% of the fill credit, to the tick |
+| Defence | within ~500 pts (~1.7%) of the strike | TQQQ within 5% of the strike (`roll_within: 0.05`), three times 1.7% |
+| Roll | down and out, always for a credit | buy back, and sell the next monthly at least four weeks further out, at the lowest listed strike whose mid pays the buy-back; never a debit |
+| Terminal | keep rolling | `max_rolls: 3`, `max_roll_dte: 180`, as the /NQ arms |
+| Sizing | ≤ 25% of buying power, 30% at most | **cash secured**: each put holds strike × 100 in cash. At most `max_bp_fraction: 0.25` of `paper_capital` is held as collateral; one contract per fill; one resting order per arm |
+
+- **Why the fill is at the bid.** An order that rests through a gap meets an opening market far
+  above it, and fills there, not at its limit. Slippage is the mid less the fill, in its own column.
+- **How big a drop fills it.** On the worked example's put, a 20% cushion fills on a TQQQ fall of
+  about 2.2% at unchanged IV, or about 1.4% with IV three points higher. That is roughly 0.5–0.7%
+  on QQQ. The cushion is therefore an arm parameter, not a constant.
+
+### Arms
+
+Declared as item 49 of [`docs/edge-hypotheses-plan.md`](../edge-hypotheses-plan.md); the
+declaration is the authority. Each arm changes one thing from `maria`:
+
+| Arm | Change | The question |
+|---|---|---|
+| `maria` | — (rest at ask × 1.20, 50%, roll within 5%) | the source's rule |
+| `deep` | cushion 1.40 | do rarer, larger fills earn more? |
+| `atclose` | sell at the close's mid on any session with room | does waiting for the fill earn anything (`nodip`'s part)? |
+| `overnight` | only an opening fill counts | is it the gap? |
+| `noroll` | buy back at the defence line and stop | does the roll only defer the loss? |
+| `trend` | rest only above the 200-session average | does it need an up-market? |
+| `qqq` | the same rules on QQQ, defence at 1.7% | does the 3× fund add anything? |
+
+Those seven are judged, Holm across them. Reported only: `cushion10`, `tp21`, `tp75`, `hold`,
+`spread`, `dist15` (strike 15% below spot) and `single` (one open chain at a time). Every chain is
+scored whole, as on /NQ.
+
+### A worked example (fictitious)
+
+One contract (100 shares), Black-Scholes at plausible IVs, r = q = 0; prices are not quotes. Fees
+are the suite's schedule: $1.00 commission to open, $0.10 clearing and $0.02 ORF a contract, and
+FINRA TAF on sales; nothing to close but clearing and ORF. Money follows the suite layout.
+
+**Day 0, Tuesday 15:55 ET.** TQQQ 60.00, IV 60%. The expiry nearest 31 DTE is chosen. The 51 put is
+the 16-delta put (delta −0.155), bid 0.90 / ask 0.94.
+
+- Rest: sell 1 TQQQ 51P, limit **1.13** (0.94 × 1.20), good till cancelled.
+
+**Day 1, Wednesday 09:30.** Nasdaq futures fell 1.6% overnight. TQQQ opens at 57.12 (−4.8%), IV 72%. The 51P
+opens 2.00 / 2.08.
+
+- The order fills at the opening bid, **2.00 cr** → **+$200.00**. Mid 2.04, so slippage is $4.00.
+  Fees $1.12.
+- Take-profit order: buy back at ≤ 1.00.
+- Collateral: **$5,100** in cash (strike × 100). Net of the credit, $4,900 is at risk.
+
+**Path A — the usual ending.** Day 3, TQQQ back at 60.20 and IV 60%: the put trades through 1.00.
+Buy to close at 1.00 db → −$100.00. At mid, gross is **+$104.00**; slippage $4.00, fees $1.24, net
+**+$98.76** in two days.
+
+**Path B — the roll.**
+
+| Day | TQQQ | Event | Cash flow |
+|---|---|---|---|
+| 1, 09:30 | 57.12 | Sell 51P at 2.00 (mid 2.04) | +$200.00 |
+| 7 | 53.40 | Within 5% of 51 (≤ 53.55), IV 82%: **roll.** Buy 51P at 3.27 db | −$327.00 |
+| 7 | 53.40 | …and sell the 46P in the monthly 59 days out, at 3.31 cr. It is the lowest strike that still pays the buy-back; the 45P pays 2.95, a debit. Net roll 0.04 cr | +$331.00 |
+
+Leg 1 closes `rolled` with a gross of −$123.00 at mid. The chain is now short a 27-delta put
+instead of a 16-delta one, and is scored when that leg closes. Collateral falls to $4,600 with the
+lower strike. Each fill carries its own fees and
+slippage.
+
+### What TQQQ changes
+
+- **Leverage decay.** In a choppy fall TQQQ loses more than three times QQQ's move, so the defence
+  reads TQQQ's own price, never a translation of QQQ's.
+- **Gaps hit the defence too.** A 5% QQQ gap is about −15% on TQQQ. The roll then happens at the
+  open, past the defence line, with nothing in between.
+- **Assignment is shares.** TQQQ options are American and physically settled. A put left in the
+  money becomes 100 shares at the strike, marked and disposed of at the next session's open (pmcc's
+  `pmcc_assignments` pattern). Early exercise is measured, not modelled.
+- **Splits.** TQQQ split five times since 2016. The backtest ends a trade at the session before a
+  split, as item 29 does. Paper follows the adjusted contract.
+- **Correlation.** pmcc already holds TQQQ. Both are long Nasdaq delta and short volatility, so the
+  review reads them together.
+- **Cash secured, not margined** (decided 2026-11-02). The /NQ plan's margin proxy and expansion
+  ratio don't apply, and neither does a broker's leveraged-fund margin rule. Collateral is known
+  exactly, and it never grows on a roll down. Assignment turns the cash into 100 shares.
+
+### How often the order would fill
+
+There's no option history in the bars, so this counts the underlying moves that fill it. TQQQ's
+daily bars from the technicals store, 2011-01-04 to 2026-10-30, with eight split-like days left
+out:
+
+| TQQQ vs the prior close | Opening gap, per year | Session low, per year | Last 5 years (gap / low) |
+|---|---|---|---|
+| −2% | 30 | 101 | — |
+| −3% | 16 | 72 | 22 / 90 |
+| −5% | 5.5 | 35 | 7.6 / 48 |
+
+A 20% cushion fills somewhere near the −2% row: on about two sessions in five, most of them
+intraday rather than at the gap. That is close to the /NQ `control` trigger's 28%. The `deep` arm
+is the rarer, gap-driven fill. Clustered selloffs fill again each session until the collateral cap
+stops them.
+
+### Test before paper
+
+Backtest first: **item 49**, declared 2026-11-02 on the store's TQQQ end-of-day chains. The
+declaration covers:
+
+- the fill model from end-of-day data, at the open or the low, with IV held flat and declared;
+- the windows (design 2016-05 to 2024, holdout 2025 to 2026-10-28);
+- the pass rule.
+
+The resting arms must also beat both `atclose` and `noroll` before anything here is built. The
+figures stay under `~/.cherrypick`, and this plan will record the verdict only.
+
+The module itself only follows a pass. Its shape would be the /NQ one without the futures
+pieces: TQQQ in `symbols` with a put window over 24–44 DTE. That window costs one producer restart
+at registration, and `budget_status` should be run before it does.
 
 ## Open questions
 
+- **TQQQ, decided 2026-11-02:** the cushion is ask × 1.20. The backtest comes before any paper
+  module. Every put is cash secured.
 - The name: `ivan`, or `dipput` to match the suite's convention?
 - Is the margin proxy good enough, or should the expansion figures wait for a way to read the
   broker's own number? That would need an account-scoped call, which this credential-free module
