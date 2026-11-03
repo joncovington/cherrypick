@@ -30,6 +30,7 @@ import { registerWsHub } from "./ws/hub.js";
 import { registerSecurity } from "./security.js";
 import { registerConfigRoutes } from "./routes/configOps.js";
 import { startHeartbeat } from "./services/heartbeat.js";
+import { startPrewarm } from "./services/prewarm.js";
 import { createLogStream, installFatalHandlers } from "./logging.js";
 
 const config = loadConfig();
@@ -119,6 +120,9 @@ try {
 // Liveness for the supervisor, started only once we are actually listening — a heartbeat written
 // before a failed bind would report a console that never came up.
 startHeartbeat(config.paths.cherrypick, config.port, (msg) => app.log.warn(msg));
+
+// The module-CLI pages' default reads, kept warm so no visit waits on a cold python read.
+startPrewarm(app, (msg) => app.log.warn(msg));
 
 // Scope detection at boot: the suite credential is probed once per process
 // (never persisted, so a rotated refresh token can't carry a stale scope).

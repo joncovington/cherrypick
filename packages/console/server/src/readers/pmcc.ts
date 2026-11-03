@@ -16,7 +16,7 @@ import type {
   PmccShortLeg,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { hasColumn, memoOnStore, num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
+import { hasColumn, num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
 import { unrealisedByPosition, NO_UNREALISED } from "./unrealised.js";
 import { armMoney, entryOutcomes } from "./armCosts.js";
 import type { ArmCostsPayload } from "@console/shared";
@@ -236,30 +236,68 @@ function latestSession(db: DatabaseHandle): string | null {
  * Mirrors `analytics.exposure()`: exposed and marked tick counts per position.
  *
  * Whole-ledger on purpose -- the integrity card totals it over every position, closed ones
- * included, so it cannot be narrowed to the open book. It is a scan of every mark (~80-400 ms on
- * 124k rows) that readPmcc asked for twice a call, and its answer moves only when pmcc writes, so it
- * is memoised on the store's stamp.
+ * included, so it cannot be narrowed to the open book. A scan of every mark was ~0.7 s on 384k rows
+ * (~4.8 s inside the served console, 2026-11-02), and in session pmcc writes a mark every tick, so a
+ * memo on the store's stamp missed on nearly every poll.
+ *
+ * So it is kept as a running count. pmcc only ever appends a mark (`db.py`: an AUTOINCREMENT id, and
+ * no UPDATE or DELETE of `pmcc_marks` anywhere in the module), so the counts move only by the rows
+ * past the highest id already counted. The count is held per FILE (path, inode, creation time), so
+ * a restored or rebuilt ledger at the same path starts again from nothing, as does a table whose
+ * highest id went backwards.
  */
-function exposureByPosition(db: DatabaseHandle): Map<string, { exposed: number; marked: number }> {
-  return memoOnStore(db.name, `pmcc-exposure:${db.name}`, () => scanExposure(db));
+const exposureCounts = new Map<string, { file: string; maxId: number; counts: Map<string, { exposed: number; marked: number }> }>();
+
+function fileIdentity(p: string): string {
+  try {
+    const st = fs.statSync(p);
+    return `${String(st.ino)}:${String(st.birthtimeMs)}`;
+  } catch {
+    return "";
+  }
 }
 
-function scanExposure(db: DatabaseHandle): Map<string, { exposed: number; marked: number }> {
-  const out = new Map<string, { exposed: number; marked: number }>();
+function exposureByPosition(db: DatabaseHandle): Map<string, { exposed: number; marked: number }> {
+  const maxId = db.prepare<[], { m: number | null }>("SELECT MAX(id) AS m FROM pmcc_marks").get()?.m ?? 0;
+  const file = fileIdentity(db.name);
+  let held = exposureCounts.get(db.name);
+  if (held === undefined || held.file !== file || maxId < held.maxId) {
+    held = { file, maxId: 0, counts: new Map() };
+    exposureCounts.set(db.name, held);
+  }
+  if (maxId > held.maxId) {
+    addExposure(db, held.counts, held.maxId, maxId);
+    held.maxId = maxId;
+  }
+  return held.counts;
+}
+
+function addExposure(
+  db: DatabaseHandle,
+  counts: Map<string, { exposed: number; marked: number }>,
+  afterId: number,
+  throughId: number,
+): void {
   const rows = db
-    .prepare<[], Record<string, unknown>>(
+    .prepare<[number, number], Record<string, unknown>>(
       `SELECT position_id,
               SUM(CASE WHEN assignment_exposed = 1 THEN 1 ELSE 0 END) AS exposed,
               COUNT(*) AS marked
          FROM pmcc_marks
-        WHERE short_tv IS NOT NULL AND usable = 1
+        WHERE id > ? AND id <= ? AND short_tv IS NOT NULL AND usable = 1
         GROUP BY position_id`,
     )
-    .all();
+    .all(afterId, throughId);
   for (const r of rows) {
-    out.set(str(r["position_id"]) ?? "", { exposed: Number(r["exposed"] ?? 0), marked: Number(r["marked"] ?? 0) });
+    const id = str(r["position_id"]) ?? "";
+    const prev = counts.get(id) ?? { exposed: 0, marked: 0 };
+    counts.set(id, { exposed: prev.exposed + Number(r["exposed"] ?? 0), marked: prev.marked + Number(r["marked"] ?? 0) });
   }
-  return out;
+}
+
+/** Drop the running exposure counts. Tests only: a fixture rewritten in place keeps its ids. */
+export function resetPmccExposure(): void {
+  exposureCounts.clear();
 }
 
 /**
