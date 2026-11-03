@@ -302,6 +302,10 @@ RETRY_ON_FAILURE = {
     "futures-contracts": 2,
     "report-screener-greeks": 1,
     "backtest-fetch": 1,
+    # A page that timed out is not a refusal: a 403/429 starts the script's own 24-hour cooldown,
+    # and a run inside it exits 0 having requested nothing. On 2026-11-02 one ERR_TIMED_OUT at
+    # 16:45 ET cost the day's capture and post.
+    "quikoptions-capture": 2,
 }
 
 

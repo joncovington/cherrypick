@@ -1499,6 +1499,14 @@ def _qo(**block):
     return {j.id: j for j in jobs}
 
 
+def test_the_quikoptions_capture_retries_and_its_posts_do_not():
+    # The capture is safe to repeat (its cooldown guards the site); a post that failed partway may
+    # already have pushed, so it never runs twice.
+    assert jobspec.RETRY_ON_FAILURE.get("quikoptions-capture", 0) >= 1
+    for job_id in ("quikoptions-post", "quikoptions-morning", "quikoptions-weekly"):
+        assert job_id not in jobspec.RETRY_ON_FAILURE
+
+
 def test_quikoptions_jobs_are_off_until_the_capture_is_switched_on():
     by_id = _qo()
     for job_id in QUIKOPTIONS_JOBS:
