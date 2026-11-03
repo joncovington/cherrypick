@@ -225,7 +225,11 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
   `adjust_order` run every leg through the same function before anything reaches the broker
   (`reason: leg_symbol_not_orderable` on a refusal). A live row records the quantity its order carried
   (`synthetic_entry_fill(quantity=)`), and the exit accounting scales P&L, close fees and slippage
-  by the row's quantity -- a no-op on paper, where every row is quantity 1.
+  by the row's quantity -- a no-op on paper, where every row is quantity 1. **Live entries are one
+  contract (`MAX_LIVE_QUANTITY`, 2026-11-02)** until partial fills are modelled: no order path reads
+  a filled quantity, so a close cancelled after a partial fill would be re-sent at full size. A
+  larger configured quantity refuses entries (`quantity_over_1`) and blocks arming; what is held
+  is still managed.
 - **Each loop declares its own open legs to the streamer.** `stream_request.py` writes `meic.json` from
   the paper loop and `meic-live.json` from the live loop's preamble (`register_live`, best-effort,
   dry-run included), each with the open-IC leg query against that loop's OWN ledger. Leg columns hold

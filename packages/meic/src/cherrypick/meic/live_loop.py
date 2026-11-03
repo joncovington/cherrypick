@@ -222,6 +222,8 @@ EXECUTION_MODE = "live"
 ARMED_BY = "live-meic-start"
 DEFAULT_DISARM = "17:00"
 DEFAULT_MAX_STRUCTURES = 1
+# Contracts per live order, at most (2026-11-02): partial fills are not modelled (`_manage_entry`).
+MAX_LIVE_QUANTITY = 1
 
 
 def _live_cfg(config: dict) -> dict:
@@ -324,6 +326,10 @@ def arm_verdict(status: dict) -> dict:
     kill = status.get("kill") or {}
     if kill.get("state") == _kill.BLOCKED:
         blockers.append(f"kill criteria blocked: {'; '.join(kill.get('reasons') or [])}")
+    if (status.get("quantity") or 1) > MAX_LIVE_QUANTITY:
+        blockers.append(
+            f"live quantity {status['quantity']} is over {MAX_LIVE_QUANTITY}: partial fills are not modelled"
+        )
     if status.get("halt_flag"):
         warnings.append("halt flag set: arming with a YES clears it")
     if status.get("breaker_tripped"):
@@ -680,6 +686,7 @@ def run_status(config: dict, *, designated: str | None) -> dict:
             params.get("entry_window_end"),
         ],
         "max_open_bp_dollars": params.get("max_open_bp_dollars"),
+        "quantity": int(params.get("quantity", 1)),
         "max_structures_per_day": max_structures_per_day(config),
         "entries_today": entries_today(db_path, symbol, today) if symbol else 0,
         "per_side_stop_management": params.get("per_side_stop_management"),
@@ -1180,6 +1187,13 @@ def _manage_entry(
         return {"entry": "skipped", "reason": reason, "_chosen": chosen}
 
     quantity = int(params.get("quantity", 1))
+    # One contract until partial fills are modelled (2026-11-02). No order path reads a filled
+    # quantity: a close cancelled after a partial fill is re-sent at the full size and can over-close,
+    # and a `Partially Removed` entry reads as unfilled while legs are held. Entries only -- what is
+    # already held is still managed.
+    if quantity > MAX_LIVE_QUANTITY:
+        log(f"entry refused: quantity {quantity} is over {MAX_LIVE_QUANTITY}; partial fills are not modelled")
+        return {"entry": "skipped", "reason": f"quantity_over_{MAX_LIVE_QUANTITY}", "_chosen": chosen}
     try:
         spec = live_orders.entry_spec(chosen, quantity)
     except ValueError as exc:
