@@ -684,6 +684,45 @@ def _disarm_cutoff(live_cfg: dict[str, Any]) -> str:
     return f"{min(total, 23 * 60 + 59) // 60:02d}:{min(total, 23 * 60 + 59) % 60:02d}"
 
 
+def account_alerts_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """The `account_alerts` block resolved: which keyring service designates the account (the named
+    `module`'s, else the first enabled module with a live loop and a keyring service; flies, bwb and
+    meic trade one account), the session window, and whether it runs. Off with no such module: there
+    is no live account to watch."""
+    block = cfg.get("account_alerts") or {}
+    modules = cfgmod.enabled_modules(cfg)
+    named = block.get("module")
+    candidates = [named] if named else sorted(modules)
+    module = next(
+        (
+            m
+            for m in candidates
+            if (modules.get(m) or {}).get("keyring_service")
+            and ((modules.get(m) or {}).get("live") or {}).get("task_name")
+        ),
+        None,
+    )
+    if not block.get("enabled", True):
+        reason = "disabled in config (account_alerts.enabled)"
+    elif module is None:
+        reason = (
+            f"no enabled module {named!r} with a live loop and a keyring service"
+            if named
+            else "no live module"
+        )
+    else:
+        reason = ""
+    return {
+        "enabled": not reason,
+        "reason": reason,
+        "module": module,
+        "keyring_service": (modules.get(module) or {}).get("keyring_service") if module else None,
+        "start": str(block.get("start", "09:00")),
+        "end": str(block.get("end", "18:00")),
+        "silence_seconds": int(block.get("silence_seconds", 180)),
+    }
+
+
 def arm_record_valid(arm: dict[str, Any] | None, live_cfg: dict[str, Any], now: datetime) -> tuple[bool, str]:
     """Is the flies live arm record live RIGHT NOW? Valid = dated today (ET) and before
     disarm_time + grace. The supervisor only ever READS the record — arming authority stays with
@@ -1930,18 +1969,39 @@ def derive_jobs(
             enabled_reason="" if lp["enabled"] else "disabled in config (live_positions.enabled)",
         ),
     )
-    # LIVE fill alerts from the order-alert inboxes (2026-10-15, livefills.py): a few seconds after the
-    # broker reports a fill, instead of the trade notifier's minutes. Enabled only while some live
-    # module's arm record is valid -- the inboxes are written only by armed modules' daemons, so an
-    # unarmed day costs nothing.
+    # The account's order events (2026-11-02, core.live.account_alerts): one read-only service for the
+    # designated account, up through every trading session whether or not anything is armed -- the
+    # per-module daemons it replaced ran only while armed, so a resting stop that filled after the
+    # disarm, or a manual order, was heard by nobody.
+    aa = account_alerts_settings(cfg)
+    add(
+        "account-alerts",
+        lambda: JobSpec(
+            id="account-alerts",
+            argv=(
+                pythonw,
+                "-m",
+                "cherrypick.core.live.account_alerts",
+                "--keyring-service",
+                str(aa["keyring_service"]),
+            ),
+            kind=KIND_RESIDENT,
+            # Resident jobs are re-evaluated on the ~1s loop; this is the silence budget, not a cadence.
+            interval_seconds=aa["silence_seconds"],
+            window_start=aa["start"],
+            window_end=aa["end"],
+            trading_days_only=True,
+            silence_file=str(cfgmod.resident_heartbeat_path("account-alerts")),
+            silence_seconds=aa["silence_seconds"],
+            enabled=aa["enabled"],
+            enabled_reason=aa["reason"],
+            tags=("live",),
+        ),
+    )
+    # LIVE order notices from that inbox (livefills.py): placed, filled and ended unfilled, seconds after
+    # the broker reports them instead of the trade notifier's minutes. On whenever the service is.
     lfa = cfg.get("live_fill_alerts") or {}
-    armed_now = [
-        name
-        for name, mcfg in cfgmod.enabled_modules(cfg).items()
-        if (mcfg.get("live") or {}).get("task_name")
-        and arm_record_valid(arm_records.get(name), mcfg.get("live") or {}, now)[0]
-    ]
-    lfa_on = bool(lfa.get("enabled", True)) and bool(armed_now)
+    lfa_on = bool(lfa.get("enabled", True)) and aa["enabled"]
     add(
         "live-fill-alerts",
         lambda: JobSpec(
@@ -1949,13 +2009,16 @@ def derive_jobs(
             argv=_run_py(pythonw, launcher, "live-fill-alerts"),
             kind=KIND_INTERVAL,
             interval_seconds=int(lfa.get("interval_seconds", 15)),
+            window_start=aa["start"],
+            window_end=aa["end"],
+            trading_days_only=True,
             enabled=lfa_on,
             enabled_reason=""
             if lfa_on
             else (
                 "disabled in config (live_fill_alerts.enabled)"
                 if not lfa.get("enabled", True)
-                else "no live module armed"
+                else f"account alerts off: {aa['reason']}"
             ),
             tags=("live",),
         ),

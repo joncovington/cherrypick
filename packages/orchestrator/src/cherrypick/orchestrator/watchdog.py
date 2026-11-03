@@ -2388,6 +2388,54 @@ _HOLD_FORGOTTEN_HOURS = 12
 
 # The live-positions job runs every 5 minutes in session; older than this, its verdict is history.
 _LIVE_POSITIONS_FRESH_SECONDS = 20 * 60
+_ACCOUNT_REST_STALE_SECONDS = 300
+
+
+def _check_account_alerts(in_session: bool, now: datetime | None = None) -> list[Finding]:
+    """The account-alert service's own status file (core.live.account_alerts): a fill only its REST
+    read saw means the stream is dropping events, and a REST read failing for minutes means the
+    fallback is blind too. Its silence is the supervisor's resident check. File-only."""
+    from cherrypick.core.live import account_alerts as _aa
+
+    if not in_session:
+        return []
+    now = now or datetime.now(timezone.utc)
+    status = _aa.read_status()
+    if not status or status.get("day") != now.astimezone().date().isoformat():
+        return []  # not started today: the supervisor's resident check says why
+    findings = []
+    missed = status.get("stream_missed_fills") or []
+    if missed:
+        findings.append(
+            Finding(
+                "account_alerts.stream",
+                WARN,
+                "Order stream missed fills",
+                f"{len(missed)} fill(s) today reached the suite only through the REST read "
+                f"({', '.join(missed[-5:])}). Notices still went out; the stream is unreliable today.",
+                members=tuple(f"missed:{oid}" for oid in missed),
+            )
+        )
+    else:
+        findings.append(Finding("account_alerts.stream", OK, "Order stream", "no fill missed today"))
+    try:
+        last_ok = datetime.fromisoformat(str(status.get("last_rest_ok_at")))
+        rest_age = (now - last_ok.astimezone(timezone.utc)).total_seconds()
+    except (TypeError, ValueError):
+        rest_age = None
+    if status.get("rest_failures") and (rest_age is None or rest_age > _ACCOUNT_REST_STALE_SECONDS):
+        findings.append(
+            Finding(
+                "account_alerts.rest",
+                WARN,
+                "Order REST read failing",
+                f"{status.get('rest_failures')} failed read(s); last error: {status.get('last_rest_error')}. "
+                "Only the stream is reporting order events.",
+            )
+        )
+    else:
+        findings.append(Finding("account_alerts.rest", OK, "Order REST read", "reading"))
+    return findings
 
 
 def _check_live_positions(in_session: bool) -> list[Finding]:
@@ -3128,6 +3176,7 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     findings += _check_holds()
     findings += _check_kill_latches()
     findings += _check_live_positions(in_session)
+    findings += _check_account_alerts(in_session)
     findings += _check_fixed_time_jobs(now)
     findings += _check_notify_delivery(cfg)
     findings += _check_config_health()

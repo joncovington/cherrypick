@@ -457,6 +457,7 @@ def test_order_status_reports_filled():
         "price": "1.23",
         "filled": True,
         "external_identifier": None,
+        "underlying_symbol": None,
         "fills": [],
     }
 
@@ -668,6 +669,7 @@ def test_wait_for_order_alerts_returns_only_matching_orders():
             "price": "1.05",
             "filled": True,
             "external_identifier": None,
+            "underlying_symbol": None,
             "fills": [],
         }
     ]

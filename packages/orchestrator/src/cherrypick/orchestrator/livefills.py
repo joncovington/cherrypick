@@ -1,17 +1,23 @@
-"""`run.py live-fill-alerts` -- a LIVE fill alert within seconds, from the order-alert inboxes.
+"""`run.py live-fill-alerts` -- LIVE order notices within seconds, from the account's order events.
 
 The trade notifier announces a live fill once the ledger records it: up to a minute for the tick to
-confirm it, plus its own two-minute pass. The order-alert daemons (`cherrypick.core.live.alerts`, one
-per armed module) see the broker's fill the moment it happens and write it to an inbox beside the
-module's live ledger. This job reads those inboxes every few seconds while something is armed and
-pushes one alert per filled order. Pushing stays here -- the suite's rule that a trading module never
-talks to a notification channel.
+confirm it, plus its own two-minute pass. The account-alert service (`cherrypick.core.live.
+account_alerts`, kept up through every trading session) records every order status on the designated
+account the moment the stream or its REST read sees it. This job reads that inbox every few seconds
+and pushes one notice per order and kind (2026-11-02; fills only, and only while armed, before):
 
-It is an early word, not the record: the ledger still records the fill only once the module's own
-tick confirms it with the broker, and the trade notifier's usual alert follows. Two daemons on one
-account both see every order, so alerts are deduplicated by order id. Each order is attributed to the
-module whose published order ids (`core.execution.publish_known_orders`) contain it; one that no live
-ledger knows is announced as exactly that -- a manual order, or a placement no ledger recorded.
+- **placed** -- the order reached the broker (received, routed, live);
+- **filled**;
+- **ended unfilled** -- cancelled, rejected, expired or removed.
+
+An order seen placed and filled in the same pass is announced once, as filled. Pushing stays here --
+the suite's rule that a trading module never talks to a notification channel.
+
+It is early word, not the record: the ledger still records a fill only once the owning loop's tick
+confirms it with the broker. Each order is attributed to the module whose published order ids
+(`core.execution.publish_known_orders`) contain it. One no ledger knows yet but carrying an external
+identifier is the suite's own (every seam submission is stamped), most likely placed this minute; one
+with no identifier is announced as manual.
 """
 
 from __future__ import annotations
@@ -20,12 +26,15 @@ import json
 from datetime import date
 from typing import Any
 
+from cherrypick.core import execution as _execution
 from cherrypick.core import home as _home
-from cherrypick.core.live import alerts as _alerts
+from cherrypick.core.live import account_alerts as _account
 
 from cherrypick.notify import Notifier
 
 from . import config as cfgmod
+
+PLACED = frozenset({"received", "routed", "in flight", "live", "contingent"})
 
 
 def state_path():
@@ -64,20 +73,54 @@ def _owners() -> dict[str, str]:
     return out
 
 
-def inboxes(cfg: dict[str, Any]) -> dict[str, str]:
-    """module -> its order-alert inbox path, for every enabled module with a live ledger."""
-    out = {}
-    for name, mcfg in cfgmod.enabled_modules(cfg).items():
-        if not mcfg.get("live"):
-            continue
-        db = cfgmod.live_db_path(mcfg, name)
-        if db is not None:
-            out[name] = str(db.parent / _alerts.INBOX_FILENAME)
-    return out
+def kind_of(status: str) -> str | None:
+    """'placed', 'filled', 'ended' or None (a status worth no notice: cancel requested, ...)."""
+    if status == "filled":
+        return "filled"
+    if status in _execution.TERMINAL_UNFILLED:
+        return "ended"
+    if status in PLACED:
+        return "placed"
+    return None
+
+
+def _who(event: dict, owners: dict[str, str]) -> tuple[str, str]:
+    """(label for the title, sentence for the message)."""
+    owner = owners.get(str(event["order_id"]))
+    if owner:
+        return owner, ""
+    if event.get("external_identifier"):
+        return "a live loop", " No ledger has published it yet; a loop's own order, placed this minute."
+    return "manual", " No live ledger records it and it carries no suite identifier: a manual order."
+
+
+def _notice(kind: str, event: dict, who: tuple[str, str]) -> tuple[str, str, str]:
+    """(level, title, message) for one notice."""
+    label, note = who
+    oid, status = event["order_id"], event["status"]
+    on = f" on {event['underlying_symbol']}" if event.get("underlying_symbol") else ""
+    price = event.get("price")
+    if kind == "filled":
+        return (
+            "WARNING",
+            f"LIVE fill: {label}",
+            f"Order {oid}{on} FILLED at {price} (broker report; the ledger records it next tick).{note}",
+        )
+    if kind == "ended":
+        return "INFO", f"LIVE order {status}: {label}", f"Order {oid}{on} ended {status}, unfilled.{note}"
+    return (
+        "INFO",
+        f"LIVE order placed: {label}",
+        f"Order {oid}{on} is at the broker ({status}), limit {price}.{note}",
+    )
 
 
 def run(
-    cfg: dict[str, Any] | None = None, *, notifier: Any = None, today: str | None = None
+    cfg: dict[str, Any] | None = None,
+    *,
+    notifier: Any = None,
+    today: str | None = None,
+    inbox: str | None = None,
 ) -> dict[str, Any]:
     cfg = cfgmod.load_config() if cfg is None else cfg
     today = today or date.today().isoformat()
@@ -88,34 +131,28 @@ def run(
         channels = sorted(set(notify_cfg.get("trade_channels", ["log"])) | {"desktop"})
         notifier = Notifier({**notify_cfg, "channels": channels})
     state = _load_state()
-    if state.get("day") != today:  # a new day: nothing carried, so yesterday's ids never block today's
-        state = {"day": today, "after": {}, "notified": []}
+    if state.get("day") != today or not isinstance(state.get("after"), (int, type(None))):
+        state = {"day": today, "after": None, "notified": []}  # a new day (or the pre-2026-11-02 shape)
     notified = set(state.get("notified") or [])
+    read = _account.events_after(inbox or _account.inbox_path(), state.get("after"))
+    if read:
+        state["after"] = read[-1]["seq"]
+    events = [e for e in read if str(e.get("received_at") or "").startswith(today)]
+    filled_now = {str(e["order_id"]) for e in events if e["status"] == "filled"}
     owners = _owners()
     sent = []
-    for module, path in sorted(inboxes(cfg).items()):
-        after = (state.get("after") or {}).get(module)
-        for row in _alerts.fills_after(path, after):
-            state.setdefault("after", {})[module] = row["received_at"]
-            oid = str(row["order_id"])
-            if not row["received_at"].startswith(today) or oid in notified:
-                continue
-            notified.add(oid)
-            owner = owners.get(oid)
-            price = row.get("price")
-            if owner:
-                title = f"LIVE fill: {owner}"
-                message = (
-                    f"Order {oid} FILLED at {price} (broker alert; the ledger records it at the next tick)."
-                )
-            else:
-                title = "LIVE fill: an order no live ledger knows"
-                message = (
-                    f"Order {oid} FILLED at {price}. No live module's ledger records this order -- a manual "
-                    "order, or a placement nothing recorded. Check the broker."
-                )
-            notifier.notify("WARNING", f"live.fill.{oid}", title, message)
-            sent.append({"order_id": oid, "module": owner, "price": price})
+    for event in events:
+        kind = kind_of(event["status"])
+        oid = str(event["order_id"])
+        if kind is None or f"{oid}:{kind}" in notified:
+            continue
+        if kind == "placed" and oid in filled_now:
+            continue  # placed and filled in one pass: the fill says both
+        notified.add(f"{oid}:{kind}")
+        who = _who(event, owners)
+        level, title, message = _notice(kind, event, who)
+        notifier.notify(level, f"live.order.{oid}.{kind}", title, message)
+        sent.append({"order_id": oid, "kind": kind, "module": who[0], "status": event["status"]})
     state["notified"] = sorted(notified)
     _save_state(state)
     return {"ok": True, "sent": sent}

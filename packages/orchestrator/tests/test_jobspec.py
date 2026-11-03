@@ -309,6 +309,7 @@ def test_derive_full_suite_job_table():
         "flies-intraday-agent",
         "flies-intraday-agent-live",
         "console",
+        "account-alerts",
         "meic-paper",
         "flies-paper",
         "flies-paper-offsession",
@@ -515,16 +516,34 @@ def test_derive_companion_resident_while_armed():
     assert not jobspec.resident_should_run(d, et(2026, 8, 10, 17, 1))[0]
 
 
-def test_live_fill_alerts_run_only_while_a_live_module_is_armed():
-    """2026-10-15: the inboxes are written only by armed modules' daemons, so the job is off otherwise.
-    Shown to fail by enabling it unconditionally: the unarmed assertion goes red."""
-    now = et(2026, 8, 10, 10, 0)
-    jobs, _ = derive(suite_cfg(), now=now, arm_records={})
-    job = next(j for j in jobs if j.id == "live-fill-alerts")
-    assert not job.enabled and job.enabled_reason == "no live module armed"
-    jobs, _ = derive(suite_cfg(), now=now, arm_records={"flies": {"date": "2026-08-10"}})
-    job = next(j for j in jobs if j.id == "live-fill-alerts")
-    assert job.enabled and job.interval_seconds == 15
+def _with_keyring(cfg, module="flies", service="fliesagent"):
+    cfg["modules"][module]["keyring_service"] = service
+    return cfg
+
+
+def test_the_account_alert_service_runs_every_session_whether_or_not_anything_is_armed():
+    """2026-11-02: one read-only service for the designated account. Shown to fail with it tied to the
+    arm: an unarmed day's resting-stop fill or manual order was heard by nobody."""
+    jobs, _ = derive(_with_keyring(suite_cfg()), now=et(2026, 8, 10, 10, 0), arm_records={})
+    svc = next(j for j in jobs if j.id == "account-alerts")
+    assert svc.enabled and svc.kind == jobspec.KIND_RESIDENT
+    assert svc.argv[1:] == ("-m", "cherrypick.core.live.account_alerts", "--keyring-service", "fliesagent")
+    assert (svc.window_start, svc.window_end, svc.trading_days_only) == ("09:00", "18:00", True)
+    assert svc.silence_file.endswith("account-alerts.heartbeat") and svc.silence_seconds == 180
+    lfa = next(j for j in jobs if j.id == "live-fill-alerts")
+    assert lfa.enabled and lfa.interval_seconds == 15 and lfa.trading_days_only
+
+
+def test_no_live_account_means_no_account_alerts():
+    jobs, _ = derive(suite_cfg(), now=et(2026, 8, 10, 10, 0))  # no module names a keyring service
+    svc = next(j for j in jobs if j.id == "account-alerts")
+    assert not svc.enabled and svc.enabled_reason == "no live module"
+    lfa = next(j for j in jobs if j.id == "live-fill-alerts")
+    assert not lfa.enabled and lfa.enabled_reason == "account alerts off: no live module"
+    off = _with_keyring(suite_cfg(account_alerts={"enabled": False}))
+    assert not next(j for j in derive(off)[0] if j.id == "account-alerts").enabled
+    meic = _with_keyring(suite_cfg(account_alerts={"module": "meic"}), "meic", "meicagent")  # no live loop
+    assert "'meic'" in next(j for j in derive(meic)[0] if j.id == "account-alerts").enabled_reason
 
 
 def test_derive_companion_follows_the_arm():
