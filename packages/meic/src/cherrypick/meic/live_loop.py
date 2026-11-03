@@ -234,6 +234,69 @@ def _data_dir() -> str:
     return os.path.dirname(str(_paths.live_db_path()))
 
 
+# --------------------------------------------------------------------------- what to tell a person
+CRITICALS_FILENAME = "live_criticals.jsonl"
+
+
+def _criticals_path() -> str:
+    return os.path.join(_data_dir(), CRITICALS_FILENAME)
+
+
+def record_critical(message: str) -> None:
+    """Append one CRITICAL line for the watchdog to push (2026-11-02). A module never talks to a
+    notification channel; until this the loop's CRITICALs reached only its own log and stderr.
+    Best-effort: a line that cannot be written must never cost the tick."""
+    try:
+        os.makedirs(_data_dir(), exist_ok=True)
+        with open(_criticals_path(), "a", encoding="utf-8") as f:
+            f.write(
+                json.dumps({"at": _pl._now_et().isoformat(timespec="seconds"), "message": message}) + "\n"
+            )
+    except OSError:
+        pass
+
+
+def criticals_on(day: str, limit: int = 20) -> list[dict]:
+    """The CRITICAL lines recorded on `day` (ET), oldest first, at most the last `limit`."""
+    try:
+        with open(_criticals_path(), encoding="utf-8") as f:
+            lines = [json.loads(line) for line in f if line.strip()]
+    except (OSError, ValueError):
+        return []
+    return [c for c in lines if str(c.get("at", "")).startswith(day)][-limit:]
+
+
+def _tick_log(*parts) -> None:
+    """The tick's log: stdout as before (`print`'s signature, which callers lean on), and every
+    CRITICAL line recorded for the watchdog too."""
+    print(*parts)
+    message = " ".join(str(p) for p in parts)
+    if message.startswith("CRITICAL"):
+        record_critical(message)
+
+
+def describe_ic(t: dict) -> str:
+    """One held IC in a line a person can act on: id, strikes, what is still held, credit, stop."""
+    sides = _open_sides(t) if t.get("status") != "pending" else []
+    held = (
+        "entry pending"
+        if t.get("status") == "pending"
+        else ("holds " + " and ".join(sides) if sides else "flat")
+    )
+    stop = f", stop {t['stop_trigger_current']}x credit" if t.get("stop_trigger_current") else ""
+
+    def n(v):  # the ledger stores strikes as REAL: 583, not 583.0
+        try:
+            return f"{float(v):g}"
+        except (TypeError, ValueError):
+            return str(v)
+
+    return (
+        f"{t.get('ic_order_id')} {t.get('symbol')} {n(t.get('put_strike'))}p/{n(t.get('call_strike'))}c "
+        f"{n(t.get('wing_width'))}w, credit {t.get('net_credit')}, {held}{stop}"
+    )
+
+
 def _once_lock_path() -> str:
     return os.path.join(_data_dir(), "live_once.lock")
 
@@ -692,6 +755,10 @@ def run_status(config: dict, *, designated: str | None) -> dict:
         "per_side_stop_management": params.get("per_side_stop_management"),
         "open_positions": None if unreadable else len(open_rows),
         "pending_orders": [t["ic_order_id"] for t in pending],
+        # What is held, in words a person can act on (2026-11-02): the watchdog quotes these, so an
+        # alert names the IC, its strikes and what is left, not just a count.
+        "open_ics": [describe_ic(t) for t in [*open_rows, *[p for p in pending if p["trade_date"] == today]]],
+        "criticals_today": criticals_on(today),
         "session_settled": False
         if unreadable
         else not open_rows and not [t for t in pending if t["trade_date"] == today],
@@ -2129,7 +2196,7 @@ def _tick(
         blockers = [*blockers, f"not_armed ({not_armed})"]
     if manage_only is not None:
         blockers = [*blockers, f"manage_only ({manage_only['error']})"]
-    summary = run_once(cfg, snapshot, db_path, broker, live=live, entry_block=blockers)
+    summary = run_once(cfg, snapshot, db_path, broker, live=live, entry_block=blockers, log=_tick_log)
     # A manage-only tick that priced every held leg did its job; one that could not is still a
     # failure the watchdog must see -- those sides were not managed.
     ok = manage_only is None or manage_only["unpriced"] == []
@@ -2143,6 +2210,7 @@ def _tick(
     _append_log(line)
     if not ok:
         print(f"CRITICAL: {payload['error']}", file=sys.stderr)
+        record_critical(f"CRITICAL: {payload['error']}")
     return 0 if ok else 1
 
 
@@ -2245,6 +2313,8 @@ def _fail(payload: dict) -> int:
 def _quiet(message: str) -> None:
     """A settlement's log lines go to the live log, not stdout -- stdout is the one JSON result."""
     _append_log(json.dumps({"at": datetime.now().isoformat(timespec="seconds"), "note": message}))
+    if str(message).startswith("CRITICAL"):
+        record_critical(str(message))
 
 
 def log_file():

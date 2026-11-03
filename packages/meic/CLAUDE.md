@@ -206,6 +206,12 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
   whose row will not save raises the suite halt flag. The incident: DXLink refused connections for an
   hour, every tick exited at `no snapshot`, and a put side was stopped 79 minutes late at $7.15
   against a $3.60 trigger.
+- **What the loop tells a person (2026-11-02).** `--status` names each of today's held ICs in words
+  (`open_ics`, `describe_ic`: id, strikes, sides still held, credit, stop), and the watchdog's live
+  findings quote them. Every `CRITICAL` line a tick logs (and `_quiet`'s, and an unpriced-legs exit)
+  is appended to `live_criticals.jsonl` beside the ledger; `--status` carries today's
+  (`criticals_today`) and the watchdog's `meic.live_critical` announces each once. The module
+  still never talks to a notification channel.
 - **Resting stops (`live.resting_stop`, off by default, 2026-11-02).** Once an entry's fill is
   confirmed, each held side gets a Day stop-limit at the broker (`live_orders.resting_stop_spec`):
   trigger = the row's stop ratio x the whole net credit, limit `limit_offset_frac` of it above,
