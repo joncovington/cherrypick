@@ -5,9 +5,13 @@ line followed by extra log output, which a plain json.loads rejects with "Extra 
 guards the suite-wide rule that account numbers are never emitted in full.
 """
 
+import os
+import subprocess
+import sys
+
 import pytest
 
-from cherrypick.orchestrator.util import first_json, mask_account
+from cherrypick.orchestrator.util import first_json, mask_account, never_throttle
 
 pytestmark = pytest.mark.unit
 
@@ -64,3 +68,35 @@ def test_mask_account_never_contains_full_value():
     full = "5WU987654321"
     masked = mask_account(full)
     assert masked == "****4321" and full not in masked
+
+
+@pytest.mark.skipif(os.name != "nt", reason="power throttling is a Windows process setting")
+def test_never_throttle_marks_a_child_as_controlled_and_not_throttled():
+    # Read back the way Windows reports it: the execution-speed control bit set, its state bit clear.
+    import ctypes
+    import ctypes.wintypes as wt
+
+    class State(ctypes.Structure):
+        _fields_ = [("Version", wt.ULONG), ("ControlMask", wt.ULONG), ("StateMask", wt.ULONG)]
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.GetProcessInformation.argtypes = [wt.HANDLE, ctypes.c_int, ctypes.c_void_p, wt.DWORD]
+
+    def state(handle):
+        s = State(1, 0, 0)
+        assert k32.GetProcessInformation(handle, 4, ctypes.byref(s), ctypes.sizeof(s))
+        return s.ControlMask, s.StateMask
+
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(10)"]) as child:
+        try:
+            handle = int(child._handle)
+            assert state(handle) == (0, 0)
+            assert never_throttle(handle) is True
+            assert state(handle) == (1, 0)
+        finally:
+            child.kill()
+
+
+def test_never_throttle_is_a_no_op_off_windows(monkeypatch):
+    monkeypatch.setattr(os, "name", "posix")
+    assert never_throttle(1234) is False

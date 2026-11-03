@@ -32,7 +32,7 @@ from cherrypick.notify import Notifier
 from . import config as cfgmod
 from . import eval_activity, jobspec, servicecfg, tasks, timeutil, util
 from . import holds as _holds
-from .util import CREATE_NO_WINDOW, NEW_SESSION, first_json
+from .util import CREATE_NO_WINDOW, NEW_SESSION, first_json, never_throttle
 
 _WATCHDOG_LOG = cfgmod.LOGS_DIR / "watchdog.log"
 _STATE_FILE = cfgmod.STATE_DIR / "watchdog_state.json"
@@ -570,7 +570,7 @@ def _start_streamer(module_root: Path, start_argv: list[str]) -> bool:
         flags = 0
         if os.name == "nt":
             flags = 0x00000008 | 0x08000000 | 0x00000200  # DETACHED | NO_WINDOW | NEW_GROUP
-        subprocess.Popen(
+        proc = subprocess.Popen(
             [exe, *[str(a) for a in start_argv]],
             cwd=str(module_root),
             stdout=subprocess.DEVNULL,
@@ -579,6 +579,10 @@ def _start_streamer(module_root: Path, start_argv: list[str]) -> bool:
             close_fds=True,
             start_new_session=NEW_SESSION,  # POSIX: out of the caller's process group
         )
+        # A long-lived daemon started outside the supervisor's _spawn: opted out the same way.
+        child = getattr(proc, "_handle", None)
+        if child is not None:
+            never_throttle(int(child))
         return True
     except Exception:
         return False
