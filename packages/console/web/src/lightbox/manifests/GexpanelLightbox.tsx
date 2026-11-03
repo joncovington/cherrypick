@@ -54,9 +54,11 @@ interface GexPanelPayload {
 
 /** The session's prints, signed (server `analytics/gexFlow.ts`, mirroring `core.gex`). */
 type FlowLayer =
-  | { status: "absent" | "empty" | "failed"; reason: string }
+  | { status: "absent" | "empty" | "failed" | "pending"; reason: string }
   | {
       status: "ok";
+      /** When the server last summed the prints (epoch seconds): it reads them in the background. */
+      readAt: number;
       contracts: {
         counted: number;
         excluded: number;
@@ -89,7 +91,7 @@ function FlowSection({ flow }: { flow: FlowLayer | undefined }) {
   return (
     <>
       <h3 className="gexp-section" title="each print signed by who initiated it: the feed's aggressor side, else the quote at the print">
-        flow (today&apos;s prints)
+        flow (today&apos;s prints) <span className="muted">· as of {formatAsOf(flow.readAt)} ET</span>
       </h3>
       <div className="gexp-grid">
         <Row label="net GEX, OI + flow" value={fmtGexDollars(flow.netGexFlow)} tone={flow.netGexFlow >= 0 ? "pnl-pos" : "pnl-neg"} />

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { flowAdjusted, readSignedFlow } from "../src/analytics/gexFlow.js";
+import { PRINTS_WHERE, flowAdjusted, readSignedFlow } from "../src/analytics/gexFlow.js";
 
 /**
  * The SQL mirror of `core.gex.signed_flow` / `flow_adjusted`, pinned to the same hand-worked fixture
@@ -63,5 +63,18 @@ describe("signed flow (mirror of core.gex)", () => {
     const f = readSignedFlow(seeded(), "SPX", "E", "NONE");
     expect(f.strikes).toEqual([]);
     expect(f.classified_by).toEqual({ aggressor: 0, quote: 0, unclassified: 0 });
+  });
+
+  it("reads the prints through the table's own key, not the date index", () => {
+    // gex's indexes (service.py `_ensure_history_table`) and, like the recorder's store, no ANALYZE
+    // statistics, so the planner chooses by the schema alone as it does there.
+    const db = seeded();
+    db.exec("CREATE INDEX idx_gpr_sym_date ON gex_prints(symbol, trade_date)");
+    db.exec("CREATE INDEX idx_gpr_sym_received ON gex_prints(symbol, received_at)");
+    const plan = db
+      .prepare<string[], { detail: string }>(`EXPLAIN QUERY PLAN SELECT size FROM gex_prints WHERE ${PRINTS_WHERE}`)
+      .all("SPX", "E", "D")
+      .map((r) => r.detail);
+    expect(plan).toEqual(["SEARCH gex_prints USING PRIMARY KEY (symbol=? AND expiration=?)"]);
   });
 });

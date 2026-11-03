@@ -2,7 +2,8 @@
  * The experimental GEX panel's payload: the GEX page's profile (`buildGexProfile`, same source,
  * expiration pick and leftover cut) plus the chain's straddles off the shared stream cache,
  * read-only, and the levels `analytics/gexPanel.ts` derives from them. Recomputed on every request,
- * so the moves follow each quote and the clock to expiry.
+ * so the moves follow each quote and the clock to expiry; the flow layer alone is read in a worker
+ * and served from memory (`gexFlowCache.ts`), up to 30 s old.
  */
 
 import fs from "node:fs";
@@ -25,43 +26,16 @@ import {
 import { buildGexProfile, etEpoch, etParts } from "./gexProfile.js";
 import path from "node:path";
 import { nearestZeroGamma } from "../analytics/gex.js";
-import { flowAdjusted, readSignedFlow, type SignedFlow } from "../analytics/gexFlow.js";
+import { flowAdjusted } from "../analytics/gexFlow.js";
+import { cachedFlow, type CachedFlow } from "./gexFlowCache.js";
 
 /** How many of the strikes the flow moved most the panel lists. */
 export const FLOW_TOP_STRIKES = 5;
 
-type FlowRead =
-  | { status: "absent" | "empty"; reason: string }
-  | { status: "failed"; reason: string }
-  | { status: "ok"; flow: SignedFlow };
-
-/** One session's signed flow from gex's `gex_prints`, read-only; says why when there is none. */
-function readFlow(config: ConsoleConfig, symbol: string, expiration: string, tradeDate: string): FlowRead {
-  const p = path.join(config.paths.gexDir, "gex_history.db");
-  if (!fs.existsSync(p)) return { status: "absent", reason: "no gex history database" };
-  let db: Database.Database | null = null;
-  try {
-    db = new Database(p, { readonly: true, fileMustExist: true });
-    db.pragma("busy_timeout = 2000");
-    const has = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'gex_prints'").get();
-    if (has === undefined) return { status: "absent", reason: "the gex recorder has never recorded prints (prints.enabled)" };
-    const flow = readSignedFlow(db, symbol, expiration, tradeDate);
-    const counted = flow.classified_by.aggressor + flow.classified_by.quote + flow.classified_by.unclassified;
-    if (counted === 0 && Object.values(flow.excluded).every((n) => n === 0)) {
-      return { status: "empty", reason: `no prints recorded for ${symbol} ${expiration} on ${tradeDate}` };
-    }
-    return { status: "ok", flow };
-  } catch (err) {
-    return { status: "failed", reason: (err as Error).message };
-  } finally {
-    db?.close();
-  }
-}
-
-/** The panel's flow layer: what the session's prints did to the OI profile. */
-function flowLayer(series: GexStrikeRow[], spot: number, read: FlowRead): Record<string, unknown> {
+/** The panel's flow layer: what the session's prints did to the OI profile, as of `readAt`. */
+function flowLayer(series: GexStrikeRow[], spot: number, read: CachedFlow): Record<string, unknown> {
   if (read.status !== "ok") return { status: read.status, reason: read.reason };
-  const { flow } = read;
+  const { flow, readAt } = read;
   const adjusted = flowAdjusted(series, flow.strikes, spot);
   const sum = (f: (r: (typeof adjusted)[number]) => number) => adjusted.reduce((s, r) => s + f(r), 0);
   const netBought = (side: "call" | "put") => flow.strikes.filter((s) => s.side === side).reduce((s, r) => s + r.net, 0);
@@ -71,6 +45,7 @@ function flowLayer(series: GexStrikeRow[], spot: number, read: FlowRead): Record
   const asRows = adjusted.map((r) => ({ ...r, net_gex: r.net_gex_flow }) as unknown as GexStrikeRow);
   return {
     status: "ok",
+    readAt: readAt / 1000,
     contracts: { counted, excluded, classifiedBy: flow.classified_by, excludedBy: flow.excluded },
     netBought: { call: netBought("call"), put: netBought("put") },
     netGexOi: sum((r) => r.net_gex),
@@ -280,7 +255,16 @@ export function buildGexPanel(config: ConsoleConfig, symbol: string, nowMs: numb
     // The session the chain's prints belong to: the ET date of the reading.
     flow: nextSession
       ? { status: "empty", reason: `the ${expiration} session has not opened` }
-      : flowLayer(series, spot, readFlow(config, symbol, expiration, etParts(asOf * 1000).date)),
+      : flowLayer(
+          series,
+          spot,
+          cachedFlow({
+            dbPath: path.join(config.paths.gexDir, "gex_history.db"),
+            symbol,
+            expiration,
+            tradeDate: etParts(asOf * 1000).date,
+          }),
+        ),
     spotHistory: profile["spotHistory"],
     spotSession: profile["spotSession"],
   };
