@@ -8,6 +8,8 @@ module to go live inherits the fix AND the test.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from cherrypick.core import broker as _broker
@@ -55,6 +57,64 @@ def test_fill_state_reads_filled_working_and_terminal():
     assert execution.fill_state({"status": "REJECTED"}) == ("rejected", None)
     assert execution.fill_state({"status": None, "error": "boom"}) == ("working", None)
     assert execution.fill_state(None) == ("working", None)
+
+
+def test_a_removed_order_is_dead_not_working():
+    # The SDK's own statuses (2026-11-02). Read as working, a removed order was waited on forever.
+    assert execution.fill_state({"status": "Removed"}) == ("removed", None)
+    assert execution.fill_state({"status": "Partially Removed"}) == ("partially removed", None)
+    assert execution.fill_state({"status": "Cancel Requested"}) == ("working", None)
+
+
+# --------------------------------------------------------------------------- the call deadline
+def test_a_broker_call_that_never_answers_is_abandoned_at_the_deadline(monkeypatch, tmp_path):
+    monkeypatch.setattr(execution, "CALL_TIMEOUT_SECONDS", 0.2)
+
+    async def hangs(account, session, order_id):
+        await asyncio.sleep(3)
+
+    monkeypatch.setattr(_broker, "order_status", hangs)
+    adapter = _adapter(monkeypatch, health_path=tmp_path / "health.json")
+    out = adapter.status("77")
+    assert out["status"] is None and "did not finish within 0.2 s" in out["error"]
+    health = execution.read_broker_health(tmp_path / "health.json")
+    assert health["failures"] == 1 and "BrokerCallTimeout" in health["last_error"]
+
+
+def test_a_submit_that_hangs_past_the_deadline_is_recovered_by_its_identifier(monkeypatch):
+    """A submit the broker accepted but never answered: the deadline ends it, and the read-back
+    finds the order rather than reporting a failure a caller would retry into a duplicate."""
+    monkeypatch.setattr(execution, "CALL_TIMEOUT_SECONDS", 0.2)
+    at_broker: list[dict] = []
+
+    async def accepts_then_hangs(
+        account, session, order, *, live, serialize, deploy_limit_pct, get_balances=None
+    ):
+        at_broker.append(
+            {"order_id": 99, "status": "Live", "external_identifier": order["external_identifier"]}
+        )
+        await asyncio.sleep(3)
+
+    async def today(account, session):
+        return list(at_broker)
+
+    monkeypatch.setattr(_broker, "place_order", accepts_then_hangs)
+    monkeypatch.setattr(_broker, "orders_today", today)
+    monkeypatch.setattr(_broker, "build_order", lambda spec: dict(spec))
+    out = _adapter(monkeypatch).place({"legs": []}, live=True)
+    assert out["ok"] is True and out["recovered"] is True and out["order_id"] == "99"
+    assert "did not finish within 0.2 s" in out["error"]
+
+
+def test_listening_for_alerts_is_bounded_past_its_own_window(monkeypatch):
+    monkeypatch.setattr(execution, "CALL_TIMEOUT_SECONDS", 0.2)
+
+    async def listens(session, account, order_ids, timeout_seconds):
+        await asyncio.sleep(timeout_seconds)
+        return [{"order_id": "1", "status": "Filled"}]
+
+    monkeypatch.setattr(_broker, "wait_for_order_alerts", listens)
+    assert _adapter(monkeypatch).wait_for_order_alerts([], 0.4) == [{"order_id": "1", "status": "Filled"}]
 
 
 # --------------------------------------------------------------------------- the adapter

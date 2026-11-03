@@ -54,8 +54,21 @@ class AccountNotDesignated(RuntimeError):
     rather than resolved: `core.broker.resolve_account`'s fallback is the login's first account."""
 
 
-#: Status strings (lower-cased) after which a working order will never fill.
-TERMINAL_UNFILLED = frozenset({"cancelled", "rejected", "expired"})
+class BrokerCallTimeout(TimeoutError):
+    """A broker call did not finish within its deadline (`Broker.run`). The call was abandoned, not
+    answered: a submit that times out takes the same uncertain path as any other raise."""
+
+
+#: Status strings (lower-cased) after which a working order will never fill. `removed` and
+#: `partially removed` are the SDK's too (`OrderStatus`, 2026-11-02): read as working, a removed
+#: entry held its slot, a removed close was re-priced every tick and a removed resting stop blocked
+#: its side's close. A partially removed order may have filled in part; nothing here reads the
+#: filled quantity, which is safe only while every live order is one contract.
+TERMINAL_UNFILLED = frozenset({"cancelled", "rejected", "expired", "removed", "partially removed"})
+
+#: Seconds one broker call may take (`Broker.run`). Without it the only bound was httpx's per-phase
+#: 5 s, and a call that kept trickling never ended; a tick holding the loop lock stalled with it.
+CALL_TIMEOUT_SECONDS = 30.0
 
 
 # --------------------------------------------------------------------------- result readers
@@ -164,15 +177,33 @@ class Broker:
         self._health_written = 0.0
 
     # --- lifecycle -------------------------------------------------------------------------
-    def run(self, coro, *, _counts_as_contact: bool = True):
+    def run(self, coro, *, _counts_as_contact: bool = True, timeout: float | None = None):
         """Drive a coroutine on the process-wide loop. Public so a module can run its OWN
         broker-side coroutine (a REST quote refresh, a settlement-print fetch) on the same loop
-        the cached session is bound to, without a second adapter."""
+        the cached session is bound to, without a second adapter.
+
+        Every call has a deadline (`timeout`, else `CALL_TIMEOUT_SECONDS`; 2026-11-02): past it the
+        coroutine is cancelled and
+        `BrokerCallTimeout` raised, recorded as a failed contact like any other raise. Callers
+        already treat a raise as "no answer", and a timed-out submit is recovered by its identifier
+        (`place`), whose read-back has the same deadline."""
         cls = type(self)
         if cls._shared_loop is None:
             cls._shared_loop = asyncio.new_event_loop()
+        if timeout is None:
+            timeout = CALL_TIMEOUT_SECONDS
+
+        async def bounded():
+            started = asyncio.get_running_loop().time()
+            try:
+                return await asyncio.wait_for(coro, timeout)
+            except TimeoutError as exc:
+                if asyncio.get_running_loop().time() - started < timeout:
+                    raise  # the call's own timeout (a REST read's), not this deadline
+                raise BrokerCallTimeout(f"broker call did not finish within {timeout:g} s") from exc
+
         try:
-            out = cls._shared_loop.run_until_complete(coro)
+            out = cls._shared_loop.run_until_complete(bounded())
         except Exception as exc:
             self._note_contact(exc)
             raise
@@ -563,7 +594,8 @@ class Broker:
         try:
             self._ensure()
             return self.run(
-                _broker.wait_for_order_alerts(self._session, self._account, set(order_ids), timeout_seconds)
+                _broker.wait_for_order_alerts(self._session, self._account, set(order_ids), timeout_seconds),
+                timeout=timeout_seconds + CALL_TIMEOUT_SECONDS,  # listening IS the call; bound past it
             )
         except Exception:  # noqa: BLE001
             self._reset()

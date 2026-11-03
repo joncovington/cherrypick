@@ -168,6 +168,28 @@ def test_a_resting_stop_that_will_not_cancel_blocks_the_loops_close(tmp_path):
     assert any("could not be cancelled" in line for line in lines)
 
 
+def test_a_removed_resting_stop_frees_the_loops_close(tmp_path):
+    """The broker's `Removed` is a dead order (2026-11-02). Read as working, it refused the side's
+    close every tick while the side ran past its stop."""
+    cfg = _on(symbol="QQQ")
+    db_path = _init_db(tmp_path)
+    paper._save_trade(_open_trade_row("QQQ"), db_path)
+    paper._update_trade(
+        "OPEN1", {"put_resting_stop_order_id": "R1", "put_resting_stop_status": "working"}, db_path
+    )
+    broker = RefusingBroker(statuses={"R1": {"status": "Removed"}})
+    # Before the close: the cancel is refused and the broker says Removed, so nothing still works.
+    trade = live_loop._trade_row("OPEN1", db_path)
+    assert live_loop._clear_resting_stop(trade, "put", broker, db_path, _quiet) is True
+    assert live_loop._trade_row("OPEN1", db_path)["put_resting_stop_status"] == "removed"
+    # And through a whole tick, the side's close goes out.
+    paper._update_trade("OPEN1", {"put_resting_stop_status": "working"}, db_path)
+    summary = live_loop.run_once(cfg, _stopping_snapshot(), db_path, broker, live=True, log=_quiet)
+    assert summary["closing"] == 1
+    row = live_loop._trade_row("OPEN1", db_path)
+    assert row["put_resting_stop_status"] == "removed" and row["put_stop_fill_status"] == "pending"
+
+
 def test_settlement_waits_for_a_resting_stop_that_filled_at_the_close(tmp_path):
     """A side the broker bought back at 15:59 must not also be settled at expiry value. XSP: a
     cash-settled symbol settles at 16:01, where QQQ would be force-closed instead."""

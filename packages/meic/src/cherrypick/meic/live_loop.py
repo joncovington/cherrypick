@@ -839,7 +839,7 @@ def _clear_resting_stop(trade: dict, side: str, broker, db_path: str, log) -> bo
     if state == "filled":
         _book_resting_fill(trade, side, oid, status, db_path, log)
         return False
-    if state in ("cancelled", "rejected", "expired"):
+    if state in _execution.TERMINAL_UNFILLED:
         paper._update_trade(trade["ic_order_id"], {f"{side}_resting_stop_status": state}, db_path)
         return True
     log(
