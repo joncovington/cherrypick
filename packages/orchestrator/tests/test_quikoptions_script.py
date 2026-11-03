@@ -214,7 +214,8 @@ def test_a_good_report_reads_every_table_and_passes():
     doc = fq.parse_report(fragment)
     assert fq.validate_report(doc, DAY) == []
     assert doc["session"] == "2026-10-02"
-    assert {k: len(v) for k, v in doc["tables"].items()} == dict.fromkeys(fq.TABLES, 1)
+    # Every table the site drew on 2026-10-02; Top Strikes came later.
+    assert {k: len(v) for k, v in doc["tables"].items()} == dict.fromkeys(set(fq.TABLES) - {"strikes"}, 1)
     tsla = doc["tables"]["birdseye"][0]
     assert (tsla["symbol"], tsla["name"], tsla["total"], tsla["buckets"]["=>1K"]) == (
         "TSLA",
@@ -283,7 +284,7 @@ def test_an_oi_panel_drawn_as_a_copy_of_openings_is_dropped_and_named():
     page = _voloi_drawn_as(page, _body(page, "Top VolOverOI (Openings)").group(0))
     doc = fq.parse_report(fq.tables_fragment(page, fq.HEADINGS, with_date=True))
     assert fq.validate_report(doc, DAY) == []
-    assert "voloi" not in doc["tables"] and set(doc["tables"]) == set(fq.TABLES) - {"voloi"}
+    assert "voloi" not in doc["tables"] and set(doc["tables"]) == set(fq.TABLES) - {"voloi", "strikes"}
     assert doc["unavailable"] == {"voloi": "the site drew the Openings list in this panel"}
 
 
@@ -295,21 +296,62 @@ def test_an_oi_panel_that_is_wrong_but_not_a_copy_still_rejects():
     assert fq.parse_report(fq.tables_fragment(report(), fq.HEADINGS, with_date=True))["unavailable"] == {}
 
 
-def test_a_report_without_the_openings_panel_reads_and_names_it():
-    # 2026-11-02 on: Top Strikes drawn where the Openings panel was. The five other tables still count,
-    # and the new panel, with its extra column, is never taken for the OI > 100 one above it.
+NOV2 = date(2026, 11, 2)
+
+
+def _with_strikes(
+    page: str, cells: tuple[str, str, str, str] = ("270,178", "10,087", "26.78", "1,221")
+) -> str:
+    """The page as the site draws it from 2026-11-02: Top Strikes (volume, OI, V/OI, max size) last."""
+    vol, oi, v_oi, max_size = cells
     strikes = _table(
         "Top Strikes",
         ["", "Symbol", "Volume", "OI", "V/OI", "Expires", "Strike", "", "Max Size"],
-        [MENU + _symbol("NVDA", "NVIDIA Corporation") + _td("270,178") + _td("10,087") + _td("26.78")
-         + _td("02-Nov-26") + _td("210") + _cp("C") + _td("1,221")],
+        [MENU + _symbol("NVDA", "NVIDIA Corporation") + _td(vol) + _td(oi) + _td(v_oi)
+         + _td("02-Nov-26") + _td("210") + _cp("C") + _td(max_size)],
     )  # fmt: skip
-    page = report(drop="Top VolOverOI (Openings)").replace("</body>", strikes + "</body>")
+    return page.replace("</body>", strikes + "</body>")
+
+
+def _nov2(**kw) -> str:
+    return report(page_date="11/2/2026", drop="Top VolOverOI (Openings)", **kw)
+
+
+def test_a_report_without_the_openings_panel_reads_and_names_it():
+    # 2026-11-02 on: Top Strikes drawn where the Openings panel was. The five other tables still count,
+    # and the new panel, with its extra column, is never taken for the OI > 100 one above it.
+    page = _with_strikes(_nov2())
     assert fq._report_ready(page)
     doc = fq.parse_report(fq.tables_fragment(page, fq.HEADINGS, with_date=True))
-    assert fq.validate_report(doc, DAY) == []
+    assert fq.validate_report(doc, NOV2) == []
     assert set(doc["tables"]) == set(fq.TABLES) - {"openings"}
     assert doc["unavailable"] == {"openings": fq.WITHDRAWN["openings"]}
+    nvda = doc["tables"]["strikes"][0]
+    assert (nvda["volume"], nvda["oi"], nvda["v_oi"], nvda["max_size"], nvda["cp"]) == (
+        270_178,
+        10_087,
+        26.78,
+        1_221,
+        "call",
+    )
+    assert doc["tables"]["voloi"][0]["symbol"] == "SPCX"
+
+
+def test_top_strikes_is_required_from_the_day_the_site_drew_it():
+    assert not fq._report_ready(_nov2())
+    assert _check(_nov2(), NOV2) == ["strikes: table missing ('Top Strikes')"]
+    assert _check(report(), DAY) == []  # a page saved before 2026-11-02 never had one
+
+
+def test_top_strikes_that_do_not_divide_are_rejected():
+    assert _check(_with_strikes(_nov2(), ("270,178", "10,087", "27.78", "1,221")), NOV2) == [
+        "strikes NVDA: 270178 / 10087 != V/OI 27.78"
+    ]
+
+
+def test_a_max_size_past_the_volume_is_rejected():
+    problems = _check(_with_strikes(_nov2(), ("270,178", "10,087", "26.78", "270,179")), NOV2)
+    assert problems == ["strikes NVDA: max size 270179 (one print, at most the volume)"]
 
 
 def test_a_table_that_is_not_a_report_grid_is_not_read():
