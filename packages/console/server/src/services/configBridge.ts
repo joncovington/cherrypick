@@ -1,5 +1,6 @@
 import { suitePython } from "@console/shared/paths";
 import { spawn } from "node:child_process";
+import { pythonArgv } from "./moduleCli.js";
 
 /**
  * The console's only route to suite config: the orchestrator's own editor, reached as a subprocess
@@ -52,7 +53,7 @@ function spawnCaller(req: BridgeRequest): Promise<BridgeResult> {
       resolve({ ok: false, code: "unavailable", error: `${UNAVAILABLE} ${detail}` });
     let child;
     try {
-      child = spawn(suitePython(), ["-m", "cherrypick.orchestrator.configcli"], { windowsHide: true });
+      child = spawn(suitePython(), pythonArgv(["-m", "cherrypick.orchestrator.configcli"]), { windowsHide: true });
     } catch (err) {
       unavailable(`(${(err as Error).message})`);
       return;
