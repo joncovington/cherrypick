@@ -694,6 +694,18 @@
     "start": "09:31",
     "end": "16:10"
   },
+  "account_alerts": {
+    "_comment": "The account's order events (2026-11-02): python -m cherrypick.core.live.account_alerts, a resident job on trading days from start to end ET, armed or not. Read-only: it listens to the account-alert stream in 30 s slices and reads today's orders over REST after each, recording every (order, status) once into data/live/account_alerts.db for live-fill-alerts to announce. The account is the one `module`'s keyring service designates (default: the first enabled module with a live loop and a keyring service). A fill only the REST read saw is a watchdog WARN (account_alerts.stream).",
+    "enabled": true,
+    "start": "09:00",
+    "end": "18:00",
+    "silence_seconds": 180
+  },
+  "live_fill_alerts": {
+    "_comment": "run.py live-fill-alerts, every interval_seconds while account_alerts runs: one LIVE notice per order and kind -- placed, filled (WARNING, with the desktop toast), ended unfilled -- to notify.trade_channels. An order no ledger has published is labelled 'a live loop' when it carries a suite identifier, else 'manual'.",
+    "enabled": true,
+    "interval_seconds": 15
+  },
   "live_settle_overdue": {
     "_comment": "run.py settle-overdue-live, every interval_seconds, every day: settles any past session a flies, bwb or meic live ledger still holds open (a machine down between the close and the disarm) at THAT session's official close (Yahoo daily bar, source yahoo_daily) -- never a provisional price. A session with a pending entry, or no official close found, stays open and the watchdog keeps alerting. Each settlement is announced on every channel. Safeguard item 4, 2026-10-08 (the owner chose official-print-only).",
     "enabled": true,

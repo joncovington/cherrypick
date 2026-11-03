@@ -480,6 +480,7 @@ def _serialize_placed_order(order_id: Any, placed: Any) -> dict:
         "price": str(getattr(placed, "price", None)),
         "filled": str(getattr(placed, "status", "")).strip().lower() == "filled",
         "external_identifier": getattr(placed, "external_identifier", None),
+        "underlying_symbol": getattr(placed, "underlying_symbol", None),
         "fills": _leg_fills(placed),
     }
 
@@ -589,7 +590,7 @@ async def cancel_order(account: Any, session: Any, order_id: Any) -> dict:
 
 async def orders_today(account: Any, session: Any) -> list[dict]:
     """Every order placed today on the account, terminal ones INCLUDED, as
-    [{order_id, status, external_identifier, underlying_symbol, terminal}]. The recovery read
+    [{order_id, status, price, external_identifier, underlying_symbol, terminal}]. The recovery read
     after an uncertain submit (2026-09-17): an order that filled in the seconds between the
     submit and the timeout is no longer working, and `working_orders` would miss it -- and
     missing it is exactly how a retry places the same order twice."""
@@ -598,6 +599,7 @@ async def orders_today(account: Any, session: Any) -> list[dict]:
         {
             "order_id": getattr(o, "id", None),
             "status": str(getattr(o, "status", None)),
+            "price": str(getattr(o, "price", None)),
             "external_identifier": getattr(o, "external_identifier", None),
             "underlying_symbol": getattr(o, "underlying_symbol", None),
             "terminal": getattr(o, "terminal_at", None) is not None,

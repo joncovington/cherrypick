@@ -264,8 +264,11 @@ filename; override with `paper.sla_state_prefix`.
   quote is withheld, not priced, and a leg **neither source can price** is reported and excluded,
   never counted as zero. The others, each scheduled: `live-positions` (designated live accounts
   against the live ledgers, its verdict in `state/live_positions.last.json` for the watchdog to read),
-  `managesnap.py` (the `manage-eval` snapshot) and `desk_notifier`'s order-status poll. A new one
-  needs an equally explicit reason.
+  `managesnap.py` (the `manage-eval` snapshot), `desk_notifier`'s order-status poll, and the
+  `account-alerts` resident job (`cherrypick.core.live.account_alerts`, 2026-11-02: the designated
+  account's order stream plus a REST read of today's orders, through every trading session, so a
+  resting stop's fill after the disarm or a manual order is heard; it records, never acts, and gets
+  a seam with its live gate shut). A new one needs an equally explicit reason.
 - **The settings surface (`settings`, port 8804) is the suite's only mutating HTTP surface.**
   Loopback-only; every route checks the `Host` header (DNS rebinding); every POST needs a per-session
   CSRF token and `application/json` (no CORS headers are sent). Config writes (`configedit.py`) splice

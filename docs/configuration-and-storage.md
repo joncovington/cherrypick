@@ -162,7 +162,8 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | `manage` | **off** (`enabled`), daily at `at` (10:00 ET), and at each `also_at` time; the minute re-mark (`marks`) follows it | `manage-eval`, `manage-eval-HHMM`, `manage-marks` |
 | `backtest` | **off** (`fetch`), daily at `fetch_at` (18:45 ET); the store count follows `fetch` unless `inventory` is set | `backtest-fetch`, `backtest-inventory` |
 | `live_positions` | **on** | `live-positions` |
-| `live_fill_alerts` | **on**, enabled only while a live module is armed | `live-fill-alerts` |
+| `account_alerts` | **on** whenever a module has a live loop and a keyring service; trading days 09:00–18:00, armed or not | `account-alerts` |
+| `live_fill_alerts` | **on**, while `account_alerts` runs | `live-fill-alerts` |
 | `live_settle_overdue` | **on**, hourly | `settle-overdue-live` |
 | `power_watch` | **on** | `power-watch` |
 
