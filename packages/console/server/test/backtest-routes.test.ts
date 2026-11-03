@@ -460,6 +460,8 @@ describe("the gate is open", () => {
       tasks: [{ id: 24, step: "holdout", status: "done", createdAt: null, startedAt: null, finishedAt: "2026-10-28T23:38:59" }],
     });
     expect(body.data.rows[0].results[0]).toEqual({
+      // The payload names no source, as an orchestrator before 2026-11-02 sends: the register's.
+      source: "register",
       name: "study-design.json",
       present: true,
       modified: "2026-10-28T06:50:12",

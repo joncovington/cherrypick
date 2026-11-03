@@ -164,7 +164,7 @@ def grid(data) -> dict | None:
     return g if isinstance(g, dict) and isinstance(g.get("rows"), list) else None
 
 
-def _result(path: str, read, notes, version=lambda path: None) -> dict:
+def _result(path: str, read, notes, version=lambda path: None, source: str = "register") -> dict:
     data, mtime = read(path)
     words = verdicts(data) if data is not None else None
     window, span = (data or {}).get("window"), (data or {}).get("span")
@@ -172,8 +172,9 @@ def _result(path: str, read, notes, version=lambda path: None) -> dict:
         window, span = None, window
     distinct = sorted({w["verdict"] for w in words or []})
     return {
+        "source": source,
         "path": path,
-        "name": path.rsplit("/", 1)[-1],
+        "name": path.replace("\\", "/").rsplit("/", 1)[-1],
         "present": data is not None,
         "modified": mtime,
         "window": window if isinstance(window, str) else None,
@@ -188,25 +189,56 @@ def _result(path: str, read, notes, version=lambda path: None) -> dict:
     }
 
 
+def queue_outputs(tasks: list[dict], listed: set[str], key=lambda p: p) -> list[str]:
+    """The JSON conclusions a study's finished script rows declared and the register does not list
+    yet, newest row first, each once. A study writes its verdict before anyone records it; these let
+    the board show that word meanwhile. `key` makes two spellings of one path compare equal."""
+    out, seen = [], {key(p) for p in listed}
+    for q in sorted(tasks, key=lambda q: q.get("id") or 0, reverse=True):
+        p = q.get("output")
+        if q.get("kind") != "script" or q.get("status") != "done" or not isinstance(p, str):
+            continue
+        if not p.endswith(".json") or key(p) in seen:
+            continue
+        seen.add(key(p))
+        out.append(p)
+    return out
+
+
 def board(
-    reg: dict, queue_rows: list[dict], read, notes=lambda path: None, version=lambda path: None
+    reg: dict,
+    queue_rows: list[dict],
+    read,
+    notes=lambda path: None,
+    version=lambda path: None,
+    key=lambda path: path,
 ) -> dict:
     """The studies board (docs/studies-board-plan.md): each register row joined with its result
     files' verdicts and its research-queue rows. `read(path)` returns `(data, modified)` for a
-    `{home}/...` path, `(None, None)` when the file is absent or unreadable. `notes(path)` returns
-    the Markdown a study left beside that file (`results.json` -> `results.md`), or None.
-    `version(path)` returns the file's replay version against its script's correction log
-    (`studyversion.state`), or None when neither is known.
+    `{home}/...` or absolute path, `(None, None)` when the file is absent or unreadable.
+    `notes(path)` returns the Markdown a study left beside that file (`results.json` ->
+    `results.md`), or None. `version(path)` returns the file's replay version against its script's
+    correction log (`studyversion.state`), or None when neither is known. `key(path)` normalises a
+    path so the register's and the queue's spellings of one file compare equal.
 
-    The register decides the status. Where the queue disagrees (a declared row with a task running)
-    both are shown; the reader never rewrites the register."""
+    Results are the register's files, then (2026-11-02) the conclusions the study's finished queue
+    rows declared that the register does not list yet, marked `source: "queue"` and only when the
+    file is there with a verdict word in it. The register decides the status. Where the queue
+    disagrees (a declared row with a task running, or a verdict written but not recorded) both are
+    shown; the reader never rewrites the register."""
     by_study: dict[str, list[dict]] = {}
     for q in queue_rows:
         by_study.setdefault(q.get("study") or "", []).append(q)
     rows = []
     for r in reg.get("hypotheses", []):
         tasks = sorted(by_study.get(r.get("study"), []), key=lambda q: q.get("id") or 0, reverse=True)
-        results = [_result(p, read, notes, version) for p in r.get("results") or []]
+        listed = list(r.get("results") or [])
+        results = [_result(p, read, notes, version) for p in listed]
+        for p in queue_outputs(tasks, set(listed), key):
+            found = _result(p, read, notes, version, source="queue")
+            # A step's working file (a request list, a coverage count) has no verdict word: not a result.
+            if found["verdicts"] is not None:
+                results.append(found)
         active = any(q.get("status") in ACTIVE for q in tasks)
         status = r.get("status")
         if status in VERDICTS or status == "retired":

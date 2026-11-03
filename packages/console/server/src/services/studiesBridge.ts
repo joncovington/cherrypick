@@ -129,6 +129,8 @@ function toResult(v: unknown): StudyResult | null {
   const sp = r["span"];
   const span = Array.isArray(sp) && sp.length === 2 && typeof sp[0] === "string" && typeof sp[1] === "string" ? ([sp[0], sp[1]] as [string, string]) : null;
   return {
+    // An older orchestrator sends no source: every result it sends is the register's.
+    source: r["source"] === "queue" ? "queue" : "register",
     name,
     present: r["present"] === true,
     modified: s(r["modified"]),

@@ -1,13 +1,13 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import type { BacktestOverview, StudiesBoard, StudyGroup, StudyResult, StudyRow, StudyVersion } from "@console/shared";
+import type { BacktestOverview, StudiesBoard, StudyGroup, StudyRow, StudyVersion } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { useBridged } from "../../lib/bridged";
 import { MiniMarkdown } from "../../lib/miniMarkdown";
 import { writePref } from "../../lib/prefs";
 import { GridBars } from "./GridBars";
 import { FILTER_KEY, ago, etMs, etNowMs, stamp } from "./QueueTab";
-import { studyHref, useStudies } from "./studyIndex";
+import { resultLabel, statusWord, studyHref, useStudies } from "./studyIndex";
 
 /**
  * The Backtest page's studies tab (2026-10-29, docs/studies-board-plan.md): what we tested and what
@@ -41,24 +41,11 @@ const STATUS_CHIP: Record<string, string> = {
 
 const COLS = 4;
 
-/** The register's status in words: `no_verdict` -> "no verdict". */
-export function statusWord(status: string): string {
-  return status.replace(/_/g, " ");
-}
+export { resultLabel, statusWord };
 
 /** The plan section on GitHub, from the register's `<file>#<heading>` pointer. */
 export function planUrl(pointer: string | null): string | null {
   return pointer ? `${REPO_BLOB}${pointer}` : null;
-}
-
-/** What a result file covers: its window, else its span's years, else its name. */
-export function resultLabel(r: StudyResult): string {
-  if (r.window) return r.window;
-  if (r.span) {
-    const [a, b] = [r.span[0].slice(0, 4), r.span[1].slice(0, 4)];
-    return a === b ? a : `${a}–${b}`;
-  }
-  return r.name;
 }
 
 /** One line for a row's results: "design fail · holdout fail". */
@@ -201,6 +188,7 @@ export function StudyDetail({ row }: { row: StudyRow }) {
               </>
             ) : null}
             {r.provisional ? <span className="chip chip-warn"> provisional</span> : null}
+            {r.source === "queue" ? <span className="muted"> · from the queue, not yet in the register</span> : null}
             {r.version ? <VersionNote v={r.version} /> : null}
             {r.grid ? <GridBars grid={r.grid} /> : null}
           </Field>

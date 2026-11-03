@@ -1,7 +1,22 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { ResearchProgress, ResearchQueue, ResearchTask } from "@console/shared";
-import { QueueTable, TaskDetail, ago, argsLine, etMs, headline, keep, plan, queuePollMs, resultLine, stamp } from "../src/pages/Backtest/QueueTab";
+import type { ResearchProgress, ResearchQueue, ResearchTask, StudyResult, StudyRow } from "@console/shared";
+import {
+  QueueTable,
+  TaskDetail,
+  ago,
+  argsLine,
+  chipLabel,
+  etMs,
+  headline,
+  keep,
+  plan,
+  queuePollMs,
+  resultLine,
+  stamp,
+  verdictText,
+} from "../src/pages/Backtest/QueueTab";
+import { indexStudies, splitTitle, type StudyIndex } from "../src/pages/Backtest/studyIndex";
 
 /**
  * The Backtest page's queue tab (laid out again 2026-10-27): now / recent (30 days) / history, five
@@ -72,26 +87,48 @@ describe("the research queue tab: sections", () => {
       task({ id: 3, step: "ready-early", waits: "ready" }),
       task({ id: 6, step: "running", status: "running", startedAt: "2026-10-27T11:00:00", waits: null }),
     ];
-    const p = plan(queue(tasks), NOW);
+    const p = plan(queue(tasks));
     expect(p.running.map((t) => t.step)).toEqual(["running"]);
     expect(p.queued.map((t) => t.step)).toEqual(["ready-early", "ready-late", "early-wait", "late-wait"]);
     expect(headline(p)).toBe("1 running · 4 queued · next: item17/ready-early");
+    // Under Now: ready ones, then waiting ones, each under its own head.
+    const html = render(queue(tasks));
+    expect(html).toContain("ready · 2 · oldest first: the top one starts next");
+    expect(html).toContain("waiting · 2");
+    expect(html.indexOf("ready-late")).toBeLessThan(html.indexOf("waiting · 2"));
+    expect(html.indexOf("waiting · 2")).toBeLessThan(html.indexOf("early-wait"));
   });
 
-  it("keeps the last 30 days as recent, newest first, and older rows in a collapsed history by study", () => {
+  it("groups finished rows by study, the most recently finished study first, its steps newest first", () => {
     const tasks = [
-      task({ id: 1, study: "item17", step: "old", status: "done", finishedAt: "2026-09-01T10:00:00", waits: null }),
-      task({ id: 2, study: "flow", step: "newer", status: "done", finishedAt: "2026-10-26T10:00:00", waits: null }),
-      task({ id: 3, study: "item18", step: "newest", status: "failed", finishedAt: "2026-10-27T09:00:00", waits: null, exitCode: 1 }),
+      task({ id: 1, study: "item17", step: "fetch", status: "done", finishedAt: "2026-09-01T10:00:00", waits: null }),
+      task({ id: 2, study: "item17", step: "study", status: "done", finishedAt: "2026-09-02T10:00:00", waits: null }),
+      task({ id: 3, study: "item18", step: "study", status: "failed", finishedAt: "2026-10-27T09:00:00", waits: null, exitCode: 1 }),
     ];
-    const p = plan(queue(tasks), NOW);
-    expect(p.recent.map((t) => t.step)).toEqual(["newest", "newer"]);
-    expect(p.history.map(([s, ts]) => [s, ts.map((t) => t.step)])).toEqual([["item17", ["old"]]]);
+    const p = plan(queue(tasks));
+    expect(p.studies.map((l) => [l.study, l.tasks.map((t) => t.step)])).toEqual([
+      ["item18", ["study"]],
+      ["item17", ["study", "fetch"]],
+    ]);
     const html = render(queue(tasks));
-    expect(html).toContain("History");
-    expect(html).toContain("1 older than 30 days");
-    expect(html).not.toContain("item17/old"); // collapsed until opened
-    expect(html.indexOf("item18/newest")).toBeLessThan(html.indexOf("flow/newer"));
+    expect(html).toContain("Studies");
+    expect(html).toContain("2 steps: study done · fetch done");
+    expect(html.indexOf("item18")).toBeLessThan(html.indexOf("item17"));
+  });
+
+  it("leaves cancelled rows out unless asked, and counts a study that has nothing else", () => {
+    const tasks = [
+      task({ id: 1, study: "item17", step: "study", status: "done", finishedAt: "2026-10-20T10:00:00", waits: null }),
+      task({ id: 2, study: "item17", step: "study", status: "cancelled", finishedAt: "2026-10-21T10:00:00", waits: null }),
+      task({ id: 3, study: "item44", step: "plan", status: "cancelled", finishedAt: "2026-10-22T10:00:00", waits: null }),
+    ];
+    const p = plan(queue(tasks));
+    expect(p.studies.map((l) => [l.study, l.tasks.length, l.cancelled])).toEqual([["item17", 1, 1]]);
+    expect(p.cancelledOnly).toBe(1);
+    expect(render(queue(tasks))).toContain("1 with only cancelled rows not shown");
+    const all = plan(queue(tasks), undefined, true);
+    expect(all.studies.map((l) => l.study)).toEqual(["item44", "item17"]);
+    expect(render(queue([tasks[2]]))).toContain("Only cancelled rows match");
   });
 
   it("shows a queued row's wait reason as the orchestrator gives it, and a ready one as ready", () => {
@@ -114,7 +151,7 @@ describe("the research queue tab: sections", () => {
     const html = render(q, { status: "active" });
     expect(html).toContain("backtest-run-meic");
     expect(html).not.toContain("meic-replay-check");
-    expect(html).not.toContain("Recent (");
+    expect(html).not.toContain(">Studies <");
   });
 
   it("says when the queue is empty, and when the filter hides everything", () => {
@@ -164,6 +201,111 @@ describe("the research queue tab: rows", () => {
     });
     expect(resultLine(missing)).toBe("item17-report.md (missing) · 4.log");
     expect(render(queue([missing]))).toMatch(/class="pnl-neg"[^>]*>item17-report\.md \(missing\)/);
+  });
+});
+
+function result(over: Partial<StudyResult>): StudyResult {
+  return {
+    source: "register",
+    name: "results.json",
+    present: true,
+    modified: null,
+    window: null,
+    span: null,
+    runId: null,
+    provisional: null,
+    verdicts: [{ arm: null, verdict: "fail" }],
+    summary: "fail",
+    grid: null,
+    notes: null,
+    version: null,
+    ...over,
+  };
+}
+
+function board(rows: Array<Partial<StudyRow> & { study: string; title: string }>): StudyIndex {
+  return indexStudies({
+    rows: rows.map((r, i) => ({
+      id: i + 1,
+      status: "failed",
+      legacy: false,
+      pointer: null,
+      outcome: null,
+      measure: null,
+      expected: null,
+      sample: null,
+      rule: null,
+      mechanism: null,
+      rivals: [],
+      group: "finished",
+      results: [],
+      queueActive: false,
+      tasks: [],
+      lastActivity: null,
+      ...r,
+    })),
+    unregistered: [],
+  });
+}
+
+describe("the research queue tab: naming a study and its results", () => {
+  const done = (over: Partial<ResearchTask>) => task({ status: "done", finishedAt: "2026-10-27T10:00:00", waits: null, needs: "", ...over });
+
+  it("leads with the register title, split at its colon, and keeps the slug as a tag", () => {
+    expect(splitTitle("The wing width of MEIC's live rule: 15, 20, 25 and 30 against 10")).toEqual([
+      "The wing width of MEIC's live rule",
+      "15, 20, 25 and 30 against 10",
+    ]);
+    expect(splitTitle("No colon here")).toEqual(["No colon here", null]);
+    const studies = board([{ study: "item43", title: "The wing width of MEIC's live rule: 15, 20, 25 and 30 against 10" }]);
+    const html = renderToString(<QueueTable q={queue([done({ study: "item43", step: "study-design" })])} nowMs={NOW} studies={studies} />).replace(/<!-- -->/g, "");
+    expect(html).toContain("<strong>The wing width of MEIC&#x27;s live rule</strong>");
+    expect(html).toContain(": 15, 20, 25 and 30 against 10");
+    expect(html).toContain('class="chip muted queue-slug">item43<');
+  });
+
+  it("shows each result file's verdict and the decision, as the board read them", () => {
+    const studies = board([
+      {
+        study: "item24",
+        title: "The entry slot of MEIC's live rule: 12:00 to 13:30 against 14:00",
+        outcome: "live stays at 14:00; the afternoon slot is closed as a lever",
+        results: [result({ name: "d.json", window: "design" }), result({ name: "h.json", window: "holdout", summary: "pass", verdicts: [{ arm: null, verdict: "pass" }] })],
+      },
+    ]);
+    const html = renderToString(<QueueTable q={queue([done({ study: "item24", step: "holdout" })])} nowMs={NOW} studies={studies} />).replace(/<!-- -->/g, "");
+    expect(html).toContain('class="chip chip-missing"');
+    expect(html).toContain(">design fail<");
+    expect(html).toMatch(/class="chip chip-ok"[^>]*>holdout pass</);
+    expect(html).toContain("live stays at 14:00; the afternoon slot is closed as a lever");
+  });
+
+  it("labels a free-text window by its years, and a lone results.json by its verdict alone", () => {
+    expect(chipLabel(result({ window: "2018-02-19..2023-12-29; holdout 2024-01-02..2026-08-21" }), false)).toBe("2018–2026");
+    expect(chipLabel(result({ span: ["2022-05-16", "2024-12-31"] }), true)).toBe("2022–2024");
+    expect(verdictText(result({}), false)).toBe("fail");
+    expect(verdictText(result({ summary: "mixed" }), true)).toBe("results mixed");
+    expect(verdictText(result({ present: false }), false)).toBe("missing");
+  });
+
+  it("says when a verdict came from the queue and the register does not record it yet", () => {
+    const row = { study: "item41", title: "The stabilization entry gate at real quotes: does waiting help?" };
+    const recorded = board([{ ...row, results: [result({ window: "design" })] }]);
+    const q = queue([done({ study: "item41", step: "study-holdout" })]);
+    const strip = (s: string) => s.replace(/<!-- -->/g, "");
+    expect(strip(renderToString(<QueueTable q={q} nowMs={NOW} studies={recorded} />))).not.toContain("not yet recorded");
+    const unrecorded = board([{ ...row, status: "declared", results: [result({ window: "holdout", summary: "pass", source: "queue" })] }]);
+    const html = strip(renderToString(<QueueTable q={q} nowMs={NOW} studies={unrecorded} />));
+    expect(html).toContain(">holdout pass<");
+    expect(html).toContain("not yet recorded");
+  });
+
+  it("names a study the register lacks by its slug, and says so", () => {
+    const html = renderToString(<QueueTable q={queue([done({ study: "gate-oracle", step: "pm-200-design" })])} nowMs={NOW} studies={board([])} />).replace(/<!-- -->/g, "");
+    expect(html).toContain("<strong>gate-oracle</strong>");
+    expect(html).toContain("not in the register");
+    // Before the board loads there is no index, and nothing is said about the register.
+    expect(render(queue([done({ study: "gate-oracle", step: "pm-200-design" })]))).not.toContain("not in the register");
   });
 });
 
