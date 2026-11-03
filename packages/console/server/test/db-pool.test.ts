@@ -12,7 +12,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { clearMemoOnStore, closePooledDbs, memoOnStore, withReadOnlyDb } from "../src/readers/db.js";
+import { DERIVED_CACHE_MAX, clearMemoOnStore, closePooledDbs, memoOnStore, withReadOnlyDb } from "../src/readers/db.js";
 
 function tmpDb(name: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "console-pool-"));
@@ -149,7 +149,8 @@ describe("memoOnStore", () => {
     // Values here are ~1MB and the key carries the day, so an unbounded map would retain every
     // session a user scrolled back through for the life of the process.
     const p = tmpDb("memo-bound.db");
-    for (let i = 0; i < 40; i++) memoOnStore(p, `day-${String(i)}`, () => i);
+    const n = DERIVED_CACHE_MAX + 8;
+    for (let i = 0; i < n; i++) memoOnStore(p, `day-${String(i)}`, () => i);
 
     let rebuilt = 0;
     memoOnStore(p, "day-0", () => {
@@ -159,9 +160,9 @@ describe("memoOnStore", () => {
     expect(rebuilt).toBe(1); // the oldest entries were evicted rather than held forever
 
     let recent = 0;
-    memoOnStore(p, "day-39", () => {
+    memoOnStore(p, `day-${String(n - 1)}`, () => {
       recent++;
-      return 39;
+      return n - 1;
     });
     expect(recent).toBe(0); // the most recent is still cached
   });

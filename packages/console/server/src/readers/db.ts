@@ -318,7 +318,7 @@ const derivedCache = new Map<string, { stamp: string; value: unknown }>();
  * iterates in insertion order, and a re-cached entry is re-inserted below), which is LRU enough for
  * a handful of entries and costs nothing to reason about.
  */
-const DERIVED_CACHE_MAX = 32;
+export const DERIVED_CACHE_MAX = 64;
 
 function cachedOnStamp<T>(key: string, stamp: string): { value: T } | undefined {
   const hit = derivedCache.get(key);
