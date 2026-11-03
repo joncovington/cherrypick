@@ -80,6 +80,19 @@ def test_an_order_with_no_ledger_and_no_suite_identifier_is_manual(tmp_path, mon
     assert "a manual order" in rec.sent[0]["message"] and "on AAPL" in rec.sent[0]["message"]
 
 
+def test_a_fill_or_a_death_asks_the_owning_loop_for_an_early_tick(tmp_path, monkeypatch):
+    """Shown to fail without the request: the loop confirmed the fill up to a minute later."""
+    asked = []
+    monkeypatch.setattr(livefills._supervisor, "request_run", lambda job, by: asked.append((job, by)))
+    cfg = {"modules": {"meic": {"enabled": True, "live": {"task_name": "cherrypick-meic-live-loop"}}}}
+    inbox = _setup(tmp_path, monkeypatch, [("M1", "Live", {}), ("X9", "Filled", {})])  # X9: manual
+    out = livefills.run(cfg, notifier=_Recorder(), today=DAY, inbox=inbox)
+    assert asked == [] and out["woken"] == []  # a placement, and a manual fill, wake nothing
+    add(inbox, [("M1", "Filled", {})])
+    out = livefills.run(cfg, notifier=_Recorder(), today=DAY, inbox=inbox)
+    assert asked == [("meic-live", "live-fill-alerts")] and out["woken"] == ["meic"]
+
+
 def test_a_status_worth_no_notice_sends_nothing(tmp_path, monkeypatch):
     inbox = _setup(tmp_path, monkeypatch, [("M1", "Cancel Requested", {})])
     assert _run(inbox, _Recorder())["sent"] == []

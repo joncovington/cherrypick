@@ -172,6 +172,40 @@ def same_process(pid: int | None, started_at: float | None) -> bool:
     return abs(float(now) - float(started_at)) <= _SAME_PROCESS_TOLERANCE_S
 
 
+# ------------------------------------------------------------------ requested runs (2026-11-02)
+_RUN_REQUEST_MAX_AGE_S = 120
+
+
+def run_request_path(job_id: str) -> Path:
+    return cfgmod.state_file(f"run-requested.{job_id}.json")
+
+
+def request_run(job_id: str, by: str) -> None:
+    """Ask for one EARLY run of an interval job: at the next pass if it is idle, nothing if it is
+    running (that run is already doing the work). Never a restart: nothing is stopped. What
+    `live-fill-alerts` asks when a live loop's order fills or ends, so the loop confirms it in
+    seconds rather than at its next minute."""
+    atomic_write_json(run_request_path(job_id), {"requested_at": time.time(), "by": by})
+
+
+def consume_run_request(job_id: str) -> dict | None:
+    """The pending run request for `job_id`, removed as it is read; None if there is none or it is
+    older than `_RUN_REQUEST_MAX_AGE_S` (an early run long after the event is no longer early)."""
+    path = run_request_path(job_id)
+    req = read_json(path)
+    if not isinstance(req, dict) or not req:
+        return None
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    try:
+        fresh = time.time() - float(req.get("requested_at")) <= _RUN_REQUEST_MAX_AGE_S
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return req if fresh else None
+
+
 # ------------------------------------------------------------------ requested restarts
 _RESTART_REQUEST_MAX_AGE_S = 600
 
@@ -650,6 +684,18 @@ class Supervisor:
                 return False, _EXIT_UNKNOWN
             time.sleep(0.25)
 
+    def _apply_run_request(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> None:
+        """Act on `request_run`: an idle, enabled interval job runs at this pass (its schedule, window
+        and overlap guard still apply). A running one is left alone -- never stopped -- and the
+        request is spent, since that run is already confirming what changed."""
+        req = consume_run_request(spec.id)
+        if req is None or spec.kind != jobspec.KIND_INTERVAL or not spec.enabled:
+            return
+        if self._child_alive(spec, st):
+            return
+        st["next_run_epoch"] = 0
+        _log(f"{spec.id}: early run requested by {req.get('by') or 'unknown'}")
+
     def _apply_restart_request(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> None:
         """Act on `run.py restart <job>`: stop the running child (confirmed gone) and let this same
         pass launch it again; a job not running is simply launched now. A child that will not exit
@@ -901,6 +947,7 @@ class Supervisor:
                 continue
             st.pop("held", None)
             self._apply_restart_request(spec, st)
+            self._apply_run_request(spec, st)
             if spec.kind == jobspec.KIND_RESIDENT:
                 # What this job's liveness is judged against, recorded so a reader does not have to
                 # re-derive the whole job table to find out. `heartbeat_seen` false means the module

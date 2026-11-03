@@ -33,6 +33,7 @@ from cherrypick.core.live import account_alerts as _account
 from cherrypick.notify import Notifier
 
 from . import config as cfgmod
+from . import supervisor as _supervisor
 
 PLACED = frozenset({"received", "routed", "in flight", "live", "contingent"})
 
@@ -155,4 +156,11 @@ def run(
         sent.append({"order_id": oid, "kind": kind, "module": who[0], "status": event["status"]})
     state["notified"] = sorted(notified)
     _save_state(state)
-    return {"ok": True, "sent": sent}
+    # The owning loop confirms a fill or a death at its next tick; ask for that tick now (2026-11-02),
+    # so the ledger follows the broker in seconds. An early run, never a restart: a tick already
+    # running is left alone (`supervisor.request_run`). Only a module whose ledger owns the order.
+    loops = {n for n, m in cfgmod.enabled_modules(cfg).items() if (m.get("live") or {}).get("task_name")}
+    woken = sorted({s["module"] for s in sent if s["kind"] in ("filled", "ended") and s["module"] in loops})
+    for module in woken:
+        _supervisor.request_run(f"{module}-live", by="live-fill-alerts")
+    return {"ok": True, "sent": sent, "woken": woken}
