@@ -19,8 +19,9 @@ Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packag
   arm, and in desk (experimental, foreground, started by a human; no automated package may import it).
   Every other package is paper-only or read-only.
 - **orchestrator** drives modules by subprocess, never by import. It places no order and never flips
-  a live gate. It runs a module's live loop only while that day's human-written arm record is valid,
-  settles overdue live sessions through the module's own command, and its one live-config action is
+  a live gate. It runs a module's live loop only while that day's human-written arm record is valid
+  (MEIC's also runs unarmed, to manage what its book holds; only entries need the arm), settles
+  overdue live sessions through the module's own command, and its one live-config action is
   onboarding/account selection.
 - **streamer** is the only writer of the stream cache. Modules declare symbols in
   `state/stream_requests/`.

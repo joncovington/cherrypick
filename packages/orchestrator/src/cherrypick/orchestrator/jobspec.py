@@ -671,6 +671,19 @@ def _module_tick_argv(paper: dict[str, Any]) -> list[str] | None:
     return None
 
 
+# Live loops whose tick manages what the book holds without today's arm (meic, 2026-11-02): the arm
+# gates new entries only, so their job runs every trading day from the open to the disarm cutoff.
+MANAGES_WHILE_DISARMED = frozenset({"meic"})
+MANAGE_WINDOW_START = "09:30"
+
+
+def _disarm_cutoff(live_cfg: dict[str, Any]) -> str:
+    """`disarm_time` plus `disarm_grace_minutes`, as "HH:MM" ET: the end of the managing window."""
+    h, m = _hhmm(str(live_cfg.get("disarm_time") or "17:00"))
+    total = h * 60 + m + int(live_cfg.get("disarm_grace_minutes", 30))
+    return f"{min(total, 23 * 60 + 59) // 60:02d}:{min(total, 23 * 60 + 59) % 60:02d}"
+
+
 def arm_record_valid(arm: dict[str, Any] | None, live_cfg: dict[str, Any], now: datetime) -> tuple[bool, str]:
     """Is the flies live arm record live RIGHT NOW? Valid = dated today (ET) and before
     disarm_time + grace. The supervisor only ever READS the record — arming authority stays with
@@ -1018,16 +1031,25 @@ def derive_jobs(
         if live and live.get("task_name"):
             armed, why = arm_record_valid(arm_records.get(name), live, now)
             tick_argv = live.get("tick_argv") or ["-m", f"cherrypick.{name}.live_loop", "--once", "--live"]
+            # Unarmed, a loop that manages what it holds runs in the session window anyway: its tick
+            # ends without a broker call when the book is flat, and only entries need the arm.
+            manages = name in MANAGES_WHILE_DISARMED and not armed
+            gate = {
+                "id": f"{name}-live",
+                "enabled": armed or manages,
+                "enabled_reason": f"{why}; managing what the live book holds" if manages else why,
+                "trading_days_only": manages,
+            }
             add(
                 f"{name}-live",
-                lambda name=name, live=live, armed=armed, why=why, tick_argv=tick_argv, root=root: JobSpec(
-                    id=f"{name}-live",
+                lambda live=live, tick_argv=tick_argv, root=root, gate=gate, manages=manages: JobSpec(
+                    **gate,
                     argv=(pythonw, *tick_argv),
                     kind=KIND_INTERVAL,
                     cwd=root,
                     interval_seconds=int(live.get("tick_interval_seconds", 60)),
-                    enabled=armed,
-                    enabled_reason=why,
+                    window_start=MANAGE_WINDOW_START if manages else None,
+                    window_end=_disarm_cutoff(live) if manages else None,
                     tags=("live",),
                     # A failing live tick retries at its own cadence, never on the crash ladder: the
                     # tick is what manages open positions. On 2026-11-02 a quote outage failed every

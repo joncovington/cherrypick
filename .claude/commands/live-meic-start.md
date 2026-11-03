@@ -5,9 +5,10 @@ argument-hint: [--stop]
 
 Arm the MEIC live loop for today. That means real money, real 0DTE iron condors on the pinned
 `live.symbol` (read it from `--status`; never assume SPX), against the real designated account. Arming writes the **arm record**
-(`~/.cherrypick/state/meic-live-arm.json`). The orchestrator's supervisor reads it to enable its
-`meic-live` job, one `cherrypick.meic.live_loop --once --live` tick per minute. Without a running
-supervisor, arming is refused. The loop **self-disarms at `live.disarm_time` (default 17:00 ET)**:
+(`~/.cherrypick/state/meic-live-arm.json`). The orchestrator's supervisor runs the `meic-live` job,
+one `cherrypick.meic.live_loop --once --live` tick per minute; unarmed it only manages what the book
+holds, and the record is what lets it open new ICs. Without a running supervisor, arming is
+refused. The loop **self-disarms at `live.disarm_time` (default 17:00 ET)**:
 disarming deletes the arm record, and any tick that finds a record that is not today's disarms at
 once. Arming is per-day by design, and the orchestrator watchdog backstops with the suite halt
 flag. `enable_live_trading` in `~/.cherrypick/config/meic.json` stays the module's master switch;
@@ -121,24 +122,28 @@ holds is refused.
 
 1. Show current state first: `python -m cherrypick.meic.live_loop --status` (armed? open
    positions? pending orders?).
-2. Confirm the disarm (a plain question is fine: disarming only stops NEW ticks; it places no order
-   and touches no open position).
+2. Confirm the disarm (a plain question is fine: disarming stops NEW ICs; it places no order, and
+   the loop keeps managing what it holds).
 3. ```bash
    python -m cherrypick.meic.live_loop --uninstall-task
    ```
-   This deletes the arm record; the supervisor disables `meic-live` within one pass.
-4. Report what was disarmed. Remind the user: **an open 0DTE IC is no longer stopped or
-   force-closed once the loop is disarmed**. Its working stop orders stay at the broker, but no tick
-   re-prices them. Either re-arm, run manual ticks, or manage it in the broker UI. A resting entry
-   order is NOT cancelled by disarming (it dies at the close as a Day order, or cancel it in the
-   broker UI). An IC still held at the close is settled later by the hourly `settle-overdue-live`
-   job at that day's official close, or by hand with `python -m cherrypick.meic.live_loop --settle
-   --date <YYYY-MM-DD> --price <official close>`. For a harder stop that keeps managing open ICs
-   but blocks new ones, use the halt flag instead of disarming.
+   This deletes the arm record. Within one pass the supervisor moves `meic-live` to its unarmed
+   schedule: trading days from the open to the disarm cutoff, managing only.
+4. Report what was disarmed. Tell the user: **an open IC is still managed after disarming** --
+   fills confirmed, resting stops polled, stops and force-closes sent, and the side settled on the
+   official print, until the disarm cutoff (`disarm_time` plus grace). Entries are refused as
+   `not_armed`. A resting entry order is NOT cancelled by disarming; a fill on it is confirmed and
+   managed, or cancel it in the broker UI. An IC still held after the cutoff is settled by the
+   hourly `settle-overdue-live` job at that day's official close, or by hand with `python -m
+   cherrypick.meic.live_loop --settle --date <YYYY-MM-DD> --price <official close>`. Turning
+   `enable_live_trading` off stops management too: nothing at the broker is touched, and the
+   watchdog's `live_unmanaged` is CRITICAL while positions are held. To stop new trades and keep
+   managing, use the halt flag or disarm, never the master switch.
 
 ## Escape hatch
 
-A single manual live tick needs today's arm record (a tick without one disarms and stops):
+A manual live tick without today's arm record manages what the book holds and opens nothing (with
+nothing held it ends at once):
 ```bash
 python -m cherrypick.meic.live_loop --once --live
 ```

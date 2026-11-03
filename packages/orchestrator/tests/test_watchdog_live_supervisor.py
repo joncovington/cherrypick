@@ -206,3 +206,51 @@ def test_supersnap_never_queried_when_heartbeat_absent(monkeypatch, tmp_path):
     )
     out = wd._check_live("flies", _mcfg(), _MIDDAY, True)
     assert not any(f.key == "flies.live_supervisor" for f in out)
+
+
+# --------------------------------------------------------------------------- unarmed and holding
+_HOLDING = {
+    "armed_for": None,
+    "session_settled": False,
+    "open_positions": 1,
+    "pending_orders": [],
+    "unmet_gates": [],
+}
+
+
+def test_an_unarmed_meic_loop_holding_positions_is_watched_for_freshness(monkeypatch, tmp_path):
+    """Shown to fail with freshness gated on the arm alone: MEIC manages what it holds without an
+    arm (2026-11-02), and a silent tick then leaves those positions unwatched."""
+    _setup(monkeypatch, tmp_path, status_obj=_HOLDING)
+    _jobs({"meic-live": {"enabled": True, "last_start": _iso_ago(20), "last_exit_code": 0}})
+    out = wd._check_live("meic", _mcfg(), _MIDDAY, True)
+    fresh = next(f for f in out if f.key == "meic.live_fresh")
+    assert fresh.status == CRITICAL and "the live book holds positions" in fresh.message
+
+
+def test_an_unarmed_flat_book_is_not_watched(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path, status_obj={**_HOLDING, "session_settled": True, "open_positions": 0})
+    _jobs({"meic-live": {"enabled": True, "last_start": _iso_ago(20), "last_exit_code": 0}})
+    out = wd._check_live("meic", _mcfg(), _MIDDAY, True)
+    assert not any(f.key == "meic.live_fresh" for f in out)
+
+
+def test_holding_with_a_live_gate_unmet_is_critical(monkeypatch, tmp_path):
+    """Shown to fail without (c7): the master switch off left positions unmanaged, and nothing said so."""
+    status = {**_HOLDING, "pending_orders": ["P1"], "unmet_gates": ["enable_live_trading is false"]}
+    _setup(monkeypatch, tmp_path, status_obj=status)
+    out = wd._check_live("meic", _mcfg(), _MIDDAY, False)
+    unmanaged = next(f for f in out if f.key == "meic.live_unmanaged")
+    assert unmanaged.status == CRITICAL
+    assert "1 open live position(s) and 1 pending order(s)" in unmanaged.message
+    assert "enable_live_trading is false" in unmanaged.message
+
+
+def test_gates_met_or_a_flat_book_is_not_unmanaged(monkeypatch, tmp_path):
+    _setup(monkeypatch, tmp_path, status_obj=_HOLDING)
+    out = wd._check_live("meic", _mcfg(), _MIDDAY, False)
+    assert next(f for f in out if f.key == "meic.live_unmanaged").status == OK
+    flat = {**_HOLDING, "session_settled": True, "open_positions": 0, "unmet_gates": ["x"]}
+    _setup(monkeypatch, tmp_path, status_obj=flat)
+    out = wd._check_live("meic", _mcfg(), _MIDDAY, False)
+    assert next(f for f in out if f.key == "meic.live_unmanaged").status == OK

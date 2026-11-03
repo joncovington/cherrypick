@@ -242,7 +242,12 @@ filename; override with `paper.sla_state_prefix`.
 - **Paper ↔ live isolation.** The orchestrator never places, cancels or sizes an order and never
   flips `enable_live_trading`. It does run a module's OWN live loop as the `<module>-live` job (and
   the companions its arm record names) only while a human's per-day arm record is valid
-  (`core.live`, `jobspec`). Its live safeguards are read-only at the broker (`live-positions`,
+  (`core.live`, `jobspec`). The exception is `MANAGES_WHILE_DISARMED` (meic, 2026-11-02): that job
+  also runs unarmed on trading days from the open to the disarm cutoff, because its tick manages
+  what the book holds and refuses only new entries without the arm; with a flat book it ends
+  without a broker call. The watchdog watches it for freshness while the book holds positions, and
+  `live_unmanaged` is CRITICAL when positions are held and a live gate (the master switch) is
+  unmet. Its live safeguards are read-only at the broker (`live-positions`,
   `live-fill-alerts`); the one that writes a live ledger, `settle-overdue-live`, does it through the
   module's own `live_loop --settle-overdue` at the official close and announces every write. Anything
   advisory (`calibrate`, the drawdown alert) never mutates a config or switches live risk. Live P&L is

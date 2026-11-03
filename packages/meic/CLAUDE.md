@@ -42,9 +42,10 @@ decisions per symbol, one shared account-wide risk budget.
   `analytics.py` read reproducible.
 - **Live (deterministic, armed per day).** `cherrypick/meic/live_loop.py` trades one pinned
   `live.symbol` with the same `paper.py` decision functions, against `meic_trades.db`. The supervisor
-  runs it as the `meic-live` job (one `--once --live` tick a minute) only while a human's
-  `/live-meic-start` arm record is today's, and it is inert unless `readiness()` comes back empty. No
-  ORB, no discretionary tightening, no working-order repricing beyond the stop rule.
+  runs it as the `meic-live` job (one `--once --live` tick a minute), and it is inert unless
+  `readiness()` comes back empty. New ICs need a human's `/live-meic-start` arm record for today;
+  management does not (below). No ORB, no discretionary tightening, no working-order repricing
+  beyond the stop rule.
 - **Interactive (agent-driven).** You execute the Loop Steps in [docs/agent-loop.md](docs/agent-loop.md) for manual `/meic-start` sessions,
   through `tt execute_trade --live`. That path needs `enable_live_trading: true` and the designated
   account, but not `live.symbol` or `live.gate0_confirmed`. Since 2026-10-27 an **opening** order on
@@ -63,8 +64,8 @@ decisions per symbol, one shared account-wide risk budget.
   Calendar and fees come from `cherrypick.core.calendar` / `cherrypick.core.fees`; add a symbol's fee
   by extending `cherrypick.core.fees`, never by hardcoding here.
 - **The orchestrator boundary is strict.** It runs this module by subprocess for paper collection, fires
-  `meic-paper`, watchdogs it and the streamer, and, from a human's arm record only, runs the
-  `meic-live` tick; it also runs `meic-fee-reconcile`, `meic-regime-cuts` and the suite's
+  `meic-paper`, watchdogs it and the streamer, and runs the `meic-live` tick (entries from a
+  human's arm record only); it also runs `meic-fee-reconcile`, `meic-regime-cuts` and the suite's
   `settle-overdue-live`, and reads `paper_trades.db` for reporting. It **never
   edits this module's code or config, never places, cancels, adjusts or closes an order, and never
   flips `enable_live_trading`**. Its one live-config action is onboarding (`cherrypick
@@ -117,9 +118,15 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 - **`enable_live_trading: true` in `config.json` is the master switch.** There is no environment
   fallback: an env var is outside the orchestrator's guarded config table and carries no attestation.
 - **The live loop is armed one day at a time (2026-10-14, the flies/bwb posture).** `/live-meic-start`
-  writes the arm record (`--install-task`, `cherrypick.core.live`); the supervisor runs `meic-live`
-  only while it is today's, and each `--live` tick deletes it once stale or past `live.disarm_time`,
-  before any broker read. A manual `--once --live` needs the record too. `--status` is the arming
+  writes the arm record (`--install-task`, `cherrypick.core.live`), and each `--live` tick deletes
+  it once stale or past `live.disarm_time`, before any broker read. **The arm gates new ICs only
+  (2026-11-02).** Unarmed, a tick whose book holds nothing today ends there without a broker call;
+  one that holds an IC or a pending entry runs management only (fill confirmation, resting stops,
+  stops, force-close, settlement), with entries blocked as `not_armed`. The supervisor therefore
+  runs `meic-live` every trading day from the open to the disarm cutoff, armed or not. Unarmed
+  with a live gate unmet (the master switch off), the tick touches nothing and says `unmanaged`;
+  the watchdog's `live_unmanaged` is the CRITICAL. Before this, disarming left an open IC
+  unmanaged until the next day's catch-up settle. `--status` is the arming
   command's and the watchdog's read (no broker). `live.max_structures_per_day` (default 1) caps new
   ICs a session (`null` lifts the count cap, so buying power alone sizes); a one-tick lock keeps a
   slow tick from overlapping the next. `live.daily_loss_halt_dollars` and the halt flag block NEW ICs

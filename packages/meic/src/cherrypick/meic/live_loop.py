@@ -1753,28 +1753,56 @@ def main(argv=None) -> int:
     if not args.once:
         ap.error("--once is required (or --status, --expected-legs, --install-task, --uninstall-task)")
     live = not args.dry_run
+    not_armed = None
     if live:
         # The dead-man's switch, before any broker read: a record that is not today's, or a clock
-        # past disarm_time, deletes the record and ends the tick. Manual live ticks need an arm too.
+        # past disarm_time, deletes the record. Since 2026-11-02 it ends ENTRIES, not management:
+        # a tick with no arm still confirms fills, stops, force-closes and settles what today's book
+        # holds, and with nothing held it ends here without a broker call. Disarming used to leave
+        # an open IC unmanaged until the next day's catch-up settle.
         now = _pl._now_et()
-        reason = should_disarm(cfg, _now_min(now), now.strftime("%Y-%m-%d"))
-        if reason:
-            uninstall_task()
-            return out({"ok": True, "disarmed": reason})
+        today = now.strftime("%Y-%m-%d")
+        not_armed = should_disarm(cfg, _now_min(now), today)
+        if not_armed:
+            if arm_stamp_date() is not None:
+                uninstall_task()
+            try:
+                held = holds_today(str(_paths.live_db_path()), today)
+            except LedgerUnreadable:
+                held = True  # cannot show nothing is held: the tick runs and fails loudly if it must
+            if not held:
+                return out({"ok": True, "disarmed": not_armed})
     designated = _designated_account()
     unmet = readiness(cfg, designated=designated)
     if live and unmet:
+        if not_armed:
+            # Not armed, positions held, and a gate (the master switch, the designation) refuses
+            # every broker act: nothing is managed. The watchdog's `live_unmanaged` says so; failing
+            # every minute here would only add a crash ladder to it.
+            return out({"ok": True, "unmanaged": "live gates unmet", "unmet": unmet, "disarmed": not_armed})
         return _fail({"ok": False, "error": "live gates unmet", "unmet": unmet})
     # One tick at a time: a slow broker call must not let the next minute's tick submit beside it.
     if not _looplock.acquire(_once_lock_path(), 180, alive=_looplock.pid_alive):
         return out({"ok": True, "skipped": "another live tick is running"})
     try:
-        return _tick(cfg, designated, unmet, live)
+        return _tick(cfg, designated, unmet, live, not_armed=not_armed)
     finally:
         _looplock.release(_once_lock_path())
 
 
-def _tick(cfg: dict, designated: str | None, unmet: list[str], live: bool) -> int:
+def holds_today(db_path: str, today: str) -> bool:
+    """Does today's live book hold anything a tick must manage: an entry still pending, or an IC
+    open or partly closed. Raises `LedgerUnreadable`; a past session is `settle-overdue`'s."""
+    return bool(
+        _ledger_rows(
+            db_path, "trade_date = ? AND status IN ('pending', 'open', 'partial', 'partial_entry')", (today,)
+        )
+    )
+
+
+def _tick(
+    cfg: dict, designated: str | None, unmet: list[str], live: bool, *, not_armed: str | None = None
+) -> int:
     if unmet:
         print(f"note: dry-run with unmet live gates: {unmet}", file=sys.stderr)
     for warning in _pl._live_config_warnings(cfg, paper.load_profiles()):
@@ -1807,6 +1835,8 @@ def _tick(cfg: dict, designated: str | None, unmet: list[str], live: bool) -> in
     _ensure_live_schema(db_path)
     # The halt flag and the daily-loss breaker stop NEW ICs only; open ones are still managed.
     blockers = entry_blockers(cfg, db_path, snapshot["date"], halt_present=os.path.exists(halt_flag_path()))
+    if not_armed:
+        blockers = [*blockers, f"not_armed ({not_armed})"]
     if manage_only is not None:
         blockers = [*blockers, f"manage_only ({manage_only['error']})"]
     summary = run_once(cfg, snapshot, db_path, broker, live=live, entry_block=blockers)
