@@ -51,60 +51,60 @@ beforeAll(() => {
   } as unknown as ConsoleConfig;
 });
 
-const history = () => readEarnings(config, undefined, "ALL");
-const row = (id: string) => history().trades.rows.find((r) => r.orderId === id);
+const history = async () => await readEarnings(config, undefined, "ALL");
+const row = async (id: string) => (await history()).trades.rows.find((r) => r.orderId === id);
 
 describe("earnings' history rows", () => {
-  it("are the closed trades only", () => {
-    expect(history().trades.total).toBe(3);
+  it("are the closed trades only", async () => {
+    expect((await history()).trades.total).toBe(3);
   });
 
-  it("sign the entry and exit in whole-position dollars, a debit entry negative", () => {
-    expect(row("t-itm")?.entryCash).toBe(400);
-    expect(row("t-itm")?.exitCash).toBe(-600);
-    expect(row("t-old")?.entryCash).toBe(-120);
+  it("sign the entry and exit in whole-position dollars, a debit entry negative", async () => {
+    expect((await row("t-itm"))?.entryCash).toBe(400);
+    expect((await row("t-itm"))?.exitCash).toBe(-600);
+    expect((await row("t-old"))?.entryCash).toBe(-120);
   });
 
-  it("count a multi-contract row's quantity once: entry_credit already carries it", () => {
+  it("count a multi-contract row's quantity once: entry_credit already carries it", async () => {
     // Multiplying by quantity again read this 2-lot's entry as +800 against a -200 gross.
-    const r = row("t-itm");
+    const r = await row("t-itm");
     expect(r?.quantity).toBe(2);
     expect(r?.entryCash).toBe(400);
     expect((r?.entryCash ?? 0) + (r?.exitCash ?? 0)).toBe(r?.gross);
     // The one per-share column is per share.
     expect(r?.entryCredit).toBe(2);
-    expect(row("t-old")?.entryCredit).toBe(-1.2);
+    expect((await row("t-old"))?.entryCredit).toBe(-1.2);
   });
 
-  it("add up: entry + exit = gross, gross - fees - settlement - slippage = net", () => {
-    for (const r of history().trades.rows) {
+  it("add up: entry + exit = gross, gross - fees - settlement - slippage = net", async () => {
+    for (const r of (await history()).trades.rows) {
       expect((r.entryCash ?? 0) + (r.exitCash ?? 0)).toBeCloseTo(r.gross ?? NaN, 2);
       expect((r.gross ?? 0) - (r.fees ?? 0) - (r.settlementFees ?? 0) - (r.slippage ?? 0)).toBeCloseTo(r.net ?? NaN, 2);
     }
   });
 
-  it("take each part out of the cost total once", () => {
-    const r = row("t-itm");
+  it("take each part out of the cost total once", async () => {
+    const r = await row("t-itm");
     expect(r?.settlementFees).toBe(5);
     expect(r?.slippage).toBe(1);
     expect(r?.fees).toBe(2);
     expect(r?.net).toBe(-208);
   });
 
-  it("read settlement as not recorded where the split never was", () => {
-    expect(row("t-old")?.settlementFees).toBeNull();
-    expect(row("t-old")?.fees).toBe(2.4);
+  it("read settlement as not recorded where the split never was", async () => {
+    expect((await row("t-old"))?.settlementFees).toBeNull();
+    expect((await row("t-old"))?.fees).toBe(2.4);
   });
 
-  it("name how each ended", () => {
-    expect(row("t-itm")?.exitKind).toBe("settled");
-    expect(row("t-pt")?.exitKind).toBe("closed");
+  it("name how each ended", async () => {
+    expect((await row("t-itm"))?.exitKind).toBe("settled");
+    expect((await row("t-pt"))?.exitKind).toBe("closed");
     expect(earningsExitKind("expired", 0)).toBe("expired");
     expect(earningsExitKind("front_expiry", null)).toBe("closed");
   });
 
-  it("total the same way the rows add up", () => {
-    const t = history().totals;
+  it("total the same way the rows add up", async () => {
+    const t = (await history()).totals;
     expect(t.trades).toBe(3);
     expect(t.gross).toBe(-60);
     expect(t.gross - t.fees - t.settlementFees - t.slippage).toBeCloseTo(t.net, 2);
@@ -112,7 +112,7 @@ describe("earnings' history rows", () => {
 });
 
 describe("earnings' open positions", () => {
-  it("carry entry cash for every contract, counted once, and a per-share price", () => {
+  it("carry entry cash for every contract, counted once, and a per-share price", async () => {
     const open = readEarningsAnalytics(config, "paper", "ALL").openPositions.find((p) => p.symbol === "S");
     expect(open?.quantity).toBe(3);
     expect(open?.price).toBe(0.9);
@@ -122,18 +122,18 @@ describe("earnings' open positions", () => {
 });
 
 describe("earnings' history date range", () => {
-  it("bounds the close, rows and totals alike", () => {
-    const day = row("t-itm")!.closedAt!.slice(0, 10);
-    const r = readEarnings(config, undefined, "ALL", { from: day, to: day });
-    const expected = history().trades.rows.filter((x) => x.closedAt?.slice(0, 10) === day);
+  it("bounds the close, rows and totals alike", async () => {
+    const day = (await row("t-itm"))!.closedAt!.slice(0, 10);
+    const r = await readEarnings(config, undefined, "ALL", { from: day, to: day });
+    const expected = (await history()).trades.rows.filter((x) => x.closedAt?.slice(0, 10) === day);
     expect(r.trades.rows.map((x) => x.orderId).sort()).toEqual(expected.map((x) => x.orderId).sort());
     expect(r.totals.trades).toBe(expected.length);
     expect(r.totals.net).toBeCloseTo(expected.reduce((n, x) => n + (x.net ?? 0), 0), 2);
   });
 
-  it("leaves the open positions alone", () => {
-    const r = readEarnings(config, undefined, "ALL", { from: "2030-01-01", to: null });
+  it("leaves the open positions alone", async () => {
+    const r = await readEarnings(config, undefined, "ALL", { from: "2030-01-01", to: null });
     expect(r.trades.total).toBe(0);
-    expect(r.openPositions).toEqual(history().openPositions);
+    expect(r.openPositions).toEqual((await history()).openPositions);
   });
 });

@@ -1,4 +1,5 @@
-import { spawnModuleCli } from "./moduleCli.js";
+import { AsyncMemo } from "./asyncMemo.js";
+import { spawnModuleCliAsync } from "./moduleCli.js";
 import type {
   PerformanceModuleId,
   ExcursionPosition,
@@ -98,10 +99,10 @@ const SPECS: Partial<Record<PerformanceModuleId, Spec>> = {
   },
 };
 
-function spawnCaller(module: PerformanceModuleId, dbPath: string, era: string | null = null): ExcursionsResult {
+async function spawnCaller(module: PerformanceModuleId, dbPath: string, era: string | null = null): Promise<ExcursionsResult> {
   const spec = SPECS[module];
   if (spec === undefined) return { ok: false, data: null, error: UNAVAILABLE };
-  const res = spawnModuleCli(spec.argv(dbPath, era), UNAVAILABLE);
+  const res = await spawnModuleCliAsync(spec.argv(dbPath, era), UNAVAILABLE);
   if (!res.ok || res.json === null) return { ok: false, data: null, error: res.error };
   if (res.json["ok"] !== true) {
     const err = res.json["error"];
@@ -114,10 +115,11 @@ function spawnCaller(module: PerformanceModuleId, dbPath: string, era: string | 
   }
 }
 
-let caller = spawnCaller;
+type Caller = (module: PerformanceModuleId, dbPath: string, era: string | null) => ExcursionsResult | Promise<ExcursionsResult>;
+let caller: Caller = spawnCaller;
 
 /** Swap the subprocess out in tests. Pass nothing to restore the real one. */
-export function setExcursionsCaller(fn?: typeof spawnCaller): void {
+export function setExcursionsCaller(fn?: Caller): void {
   caller = fn ?? spawnCaller;
 }
 
@@ -125,20 +127,15 @@ export function setExcursionsCaller(fn?: typeof spawnCaller): void {
 // calibration reading, and the same reason for a long TTL: the answer only moves when a new
 // position closes.
 const TTL_MS = 120_000;
-const cache = new Map<string, { at: number; value: ExcursionsResult }>();
+const cache = new AsyncMemo<ExcursionsResult>();
 
 export function readExcursions(
   module: PerformanceModuleId,
   dbPath: string,
   era: string | null = null,
   now = Date.now(),
-): ExcursionsResult {
-  const key = `${module}|${dbPath}|${era ?? ""}`;
-  const hit = cache.get(key);
-  if (hit !== undefined && now - hit.at < TTL_MS) return hit.value;
-  const value = caller(module, dbPath, era);
-  cache.set(key, { at: now, value });
-  return value;
+): Promise<ExcursionsResult> {
+  return cache.get(`${module}|${dbPath}|${era ?? ""}`, TTL_MS, now, () => caller(module, dbPath, era));
 }
 
 /** Drop the memoised readings. Tests only. */

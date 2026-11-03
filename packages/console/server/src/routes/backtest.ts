@@ -45,14 +45,14 @@ function refuse(reply: FastifyReply): FastifyReply {
 
 export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleConfig): void {
   app.get("/api/backtest/overview", async (_req, reply): Promise<BridgedResult<BacktestOverview> | FastifyReply> => {
-    if (!backtestOn(getFeatures())) return refuse(reply);
+    if (!backtestOn(await getFeatures())) return refuse(reply);
     return readBacktestOverview();
   });
 
   app.get<{ Params: { id: string }; Querystring: { capital?: string; risk?: string; unit?: string; dd?: string } }>(
     "/api/backtest/runs/:id",
     async (req, reply): Promise<BridgedResult<BacktestRunReport> | FastifyReply> => {
-      if (!backtestOn(getFeatures())) return refuse(reply);
+      if (!backtestOn(await getFeatures())) return refuse(reply);
       if (!isBacktestRunId(req.params.id)) return reply.code(400).send({ error: "not a run id" });
       // The cards' account: whole dollars or nothing (the run's own peak risk). Anything else is a
       // 400 and runs nothing.
@@ -90,7 +90,7 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
   app.get<{ Params: { id: string }; Querystring: { arm?: string } }>(
     "/api/backtest/runs/:id/trades",
     async (req, reply): Promise<BridgedResult<BacktestTradeLog> | FastifyReply> => {
-      if (!backtestOn(getFeatures())) return refuse(reply);
+      if (!backtestOn(await getFeatures())) return refuse(reply);
       if (!isBacktestRunId(req.params.id)) return reply.code(400).send({ error: "not a run id" });
       const arm = req.query.arm;
       if (arm === undefined || !isBacktestArm(arm)) return reply.code(400).send({ error: "not an arm name" });
@@ -103,7 +103,7 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
   app.get<{ Params: { id: string }; Querystring: { arm?: string; session?: string; position?: string } }>(
     "/api/backtest/runs/:id/path",
     async (req, reply): Promise<BridgedResult<BacktestTradePath> | FastifyReply> => {
-      if (!backtestOn(getFeatures())) return refuse(reply);
+      if (!backtestOn(await getFeatures())) return refuse(reply);
       if (!isBacktestRunId(req.params.id)) return reply.code(400).send({ error: "not a run id" });
       const { arm, session, position } = req.query;
       if (arm === undefined || !isBacktestArm(arm)) return reply.code(400).send({ error: "not an arm name" });
@@ -116,21 +116,21 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
   // The research queue's rows (orchestrator `queue-list`). Behind the same gate: its tasks are the
   // fetches and studies over the licensed history.
   app.get("/api/backtest/queue", async (_req, reply): Promise<BridgedResult<ResearchQueue> | FastifyReply> => {
-    if (!backtestOn(getFeatures())) return refuse(reply);
+    if (!backtestOn(await getFeatures())) return refuse(reply);
     return readResearchQueue();
   });
 
   // The studies board (orchestrator `hypotheses-board`). Behind the same gate: its verdicts are read
   // from licensed result files.
   app.get("/api/backtest/studies", async (_req, reply): Promise<BridgedResult<StudiesBoard> | FastifyReply> => {
-    if (!backtestOn(getFeatures())) return refuse(reply);
+    if (!backtestOn(await getFeatures())) return refuse(reply);
     return readStudies();
   });
 
   // One task's log tail, for its expanded row. The id is a positive integer and the path is built
   // from it alone, so nothing outside `logs/research-queue/` can be named.
   app.get<{ Params: { id: string } }>("/api/backtest/queue/:id/log", async (req, reply) => {
-    if (!backtestOn(getFeatures()) || config === undefined) return refuse(reply);
+    if (!backtestOn(await getFeatures()) || config === undefined) return refuse(reply);
     if (!/^[1-9]\d{0,8}$/.test(req.params.id)) return reply.code(400).send({ error: "task id must be a positive integer" });
     const result: BridgedResult<{ lines: string[] }> = {
       ok: true,
@@ -143,7 +143,7 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
   // B5's slice reports (`technicals slices` files). Behind the same gate: one may be built from a
   // licensed replay.
   app.get("/api/backtest/slices", async (_req, reply) => {
-    if (!backtestOn(getFeatures()) || config === undefined) return refuse(reply);
+    if (!backtestOn(await getFeatures()) || config === undefined) return refuse(reply);
     return readSlices(config);
   });
 }

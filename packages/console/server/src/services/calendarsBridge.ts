@@ -1,4 +1,5 @@
-import { spawnModuleCli } from "./moduleCli.js";
+import { AsyncMemo } from "./asyncMemo.js";
+import { spawnModuleCliAsync } from "./moduleCli.js";
 
 /**
  * The two calendars answers this package must not compute for itself.
@@ -36,14 +37,15 @@ interface Spawned {
   error: string | null;
 }
 
-function spawnCli(verb: string): Spawned {
-  return spawnModuleCli(["-m", "cherrypick.calendars.cli", verb], UNAVAILABLE);
+function spawnCli(verb: string): Promise<Spawned> {
+  return spawnModuleCliAsync(["-m", "cherrypick.calendars.cli", verb], UNAVAILABLE);
 }
 
-let caller = spawnCli;
+type Caller = (verb: string) => Spawned | Promise<Spawned>;
+let caller: Caller = spawnCli;
 
 /** Swap the subprocess out in tests. Pass nothing to restore the real one. */
-export function setCalendarsCaller(fn?: typeof spawnCli): void {
+export function setCalendarsCaller(fn?: Caller): void {
   caller = fn ?? spawnCli;
 }
 
@@ -52,19 +54,15 @@ export function setCalendarsCaller(fn?: typeof spawnCli): void {
 const PLAN_TTL_MS = 600_000;
 const POLICIES_TTL_MS = 300_000;
 
-const cache = new Map<string, { at: number; value: Spawned }>();
+const memo = new AsyncMemo<Spawned>();
 
-function memoised(verb: string, ttl: number, now: number): Spawned {
-  const hit = cache.get(verb);
-  if (hit !== undefined && now - hit.at < ttl) return hit.value;
-  const value = caller(verb);
-  cache.set(verb, { at: now, value });
-  return value;
+function memoised(verb: string, ttl: number, now: number): Promise<Spawned> {
+  return memo.get(verb, ttl, now, () => caller(verb));
 }
 
 /** Drop the memoised responses. Tests only. */
 export function resetCalendarsCache(): void {
-  cache.clear();
+  memo.clear();
 }
 
 export interface CalendarsPlanResult {
@@ -91,8 +89,8 @@ function obj(v: unknown): Record<string, unknown> {
 }
 
 /** `cli status`'s `week_plan` — the anchors for the week the NEXT entry belongs to. */
-export function readCalendarsPlan(now = Date.now()): CalendarsPlanResult {
-  const res = memoised("status", PLAN_TTL_MS, now);
+export async function readCalendarsPlan(now = Date.now()): Promise<CalendarsPlanResult> {
+  const res = await memoised("status", PLAN_TTL_MS, now);
   if (!res.ok || res.json === null) return { plan: null, error: res.error };
   const p = res.json["week_plan"];
   // A null week_plan is a real answer (a calendar that cannot produce a week), not a failure.
@@ -143,7 +141,7 @@ export interface PoliciesResult {
 }
 
 /** `cli policies` — `exit_policies.comparison_table`, validation included by construction. */
-export function readCalendarsPolicies(now = Date.now()): PoliciesResult {
+export async function readCalendarsPolicies(now = Date.now()): Promise<PoliciesResult> {
   const empty: PoliciesResult = {
     ok: false,
     error: null,
@@ -152,7 +150,7 @@ export function readCalendarsPolicies(now = Date.now()): PoliciesResult {
     policies: [],
     validation: null,
   };
-  const res = memoised("policies", POLICIES_TTL_MS, now);
+  const res = await memoised("policies", POLICIES_TTL_MS, now);
   if (!res.ok || res.json === null) return { ...empty, error: res.error };
 
   const table = obj(res.json["policies"]);

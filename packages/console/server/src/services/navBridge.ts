@@ -7,7 +7,7 @@ import type {
   EquityReading,
   NavReading,
 } from "@console/shared";
-import { spawnModuleCli } from "./moduleCli.js";
+import { spawnModuleCliAsync } from "./moduleCli.js";
 
 /**
  * Daily-series readings from the modules' own analytics (`contango metrics`, `curve equity`), both
@@ -69,8 +69,8 @@ export function normalizeCurve(json: Record<string, unknown>): Omit<CurveEquity,
   return { arms };
 }
 
-function contangoCaller(dbPath: string): ContangoMetrics {
-  const res = spawnModuleCli(["-m", "cherrypick.contango.cli", "--db", dbPath, "metrics"], CONTANGO_UNAVAILABLE);
+async function contangoCaller(dbPath: string): Promise<ContangoMetrics> {
+  const res = await spawnModuleCliAsync(["-m", "cherrypick.contango.cli", "--db", dbPath, "metrics"], CONTANGO_UNAVAILABLE);
   if (!res.ok || res.json === null) return { ok: false, error: res.error, arms: {}, benchmarks: {} };
   try {
     return { ok: true, error: null, ...normalizeContango(res.json) };
@@ -79,8 +79,8 @@ function contangoCaller(dbPath: string): ContangoMetrics {
   }
 }
 
-function curveCaller(dbPath: string): CurveEquity {
-  const res = spawnModuleCli(["-m", "cherrypick.curve.cli", "--db", dbPath, "equity"], CURVE_UNAVAILABLE);
+async function curveCaller(dbPath: string): Promise<CurveEquity> {
+  const res = await spawnModuleCliAsync(["-m", "cherrypick.curve.cli", "--db", dbPath, "equity"], CURVE_UNAVAILABLE);
   if (!res.ok || res.json === null) return { ok: false, error: res.error, arms: {} };
   try {
     return { ok: true, error: null, ...normalizeCurve(res.json) };
@@ -91,9 +91,9 @@ function curveCaller(dbPath: string): CurveEquity {
 
 /** pmcc's `equity` verb: every position valued at each session's close by `tracker.value_at`,
  *  scoped to `era` like its arm comparison ("ALL" pools every era). */
-function pmccCaller(dbPath: string, era: string | null): CurveEquity {
+async function pmccCaller(dbPath: string, era: string | null): Promise<CurveEquity> {
   const argv = ["-m", "cherrypick.pmcc.cli", "--db", dbPath, "equity", ...(era === null ? [] : ["--era", era])];
-  const res = spawnModuleCli(argv, PMCC_UNAVAILABLE);
+  const res = await spawnModuleCliAsync(argv, PMCC_UNAVAILABLE);
   if (!res.ok || res.json === null) return { ok: false, error: res.error, arms: {} };
   try {
     return { ok: true, error: null, ...normalizeCurve(res.json) };
@@ -102,10 +102,16 @@ function pmccCaller(dbPath: string, era: string | null): CurveEquity {
   }
 }
 
-let callers = { contango: contangoCaller, curve: curveCaller, pmcc: pmccCaller };
+interface NavCallers {
+  contango: (dbPath: string) => ContangoMetrics | Promise<ContangoMetrics>;
+  curve: (dbPath: string) => CurveEquity | Promise<CurveEquity>;
+  pmcc: (dbPath: string, era: string | null) => CurveEquity | Promise<CurveEquity>;
+}
+
+let callers: NavCallers = { contango: contangoCaller, curve: curveCaller, pmcc: pmccCaller };
 
 /** Swap the subprocesses out in tests. Pass nothing to restore the real ones. */
-export function setNavCallers(fns?: Partial<typeof callers>): void {
+export function setNavCallers(fns?: Partial<NavCallers>): void {
   callers = {
     contango: fns?.contango ?? contangoCaller,
     curve: fns?.curve ?? curveCaller,
@@ -113,14 +119,14 @@ export function setNavCallers(fns?: Partial<typeof callers>): void {
   };
 }
 
-export function readPmccEquity(dbPath: string, era: string | null): CurveEquity {
+export async function readPmccEquity(dbPath: string, era: string | null): Promise<CurveEquity> {
   return callers.pmcc(dbPath, era);
 }
 
-export function readContangoMetrics(dbPath: string): ContangoMetrics {
+export async function readContangoMetrics(dbPath: string): Promise<ContangoMetrics> {
   return callers.contango(dbPath);
 }
 
-export function readCurveEquity(dbPath: string): CurveEquity {
+export async function readCurveEquity(dbPath: string): Promise<CurveEquity> {
   return callers.curve(dbPath);
 }

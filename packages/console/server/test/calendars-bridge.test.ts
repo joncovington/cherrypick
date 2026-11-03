@@ -53,9 +53,9 @@ const POLICIES = {
 };
 
 describe("the calendars bridge", () => {
-  it("passes the week anchors through as the module computed them", () => {
+  it("passes the week anchors through as the module computed them", async () => {
     setCalendarsCaller(() => ({ ok: true, json: PLAN, error: null }));
-    const out = readCalendarsPlan(1_000);
+    const out = await readCalendarsPlan(1_000);
     expect(out.error).toBeNull();
     expect(out.plan).toEqual({
       weekOf: "2026-08-17",
@@ -66,20 +66,20 @@ describe("the calendars bridge", () => {
     });
   });
 
-  it("treats a null week plan as an answer, not a failure", () => {
+  it("treats a null week plan as an answer, not a failure", async () => {
     // The module returns None when the calendar cannot produce a week. That is a real state and
     // must not be reported as a broken bridge.
     setCalendarsCaller(() => ({ ok: true, json: { ok: true, week_plan: null }, error: null }));
-    const out = readCalendarsPlan(1_000);
+    const out = await readCalendarsPlan(1_000);
     expect(out.plan).toBeNull();
     expect(out.error).toBeNull();
   });
 
-  it("keeps each policy's structure buckets separate", () => {
+  it("keeps each policy's structure buckets separate", async () => {
     // Distinct structure tags are distinct trades and never pool. A shape that flattened them here
     // would be the module's fourth honesty rule broken where it is least visible.
     setCalendarsCaller(() => ({ ok: true, json: POLICIES, error: null }));
-    const out = readCalendarsPolicies(1_000);
+    const out = await readCalendarsPolicies(1_000);
     expect(out.ok).toBe(true);
     expect(out.weeksConsidered).toBe(3);
     const control = out.policies.find((p) => p.policy === "control");
@@ -88,48 +88,48 @@ describe("the calendars bridge", () => {
     expect(control?.buckets[0].worst).toEqual({ weekOf: "2026-08-24", netPnl: -60 });
   });
 
-  it("carries the validation with the table, never separately", () => {
+  it("carries the validation with the table, never separately", async () => {
     setCalendarsCaller(() => ({ ok: true, json: POLICIES, error: null }));
-    const out = readCalendarsPolicies(1_000);
+    const out = await readCalendarsPolicies(1_000);
     expect(out.validation).toEqual({ compared: 4, ok: true, mismatches: [] });
   });
 
-  it("keeps a worst-week of null rather than inventing a zero", () => {
+  it("keeps a worst-week of null rather than inventing a zero", async () => {
     setCalendarsCaller(() => ({ ok: true, json: POLICIES, error: null }));
-    const out = readCalendarsPolicies(1_000);
+    const out = await readCalendarsPolicies(1_000);
     expect(out.policies.find((p) => p.policy === "pt-20")?.buckets[0].worst).toBeNull();
   });
 
-  it("memoises, because a replay over the whole mark path is a subprocess and the page polls", () => {
+  it("memoises, because a replay over the whole mark path is a subprocess and the page polls", async () => {
     let calls = 0;
     setCalendarsCaller(() => {
       calls += 1;
       return { ok: true, json: POLICIES, error: null };
     });
-    readCalendarsPolicies(1_000);
-    readCalendarsPolicies(60_000);
+    await readCalendarsPolicies(1_000);
+    await readCalendarsPolicies(60_000);
     expect(calls).toBe(1);
     // Past the TTL it asks again — a week completing since then would change the answer.
-    readCalendarsPolicies(1_000 + 400_000);
+    await readCalendarsPolicies(1_000 + 400_000);
     expect(calls).toBe(2);
   });
 
-  it("memoises the plan and the table under separate keys", () => {
+  it("memoises the plan and the table under separate keys", async () => {
     const seen: string[] = [];
     setCalendarsCaller((verb) => {
       seen.push(verb);
       return { ok: true, json: verb === "status" ? PLAN : POLICIES, error: null };
     });
-    readCalendarsPlan(1_000);
-    readCalendarsPolicies(1_000);
+    await readCalendarsPlan(1_000);
+    await readCalendarsPolicies(1_000);
     expect(seen).toEqual(["status", "policies"]);
   });
 
-  it("reports an unavailable module as an error rather than an empty table", () => {
+  it("reports an unavailable module as an error rather than an empty table", async () => {
     // An empty policy table reads as "no exit rule works", which is a finding. It must never be
     // produced by a missing package.
     setCalendarsCaller(() => ({ ok: false, json: null, error: "calendars analytics unavailable — ..." }));
-    const out = readCalendarsPolicies(1_000);
+    const out = await readCalendarsPolicies(1_000);
     expect(out.ok).toBe(false);
     expect(out.policies).toEqual([]);
     expect(out.validation).toBeNull();

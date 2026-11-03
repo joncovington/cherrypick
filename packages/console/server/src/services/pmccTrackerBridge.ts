@@ -5,7 +5,7 @@ import type {
   PmccWeeklyRow,
 } from "@console/shared";
 import { readOnlyDb } from "../readers/db.js";
-import { spawnModuleCli } from "./moduleCli.js";
+import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
  * The PMCC position tracker, bridged from the module's own `analytics.tracker` /
@@ -23,9 +23,9 @@ import { spawnModuleCli } from "./moduleCli.js";
 
 const UNAVAILABLE = "pmcc tracker unavailable — the pmcc module's CLI did not answer";
 
-export type TrackerCaller = (argv: string[]) => { ok: boolean; json: Record<string, unknown> | null; error: string | null };
+export type TrackerCaller = (argv: string[]) => SpawnedJson | Promise<SpawnedJson>;
 
-const spawnCaller: TrackerCaller = (argv) => spawnModuleCli(argv, UNAVAILABLE);
+const spawnCaller: TrackerCaller = (argv) => spawnModuleCliAsync(argv, UNAVAILABLE);
 let caller: TrackerCaller = spawnCaller;
 
 /** Swap the subprocess out in tests. Pass nothing to restore the real one. */
@@ -49,8 +49,8 @@ export function camelise(value: unknown): unknown {
   return value;
 }
 
-function run<T>(argv: string[], pick: (json: Record<string, unknown>) => unknown): PmccBridged<T> {
-  const res = caller(argv);
+async function run<T>(argv: string[], pick: (json: Record<string, unknown>) => unknown): Promise<PmccBridged<T>> {
+  const res = await caller(argv);
   if (!res.ok || res.json === null) return { ok: false, data: null, error: res.error };
   if (res.json["ok"] !== true) {
     const reason = res.json["reason"] ?? res.json["error"];
@@ -79,14 +79,14 @@ function positionStamp(dbPath: string, positionId: string): string | null {
   return out.status === "ok" ? out.value : null;
 }
 
-export function readPmccTracker(dbPath: string, positionId: string, now = Date.now()): PmccBridged<PmccTracker> {
+export async function readPmccTracker(dbPath: string, positionId: string, now = Date.now()): Promise<PmccBridged<PmccTracker>> {
   const key = `tracker|${dbPath}|${positionId}`;
   const stamp = positionStamp(dbPath, positionId);
   const hit = memo.get(key);
   if (hit !== undefined && stamp !== null && hit.stamp === stamp && now - hit.at < 10 * TTL_MS) {
     return hit.value as PmccBridged<PmccTracker>;
   }
-  const value = run<PmccTracker>(
+  const value = await run<PmccTracker>(
     ["-m", "cherrypick.pmcc.cli", "--db", dbPath, "tracker", "--position", positionId],
     (json) => json["tracker"],
   );
@@ -94,21 +94,21 @@ export function readPmccTracker(dbPath: string, positionId: string, now = Date.n
   return value;
 }
 
-function ttl<T>(key: string, now: number, compute: () => PmccBridged<T>): PmccBridged<T> {
+async function ttl<T>(key: string, now: number, compute: () => Promise<PmccBridged<T>>): Promise<PmccBridged<T>> {
   const hit = memo.get(key);
   if (hit !== undefined && now - hit.at < TTL_MS) return hit.value as PmccBridged<T>;
-  const value = compute();
+  const value = await compute();
   memo.set(key, { stamp: "", at: now, value });
   return value;
 }
 
-export function readPmccTrackerIndex(dbPath: string, now = Date.now()): PmccBridged<PmccTrackerIndexRow[]> {
+export function readPmccTrackerIndex(dbPath: string, now = Date.now()): Promise<PmccBridged<PmccTrackerIndexRow[]>> {
   return ttl(`index|${dbPath}`, now, () =>
     run<PmccTrackerIndexRow[]>(["-m", "cherrypick.pmcc.cli", "--db", dbPath, "tracker-index"], (json) => json["positions"]),
   );
 }
 
-export function readPmccWeekly(dbPath: string, era: string | null, now = Date.now()): PmccBridged<PmccWeeklyRow[]> {
+export function readPmccWeekly(dbPath: string, era: string | null, now = Date.now()): Promise<PmccBridged<PmccWeeklyRow[]>> {
   const argv = ["-m", "cherrypick.pmcc.cli", "--db", dbPath, "weekly", ...(era !== null ? ["--era", era] : [])];
   return ttl(`weekly|${dbPath}|${era ?? ""}`, now, () =>
     run<PmccWeeklyRow[]>(argv, (json) => (json["weekly"] as Record<string, unknown> | undefined)?.["rows"] ?? []),

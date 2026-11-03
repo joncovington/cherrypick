@@ -7,5 +7,5 @@ import { getFeatures } from "../services/featuresBridge.js";
 
 export function registerOverviewRoutes(app: FastifyInstance, config: ConsoleConfig): void {
   app.get("/api/overview", async (): Promise<OverviewPayload> => readOverview(config));
-  app.get("/api/desk", async (): Promise<DeskPayload> => readDesk(config, getFeatures()));
+  app.get("/api/desk", async (): Promise<DeskPayload> => readDesk(config, await getFeatures()));
 }

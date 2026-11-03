@@ -157,7 +157,7 @@ function sumField(positions: Array<Record<string, unknown>>, field: string): num
   }, null);
 }
 
-export function readDesk(config: ConsoleConfig, features?: SuiteFeatures): DeskPayload {
+export async function readDesk(config: ConsoleConfig, features?: SuiteFeatures): Promise<DeskPayload> {
   const orch = config.paths.orchestratorConfig;
   const streamer = streamerFreshness(config);
   const meicLoop = readMeicLoopStatus(config, "paper");
@@ -167,7 +167,7 @@ export function readDesk(config: ConsoleConfig, features?: SuiteFeatures): DeskP
   const pmcc = readPmcc(config);
   const curve = readCurve(config);
   const bwb = readBwb(config);
-  const calendars = readCalendars(config);
+  const calendars = await readCalendars(config);
   // "today" scope: no arm/date/symbol filter, current era -- the same shape every other module's
   // exposure row already reads, and the same aggregate FliesLightbox's own "now" tab already shows
   // as "max possible loss" / EarningsLightbox's "overview" tab shows as "capital at risk (open)".
@@ -293,7 +293,7 @@ export function readDesk(config: ConsoleConfig, features?: SuiteFeatures): DeskP
   // but not (yet) opened -- the SAME funnel the (now-removed) screening-funnel card read, scoped to
   // today alone via `since` = today's ET date rather than the era-wide window that card used.
   const todayEt = sessionDateEt();
-  const earningsMetrics = readScreenMetrics("paper", todayEt).metrics;
+  const earningsMetrics = (await readScreenMetrics("paper", todayEt)).metrics;
   const earningsFunnel = earningsMetrics?.funnel ?? null;
   const earningsCounts = {
     filled: earningsFunnel?.opened ?? 0,

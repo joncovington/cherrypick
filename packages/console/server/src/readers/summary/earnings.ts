@@ -44,11 +44,11 @@ interface RowExtras {
  * `readEarnings` itself, so the money is that reader's arithmetic and nothing else; paged at its
  * ceiling, which one call covers until the books pass 500 closed rows.
  */
-function historyRows(config: ConsoleConfig): EarningsTradeRow[] {
+async function historyRows(config: ConsoleConfig): Promise<EarningsTradeRow[]> {
   const rows: EarningsTradeRow[] = [];
   for (let offset = 0; ; offset += MAX_PAGE) {
     // era null = the history page's default scope (the suite's data epoch).
-    const page = readEarnings(config, { ...EARNINGS_FIRST_PAGE, trades: { limit: MAX_PAGE, offset } }, null).trades;
+    const page = (await readEarnings(config, { ...EARNINGS_FIRST_PAGE, trades: { limit: MAX_PAGE, offset } }, null)).trades;
     rows.push(...page.rows);
     if (page.rows.length === 0 || offset + page.rows.length >= page.total) break;
   }
@@ -67,7 +67,7 @@ function historyRows(config: ConsoleConfig): EarningsTradeRow[] {
  * card is the arm; the structure table is the strategy. Earnings has a live ledger, so `q.mode` is
  * honoured.
  */
-export function readEarningsSummary(config: ConsoleConfig, q: SummaryQuery): ModuleSummarySlice {
+export async function readEarningsSummary(config: ConsoleConfig, q: SummaryQuery): Promise<ModuleSummarySlice> {
   const mode = q.mode;
   const dbPath = path.join(config.paths.earningsDir, mode === "live" ? "earnings_trades.db" : "paper_trades.db");
 
@@ -103,7 +103,7 @@ export function readEarningsSummary(config: ConsoleConfig, q: SummaryQuery): Mod
     return slice;
   }
 
-  const settled: EarningsSummaryTrade[] = historyRows(config)
+  const settled: EarningsSummaryTrade[] = (await historyRows(config))
     .filter((r) => r.mode === mode && r.closedAt !== null && r.gross !== null && r.net !== null)
     .flatMap((r) => {
       const session = sessionDate(r.closedAt);

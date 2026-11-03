@@ -27,7 +27,7 @@ export interface SummaryQuery {
   era?: string | null;
 }
 
-export type SummaryReader = (config: ConsoleConfig, q: SummaryQuery) => ModuleSummarySlice;
+export type SummaryReader = (config: ConsoleConfig, q: SummaryQuery) => ModuleSummarySlice | Promise<ModuleSummarySlice>;
 
 /**
  * The page scope applied to a reader's settled trades: the header's arm and symbol, once, in one

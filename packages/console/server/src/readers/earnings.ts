@@ -628,17 +628,17 @@ export const EARNINGS_HISTORY_SORTS: SortAccessors<EarningsTradeRow> = {
  * the alternative — a per-store LIMIT — silently drops rows, which is what this
  * is here to stop.
  */
-export function readEarnings(
+export async function readEarnings(
   config: ConsoleConfig,
   page: EarningsPageRequest = EARNINGS_FIRST_PAGE,
   era: string | null = null,
   range: DateRange = NO_RANGE,
-): EarningsPayload {
+): Promise<EarningsPayload> {
   const since = eraSince(config, era);
   const liveDb = path.join(config.paths.earningsDir, "earnings_trades.db");
   const paperDb = path.join(config.paths.earningsDir, "paper_trades.db");
   // The flag comes from the verdict's own rule list (the module's derivation), never re-derived here.
-  const flags = readFlaggedOrders();
+  const flags = await readFlaggedOrders();
   const trades = [
     ...readTrades(liveDb, "live", since),
     ...readTrades(paperDb, "paper", since).map((t) => ({ ...t, flag: flags.get(t.orderId) ?? null })),

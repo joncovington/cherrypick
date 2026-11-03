@@ -5,7 +5,7 @@ import path from "node:path";
 import type { LiveTodayLoop, MeicDivergence, MeicPayload, MeicTradeRow, MeicTradeTotals, MeicSummaryRow, MeicSummarySlice, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
-import { readJson, readOnlyDb, withReadOnlyDb, withReadSnapshot, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
+import { memoReadOnlyDb, readJson, readOnlyDb, withReadOnlyDb, withReadSnapshot, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest, type SortAccessors } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
@@ -1196,12 +1196,15 @@ export function readMeicAnalytics(
     exitReasons: [],
     feeDrag: { credit: 0, fees: 0, settlementFees: 0, netPnl: 0, dragPct: null },
   };
-  return withReadOnlyDb<MeicAnalytics>(dbPath, empty, (db) => {
+  // ET-anchored period starts, matching the MEIC dashboard.
+  const nowEt = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const today = iso(new Date(Date.UTC(nowEt.getFullYear(), nowEt.getMonth(), nowEt.getDate())));
+  // Every MEIC tab polls this, and it took ~2 s of the event loop in the server (2026-11-02). It moves
+  // only when the ledger is written or the ET date turns, so it is memoised on both.
+  const key = `meic-analytics:${dbPath}:${today}:${scope.symbol ?? ""}|${scope.profile ?? ""}|${scope.era ?? ""}`;
+  return memoReadOnlyDb<MeicAnalytics>(dbPath, key, empty, (db) => {
     const sc = scopeSql(db, scope);
-    // ET-anchored period starts, matching the MEIC dashboard.
-    const nowEt = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
-    const iso = (d: Date) => d.toISOString().slice(0, 10);
-    const today = iso(new Date(Date.UTC(nowEt.getFullYear(), nowEt.getMonth(), nowEt.getDate())));
     const monday = new Date(Date.UTC(nowEt.getFullYear(), nowEt.getMonth(), nowEt.getDate()));
     monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
     const starts: Array<[string, string | null]> = [

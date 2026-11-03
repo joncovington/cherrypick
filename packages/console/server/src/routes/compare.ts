@@ -16,7 +16,7 @@ export function registerCompareRoutes(app: FastifyInstance, config: ConsoleConfi
     if (!isCompareScope(raw)) {
       return reply.code(400).send({ error: `scope must be one of: ${COMPARE_SCOPES.join(", ")}` });
     }
-    const payload: ComparePayload = readCompare(config, raw);
+    const payload: ComparePayload = await readCompare(config, raw);
     return payload;
   });
 }

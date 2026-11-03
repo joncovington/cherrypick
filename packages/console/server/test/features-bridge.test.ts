@@ -50,7 +50,7 @@ afterEach(() => {
 });
 
 describe("parsing the orchestrator's reply", () => {
-  it("carries every map through", () => {
+  it("carries every map through", async () => {
     const f = parseFeatures(REPLY) as SuiteFeaturesOk;
     expect(f.ok).toBe(true);
     expect(f.modules["earnings"]).toEqual({ configured: true, enabled: false, missing: ["dolt"] });
@@ -59,15 +59,15 @@ describe("parsing the orchestrator's reply", () => {
     expect(f.capabilities["dolt"]).toBe(false);
   });
 
-  it("a bridge failure is a value, never a throw", () => {
+  it("a bridge failure is a value, never a throw", async () => {
     expect(parseFeatures({ ok: false, code: "unavailable", error: "no python" })).toEqual({ ok: false, error: "no python" });
   });
 
-  it("a reply with no modules map is a failure, not 'everything off'", () => {
+  it("a reply with no modules map is a failure, not 'everything off'", async () => {
     expect(parseFeatures({ ok: true, features: {} }).ok).toBe(false);
   });
 
-  it("a module row without a boolean enabled is left out, so it reads as visible", () => {
+  it("a module row without a boolean enabled is left out, so it reads as visible", async () => {
     const f = parseFeatures({ ok: true, modules: { meic: { configured: true, enabled: "no" } } }) as SuiteFeaturesOk;
     expect(f.modules["meic"]).toBeUndefined();
     expect(moduleOn(f, "meic")).toBe(true);
@@ -76,13 +76,13 @@ describe("parsing the orchestrator's reply", () => {
 
 describe("moduleOn", () => {
   const f = parseFeatures(REPLY);
-  it("follows enabled for a trading module and the recorder for gex", () => {
+  it("follows enabled for a trading module and the recorder for gex", async () => {
     expect(moduleOn(f, "meic")).toBe(true);
     expect(moduleOn(f, "earnings")).toBe(false);
     expect(moduleOn(f, "pmcc")).toBe(false);
     expect(moduleOn(f, "gex")).toBe(false);
   });
-  it("is true for anything unknown", () => {
+  it("is true for anything unknown", async () => {
     expect(moduleOn(undefined, "earnings")).toBe(true);
     expect(moduleOn({ ok: false, error: "x" }, "earnings")).toBe(true);
     expect(moduleOn(f, "watchdog")).toBe(true);
@@ -90,22 +90,22 @@ describe("moduleOn", () => {
 });
 
 describe("the memo", () => {
-  it("asks once per window, and again after it", () => {
+  it("asks once per window, and again after it", async () => {
     fakeBridge(() => REPLY);
     const t0 = 1_000_000;
-    getFeatures(t0);
-    getFeatures(t0 + TTL_MS - 1);
+    await getFeatures(t0);
+    await getFeatures(t0 + TTL_MS - 1);
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual({ op: "features" });
-    getFeatures(t0 + TTL_MS);
+    await getFeatures(t0 + TTL_MS);
     expect(calls).toHaveLength(2);
   });
 
-  it("is dropped by invalidateFeatures", () => {
+  it("is dropped by invalidateFeatures", async () => {
     fakeBridge(() => REPLY);
-    getFeatures(5);
+    await getFeatures(5);
     invalidateFeatures();
-    getFeatures(6);
+    await getFeatures(6);
     expect(calls).toHaveLength(2);
   });
 });
@@ -210,10 +210,10 @@ describe("the desk leaves off modules out on the server", () => {
     );
   }
 
-  it("paper: liveness, exposure, entries, evidence and eod drop earnings, pmcc and gex; the streamer stays", () => {
+  it("paper: liveness, exposure, entries, evidence and eod drop earnings, pmcc and gex; the streamer stays", async () => {
     const config = configFor(fs.mkdtempSync(path.join(os.tmpdir(), "console-features-desk-")));
     writeFactSet(config.paths.reviewDir, "2026-09-30");
-    const desk = readDesk(config, features);
+    const desk = await readDesk(config, features);
     const liveness = desk.liveness.map((r) => r.id);
     expect(liveness).toContain("streamer");
     expect(liveness).toContain("meic");
@@ -224,10 +224,10 @@ describe("the desk leaves off modules out on the server", () => {
     expect(desk.eod.rows.map((r) => r.module)).toEqual(["meic"]);
   });
 
-  it("an unknown answer keeps every row (fail open)", () => {
+  it("an unknown answer keeps every row (fail open)", async () => {
     const config = configFor(fs.mkdtempSync(path.join(os.tmpdir(), "console-features-open-")));
     for (const f of [undefined, { ok: false as const, error: "bridge down" }]) {
-      const desk = readDesk(config, f);
+      const desk = await readDesk(config, f);
       expect(desk.exposure).toHaveLength(7);
       expect(desk.liveness.map((r) => r.id)).toContain("gex");
     }
@@ -235,7 +235,7 @@ describe("the desk leaves off modules out on the server", () => {
 });
 
 describe("the merged log tail", () => {
-  it("leaves an off module out of the default sources, and still reads it when asked by name", () => {
+  it("leaves an off module out of the default sources, and still reads it when asked by name", async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-features-logs-"));
     const config = configFor(tmp);
     const logs = path.join(tmp, "logs");

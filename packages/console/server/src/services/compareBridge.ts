@@ -1,8 +1,8 @@
 import path from "node:path";
 import type { CompareDoc, ComparePayload, CompareScope } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { memoOnStore } from "../readers/db.js";
-import { spawnModuleCli } from "./moduleCli.js";
+import { memoOnStoreAsync } from "../readers/db.js";
+import { spawnModuleCliAsync } from "./moduleCli.js";
 
 /**
  * Every arm beside its control, read from the module that owns the statistics.
@@ -46,18 +46,21 @@ export function shapeCompare(json: Record<string, unknown> | null, error: string
   return { ok: true, data: doc as unknown as CompareDoc, error: null };
 }
 
-function spawnCaller(scope: CompareScope, session: string): CompareResult {
-  const res = spawnModuleCli(["-m", "cherrypick.core.compare", "--json", "--scope", scope, "--session", session], UNAVAILABLE);
-  // The CLI's own `{"ok": false, "error": ...}` exits 1; spawnModuleCli carries that reason into
+async function spawnCaller(scope: CompareScope, session: string): Promise<CompareResult> {
+  const res = await spawnModuleCliAsync(
+    ["-m", "cherrypick.core.compare", "--json", "--scope", scope, "--session", session],
+    UNAVAILABLE,
+  );
+  // The CLI's own `{"ok": false, "error": ...}` exits 1; the spawner carries that reason into
   // `error` from stdout, so a refusal and a missing interpreter both arrive here as `res.error`.
   if (!res.ok || res.json === null) return { ok: false, data: null, error: res.error };
   return shapeCompare(res.json, res.error);
 }
 
-let caller = spawnCaller;
+let caller: (scope: CompareScope, session: string) => CompareResult | Promise<CompareResult> = spawnCaller;
 
 /** Swap the subprocess out in tests. Pass nothing to restore the real one. */
-export function setCompareCaller(fn?: typeof spawnCaller): void {
+export function setCompareCaller(fn?: (scope: CompareScope, session: string) => CompareResult | Promise<CompareResult>): void {
   caller = fn ?? spawnCaller;
 }
 
@@ -83,7 +86,11 @@ export function compareStores(config: ConsoleConfig): string[] {
  * later day can bound a different era. A failure is memoised too, until a store moves or the day
  * turns -- a missing interpreter does not fix itself between polls.
  */
-export function readCompare(config: ConsoleConfig, scope: CompareScope, session: string = nySession()): ComparePayload {
-  const result = memoOnStore(compareStores(config), `compare:${scope}:${session}`, () => caller(scope, session));
+export async function readCompare(
+  config: ConsoleConfig,
+  scope: CompareScope,
+  session: string = nySession(),
+): Promise<ComparePayload> {
+  const result = await memoOnStoreAsync(compareStores(config), `compare:${scope}:${session}`, () => caller(scope, session));
   return { ...result, scope };
 }

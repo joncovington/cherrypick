@@ -558,7 +558,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   });
   app.get<{ Querystring: { source?: string; limit?: string } }>("/api/logs", async (req) => {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit ?? "", 10) || 50, 1), 1000);
-    return { lines: readLogTail(config, limit, req.query.source || undefined, getFeatures()) };
+    return { lines: readLogTail(config, limit, req.query.source || undefined, await getFeatures()) };
   });
   app.get("/api/system", async () => readSystemPanel(config));
 }

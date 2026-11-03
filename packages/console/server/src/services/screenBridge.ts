@@ -1,4 +1,5 @@
-import { spawnModuleCli } from "./moduleCli.js";
+import { AsyncMemo } from "./asyncMemo.js";
+import { spawnModuleCliAsync } from "./moduleCli.js";
 
 /**
  * The earnings screening metrics, read from the module that owns them.
@@ -64,37 +65,33 @@ export interface ScreenMetricsResult {
 const UNAVAILABLE =
   "screening metrics unavailable — the earnings package must be installed (pip install -e packages/earnings)";
 
-function spawnCaller(mode: "paper" | "live", since: string | null): ScreenMetricsResult {
+async function spawnCaller(mode: "paper" | "live", since: string | null): Promise<ScreenMetricsResult> {
   const argv = ["-m", "cherrypick.earnings.screen_report", "--json", "--mode", mode, "--limit", "25"];
   if (since !== null) argv.push("--since", since);
-  const res = spawnModuleCli(argv, UNAVAILABLE);
+  const res = await spawnModuleCliAsync(argv, UNAVAILABLE);
   if (!res.ok || res.json === null) return { ok: false, metrics: null, error: res.error };
   return { ok: true, metrics: res.json as unknown as ScreenMetrics, error: null };
 }
 
-let caller = spawnCaller;
+type Caller = (mode: "paper" | "live", since: string | null) => ScreenMetricsResult | Promise<ScreenMetricsResult>;
+let caller: Caller = spawnCaller;
 
 /** Swap the subprocess out in tests. Pass nothing to restore the real one. */
-export function setScreenCaller(fn?: typeof spawnCaller): void {
+export function setScreenCaller(fn?: Caller): void {
   caller = fn ?? spawnCaller;
 }
 
 // Classifying the whole scan history costs a subprocess and a full table read, and the answer moves
 // only when a scan runs. The Earnings page polls; this must not.
 const TTL_MS = 120_000;
-const cache = new Map<string, { at: number; value: ScreenMetricsResult }>();
+const cache = new AsyncMemo<ScreenMetricsResult>();
 
 export function readScreenMetrics(
   mode: "paper" | "live",
   since: string | null,
   now = Date.now(),
-): ScreenMetricsResult {
-  const key = `${mode}|${since ?? ""}`;
-  const hit = cache.get(key);
-  if (hit !== undefined && now - hit.at < TTL_MS) return hit.value;
-  const value = caller(mode, since);
-  cache.set(key, { at: now, value });
-  return value;
+): Promise<ScreenMetricsResult> {
+  return cache.get(`${mode}|${since ?? ""}`, TTL_MS, now, () => caller(mode, since));
 }
 
 /** Drop the memoised metrics. Tests only. */

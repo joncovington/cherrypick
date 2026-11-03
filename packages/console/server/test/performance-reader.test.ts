@@ -83,7 +83,7 @@ const READING = {
 };
 
 describe("performance db path resolution", () => {
-  it("maps every module to its own dir and paper_trades.db", () => {
+  it("maps every module to its own dir and paper_trades.db", async () => {
     const config = fakeConfig(null);
     for (const module of Object.keys(MODULE_SCHEMA) as Array<keyof typeof MODULE_SCHEMA>) {
       const p = performanceDbPath(config, module);
@@ -91,7 +91,7 @@ describe("performance db path resolution", () => {
     }
   });
 
-  it("uses the schema each module's ledger actually declares", () => {
+  it("uses the schema each module's ledger actually declares", async () => {
     expect(MODULE_SCHEMA.meic).toBe("meic_ic");
     expect(MODULE_SCHEMA.flies).toBe("fly_book");
     expect(MODULE_SCHEMA.earnings).toBe("earnings");
@@ -104,9 +104,9 @@ describe("performance db path resolution", () => {
 });
 
 describe("readModulePerformance", () => {
-  it("passes the reading through, tagged by profile", () => {
+  it("passes the reading through, tagged by profile", async () => {
     setMetricsCaller(() => READING);
-    const out = readModulePerformance(fakeConfig(null), "curve", "ALL");
+    const out = await readModulePerformance(fakeConfig(null), "curve", "ALL");
     expect(out.ok).toBe(true);
     expect(out.nRecords).toBe(3);
     expect(out.groups).toEqual([
@@ -119,17 +119,17 @@ describe("readModulePerformance", () => {
     ]);
   });
 
-  it("era='current' bounds start to the suite's own data_epoch date", () => {
+  it("era='current' bounds start to the suite's own data_epoch date", async () => {
     const seen: Array<[string | null, string | null]> = [];
     setMetricsCaller((_db, _schema, start, end) => {
       seen.push([start, end]);
       return READING;
     });
-    readModulePerformance(fakeConfig("2026-08-21"), "curve", "current");
+    await readModulePerformance(fakeConfig("2026-08-21"), "curve", "current");
     expect(seen).toEqual([["2026-08-21", null]]);
   });
 
-  it("scopes pmcc to its own stamped era as well as the suite epoch, and only pmcc", () => {
+  it("scopes pmcc to its own stamped era as well as the suite epoch, and only pmcc", async () => {
     // pmcc's eras are roster changes stamped at entry; the suite epoch alone pooled the redesign and
     // pre-redesign books into the shield era's slide (2026-10-05).
     const seen: Array<[string, string | null]> = [];
@@ -142,14 +142,14 @@ describe("readModulePerformance", () => {
       excursionEras.push(era ?? null);
       return { ok: false, data: null, error: "n/a" };
     });
-    const pmcc = readModulePerformance(fakeConfig("2026-08-21"), "pmcc", "current");
-    readModulePerformance(fakeConfig("2026-08-21"), "curve", "current");
+    const pmcc = await readModulePerformance(fakeConfig("2026-08-21"), "pmcc", "current");
+    await readModulePerformance(fakeConfig("2026-08-21"), "curve", "current");
     expect(seen).toEqual([["pmcc", "shield"], ["curve_vx", null]]);
     expect(pmcc.era).toMatchObject({ key: "current", from: "2026-08-21", moduleEra: "shield" });
     expect(excursionEras[0]).toBe("shield");
   });
 
-  it("era='ALL' on pmcc widens its own era too, including the excursions verb's default", () => {
+  it("era='ALL' on pmcc widens its own era too, including the excursions verb's default", async () => {
     const seen: Array<string | null> = [];
     setMetricsCaller((_db, _schema, _start, _end, era) => {
       seen.push(era ?? null);
@@ -160,33 +160,33 @@ describe("readModulePerformance", () => {
       excursionEras.push(era ?? null);
       return { ok: false, data: null, error: "n/a" };
     });
-    const out = readModulePerformance(fakeConfig("2026-08-21"), "pmcc", "ALL");
+    const out = await readModulePerformance(fakeConfig("2026-08-21"), "pmcc", "ALL");
     expect(seen).toEqual([null]);
     expect(out.era.moduleEra).toBeNull();
     expect(excursionEras).toEqual(["ALL"]);
   });
 
-  it("era='ALL' passes no date bound at all", () => {
+  it("era='ALL' passes no date bound at all", async () => {
     const seen: Array<[string | null, string | null]> = [];
     setMetricsCaller((_db, _schema, start, end) => {
       seen.push([start, end]);
       return READING;
     });
-    readModulePerformance(fakeConfig("2026-08-21"), "curve", "ALL");
+    await readModulePerformance(fakeConfig("2026-08-21"), "curve", "ALL");
     expect(seen).toEqual([[null, null]]);
   });
 
-  it("era='current' with no declared data_epoch reads everything, not nothing", () => {
+  it("era='current' with no declared data_epoch reads everything, not nothing", async () => {
     const seen: Array<[string | null, string | null]> = [];
     setMetricsCaller((_db, _schema, start, end) => {
       seen.push([start, end]);
       return READING;
     });
-    readModulePerformance(fakeConfig(null), "curve", "current");
+    await readModulePerformance(fakeConfig(null), "curve", "current");
     expect(seen).toEqual([[null, null]]);
   });
 
-  it("mode='live' reads each toggled module's own live ledger, and paper by default", () => {
+  it("mode='live' reads each toggled module's own live ledger, and paper by default", async () => {
     // Shown to fail before 2026-09-30: the slide ignored the page's paper/live toggle and always
     // read paper_trades.db, so a live-badged flies page showed the paper book's numbers.
     const seen: string[] = [];
@@ -195,37 +195,37 @@ describe("readModulePerformance", () => {
       return READING;
     });
     const config = fakeConfig(null);
-    readModulePerformance(config, "flies", "ALL");
-    readModulePerformance(config, "flies", "ALL", "live");
-    readModulePerformance(config, "meic", "ALL", "live");
-    readModulePerformance(config, "earnings", "ALL", "live");
+    await readModulePerformance(config, "flies", "ALL");
+    await readModulePerformance(config, "flies", "ALL", "live");
+    await readModulePerformance(config, "meic", "ALL", "live");
+    await readModulePerformance(config, "earnings", "ALL", "live");
     expect(seen).toEqual(["paper_trades.db", "live_trades.db", "meic_trades.db", "earnings_trades.db"]);
-    const live = readModulePerformance(config, "flies", "ALL", "live");
+    const live = await readModulePerformance(config, "flies", "ALL", "live");
     expect(live.mode).toBe("live");
     expect(live.pairs).toEqual([]); // advised books are paper-only
   });
 
-  it("mode='live' on a module with no live book refuses, rather than reading paper", () => {
+  it("mode='live' on a module with no live book refuses, rather than reading paper", async () => {
     const seen: string[] = [];
     setMetricsCaller((db) => {
       seen.push(db);
       return READING;
     });
-    const out = readModulePerformance(fakeConfig(null), "curve", "ALL", "live");
+    const out = await readModulePerformance(fakeConfig(null), "curve", "ALL", "live");
     expect(out.ok).toBe(false);
     expect(out.error).toMatch(/no live ledger/);
     expect(seen).toEqual([]);
   });
 
-  it("reports a refused read as an error, never an empty groups array", () => {
+  it("reports a refused read as an error, never an empty groups array", async () => {
     setMetricsCaller(() => ({ ok: false, metrics: null, error: "unknown schema" }));
-    const out = readModulePerformance(fakeConfig(null), "curve", "ALL");
+    const out = await readModulePerformance(fakeConfig(null), "curve", "ALL");
     expect(out.ok).toBe(false);
     expect(out.groups).toEqual([]);
     expect(out.error).toBe("unknown schema");
   });
 
-  it("carries exitReasons/heldBack from the ledger even when the metrics reading fails", () => {
+  it("carries exitReasons/heldBack from the ledger even when the metrics reading fails", async () => {
     // exitReasons reads straight off the ledger (readExitReasons), independent of metricsBridge --
     // a module whose schema core.metrics doesn't yet recognise should still show its exit reasons.
     const config = fakeConfig(null);
@@ -246,7 +246,7 @@ describe("readModulePerformance", () => {
     db.close();
 
     setMetricsCaller(() => ({ ok: false, metrics: null, error: "unavailable" }));
-    const out = readModulePerformance(config, "curve", "ALL");
+    const out = await readModulePerformance(config, "curve", "ALL");
     expect(out.ok).toBe(false); // the metrics half still failed
     expect(out.exitReasons).toEqual([
       { tag: "control", reason: "profit_take", n: 1, net: 38.0, avgNet: 38.0 },
@@ -257,7 +257,7 @@ describe("readModulePerformance", () => {
     expect(out.breaks).toEqual([{ date: "2026-08-27", key: "spread_width", note: "5.0 -> 1.0, re-scaled to VXX", scope: null }]);
   });
 
-  it("carries excursions from the bridge, independent of the metrics reading", () => {
+  it("carries excursions from the bridge, independent of the metrics reading", async () => {
     setExcursionsCaller(() => ({
       ok: true,
       error: null,
@@ -268,7 +268,7 @@ describe("readModulePerformance", () => {
       },
     }));
     setMetricsCaller(() => ({ ok: false, metrics: null, error: "unavailable" }));
-    const out = readModulePerformance(fakeConfig(null), "curve", "ALL");
+    const out = await readModulePerformance(fakeConfig(null), "curve", "ALL");
     expect(out.ok).toBe(false); // the metrics half still failed
     expect(out.excursions.ok).toBe(true);
     expect(out.excursions.data?.positions).toEqual([
@@ -276,10 +276,10 @@ describe("readModulePerformance", () => {
     ]);
   });
 
-  it("reports excursions as unavailable for a module with no Python excursions support, not a crash", () => {
+  it("reports excursions as unavailable for a module with no Python excursions support, not a crash", async () => {
     setExcursionsCaller(() => ({ ok: false, data: null, error: "excursions unavailable" }));
     setMetricsCaller(() => ({ ok: true, metrics: { schema: "meic_ic", n_records: 0, groups: {} }, error: null }));
-    const out = readModulePerformance(fakeConfig(null), "meic", "ALL");
+    const out = await readModulePerformance(fakeConfig(null), "meic", "ALL");
     expect(out.excursions).toEqual({ ok: false, data: null, error: "excursions unavailable" });
   });
 });

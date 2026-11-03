@@ -56,8 +56,10 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
    */
   app.get("/api/config/model", async () => {
     const targets: Record<string, unknown> = {};
-    for (const id of TARGETS) {
-      const result = callConfigCli({ op: "load", target: id });
+    // Side by side: each target is its own subprocess, and none reads another's answer.
+    const loaded = await Promise.all(TARGETS.map((id) => callConfigCli({ op: "load", target: id })));
+    for (const [i, id] of TARGETS.entries()) {
+      const result = loaded[i]!;
       targets[id] = result.ok
         ? {
             exists: result["exists"] === true,
@@ -96,7 +98,7 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
         code: "confirm_required",
       });
     }
-    if (sendBridgeFailure(reply, callConfigCli({ op: "set_halt", present })) === null) return reply;
+    if (sendBridgeFailure(reply, await callConfigCli({ op: "set_halt", present })) === null) return reply;
     invalidateFeatures();
     app.log.info(`halt flag ${present ? "set" : "cleared"} from the console config page`);
     return readLockStatus(config);
@@ -128,7 +130,7 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
     const expectedMtime = body["expectedMtime"];
     const result = sendBridgeFailure(
       reply,
-      callConfigCli({
+      await callConfigCli({
         op: "save",
         target,
         expected_mtime: typeof expectedMtime === "number" ? expectedMtime : null,

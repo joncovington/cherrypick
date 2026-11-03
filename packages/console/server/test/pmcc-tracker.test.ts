@@ -76,7 +76,7 @@ describe("the tracker bridge", () => {
     expect(POSITION_ID.test("XSP:advised:tv-exit-threshold-floor:2026-10-02")).toBe(true);
   });
 
-  it("camelises the module's keys, all the way down, and leaves values alone", () => {
+  it("camelises the module's keys, all the way down, and leaves values alone", async () => {
     expect(camelise({ short_realised: 60, weeks: [{ return_on_long_cost: 0.04, week_end: "2026-09-04" }] })).toEqual({
       shortRealised: 60,
       weeks: [{ returnOnLongCost: 0.04, weekEnd: "2026-09-04" }],
@@ -113,7 +113,7 @@ const cliWorks =
     .status === 0;
 
 describe.skipIf(!cliWorks)("the module's tracker against the real ledger", () => {
-  it("states every closed position's net exactly as the ledger does", () => {
+  it("states every closed position's net exactly as the ledger does", async () => {
     const db = new Database(LEDGER, { readonly: true });
     const closed = db
       .prepare<[], { position_id: string; net: number }>(
@@ -124,7 +124,7 @@ describe.skipIf(!cliWorks)("the module's tracker against the real ledger", () =>
     db.close();
     expect(closed.length).toBeGreaterThan(0);
     for (const row of closed) {
-      const out = readPmccTracker(LEDGER, row.position_id);
+      const out = await readPmccTracker(LEDGER, row.position_id);
       expect(out.ok, out.error ?? "").toBe(true);
       const t = out.data!;
       // The header is the ledger's own result; the last weekly row is the header.
@@ -136,7 +136,7 @@ describe.skipIf(!cliWorks)("the module's tracker against the real ledger", () =>
 });
 
 describe("the real-ledger check itself", () => {
-  it("says plainly when it could not run", () => {
+  it("says plainly when it could not run", async () => {
     expect(typeof cliWorks).toBe("boolean");
     if (!cliWorks) expect(!fs.existsSync(LEDGER) || cliWorks === false).toBe(true);
   });

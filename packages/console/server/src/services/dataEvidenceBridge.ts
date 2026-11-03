@@ -1,7 +1,8 @@
 import path from "node:path";
 import type { BridgedResult, ImpliedVarCheck, ImpliedVarEvidence, QuoteHistoryCoverage } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { spawnModuleCli } from "./moduleCli.js";
+import { AsyncMemo } from "./asyncMemo.js";
+import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
  * System › data's two reads of `cherrypick.core`:
@@ -28,57 +29,57 @@ const IV_UNAVAILABLE = "implied-variance check unavailable — cherrypick-core m
 /** The indices `core.impliedvar` reproduces (its own `INDEX_DAYS`). */
 export const IMPLIEDVAR_INDICES = ["VIX9D", "VIX"] as const;
 
-type Spawned = ReturnType<typeof spawnModuleCli>;
 type Request = { kind: "coverage" } | { kind: "impliedvar"; index: string };
 
-function spawnRequest(config: ConsoleConfig, req: Request): Spawned {
+function spawnRequest(config: ConsoleConfig, req: Request): Promise<SpawnedJson> {
   if (req.kind === "coverage") {
     const db = path.join(config.paths.gexDir, "gex_history.db");
-    return spawnModuleCli(["-m", "cherrypick.core.quotehistory", "coverage", "--db", db], QH_UNAVAILABLE);
+    return spawnModuleCliAsync(["-m", "cherrypick.core.quotehistory", "coverage", "--db", db], QH_UNAVAILABLE);
   }
-  return spawnModuleCli(
+  return spawnModuleCliAsync(
     ["-m", "cherrypick.core.impliedvar", "check", "--index", req.index, "--db", config.paths.streamCacheDb],
     IV_UNAVAILABLE,
     [0, 1, 2],
   );
 }
 
-let caller = spawnRequest;
+type Caller = (config: ConsoleConfig, req: Request) => SpawnedJson | Promise<SpawnedJson>;
+let caller: Caller = spawnRequest;
 
 /** Swap the subprocess out in tests. Pass nothing to restore the real one. */
-export function setDataEvidenceCaller(fn?: typeof spawnRequest): void {
+export function setDataEvidenceCaller(fn?: Caller): void {
   caller = fn ?? spawnRequest;
 }
 
 const COVERAGE_TTL_MS = 300_000;
 const CHECK_TTL_MS = 120_000;
-const cache = new Map<string, { at: number; value: Spawned }>();
+const cache = new AsyncMemo<SpawnedJson>();
 
 /** Drop the memoised responses. Tests only. */
 export function resetDataEvidenceCache(): void {
   cache.clear();
 }
 
-function memo(config: ConsoleConfig, req: Request, ttl: number, now: number): Spawned {
+function memo(config: ConsoleConfig, req: Request, ttl: number, now: number): Promise<SpawnedJson> {
   const key = `${req.kind}|${req.kind === "impliedvar" ? req.index : ""}|${config.paths.gexDir}`;
-  const hit = cache.get(key);
-  if (hit !== undefined && now - hit.at < ttl) return hit.value;
-  const value = caller(config, req);
-  cache.set(key, { at: now, value });
-  return value;
+  return cache.get(key, ttl, now, () => caller(config, req));
 }
 
-export function readQuoteHistoryCoverage(config: ConsoleConfig, now = Date.now()): BridgedResult<QuoteHistoryCoverage> {
-  const res = memo(config, { kind: "coverage" }, COVERAGE_TTL_MS, now);
+export async function readQuoteHistoryCoverage(
+  config: ConsoleConfig,
+  now = Date.now(),
+): Promise<BridgedResult<QuoteHistoryCoverage>> {
+  const res = await memo(config, { kind: "coverage" }, COVERAGE_TTL_MS, now);
   if (!res.ok || res.json === null) return { ok: false, data: null, error: res.error ?? QH_UNAVAILABLE };
   if (res.json["ok"] !== true) return { ok: false, data: null, error: String(res.json["error"] ?? QH_UNAVAILABLE) };
   return { ok: true, data: res.json as unknown as QuoteHistoryCoverage, error: null };
 }
 
-export function readImpliedVarChecks(config: ConsoleConfig, now = Date.now()): ImpliedVarEvidence {
+export async function readImpliedVarChecks(config: ConsoleConfig, now = Date.now()): Promise<ImpliedVarEvidence> {
   const checks: Record<string, BridgedResult<ImpliedVarCheck>> = {};
-  for (const index of IMPLIEDVAR_INDICES) {
-    const res = memo(config, { kind: "impliedvar", index }, CHECK_TTL_MS, now);
+  const reads = await Promise.all(IMPLIEDVAR_INDICES.map((index) => memo(config, { kind: "impliedvar", index }, CHECK_TTL_MS, now)));
+  for (const [i, index] of IMPLIEDVAR_INDICES.entries()) {
+    const res = reads[i]!;
     if (!res.ok || res.json === null) {
       checks[index] = { ok: false, data: null, error: res.error ?? IV_UNAVAILABLE };
     } else if (typeof res.json["error"] === "string") {

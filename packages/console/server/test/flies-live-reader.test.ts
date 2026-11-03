@@ -106,7 +106,7 @@ afterEach(() => {
 });
 
 describe("period bounds", () => {
-  it("run Monday-to-session, first-of-month, and first-of-year", () => {
+  it("run Monday-to-session, first-of-month, and first-of-year", async () => {
     const b = periodBounds("2026-09-17"); // a Thursday
     expect(b.today).toEqual(["2026-09-17", "2026-09-17"]);
     expect(b.week).toEqual(["2026-09-14", "2026-09-17"]);
@@ -116,7 +116,7 @@ describe("period bounds", () => {
     expect(periodBounds("2026-09-14").week).toEqual(["2026-09-14", "2026-09-14"]); // a Monday
   });
 
-  it("follows the session across a month boundary, whatever the clock says", () => {
+  it("follows the session across a month boundary, whatever the clock says", async () => {
     // Shown to fail before 2026-09-22: the week came from the wall clock, so this read as the
     // current week and the payload test above went to zero the first Monday after its fixtures.
     expect(periodBounds("2026-09-02").week).toEqual(["2026-08-31", "2026-09-02"]);
@@ -126,7 +126,7 @@ describe("period bounds", () => {
 
 describe("the live payload", () => {
   it("reports an absent live ledger as absent, not as an empty day", async () => {
-    const first = readFliesLive(config, "2026-09-17");
+    const first = await readFliesLive(config, "2026-09-17");
     expect(first.ledger).toBe("absent");
     expect(first.periods.today).toEqual({
       net: 0, trades: 0, sessions: 0, paperNet: null, paperSessions: null,
@@ -137,7 +137,7 @@ describe("the live payload", () => {
     expect(first.buyingPower.account).toBeNull();
     expect(first.buyingPower.accountError).toBe(FETCHING);
     await settleBrokerRead();
-    const out = readFliesLive(config, "2026-09-17");
+    const out = await readFliesLive(config, "2026-09-17");
     expect(out.buyingPower.accountError).toBe("no broker in tests");
     expect(out.arm.arm).toBe("control");
   });
@@ -158,7 +158,7 @@ describe("the live payload", () => {
     pos(paper, "P2", "2026-09-17", { arm: "callwall", gross_pnl: 500, fees: 0 });
     paper.close();
 
-    const out = readFliesLive(config, "2026-09-17");
+    const out = await readFliesLive(config, "2026-09-17");
     expect(out.ledger).toBe("ok");
     expect(out.periods.today).toMatchObject({ net: 23.11, trades: 1, sessions: 1, paperNet: 100 });
     expect(out.periods.week.net).toBeCloseTo(23.11 - 313.44, 6);
@@ -185,7 +185,7 @@ describe("the live payload", () => {
     );
     live.close();
 
-    const out = readFliesLive(config, "2026-09-17");
+    const out = await readFliesLive(config, "2026-09-17");
     expect(out.series.markPnl).toEqual([
       { m: 631, v: -23.44 + 113.11 },
       { m: 632, v: -103.44 + 73.11 },
@@ -231,11 +231,11 @@ describe("a retired pilot read days later (2026-10-21)", () => {
     paper.close();
   }
 
-  it("shows the last settled session's peak, never the last tick's margin as open exposure", () => {
+  it("shows the last settled session's peak, never the last tick's margin as open exposure", async () => {
     // Shown to fail before 2026-10-21: the peak was nulled by the paper 10-19 open while the page
     // still served 10-16, and buyingPower.open was the 15:59 tick's 890.33.
     build(false);
-    const out = readFliesLive(config, null);
+    const out = await readFliesLive(config, null);
     expect(out.sessionBasis).toBe("last_completed");
     expect(out.session).toBe("2026-10-16");
     expect([out.today.open, out.today.pending]).toEqual([0, 0]);
@@ -243,30 +243,30 @@ describe("a retired pilot read days later (2026-10-21)", () => {
     expect(out.buyingPower.open).toBe(0);
   });
 
-  it("leaves cancelled and voided rows out of the positions and their count", () => {
+  it("leaves cancelled and voided rows out of the positions and their count", async () => {
     // Shown to fail before 2026-10-21: only status 'voided' (never written) was filtered.
     build(false);
-    const out = readFliesLive(config, "2026-10-16");
+    const out = await readFliesLive(config, "2026-10-16");
     expect(out.positions.map((p) => p.positionId).sort()).toEqual(["A", "G"]);
     expect(out.today.positions).toBe(2);
   });
 
-  it("compares paper over the sessions live traded, not the calendar period", () => {
+  it("compares paper over the sessions live traded, not the calendar period", async () => {
     // Shown to fail before 2026-10-21: the year tile's paper side was +650 over three paper sessions
     // beside two live ones.
     build(false);
-    const y = readFliesLive(config, "2026-10-16").periods.year;
+    const y = (await readFliesLive(config, "2026-10-16")).periods.year;
     expect(y).toMatchObject({ trades: 2, sessions: 2, paperNet: 100, paperSessions: 1 });
     expect(y.net).toBeCloseTo(23.11 - 110, 6);
   });
 
-  it("carries the module's switch from the suite config, as the today tab reads it", () => {
+  it("carries the module's switch from the suite config, as the today tab reads it", async () => {
     build(false);
-    expect(readFliesLive(config, "2026-10-16").moduleEnabled).toBe(false);
+    expect((await readFliesLive(config, "2026-10-16")).moduleEnabled).toBe(false);
     fs.writeFileSync(path.join(tmp, "config.json"), JSON.stringify({ modules: { flies: { enabled: true } } }));
-    expect(readFliesLive(config, "2026-10-16").moduleEnabled).toBe(true);
+    expect((await readFliesLive(config, "2026-10-16")).moduleEnabled).toBe(true);
     fs.writeFileSync(path.join(tmp, "config.json"), JSON.stringify({ modules: {} }));
-    expect(readFliesLive(config, "2026-10-16").moduleEnabled).toBeNull();
+    expect((await readFliesLive(config, "2026-10-16")).moduleEnabled).toBeNull();
   });
 });
 
@@ -276,7 +276,7 @@ describe("return on session peak risk", () => {
     margins.forEach((m, i) => mk.run(`${day}T10:3${i}:00-04:00`, day, "X", m));
   }
 
-  it("divides each finished session's settled net by its peak open margin, and matches the numerator", () => {
+  it("divides each finished session's settled net by its peak open margin, and matches the numerator", async () => {
     const live = new Database(path.join(tmp, "flies", "live_trades.db"));
     live.exec(DDL);
     pos(live, "A1", "2026-09-15", { gross_pnl: 110, fees: 10 }); // +100
@@ -289,7 +289,7 @@ describe("return on session peak risk", () => {
     marks(live, "2026-09-17", [100]);
     live.close();
 
-    const out = readFliesLive(config, "2026-09-17");
+    const out = await readFliesLive(config, "2026-09-17");
     expect(out.performance.sessions.map((s) => [s.session, s.complete, s.peakRisk])).toEqual([
       ["2026-09-17", false, 100],
       ["2026-09-16", true, null],
@@ -320,7 +320,7 @@ describe("which session the page shows", () => {
     db.close();
   }
 
-  it("is the last settled session until today's opens, then today", () => {
+  it("is the last settled session until today's opens, then today", async () => {
     const live = new Database(path.join(tmp, "flies", "live_trades.db"));
     live.exec(DDL);
     pos(live, "A", "2026-09-16");
@@ -340,7 +340,7 @@ describe("which session the page shows", () => {
     expect(resolveLiveSession(config, "2026-09-16", "2026-09-18")).toEqual({ session: "2026-09-16", basis: "requested" });
   });
 
-  it("is today once the pilot has a row for it, and today when nothing was ever settled", () => {
+  it("is today once the pilot has a row for it, and today when nothing was ever settled", async () => {
     const live = new Database(path.join(tmp, "flies", "live_trades.db"));
     live.exec(DDL);
     pos(live, "A", "2026-09-17");
@@ -352,7 +352,7 @@ describe("which session the page shows", () => {
 });
 
 describe("the calibration reading", () => {
-  it("is the performance slide's core.metrics read of the LIVE ledger, for the pilot's arm", () => {
+  it("is the performance slide's core.metrics read of the LIVE ledger, for the pilot's arm", async () => {
     const asked: string[] = [];
     setMetricsCaller((dbPath, schema) => {
       asked.push(`${path.basename(dbPath)}|${schema}`);
@@ -369,20 +369,20 @@ describe("the calibration reading", () => {
         error: null,
       };
     });
-    const out = readFliesLive(config, "2026-09-17");
+    const out = await readFliesLive(config, "2026-09-17");
     expect(asked).toEqual(["live_trades.db|fly_book"]);
     expect(out.performance.calibration.reading).toEqual({ sample: 2, expectancy: 11.5 });
     expect(out.performance.calibration.error).toBeNull();
 
     setMetricsCaller(() => ({ ok: false, metrics: null, error: "calibration metrics unavailable" }));
     resetMetricsCache();
-    const refused = readFliesLive(config, "2026-09-17").performance.calibration;
+    const refused = (await readFliesLive(config, "2026-09-17")).performance.calibration;
     expect(refused).toMatchObject({ reading: null, error: "calibration metrics unavailable" });
   });
 });
 
 describe("live vs paper", () => {
-  it("measures the pilot's configured arm, not a hard-coded one", () => {
+  it("measures the pilot's configured arm, not a hard-coded one", async () => {
     const live = new Database(path.join(tmp, "flies", "live_trades.db"));
     live.exec(DDL);
     live.exec("ALTER TABLE fly_positions ADD COLUMN completion_latency_min REAL");
@@ -398,14 +398,14 @@ describe("live vs paper", () => {
     paper.close();
 
     // Shown to fail before 2026-09-30: the arm was the literal 'gex', so this read G1 alone.
-    const lvp = readFliesLive(config, "2026-09-17").performance.liveVsPaper!;
+    const lvp = (await readFliesLive(config, "2026-09-17")).performance.liveVsPaper!;
     expect(lvp.arm).toBe("control");
     expect(lvp.live).toMatchObject({ sessions: 1, entries: 2, completed: 1, completionRatePct: 50 });
     expect(lvp.paper).toMatchObject({ sessions: 1, entries: 1, completed: 1, completionRatePct: 100 });
     expect(lvp.degraded).toBeUndefined();
   });
 
-  it("serves no paper figures, and says why, when the paper read fails -- never the live ones", () => {
+  it("serves no paper figures, and says why, when the paper read fails -- never the live ones", async () => {
     const live = new Database(path.join(tmp, "flies", "live_trades.db"));
     live.exec(DDL);
     live.exec("ALTER TABLE fly_positions ADD COLUMN completion_latency_min REAL");
@@ -418,7 +418,7 @@ describe("live vs paper", () => {
     paper.close();
 
     // Shown to fail before 2026-10-12: paper fell back to side(liveDb), so it read 0/30 and the gap 0.
-    const lvp = readFliesLive(config, "2026-09-17").performance.liveVsPaper!;
+    const lvp = (await readFliesLive(config, "2026-09-17")).performance.liveVsPaper!;
     expect(lvp.live).toMatchObject({ entries: 30, completed: 0 });
     expect(lvp.paper).toBeNull();
     expect(lvp.completionGapPct).toBeNull();
@@ -426,7 +426,7 @@ describe("live vs paper", () => {
     expect(lvp.degraded?.reason).toMatch(/^paper ledger read failed: /);
   });
 
-  it("leaves voided rows out on both sides, as live_vs_paper does", () => {
+  it("leaves voided rows out on both sides, as live_vs_paper does", async () => {
     const live = new Database(path.join(tmp, "flies", "live_trades.db"));
     live.exec(DDL);
     live.exec("ALTER TABLE fly_positions ADD COLUMN completion_latency_min REAL");
@@ -442,26 +442,26 @@ describe("live vs paper", () => {
     pos(paper, "P7", "2026-10-07", { credit: 2.3, completion_latency_min: 20 }); // a void-only live session
     paper.close();
 
-    const lvp = readFliesLive(config, "2026-10-08").performance.liveVsPaper!;
+    const lvp = (await readFliesLive(config, "2026-10-08")).performance.liveVsPaper!;
     expect(lvp.live).toMatchObject({ sessions: 1, entries: 1, completed: 1 });
     expect(lvp.paper).toMatchObject({ sessions: 1, entries: 1, completed: 1, completionRatePct: 100 });
     expect(lvp.completionGapPct).toBe(0);
   });
 
-  it("calls an absent paper ledger degraded too: the abort rule has nothing to compare", () => {
+  it("calls an absent paper ledger degraded too: the abort rule has nothing to compare", async () => {
     const live = new Database(path.join(tmp, "flies", "live_trades.db"));
     live.exec(DDL);
     live.exec("ALTER TABLE fly_positions ADD COLUMN completion_latency_min REAL");
     pos(live, "C1", "2026-09-17", { credit: 2.4, completion_latency_min: 30 });
     live.close();
-    const lvp = readFliesLive(config, "2026-09-17").performance.liveVsPaper!;
+    const lvp = (await readFliesLive(config, "2026-09-17")).performance.liveVsPaper!;
     expect(lvp.paper).toBeNull();
     expect(lvp.degraded).toEqual({ reason: "paper ledger absent" });
   });
 });
 
 describe("market series", () => {
-  it("clips the recorder's pre-open samples to regular hours and baselines on the prior close", () => {
+  it("clips the recorder's pre-open samples to regular hours and baselines on the prior close", async () => {
     fs.mkdirSync(path.join(tmp, "gex"), { recursive: true });
     const gex = new Database(path.join(tmp, "gex", "gex_history.db"));
     gex.exec("CREATE TABLE gex_spot_history (symbol TEXT, trade_date TEXT, ts REAL, spot REAL)");
@@ -471,7 +471,7 @@ describe("market series", () => {
     ins.run("SPX", "2026-09-17", Date.UTC(2026, 8, 17, 13, 31) / 1000, 7600);
     ins.run("SPX", "2026-09-17", Date.UTC(2026, 8, 17, 14, 0) / 1000, 7500);
     gex.close();
-    const out = readFliesLive(config, "2026-09-17");
+    const out = await readFliesLive(config, "2026-09-17");
     expect(out.series.spxBaseline).toEqual({ value: 7551.81, source: "first_tick" }); // no stream cache here
     expect(out.series.spx.map((p) => p.m)).toEqual([571, 600]);
     expect(out.series.spx[0]!.v).toBeCloseTo(((7600 - 7551.81) / 7551.81) * 100, 6);
@@ -479,7 +479,7 @@ describe("market series", () => {
 });
 
 describe("drawdown", () => {
-  it("is peak-to-trough of the running path, never negative, null for no path", () => {
+  it("is peak-to-trough of the running path, never negative, null for no path", async () => {
     expect(drawdownOf([])).toEqual({ maxDrawdown: null, peak: null });
     expect(drawdownOf([{ m: 1, v: 10 }, { m: 2, v: 30 }, { m: 3, v: -20 }, { m: 4, v: 5 }])).toEqual({ maxDrawdown: 50, peak: 30 });
     expect(drawdownOf([{ m: 1, v: -5 }, { m: 2, v: -1 }])).toEqual({ maxDrawdown: 0, peak: -1 });
@@ -487,7 +487,7 @@ describe("drawdown", () => {
 });
 
 describe("the broker bridge", () => {
-  it("reads the designated account's balances by the SDK's underscored names and the account marks", () => {
+  it("reads the designated account's balances by the SDK's underscored names and the account marks", async () => {
     const out = shape({
       ok: true,
       generated_at: "2026-09-17T21:00:00+00:00",

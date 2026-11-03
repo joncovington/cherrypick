@@ -13,7 +13,7 @@ import {
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { suiteEra, withReadOnlyDb } from "./db.js";
-import { readModuleMetrics, type ModuleMetricsGroup } from "../services/metricsBridge.js";
+import { readModuleMetricsAsync, type ModuleMetricsGroup } from "../services/metricsBridge.js";
 import { readExitReasons } from "./exitReasons.js";
 import { readAdvisedPairs } from "./pairs.js";
 import { readMeasurementBreaks } from "./integrity.js";
@@ -112,12 +112,12 @@ function readBreaks(dbPath: string): MeasurementBreak[] {
  * for a different window. `era="ALL"` pools every session and every era on file. MEIC's
  * advisor-era cutover is a date, not a stamp, and is not integrated here yet.
  */
-export function readModulePerformance(
+export async function readModulePerformance(
   config: ConsoleConfig,
   module: PerformanceModuleId,
   era: "current" | "ALL" = "current",
   mode: TradingMode = "paper",
-): ModulePerformanceResult {
+): Promise<ModulePerformanceResult> {
   const schema = MODULE_SCHEMA[module];
   const suite = suiteEra(config.paths.orchestratorConfig);
   const start = era === "current" ? suite.from : null;
@@ -148,9 +148,10 @@ export function readModulePerformance(
   const exits = readExitReasons(config, module, file, moduleEra);
   const breaks = readBreaks(dbPath);
   // pmcc's own verb defaults to its current era, so ALL has to be asked for to widen it.
-  const excursions = readExcursions(module, dbPath, module in MODULE_ERA ? (moduleEra ?? "ALL") : null);
-
-  const res = readModuleMetrics(dbPath, schema, start, null, moduleEra);
+  const [excursions, res] = await Promise.all([
+    readExcursions(module, dbPath, module in MODULE_ERA ? (moduleEra ?? "ALL") : null),
+    readModuleMetricsAsync(dbPath, schema, start, null, moduleEra),
+  ]);
   if (!res.ok || res.metrics === null) {
     return {
       ok: false,

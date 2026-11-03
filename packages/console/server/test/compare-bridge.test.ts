@@ -72,7 +72,7 @@ afterEach(() => {
 });
 
 describe("shaping the bridge's document", () => {
-  it("hands the document on with the bridge's snake_case names intact", () => {
+  it("hands the document on with the bridge's snake_case names intact", async () => {
     const out = shapeCompare(FIXTURE, null);
     expect(out.ok).toBe(true);
     expect(out.error).toBeNull();
@@ -89,18 +89,18 @@ describe("shaping the bridge's document", () => {
     expect(range?.vs_control?.sign_test_p).toBeNull();
   });
 
-  it("reports the CLI's own refusal as an error", () => {
+  it("reports the CLI's own refusal as an error", async () => {
     const out = shapeCompare({ ok: false, error: "ValueError: compare: scope must be 'era' or 'all'" }, null);
     expect(out).toEqual({ ok: false, data: null, error: "ValueError: compare: scope must be 'era' or 'all'" });
   });
 
-  it("refuses a schema it cannot read rather than half-render it", () => {
+  it("refuses a schema it cannot read rather than half-render it", async () => {
     const out = shapeCompare({ ...FIXTURE, schema: 2 }, null);
     expect(out.ok).toBe(false);
     expect(out.error).toMatch(/schema 2/);
   });
 
-  it("refuses a document with no module list", () => {
+  it("refuses a document with no module list", async () => {
     const { modules: _m, ...rest } = FIXTURE;
     expect(shapeCompare(rest, null).ok).toBe(false);
   });
@@ -161,7 +161,7 @@ describe("the CLI's own failure reaches the page", () => {
     else process.env["CHERRYPICK_PYTHON"] = saved;
   });
 
-  it("carries the stdout reason of a nonzero exit", () => {
+  it("carries the stdout reason of a nonzero exit", async () => {
     process.env["CHERRYPICK_PYTHON"] = process.execPath;
     const res = spawnModuleCli(
       ["-e", 'process.stdout.write(JSON.stringify({ok:false,error:"OperationalError: database is locked"})); process.exit(1)'],
@@ -171,7 +171,7 @@ describe("the CLI's own failure reaches the page", () => {
     expect(res.error).toBe("unavailable — OperationalError: database is locked");
   });
 
-  it("still falls back to the last stderr line", () => {
+  it("still falls back to the last stderr line", async () => {
     process.env["CHERRYPICK_PYTHON"] = process.execPath;
     const res = spawnModuleCli(["-e", 'process.stderr.write("first\\nModuleNotFoundError: x\\n"); process.exit(1)'], "unavailable");
     expect(res.error).toBe("unavailable — ModuleNotFoundError: x");
@@ -179,7 +179,7 @@ describe("the CLI's own failure reaches the page", () => {
 });
 
 describe("the memo", () => {
-  it("stamps every module ledger and the advisor store", () => {
+  it("stamps every module ledger and the advisor store", async () => {
     const stores = compareStores(config).map((p) => path.relative(tmp, p).replace(/\\/g, "/"));
     expect(stores).toEqual([
       "data/flies/paper_trades.db",
@@ -194,10 +194,10 @@ describe("the memo", () => {
     ]);
   });
 
-  it("serves a poll from memory, and re-runs when any ledger moves or the session turns", () => {
+  it("serves a poll from memory, and re-runs when any ledger moves or the session turns", async () => {
     setCompareCaller(okCaller);
-    readCompare(config, "era", "2026-10-12");
-    readCompare(config, "era", "2026-10-12");
+    await readCompare(config, "era", "2026-10-12");
+    await readCompare(config, "era", "2026-10-12");
     expect(calls).toHaveLength(1);
 
     // A trade closing in the LAST store of the list -- one the memo would miss if it stamped only
@@ -205,12 +205,12 @@ describe("the memo", () => {
     const contango = path.join(config.paths.contangoDir, "paper_trades.db");
     fs.mkdirSync(path.dirname(contango), { recursive: true });
     fs.writeFileSync(contango, "x");
-    readCompare(config, "era", "2026-10-12");
+    await readCompare(config, "era", "2026-10-12");
     expect(calls).toHaveLength(2);
 
-    readCompare(config, "era", "2026-10-13");
+    await readCompare(config, "era", "2026-10-13");
     expect(calls).toHaveLength(3);
-    readCompare(config, "all", "2026-10-13");
+    await readCompare(config, "all", "2026-10-13");
     expect(calls).toHaveLength(4);
   });
 });
