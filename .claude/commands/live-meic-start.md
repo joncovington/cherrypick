@@ -46,9 +46,15 @@ holds is refused.
    python -m cherrypick.meic.live_loop --status
    ```
    and present, in plain language:
+   - **The verdict first** (`arm_ready`). If `ready` is false, **stop here**: report each of its
+     `blockers` in plain words and what resolves it, and ask nothing. `--install-task` refuses
+     while any blocker stands, so there is nothing to work around. Every warning in `warnings`
+     is said out loud below. The items that follow are what the verdict is made of.
    - **Unmet gates** (`unmet_gates`). If any is unmet (`enable_live_trading`, `live.symbol`,
      `live.gate0_confirmed`, the designated account, a bad `live.arm`), **stop here** and report.
      There is nothing to arm if every tick would refuse.
+   - **Kill criteria** (`kill`): `blocked` stops here; the reasons say why (a latched drawdown, a
+     closed IC with no net recorded, unwritten criteria).
    - **Halt flag**: if `halt_flag` is true, surface it PROMINENTLY. The watchdog backstop may have
      set it after a failed self-disarm, which is worth understanding before re-arming. Only a
      fresh YES may clear it (step 4).
@@ -101,8 +107,8 @@ holds is refused.
      python -m cherrypick.meic.live_loop --install-task
      ```
      This writes today's arm record (the supervisor enables `meic-live` within one pass) and fires
-     the first tick immediately. A refusal (`ok: false`, no supervisor) is final: report it, do
-     not work around it.
+     the first tick immediately. A refusal (`ok: false`: a blocker named in `blockers`, such as
+     no supervisor) is final: report it, do not work around it.
 
    **If the JSON carries a `warning`, report it first and prominently.** Today it means a
    quarter-end session: arming succeeded, but the loop places no new entry all day (open ICs are
