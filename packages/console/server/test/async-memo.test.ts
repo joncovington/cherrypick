@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { AsyncMemo } from "../src/services/asyncMemo.js";
+import { AsyncMemo, STALE_MS } from "../src/services/asyncMemo.js";
 
 /** The bridges' shared memo: a value per key for its TTL, and one load per key at a time. */
 
@@ -21,7 +21,7 @@ describe("AsyncMemo", () => {
     expect(loads).toBe(1);
   });
 
-  it("loads again once the TTL has passed, and keeps keys apart", async () => {
+  it("past the TTL serves the old value at once and refreshes it in the background, keys apart", async () => {
     const memo = new AsyncMemo<string>();
     let loads = 0;
     const load = (v: string) => () => {
@@ -30,8 +30,32 @@ describe("AsyncMemo", () => {
     };
     expect(await memo.get("a", 1_000, 0, load("one"))).toBe("one");
     expect(await memo.get("b", 1_000, 0, load("other"))).toBe("other");
-    expect(await memo.get("a", 1_000, 1_000, load("two"))).toBe("two");
+    // Stale: the request is answered from memory, and one load replaces the value.
+    expect(await memo.get("a", 1_000, 1_000, load("two"))).toBe("one");
+    expect(await memo.get("a", 1_000, 1_001, load("three"))).toBe("one"); // the refresh is still the one in flight
+    await new Promise((res) => setTimeout(res, 0));
+    expect(await memo.get("a", 1_000, 1_002, load("four"))).toBe("two");
     expect(loads).toBe(3);
+  });
+
+  it("past the stale window waits for the load, as a first read does", async () => {
+    const memo = new AsyncMemo<string>();
+    expect(await memo.get("a", 1_000, 0, () => "old")).toBe("old");
+    expect(await memo.get("a", 1_000, 1_000 + STALE_MS, () => "new")).toBe("new");
+  });
+
+  it("keeps serving the old value when a background refresh throws, and retries next time", async () => {
+    const memo = new AsyncMemo<string>();
+    expect(await memo.get("a", 1_000, 0, () => "old")).toBe("old");
+    expect(
+      await memo.get("a", 1_000, 1_000, () => {
+        throw new Error("boom");
+      }),
+    ).toBe("old");
+    await new Promise((res) => setTimeout(res, 0));
+    expect(await memo.get("a", 1_000, 1_001, () => "new")).toBe("old");
+    await new Promise((res) => setTimeout(res, 0));
+    expect(await memo.get("a", 1_000, 1_002, () => "newer")).toBe("new");
   });
 
   it("does not remember a load that threw, so the next request tries again", async () => {
