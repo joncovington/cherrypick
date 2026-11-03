@@ -504,12 +504,60 @@ class _NoBroker:
         return {"ok": True, "order_id": order_id}
 
 
+class _SettleBroker:
+    """The real broker's status reads, and nothing that acts: a settlement asks what happened to the
+    session's orders and never places, replaces or cancels one. A close `_confirm_fills` would
+    cancel and re-price is refused here, so it stays pending and the session is left open."""
+
+    def __init__(self, broker):
+        self._broker = broker
+
+    def status(self, order_id):
+        return self._broker.status(order_id)
+
+    def cancel(self, order_id):
+        return {"ok": False, "order_id": order_id, "error": "a settlement cancels nothing"}
+
+    def place(self, spec, live):
+        return {"ok": False, "error": "a settlement places nothing"}
+
+    def replace(self, order_id, spec, live):
+        return {"ok": False, "order_id": order_id, "error": "a settlement replaces nothing"}
+
+
+def _orders_in_doubt(trade: dict) -> bool:
+    """A row whose orders the ledger last saw unfinished: an entry pending, a close pending, or a
+    resting stop working. Any of them may have filled after the last tick that looked."""
+    return (
+        trade.get("status") == "pending"
+        or bool(_closing_sides(trade))
+        or any(_resting_working(trade, s) for s in ("put", "call"))
+    )
+
+
 def settle_session(
-    config: dict, db_path: str, session: str, symbol: str, price: float, source: str, *, log
+    config: dict,
+    db_path: str,
+    session: str,
+    symbol: str,
+    price: float,
+    source: str,
+    *,
+    log,
+    broker_fn=None,
 ) -> dict:
     """Settle `symbol`'s ICs still held from `session` at `price` -- through `_manage_open_trades`,
     the path a live tick takes at the bell, so a catch-up and a hand-settled day write exactly what
-    the tick would have. `source` must be official (`core.settlement.OFFICIAL_SOURCES`)."""
+    the tick would have. `source` must be official (`core.settlement.OFFICIAL_SOURCES`).
+
+    **The broker first, when anything was left unfinished (2026-11-02).** A close or a resting
+    stop that FILLED after the last tick that looked (the ticks were failing, the process died)
+    would otherwise be marked cancelled and the side settled at expiry: the wrong P&L. So an
+    order in doubt is read first (`broker_fn()`, through `_SettleBroker`) with the tick's own
+    `_poll_resting_stops` and `_confirm_fills`: a fill is booked at the broker's legs, a dead order
+    clears its marker, a pending entry is confirmed or cancelled. Anything still unresolved, or
+    no broker to ask, leaves the session open (`left`) for the next run or a person. A session
+    with nothing in doubt settles with no broker call, as before."""
     base_config = paper.load_base_config()
     settle_min = paper._time_to_minutes(base_config.get("expiration_settlement_time", "16:00")) + 1
     snapshot = {
@@ -520,6 +568,21 @@ def settle_session(
         "underlying_price": price,
         "leg_quotes": {},
     }
+    where = "trade_date = ? AND symbol = ? AND status IN ('pending', 'open', 'partial', 'partial_entry')"
+    if [t for t in _ledger_rows(db_path, where, (session, symbol)) if _orders_in_doubt(t)]:
+        if broker_fn is None:
+            return {"left": "orders_in_doubt", "detail": "no broker to ask what they did"}
+        try:
+            broker = _SettleBroker(broker_fn())
+        except Exception as exc:  # noqa: BLE001 -- no broker, no settlement: left open, not guessed
+            return {"left": "orders_in_doubt", "detail": f"broker unavailable: {type(exc).__name__}: {exc}"}
+        _poll_resting_stops(symbol, session, db_path, broker, log=log)
+        _confirm_fills(symbol, snapshot, db_path, broker, log=log, params=paper.live_params(config))
+        still = [
+            t["ic_order_id"] for t in _ledger_rows(db_path, where, (session, symbol)) if _orders_in_doubt(t)
+        ]
+        if still:
+            return {"left": "orders_unresolved", "ic_order_ids": still}
     return _manage_open_trades(
         symbol,
         snapshot,
@@ -532,7 +595,9 @@ def settle_session(
     )
 
 
-def settle_overdue(config: dict, db_path: str, today: str, *, close_fn=None, log=print) -> dict:
+def settle_overdue(
+    config: dict, db_path: str, today: str, *, close_fn=None, log=print, broker_fn=None
+) -> dict:
     """Settle every past session the live ledger still holds open, at THAT session's official close
     (`core.settlement.dated_index_close`, source `yahoo_daily`) -- never a provisional price, the
     flies/bwb rule. A session with a pending entry (its order died at that close) is left for a
@@ -562,7 +627,12 @@ def settle_overdue(config: dict, db_path: str, today: str, *, close_fn=None, log
             if price is None:
                 left.append({"session": session, "symbol": symbol, "reason": "no_official_close"})
                 continue
-            counts = settle_session(config, db_path, session, symbol, price, "yahoo_daily", log=log)
+            counts = settle_session(
+                config, db_path, session, symbol, price, "yahoo_daily", log=log, broker_fn=broker_fn
+            )
+            if "left" in counts:
+                left.append({"session": session, "symbol": symbol, "reason": counts.pop("left"), **counts})
+                continue
             done.append({"session": session, "symbol": symbol, "price": price, **counts})
     return {"ok": True, "settled": done, "left": left}
 
@@ -1916,8 +1986,14 @@ def main(argv=None) -> int:
             return out({"ok": False, "error": "a live tick is running; try again in a minute"})
         try:
             db_path = str(_paths.live_db_path())
+            # Built only if a session has an order in doubt; reads only (`_SettleBroker`).
+            broker_fn = lambda: make_broker(cfg, _designated_account())  # noqa: E731
             if args.settle_overdue:
-                return out(settle_overdue(cfg, db_path, _pl._now_et().strftime("%Y-%m-%d"), log=_quiet))
+                return out(
+                    settle_overdue(
+                        cfg, db_path, _pl._now_et().strftime("%Y-%m-%d"), log=_quiet, broker_fn=broker_fn
+                    )
+                )
             if not args.date or args.price is None:
                 return out({"ok": False, "error": "--settle needs --date and --price (the official print)"})
             try:
@@ -1930,7 +2006,9 @@ def main(argv=None) -> int:
             settled = [
                 {
                     "symbol": s,
-                    **settle_session(cfg, db_path, args.date, s, args.price, "official", log=_quiet),
+                    **settle_session(
+                        cfg, db_path, args.date, s, args.price, "official", log=_quiet, broker_fn=broker_fn
+                    ),
                 }
                 for s in symbols
             ]

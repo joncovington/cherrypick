@@ -87,6 +87,72 @@ def test_the_catch_up_leaves_a_session_with_no_posted_close(tmp_path):
     assert live_loop._trade_row("OPEN1", db_path)["status"] == "open"
 
 
+# --------------------------------------------------------------------------- the broker first (2026-11-02)
+def _with_resting_stop(tmp_path):
+    db_path = _held_xsp(tmp_path)
+    paper._update_trade(
+        "OPEN1", {"put_resting_stop_order_id": "R1", "put_resting_stop_status": "working"}, db_path
+    )
+    return db_path
+
+
+def _catch_up(db_path, broker_fn):
+    return live_loop.settle_overdue(
+        _config(symbol="XSP"), db_path, "2099-01-01", close_fn=lambda *_: 585.0, broker_fn=broker_fn, **QUIET
+    )
+
+
+def test_a_stop_that_filled_unseen_is_booked_before_the_session_settles(tmp_path):
+    """Shown to fail with the old no-broker settle: the resting stop that filled at $2.95 was read as
+    cancelled and the put side settled at expiry, worthless -- a $295 loss recorded as nothing."""
+    db_path = _with_resting_stop(tmp_path)
+    broker = FakeBroker(statuses={"R1": {"status": "Filled", "price": "-2.95"}})
+    out = _catch_up(db_path, lambda: broker)
+    assert out["settled"] and not out["left"]
+    row = live_loop._trade_row("OPEN1", db_path)
+    assert row["put_stop_cost"] == 2.95 and row["put_resting_stop_status"] == "filled"
+    assert row["status"] != "open" and broker.placed == [] and broker.cancelled == []
+
+
+def test_an_order_that_died_clears_and_the_session_settles(tmp_path):
+    db_path = _with_resting_stop(tmp_path)
+    broker = FakeBroker(statuses={"R1": {"status": "Expired"}})
+    out = _catch_up(db_path, lambda: broker)
+    assert out["settled"] and live_loop._trade_row("OPEN1", db_path)["put_stop_cost"] is None
+
+
+def test_an_order_the_broker_cannot_place_leaves_the_session_open(tmp_path):
+    """Still working, or no answer: the session waits for the next run or a person, never a guess."""
+    db_path = _with_resting_stop(tmp_path)
+    out = _catch_up(db_path, lambda: FakeBroker(statuses={"R1": {"status": "Live"}}))
+    assert out["settled"] == [] and out["left"][0]["reason"] == "orders_unresolved"
+    assert live_loop._trade_row("OPEN1", db_path)["status"] == "open"
+
+    def no_broker():
+        raise RuntimeError("keyring unreadable")
+
+    out = _catch_up(db_path, no_broker)
+    assert out["left"][0]["reason"] == "orders_in_doubt" and "keyring unreadable" in out["left"][0]["detail"]
+    left = _catch_up(db_path, None)["left"][0]
+    assert left["reason"] == "orders_in_doubt" and left["detail"] == "no broker to ask what they did"
+
+
+def test_a_session_with_nothing_in_doubt_settles_without_asking(tmp_path):
+    db_path = _held_xsp(tmp_path)
+
+    def must_not_ask():
+        raise AssertionError("a settled-clean session built a broker")
+
+    assert _catch_up(db_path, must_not_ask)["settled"]
+
+
+def test_the_settlement_broker_reads_and_never_acts():
+    b = live_loop._SettleBroker(FakeBroker(statuses={"X": {"status": "Live"}}))
+    assert b.status("X")["status"] == "Live"
+    assert b.cancel("X")["ok"] is False and b.place({}, True)["ok"] is False
+    assert b.replace("X", {}, True)["ok"] is False
+
+
 def test_a_session_settled_by_hand(tmp_path, monkeypatch, capsys):
     db_path = _held_xsp(tmp_path)
     cfg = _config(symbol="XSP")
