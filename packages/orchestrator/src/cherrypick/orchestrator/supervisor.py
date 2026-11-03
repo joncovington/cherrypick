@@ -52,11 +52,18 @@ from .util import (
     NEW_SESSION,
     atomic_write_json,
     file_holders,
+    never_throttle,
     pid_alive,
     port_owner_pid,
     read_json,
     rotate_if_large,
 )
+
+
+def _throttle_word(off: bool) -> str:
+    """How a process's power throttling came out (`never_throttle`), for the log and job state."""
+    return "off" if off else "left to Windows"
+
 
 HEARTBEAT_FILE = "supervisor.last.json"
 JOBS_FILE = "supervisor-jobs.json"
@@ -838,6 +845,10 @@ class Supervisor:
             if err is not subprocess.DEVNULL:
                 err.close()
         self._handles[spec.id] = handle
+        # Every job a windowless service child, so Windows would throttle it (see `never_throttle`);
+        # opted out at spawn, the result kept in the job's state where `ps` and the console read it.
+        child = getattr(handle, "_handle", None)  # Windows only; None would mean the supervisor itself
+        st["power_throttling"] = _throttle_word(child is not None and never_throttle(int(child)))
         st["running_pid"] = handle.pid
         # The other half of the child's identity: a PID alone can be reused (see `same_process`).
         st["pid_started_at"] = _looplock.process_start_time(handle.pid)
@@ -1259,7 +1270,7 @@ def run(cfg: dict[str, Any] | None = None, *, max_passes: int | None = None) -> 
         sup.adopt_prior_state()
         if max_passes is None:  # a real daemon, not a test's bounded run — see _arm_death_breadcrumbs
             _arm_death_breadcrumbs()
-        _log(f"supervisor started (pid {os.getpid()})")
+        _log(f"supervisor started (pid {os.getpid()}; power throttling {_throttle_word(never_throttle())})")
         passes = 0
         last_alive_log = time.time()
         restart = False

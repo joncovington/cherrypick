@@ -26,6 +26,42 @@ CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 NEW_SESSION = os.name != "nt"
 
 
+def never_throttle(handle: int | None = None) -> bool:
+    """Opt a process out of Windows power throttling (EcoQoS, Task Manager's "efficiency mode"):
+    `handle` is a child's process handle (`Popen._handle`), None this process.
+
+    The supervisor runs as a service with nobody logged on, so it and every job it starts are
+    windowless background processes, which Windows throttles. On this suite's hybrid-CPU host the
+    same CPU-bound loop took 0.36 s normally and 2.45 s with EcoQoS forced on (6.8x), and the served
+    console ran 3-7x faster once opted out (#807, 2026-11-02). Setting the control bit with the state
+    bit clear tells Windows never to throttle the process. Not inherited, so every child is opted
+    out at its spawn. No admin needed for one's own process or child. Best effort: False off
+    Windows, or where the call is refused, and the process runs as before.
+    """
+    if os.name != "nt":
+        return False
+    import ctypes
+    import ctypes.wintypes as wt
+
+    class _State(ctypes.Structure):
+        _fields_ = [("Version", wt.ULONG), ("ControlMask", wt.ULONG), ("StateMask", wt.ULONG)]
+
+    execution_speed = 0x1  # PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+    process_power_throttling = 4  # PROCESS_INFORMATION_CLASS.ProcessPowerThrottling
+    state = _State(1, execution_speed, 0)  # version 1; controlled, not throttled
+    try:
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.GetCurrentProcess.restype = wt.HANDLE
+        k32.SetProcessInformation.argtypes = [wt.HANDLE, ctypes.c_int, ctypes.c_void_p, wt.DWORD]
+        target = k32.GetCurrentProcess() if handle is None else handle
+        ok = k32.SetProcessInformation(
+            target, process_power_throttling, ctypes.byref(state), ctypes.sizeof(state)
+        )
+        return bool(ok)
+    except (OSError, AttributeError):
+        return False
+
+
 def first_json(text: str | None) -> dict[str, Any]:
     """Parse the first JSON object from command output.
 

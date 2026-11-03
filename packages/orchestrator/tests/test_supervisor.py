@@ -139,6 +139,40 @@ def test_pass_spawns_due_jobs_and_writes_state(spawned):
     assert not list(supervisor.jobs_path().parent.glob("*.tmp"))
 
 
+def test_every_spawned_job_is_opted_out_of_power_throttling(spawned, monkeypatch):
+    """Each child is handed to `never_throttle` by its OWN handle at spawn, and the outcome is kept in
+    its state. A child with no handle is left alone: `never_throttle(None)` would mean the supervisor."""
+    calls = []
+
+    def fake_never_throttle(handle=None):
+        calls.append(handle)
+        return handle is not None
+
+    monkeypatch.setattr(supervisor, "never_throttle", fake_never_throttle)
+    real_popen = supervisor.subprocess.Popen
+
+    def with_handle(argv, **kw):
+        p = real_popen(argv, **kw)
+        p._handle = 10_000 + p.pid
+        return p
+
+    monkeypatch.setattr(supervisor.subprocess, "Popen", with_handle)
+    sup = supervisor.Supervisor(base_cfg())
+    res = sup.pass_once(now=MONDAY_NOON)
+    assert res["started"]
+    assert sorted(calls) == sorted(10_000 + p.pid for p in spawned)
+    assert all(sup._state[j]["power_throttling"] == "off" for j in res["started"])
+
+
+def test_a_child_without_a_handle_never_opts_out_the_supervisor(spawned, monkeypatch):
+    calls = []
+    monkeypatch.setattr(supervisor, "never_throttle", lambda handle=None: calls.append(handle) or True)
+    sup = supervisor.Supervisor(base_cfg())
+    res = sup.pass_once(now=MONDAY_NOON)
+    assert res["started"] and calls == []
+    assert all(sup._state[j]["power_throttling"] == "left to Windows" for j in res["started"])
+
+
 def test_overlap_guard_never_double_fires(spawned):
     sup = supervisor.Supervisor(base_cfg())
     sup.pass_once(now=MONDAY_NOON)
