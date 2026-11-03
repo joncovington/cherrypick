@@ -67,7 +67,7 @@ function writeFactSet(dir: string, session: string, net: number): void {
 }
 
 describe("the suite report's cache", () => {
-  it("picks up a provisional session being restated as final", () => {
+  it("picks up a provisional session being restated as final", async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-report-cache-"));
     const config = configFor(tmp);
     const reviewDir = config.paths.reviewDir;
@@ -86,7 +86,7 @@ describe("the suite report's cache", () => {
     expect(buildSuiteReport(config).suite.net).toBe(250);
   });
 
-  it("picks up a newly added session", () => {
+  it("picks up a newly added session", async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-report-cache-"));
     const config = configFor(tmp);
 
@@ -100,7 +100,7 @@ describe("the suite report's cache", () => {
     expect(after.daily.map((d) => d.session)).toEqual(["2026-08-19", "2026-08-20"]);
   });
 
-  it("serves a repeated call without the fact sets changing", () => {
+  it("serves a repeated call without the fact sets changing", async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-report-cache-"));
     const config = configFor(tmp);
     writeFactSet(config.paths.reviewDir, "2026-08-19", 100);
@@ -144,7 +144,7 @@ describe("a fact set with no net", () => {
     expect(report.suite.net).toBe(100);
     expect(report.suite.trades).toBe(2);
     expect(report.daily[0]?.byModule).toEqual({ meic: 100 });
-    const flies = readDesk(config, ALL_ENABLED).eod.rows.find((r) => r.module === "flies");
+    const flies = (await readDesk(config, ALL_ENABLED)).eod.rows.find((r) => r.module === "flies");
     expect(flies).toEqual({ module: "flies", net: null, closed: 3, netPerTrade: null });
   });
 });
@@ -207,7 +207,7 @@ describe("the evidence clock", () => {
     add.run("2026-08-20", "bp-5k", "arm_added", "an arm added"); // arm-scoped: not the module's clock
     db.close();
 
-    const meic = readDesk(config, ALL_ENABLED).evidence.find((r) => r.module === "meic");
+    const meic = (await readDesk(config, ALL_ENABLED)).evidence.find((r) => r.module === "meic");
     // The whole-book break predates the curve, and is still the clock's anchor -- not "no break".
     expect(meic?.lastBreakDate).toBe("2026-08-01");
     expect(meic?.sessionsSince).toBe(3);

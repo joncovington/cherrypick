@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 describe("the flies evidence bridge", () => {
-  it("asks each verb of the module and hands its numbers on unchanged", () => {
+  it("asks each verb of the module and hands its numbers on unchanged", async () => {
     const seen: string[] = [];
     setFliesEvidenceCaller((_c, verb) => {
       seen.push(verb);
@@ -39,38 +39,38 @@ describe("the flies evidence bridge", () => {
         error: null,
       };
     });
-    const out = readFliesLiveGap(config, 1_000);
+    const out = await readFliesLiveGap(config, 1_000);
     expect(out.ok).toBe(true);
     expect(out.data?.sessions[0]).toEqual({ session: "2026-10-09", net_gap: -12.34 });
-    readFliesGateSessions(config, 1_000);
-    readFliesSelector(config, 1_000);
+    await readFliesGateSessions(config, 1_000);
+    await readFliesSelector(config, 1_000);
     expect(seen).toEqual(["live-gap", "gate-sessions", "selector-sessions"]);
   });
 
-  it("memoises a verb for the TTL, so a page poll is not a subprocess", () => {
+  it("memoises a verb for the TTL, so a page poll is not a subprocess", async () => {
     let calls = 0;
     setFliesEvidenceCaller(() => {
       calls += 1;
       return { ok: true, json: { ok: true, ledger: "ok", arms: [] }, error: null };
     });
-    readFliesGateSessions(config, 1_000);
-    readFliesGateSessions(config, 60_000);
+    await readFliesGateSessions(config, 1_000);
+    await readFliesGateSessions(config, 60_000);
     expect(calls).toBe(1);
-    readFliesGateSessions(config, 200_000);
+    await readFliesGateSessions(config, 200_000);
     expect(calls).toBe(2);
   });
 
-  it("reports an unavailable module as an error, never as an empty result", () => {
+  it("reports an unavailable module as an error, never as an empty result", async () => {
     setFliesEvidenceCaller(() => ({ ok: false, json: null, error: "flies evidence unavailable — exit 1" }));
-    const out = readFliesSelector(config, 1_000);
+    const out = await readFliesSelector(config, 1_000);
     expect(out.ok).toBe(false);
     expect(out.data).toBeNull();
     expect(out.error).toContain("unavailable");
   });
 
-  it("reports a refusal from the module as an error", () => {
+  it("reports a refusal from the module as an error", async () => {
     setFliesEvidenceCaller(() => ({ ok: true, json: { ok: false, error: "no such table" }, error: null }));
-    expect(readFliesLiveGap(config, 1_000)).toEqual({ ok: false, data: null, error: "no such table" });
+    expect(await readFliesLiveGap(config, 1_000)).toEqual({ ok: false, data: null, error: "no such table" });
   });
 });
 
@@ -80,12 +80,12 @@ const python = suitePython();
 const hasFlies = spawnSync(python, ["-c", "import cherrypick.flies.cli"], { encoding: "utf-8" }).status === 0;
 
 describe.skipIf(!hasFlies)("the real flies verbs", () => {
-  it("answer for an absent ledger without failing or creating one", () => {
+  it("answer for an absent ledger without failing or creating one", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flies-evidence-"));
     const cfg = { paths: { fliesDir: dir } } as unknown as ConsoleConfig;
-    expect(readFliesLiveGap(cfg).data?.ledger).toBe("absent");
-    expect(readFliesGateSessions(cfg).data?.ledger).toBe("absent");
-    expect(readFliesSelector(cfg).data?.ledger).toBe("absent");
+    expect((await readFliesLiveGap(cfg)).data?.ledger).toBe("absent");
+    expect((await readFliesGateSessions(cfg)).data?.ledger).toBe("absent");
+    expect((await readFliesSelector(cfg)).data?.ledger).toBe("absent");
     expect(fs.readdirSync(dir)).toEqual([]);
   });
 });

@@ -354,6 +354,33 @@ export function memoOnStore<T>(dbPath: string | readonly string[], key: string, 
   return value;
 }
 
+const buildsInFlight = new Map<string, Promise<unknown>>();
+
+/**
+ * `memoOnStore` for a build that runs off the event loop (a module CLI subprocess): the same stamp
+ * rule, and one build per key and stamp at a time, so a second request waits on the first.
+ */
+export function memoOnStoreAsync<T>(dbPath: string | readonly string[], key: string, build: () => T | Promise<T>): Promise<T> {
+  const stamp = typeof dbPath === "string" ? fileStamp(dbPath) : dbPath.map(fileStamp).join("|");
+  const hit = cachedOnStamp<T>(key, stamp);
+  if (hit !== undefined) return Promise.resolve(hit.value);
+  const flightKey = `${key}\u0000${stamp}`;
+  const pending = buildsInFlight.get(flightKey);
+  if (pending !== undefined) return pending as Promise<T>;
+  const read = Promise.resolve()
+    .then(build)
+    .then((value) => {
+      rememberOnStamp(key, stamp, value);
+      return value;
+    });
+  buildsInFlight.set(flightKey, read);
+  void read.then(
+    () => buildsInFlight.delete(flightKey),
+    () => buildsInFlight.delete(flightKey),
+  );
+  return read;
+}
+
 /**
  * `withReadOnlyDb`, memoised on the store's stamp like `memoOnStore` -- except that a read which
  * THREW is not remembered. Caching the fallback would pin an empty answer (and a single recorded

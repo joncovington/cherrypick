@@ -8,7 +8,8 @@ import type {
   BwbVolEvidence,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { spawnModuleCli } from "./moduleCli.js";
+import { AsyncMemo } from "./asyncMemo.js";
+import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
  * bwb's own evidence reads, asked of the module (`python -m cherrypick.bwb.cli`):
@@ -30,8 +31,6 @@ const UNAVAILABLE = "bwb evidence unavailable — the bwb package must be instal
 
 export type BwbEvidenceVerb = "live-gap" | "entry-context" | "regime-split" | "iv-premium";
 
-type Spawned = ReturnType<typeof spawnModuleCli>;
-
 function argv(config: ConsoleConfig, verb: BwbEvidenceVerb): string[] {
   const head = ["-m", "cherrypick.bwb.cli", "--db", path.join(config.paths.bwbDir, "paper_trades.db"), verb];
   if (verb === "live-gap") return [...head, "--live-db", path.join(config.paths.bwbDir, "live_trades.db")];
@@ -39,33 +38,28 @@ function argv(config: ConsoleConfig, verb: BwbEvidenceVerb): string[] {
   return head;
 }
 
-function spawnVerb(config: ConsoleConfig, verb: BwbEvidenceVerb): Spawned {
-  return spawnModuleCli(argv(config, verb), UNAVAILABLE);
+function spawnVerb(config: ConsoleConfig, verb: BwbEvidenceVerb): Promise<SpawnedJson> {
+  return spawnModuleCliAsync(argv(config, verb), UNAVAILABLE);
 }
 
-let caller = spawnVerb;
+type Caller = (config: ConsoleConfig, verb: BwbEvidenceVerb) => SpawnedJson | Promise<SpawnedJson>;
+let caller: Caller = spawnVerb;
 
 /** Swap the subprocess out in tests. Pass nothing to restore the real one. */
-export function setBwbEvidenceCaller(fn?: typeof spawnVerb): void {
+export function setBwbEvidenceCaller(fn?: Caller): void {
   caller = fn ?? spawnVerb;
 }
 
 const TTL_MS = 120_000;
-const cache = new Map<string, { at: number; value: Spawned }>();
+const cache = new AsyncMemo<SpawnedJson>();
 
 /** Drop the memoised responses. Tests only. */
 export function resetBwbEvidenceCache(): void {
   cache.clear();
 }
 
-function read<T>(config: ConsoleConfig, verb: BwbEvidenceVerb, now: number): BridgedResult<T> {
-  const key = `${config.paths.bwbDir}|${verb}`;
-  let hit = cache.get(key);
-  if (hit === undefined || now - hit.at >= TTL_MS) {
-    hit = { at: now, value: caller(config, verb) };
-    cache.set(key, hit);
-  }
-  const res = hit.value;
+async function read<T>(config: ConsoleConfig, verb: BwbEvidenceVerb, now: number): Promise<BridgedResult<T>> {
+  const res = await cache.get(`${config.paths.bwbDir}|${verb}`, TTL_MS, now, () => caller(config, verb));
   if (!res.ok || res.json === null) return { ok: false, data: null, error: res.error ?? UNAVAILABLE };
   if (res.json["ok"] !== true) {
     const err = res.json["error"];
@@ -74,14 +68,15 @@ function read<T>(config: ConsoleConfig, verb: BwbEvidenceVerb, now: number): Bri
   return { ok: true, data: res.json as unknown as T, error: null };
 }
 
-export function readBwbLiveGap(config: ConsoleConfig, now = Date.now()): BridgedResult<BwbLiveGap> {
+export function readBwbLiveGap(config: ConsoleConfig, now = Date.now()): Promise<BridgedResult<BwbLiveGap>> {
   return read<BwbLiveGap>(config, "live-gap", now);
 }
 
-export function readBwbVol(config: ConsoleConfig, now = Date.now()): BwbVolEvidence {
-  return {
-    entryContext: read<BwbEntryContext>(config, "entry-context", now),
-    regimeSplit: read<BwbRegimeSplit>(config, "regime-split", now),
-    ivPremium: read<BwbIvPremium>(config, "iv-premium", now),
-  };
+export async function readBwbVol(config: ConsoleConfig, now = Date.now()): Promise<BwbVolEvidence> {
+  const [entryContext, regimeSplit, ivPremium] = await Promise.all([
+    read<BwbEntryContext>(config, "entry-context", now),
+    read<BwbRegimeSplit>(config, "regime-split", now),
+    read<BwbIvPremium>(config, "iv-premium", now),
+  ]);
+  return { entryContext, regimeSplit, ivPremium };
 }

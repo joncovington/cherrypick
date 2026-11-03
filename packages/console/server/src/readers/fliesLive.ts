@@ -30,7 +30,7 @@ import type {
 } from "@console/shared";
 import { PERFORMANCE_MODULE_SCHEMA } from "@console/shared";
 import { hasColumn, readOnlyDb, withReadOnlyDb, num, str, readJson, suiteEra } from "./db.js";
-import { readModuleMetrics } from "../services/metricsBridge.js";
+import { readModuleMetricsAsync } from "../services/metricsBridge.js";
 import { onPeakRiskOver, peakRiskSessions } from "./fliesPeakRisk.js";
 import { readFliesAnalytics, readFliesJournal, readFliesLoopStatus, readFliesPerformance } from "./flies.js";
 import { readLockStatus, sessionDateEt } from "../services/liveLock.js";
@@ -343,11 +343,11 @@ function prevClose(config: ConsoleConfig, symbol: string, session: string): numb
 /** The flies completion tab's live-mode read (`readFliesPerformance`) and the performance slide's
  *  calibration reading, both for the pilot's arm in their own default scopes -- the whole live
  *  record, not bounded by `?session` -- carried, not recomputed. */
-function livePerformance(config: ConsoleConfig, arm: string | null, sessions: LiveRiskSession[]): LivePerformance {
+async function livePerformance(config: ConsoleConfig, arm: string | null, sessions: LiveRiskSession[]): Promise<LivePerformance> {
   const p = readFliesPerformance(config, "live", "daily", { arm, date: null, symbol: null, era: null });
   const from = suiteEra(config.paths.orchestratorConfig).from;
   // Memoised in the bridge (120 s), so the page's 15 s poll does not spawn a process per poll.
-  const metrics = readModuleMetrics(path.join(config.paths.fliesDir, "live_trades.db"), PERFORMANCE_MODULE_SCHEMA.flies, from, null);
+  const metrics = await readModuleMetricsAsync(path.join(config.paths.fliesDir, "live_trades.db"), PERFORMANCE_MODULE_SCHEMA.flies, from, null);
   const group = arm !== null ? metrics.metrics?.groups[arm] : undefined;
   return {
     arm,
@@ -373,7 +373,7 @@ function livePerformance(config: ConsoleConfig, arm: string | null, sessions: Li
 }
 
 // --------------------------------------------------------------------------- the payload
-export function readFliesLive(config: ConsoleConfig, session: string | null = null): LiveFliesPayload {
+export async function readFliesLive(config: ConsoleConfig, session: string | null = null): Promise<LiveFliesPayload> {
   const resolved = resolveLiveSession(config, session);
   const day = resolved.session;
   const liveDb = path.join(config.paths.fliesDir, "live_trades.db");
@@ -433,7 +433,7 @@ export function readFliesLive(config: ConsoleConfig, session: string | null = nu
     paperSessions: paper?.[k].sessions ?? null,
     onRisk: onPeakRiskOver(risk, bounds[k]),
   });
-  const performance = livePerformance(config, armName, risk);
+  const performance = await livePerformance(config, armName, risk);
   const positions = value?.positions ?? [];
   const marks = value?.marks ?? { markPnl: [], openMargin: [], latest: null };
   const dd = drawdownOf(marks.markPnl);

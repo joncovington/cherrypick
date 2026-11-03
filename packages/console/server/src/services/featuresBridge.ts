@@ -7,7 +7,7 @@ import { callConfigCli, type BridgeResult } from "./configBridge.js";
  * capabilities (Dolt, Claude Code); that rule lives in Python, and a TypeScript copy reading the
  * config file directly would be a second answer free to drift from the one the scheduler acts on.
  *
- * Memoised for `TTL_MS` (one ~250 ms subprocess per window, failures included) and dropped the
+ * Memoised for `TTL_MS` (one ~250 ms subprocess per window, off the event loop, failures included) and dropped the
  * moment the Config page saves or the halt toggles, so a module switched off in the browser leaves
  * the rail on the next poll rather than up to a window later.
  *
@@ -59,16 +59,31 @@ export function parseFeatures(raw: BridgeResult): SuiteFeatures {
   return ok;
 }
 
-export function getFeatures(now: number = Date.now()): SuiteFeatures {
-  if (memo !== null && now - memo.at < TTL_MS) return memo.value;
-  const value = parseFeatures(callConfigCli({ op: "features" }));
-  memo = { at: now, value };
-  return value;
+/** The read in flight, and the memo generation it belongs to: an invalidation orphans it. */
+let inflight: { generation: number; read: Promise<SuiteFeatures> } | null = null;
+let generation = 0;
+
+export function getFeatures(now: number = Date.now()): Promise<SuiteFeatures> {
+  if (memo !== null && now - memo.at < TTL_MS) return Promise.resolve(memo.value);
+  if (inflight !== null && inflight.generation === generation) return inflight.read;
+  const mine = generation;
+  const read = callConfigCli({ op: "features" }).then((raw) => {
+    const value = parseFeatures(raw);
+    // A save that landed mid-read invalidated this answer: hand it to this caller, never memoise it.
+    if (mine === generation) memo = { at: now, value };
+    return value;
+  });
+  inflight = { generation: mine, read };
+  void read.finally(() => {
+    if (inflight?.read === read) inflight = null;
+  });
+  return read;
 }
 
 /** Drop the memo: the Config page saved, or the halt flag moved. */
 export function invalidateFeatures(): void {
   memo = null;
+  generation += 1;
 }
 
 /**

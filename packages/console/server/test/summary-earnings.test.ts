@@ -79,17 +79,17 @@ beforeAll(() => {
 const sum = (xs: number[]) => Math.round(xs.reduce((s, x) => s + x, 0) * 100) / 100;
 
 describe("earnings summary money", () => {
-  it("equals the history reader's totals for the same window", () => {
+  it("equals the history reader's totals for the same window", async () => {
     for (const range of ["day", "week", "month", "all"]) {
-      const s = readEarningsSummary(config, { mode: "paper", range, day: DAY });
+      const s = await readEarningsSummary(config, { mode: "paper", range, day: DAY });
       const w = s.window;
-      const h = readEarnings(config, undefined, null, { from: w.from, to: w.to });
+      const h = await readEarnings(config, undefined, null, { from: w.from, to: w.to });
       const rows = h.trades.rows.filter((r) => r.mode === "paper");
       expect(s.hero.trades).toBe(rows.length);
       expect(s.hero.net).toBe(sum(rows.map((r) => r.net ?? 0)));
       expect(s.hero.gross).toBe(sum(rows.map((r) => r.gross ?? 0)));
     }
-    const day = readEarningsSummary(config, { mode: "paper", range: "day", day: DAY });
+    const day = await readEarningsSummary(config, { mode: "paper", range: "day", day: DAY });
     expect(day.hero.net).toBe(-90);
     expect(day.hero.gross).toBe(-80);
     expect(day.hero.costs).toEqual([
@@ -98,55 +98,55 @@ describe("earnings summary money", () => {
       { label: "slippage (charged)", amount: 1.8 },
     ]);
     // Paper only: the live ledger's same-day trade is not in the paper hero.
-    const paperOnly = readEarnings(config, undefined, null, { from: DAY, to: DAY }).totals;
+    const paperOnly = (await readEarnings(config, undefined, null, { from: DAY, to: DAY })).totals;
     expect(paperOnly.net).toBe(-90 + 86);
   });
 
-  it("reads settlement n/r when a row never recorded it", () => {
-    const s = readEarningsSummary(config, { mode: "paper", range: "week", day: DAY });
+  it("reads settlement n/r when a row never recorded it", async () => {
+    const s = await readEarningsSummary(config, { mode: "paper", range: "week", day: DAY });
     expect(s.hero.trades).toBe(3);
     expect(s.hero.net).toBe(-53);
     expect(s.hero.costs.find((c) => c.label === "settlement")?.amount).toBeNull();
   });
 
-  it("widens the window from the page's session", () => {
-    expect(readEarningsSummary(config, { mode: "paper", range: "week", day: DAY }).window).toMatchObject({ from: "2026-10-12", to: "2026-10-18" });
-    const month = readEarningsSummary(config, { mode: "paper", range: "month", day: "2026-09-02" });
+  it("widens the window from the page's session", async () => {
+    expect((await readEarningsSummary(config, { mode: "paper", range: "week", day: DAY })).window).toMatchObject({ from: "2026-10-12", to: "2026-10-18" });
+    const month = await readEarningsSummary(config, { mode: "paper", range: "month", day: "2026-09-02" });
     expect(month.window).toMatchObject({ from: "2026-09-01", to: "2026-09-30" });
     expect(month.hero.net).toBe(58);
   });
 
-  it("resolves a null day to the latest settled session, with neighbours", () => {
-    const s = readEarningsSummary(config, { mode: "paper", range: "day", day: null });
+  it("resolves a null day to the latest settled session, with neighbours", async () => {
+    const s = await readEarningsSummary(config, { mode: "paper", range: "day", day: null });
     expect(s.session).toEqual({ day: DAY, prev: "2026-10-13", next: null });
     expect(s.hero.trades).toBe(2);
   });
 
-  it("keeps open positions out of the money, counting them", () => {
-    const s = readEarningsSummary(config, { mode: "paper", range: "day", day: DAY });
+  it("keeps open positions out of the money, counting them", async () => {
+    const s = await readEarningsSummary(config, { mode: "paper", range: "day", day: DAY });
     expect(s.hero.open).toBe(1);
     expect(s.tiles.find((t) => t.label === "names traded")?.value).toBe(2);
     // An earlier window's end precedes the open position's entry.
-    expect(readEarningsSummary(config, { mode: "paper", range: "month", day: "2026-09-02" }).hero.open).toBe(0);
+    expect((await readEarningsSummary(config, { mode: "paper", range: "month", day: "2026-09-02" })).hero.open).toBe(0);
   });
 
-  it("states return on capital at risk with its coverage", () => {
-    const s = readEarningsSummary(config, { mode: "paper", range: "week", day: DAY });
+  it("states return on capital at risk with its coverage", async () => {
+    const s = await readEarningsSummary(config, { mode: "paper", range: "week", day: DAY });
     // c recorded no max loss: (115 - 205) / (500 + 400) = -10%.
     expect(s.gauges[0]?.rawPct).toBe(-10);
     expect(s.gauges[0]?.caption).toContain("2/3");
     expect(s.tiles.find((t) => t.label === "average sessions held")?.note).toContain("2/3");
   });
 
-  it("lists every arm in the window, footed to the hero", () => {
-    const s = readEarningsSummary(config, { mode: "paper", range: "all", day: DAY });
+  it("lists every arm in the window, footed to the hero", async () => {
+    const s = await readEarningsSummary(config, { mode: "paper", range: "all", day: DAY });
     expect(s.arms.map((a) => a.arm).sort()).toEqual(["advised:condor-take-earlier:iron_condor", "strat_test:atm_calendar", "strat_test:iron_fly"]);
     expect(sum(s.arms.map((a) => a.net))).toBe(s.hero.net);
     expect(s.arms.every((a) => a.retired === false)).toBe(true);
   });
 
-  it("breaks down by structure, exit and symbol, each adding up", () => {
-    const s = readEarningsSummary(config, { mode: "paper", range: "all", day: DAY });
+  it("breaks down by structure, exit and symbol, each adding up", async () => {
+    const s = await readEarningsSummary(config, { mode: "paper", range: "all", day: DAY });
     const [byStrategy, byExit, bySymbol] = s.breakdowns;
     expect(byStrategy?.rows.find((r) => r.bucket === "iron_fly")).toMatchObject({ trades: 2, net: 173 });
     for (const b of s.breakdowns) expect(sum(b.rows.map((r) => r.net))).toBe(s.hero.net);
@@ -154,8 +154,8 @@ describe("earnings summary money", () => {
     expect(bySymbol?.rows[0]?.bucket).toBe("AEO");
   });
 
-  it("honours live mode against the live ledger, its unrecorded costs n/r", () => {
-    const s = readEarningsSummary(config, { mode: "live", range: "day", day: null });
+  it("honours live mode against the live ledger, its unrecorded costs n/r", async () => {
+    const s = await readEarningsSummary(config, { mode: "live", range: "day", day: null });
     expect(s.mode).toBe("live");
     expect(s.hero.trades).toBe(1);
     expect(s.hero.net).toBe(86);
@@ -163,9 +163,9 @@ describe("earnings summary money", () => {
     expect(s.breakdowns[1]?.rows[0]?.bucket).toBe("n/r");
   });
 
-  it("returns an empty slice for a missing ledger, without throwing", () => {
+  it("returns an empty slice for a missing ledger, without throwing", async () => {
     const missing = { paths: { ...config.paths, earningsDir: path.join(tmp, "nope") } } as unknown as ConsoleConfig;
-    const s = readEarningsSummary(missing, { mode: "paper", range: "week", day: DAY });
+    const s = await readEarningsSummary(missing, { mode: "paper", range: "week", day: DAY });
     expect(s.hero.trades).toBe(0);
     expect(s.arms).toEqual([]);
     expect(s.notes.length).toBeGreaterThan(0);

@@ -89,7 +89,7 @@ afterEach(() => {
 const get = (url: string) => app.inject({ method: "GET", url, headers: { host: "127.0.0.1:5070" } });
 
 describe("bwb's readers in live mode", () => {
-  it("read the live book as present and empty -- no rows, no zeros dressed as a result", () => {
+  it("read the live book as present and empty -- no rows, no zeros dressed as a result", async () => {
     const live = readBwb(config, "live");
     expect(live.mode).toBe("live");
     expect(live.dbPresent).toBe(true);
@@ -108,7 +108,7 @@ describe("bwb's readers in live mode", () => {
     expect(readBwbMeta(config, "live")).toEqual({ mode: "live", arms: [], symbols: [], sessions: [] });
   });
 
-  it("never fall back to the paper book", () => {
+  it("never fall back to the paper book", async () => {
     expect(readBwb(config).mode).toBe("paper");
     expect(readBwb(config).arms).toHaveLength(1);
     const paper = readBwbHistory(config, { arm: null, symbol: null });
@@ -117,7 +117,7 @@ describe("bwb's readers in live mode", () => {
     expect(readBwbMeta(config).arms).toEqual(["control"]);
   });
 
-  it("read the live decision journal from the live file, and refuse live for a module with none", () => {
+  it("read the live decision journal from the live file, and refuse live for a module with none", async () => {
     expect(readDecisions(config, "bwb", null).rows.map((r) => r.arm)).toEqual(["control"]);
     const live = readDecisions(config, "bwb", null, "live");
     expect(live).toEqual({ module: "bwb", mode: "live", tradeDate: null, rows: [] });
@@ -148,14 +148,14 @@ describe("bwb's routes", () => {
 });
 
 describe("bwb's performance slide in live mode", () => {
-  it("reads live_trades.db rather than refusing or reading paper", () => {
+  it("reads live_trades.db rather than refusing or reading paper", async () => {
     expect(ledgerFile("bwb", "live")).toBe("live_trades.db");
     const seen: string[] = [];
     setMetricsCaller((db) => {
       seen.push(path.basename(db));
       return { ok: true, error: null, metrics: { schema: "bwb_132", n_records: 0, groups: {} } };
     });
-    const out = readModulePerformance(config, "bwb", "ALL", "live");
+    const out = await readModulePerformance(config, "bwb", "ALL", "live");
     expect(seen).toEqual(["live_trades.db"]);
     expect(out.ok).toBe(true);
     expect(out.mode).toBe("live");

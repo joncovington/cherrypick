@@ -103,26 +103,26 @@ const meicHistory = (over: Partial<typeof NO_TRADE_QUERY> = {}) =>
   readMeic(config, "paper", { ...NO_TRADE_QUERY, era: "ALL", view: "history", from: "2026-09-01", limit: 2, ...over }).trades;
 
 describe("MEIC's trade log sorts on the server", () => {
-  it("defaults to newest first, which here is the two worst", () => {
+  it("defaults to newest first, which here is the two worst", async () => {
     expect(meicHistory().rows.map((r) => r.gross)).toEqual([-300, -200]);
   });
 
-  it("serves the WHOLE log's best on the first sorted page, not the default page re-ordered", () => {
+  it("serves the WHOLE log's best on the first sorted page, not the default page re-ordered", async () => {
     const p = meicHistory({ sort: "net", dir: "desc" });
     expect(p.rows.map((r) => r.gross)).toEqual([500, 400]);
     expect(p.total).toBe(5);
   });
 
-  it("sorts by the net the row serves (gross − fees), and pages the sorted set", () => {
+  it("sorts by the net the row serves (gross − fees), and pages the sorted set", async () => {
     expect(meicHistory({ sort: "net", dir: "asc" }).rows.map((r) => r.net)).toEqual([-302, -202]);
     expect(meicHistory({ sort: "net", dir: "desc", offset: 2 }).rows.map((r) => r.gross)).toEqual([-100, -200]);
   });
 
-  it("orders by date in either direction", () => {
+  it("orders by date in either direction", async () => {
     expect(meicHistory({ sort: "date", dir: "asc" }).rows.map((r) => r.tradeDate)).toEqual(DAYS.slice(0, 2));
   });
 
-  it("ignores a column it does not name, keeping its own order", () => {
+  it("ignores a column it does not name, keeping its own order", async () => {
     expect(meicHistory({ sort: "reason", dir: "asc" }).rows.map((r) => r.gross)).toEqual([-300, -200]);
   });
 
@@ -145,35 +145,35 @@ describe("the flies trade log sorts on the server", () => {
   const log = (over: Partial<typeof NO_TRADE_LOG_QUERY> = {}) =>
     readFliesTradeLog(config, "paper", { ...NO_TRADE_LOG_QUERY, era: "ALL", limit: 2, ...over });
 
-  it("serves the whole log's best first, not the default page re-ordered", () => {
+  it("serves the whole log's best first, not the default page re-ordered", async () => {
     expect(log().rows.map((r) => r.pnl)).toEqual([-301, -201]);
     const p = log({ sort: "net", dir: "desc" });
     expect(p.rows.map((r) => r.pnl)).toEqual([499, 399]);
     expect(p.total).toBe(5);
   });
 
-  it("keeps its totals over every matching row whatever the sort", () => {
+  it("keeps its totals over every matching row whatever the sort", async () => {
     expect(log({ sort: "gross", dir: "asc" }).totals.trades).toBe(5);
   });
 });
 
 describe("the earnings history sorts on the server", () => {
-  const history = (sort?: string, dir?: "asc" | "desc") =>
-    readEarnings(
+  const history = async (sort?: string, dir?: "asc" | "desc") =>
+    (await readEarnings(
       config,
       { trades: { limit: 2, offset: 0, ...(sort !== undefined ? { sort, dir } : {}) }, reviews: FIRST_PAGE },
       "ALL",
-    ).trades;
+    )).trades;
 
-  it("serves the whole history's best first, not the default page re-ordered", () => {
-    expect(history().rows.map((r) => r.gross)).toEqual([-300, -200]);
-    const p = history("net", "desc");
+  it("serves the whole history's best first, not the default page re-ordered", async () => {
+    expect((await history()).rows.map((r) => r.gross)).toEqual([-300, -200]);
+    const p = await history("net", "desc");
     expect(p.rows.map((r) => r.gross)).toEqual([500, 400]);
     expect(p.total).toBe(5);
   });
 
-  it("orders by the open in either direction", () => {
-    expect(history("opened", "asc").rows.map((r) => r.orderId)).toEqual(["t-0", "t-1"]);
+  it("orders by the open in either direction", async () => {
+    expect((await history("opened", "asc")).rows.map((r) => r.orderId)).toEqual(["t-0", "t-1"]);
   });
 });
 
@@ -186,15 +186,15 @@ describe("each web table offers only the sorts its reader names", () => {
     return [...m[1]!.matchAll(/"([^"]+)"/g)].map((x) => x[1]!);
   };
 
-  it("MEIC", () => {
+  it("MEIC", async () => {
     expect(listIn(web("Meic/MeicTables.tsx"), "MEIC_TRADE_SORTS").sort()).toEqual(Object.keys(MEIC_TRADE_SORTS).sort());
   });
 
-  it("flies", () => {
+  it("flies", async () => {
     expect(listIn(web("Flies/HistoryTab.tsx"), "TRADE_LOG_SORTS").sort()).toEqual(Object.keys(TRADE_LOG_SORTS).sort());
   });
 
-  it("earnings", () => {
+  it("earnings", async () => {
     expect(listIn(web("Earnings/EarningsHistory.tsx"), "HISTORY_SORTS").sort()).toEqual(
       Object.keys(EARNINGS_HISTORY_SORTS).sort(),
     );

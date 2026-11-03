@@ -89,7 +89,7 @@ function ledger(spelling: string): ConsoleConfig {
 }
 
 const READERS: Record<string, (c: ConsoleConfig) => unknown> = {
-  trades: (c) => readEarnings(c, undefined, "ALL").trades,
+  trades: async (c) => (await readEarnings(c, undefined, "ALL")).trades,
   exitReasons: (c) => readExitReasons(c, "earnings"),
 };
 
@@ -99,12 +99,13 @@ afterEach(() => closePooledDbs());
 
 describe("every console reader of an earnings ledger reads its arm column under either name", () => {
   for (const [name, read] of Object.entries(READERS)) {
-    it(name, () => {
-      const out = SPELLINGS.map((s) => {
-        const payload = read(ledger(s));
+    it(name, async () => {
+      const out: string[] = [];
+      for (const s of SPELLINGS) {
+        const payload = await read(ledger(s));
         closePooledDbs();
-        return JSON.stringify(payload);
-      });
+        out.push(JSON.stringify(payload));
+      }
       for (const [i, s] of SPELLINGS.entries()) {
         expect(out[i], `${name} under \`${s}\` never names the arm -- read as empty`).toContain(ARM);
       }

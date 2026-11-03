@@ -70,20 +70,20 @@ function insert(db: Database.Database, rows: Row[]) {
 }
 
 describe("the peak-risk replay", () => {
-  it("sums each position's open worst case at every entry and completion, and keeps the largest", () => {
+  it("sums each position's open worst case at every entry and completion, and keeps the largest", async () => {
     expect(vRisk(2.35)).toBeCloseTo(278.4433, 9);
     const out = peakRisk(DAY.map(peakRowFrom));
     expect(out.peak).toBeCloseTo(vRisk(2.35) + vRisk(2.0), 6); // 591.88
     expect(out.at).toBe("2026-09-29T11:10:00-04:00");
   });
 
-  it("rewinds a completed fly to its open vertical before the completing leg", () => {
+  it("rewinds a completed fly to its open vertical before the completing leg", async () => {
     const ab = peakRisk(DAY.slice(0, 2).map(peakRowFrom));
     expect(ab.peak).toBeCloseTo(vRisk(2.35) + vRisk(2.6), 6); // 531.88 at 10:30
     expect(ab.at).toBe("2026-09-29T10:30:00-04:00");
   });
 
-  it("is zero for a book of nothing but risk-free flies", () => {
+  it("is zero for a book of nothing but risk-free flies", async () => {
     expect(peakRisk([peakRowFrom(DAY[1]!)]).peak).toBeCloseTo(vRisk(2.6), 6); // before it completes it is a vertical
     const riskFree = { ...DAY[1]!, entry_time: "2026-09-29T11:00:00-04:00" }; // entered as its final fly
     expect(peakRisk([peakRowFrom(riskFree)])).toEqual({ peak: 0, at: null });
@@ -98,7 +98,7 @@ describe("peak-risk sessions", () => {
   });
   afterEach(() => db.close());
 
-  it("prefers the live loop's recorded peak, and replays a session that has none", () => {
+  it("prefers the live loop's recorded peak, and replays a session that has none", async () => {
     insert(db, DAY);
     insert(db, [pos({ position_id: "Y", trade_date: "2026-09-28", entry_time: "2026-09-28T10:05:00-04:00", net: 2.4, credit: 2.4, fees: 13.44, floor_dollars: -vRisk(2.4), gross_pnl: -260 })]);
     db.exec("CREATE TABLE fly_live_marks (id INTEGER PRIMARY KEY, iteration_ts TEXT, trade_date TEXT, position_id TEXT, open_margin REAL)");
@@ -112,7 +112,7 @@ describe("peak-risk sessions", () => {
     expect(all.peakRisk).toBeCloseTo(600 + vRisk(2.4), 6);
   });
 
-  it("splits an arm by experiment stamp, as core.metrics names its groups", () => {
+  it("splits an arm by experiment stamp, as core.metrics names its groups", async () => {
     insert(db, DAY.map((r) => ({ ...r, arm: "advised:x", experiment_id: "exp-1" })));
     insert(db, [pos({ arm: "advised:x", experiment_id: "exp-2", entry_time: "2026-09-29T10:00:00-04:00", net: 1, credit: 1, fees: 13.44, floor_dollars: -vRisk(1), gross_pnl: 0 })]);
     expect(flyTagScope("advised:x@exp-1")).toEqual({ arm: "advised:x", experimentId: "exp-1" });
@@ -122,7 +122,7 @@ describe("peak-risk sessions", () => {
     expect(peakRiskSessions(db, { ...flyTagScope("advised:x") })).toEqual([]); // no unstamped rows
   });
 
-  it("leaves a running session out of the ratio until nothing is open", () => {
+  it("leaves a running session out of the ratio until nothing is open", async () => {
     insert(db, [DAY[0]!, { ...DAY[3]!, status: "open", gross_pnl: null, pnl: null }]);
     const [s] = peakRiskSessions(db, { arm: "control" });
     expect(s).toMatchObject({ complete: false, onRisk: null });
@@ -158,7 +158,7 @@ describe("the flies performance slide and session tile", () => {
     resetExcursionsCache();
   });
 
-  it("puts return on peak risk on each flies group, and on no other module's", () => {
+  it("puts return on peak risk on each flies group, and on no other module's", async () => {
     const config = fakeConfig();
     const paper = new Database(path.join(config.paths.fliesDir, "paper_trades.db"));
     paper.exec(DDL);
@@ -173,18 +173,18 @@ describe("the flies performance slide and session tile", () => {
       metrics: { schema, n_records: 6, groups: Object.fromEntries([group("control"), group("advised:x@exp-1")]) },
     }));
 
-    const flies = readModulePerformance(config, "flies", "ALL");
+    const flies = await readModulePerformance(config, "flies", "ALL");
     const byTag = new Map(flies.groups.map((g) => [g.tag, g.peakRisk]));
     const net = -265 - 13.44 + 25 - 16.89 + 100 - 13.44;
     expect(byTag.get("control")).toMatchObject({ sessions: 1, of: 1, replayed: 1 });
     expect(byTag.get("control")!.ratio).toBeCloseTo(net / (vRisk(2.35) + vRisk(2.0)), 9);
     expect(byTag.get("advised:x@exp-1")!.net).toBeCloseTo(-13.44 - 16.89 - 13.44, 6);
 
-    const curve = readModulePerformance(config, "curve", "ALL");
+    const curve = await readModulePerformance(config, "curve", "ALL");
     expect(curve.groups.every((g) => g.peakRisk === undefined)).toBe(true);
   });
 
-  it("holds the session's peak after its book settles", () => {
+  it("holds the session's peak after its book settles", async () => {
     const config = fakeConfig();
     const paper = new Database(path.join(config.paths.fliesDir, "paper_trades.db"));
     paper.exec(DDL);

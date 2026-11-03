@@ -132,9 +132,37 @@ export function readLogTail(config: ConsoleConfig, limit = DEFAULT_LINES, source
     source === undefined ? DEFAULT_SOURCES.has(s.id) && moduleOn(features, s.id) : s.id === source,
   );
   const lines: LogLine[] = [];
-  for (const { id, path: p } of sources) {
-    for (const raw of tailFile(p)) lines.push(parseLine(id, raw));
-  }
-  lines.sort((a, b) => (a.ts ?? "").localeCompare(b.ts ?? ""));
+  for (const { id, path: p } of sources) lines.push(...parsedTail(id, p));
+  // Code-unit order, not `localeCompare`: the timestamps are ASCII ISO strings, which sort the same
+  // either way, and over ~20k lines the locale-aware compare alone cost most of a second.
+  lines.sort((a, b) => {
+    const x = a.ts ?? "";
+    const y = b.ts ?? "";
+    return x < y ? -1 : x > y ? 1 : 0;
+  });
   return lines.slice(-limit);
+}
+
+/**
+ * Each log's parsed tail, kept until the file moves. The System page polls the merged view, which
+ * re-read and re-parsed 256 KB of every log on each poll (~1.4 s of the event loop, 2026-11-02);
+ * most logs are idle between polls, and an unchanged file now costs one stat.
+ */
+const parsedTails = new Map<string, { stamp: string; lines: LogLine[] }>();
+
+function parsedTail(id: string, p: string): LogLine[] {
+  const key = `${id}\u0000${p}`;
+  let stamp: string;
+  try {
+    const st = fs.statSync(p);
+    stamp = `${st.mtimeMs}:${st.size}`;
+  } catch {
+    parsedTails.delete(key);
+    return [];
+  }
+  const hit = parsedTails.get(key);
+  if (hit !== undefined && hit.stamp === stamp) return hit.lines;
+  const lines = tailFile(p).map((raw) => parseLine(id, raw));
+  parsedTails.set(key, { stamp, lines });
+  return lines;
 }

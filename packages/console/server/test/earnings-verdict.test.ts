@@ -58,7 +58,7 @@ afterEach(() => {
 });
 
 describe("earnings' per-strategy figures", () => {
-  it("count the control arm only, never its advised twin", () => {
+  it("count the control arm only, never its advised twin", async () => {
     const a = readEarningsAnalytics(config, "paper", "ALL");
     expect(a.kpis.closedTrades).toBe(2);
     expect(a.strategies).toEqual([expect.objectContaining({ strategy: "iron_fly", trades: 2, net: -200 })]);
@@ -66,9 +66,9 @@ describe("earnings' per-strategy figures", () => {
 });
 
 describe("earnings' history", () => {
-  it("marks the rows the verdict flags, and only those", () => {
+  it("marks the rows the verdict flags, and only those", async () => {
     setVerdictCaller(() => ({ ok: true, verdict: VERDICT, error: null }));
-    const rows = readEarnings(config, undefined, "ALL").trades.rows;
+    const rows = (await readEarnings(config, undefined, "ALL")).trades.rows;
     expect(Object.fromEntries(rows.map((r) => [r.orderId, r.flag]))).toEqual({
       "ctl-acn": null,
       "twin-acn": null,
@@ -76,24 +76,24 @@ describe("earnings' history", () => {
     });
   });
 
-  it("still loads when the verdict is unavailable, every row unflagged", () => {
+  it("still loads when the verdict is unavailable, every row unflagged", async () => {
     setVerdictCaller(() => ({ ok: false, verdict: null, error: "not installed" }));
-    expect(readEarnings(config, undefined, "ALL").trades.rows.every((r) => r.flag === null)).toBe(true);
+    expect((await readEarnings(config, undefined, "ALL")).trades.rows.every((r) => r.flag === null)).toBe(true);
   });
 });
 
 describe("the verdict bridge", () => {
-  it("memoises per scope, so a polling page spawns once", () => {
+  it("memoises per scope, so a polling page spawns once", async () => {
     let calls = 0;
     setVerdictCaller(() => {
       calls += 1;
       return { ok: true, verdict: VERDICT, error: null };
     });
-    readVerdict("2026-08-21", false, 0);
-    readVerdict("2026-08-21", false, 1000);
-    readVerdict("2026-08-21", true, 1000);
+    await readVerdict("2026-08-21", false, 0);
+    await readVerdict("2026-08-21", false, 1000);
+    await readVerdict("2026-08-21", true, 1000);
     expect(calls).toBe(2);
-    readVerdict("2026-08-21", false, 200_000);
+    await readVerdict("2026-08-21", false, 200_000);
     expect(calls).toBe(3);
   });
 });

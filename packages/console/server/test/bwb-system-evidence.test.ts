@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 describe("the bwb evidence bridge", () => {
-  it("passes live-gap through, refusals named by the module", () => {
+  it("passes live-gap through, refusals named by the module", async () => {
     setBwbEvidenceCaller((_c, verb) => ({
       ok: true,
       json: {
@@ -51,18 +51,18 @@ describe("the bwb evidence bridge", () => {
       },
       error: null,
     }));
-    const out = readBwbLiveGap(config, 1_000);
+    const out = await readBwbLiveGap(config, 1_000);
     expect(out.ok).toBe(true);
     expect(out.data?.refusals["regime_inverted"]?.gate).toBe("live.vix9d_vix_max");
   });
 
-  it("keeps each vol read's failure to itself", () => {
+  it("keeps each vol read's failure to itself", async () => {
     setBwbEvidenceCaller((_c, verb) =>
       verb === "iv-premium"
         ? { ok: false, json: null, error: "bwb evidence unavailable — exit 1" }
         : { ok: true, json: { ok: true, ledger: "ok", positions: [], arms: {} }, error: null },
     );
-    const vol = readBwbVol(config, 1_000);
+    const vol = await readBwbVol(config, 1_000);
     expect(vol.entryContext.ok).toBe(true);
     expect(vol.regimeSplit.ok).toBe(true);
     expect(vol.ivPremium).toEqual({ ok: false, data: null, error: "bwb evidence unavailable — exit 1" });
@@ -70,28 +70,28 @@ describe("the bwb evidence bridge", () => {
 });
 
 describe("the System › data bridge", () => {
-  it("treats an impliedvar refusal as the reading and an unreadable cache as an error", () => {
+  it("treats an impliedvar refusal as the reading and an unreadable cache as an error", async () => {
     setDataEvidenceCaller((_c, req) => {
       if (req.kind !== "impliedvar") return { ok: true, json: { ok: true, symbols: {} }, error: null };
       return req.index === "VIX"
         ? { ok: true, json: { ok: false, index: "VIX", reason: "not_bracketed", offered: [["2026-10-16", 4]] }, error: null }
         : { ok: true, json: { ok: false, error: "OperationalError: unable to open database file" }, error: null };
     });
-    const { checks } = readImpliedVarChecks(config, 1_000);
+    const { checks } = await readImpliedVarChecks(config, 1_000);
     expect(checks["VIX"]?.ok).toBe(true);
     expect(checks["VIX"]?.data?.reason).toBe("not_bracketed");
     expect(checks["VIX9D"]?.ok).toBe(false);
     expect(checks["VIX9D"]?.error).toContain("unable to open");
   });
 
-  it("asks quote-history coverage of core and memoises it", () => {
+  it("asks quote-history coverage of core and memoises it", async () => {
     let calls = 0;
     setDataEvidenceCaller(() => {
       calls += 1;
       return { ok: true, json: { ok: true, exists: true, recorded_from: "2026-10-13", symbols: {} }, error: null };
     });
-    expect(readQuoteHistoryCoverage(config, 1_000).data?.recorded_from).toBe("2026-10-13");
-    readQuoteHistoryCoverage(config, 100_000);
+    expect((await readQuoteHistoryCoverage(config, 1_000)).data?.recorded_from).toBe("2026-10-13");
+    await readQuoteHistoryCoverage(config, 100_000);
     expect(calls).toBe(1);
   });
 });
@@ -100,7 +100,7 @@ const python = suitePython();
 const canRun = spawnSync(python, ["-c", "import cherrypick.core"], { encoding: "utf-8" }).status === 0;
 
 describe.skipIf(!canRun)("spawnModuleCli's exit codes", () => {
-  it("reads stdout on a declared exit code and fails on any other", () => {
+  it("reads stdout on a declared exit code and fails on any other", async () => {
     const argv = ["-c", "import json,sys; print(json.dumps({'ok': False, 'reason': 'x'})); sys.exit(1)"];
     expect(spawnModuleCli(argv, "u").ok).toBe(false);
     const ok = spawnModuleCli(argv, "u", [0, 1]);
@@ -110,10 +110,10 @@ describe.skipIf(!canRun)("spawnModuleCli's exit codes", () => {
 });
 
 describe.skipIf(!canRun)("the real core verbs", () => {
-  it("quote-history coverage answers for an absent store without creating it", () => {
+  it("quote-history coverage answers for an absent store without creating it", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "qh-"));
     const cfg = { paths: { gexDir: dir, streamCacheDb: path.join(dir, "c.db") } } as unknown as ConsoleConfig;
-    const out = readQuoteHistoryCoverage(cfg);
+    const out = await readQuoteHistoryCoverage(cfg);
     expect(out.ok, out.error ?? "").toBe(true);
     expect(out.data?.exists).toBe(false);
     expect(fs.readdirSync(dir)).toEqual([]);

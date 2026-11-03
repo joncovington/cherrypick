@@ -1,5 +1,5 @@
 import { suitePython } from "@console/shared/paths";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 
 /**
  * The console's only route to suite config: the orchestrator's own editor, reached as a subprocess
@@ -40,42 +40,60 @@ export type BridgeRequest =
 const UNAVAILABLE =
   "config bridge unavailable — the orchestrator package must be installed (pip install -e packages/orchestrator)";
 
-function spawnCaller(req: BridgeRequest): BridgeResult {
-  let out;
-  try {
-    out = spawnSync(suitePython(), ["-m", "cherrypick.orchestrator.configcli"], {
-      input: JSON.stringify(req),
-      encoding: "utf-8",
-      timeout: 20_000,
-      windowsHide: true,
+const TIMEOUT_MS = 20_000;
+
+/**
+ * One configcli call, off the event loop: a synchronous spawn held every request and the heartbeat
+ * for its ~0.5 s, once per target on the Config page (six in a row, ~3 s, 2026-11-02).
+ */
+function spawnCaller(req: BridgeRequest): Promise<BridgeResult> {
+  return new Promise((resolve) => {
+    const unavailable = (detail: string): void =>
+      resolve({ ok: false, code: "unavailable", error: `${UNAVAILABLE} ${detail}` });
+    let child;
+    try {
+      child = spawn(suitePython(), ["-m", "cherrypick.orchestrator.configcli"], { windowsHide: true });
+    } catch (err) {
+      unavailable(`(${(err as Error).message})`);
+      return;
+    }
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf-8").on("data", (d: string) => (stdout += d));
+    child.stderr.setEncoding("utf-8").on("data", (d: string) => (stderr += d));
+    const timer = setTimeout(() => child.kill(), TIMEOUT_MS);
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      unavailable(`(${err.message})`);
     });
-  } catch (err) {
-    return { ok: false, code: "unavailable", error: `${UNAVAILABLE} (${(err as Error).message})` };
-  }
-  if (out.error !== undefined) {
-    return { ok: false, code: "unavailable", error: `${UNAVAILABLE} (${out.error.message})` };
-  }
-  // A refusal rides in the body on status 0; a non-zero status means the bridge itself broke, which
-  // is a different thing for the caller to say and a different thing to fix.
-  if (out.status !== 0) {
-    const detail = (out.stderr ?? "").trim().split(/\r?\n/).pop() ?? `exit ${String(out.status)}`;
-    return { ok: false, code: "unavailable", error: `${UNAVAILABLE} — ${detail}` };
-  }
-  try {
-    return JSON.parse(out.stdout.trim()) as BridgeResult;
-  } catch {
-    return { ok: false, code: "unavailable", error: `${UNAVAILABLE} — unparseable response` };
-  }
+    child.on("close", (status) => {
+      clearTimeout(timer);
+      // A refusal rides in the body on status 0; a non-zero status means the bridge itself broke,
+      // which is a different thing for the caller to say and a different thing to fix.
+      if (status !== 0) {
+        unavailable(`— ${stderr.trim().split(/\r?\n/).pop() || `exit ${String(status)}`}`);
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout.trim()) as BridgeResult);
+      } catch {
+        unavailable("— unparseable response");
+      }
+    });
+    child.stdin.on("error", () => undefined); // a child that dies early reports through `close`
+    child.stdin.end(JSON.stringify(req));
+  });
 }
 
-let caller: (req: BridgeRequest) => BridgeResult = spawnCaller;
+type Caller = (req: BridgeRequest) => BridgeResult | Promise<BridgeResult>;
+let caller: Caller = spawnCaller;
 
 /** Swap the subprocess out in tests. Pass nothing to restore the real one. */
-export function setBridgeCaller(fn?: (req: BridgeRequest) => BridgeResult): void {
+export function setBridgeCaller(fn?: Caller): void {
   caller = fn ?? spawnCaller;
 }
 
-export function callConfigCli(req: BridgeRequest): BridgeResult {
+export async function callConfigCli(req: BridgeRequest): Promise<BridgeResult> {
   return caller(req);
 }
 

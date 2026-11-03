@@ -534,9 +534,9 @@ function readEntryWindow(
   };
 }
 
-export function readCalendars(config: ConsoleConfig): CalendarsPayload {
+export async function readCalendars(config: ConsoleConfig): Promise<CalendarsPayload> {
   const params = loadParams(config);
-  const { plan, error: planError } = readCalendarsPlan();
+  const { plan, error: planError } = await readCalendarsPlan();
   const cadenceDoc = readJson(path.join(config.paths.calendarsDir, CADENCE_FILE));
 
   const paramsOut: CalendarsPayload["params"] = {
