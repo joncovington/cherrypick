@@ -162,6 +162,16 @@ TABLES: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
             ("Strike", "strike", NUM), ("", "cp", CP),
         ],
     ),
+    # From 2026-11-02, where the Openings panel was: the day's busiest contracts by volume, with
+    # the largest single print among them.
+    "strikes": (
+        "Top Strikes",
+        [
+            ("", "menu", SKIP), ("Symbol", "symbol", SYMBOL), ("Volume", "volume", INT),
+            ("OI", "oi", INT), ("V/OI", "v_oi", NUM), ("Expires", "expires", EXPIRY),
+            ("Strike", "strike", NUM), ("", "cp", CP), ("Max Size", "max_size", INT),
+        ],
+    ),
 }  # fmt: skip
 # Every Openings row had OI 0 until 2026-10-09 (TAL: 20,062 / 1 = 20,062.00). An opening may carry a
 # little open interest; past the other panel's "OI > 100" it is that panel's row, not an opening.
@@ -170,6 +180,8 @@ OPENING_MAX_OI = 100
 # tables that did draw; drawn, it is read and checked as before. On 2026-11-02 a Top Strikes panel
 # took the Openings panel's place.
 WITHDRAWN = {"openings": "the site no longer draws this panel (2026-11-02: Top Strikes in its place)"}
+# Panels by the first session the site drew them: a page saved before that never had one.
+INTRODUCED = {"strikes": "2026-11-02"}
 CALENDAR_HEADING = "Economic"
 CALENDAR_COLUMNS = [
     ("Date", "when", TEXT), ("Impact", "impact", TEXT), ("Event", "event", TEXT),
@@ -185,10 +197,9 @@ CALENDAR_COLUMNS_2026_10 = [
     ("Estimate", "estimate", TEXT), ("Actual", "actual", TEXT),
 ]  # fmt: skip
 CALENDAR_LAYOUTS = (CALENDAR_COLUMNS_2026_10, CALENDAR_COLUMNS)
-# A table takes the last known heading before it, so a panel not read yet still names its own
-# heading: unknown, Top Strikes (2026-11-02) was read as a second OI > 100 panel and replaced it.
-UNREAD_HEADINGS = ("Top Strikes",)
-HEADINGS = tuple(heading for heading, _ in TABLES.values()) + UNREAD_HEADINGS
+# A table takes the last known heading before it, so a panel the site adds must be named here
+# before it can be read: unknown, Top Strikes (2026-11-02) was read as a second OI > 100 panel.
+HEADINGS = tuple(heading for heading, _ in TABLES.values())
 PAGE_DATE_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
 
 # Elements whose text is never a cell's value: the row menu's items, the paid badge count, icons.
@@ -427,6 +438,11 @@ def read_rows(spec: list[tuple[str, str, str]], table: dict) -> list[dict]:
     return out
 
 
+def _before(name: str, session: str | None) -> bool:
+    """True when the page's session predates the panel (`INTRODUCED`): it never had one."""
+    return name in INTRODUCED and session is not None and session < INTRODUCED[name]
+
+
 def parse_report(page_html: str) -> dict:
     """{"session", "tables": {name: [row, ...]}, "problems": [...]} from the report's HTML. Reading
     problems (a missing table, changed columns) are returned, never raised: the caller keeps the
@@ -448,6 +464,8 @@ def parse_report(page_html: str) -> dict:
         table = by_heading.get(heading)
         if table is None and name in WITHDRAWN:
             unavailable[name] = WITHDRAWN[name]
+            continue
+        if table is None and _before(name, session):
             continue
         if table is None:
             problems.append(f"{name}: table missing ({heading!r})")
@@ -472,10 +490,11 @@ def validate_report(doc: dict, expected: date | None = None) -> list[str]:
     Birdseye's size buckets sum to Total and Calls + Puts = Total, to the site's own display
     rounding; Premium = price x size x 100 on sweeps and spreads (signed, on spreads); V/OI =
     Volume / OI, on Openings too, whose OI is at most OPENING_MAX_OI (0 until 2026-10-09; V/OI =
-    Volume at OI 0). Plus: the session the page states is the one expected, every table is there
-    with at least one row, every expiry and call/put reads. A mixed spread (call and put legs, `M`)
-    and a spread of more than two legs are the rows the premium identity is not checked on: the
-    site's premium for either does not satisfy it."""
+    Volume at OI 0), and on Top Strikes, whose Max Size is one print, so at most the volume. Plus:
+    the session the page states is the one expected, every table is there with at least one row,
+    every expiry and call/put reads. A mixed spread (call and put legs, `M`) and a spread of more
+    than two legs are the rows the premium identity is not checked on: the site's premium for
+    either does not satisfy it."""
     problems = list(doc.get("problems", []))
     if expected is not None and doc.get("session") != expected.isoformat():
         problems.append(f"page shows session {doc.get('session')}, expected {expected.isoformat()}")
@@ -531,18 +550,22 @@ def validate_report(doc: dict, expected: date | None = None) -> list[str]:
             elif abs(price * size * 100 - premium) > tol:
                 problems.append(f"{name} {sym}: {price} x {size} x 100 != premium {premium:,.0f}")
 
-    for name in ("voloi", "openings"):
+    for name in ("voloi", "openings", "strikes"):
         for row in tables.get(name, []):
             sym, vol, oi, v_oi = row.get("symbol"), row.get("volume"), row.get("oi"), row.get("v_oi")
             shown = row.get("shown", {})
             r_ratio, r_vol = rounding(shown.get("v_oi", "")), rounding(shown.get("volume", ""))
             if None in (vol, oi, v_oi):
                 problems.append(f"{name} {sym}: volume, OI or V/OI did not read")
+            elif name == "strikes" and not 0 < (row.get("max_size") or 0) <= vol:
+                problems.append(
+                    f"strikes {sym}: max size {row.get('max_size')} (one print, at most the volume)"
+                )
             elif name == "openings" and not 0 <= oi <= OPENING_MAX_OI:
                 problems.append(f"openings {sym}: OI {oi} (an opening has OI {OPENING_MAX_OI} or less)")
             elif name == "openings" and oi == 0 and abs(v_oi - vol) > r_ratio + r_vol + 1e-9:
                 problems.append(f"openings {sym}: OI 0, V/OI {v_oi} (the site's ratio is volume at OI 0)")
-            elif (name == "voloi" or oi > 0) and (
+            elif (name != "openings" or oi > 0) and (
                 oi <= 0
                 # The ratio's own rounding, plus what rounding in volume and OI can move it by.
                 or abs(vol / oi - v_oi)
@@ -983,9 +1006,13 @@ def _wait_for_tables(page, ready, hits: list[str], timeout_s: float = TABLES_TIM
 
 
 def _report_ready(content: str) -> bool:
-    _, found = grids(content, HEADINGS)
+    page_date, found = grids(content, HEADINGS)
+    try:
+        session = datetime.strptime(page_date or "", "%m/%d/%Y").date().isoformat()
+    except ValueError:
+        session = None
     drawn = {t["heading"] for t in found if t["rows"]}
-    return {TABLES[n][0] for n in TABLES if n not in WITHDRAWN} <= drawn
+    return {TABLES[n][0] for n in TABLES if n not in WITHDRAWN and not _before(n, session)} <= drawn
 
 
 def _calendar_ready(content: str) -> bool:
