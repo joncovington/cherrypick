@@ -72,7 +72,7 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `pmcc-paper` | every **60 s** | `-m cherrypick.pmcc.paper_loop --once` | **off** (experimental) | enters whenever the (symbol, book) slot is free, marks every open leg (the assignment-exposure telemetry reads that path), holds to the short's expiry, and settles expiring legs (an ITM short delivers shares covered the next session) |
 | `curve-paper` | every **60 s** | `-m cherrypick.curve.paper_loop --once` | **off** (experimental) | VXX call credit spreads; records the daily VIX/VIX3M regime classification every session, traded or not |
 | `contango-paper` | every **60 s** | `-m cherrypick.contango.paper_loop --once` | **off** (experimental) | the SVXY/SHV switch: one decision per arm ten minutes before the close |
-| `meic-live` | every 60 s — **enabled only while the arm record is valid for today** | `-m cherrypick.meic.live_loop --once --live` | off (unarmed) | armed by `/live-meic-start` writing `state/meic-live-arm.json`; the same self-disarm at `live.disarm_time` (17:00 ET) and watchdog backstop as flies, through `cherrypick.core.live` |
+| `meic-live` | every 60 s — **armed: all day; unarmed: trading days 09:30 to the disarm cutoff, to manage what the book holds** | `-m cherrypick.meic.live_loop --once --live` | manage-only (unarmed) | armed by `/live-meic-start` writing `state/meic-live-arm.json`; the arm gates new ICs only. Unarmed, a tick with a flat book ends without a broker call, and one holding an IC confirms fills, stops and settles it. The same self-disarm at `live.disarm_time` (17:00 ET) and watchdog backstop as flies, through `cherrypick.core.live` |
 
 **Reports, data and the AI**
 

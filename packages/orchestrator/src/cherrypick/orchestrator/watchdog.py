@@ -1923,8 +1923,14 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
         )
         return findings  # halted state — the armed-window checks below would only add noise
 
-    if registered:
-        # (b) freshness while armed and in session: the ticks must actually be RUNNING recently.
+    # A loop that manages what it holds without an arm (meic, 2026-11-02) is watched the same way
+    # while today's book holds anything: its ticks are what stop and settle those positions.
+    from .jobspec import MANAGES_WHILE_DISARMED
+
+    holding = bool(status) and status.get("session_settled") is False
+    watched = "live is armed" if registered else "the live book holds positions"
+    if registered or (holding and name in MANAGES_WHILE_DISARMED):
+        # (b) freshness while armed (or holding) and in session: the ticks must actually be RUNNING.
         if in_session and sup_alive:
             # Supervisor-driven: the job registry is the run record — `still_running` is the
             # SCHED_S_TASK_RUNNING equivalent, last_start/last_exit_code replace the scheduler's
@@ -1939,8 +1945,9 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                         f"{name}.live_fresh",
                         CRITICAL,
                         f"{label} LIVE job not running",
-                        f"Armed, but supervisor job '{name}-live' is {why} — arming did not take. "
-                        "Check the arm record and logs/supervisor.log.",
+                        f"{watched.capitalize()}, but supervisor job '{name}-live' is {why}"
+                        + (" — arming did not take. " if registered else ". ")
+                        + "Check the arm record and logs/supervisor.log.",
                     )
                 )
             elif info is None:
@@ -1960,7 +1967,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                         f"{name}.live_fresh",
                         WARN,
                         f"{label} LIVE loop stopped on purpose",
-                        f"{_holds.describe(f'{name}-live', info['held'])} while live is armed and the market "
+                        f"{_holds.describe(f'{name}-live', info['held'])} while {watched} and the market "
                         f"is open — check the broker for resting orders, or `run.py start {name}-live`.",
                     )
                 )
@@ -1988,7 +1995,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                             f"{name}.live_fresh",
                             CRITICAL,
                             f"{label} LIVE loop silent",
-                            f"supervisor registry reports {shown} while live is armed and the market "
+                            f"supervisor registry reports {shown} while {watched} and the market "
                             "is open — real working orders may be resting unwatched.",
                         )
                     )
@@ -2073,6 +2080,25 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
         )
     elif status and "orphaned_orders" in status:
         findings.append(Finding(f"{name}.live_orphans", OK, f"{label} live orders", "all accounted for"))
+
+    # (c7) positions held and a live gate unmet (2026-11-02): the master switch off, the designation
+    # unreadable. Every broker act is refused, so nothing stops, closes or settles what is open --
+    # turning live off must be a choice someone is told about. Not gated on arming or the session.
+    unmet = (status or {}).get("unmet_gates") or []
+    if holding and unmet:
+        pending = len((status or {}).get("pending_orders") or [])
+        findings.append(
+            Finding(
+                f"{name}.live_unmanaged",
+                CRITICAL,
+                f"{label} LIVE positions UNMANAGED",
+                f"{status.get('open_positions') or 0} open live position(s) and {pending} pending order(s), "
+                f"and the loop cannot act: unmet {unmet}. Stops resting at the broker are the only "
+                "protection -- restore the gate, or manage them in the broker UI.",
+            )
+        )
+    elif status and "unmet_gates" in status:
+        findings.append(Finding(f"{name}.live_unmanaged", OK, f"{label} live positions", "managed or flat"))
 
     # (c3) a held submission: the broker seam refuses every live order until a submit of unknown
     # outcome is resolved, or an order found at the broker that nothing recorded is acknowledged.

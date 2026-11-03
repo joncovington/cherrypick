@@ -104,7 +104,8 @@ This package is self-contained — everything below works from `packages/meic` o
 cherrypick suite it plays three roles:
 
 - **Live (supervisor-ticked, human-armed).** `cherrypick.meic.live_loop --once --live` runs as the
-  supervisor's `meic-live` job, only while today's arm record from `/live-meic-start` exists. It
+  supervisor's `meic-live` job. New ICs need today's arm record from `/live-meic-start`; an unarmed
+  tick still manages what the live book holds. It
   trades one pinned `live.symbol` with the paper engine's own decision functions — experimental, off
   by default, at your own risk.
 - **Interactive (this package, standalone).** You drive the agent loop and the `/`-commands

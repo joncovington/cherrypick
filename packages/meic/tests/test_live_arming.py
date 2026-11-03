@@ -52,6 +52,71 @@ def test_a_live_tick_without_an_arm_never_reaches_the_broker(monkeypatch, capsys
     assert "disarmed" in json.loads(capsys.readouterr().out)
 
 
+def _todays_open_ic():
+    """Today's live book holding one open IC, in the managed home's live ledger."""
+    from test_live_scaffold import _open_trade_row
+
+    from cherrypick.meic import paths
+
+    path = paths.live_db_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    db_path = _init_db(path.parent, path.name)
+    live_loop._ensure_live_schema(db_path)
+    today = live_loop._pl._now_et().strftime("%Y-%m-%d")
+    paper._save_trade({**_open_trade_row("XSP"), "trade_date": today}, db_path)
+    return db_path
+
+
+def test_an_unarmed_tick_still_manages_what_the_book_holds(monkeypatch, capsys):
+    """Shown to fail with main() ending every unarmed tick at the disarm: the open IC was left
+    unmanaged until the next day's catch-up settle (2026-11-02)."""
+    _pin_config(monkeypatch)
+    _todays_open_ic()
+    monkeypatch.setattr(live_loop, "arm_stamp_date", lambda: None)
+    monkeypatch.setattr(live_loop, "readiness", lambda *a, **k: [])
+    monkeypatch.setattr(live_loop, "_designated_account", lambda: "1234")
+    ticks = []
+    monkeypatch.setattr(
+        live_loop, "_tick", lambda cfg, d, u, live, not_armed=None: ticks.append(not_armed) or 0
+    )
+    assert live_loop.main(["--once", "--live"]) == 0
+    assert len(ticks) == 1 and "arm stamp" in ticks[0]
+
+
+def test_an_unarmed_tick_blocks_entries_but_not_management(monkeypatch):
+    _pin_config(monkeypatch)
+    monkeypatch.setattr(live_loop, "_build_snapshot", lambda cfg, symbol: (_entry_snapshot(), None))
+    monkeypatch.setattr(live_loop, "make_broker", lambda cfg, designated: FakeBroker())
+    monkeypatch.setattr(live_loop._stream_request, "register_live", lambda cfg: None)
+    seen = {}
+
+    def run_once(cfg, snapshot, db_path, broker, *, live, entry_block):
+        seen["block"] = entry_block
+        return {"entries": 0}
+
+    monkeypatch.setattr(live_loop, "run_once", run_once)
+    live_loop._tick(_config(), "1234", [], True, not_armed="arm stamp is None")
+    assert "not_armed (arm stamp is None)" in seen["block"]
+
+
+def test_an_unarmed_tick_with_a_live_gate_unmet_touches_nothing(monkeypatch, capsys):
+    """The master switch off is a full off, management included; the watchdog's `live_unmanaged`
+    is what says positions are held. The tick exits clean rather than climb a crash ladder."""
+    _pin_config(monkeypatch)
+    _todays_open_ic()
+    monkeypatch.setattr(live_loop, "arm_stamp_date", lambda: None)
+    monkeypatch.setattr(live_loop, "readiness", lambda *a, **k: ["enable_live_trading is false"])
+    monkeypatch.setattr(live_loop, "_designated_account", lambda: "1234")
+
+    def boom(*_a, **_k):
+        raise AssertionError("an unmanaged tick reached the broker")
+
+    monkeypatch.setattr(live_loop, "make_broker", boom)
+    assert live_loop.main(["--once", "--live"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["unmanaged"] == "live gates unmet" and out["unmet"] == ["enable_live_trading is false"]
+
+
 def test_arming_needs_a_supervisor_and_writes_todays_record(monkeypatch):
     monkeypatch.setattr(live_loop, "_spawn_first_tick", lambda: None)
     monkeypatch.setattr(_live, "supervisor_heartbeat_fresh", lambda *a, **k: False)

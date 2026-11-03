@@ -446,6 +446,40 @@ def test_derive_flies_live_enabled_with_todays_arm_record():
     assert live.argv == ("pythonw", "-m", "cherrypick.flies.live_loop", "--once", "--live")
 
 
+def _with_meic_live(cfg):
+    cfg["modules"]["meic"]["live"] = {
+        "task_name": "cherrypick-meic-live-loop",
+        "disarm_time": "17:00",
+        "disarm_grace_minutes": 30,
+    }
+    return cfg
+
+
+def test_meic_live_runs_unarmed_in_the_session_window_to_manage_what_it_holds():
+    """Shown to fail with `enabled=armed` alone: a disarmed MEIC loop left today's open IC unmanaged
+    (2026-11-02). Its tick ends without a broker call when the book is flat; the arm gates entries."""
+    jobs, _ = derive(_with_meic_live(suite_cfg()), now=et(2026, 8, 10, 10, 0), arm_records={})
+    live = next(j for j in jobs if j.id == "meic-live")
+    assert live.enabled and "not armed" in live.enabled_reason and "managing" in live.enabled_reason
+    assert (live.window_start, live.window_end, live.trading_days_only) == ("09:30", "17:30", True)
+    assert live.argv[-2:] == ("--once", "--live")
+
+
+def test_meic_live_armed_keeps_its_unwindowed_schedule():
+    jobs, _ = derive(
+        _with_meic_live(suite_cfg()), now=et(2026, 8, 10, 10, 0), arm_records={"meic": {"date": "2026-08-10"}}
+    )
+    live = next(j for j in jobs if j.id == "meic-live")
+    assert live.enabled and live.window_start is None and not live.trading_days_only
+
+
+def test_only_a_loop_that_manages_unarmed_runs_unarmed():
+    # flies' tick still ends at the disarm, so its job stays off without an arm.
+    assert jobspec.MANAGES_WHILE_DISARMED == frozenset({"meic"})
+    jobs, _ = derive(_with_meic_live(suite_cfg()), now=et(2026, 8, 10, 10, 0), arm_records={})
+    assert not next(j for j in jobs if j.id == "flies-live").enabled
+
+
 def test_live_loop_failures_retry_at_the_tick_interval_not_the_crash_ladder():
     """The live tick manages open positions, so a failing one must come back each tick. The crash
     ladder's 10-minute cap held a stopped-out MEIC put side unmanaged for 20 minutes after quotes
