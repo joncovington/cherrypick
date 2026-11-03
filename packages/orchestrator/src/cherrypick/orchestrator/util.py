@@ -250,6 +250,9 @@ def port_owner_pid(port: int) -> int | None:
         return _macos_port_owner(port)
     if os.name != "nt":
         return None
+    owner = _windows_port_owner(port)
+    if owner is not None:
+        return owner
     try:
         import re
         import subprocess
@@ -268,6 +271,50 @@ def port_owner_pid(port: int) -> int | None:
     except Exception:
         return None
     return None
+
+
+# Windows without psutil (2026-11-02): netstat on this host omits the listening sockets on 127.0.0.1
+# and 0.0.0.0 -- it printed five LISTENING rows, none of them the console's or Dolt's -- so the port
+# owner was never found, the console's stuck-port reclaim could not fire, and `restart dolt-server`
+# refused to stop a server it could not identify. Get-NetTCPConnection does list them, but reports a
+# listener's State as 0 rather than Listen (2) here, so a listener is also told by its unbound remote
+# end (0.0.0.0:0 or [::]:0). Same contract: any doubt -- several owners, no answer -- is None.
+_NETTCP_SCRIPT = (
+    "Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | ForEach-Object {{ "
+    "'{{0}} {{1}} {{2}} {{3}}' -f [int]$_.State, $_.RemoteAddress, $_.RemotePort, $_.OwningProcess }}"
+)
+
+
+def listen_owner_from_nettcp(text: str) -> int | None:
+    """The one PID listening, from `state remote_addr remote_port pid` lines (pure). A row is a
+    listener when its State is Listen (2), or its remote end is unbound (0.0.0.0 or :: on port 0)."""
+    owners = set()
+    for line in text.splitlines():
+        f = line.split()
+        if len(f) != 4:
+            continue
+        state, remote, rport, pid = f
+        listening = state == "2" or (rport == "0" and remote in ("0.0.0.0", "::"))
+        if listening and pid.isdigit() and int(pid) > 0:
+            owners.add(int(pid))
+    return owners.pop() if len(owners) == 1 else None
+
+
+def _windows_port_owner(port: int) -> int | None:
+    try:
+        import subprocess
+
+        script = _NETTCP_SCRIPT.format(port=int(port))
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            creationflags=CREATE_NO_WINDOW,
+            timeout=20,
+        ).stdout
+        return listen_owner_from_nettcp(out)
+    except Exception:
+        return None
 
 
 # POSIX without psutil (2026-10-08 OS audit): the stuck-port reclaim never fired off Windows, so a

@@ -11,7 +11,12 @@ import sys
 
 import pytest
 
-from cherrypick.orchestrator.util import first_json, mask_account, never_throttle
+from cherrypick.orchestrator.util import (
+    first_json,
+    listen_owner_from_nettcp,
+    mask_account,
+    never_throttle,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -100,3 +105,28 @@ def test_never_throttle_marks_a_child_as_controlled_and_not_throttled():
 def test_never_throttle_is_a_no_op_off_windows(monkeypatch):
     monkeypatch.setattr(os, "name", "posix")
     assert never_throttle(1234) is False
+
+
+# `state remote_addr remote_port pid`, as port_owner_pid's Get-NetTCPConnection fallback prints them.
+# On the suite's host a listener reports State 0, not Listen (2) -- the 2026-11-02 Dolt rows below.
+def test_a_listener_is_found_by_its_unbound_remote_end_when_its_state_reads_0():
+    assert listen_owner_from_nettcp("0 0.0.0.0 0 1848\n") == 1848
+    assert listen_owner_from_nettcp("0 :: 0 1848\n") == 1848
+
+
+def test_a_listener_is_found_by_its_listen_state():
+    assert listen_owner_from_nettcp("2 0.0.0.0 0 77\n") == 77
+
+
+def test_connections_to_the_port_are_not_its_owner():
+    # Clients connected to the server, and the server's own end of those connections.
+    text = "5 127.0.0.1 51234 1848\n5 127.0.0.1 3306 9999\n0 0.0.0.0 0 1848\n"
+    assert listen_owner_from_nettcp(text) == 1848
+    assert listen_owner_from_nettcp("5 127.0.0.1 51234 1848\n") is None
+
+
+def test_any_doubt_is_none_never_a_guess():
+    assert listen_owner_from_nettcp("") is None
+    assert listen_owner_from_nettcp("0 0.0.0.0 0 11\n0 :: 0 22\n") is None  # two owners
+    assert listen_owner_from_nettcp("0 0.0.0.0 0 0\n") is None  # the idle pseudo-process
+    assert listen_owner_from_nettcp("garbage line\n") is None
