@@ -753,6 +753,9 @@ def run_status(config: dict, *, designated: str | None) -> dict:
         "max_structures_per_day": max_structures_per_day(config),
         "entries_today": entries_today(db_path, symbol, today) if symbol else 0,
         "per_side_stop_management": params.get("per_side_stop_management"),
+        # The ratio live resolves (live.arm over the top level), never the top-level key alone: an
+        # arming readout that read the top level said 0.95 while pm-200 stops at 2.0 (2026-11-03).
+        "stop_trigger_ratio": params.get("stop_trigger_ratio"),
         "open_positions": None if unreadable else len(open_rows),
         "pending_orders": [t["ic_order_id"] for t in pending],
         # What is held, in words a person can act on (2026-11-02): the watchdog quotes these, so an

@@ -228,6 +228,13 @@ def test_the_status_readout_never_latches_the_kill_criteria(monkeypatch):
     assert "kill criteria blocked: drawdown" in status["arm_ready"]["blockers"]
 
 
+def test_the_status_readout_names_the_stop_ratio_live_arm_sets(monkeypatch):
+    """The top level says 0.95, the arm 2.0: the readout says what live stops at."""
+    monkeypatch.setattr(paper, "load_profiles", lambda: {"pm-200": {"stop_trigger_ratio": 2.0}})
+    cfg = {**_config(arm="pm-200"), "stop_trigger_ratio": 0.95}
+    assert live_loop.run_status(cfg, designated="1234")["stop_trigger_ratio"] == 2.0
+
+
 # --------------------------------------------------------------------------- entries per day
 
 
