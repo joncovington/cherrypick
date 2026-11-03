@@ -206,6 +206,7 @@ describe("the research queue tab: rows", () => {
 
 function result(over: Partial<StudyResult>): StudyResult {
   return {
+    source: "register",
     name: "results.json",
     present: true,
     modified: null,
@@ -285,6 +286,18 @@ describe("the research queue tab: naming a study and its results", () => {
     expect(verdictText(result({}), false)).toBe("fail");
     expect(verdictText(result({ summary: "mixed" }), true)).toBe("results mixed");
     expect(verdictText(result({ present: false }), false)).toBe("missing");
+  });
+
+  it("says when a verdict came from the queue and the register does not record it yet", () => {
+    const row = { study: "item41", title: "The stabilization entry gate at real quotes: does waiting help?" };
+    const recorded = board([{ ...row, results: [result({ window: "design" })] }]);
+    const q = queue([done({ study: "item41", step: "study-holdout" })]);
+    const strip = (s: string) => s.replace(/<!-- -->/g, "");
+    expect(strip(renderToString(<QueueTable q={q} nowMs={NOW} studies={recorded} />))).not.toContain("not yet recorded");
+    const unrecorded = board([{ ...row, status: "declared", results: [result({ window: "holdout", summary: "pass", source: "queue" })] }]);
+    const html = strip(renderToString(<QueueTable q={q} nowMs={NOW} studies={unrecorded} />));
+    expect(html).toContain(">holdout pass<");
+    expect(html).toContain("not yet recorded");
   });
 
   it("names a study the register lacks by its slug, and says so", () => {

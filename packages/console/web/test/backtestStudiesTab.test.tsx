@@ -33,6 +33,7 @@ function row(over: Partial<StudyRow>): StudyRow {
     group: "finished",
     results: [
       {
+        source: "register",
         name: "study-design.json",
         present: true,
         modified: "2026-10-28T06:50:12",
@@ -49,6 +50,7 @@ function row(over: Partial<StudyRow>): StudyRow {
         notes: null,
       },
       {
+        source: "register",
         name: "study-holdout.json",
         present: true,
         modified: "2026-10-28T17:30:06",

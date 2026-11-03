@@ -43,6 +43,9 @@ export interface StudyGrid {
 }
 
 export interface StudyResult {
+  /** "register": a file the register lists. "queue": a conclusion a finished queue row declared that
+   *  the register does not list yet (2026-11-02): the study's word, not yet recorded. */
+  source: "register" | "queue";
   /** The file's name only; the full path stays on the Python side. */
   name: string;
   present: boolean;

@@ -188,6 +188,7 @@ export function StudyDetail({ row }: { row: StudyRow }) {
               </>
             ) : null}
             {r.provisional ? <span className="chip chip-warn"> provisional</span> : null}
+            {r.source === "queue" ? <span className="muted"> · from the queue, not yet in the register</span> : null}
             {r.version ? <VersionNote v={r.version} /> : null}
             {r.grid ? <GridBars grid={r.grid} /> : null}
           </Field>

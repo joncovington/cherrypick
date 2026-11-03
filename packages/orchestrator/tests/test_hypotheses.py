@@ -144,6 +144,52 @@ def test_board_joins_results_and_queue_and_groups_rows():
     assert "retired" not in hy.RETESTABLE
 
 
+def test_board_shows_a_verdict_the_queue_wrote_before_the_register_lists_it():
+    declared = {**NEW, "id": 41, "study": "item41"}
+    listed = {
+        **NEW,
+        "id": 24,
+        "study": "item24",
+        "status": "failed",
+        "results": ["{home}/r/item24/design.json"],
+    }
+    files = {
+        "C:/h/r/item41/coverage.json": ({"cells": 40}, "2026-10-31T10:00:00"),
+        "C:/h/r/item41/holdout.json": ({"window": "holdout", "verdict": "pass"}, "2026-11-02T10:00:00"),
+        "C:/h/r/item41/design.json": ({"window": "design", "verdict": "fail"}, "2026-11-01T10:00:00"),
+        "{home}/r/item24/design.json": ({"window": "design", "verdict": "fail"}, "2026-10-20T10:00:00"),
+    }
+
+    def script(id_, study, out, status="done"):
+        return {"id": id_, "study": study, "step": "s", "kind": "script", "status": status, "output": out}
+
+    queue = [
+        script(10, "item41", "C:/h/r/item41/design.json"),
+        script(11, "item41", "C:/h/r/item41/holdout.json"),
+        script(12, "item41", "C:/h/r/item41/holdout.json", status="cancelled"),
+        script(13, "item41", "C:/h/r/item41/later.json", status="queued"),
+        script(9, "item41", "C:/h/r/item41/gone.json"),
+        script(6, "item41", "C:/h/r/item41/coverage.json"),
+        script(8, "item41", "C:/h/r/item41/bars.db"),
+        {"id": 7, "study": "item41", "kind": "fetch-chains", "status": "done", "output": "C:/h/r/x.json"},
+        # The register's file, spelled the queue's way: one result, the register's.
+        script(5, "item24", "C:/h/r/item24/design.json"),
+    ]
+    key = lambda p: p.replace("{home}", "C:/h")  # noqa: E731
+    out = hy.board({"hypotheses": [declared, listed]}, queue, lambda p: files.get(p, (None, None)), key=key)
+    rows = {r["study"]: r for r in out["rows"]}
+    r41 = rows["item41"]
+    # Newest finished script row first, each file once; missing, unfinished, non-JSON, fetch rows and
+    # a working file with no verdict word left out.
+    assert [(x["name"], x["summary"], x["source"]) for x in r41["results"]] == [
+        ("holdout.json", "pass", "queue"),
+        ("design.json", "fail", "queue"),
+    ]
+    # Shown, never recorded: the register's status stands.
+    assert r41["status"] == "declared"
+    assert [(x["name"], x["source"]) for x in rows["item24"]["results"]] == [("design.json", "register")]
+
+
 def test_similar_lists_only_rejected_matches_on_stated_tags():
     reg = hy.load()
     hits = hy.similar(reg, {"setup": "down-day", "structure": "put-bwb"})

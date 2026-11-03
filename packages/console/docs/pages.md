@@ -401,7 +401,10 @@ waiting ones, split on the orchestrator's `waits`; the page works out no run ord
 one line per study with finished rows, most recently finished first. A study is named by its register
 title (heading in bold, split at its first colon, the slug as a small tag; "not in the register" only
 once the board has loaded), and its line carries each result file's verdict chip and the decision
-taken, both from the studies board, never worked out here. It opens to its rows; a row's Result is what
+taken, both from the studies board, never worked out here. The board also carries the verdict files
+a study's finished queue rows declared that the register does not list yet (`source: "queue"`, only
+when the file holds a verdict word); those are marked "not yet recorded", and the register's status
+stands until someone records them. It opens to its rows; a row's Result is what
 it points to: a fetch's counts and input, a script's declared conclusion (red when missing), and its
 log, each by name. Cancelled rows are hidden behind `show cancelled`. Rows are added on the command
 line (`run.py queue-add`), never from here. Every tab opens with the licensed-data note. Run money is net of fees,

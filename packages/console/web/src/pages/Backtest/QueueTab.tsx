@@ -475,6 +475,11 @@ export function Verdicts({ row }: { row: StudyRow }) {
           {verdictText(r, many)}
         </span>
       ))}
+      {row.results.some((r) => r.source === "queue") ? (
+        <span className="chip muted" title="The study wrote this verdict; the hypothesis register does not record it yet">
+          not yet recorded
+        </span>
+      ) : null}
       {row.results.some((r) => r.provisional) ? <span className="chip chip-warn">provisional</span> : null}
       {row.results.some((r) => r.version?.stale) ? <span className="chip chip-warn">stale</span> : null}
     </span>
@@ -502,6 +507,7 @@ function StudyLineDetail({ line, row }: { line: StudyLine; row?: StudyRow }) {
                     </span>
                   ))
                 )}
+                {r.source === "queue" ? <span className="muted"> · from the queue, not yet in the register</span> : null}
               </Field>
             ))}
             <Field k="the study">

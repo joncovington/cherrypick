@@ -1983,7 +1983,8 @@ def cmd_hypotheses_board() -> None:
     home = core_home.home()
 
     def read(path: str):
-        p = Path(path.replace("{home}", home.as_posix()))
+        # A queue row's output may be absolute or start with `~`; the register's start with {home}.
+        p = Path(path.replace("{home}", home.as_posix())).expanduser()
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
             mtime = datetime.fromtimestamp(p.stat().st_mtime, rq.ET).strftime("%Y-%m-%dT%H:%M:%S")
@@ -1993,7 +1994,7 @@ def cmd_hypotheses_board() -> None:
 
     def notes(path: str):
         # The study's own Markdown beside its result file, capped: it rides in every board read.
-        p = Path(path.replace("{home}", home.as_posix())).with_suffix(".md")
+        p = Path(path.replace("{home}", home.as_posix())).expanduser().with_suffix(".md")
         try:
             return p.read_text(encoding="utf-8")[:65536]
         except OSError:
@@ -2017,7 +2018,7 @@ def cmd_hypotheses_board() -> None:
             scripts[_key(q["output"])] = args["path"]
 
     def version(path: str):
-        p = Path(path.replace("{home}", home.as_posix()))
+        p = Path(path.replace("{home}", home.as_posix())).expanduser()
         stamped = studyversion.read_stamp(p)
         script = (stamped or {}).get("script") or scripts.get(_key(path))
         try:
@@ -2027,7 +2028,7 @@ def cmd_hypotheses_board() -> None:
         return studyversion.state(stamped, log)
 
     reg = hypotheses.load()
-    out = hypotheses.board(reg, queue, read, notes, version)
+    out = hypotheses.board(reg, queue, read, notes, version, _key)
     out["unregistered"] = hypotheses.unregistered(reg, set(out["unregistered"]) | _study_folders())
     _emit({"ok": True, **out})
 
