@@ -5178,6 +5178,128 @@ loop. Declared here before any of it is run.*
   - **A fail:** live keeps 2.0x. The resting stop can still be switched on as outage protection,
     argued as insurance, not as edge, with this run's `rest-200` against `live-1400` as its cost.
 
+### 49. The "Crazy Ivan" on TQQQ: a cash-secured 16-delta put sold by a resting order 20% over the ask
+
+*Source: Maria Helmick's written rules (the Math Makes Money newsletter, Issue 32, 2026-07-07),
+moved to TQQQ in [`docs/history/ivan-plan.md`](history/ivan-plan.md) ("The TQQQ version"). The
+user decided on 2026-11-02: the cushion is the ask × 1.20, every put is cash secured, and this
+backtest comes before any paper module. Declared here before any of it is run.*
+
+- **Question:** does a cash-secured TQQQ put earn after costs when it is sold only by a resting order
+  priced 20% over the ask, and more than the same put sold at the close on any session? Does
+  defending it by rolling down and out for a credit earn more than buying it back at the defence
+  line?
+- **Where the edge would live:** **premium, at the fill.** After a fast fall, index put buyers pay
+  above the variance that follows, most of all at the opening gap. An order that fills only then
+  sells into that premium. The roll is **payoff shaping**, not edge: it is the source's rule, and it is
+  tested here only against its rival.
+- **This matches a "not worth revisiting" row, said out loud.** "Roll-for-a-credit, never close"
+  (below) is answered. Every chain is scored from first sale to final close, so a roll can never
+  turn a loss into a win, and `noroll` is a judged arm. The expectation is that `noroll` matches or
+  beats `maria`.
+- **Look-alikes:** item 6 (a down-day entry filter for the put BWB, failed); item 21 (a resting entry
+  limit on legged flies, failed); item 25 (the skate's cash-secured put, no verdict); item 46 (the
+  variance premium on the equity index's 30–60-day puts, declared); the 2026-10-12 SPY 40-delta
+  cash-secured put, which tracked Cboe's PUT index; the short-put delta and income-screen tests (edge
+  about zero after costs at every delta); the pmcc roll policy (lost on 5 of 6 symbols).
+- **Rival explanations, each with its check:**
+  - *The plain short-put premium, not the fill:* **check:** `maria` must beat `atclose` (the same
+    put, sold at the close on any session with room), paired by month.
+  - *The roll hides the loss:* **check:** chains are scored whole, and `maria` must beat `noroll`,
+    paired by month.
+  - *A Nasdaq bull market:* **check:** both time-halves must agree (2018's fourth quarter, 2020 and
+    2022 are inside), `trend` shows how much rests on up-markets, and the holdout holds 2025's spring
+    fall.
+  - *The modelled fill flatters:* **check:** every arm is re-run with the fill at the limit only (no
+    gap improvement), and a pass must hold there too.
+  - *Leverage, not the fund:* **check:** `qqq` runs the same rules on QQQ, compared per dollar of
+    collateral.
+  - *Costs read too kindly:* **check:** still positive at 1.5x fees and the natural + $0.02 a leg.
+  - *Searching arms:* **check:** Holm across the seven judged arms, all fixed here.
+- **The structure, shared by every arm unless it says otherwise:**
+  - **Expiry:** the listed expiry 24–44 days out nearest 31.
+  - **Strike:** the listed put nearest 16 delta (Black-Scholes from the leg's mid, r = q = 0).
+  - **Collateral:** strike × 100 in cash for each contract, one contract a fill, and at most five
+    open chains per arm (about 25% of $100,000 at TQQQ's prices).
+  - **Entry:** at each session's close (except Friday's), a sell limit at the put's close ask ×
+    1.20, to the tick. It lives for the next session only, then is priced again.
+  - **Take profit:** buy back at half of the fill credit.
+  - **Defence:** a close at or below the strike × 1.05.
+  - **Roll:** buy back at the close, and sell the next monthly at least 28 days beyond the current
+    expiry, at the lowest listed strike whose mid pays the buy-back. Never a debit. At most 3 rolls,
+    never beyond 180 DTE; with no credit roll, the chain is closed.
+  - **At expiry:** a put in the money is assigned 100 shares at the strike, sold at the next session's
+    open.
+- **Judged arms (seven):**
+  - `maria`: as above.
+  - `deep`: the cushion at 1.40.
+  - `atclose`: no resting order; sell at the close's mid on any session with room.
+  - `overnight`: only a fill at the open counts. The order is gone by 09:45.
+  - `noroll`: at the defence line, buy back at the close and end the chain.
+  - `trend`: rest the order only while TQQQ's close is above its 200-session average.
+  - `qqq`: `maria` on QQQ, defence at 1.7% (unscaled).
+- **Reported, never judged:**
+  - `cushion10` (1.10);
+  - `tp21` (half the credit or 21 DTE, whichever is first);
+  - `tp75` (75%);
+  - `hold` (no take profit);
+  - `spread` (`maria` with a long put 10% of spot below the short);
+  - `dist15` (the strike nearest 15% below spot instead of 16 delta);
+  - `single` (one open chain at a time).
+- **The fill, from end-of-day data.** Daily chains can't see an intraday bid, so the next session's
+  fill is modelled:
+  - The put is repriced by Black-Scholes at the session's open (from the bars) and the prior close's
+    IV, less half the prior close's spread. If that clears the limit, it fills at the open, at that
+    price.
+  - Otherwise, if the same reprice at the session low clears the limit, it fills at the limit.
+  - Holding IV flat understates fills. That is declared.
+  - Exits, take profits, defences and rolls are read on closing quotes, at the natural price.
+- **Costs:** `cherrypick.core.fees`: $1.00 a contract to open; clearing, ORF and TAF on every fill;
+  the assignment fee and the share sale's fees on assignment.
+- **Measured:**
+  - per chain, the net from first sale to final close (legs, fees, slippage, assignment) as a share
+    of the first leg's collateral;
+  - per calendar month, the summed net of chains opened that month over their collateral, for the
+    paired comparisons;
+  - reported beside them: the net per dollar-day of collateral against the 3-month bill yield, the
+    chain-level and leg-level win rates, roll counts, the worst chain and the fill count at the open.
+- **Windows:**
+  - **Design:** 2016-05-02 to 2024-12-31 (the subscription's TQQQ chains), halves split at
+    2020-09-01.
+  - **Holdout:** 2025-01-02 to 2026-10-28. Read once per surviving arm, after a design pass.
+  - Fewer than 30 closed chains in an arm in a window is no verdict.
+- **Pass-or-fail rule**, per judged arm, all must hold:
+  - in the design window, the mean chain net above zero with a one-sided t above 2, clustered by the
+    month the chain opened, Holm across the seven;
+  - positive in each time-half;
+  - still positive at 1.5x fees and the natural + $0.02 a leg, and with fills at the limit only;
+  - then the holdout's mean above zero.
+  - **The Crazy Ivan claim** needs more: a passing `maria`, `deep`, `overnight` or `trend` must also
+    beat `atclose` and `noroll`, by a paired monthly difference with a one-sided t above 2.
+- **Minimum detectable effect (B12):** from the design window's own spread of chain nets, recorded
+  in the local result before the holdout is read.
+- **Declared limits (B11):**
+  - end-of-day quotes, so the entry is modelled, and exits and defences are read on closes;
+  - Black-Scholes deltas, not the vendor's;
+  - early assignment is not modelled;
+  - a split inside a chain ends it at the session before, as in item 29 (TQQQ split five times in
+    the windows);
+  - the five-chain cap stands in for a fixed account.
+- **Data:** ThetaData Options Standard end-of-day chains for TQQQ, in the backtest store from item 29.
+  A research-queue `fetch-chains` row fills any strikes and expiries that fetch left out. QQQ's chains
+  come the same way. Bars come from the technicals history. The replay is
+  `scripts/ivan_tqqq_item49.py`, run as `item49/plan`, `item49/fetch-chains` and `item49/study`. The
+  results are derived from licensed data, so they stay under
+  `~/.cherrypick/data/backtest/results/research/item49/`; this plan records the verdict only.
+- **Decides:**
+  - **The Crazy Ivan claim passes:** the TQQQ paper module of `docs/history/ivan-plan.md` is built on
+    the passing arm, paper only, with `noroll`'s defence if `noroll` did as well.
+  - **Only `atclose` passes,** or no resting arm beats it: no module. Waiting for the fill adds
+    nothing, and it is a plain cash-secured put, already measured.
+  - **`noroll` beats `maria`:** the roll is dropped from every version of the plan.
+  - **Only `qqq` passes:** the QQQ version is proposed instead.
+  - **Every arm fails:** the question is closed and the plan stays shelved.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

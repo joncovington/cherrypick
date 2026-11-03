@@ -423,7 +423,7 @@ against it. Every named source found:
 | Module | Source | Where recorded |
 |---|---|---|
 | **PMCC** | Tom King's "Income Shield" (Theta Profits, [video `P43DluId17o`](https://www.youtube.com/watch?v=P43DluId17o)): a ~1-year call at about 0.925 delta, a ~0.70-delta weekly call sold against it | [`packages/pmcc/docs/shield-study.md`](../packages/pmcc/docs/shield-study.md) |
-| **ivan** (shelved /NQ proposal) | Rob and Maria Helmick, "Math Makes Money" on YouTube, described in full on Theta Profits' *My Trade* segment recorded 2026-09-14 — their own parameter table is carried, thresholds converted to percentages | [`docs/history/ivan-plan.md`](history/ivan-plan.md) |
+| **ivan** (shelved /NQ proposal; TQQQ version proposed 2026-11-02) | Rob and Maria Helmick, "Math Makes Money" on YouTube, described in full on Theta Profits' *My Trade* segment recorded 2026-09-14 — their own parameter table is carried, thresholds converted to percentages. Maria's written entry rules come from the Math Makes Money newsletter, Issue 32 (2026-07-07) | [`docs/history/ivan-plan.md`](history/ivan-plan.md) |
 | **volcrush** (plan-only branch) | Option Omega's "Tasty Vol Crush" — an SPX short-call backtest, 2013–2026 | commit `e51318bf`, 2026-10-09 |
 | **GEX engine** | What gexbot.com, SpotGamma and MenthorQ sell — a self-hosted lightweight take | [`packages/gex/README.md`](../packages/gex/README.md) |
 | **MEIC** | Chambless (convention + MEIC+), Option Alpha (stop literature), 0DTESPX.com (rejected data source) | cited in the module docs above |
