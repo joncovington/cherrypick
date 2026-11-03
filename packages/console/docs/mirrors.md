@@ -25,6 +25,11 @@ a mirror with a test against the module itself. These are the current ones.
   `services/calendarsBridge.ts` (memoised 5–10 min) — the policy replay is validated to the cent
   against the real books, and a TypeScript copy would be validating the wrong derivation; the
   anchors are NYSE holiday arithmetic whose structure tag keys every result.
+- **MEIC live readiness is bridged** (`services/meicStatusBridge.ts`, memoised 30 s): `live_loop --status`
+  gives `arm_ready` (blockers and warnings), `open_ics` and `criticals_today` for the Live page's MEIC
+  tab. The verdict is the module's own (`arm_verdict`); a failed or malformed answer is
+  `{ok: false, error}` and the card says so, never "ready". `--status` reads files and the ledger
+  only, never the broker.
 - **Flies evidence** (`services/fliesEvidenceBridge.ts`, memoised 2 min): `run.py live-gap`
   (live vs paper paired per session, split at the `completion_rule` break; each unmatched entry
   carries the other book's reason and category, each pair its largest gap, and a "why the books

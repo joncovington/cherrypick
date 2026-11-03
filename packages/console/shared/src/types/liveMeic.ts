@@ -115,4 +115,32 @@ export interface LiveMeicPayload {
   /** Resolved rows (stopped / expired / force_closed), newest first, in the trade table standard. */
   history: MeicTradeRow[];
   totals: LiveMeicTotals;
+  /** The module's own arm verdict (`services/meicStatusBridge.ts`); a failed bridge is `ok: false`. */
+  readiness?: LiveMeicReadiness;
 }
+
+/** One CRITICAL line the live loop recorded today (`criticals_today` in its `--status`). */
+export interface LiveMeicCritical {
+  at: string;
+  message: string;
+}
+
+/**
+ * Whether MEIC's live loop may be armed, as the module itself answers it (`live_loop --status`,
+ * `arm_verdict`). A derivation, so the console bridges it (`services/meicStatusBridge.ts`) and never
+ * recomputes it. `ok: false` is a bridge that failed: the card says so, and it is never "ready".
+ */
+export type LiveMeicReadiness =
+  | {
+      ok: true;
+      ready: boolean;
+      /** What refuses `--install-task`. */
+      blockers: string[];
+      /** What a person must be told before saying YES. */
+      warnings: string[];
+      /** One line per IC held today, the module's own words. */
+      openIcs: string[];
+      /** The loop's CRITICAL lines today, oldest first as the module lists them. */
+      criticals: LiveMeicCritical[];
+    }
+  | { ok: false; error: string };

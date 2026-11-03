@@ -8,6 +8,7 @@ import { fmtCash, fmtPrice } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
 import { HISTORY_COLUMNS, feesNetWords } from "../Meic/MeicTables";
 import { MeicLiveGapCard } from "./MeicLiveGap";
+import { MeicReadinessCard } from "./MeicReadinessCard";
 
 /**
  * MEIC's live loop, read-only (2026-10-15): the flies Live tab's arming strip and trade tables, cut
@@ -136,6 +137,7 @@ export function MeicLivePage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
+      {d && <MeicReadinessCard readiness={d.readiness} />}
       {d && d.ledger !== "ok" && (
         <p className={d.ledger === "failed" ? "pnl-neg" : "muted"}>
           {d.ledger === "absent"
