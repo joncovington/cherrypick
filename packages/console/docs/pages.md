@@ -396,10 +396,15 @@ dollar), `queue` (2026-10-24; `pages/Backtest/QueueTab.tsx`,
 `GET /api/backtest/queue` → `services/researchQueueBridge.ts` → `python -m cherrypick.cli queue-list`,
 behind the same gate): the research tasks the supervisor runs, read-only. Each row's state and why a
 queued row waits are the orchestrator's words, shown verbatim, and a file argument is shown by its name
-only. Rows are grouped by study (the category; a row is named `study/step`), and a finished row's
-Result is what it points to: a fetch's counts and input, a script's declared conclusion (red when
-missing), and its log, each by name. Rows are added on the command line (`run.py queue-add`), never
-from here. Every tab opens with the licensed-data note. Run money is net of fees,
+only. Two sections (by study from 2026-11-02): **Now** (running, then ready rows oldest first, then
+waiting ones, split on the orchestrator's `waits`; the page works out no run order) and **Studies**,
+one line per study with finished rows, most recently finished first. A study is named by its register
+title (heading in bold, split at its first colon, the slug as a small tag; "not in the register" only
+once the board has loaded), and its line carries each result file's verdict chip and the decision
+taken, both from the studies board, never worked out here. It opens to its rows; a row's Result is what
+it points to: a fetch's counts and input, a script's declared conclusion (red when missing), and its
+log, each by name. Cancelled rows are hidden behind `show cancelled`. Rows are added on the command
+line (`run.py queue-add`), never from here. Every tab opens with the licensed-data note. Run money is net of fees,
 signed, whole-position dollars; fees are shown as a cost, already out of net, never subtracted again.
 Detail view only (`SIMPLE_HIDDEN_PAGES`); shortcut `g b`.
 

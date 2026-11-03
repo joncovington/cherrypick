@@ -5224,3 +5224,52 @@ select.text-input {
   padding-left: 24px;
 }
 
+/* The queue by study (2026-11-02): a study named by its title, its steps indented under it. */
+.queue-study .queue-slug {
+  margin-left: 4px;
+  font-size: 11px;
+}
+
+.queue-steps,
+.queue-section-note {
+  font-size: 12px;
+  font-weight: normal;
+}
+
+.queue-verdicts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.queue-found {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 4px 0 2px;
+}
+
+.queue-outcome {
+  max-width: 60em;
+  font-size: 12px;
+}
+
+.queue-fields dd .chip + .chip {
+  margin-left: 4px;
+}
+
+.queue-table .queue-step-row > td:nth-child(2) {
+  padding-left: 24px;
+}
+
+/* A study's title wraps rather than pushing State and Result off the card. */
+.queue-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.queue-table td:nth-child(2) {
+  min-width: 16em;
+}
+

@@ -34,3 +34,35 @@ export function studyHref(study: string): string {
 
 /** The register's statuses that carry a verdict. */
 export const VERDICT_STATUSES = ["passed", "failed", "no_verdict"];
+
+/** The register's status in words: `no_verdict` -> "no verdict". */
+export function statusWord(status: string): string {
+  return status.replace(/_/g, " ");
+}
+
+/** What a result file covers: its window, else its span's years, else its name. */
+export function resultLabel(r: StudyResult): string {
+  if (r.window) return r.window;
+  if (r.span) {
+    const [a, b] = [r.span[0].slice(0, 4), r.span[1].slice(0, 4)];
+    return a === b ? a : `${a}–${b}`;
+  }
+  return r.name;
+}
+
+/**
+ * A register title as a heading and the rest, split at its first colon: "The wing width of MEIC's
+ * live rule" / "15, 20, 25 and 30 against 10". A title without one is all heading.
+ */
+export function splitTitle(title: string): [string, string | null] {
+  const at = title.indexOf(": ");
+  return at > 0 ? [title.slice(0, at), title.slice(at + 2)] : [title, null];
+}
+
+/** A verdict word's chip: a pass green, a fail red, anything else plain. */
+export function verdictChip(word: string | null): string {
+  const w = (word ?? "").toLowerCase();
+  if (w === "pass" || w === "passed") return "chip chip-ok";
+  if (w === "fail" || w === "failed") return "chip chip-missing";
+  return word === null ? "chip muted" : "chip";
+}
