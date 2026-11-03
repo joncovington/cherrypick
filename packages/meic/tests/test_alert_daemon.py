@@ -43,6 +43,10 @@ def test_the_companion_is_named_only_when_switched_on():
 
 
 def test_arming_puts_the_companion_on_the_record(monkeypatch):
+    # Arming needs a clear verdict (2026-11-02); this test is about the record, so clear it.
+    monkeypatch.setattr(
+        live_loop, "arm_verdict", lambda status: {"ready": True, "blockers": [], "warnings": []}
+    )
     monkeypatch.setattr(live_loop, "_spawn_first_tick", lambda: None)
     monkeypatch.setattr(_live, "supervisor_heartbeat_fresh", lambda *a, **k: True)
     out = live_loop.install_task(_config(use_order_alert_daemon=True))

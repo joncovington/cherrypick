@@ -126,6 +126,7 @@ def test_an_unarmed_tick_with_a_live_gate_unmet_touches_nothing(monkeypatch, cap
 def test_arming_needs_a_supervisor_and_writes_todays_record(monkeypatch):
     _empty_live_ledger()
     monkeypatch.setattr(live_loop, "_spawn_first_tick", lambda: None)
+    monkeypatch.setattr(live_loop, "_designated_account", lambda: "1234")  # CI has no keyring backend
     monkeypatch.setattr(live_loop, "readiness", lambda *a, **k: [])
     monkeypatch.setattr(live_loop, "kill_verdict", lambda *a, **k: {"state": "normal", "reasons": []})
     monkeypatch.setattr(_live, "supervisor_heartbeat_fresh", lambda *a, **k: False)
@@ -202,6 +203,7 @@ def test_arming_is_refused_while_a_blocker_stands(monkeypatch):
     stop the arm record being written; only the instructions said to stop."""
     _empty_live_ledger()
     monkeypatch.setattr(live_loop, "_spawn_first_tick", lambda: None)
+    monkeypatch.setattr(live_loop, "_designated_account", lambda: "1234")  # CI has no keyring backend
     monkeypatch.setattr(live_loop, "readiness", lambda *a, **k: [])
     monkeypatch.setattr(_live, "supervisor_heartbeat_fresh", lambda *a, **k: True)
     monkeypatch.setattr(live_loop, "read_orphans", lambda: ["ORPHAN1"])

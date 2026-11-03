@@ -338,7 +338,11 @@ def install_task(config: dict | None = None) -> dict:
     `arm_verdict` has a blocker (2026-11-02): the arming command's "stop here" states, enforced
     rather than only instructed."""
     config = config if config is not None else paper.load_base_config()
-    verdict = arm_verdict(run_status(config, designated=_designated_account()))
+    try:
+        designated = _designated_account()
+    except Exception:  # noqa: BLE001 -- a keyring that cannot be read designates nothing: a blocker
+        designated = None
+    verdict = arm_verdict(run_status(config, designated=designated))
     if verdict["blockers"]:
         return {"ok": False, "error": "not ready to arm", "blockers": verdict["blockers"]}
     now = _pl._now_et()
