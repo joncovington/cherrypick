@@ -98,3 +98,17 @@ def test_dolt_sql_reaches_the_server_by_address_never_by_its_info_file():
     for flag, value in (("--host", "127.0.0.1"), ("--port", "3306"), ("--use-db", "options")):
         assert globals_[globals_.index(flag) + 1] == value
     assert "--no-tls" in globals_
+
+
+def test_the_started_server_is_opted_out_of_power_throttling(monkeypatch, tmp_path):
+    """`dolt sql-server` is started outside the supervisor's _spawn, so _start_dolt opts it out
+    itself, by the server's own handle (the 2026-11-03 boundary)."""
+    calls = []
+
+    class FakeProc:
+        _handle = 4242
+
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda argv, **kw: FakeProc())
+    monkeypatch.setattr(cli, "never_throttle", lambda handle=None: calls.append(handle) or True)
+    assert cli._start_dolt(tmp_path) is True
+    assert calls == [4242]

@@ -149,6 +149,7 @@ from cherrypick.orchestrator.util import (
     NEW_SESSION,
     atomic_write_json,
     first_json,
+    never_throttle,
     port_owner_pid,
 )
 
@@ -511,7 +512,7 @@ def _start_dolt(data_dir: Path) -> bool:
         flags = 0
         if os.name == "nt":
             flags = 0x00000008 | 0x08000000 | 0x00000200  # DETACHED | NO_WINDOW | NEW_GROUP
-        subprocess.Popen(
+        proc = subprocess.Popen(
             ["dolt", "sql-server"],
             cwd=str(data_dir),
             stdout=subprocess.DEVNULL,
@@ -519,6 +520,11 @@ def _start_dolt(data_dir: Path) -> bool:
             creationflags=flags,
             start_new_session=NEW_SESSION,  # POSIX: out of this process's group (DETACHED's twin)
         )
+        # A long-lived server started outside the supervisor's _spawn: opted out of Windows power
+        # throttling the same way (util.never_throttle, the 2026-11-03 boundary).
+        child = getattr(proc, "_handle", None)
+        if child is not None:
+            never_throttle(int(child))
         return True
     except OSError:
         return False

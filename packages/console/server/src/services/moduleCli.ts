@@ -1,5 +1,24 @@
 import { suitePython } from "@console/shared/paths";
 import { execFile, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+
+/**
+ * `server/python/unthrottled.py`, the same two levels up from `src/services/` and `dist/services/`.
+ * It runs `-m <module>` with Windows power throttling off: this server runs as a windowless child of
+ * the supervisor's service, so every python it spawned was a throttled background process (CPU-bound
+ * work 6.8x slower on this host, 2026-11-02), and Node cannot make the Win32 call itself.
+ */
+const UNTHROTTLED = fileURLToPath(new URL("../../python/unthrottled.py", import.meta.url));
+
+/**
+ * The argv to hand python for a `-m` read: through `unthrottled.py` on Windows when it is there, else
+ * unchanged. Anything not starting `-m` (a `-c` probe) passes through as it is.
+ */
+export function pythonArgv(argv: readonly string[], platform: NodeJS.Platform = process.platform): string[] {
+  if (platform !== "win32" || argv[0] !== "-m" || !fs.existsSync(UNTHROTTLED)) return [...argv];
+  return [UNTHROTTLED, ...argv];
+}
 
 /**
  * The subprocess mechanics every module-CLI bridge in this package shares.
@@ -46,7 +65,7 @@ function stdoutError(stdout: string | null | undefined): string | null {
 export function spawnModuleCli(argv: string[], unavailableMessage: string, okStatuses: readonly number[] = [0]): SpawnedJson {
   let out;
   try {
-    out = spawnSync(suitePython(), argv, { encoding: "utf-8", timeout: 30_000, windowsHide: true });
+    out = spawnSync(suitePython(), pythonArgv(argv), { encoding: "utf-8", timeout: 30_000, windowsHide: true });
   } catch (err) {
     return { ok: false, json: null, error: `${unavailableMessage} (${(err as Error).message})` };
   }
@@ -95,7 +114,7 @@ export function spawnModuleCliAsync(
     try {
       execFile(
         suitePython(),
-        argv,
+        pythonArgv(argv),
         { encoding: "utf-8", timeout: 30_000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 },
         (err, stdout, stderr) => {
           // execFile reports a nonzero exit as `err` with `code`; a spawn failure has no numeric code.
