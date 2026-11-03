@@ -5286,11 +5286,18 @@ backtest comes before any paper module. Declared here before any of it is run.*
     the windows);
   - the five-chain cap stands in for a fixed account.
 - **Data:** ThetaData Options Standard end-of-day chains for TQQQ, in the backtest store from item 29.
-  A research-queue `fetch-chains` row fills any strikes and expiries that fetch left out. QQQ's chains
-  come the same way. Bars come from the technicals history. The replay is
-  `scripts/ivan_tqqq_item49.py`, run as `item49/plan`, `item49/fetch-chains` and `item49/study`. The
-  results are derived from licensed data, so they stay under
-  `~/.cherrypick/data/backtest/results/research/item49/`; this plan records the verdict only.
+  QQQ's come the same way. Bars come from the technicals history.
+  - The replay is `scripts/ivan_tqqq_item49.py`.
+  - Its `expirations` lists both names' expiries once, by hand: it needs the vendor session, which a
+    queued script may not hold.
+  - Its `plan` writes every expiry path an arm could read that the store's records of finished work
+    don't already cover: each session's entry expiry to its expiry, and each monthly from 180 days
+    before it.
+  - The research queue then runs `item49/fetch-chains` (`fetch-chain-paths`), `item49/study-design`,
+    and `item49/study-holdout`. The holdout step refuses a second read, and reads only the arms that
+    passed the design window.
+  - The results are derived from licensed data, so they stay under
+    `~/.cherrypick/data/backtest/results/research/item49/`; this plan records the verdict only.
 - **Decides:**
   - **The Crazy Ivan claim passes:** the TQQQ paper module of `docs/history/ivan-plan.md` is built on
     the passing arm, paper only, with `noroll`'s defence if `noroll` did as well.
