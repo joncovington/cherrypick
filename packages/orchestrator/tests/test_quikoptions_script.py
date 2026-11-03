@@ -295,6 +295,23 @@ def test_an_oi_panel_that_is_wrong_but_not_a_copy_still_rejects():
     assert fq.parse_report(fq.tables_fragment(report(), fq.HEADINGS, with_date=True))["unavailable"] == {}
 
 
+def test_a_report_without_the_openings_panel_reads_and_names_it():
+    # 2026-11-02 on: Top Strikes drawn where the Openings panel was. The five other tables still count,
+    # and the new panel, with its extra column, is never taken for the OI > 100 one above it.
+    strikes = _table(
+        "Top Strikes",
+        ["", "Symbol", "Volume", "OI", "V/OI", "Expires", "Strike", "", "Max Size"],
+        [MENU + _symbol("NVDA", "NVIDIA Corporation") + _td("270,178") + _td("10,087") + _td("26.78")
+         + _td("02-Nov-26") + _td("210") + _cp("C") + _td("1,221")],
+    )  # fmt: skip
+    page = report(drop="Top VolOverOI (Openings)").replace("</body>", strikes + "</body>")
+    assert fq._report_ready(page)
+    doc = fq.parse_report(fq.tables_fragment(page, fq.HEADINGS, with_date=True))
+    assert fq.validate_report(doc, DAY) == []
+    assert set(doc["tables"]) == set(fq.TABLES) - {"openings"}
+    assert doc["unavailable"] == {"openings": fq.WITHDRAWN["openings"]}
+
+
 def test_a_table_that_is_not_a_report_grid_is_not_read():
     page = report().replace('id="table-x" class="quikgrid table table-hover"', 'id="nav" class="w-full"')
     assert not fq._report_ready(page)

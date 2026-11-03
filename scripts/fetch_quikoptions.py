@@ -166,6 +166,10 @@ TABLES: dict[str, tuple[str, list[tuple[str, str, str]]]] = {
 # Every Openings row had OI 0 until 2026-10-09 (TAL: 20,062 / 1 = 20,062.00). An opening may carry a
 # little open interest; past the other panel's "OI > 100" it is that panel's row, not an opening.
 OPENING_MAX_OI = 100
+# Panels the site has stopped drawing. Absent, one is named in `unavailable` rather than costing the
+# tables that did draw; drawn, it is read and checked as before. On 2026-11-02 a Top Strikes panel
+# took the Openings panel's place.
+WITHDRAWN = {"openings": "the site no longer draws this panel (2026-11-02: Top Strikes in its place)"}
 CALENDAR_HEADING = "Economic"
 CALENDAR_COLUMNS = [
     ("Date", "when", TEXT), ("Impact", "impact", TEXT), ("Event", "event", TEXT),
@@ -181,7 +185,10 @@ CALENDAR_COLUMNS_2026_10 = [
     ("Estimate", "estimate", TEXT), ("Actual", "actual", TEXT),
 ]  # fmt: skip
 CALENDAR_LAYOUTS = (CALENDAR_COLUMNS_2026_10, CALENDAR_COLUMNS)
-HEADINGS = tuple(heading for heading, _ in TABLES.values())
+# A table takes the last known heading before it, so a panel not read yet still names its own
+# heading: unknown, Top Strikes (2026-11-02) was read as a second OI > 100 panel and replaced it.
+UNREAD_HEADINGS = ("Top Strikes",)
+HEADINGS = tuple(heading for heading, _ in TABLES.values()) + UNREAD_HEADINGS
 PAGE_DATE_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$")
 
 # Elements whose text is never a cell's value: the row menu's items, the paid badge count, icons.
@@ -436,8 +443,12 @@ def parse_report(page_html: str) -> dict:
     else:
         problems.append("no session date on the page")
     tables: dict[str, list[dict]] = {}
+    unavailable: dict[str, str] = {}
     for name, (heading, spec) in TABLES.items():
         table = by_heading.get(heading)
+        if table is None and name in WITHDRAWN:
+            unavailable[name] = WITHDRAWN[name]
+            continue
         if table is None:
             problems.append(f"{name}: table missing ({heading!r})")
             continue
@@ -446,7 +457,6 @@ def parse_report(page_html: str) -> dict:
             problems.append(why)
             continue
         tables[name] = read_rows(spec, table)
-    unavailable: dict[str, str] = {}
     # Since the 2026-10-09 redesign the site draws the Openings list into the OI > 100 panel too:
     # byte-identical, every OI 0. That panel is the site's fault, not a half-drawn page, so it is
     # dropped and named rather than costing the five tables that read. Only an exact copy is
@@ -975,7 +985,7 @@ def _wait_for_tables(page, ready, hits: list[str], timeout_s: float = TABLES_TIM
 def _report_ready(content: str) -> bool:
     _, found = grids(content, HEADINGS)
     drawn = {t["heading"] for t in found if t["rows"]}
-    return set(HEADINGS) <= drawn
+    return {TABLES[n][0] for n in TABLES if n not in WITHDRAWN} <= drawn
 
 
 def _calendar_ready(content: str) -> bool:
