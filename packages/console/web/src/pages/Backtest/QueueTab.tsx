@@ -1,9 +1,10 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { BridgedResult, ResearchProgress, ResearchQueue, ResearchTask } from "@console/shared";
 import { VERDICT_STATUSES, indexStudies, splitTitle, statusWord, studyHref, useStudies, verdictChip, type StudyIndex } from "./studyIndex";
 import { Card } from "../../components/DataTable";
 import { useBridged } from "../../lib/bridged";
+import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
 
 /**
  * The Backtest page's queue tab (2026-10-24; laid out again 2026-10-27, docs/progress-queue-arms-plan.md
@@ -17,7 +18,10 @@ import { useBridged } from "../../lib/bridged";
  * runs started by hand in the last month. A study's finished rows live on its card on the studies
  * tab, beside its verdict, so this tab no longer lists them by study.
  *
- * A row opens to the rest (arguments, timings, the result's fields, the log's tail).
+ * As cards (2026-11-03): the running task large with its phase meters, runs by hand beside it, then
+ * up next (numbered, each with the orchestrator's own reason for waiting), the last week's failures
+ * and the last month's runs by hand. A card opens a lightbox (`?task=`): overview, arguments,
+ * result and the log's tail.
  * Read-only: rows are added with `run.py queue-add` and cancelled with `run.py queue-cancel`.
  */
 
@@ -207,34 +211,14 @@ export function StudyName({ study, studies, compact = false }: { study: string; 
 }
 
 // --------------------------------------------------------------------------- rows
-function Meter({ p }: { p: ResearchProgress }) {
-  const frac = p.fraction ?? 0;
-  const detail = p.phases.map((ph) => `${ph.name}: ${ph.done}${ph.total !== null ? ` of ${ph.total}` : ""}`).join("; ");
-  return (
-    <div className="queue-meter" title={detail}>
-      {p.fraction !== null ? (
-        <div className="queue-meter-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(frac * 100)}>
-          <div className="queue-meter-fill" style={{ width: `${(frac * 100).toFixed(1)}%` }} />
-        </div>
-      ) : null}
-      <span className="muted">{progressLine(p)}</span>
-    </div>
-  );
-}
-
-function waitText(t: ResearchTask): string | null {
-  if (t.status === "queued") return t.waits === "ready" ? "ready: starts at the next tick" : t.waits;
-  return t.note;
-}
-
-const COLS = 6;
-
-function Toggle({ open, label, onClick }: { open: boolean; label: string; onClick: () => void }) {
-  return (
-    <button type="button" className="btn btn-quiet" aria-expanded={open} aria-label={`${open ? "Close" : "Open"} ${label}`} onClick={onClick}>
-      {open ? "▾" : "▸"}
-    </button>
-  );
+/**
+ * Why a queued row has not started, in the orchestrator's words; for a ready row, where it stands:
+ * only the first ready row starts next (one task at a time). `pos` is its place in up next.
+ */
+export function waitText(t: ResearchTask, pos?: number): string | null {
+  if (t.status !== "queued") return t.note;
+  if (t.waits !== "ready") return t.waits;
+  return pos === 1 ? "ready: starts next, at the tick after the running task ends" : "ready, in line behind the rows above";
 }
 
 function Field({ k, children }: { k: string; children: ReactNode }) {
@@ -314,177 +298,398 @@ export function StudyChip({ study, studies }: { study: string; studies?: StudyIn
   );
 }
 
-/** One queue row: its study, by register title, and its step. */
-function TaskRows({ t, nowMs, studies }: { t: ResearchTask; nowMs: number; studies?: StudyIndex }) {
-  const [open, setOpen] = useState(false);
-  const when = t.status === "running" ? etMs(t.startedAt) : t.status === "queued" ? etMs(t.createdAt) : endedMs(t);
+// --------------------------------------------------------------------------- the cards (2026-11-03)
+
+/** One card on the tab: a queue row, or a run started by hand (its progress file). */
+export type QueueItem =
+  | { kind: "task"; key: string; section: QueueSection; t: ResearchTask; pos?: number }
+  | { kind: "hand"; key: string; section: QueueSection; p: ResearchProgress };
+
+export type QueueSection = "running" | "hand-live" | "next" | "attention" | "hand-recent";
+
+/** Every card in the order the tab lays them out, which is the order the lightbox steps through. */
+export function queueItems(q: ResearchQueue, nowMs = etNowMs(), nowEpochS = Date.now() / 1000): QueueItem[] {
+  const p = plan(q, nowEpochS, nowMs);
+  const task = (section: QueueSection) => (t: ResearchTask, i: number): QueueItem => ({
+    kind: "task",
+    key: String(t.id),
+    section,
+    t,
+    ...(section === "next" ? { pos: i + 1 } : {}),
+  });
+  const hand = (section: QueueSection) => (x: ResearchProgress): QueueItem => ({ kind: "hand", key: `hand:${x.file}`, section, p: x });
+  return [
+    ...p.running.map(task("running")),
+    ...p.byHandLive.map(hand("hand-live")),
+    ...p.queued.map(task("next")),
+    ...p.attention.map(task("attention")),
+    ...p.byHandRecent.map(hand("hand-recent")),
+  ];
+}
+
+/** "about 1 h 5 min left", "under a minute left"; null without an estimate. */
+export function etaText(seconds: number | null): string | null {
+  if (seconds === null || !Number.isFinite(seconds)) return null;
+  const mins = Math.round(seconds / 60);
+  if (mins < 1) return "under a minute left";
+  if (mins < 60) return `about ${String(mins)} min left`;
+  const h = Math.floor(mins / 60);
+  return `about ${String(h)} h ${String(mins % 60)} min left`;
+}
+
+/** A study's register title, heading only, else its slug. */
+function studyTitle(study: string, studies?: StudyIndex): string {
+  const row = studies?.byStudy.get(study);
+  return row ? splitTitle(row.title)[0] : study;
+}
+
+function PhaseMeters({ p }: { p: ResearchProgress }) {
+  if (p.phases.length === 0) return null;
+  return (
+    <span className="q-meters">
+      {p.phases.map((ph) => (
+        <span key={ph.name} className="q-meter">
+          <span className="q-meter-name">{ph.name}</span>
+          <span className="q-meter-track" aria-hidden="true">
+            <span className="q-meter-fill" style={{ width: ph.total ? `${String(Math.min(100, Math.round((ph.done / ph.total) * 100)))}%` : "0%" }} />
+          </span>
+          <span className="q-meter-count">
+            {ph.done}
+            {ph.total !== null ? ` / ${String(ph.total)}` : ""} {ph.unit}
+          </span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function stateChip(t: ResearchTask): { word: string; cls: string } {
+  if (t.status === "queued") return t.waits === "ready" ? { word: "ready", cls: "chip q-ready" } : { word: "waiting", cls: "chip q-waiting" };
+  if (t.status === "failed" || t.status === "stopped") return { word: t.status, cls: "chip chip-warn" };
+  return { word: t.status, cls: STATUS_CHIP[t.status] };
+}
+
+function RunningTile({ t, studies, nowMs, onOpen }: { t: ResearchTask; studies?: StudyIndex; nowMs: number; onOpen: () => void }) {
+  const pct = t.progress?.fraction !== null && t.progress?.fraction !== undefined ? Math.round(t.progress.fraction * 100) : null;
+  return (
+    <button type="button" className="study-tile study-hero q-hero" data-task={t.id} aria-label={`Open ${t.name}`} onClick={onOpen}>
+      <span className="study-tile-top">
+        <span className="study-tile-status">
+          <span className="study-dot is-running" />
+          Running · started {ago(etMs(t.startedAt), nowMs)}
+        </span>
+        <span className="study-tile-slug">{t.name}</span>
+      </span>
+      <span className="study-tile-mid">
+        <span className="study-hero-title">{studyTitle(t.study, studies)}</span>
+        <span className="study-tile-sub">
+          {t.step} · {t.kind}
+          {t.needs.includes("thetadata") ? " · ThetaData" : ""}
+        </span>
+      </span>
+      <span className="study-tile-foot">
+        {pct !== null ? (
+          <span className="q-pct">
+            <span className="q-pct-num">{pct}%</span>
+            <span className="study-tile-sub">{etaText(t.progress?.etaSeconds ?? null) ?? ""}</span>
+          </span>
+        ) : null}
+        {t.progress ? <PhaseMeters p={t.progress} /> : <span className="study-tile-sub">No progress file yet.</span>}
+      </span>
+    </button>
+  );
+}
+
+function HandTile({ p, nowMs, onOpen, live }: { p: ResearchProgress; nowMs: number; onOpen: () => void; live: boolean }) {
+  return (
+    <button type="button" className="study-tile q-hand" data-task={`hand:${p.file}`} aria-label={`Open ${p.job}`} onClick={onOpen}>
+      <span className="study-tile-top">
+        <span className="study-tile-sub">Started by hand</span>
+        <span className={PROGRESS_CHIP[p.state]}>{p.state}</span>
+      </span>
+      <span className="q-mono">{p.job}</span>
+      <span className="study-tile-foot">
+        {live && p.fraction !== null ? (
+          <span className="q-meter-track" aria-hidden="true">
+            <span className="q-meter-fill" style={{ width: `${(p.fraction * 100).toFixed(1)}%` }} />
+          </span>
+        ) : null}
+        <span className="study-tile-sub">{live ? progressLine(p) : ago(p.updatedAt === null ? null : p.updatedAt * 1000 - (Date.now() - nowMs), nowMs)}</span>
+      </span>
+    </button>
+  );
+}
+
+function TaskTile({ item, studies, nowMs, onOpen }: { item: Extract<QueueItem, { kind: "task" }>; studies?: StudyIndex; nowMs: number; onOpen: () => void }) {
+  const t = item.t;
+  const chip = stateChip(t);
+  const attention = item.section === "attention";
+  const wait = waitText(t, item.pos);
+  return (
+    <button type="button" className={attention ? "study-tile q-attn" : "study-tile"} data-task={t.id} aria-label={`Open ${t.name}`} onClick={onOpen}>
+      <span className="study-tile-top">
+        {item.pos !== undefined ? <span className={t.waits === "ready" ? "q-pos" : "q-pos is-waiting"}>{item.pos}</span> : <span className="study-tile-sub">{ago(endedMs(t), nowMs)}</span>}
+        <span className={chip.cls}>{chip.word}</span>
+      </span>
+      <span className="study-tile-title">{studyTitle(t.study, studies)}</span>
+      <span className="study-tile-foot">
+        <span className="study-tile-sub">
+          <span className="study-tile-slug">{t.study}</span> · {t.step} · {t.kind}
+          {t.needs.includes("thetadata") ? " · ThetaData" : ""}
+          {studies && !studies.byStudy.has(t.study) ? " · not in the register" : ""}
+        </span>
+        {attention ? (
+          <span className={t.result?.outputExists === false ? "study-tile-sub pnl-neg" : "study-tile-sub"}>{t.note ?? resultLine(t)}</span>
+        ) : wait ? (
+          <span className="study-tile-sub q-wait">{wait}</span>
+        ) : null}
+      </span>
+    </button>
+  );
+}
+
+function CardSection({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
+  return (
+    <section className="q-section">
+      <h3 className="q-section-title">
+        {title} {note ? <span className="muted">· {note}</span> : null}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------ the lightbox
+
+type TaskTab = "overview" | "args" | "result" | "log";
+
+const TASK_TABS: LightboxTab<TaskTab>[] = [
+  { id: "overview", label: "Overview" },
+  { id: "args", label: "Arguments" },
+  { id: "result", label: "Result" },
+  { id: "log", label: "Log" },
+];
+
+/** The task's arguments, one per line: a file shown by its name, never its full path. */
+export function argRows(args: Record<string, unknown>): Array<[string, string]> {
+  return Object.entries(args).map(([k, v]) => {
+    if (typeof v === "string" && /[\\/]/.test(v)) return [k, fileName(v)];
+    if (Array.isArray(v)) return [k, v.map((x) => (typeof x === "string" && /[\\/]/.test(x) ? fileName(x) : String(x))).join(" ")];
+    return [k, String(v)];
+  });
+}
+
+function TaskOverview({ t, studies, nowMs }: { t: ResearchTask; studies?: StudyIndex; nowMs: number }) {
   const wait = waitText(t);
   return (
-    <Fragment>
-      <tr>
-        <td>
-          <Toggle open={open} label={t.name} onClick={() => setOpen(!open)} />
-        </td>
-        <td title={`#${t.id} ${t.name}`}>
-          <StudyName study={t.study} studies={studies} compact /> <span className="muted">·</span> {t.step}
-          {t.needs.includes("thetadata") ? (
-            <span className="chip" title="Needs the vendor account's one ThetaData session">
-              ThetaData
-            </span>
-          ) : null}
-        </td>
-        <td>
-          <span className="chip muted">{t.kind}</span>
-        </td>
-        <td>
-          <span className={STATUS_CHIP[t.status]}>{t.status}</span>
-          {wait ? <span className="muted"> {wait}</span> : null}
-          {t.progress && (t.status === "running" || t.status === "queued") ? <Meter p={t.progress} /> : null}
-        </td>
-        <td className={t.result?.outputExists === false ? "pnl-neg" : undefined}>{resultLine(t)}</td>
-        <td className="muted" title={stamp(t.finishedAt ?? t.startedAt ?? t.createdAt)}>
-          {ago(when, nowMs)}
-        </td>
-      </tr>
-      {open ? (
-        <tr className="queue-detail-row">
-          <td colSpan={COLS}>
-            <TaskDetail t={t} />
-          </td>
-        </tr>
-      ) : null}
-    </Fragment>
-  );
-}
-
-function ByHandRows({ p }: { p: ResearchProgress }) {
-  const [open, setOpen] = useState(false);
-  const nowS = Date.now() / 1000;
-  const when = p.updatedAt !== null ? `${Math.max(0, Math.round((nowS - p.updatedAt) / 60))} min ago` : "—";
-  return (
-    <Fragment>
-      <tr>
-        <td>
-          <Toggle open={open} label={p.job} onClick={() => setOpen(!open)} />
-        </td>
-        <td title={p.file}>{p.job}</td>
-        <td>
-          <span className="chip muted" title="Started without the queue: found through its progress file">
-            by hand
-          </span>
-        </td>
-        <td>
-          <span className={PROGRESS_CHIP[p.state]}>{p.state}</span>
-          <Meter p={p} />
-        </td>
-        <td className="muted">{p.note ?? "—"}</td>
-        <td className="muted">{when}</td>
-      </tr>
-      {open ? (
-        <tr className="queue-detail-row">
-          <td colSpan={COLS}>
-            <dl className="queue-fields">
-              <Field k="file">{p.file}</Field>
-              {p.phases.map((ph) => (
-                <Field key={ph.name} k={ph.name}>
-                  {ph.done}
-                  {ph.total !== null ? ` of ${ph.total}` : ""} {ph.unit}
-                  {ph.current ? ` · on ${ph.current}` : ""}
-                </Field>
-              ))}
-            </dl>
-          </td>
-        </tr>
-      ) : null}
-    </Fragment>
-  );
-}
-
-function SubHead({ text }: { text: string }) {
-  return (
-    <tr className="row-subgroup">
-      <td colSpan={COLS} className="muted">
-        {text}
-      </td>
-    </tr>
-  );
-}
-
-function Section({ title, count, note, children }: { title: string; count: number; note?: string; children: ReactNode }) {
-  return (
     <>
-      <tr className="row-group">
-        <th colSpan={COLS} scope="rowgroup">
-          {title} <span className="muted">· {count}</span>
-          {note ? <span className="muted queue-section-note"> — {note}</span> : null}
-        </th>
-      </tr>
-      {children}
+      <div className="q-times">
+        <div>
+          <span>Queued</span>
+          <strong>{stamp(t.createdAt)}</strong>
+        </div>
+        <div>
+          <span>Started</span>
+          <strong>{stamp(t.startedAt)}</strong>
+        </div>
+        <div>
+          <span>Finished</span>
+          <strong>{stamp(t.finishedAt)}</strong>
+        </div>
+      </div>
+      {wait ? <p className="study-decision">{wait}</p> : null}
+      {t.progress ? (
+        <section>
+          {t.progress.fraction !== null ? (
+            <div className="q-pct">
+              <span className="q-pct-num">{Math.round(t.progress.fraction * 100)}%</span>
+              <span className="muted">{etaText(t.progress.etaSeconds) ?? ""}</span>
+            </div>
+          ) : null}
+          <PhaseMeters p={t.progress} />
+        </section>
+      ) : null}
+      <p className="muted">
+        Study: <StudyName study={t.study} studies={studies} /> <StudyChip study={t.study} studies={studies} /> · its card on the studies tab holds
+        the verdict. Queued {ago(etMs(t.createdAt), nowMs)}.
+      </p>
     </>
   );
 }
 
-export function QueueTable({ q, nowMs = etNowMs(), studies }: { q: ResearchQueue; nowMs?: number; studies?: StudyIndex }) {
-  const p = plan(q, undefined, nowMs);
-  const nowCount = p.running.length + p.queued.length + p.byHandLive.length;
-  // Ready and waiting are the orchestrator's words (`waits`); the page only splits on them.
-  const ready = p.queued.filter((t) => t.waits === "ready");
-  const waiting = p.queued.filter((t) => t.waits !== "ready");
-  if (q.tasks.length === 0 && q.byHand.length === 0) return <p className="muted">The queue is empty.</p>;
+function KeyValues({ rows }: { rows: Array<[string, ReactNode]> }) {
   return (
-    <div className="table-scroll">
-      <table className="data-table queue-table">
-        <thead>
-          <tr>
-            <th aria-label="Open" />
-            <th title="The study, by its register title, and the step">Study · step</th>
-            <th>Kind</th>
-            <th>State</th>
-            <th title="What the row produced, or will write">Result</th>
-            <th title="Started (running), queued (waiting) or finished, ET">When</th>
-          </tr>
-        </thead>
-        <tbody>
-          <Section title="Now" count={nowCount} note="one task at a time; when it ends, the oldest ready row starts">
-            {p.running.map((t) => (
-              <TaskRows key={t.id} t={t} nowMs={nowMs} studies={studies} />
-            ))}
-            {p.byHandLive.map((x) => (
-              <ByHandRows key={x.file} p={x} />
-            ))}
-            {ready.length > 0 ? <SubHead text={`ready · ${ready.length} · oldest first: the top one starts next`} /> : null}
-            {ready.map((t) => (
-              <TaskRows key={t.id} t={t} nowMs={nowMs} studies={studies} />
-            ))}
-            {waiting.length > 0 ? <SubHead text={`waiting · ${waiting.length} · each starts once its reason clears and it is the oldest ready`} /> : null}
-            {waiting.map((t) => (
-              <TaskRows key={t.id} t={t} nowMs={nowMs} studies={studies} />
-            ))}
-            {nowCount === 0 ? (
-              <tr>
-                <td colSpan={COLS} className="muted">
-                  Nothing running or queued.
-                </td>
-              </tr>
-            ) : null}
-          </Section>
-          {p.attention.length > 0 ? (
-            <Section title={`Failed or stopped (${ATTENTION_DAYS} days)`} count={p.attention.length} note="newest first; every row is also on its study's card">
-              {p.attention.map((t) => (
-                <TaskRows key={t.id} t={t} nowMs={nowMs} studies={studies} />
-              ))}
-            </Section>
-          ) : null}
-          {p.byHandRecent.length > 0 ? (
-            <Section title={`Started by hand (${RECENT_DAYS} days)`} count={p.byHandRecent.length}>
-              {p.byHandRecent.map((x) => (
-                <ByHandRows key={x.file} p={x} />
-              ))}
-            </Section>
-          ) : null}
-        </tbody>
-      </table>
-    </div>
+    <dl className="study-fields">
+      {rows.map(([k, v]) => (
+        <Field key={k} k={k}>
+          {v}
+        </Field>
+      ))}
+    </dl>
+  );
+}
+
+function TaskResult({ t }: { t: ResearchTask }) {
+  const r = t.result;
+  const rows: Array<[string, ReactNode]> = [
+    ["runs / exit", <span key="x" className={t.exitCode !== null && t.exitCode !== 0 ? "pnl-neg" : undefined}>{`${String(t.runs)} · ${t.exitCode ?? "—"}`}</span>],
+  ];
+  if (t.output) rows.push(["declares", fileName(t.output)]);
+  for (const [k, v] of Object.entries(r?.report ?? {})) rows.push([k, String(v)]);
+  if (r?.input) rows.push(["input", fileName(r.input)]);
+  if (r?.store) rows.push(["store", fileName(r.store)]);
+  if (r?.output) rows.push(["output", <span key="o" className={r.outputExists === false ? "pnl-neg" : undefined}>{`${fileName(r.output)}${r.outputExists === false ? " (missing)" : ""}`}</span>]);
+  if (r?.log) rows.push(["log", fileName(r.log)]);
+  if (t.note) rows.push(["note", t.note]);
+  return r === null && !t.output ? <p className="muted">Not finished: no result yet.</p> : <KeyValues rows={rows} />;
+}
+
+function HandOverview({ p }: { p: ResearchProgress }) {
+  return (
+    <>
+      <p className="study-decision">{progressLine(p) || "No reading yet."}</p>
+      {p.fraction !== null ? (
+        <div className="q-pct">
+          <span className="q-pct-num">{Math.round(p.fraction * 100)}%</span>
+          <span className="muted">{etaText(p.etaSeconds) ?? ""}</span>
+        </div>
+      ) : null}
+      <PhaseMeters p={p} />
+      <KeyValues
+        rows={[
+          ["state", p.state],
+          ["progress file", p.file],
+          ["last wrote", p.ageSeconds === null ? "—" : `${String(Math.round(p.ageSeconds))} s ago`],
+        ]}
+      />
+    </>
+  );
+}
+
+export function QueueDialogBody({
+  item,
+  tab,
+  onTab,
+  studies,
+  nowMs,
+  position,
+  onPrev,
+  onNext,
+  onClose,
+}: {
+  item: QueueItem;
+  tab: TaskTab;
+  onTab: (t: TaskTab) => void;
+  studies?: StudyIndex;
+  nowMs: number;
+  position: string;
+  onPrev: () => void;
+  onNext: () => void;
+  onClose: () => void;
+}) {
+  const nav = { position, onPrev, onNext, onClose };
+  if (item.kind === "hand") {
+    const p = item.p;
+    return (
+      <LightboxFrame kicker="Started by hand" title={p.job} chips={<span className={PROGRESS_CHIP[p.state]}>{p.state}</span>} tabs={[{ id: "overview", label: "Overview" }]} tab="overview" onTab={() => undefined} {...nav}>
+        <HandOverview p={p} />
+      </LightboxFrame>
+    );
+  }
+  const t = item.t;
+  const chip = stateChip(t);
+  return (
+    <LightboxFrame
+      kicker={`#${String(t.id)} · ${t.name}`}
+      title={studyTitle(t.study, studies)}
+      chips={
+        <>
+          <span className={chip.cls}>{chip.word}</span>
+          <span className="chip muted">{t.kind}</span>
+          {t.needs.includes("thetadata") ? <span className="chip">needs ThetaData</span> : null}
+        </>
+      }
+      tabs={TASK_TABS}
+      tab={tab}
+      onTab={onTab}
+      {...nav}
+    >
+      {tab === "overview" ? <TaskOverview t={t} studies={studies} nowMs={nowMs} /> : null}
+      {tab === "args" ? (
+        <KeyValues
+          rows={[
+            ...argRows(t.args),
+            ...(t.needs ? ([["needs", t.needs]] as Array<[string, string]>) : []),
+            ...(t.notBefore ? ([["not before", `${stamp(t.notBefore)} ET`]] as Array<[string, string]>) : []),
+            ...(t.stopBy ? ([["stop by", `${stamp(t.stopBy)} ET`]] as Array<[string, string]>) : []),
+          ]}
+        />
+      ) : null}
+      {tab === "result" ? <TaskResult t={t} /> : null}
+      {tab === "log" ? <LogTail id={t.id} /> : null}
+    </LightboxFrame>
+  );
+}
+
+function QueueDialog({ items, index, studies, onStep, onClose }: { items: QueueItem[]; index: number; studies?: StudyIndex; onStep: (to: number) => void; onClose: () => void }) {
+  const [tab, setTab] = useState<TaskTab>("overview");
+  const item = items[index];
+  if (item === undefined) return null;
+  return (
+    <CardLightbox count={items.length} index={index} onStep={onStep} onClose={onClose}>
+      {(nav) => (
+        <QueueDialogBody item={item} tab={item.kind === "hand" ? "overview" : tab} onTab={setTab} studies={studies} nowMs={etNowMs()} position={nav.position} onPrev={nav.prev} onNext={nav.next} onClose={onClose} />
+      )}
+    </CardLightbox>
+  );
+}
+
+/** The tab's cards: the running task large, then up next, the last week's failures, runs by hand. */
+export function QueueCards({ q, nowMs = etNowMs(), studies }: { q: ResearchQueue; nowMs?: number; studies?: StudyIndex }) {
+  const lightbox = useOpenParam("task");
+  if (q.tasks.length === 0 && q.byHand.length === 0) return <p className="muted">The queue is empty.</p>;
+  const items = queueItems(q, nowMs);
+  const index = items.findIndex((i) => i.key === lightbox.open);
+  const open = (i: QueueItem) => () => lightbox.show(i.key);
+  const of = (s: QueueSection) => items.filter((i) => i.section === s);
+  const running = of("running");
+  const handLive = of("hand-live");
+  const next = of("next");
+  const attention = of("attention");
+  const handRecent = of("hand-recent");
+  return (
+    <>
+      <div className="q-top">
+        {running.length > 0 ? (
+          running.map((i) => (i.kind === "task" ? <RunningTile key={i.key} t={i.t} studies={studies} nowMs={nowMs} onOpen={open(i)} /> : null))
+        ) : (
+          <div className="study-tile study-hero q-hero q-idle">
+            <span className="study-tile-status muted">Nothing running</span>
+            <span className="study-tile-sub">{next.length > 0 ? "The top ready row starts at the next tick." : "Nothing is queued either."}</span>
+          </div>
+        )}
+        <div className="q-side">
+          {handLive.map((i) => (i.kind === "hand" ? <HandTile key={i.key} p={i.p} nowMs={nowMs} live onOpen={open(i)} /> : null))}
+          <div className="q-note">One task at a time. When it ends, the top ready row starts at the next tick.</div>
+        </div>
+      </div>
+      {next.length > 0 ? (
+        <CardSection title="Up next" note="in the order the runner takes them">
+          <div className="study-tiles q-tiles">{next.map((i) => (i.kind === "task" ? <TaskTile key={i.key} item={i} studies={studies} nowMs={nowMs} onOpen={open(i)} /> : null))}</div>
+        </CardSection>
+      ) : null}
+      {attention.length > 0 ? (
+        <CardSection title="Failed or stopped" note={`last ${String(ATTENTION_DAYS)} days; each is also on its study's card`}>
+          <div className="study-tiles q-tiles">{attention.map((i) => (i.kind === "task" ? <TaskTile key={i.key} item={i} studies={studies} nowMs={nowMs} onOpen={open(i)} /> : null))}</div>
+        </CardSection>
+      ) : null}
+      {handRecent.length > 0 ? (
+        <CardSection title="Started by hand" note={`last ${String(RECENT_DAYS)} days`}>
+          <div className="study-tiles q-tiles q-tiles-small">{handRecent.map((i) => (i.kind === "hand" ? <HandTile key={i.key} p={i.p} nowMs={nowMs} live={false} onOpen={open(i)} /> : null))}</div>
+        </CardSection>
+      ) : null}
+      {index >= 0 ? <QueueDialog items={items} index={index} studies={studies} onStep={(to) => lightbox.step(items[to]?.key ?? "")} onClose={lightbox.close} /> : null}
+    </>
   );
 }
 
@@ -502,12 +707,15 @@ export function BacktestQueueTab() {
     const nowMs = etNowMs();
     body = (
       <>
-        <p style={{ margin: "0 0 4px" }}>{headline(plan(q, undefined, nowMs))}</p>
-        <p className="muted" style={{ margin: "0 0 8px" }}>
-          ThetaData session {q.sessionHeld ? "held by another process" : "free"}
-          {q.blackout ? ` · no ThetaData task runs ${q.blackout[0]}–${q.blackout[1]} ET on trading days (the nightly backtest-fetch)` : ""}
-        </p>
-        <QueueTable q={q} nowMs={nowMs} studies={index} />
+        <div className="q-strip">
+          <span className="q-strip-chip">
+            <span className={q.sessionHeld ? "study-dot" : "study-dot is-running"} />
+            ThetaData session {q.sessionHeld ? "held by another process" : "free"}
+          </span>
+          {q.blackout ? <span className="q-strip-chip muted">Nightly window {q.blackout[0]}–{q.blackout[1]} ET</span> : null}
+        </div>
+        <p className="q-headline">{headline(plan(q, undefined, nowMs))}</p>
+        <QueueCards q={q} nowMs={nowMs} studies={index} />
       </>
     );
   }

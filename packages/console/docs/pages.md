@@ -406,13 +406,18 @@ dollar), `queue` (2026-10-24; `pages/Backtest/QueueTab.tsx`,
 `GET /api/backtest/queue` → `services/researchQueueBridge.ts` → `python -m cherrypick.cli queue-list`,
 behind the same gate): the research tasks the supervisor runs, read-only. Each row's state and why a
 queued row waits are the orchestrator's words, shown verbatim, and a file argument is shown by its name
-only. What the queue is doing, not what a study found (2026-11-03): **Now** (running, then ready
-rows oldest first, then waiting ones, split on the orchestrator's `waits`; the page works out no run
-order), then rows that failed or were stopped in the last 7 days, then runs started by hand in the
-last 30. A row names its study by register title (heading in bold, split at its first colon, the
-slug as a small tag; "not in the register" only once the board has loaded) with the study's verdict
-chip linking to its card, and opens to its arguments, result and log. A study's finished rows, with
-their results, are on its card in the studies tab. Rows are added on the command
+only. What the queue is doing, not what a study found, as cards (2026-11-03): the running task as a
+large tile (its overall share done, time left, and a meter per phase from its progress file), runs
+started by hand still going beside it, then up next, numbered in the runner's order (ready first,
+oldest first, split on the orchestrator's `waits`; the page works out no run order), each with the
+orchestrator's reason for waiting verbatim, the first ready row marked as starting next and the rest
+as in line; then rows that failed or were stopped in the last 7 days, then runs started by hand in
+the last 30. A tile names its study by register title (its slug as a tag; "not in the register" only
+once the board has loaded) and opens a lightbox (`?task=`, by hand `?task=hand:<file>`): overview
+(queued, started, finished, the wait, the meters, the study with its verdict chip), arguments (a
+file by its name only), result (exit, counts, input, store, output marked missing, log, each by
+name) and the log's tail. A study's finished rows are on its card in the studies tab. The lightbox is
+`pages/Backtest/CardLightbox.tsx`, shared by every Backtest tab. Rows are added on the command
 line (`run.py queue-add`), never from here. Every tab opens with the licensed-data note. Run money is net of fees,
 signed, whole-position dollars; fees are shown as a cost, already out of net, never subtracted again.
 Detail view only (`SIMPLE_HIDDEN_PAGES`); shortcut `g b`.

@@ -1,14 +1,31 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
+import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ResearchProgress, ResearchQueue, ResearchTask, StudyRow } from "@console/shared";
-import { QueueTable, TaskDetail, ago, argsLine, etMs, headline, plan, queuePollMs, resultLine, stamp } from "../src/pages/Backtest/QueueTab";
+import {
+  QueueCards,
+  QueueDialogBody,
+  TaskDetail,
+  ago,
+  argRows,
+  argsLine,
+  etMs,
+  etaText,
+  headline,
+  plan,
+  queueItems,
+  queuePollMs,
+  resultLine,
+  stamp,
+} from "../src/pages/Backtest/QueueTab";
 import { indexStudies, splitTitle, type StudyIndex } from "../src/pages/Backtest/studyIndex";
 
 /**
- * The Backtest page's queue tab (laid out again 2026-10-27; slimmed 2026-11-03): what the queue is
- * doing now, the last week's failures, and runs started by hand. A study's finished rows are on its
- * card. Why a row waits is the orchestrator's reason, shown verbatim; the page decides nothing about
- * the queue, only how to lay it out.
+ * The Backtest page's queue tab (as cards 2026-11-03): the running task large, then up next in the
+ * runner's order, the last week's failures and runs started by hand, each opening to a lightbox. Why
+ * a row waits is the orchestrator's reason, shown verbatim; the page decides nothing about the
+ * queue, only how to lay it out.
  */
 
 const NOW = etMs("2026-10-27T12:00:00") as number;
@@ -61,8 +78,15 @@ function queue(tasks: ResearchTask[], hand: ResearchProgress[] = []): ResearchQu
   return { sessionHeld: true, blackout: ["18:30", "20:30"], tasks, byHand: hand };
 }
 
-function render(q: ResearchQueue): string {
-  return renderToString(<QueueTable q={q} nowMs={NOW} />).replace(/<!-- -->/g, "");
+const wrap = (node: React.ReactNode) =>
+  renderToString(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter>{node}</MemoryRouter>
+    </QueryClientProvider>,
+  ).replace(/<!-- -->/g, "");
+
+function render(q: ResearchQueue, studies?: StudyIndex): string {
+  return wrap(<QueueCards q={q} nowMs={NOW} studies={studies} />);
 }
 
 describe("the research queue tab: sections", () => {
@@ -78,12 +102,23 @@ describe("the research queue tab: sections", () => {
     expect(p.running.map((t) => t.step)).toEqual(["running"]);
     expect(p.queued.map((t) => t.step)).toEqual(["ready-early", "ready-late", "early-wait", "late-wait"]);
     expect(headline(p)).toBe("1 running · 4 queued · next: item17/ready-early");
-    // Under Now: ready ones, then waiting ones, each under its own head.
+    // The running task is the large tile; up next is numbered in the runner's order.
+    const items = queueItems(queue(tasks), NOW);
+    expect(items.map((i) => (i.kind === "task" ? `${i.section}:${i.t.step}` : i.key))).toEqual([
+      "running:running",
+      "next:ready-early",
+      "next:ready-late",
+      "next:early-wait",
+      "next:late-wait",
+    ]);
     const html = render(queue(tasks));
-    expect(html).toContain("ready · 2 · oldest first: the top one starts next");
-    expect(html).toContain("waiting · 2");
-    expect(html.indexOf("ready-late")).toBeLessThan(html.indexOf("waiting · 2"));
-    expect(html.indexOf("waiting · 2")).toBeLessThan(html.indexOf("early-wait"));
+    expect(html).toContain('class="study-tile study-hero q-hero" data-task="6"');
+    expect(html.indexOf("ready-early")).toBeLessThan(html.indexOf("ready-late"));
+    expect(html.indexOf("ready-late")).toBeLessThan(html.indexOf("early-wait"));
+    expect(html).toContain('class="q-pos">1<');
+    expect(html).toContain('class="q-pos is-waiting">3<');
+    expect(html.match(/>ready</g)).toHaveLength(2);
+    expect(html.match(/>waiting</g)).toHaveLength(2);
   });
 
   it("keeps finished rows off the tab, except a failure or stop in the last week, newest first", () => {
@@ -97,23 +132,28 @@ describe("the research queue tab: sections", () => {
     const p = plan(queue(tasks), undefined, NOW);
     expect(p.attention.map((t) => t.step)).toEqual(["study-failed", "study-stopped"]);
     const html = render(queue(tasks));
-    expect(html).toContain("Failed or stopped (7 days)");
+    expect(html).toContain("Failed or stopped");
+    expect(html).toContain("last 7 days");
     expect(html.indexOf("study-failed")).toBeLessThan(html.indexOf("study-stopped"));
-    for (const gone of ["fetch<", "study-old", ">plan<"]) expect(html).not.toContain(gone);
-    expect(html).toContain("Nothing running or queued.");
+    for (const gone of ["· fetch ·", "study-old", "· plan ·"]) expect(html).not.toContain(gone);
+    expect(html).toContain("Nothing running");
   });
 
   it("shows a queued row's wait reason as the orchestrator gives it, and a ready one as ready", () => {
     const html = render(queue([task({ id: 2 }), task({ id: 1, step: "plan", waits: "ready" })]));
     expect(html).toContain("the ThetaData session is held by another process");
-    expect(html).toContain("ready: starts at the next tick");
-    expect(html).toContain(">ThetaData<");
+    // The first ready row starts next; a ready row behind it says it is in line.
+    expect(html).toContain("ready: starts next");
+    const two = render(queue([task({ id: 1, step: "a", waits: "ready" }), task({ id: 2, step: "b", waits: "ready" })]));
+    expect(two).toContain("ready: starts next");
+    expect(two).toContain("ready, in line behind the rows above");
+    expect(html).toContain("· ThetaData");
   });
 
   it("shows a run started by hand under Now with its meter, and a finished one under Recent", () => {
     const html = render(queue([], [byHand({}), byHand({ file: "x-1", job: "meic-replay-check", state: "done", fraction: 1, line: "sessions 4/4 days" })]));
     expect(html).toContain("backtest-run-meic");
-    expect(html).toContain(">by hand<");
+    expect(html).toContain("Started by hand");
     expect(html).toContain("30.0% · sessions 3/10 days");
     expect(html.indexOf("backtest-run-meic")).toBeLessThan(html.indexOf("meic-replay-check"));
   });
@@ -167,7 +207,13 @@ describe("the research queue tab: rows", () => {
       result: { log: "C:\\logs\\4.log", report: null, input: null, store: null, output: "C:\\out\\item17-report.md", outputExists: false },
     });
     expect(resultLine(missing)).toBe("item17-report.md (missing) · 4.log");
-    expect(render(queue([missing]))).toMatch(/class="pnl-neg"[^>]*>item17-report\.md \(missing\)/);
+    expect(render(queue([missing]))).toMatch(/pnl-neg[^>]*>item17-report\.md \(missing\)/);
+    // The lightbox's result tab names the output, marked missing, and the log by name.
+    const item = queueItems(queue([missing]), NOW)[0]!;
+    const box = wrap(<QueueDialogBody item={item} tab="result" onTab={() => undefined} nowMs={NOW} position="1 of 1" onPrev={() => undefined} onNext={() => undefined} onClose={() => undefined} />);
+    expect(box).toContain("item17-report.md (missing)");
+    expect(box).toContain("4.log");
+    expect(box).not.toContain("C:\\out");
   });
 });
 
@@ -206,15 +252,20 @@ describe("the research queue tab: naming a study", () => {
     ]);
     expect(splitTitle("No colon here")).toEqual(["No colon here", null]);
     const studies = board([{ study: "item43", title: "The wing width of MEIC's live rule: 15, 20, 25 and 30 against 10" }]);
-    const html = renderToString(<QueueTable q={queue([done({ study: "item43", step: "study-design" })])} nowMs={NOW} studies={studies} />).replace(/<!-- -->/g, "");
-    expect(html).toContain("<strong>The wing width of MEIC&#x27;s live rule</strong>");
-    expect(html).toContain(": 15, 20, 25 and 30 against 10");
-    expect(html).toContain('class="chip muted queue-slug">item43<');
+    const html = render(queue([done({ study: "item43", step: "study-design" })]), studies);
+    expect(html).toContain("The wing width of MEIC&#x27;s live rule");
+    expect(html).not.toContain("15, 20, 25 and 30 against 10");
+    expect(html).toContain('class="study-tile-slug">item43<');
+    // The lightbox names it in full, the slug as a tag.
+    const item = queueItems(queue([done({ study: "item43", step: "study-design" })]), NOW)[0]!;
+    const box = wrap(<QueueDialogBody item={item} tab="overview" onTab={() => undefined} studies={studies} nowMs={NOW} position="1 of 1" onPrev={() => undefined} onNext={() => undefined} onClose={() => undefined} />);
+    expect(box).toContain("<strong>The wing width of MEIC&#x27;s live rule</strong>");
+    expect(box).toContain('class="chip muted queue-slug">item43<');
   });
 
   it("names a study the register lacks by its slug, and says so", () => {
-    const html = renderToString(<QueueTable q={queue([done({ study: "gate-oracle", step: "pm-200-design" })])} nowMs={NOW} studies={board([])} />).replace(/<!-- -->/g, "");
-    expect(html).toContain("<strong>gate-oracle</strong>");
+    const html = render(queue([done({ study: "gate-oracle", step: "pm-200-design" })]), board([]));
+    expect(html).toContain("gate-oracle");
     expect(html).toContain("not in the register");
     // Before the board loads there is no index, and nothing is said about the register.
     expect(render(queue([done({ study: "gate-oracle", step: "pm-200-design" })]))).not.toContain("not in the register");
@@ -227,6 +278,23 @@ describe("the research queue tab: helpers", () => {
     expect(ago(etMs("2026-10-27T09:00:00"), NOW)).toBe("3 h ago");
     expect(ago(etMs("2026-10-20T12:00:00"), NOW)).toBe("7 d ago");
     expect(ago(null, NOW)).toBe("—");
+  });
+
+  it("words a meter's time left, and lists each argument with a file by its name", () => {
+    expect(etaText(3900)).toBe("about 1 h 5 min left");
+    expect(etaText(600)).toBe("about 10 min left");
+    expect(etaText(20)).toBe("under a minute left");
+    expect(etaText(null)).toBeNull();
+    expect(argRows({ requests: "C:\\a\\b\\requests.json", workers: 3, args: ["--item", "C:\\x\\y.json"] })).toEqual([
+      ["requests", "requests.json"],
+      ["workers", "3"],
+      ["args", "--item y.json"],
+    ]);
+  });
+
+  it("opens a card from the URL, and steps through every card in layout order", () => {
+    const q = queue([task({ id: 9, status: "running", startedAt: "2026-10-27T11:00:00", waits: null }), task({ id: 4, waits: "ready" })], [byHand({})]);
+    expect(queueItems(q, NOW).map((i) => i.key)).toEqual(["9", "hand:backtest-run-meic-77", "4"]);
   });
 
   it("shows a file argument by its name, never its full path", () => {
