@@ -174,6 +174,9 @@ export interface LiveTodayHand {
   openLegs: LiveTodayHandLeg[];
   /** Symbols whose held quantity today's fills do not explain; while any is listed, mark/gross/net are null. */
   unreconciled: Array<{ symbol: string; held: number; loopFills: number; handFills: number }>;
+  /** Legs that expired on an earlier day but the broker still lists (until it processes the expiry
+   *  overnight): an earlier session's, set aside by manage and counted nowhere here. */
+  expiredHeld: Array<{ symbol: string; expiry: string | null; quantity: number | null }>;
   /** Hand orders filled after the loops' newest publish of their ids: possibly a loop's, not yet listed. */
   afterPublish: string[];
   /** Each loop whose published ids were read, and when it last published. */

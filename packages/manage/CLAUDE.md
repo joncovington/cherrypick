@@ -41,7 +41,9 @@ import it. The closing order an evaluation lists is what a person would enter, p
 The legs `exclude.zero_dte_underlyings` leaves out are not dropped silently: each account's
 `zero_dte` block (`zerodte.py`, 2026-11-03) splits today's fills on them into the live loops' (order
 ids the loops publish, snapshot v16 `live_known_orders`) and the hand's, and reconciles the hand's
-against what is held. It judges nothing; the console's Live → today hand row reads it.
+against what is held. It judges nothing; the console's Live → today hand row reads it. Legs that
+expired on an earlier day (the broker lists them until it processes the expiry) are set aside in
+`expired_held`, outside the reconciliation and not as a caveat.
 
 The evaluation embeds the **effective ruleset** it was judged by, so a page read later shows the rules
 of that day, not today's.

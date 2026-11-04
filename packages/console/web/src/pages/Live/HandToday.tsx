@@ -37,6 +37,21 @@ export function fmtMid(v: number | null): string {
   return Math.round(v * 1000) % 10 === 0 ? v.toFixed(2) : v.toFixed(3);
 }
 
+/** `2 expired legs still listed by the broker … (2026-11-03: −1 7555P +1 7545P)`, one clause per
+ *  expiry; null when nothing expired is listed. */
+export function expiredWords(legs: LiveTodayHand["expiredHeld"]): string | null {
+  if (legs.length === 0) return null;
+  const byExpiry = new Map<string, string[]>();
+  for (const l of legs) {
+    const q = l.quantity ?? 0;
+    const key = l.expiry ?? "?";
+    byExpiry.set(key, [...(byExpiry.get(key) ?? []), legLabel(l.symbol, q < 0 ? "Sell" : "Buy", Math.abs(q))]);
+  }
+  const parts = [...byExpiry].sort(([a], [b]) => a.localeCompare(b)).map(([exp, labels]) => `${exp}: ${labels.join(" ")}`);
+  const n = legs.length;
+  return `${n} expired ${n === 1 ? "leg" : "legs"} still listed by the broker until it processes the expiry, not counted here (${parts.join("; ")})`;
+}
+
 /** The one-line state for the row's `state` cell. */
 export function handStateWords(h: LiveTodayHand): string {
   if (h.status === "none") return h.reason ?? "no evaluation today";
@@ -143,16 +158,22 @@ export function handCell(key: string, h: LiveTodayHand): ReactElement {
 
 /** The hand trades' detail: each order today and each leg still held. Drawn only when there is something to show. */
 export function HandCard({ hand: h, session }: { hand: LiveTodayHand; session: string }) {
-  if (h.status !== "ok" || (h.orders.length === 0 && h.unreconciled.length === 0 && h.caveats.length === 0)) return null;
-  const notes = [
+  if (
+    h.status !== "ok" ||
+    (h.orders.length === 0 && h.unreconciled.length === 0 && h.caveats.length === 0 && h.expiredHeld.length === 0)
+  )
+    return null;
+  // Red is kept for what puts today's figures in doubt; caveats and the expired legs are muted, or
+  // a note every morning after a 0DTE session would train the eye to pass over red here.
+  const warnings = [
     ...h.unreconciled.map(
       (u) => `${u.symbol.trim()}: ${u.held} held, but today's fills explain ${u.loopFills + u.handFills} (loops ${u.loopFills}, hand ${u.handFills}); mark and net are not stated`,
     ),
     ...(h.afterPublish.length > 0
       ? [`filled after the loops last listed their orders, so possibly a loop's: ${h.afterPublish.join(", ")}`]
       : []),
-    ...h.caveats,
   ];
+  const expired = expiredWords(h.expiredHeld);
   return (
     <DataCard
       title={`By hand — ${h.underlyings.join(", ")} 0DTE, ${session}`}
@@ -174,11 +195,21 @@ export function HandCard({ hand: h, session }: { hand: LiveTodayHand; session: s
               · mark {fmtCash(h.mark)}
             </p>
           )}
-          {notes.map((n) => (
+          {warnings.map((n) => (
             <p key={n} className="pnl-neg" style={{ margin: 0 }}>
               {n}
             </p>
           ))}
+          {h.caveats.map((n) => (
+            <p key={n} className="muted" style={{ margin: 0 }}>
+              {n}
+            </p>
+          ))}
+          {expired !== null && (
+            <p className="muted" style={{ margin: 0 }} title="the broker lists an expired leg until it processes the expiry overnight">
+              {expired}
+            </p>
+          )}
           <p className="muted" style={{ margin: 0, fontSize: 11 }}>
             No loop manages these: no stop, no force-close, no settlement row, and no breaker counts them. A fill is a loop's when its
             order id is one a loop has published ({Object.keys(h.knownModules).join(", ") || "none read"}); {h.loopFills} of today's fills were.

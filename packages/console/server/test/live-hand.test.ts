@@ -73,6 +73,14 @@ describe("readLiveHand", () => {
     expect(h.knownModules).toEqual({ meic: "2026-10-14T15:00:00-04:00" });
   });
 
+  it("shapes the expired legs manage set aside, and reads an evaluation without them as none", () => {
+    const expired_held = [{ symbol: "SPXW  261013P04950000", expiry: "2026-10-13", quantity: -1.0 }];
+    write(DAY, { accounts: [{ zero_dte: { ...BLOCK, expired_held } }] });
+    expect(readLiveHand(config, DAY).expiredHeld).toEqual([{ symbol: "SPXW  261013P04950000", expiry: "2026-10-13", quantity: -1 }]);
+    write(DAY, { accounts: [{ zero_dte: BLOCK }] });
+    expect(readLiveHand(config, DAY).expiredHeld).toEqual([]);
+  });
+
   it("reads only today's evaluation", () => {
     write("2026-10-13", { accounts: [{ zero_dte: { ...BLOCK, session: "2026-10-13" } }] });
     const h = readLiveHand(config, DAY);

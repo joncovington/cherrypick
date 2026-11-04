@@ -46,6 +46,7 @@ function empty(status: LiveTodayHand["status"], reason: string | null): LiveToda
     orders: [],
     openLegs: [],
     unreconciled: [],
+    expiredHeld: [],
     afterPublish: [],
     knownModules: {},
     loopFills: 0,
@@ -130,6 +131,11 @@ export function readLiveHand(config: ConsoleConfig, session: string): LiveTodayH
     unreconciled: arr(z["unreconciled"]).map((u) => {
       const x = rec(u);
       return { symbol: str(x["symbol"]) ?? "", held: n(x["held"]) ?? 0, loopFills: n(x["loop_fills"]) ?? 0, handFills: n(x["hand_fills"]) ?? 0 };
+    }),
+    // Absent on an evaluation written before manage set expired legs aside: an empty list then.
+    expiredHeld: arr(z["expired_held"]).map((e) => {
+      const x = rec(e);
+      return { symbol: str(x["symbol"]) ?? "", expiry: str(x["expiry"]), quantity: n(x["quantity"]) };
     }),
     afterPublish: arr(z["after_publish"]).map(String),
     knownModules: Object.fromEntries(Object.entries(rec(z["known_modules"])).map(([k, v]) => [k, str(v)])),

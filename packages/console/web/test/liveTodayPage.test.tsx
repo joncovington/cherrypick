@@ -3,6 +3,7 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { LiveTodayHand, LiveTodayLoop, LiveTodayPayload } from "@console/shared";
 import { LiveTodayView, suiteBadgeText } from "../src/pages/Live/LiveTodayPage";
+import { expiredWords } from "../src/pages/Live/HandToday";
 import { aligned, inView, tables } from "./viewTables";
 
 /**
@@ -63,6 +64,7 @@ function hand(over: Partial<LiveTodayHand> = {}): LiveTodayHand {
     orders: [],
     openLegs: [],
     unreconciled: [],
+    expiredHeld: [],
     afterPublish: [],
     knownModules: { meic: "2026-10-15T12:04:00-04:00" },
     loopFills: 0,
@@ -272,6 +274,32 @@ describe("the hand row", () => {
     expect(html).toContain("does not reconcile");
     expect(html).toContain("SPXW  261015C05100000: -1 held, but today&#x27;s fills explain 0");
     expect(html).toContain("By hand: n/r");
+    expect(html).toMatch(/class="pnl-neg"[^>]*>SPXW  261015C05100000: -1 held/);
+  });
+
+  it("lists yesterday's expired legs muted, never red, on a morning with no hand trade", () => {
+    const html = render(
+      payload({
+        hand: hand({
+          expiredHeld: [
+            { symbol: "SPXW  261014P04950000", expiry: "2026-10-14", quantity: -1 },
+            { symbol: "SPXW  261014P04940000", expiry: "2026-10-14", quantity: 1 },
+          ],
+          caveats: ["the account history holds nothing older than today, so today's fills may not all be in it"],
+        }),
+      }),
+    );
+    expect(html).toContain("By hand —");
+    expect(html).toMatch(/class="muted"[^>]*>2 expired legs still listed by the broker until it processes the expiry, not counted here \(2026-10-14: −1 4950P \+1 4940P\)/);
+    expect(html).toMatch(/class="muted"[^>]*>the account history holds nothing older than today/);
+    expect(html).not.toContain('class="pnl-neg"');
+  });
+
+  it("names one expired leg in the singular", () => {
+    expect(expiredWords([{ symbol: "SPXW  261014C05100000", expiry: "2026-10-14", quantity: -1 }])).toBe(
+      "1 expired leg still listed by the broker until it processes the expiry, not counted here (2026-10-14: −1 5100C)",
+    );
+    expect(expiredWords([])).toBeNull();
   });
 
   it("says why there is nothing to show before today's evaluation, and draws no card", () => {
