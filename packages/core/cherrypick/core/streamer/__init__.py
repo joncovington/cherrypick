@@ -46,6 +46,24 @@ from cherrypick.core.streamrequests import OPT_IN_EVENTS, WINDOW_EVENTS
 
 _RECONNECT_BASE = 2.0
 _RECONNECT_MAX = 60.0
+# The wait before a reconnect doubles on each drop, and goes back to the base after a connection that
+# lived this long (2026-11-03). Before, it went back only when the stream ended cleanly, which it does
+# only on a stop, so the wait grew for the process's whole life: on 2026-11-03 four pre-market broker
+# restarts left the 09:34 ET one, after nearly two healthy hours, waiting 32s, and any drop after the
+# fifth waited 60s. A connection killed by the subscription rate limit dies seconds in (5-19s in the
+# 2026-08-24 and 2026-10-26 incidents), well under this, so that loop still backs off; a rate cut
+# keeps doubling however long the connection lived.
+_RECONNECT_HEALTHY_S = 300.0
+
+
+def reconnect_wait(delay: float, lived_s: float | None, rate_cut: bool) -> float:
+    """The wait before the next reconnect: the base after a connection that lived
+    `_RECONNECT_HEALTHY_S` or more and was not cut for its subscription rate, else `delay` (the
+    doubling so far). `lived_s` is None for a connection that never came up."""
+    if not rate_cut and lived_s is not None and lived_s >= _RECONNECT_HEALTHY_S:
+        return _RECONNECT_BASE
+    return delay
+
 
 # DXLink enforces a subscription RATE limit and kills the socket outright with "Your subscription
 # rate is too high". On 2026-08-24 the producer held ~12,000 subscriptions and re-sent every one of
@@ -148,6 +166,9 @@ class _State:
         self.stop_event = asyncio.Event()
         self.subscribed: dict[str, list[str]] = {"Trade": [], "Quote": [], "Greeks": [], "Summary": []}
         self.reconnect_count = 0
+        # When the current socket connected (the engine's clock), None until it has: how long a
+        # connection lived decides whether the reconnect wait starts over (`reconnect_wait`).
+        self.connected_at: float | None = None
         self.last_event_at: str | None = None
         self.conn = conn
         self.symbols = list(symbols)
@@ -287,6 +308,7 @@ class ChainStreamer:
         self._last_rate_cut_at = time.monotonic()
         self._sent_log: list[tuple[float, int]] = []  # (monotonic ts, symbols) for the last 300s
         self.rate_cuts = 0
+        self._clock = time.monotonic  # how long a connection lived; a test swaps it
         self.stop_file = Path(stop_file) if stop_file else None
         self.stop_poll_s = max(0.1, float(stop_poll_s))
         self._stale_resub_at: dict[str, float] = {}
@@ -398,6 +420,7 @@ class ChainStreamer:
                 connected_since=datetime.now(UTC).isoformat(),
                 reconnect_count=state.reconnect_count,
             )
+            state.connected_at = self._clock()
             self.log.info("DXLinkStreamer connected (reconnects: %d)", state.reconnect_count)
             # This socket is subscribed to nothing yet, whatever the last one was carrying.
             state.reset_for_new_connection()
@@ -1488,6 +1511,7 @@ class ChainStreamer:
         self.log.info("Streaming symbols: %s (±%d strikes each)", self.symbols, self.window_strike_count)
         delay = _RECONNECT_BASE
         while not state.stop_event.is_set():
+            state.connected_at = None
             try:
                 await self._run_stream(state)
                 delay = _RECONNECT_BASE
@@ -1507,9 +1531,17 @@ class ChainStreamer:
                             len(exc.exceptions),
                             "".join(traceback.format_exception(type(sub), sub, sub.__traceback__)),
                         )
-                if _is_rate_cut(exc):
+                cut = _is_rate_cut(exc)
+                if cut:
                     self._note_rate_cut()
-                self.log.warning("Stream error: %s — reconnecting in %.0fs", exc, delay)
+                lived = None if state.connected_at is None else self._clock() - state.connected_at
+                delay = reconnect_wait(delay, lived, cut)
+                self.log.warning(
+                    "Stream error: %s — reconnecting in %.0fs (connection lived %s)",
+                    exc,
+                    delay,
+                    "never" if lived is None else f"{lived:.0f}s",
+                )
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, _RECONNECT_MAX)
                 state.reconnect_count += 1
