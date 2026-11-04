@@ -704,6 +704,29 @@ def other_modules_known_orders(module: str) -> set[str]:
     return out
 
 
+def read_known_orders() -> tuple[dict[str, dict[str, Any]], str | None]:
+    """Every live loop's published order ids (`publish_known_orders`), per module:
+    `{module: {"at": iso | None, "order_ids": [...]}}`, and an error string when the folder itself
+    cannot be listed. For readers outside the loops (manage's 0DTE view, 2026-11-03), which need to
+    tell a loop's order from a hand-placed one by the loops' own belief. An unreadable file is listed
+    with `error` instead of ids, so a reader can say which loop it could not hear from."""
+    out: dict[str, dict[str, Any]] = {}
+    folder = _known_orders_dir()
+    if not folder.exists():
+        return out, None
+    try:
+        files = sorted(folder.glob("*.json"))
+    except OSError as exc:
+        return out, f"{type(exc).__name__}: {exc}"
+    for f in files:
+        try:
+            doc = json.loads(f.read_text(encoding="utf-8"))
+            out[f.stem] = {"at": doc.get("at"), "order_ids": [str(i) for i in doc.get("order_ids") or []]}
+        except (OSError, ValueError, AttributeError) as exc:
+            out[f.stem] = {"at": None, "order_ids": [], "error": f"{type(exc).__name__}: {exc}"}
+    return out, None
+
+
 def sweep_orphans(
     broker: Any,
     known_order_ids: Iterable[Any],

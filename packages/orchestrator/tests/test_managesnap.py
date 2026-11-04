@@ -35,6 +35,8 @@ def _fake(monkeypatch, answers):
     monkeypatch.setattr(managesnap, "earnings_times_dir", lambda: Path("no-such-times-dir"))
     monkeypatch.setattr(managesnap, "skate_dir", lambda: Path("no-such-skate-dir"))
     monkeypatch.setattr(managesnap, "history_db", lambda: Path("no-such-history.db"))
+    # Nor the real home's published loop order ids.
+    monkeypatch.setattr(managesnap._execution, "_known_orders_dir", lambda: Path("no-such-known-orders"))
     # Nor the real home's stream cache.
     monkeypatch.setattr(managesnap, "_cached_greeks", lambda syms: {})
     monkeypatch.setattr(managesnap, "_cached_listing", lambda name: [])
@@ -53,7 +55,9 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 15
+    assert snap["snapshot_version"] == 16
+    # v16: the loops' published order ids, read from the (isolated, empty) state folder
+    assert snap["live_known_orders"] == {} and snap["live_known_orders_error"] is None
     assert snap["underlying_history"] == {} and snap["underlying_history_error"] is None  # no long call
     assert snap["roll_chains"] == {}  # no short strangle held, no chain read
     assert not any("get_option_chain" in c[0] and "GLD" in c[0] for c in calls)

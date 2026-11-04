@@ -8,6 +8,7 @@ import { useLiveToday } from "../../lib/useLiveToday";
 import { Tile } from "../Flies/PerformanceTab";
 import { useManage } from "./ManagePage";
 import { WhatToDoList, todoList } from "./WhatToDo";
+import { HandCard, handCell } from "./HandToday";
 
 /**
  * The Live page's `today` tab (2026-10-15): every live loop's day on one page -- what is armed,
@@ -60,6 +61,14 @@ function loopStateWords(l: LiveTodayLoop): string {
   if (l.loopState.state === "no-data") return "no iterations";
   const age = l.loopState.ageSeconds;
   return age === null ? l.loopState.state : `${l.loopState.state} · ${age < 120 ? `${Math.round(age)}s` : `${Math.round(age / 60)}m`} ago`;
+}
+
+/** The hand row's net, stated beside the suite total and never in it. */
+export function handNote(d: LiveTodayPayload): string {
+  const h = d.hand;
+  if (h === undefined || h.status !== "ok" || h.orders.length === 0) return "No 0DTE trade by hand today.";
+  const net = h.net === null ? "n/r" : `${fmtMoney(h.net)}${h.openLegs.length > 0 ? " at mark" : ""}`;
+  return `By hand: ${net}, not in the loops' total.`;
 }
 
 /** True when any loop has a working order: the simple view then shows the `working` column too. */
@@ -216,12 +225,13 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
             value={s.net === null ? "n/r" : fmtMoney(s.net)}
             tone={s.net === null ? "dim" : s.net >= 0 ? "pos" : "neg"}
             title={
-              s.net === null
+              `${handNote(d)} ` +
+              (s.net === null
                 ? s.feesUnrecorded.length > 0 && s.gross !== null
                   ? `Not totalled: fees were never recorded on a trade resolved today in ${s.feesUnrecorded.join(", ")}, so its net is unknown.`
                   : `Not totalled: ${s.excluded.map((e) => `${e.loop} — ${e.reason}`).join("; ")}`
                 : `Realised net today over ${s.summed.join(", ") || "no loop"}: gross − fees − settlement, positions resolved today.` +
-                  (s.excluded.length > 0 ? ` Left out: ${s.excluded.map((e) => `${e.loop} (${e.reason})`).join(", ")}.` : "")
+                  (s.excluded.length > 0 ? ` Left out: ${s.excluded.map((e) => `${e.loop} (${e.reason})`).join(", ")}.` : ""))
             }
           />
           <Tile
@@ -252,7 +262,7 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
         headers={headersOf(cols)}
         numFrom={cols.findIndex((c) => c.key === "open")}
         loading={false}
-        rowCount={d.loops.length}
+        rowCount={d.loops.length + (d.hand !== undefined ? 1 : 0)}
         empty="no live loops"
       >
         {d.loops.map((l) =>
@@ -273,10 +283,12 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
             </tr>
           ),
         )}
+        {d.hand !== undefined && <tr key="hand">{cols.map((c) => handCell(c.key, d.hand))}</tr>}
       </DataCard>
+      {d.hand !== undefined && <HandCard hand={d.hand} session={d.session} />}
       <p className="muted" style={{ fontSize: 11, margin: 0 }}>
         Net is realised today: gross − fees − settlement over positions resolved today, at the broker's fills. Worst case and mark are
-        each loop's own measure (hover for which) and are not added across loops.
+        each loop's own measure (hover for which) and are not added across loops. {handNote(d)}
       </p>
     </div>
   );

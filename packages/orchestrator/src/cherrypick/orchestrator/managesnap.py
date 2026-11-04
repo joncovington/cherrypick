@@ -107,6 +107,12 @@ name (the broker tool answers a listing from the cache's nearest expiry alone wh
 broker's otherwise. The step is capped (`manage.roll_out` in the orchestrator config: `max_calls`
 reads, `max_seconds`), and what the cap cuts is listed in `skipped`; a failed read is an entry with
 `error`, never fatal. A snapshot without the field is read exactly as before.
+
+Version 16 (2026-11-03) carries `live_known_orders`: every live loop's published order ids
+(`core.execution.read_known_orders`, the files each loop's orphan sweep writes), so manage can tell a
+loop's 0DTE fill from a hand-placed one by the loops' own belief, and a re-evaluation of the session
+gets the same answer. A local file read, never the broker. A folder that cannot be listed is
+`live_known_orders_error`; a snapshot without the field has no hand 0DTE view.
 """
 
 from __future__ import annotations
@@ -118,6 +124,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from cherrypick.core import clock, streamcache
+from cherrypick.core import execution as _execution
 from cherrypick.core.db import connect_ro
 
 from . import config as cfgmod
@@ -125,7 +132,7 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 15
+SNAPSHOT_VERSION = 16
 # Greeks move far more slowly than a bid; the cache's are used up to this old, the feed's otherwise.
 GREEKS_MAX_AGE_SECONDS = 900.0
 # Monday reads Friday's afternoon reading; anything older is a stale book of quotes.
@@ -930,6 +937,9 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
     )
     bands, bands_error = skate_bands(date.fromisoformat(session), symbols)
     underlying, underlying_error = underlying_history(date.fromisoformat(session), positions, history)
+    # Read after the broker's history, so an order a loop placed before that read is already listed
+    # (each loop publishes its ledger's ids every tick).
+    known_orders, known_orders_error = _execution.read_known_orders()
     return {
         "snapshot_version": SNAPSHOT_VERSION,
         "session": session,
@@ -954,6 +964,8 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "skate_bands_error": bands_error,
         "underlying_history": underlying,
         "underlying_history_error": underlying_error,
+        "live_known_orders": known_orders,
+        "live_known_orders_error": known_orders_error,
     }
 
 
