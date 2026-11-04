@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import type { LiveTodayLoop, LiveTodayPayload } from "@console/shared";
+import type { LiveTodayHand, LiveTodayLoop, LiveTodayPayload } from "@console/shared";
 import { LiveTodayView, suiteBadgeText } from "../src/pages/Live/LiveTodayPage";
 import { aligned, inView, tables } from "./viewTables";
 
@@ -47,9 +47,66 @@ function payload(over: Partial<LiveTodayPayload> = {}): LiveTodayPayload {
     loops: [loop("flies"), loop("meic"), loop("bwb")],
     attention: [],
     suite: { loops: 3, armed: [], net: 0, gross: 0, fees: 0, settlementFees: 0, trades: 0, summed: ["flies", "meic", "bwb"], excluded: [], feesUnrecorded: [] },
+    hand: hand({ status: "none", reason: "no position evaluation today yet (newest 2026-10-14)" }),
     ...over,
   };
 }
+
+function hand(over: Partial<LiveTodayHand> = {}): LiveTodayHand {
+  return {
+    status: "ok",
+    reason: null,
+    evaluatedSession: "2026-10-15",
+    snapshotAt: "2026-10-15T12:00:00-0400",
+    markedAt: "2026-10-15T12:05:00-04:00",
+    underlyings: ["SPX"],
+    orders: [],
+    openLegs: [],
+    unreconciled: [],
+    afterPublish: [],
+    knownModules: { meic: "2026-10-15T12:04:00-04:00" },
+    loopFills: 0,
+    cash: 0,
+    mark: 0,
+    gross: 0,
+    fees: 0,
+    settlement: 0,
+    net: 0,
+    netBasis: "realised: nothing held",
+    caveats: [],
+    ...over,
+  };
+}
+
+/** A made-up hand iron condor still held: +$220 in, $2.00 fees, the four legs at a −$50 mark. */
+const HAND_IC: Partial<LiveTodayHand> = {
+  orders: [
+    {
+      orderId: "200",
+      at: "2026-10-15T15:35:00Z",
+      kind: "open",
+      legs: [
+        { symbol: "SPXW  261015P04980000", action: "Sell to Open", quantity: 1, price: 2.5, value: 250 },
+        { symbol: "SPXW  261015P04970000", action: "Buy to Open", quantity: 1, price: 1.2, value: -120 },
+        { symbol: "SPXW  261015C05080000", action: "Sell to Open", quantity: 1, price: 1.3, value: 130 },
+        { symbol: "SPXW  261015C05090000", action: "Buy to Open", quantity: 1, price: 0.4, value: -40 },
+      ],
+      cash: 220,
+      fees: 2,
+    },
+  ],
+  openLegs: [
+    { symbol: "SPXW  261015P04980000", right: "P", strike: 4980, quantity: -1, mid: 0.5, value: -50, markSource: "feed", markAgeSeconds: 1 },
+  ],
+  loopFills: 6,
+  cash: 220,
+  mark: -50,
+  gross: 170,
+  fees: 2,
+  settlement: null,
+  net: 168,
+  netBasis: "at mark: held legs at mid, not yet settled",
+};
 
 const render = (d: LiveTodayPayload) =>
   renderToString(
@@ -169,5 +226,58 @@ describe("the loops table, simple and detail", () => {
     const d = payload({ loops: [loop("flies", { moduleEnabled: false, retired: true }), loop("meic")] });
     expect(aligned(shape("simple", d))).toBe(true);
     expect(aligned(shape("detail", d))).toBe(true);
+  });
+
+  it("the hand row lines up with the loops in both views, with and without a working column", () => {
+    for (const d of [payload({ hand: hand(HAND_IC) }), payload({ hand: hand(HAND_IC), loops: [loop("meic", { working: 1 })] })]) {
+      expect(aligned(shape("simple", d))).toBe(true);
+      expect(aligned(shape("detail", d))).toBe(true);
+    }
+  });
+});
+
+/** The hand row and card (2026-11-03): 0DTE trades placed by hand, which no loop manages. */
+describe("the hand row", () => {
+  it("states the hand net beside the loops' total and never adds it in", () => {
+    const html = render(payload({ hand: hand(HAND_IC) }));
+    expect(html).toContain("by hand");
+    expect(html).toContain("By hand: $168.00 at mark, not in the loops&#x27; total.");
+    // the loops' total is still the loops' alone
+    expect(html).toContain("$0.00");
+    expect(html).not.toContain("$168.00</span></div>");
+  });
+
+  it("lists each hand order with its legs, net price, cash and fees", () => {
+    const html = render(payload({ hand: hand(HAND_IC) }));
+    expect(html).toContain("By hand — SPX 0DTE, 2026-10-15");
+    expect(html).toContain("−1 4980P  +1 4970P  −1 5080C  +1 5090C");
+    expect(html).toContain("2.20 cr");
+    expect(html).toContain("+$220.00");
+    expect(html).toContain("$2.00");
+    expect(html).toContain("11:35"); // 15:35Z in ET
+  });
+
+  it("names a leg the fills cannot explain, and draws no net for it", () => {
+    const html = render(
+      payload({
+        hand: hand({
+          ...HAND_IC,
+          unreconciled: [{ symbol: "SPXW  261015C05100000", held: -1, loopFills: 0, handFills: 0 }],
+          mark: null,
+          gross: null,
+          net: null,
+        }),
+      }),
+    );
+    expect(html).toContain("does not reconcile");
+    expect(html).toContain("SPXW  261015C05100000: -1 held, but today&#x27;s fills explain 0");
+    expect(html).toContain("By hand: n/r");
+  });
+
+  it("says why there is nothing to show before today's evaluation, and draws no card", () => {
+    const html = render(payload());
+    expect(html).toContain("no position evaluation today yet (newest 2026-10-14)");
+    expect(html).toContain("No 0DTE trade by hand today.");
+    expect(html).not.toContain("By hand —");
   });
 });

@@ -27,6 +27,10 @@
  * shown per loop and never totalled. A loop whose ledger read failed makes the total n/r: a total
  * missing one loop reads as the whole suite's.
  *
+ * The hand row (2026-11-03, `liveHand.ts`) is today's 0DTE trades placed by hand, read from
+ * packages/manage's evaluation. It sits beside the loops, not among them, and its net is never in
+ * the suite total.
+ *
  * Read-only, files and SQLite only; nothing here touches an order or spawns a process.
  */
 import path from "node:path";
@@ -49,6 +53,7 @@ import { NO_TRADE_LOG_QUERY, readFliesAnalytics, readFliesLoopStatus, readFliesT
 import { markSeries, positionsFor } from "./fliesLive.js";
 import { DEFAULT_DISARM, etParts, minutesOf, readBrokerHealth, readHeld, readMeicLive, readOrphans, totalsOf } from "./meicLive.js";
 import { readBwb, readBwbHistory } from "./bwb.js";
+import { readLiveHand } from "./liveHand.js";
 import { meicLoopState } from "./meic.js";
 import { LIVE_BOOKS } from "./liveBooks.js";
 import { readLockStatus, readModuleGate } from "../services/liveLock.js";
@@ -536,5 +541,7 @@ export function readLiveToday(config: ConsoleConfig, now: Date = new Date()): Li
     loops,
     attention: loops.flatMap(attentionFor),
     suite: suiteOf(loops),
+    // Beside the loops, never in `loops`: it has no arm, gate or breaker, and its net stays out of the suite total.
+    hand: readLiveHand(config, session),
   };
 }

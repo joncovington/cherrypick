@@ -130,6 +130,67 @@ export interface LiveTodaySuite {
   feesUnrecorded: LiveLoopId[];
 }
 
+/** One hand-placed order's fills today (manage's `zero_dte.orders`). Cash is signed: a credit is +. */
+export interface LiveTodayHandOrder {
+  orderId: string | null;
+  at: string | null;
+  kind: "open" | "close" | "mixed" | "unknown";
+  legs: Array<{ symbol: string; action: string; quantity: number | null; price: number | null; value: number | null }>;
+  cash: number;
+  /** The broker's own fee total on the order's fills (value − net value); null when a fill lacks it. */
+  fees: number | null;
+}
+
+/** A 0DTE leg still held by hand, at the evaluation's mark. Value is signed, whole-position dollars. */
+export interface LiveTodayHandLeg {
+  symbol: string;
+  right: string | null;
+  strike: number | null;
+  quantity: number;
+  mid: number | null;
+  value: number | null;
+  markSource: string | null;
+  markAgeSeconds: number | null;
+}
+
+/**
+ * The 0DTE trades placed by hand (2026-11-03): packages/manage's `zero_dte` block, the legs the
+ * ruleset's `exclude.zero_dte_underlyings` leaves out with the live loops' own fills taken away (a
+ * fill is a loop's when its order id is one a loop has published). Read and shaped, never derived:
+ * the split, the reconciliation and the money are manage's. Its net is shown beside the suite total,
+ * never added into it: the total is every loop's realised net, and a hand trade has no ledger.
+ */
+export interface LiveTodayHand {
+  /** ok: today's evaluation carries the view. none: no evaluation today (or ever). unread: today's
+   *  evaluation could not build it (`reason`), or predates it. */
+  status: "ok" | "none" | "unread";
+  reason: string | null;
+  /** The evaluation's session and when its snapshot was taken / last re-marked. */
+  evaluatedSession: string | null;
+  snapshotAt: string | null;
+  markedAt: string | null;
+  underlyings: string[];
+  orders: LiveTodayHandOrder[];
+  openLegs: LiveTodayHandLeg[];
+  /** Symbols whose held quantity today's fills do not explain; while any is listed, mark/gross/net are null. */
+  unreconciled: Array<{ symbol: string; held: number; loopFills: number; handFills: number }>;
+  /** Hand orders filled after the loops' newest publish of their ids: possibly a loop's, not yet listed. */
+  afterPublish: string[];
+  /** Each loop whose published ids were read, and when it last published. */
+  knownModules: Record<string, string | null>;
+  loopFills: number;
+  cash: number | null;
+  mark: number | null;
+  gross: number | null;
+  fees: number | null;
+  /** null while a held leg has still to settle; 0 with nothing held. */
+  settlement: number | null;
+  net: number | null;
+  /** "at mark: ..." while legs are held, "realised: ..." when flat. */
+  netBasis: string | null;
+  caveats: string[];
+}
+
 export interface LiveTodayPayload {
   generatedAt: string;
   /** Today's ET session, the date every per-day gate is measured against. */
@@ -139,4 +200,6 @@ export interface LiveTodayPayload {
   loops: LiveTodayLoop[];
   attention: LiveAttentionItem[];
   suite: LiveTodaySuite;
+  /** Today's 0DTE trades placed by hand, beside the loops and outside the suite total. */
+  hand: LiveTodayHand;
 }

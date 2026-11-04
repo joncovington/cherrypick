@@ -46,6 +46,12 @@ def held_symbols(result: dict) -> list[str]:
                         out.add(streamer)
                 elif symbol:
                     out.add(symbol)
+        # The 0DTE legs held by hand (`zerodte.py`, 2026-11-03): the ruleset leaves them out of the
+        # trades, but the console marks them between runs too. The loops' own legs are theirs to declare.
+        for leg in (account.get("zero_dte") or {}).get("open_legs") or []:
+            streamer = occ_to_streamer_symbol(str(leg.get("symbol") or ""))
+            if streamer:
+                out.add(streamer)
     return sorted(out)
 
 
