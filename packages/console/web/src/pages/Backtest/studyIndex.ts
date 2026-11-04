@@ -59,10 +59,13 @@ export function splitTitle(title: string): [string, string | null] {
   return at > 0 ? [title.slice(0, at), title.slice(at + 2)] : [title, null];
 }
 
-/** A verdict word's chip: a pass green, a fail red, anything else plain. */
+/**
+ * A verdict word's chip: a pass, a fail, anything else plain. `verdict-pass` / `verdict-fail` colour it
+ * on the Backtest page (blue and orange, 2026-11-03), so a verdict never reads as a P&L's sign.
+ */
 export function verdictChip(word: string | null): string {
   const w = (word ?? "").toLowerCase();
-  if (w === "pass" || w === "passed") return "chip chip-ok";
-  if (w === "fail" || w === "failed") return "chip chip-missing";
+  if (w === "pass" || w === "passed") return "chip chip-ok verdict-pass";
+  if (w === "fail" || w === "failed") return "chip chip-missing verdict-fail";
   return word === null ? "chip muted" : "chip";
 }
