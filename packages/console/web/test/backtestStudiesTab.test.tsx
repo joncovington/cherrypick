@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { BacktestOverview, BacktestRunReport, StudiesBoard, StudyGrid, StudyResult, StudyRow } from "@console/shared";
+import type { BacktestOverview, BacktestRunReport, StudiesBoard, StudyGrid, StudyResult, StudyRow, StudyRunFigures, StudyRunSummaries } from "@console/shared";
 import { RunPlainEnglish } from "../src/pages/Backtest/BacktestPage";
 import { neighbourhoodLine } from "../src/pages/Backtest/GridBars";
 import { StudyChip, etMs } from "../src/pages/Backtest/QueueTab";
@@ -18,10 +18,12 @@ import {
   chipLabel,
   controlScale,
   figuresRun,
+  figuresRunIds,
   heroStudy,
   laidOut,
   openIndex,
   orderedRows,
+  tileFigures,
   tileModel,
   tradesPerSession,
   verdictText,
@@ -281,11 +283,51 @@ describe("studies tab", () => {
     expect(dialog(row({ group: "declared", status: "declared", results: [] }))).toContain("Declared, not run yet.");
   });
 
+  it("a tile draws its run in brief: a line per arm, the highest mean named, control left off on another scale", () => {
+    const RUN = "20261028-065012-0174bd";
+    const run = (controlTrades: number): StudyRunFigures => ({
+      module: "meic",
+      window: "design",
+      provisional: true,
+      arms: {
+        control: { mean: 80, sessions: 10, trades: controlTrades, path: [0, 900, -800] },
+        d16: { mean: -12, sessions: 10, trades: 10, path: [0, -5, -9] },
+        d20: { mean: -4.5, sessions: 10, trades: 9, path: [0, -2, -4] },
+      },
+    });
+    // Control is the module's sampling arm: left off the line, and out of "best".
+    const wide = tileFigures(run(2990))!;
+    expect(wide.controlLeftOff).toBe(true);
+    expect(wide.lines.map((l) => l.arm)).toEqual(["d16", "d20"]);
+    expect([wide.lead, wide.armsWithMean]).toEqual([{ arm: "d20", mean: -4.5 }, 2]);
+    // On the same scale control is drawn, dashed, and still not the arm named.
+    const same = tileFigures(run(10))!;
+    expect(same.lines.map((l) => l.arm)).toEqual(["control", "d16", "d20"]);
+    expect(same.lead?.arm).toBe("d20");
+    // A run with control alone names control.
+    expect(tileFigures({ ...run(10), arms: { control: run(10).arms["control"]! } })?.lead?.arm).toBe("control");
+    expect(tileFigures({ ...run(10), arms: {} })).toBeNull();
+    expect(figuresRunIds([row({}), row({ study: "x" }), row({ study: "y", results: [] })])).toEqual([RUN]);
+    // On the tile: the line, the figure in the wording the user chose, and a shorter title.
+    const summaries: StudyRunSummaries = { runs: { [RUN]: run(2990) }, missing: [] };
+    const out = html(<StudyTiles rows={[row({})]} nowMs={NOW} onOpen={() => undefined} summaries={summaries} />);
+    expect(out).toContain("study-tile has-figures");
+    expect(out.match(/<polyline /g)).toHaveLength(2);
+    expect(out).toContain("<span>-$4.50</span> <span>/ session</span>");
+    expect(out).toContain("best of 2");
+    // No run in brief: the tile is as it was.
+    expect(tiles([row({})])).not.toContain("has-figures");
+  });
+
   it("takes its figures from the newest result file that names a run", () => {
     const [design, holdout] = [result({ name: "d.json", runId: "20261001-000000-aaaaaa", modified: "2026-10-01T00:00:00" }), result({ name: "h.json", runId: "20261020-000000-bbbbbb", modified: "2026-10-20T00:00:00" })];
     expect(figuresRun(row({ results: [design, holdout] }))?.name).toBe("h.json");
     expect(figuresRun(row({ results: [design, { ...holdout, present: false }] }))?.name).toBe("d.json");
     expect(figuresRun(row({ results: [result({})] }))).toBeNull();
+    // A study script's own label names no runner report: passed over for an older file that does.
+    const label = result({ name: "s.json", runId: "item30-2026-10-30", modified: "2026-10-30T00:00:00" });
+    expect(figuresRun(row({ results: [design, label] }))?.name).toBe("d.json");
+    expect(figuresRun(row({ results: [label] }))).toBeNull();
   });
 
   it("shows each arm's net a session and its verdict, control first", () => {

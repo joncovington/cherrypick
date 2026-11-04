@@ -135,3 +135,31 @@ export interface StudiesBoard {
   /** `itemN` studies seen in the queue or as a result folder with no register row. */
   unregistered: string[];
 }
+
+/**
+ * One arm of a run in brief, for a studies tile (`python -m cherrypick.backtest read summaries`,
+ * 2026-11-03): the mean net a session, sessions and trades as the run's own report states them, and
+ * its running net over the run thinned to at most 48 points, for the line's shape only.
+ */
+export interface StudyArmFigures {
+  mean: number | null;
+  sessions: number | null;
+  trades: number | null;
+  path: number[];
+}
+
+export interface StudyRunFigures {
+  module: string | null;
+  window: string | null;
+  provisional: boolean;
+  arms: Record<string, StudyArmFigures>;
+}
+
+/** The runs asked for, by id; `missing` lists the ids with no report on this machine. */
+export interface StudyRunSummaries {
+  runs: Record<string, StudyRunFigures>;
+  missing: string[];
+}
+
+/** Run ids one summaries read answers for (the package's `SUMMARY_RUNS`). */
+export const STUDY_SUMMARY_RUNS = 80;

@@ -5287,7 +5287,8 @@ select.text-input {
 .study-tiles {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  grid-auto-rows: 196px;
+  /* 220 (196 before 2026-11-03): room for a tile's line and figure beneath its title. */
+  grid-auto-rows: 220px;
   gap: 12px;
   margin-top: 12px;
 }
@@ -5399,6 +5400,70 @@ select.text-input {
 .study-tile-sub {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* A tile's figures (2026-11-03): each arm's running net as a thin line, the leading arm over the
+   rest, and that arm's mean net a session beneath. */
+.study-spark {
+  display: block;
+  width: 100%;
+  height: 32px;
+  overflow: visible;
+}
+
+.study-hero .study-spark {
+  height: 96px;
+}
+
+.study-spark-zero {
+  stroke: var(--chart-grid-strong);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.study-spark-line {
+  fill: none;
+  stroke: var(--chart-grid-strong);
+  stroke-width: 1.25;
+}
+
+.study-spark-lead {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.75;
+}
+
+.study-tile-fig {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-family: var(--num-face);
+  font-size: 13px;
+  min-width: 0;
+}
+
+.study-tile-fig-arm {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* The figure breaks only between the amount and "/ session", never inside either. */
+.study-tile-fig-amt > span {
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .study-tile-fig {
+    font-size: 11px;
+  }
+}
+
+.study-tile.has-figures:not(.study-hero) .study-tile-title {
+  -webkit-line-clamp: 2;
 }
 
 .study-tile-clamp,

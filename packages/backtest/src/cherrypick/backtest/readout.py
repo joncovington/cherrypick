@@ -9,11 +9,14 @@ gate: it answers whoever asks on this machine, as every other read verb does.
 `run --id X [--capital N]` -> {ok, report, cards} (the run's own report, as written, and its cards:
 cards.py, each arm on its own peak session risk unless one capital is chosen for all)
 `stores` -> {ok, dir, files} (where the declared vendor stores live; the research queue's check)
+`summaries --ids A,B` -> {ok, runs, missing} (each run's arms in brief, for the studies tiles: the
+report's own mean, sessions and trades per arm, and the running net thinned to SUMMARY_POINTS)
 """
 
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections import Counter
 from pathlib import Path
@@ -21,6 +24,11 @@ from pathlib import Path
 from . import licensing, paths, results, store
 
 RUNS_LISTED = 50
+#: Points on a tile's running-net line: enough for its shape, small enough for every tile at once.
+SUMMARY_POINTS = 48
+#: Runs one `summaries` read answers for: a board's worth of studies.
+SUMMARY_RUNS = 80
+RUN_ID = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$")
 
 
 def _ro(path: Path) -> sqlite3.Connection:
@@ -183,6 +191,67 @@ def run_report(
         "report": report,
         "cards": _cards(run_id, report, capital, risk_pct, risk_unit, dd_pct),
     }
+
+
+def thin(values: list[float], points: int = SUMMARY_POINTS) -> list[float]:
+    """`values` at `points` evenly spaced places, the first and last always kept; all of them when
+    there are no more than `points`. For a sparkline's shape only: no figure is read from it."""
+    if len(values) <= points:
+        return list(values)
+    last = len(values) - 1
+    return [values[round(i * last / (points - 1))] for i in range(points)]
+
+
+def run_summaries(run_ids: list[str]) -> dict:
+    """Each run's arms in brief, for the studies board's tiles: the mean net a session, sessions and
+    trades as the run's own report states them (never recomputed), and the running net over its
+    sessions from `session_results`, thinned to SUMMARY_POINTS. An id that is not a run id or has no
+    report is listed in `missing`; one read answers for at most SUMMARY_RUNS ids."""
+    wanted = list(dict.fromkeys(i for i in run_ids if i))[:SUMMARY_RUNS]
+    reports: dict[str, dict] = {}
+    missing: list[str] = []
+    for rid in wanted:
+        path = paths.results_dir() / "runs" / f"{rid}.json"
+        if not RUN_ID.match(rid) or not path.exists():
+            missing.append(rid)
+            continue
+        try:
+            reports[rid] = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            missing.append(rid)
+    cums: dict[str, dict[str, list[float]]] = {rid: {} for rid in reports}
+    if reports and paths.results_db().exists():
+        conn = _ro(paths.results_db())
+        try:
+            marks = ",".join("?" * len(reports))
+            for r in conn.execute(
+                f"SELECT run_id, arm, net FROM session_results WHERE run_id IN ({marks}) "
+                "ORDER BY run_id, arm, session",
+                list(reports),
+            ):
+                line = cums[r["run_id"]].setdefault(r["arm"], [])
+                line.append((line[-1] if line else 0.0) + (r["net"] or 0.0))
+        finally:
+            conn.close()
+    runs = {}
+    for rid, report in reports.items():
+        arms = {}
+        for arm, entry in (report.get("arms") or {}).items():
+            summary = (entry or {}).get("summary") or {}
+            arms[arm] = {
+                "mean": summary.get("mean"),
+                "sessions": summary.get("sessions"),
+                "trades": (entry or {}).get("trades"),
+                "path": [round(v, 2) for v in thin(cums[rid].get(arm, []))],
+            }
+        runs[rid] = {
+            "module": report.get("module"),
+            "window": report.get("window"),
+            "provisional": bool(report.get("provisional")),
+            "span": report.get("span"),
+            "arms": arms,
+        }
+    return {"ok": True, "runs": runs, "missing": missing}
 
 
 def run_trades(run_id: str, arm: str) -> dict:

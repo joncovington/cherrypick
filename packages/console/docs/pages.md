@@ -366,8 +366,13 @@ hypothesis-register item, in progress / declared / finished / observations order
 task running now as a large tile first. A finished tile's big word is the register's status, with
 "2 pass · 5 fail" when the newest result's arms disagree; an in-progress tile shows its step and one
 segment per queue step; a declared one what it expects; each carries stale (a replay correction since
-the result), its window and provisional, all read from the board. Tiles carry no figures: the board
-has none. Group chips filter (`?group=`). A tile opens a lightbox (`?study=`, so back closes it; Esc,
+the result), its window and provisional, all read from the board. A tile whose newest result names a
+runner run (2026-11-03; a study script's own label is passed over) also draws that run in brief,
+from one `GET /api/backtest/summaries?ids=` read for the board (`read summaries`): each arm's
+running net as a thin line, the arm with the highest mean drawn over the rest, and that arm's
+"$xx.xx / session" with "best of N" (control left out of both while it trades on another scale,
+and never the arm named while another arm has a mean). The board's words never wait on it. Group
+chips filter (`?group=`). A tile opens a lightbox (`?study=`, so back closes it; Esc,
 ← → and a swipe step through the tiles in layout order) with four tabs: overview (the decision, a
 stale note, and the run's figures, fetched on open from the newest result file that names a run:
 each arm's net a session, sessions, trades a session and verdict, and each arm's running net, legend

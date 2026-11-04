@@ -95,3 +95,48 @@ def test_provisional_looks_count_distinct_specs_without_recording_a_trial(capsys
     out = readout.overview(s)
     assert out["provisional_looks"] == {"meic": 3}
     assert out["trials"] == {}
+
+
+def test_thin_keeps_the_ends_and_short_lines_whole():
+    assert readout.thin([1.0, 2.0], 48) == [1.0, 2.0]
+    line = [float(i) for i in range(1000)]
+    out = readout.thin(line, 48)
+    assert len(out) == 48 and out[0] == 0.0 and out[-1] == 999.0
+    assert out == sorted(out)
+
+
+def test_summaries_give_the_reports_figures_and_each_arms_running_net(capsys):
+    _settings()
+    rid = "20261017-120000-abcdef"
+    runs = paths.results_dir() / "runs"
+    runs.mkdir(parents=True)
+    report = {
+        "run_id": rid,
+        "module": "meic",
+        "window": "design",
+        "provisional": True,
+        "span": ["2026-01-02", "2026-01-06"],
+        "arms": {
+            "control": {"summary": {"mean": 5.0, "sessions": 3}, "trades": 900},
+            "d10": {"summary": {"mean": -1.25, "sessions": 3}, "trades": 3},
+        },
+    }
+    (runs / f"{rid}.json").write_text(json.dumps(report), encoding="utf-8")
+    conn = results.connect()
+    for arm, nets in (("control", (4.0, 6.0, 5.0)), ("d10", (-2.0, 1.0, -2.75))):
+        for day, net in zip(("2026-01-02", "2026-01-05", "2026-01-06"), nets, strict=True):
+            conn.execute(
+                "INSERT INTO session_results (run_id, arm, spec_hash, session, net) VALUES (?,?,?,?,?)",
+                (rid, arm, "h", day, net),
+            )
+    conn.commit()
+    conn.close()
+    out = readout.run_summaries([rid, "../../etc/passwd", "20261017-120000-000000", rid])
+    assert out["missing"] == ["../../etc/passwd", "20261017-120000-000000"]
+    run = out["runs"][rid]
+    assert (run["module"], run["window"], run["provisional"]) == ("meic", "design", True)
+    # The report's own figures, never recomputed from the path.
+    assert run["arms"]["d10"] == {"mean": -1.25, "sessions": 3, "trades": 3, "path": [-2.0, -1.0, -3.75]}
+    assert run["arms"]["control"]["path"] == [4.0, 10.0, 15.0]
+    assert cli.main(["read", "summaries", "--ids", rid]) == 0
+    assert json.loads(capsys.readouterr().out)["runs"][rid]["arms"]["control"]["trades"] == 900

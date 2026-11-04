@@ -1,4 +1,13 @@
-import type { BacktestOverview, BacktestRunReport, BacktestTradeLog, BacktestTradePath, BridgedResult } from "@console/shared";
+import type {
+  BacktestOverview,
+  BacktestRunReport,
+  BacktestTradeLog,
+  BacktestTradePath,
+  BridgedResult,
+  StudyArmFigures,
+  StudyRunFigures,
+  StudyRunSummaries,
+} from "@console/shared";
 import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
@@ -15,6 +24,8 @@ import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
  *   when the trade log is opened, so the run report stays light.
  * - `read path --id --arm --session --position`: one MEIC condor's marks through its session
  *   (`tradepath.py`), asked for when a trade in the log is opened.
+ * - `read summaries --ids A,B`: each run's arms in brief (the report's mean, sessions and trades,
+ *   and a thinned running net), for the studies tiles: one read for every tile on the board.
  *
  * All are read-only on the Python side and neither contacts the vendor. Every verdict on the page
  * (the unlock, each check, the paired interval) is the module's; nothing here recomputes one.
@@ -33,7 +44,8 @@ export type BacktestRequest =
   | { kind: "overview" }
   | { kind: "run"; id: string; capital?: number; riskPct?: number; riskUnit?: string; ddPct?: number }
   | { kind: "trades"; id: string; arm: string }
-  | { kind: "path"; id: string; arm: string; session: string; position: string };
+  | { kind: "path"; id: string; arm: string; session: string; position: string }
+  | { kind: "summaries"; ids: string[] };
 
 function spawnRequest(req: BacktestRequest): Promise<SpawnedJson> {
   if (req.kind === "overview") {
@@ -42,6 +54,9 @@ function spawnRequest(req: BacktestRequest): Promise<SpawnedJson> {
   if (req.kind === "trades") {
     // Exit 1 is the module's refusal (no such run or arm), read as an answer.
     return spawnModuleCliAsync(["-m", "cherrypick.backtest", "read", "trades", "--id", req.id, "--arm", req.arm], UNAVAILABLE, [0, 1]);
+  }
+  if (req.kind === "summaries") {
+    return spawnModuleCliAsync(["-m", "cherrypick.backtest", "read", "summaries", "--ids", req.ids.join(",")], UNAVAILABLE);
   }
   if (req.kind === "path") {
     const args = ["-m", "cherrypick.backtest", "read", "path", "--id", req.id, "--arm", req.arm];
@@ -80,7 +95,9 @@ function memo(req: BacktestRequest, now: number): Promise<SpawnedJson> {
         ? `trades|${req.id}|${req.arm}`
         : req.kind === "path"
           ? `path|${req.id}|${req.arm}|${req.session}|${req.position}`
-          : `run|${req.id}|${String(req.capital ?? "")}|${String(req.riskPct ?? "")}|${req.riskUnit ?? ""}|${String(req.ddPct ?? "")}`;
+          : req.kind === "summaries"
+            ? `summaries|${req.ids.join(",")}`
+            : `run|${req.id}|${String(req.capital ?? "")}|${String(req.riskPct ?? "")}|${req.riskUnit ?? ""}|${String(req.ddPct ?? "")}`;
   const hit = cache.get(key);
   if (hit !== undefined && now - hit.at < TTL_MS) return hit.value;
   // Expired entries go when anything is read, so the map holds at most a window's worth of ids.
@@ -146,5 +163,42 @@ export async function readBacktestPath(
     if (!Array.isArray(j["points"])) return null;
     const { ok: _ok, ...rest } = j;
     return rest;
+  });
+}
+
+function num(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function str(v: unknown): string | null {
+  return typeof v === "string" && v !== "" ? v : null;
+}
+
+function rec(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+/** One run in brief as the package wrote it; a path keeps only its finite numbers. */
+function toRunFigures(v: unknown): StudyRunFigures {
+  const r = rec(v);
+  const arms: Record<string, StudyArmFigures> = {};
+  for (const [arm, a] of Object.entries(rec(r["arms"]))) {
+    const x = rec(a);
+    const path = Array.isArray(x["path"]) ? x["path"].filter((p): p is number => typeof p === "number" && Number.isFinite(p)) : [];
+    arms[arm] = { mean: num(x["mean"]), sessions: num(x["sessions"]), trades: num(x["trades"]), path };
+  }
+  return { module: str(r["module"]), window: str(r["window"]), provisional: r["provisional"] === true, arms };
+}
+
+/** Each run's arms in brief, for the studies tiles. The caller has already checked every id's
+ *  shape and their count; they are sorted here so one set of tiles is one memoised read. */
+export async function readRunSummaries(ids: string[], now = Date.now()): Promise<BridgedResult<StudyRunSummaries>> {
+  const sorted = [...new Set(ids)].sort();
+  if (sorted.length === 0) return { ok: true, data: { runs: {}, missing: [] }, error: null };
+  return shape<StudyRunSummaries>(await memo({ kind: "summaries", ids: sorted }, now), (j) => {
+    const runs: Record<string, StudyRunFigures> = {};
+    for (const [id, v] of Object.entries(rec(j["runs"]))) runs[id] = toRunFigures(v);
+    const missing = Array.isArray(j["missing"]) ? j["missing"].filter((x): x is string => typeof x === "string") : [];
+    return { runs, missing };
   });
 }

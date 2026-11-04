@@ -332,6 +332,40 @@ describe("the gate is open", () => {
     expect(spawned).toEqual([]);
   });
 
+  it("serves runs in brief for the tiles, one sorted read, keeping only finite path points", async () => {
+    setBridgeCaller(() => features({ backtest: true }));
+    const other = "20261016-093000-ffffff";
+    stubBacktest(() => ({
+      ok: true,
+      json: {
+        ok: true,
+        runs: { [RUN_ID]: { module: "meic", window: "design", provisional: true, arms: { d10: { mean: -1.25, sessions: 3, trades: 3, path: [-2, "x", -3.75] } } } },
+        missing: [other],
+      },
+      error: null,
+    }));
+    const r = await app.inject({ method: "GET", url: `/api/backtest/summaries?ids=${RUN_ID},${other},${RUN_ID}` });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().data).toEqual({
+      runs: { [RUN_ID]: { module: "meic", window: "design", provisional: true, arms: { d10: { mean: -1.25, sessions: 3, trades: 3, path: [-2, -3.75] } } } },
+      missing: [other],
+    });
+    expect(spawned).toEqual([{ kind: "summaries", ids: [other, RUN_ID].sort() }]);
+  });
+
+  it("refuses summaries with a malformed id or too many ids, and the gate closed, spawning nothing", async () => {
+    setBridgeCaller(() => features({ backtest: true }));
+    stubBacktest(() => ({ ok: true, json: { ok: true, runs: {}, missing: [] }, error: null }));
+    const bad = await app.inject({ method: "GET", url: `/api/backtest/summaries?ids=${RUN_ID},..%2Fx` });
+    expect(bad.statusCode).toBe(400);
+    const many = Array.from({ length: 81 }, () => RUN_ID).join(",");
+    expect((await app.inject({ method: "GET", url: `/api/backtest/summaries?ids=${many}` })).statusCode).toBe(400);
+    invalidateFeatures();
+    setBridgeCaller(() => features({ backtest: false }));
+    expect((await app.inject({ method: "GET", url: `/api/backtest/summaries?ids=${RUN_ID}` })).statusCode).toBe(404);
+    expect(spawned).toEqual([]);
+  });
+
   it("serves one arm's trade log, and passes the module's refusal of an unknown arm on as an error", async () => {
     setBridgeCaller(() => features({ backtest: true }));
     const trade = { session: "2024-01-02", outcome: "per_side_stop", net_pnl: -50 };
