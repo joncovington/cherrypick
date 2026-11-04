@@ -5916,6 +5916,7 @@ select.text-input {
 .mf-layout[data-module="backtest"],
 .pos-board,
 .meic-arm-tiles,
+.lt-board,
 .study-dialog-wrap {
   --num-face: "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
   font-family: "Inter Variable", Inter, "Segoe UI", system-ui, sans-serif;
@@ -5926,6 +5927,7 @@ select.text-input {
 .mf-layout[data-module="backtest"] select,
 .mf-layout[data-module="backtest"] input,
 .pos-board button,
+.lt-board button,
 .study-dialog-wrap button {
   font-family: inherit;
 }
@@ -7030,4 +7032,205 @@ select.text-input {
   width: 12px;
   height: 3px;
   border-radius: 2px;
+}
+
+/* Live -> today as a mosaic (2026-11-04): a large card (the suite's net and what to do today; it
+   opens Live -> positions) and a card per live loop, which opens the loop's orders and detail. */
+.lt-board {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lt-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+  grid-auto-rows: minmax(200px, auto);
+  gap: 14px;
+}
+
+.lt-tiles .study-tile {
+  justify-content: flex-start;
+  cursor: pointer;
+}
+
+.lt-hero {
+  grid-row: span 2;
+  gap: 10px;
+}
+
+.lt-hero .card {
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
+}
+
+.lt-hero-top,
+.lt-loop-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.lt-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.lt-hero-link {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.lt-hero-net {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 38px;
+  font-weight: 600;
+  line-height: 1.05;
+}
+
+.lt-hero-parts {
+  font-family: var(--num-face);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.lt-hero-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lt-loop.is-neg {
+  border-color: color-mix(in srgb, var(--neg) 45%, var(--border));
+}
+
+.lt-loop.is-flagged {
+  border-color: var(--neg);
+}
+
+.lt-loop:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.lt-loop-name {
+  font-family: var(--num-face);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.lt-loop-net {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.lt-loop-net-label {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.lt-fields {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.lt-fields th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--text-muted);
+  padding: 5px 10px 5px 0;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.lt-fields td {
+  text-align: right;
+  font-family: var(--num-face);
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.lt-fields tr:last-child td {
+  border-bottom: none;
+}
+
+.lt-retired {
+  margin: 0;
+  font-size: 13px;
+}
+
+.lt-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 640px;
+}
+
+.lt-attention {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.lt-chains {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.lt-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.lt-chain.is-neg {
+  border-color: color-mix(in srgb, var(--neg) 45%, var(--border));
+}
+
+.lt-chain-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.lt-chain-title {
+  font-weight: 600;
+}
+
+.lt-chain-net {
+  font-family: var(--num-face);
+  font-weight: 600;
+}
+
+.lt-chain-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .lt-hero {
+    grid-column: auto;
+    grid-row: auto;
+  }
 }

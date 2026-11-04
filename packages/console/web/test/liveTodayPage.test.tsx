@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import type { LiveTodayHand, LiveTodayLoop, LiveTodayPayload } from "@console/shared";
-import { LiveTodayView, suiteBadgeText } from "../src/pages/Live/LiveTodayPage";
+import type { LiveMeicPayload, LiveTodayHand, LiveTodayLoop, LiveTodayPayload } from "@console/shared";
+import { LiveTodayView, LoopDetail, suiteBadgeText } from "../src/pages/Live/LiveTodayPage";
+import { DayChains, bwbChains, meicChains } from "../src/pages/Live/LiveTodayOrders";
 import { expiredWords } from "../src/pages/Live/HandToday";
-import { aligned, inView, tables } from "./viewTables";
+import { inView } from "./viewTables";
 
 /**
  * The Live page's `today` tab. Pinned: a quiet day says plainly that nothing needs a person; an
@@ -117,6 +118,13 @@ const render = (d: LiveTodayPayload) =>
     </MemoryRouter>,
   );
 
+const detailOf = (l: LiveTodayLoop) =>
+  renderToString(
+    <MemoryRouter>
+      <LoopDetail l={l} attention={[]} />
+    </MemoryRouter>,
+  );
+
 describe("LiveTodayView", () => {
   it("says plainly when nothing needs a person", () => {
     const html = render(payload());
@@ -151,7 +159,8 @@ describe("LiveTodayView", () => {
         suite: { loops: 3, armed: [], net: null, gross: null, fees: null, settlementFees: null, trades: null, summed: [], excluded: [{ loop: "bwb", reason: "the live ledger could not be read" }], feesUnrecorded: [] },
       }),
     );
-    expect(html).toContain("n/r (1 of 2)");
+    // settlement and fees are the detail tab's fields (2026-11-04)
+    expect(detailOf(flies)).toContain("n/r (1 of 2)");
     expect(html).toContain("read failed");
     expect(html).toMatch(/net today · all loops[\s\S]*?n\/r/);
   });
@@ -167,7 +176,7 @@ describe("LiveTodayView", () => {
         suite: { loops: 2, armed: [], net: null, gross: 2, fees: null, settlementFees: 0, trades: 2, summed: ["flies", "meic"], excluded: [], feesUnrecorded: ["meic"] },
       }),
     );
-    expect(html).toContain("n/r (1 of 2)");
+    expect(detailOf(meic)).toContain("n/r (1 of 2)");
     expect(html).toContain("its net is unknown; -$0.96 over the other 1");
     expect(html).toContain("fees were never recorded on a trade resolved today in meic");
   });
@@ -199,42 +208,80 @@ describe("the suite badge", () => {
   });
 });
 
-/** Live → today in the simple and detail views (2026-10-21). */
-describe("the loops table, simple and detail", () => {
-  const shape = (view: "simple" | "detail", d: LiveTodayPayload) => tables(inView(view, () => render(d)))[0]!;
+/** Live → today as cards (2026-11-04): each loop's card carries the simple view's fields; its
+ *  lightbox's detail tab carries every field the old table's detail view did. */
+describe("the loop cards and their detail", () => {
+  const labels = (html: string) => [...html.matchAll(/<th scope="row">([^<]*)<\/th>/g)].map((m) => m[1]!.replace(/&amp;/g, "&"));
 
-  it("names the loop's state `state`, and keeps the gate, the counts and the net's parts to detail", () => {
-    const simple = shape("simple", payload());
-    const detail = shape("detail", payload());
-    expect(simple.headers.filter((h) => h === "loop")).toHaveLength(1);
-    expect(detail.headers.filter((h) => h === "loop")).toHaveLength(1);
-    expect(simple.headers).toContain("state");
-    for (const h of ["gate · symbol", "entries", "resolved", "gross", "fees", "settlement", "working"]) {
-      expect(simple.headers).not.toContain(h);
-      expect(detail.headers).toContain(h);
-    }
-    expect(simple.headers).toEqual(expect.arrayContaining(["arm", "open", "worst case", "mark", "net", "loss breaker"]));
-    expect(aligned(simple)).toBe(true);
-    expect(aligned(detail)).toBe(true);
+  it("a card shows the state, open, worst case, mark and breaker; the gate, counts and the net's parts wait for the detail", () => {
+    const card = labels(inView("simple", () => render(payload({ loops: [loop("meic")], hand: undefined }))));
+    expect(card).toEqual(expect.arrayContaining(["state", "open", "worst case", "mark", "loss breaker"]));
+    for (const h of ["gate · symbol", "entries", "resolved", "gross", "fees", "settlement", "working"]) expect(card).not.toContain(h);
+    const detail = labels(renderToString(<MemoryRouter><LoopDetail l={loop("meic")} attention={[]} /></MemoryRouter>));
+    for (const h of ["gate · symbol", "entries", "resolved", "gross", "fees", "settlement", "working", "net", "arm"]) expect(detail).toContain(h);
   });
 
-  it("shows `working` in simple too whenever a loop has an order working", () => {
-    const d = payload({ loops: [loop("flies"), loop("meic", { working: 1 }), loop("bwb")] });
-    expect(shape("simple", d).headers).toContain("working");
-    expect(aligned(shape("simple", d))).toBe(true);
+  it("shows `working` on the cards whenever a loop has an order working", () => {
+    const d = payload({ loops: [loop("flies"), loop("meic", { working: 1 }), loop("bwb")], hand: undefined });
+    expect(labels(inView("simple", () => render(d)))).toContain("working");
   });
 
-  it("a retired loop's folded line spans the simple view's columns", () => {
-    const d = payload({ loops: [loop("flies", { moduleEnabled: false, retired: true }), loop("meic")] });
-    expect(aligned(shape("simple", d))).toBe(true);
-    expect(aligned(shape("detail", d))).toBe(true);
+  it("the big card links to Live → positions, and a loop card to its own page", () => {
+    const html = render(payload());
+    expect(html).toContain('href="/live/positions"');
+    expect(html).toContain('href="/live/meic"');
   });
 
-  it("the hand row lines up with the loops in both views, with and without a working column", () => {
-    for (const d of [payload({ hand: hand(HAND_IC) }), payload({ hand: hand(HAND_IC), loops: [loop("meic", { working: 1 })] })]) {
-      expect(aligned(shape("simple", d))).toBe(true);
-      expect(aligned(shape("detail", d))).toBe(true);
-    }
+  it("marks a losing loop's card red, and names what needs a person in its detail", () => {
+    const meic = loop("meic", { today: { trades: 1, gross: -50, fees: 2, settlementFees: 0, settlementRecorded: 0, settlementTrades: 1, net: -52, feesTrades: 1, netRecorded: -52, basis: "" } });
+    expect(render(payload({ loops: [meic] }))).toContain("lt-loop is-neg");
+    const detail = renderToString(
+      <MemoryRouter>
+        <LoopDetail l={meic} attention={[{ loop: "meic", kind: "orphaned_orders", detail: "1 working broker order no live ledger knows", to: "/live/meic" }]} />
+      </MemoryRouter>,
+    );
+    expect(detail.replace(/<!-- -->/g, "")).toContain("orphaned orders: 1 working broker order no live ledger knows");
+  });
+});
+
+/** A loop's orders today as chains, from its own live read. */
+describe("the loop order chains", () => {
+  const meicOpen = {
+    id: 7, tradeDate: "2026-10-15", entryTime: "2026-10-15T10:05:00", symbol: "SPX", arm: "live", status: "open", working: false,
+    putStrike: 5800, callStrike: 5900, wingWidth: 25, quantity: 1, netCredit: 2.6, entryCash: 260,
+    putHeld: false, callHeld: true, putClosing: false, callClosing: false, fillConfirmedAt: null, overdue: false,
+  };
+  const meicDone = {
+    mode: "live" as const, id: 6, tradeDate: "2026-10-15", entryTime: "2026-10-15T09:45:00", symbol: "SPX", putStrike: 5795, callStrike: 5905,
+    wingWidth: 25, netCredit: 2.4, quantity: 1, status: "expired", entryCash: 240, exitCash: 0, exitKind: "expired" as const, gross: 240,
+    fees: 4, settlementFees: 0, slippage: null, net: 236, exitReason: "expired worthless", ivRankAtEntry: null,
+  };
+
+  it("MEIC: an open condor with a stopped side, then today's resolved ones; yesterday's history is left out", () => {
+    const chains = meicChains({ session: "2026-10-15", open: [meicOpen], history: [meicDone, { ...meicDone, id: 5, tradeDate: "2026-10-14" }] } as unknown as LiveMeicPayload);
+    expect(chains.map((c) => c.id)).toEqual(["meic-7", "meic-6"]);
+    expect(chains[0]!.steps.map((x) => x.role)).toEqual(["open", "close"]);
+    expect(chains[0]!.steps[0]!.what).toBe("5775/5800P · 5900/5925C");
+    expect(chains[0]!.steps[0]!.price).toBe("2.60 cr");
+    expect(chains[1]!.net).toBe(236);
+    expect(chains[1]!.steps.map((x) => x.role)).toEqual(["open", "expired"]);
+  });
+
+  it("bwb: the add-on joins the chain once it fired, and only today's closes are listed", () => {
+    const open = { positionId: "p1", symbol: "SPX", arm: "control", status: "open", bodyStrike: 5800, nearStrike: 5830, farStrike: 5780, expiration: "2026-10-31", entrySpot: null, entryCredit: 1.1, entryMaxLoss: null, quantity: 1, entryCash: 110, addOnCash: 45, peakAbsDelta: null, belowFlipSeen: false, armedAt: null, addonFiredAt: "2026-10-15T11:20:00", addonShortStrike: 5760, addonLongStrike: 5750, addonCredit: 0.45, currentCloseCost: null, currentSpot: null, entrySession: "2026-10-13", unrealisedGross: null, unrealisedNet: -30, feesToDate: 3 };
+    const closed = { positionId: "p0", symbol: "SPX", arm: "control", entrySession: "2026-10-10", closedSession: "2026-10-15", status: "closed", exitReason: "target", bodyStrike: 5700, nearStrike: 5730, farStrike: 5680, expiration: "2026-10-24", entrySpot: null, entryCredit: 1.0, armedAt: null, addonFiredAt: null, addonShortStrike: null, addonLongStrike: null, addonCredit: null, quantity: 1, entryCash: 100, addOnCash: null, exitCash: 120, exitKind: "closed" as const, grossPnl: 220, fees: 4, settlementFees: 0, slippage: 1, netPnl: 215 };
+    const chains = bwbChains([open] as never, [closed, { ...closed, positionId: "old", closedSession: "2026-10-14" }] as never, "2026-10-15");
+    expect(chains.map((c) => c.id)).toEqual(["bwb-p1", "bwb-p0"]);
+    expect(chains[0]!.steps.map((x) => x.role)).toEqual(["open", "add"]);
+    expect(chains[0]!.net).toBe(-30);
+    expect(chains[1]!.steps.map((x) => x.role)).toEqual(["open", "closed"]);
+    expect(chains[1]!.net).toBe(215);
+  });
+
+  it("draws a resolved chain's net, red when it lost", () => {
+    const html = renderToString(<DayChains chains={[{ id: "x", title: "SPX iron condor", sub: "", steps: [], open: false, net: -40, netLabel: "net" }]} empty="none" />);
+    expect(html).toContain("lt-chain is-neg");
+    expect(html).toContain("ended · net");
   });
 });
 

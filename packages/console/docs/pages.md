@@ -591,8 +591,17 @@ live's favour; paired totals are the sums of their rows, and paper condors on da
 counted on their own line. Pinned by `server/test/meic-live-gap.test.ts`.
 
 **The Live page's `today` tab** (`pages/Live/LiveTodayPage.tsx` over `GET /api/live/today` →
-`readers/liveToday.ts`, 2026-10-15) opens `/live`: one row per live loop (flies, meic, bwb), the
-attention list above it, the suite line and a header badge (`2 armed · HALTED`). It **composes** the
+`readers/liveToday.ts`, 2026-10-15) opens `/live`. Since 2026-11-04 it is a mosaic: a large card
+(the suite's net and its parts, armed, the halt flag, needs a person, and what to do today; a click on
+it opens Live → positions) and a card per live loop with the simple view's fields (arm, state, open,
+worst case, mark, net, loss breaker, working when any is). A loop's card opens the shared lightbox
+(`?loop=`): *orders*, the loop's positions today as chains from its own live read
+(`pages/Live/LiveTodayOrders.tsx`: MEIC's `/api/live/meic` open rows and today's resolved rows; bwb's
+live payload and its history for the session; entry, a stopped side or the add-on, then how it ended
+or "now"), and *detail*, every field the old table's detail view carried plus what on the loop needs a
+person. A losing loop's card has a red edge, a tripped breaker or failed read a red border. The hand
+trades are a card of their own beside the loops (never in the total) with their orders card below; a
+retired loop folds to one line. Header badge: `2 armed · HALTED`. It **composes** the
 per-loop readers (`fliesLive`/`flies`, `readMeicLive`, `readBwb`/`readBwbHistory` in live mode,
 `liveBooks`' bwb read for absent-vs-failed) and adds only each loop's own `daily_loss_tripped` and
 flies' `overdue_settlement` queries, mirrored and named. Attention: orphaned orders, held
