@@ -447,6 +447,17 @@ is a comparison across arms (gates vs control, live vs paper, selector) or a mod
 (summary, advisor, agent) deliberately ignores it. The picked arm is page state, kept across tabs
 because the frame stays mounted; it is not in the URL.
 
+**MEIC's `arms` tab** (2026-11-04, `pages/Meic/MeicArmCards.tsx`) is a card per arm in the studies
+mosaic's tiles, from two reads the page already makes (the forest and the attempts, under the page's
+scope): a large tile with every arm's payoff at expiry drawn together and their realised net (it
+opens `forest`), then each arm's realised net, its payoff in small, entered / stopped / open, and its
+checks: fills of attempts and the refusal that turned most away, with its share. Arms sort by realised
+net; a losing arm's tile has a red edge. Control on another scale (`controlScaleOf`, the Backtest
+tiles' rule) is dashed, sorts last, says "not ranked", and is left out of the large tile. A tile opens
+the shared lightbox (`?arm=`): *forest* (the forest card narrowed to the arm, its attempt timeline
+beneath), *attempts* (rail, timeline and strike occupancy for the arm) and *trades* (its positions).
+It sits after `today` and replaces `forest` in the simple view; `forest` and `attempts` stay as tabs.
+
 **A summary slide is a module's own.** MEIC's summary slide is the pattern — one-read payload
 computed server-side to the cent, presentation arithmetic only in the component, money in the
 suite's one layout, tone from a number's sign — and each module's summary carries its own KPIs in
