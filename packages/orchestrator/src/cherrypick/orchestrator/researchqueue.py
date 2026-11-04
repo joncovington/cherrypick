@@ -12,6 +12,11 @@ in (`queue-add --priority`) or later on a queued row (`queue-priority`). It neve
 that is running, and it never releases a row from its `after`, `not_before`, the session lock or the
 blackout: a raised row whose prerequisite waits still waits, so raise the chain, not just its end.
 
+**A study whose inputs are in runs first** (2026-11-03, the user's rule, `run_order`): a ready row of
+a kind that needs no vendor session (`script`, `validate`) and waits `after` a prerequisite -- so that
+prerequisite is done -- runs before any other ready row, whatever its priority. Priority, then age,
+orders within each group. A script with no `after` is not one: nothing says its inputs were fetched.
+
 **What a row may run is an allow-list, never a command line** (`KINDS`). The supervisor is a Windows
 service with the broker credentials in reach, so a row that could name any command would be
 unreviewed code run by it. A kind builds its own argv from the row's arguments:
@@ -401,6 +406,19 @@ def after_reason(row: dict, after_status: str | None) -> str | None:
     return f"{HELD} {after} is {after_status or 'missing'}; re-queue it and this row runs once it is done"
 
 
+def study_first(row: dict) -> bool:
+    """A study row whose inputs are in: a kind that needs no vendor session, waiting `after` a
+    prerequisite. Among READY rows only, where that prerequisite is already `done`."""
+    needs = KINDS.get(row.get("kind"), ((), False))[0]
+    return THETADATA not in needs and bool(row.get("after"))
+
+
+def run_order(row: dict) -> tuple:
+    """The sort key among ready rows (smallest runs first): a study row whose inputs are in before
+    everything else, then the highest priority, then the oldest."""
+    return (0 if study_first(row) else 1, -int(row.get("priority") or 0), row["id"])
+
+
 def ready(
     row: dict,
     now: datetime,
@@ -760,8 +778,8 @@ def run_next(
     spawn: Callable[..., subprocess.Popen] = subprocess.Popen,
     notify: Callable[[str, str, str], Any] | None = None,
 ) -> dict:
-    """Recover orphaned rows, then run the ready row of highest priority (the oldest among equals) to
-    its end. Returns what it did."""
+    """Recover orphaned rows, then run the first ready row by `run_order` (a study whose inputs are
+    in, then the highest priority, then the oldest) to its end. Returns what it did."""
     if is_trading_day is None:
         from cherrypick.core import calendar as cal
 
@@ -786,16 +804,16 @@ def run_next(
                 return {"ok": True, "ran": None, "why": "a task is running", "recovered": recovered}
             held = session_held()
             waiting = {}
-            pick = None
-            queued = "SELECT * FROM tasks WHERE status = 'queued' ORDER BY priority DESC, id"
-            for r in conn.execute(queued).fetchall():
+            candidates = []
+            for r in conn.execute("SELECT * FROM tasks WHERE status = 'queued'").fetchall():
                 row = dict(r)
                 after_status = prereq_status(conn, row.get("after"), row["id"])
                 why = ready(row, now(), is_trading_day, held, window, after_status)
                 if why is None:
-                    pick = row
-                    break
-                waiting[row["id"]] = why
+                    candidates.append(row)
+                else:
+                    waiting[row["id"]] = why
+            pick = min(candidates, key=run_order) if candidates else None
             if pick is None:
                 return {"ok": True, "ran": None, "waiting": waiting, "recovered": recovered}
             stop_by = stop_by_for(pick, now(), is_trading_day, window)
