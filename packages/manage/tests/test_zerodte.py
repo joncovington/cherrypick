@@ -120,7 +120,7 @@ def test_legs_that_expired_before_today_are_set_aside_not_unreconciled():
     expired = [(e["expiry"], e["quantity"]) for e in out["expired_held"]]
     assert expired == [(yesterday, -1.0), (yesterday, 1.0)]
     assert out["net"] == read()["net"]
-    assert any("expired before today" in c for c in out["caveats"])
+    assert out["caveats"] == []  # listed, not a caveat: nothing about today is in doubt
 
 
 def test_the_next_morning_with_only_expired_legs_reads_clean():

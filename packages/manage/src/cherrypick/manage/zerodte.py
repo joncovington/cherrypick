@@ -78,14 +78,10 @@ def reading(
 
     `held` also carries legs that expired before today: the broker lists an expired leg until it
     processes the expiry overnight. Those are an earlier session's, which today's fills can never
-    explain, so they are set aside in `expired_held` and left out of the reconciliation."""
+    explain, so they are set aside in `expired_held` and left out of the reconciliation. They are
+    not a caveat: the morning after every 0DTE session has them, and nothing about today is in doubt."""
     held, expired = _split_expired(held, session)
     caveats: list[str] = []
-    if expired:
-        caveats.append(
-            f"{len(expired)} leg(s) that expired before today are still listed by the broker until it "
-            "processes the expiry; they belong to an earlier session and are not counted here"
-        )
     if transactions is None or transactions_error:
         return _unread(
             session, names, held, expired, transactions_error or "no account-wide history in this snapshot"

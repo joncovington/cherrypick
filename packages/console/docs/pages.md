@@ -609,7 +609,10 @@ one a loop has published for its orphan sweep, and a held leg today's fills cann
 mark and net null rather than part-counted. Its net is stated beside the suite total (the tile's hover
 and the footnote) and **never added to it**; the card below lists each hand order and the legs still
 held. Fills are as fresh as manage's last snapshot (every 30 minutes), marks as its last re-mark.
-Pinned by `server/test/live-hand.test.ts` and `web/test/liveTodayPage.test.tsx`.
+On the card, red is kept for what puts today's figures in doubt (a leg that does not reconcile, a fill
+after the loops' last publish). manage's caveats, and the earlier session's expired legs the broker
+still lists until it processes the expiry (`expired_held`), are muted: they appear every morning after
+a 0DTE session, and red there would teach the eye to pass over red. Pinned by `server/test/live-hand.test.ts` and `web/test/liveTodayPage.test.tsx`.
 
 **The Live page's `positions` and `portfolio` tabs** read packages/manage's evaluation
 (`readers/manage.ts`); they were one `manage` tab until 2026-10-18, and `/live/manage` lands on
