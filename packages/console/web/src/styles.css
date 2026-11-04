@@ -5941,3 +5941,246 @@ select.text-input {
     font-size: 21px;
   }
 }
+
+/* Backtest queue as cards (2026-11-03, pages/Backtest/QueueTab.tsx): the running task large with its
+   phase meters, runs by hand beside it, then numbered up-next tiles, the last week's failures and
+   the runs by hand. Shares the studies mosaic's tile and lightbox styles. */
+.study-tab-badge {
+  margin-left: 6px;
+  font-size: 11px;
+}
+
+.q-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.q-strip-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border-strong);
+  font-size: 13px;
+}
+
+.q-headline {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+.q-top {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.q-top .study-hero {
+  grid-column: auto;
+  grid-row: auto;
+  min-height: 300px;
+}
+
+.q-idle {
+  cursor: default;
+  justify-content: center;
+}
+
+.q-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.q-side .study-tile {
+  flex: 1 1 auto;
+  min-height: 150px;
+}
+
+.q-note {
+  padding: 18px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.q-section {
+  margin-top: 22px;
+}
+
+.q-section-title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.q-tiles {
+  margin-top: 0;
+  grid-auto-rows: minmax(168px, auto);
+}
+
+.q-tiles-small {
+  grid-auto-rows: minmax(110px, auto);
+}
+
+.q-pos {
+  font-family: var(--num-face);
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.q-pos.is-waiting {
+  color: var(--text-muted);
+}
+
+.q-ready {
+  border-color: var(--text-muted);
+}
+
+.q-waiting {
+  border-style: dashed;
+  color: var(--text-muted);
+}
+
+.q-attn {
+  border-style: dashed;
+  border-color: var(--warn);
+}
+
+.q-wait {
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.q-mono {
+  font-family: var(--num-face);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.q-pct {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.q-pct-num {
+  font-family: var(--num-face);
+  font-size: 36px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.q-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.q-meter {
+  display: grid;
+  grid-template-columns: minmax(5em, max-content) minmax(0, 1fr) minmax(7em, max-content);
+  gap: 12px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.q-meter-name {
+  color: var(--text-muted);
+}
+
+.q-meter-track {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.q-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--text);
+}
+
+.q-meter-count {
+  font-family: var(--num-face);
+  font-size: 12px;
+  text-align: right;
+}
+
+.q-times {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.q-times > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.q-times strong {
+  font-family: var(--num-face);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+@media (max-width: 560px) {
+  .q-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .q-top .study-hero {
+    min-height: 260px;
+  }
+
+  .q-pct-num {
+    font-size: 28px;
+  }
+
+  .q-meter {
+    grid-template-columns: minmax(4em, max-content) minmax(0, 1fr);
+  }
+
+  .q-meter-count {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+
+  /* The number and its chip stay side by side, unlike a study tile's slug and status. */
+  .q-tiles .study-tile .study-tile-top {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .q-hero .study-tile-top {
+    flex-wrap: wrap;
+  }
+
+  .q-hero .study-tile-status {
+    white-space: normal;
+  }
+}

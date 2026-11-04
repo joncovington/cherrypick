@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type TouchEvent } from "react";
-import { createPortal } from "react-dom";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useState, type ReactNode } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import type { BacktestRunReport, ResearchQueue, ResearchTask, StudiesBoard, StudyGroup, StudyResult, StudyRow, StudyVersion } from "@console/shared";
 import { useBridged } from "../../lib/bridged";
 import { fmtCash, fmtCount } from "../../lib/format";
 import { useRun } from "./BacktestPage";
+import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
 import { GridBars } from "./GridBars";
 import { TaskDetail, ago, etMs, etNowMs, queuePollMs, resultLine, stamp } from "./QueueTab";
 import { VERDICT_STATUSES, resultLabel, statusWord, studyHref, verdictChip } from "./studyIndex";
@@ -492,11 +492,11 @@ function StudyQueue({ row, nowMs }: { row: StudyRow; nowMs: number }) {
 
 export type DialogTab = "overview" | "declaration" | "grid" | "queue";
 
-export const DIALOG_TABS: Array<[DialogTab, string]> = [
-  ["overview", "Overview"],
-  ["declaration", "Declaration"],
-  ["grid", "Grid"],
-  ["queue", "Queue"],
+export const DIALOG_TABS: LightboxTab<DialogTab>[] = [
+  { id: "overview", label: "Overview" },
+  { id: "declaration", label: "Declaration" },
+  { id: "grid", label: "Grid" },
+  { id: "queue", label: "Queue" },
 ];
 
 function Field({ k, children }: { k: string; children: ReactNode }) {
@@ -505,16 +505,6 @@ function Field({ k, children }: { k: string; children: ReactNode }) {
       <dt>{k}</dt>
       <dd>{children}</dd>
     </>
-  );
-}
-
-function IconButton({ label, onClick, path }: { label: string; onClick: () => void; path: string }) {
-  return (
-    <button type="button" className="study-icon-btn" aria-label={label} title={label} onClick={onClick}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-        <path d={path} />
-      </svg>
-    </button>
   );
 }
 
@@ -653,141 +643,48 @@ export function StudyDialogBody({
   onClose: () => void;
 }) {
   return (
-    <>
-      <header className="study-dialog-head">
-        <div className="study-dialog-top">
-          <div className="study-dialog-titles">
-            <div className="study-dialog-kicker">
-              {row.study} · last moved {ago(etMs(row.lastActivity), nowMs)}
-            </div>
-            <h2 id="study-dialog-title" className="study-dialog-title">
-              {row.title}
-            </h2>
-            <div className="study-dialog-chips">
-              <span className={verdictChip(VERDICT_STATUSES.includes(row.status) ? statusWord(row.status) : null)}>{statusWord(row.status)}</span>
-              <Verdicts row={row} />
-              <Link to={studyHref(row.study)} className="study-dialog-link" title="This study's link">
-                ?study={row.study}
-              </Link>
-            </div>
-          </div>
-          <IconButton label="Close" onClick={onClose} path="M6 6l12 12M18 6L6 18" />
-        </div>
-        <div className="study-tabs" role="tablist" aria-label="Study detail">
-          {DIALOG_TABS.map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              id={`study-tab-${id}`}
-              aria-selected={tab === id}
-              aria-controls="study-tabpanel"
-              className={tab === id ? "study-tab is-on" : "study-tab"}
-              onClick={() => onTab(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </header>
-
-      <div className="study-dialog-body" id="study-tabpanel" role="tabpanel" aria-labelledby={`study-tab-${tab}`}>
-        {tab === "overview" ? <OverviewTab row={row} /> : null}
-        {tab === "declaration" ? <DeclarationTab row={row} /> : null}
-        {tab === "grid" ? <GridTab row={row} /> : null}
-        {tab === "queue" ? <QueueTab row={row} nowMs={nowMs} /> : null}
-      </div>
-
-      <footer className="study-dialog-foot">
-        <button type="button" className="study-step-btn" onClick={onPrev}>
-          Previous
-        </button>
-        <span>
-          {position}
-          <span className="study-keyhint"> · Esc closes · ← → step</span>
-        </span>
-        <button type="button" className="study-step-btn" onClick={onNext}>
-          Next
-        </button>
-      </footer>
-    </>
+    <LightboxFrame
+      kicker={
+        <>
+          {row.study} · last moved {ago(etMs(row.lastActivity), nowMs)}
+        </>
+      }
+      title={row.title}
+      chips={
+        <>
+          <span className={verdictChip(VERDICT_STATUSES.includes(row.status) ? statusWord(row.status) : null)}>{statusWord(row.status)}</span>
+          <Verdicts row={row} />
+          <Link to={studyHref(row.study)} className="study-dialog-link" title="This study's link">
+            ?study={row.study}
+          </Link>
+        </>
+      }
+      tabs={DIALOG_TABS}
+      tab={tab}
+      onTab={onTab}
+      position={position}
+      onPrev={onPrev}
+      onNext={onNext}
+      onClose={onClose}
+    >
+      {tab === "overview" ? <OverviewTab row={row} /> : null}
+      {tab === "declaration" ? <DeclarationTab row={row} /> : null}
+      {tab === "grid" ? <GridTab row={row} /> : null}
+      {tab === "queue" ? <QueueTab row={row} nowMs={nowMs} /> : null}
+    </LightboxFrame>
   );
 }
 
 function StudyDialog({ rows, index, onStep, onClose }: { rows: StudyRow[]; index: number; onStep: (to: number) => void; onClose: () => void }) {
-  const panel = useRef<HTMLDivElement>(null);
-  const touch = useRef<{ x: number; y: number } | null>(null);
   const [tab, setTab] = useState<DialogTab>("overview");
   const row = rows[index];
-  useEffect(() => {
-    const before = document.activeElement as HTMLElement | null;
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    panel.current?.focus({ preventScroll: true });
-    return () => {
-      document.body.style.overflow = overflow;
-      before?.focus({ preventScroll: true });
-    };
-  }, []);
-  useEffect(() => {
-    panel.current?.querySelector(".study-dialog-body")?.scrollTo({ top: 0 });
-  }, [index, tab]);
   if (row === undefined) return null;
-  const step = (d: number) => onStep((index + d + rows.length) % rows.length);
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      onClose();
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      step(1);
-    } else if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      step(-1);
-    }
-  };
-  const onTouchStart = (e: TouchEvent<HTMLDivElement>) => {
-    const t = e.touches[0];
-    touch.current = t ? { x: t.clientX, y: t.clientY } : null;
-  };
-  const onTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
-    const start = touch.current;
-    const t = e.changedTouches[0];
-    touch.current = null;
-    if (!start || !t) return;
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-    const body = panel.current?.querySelector(".study-dialog-body");
-    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
-    else if (dy > 90 && Math.abs(dy) > Math.abs(dx) * 1.5 && (body?.scrollTop ?? 0) <= 0) onClose();
-  };
-  return createPortal(
-    <div className="study-dialog-wrap">
-      <button type="button" className="study-dialog-backdrop" aria-label="Close" tabIndex={-1} onClick={onClose} />
-      <div
-        ref={panel}
-        className="study-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="study-dialog-title"
-        tabIndex={-1}
-        onKeyDown={onKeyDown}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-      >
-        <StudyDialogBody
-          row={row}
-          tab={tab}
-          onTab={setTab}
-          position={`${String(index + 1)} of ${String(rows.length)}`}
-          nowMs={etNowMs()}
-          onPrev={() => step(-1)}
-          onNext={() => step(1)}
-          onClose={onClose}
-        />
-      </div>
-    </div>,
-    document.body,
+  return (
+    <CardLightbox count={rows.length} index={index} onStep={onStep} onClose={onClose}>
+      {(nav) => (
+        <StudyDialogBody row={row} tab={tab} onTab={setTab} position={nav.position} nowMs={etNowMs()} onPrev={nav.prev} onNext={nav.next} onClose={onClose} />
+      )}
+    </CardLightbox>
   );
 }
 
@@ -847,20 +744,12 @@ export function StudyTiles({ rows, nowMs, onOpen }: { rows: StudyRow[]; nowMs: n
 
 export function StudyCards({ board }: { board: StudiesBoard }) {
   const [params, setParams] = useSearchParams();
-  const navigate = useNavigate();
-  // Opened from a tile here: closing goes back, so the browser's back button and the close agree.
-  const [pushed, setPushed] = useState(false);
+  const lightbox = useOpenParam("study");
   const groupParam = params.get("group");
   const group = isGroup(groupParam) ? groupParam : null;
   const rows = orderedRows(board, group);
   // The lightbox steps in the order the tiles are laid out: the large tile first.
-  const { rows: stepRows, index } = openIndex(board, group, params.get("study"));
-  const setStudy = (study: string | null, push: boolean) => {
-    const next = new URLSearchParams(params);
-    if (study === null) next.delete("study");
-    else next.set("study", study);
-    setParams(next, { replace: !push });
-  };
+  const { rows: stepRows, index } = openIndex(board, group, lightbox.open);
   return (
     <>
       <GroupChips
@@ -873,26 +762,9 @@ export function StudyCards({ board }: { board: StudiesBoard }) {
           setParams(next, { replace: true });
         }}
       />
-      <StudyTiles
-        rows={rows}
-        nowMs={etNowMs()}
-        onOpen={(study) => {
-          setPushed(true);
-          setStudy(study, true);
-        }}
-      />
+      <StudyTiles rows={rows} nowMs={etNowMs()} onOpen={lightbox.show} />
       {index >= 0 ? (
-        <StudyDialog
-          rows={stepRows}
-          index={index}
-          onStep={(to) => setStudy(stepRows[to]?.study ?? null, false)}
-          onClose={() => {
-            if (pushed) {
-              setPushed(false);
-              navigate(-1);
-            } else setStudy(null, false);
-          }}
-        />
+        <StudyDialog rows={stepRows} index={index} onStep={(to) => lightbox.step(stepRows[to]?.study ?? "")} onClose={lightbox.close} />
       ) : null}
     </>
   );
