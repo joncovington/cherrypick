@@ -16,12 +16,14 @@ import {
   Verdicts,
   armsLine,
   chipLabel,
+  controlScale,
   figuresRun,
   heroStudy,
   laidOut,
   openIndex,
   orderedRows,
   tileModel,
+  tradesPerSession,
   verdictText,
 } from "../src/pages/Backtest/StudyCards";
 import { indexStudies, studyHref } from "../src/pages/Backtest/studyIndex";
@@ -298,6 +300,38 @@ describe("studies tab", () => {
     expect(out).toContain("+$1.29 / session");
     expect(out).toContain("-$2.50 / session");
     expect(out).toMatch(/class="chip chip-missing">fail</);
+  });
+
+  it("starts control hidden only when it trades on another scale from the study's arms, and says why", () => {
+    const eq = (cums: number[]) => cums.map((cum, i) => ({ session: `2026-01-0${String(i + 1)}`, net: 0, cum, drawdown: 0 }));
+    const report = (controlTrades: number) =>
+      ({
+        arms: {
+          control: { spec_hash: "c", summary: { sessions: 10, mean: 80 }, trades: controlTrades },
+          d16: { spec_hash: "a", summary: { sessions: 10, mean: 12 }, trades: 10 },
+          d20: { spec_hash: "b", summary: { sessions: 10, mean: 15 }, trades: 9 },
+        },
+        cards: { ok: true, arms: { control: { equity: eq([0, 900, -800]) }, d16: { equity: eq([0, 5, 9]) }, d20: { equity: eq([0, 6, 12]) } } },
+      }) as unknown as BacktestRunReport;
+    // MEIC's sampling arm: hundreds of condors a session against one.
+    const wide = report(2990);
+    expect(tradesPerSession(wide, "control")).toBe(299);
+    expect(Math.round(controlScale(wide)!)).toBe(299);
+    const hidden = html(<EquityLines report={wide} />);
+    expect(hidden.match(/<polyline /g)).toHaveLength(2);
+    expect(hidden).toContain("Control starts hidden");
+    expect(hidden).toContain('aria-pressed="false"');
+    // Control on the same scale is the comparison, and starts shown.
+    const same = report(10);
+    expect(controlScale(same)).toBeNull();
+    const shown = html(<EquityLines report={same} />);
+    expect(shown.match(/<polyline /g)).toHaveLength(3);
+    expect(shown).not.toContain("Control starts hidden");
+    // No trade counts, no claim either way.
+    expect(controlScale({ arms: { control: { spec_hash: "c", summary: { sessions: 10 } } } } as unknown as BacktestRunReport)).toBeNull();
+    // The arm table says how often each arm traded.
+    expect(html(<ArmFigures report={wide} result={result({})} />)).toContain("10 sessions · 299 trades / session");
+    expect(html(<ArmFigures report={wide} result={result({})} />)).toContain("10 sessions · 0.9 trades / session");
   });
 
   it("draws each arm's running net, control dashed, and says when the report has no path", () => {
