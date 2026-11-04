@@ -1,4 +1,5 @@
 import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
+import { PmccArmBoard } from "../../pages/Pmcc/PmccArmBoard";
 import { useState } from "react";
 import { usePmcc } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
@@ -126,6 +127,7 @@ export function PmccLightbox({ slide }: { slide: string }) {
         </>
       ),
     },
+    { id: "board", label: PMCC_LABEL.board, render: () => <PmccArmBoard symbol={symbol} /> },
     { id: "performance", label: PMCC_LABEL.performance, render: () => <PmccPerformance era={era} /> },
     { id: "analysis", label: PMCC_LABEL.analysis, render: () => <AnalysisSlide module="pmcc" /> },
     { id: "costs", label: PMCC_LABEL.costs, render: () => <PmccCosts era={era} /> },

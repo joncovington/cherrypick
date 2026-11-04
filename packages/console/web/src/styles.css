@@ -5917,6 +5917,7 @@ select.text-input {
 .pos-board,
 .meic-arm-tiles,
 .lt-board,
+.pmcc-board,
 .study-dialog-wrap {
   --num-face: "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
   font-family: "Inter Variable", Inter, "Segoe UI", system-ui, sans-serif;
@@ -7233,4 +7234,189 @@ select.text-input {
     grid-column: auto;
     grid-row: auto;
   }
+}
+
+/* PMCC by arm (2026-11-04): a column per arm, a card per symbol it holds. Read per symbol, never
+   pooled, so an arm's head is a bar per symbol, never a total. */
+.pmcc-board-note {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+}
+
+.pmcc-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.pmcc-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pmcc-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.pmcc-arm-name,
+.pmcc-sym-name {
+  font-family: var(--num-face);
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.pmcc-rule {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.pmcc-bars svg {
+  display: block;
+  width: 100%;
+  height: 56px;
+}
+
+.pmcc-bar-pos {
+  fill: var(--pos);
+}
+
+.pmcc-bar-neg {
+  fill: var(--neg);
+}
+
+.pmcc-bar-nr {
+  fill: var(--chart-neutral);
+}
+
+.pmcc-bar-labels {
+  display: flex;
+  font-family: var(--num-face);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.pmcc-bar-labels > span {
+  flex: 1;
+  text-align: center;
+  overflow: hidden;
+}
+
+.pmcc-sym {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.pmcc-sym:hover {
+  border-color: var(--chart-grid-strong);
+}
+
+.pmcc-sym:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.pmcc-sym.is-neg {
+  border-color: color-mix(in srgb, var(--neg) 45%, var(--border));
+}
+
+.pmcc-sym-top,
+.pmcc-sym-foot,
+.pmcc-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.pmcc-sym-net {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.pmcc-sym-legs {
+  font-family: var(--num-face);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.pmcc-sym-foot {
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.pmcc-pos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.pmcc-pos-main {
+  flex: 999 1 420px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pmcc-pos-side {
+  flex: 1 1 240px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-sunken);
+}
+
+.pmcc-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.pmcc-pnl {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.pmcc-axis {
+  fill: var(--text-dim);
+  font-family: var(--num-face);
+  font-size: 10px;
+}
+
+.pmcc-mark {
+  stroke: var(--verdict-fail);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+}
+
+.pmcc-mark-label {
+  fill: var(--verdict-fail);
+  font-family: var(--num-face);
+  font-size: 10px;
 }

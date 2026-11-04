@@ -696,6 +696,17 @@ flag that disagrees with the arithmetic both ways and was shown to fail against 
 The shared pieces of the evaluation's tabs (action chip, detail card, rows, the per-share and fee
 formats, the status, tested and check-roll chips, the band text) are in `manageParts.tsx`.
 
+**PMCC's `by arm` tab** (`board`, 2026-11-04, `pages/Pmcc/PmccArmBoard.tsx`) is a column per arm
+with an open position, the symbols it holds stacked as cards (long and short legs, rolls, net, and an
+"exposed N" chip where the short's extrinsic fell under the assignment threshold on N marked ticks).
+PMCC is read per symbol, never pooled, so an arm's head is a bar per symbol and its rule in a line,
+never a total. A card opens the shared lightbox on its symbol (`?pos=`): a tab per open position on
+the symbol, each its P&L since entry (zero at entry, then each priced week's close from the tracker;
+an unpriced week is left off, never zero; dashed lines where a short closed early) and its chain off
+the tracker (the long bought, every short sold and how it ended, then now), and an "all arms" tab with
+every position's P&L on one chart. Reads `/api/pmcc` and the bridged tracker only. The `arms` tab
+stays the closed-results comparison.
+
 **The Live page's `pmcc` tab** (2026-10-20, `pages/Live/PmccCards.tsx`) is the fourth view: the
 account's `pmcc` (packages/manage `pmcc.py`, docs/skate-plan.md step 6), one card per name whose calls
 have a PMCC's shape, recognised or not, in the wheel cards' columns wherever they mean the same thing.

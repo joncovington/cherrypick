@@ -232,6 +232,8 @@ export type ContangoSlideId = (typeof CONTANGO_SLIDES)[number]["id"];
  */
 export const PMCC_SLIDES = [
   { id: "summary", label: "today" },
+  // A column per arm, a card per symbol it holds (2026-11-04); `arms` stays the closed-results comparison.
+  { id: "board", label: "by arm" },
   { id: "positions", label: "positions" },
   { id: "tracker", label: "tracker" },
   { id: "history", label: "history" },
@@ -522,9 +524,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   pmcc: {
     slides: PMCC_SLIDES,
-    simple: ["summary", "performance", "positions", "guide"],
+    simple: ["summary", "board", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["summary"] },
+      { label: "today", ids: ["summary", "board"] },
       { label: "tables", ids: ["positions", "tracker", "history"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "analysis", "costs", "advisor"] },
