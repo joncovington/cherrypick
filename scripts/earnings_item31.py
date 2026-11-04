@@ -488,6 +488,10 @@ PIT_MAX_SPREAD_PCT = 0.075
 PIT_DOLLAR_SESSIONS, AVG_VOLUME_SESSIONS = 50, 30
 STRESS = {"fees": 1.5, "slippage_frac_of_spread": 0.25}
 REPLAY_MIN_EVENTS, REPLAY_MIN_SHARE, REPLAY_TICK = 20, 0.90, 0.01
+#: The check's agreement (2026-11-03, the user's decision, before any arm was read): each leg's
+#: strike within one listed strike of paper's, and the credit within 5% of paper's. The exact
+#: agreement (the same strikes, the credit within a tick) is reported beside it.
+REPLAY_STRIKE_STEPS, REPLAY_CREDIT_SHARE = 1, 0.05
 PAPER_FIRST, PAPER_LAST = date(2026, 7, 15), date(2026, 10, 23)
 EXIT_READINGS = ("managed", "first_morning", "held_to_expiry", "no_pead")
 FILL_READINGS = ("working", "mid_fees", "natural", "stress")
@@ -1973,31 +1977,85 @@ def compare_entry(paper: dict, built: dict | None) -> str | None:
     return None
 
 
+def _legs_by_side(legs: list[dict]) -> dict[tuple, list[float]] | None:
+    """{(expiry, right, action): sorted strikes}, or None when a leg's symbol does not parse."""
+    from cherrypick.core.livepositions import parse_occ
+
+    out: dict[tuple, list[float]] = {}
+    for leg in legs:
+        p = parse_occ(leg["symbol"])
+        if not p:
+            return None
+        out.setdefault((p[1], p[2], leg["action"]), []).append(float(p[3]))
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def _steps_apart(a: float, b: float, listed: list[float]) -> int | None:
+    """How many listed strikes lie between `a` and `b` and one of them (0 when equal); None when
+    either is not listed."""
+    try:
+        return abs(listed.index(a) - listed.index(b))
+    except ValueError:
+        return None
+
+
+def match_entry(paper: dict, built: dict | None, listed: dict[str, list[float]]) -> str | None:
+    """The gate's agreement: None when the replay built paper's entry on the same expiry, with the
+    same legs by right and action, each strike within `REPLAY_STRIKE_STEPS` listed strikes of
+    paper's (`listed`: {right: sorted strikes} of that expiry), and the credit within
+    `REPLAY_CREDIT_SHARE` of paper's; else why not (`structure`, `strikes`, `credit`, `not_built`)."""
+    if built is None:
+        return "not_built"
+    p, b = _legs_by_side(paper["legs"]), _legs_by_side(built["legs"])
+    if p is None or b is None or set(p) != set(b) or any(len(p[k]) != len(b[k]) for k in p):
+        return "structure"
+    for (_exp, right, _action), strikes in p.items():
+        for x, y in zip(strikes, b[(_exp, right, _action)], strict=True):
+            apart = 0 if x == y else _steps_apart(x, y, listed.get(right, []))
+            if apart is None or apart > REPLAY_STRIKE_STEPS:
+                return "strikes"
+    pc, bc = float(paper["credit"]), float(built["credit"])
+    if abs(bc - pc) > REPLAY_CREDIT_SHARE * abs(pc) + 1e-9:
+        return "credit"
+    return None
+
+
 def evaluate_replay_check(results: list[dict]) -> dict:
-    """The share of replayed paper entries that agree. Stops the study when fewer than 20 events
-    could be replayed or fewer than 90% agree."""
+    """The share of replayed paper entries that agree (`match_entry`). Stops the study when fewer
+    than 20 events could be replayed or fewer than 90% agree. The exact agreement (`compare_entry`)
+    is reported, not gated."""
     n = len(results)
     agree = sum(1 for r in results if r["disagreement"] is None)
+    exact = sum(1 for r in results if r.get("exact", "") is None)
     share_ = agree / n if n else None
     return {
         "events": n,
         "agree": agree,
         "share": share_,
         "disagreements": dict(Counter(r["disagreement"] for r in results if r["disagreement"])),
+        "exact": {
+            "agree": exact,
+            "share": exact / n if n else None,
+            "disagreements": dict(Counter(r["exact"] for r in results if r.get("exact"))),
+        },  # fmt: skip
         "ok": n >= REPLAY_MIN_EVENTS and share_ is not None and share_ >= REPLAY_MIN_SHARE,
-        "rule": f"at least {REPLAY_MIN_EVENTS} events and {REPLAY_MIN_SHARE:.0%} agreeing, "
+        "rule": f"at least {REPLAY_MIN_EVENTS} events and {REPLAY_MIN_SHARE:.0%} agreeing (strikes within "
+        f"{REPLAY_STRIKE_STEPS} listed strike, credit within {REPLAY_CREDIT_SHARE:.0%}), "
         "else the study stops and the replay is fixed first",
     }
 
 
-#: The bars the check may read paper's entry at: the entry window at 5 minutes.
-CHECK_BARS = ("15:35", "15:40", "15:45", "15:50")
+#: The check reads paper's own entry minute, one bar at one minute (2026-11-03): at the 5-minute bar
+#: nearest paper's time, agreement fell with every minute between them.
+CHECK_INTERVAL = "1m"
 
 
-def entry_bar(opened: str) -> str:
-    """The stored bar nearest paper's entry time, inside the entry window."""
-    hh, mm = (int(x) for x in opened.split(":"))
-    return min(CHECK_BARS, key=lambda b: (abs(int(b[:2]) * 60 + int(b[3:]) - hh * 60 - mm), b))
+def listed_strikes(chains: Chains, symbol: str, session: str, expiration: str) -> dict[str, list[float]]:
+    """{right: sorted strikes} the chain lists for one expiry, as the check's step is counted."""
+    out: dict[str, set[float]] = {}
+    for r in chains.rows(symbol, date.fromisoformat(session), date.fromisoformat(expiration)):
+        out.setdefault(r["right"], set()).add(float(r["strike"]))
+    return {k: sorted(v) for k, v in out.items()}
 
 
 class BarChains(Chains):
@@ -2073,17 +2131,18 @@ def basis_gap(at_bar: list[dict], at_close: list[dict]) -> dict:
 
 
 def check_requests(pairs: list[tuple[dict, dict]]) -> list[dict]:
-    """The intraday entry-window request for each paper entry's own expiry on its session, once each."""
+    """One request per paper entry: its own expiry on its session at its own entry minute, one bar
+    at one minute, once each."""
     out, seen = [], set()
     for p, _ev in pairs:
-        key = (p["symbol"].upper(), p["session"], p["expiration"])
+        key = (p["symbol"].upper(), p["session"], p["expiration"], p["opened"])
         if key in seen:
             continue
         seen.add(key)
         out.append(
-            {"symbol": key[0], "expiration": key[2], "interval": INTERVAL, "event": f"{key[0]} {key[1]}",
-             "year": int(key[1][:4]), "kind": "entry", "session": key[1], "start": ENTRY_WINDOW[0],
-             "end": ENTRY_WINDOW[1], "required": list(ENTRY_BARS)}
+            {"symbol": key[0], "expiration": key[2], "interval": CHECK_INTERVAL,
+             "event": f"{key[0]} {key[1]}", "year": int(key[1][:4]), "kind": "entry", "session": key[1],
+             "start": key[3], "end": key[3], "required": [key[3]]}
         )  # fmt: skip
     return out
 
@@ -2104,10 +2163,12 @@ def replay_events(
 
 
 def cmd_replay_check(args) -> int:
-    """The gate builds each paper entry from the intraday chain at the bar nearest paper's own entry
-    time (2026-11-01, the user's decision, before any arm was read): the close's build disagreed on
-    100 of 104, a strike or a few cents off on the same expiry and structure, which is the 15:40
-    against close basis and not the rule. The close's build is reported beside it (`basis_gap`)."""
+    """The gate builds each paper entry from the intraday chain at paper's own entry minute and
+    judges it with `match_entry` (2026-11-03, the user's decision, before any arm was read). The
+    first gate (2026-11-01) read the 5-minute bar nearest paper's time and asked for the same strikes
+    and the credit within a tick: agreement fell with each minute between paper and the bar, and a
+    second vendor's quote seconds away from paper's moves a strike or a few cents even at the same
+    minute. The exact agreement and the close's build are reported beside it (`exact`, `basis_gap`)."""
     from cherrypick.backtest import chainfetch, intradayfetch, settings
     from cherrypick.earnings import paths as epaths
 
@@ -2174,20 +2235,21 @@ def cmd_replay_check(args) -> int:
 
 
 def replay_check(pairs, data, close_chains: Chains, bar_conn: sqlite3.Connection) -> tuple[dict, list]:
-    """The gate on each entry built at paper's bar; the close's build reported beside it."""
-    bars = {(p["symbol"].upper(), p["session"]): entry_bar(p["opened"]) for p, _ in pairs}
-    bar_chains = BarChains(bar_conn, bars)
-    at_bar = Study(AtBar(data, bar_chains), bar_chains, study_config(), {})
+    """The gate on each entry built at paper's own minute; the close's build reported beside it.
+    Each entry reads its own minute, so two entries on one name and session read their own bars."""
     at_close = Study(data, close_chains, study_config(), {})
     results, bar_recs, close_recs = [], [], []
     for p, ev in pairs:
+        bar_chains = BarChains(bar_conn, {(p["symbol"].upper(), p["session"]): p["opened"]})
+        at_bar = Study(AtBar(data, bar_chains), bar_chains, study_config(), {})
         rb = at_bar.trade(p["strategy"], ev, "replay", None, entry_only=True)
         rc = at_close.trade(p["strategy"], ev, "replay", None, entry_only=True)
         bar_recs.append(rb)
         close_recs.append(rc)
+        listed = listed_strikes(bar_chains, p["symbol"], p["session"], p["expiration"])
         results.append({"symbol": p["symbol"], "session": p["session"], "strategy": p["strategy"],
-                        "bar": bars[(p["symbol"].upper(), p["session"])],
-                        "disagreement": compare_entry(p, rb.get("built")), "drop": rb.get("drop"),
+                        "bar": p["opened"], "disagreement": match_entry(p, rb.get("built"), listed),
+                        "exact": compare_entry(p, rb.get("built")), "drop": rb.get("drop"),
                         "at_close": compare_entry(p, rc.get("built"))})  # fmt: skip
     report_ = evaluate_replay_check(results)
     report_["at_close"] = dict(Counter(r["at_close"] or "agree" for r in results))

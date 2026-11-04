@@ -2809,6 +2809,25 @@ paper ledger has been running since 2026-07-15, and it is the thing asked about.
     - **The close's build is reported beside it** (`at_close`, `basis_gap`): how often its legs differ
       from the bar's, and its credit less the bar's. This is what the end-of-day basis does to an
       entry. It is shown with the verdict, not gated.
+  - **The check reads paper's own minute and agrees within a step (2026-11-03, the user's decision,
+    before any arm was read).** The bar check stopped the study (`item31/replay-check`, 2026-11-02).
+    - **The misses were the snapshot, not the rule.** Read entry by entry, every miss again had paper's
+      expiry and structure, with a strike a step out or the credit a few cents off. Agreement fell with
+      each minute between paper's entry and the 5-minute bar read for it, and even at paper's own
+      minute a second vendor's quote some seconds away moves a strike or a few cents. The same
+      strikes and the credit within a tick cannot be met from history at any bar.
+    - **Correction:** paper does record its inputs in part. `entry_context` carries the expected move
+      on most entries and the side on the directional spread's. They are not fed through the rule.
+
+    Now:
+    - **Paper's own minute.** Each entry is read at its own entry minute, one bar at one minute
+      (`check_requests` writes one request per entry), with that bar's underlying as the spot. Two
+      entries on one name and session read their own minutes.
+    - **The gate's agreement** (`match_entry`): the same expiry, the same legs by right and action,
+      each strike within one listed strike of paper's (a strike the chain does not list is no
+      agreement), and the credit within 5% of paper's. 20 events and 90% agreeing, as before.
+    - **The exact agreement is reported beside it** (`exact`: the same strikes, the credit within a
+      tick), with the close's build, not gated.
 
 ### 32. Large options orders as a signal: the flow plan's declared test, registered
 
