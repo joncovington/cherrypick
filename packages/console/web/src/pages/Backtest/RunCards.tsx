@@ -482,7 +482,7 @@ export function healthSentence(h: BacktestHealthCheck): string {
 }
 
 /** The health checks first, flagged ones on top; nothing for a card from an older backtest package. */
-function HealthChecks({ c }: { c: BacktestArmCards }) {
+export function HealthChecks({ c }: { c: BacktestArmCards }) {
   const h = c.health;
   if (h === undefined) return null;
   const ordered = [...h.checks].sort((a, b) => Number(b.flag) - Number(a.flag));
@@ -616,7 +616,7 @@ function DrawdownTable({ c }: { c: BacktestArmCards }) {
   );
 }
 
-function MonthGrid({ c }: { c: BacktestArmCards }) {
+export function MonthGrid({ c }: { c: BacktestArmCards }) {
   const { months, years } = c.calendar;
   if (years.length === 0) return <p className="muted">No sessions.</p>;
   const maxAbs = Math.max(...Object.values(months).map((v) => Math.abs(v)), 1);
