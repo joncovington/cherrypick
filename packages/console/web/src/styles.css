@@ -7420,3 +7420,48 @@ select.text-input {
   font-family: var(--num-face);
   font-size: 10px;
 }
+
+/* Backtest cards at twice the size (2026-11-04): each tile twice as wide and twice as tall as the
+   shared grid's 240 x 220, the sparklines grown to match. Scoped to the Backtest page; MEIC's arms
+   tab and Live -> today keep the shared size. */
+.mf-layout[data-module="backtest"] .study-tiles {
+  grid-template-columns: repeat(auto-fill, minmax(min(480px, 100%), 1fr));
+  grid-auto-rows: 440px;
+  gap: 16px;
+}
+
+.mf-layout[data-module="backtest"] .q-tiles {
+  grid-auto-rows: minmax(336px, auto);
+}
+
+.mf-layout[data-module="backtest"] .q-tiles-small {
+  grid-auto-rows: minmax(220px, auto);
+}
+
+.mf-layout[data-module="backtest"] .study-spark {
+  height: 64px;
+}
+
+.mf-layout[data-module="backtest"] .study-hero .study-spark {
+  height: 160px;
+}
+
+/* The large tile stays two columns wide but one row tall: two doubled rows (880px) left it mostly
+   empty. */
+.mf-layout[data-module="backtest"] .study-hero {
+  grid-row: span 1;
+}
+
+/* Under two columns' width the large tile spans the one column there is, never an implicit second. */
+@media (max-width: 1240px) {
+  .mf-layout[data-module="backtest"] .study-hero {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .mf-layout[data-module="backtest"] .study-tiles {
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: minmax(360px, auto);
+  }
+}
