@@ -6,8 +6,8 @@ import App from "./App";
 import { reloadForStaleChunk } from "./components/shell/PageErrorBoundary";
 import { AppErrorBoundary } from "./components/shell/AppErrorBoundary";
 // The Backtest page's fonts (2026-11-03), bundled so nothing is fetched; used only there (styles.css).
-import "@fontsource-variable/inter";
-import "@fontsource-variable/jetbrains-mono";
+import "@fontsource-variable/inter/index.css";
+import "@fontsource-variable/jetbrains-mono/index.css";
 import "./styles.css";
 
 const queryClient = new QueryClient({
