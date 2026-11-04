@@ -299,7 +299,7 @@ describe("studies tab", () => {
     expect(out.indexOf("control")).toBeLessThan(out.indexOf("d20"));
     expect(out).toContain("+$1.29 / session");
     expect(out).toContain("-$2.50 / session");
-    expect(out).toMatch(/class="chip chip-missing">fail</);
+    expect(out).toMatch(/class="chip chip-missing verdict-fail">fail</);
   });
 
   it("starts control hidden only when it trades on another scale from the study's arms, and says why", () => {
@@ -430,9 +430,9 @@ describe("links between the tabs", () => {
       results: [result({ name: "d.json", window: "design" }), result({ name: "h.json", window: "holdout", summary: "pass", verdicts: [{ arm: null, verdict: "pass" }] })],
     });
     const out = html(<Verdicts row={r} />);
-    expect(out).toContain('class="chip chip-missing"');
+    expect(out).toContain('class="chip chip-missing verdict-fail"');
     expect(out).toContain(">design fail<");
-    expect(out).toMatch(/class="chip chip-ok"[^>]*>holdout pass</);
+    expect(out).toMatch(/class="chip chip-ok verdict-pass"[^>]*>holdout pass</);
     expect(out).not.toContain("not yet recorded");
     expect(html(<Verdicts row={row({ results: [result({ window: "holdout", summary: "pass", source: "queue" })] })} />)).toContain("not yet recorded");
   });

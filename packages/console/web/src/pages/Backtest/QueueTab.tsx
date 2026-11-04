@@ -1,7 +1,7 @@
 import { Fragment, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { BridgedResult, ResearchProgress, ResearchQueue, ResearchTask } from "@console/shared";
-import { VERDICT_STATUSES, indexStudies, splitTitle, statusWord, studyHref, useStudies, type StudyIndex } from "./studyIndex";
+import { VERDICT_STATUSES, indexStudies, splitTitle, statusWord, studyHref, useStudies, verdictChip, type StudyIndex } from "./studyIndex";
 import { Card } from "../../components/DataTable";
 import { useBridged } from "../../lib/bridged";
 
@@ -306,7 +306,7 @@ export function StudyChip({ study, studies }: { study: string; studies?: StudyIn
   return (
     <Link
       to={studyHref(study)}
-      className={row.status === "failed" ? "chip chip-missing" : row.status === "passed" ? "chip chip-ok" : "chip"}
+      className={verdictChip(statusWord(row.status))}
       title={`${row.title}: the study's verdict (open it on the studies tab)`}
     >
       {statusWord(row.status)}

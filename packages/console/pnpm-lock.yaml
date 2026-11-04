@@ -94,6 +94,12 @@ importers:
       '@console/shared':
         specifier: workspace:*
         version: link:../shared
+      '@fontsource-variable/inter':
+        specifier: 5.2.5
+        version: 5.2.5
+      '@fontsource-variable/jetbrains-mono':
+        specifier: 5.2.5
+        version: 5.2.5
       '@tanstack/react-query':
         specifier: ^5.104.1
         version: 5.104.1(react@19.3.0)
@@ -339,6 +345,12 @@ packages:
 
   '@fastify/websocket@11.3.3':
     resolution: {integrity: sha512-NBJoykKpFwrdX9Ezod1rt30p5NoPFu7vgeuUowSM3JVI5/hFNRPhetqkWMTiF/ifIzctwitbJut1gZ6FDg1mwQ==}
+
+  '@fontsource-variable/inter@5.2.5':
+    resolution: {integrity: sha512-TrWffUAFOnT8zroE9YmGybagoOgM/HjRqMQ8k9R0vVgXlnUh/vnpbGPAS/Caz1KIlOPnPGh6fvJbb7DHbFCncA==}
+
+  '@fontsource-variable/jetbrains-mono@5.2.5':
+    resolution: {integrity: sha512-G3sN1xq1moZd0JL+hFaA4MEdsiQS+JXC/z7m+EqA5/Fzn5CQlXGUaaNKFGQdDsFuLTnCfW0KOOSWHjygNfjEPw==}
 
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
@@ -1754,6 +1766,10 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
+
+  '@fontsource-variable/inter@5.2.5': {}
+
+  '@fontsource-variable/jetbrains-mono@5.2.5': {}
 
   '@jridgewell/resolve-uri@3.1.2': {}
 

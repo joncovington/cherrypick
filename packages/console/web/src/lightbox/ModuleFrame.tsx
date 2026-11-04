@@ -132,7 +132,7 @@ export function ModuleFrame({
   const undeclared = declared.length === 0 ? [] : slides.filter((s) => !declared.includes(s.id));
 
   return (
-    <div className="mf-layout">
+    <div className="mf-layout" data-module={module}>
       <FrameChrome
         module={module}
         slideLabel={active?.label ?? activeId}

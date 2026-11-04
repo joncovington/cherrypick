@@ -21,7 +21,7 @@ import { TileGrid } from "../../components/performance/TileGrid";
 import { fmtGap, signTone, useBridged } from "../../lib/bridged";
 import { fmtCash, fmtCount, fmtNum } from "../../lib/format";
 import { RunCards } from "./RunCards";
-import { indexStudies, studyHref, useStudies, type StudyIndex } from "./studyIndex";
+import { indexStudies, studyHref, useStudies, verdictChip, type StudyIndex } from "./studyIndex";
 
 /**
  * The Backtest page (2026-10-17): `packages/backtest`'s replays over licensed vendor history, read
@@ -94,7 +94,7 @@ function measure(v: unknown): string {
 
 function pass(v: boolean | undefined | null): ReactNode {
   if (v === undefined || v === null) return <span className="muted">—</span>;
-  return <span className={v ? "chip chip-ok" : "chip chip-missing"}>{v ? "pass" : "fail"}</span>;
+  return <span className={verdictChip(v ? "pass" : "fail")}>{v ? "pass" : "fail"}</span>;
 }
 
 /** `created_at` (epoch seconds) as New York wall clock, `2026-10-17 09:30`. */
