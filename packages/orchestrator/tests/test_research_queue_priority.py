@@ -44,6 +44,54 @@ def _add(db, step, **kw):
     return rq.add("item31", "fetch-chains", {"requests": "r.json"}, step=step, path=db, **kw)["id"]
 
 
+def _study(db, study, step, **kw):
+    return rq.add(study, "script", {"path": "scripts/x.py"}, step=step, path=db, **kw)["id"]
+
+
+def test_a_study_whose_fetch_is_done_runs_before_a_higher_priority_fetch(db):
+    fetch = _add(db, "fetch", priority=-1)
+    study = _study(db, "item49", "study", after="item31/fetch")
+    other = _add(db, "other-fetch", priority=10)
+    assert _next(db) == other, "the study's fetch has not run: it waits, the raised fetch runs"
+    assert _next(db) == fetch
+    late = _add(db, "late-fetch", priority=10)
+    assert _next(db) == study, "its input is in: the study goes before any fetch"
+    assert _next(db) == late
+
+
+def test_a_validate_row_after_its_prerequisite_counts_as_a_study(db):
+    first = _add(db, "first")
+    assert _next(db) == first
+    _add(db, "raised", priority=10)
+    v = rq.add("validation", "validate", {"module": "meic", "cadence": 60}, step="v", path=db,
+               after="item31/first")["id"]  # fmt: skip
+    assert _next(db) == v
+
+
+def test_a_script_with_no_prerequisite_takes_its_place_by_priority(db):
+    loose = _study(db, "item48", "design")
+    raised = _add(db, "raised", priority=10)
+    assert _next(db) == raised, "nothing says the loose script's inputs were fetched"
+    assert _next(db) == loose
+
+
+def test_priority_then_age_orders_studies_whose_inputs_are_in(db):
+    a, b = _add(db, "a"), _add(db, "b")
+    assert [_next(db), _next(db)] == [a, b]
+    s1 = _study(db, "s", "one", after="item31/a")
+    s2 = _study(db, "s", "two", after="item31/b", priority=3)
+    s3 = _study(db, "s", "three", after="item31/b", priority=3)
+    assert [_next(db) for _ in range(3)] == [s2, s3, s1]
+
+
+def test_run_order_is_the_rule_spelt_once():
+    fetch = {"id": 1, "kind": "fetch-chains", "after": "a/b", "priority": 99}
+    study = {"id": 2, "kind": "script", "after": "a/b", "priority": 0}
+    loose = {"id": 3, "kind": "script", "after": None, "priority": 0}
+    assert rq.study_first(study) and not rq.study_first(fetch) and not rq.study_first(loose)
+    assert sorted([loose, fetch, study], key=rq.run_order) == [study, fetch, loose]
+
+
 def test_the_highest_priority_ready_row_runs_first_and_the_oldest_among_equals(db):
     a, b, c = _add(db, "a"), _add(db, "b"), _add(db, "c", priority=5)
     d = _add(db, "d", priority=5)
