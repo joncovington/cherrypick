@@ -1,6 +1,20 @@
 import { useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import type { BacktestRunReport, ResearchQueue, ResearchTask, StudiesBoard, StudyGroup, StudyResult, StudyRow, StudyVersion } from "@console/shared";
+import { useQuery } from "@tanstack/react-query";
+import type {
+  BacktestRunReport,
+  BridgedResult,
+  ResearchQueue,
+  ResearchTask,
+  StudiesBoard,
+  StudyGroup,
+  StudyResult,
+  StudyRow,
+  StudyRunFigures,
+  StudyRunSummaries,
+  StudyVersion,
+} from "@console/shared";
+import { isBacktestRunId } from "@console/shared";
 import { useBridged } from "../../lib/bridged";
 import { fmtCash, fmtCount } from "../../lib/format";
 import { useRun } from "./BacktestPage";
@@ -15,8 +29,12 @@ import { VERDICT_STATUSES, resultLabel, statusWord, studyHref, verdictChip } fro
  *
  * Every word is the orchestrator's or the study's: the register's status is the big word on a
  * finished tile, a result file's per-arm verdicts give the "2 pass · 5 fail" line, and a stale or
- * provisional mark is read from the result, never worked out from figures. The tiles carry no
- * figures: the board has none, and a run's report is read only once its lightbox opens.
+ * provisional mark is read from the result, never worked out from figures.
+ *
+ * A tile's figures (2026-11-03) come from the same run its lightbox opens (`figuresRun`), read for
+ * every tile at once in brief (`/api/backtest/summaries`): each arm's running net as a small line and
+ * the arm with the highest mean net a session, as the run's report states it. The board's words
+ * never wait on them; a tile whose run is not on this machine simply shows none.
  *
  * The open study is `?study=` (the link the other tabs already use), so the back button closes it.
  */
@@ -204,6 +222,106 @@ export function heroStudy(rows: StudyRow[]): StudyRow | null {
   return rows.find((r) => r.tasks.some((t) => t.status === "running")) ?? null;
 }
 
+// --------------------------------------------------------------------------- tile figures
+
+/** The run ids every tile's figures come from (`figuresRun`), sorted, each once. */
+export function figuresRunIds(rows: StudyRow[]): string[] {
+  const ids = rows.map((r) => figuresRun(r)?.runId ?? null).filter((x): x is string => x !== null);
+  return [...new Set(ids)].sort();
+}
+
+/** Every tile's run in brief, one read for the board. A run's figures never change once written. */
+export function useRunSummaries(ids: string[]) {
+  const q = ids.join(",");
+  return useQuery<BridgedResult<StudyRunSummaries>>({
+    queryKey: ["bridged", "backtest", "summaries", q],
+    enabled: ids.length > 0,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const res = await fetch(`/api/backtest/summaries?ids=${encodeURIComponent(q)}`);
+      if (!res.ok) throw new Error(`summaries: HTTP ${String(res.status)}`);
+      return (await res.json()) as BridgedResult<StudyRunSummaries>;
+    },
+  });
+}
+
+export interface TileLine {
+  arm: string;
+  path: number[];
+  lead: boolean;
+  control: boolean;
+}
+
+export interface TileFigures {
+  lines: TileLine[];
+  /** The arm with the highest mean net a session, control left out while any other arm has one. */
+  lead: { arm: string; mean: number } | null;
+  /** Arms with a mean: "best of 4" reads against it. */
+  armsWithMean: number;
+  /** Control's line is left off: it trades many times as often as the others (`controlScaleOf`). */
+  controlLeftOff: boolean;
+}
+
+/** What a tile draws from its run in brief; null when there is nothing to draw. Description only:
+ *  the highest mean is a fact of the report, never the study's verdict. */
+export function tileFigures(run: StudyRunFigures): TileFigures | null {
+  const arms = Object.entries(run.arms);
+  const rates = Object.fromEntries(arms.map(([a, f]) => [a, f.trades !== null && f.sessions ? f.trades / f.sessions : null]));
+  const controlLeftOff = controlScaleOf(rates) !== null;
+  const withMean = arms.filter((x): x is [string, (typeof x)[1] & { mean: number }] => x[1].mean !== null);
+  const rivals = withMean.filter(([a]) => a !== "control");
+  const pool = rivals.length > 0 ? rivals : withMean;
+  const best = pool.reduce<[string, number] | null>((acc, [a, f]) => (acc === null || f.mean > acc[1] ? [a, f.mean] : acc), null);
+  const lead = best === null ? null : { arm: best[0], mean: best[1] };
+  const lines = arms
+    .filter(([a, f]) => f.path.length > 1 && !(a === "control" && controlLeftOff))
+    .map(([a, f]) => ({ arm: a, path: f.path, lead: a === lead?.arm, control: a === "control" }));
+  if (lines.length === 0 && lead === null) return null;
+  return { lines, lead, armsWithMean: pool.length, controlLeftOff };
+}
+
+/** Each arm's running net as a thin line, the leading arm drawn over the rest, control dashed. */
+export function TileSpark({ fig }: { fig: TileFigures }) {
+  if (fig.lines.length === 0) return null;
+  const W = 200;
+  const H = 48;
+  const values = fig.lines.flatMap((l) => l.path);
+  const top = Math.max(0, ...values);
+  const bottom = Math.min(0, ...values);
+  const span = top - bottom || 1;
+  const y = (v: number) => 2 + ((top - v) / span) * (H - 4);
+  const pts = (path: number[]) => path.map((v, i) => `${((i / (path.length - 1)) * W).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const order = [...fig.lines].sort((a, b) => Number(a.lead) - Number(b.lead));
+  return (
+    <svg className="study-spark" viewBox={`0 0 ${String(W)} ${String(H)}`} preserveAspectRatio="none" aria-hidden="true">
+      <line x1={0} x2={W} y1={y(0)} y2={y(0)} className="study-spark-zero" vectorEffect="non-scaling-stroke" />
+      {order.map((l) => (
+        <polyline
+          key={l.arm}
+          points={pts(l.path)}
+          className={l.lead ? "study-spark-lead" : "study-spark-line"}
+          strokeDasharray={l.control ? "4 3" : undefined}
+          vectorEffect="non-scaling-stroke"
+        />
+      ))}
+    </svg>
+  );
+}
+
+/** "d10 · +$12.30 / session", "best of 4" beside it when there is more than one arm to choose from. */
+export function TileFigureLine({ fig }: { fig: TileFigures }) {
+  if (fig.lead === null) return null;
+  return (
+    <span className="study-tile-fig">
+      <span className="study-tile-fig-arm">{fig.lead.arm}</span>
+      <span className={`study-tile-fig-amt ${fig.lead.mean < 0 ? "pnl-neg" : fig.lead.mean > 0 ? "pnl-pos" : ""}`}>
+        <span>{fmtCash(fig.lead.mean)}</span> <span>/ session</span>
+      </span>
+      {fig.armsWithMean > 1 ? <span className="muted">best of {fig.armsWithMean}</span> : null}
+    </span>
+  );
+}
+
 // --------------------------------------------------------------------------- the tiles
 
 function StaleMark() {
@@ -227,13 +345,25 @@ function StepSegments({ row }: { row: StudyRow }) {
   );
 }
 
-export function StudyTile({ row, nowMs, onOpen, hero = false }: { row: StudyRow; nowMs: number; onOpen: () => void; hero?: boolean }) {
+export function StudyTile({
+  row,
+  nowMs,
+  onOpen,
+  hero = false,
+  figures = null,
+}: {
+  row: StudyRow;
+  nowMs: number;
+  onOpen: () => void;
+  hero?: boolean;
+  figures?: TileFigures | null;
+}) {
   const m = tileModel(row);
   const when = ago(etMs(row.lastActivity), nowMs);
   return (
     <button
       type="button"
-      className={hero ? "study-tile study-hero" : "study-tile"}
+      className={["study-tile", hero ? "study-hero" : "", figures ? "has-figures" : ""].filter((c) => c !== "").join(" ")}
       data-study={row.study}
       aria-label={`Open ${row.study}: ${row.title}`}
       onClick={onOpen}
@@ -263,8 +393,14 @@ export function StudyTile({ row, nowMs, onOpen, hero = false }: { row: StudyRow;
             {m.done} of {m.total} steps done
           </span>
         ) : null}
-        {(hero || m.kind === "declared" || m.kind === "observation") && (row.expected ?? row.outcome) ? (
+        {(hero || ((m.kind === "declared" || m.kind === "observation") && !figures)) && (row.expected ?? row.outcome) ? (
           <span className={hero ? "study-hero-expect" : "study-tile-sub study-tile-clamp"}>{row.expected ?? row.outcome}</span>
+        ) : null}
+        {figures ? (
+          <>
+            <TileSpark fig={figures} />
+            <TileFigureLine fig={figures} />
+          </>
         ) : null}
       </span>
 
@@ -279,9 +415,11 @@ export function StudyTile({ row, nowMs, onOpen, hero = false }: { row: StudyRow;
 
 // --------------------------------------------------------------------------- the lightbox: run figures
 
-/** The run a study's figures come from: its newest result file that names one. */
+/** The run a study's figures come from: its newest result file that names one in the runner's shape.
+ *  A study script's own label ("item30-2026-10-30") names no report the runner wrote, so it is passed
+ *  over for an older file that does, never asked for. */
 export function figuresRun(row: StudyRow): StudyResult | null {
-  const withRun = row.results.filter((r) => r.present && r.runId);
+  const withRun = row.results.filter((r) => r.present && r.runId !== null && isBacktestRunId(r.runId));
   withRun.sort((a, b) => (etMs(b.modified) ?? 0) - (etMs(a.modified) ?? 0));
   return withRun[0] ?? null;
 }
@@ -302,10 +440,15 @@ export const CONTROL_SCALE = 10;
  * alike), so its dollars a session do not compare with a one-condor rule's. Null otherwise.
  */
 export function controlScale(report: BacktestRunReport): number | null {
-  const ctl = tradesPerSession(report, "control");
-  const others = Object.keys(report.arms)
-    .filter((a) => a !== "control")
-    .map((a) => tradesPerSession(report, a))
+  return controlScaleOf(Object.fromEntries(Object.keys(report.arms).map((a) => [a, tradesPerSession(report, a)])));
+}
+
+/** `controlScale` over each arm's trades a session, however they were read. */
+export function controlScaleOf(rates: Record<string, number | null>): number | null {
+  const ctl = rates["control"] ?? null;
+  const others = Object.entries(rates)
+    .filter(([a]) => a !== "control")
+    .map(([, r]) => r)
     .filter((x): x is number => x !== null && x > 0)
     .sort((a, b) => a - b);
   if (ctl === null || others.length === 0) return null;
@@ -420,7 +563,7 @@ function RunFigures({ row }: { row: StudyRow }) {
   const result = figuresRun(row);
   const { data, isLoading, isError, error } = useRun(result?.runId ?? null, { capital: null });
   if (result === null) {
-    return <p className="muted">{row.group === "declared" ? "Declared, not run yet." : "No result file here names a run, so there are no figures to show."}</p>;
+    return <p className="muted">{row.group === "declared" ? "Declared, not run yet." : "No result file here names a run the backtest runner wrote, so there are no figures to show."}</p>;
   }
   let body: ReactNode;
   if (isLoading) body = <span className="skeleton skeleton-text" style={{ width: "50%" }} />;
@@ -727,16 +870,31 @@ export function laidOut(rows: StudyRow[]): StudyRow[] {
 }
 
 /** The mosaic: the study running now as the large tile, then the rest in order. */
-export function StudyTiles({ rows, nowMs, onOpen }: { rows: StudyRow[]; nowMs: number; onOpen: (study: string) => void }) {
+export function StudyTiles({
+  rows,
+  nowMs,
+  onOpen,
+  summaries = null,
+}: {
+  rows: StudyRow[];
+  nowMs: number;
+  onOpen: (study: string) => void;
+  summaries?: StudyRunSummaries | null;
+}) {
   if (rows.length === 0) return <p className="muted">No studies in this group.</p>;
   const hero = heroStudy(rows);
+  const figuresOf = (r: StudyRow): TileFigures | null => {
+    const id = figuresRun(r)?.runId;
+    const run = id ? summaries?.runs[id] : undefined;
+    return run ? tileFigures(run) : null;
+  };
   return (
     <div className="study-tiles">
-      {hero ? <StudyTile key={hero.study} row={hero} nowMs={nowMs} hero onOpen={() => onOpen(hero.study)} /> : null}
+      {hero ? <StudyTile key={hero.study} row={hero} nowMs={nowMs} hero figures={figuresOf(hero)} onOpen={() => onOpen(hero.study)} /> : null}
       {rows
         .filter((r) => r !== hero)
         .map((r) => (
-          <StudyTile key={r.study} row={r} nowMs={nowMs} onOpen={() => onOpen(r.study)} />
+          <StudyTile key={r.study} row={r} nowMs={nowMs} figures={figuresOf(r)} onOpen={() => onOpen(r.study)} />
         ))}
     </div>
   );
@@ -748,6 +906,8 @@ export function StudyCards({ board }: { board: StudiesBoard }) {
   const groupParam = params.get("group");
   const group = isGroup(groupParam) ? groupParam : null;
   const rows = orderedRows(board, group);
+  // One read for the whole board, so picking a group never asks again.
+  const summaries = useRunSummaries(figuresRunIds(board.rows));
   // The lightbox steps in the order the tiles are laid out: the large tile first.
   const { rows: stepRows, index } = openIndex(board, group, lightbox.open);
   return (
@@ -762,7 +922,7 @@ export function StudyCards({ board }: { board: StudiesBoard }) {
           setParams(next, { replace: true });
         }}
       />
-      <StudyTiles rows={rows} nowMs={etNowMs()} onOpen={lightbox.show} />
+      <StudyTiles rows={rows} nowMs={etNowMs()} onOpen={lightbox.show} summaries={summaries.data?.ok ? summaries.data.data : null} />
       {index >= 0 ? (
         <StudyDialog rows={stepRows} index={index} onStep={(to) => lightbox.step(stepRows[to]?.study ?? "")} onClose={lightbox.close} />
       ) : null}

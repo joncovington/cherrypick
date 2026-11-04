@@ -564,6 +564,9 @@ def cmd_read(args) -> int:
     if args.what == "stores":
         _emit(readout.store_locations(settings.load(args.config)))
         return 0
+    if args.what == "summaries":
+        _emit(readout.run_summaries((args.ids or "").split(",")))
+        return 0
     if args.what == "trades":
         out = readout.run_trades(args.id or "", args.arm or "")
         _emit(out)
@@ -749,7 +752,8 @@ def main(argv: list[str] | None = None) -> int:
     ra.add_argument("--workers", type=int, default=4)
     ra.set_defaults(fn=cmd_run_advised)
     rd = sub.add_parser("read", help="the console's read surface: JSON, read-only")
-    rd.add_argument("what", choices=("overview", "run", "trades", "path", "stores"))
+    rd.add_argument("what", choices=("overview", "run", "trades", "path", "stores", "summaries"))
+    rd.add_argument("--ids", default=None, help="with `summaries`: run ids, comma separated")
     rd.add_argument("--id", default=None, help="with `run`, `trades` or `path`: the run id")
     rd.add_argument("--arm", default=None, help="with `trades` or `path`: the arm")
     rd.add_argument("--session", default=None, help="with `path`: the trade's session (YYYY-MM-DD)")

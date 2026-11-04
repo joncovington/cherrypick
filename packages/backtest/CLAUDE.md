@@ -263,6 +263,12 @@ config: a size change stays the operator's, through the module's `live` block.
 each trade's times, its exit reason in the module's words and its money columns as `core.ledgers`
 names them, a field the schema does not record as null. Its own read, so `read run` stays light.
 
+`read summaries --ids A,B` (2026-11-03) gives each run's arms in brief for the console's studies
+tiles: the mean net a session, sessions and trades as the run's report states them (never
+recomputed), and the running net from `session_results` thinned to 48 points, for a line's shape
+only. One read answers for a board's worth of runs (at most 80); an id with no report is listed in
+`missing`.
+
 **The trade path** (`tradepath.py`, `read path --id --arm --session --position`, 2026-10-31): one MEIC
 condor through its session, re-read from the store the run read: each side's cost to close at mid at
 every stored sample until its own exit, then its recorded exit price; the position's P&L at those

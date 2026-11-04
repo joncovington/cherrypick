@@ -7,6 +7,7 @@ import {
   isBacktestRiskUnit,
   isBacktestRunId,
   isBacktestSession,
+  STUDY_SUMMARY_RUNS,
   type BacktestOverview,
   type BacktestRunReport,
   type BacktestTradeLog,
@@ -14,9 +15,10 @@ import {
   type BridgedResult,
   type ResearchQueue,
   type StudiesBoard,
+  type StudyRunSummaries,
 } from "@console/shared";
 import { backtestOn, getFeatures } from "../services/featuresBridge.js";
-import { readBacktestOverview, readBacktestPath, readBacktestRun, readBacktestTrades } from "../services/backtestBridge.js";
+import { readBacktestOverview, readBacktestPath, readBacktestRun, readBacktestTrades, readRunSummaries } from "../services/backtestBridge.js";
 import { readResearchQueue } from "../services/researchQueueBridge.js";
 import { readStudies } from "../services/studiesBridge.js";
 import type { ConsoleConfig } from "../config.js";
@@ -25,8 +27,8 @@ import { readQueueLog } from "../readers/logs.js";
 
 /**
  * `GET /api/backtest/overview`, `GET /api/backtest/runs/:id`, `GET /api/backtest/runs/:id/trades`,
- * `GET /api/backtest/runs/:id/path`, `GET /api/backtest/queue` and `GET /api/backtest/studies` — the
- * Backtest page.
+ * `GET /api/backtest/runs/:id/path`, `GET /api/backtest/summaries`, `GET /api/backtest/queue` and
+ * `GET /api/backtest/studies` — the Backtest page.
  *
  * **Each route refuses on its own, fail closed.** Unless the orchestrator's features answer was read
  * and says `backtest: true` (`featuresBridge.backtestOn`), the answer is the same 404 an unknown API
@@ -110,6 +112,19 @@ export function registerBacktestRoutes(app: FastifyInstance, config?: ConsoleCon
       if (session === undefined || !isBacktestSession(session)) return reply.code(400).send({ error: "not a session date" });
       if (position === undefined || !isBacktestPosition(position)) return reply.code(400).send({ error: "not a position id" });
       return readBacktestPath(req.params.id, arm, session, position);
+    },
+  );
+
+  // Runs in brief for the studies tiles (`?ids=A,B`): every id is checked for shape, and their count
+  // capped, before anything is spawned.
+  app.get<{ Querystring: { ids?: string } }>(
+    "/api/backtest/summaries",
+    async (req, reply): Promise<BridgedResult<StudyRunSummaries> | FastifyReply> => {
+      if (!backtestOn(await getFeatures())) return refuse(reply);
+      const ids = (req.query.ids ?? "").split(",").filter((x) => x !== "");
+      if (ids.length > STUDY_SUMMARY_RUNS) return reply.code(400).send({ error: `at most ${String(STUDY_SUMMARY_RUNS)} run ids` });
+      if (!ids.every(isBacktestRunId)) return reply.code(400).send({ error: "not a run id" });
+      return readRunSummaries(ids);
     },
   );
 
