@@ -87,10 +87,13 @@ Subcommands:
                        fetch-sessions|
                        script, --task-args JSON,
                        --output (a script's conclusion file), --not-before / --stop-by (ET,
-                       YYYY-MM-DDTHH:MM). Allow-listed kinds only.
+                       YYYY-MM-DDTHH:MM), --priority N (higher runs first; default 0).
+                       Allow-listed kinds only.
   queue-list           The research queue's rows, newest first (--study narrows), why a queued one
                        waits, and where a finished one's result is.
   queue-cancel         Cancel a queued task (--task-id).
+  queue-priority       Reorder a queued task (--task-id, --priority N): the ready row with the
+                       highest priority runs next, the oldest among equals.
   queue-run            Run ready tasks one after another, each to its end (the research-queue job).
   remind-add           Add a dated reminder (orchestrator/reminders.py): --title, --file (the
                        message), --due (ET, YYYY-MM-DDTHH:MM), --done-when / --checks (JSON lists of
@@ -1642,6 +1645,7 @@ def cmd_queue_add(args) -> None:
             not_before=args.not_before,
             stop_by=args.stop_by,
             after=args.after,
+            priority=args.priority if args.priority is not None else 0,
         )
     except (rq.Refused, ValueError) as exc:
         _emit({"ok": False, "error": str(exc)})
@@ -1693,6 +1697,18 @@ def cmd_queue_cancel(args) -> None:
         _emit({"ok": False, "error": "queue-cancel needs --task-id"})
         sys.exit(2)
     out = rq.cancel(args.task_id)
+    _emit(out)
+    if not out["ok"]:
+        sys.exit(1)
+
+
+def cmd_queue_priority(args) -> None:
+    from cherrypick.orchestrator import researchqueue as rq
+
+    if args.task_id is None or args.priority is None:
+        _emit({"ok": False, "error": "queue-priority needs --task-id and --priority"})
+        sys.exit(2)
+    out = rq.set_priority(args.task_id, args.priority)
     _emit(out)
     if not out["ok"]:
         sys.exit(1)
@@ -2312,6 +2328,7 @@ def build_parser() -> argparse.ArgumentParser:
             "queue-add",
             "queue-list",
             "queue-cancel",
+            "queue-priority",
             "queue-run",
             "remind-add",
             "remind-list",
@@ -2591,7 +2608,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="For queue-add: wait for this row (study/step) to finish done; held if it fails",
     )
-    parser.add_argument("--task-id", type=int, default=None, help="For queue-cancel: the row to cancel")
+    parser.add_argument(
+        "--task-id", type=int, default=None, help="For queue-cancel / queue-priority: the row"
+    )
+    parser.add_argument(
+        "--priority",
+        type=int,
+        default=None,
+        help="For queue-add / queue-priority: higher runs first (default 0)",
+    )
     parser.add_argument("--title", default=None, help="For remind-add: the reminder's title")
     parser.add_argument(
         "--due", default=None, help="For remind-add: when it falls due (ET, YYYY-MM-DDTHH:MM)"
@@ -2717,6 +2742,7 @@ def main() -> None:
         "queue-add": lambda: cmd_queue_add(args),
         "queue-list": lambda: cmd_queue_list(cfg, args),
         "queue-cancel": lambda: cmd_queue_cancel(args),
+        "queue-priority": lambda: cmd_queue_priority(args),
         "queue-run": lambda: cmd_queue_run(cfg),
         "remind-add": lambda: cmd_remind_add(args),
         "remind-list": lambda: cmd_remind_list(cfg),

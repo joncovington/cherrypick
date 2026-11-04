@@ -6,6 +6,12 @@ terminal or an assistant's session, it dies with that session and collides with 
 the supervisor's `research-queue` job takes the oldest ready row every minute and runs it, then the
 next ready row straight away (`run_ready`), so a chain of rows has no gap between them.
 
+**Priority** (2026-11-03, the user's ask): a row's `priority` (a whole number, default 0) orders the
+queue: the ready row with the highest priority runs first, the oldest among equals. Set it on the way
+in (`queue-add --priority`) or later on a queued row (`queue-priority`). It never preempts the row
+that is running, and it never releases a row from its `after`, `not_before`, the session lock or the
+blackout: a raised row whose prerequisite waits still waits, so raise the chain, not just its end.
+
 **What a row may run is an allow-list, never a command line** (`KINDS`). The supervisor is a Windows
 service with the broker credentials in reach, so a row that could name any command would be
 unreviewed code run by it. A kind builds its own argv from the row's arguments:
@@ -92,6 +98,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     stop_by TEXT,
     after TEXT,
     held_at TEXT,
+    priority INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'queued',
     created_at TEXT NOT NULL,
     started_at TEXT,
@@ -471,8 +478,9 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 
 
 # Columns added after the table first shipped, each added to an older queue on connect: `after`
-# (2026-10-25), a row that waits for another row's success; `held_at`, when a held row was notified.
-ADDED_COLUMNS = (("after", "TEXT"), ("held_at", "TEXT"))
+# (2026-10-25), a row that waits for another row's success; `held_at`, when a held row was notified;
+# `priority` (2026-11-03), the order the queue is run in.
+ADDED_COLUMNS = (("after", "TEXT"), ("held_at", "TEXT"), ("priority", "INTEGER NOT NULL DEFAULT 0"))
 
 
 def _columns(conn: sqlite3.Connection) -> set[str]:
@@ -541,6 +549,7 @@ def add(
     not_before: str | None = None,
     stop_by: str | None = None,
     after: str | None = None,
+    priority: int = 0,
     path: Path | None = None,
     root: Path | None = None,
     tracked: Callable[[Path, Path], bool] | None = None,
@@ -558,6 +567,7 @@ def add(
                 f"{what} {v!r} must be a lowercase slug (letters, digits, single dashes), e.g. item17"
             )
     build_argv(kind, args, sys.executable, root=root, tracked=tracked)
+    _check_priority(priority)
     for v in (not_before, stop_by):
         if v is not None:
             datetime.fromisoformat(v)  # ValueError on a malformed time
@@ -588,17 +598,38 @@ def add(
                 cur = _newest(conn, cur["after"])
         cur = conn.execute(
             "INSERT INTO tasks (study, step, kind, args, output, needs, not_before, stop_by, after,"
-            " created_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (study, step, kind, json.dumps(args), output, needs, not_before, stop_by, after, _now_iso()),
-        )
+            " priority, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (study, step, kind, json.dumps(args), output, needs, not_before, stop_by, after, priority,
+             _now_iso()),
+        )  # fmt: skip
         return {
             "id": cur.lastrowid,
             "name": f"{study}/{step}",
             "kind": kind,
             "needs": needs or None,
             "status": "queued",
+            "priority": priority,
         }
+
+
+def _check_priority(priority) -> None:
+    if isinstance(priority, bool) or not isinstance(priority, int):
+        raise Refused(f"priority {priority!r} must be a whole number")
+
+
+def set_priority(task_id: int, priority: int, path: Path | None = None) -> dict:
+    """Set a queued row's priority. A row that has started or finished is refused: the order only
+    decides what starts next."""
+    _check_priority(priority)
+    with connect(path) as conn:
+        r = conn.execute("SELECT status, priority FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if r is None:
+            return {"ok": False, "error": f"no task {task_id}"}
+        if r["status"] != "queued":
+            return {"ok": False, "error": f"task {task_id} is {r['status']}; only a queued task is reordered"}
+        conn.execute("UPDATE tasks SET priority = ? WHERE id = ?", (priority, task_id))
+    return {"ok": True, "id": task_id, "priority": priority, "was": r["priority"]}
 
 
 def result_of(row: dict, report: dict, log: Path) -> dict:
@@ -729,7 +760,8 @@ def run_next(
     spawn: Callable[..., subprocess.Popen] = subprocess.Popen,
     notify: Callable[[str, str, str], Any] | None = None,
 ) -> dict:
-    """Recover orphaned rows, then run the oldest ready row to its end. Returns what it did."""
+    """Recover orphaned rows, then run the ready row of highest priority (the oldest among equals) to
+    its end. Returns what it did."""
     if is_trading_day is None:
         from cherrypick.core import calendar as cal
 
@@ -755,7 +787,8 @@ def run_next(
             held = session_held()
             waiting = {}
             pick = None
-            for r in conn.execute("SELECT * FROM tasks WHERE status = 'queued' ORDER BY id").fetchall():
+            queued = "SELECT * FROM tasks WHERE status = 'queued' ORDER BY priority DESC, id"
+            for r in conn.execute(queued).fetchall():
                 row = dict(r)
                 after_status = prereq_status(conn, row.get("after"), row["id"])
                 why = ready(row, now(), is_trading_day, held, window, after_status)
