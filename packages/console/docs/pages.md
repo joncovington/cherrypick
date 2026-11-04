@@ -392,7 +392,14 @@ replay measures, per-session quote and profile agreement) behind an expand. Then
 line while it is active with no end date and its clock once it ends; then one store table, the
 inventory with each replay store's refused sessions joined in by file and the rebuild code under
 the store's name, and "count pending" on a store changed since the `backtest-inventory` job last
-counted it, because the read never counts; the old fetch-record table only when the inventory cannot be read), `runs` (the list; `?run=`
+counted it, because the read never counts; the old fetch-record table only when the inventory cannot be read), `runs` (as cards 2026-11-03, `pages/Backtest/RunsCards.tsx`: one tile per replay, newest first and
+the newest large, module chips on `?module=`; a tile names the study whose result file names the run
+and that study's verdict, else says none does. A tile opens a lightbox on `?run=` with five tabs:
+summary (the "in plain English" card, then each arm's net a session toned by sign, trades a session,
+its interval against control drawn untoned around zero, and the study's per-arm verdict; when
+control trades more than ten times as often as the arms, as MEIC's sampling arm does, a note says
+so and that the study judges against its own base arm), equity (each arm's running net), health and
+calendar (one arm at a time, the run cards' own checks and month grid), and settings. `?run=&full=1`
 reads one report: each arm's summary, the pairing with control, trials, fill model, code commit, data
 fingerprint, refused sessions, and the run cards, 2026-10-26, `pages/Backtest/RunCards.tsx`: per arm
 a one-line settings strip (2026-11-01: cadence, fill model, and the params that differ from

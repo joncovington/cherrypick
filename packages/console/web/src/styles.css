@@ -5532,6 +5532,7 @@ select.text-input {
 }
 
 .study-dialog .study-dialog-title {
+  color: var(--text);
   margin: 0;
   font-size: 22px;
   font-weight: 600;
@@ -6182,5 +6183,100 @@ select.text-input {
 
   .q-hero .study-tile-status {
     white-space: normal;
+  }
+}
+
+/* Backtest runs as cards (2026-11-03, pages/Backtest/RunsCards.tsx): one tile per replay, the newest
+   large, and the run's lightbox with each arm's interval against control drawn untoned. */
+.r-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.r-age {
+  margin-left: auto;
+}
+
+.r-study {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.r-arms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.r-arm,
+.r-span,
+.r-mono {
+  font-family: var(--num-face);
+  font-size: 12px;
+}
+
+.r-full {
+  text-decoration: none;
+}
+
+.r-interval-row {
+  grid-template-columns: minmax(5em, 0.8fr) minmax(9em, auto) minmax(8em, auto) minmax(120px, 2fr) minmax(5em, auto);
+}
+
+.r-bar {
+  position: relative;
+  display: block;
+  height: 22px;
+}
+
+.r-bar-zero {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--chart-grid-strong);
+}
+
+.r-bar-ci {
+  position: absolute;
+  top: 9px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text);
+}
+
+.r-bar-pt {
+  position: absolute;
+  top: 5px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 6px;
+  background: var(--text);
+}
+
+.r-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-family: var(--num-face);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 560px) {
+  .r-interval-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .r-interval-row .r-bar {
+    grid-column: 1 / -1;
   }
 }

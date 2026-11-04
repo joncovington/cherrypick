@@ -1,0 +1,422 @@
+import { useState, type ReactNode } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import type { BacktestOverview, BacktestRunListing, BacktestRunReport, StudyResult, StudyRow } from "@console/shared";
+import { Card } from "../../components/DataTable";
+import { fmtCash, fmtCount } from "../../lib/format";
+import { ProvisionalChip, RunPlainEnglish, RunReport, WithOverview, etStamp, measure, span, trialsLine, useRun } from "./BacktestPage";
+import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
+import { ago, etMs, etNowMs } from "./QueueTab";
+import { HealthChecks, MonthGrid, settingsLine } from "./RunCards";
+import { EquityLines, controlScale, fmtTrades, tradesPerSession } from "./StudyCards";
+import { indexStudies, splitTitle, studyHref, useStudies, verdictChip, type StudyIndex } from "./studyIndex";
+
+/**
+ * The Backtest page's runs tab as cards (2026-11-03): one tile per replay, newest first and the
+ * newest large, each naming the study whose result file names it and that study's verdict. A tile
+ * opens a lightbox on `?run=` (the link the other tabs already use): the run in plain words with
+ * each arm's interval against control, each arm's running net, its health checks, its month grid,
+ * and its settings. The full report (the account picker, sizing check, compounded lens, drawdowns,
+ * trades, refused sessions) is one press away at `?run=&full=1`.
+ *
+ * Every figure is the report's and every verdict the study's: the page draws them. An interval is
+ * drawn untoned (interval ends are never toned); a net figure is toned by its sign.
+ */
+
+type StudyHit = { row: StudyRow; result: StudyResult };
+
+/** Newest first, filtered to one module or none. */
+export function orderedRuns(runs: BacktestRunListing[], module: string | null): BacktestRunListing[] {
+  return [...runs].filter((r) => module === null || r.module === module).sort((a, b) => b.created_at - a.created_at || b.run_id.localeCompare(a.run_id));
+}
+
+/** Each module with a run, in the order runs first appear newest first. */
+export function runModules(runs: BacktestRunListing[]): string[] {
+  return [...new Set(orderedRuns(runs, null).map((r) => r.module))];
+}
+
+/** "2026-10-28 06:50" → its age on the ET scale the queue uses. */
+function runAge(createdAt: number, nowMs: number): string {
+  return ago(etMs(etStamp(createdAt).replace(" ", "T")), nowMs);
+}
+
+function VerdictLine({ hit }: { hit: StudyHit | undefined }) {
+  if (!hit) return <span className="study-tile-sub">No study in the register names this run.</span>;
+  return (
+    <span className="r-study">
+      <span className={verdictChip(hit.result.summary)}>{hit.result.summary ?? "no verdict word"}</span>
+      <span className="study-tile-slug">{hit.row.study}</span>
+    </span>
+  );
+}
+
+export function RunTile({ r, hit, hero, nowMs, onOpen }: { r: BacktestRunListing; hit?: StudyHit; hero: boolean; nowMs: number; onOpen: () => void }) {
+  const arms = r.arms.filter((a) => a !== "control");
+  return (
+    <button type="button" className={hero ? "study-tile study-hero r-tile" : "study-tile r-tile"} data-run={r.run_id} aria-label={`Open run ${r.run_id}`} onClick={onOpen}>
+      <span className="r-chips">
+        <span className="chip muted">{r.module}</span>
+        <span className="chip">{r.window}</span>
+        {r.provisional === true ? <span className="chip chip-warn">provisional</span> : null}
+        <span className="study-tile-sub r-age">{runAge(r.created_at, nowMs)}</span>
+      </span>
+      <span className="study-tile-mid">
+        {hero ? <span className="study-tile-sub">Newest run</span> : null}
+        <span className={hero ? "study-hero-title" : "study-tile-title"}>{hit ? splitTitle(hit.row.title)[0] : r.run_id}</span>
+        <VerdictLine hit={hit} />
+        {hero && arms.length > 0 ? (
+          <span className="r-arms">
+            {arms.map((a) => (
+              <span key={a} className="chip muted r-arm">
+                {a}
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </span>
+      <span className="study-tile-foot">
+        <span className="r-span">{span(r.span)}</span>
+        <span className="study-tile-sub">
+          {fmtCount(r.sessions)} sessions · {arms.length} arm{arms.length === 1 ? "" : "s"} · {r.cadence} s
+        </span>
+      </span>
+    </button>
+  );
+}
+
+// ------------------------------------------------------------------ the lightbox
+
+export type RunTab = "summary" | "equity" | "health" | "calendar" | "settings";
+
+/** Where a value sits on a symmetric scale around zero, as a percentage of the bar's width. */
+function at(v: number, scale: number): number {
+  return Math.max(0, Math.min(100, 50 + (v / scale) * 50));
+}
+
+/**
+ * Each arm against control, paired by session: its own net a session (toned by sign), trades a
+ * session, the interval of its difference from control drawn untoned around zero, and the verdict
+ * the study's result file gave it.
+ */
+export function ArmIntervals({ report, result }: { report: BacktestRunReport; result?: StudyResult }) {
+  const arms = Object.entries(report.arms).sort(([a], [b]) => Number(b === "control") - Number(a === "control") || a.localeCompare(b));
+  const bounds = arms.flatMap(([, a]) => [...(a.vs_control?.ci ?? []), a.vs_control?.mean_diff ?? 0]).map((x) => Math.abs(x));
+  const scale = Math.max(1, ...bounds);
+  const word = new Map((result?.verdicts ?? []).map((v) => [v.arm, v.verdict]));
+  const wide = controlScale(report);
+  return (
+    <section>
+      <h3>
+        Each arm against control, paired by session <span className="muted">· the bar is the interval of the difference</span>
+      </h3>
+      <div className="study-arms r-intervals">
+        {arms.map(([arm, a]) => {
+          const v = a.vs_control;
+          const per = tradesPerSession(report, arm);
+          const verdict = arm === "control" ? null : (word.get(arm) ?? null);
+          return (
+            <div key={arm} className="study-arm r-interval-row">
+              <span className="study-arm-name">{arm}</span>
+              <span className={`study-arm-mean ${a.summary.mean === null ? "" : a.summary.mean < 0 ? "pnl-neg" : "pnl-pos"}`}>{fmtCash(a.summary.mean)} / session</span>
+              <span className="muted">{per === null ? "" : `${fmtTrades(per)} trades / session`}</span>
+              <span className="r-bar" aria-label={v?.ci ? `${arm} against control: ${fmtCash(v.ci[0])} to ${fmtCash(v.ci[1])}` : `${arm}: not paired`}>
+                <span className="r-bar-zero" />
+                {arm !== "control" && v?.ci ? (
+                  <>
+                    <span className="r-bar-ci" style={{ left: `${String(at(v.ci[0], scale))}%`, width: `${String(Math.max(0.5, at(v.ci[1], scale) - at(v.ci[0], scale)))}%` }} />
+                    {v.mean_diff !== null ? <span className="r-bar-pt" style={{ left: `${String(at(v.mean_diff, scale))}%` }} /> : null}
+                  </>
+                ) : null}
+              </span>
+              <span>{arm === "control" ? <span className="chip muted">control</span> : verdict ? <span className={verdictChip(verdict)}>{verdict}</span> : a.no_exposure ? <span className="chip muted">measured nothing</span> : null}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="r-axis">
+        <span>worse than control</span>
+        <span>0</span>
+        <span>better than control</span>
+      </div>
+      {wide !== null ? (
+        <p className="muted study-section-note">
+          Control trades about {Math.round(wide)} times as often a session as these arms (the module&apos;s own sampling arm), so each
+          pairing with it is wide for that reason. A study of these arms judges them against its own base arm, not control.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/** Chips to pick the arm the health and calendar tabs read; control last. */
+function ArmPicker({ arms, arm, onPick }: { arms: string[]; arm: string; onPick: (a: string) => void }) {
+  return (
+    <div className="history-controls" role="group" aria-label="Arm">
+      {arms.map((a) => (
+        <button key={a} type="button" className={a === arm ? "chip chip-ok" : "chip"} aria-pressed={a === arm} onClick={() => onPick(a)}>
+          {a}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RunSettings({ r }: { r: BacktestRunReport }) {
+  const rows: Array<[string, string]> = [
+    ["window", String(r.window)],
+    ["span", span(r.span)],
+    ["cadence", `${String(r.cadence)} s`],
+    ["fill model", measure(r.fill_model)],
+    ["trials (module)", r.trials_for_module === null ? "—" : String(r.trials_for_module)],
+    ["refused sessions", String(Object.keys(r.refused).length)],
+    ["code commit", r.code_commit ?? "—"],
+    ["data fingerprint", r.data_fingerprint ?? "—"],
+  ];
+  const strips = Object.entries(r.cards?.arms ?? {})
+    .map(([arm, c]) => settingsLine(arm, c.settings))
+    .filter((x): x is string => x !== null);
+  return (
+    <>
+      <dl className="study-fields">
+        {rows.map(([k, v]) => (
+          <div key={k} style={{ display: "contents" }}>
+            <dt>{k}</dt>
+            <dd className="r-mono">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      {strips.length > 0 ? (
+        <section>
+          <h3>Each arm&apos;s settings</h3>
+          <ul className="study-list">
+            {strips.map((s) => (
+              <li key={s}>{s}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </>
+  );
+}
+
+export function RunDialogBody({
+  listing,
+  report,
+  hit,
+  tab,
+  onTab,
+  arm,
+  onArm,
+  position,
+  onPrev,
+  onNext,
+  onClose,
+  status,
+}: {
+  listing: BacktestRunListing;
+  report: BacktestRunReport | null;
+  hit?: StudyHit;
+  tab: RunTab;
+  onTab: (t: RunTab) => void;
+  arm: string | null;
+  onArm: (a: string) => void;
+  position: string;
+  onPrev: () => void;
+  onNext: () => void;
+  onClose: () => void;
+  /** Shown in place of the body while the report loads or when it cannot be read. */
+  status?: ReactNode;
+}) {
+  const cards = report?.cards?.arms ?? {};
+  const armNames = Object.keys(cards).sort((a, b) => Number(a === "control") - Number(b === "control") || a.localeCompare(b));
+  const chosen = arm !== null && armNames.includes(arm) ? arm : (armNames[0] ?? null);
+  const flags = chosen !== null ? (cards[chosen]?.health?.flags ?? 0) : 0;
+  const tabs: LightboxTab<RunTab>[] = [
+    { id: "summary", label: "Summary" },
+    { id: "equity", label: "Equity" },
+    { id: "health", label: "Health", badge: flags > 0 ? `${String(flags)} flagged` : null },
+    { id: "calendar", label: "Calendar" },
+    { id: "settings", label: "Settings" },
+  ];
+  return (
+    <LightboxFrame
+      kicker={
+        <>
+          run {listing.run_id} · {etStamp(listing.created_at)} ET
+        </>
+      }
+      title={hit ? hit.row.title : `A ${listing.module} replay, ${listing.window} window`}
+      chips={
+        <>
+          {hit ? <span className={verdictChip(hit.result.summary)}>{hit.result.summary ?? "no verdict word"}</span> : null}
+          <span className="chip muted">
+            {listing.module} · {listing.window}
+          </span>
+          {listing.provisional === true ? <ProvisionalChip /> : null}
+          {hit ? (
+            <Link to={studyHref(hit.row.study)} className="study-dialog-link">
+              {hit.row.study}
+            </Link>
+          ) : null}
+          <Link to={`/backtest/runs?run=${encodeURIComponent(listing.run_id)}&full=1`} className="chip r-full">
+            Full report
+          </Link>
+        </>
+      }
+      tabs={tabs}
+      tab={tab}
+      onTab={onTab}
+      position={position}
+      onPrev={onPrev}
+      onNext={onNext}
+      onClose={onClose}
+    >
+      {report === null ? (
+        status
+      ) : (
+        <>
+          {tab === "summary" ? (
+            <>
+              <RunPlainEnglish r={report} study={hit} />
+              <ArmIntervals report={report} result={hit?.result} />
+            </>
+          ) : null}
+          {tab === "equity" ? <EquityLines report={report} /> : null}
+          {tab === "health" || tab === "calendar" ? (
+            chosen === null ? (
+              <p className="muted">This run&apos;s report carries no cards (an older backtest package).</p>
+            ) : (
+              <>
+                <ArmPicker arms={armNames} arm={chosen} onPick={onArm} />
+                {tab === "health" ? (
+                  cards[chosen]?.health ? <HealthChecks c={cards[chosen]!} /> : <p className="muted">No health checks for this arm (an older backtest package).</p>
+                ) : (
+                  <MonthGrid c={cards[chosen]!} />
+                )}
+              </>
+            )
+          ) : null}
+          {tab === "settings" ? <RunSettings r={report} /> : null}
+        </>
+      )}
+    </LightboxFrame>
+  );
+}
+
+function RunDialog({ runs, index, studies, onStep, onClose }: { runs: BacktestRunListing[]; index: number; studies: StudyIndex; onStep: (to: number) => void; onClose: () => void }) {
+  const [tab, setTab] = useState<RunTab>("summary");
+  const [arm, setArm] = useState<string | null>(null);
+  const listing = runs[index];
+  const { data, isLoading, isError, error } = useRun(listing?.run_id ?? null, { capital: null });
+  if (listing === undefined) return null;
+  const report = data?.ok && data.data && data.data.run_id === listing.run_id ? data.data : null;
+  const status = isLoading ? (
+    <span className="skeleton skeleton-text" style={{ width: "50%" }} />
+  ) : isError ? (
+    <p className="muted">{(error as Error).message}</p>
+  ) : report === null ? (
+    <p className="muted">{data?.error ?? "Loading the report…"}</p>
+  ) : null;
+  return (
+    <CardLightbox count={runs.length} index={index} onStep={onStep} onClose={onClose}>
+      {(nav) => (
+        <RunDialogBody
+          listing={listing}
+          report={report}
+          hit={studies.byRun.get(listing.run_id)}
+          tab={tab}
+          onTab={setTab}
+          arm={arm}
+          onArm={setArm}
+          position={nav.position}
+          onPrev={nav.prev}
+          onNext={nav.next}
+          onClose={onClose}
+          status={status}
+        />
+      )}
+    </CardLightbox>
+  );
+}
+
+/** The mosaic: module chips, then one tile per run, newest first and large. */
+export function RunsMosaic({ d, studies, nowMs = etNowMs() }: { d: BacktestOverview; studies: StudyIndex; nowMs?: number }) {
+  const [params, setParams] = useSearchParams();
+  const lightbox = useOpenParam("run");
+  const modules = runModules(d.runs);
+  const raw = params.get("module");
+  const module = raw !== null && modules.includes(raw) ? raw : null;
+  const runs = orderedRuns(d.runs, module);
+  // A run named in the URL but filtered out still opens, stepping through every run.
+  const stepRuns = runs.some((r) => r.run_id === lightbox.open) ? runs : orderedRuns(d.runs, null);
+  const index = stepRuns.findIndex((r) => r.run_id === lightbox.open);
+  const pickModule = (m: string | null) => {
+    const next = new URLSearchParams(params);
+    if (m === null) next.delete("module");
+    else next.set("module", m);
+    setParams(next, { replace: true });
+  };
+  if (d.runs.length === 0) return <p className="muted">No runs yet.</p>;
+  return (
+    <>
+      <div className="history-controls study-chips" role="group" aria-label="Module">
+        <button type="button" className={module === null ? "chip chip-ok" : "chip"} aria-pressed={module === null} onClick={() => pickModule(null)}>
+          All {d.runs.length}
+        </button>
+        {modules.map((m) => (
+          <button key={m} type="button" className={module === m ? "chip chip-ok" : "chip"} aria-pressed={module === m} onClick={() => pickModule(m)}>
+            {m}
+          </button>
+        ))}
+      </div>
+      <div className="study-tiles">
+        {runs.map((r, i) => (
+          <RunTile key={r.run_id} r={r} hit={studies.byRun.get(r.run_id)} hero={i === 0} nowMs={nowMs} onOpen={() => lightbox.show(r.run_id)} />
+        ))}
+      </div>
+      {index >= 0 ? <RunDialog runs={stepRuns} index={index} studies={studies} onStep={(to) => lightbox.step(stepRuns[to]?.run_id ?? "")} onClose={lightbox.close} /> : null}
+    </>
+  );
+}
+
+export function BacktestRunsTab() {
+  const [params, setParams] = useSearchParams();
+  const selected = params.get("run");
+  const full = params.get("full") === "1";
+  const studies = useStudies();
+  const index = indexStudies(studies.data?.ok ? studies.data.data : null);
+  const back = () => {
+    const next = new URLSearchParams(params);
+    next.delete("full");
+    next.delete("run");
+    setParams(next, { replace: true });
+  };
+  return (
+    <WithOverview>
+      {(d, updatedAt) =>
+        full && selected !== null ? (
+          <div className="cards cards-wide">
+            <p style={{ margin: 0 }}>
+              <button type="button" className="btn btn-quiet" onClick={back}>
+                ← All runs
+              </button>
+            </p>
+            <RunReport id={selected} study={index.byRun.get(selected)} />
+          </div>
+        ) : (
+          <div className="cards cards-wide">
+            <Card title="Runs" collapseKey="backtest-runs" updatedAt={updatedAt}>
+              <p className="muted" style={{ fontSize: 12, margin: "0 0 4px" }}>
+                {trialsLine(d)}
+              </p>
+              <RunsMosaic d={d} studies={index} />
+              <p className="muted" style={{ marginTop: 8 }}>
+                One card per replay, newest first. A card opens the run in plain words, each arm against control, its running net, health,
+                months and settings; the full report has the account, sizing and every card.
+              </p>
+            </Card>
+          </div>
+        )
+      }
+    </WithOverview>
+  );
+}

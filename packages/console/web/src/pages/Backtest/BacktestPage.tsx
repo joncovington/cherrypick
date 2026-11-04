@@ -52,7 +52,7 @@ function useOverview() {
 }
 
 /** The shared head of every tab: the note, then the overview's loading/failure state. */
-function WithOverview({ children }: { children: (d: BacktestOverview, updatedAt: number) => ReactNode }) {
+export function WithOverview({ children }: { children: (d: BacktestOverview, updatedAt: number) => ReactNode }) {
   const { data, isLoading, isError, error, dataUpdatedAt } = useOverview();
   let body: ReactNode;
   if (isLoading) body = <span className="skeleton skeleton-text" style={{ width: "40%" }} />;
@@ -69,7 +69,7 @@ function WithOverview({ children }: { children: (d: BacktestOverview, updatedAt:
 
 // ------------------------------------------------------------------ formatting
 
-function span(s: [string, string] | null | undefined): string {
+export function span(s: [string, string] | null | undefined): string {
   return s === null || s === undefined ? "—" : `${s[0]} → ${s[1]}`;
 }
 
@@ -84,7 +84,7 @@ function gapCell(g: BacktestGapStats | null | undefined): string {
 }
 
 /** An open-shaped measure value, as written. */
-function measure(v: unknown): string {
+export function measure(v: unknown): string {
   if (v === null || v === undefined) return "—";
   if (typeof v === "number") return Number.isInteger(v) ? fmtCount(v) : String(Math.round(v * 10_000) / 10_000);
   if (typeof v === "boolean") return v ? "yes" : "no";
@@ -98,7 +98,7 @@ function pass(v: boolean | undefined | null): ReactNode {
 }
 
 /** `created_at` (epoch seconds) as New York wall clock, `2026-10-17 09:30`. */
-function etStamp(sec: number): string {
+export function etStamp(sec: number): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/New_York",
     year: "numeric",
@@ -725,7 +725,7 @@ function riskParam(raw: string | null): number | null {
   return raw !== null && isBacktestRiskPct(raw) ? Number(raw) : null;
 }
 
-function RunReport({ id, study }: { id: string; study?: { row: StudyRow; result: StudyResult } }) {
+export function RunReport({ id, study }: { id: string; study?: { row: StudyRow; result: StudyResult } }) {
   const [params, setParams] = useSearchParams();
   const capital = capitalParam(params.get("capital"));
   const risk = riskParam(params.get("risk"));
@@ -830,18 +830,6 @@ function RunReport({ id, study }: { id: string; study?: { row: StudyRow; result:
   );
 }
 
-/** "item 23 · design": the study a run belongs to, from the result file that names it. */
-function StudyCell({ id, index }: { id: string; index: StudyIndex }) {
-  const hit = index.byRun.get(id);
-  if (!hit) return <span className="muted">—</span>;
-  const where = hit.result.window ?? hit.result.name;
-  return (
-    <Link to={studyHref(hit.row.study)} title={hit.row.title}>
-      item {hit.row.id} · {where}
-    </Link>
-  );
-}
-
 /** Which way an interval sits against zero, in words. */
 function against(ci: [number, number] | null | undefined): string {
   if (!ci) return "";
@@ -917,86 +905,8 @@ export function trialsLine(d: BacktestOverview): string {
   );
 }
 
-export function BacktestRunsTab() {
-  const [params, setParams] = useSearchParams();
-  const selected = params.get("run");
-  const studies = useStudies();
-  const index = indexStudies(studies.data?.ok ? studies.data.data : null);
-  const pick = (id: string) => {
-    const next = new URLSearchParams(params);
-    next.set("run", id);
-    setParams(next, { replace: true });
-  };
-  return (
-    <WithOverview>
-      {(d, updatedAt) => (
-        <div className="cards cards-wide">
-          <Card title="runs" updatedAt={updatedAt}>
-            <p className="muted" style={{ fontSize: 12 }}>
-              {trialsLine(d)} Select a run to read its report.
-            </p>
-            {d.runs.length === 0 ? (
-              <p className="muted">No runs yet.</p>
-            ) : (
-              <div className="table-scroll">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>run</th>
-                      <th title="The study whose result names this run">study</th>
-                      <th>created (ET)</th>
-                      <th>module</th>
-                      <th>window</th>
-                      <th>arms</th>
-                      <th>span</th>
-                      <th className="num">cadence</th>
-                      <th className="num">sessions</th>
-                      <th className="num">refused</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {d.runs.map((r) => (
-                      <tr key={r.run_id} className={r.run_id === selected ? "row-selected" : undefined}>
-                        <td>
-                          <button
-                            type="button"
-                            className="btn btn-quiet"
-                            onClick={() => pick(r.run_id)}
-                            aria-pressed={r.run_id === selected}
-                          >
-                            {r.run_id}
-                          </button>
-                        </td>
-                        <td>
-                          <StudyCell id={r.run_id} index={index} />
-                        </td>
-                        <td className="muted">{etStamp(r.created_at)}</td>
-                        <td>{r.module}</td>
-                        <td>
-                          {r.window}
-                          {r.provisional === true && <ProvisionalChip />}
-                        </td>
-                        <td>{r.arms.join(", ")}</td>
-                        <td>{span(r.span)}</td>
-                        <td className="num">{`${String(r.cadence)} s`}</td>
-                        <td className="num">{fmtCount(r.sessions)}</td>
-                        <td className="num">{fmtCount(r.refused)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-          {selected !== null && <RunReport id={selected} study={index.byRun.get(selected)} />}
-        </div>
-      )}
-    </WithOverview>
-  );
-}
-
 /** A run made before validation unlocked history: shown as such wherever it appears. */
-function ProvisionalChip() {
+export function ProvisionalChip() {
   return (
     <Link
       to="/backtest/data"

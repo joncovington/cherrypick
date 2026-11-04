@@ -3,7 +3,8 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BacktestArmCards, BacktestOverview, BacktestRunCards, BacktestRunReport, BridgedResult } from "@console/shared";
-import { BacktestDataTab, BacktestRunsTab, trialsLine } from "../src/pages/Backtest/BacktestPage";
+import { BacktestDataTab, trialsLine } from "../src/pages/Backtest/BacktestPage";
+import { BacktestRunsTab } from "../src/pages/Backtest/RunsCards";
 
 /**
  * The Backtest page's data and runs tabs (validation folded into data 2026-10-30), rendered with the bridge's documents already in the query cache
@@ -198,13 +199,22 @@ describe("is history trusted?", () => {
 });
 
 describe("runs", () => {
-  it("lists runs, and reads the selected one's report", () => {
-    const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}`, (c) => {
+  it("lists runs as cards, newest first and large, under the trials line", () => {
+    const html = render(<BacktestRunsTab />, "/backtest/runs", (c) => seedOverview(c));
+    expect(html).toContain("flies 4");
+    expect(html).toContain(`class="study-tile study-hero r-tile" data-run="${RUN_ID}"`);
+    expect(html).toContain("Newest run");
+    expect(html).toContain("No study in the register names this run.");
+    // The full report waits for its own view.
+    expect(html).not.toContain("abc1234");
+  });
+
+  it("reads the selected run's full report at full=1, with the way back", () => {
+    const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}&full=1`, (c) => {
       seedOverview(c);
       c.setQueryData(["bridged", "backtest", "run", RUN_ID], { ok: true, data: REPORT, error: null });
     });
-    expect(html).toContain("flies 4");
-    expect(html).toContain("row-selected");
+    expect(html).toContain("All runs");
     expect(html).toContain("flies-paper-legged");
     expect(html).toContain("abc1234");
     expect(html).toContain("fp-9f8e");
@@ -265,7 +275,7 @@ describe("runs", () => {
       account: { capital: null, basis: "peak_risk" },
       arms: { control: arm, "range-high": { ...arm, account: null, exits: null, premium: null, peak_risk: null } },
     };
-    const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}`, (c) => {
+    const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}&full=1`, (c) => {
       seedOverview(c);
       c.setQueryData(["bridged", "backtest", "run", RUN_ID], { ok: true, data: { ...REPORT, cards }, error: null });
     });
@@ -283,7 +293,7 @@ describe("runs", () => {
     expect(html).toContain("+$20"); // a month cell, whole dollars
 
     const ruined = { ...cards, arms: { control: { ...arm, account: { ...arm.account!, ruined_on: "2024-02-01" } } } };
-    const html2 = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}`, (c) => {
+    const html2 = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}&full=1`, (c) => {
       seedOverview(c);
       c.setQueryData(["bridged", "backtest", "run", RUN_ID], { ok: true, data: { ...REPORT, cards: ruined }, error: null });
     });
@@ -292,7 +302,7 @@ describe("runs", () => {
   });
 
   it("a chosen account is read from the URL and keys its own query", () => {
-    const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}&capital=50000`, (c) => {
+    const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}&full=1&capital=50000`, (c) => {
       seedOverview(c);
       c.setQueryData(["bridged", "backtest", "run", RUN_ID, 50000], {
         ok: true,
@@ -305,7 +315,7 @@ describe("runs", () => {
   });
 
   it("a run the module does not know is its error, not an empty report", () => {
-    const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}`, (c) => {
+    const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}&full=1`, (c) => {
       seedOverview(c);
       c.setQueryData(["bridged", "backtest", "run", RUN_ID], { ok: false, data: null, error: `no run '${RUN_ID}'` });
     });
