@@ -1,4 +1,4 @@
-import { BacktestDataTab } from "../../pages/Backtest/BacktestPage";
+import { BacktestDataTab } from "../../pages/Backtest/DataCards";
 import { BacktestRunsTab } from "../../pages/Backtest/RunsCards";
 import { BacktestQueueTab } from "../../pages/Backtest/QueueTab";
 import { BacktestStudiesTab } from "../../pages/Backtest/StudiesTab";
