@@ -17,6 +17,7 @@ import { ExperimentGuideView } from "../../components/ExperimentGuide";
 import { ArmRail, AttemptTimeline } from "../../components/Attempts";
 import { OccupancyMap } from "../../components/OccupancyMap";
 import { MeicForestCard } from "../../pages/Meic/MeicForestCard";
+import { MeicArmCards } from "../../pages/Meic/MeicArmCards";
 import { MeicPerformanceTab } from "../../pages/Meic/MeicPerformanceTab";
 import { MeicSession } from "../../pages/Meic/MeicSession";
 import { MeicSummary } from "../../pages/Meic/SummarySlide";
@@ -186,6 +187,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
         />
       ),
     },
+    { id: "arms", label: MEIC_LABEL.arms, render: () => <MeicArmCards mode={mode} scope={scopeArgs} attemptsScope={attemptsScope} /> },
     { id: "forest", label: MEIC_LABEL.forest, render: () => <MeicForestCard mode={mode} scope={scopeArgs} /> },
     {
       // Attempts and occupancy merged (2026-09): both are bounded snapshots regardless of session

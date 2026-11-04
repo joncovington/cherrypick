@@ -5915,6 +5915,7 @@ select.text-input {
    The lightbox is portalled to the body, so it carries the scope's class itself. */
 .mf-layout[data-module="backtest"],
 .pos-board,
+.meic-arm-tiles,
 .study-dialog-wrap {
   --num-face: "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
   font-family: "Inter Variable", Inter, "Segoe UI", system-ui, sans-serif;
@@ -6902,4 +6903,131 @@ select.text-input {
   .pos-card-pnl {
     font-size: 21px;
   }
+}
+
+/* MEIC's arms board (2026-11-04): the studies mosaic's tiles, one per arm, the whole book large.
+   A losing arm's tile has a red edge; control on another scale is dashed. */
+.meic-arm-tiles .study-tile {
+  justify-content: flex-start;
+  text-decoration: none;
+}
+
+.meic-arm-tile.is-neg {
+  border-color: color-mix(in srgb, var(--neg) 45%, var(--border));
+}
+
+.meic-arm-tile.is-other-scale {
+  border-style: dashed;
+}
+
+.meic-arm-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.meic-arm-name {
+  font-family: var(--num-face);
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.meic-arm-hero .meic-arm-name {
+  font-family: inherit;
+  font-size: 17px;
+}
+
+.meic-arm-net {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 17px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.meic-arm-hero .meic-arm-net {
+  font-size: 22px;
+}
+
+.meic-arm-payoff {
+  display: block;
+  width: 100%;
+  height: 52px;
+  flex: none;
+  overflow: visible;
+}
+
+.meic-arm-payoff.is-tall {
+  flex: 1;
+  min-height: 120px;
+  height: auto;
+}
+
+.meic-arm-spot {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+.meic-arm-nochart {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+}
+
+.meic-arm-counts {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.meic-arm-checks {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.meic-arm-checks-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.meic-arm-bar {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.meic-arm-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--verdict-fail);
+}
+
+.meic-arm-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.meic-arm-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.meic-arm-swatch {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
 }

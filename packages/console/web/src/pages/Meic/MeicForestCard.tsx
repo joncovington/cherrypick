@@ -29,7 +29,7 @@ import { extendFlat, visibleYRange } from "../../components/chart/payoffWindow";
  * says so, the same discipline the flies forest keeps.
  */
 
-interface ForestPosition {
+export interface ForestPosition {
   icOrderId: string;
   putStrike: number;
   callStrike: number;
@@ -40,7 +40,7 @@ interface ForestPosition {
   held?: "put" | "call" | null;
 }
 
-interface ForestArm {
+export interface ForestArm {
   arm: string;
   positions: ForestPosition[];
   prices: number[];
@@ -49,7 +49,7 @@ interface ForestArm {
   perPosition: Array<{ icOrderId: string; pnl: number[] }>;
 }
 
-interface MeicForest {
+export interface MeicForest {
   mode: TradingMode;
   tradeDate: string | null;
   /** The one symbol drawn, and every symbol the day traded (the switch appears for two or more). */
@@ -78,7 +78,7 @@ export function meicForestQuery(mode: TradingMode, scope: MeicScope, forestSymbo
   return qs.toString();
 }
 
-function useMeicForest(mode: TradingMode, scope: MeicScope, forestSymbol: string | null) {
+export function useMeicForest(mode: TradingMode, scope: MeicScope, forestSymbol: string | null) {
   return useQuery<MeicForest>({
     queryKey: ["meic-forest", mode, scope, forestSymbol],
     queryFn: async () => {

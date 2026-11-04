@@ -108,6 +108,8 @@ export const MEIC_SLIDES = [
   // suite's theme, and the pattern for every module's own summary — one per module, each in its
   // own KPI vocabulary; no central summary page.
   { id: "summary", label: "today" },
+  // A card per arm (2026-11-04): each opens its forest, attempts and trades; the big tile opens the forest.
+  { id: "arms", label: "arms" },
   { id: "forest", label: "forest" },
   { id: "attempts", label: "attempts" },
   { id: "positions", label: "positions" },
@@ -440,9 +442,9 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   meic: {
     slides: MEIC_SLIDES,
-    simple: ["summary", "forest", "performance", "positions", "guide"],
+    simple: ["summary", "arms", "performance", "positions", "guide"],
     groups: [
-      { label: "today", ids: ["summary", "forest", "attempts"] },
+      { label: "today", ids: ["summary", "arms", "forest", "attempts"] },
       { label: "tables", ids: ["positions", "history", "sessions"] },
       { label: "evidence", ids: ["exits", "regime"] },
       { label: "study", ids: ["performance", "analysis", "costs", "advisor"] },
