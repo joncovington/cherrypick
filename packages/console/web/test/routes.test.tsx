@@ -445,7 +445,7 @@ describe("a page the suite has turned off", () => {
 
   it("backtest renders on its own frame, and is on the rail, only when the suite says true", () => {
     const on = { ...base, features: { ...base.features, backtest: true } };
-    expect(text(renderWith("/backtest", on))).toContain("Backtest / queue");
+    expect(text(renderWith("/backtest", on))).toContain("Backtest / studies");
     expect(text(renderWith("/backtest/runs", on))).toContain("Backtest / runs");
     // Every card link into a gated page or tab opens its own tab once the gate is open.
     const into = [...links].filter(gated);

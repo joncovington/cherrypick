@@ -11,10 +11,11 @@ import type { SlideDef } from "../types";
  * nothing else.
  */
 export const slides: SlideDef[] = [
-  // The queue first (2026-10-29): what is running and what just finished is what the page is opened for.
-  { id: "queue", label: "queue", render: () => <BacktestQueueTab /> },
-  // What we tested and what we found (2026-10-29): a run is opened from its study.
+  // What we tested and what we found (2026-10-29), first from 2026-11-03: one card per study, its
+  // run's figures and its queue rows in the lightbox it opens.
   { id: "studies", label: "studies", render: () => <BacktestStudiesTab /> },
+  // What the queue is doing now (2026-10-24): running, queued, recent failures, runs by hand.
+  { id: "queue", label: "queue", render: () => <BacktestQueueTab /> },
   { id: "runs", label: "runs", render: () => <BacktestRunsTab /> },
   // Validation lives here from 2026-10-30, as "is history trusted?" with its tables behind an expand;
   // slices moved to Compare.

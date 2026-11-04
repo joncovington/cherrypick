@@ -551,14 +551,14 @@ function ValidationCard({ v, updatedAt }: { v: BacktestValidation; updatedAt: nu
 
 /** The cards' choices beyond the run: the account, the lens's risk and unit, the sizing check's cap.
  *  Null is the package's default for each, and keeps it out of the URL and the query key. */
-interface RunChoices {
+export interface RunChoices {
   capital: number | null;
   risk?: number | null;
   unit?: BacktestRiskUnit | null;
   dd?: number | null;
 }
 
-function useRun(id: string | null, { capital, risk = null, unit = null, dd = null }: RunChoices) {
+export function useRun(id: string | null, { capital, risk = null, unit = null, dd = null }: RunChoices) {
   // The default account (the run's peak risk) and defaults elsewhere keep the plain key; a chosen
   // account, then each other choice, extend it.
   const key: unknown[] = ["bridged", "backtest", "run", id];

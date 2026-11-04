@@ -356,21 +356,29 @@ cherrypick.backtest read overview|run --id`, async, memoised 30 s) each 404 with
 unless the features answer says `backtest: true`; a run id is checked against the runner's shape
 (`BACKTEST_RUN_ID` in `@console/shared`) and anything else is a 400 that spawns nothing. A bridge,
 not a mirror: the unlock verdict, every check, the paired interval and `no_exposure` are the module's.
-Tabs (`queue` first, and the landing tab, then `studies`, `runs`, `data`, from 2026-10-30;
+Tabs (`studies` first, and the landing tab, then `queue`, `runs`, `data`, from 2026-11-03;
 `validation` folded into `data`, its old URL landing there; `slices` moved to Compare, its old URL
 redirected): `studies` (2026-10-29, `pages/Backtest/StudiesTab.tsx`, `GET /api/backtest/studies` →
 `services/studiesBridge.ts` → `python -m cherrypick.cli hypotheses-board`, behind the same gate
 because the verdicts are read from licensed result files; docs/studies-board-plan.md): what we
-tested and what we found. One row per hypothesis-register item, grouped in progress / declared /
-finished / observations, with its title, its status (the register's) and when it last moved. A row
-opens to the decision taken, each result file's verdict as the study wrote it (a file with no word
-says "see plan", never a guess), the pass test, rivals with their checks, per-arm verdicts, its run,
-its queue rows and the plan section on GitHub (2026-10-30: as columns, the prose ran the table off
-the card). A study may leave Markdown beside a result file (`results.json` -> `results.md`, its own
-figures, written under the home and never committed); the opened row links to it, opening full width
+tested and what we found. A mosaic (2026-11-03, `pages/Backtest/StudyCards.tsx`): one tile per
+hypothesis-register item, in progress / declared / finished / observations order, the study with a
+task running now as a large tile first. A finished tile's big word is the register's status, with
+"2 pass · 5 fail" when the newest result's arms disagree; an in-progress tile shows its step and one
+segment per queue step; a declared one what it expects; each carries stale (a replay correction since
+the result), its window and provisional, all read from the board. Tiles carry no figures: the board
+has none. Group chips filter (`?group=`). A tile opens a lightbox (`?study=`, so back closes it; Esc,
+← → and a swipe step through the tiles in layout order) with four tabs: overview (the decision, a
+stale note, and the run's figures, fetched on open from the newest result file that names a run:
+each arm's net a session, sessions and verdict, and each arm's running net, legend entries hiding a
+line so one wide arm cannot flatten the rest), declaration (measure, expects, sample, pass test, why,
+rivals, the plan section on GitHub), grid (the study's grid bars) and queue (each result file's
+per-arm verdicts, run and write-up links, and the study's queue rows, each opening to its arguments,
+result and log). Phones get two columns and a full-screen lightbox. A study may leave Markdown beside a result file (`results.json` -> `results.md`, its own
+figures, written under the home and never committed); the lightbox's queue tab links to it, opening full width
 on the tab (`?study=&notes=<result file>`), rendered as elements
-by `lib/miniMarkdown.tsx`, never as HTML. A result file is shown by its name only. `?study=` opens one
-row. The other tabs point back (2026-10-30, `pages/Backtest/studyIndex.ts`, one shared fetch): a
+by `lib/miniMarkdown.tsx`, never as HTML. A result file is shown by its name only. `?study=` opens its
+lightbox. The other tabs point back (2026-10-30, `pages/Backtest/studyIndex.ts`, one shared fetch): a
 queue row carries its study's verdict as a chip linking to the board, the runs list has a `study`
 column, a run report opens with an "in plain English" card (what ran, the study it answers and
 that study's verdict and decision, control's net, each arm against control and where its interval
@@ -396,17 +404,13 @@ dollar), `queue` (2026-10-24; `pages/Backtest/QueueTab.tsx`,
 `GET /api/backtest/queue` → `services/researchQueueBridge.ts` → `python -m cherrypick.cli queue-list`,
 behind the same gate): the research tasks the supervisor runs, read-only. Each row's state and why a
 queued row waits are the orchestrator's words, shown verbatim, and a file argument is shown by its name
-only. Two sections (by study from 2026-11-02): **Now** (running, then ready rows oldest first, then
-waiting ones, split on the orchestrator's `waits`; the page works out no run order) and **Studies**,
-one line per study with finished rows, most recently finished first. A study is named by its register
-title (heading in bold, split at its first colon, the slug as a small tag; "not in the register" only
-once the board has loaded), and its line carries each result file's verdict chip and the decision
-taken, both from the studies board, never worked out here. The board also carries the verdict files
-a study's finished queue rows declared that the register does not list yet (`source: "queue"`, only
-when the file holds a verdict word); those are marked "not yet recorded", and the register's status
-stands until someone records them. It opens to its rows; a row's Result is what
-it points to: a fetch's counts and input, a script's declared conclusion (red when missing), and its
-log, each by name. Cancelled rows are hidden behind `show cancelled`. Rows are added on the command
+only. What the queue is doing, not what a study found (2026-11-03): **Now** (running, then ready
+rows oldest first, then waiting ones, split on the orchestrator's `waits`; the page works out no run
+order), then rows that failed or were stopped in the last 7 days, then runs started by hand in the
+last 30. A row names its study by register title (heading in bold, split at its first colon, the
+slug as a small tag; "not in the register" only once the board has loaded) with the study's verdict
+chip linking to its card, and opens to its arguments, result and log. A study's finished rows, with
+their results, are on its card in the studies tab. Rows are added on the command
 line (`run.py queue-add`), never from here. Every tab opens with the licensed-data note. Run money is net of fees,
 signed, whole-position dollars; fees are shown as a cost, already out of net, never subtracted again.
 Detail view only (`SIMPLE_HIDDEN_PAGES`); shortcut `g b`.
