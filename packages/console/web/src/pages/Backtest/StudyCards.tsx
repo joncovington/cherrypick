@@ -286,6 +286,34 @@ export function figuresRun(row: StudyRow): StudyResult | null {
   return withRun[0] ?? null;
 }
 
+/** An arm's trades a session over the run, from the report's own counts; null when either is missing. */
+export function tradesPerSession(report: BacktestRunReport, arm: string): number | null {
+  const a = report.arms[arm];
+  if (!a || a.trades === null || a.trades === undefined || !a.summary.sessions) return null;
+  return a.trades / a.summary.sessions;
+}
+
+/** How many times more often control trades than the other arms before it is a different design. */
+export const CONTROL_SCALE = 10;
+
+/**
+ * Control's trades a session over the median of the other arms', when that exceeds CONTROL_SCALE:
+ * MEIC's control is the module's sampling arm (hundreds of condors a session in paper and replay
+ * alike), so its dollars a session do not compare with a one-condor rule's. Null otherwise.
+ */
+export function controlScale(report: BacktestRunReport): number | null {
+  const ctl = tradesPerSession(report, "control");
+  const others = Object.keys(report.arms)
+    .filter((a) => a !== "control")
+    .map((a) => tradesPerSession(report, a))
+    .filter((x): x is number => x !== null && x > 0)
+    .sort((a, b) => a - b);
+  if (ctl === null || others.length === 0) return null;
+  const median = others[Math.floor(others.length / 2)]!;
+  const ratio = ctl / median;
+  return ratio > CONTROL_SCALE ? ratio : null;
+}
+
 const LINE_COLOURS = ["var(--accent)", "var(--chart-special)", "var(--amber-line)", "var(--chart-orange)", "var(--live)", "var(--pos)"];
 
 /**
@@ -294,7 +322,8 @@ const LINE_COLOURS = ["var(--accent)", "var(--chart-special)", "var(--amber-line
  * than the rest would otherwise flatten them.
  */
 export function EquityLines({ report }: { report: BacktestRunReport }) {
-  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+  const scale = controlScale(report);
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set(scale === null ? [] : ["control"]));
   const arms = Object.entries(report.cards?.arms ?? {}).filter(([, c]) => c.equity.length > 1);
   if (arms.length === 0) return <p className="muted">This run's report carries no equity path.</p>;
   let colour = 0;
@@ -346,6 +375,12 @@ export function EquityLines({ report }: { report: BacktestRunReport }) {
           {fmtCash(top)} top · {fmtCash(bottom)} bottom · press an arm to hide it
         </span>
       </figcaption>
+      {scale !== null ? (
+        <p className="muted study-section-note">
+          Control starts hidden: it trades about {Math.round(scale)} times as often a session as the other arms (the module&apos;s own
+          sampling arm, not this study&apos;s base), so its dollars a session do not compare with theirs.
+        </p>
+      ) : null}
     </figure>
   );
 }
@@ -364,13 +399,21 @@ export function ArmFigures({ report, result }: { report: BacktestRunReport; resu
             <span className={`study-arm-mean ${a.summary.mean === null ? "" : a.summary.mean < 0 ? "pnl-neg" : "pnl-pos"}`}>
               {fmtCash(a.summary.mean)} / session
             </span>
-            <span className="muted">{fmtCount(a.summary.sessions)} sessions</span>
+            <span className="muted">
+              {fmtCount(a.summary.sessions)} sessions
+              {tradesPerSession(report, arm) === null ? "" : ` · ${fmtTrades(tradesPerSession(report, arm)!)} trades / session`}
+            </span>
             {v ? <span className={verdictChip(v)}>{v}</span> : arm === "control" ? <span className="chip muted">control</span> : null}
           </div>
         );
       })}
     </div>
   );
+}
+
+/** "1", "0.9", "283": trades a session, to one decimal below ten. */
+export function fmtTrades(v: number): string {
+  return v >= 10 ? String(Math.round(v)) : String(Math.round(v * 10) / 10);
 }
 
 function RunFigures({ row }: { row: StudyRow }) {

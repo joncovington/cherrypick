@@ -370,8 +370,10 @@ the result), its window and provisional, all read from the board. Tiles carry no
 has none. Group chips filter (`?group=`). A tile opens a lightbox (`?study=`, so back closes it; Esc,
 ← → and a swipe step through the tiles in layout order) with four tabs: overview (the decision, a
 stale note, and the run's figures, fetched on open from the newest result file that names a run:
-each arm's net a session, sessions and verdict, and each arm's running net, legend entries hiding a
-line so one wide arm cannot flatten the rest), declaration (measure, expects, sample, pass test, why,
+each arm's net a session, sessions, trades a session and verdict, and each arm's running net, legend
+entries hiding a line so one wide arm cannot flatten the rest; control starts hidden, with a note, when
+it trades more than ten times as often a session as the other arms' median, as MEIC's sampling arm
+does, hundreds of condors a session against a one-condor rule), declaration (measure, expects, sample, pass test, why,
 rivals, the plan section on GitHub), grid (the study's grid bars) and queue (each result file's
 per-arm verdicts, run and write-up links, and the study's queue rows, each opening to its arguments,
 result and log). Phones get two columns and a full-screen lightbox. A study may leave Markdown beside a result file (`results.json` -> `results.md`, its own
