@@ -107,6 +107,31 @@ def test_a_held_leg_todays_fills_cannot_explain_makes_the_mark_and_net_null():
     assert out["cash"] == 220.0  # what the fills say is still stated
 
 
+def test_legs_that_expired_before_today_are_set_aside_not_unreconciled():
+    """The broker lists an expired leg until it processes the expiry overnight. Yesterday's condor
+    still listed the next morning is an earlier session's, not an unexplained leg of today's."""
+    yesterday = "2026-10-12"
+    stale = [
+        leg(-1, "P", 4950, yesterday, 0.0, 0.0, root="SPXW", underlying="SPX"),
+        leg(1, "P", 4940, yesterday, 0.0, 0.0, root="SPXW", underlying="SPX"),
+    ]
+    out = read(held=[*HELD, *stale])
+    assert out["unreconciled"] == []
+    expired = [(e["expiry"], e["quantity"]) for e in out["expired_held"]]
+    assert expired == [(yesterday, -1.0), (yesterday, 1.0)]
+    assert out["net"] == read()["net"]
+    assert any("expired before today" in c for c in out["caveats"])
+
+
+def test_the_next_morning_with_only_expired_legs_reads_clean():
+    """No trade today, only yesterday's legs still listed: nothing to reconcile, nothing held."""
+    stale = [leg(-1, "C", 5100, "2026-10-12", 0.0, 0.0, root="SPXW", underlying="SPX")]
+    out = read(held=stale, history=OLDER)
+    assert out["unreconciled"] == [] and out["open_legs"] == [] and out["orders"] == []
+    assert out["net"] == 0.0 and out["net_basis"] == "realised: nothing held"
+    assert len(out["expired_held"]) == 1
+
+
 def test_a_closed_hand_trade_is_realised_with_no_settlement():
     close = [
         fill(201, "Buy to Close", "P", 4980, 0.40, at="2026-10-13T19:30:00Z"),
