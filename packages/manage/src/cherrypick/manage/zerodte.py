@@ -74,14 +74,25 @@ def reading(
 ) -> dict[str, Any]:
     """The hand 0DTE view for one account. `held` is the legs `_without_excluded` dropped, `names`
     the excluded underlyings, `transactions` the account-wide history (None: the snapshot predates
-    it), `known` the loops' published order ids (None: the snapshot predates v16)."""
+    it), `known` the loops' published order ids (None: the snapshot predates v16).
+
+    `held` also carries legs that expired before today: the broker lists an expired leg until it
+    processes the expiry overnight. Those are an earlier session's, which today's fills can never
+    explain, so they are set aside in `expired_held` and left out of the reconciliation."""
+    held, expired = _split_expired(held, session)
     caveats: list[str] = []
-    if transactions is None or transactions_error:
-        return _unread(session, names, held, transactions_error or "no account-wide history in this snapshot")
-    if known is None or known_error:
-        return _unread(
-            session, names, held, known_error or "no loop order ids in this snapshot (taken before v16)"
+    if expired:
+        caveats.append(
+            f"{len(expired)} leg(s) that expired before today are still listed by the broker until it "
+            "processes the expiry; they belong to an earlier session and are not counted here"
         )
+    if transactions is None or transactions_error:
+        return _unread(
+            session, names, held, expired, transactions_error or "no account-wide history in this snapshot"
+        )
+    if known is None or known_error:
+        why = known_error or "no loop order ids in this snapshot (taken before v16)"
+        return _unread(session, names, held, expired, why)
 
     known_ids: set[str] = set()
     newest_publish: datetime | None = None
@@ -210,6 +221,7 @@ def reading(
         "orders": orders,
         "open_legs": open_legs,
         "unreconciled": unreconciled,
+        "expired_held": expired,
         "after_publish": after_publish,
         "known_modules": {m: doc.get("at") for m, doc in sorted(known.items())},
         "loop_fills": loop_fills,
@@ -235,7 +247,44 @@ def _stamp(v: Any) -> datetime | None:
     return d if d.tzinfo is not None else None
 
 
-def _unread(session: date, names: set[str], held: list[dict[str, Any]], why: str) -> dict[str, Any]:
+def _leg_expiry(leg: dict[str, Any]) -> date | None:
+    """A held leg's expiry: its OCC symbol's, else its `expiration` field; None when neither reads."""
+    exp = _occ_expiry(str(leg.get("symbol") or ""))
+    if exp is not None:
+        return exp
+    try:
+        return date.fromisoformat(str(leg.get("expiration") or "")[:10])
+    except ValueError:
+        return None
+
+
+def _split_expired(
+    held: list[dict[str, Any]], session: date
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Today's held legs, and those that expired on an earlier day ({symbol, expiry, quantity})."""
+    today, expired = [], []
+    for leg in held:
+        exp = _leg_expiry(leg)
+        if exp is not None and exp < session:
+            expired.append(
+                {
+                    "symbol": leg.get("symbol"),
+                    "expiry": exp.isoformat(),
+                    "quantity": _f(leg.get("quantity")),
+                }
+            )
+        else:
+            today.append(leg)
+    return today, expired
+
+
+def _unread(
+    session: date,
+    names: set[str],
+    held: list[dict[str, Any]],
+    expired: list[dict[str, Any]],
+    why: str,
+) -> dict[str, Any]:
     return {
         "session": session.isoformat(),
         "underlyings": sorted(names),
@@ -244,6 +293,7 @@ def _unread(session: date, names: set[str], held: list[dict[str, Any]], why: str
         "orders": [],
         "open_legs": [],
         "unreconciled": [],
+        "expired_held": expired,
         "after_publish": [],
         "known_modules": {},
         "loop_fills": 0,
