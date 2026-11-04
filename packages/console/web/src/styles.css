@@ -5914,6 +5914,7 @@ select.text-input {
    (@fontsource-variable, imported in main.tsx); nothing is fetched. Scoped to this page alone.
    The lightbox is portalled to the body, so it carries the scope's class itself. */
 .mf-layout[data-module="backtest"],
+.pos-board,
 .study-dialog-wrap {
   --num-face: "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
   font-family: "Inter Variable", Inter, "Segoe UI", system-ui, sans-serif;
@@ -5923,6 +5924,7 @@ select.text-input {
 .mf-layout[data-module="backtest"] button,
 .mf-layout[data-module="backtest"] select,
 .mf-layout[data-module="backtest"] input,
+.pos-board button,
 .study-dialog-wrap button {
   font-family: inherit;
 }
@@ -6546,5 +6548,358 @@ select.text-input {
   .d-val-why {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+}
+
+/* Live -> positions as cards (2026-11-04): a card per trade, its broker order chain down the card
+   as a timeline, open -> rolls -> "now, close at mid". The page's type follows the Backtest look
+   (Inter, JetBrains Mono figures; .pos-board joins that scope above). A losing trade is red: its
+   P&L, its bar and its card's edge. Opened, the chain and the evaluation sit in the shared lightbox. */
+.pos-board {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pos-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.pos-controls .history-controls {
+  align-items: center;
+}
+
+.pos-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.pos-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.pos-card:hover {
+  border-color: var(--chart-grid-strong);
+}
+
+.pos-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.pos-card.is-neg {
+  border-color: color-mix(in srgb, var(--neg) 45%, var(--border));
+  background: color-mix(in srgb, var(--neg) 4%, var(--surface));
+}
+
+.pos-card.is-neg:hover {
+  border-color: color-mix(in srgb, var(--neg) 70%, var(--border));
+}
+
+.pos-card-head,
+.pos-card-figs,
+.pos-card-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pos-card-head {
+  align-items: flex-start;
+}
+
+.pos-card-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pos-card-sym {
+  font-family: var(--num-face);
+  font-size: 18px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.pos-card-shape {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.pos-card-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.pos-card-figs {
+  align-items: baseline;
+}
+
+.pos-card-pnl {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 24px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pos-card-side {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: right;
+  line-height: 1.45;
+}
+
+.pos-bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.pos-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--pos);
+}
+
+.pos-bar-fill.is-neg {
+  background: var(--neg);
+}
+
+.pos-chain-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.pos-chain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pos-step {
+  display: flex;
+  gap: 10px;
+  position: relative;
+}
+
+/* The line joining each step to the next. */
+.pos-step:not(.pos-step-now)::before {
+  content: "";
+  position: absolute;
+  left: 4.5px;
+  top: 16px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-strong);
+}
+
+.pos-dot {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  margin-top: 3px;
+  border-radius: 50%;
+  border: 2px solid var(--verdict-pass);
+  background: var(--surface);
+  box-sizing: border-box;
+  position: relative;
+}
+
+.pos-step-roll .pos-dot {
+  border-color: var(--verdict-fail);
+}
+
+.pos-step-close .pos-dot {
+  border-color: var(--neg);
+}
+
+.pos-step-add .pos-dot {
+  border-style: dashed;
+}
+
+.pos-step-now .pos-dot {
+  background: var(--verdict-pass);
+}
+
+.pos-step-body {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pos-step-now .pos-step-body {
+  padding-bottom: 0;
+}
+
+.pos-step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pos-step-date {
+  font-family: var(--num-face);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.pos-role {
+  font: 600 10px/1 var(--num-face);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.pos-step-roll .pos-role {
+  color: var(--verdict-fail);
+  background: color-mix(in srgb, var(--verdict-fail) 14%, transparent);
+}
+
+.pos-step-close .pos-role {
+  color: var(--neg);
+  background: color-mix(in srgb, var(--neg) 14%, transparent);
+}
+
+.pos-step-price {
+  margin-left: auto;
+  font-family: var(--num-face);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.pos-step-cash {
+  font-family: var(--num-face);
+  font-size: 13px;
+  min-width: 6.5em;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.pos-step-legs,
+.pos-legs,
+.pos-step-foot {
+  font-family: var(--num-face);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.pos-legs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pos-step-now-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+
+.pos-num {
+  font-family: var(--num-face);
+}
+
+.pos-chain-note {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.pos-card-foot {
+  align-items: baseline;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.pos-card-foot > span:first-child {
+  white-space: nowrap;
+}
+
+.pos-card-reason {
+  text-align: right;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Opened: the chain beside the P&L. */
+.pos-open {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.pos-open > .pos-chain {
+  flex: 999 1 420px;
+  min-width: 0;
+}
+
+.pos-open-side {
+  flex: 1 1 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-sunken);
+}
+
+.pos-open-side .lbl {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+@media (max-width: 560px) {
+  .pos-card {
+    padding: 14px;
+  }
+
+  .pos-card-pnl {
+    font-size: 21px;
   }
 }

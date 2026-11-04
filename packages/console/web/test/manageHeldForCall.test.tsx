@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ManageTrade } from "@console/shared";
-import { TradeDetail, TradesCard } from "../src/pages/Live/ManagePage";
-import { aligned, inView, tables } from "./viewTables";
+import { MemoryRouter } from "react-router-dom";
+import { TradeDetail } from "../src/pages/Live/ManagePage";
+import { PositionCard, PositionCards, chainSteps, sortByPnl } from "../src/pages/Live/PositionCards";
 
 /**
  * The held-for-call chip and "waits for call" are packages/manage's `earnings_trade` verdict, read and
@@ -66,7 +67,7 @@ function trade(over: Partial<ManageTrade>): ManageTrade {
 }
 
 function hold(t: ManageTrade): string {
-  return text(renderToString(<TradesCard title="holding" trades={[t]} loading={false} empty="none" variant="hold" />));
+  return text(renderToString(<PositionCard t={t} onOpen={() => undefined} />));
 }
 
 // The exit levels left the holding row on 2026-10-30 (docs/console-review-plan.md batch 3): they are
@@ -75,10 +76,10 @@ function expanded(t: ManageTrade): string {
   return text(renderToString(<TradeDetail t={t} />));
 }
 
-describe("the held-for-call chip on the positions table", () => {
+describe("the held-for-call chip on the positions cards", () => {
   it("an earnings trade before its call waits for the call", () => {
     const t = trade({ earningsTrade: { report: "2026-10-20", timeOfDay: "AMC", leadDays: 4, passed: false } });
-    expect(hold(t)).toContain("earnings"); // the chip, in the trade cell
+    expect(hold(t)).toContain("earnings"); // the chip, on the card
     expect(expanded(t)).toContain("waits for the call");
     expect(expanded(t)).toContain("after the call");
   });
@@ -93,46 +94,92 @@ describe("the held-for-call chip on the positions table", () => {
   });
 });
 
-/** Live → positions in the simple and detail views (2026-10-21). */
-describe("the positions tables, simple and detail", () => {
-  const card = (variant: "act" | "hold", t: ManageTrade) =>
-    renderToString(<TradesCard title={variant} trades={[t]} loading={false} empty="none" variant={variant} />);
-  const act = trade({ action: "CLOSE", reason: "stop hit", pnlGross: -57, pnlNet: -59.6, fees: -2.6 });
-
-  it("keeps conf., kind and the exit levels out of the row in both views, and every row stays under its headers", () => {
-    for (const variant of ["act", "hold"] as const) {
-      const simple = tables(inView("simple", () => card(variant, act)))[0]!;
-      const detail = tables(inView("detail", () => card(variant, act)))[0]!;
-      for (const t of [simple, detail]) {
-        expect(t.headers).not.toContain("conf.");
-        expect(t.headers).not.toContain("kind");
-        expect(t.headers).not.toContain("live capture");
-        expect(t.headers).not.toContain("take profit");
-      }
-      expect(aligned(simple)).toBe(true);
-      expect(aligned(detail)).toBe(true);
-    }
+/** Live → positions as cards (2026-11-04): a card per trade, its order chain down the card. */
+describe("the positions cards", () => {
+  const order = (date: string, role: string, netV: number | null, netPrice: number, netSide: "cr" | "db", legs: string[]) => ({
+    date,
+    role,
+    net: netV,
+    netPrice,
+    netSide,
+    fees: -1.3,
+    legs,
+  });
+  const rolled = trade({
+    tradeId: "IWM",
+    action: "TAKE_PROFIT",
+    pnlGross: 187,
+    pnlNet: 185.2,
+    fees: -1.8,
+    value: -88,
+    chain: {
+      orders: [order("2026-10-02", "open", 210, 2.1, "cr", ["STO 1 IWM 215P"]), order("2026-10-24", "roll", 65, 0.65, "cr", ["BTC 1 IWM 215P", "STO 1 IWM 210P"])],
+      cash: 275,
+      fees: -1.8,
+      rolls: 1,
+    },
   });
 
-  it("the holding table has no action column in either view; action needed keeps it", () => {
-    for (const view of ["simple", "detail"] as const) {
-      expect(tables(inView(view, () => card("hold", trade({}))))[0]!.headers).not.toContain("action");
-      expect(tables(inView(view, () => card("act", act)))[0]!.headers).toContain("action");
-    }
+  it("draws the chain in order, the first order named open, each with the chain's running total", () => {
+    const steps = chainSteps(rolled);
+    expect(steps.map((x) => x.role)).toEqual(["open", "roll"]);
+    expect(steps.map((x) => x.price)).toEqual(["2.10 cr", "0.65 cr"]);
+    expect(steps.map((x) => x.total)).toEqual([210, 275]);
+    const html = text(renderToString(<PositionCard t={rolled} onOpen={() => undefined} />));
+    expect(html).toContain("1 roll");
+    expect(html).toContain("close at mid -$88.00");
+    expect(html).toContain("taken in +$275.00");
   });
 
-  it("a settling trade in the holding table still says so, in its trade cell", () => {
-    expect(text(card("hold", trade({ action: "SETTLES" })))).toContain("settles");
+  it("stops the running total at an order whose cash is unknown, and falls back to the opening with no chain", () => {
+    const gap = trade({ chain: { orders: [order("2026-10-01", "open", 100, 1, "cr", []), order("2026-10-05", "roll", null, 0.2, "cr", []), order("2026-10-09", "roll", 30, 0.3, "cr", [])], cash: null, fees: null, rolls: 2 } });
+    expect(chainSteps(gap).map((x) => x.total)).toEqual([100, null, null]);
+    const legsOnly = trade({ basis: "open_legs", chain: null, opening: { net: 120, netPrice: 1.2, netSide: "cr" } });
+    expect(chainSteps(legsOnly)).toHaveLength(1);
+    expect(text(renderToString(<PositionCard t={legsOnly} onOpen={() => undefined} />))).toContain("no reconciled chain");
   });
 
-  it("shows P&L net of fees in both views, and a dash (never the gross) where fees were not read", () => {
-    for (const view of ["simple", "detail"] as const) {
-      const html = inView(view, () => card("act", act));
-      expect(tables(html)[0]!.headers).toContain("P&L (net)");
-      expect(tables(html)[0]!.headers).not.toContain("mark P&L (gross)");
-      expect(text(html)).toContain("-$59.60");
-    }
-    const unread = text(card("hold", trade({ pnlGross: -57, pnlNet: null })));
-    expect(unread).not.toContain("-$57.00");
+  it("shows P&L net of fees, never the gross where fees were not read, and marks a losing card red", () => {
+    const loss = renderToString(<PositionCard t={trade({ action: "CLOSE", pnlGross: -57, pnlNet: -59.6, fees: -2.6 })} onOpen={() => undefined} />);
+    expect(text(loss)).toContain("-$59.60");
+    expect(loss).toContain("pos-card is-neg");
+    expect(loss).toContain("pnl-neg");
+    const unread = renderToString(<PositionCard t={trade({ pnlGross: -57, pnlNet: null })} onOpen={() => undefined} />);
+    expect(text(unread)).not.toContain("-$57.00");
+    expect(unread).not.toContain("pos-card is-neg");
+  });
+
+  it("a settling trade says so on its card", () => {
+    expect(hold(trade({ action: "SETTLES" }))).toContain("settles");
+  });
+
+  it("sorts by P&L either way, a trade with no net last both times", () => {
+    const a = trade({ tradeId: "A", pnlNet: 50 });
+    const b = trade({ tradeId: "B", pnlNet: -20 });
+    const c = trade({ tradeId: "C", pnlNet: null });
+    const d = trade({ tradeId: "D", pnlNet: 120 });
+    expect(sortByPnl([a, b, c, d], "desc").map((t) => t.tradeId)).toEqual(["D", "A", "B", "C"]);
+    expect(sortByPnl([a, b, c, d], "asc").map((t) => t.tradeId)).toEqual(["B", "A", "D", "C"]);
+  });
+
+  it("the board counts what needs action and what rolled, and orders by the URL's choice", () => {
+    const trades = [trade({ tradeId: "A", pnlNet: 50 }), rolled, trade({ tradeId: "B", action: "CLOSE", pnlNet: -20 })];
+    const board = (url: string) =>
+      text(
+        renderToString(
+          <MemoryRouter initialEntries={[url]}>
+            <PositionCards trades={trades} loading={false} detail={() => null} />
+          </MemoryRouter>,
+        ),
+      );
+    const desc = board("/live/positions");
+    expect(desc).toContain("all 3");
+    expect(desc).toContain("needs action 2");
+    expect(desc).toContain("rolled 1");
+    expect(desc.indexOf("185.20")).toBeLessThan(desc.indexOf("-$20.00"));
+    const asc = board("/live/positions?pnl=asc");
+    expect(asc.indexOf("-$20.00")).toBeLessThan(asc.indexOf("185.20"));
+    const act = board("/live/positions?show=act");
+    expect(act).not.toContain("$50.00");
   });
 });
