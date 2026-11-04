@@ -1,16 +1,35 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import type { BacktestOverview, BacktestRunReport, StudiesBoard, StudyGrid, StudyRow } from "@console/shared";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { BacktestOverview, BacktestRunReport, StudiesBoard, StudyGrid, StudyResult, StudyRow } from "@console/shared";
 import { RunPlainEnglish } from "../src/pages/Backtest/BacktestPage";
 import { neighbourhoodLine } from "../src/pages/Backtest/GridBars";
 import { StudyChip, etMs } from "../src/pages/Backtest/QueueTab";
-import { StudiesTable, StudyDetail, StudyNotes, contextLine, headline, notesHref, planUrl, resultLabel, resultsLine } from "../src/pages/Backtest/StudiesTab";
+import { StudyNotes, contextLine, headline, notesHref, planUrl, resultLabel, resultsLine } from "../src/pages/Backtest/StudiesTab";
+import {
+  type DialogTab,
+  ArmFigures,
+  EquityLines,
+  StudyDialogBody,
+  StudyTiles,
+  Verdicts,
+  armsLine,
+  chipLabel,
+  figuresRun,
+  heroStudy,
+  laidOut,
+  openIndex,
+  orderedRows,
+  tileModel,
+  verdictText,
+} from "../src/pages/Backtest/StudyCards";
 import { indexStudies, studyHref } from "../src/pages/Backtest/studyIndex";
 
 /**
- * The Backtest page's studies tab (2026-10-29): one row per register item, grouped in progress /
- * declared / finished / observations. Every word is the orchestrator's; the tab lays it out.
+ * The Backtest page's studies tab (2026-10-29; as cards 2026-11-03): one tile per register item, in
+ * progress first, opening to a lightbox. Every word is the orchestrator's or the study's; the tab
+ * lays it out and works out no verdict.
  */
 
 const NOW = etMs("2026-10-29T12:00:00") as number;
@@ -91,7 +110,47 @@ const BOARD: StudiesBoard = {
   ],
 };
 
-const html = (node: React.ReactNode) => renderToString(<MemoryRouter>{node}</MemoryRouter>);
+const html = (node: React.ReactNode) =>
+  renderToString(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter>{node}</MemoryRouter>
+    </QueryClientProvider>,
+  ).replace(/<!-- -->/g, "");
+
+const tiles = (rows: StudyRow[]) => html(<StudyTiles rows={rows} nowMs={NOW} onOpen={() => undefined} />);
+
+const dialog = (r: StudyRow, tab: DialogTab = "overview") =>
+  html(
+    <StudyDialogBody
+      row={r}
+      tab={tab}
+      onTab={() => undefined}
+      position="1 of 1"
+      nowMs={NOW}
+      onPrev={() => undefined}
+      onNext={() => undefined}
+      onClose={() => undefined}
+    />,
+  );
+
+function result(over: Partial<StudyResult>): StudyResult {
+  return {
+    source: "register",
+    name: "results.json",
+    present: true,
+    modified: null,
+    window: null,
+    span: null,
+    runId: null,
+    provisional: null,
+    verdicts: [{ arm: null, verdict: "fail" }],
+    summary: "fail",
+    grid: null,
+    notes: null,
+    version: null,
+    ...over,
+  };
+}
 
 describe("studies tab", () => {
   it("heads with the counts the user asks for first", () => {
@@ -101,21 +160,24 @@ describe("studies tab", () => {
     expect(headline(withRetired)).toBe("5 studies: 1 in progress, 0 declared, 3 finished (1 failed, 1 no verdict, 1 retired), 1 observation.");
   });
 
-  it("groups rows and shows title and status; verdicts and outcome wait for the row to open", () => {
-    const out = html(<StudiesTable board={BOARD} nowMs={NOW} />);
-    const order = ["In progress", "Finished", "Observations"].map((t) => out.indexOf(t));
-    expect(order.every((i, k) => i > -1 && (k === 0 || i > order[k - 1]!))).toBe(true);
-    expect(out).not.toContain("Declared, not started");
-    expect(out).toContain("task running");
+  it("tiles run in progress first, then finished, then observations; the decision waits for the lightbox", () => {
+    expect(orderedRows(BOARD, null).map((r) => r.study)).toEqual(["item26", "item23", "item25", "item2"]);
+    expect(orderedRows(BOARD, "finished").map((r) => r.study)).toEqual(["item23", "item25"]);
+    const out = tiles(orderedRows(BOARD, null));
+    const at = (s: string) => out.indexOf(`data-study="${s}"`);
+    expect(at("item26")).toBeGreaterThan(-1);
+    expect(at("item26")).toBeLessThan(at("item23"));
+    expect(at("item23")).toBeLessThan(at("item2"));
+    expect(out).toContain("fetch running");
     expect(out).toContain("no verdict");
-    expect(out).not.toContain("design fail · holdout fail");
+    expect(out).toContain('class="study-tile-word tone-neg">failed<');
     expect(out).not.toContain("live stays at 16 delta");
-    const opened = html(<StudyDetail row={row({})} />);
-    expect(opened).toContain("design fail · holdout fail");
+    const opened = dialog(row({}));
+    expect(opened).toContain(">design fail<");
     expect(opened).toContain("live stays at 16 delta");
   });
 
-  it("a study whose tasks are only queued says queued, not running", () => {
+  it("a study in progress shows its step and how far through; one only queued says queued, not running", () => {
     // The queue's `active` is queued or running (2026-10-30: two studies said "task running" in
     // the 18:30-20:30 window while the queue ran nothing).
     const waiting = row({
@@ -124,13 +186,57 @@ describe("studies tab", () => {
       status: "declared",
       group: "in_progress",
       queueActive: true,
-      tasks: [{ id: 42, step: "fetch-chain-paths", status: "queued", createdAt: null, startedAt: null, finishedAt: null }],
+      tasks: [
+        { id: 41, step: "fetch", status: "done", createdAt: null, startedAt: null, finishedAt: "2026-10-28T10:00:00" },
+        { id: 42, step: "fetch-chain-paths", status: "queued", createdAt: null, startedAt: null, finishedAt: null },
+        { id: 43, step: "old", status: "cancelled", createdAt: null, startedAt: null, finishedAt: null },
+      ],
       results: [],
       outcome: null,
     });
-    const out = html(<StudiesTable board={{ unregistered: [], rows: [waiting] }} nowMs={NOW} />);
-    expect(out).toContain("task queued");
-    expect(out).not.toContain("task running");
+    const m = tileModel(waiting);
+    expect([m.kind, m.step, m.done, m.total]).toEqual(["running", "fetch-chain-paths queued", 1, 2]);
+    const out = tiles([waiting]);
+    expect(out).toContain("1 of 2 steps done");
+    expect(out.match(/study-segment is-done/g)).toHaveLength(1);
+    expect(out.match(/study-segment is-queued/g)).toHaveLength(1);
+    expect(out).not.toContain(" running<");
+  });
+
+  it("a declared tile shows what it expects instead of a verdict", () => {
+    const declared = row({ group: "declared", status: "declared", results: [], tasks: [] });
+    const out = tiles([declared]);
+    expect(out).toContain(">Declared<");
+    expect(out).toContain("a positive paired difference");
+    expect(out).not.toContain("study-tile-word");
+  });
+
+  it("marks a stale or provisional result on the tile, and says how the arms split when they disagree", () => {
+    const stale = result({
+      window: "holdout",
+      provisional: true,
+      verdicts: [
+        { arm: "w15", verdict: "fail" },
+        { arm: "w20", verdict: "pass" },
+        { arm: "w25", verdict: "pass" },
+      ],
+      summary: "mixed",
+      version: { version: 2, current: 3, commit: null, stale: true, since: [{ on: "2026-10-30", what: "fees per leg", beforeRead: true }], error: null },
+    });
+    const m = tileModel(row({ results: [stale] }));
+    expect(m.stale).toBe(true);
+    expect(m.meta).toBe("holdout · provisional");
+    expect(m.arms).toBe("2 pass · 1 fail");
+    expect(armsLine(result({ verdicts: [{ arm: "a", verdict: "fail" }, { arm: "b", verdict: "fail" }] }))).toBeNull();
+    expect(armsLine(null)).toBeNull();
+    const out = tiles([row({ results: [stale] })]);
+    expect(out).toContain(">stale<");
+    expect(out).toContain("2 pass · 1 fail");
+    expect(tiles([row({})])).not.toContain(">stale<");
+    // The lightbox says what landed since, and to rerun.
+    const opened = dialog(row({ results: [stale] }));
+    expect(opened).toContain("Rerun before relying on the verdict");
+    expect(opened).toContain("2026-10-30: fees per leg");
   });
 
   it("a result with no word says so, never a guess; a missing file says missing", () => {
@@ -141,16 +247,67 @@ describe("studies tab", () => {
     expect(resultLabel({ ...r, window: null, span: null })).toBe("study-design.json");
   });
 
-  it("a row opens to its test, rivals, per-arm verdicts and links", () => {
-    const out = html(<StudyDetail row={row({})} />);
-    expect(out).toContain("t &gt; 2, Holm, both halves");
-    expect(out).toContain("a calm span");
-    expect(out).toContain("d12: fail · d20: fail");
-    expect(out).toContain('href="/backtest/runs?run=20261028-065012-0174bd"');
-    expect(out).toContain(planUrl("docs/edge-hypotheses-plan.md#23-the-short-delta")!);
-    expect(out).toContain("its queue rows");
-    // A pre-register item points to its prose.
-    expect(html(<StudyDetail row={row({ legacy: true, rule: null, rivals: [] })} />)).toContain("before the register");
+  it("the large tile is the study running now, laid out first; none when nothing runs", () => {
+    const rows = orderedRows(BOARD, null);
+    expect(heroStudy(rows)?.study).toBe("item26");
+    expect(tiles(rows)).toContain('class="study-tile study-hero" data-study="item26"');
+    expect(tiles(rows)).toContain("Running now · fetch running");
+    const finished = orderedRows(BOARD, "finished");
+    expect(heroStudy(finished)).toBeNull();
+    expect(tiles(finished)).not.toContain("study-hero");
+    const reordered = [row({}), ...rows.filter((r) => r.study !== "item23")];
+    expect(laidOut(reordered).map((r) => r.study)).toEqual(["item26", "item23", "item25", "item2"]);
+  });
+
+  it("the lightbox's tabs: the decision and run on the overview, the test and rivals, the grid, the queue", () => {
+    const overview = dialog(row({}));
+    expect(overview).toContain("live stays at 16 delta");
+    expect(overview).toContain('href="/backtest/runs?run=20261028-065012-0174bd"');
+    expect(overview).toContain(`href="${studyHref("item23")}"`);
+    expect(overview).toContain('aria-selected="true"');
+    expect(overview).not.toContain("a calm span");
+    const declaration = dialog(row({}), "declaration");
+    expect(declaration).toContain("t &gt; 2, Holm, both halves");
+    expect(declaration).toContain("a calm span");
+    expect(declaration).toContain(planUrl("docs/edge-hypotheses-plan.md#23-the-short-delta")!);
+    const queue = dialog(row({}), "queue");
+    expect(queue).toContain("d12: fail · d20: fail");
+    expect(queue).toContain("holdout done");
+    expect(dialog(row({}), "grid")).toContain("No grid");
+    // A pre-register item points to its prose; a declared one says it has not run.
+    expect(dialog(row({ legacy: true, rule: null, rivals: [] }), "declaration")).toContain("before the register");
+    expect(dialog(row({ group: "declared", status: "declared", results: [] }))).toContain("Declared, not run yet.");
+  });
+
+  it("takes its figures from the newest result file that names a run", () => {
+    const [design, holdout] = [result({ name: "d.json", runId: "20261001-000000-aaaaaa", modified: "2026-10-01T00:00:00" }), result({ name: "h.json", runId: "20261020-000000-bbbbbb", modified: "2026-10-20T00:00:00" })];
+    expect(figuresRun(row({ results: [design, holdout] }))?.name).toBe("h.json");
+    expect(figuresRun(row({ results: [design, { ...holdout, present: false }] }))?.name).toBe("d.json");
+    expect(figuresRun(row({ results: [result({})] }))).toBeNull();
+  });
+
+  it("shows each arm's net a session and its verdict, control first", () => {
+    const report = {
+      arms: {
+        d20: { spec_hash: "a", summary: { sessions: 778, mean: -2.5 } },
+        control: { spec_hash: "c", summary: { sessions: 778, mean: 1.29 } },
+      },
+    } as unknown as BacktestRunReport;
+    const out = html(<ArmFigures report={report} result={result({ verdicts: [{ arm: "d20", verdict: "fail" }] })} />);
+    expect(out.indexOf("control")).toBeLessThan(out.indexOf("d20"));
+    expect(out).toContain("+$1.29 / session");
+    expect(out).toContain("-$2.50 / session");
+    expect(out).toMatch(/class="chip chip-missing">fail</);
+  });
+
+  it("draws each arm's running net, control dashed, and says when the report has no path", () => {
+    const eq = (cums: number[]) => cums.map((cum, i) => ({ session: `2026-01-0${String(i + 1)}`, net: 0, cum, drawdown: 0 }));
+    const report = { arms: {}, cards: { ok: true, arms: { control: { equity: eq([0, 1, 2]) }, d20: { equity: eq([0, -1, -3]) } } } } as unknown as BacktestRunReport;
+    const out = html(<EquityLines report={report} />);
+    expect(out.match(/<polyline /g)).toHaveLength(2);
+    expect(out).toContain('stroke-dasharray="6 4"');
+    expect(out.match(/aria-pressed="true"/g)).toHaveLength(2);
+    expect(html(<EquityLines report={{ arms: {} } as unknown as BacktestRunReport} />)).toContain("no equity path");
   });
 
   it("a grid result draws a bar per setting with the live one outlined, and the study's own labels", () => {
@@ -167,19 +324,19 @@ describe("studies tab", () => {
     };
     expect(neighbourhoodLine(grid)).toBe("live 0.16: on a plateau · 0.2 (pass): not positive");
     const r = row({}).results[0]!;
-    const out = html(<StudyDetail row={row({ results: [{ ...r, grid }] })} />);
+    const out = dialog(row({ results: [{ ...r, grid }] }), "grid");
     expect(out.match(/<rect /g)).toHaveLength(3);
     expect(out).toContain("short delta 0.16 (live)");
     expect(out).toContain("var(--neg)");
-    expect(html(<StudyDetail row={row({})} />)).not.toContain("<svg");
+    expect(dialog(row({}), "grid")).not.toContain("<rect");
   });
 
-  it("an opened row links to the study's Markdown beside its result file; none, no link", () => {
+  it("the lightbox links to the study's Markdown beside its result file; none, no link", () => {
     const r = row({}).results[0]!;
-    const out = html(<StudyDetail row={row({ results: [{ ...r, notes: "# x" }] })} />);
-    expect(out).toContain("<dt>study-design.md</dt>");
+    const out = dialog(row({ results: [{ ...r, notes: "# x" }] }), "queue");
+    expect(out).toContain(">study-design.md</a>");
     expect(out).toContain(`href="${notesHref("item23", "study-design.json").replace(/&/g, "&amp;")}"`);
-    expect(html(<StudyDetail row={row({})} />)).not.toContain("open the write-up");
+    expect(dialog(row({}), "queue")).not.toContain("study-design.md");
   });
 
   it("the write-up opens full width, as elements, never as HTML, with the way back", () => {
@@ -225,9 +382,33 @@ describe("links between the tabs", () => {
     expect(html(<StudyChip study="validation" studies={index} />)).toBe("");
   });
 
-  it("a study named in the URL opens", () => {
-    expect(html(<StudiesTable board={BOARD} nowMs={NOW} focus="item23" />)).toContain("pass test");
-    expect(html(<StudiesTable board={BOARD} nowMs={NOW} />)).not.toContain("pass test");
+  it("a study named in the URL opens, stepping through its group, or every study when filtered out", () => {
+    expect(openIndex(BOARD, null, "item23")).toMatchObject({ index: 1 });
+    expect(openIndex(BOARD, "finished", "item25")).toMatchObject({ index: 1 });
+    const out = openIndex(BOARD, "finished", "item26");
+    expect([out.rows.length, out.index]).toEqual([4, 0]);
+    expect(openIndex(BOARD, null, null).index).toBe(-1);
+    expect(openIndex(BOARD, null, "gone").index).toBe(-1);
+  });
+
+  it("shows each result file's verdict as the study wrote it, and marks one the register lacks", () => {
+    const r = row({
+      results: [result({ name: "d.json", window: "design" }), result({ name: "h.json", window: "holdout", summary: "pass", verdicts: [{ arm: null, verdict: "pass" }] })],
+    });
+    const out = html(<Verdicts row={r} />);
+    expect(out).toContain('class="chip chip-missing"');
+    expect(out).toContain(">design fail<");
+    expect(out).toMatch(/class="chip chip-ok"[^>]*>holdout pass</);
+    expect(out).not.toContain("not yet recorded");
+    expect(html(<Verdicts row={row({ results: [result({ window: "holdout", summary: "pass", source: "queue" })] })} />)).toContain("not yet recorded");
+  });
+
+  it("labels a free-text window by its years, and a lone results.json by its verdict alone", () => {
+    expect(chipLabel(result({ window: "2018-02-19..2023-12-29; holdout 2024-01-02..2026-08-21" }), false)).toBe("2018–2026");
+    expect(chipLabel(result({ span: ["2022-05-16", "2024-12-31"] }), true)).toBe("2022–2024");
+    expect(verdictText(result({}), false)).toBe("fail");
+    expect(verdictText(result({ summary: "mixed" }), true)).toBe("results mixed");
+    expect(verdictText(result({ present: false }), false)).toBe("missing");
   });
 
   it("a run report opens in plain words: the study, its verdict, each arm against control", () => {
