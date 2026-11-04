@@ -3,7 +3,8 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BacktestArmCards, BacktestOverview, BacktestRunCards, BacktestRunReport, BridgedResult } from "@console/shared";
-import { BacktestDataTab, trialsLine } from "../src/pages/Backtest/BacktestPage";
+import { trialsLine } from "../src/pages/Backtest/BacktestPage";
+import { BacktestDataTab, DataDialogBody, blocker, keepStore, storeModels, trustAnswer, yearDomain, type DataItem, type DataTab } from "../src/pages/Backtest/DataCards";
 import { BacktestRunsTab } from "../src/pages/Backtest/RunsCards";
 
 /**
@@ -125,6 +126,13 @@ function render(node: React.ReactNode, url: string, seed: (c: QueryClient) => vo
   ).replace(/<!-- -->/g, "");
 }
 
+const dialog = (item: DataItem, tab: DataTab) =>
+  renderToString(
+    <MemoryRouter>
+      <DataDialogBody item={item} tab={tab} onTab={() => undefined} position="1 of 1" onPrev={() => undefined} onNext={() => undefined} onClose={() => undefined} />
+    </MemoryRouter>,
+  ).replace(/<!-- -->/g, "");
+
 const seedOverview = (c: QueryClient, v: BridgedResult<BacktestOverview> = { ok: true, data: OVERVIEW, error: null }) =>
   c.setQueryData(["bridged", "backtest", "overview"], v);
 
@@ -153,8 +161,12 @@ describe("data", () => {
     // The study windows moved to the studies tab.
     expect(html).not.toContain("2023-01-03 → 2025-06-30");
     expect(html).toContain("SPX-60s.db");
-    expect(html).toContain("412");
-    expect(html).toContain("half_day 2");
+    expect(html).toContain("412 sessions stored complete");
+    expect(html).toContain("2 refused");
+    // Why, in the store's lightbox.
+    const store = storeModels(OVERVIEW)[0]!;
+    const refused = dialog({ kind: "store", key: "store:SPX-60s.db", s: store }, "refused");
+    expect(refused).toContain("half_day");
   });
 
   it("a terminated licence shows its clock", () => {
@@ -172,8 +184,33 @@ describe("data", () => {
     const withInv = { ...OVERVIEW, inventory } as unknown as BacktestOverview;
     const html = render(<BacktestDataTab />, "/backtest/data", (c) => seedOverview(c, { ok: true, data: withInv, error: null }));
     expect(html).not.toContain("vendor stores");
-    expect(html).toContain("fetch --cadence 60");
-    expect(html).toContain("2 · half_day 2");
+    expect(html).toContain("2.65 GB");
+    expect(html).toContain("2 refused");
+    const store = storeModels(withInv)[0]!;
+    expect(store.refused).toBe(2);
+    expect(dialog({ kind: "store", key: "store:SPX-60s.db", s: store }, "rebuild")).toContain("fetch --cadence 60");
+    expect(dialog({ kind: "store", key: "store:SPX-60s.db", s: store }, "refused")).toContain("half_day");
+  });
+
+  it("keeps a missing store and one changed since its count apart, and filters on them", () => {
+    const inventory = {
+      stores: [
+        { file: "a.db", present: true, tables: { q: { rows: 10, span: ["2012-01-03", "2024-12-31"] } } },
+        { file: "b.db", present: false },
+        { file: "c.db", present: true, pending: true, tables: { q: { rows: 5, span: ["2020-01-02", "2026-10-30"] } } },
+      ],
+      undeclared: [{ file: "stray.db" }],
+    };
+    const d = { ...OVERVIEW, inventory } as unknown as BacktestOverview;
+    const stores = storeModels(d);
+    expect(stores.filter((x) => keepStore(x, "missing")).map((x) => x.file)).toEqual(["b.db"]);
+    expect(stores.filter((x) => keepStore(x, "pending")).map((x) => x.file)).toEqual(["c.db"]);
+    expect(stores.filter((x) => keepStore(x, "present")).map((x) => x.file)).toEqual(["a.db", "c.db"]);
+    expect(yearDomain(stores)).toEqual([2012, 2026]);
+    const html = render(<BacktestDataTab />, "/backtest/data", (c) => seedOverview(c, { ok: true, data: d, error: null }));
+    expect(html).toContain(">missing<");
+    expect(html).toContain(">count pending<");
+    expect(html).toContain("Undeclared: stray.db");
   });
 });
 
@@ -185,11 +222,17 @@ describe("is history trusted?", () => {
     );
     expect(html).toContain("No: the one validation does not unlock history");
     expect(html).toContain("Outside tolerance: settles_match.");
-    expect(html).toContain("<details>");
-    // The tables, as written, inside it.
-    expect(html).toContain("does not unlock history");
-    expect(html).toContain("98.7%");
-    expect(html).toContain("no vendor profile");
+    expect(html).toContain('class="d-dot is-in"');
+    expect(html).toContain('class="d-dot is-out"');
+    expect(trustAnswer([tol]).head).toBe("Not yet");
+    expect(trustAnswer([]).head).toBe("Not yet asked");
+    expect(trustAnswer([{ ...tol, unlocks_history: true }]).line).toBe("1 of 1 validation unlocks history.");
+    expect(blocker({ ...tol, unlocks_history: true })).toBeNull();
+    // The module's tables, as written, in the validation's lightbox.
+    const item: DataItem = { kind: "validation", key: "validation:SPX-60s.json", v: tol };
+    expect(dialog(item, "checks")).toContain("does not unlock history");
+    expect(dialog(item, "quotes")).toContain("98.7%");
+    expect(dialog(item, "profile")).toContain("no vendor profile");
   });
 
   it("with every check within tolerance, it is the session count that stands in the way", () => {

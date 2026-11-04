@@ -385,14 +385,17 @@ queue row carries its study's verdict as a chip linking to the board, the runs l
 column, a run report opens with an "in plain English" card (what ran, the study it answers and
 that study's verdict and decision, control's net, each arm against control and where its interval
 sits against zero, all the report's figures worded), and the `provisional` chip links to
-data), `data` (2026-10-30 layout: "is history trusted?" first -- the answer, then per validation the
-module's unlock verdict, the sessions compared and what stands in the way, the checks outside
-tolerance or, none outside, the session count; the per-cadence comparison tables (decision checks,
-replay measures, per-session quote and profile agreement) behind an expand. Then the licence, one
-line while it is active with no end date and its clock once it ends; then one store table, the
-inventory with each replay store's refused sessions joined in by file and the rebuild code under
-the store's name, and "count pending" on a store changed since the `backtest-inventory` job last
-counted it, because the read never counts; the old fetch-record table only when the inventory cannot be read), `runs` (as cards 2026-11-03, `pages/Backtest/RunsCards.tsx`: one tile per replay, newest first and
+data), `data` (as cards 2026-11-03, `pages/Backtest/DataCards.tsx`: "is history trusted?" first and
+large, the answer the module's unlock verdicts give, then one row per validation with its cadence,
+sessions compared, dates, what stands in the way (the checks outside tolerance, or the session
+count) and a dot per check from `vendor_within_tolerance`; the licence (a line while it is active
+with no end date, its clock once it ends) and the stores' totals beside it; then one tile per
+store, from the inventory (else the replay stores' fetch record), with what it holds, a bar of the
+years its largest dated table covers, size, the largest table's rows and the sessions its fetch
+refused, missing and "count pending" marked (the read never counts), filters on `?stores=`. A
+validation opens a lightbox (`?item=validation:<file>`) with the module's tables as tabs: checks,
+replay measures, quotes and GEX profile per session; a store (`?item=store:<file>`) opens what it
+holds, its tables, the code that rebuilds it and the sessions refused, with why), `runs` (as cards 2026-11-03, `pages/Backtest/RunsCards.tsx`: one tile per replay, newest first and
 the newest large, module chips on `?module=`; a tile names the study whose result file names the run
 and that study's verdict, else says none does. A tile opens a lightbox on `?run=` with five tabs:
 summary (the "in plain English" card, then each arm's net a session toned by sign, trades a session,
