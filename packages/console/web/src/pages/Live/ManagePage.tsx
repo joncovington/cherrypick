@@ -1,8 +1,8 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ManageAccount, ManageLevel, ManagePayload, ManageTrade } from "@console/shared";
-import { Card, DataCard, sortRows, useSort } from "../../components/DataTable";
-import { Cells, HeadRow, SecondaryCells, headersOf, secondaryOf, useColumns, type Column } from "../../components/columns";
+import { Card } from "../../components/DataTable";
+import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { TileGrid, tileCount } from "../../components/performance/TileGrid";
 import { useOverview } from "../../lib/api";
 import { parseSuiteTs } from "../../lib/etTime";
@@ -15,14 +15,12 @@ import { PremiumPaceCard } from "./PremiumPace";
 import { ScenarioCards } from "./ScenarioCards";
 import { PmccCards } from "./PmccCards";
 import { WheelCards } from "./WheelCards";
+import { PositionCards } from "./PositionCards";
 import {
-  LiveCaptureCell,
   LiveGreeksCard,
   LiveMarksContext,
-  LivePnlCell,
   LiveStatus,
   liveMarks,
-  useLiveMarks,
   useManageLive,
 } from "./LiveMarks";
 
@@ -45,8 +43,6 @@ export function useManage(session: string | undefined) {
     refetchInterval: 60_000,
   });
 }
-
-const RIGHT = { textAlign: "right" } as const;
 
 /** A per-share option price: no cr/db, because the side is the order leg's, not the price's. */
 function px(v: number | null): string {
@@ -420,15 +416,12 @@ export function AccountTiles({ a, oversize }: { a: ManageAccount; oversize: numb
   return <TileGrid count={tileCount(tiles.length)}>{tiles.map((t) => t.node)}</TileGrid>;
 }
 
-/** Positions: what to do with each trade today, the actions first. */
+/** Positions: a card per trade with its broker order chain (PositionCards), sorted by P&L. */
 function PositionsAccount({ a, loading, oversize }: { a: ManageAccount; loading: boolean; oversize: number | null }) {
-  const acting = a.trades.filter((t) => !PASSIVE.has(t.action));
-  const holding = a.trades.filter((t) => PASSIVE.has(t.action));
   return (
     <>
       <AccountTiles a={a} oversize={oversize} />
-      <TradesCard title="action needed" trades={acting} loading={loading} empty="nothing to do today" variant="act" />
-      <TradesCard title="holding" trades={holding} loading={loading} empty="no trades on hold" variant="hold" />
+      <PositionCards trades={a.trades} loading={loading} detail={(t) => <TradeDetail t={t} />} />
       {a.excluded.length > 0 && (
         <p className="muted" style={{ margin: 0 }}>
           not evaluated: {a.excluded.map((e) => `${e.underlying} (${e.legs} leg${e.legs === 1 ? "" : "s"}, ${e.reason})`).join("; ")}
@@ -461,210 +454,10 @@ function PortfolioAccount({ a, oversize }: { a: ManageAccount; oversize: number 
   );
 }
 
-/**
- * The trade tables' columns. `conf.` and `kind` are the detail view's; the holding table has no
- * `action` column (every row in it is a hold, and its title says so -- an earnings trade's chip sits in
- * the trade cell). P&L is net of fees in both views (2026-10-21; it was gross, with net only in the
- * expanded chain); a trade whose fees were never read shows a dash, its gross on hover.
- */
 /** An earnings date the position's nearest short expiry reaches: the one case the column matters. */
 export function earningsInLife(t: ManageTrade): boolean {
   const days = t.earnings?.days ?? null;
   return days !== null && days >= 0 && (t.nearestShortDte === null || days <= t.nearestShortDte);
-}
-
-/**
- * The simple view keeps a trade, what to do, its net, and why (2026-10-30, docs/console-review-plan.md
- * batch 3). The exit levels are in each trade's expanded row already, and live capture repeats capture
- * on a fresher mark; both stay in the detail view.
- */
-function tradeColumns(
-  variant: "act" | "hold",
-  open: string | null,
-  setOpen: (id: string | null) => void,
-  anyEarnings: boolean,
-): Column<ManageTrade>[] {
-  const head: Column<ManageTrade>[] = [
-    {
-      key: "trade",
-      label: "trade",
-      sort: "trade",
-      td: (t) => (
-        <td>
-          <button
-            type="button"
-            className="btn btn-quiet"
-            aria-expanded={open === t.tradeId}
-            onClick={() => setOpen(open === t.tradeId ? null : t.tradeId)}
-          >
-            {open === t.tradeId ? "▾" : "▸"} {t.tradeId}
-          </button>
-          {t.shape ? <span className="muted"> · {t.shape}</span> : null}
-          {t.intent ? <span className="muted"> · {t.intent}</span> : null}
-          {/* The holding table has no action column; a passive action other than hold (settles)
-              still says so, here. */}
-          {variant === "hold" && t.action !== "HOLD" ? (
-            <>
-              {" "}
-              <ActionChip action={t.action} />
-            </>
-          ) : null}
-          {t.earningsTrade ? (
-            <>
-              {" "}
-              <EarningsChip et={t.earningsTrade} label="earnings" />
-            </>
-          ) : null}
-        </td>
-      ),
-    },
-    ...(variant === "act"
-      ? [
-          {
-            key: "action",
-            label: "action",
-            sort: "action",
-            td: (t: ManageTrade) => (
-              <td>
-                <ActionChip action={t.action} />
-              </td>
-            ),
-          },
-        ]
-      : []),
-    { key: "conf", label: "conf.", sort: "conf", secondary: true, td: (t) => <td style={RIGHT}>{t.confidence ?? "—"}</td> },
-    { key: "kind", label: "kind", sort: "kind", secondary: true, td: (t) => <td>{t.kind ?? "—"}</td> },
-    {
-      key: "pnl",
-      label: "P&L (net)",
-      sort: "pnl",
-      title: "mark P&L at mid less the fees paid",
-      td: (t) => (
-        <td
-          className={tone(t.pnlNet)}
-          style={RIGHT}
-          title={t.pnlNet === null ? `fees not read, so no net; gross ${fmtMoney(t.pnlGross)}` : `gross ${fmtMoney(t.pnlGross)}`}
-        >
-          {fmtMoney(t.pnlNet)}
-        </td>
-      ),
-    },
-    {
-      key: "capture",
-      label: "capture / return",
-      sort: "capture",
-      td: (t) => (
-        <td className={tone(t.capture)} style={RIGHT}>
-          {pct(t.capture)}
-        </td>
-      ),
-    },
-    {
-      key: "livePnl",
-      label: "live P&L",
-      sort: "livePnl",
-      title: "re-marked from the stream every few seconds, on the evaluation's basis and fees; a dash until every leg has a fresh quote",
-      td: (t) => <LivePnlCell id={t.tradeId} />,
-    },
-    {
-      key: "liveCapture",
-      secondary: true,
-      label: "live capture",
-      sort: "liveCapture",
-      title: "capture / return on the live mark; 'at TP' / 'at stop' when it reaches the evaluation's level (the next evaluation judges it)",
-      td: (t) => <LiveCaptureCell id={t.tradeId} />,
-    },
-    { key: "dte", label: "short dte", sort: "dte", td: (t) => <td style={RIGHT}>{t.nearestShortDte ?? "—"}</td> },
-    {
-      key: "earnings",
-      secondary: !anyEarnings,
-      label: "earnings",
-      sort: "earnings",
-      title: "sorts by days to the announcement",
-      td: (t) => <td>{t.earnings ? `${t.earnings.date}${daysText(t.earnings.days)}` : "—"}</td>,
-    },
-  ];
-  if (variant === "act") {
-    return [
-      ...head,
-      {
-        key: "reason",
-        label: "reason",
-        td: (t) => (
-          <td style={{ whiteSpace: "normal", minWidth: "18rem" }}>
-            {t.reason}
-            {t.conflicts.length > 0 ? <span className="muted"> · conflicts: {t.conflicts.join(", ")}</span> : null}
-          </td>
-        ),
-      },
-    ];
-  }
-  return head;
-}
-
-/**
- * One table of trades. `act` rows carry the rule's reason; `hold` rows carry the levels the trade is
- * waiting on instead, since "no rule fired" is the same sentence on every one of them.
- */
-export function TradesCard({
-  title,
-  trades,
-  loading,
-  empty,
-  variant,
-}: {
-  title: string;
-  trades: ManageTrade[];
-  loading: boolean;
-  empty: string;
-  variant: "act" | "hold";
-}) {
-  const [open, setOpen] = useState<string | null>(null);
-  const sort = useSort();
-  const all = tradeColumns(variant, open, setOpen, trades.some(earningsInLife));
-  const cols = useColumns(all);
-  const secondary = secondaryOf(all);
-  const live = useLiveMarks();
-  const liveOf = (t: ManageTrade) => live?.trades.get(t.tradeId);
-  // Each trade's detail row is rendered inside its own Fragment, so it follows its trade through a sort.
-  const rows = sortRows(trades, sort, {
-    livePnl: (t) => liveOf(t)?.pnlNet ?? liveOf(t)?.pnlGross ?? null,
-    liveCapture: (t) => liveOf(t)?.capture ?? null,
-    trade: (t) => t.tradeId,
-    action: (t) => ACTION_PRIORITY[t.action] ?? 9,
-    conf: (t) => t.confidence,
-    kind: (t) => t.kind,
-    pnl: (t) => t.pnlNet,
-    capture: (t) => t.capture,
-    dte: (t) => t.nearestShortDte,
-    earnings: (t) => t.earnings?.days ?? null,
-  });
-  return (
-    <DataCard
-      title={title}
-      headers={headersOf(cols)}
-      sort={sort}
-      loading={loading}
-      rowCount={trades.length}
-      empty={empty}
-    >
-      {rows.map((t) => (
-        <Fragment key={t.tradeId}>
-          <tr>
-            <Cells cols={cols} row={t} />
-          </tr>
-          {open === t.tradeId && (
-            <tr>
-              <td colSpan={cols.length}>
-                <SecondaryCells cols={secondary} row={t} />
-                <TradeDetail t={t} />
-              </td>
-            </tr>
-          )}
-        </Fragment>
-      ))}
-    </DataCard>
-  );
 }
 
 /** Live → positions: each trade's action, rule and levels, actions first. */

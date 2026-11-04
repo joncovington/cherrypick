@@ -602,7 +602,15 @@ Pinned by `server/test/live-hand.test.ts` and `web/test/liveTodayPage.test.tsx`.
 
 **The Live page's `positions` and `portfolio` tabs** read packages/manage's evaluation
 (`readers/manage.ts`); they were one `manage` tab until 2026-10-18, and `/live/manage` lands on
-`positions`. `positions` is each trade's action, actions first, with the ruleset; `portfolio` is
+`positions`. `positions` is a card per trade (2026-11-04, `pages/Live/PositionCards.tsx`; it was two
+tables, action needed and holding): the trade's action, its P&L net of fees, capture and short DTE,
+and its broker order chain down the card (open, rolls, then "now, close at mid" with what the chain
+took in), from manage's own `chain`. A trade with no reconciled chain shows its opening alone and
+says so. A losing trade is red, edge included. Chips filter (all, needs action, rolled) and sort by
+P&L net either way (`?show=`, `?pnl=asc`), a trade with no net last; a card opens the shared
+lightbox (`?trade=`) with the whole chain, every leg, each order's fees and the chain's running total
+(the sum of its own signed cash, nothing re-priced), and the evaluation's detail. The ruleset follows;
+`portfolio` is
 the account as one book (`pages/Live/PortfolioCards.tsx`). Both open with the same evaluation
 header (its caveats qualify both) and the same six-tile account strip. The portfolio includes
 dials for beta-weighted delta and theta against their bands, the break-even move, the stress line,
