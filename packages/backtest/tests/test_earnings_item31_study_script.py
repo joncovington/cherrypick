@@ -1101,18 +1101,54 @@ def test_an_entry_agrees_when_the_structure_matches_and_the_credit_is_within_a_t
 
 def test_the_check_stops_the_study_under_twenty_events_or_ninety_percent():
     def results(n, bad):
-        return [{"disagreement": "credit" if i < bad else None} for i in range(n)]
+        return [{"disagreement": "credit" if i < bad else None, "exact": "credit"} for i in range(n)]
 
     assert e31.evaluate_replay_check(results(20, 2))["ok"] is True, "18 of 20 is 90%"
     assert e31.evaluate_replay_check(results(20, 3))["ok"] is False, "17 of 20 is under 90%"
     assert e31.evaluate_replay_check(results(19, 0))["ok"] is False, "19 events is under the minimum"
     assert e31.evaluate_replay_check([])["ok"] is False
+    exact = e31.evaluate_replay_check(results(20, 0))["exact"]
+    assert exact["agree"] == 0 and exact["disagreements"] == {"credit": 20}, "reported, never gated"
 
 
-def test_the_check_reads_the_stored_bar_nearest_paper_s_entry_time_inside_the_window():
-    assert e31.entry_bar("15:41") == "15:40" and e31.entry_bar("15:38") == "15:40"
-    assert e31.entry_bar("15:20") == "15:35" and e31.entry_bar("15:59") == "15:50"
-    assert e31.entry_bar("15:37") == "15:35"
+def _leg(right: str, strike: float, action: str) -> dict:
+    return {"symbol": e31.occ_symbol("TST", date(2024, 3, 8), right, strike), "action": action}
+
+
+def _fly(short: float, call_wing: float, put_wing: float) -> list[dict]:
+    return [_leg("C", short, "Sell to Open"), _leg("P", short, "Sell to Open"),
+            _leg("C", call_wing, "Buy to Open"), _leg("P", put_wing, "Buy to Open")]  # fmt: skip
+
+
+_LISTED = [90.0, 92.5, 95.0, 97.5, 100.0, 102.5, 105.0, 107.5, 110.0]
+LISTED = {"C": _LISTED, "P": _LISTED}
+
+
+def test_the_gate_agrees_within_one_listed_strike_and_five_percent_of_the_credit():
+    paper = {"legs": _fly(100.0, 107.5, 92.5), "credit": 4.00}
+    assert e31.match_entry(paper, {"legs": _fly(100.0, 105.0, 95.0), "credit": 4.20}, LISTED) is None
+    assert e31.match_entry(paper, {"legs": _fly(100.0, 110.0, 92.5), "credit": 3.80}, LISTED) is None
+    assert e31.match_entry(paper, {"legs": _fly(100.0, 102.5, 92.5), "credit": 4.0}, LISTED) == "strikes"
+    assert e31.match_entry(paper, {"legs": _fly(100.0, 107.5, 92.5), "credit": 4.21}, LISTED) == "credit"
+    assert e31.match_entry(paper, {"legs": _fly(100.0, 107.5, 92.5), "credit": 3.79}, LISTED) == "credit"
+    assert e31.match_entry(paper, None, LISTED) == "not_built"
+
+
+def test_a_strike_the_chain_does_not_list_or_another_side_is_no_agreement():
+    paper = {"legs": _fly(100.0, 107.5, 92.5), "credit": 4.00}
+    assert e31.match_entry(paper, {"legs": _fly(100.0, 108.0, 92.5), "credit": 4.0}, LISTED) == "strikes"
+    calls = {"legs": [_leg("C", 105.0, "Sell to Open"), _leg("C", 110.0, "Buy to Open")], "credit": 1.0}
+    puts = {"legs": [_leg("P", 95.0, "Sell to Open"), _leg("P", 90.0, "Buy to Open")], "credit": 1.0}
+    assert e31.match_entry(calls, puts, LISTED) == "structure", "the other side is another trade"
+    assert e31.match_entry(paper, {"legs": paper["legs"][:3], "credit": 4.0}, LISTED) == "structure"
+
+
+def test_the_listed_strikes_are_the_chain_s_own_for_that_expiry():
+    conn = _store()
+    rows = [r for r in _rows(100.0, 4 / 365.0, 1.0, strikes=(95, 100, 105))]
+    put_chain(conn, SYM, ENTRY, date(2024, 3, 8), rows)
+    got = e31.listed_strikes(e31.Chains(conn), SYM, ENTRY.isoformat(), "2024-03-08")
+    assert got == {"C": [95.0, 100.0, 105.0], "P": [95.0, 100.0, 105.0]}
 
 
 def _bar_store(w: World, bar: str, spot: float) -> sqlite3.Connection:
@@ -1131,32 +1167,61 @@ def _bar_store(w: World, bar: str, spot: float) -> sqlite3.Connection:
     return conn
 
 
-def test_the_gate_builds_at_paper_s_bar_and_the_close_s_build_is_reported_beside_it(earnings):
+def test_the_gate_builds_at_paper_s_own_minute_and_the_close_s_build_is_reported_beside_it(earnings):
     """The close's build missed 100 of 104 paper entries a strike or a few cents off: paper built at
-    15:40, the replay at the close. The gate reads paper's bar; the close is reported, not gated."""
+    15:40, the replay at the close. The gate reads paper's own minute; the close is reported, not
+    gated. A bar a minute away is not read for it."""
     w = World()
     w.lay_entry()  # the close: spot 100
-    bconn = _bar_store(w, "15:40", 104.0)
-    paper_world = World(close=104.0)  # paper's 15:40 market, built the ordinary way
+    bconn = _bar_store(w, "15:41", 104.0)
+    paper_world = World(close=104.0)  # paper's 15:41 market, built the ordinary way
     paper_world.lay_entry(spot=104.0)
     built = paper_world.trade(role="replay", entry_only=True)["built"]
     paper = {"symbol": SYM, "session": w.entry_date.isoformat(), "opened": "15:41", "strategy": "iron_fly",
              "expiration": w.front.isoformat(), "legs": built["legs"], "credit": built["credit"]}  # fmt: skip
     report, rows = e31.replay_check([(paper, w.event())], w.data, e31.Chains(w.conn), bconn)
-    assert rows[0]["disagreement"] is None and rows[0]["bar"] == "15:40"
+    assert rows[0]["disagreement"] is None and rows[0]["exact"] is None and rows[0]["bar"] == "15:41"
+    assert report["exact"]["agree"] == 1
     assert rows[0]["at_close"] == "structure" and report["at_close"] == {"structure": 1}
     assert report["basis_gap"]["entries"] == 1 and report["basis_gap"]["legs_differ"] == 1
+    _, missed = e31.replay_check([({**paper, "opened": "15:40"}, w.event())], w.data,
+                                 e31.Chains(w.conn), bconn)  # fmt: skip
+    assert missed[0]["disagreement"] == "not_built", "the 15:41 bar is not paper's 15:40"
 
 
-def test_the_check_requests_ask_each_paper_entry_s_own_expiry_once_as_the_fetch_reads_them(tmp_path):
+def test_two_entries_on_one_name_and_session_each_read_their_own_minute(earnings):
+    w = World()
+    w.lay_entry()
+    bconn = _bar_store(w, "15:41", 104.0)
+    yf = (w.front - w.entry_date).days / 365.0
+    bconn.executemany(
+        "INSERT INTO intraday_chain_quotes VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)",
+        [(SYM, w.entry_date.isoformat(), w.front.isoformat(), "15:47", r["strike"], r["right"], r["bid"],
+          r["ask"], 96.0) for r in _rows(96.0, yf, 1.0)],
+    )  # fmt: skip
+    built = {}
+    for spot in (104.0, 96.0):
+        pw = World(close=spot)
+        pw.lay_entry(spot=spot)
+        built[spot] = pw.trade(role="replay", entry_only=True)["built"]
+    base = {"symbol": SYM, "session": w.entry_date.isoformat(), "strategy": "iron_fly",
+            "expiration": w.front.isoformat()}  # fmt: skip
+    pairs = [({**base, "opened": "15:41", **built[104.0]}, w.event()),
+             ({**base, "opened": "15:47", **built[96.0]}, w.event())]  # fmt: skip
+    _, rows = e31.replay_check(pairs, w.data, e31.Chains(w.conn), bconn)
+    assert [r["exact"] for r in rows] == [None, None] and [r["bar"] for r in rows] == ["15:41", "15:47"]
+
+
+def test_the_check_requests_ask_each_paper_entry_s_own_minute_once_as_the_fetch_reads_them(tmp_path):
     from cherrypick.backtest import intradayfetch
 
-    p = {"symbol": "tst", "session": "2026-08-03", "expiration": "2026-08-07"}
-    reqs = e31.check_requests([(p, {}), ({**p, "strategy": "iron_condor"}, {})])
-    assert len(reqs) == 1 and reqs[0]["required"] == list(e31.ENTRY_BARS)
+    p = {"symbol": "tst", "session": "2026-08-03", "expiration": "2026-08-07", "opened": "15:44"}
+    reqs = e31.check_requests([(p, {}), (dict(p), {}), ({**p, "opened": "15:47"}, {})])
+    assert len(reqs) == 2 and reqs[0]["required"] == ["15:44"] and reqs[1]["required"] == ["15:47"]
     (tmp_path / "r.json").write_text(json.dumps({"requests": reqs}), encoding="utf-8")
     assert intradayfetch.read_requests(tmp_path / "r.json") == [
-        ("TST", "2026-08-03", "2026-08-07", "15:35", "15:50", "5m")
+        ("TST", "2026-08-03", "2026-08-07", "15:44", "15:44", "1m"),
+        ("TST", "2026-08-03", "2026-08-07", "15:47", "15:47", "1m"),
     ]
 
 
