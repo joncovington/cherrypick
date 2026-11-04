@@ -36,6 +36,7 @@ from cherrypick.manage import pricing
 from cherrypick.manage import rules as _rules
 from cherrypick.manage import shapes as _shapes
 from cherrypick.manage import wheel as _wheel
+from cherrypick.manage import zerodte as _zerodte
 
 EVAL_VERSION = 1
 NEW_YORK = ZoneInfo("America/New_York")
@@ -2295,6 +2296,7 @@ def evaluate(
         net_liq = _f(balances.get("net_liquidating_value"))
         trades = []
         excluded = []
+        dropped_legs: list[dict[str, Any]] = []
         grouping_errors: list[str] = []
         # The wheel view first: its cycles are a pure reading of the history, and the wheel rules judge
         # each trade holding a cycle's legs alongside every other rule.
@@ -2321,6 +2323,7 @@ def evaluate(
         for u in account.get("underlyings") or []:
             legs, dropped = _without_excluded(u, session, rules)
             if dropped:
+                dropped_legs.extend(dropped)
                 excluded.append(
                     {
                         "underlying": u["underlying"],
@@ -2404,6 +2407,26 @@ def evaluate(
             if account.get("designated") or n_accounts == 1
             else None
         )
+        # The legs left out above, split into the loops' and the hand's (`zerodte.py`); the same
+        # account rule as the pace, since both read the designated account's history.
+        zero_dte_names = {
+            str(s).upper() for s in ((rules.get("exclude") or {}).get("zero_dte_underlyings") or [])
+        }
+        zero_dte = (
+            _zerodte.reading(
+                session=session,
+                names=zero_dte_names,
+                held=dropped_legs,
+                transactions=snapshot.get("account_transactions")
+                if "account_transactions" in snapshot
+                else None,
+                transactions_error=snapshot.get("account_transactions_error"),
+                known=snapshot.get("live_known_orders") if "live_known_orders" in snapshot else None,
+                known_error=snapshot.get("live_known_orders_error"),
+            )
+            if zero_dte_names and (account.get("designated") or n_accounts == 1)
+            else None
+        )
         _link_wheel(wheel_view, trades)
         _link_pmcc(pmcc_view, trades)
         accounts.append(
@@ -2424,6 +2447,7 @@ def evaluate(
                 "premium": premium,
                 "trades": trades,
                 "excluded": excluded,
+                "zero_dte": zero_dte,
             }
         )
     return {

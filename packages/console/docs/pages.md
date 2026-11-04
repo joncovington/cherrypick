@@ -564,6 +564,15 @@ submissions, a tripped breaker, overdue settlement, failing broker contact, an u
 (resolved today, gross − fees − settlement, broker fills): any loop's failed read makes it n/r, and
 the worst case and the mark are each loop's own measure, shown per loop, never added. `/live/today`
 is this tab now, not an alias for flies. Pinned by `server/test/live-today.test.ts`.
+**The hand row** (2026-11-03, `readers/liveHand.ts`, `pages/Live/HandToday.tsx`) sits under the loops:
+today's 0DTE trades placed by hand on the names manage leaves to the loops, which no loop manages,
+stops, force-closes or settles. It reads TODAY's manage evaluation's `zero_dte` block
+(`manage/zerodte.py`) and splits, reconciles and sums nothing: a fill is a loop's when its order id is
+one a loop has published for its orphan sweep, and a held leg today's fills cannot explain makes the
+mark and net null rather than part-counted. Its net is stated beside the suite total (the tile's hover
+and the footnote) and **never added to it**; the card below lists each hand order and the legs still
+held. Fills are as fresh as manage's last snapshot (every 30 minutes), marks as its last re-mark.
+Pinned by `server/test/live-hand.test.ts` and `web/test/liveTodayPage.test.tsx`.
 
 **The Live page's `positions` and `portfolio` tabs** read packages/manage's evaluation
 (`readers/manage.ts`); they were one `manage` tab until 2026-10-18, and `/live/manage` lands on

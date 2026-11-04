@@ -38,6 +38,11 @@ import it. The closing order an evaluation lists is what a person would enter, p
   evaluation did. The snapshot is never rewritten by a re-mark; the evaluation's `remark` block says
   when, against which snapshot and how many legs moved.
 
+The legs `exclude.zero_dte_underlyings` leaves out are not dropped silently: each account's
+`zero_dte` block (`zerodte.py`, 2026-11-03) splits today's fills on them into the live loops' (order
+ids the loops publish, snapshot v16 `live_known_orders`) and the hand's, and reconciles the hand's
+against what is held. It judges nothing; the console's Live → today hand row reads it.
+
 The evaluation embeds the **effective ruleset** it was judged by, so a page read later shows the rules
 of that day, not today's.
 

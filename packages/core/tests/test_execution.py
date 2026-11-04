@@ -805,3 +805,15 @@ def test_loops_sharing_an_underlying_do_not_flag_each_others_orders(tmp_path, mo
     )
     # a loop never counts its own published file as another's
     assert execution.other_modules_known_orders("meic") == {"FLY-1"}
+
+
+def test_read_known_orders_lists_every_loop_and_names_an_unreadable_one(tmp_path, monkeypatch):
+    """manage's 0DTE view tells a loop's order from a hand-placed one by these files (2026-11-03)."""
+    monkeypatch.setattr(execution, "_known_orders_dir", lambda: tmp_path / "known")
+    assert execution.read_known_orders() == ({}, None)
+    execution.publish_known_orders("meic", [5, "7", None], now_iso="2026-11-03T14:00:00-05:00")
+    (tmp_path / "known" / "bwb.json").write_text("{not json", encoding="utf-8")
+    known, error = execution.read_known_orders()
+    assert error is None
+    assert known["meic"] == {"at": "2026-11-03T14:00:00-05:00", "order_ids": ["5", "7"]}
+    assert known["bwb"]["order_ids"] == [] and "error" in known["bwb"]
