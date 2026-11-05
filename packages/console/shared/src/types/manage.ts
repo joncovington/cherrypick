@@ -1066,6 +1066,9 @@ export interface ManageLivePayload {
   oldestQuoteAt: number | null;
   /** A quote older than this is not used, seconds. */
   maxAgeSeconds: number;
+  /** Out of the session (a fresh watchdog's word): each leg's last quote is its closing mark, used up to
+   *  `maxAgeSeconds` (four days) old. In the session a mark is at most two minutes old. */
+  closedMarks: boolean;
   trades: ManageLiveTrade[];
   accounts: ManageLiveAccount[];
   /** Each held underlying's (and the benchmark's) streamed price. */

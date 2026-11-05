@@ -64,4 +64,12 @@ describe("the live account line", () => {
     expect(out).toContain("net liq ≈ —");
     expect(out).toContain("1 of 4 legs not streaming: held at the evaluation's price");
   });
+
+  it("out of the session says the legs are at their closing marks, and never 'not streaming'", () => {
+    const out = text(renderToString(<LiveAccountLine a={account()} closed />));
+    expect(out).toContain("market closed: all 4 legs at their closing marks");
+    expect(out).not.toContain("streaming");
+    const gap = text(renderToString(<LiveAccountLine a={account({ legsMarked: 3, dayPl: null, netLiqEstimate: null })} closed />));
+    expect(gap).toContain("1 of 4 legs with no quote in four days");
+  });
 });

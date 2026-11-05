@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../src/config.js";
-import { occToStreamer, readManageLive } from "../src/readers/manageLive.js";
+import { occToStreamer, readManageLive, sessionClosed } from "../src/readers/manageLive.js";
 
 /**
  * Live marks re-price the newest evaluation's legs from the stream cache and judge nothing. The
@@ -119,6 +119,40 @@ describe("readManageLive", () => {
 
   it("does not use a quote older than the cutoff", () => {
     cache([[".KO261120P87.5", 1.0, 1.2, 600]], []);
+    expect(readManageLive(config, NOW).trades.find((t) => t.tradeId === "KO")!.value).toBeNull();
+  });
+
+  it("out of the session takes each leg's last quote as its closing mark, on a fresh watchdog's word only", () => {
+    // Six hours since the close: every stock option's last quote is from it.
+    cache([[".KO261120P87.5", 1.0, 1.2, 6 * 3600]], []);
+    const watchdog = path.join(tmp, "watchdog.last.json");
+    config = { paths: { ...config.paths, watchdogLast: watchdog } } as unknown as ConsoleConfig;
+    const write = (ageS: number, inSession: boolean) =>
+      fs.writeFileSync(watchdog, JSON.stringify({ ts: new Date(NOW - ageS * 1000).toISOString(), in_session: inSession }));
+    write(30, false);
+    expect(sessionClosed(config, NOW)).toBe(true);
+    const live = readManageLive(config, NOW);
+    expect(live.closedMarks).toBe(true);
+    expect(live.trades.find((t) => t.tradeId === "KO")!.value).toBeCloseTo(110);
+    // In the session, a stale watchdog, or none: the two-minute rule.
+    write(30, true);
+    expect(readManageLive(config, NOW).trades.find((t) => t.tradeId === "KO")!.value).toBeNull();
+    write(3600, false);
+    expect(sessionClosed(config, NOW)).toBe(false);
+    expect(readManageLive(config, NOW).closedMarks).toBe(false);
+    // A watchdog a cycle behind the open still says closed; the clock does not: 10:00 ET on a Thursday.
+    const open = Date.parse("2026-11-05T15:00:00Z");
+    fs.writeFileSync(watchdog, JSON.stringify({ ts: new Date(open - 300_000).toISOString(), in_session: false }));
+    expect(sessionClosed(config, open)).toBe(false);
+    expect(sessionClosed(config, Date.parse("2026-11-05T22:00:00Z"))).toBe(false); // 17:00 ET, but the watchdog is 7 h old
+    fs.writeFileSync(watchdog, JSON.stringify({ ts: "2026-11-05T21:55:00Z", in_session: false }));
+    expect(sessionClosed(config, Date.parse("2026-11-05T22:00:00Z"))).toBe(true); // 17:00 ET, fresh
+    fs.rmSync(watchdog);
+    expect(readManageLive(config, NOW).trades.find((t) => t.tradeId === "KO")!.value).toBeNull();
+    // Closed, a quote older than four days is still no mark.
+    write(30, false);
+    fs.rmSync(path.join(tmp, "stream_cache.db"));
+    cache([[".KO261120P87.5", 1.0, 1.2, 5 * 86_400]], []);
     expect(readManageLive(config, NOW).trades.find((t) => t.tradeId === "KO")!.value).toBeNull();
   });
 
