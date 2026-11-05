@@ -5326,6 +5326,81 @@ backtest comes before any paper module. Declared here before any of it is run.*
   - **Only `qqq` passes:** the QQQ version is proposed instead.
   - **Every arm fails:** the question is closed and the plan stays shelved.
 
+### 50. Item 43's wider wings with live's gates on: 15 and 20 against the live rule
+
+*Source: the user, 2026-11-04, after item 43's result: "yes, declare it and queue it". Item 43 passed
+`w15` and `w20` against `w10`, but every arm it judged ran with no credit floor and no call-delta
+ceiling, and `live-1400`, the rule with both, beat `w10` in its design window. So the pass says a
+wider wing beats an ungated 10, not that it beats what live trades. Declared here before any of it
+is run.*
+
+- **Question:** with the rule exactly as live trades it, floor and ceiling included, does a 15- or
+  20-point wing earn more per session than live's 10?
+- **Where the edge would live:** **premium**, with width as payoff shaping, as item 43. The gates
+  are part of the rule, so the width has to earn its keep with them on.
+- **Look-alikes:** item 43 (the same widths ungated); item 44 (the stabilization gate across widths
+  10 to 40); item 23 (the delta of the same rule).
+- **Rival explanations, each with its check:**
+  - *The floor, not the width:* the credit floor is a share of the width, so at 15 or 20 it asks for
+    more credit and refuses more sessions. A gated wide arm that enters less can look better or worse
+    for that alone. **Check:** per arm, sessions entered and sessions `live-1400` entered and the arm
+    did not are reported; a session with no entry counts at zero, and the paired difference over
+    only the sessions both entered is reported beside the verdict.
+  - *Paying more by risking more:* **Check:** the arm's net over buying power must be at least
+    `live-1400`'s over the same sessions, item 43's measure.
+  - *The store, not the width:* the store keeps about 100 points either side of spot. **Check:**
+    entries with an unquoted tick are reported per arm, as item 43.
+  - *A calm span:* **Check:** the paired difference must be positive in both time-halves.
+  - *Fees:* **Check:** the arm's own net is still positive at 1.5× fees.
+  - *Searching a grid:* **Check:** Holm across the two arms; the grid is fixed here at item 43's two
+    passing widths. 25 and 30 failed item 43's buying-power check and are not retried.
+- **The structure:**
+  - `live-1400` is item 43's: the registry's `pm-200` with entries 14:00–14:30, gates and all. It is
+    the base each arm is judged against.
+  - `g15` and `g20` are `live-1400` with `wing_width_points` changed. Nothing else differs, so the
+    floor and ceiling are live's.
+  - **Reported, never judged:** each arm against item 43's ungated twin at the same width (`w15`,
+    `w20`), read from item 43's own runs, which is what the gates cost at that width.
+  - The stabilization gate is off in every arm, as item 43.
+- **Costs:** MEIC paper's own model, as item 43.
+- **Measured:** each session's summed net per arm, in dollars at one condor; each session's buying
+  power per arm from the run's ledgers.
+- **Window and sample:** the backtest's own windows over the 60 s vendor store (`SPX-60s.db`).
+  - **Design:** 2022-05-16 to 2025-06-30. **Holdout:** 2025-07-01 to 2026-10-12, run straight after
+    the design whatever it shows. It counts toward a pass only after a design pass. Item 23 spent
+    `live-1400`'s holdout, so the holdout pair reads item 23's recorded `live-1400` sessions, as item
+    43 does.
+  - **The holdout is not clean for this question.** Item 43 has already been read there for the
+    ungated arms at these widths, and that read chose them. It is judged as declared, but a holdout
+    pass is weaker evidence than item 43's. Before any proposal, the fresh sessions after 2026-10-12
+    are read too.
+  - **Both runs are provisional:** MEIC validation has not unlocked. The holdout spends once per arm
+    through `unvalidated_holdout`.
+  - Fewer than 100 sessions in a window is no verdict.
+- **Pass-or-fail rule**, per arm, all must hold:
+  - the paired difference against `live-1400` (one session one observation) has a mean above zero
+    and a one-sided t above 2;
+  - Holm across the two arms;
+  - the paired difference positive in each time-half of the window;
+  - the arm's own mean net above zero, and still positive at **1.5× fees**;
+  - its net over buying power at least `live-1400`'s over the same sessions;
+  - then the holdout: the paired difference with a mean above zero and a one-sided t above 2.
+- **Declared limits (B11):** item 43's: 60 s ticks; strikes beyond the stored ~100 points do not
+  exist here; a stop fills under the fill model; one width per arm.
+- **Name split (B9):** does not apply; one symbol.
+- **Data:** no new store. `scripts/meic_wing_width_gated_item50.py --window design|holdout` builds a
+  scratch MEIC arm registry from the machine's and runs `cherrypick.backtest.runner`. Its arithmetic
+  is item 43's, loaded from that script. Results go under the backtest data directory only; this
+  plan records the verdict.
+- **Decides:**
+  - **A pass:** item 43's pass branch, on the gated arm. After MEIC validation unlocks and the fresh
+    sessions agree, a proposal moves `live.arm`'s width at a declared boundary, floor and ceiling
+    kept, with the kill criteria and the buying-power cap re-derived from that arm's replay.
+  - **A fail while the ungated twin beats it:** the gates and the wider wing work against each other.
+    No live change; whether a width-aware floor is worth declaring is read from the reported pairs.
+  - **A fail or no verdict otherwise:** live stays at 10 wide with its gates, and item 43's pass is
+    read as a result about the ungated rule only.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
