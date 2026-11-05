@@ -760,7 +760,8 @@ def test_manage_marks_runs_each_minute_in_the_session_with_manage_and_can_be_tur
     cfg["manage"] = {"enabled": True}
     job = {j.id: j for j in derive(cfg)[0]}["manage-marks"]
     assert job.enabled and job.trading_days_only and job.kind == jobspec.KIND_INTERVAL
-    assert (job.interval_seconds, job.window_start, job.window_end) == (60, "10:01", "16:10")
+    # From the open (2026-11-04): its first minute takes the day's first snapshot (managerefresh).
+    assert (job.interval_seconds, job.window_start, job.window_end) == (60, "09:36", "16:10")
     assert job.argv[-1] == "manage-marks"
     cfg["manage"]["marks"] = {"enabled": False}
     assert not {j.id: j for j in derive(cfg)[0]}["manage-marks"].enabled

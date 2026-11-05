@@ -122,10 +122,41 @@ export function LiveStatus() {
     );
   }
   return (
+    <>
+      <p className="muted" style={{ margin: 0 }}>
+        live marks: {whole} of {p.trades.length} trades from the stream
+        {p.oldestQuoteAt !== null ? `, oldest quote ${ageText(Date.now() - p.oldestQuoteAt)} old` : ""} · on the evaluation's basis
+        and levels; the verdicts are the evaluation's
+      </p>
+      {p.accounts.map((a) => (
+        <LiveAccountLine key={a.account ?? "?"} a={a} />
+      ))}
+    </>
+  );
+}
+
+/** The account's day on the live marks (2026-11-04): day P&L, an estimated net liq, and the legs
+ *  the stream is not carrying, named so a stale price never passes as a live one. */
+export function LiveAccountLine({ a }: { a: ManageLiveAccount }) {
+  const stale = a.legsTotal - a.legsMarked;
+  return (
     <p className="muted" style={{ margin: 0 }}>
-      live marks: {whole} of {p.trades.length} trades from the stream
-      {p.oldestQuoteAt !== null ? `, oldest quote ${ageText(Date.now() - p.oldestQuoteAt)} old` : ""} · on the evaluation's basis
-      and levels; the verdicts are the evaluation's
+      {a.account ?? "?"}: day P&amp;L{" "}
+      <span className={a.dayPl === null ? "muted" : tone(a.dayPl)} title="each leg's live mark less the broker's previous close; a leg opened today counts from its previous close, not its fill">
+        {a.dayPl === null ? "—" : fmtCash(a.dayPl)}
+      </span>{" "}
+      · net liq ≈{" "}
+      <span title={`an estimate: the evaluation's net liq moved by the evaluated legs' live marks; cash is the snapshot's${a.legsLeftOut ? `, and ${a.legsLeftOut} 0DTE legs left out of the evaluation are not moved` : ""}`}>
+        {a.netLiqEstimate === null ? "—" : fmtMoney(a.netLiqEstimate)}
+      </span>
+      {stale > 0 ? (
+        <span className="pnl-neg">
+          {" "}
+          · {stale} of {a.legsTotal} legs not streaming: held at the evaluation's price, so the day and net liq read a dash
+        </span>
+      ) : (
+        ` · all ${a.legsTotal} legs streaming`
+      )}
     </p>
   );
 }

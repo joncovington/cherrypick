@@ -598,11 +598,11 @@
       "max_calls": 30,
       "max_seconds": 300
     },
-    "_marks_note": "Between the full runs, the `manage-marks` job moves the day's stored snapshot to the stream cache's quotes every 'interval_seconds' (at least 30) from 'start' to 'end' ET and evaluates it again (packages/manage `remark`): legs and spots re-priced, nothing else re-read. No broker call; it posts only a needs-a-look name not yet posted today ('attention_notify'). On whenever manage is; 'enabled': false turns it off alone.",
+    "_marks_note": "Between the full runs, the `manage-marks` job moves the day's stored snapshot to the stream cache's quotes every 'interval_seconds' (at least 30) from 'start' to 'end' ET and evaluates it again (packages/manage `remark`): legs and spots re-priced, nothing else re-read. No broker call; it posts only a needs-a-look name not yet posted today ('attention_notify'). On whenever manage is; 'enabled': false turns it off alone. Its first minute of the day, and the minute after a fill the account-alerts service heard since the stored snapshot (once the fill is 30 s old, so a multi-leg order lands whole), take a full snapshot instead (`managerefresh.py`); until 10:00 the evaluation is marked early and the list is not posted.",
     "marks": {
       "enabled": true,
       "interval_seconds": 60,
-      "start": "10:01",
+      "start": "09:36",
       "end": "16:10"
     }
   },

@@ -142,6 +142,37 @@ describe("readManageLive", () => {
     expect(a.theta).toBeNull();
   });
 
+  it("works the day's P&L and an estimated net liq off the live marks, and dashes both while a leg is unmarked", () => {
+    const doc = evalDoc();
+    const [acct] = doc["accounts"] as Array<Record<string, unknown>>;
+    acct!["net_liq"] = 10_000;
+    acct!["excluded"] = [{ underlying: "SPX", legs: 2, reason: "0DTE" }];
+    const trades = acct!["trades"] as Array<Record<string, unknown>>;
+    const closes = [1.0, 1.5, 3.0, 1.5]; // GLW 155C, 150C, 112.5P, KO 87.5P
+    let i = 0;
+    for (const t of trades) for (const l of t["legs"] as Array<Record<string, unknown>>) l["prev_close"] = closes[i++];
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-22.json"), JSON.stringify(doc));
+    const quotes: Array<[string, number, number, number]> = [
+      [".GLW261120C155", 0.5, 0.7, 5],
+      [".GLW261120C150", 0.9, 1.1, 5],
+      [".GLW261120P112.5", 0.9, 1.1, 5],
+    ];
+    cache(quotes, []);
+    let a = readManageLive(config, NOW).accounts[0]!;
+    expect(a.legsMarked).toBe(3);
+    expect(a.dayPl).toBeNull(); // KO's put has no fresh mark
+    expect(a.netLiqEstimate).toBeNull();
+    expect(a.legsLeftOut).toBe(2);
+    fs.rmSync(path.join(tmp, "stream_cache.db"));
+    cache([...quotes, [".KO261120P87.5", 1.2, 1.4, 5]], []);
+    a = readManageLive(config, NOW).accounts[0]!;
+    // Day: (0.6−1.0)×100 + (1.0−1.5)×−100 + (1.0−3.0)×−200 + (1.3−1.5)×100 = −40 + 50 + 400 − 20 = 390.
+    expect(a.dayPl).toBeCloseTo(390);
+    // Moved since the evaluation: (60−141) + (−100+197) + (−200+500) + (130−122) = 324; on 10,000.
+    expect(a.netLiqEstimate).toBeCloseTo(10_324);
+    expect(a.legsMarked).toBe(4);
+  });
+
   it("is an empty payload when there is no evaluation or no cache", () => {
     const live = readManageLive(config, NOW);
     expect(live.trades.every((t) => t.value === null)).toBe(true);

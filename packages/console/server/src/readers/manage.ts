@@ -1313,6 +1313,7 @@ export function readManage(config: ConsoleConfig, session?: string): ManagePaylo
     accounts: [],
     snapshotStale: null,
     preOpen: null,
+    early: null,
   };
   if (!wanted) return empty;
   let doc: Record<string, unknown>;
@@ -1337,6 +1338,9 @@ export function readManage(config: ConsoleConfig, session?: string): ManagePaylo
     snapshotStale: newest ? snapshotStale(config) : null,
     preOpen: doc["pre_open"]
       ? { takenAt: str(rec(doc["pre_open"])["taken_at"]), expiringUnpriced: strs(rec(doc["pre_open"])["expiring_unpriced"]) }
+      : null,
+    early: doc["early"]
+      ? { takenAt: str(rec(doc["early"])["taken_at"]), verdictsFrom: str(rec(doc["early"])["verdicts_from"]) }
       : null,
   };
 }
