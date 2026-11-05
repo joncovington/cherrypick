@@ -96,6 +96,19 @@ def test_a_mid_under_the_models_floor_leaves_the_leg_unmodelled():
     assert t["legs"][0]["iv_source"] == "mid" and t["legs"][0]["delta"] == pytest.approx(-1.0, abs=1e-6)
 
 
+def test_no_payoff_profile_when_a_leg_outliving_the_horizon_has_no_iv():
+    # A long call whose mid sits under the no-dividend floor has no IV, so at the short's expiry it was
+    # valued at intrinsic: the best case read exactly the strike width and "left to win" went negative.
+    # No profile is better than that one.
+    long_ = leg(1, "C", 100, "2028-12-15", 5.50, 6.00)
+    short = leg(-1, "C", 106, "2026-12-18", 0.60, 0.80)
+    t = run([long_, short], spot=100.3)
+    assert t["legs"][0]["iv"] is None and t["profile"] is None
+    # A leg with no IV that expires at the horizon is worth its intrinsic there, so it is still modelled.
+    t = run([leg(-1, "P", 120, "2026-11-20", 20.0, 20.0)], spot=100.0)
+    assert t["profile"] is not None
+
+
 # --------------------------------------------------------------------------- credit trades
 def test_credit_take_profit_at_half_the_credit():
     t = run([leg(-1, "P", 95, "2026-11-20", 2.00, 0.95), leg(1, "P", 90, "2026-11-20", 0.80, 0.35)])

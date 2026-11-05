@@ -351,7 +351,13 @@ def evaluate_trade(
 
     # ---- modelled payoff at the nearest expiry
     profile = None
-    if spot and expiries and _date(expiries[0]) >= session:
+    # A leg that outlives the horizon is valued there at its own IV. One with no IV would fall back to
+    # intrinsic, its remaining time thrown away: a long-dated call under a near short read a best case
+    # of exactly the strike width and a negative "left to win". So no profile is modelled.
+    outliving_unpriced = bool(expiries) and any(
+        leg["iv"] is None for leg in options if leg["expiration"] > expiries[0]
+    )
+    if spot and expiries and _date(expiries[0]) >= session and not outliving_unpriced:
         horizon = max((_date(expiries[0]) - session).days, 0) / 365.0
         profile = pricing.payoff_profile(legs, spot, horizon, pr)
         # Whole-position dollars to the cent: summing Black-Scholes legs leaves float noise
