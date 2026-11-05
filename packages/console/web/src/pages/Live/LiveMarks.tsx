@@ -116,33 +116,43 @@ export function LiveStatus() {
   if (whole === 0) {
     return (
       <p className="muted" style={{ margin: 0 }}>
-        live marks: none streaming (no quote under {p.maxAgeSeconds} s old: the market is shut, the streamer is down, or the
-        held legs are subscribed only from the next evaluation)
+        {p.closedMarks
+          ? "closing marks: none (no quote in the last four days: the streamer is down, or the held legs are subscribed only from the next evaluation)"
+          : `live marks: none streaming (no quote under ${p.maxAgeSeconds} s old: the market is shut, the streamer is down, or the held legs are subscribed only from the next evaluation)`}
       </p>
     );
   }
   return (
     <>
       <p className="muted" style={{ margin: 0 }}>
-        live marks: {whole} of {p.trades.length} trades from the stream
+        {p.closedMarks ? "closing marks, the market out of its session" : "live marks"}: {whole} of {p.trades.length} trades
+        from the stream
         {p.oldestQuoteAt !== null ? `, oldest quote ${ageText(Date.now() - p.oldestQuoteAt)} old` : ""} · on the evaluation's basis
         and levels; the verdicts are the evaluation's
       </p>
       {p.accounts.map((a) => (
-        <LiveAccountLine key={a.account ?? "?"} a={a} />
+        <LiveAccountLine key={a.account ?? "?"} a={a} closed={p.closedMarks} />
       ))}
     </>
   );
 }
 
 /** The account's day on the live marks (2026-11-04): day P&L, an estimated net liq, and the legs
- *  the stream is not carrying, named so a stale price never passes as a live one. */
-export function LiveAccountLine({ a }: { a: ManageLiveAccount }) {
+ *  the stream is not carrying, named so a stale price never passes as a live one. Out of the session
+ *  (`closed`, 2026-11-05) each leg's mark is its last quote, the session's close, and the line says so. */
+export function LiveAccountLine({ a, closed = false }: { a: ManageLiveAccount; closed?: boolean }) {
   const stale = a.legsTotal - a.legsMarked;
   return (
     <p className="muted" style={{ margin: 0 }}>
       {a.account ?? "?"}: day P&amp;L{" "}
-      <span className={a.dayPl === null ? "muted" : tone(a.dayPl)} title="each leg's live mark less the broker's previous close; a leg opened today counts from its previous close, not its fill">
+      <span
+        className={a.dayPl === null ? "muted" : tone(a.dayPl)}
+        title={
+          closed
+            ? "each leg's closing mark less the broker's previous close: the last session's P&L until the broker rolls its closes"
+            : "each leg's live mark less the broker's previous close; a leg opened today counts from its previous close, not its fill"
+        }
+      >
         {a.dayPl === null ? "—" : fmtCash(a.dayPl)}
       </span>{" "}
       · net liq ≈{" "}
@@ -152,8 +162,12 @@ export function LiveAccountLine({ a }: { a: ManageLiveAccount }) {
       {stale > 0 ? (
         <span className="pnl-neg">
           {" "}
-          · {stale} of {a.legsTotal} legs not streaming: held at the evaluation's price, so the day and net liq read a dash
+          · {stale} of {a.legsTotal} legs{" "}
+          {closed ? "with no quote in four days" : "not streaming"}: held at the evaluation's price, so the day and net liq read a
+          dash
         </span>
+      ) : closed ? (
+        ` · market closed: all ${a.legsTotal} legs at their closing marks`
       ) : (
         ` · all ${a.legsTotal} legs streaming`
       )}

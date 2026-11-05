@@ -17,6 +17,43 @@ import { listSessions } from "./manage.js";
  */
 
 const MAX_AGE_S = 120;
+/**
+ * Out of the session (2026-11-05) a stock or ETF option stops quoting at its close, so its last quote IS
+ * its closing mark and stays its mark until the open; only the index options keep quoting overnight.
+ * Then a quote up to this old is a mark (a weekend and a holiday), and the payload says the marks are
+ * the close. The session is closed only when a fresh watchdog says so AND the New York clock is outside
+ * a weekday's 09:30-16:00; anything else keeps the 2-minute rule, so neither a missing watchdog nor one
+ * a cycle behind the open lets an old quote pass as live in the session.
+ */
+const CLOSED_MAX_AGE_S = 4 * 86_400;
+/** The watchdog writes every 10 minutes: three of its cycles. */
+const WATCHDOG_FRESH_S = 1_800;
+
+/** Weekday and minutes since midnight on the New York clock. */
+function nyClock(now: number): { weekday: string; minutes: number } {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(new Date(now))
+      .map((p) => [p.type, p.value]),
+  );
+  return { weekday: String(parts["weekday"]), minutes: Number(parts["hour"]) * 60 + Number(parts["minute"]) };
+}
+
+/** True only when a fresh watchdog says the market is out of its session and the clock agrees. */
+export function sessionClosed(config: ConsoleConfig, now: number): boolean {
+  const p = config.paths.watchdogLast;
+  if (!p) return false;
+  const ny = nyClock(now);
+  const weekday = !["Sat", "Sun"].includes(ny.weekday);
+  if (weekday && ny.minutes >= 9 * 60 + 30 && ny.minutes < 16 * 60) return false;
+  try {
+    const raw = rec(JSON.parse(fs.readFileSync(p, "utf-8")));
+    const at = typeof raw["ts"] === "string" ? Date.parse(raw["ts"]) : Number.NaN;
+    return Number.isFinite(at) && now - at <= WATCHDOG_FRESH_S * 1000 && raw["in_session"] === false;
+  } catch {
+    return false;
+  }
+}
 
 type Rec = Record<string, unknown>;
 
@@ -46,7 +83,7 @@ interface Fresh {
   oldest: number | null;
 }
 
-function readFresh(config: ConsoleConfig, symbols: string[], now: number): Fresh {
+function readFresh(config: ConsoleConfig, symbols: string[], now: number, maxAgeS: number): Fresh {
   const out: Fresh = { mids: new Map(), greeks: new Map(), oldest: null };
   const p = config.paths.streamCacheDb;
   if (symbols.length === 0 || !fs.existsSync(p)) return out;
@@ -54,7 +91,7 @@ function readFresh(config: ConsoleConfig, symbols: string[], now: number): Fresh
   try {
     db = new Database(p, { readonly: true, fileMustExist: true });
     db.pragma("busy_timeout = 2000");
-    const cutoff = now / 1000 - MAX_AGE_S;
+    const cutoff = now / 1000 - maxAgeS;
     const marks = symbols.map(() => "?").join(",");
     const quotes = db
       .prepare(`SELECT symbol, bid, ask, mid, updated_at FROM stream_quotes WHERE symbol IN (${marks}) AND updated_at >= ?`)
@@ -206,10 +243,15 @@ function liveAccount(a: Rec, fresh: Fresh): ManageLiveAccount {
   };
 }
 
-export function readManageLive(config: ConsoleConfig, now: number = Date.now()): ManageLivePayload {
+export function readManageLive(
+  config: ConsoleConfig,
+  now: number = Date.now(),
+  closed: boolean = sessionClosed(config, now),
+): ManageLivePayload {
   const sessions = listSessions(config);
   const session = sessions[sessions.length - 1] ?? null;
-  const empty: ManageLivePayload = { session, oldestQuoteAt: null, maxAgeSeconds: MAX_AGE_S, trades: [], accounts: [], spots: {} };
+  const maxAge = closed ? CLOSED_MAX_AGE_S : MAX_AGE_S;
+  const empty: ManageLivePayload = { session, oldestQuoteAt: null, maxAgeSeconds: maxAge, closedMarks: closed, trades: [], accounts: [], spots: {} };
   if (session === null) return empty;
   let doc: Rec;
   try {
@@ -230,7 +272,7 @@ export function readManageLive(config: ConsoleConfig, now: number = Date.now()):
       }
     }
   }
-  const fresh = readFresh(config, [...symbols], now);
+  const fresh = readFresh(config, [...symbols], now, maxAge);
   const spots: Record<string, number> = {};
   for (const s of symbols) {
     const m = fresh.mids.get(s);
@@ -239,7 +281,8 @@ export function readManageLive(config: ConsoleConfig, now: number = Date.now()):
   return {
     session,
     oldestQuoteAt: fresh.oldest,
-    maxAgeSeconds: MAX_AGE_S,
+    maxAgeSeconds: maxAge,
+    closedMarks: closed,
     trades: accounts.flatMap((a) => arr(a["trades"]).map((t) => liveTrade(rec(t), fresh))),
     accounts: accounts.map((a) => liveAccount(a, fresh)),
     spots,
