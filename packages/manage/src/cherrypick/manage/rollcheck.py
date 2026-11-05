@@ -78,9 +78,13 @@ def _net_short_runs(legs: list[dict[str, Any]], shares: float = 0.0) -> list[str
 def _max_loss(
     legs: list[dict[str, Any]], spot: float, cost: float, session: date, pr: dict, shares: float = 0.0
 ) -> dict:
+    """The modelled max loss at the nearest expiry; None (and not unbounded) when a leg outliving it has
+    no IV, since the model would value that leg at its intrinsic."""
     expiries = sorted(leg["expiration"] for leg in legs if leg["quantity"])
     horizon = max((date.fromisoformat(expiries[0]) - session).days, 0) / 365.0
     held = [leg for leg in legs if leg["quantity"]]
+    if pricing.outliving_unpriced(held, expiries[0]):
+        return {"max_loss": None, "unbounded": False}
     if shares:
         # The shares are valued from today's price, so `cost` (the options' basis) still measures the
         # change: a covered call's loss is bounded by the shares falling to the grid's floor.
@@ -103,6 +107,8 @@ def _put_downside(legs: list[dict[str, Any]], spot: float, session: date, pr: di
     if not puts:
         return None
     expiries = sorted(leg["expiration"] for leg in puts)
+    if pricing.outliving_unpriced(puts, expiries[0]):
+        return None
     horizon = max((date.fromisoformat(expiries[0]) - session).days, 0) / 365.0
     rate = float(pr["rate"])
     now = sum(pricing.leg_value_at(leg, spot, leg["years"], rate) for leg in puts)
@@ -150,6 +156,10 @@ def check(
             )
         cash -= o["quantity"] * o["price"] * pricing.MULTIPLIER  # sell to open: +; buy to open: -
         years = max((date.fromisoformat(o["expiration"]) - session).days, 0) / 365.0
+        iv = pricing.implied_vol(spot, o["strike"], years, o["price"], o["right"], rate)
+        extrinsic = o["price"] - pricing.intrinsic(spot, o["strike"], o["right"])
+        if iv and iv <= _ev._IV_FLOOR and extrinsic > _ev._NO_EXTRINSIC:
+            iv = None  # a price under the model's floor, as the evaluation reads it: left unmodelled
         new = {
             "quantity": o["quantity"],
             "expiration": o["expiration"],
@@ -157,7 +167,7 @@ def check(
             "right": o["right"],
             "mid": o["price"],
             "years": years,
-            "iv": pricing.implied_vol(spot, o["strike"], years, o["price"], o["right"], rate),
+            "iv": iv,
         }
         prior = legs.get(_key(new))
         if prior:
@@ -224,6 +234,8 @@ def check(
     risk_after = _max_loss(after, spot, cost_after, session, pr, shares)
     if risk_after["unbounded"]:
         problems.append("after the roll the modelled loss is unbounded")
+    elif risk_before["max_loss"] is None or risk_after["max_loss"] is None:
+        notes.append("max loss not modelled: a leg outliving the nearest expiry has no IV")
     elif risk_after["max_loss"] > risk_before["max_loss"] * 1.10 + 1:
         problems.append(
             f"what the trade can lose grows from ${risk_before['max_loss']:,.0f} "
