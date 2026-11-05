@@ -1879,6 +1879,52 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 50,
+      "study": "item50",
+      "title": "Item 43's wider wings with live's gates on: 15 and 20 against the live rule",
+      "status": "declared",
+      "legacy": false,
+      "setup": "wing-width",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "summed net per session in $ at one condor, and buying power per session, per arm: pm-200 entering 14:00-14:30 with its credit floor and call-delta ceiling (live-1400), and the same at 15 and 20 wide",
+      "expected": "a positive paired difference per session against live-1400, at no worse net over buying power",
+      "sample": "design 2022-05-16..2025-06-30, holdout 2025-07-01..2026-10-12 run straight after, counting only after a design pass and not clean (item 43 read the ungated twins there); 60 s vendor store; both provisional, MEIC history being unvalidated; < 100 sessions = no verdict",
+      "rule": "per arm: paired difference against live-1400 with mean > 0 and one-sided t > 2, Holm across the two arms, positive in both time-halves, own mean net > 0 and still positive at 1.5x fees, net over buying power >= live-1400's; then holdout mean > 0 with t > 2",
+      "mechanism": "item 43's: a wider wing collects more credit for the same short, if that outweighs a maximum loss growing faster than the credit, here with the floor asking a wider wing for more credit as live would",
+      "rivals": [
+        {
+          "explanation": "the floor, not the width",
+          "check": "sessions entered, sessions live-1400 entered and the arm did not, and the paired difference over both-entered sessions, all reported; no-entry sessions count at zero"
+        },
+        {
+          "explanation": "paying more by risking more",
+          "check": "net over buying power at least live-1400's"
+        },
+        {
+          "explanation": "the store's strike window, not the width",
+          "check": "unquoted-tick entries reported per arm"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "paired difference positive in both time-halves"
+        },
+        {
+          "explanation": "fees",
+          "check": "own net positive at 1.5x fees"
+        },
+        {
+          "explanation": "searching a grid",
+          "check": "Holm across the two arms; only item 43's passing widths"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#50-item-43s-wider-wings-with-lives-gates-on-15-and-20-against-the-live-rule",
+      "results": [],
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
