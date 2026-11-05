@@ -242,6 +242,10 @@
     "near_zero_extrinsic": 0.05,
     "expiring_days": 7
   },
+  "early": {
+    "_comment": "Marks taken between the open (09:30) and verdicts_from (New York) are the opening scramble: the evaluation is marked early, surfaces show prices, P&L and needs-a-look but hold the verdicts back, and the orchestrator does not post the list.",
+    "verdicts_from": "10:00"
+  },
   "pricing": {
     "rate": 0.04,
     "grid_low": 0.01,

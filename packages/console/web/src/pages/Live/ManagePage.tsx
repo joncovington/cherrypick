@@ -8,7 +8,7 @@ import { useOverview } from "../../lib/api";
 import { parseSuiteTs } from "../../lib/etTime";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
-import { ActionChip, DetailCard, Kv, Money, ageText, etStamp, tone } from "./manageParts";
+import { ActionChip, DetailCard, Kv, Money, VerdictsHeld, ageText, etStamp, tone } from "./manageParts";
 import { BandsHistoryCard } from "./BandsHistory";
 import { PortfolioCards } from "./PortfolioCards";
 import { PremiumPaceCard } from "./PremiumPace";
@@ -598,6 +598,12 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
             · a run after 09:30 reprices
           </p>
         )}
+        {data?.early && (
+          <p className="pnl-neg" title="manage's early: the marks were taken in the open's first half hour">
+            marks from {data.early.takenAt ?? "—"} ET, the opening half hour: prices, P&amp;L and needs-a-look stand; every
+            verdict is held until {data.early.verdictsFrom ?? "10:00"} ET, when the quotes have settled
+          </p>
+        )}
         {data?.metricsError && (
           <p className="muted">earnings and dividend dates unavailable ({data.metricsError}); price rules still ran</p>
         )}
@@ -613,17 +619,19 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
           </p>
         ))}
       </Card>
-      {(data?.accounts ?? []).map((a) =>
-        view === "positions" ? (
-          <PositionsAccount key={a.account ?? "?"} a={a} loading={isLoading} oversize={oversizeMultiple(data?.rules)} />
-        ) : view === "portfolio" ? (
-          <PortfolioAccount key={a.account ?? "?"} a={a} oversize={oversizeMultiple(data?.rules)} />
-        ) : view === "wheel" ? (
-          <WheelCards key={a.account ?? "?"} a={a} />
-        ) : (
-          <PmccCards key={a.account ?? "?"} a={a} />
-        ),
-      )}
+      <VerdictsHeld.Provider value={data?.early ? (data.early.verdictsFrom ?? "10:00") : null}>
+        {(data?.accounts ?? []).map((a) =>
+          view === "positions" ? (
+            <PositionsAccount key={a.account ?? "?"} a={a} loading={isLoading} oversize={oversizeMultiple(data?.rules)} />
+          ) : view === "portfolio" ? (
+            <PortfolioAccount key={a.account ?? "?"} a={a} oversize={oversizeMultiple(data?.rules)} />
+          ) : view === "wheel" ? (
+            <WheelCards key={a.account ?? "?"} a={a} />
+          ) : (
+            <PmccCards key={a.account ?? "?"} a={a} />
+          ),
+        )}
+      </VerdictsHeld.Provider>
       {view === "positions" && (
         <Card title="ruleset" collapseKey="manage-ruleset" defaultCollapsed>
           <pre style={{ margin: 0, fontSize: "0.8rem", whiteSpace: "pre-wrap" }}>

@@ -462,6 +462,15 @@ expiry for a diagonal). One earnings trade with no bounded loss refuses the whol
 freeing part of it. Only buying power is freed: their theta and delta still count. The console's
 income card switches between the two lists with a checkbox.
 
+## The opening half hour
+
+An evaluation of marks taken between 09:30 and `early.verdicts_from` (10:00) New York time carries
+`early` (2026-11-04): the opening quotes are wide and jumpy, so the verdicts are worked out but not
+to be acted on. The console shows prices, P&L and needs-a-look and holds the verdicts back; the
+orchestrator does not post the list (needs-a-look still posts). Before 09:30 is `pre_open`'s. Each
+evaluated leg also carries the broker's previous close (`prev_close`), from which the console marks
+the day's P&L live.
+
 ## Needs a look
 
 `attention.py` (2026-11-04) measures every short option held against its strike: its distance out of

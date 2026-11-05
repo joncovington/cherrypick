@@ -275,6 +275,10 @@ DEFAULT_RULES: dict[str, Any] = {
     # dividend going ex before expiry, or any short's under `near_zero_extrinsic`); and every leg with
     # `expiring_days` or fewer left. A reading, not a rule: it fires nothing.
     "attention": {"near_pct": 0.03, "near_zero_extrinsic": 0.05, "expiring_days": 7},
+    # Marks taken between the open and `verdicts_from` (New York) are the opening scramble: the
+    # evaluation says `early`, surfaces show prices, P&L and needs-a-look and hold the verdicts back,
+    # and the orchestrator does not post the list (user, 2026-11-04).
+    "early": {"verdicts_from": "10:00"},
     "pricing": {"rate": 0.04, "grid_low": 0.01, "grid_high": 3.0, "grid_steps": 600},
     # The account as one book (portfolio.py, docs/portfolio-guidance-plan.md). Every band is a retail
     # heuristic with no published out-of-sample evidence, hence the low confidences.

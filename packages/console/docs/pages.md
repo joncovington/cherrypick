@@ -662,7 +662,12 @@ capture denominator, an "at TP" / "at stop" chip against the evaluation's own le
 delta and theta from the streamed greeks with the evaluation's betas. Display only: no verdict is
 re-judged and no in/out-of-band flag is drawn for a live figure (that stays the evaluation's). A trade
 or book figure with any quote over 120 s old reads a dash, never part-marked. A past session shows
-none. `ScenarioCards.tsx` adds a
+none. Under the status line (2026-11-04) each account's day P&L (each leg's mark less the broker's
+previous close, which manage now carries per leg) and an estimated net liq (the evaluation's, moved
+by the evaluated legs' marks; cash and the left-out 0DTE legs are the snapshot's), with the legs the
+stream is not carrying named in red: either figure is a dash while one is. While manage's evaluation
+is `early` (marks from 09:30-10:00 ET) the page says so and every action chip reads "held until
+10:00", the action in its title (`VerdictsHeld`). `ScenarioCards.tsx` adds a
 buying-power dial (the cap is manage's, set by VIX), the expiry ladder with the earnings exposure,
 the risk graph and the risk matrix. Every figure is manage's repricing; the matrix states which IV
 weighting manage used, and a card manage wrote no reading for is not drawn. `IncomeCard.tsx` lists

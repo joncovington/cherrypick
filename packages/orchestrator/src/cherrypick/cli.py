@@ -903,6 +903,13 @@ def _run_manage(cfg) -> None:
     into its own home for the console. The evaluation is advice: nothing on this path places, closes
     or sizes an order, so a failed pass costs a missing page and is a WARNING.
     """
+    _emit(_manage_full(cfg))
+
+
+def _manage_full(cfg) -> dict:
+    """One full snapshot and evaluation, its posts included; the run's record. The scheduled runs call it
+    through `_run_manage`, and `manage-marks` calls it on the minute a fill or a new day needs one
+    (`managerefresh.why_full`)."""
     from cherrypick.orchestrator import managesnap
 
     hb_path = cfgmod.state_file("manage.last.json")
@@ -941,21 +948,25 @@ def _run_manage(cfg) -> None:
     _append_log(log_path, {**rec, "result": result})
 
     notifier = Notifier(cfg.get("notify"))
+    written = (result or {}).get("written")
+    try:
+        doc = json.loads(Path(written).read_text(encoding="utf-8")) if ok and written else {}
+    except (OSError, json.JSONDecodeError):
+        doc = {}
     if not ok:
         notifier.notify(
             "WARNING", "manage", "Position evaluation failed", f"{error or 'see logs/manage.log'}"
         )
+    elif doc.get("early") or doc.get("pre_open"):
+        # Marks from before the open, or its first half hour, are not to be acted on: the list waits
+        # for the first run past `early.verdicts_from` (needs-a-look still posts, below).
+        rec["list_held"] = "early" if doc.get("early") else "pre_open"
     elif settings["notify"] and _manage_post_due(cfg, rec["session"], settings["notify_every_minutes"]):
         # A run posts its list, the all-hold one included: the runs are at times a person chose
         # (`manage.at`, `manage.also_at`) to read what needs managing -- no more often than
         # `manage.notify_every_minutes`, so frequent runs refresh the console without flooding Discord.
         from cherrypick.orchestrator import managepost
 
-        written = (result or {}).get("written")
-        try:
-            doc = json.loads(Path(written).read_text(encoding="utf-8")) if written else {}
-        except (OSError, json.JSONDecodeError):
-            doc = {}
         at = timeutil.now_et(cfg.get("timezone", "America/New_York")).strftime("%H:%M")
         if doc:
             title, message, embed = managepost.build(doc, at)
@@ -971,8 +982,8 @@ def _run_manage(cfg) -> None:
             "INFO", "manage", title, message, embed, session=rec["session"], inputs=[written] if doc else ()
         )
     if ok:
-        _manage_attention(cfg, settings, (result or {}).get("written"), rec["session"], notifier)
-    _emit(rec)
+        _manage_attention(cfg, settings, written, rec["session"], notifier)
+    return rec
 
 
 def _manage_attention(cfg, settings: dict, written: str | None, session: str | None, notifier) -> None:
@@ -996,12 +1007,26 @@ def _run_manage_marks(cfg) -> None:
     It posts only the needs-a-look names not yet posted today (`_manage_attention`): the full `manage`
     run posts the list, and a missed minute costs a minute of freshness. Only a failure is logged, so
     the manage log keeps one line per full run."""
-    from cherrypick.orchestrator import managesnap
+    from cherrypick.core.live import account_alerts
+
+    from cherrypick.orchestrator import managerefresh, managesnap
 
     hb_path = cfgmod.state_file("manage.marks.last.json")
     now = timeutil.now_et(cfg.get("timezone", "America/New_York"))
     rec: dict = {"at": now.isoformat(), "ok": True}
     written: str | None = None
+    # A trade since the stored snapshot, or no snapshot today yet: this minute takes a full one.
+    snap_session, snap_at = managerefresh.stored_snapshot(cfgmod.state_file("manage.snapshot.json"))
+    fill_at = managerefresh.latest_fill(Path(account_alerts.data_dir()) / account_alerts.INBOX_FILENAME)
+    reason = managerefresh.why_full(now, now.date().isoformat(), snap_session, snap_at, fill_at)
+    if reason is not None:
+        full = _manage_full(cfg)
+        rec.update({"ok": full["ok"], "full_snapshot": reason, "session": full.get("session")})
+        if not full["ok"]:
+            rec["error"] = full.get("error")
+        write_json_atomic(hb_path, rec)
+        _emit(rec)
+        return
     try:
         overlay = managesnap.marks_overlay(now.date().isoformat(), now_iso=now.isoformat())
         if overlay is None:

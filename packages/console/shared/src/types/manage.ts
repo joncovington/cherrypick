@@ -924,6 +924,9 @@ export interface ManagePayload {
   /** Set when the snapshot was taken before 09:30 New York time on its own session (manage's
    *  `pre_open`): spot and marks are the last session's, and today's expiring legs are unpriced. */
   preOpen: { takenAt: string | null; expiringUnpriced: string[] } | null;
+  /** Set when the marks were taken between the open and `early.verdicts_from` (manage's `early`,
+   *  2026-11-04): prices, P&L and needs-a-look stand, the verdicts are held until then. */
+  early: { takenAt: string | null; verdictsFrom: string | null } | null;
 }
 
 /* ------------------------------------------------------------------ live marks (2026-10-22) */
@@ -955,6 +958,17 @@ export interface ManageLiveAccount {
   theta: number | null;
   legsWithGreeks: number;
   legsTotal: number;
+  /** Legs with a fresh streamed mark (2026-11-04); the rest carry the evaluation's price. */
+  legsMarked: number;
+  /** The day's P&L on the live marks: each leg's mark less the broker's previous close, whole
+   *  position. Null unless every leg is marked and has a previous close. A leg opened today counts
+   *  from its previous close, not its fill. */
+  dayPl: number | null;
+  /** The evaluation's net liq moved by the evaluated legs' live marks: an ESTIMATE (cash is the
+   *  snapshot's; the legs the ruleset leaves out are not moved). Null unless every leg is marked. */
+  netLiqEstimate: number | null;
+  /** Legs the ruleset left out of the evaluation (the live loops' 0DTE), which the estimate does not move. */
+  legsLeftOut: number;
 }
 
 export interface ManageLivePayload {

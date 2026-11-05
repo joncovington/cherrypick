@@ -172,6 +172,8 @@ def _legs(
             "dte": dte,
             "open_price": opened,
             "mid": mid,
+            # The broker's previous close, so a surface can mark the day's P&L live (2026-11-04).
+            "prev_close": _f(leg.get("prev_close")),
             "value": value,
             "cost": (value - open_pl) if value is not None and open_pl is not None else None,
             "open_pl": open_pl,
@@ -1047,6 +1049,36 @@ def pre_open(generated_at: Any, session: date, accounts: list[dict[str, Any]]) -
         }
     )
     return {"taken_at": taken.strftime("%H:%M"), "expiring_unpriced": unpriced}
+
+
+def _ny(stamp: Any) -> datetime | None:
+    for parse in (
+        lambda s: datetime.strptime(s, "%Y-%m-%dT%H:%M:%S%z"),
+        lambda s: datetime.fromisoformat(s),
+    ):
+        try:
+            t = parse(str(stamp))
+        except (TypeError, ValueError):
+            continue
+        return t.astimezone(NEW_YORK) if t.tzinfo is not None else None
+    return None
+
+
+def early(snapshot: dict[str, Any], session: date, rules: dict[str, Any]) -> dict[str, Any] | None:
+    """Set when the marks this evaluation judged were taken on the session's day between the open
+    (09:30) and `early.verdicts_from` New York time (10:00; user, 2026-11-04): the opening half hour's
+    quotes are wide and jumpy, so its verdicts are not to be acted on yet. The verdicts are still
+    worked out and written; `early` tells every surface to show prices, P&L and needs-a-look and hold
+    the verdicts back, and the orchestrator not to post the list. The time is the re-mark's when the
+    snapshot was moved to newer quotes, else the snapshot's. None at or after it, or before the open
+    (that is `pre_open`'s)."""
+    remark = snapshot.get("remark") or {}
+    taken = _ny(remark.get("at")) or _ny(snapshot.get("generated_at"))
+    hh, mm = (int(x) for x in str((rules.get("early") or {}).get("verdicts_from") or "10:00").split(":"))
+    until = time(hh, mm)
+    if taken is None or taken.date() != session or not time(9, 30) <= taken.time() < until:
+        return None
+    return {"taken_at": taken.strftime("%H:%M"), "verdicts_from": until.strftime("%H:%M")}
 
 
 def before_open(time_of_day: Any) -> bool:
@@ -2484,6 +2516,7 @@ def evaluate(
         else "no trade history in this snapshot (taken before chains were read)",
         "marks": positions.get("marks"),
         "pre_open": pre_open(snapshot.get("generated_at"), session, accounts),
+        "early": early(snapshot, session, rules),
         "ruleset": rules.get("ruleset"),
         "rules": rules,
         "rule_warnings": list(warnings or []),

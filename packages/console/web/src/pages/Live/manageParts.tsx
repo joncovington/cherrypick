@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import type { ManageWheelBand } from "@console/shared";
 import { parseSuiteTs } from "../../lib/etTime";
 import { fmtMoney } from "../../lib/format";
@@ -33,8 +33,23 @@ const ACTION_CHIP: Record<string, string> = {
   CLOSE_LEGS: "chip-bad",
 };
 
+/** The New York time verdicts are held until, while the evaluation shown is manage's `early`
+ *  (2026-11-04: marks from the open's first half hour); null otherwise. The page sets it. */
+export const VerdictsHeld = createContext<string | null>(null);
+
+/** Manage's action; while the evaluation is early, a muted "held until 10:00" with the action in its
+ *  title, never the action as something to act on. */
 export function ActionChip({ action }: { action: string }) {
-  return <span className={`chip ${ACTION_CHIP[action] ?? ""}`}>{ACTION_LABEL[action] ?? action}</span>;
+  const held = useContext(VerdictsHeld);
+  const label = ACTION_LABEL[action] ?? action;
+  if (held) {
+    return (
+      <span className="chip muted" title={`manage says ${label}; held until ${held} ET: the opening marks are not settled`}>
+        held until {held}
+      </span>
+    );
+  }
+  return <span className={`chip ${ACTION_CHIP[action] ?? ""}`}>{label}</span>;
 }
 
 export function tone(v: number | null | undefined): string {

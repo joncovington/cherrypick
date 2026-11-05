@@ -161,6 +161,9 @@ function liveAccount(a: Rec, fresh: Fresh): ManageLiveAccount {
   let theta: number | null = 0;
   let total = 0;
   let withGreeks = 0;
+  let marked = 0;
+  let dayPl: number | null = 0;
+  let moved: number | null = 0;
   for (const tRaw of arr(a["trades"])) {
     const t = rec(tRaw);
     const under = typeof t["underlying"] === "string" ? t["underlying"] : "";
@@ -170,6 +173,13 @@ function liveAccount(a: Rec, fresh: Fresh): ManageLiveAccount {
       const l = legOf(raw);
       if (l === null) continue;
       total += 1;
+      // The day's P&L and the move since the evaluation, each null once any leg lacks a fresh mark.
+      const mark = fresh.mids.get(l.key);
+      const prev = num(rec(raw)["prev_close"]);
+      const was = num(rec(raw)["value"]);
+      if (mark !== undefined) marked += 1;
+      dayPl = dayPl !== null && mark !== undefined && prev !== null ? dayPl + (mark - prev) * l.quantity * l.scale : null;
+      moved = moved !== null && mark !== undefined && was !== null ? moved + mark * l.quantity * l.scale - was : null;
       const g = l.option ? fresh.greeks.get(l.key) : { delta: 1, theta: 0 };
       const ok = g && g.delta !== null && g.theta !== null;
       if (ok) withGreeks += 1;
@@ -181,12 +191,18 @@ function liveAccount(a: Rec, fresh: Fresh): ManageLiveAccount {
           : null;
     }
   }
+  const netLiq = num(a["net_liq"]);
+  const leftOut = arr(a["excluded"]).reduce<number>((s, e) => s + (num(rec(e)["legs"]) ?? 0), 0);
   return {
     account: typeof a["account"] === "string" ? a["account"] : null,
     bwd: total > 0 ? bwd : null,
     theta: total > 0 ? theta : null,
     legsWithGreeks: withGreeks,
     legsTotal: total,
+    legsMarked: marked,
+    dayPl: total > 0 ? dayPl : null,
+    netLiqEstimate: total > 0 && moved !== null && netLiq !== null ? netLiq + moved : null,
+    legsLeftOut: leftOut,
   };
 }
 

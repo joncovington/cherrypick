@@ -468,13 +468,15 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # (managesnap.roll_out_chains), and the cap on the broker reads that costs.
         "roll_out": {k: _int_or(ro.get(k), v) for k, v in ROLL_OUT_DEFAULTS.items()},
         # The minute re-mark between full runs (`manage-marks`, packages/manage `remark`): the day's
-        # snapshot moved to the stream cache's quotes. No broker call, so on whenever manage is; it
-        # stands down until the day's first full snapshot is stored, and after the close, when the
-        # cache holds no fresh quote.
+        # snapshot moved to the stream cache's quotes, no broker call. From 2026-11-04 it starts at the
+        # open (09:36) and takes a full snapshot instead on its first minute of the day and on the
+        # minute after a fill (managerefresh.py); the evaluation marks 09:30-10:00 early, so the list
+        # still waits for the first run past `early.verdicts_from`. It stands down after the close,
+        # when the cache holds no fresh quote.
         "marks": {
             "enabled": bool(mg.get("enabled", False)) and bool(mk.get("enabled", True)),
             "interval_seconds": max(30, _int_or(mk.get("interval_seconds"), 60)),
-            "start": str(mk.get("start", "10:01")),
+            "start": str(mk.get("start", "09:36")),
             "end": str(mk.get("end", "16:10")),
         },
     }
