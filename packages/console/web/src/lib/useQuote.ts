@@ -12,6 +12,8 @@ export function useQuote(symbol: string): QuoteState | undefined {
   return useSyncExternalStore(
     (cb) => wsClient.onQuote(symbol, cb),
     () => wsClient.getQuote(symbol),
+    // A server render (the tests') has no socket: no quote yet.
+    () => undefined,
   );
 }
 

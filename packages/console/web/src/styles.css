@@ -6647,6 +6647,25 @@ select.text-input {
   overflow-wrap: anywhere;
 }
 
+.pos-card-sym-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.pos-card-spot-wrap {
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.pos-card-spot {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .pos-card-shape {
   font-size: 13px;
   color: var(--text-muted);
