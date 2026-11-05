@@ -27,6 +27,7 @@ function bucket(over: Partial<ManageLedgerBucket> = {}): ManageLedgerBucket {
 function ledger(over: Partial<ManageLedger> = {}): ManageLedger {
   return {
     error: null,
+    scope: null,
     historyFrom: "2026-05-13",
     rows: 1200,
     windows: {
@@ -81,6 +82,12 @@ describe("the ledger", () => {
     expect(out).not.toMatch(/BBB/);
     expect(render(ledger())).toMatch(/BBB/);
     expect(ledgerWindow("bogus")).toBe("ALL");
+  });
+
+  it("names the wheel's names it counts, or says it has none", () => {
+    expect(render(ledger({ scope: ["AAA", "BBB"] }))).toContain("AAA, BBB · since 2026-05-13");
+    expect(render(ledger({ scope: [] }))).toContain("no wheel names · since 2026-05-13");
+    expect(render(ledger())).toMatch(/ledger since 2026-05-13/);
   });
 
   it("says what it left out with its count and net", () => {

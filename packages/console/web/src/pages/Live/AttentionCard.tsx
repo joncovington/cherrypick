@@ -43,18 +43,24 @@ function Row({ i, nearPct }: { i: ManageAttentionItem; nearPct: number | null })
   );
 }
 
-export function AttentionCard({ a }: { a: ManageAttention }) {
+/** Manage's attention reading, `scope` (the wheel's names) keeping only those names' legs. */
+export function AttentionCard({ a: all, scope = null }: { a: ManageAttention; scope?: string[] | null }) {
+  const keep = (x: { underlying: string }) => scope === null || scope.includes(x.underlying);
+  const a = { ...all, items: all.items.filter(keep), expiring: all.expiring.filter(keep) };
+  const of = scope === null ? "" : " on a wheel name";
   return (
     <section className="att-board" aria-label="Needs a look">
       <div className="att-col">
         <div className="att-head">
           <span className="att-title">Needs a look</span>
           <span className="muted">
-            a short within {pct(a.nearPct, 0)} of its strike, through it, or likely exercised early
+            a short{of} within {pct(a.nearPct, 0)} of its strike, through it, or likely exercised early
           </span>
         </div>
         {a.items.length === 0 ? (
-          <p className="muted">nothing: every short option is further than {pct(a.nearPct, 0)} from its strike</p>
+          <p className="muted">
+            nothing: every short option{of} is further than {pct(a.nearPct, 0)} from its strike
+          </p>
         ) : (
           <ul className="att-list">
             {a.items.map((i) => (
@@ -68,7 +74,9 @@ export function AttentionCard({ a }: { a: ManageAttention }) {
           <span className="att-title">Expiring in {a.expiringDays ?? "?"} days</span>
         </div>
         {a.expiring.length === 0 ? (
-          <p className="muted">nothing expires in {a.expiringDays ?? "?"} days</p>
+          <p className="muted">
+            nothing{of} expires in {a.expiringDays ?? "?"} days
+          </p>
         ) : (
           <ul className="att-exp">
             {a.expiring.map((e) => (

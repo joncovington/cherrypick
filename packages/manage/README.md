@@ -536,6 +536,12 @@ with how it ended), and what is still held is `open`, its cash so far, never cou
 live loops' 0DTE legs and spans the history entered mid-position are counted aside with their legs
 and net, as the pace counts them. The console's Live -> wheel tab draws it above the cycles.
 
+The evaluation's `ledger` counts the wheel's names alone (2026-11-05): the names with a cycle, which
+the wheel view states as `names`, are passed as `scope`, and every total, month, lot and open leg is
+over them alone; `scope` is in the reading. The scope is by name, so a name's other trades (a
+diagonal on a name the wheel also runs) are in it. With no cycle the ledger is empty, never the
+account's.
+
 ## The premium pace
 
 `premium.py` reads three figures side by side for the broker tool's designated account (the

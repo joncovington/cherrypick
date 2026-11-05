@@ -92,6 +92,29 @@ def test_puts_calls_shares_and_dividends_each_once_and_they_add_up():
     )
 
 
+def test_a_scope_counts_only_its_names_everywhere():
+    # The wheel tab's ledger: only the wheel's names, in the totals, the months, the lots and what is held.
+    other = "BBB   261120P00030000"
+    rows = [
+        row(1, "2026-10-01T15:00:00Z", "Sell to Open", PUT, 1, 150.0),
+        row(2, "2026-10-20T15:00:00Z", "Buy to Close", PUT, 1, -50.0),
+        row(3, "2026-10-02T15:00:00Z", "Sell to Open", other, 1, 90.0, underlying="BBB"),
+        row(4, "2026-10-21T15:00:00Z", "Buy to Close", other, 1, -10.0, underlying="BBB"),
+        dividend("2026-10-15T12:00:00Z", 12.0, name="BBB"),
+        row(5, "2026-10-22T15:00:00Z", "Sell to Open", "BBB   261218P00028000", 1, 60.0, underlying="BBB"),
+    ]
+    whole = read(rows)
+    out = ledger.reading(rows, None, SESSION, _rules.DEFAULT_RULES, scope=["AAA"])
+    assert out["scope"] == ["AAA"] and whole["scope"] is None
+    assert [n["underlying"] for n in out["names"]] == ["AAA"]
+    assert out["windows"]["ALL"]["net"] == name(whole, "AAA")["ALL"]["net"] < whole["windows"]["ALL"]["net"]
+    assert sum(m["net"] for m in out["months"]) == pytest.approx(out["windows"]["ALL"]["net"])
+    assert {r["underlying"] for r in out["lots"]} == {"AAA"} and out["open"] == []
+    # No wheel names: an empty ledger, not the account's.
+    empty = ledger.reading(rows, None, SESSION, _rules.DEFAULT_RULES, scope=[])
+    assert empty["names"] == [] and empty["windows"]["ALL"]["net"] == 0.0
+
+
 def test_windows_count_back_from_the_session_by_the_closing_day():
     rows = [
         row(1, "2026-03-02T15:00:00Z", "Sell to Open", "AAA   260320P00045000", 1, 100.0),

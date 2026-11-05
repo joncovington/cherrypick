@@ -2460,13 +2460,16 @@ def evaluate(
         payoff = _payoff.reading(trades, metrics, snapshot, session, rules)
         # Your limits beside the book, and the day's loss against its alert (`limits.py`).
         limits = _limits.reading(book, trades, account.get("underlyings"), account.get("account_type"), rules)
-        # What each name has earned over the whole history (`ledger.py`), on the pace's account rule.
+        # The wheel's names, each with a cycle; the wheel tab shows them and no other.
+        wheel_view["names"] = sorted({c["underlying"] for c in wheel_view["cycles"]})
+        # What each wheel name has earned over the whole history (`ledger.py`), on the pace's account rule.
         ledger = (
             _ledger.reading(
                 snapshot.get("account_transactions") if "account_transactions" in snapshot else None,
                 snapshot.get("account_transactions_error"),
                 session,
                 rules,
+                scope=wheel_view["names"],
             )
             if account.get("designated") or n_accounts == 1
             else None

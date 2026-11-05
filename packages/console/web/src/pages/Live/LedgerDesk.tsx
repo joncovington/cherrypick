@@ -253,7 +253,8 @@ export function LedgerDesk({ ledger }: { ledger: ManageLedger | null }) {
       <div className="ldg-head">
         <span className="ldg-title">ledger</span>
         <span className="muted">
-          since {ledger.historyFrom ?? "?"} · {ledger.rows ?? "?"} history rows · by closing day
+          {ledger.scope === null ? "" : `${ledger.scope.length ? ledger.scope.join(", ") : "no wheel names"} · `}since{" "}
+          {ledger.historyFrom ?? "?"} · {ledger.rows ?? "?"} history rows · by closing day
         </span>
         <div className="ldg-windows" role="group" aria-label="Window">
           {LEDGER_WINDOWS.map((w) => (

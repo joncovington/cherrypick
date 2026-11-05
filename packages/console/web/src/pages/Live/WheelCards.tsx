@@ -428,8 +428,8 @@ export function leftOutText(names: string[]): string | null {
 export function WheelCards({ a }: { a: ManageAccount }) {
   return (
     <>
-      {a.attention ? <AttentionCard a={a.attention} /> : null}
-      {a.payoff ? <PayoffStrip payoff={a.payoff} /> : null}
+      {a.attention ? <AttentionCard a={a.attention} scope={a.wheel?.names ?? null} /> : null}
+      {a.payoff ? <PayoffStrip payoff={a.payoff} scope={a.wheel?.names ?? null} /> : null}
       {a.ledger ? <LedgerDesk ledger={a.ledger} /> : null}
       <WheelCycles a={a} />
     </>

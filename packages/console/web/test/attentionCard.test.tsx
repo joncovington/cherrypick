@@ -57,6 +57,22 @@ describe("needs a look", () => {
     expect(out).toContain("a short within 3% of its strike");
   });
 
+  it("on the wheel tab keeps only the wheel's names, and says so", () => {
+    const a = attention({
+      items: [item({ underlying: "BBB" }), item()],
+      expiring: [item({ underlying: "CCC", leg: "2026-11-06 30P", dte: 1 }), item({ underlying: "AAA", leg: "2026-11-06 47P", dte: 1 })],
+    });
+    const out = text(renderToString(<AttentionCard a={a} scope={["AAA"]} />));
+    expect(out).not.toContain("BBB");
+    expect(out).not.toContain("CCC");
+    expect(out).toContain("AAA 2026-12-18 49P");
+    expect(out).toContain("AAA −1 2026-11-06 47P");
+    expect(out).toContain("a short on a wheel name within 3%");
+    const none = text(renderToString(<AttentionCard a={a} scope={[]} />));
+    expect(none).toContain("nothing: every short option on a wheel name is further than 3%");
+    expect(none).toContain("nothing on a wheel name expires in 7 days");
+  });
+
   it("shows manage's level even where its distance would say otherwise", () => {
     const out = text(renderToString(<AttentionCard a={attention({ items: [item({ distance: 0.2, level: "early exercise", why: "manage says so" })] })} />));
     expect(out).toContain("early exercise");

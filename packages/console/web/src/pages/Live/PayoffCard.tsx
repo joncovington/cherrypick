@@ -354,10 +354,11 @@ function PayoffDialog({ names, index, onStep, onClose }: { names: ManagePayoffNa
   );
 }
 
-/** The strip of held names, each with manage's P&L now; one opens its payoff. */
-export function PayoffStrip({ payoff }: { payoff: ManagePayoff }) {
+/** The strip of held names, each with manage's P&L now; one opens its payoff. `scope` (the wheel's
+ *  names) keeps only those. */
+export function PayoffStrip({ payoff, scope = null }: { payoff: ManagePayoff; scope?: string[] | null }) {
   const lightbox = useOpenParam("payoff");
-  const names = payoff.names;
+  const names = scope === null ? payoff.names : payoff.names.filter((n) => scope.includes(n.underlying));
   if (names.length === 0) return null;
   const order = names.map((n) => n.underlying);
   const index = lightbox.open === null ? -1 : order.indexOf(lightbox.open);
@@ -365,7 +366,7 @@ export function PayoffStrip({ payoff }: { payoff: ManagePayoff }) {
     <section className="pay-board" aria-label="Payoff">
       <div className="att-head">
         <span className="att-title">Payoff</span>
-        <span className="muted">each name held: P&amp;L across its price, at expiry and before</span>
+        <span className="muted">each {scope === null ? "name" : "wheel name"} held: P&amp;L across its price, at expiry and before</span>
       </div>
       <div className="pay-names">
         {names.map((n) => (

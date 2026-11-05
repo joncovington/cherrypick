@@ -683,6 +683,13 @@ manage's reason where manage refused one. There is no earnings column: manage dr
 report inside it, so a known date is always after expiry. An unknown one is an `earnings unknown`
 chip on the name.
 
+**The wheel's names only** (2026-11-05). Live -> wheel shows the names the wheel follows and no other:
+needs a look, expiring, the payoff strip and the ledger. The names are manage's (`wheel.names`, the
+names with a cycle). The console keeps only those names' items from manage's account-wide `attention`
+and `payoff`, which the alert post still reads whole, and the ledger arrives already summed over them
+(`ledger.scope`, named in its header). An evaluation from before carries no names and shows the
+whole account as it did.
+
 **Live -> wheel's payoff** (2026-11-04, `pages/Live/PayoffCard.tsx`): a strip of held names, each
 with manage's P&L now and breakevens, opening its chart in the lightbox (`?payoff=`): the nearest
 expiry's curve always, a dated curve by chip, the evaluation's price and the stream's live price
