@@ -588,9 +588,15 @@ class FakeHistoryAccount:
         self._transactions = transactions
         self.calls = []
 
-    async def get_history(self, session, start_date, end_date, underlying_symbol, symbol):
+    async def get_history(
+        self, session, start_date, end_date, underlying_symbol, symbol, page_offset=0, per_page=250
+    ):
+        """As the SDK pages: `page_offset` 0 (its default) is the newest `per_page` rows only; None
+        is every page."""
         self.calls.append((start_date, end_date, underlying_symbol, symbol))
-        return self._transactions
+        if page_offset is None:
+            return self._transactions
+        return self._transactions[page_offset * per_page : (page_offset + 1) * per_page]
 
 
 def test_transaction_history_serializes_and_defaults_end_date_to_start_date():
@@ -606,6 +612,14 @@ def test_transaction_history_serializes_and_defaults_end_date_to_start_date():
         {"id": 2, "transaction_type": "Receive Deliver", "value": "-53.0"},
     ]
     assert acct.calls == [(d, d, "XSP", None)]
+
+
+def test_transaction_history_reads_every_page_not_the_newest_250():
+    # The SDK's default reads one page of 250: an account-wide year was cut to its last three weeks
+    # (2026-11-04).
+    txns = [FakeTransaction(id=i) for i in range(613)]
+    out = _run(broker.transaction_history(FakeHistoryAccount(txns), "sess", start_date=date(2000, 1, 1)))
+    assert len(out) == 613 and out[-1] == {"id": 612}
 
 
 def test_transaction_history_respects_explicit_end_date_and_symbol():

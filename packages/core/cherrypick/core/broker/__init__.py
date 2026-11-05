@@ -566,13 +566,17 @@ async def transaction_history(
     and fee fields), unlike `order_status`'s `price` field, which is the order's own working/limit
     price and, as documented there, "the closest a `PlacedOrder` gets to a real fill price without
     a separate transactions-API call" — not a true realized amount. `end_date` defaults to
-    `start_date` (a single-day query is the common case for reconciling one session)."""
+    `start_date` (a single-day query is the common case for reconciling one session).
+
+    Every page is read (`page_offset=None`). The SDK's default is page 0 alone, the newest 250 rows,
+    which cut an account-wide year of history to its last three weeks until 2026-11-04."""
     transactions = await account.get_history(
         session,
         start_date=start_date,
         end_date=end_date or start_date,
         underlying_symbol=underlying_symbol,
         symbol=symbol,
+        page_offset=None,
     )
     return [t.model_dump(mode="json") for t in transactions]
 
