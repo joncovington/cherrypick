@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import type { ManageTrade } from "@console/shared";
 import { MemoryRouter } from "react-router-dom";
 import { TradeDetail } from "../src/pages/Live/ManagePage";
-import { PositionCard, PositionCards, chainLegs, chainSteps, sortByPnl } from "../src/pages/Live/PositionCards";
+import { PositionCard, PositionCards, SpotLine, chainLegs, chainSteps, sortByPnl } from "../src/pages/Live/PositionCards";
 
 /**
  * The held-for-call chip and "waits for call" are packages/manage's `earnings_trade` verdict, read and
@@ -129,6 +129,18 @@ describe("the positions cards", () => {
     expect(html).toContain("1 roll");
     expect(html).toContain("close at mid -$88.00");
     expect(html).toContain("taken in +$275.00");
+  });
+
+  it("shows the underlying's live price with its change on the day, or the evaluation's spot muted with none", () => {
+    const live = renderToString(<SpotLine q={{ last: 51.5, prevClose: 50, source: "dxlink", direction: "up", ts: 1 }} evaluated={49} />);
+    expect(text(live)).toBe("51.50 +1.50 +3.00%");
+    expect(live).toContain('class="pnl-pos"');
+    expect(text(renderToString(<SpotLine q={{ last: 48, prevClose: 50, source: "dxlink", direction: "down", ts: 1 }} evaluated={49} />))).toBe("48.00 −2.00 −4.00%");
+    // A cached price (the live feed down) shows no change between numbers from two sources.
+    const cached = renderToString(<SpotLine q={{ last: 51.5, prevClose: 50, source: "cache", direction: null, ts: 1 }} evaluated={49} />);
+    expect(text(cached)).toBe("49.00");
+    expect(cached).toContain("muted");
+    expect(renderToString(<SpotLine q={undefined} evaluated={null} />)).toBe("");
   });
 
   it("puts each leg on its own line, a buy green and a sell red, the side that set the net first", () => {

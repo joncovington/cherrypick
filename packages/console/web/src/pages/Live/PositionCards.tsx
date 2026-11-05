@@ -1,10 +1,13 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ManageChainOrder, ManageTrade } from "@console/shared";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
 import { ACTION_LABEL, ActionChip, Kv, Money, tone } from "./manageParts";
 import { useLiveMarks } from "./LiveMarks";
+import { useQuote } from "../../lib/useQuote";
+import type { QuoteState } from "../../lib/wsClient";
+import { chipState, formatChange, formatPct, formatPrice } from "../../components/shell/FuturesTicker";
 
 /**
  * Live → positions as cards (2026-11-04, the user's pick "A" off the mock-up canvas): one card per
@@ -176,6 +179,55 @@ function PnlFigure({ t }: { t: ManageTrade }) {
   );
 }
 
+/**
+ * The underlying's price beside its symbol: the live feed's price with its change and change % on the
+ * day, against the feed's prior close, by the top bar's own rule (`chipState`). Without a live price it
+ * is the evaluation's spot, muted, with no change: never a change between numbers from two sources.
+ */
+export function SpotLine({ q, evaluated }: { q: QuoteState | undefined; evaluated: number | null }) {
+  const { price, change, changePct } = chipState(q);
+  const live = q?.source === "dxlink" && price !== undefined;
+  if (!live) {
+    return evaluated === null ? null : (
+      <span className="pos-card-spot muted" title="the evaluation's spot; no live price">
+        {formatPrice("", evaluated)}
+      </span>
+    );
+  }
+  return (
+    <span className="pos-card-spot" title={q?.prevClose !== undefined ? `prior close ${formatPrice("", q.prevClose)}` : undefined}>
+      {formatPrice("", price)}
+      {change !== undefined && changePct !== undefined ? (
+        <span className={change > 0 ? "pnl-pos" : change < 0 ? "pnl-neg" : "muted"}>
+          {" "}
+          {formatChange("", change)} {formatPct(changePct)}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** The card's spot, live on the quote socket, flashing on each tick as the top bar's chips do. */
+function CardSpot({ t }: { t: ManageTrade }) {
+  const q = useQuote(t.underlying);
+  const ref = useRef<HTMLSpanElement>(null);
+  const prevTs = useRef(0);
+  useEffect(() => {
+    if (q === undefined || q.ts === prevTs.current) return;
+    prevTs.current = q.ts;
+    const el = ref.current;
+    if (el === null || q.direction === null || q.source !== "dxlink") return;
+    el.classList.remove("flash-up", "flash-down");
+    void el.offsetWidth; // restart the animation
+    el.classList.add(q.direction === "up" ? "flash-up" : "flash-down");
+  }, [q]);
+  return (
+    <span ref={ref} className="pos-card-spot-wrap">
+      <SpotLine q={q} evaluated={t.spot} />
+    </span>
+  );
+}
+
 export function PositionCard({ t, onOpen }: { t: ManageTrade; onOpen: () => void }) {
   const live = useLiveMarks()?.trades.get(t.tradeId);
   const livePnl = live ? (live.pnlNet ?? live.pnlGross) : null;
@@ -187,7 +239,10 @@ export function PositionCard({ t, onOpen }: { t: ManageTrade; onOpen: () => void
     <button type="button" className={losing ? "pos-card is-neg" : "pos-card"} onClick={onOpen} aria-label={`${t.tradeId}: ${ACTION_LABEL[t.action] ?? t.action}, P&L ${fmtMoney(t.pnlNet)}`}>
       <span className="pos-card-head">
         <span className="pos-card-titles">
-          <span className="pos-card-sym">{t.tradeId}</span>
+          <span className="pos-card-sym-line">
+            <span className="pos-card-sym">{t.tradeId}</span>
+            <CardSpot t={t} />
+          </span>
           <span className="pos-card-shape">{[t.shape, t.intent].filter(Boolean).join(" · ") || "—"}</span>
         </span>
         <span className="pos-card-chips">
