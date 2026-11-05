@@ -980,6 +980,9 @@ def test_the_snapshot_carries_the_account_wide_history(monkeypatch):
     assert snap["transactions"] == {"GLD": [{"order_id": 1}]}
     wide = [c for c in calls if "--account_wide" in c[0]]
     assert len(wide) == 1 and "--underlyings" not in wide[0][0] and wide[0][1] == 180
+    # The whole history since the account opened (the ledger's ALL), not HISTORY_DAYS back.
+    argv = wide[0][0]
+    assert argv[argv.index("--since") + 1] == managesnap.ACCOUNT_HISTORY_FROM == "2000-01-01"
 
 
 def test_an_account_wide_answer_without_a_list_is_an_error_not_an_empty_history(monkeypatch):

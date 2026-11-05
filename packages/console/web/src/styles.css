@@ -5918,6 +5918,7 @@ select.text-input {
 .meic-arm-tiles,
 .lt-board,
 .pmcc-board,
+.ldg-board,
 .study-dialog-wrap {
   --num-face: "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
   font-family: "Inter Variable", Inter, "Segoe UI", system-ui, sans-serif;
@@ -7463,5 +7464,228 @@ select.text-input {
   .mf-layout[data-module="backtest"] .study-tiles {
     grid-template-columns: minmax(0, 1fr);
     grid-auto-rows: minmax(360px, auto);
+  }
+}
+
+/* Live -> wheel's ledger (2026-11-04, pages/Live/LedgerDesk.tsx): what each name has earned, by
+   window. Tiles for the window, the months as bars about zero, a card per name opening its spans. */
+.ldg-board {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.ldg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.ldg-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.ldg-windows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.ldg-win {
+  font: inherit;
+  font-size: 12.5px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.ldg-win.is-on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ldg-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.ldg-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-sunken);
+}
+
+.ldg-tile.is-big {
+  grid-column: span 2;
+}
+
+.ldg-tile-label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.ldg-tile-value {
+  font-family: var(--num-face);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.ldg-tile.is-big .ldg-tile-value {
+  font-size: 28px;
+}
+
+.ldg-tile-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.ldg-months {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 240px;
+}
+
+.ldg-zero {
+  stroke: var(--chart-grid-strong);
+  stroke-width: 1;
+}
+
+.ldg-bar {
+  fill: var(--pos);
+}
+
+.ldg-bar.is-neg {
+  fill: var(--neg);
+}
+
+.ldg-bar-label,
+.ldg-axis {
+  fill: var(--text-dim);
+  font-family: var(--num-face);
+  font-size: 10px;
+}
+
+.ldg-note {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.ldg-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.ldg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.ldg-card:hover {
+  border-color: var(--chart-grid-strong);
+}
+
+.ldg-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ldg-card.is-neg {
+  border-color: color-mix(in srgb, var(--neg) 45%, var(--border));
+}
+
+.ldg-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ldg-card-name {
+  font-family: var(--num-face);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.ldg-card-net {
+  font-family: var(--num-face);
+  font-size: 15px;
+}
+
+.ldg-card-parts,
+.ldg-card-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.ldg-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.ldg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ldg-table th,
+.ldg-table td {
+  padding: 7px 10px;
+  border-top: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ldg-table th {
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.ldg-table .num {
+  text-align: right;
+  font-family: var(--num-face);
+}
+
+.ldg-held {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+@media (max-width: 560px) {
+  .ldg-tile.is-big {
+    grid-column: 1 / -1;
+  }
+
+  .ldg-windows {
+    margin-left: 0;
   }
 }

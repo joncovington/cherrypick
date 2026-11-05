@@ -51,7 +51,11 @@ import type {
   ManagePmccShort,
   ManageWheelBand,
   ManageWheelRollCheck,
+  ManageLedger,
+  ManageLedgerBucket,
+  ManageLedgerWindow,
 } from "@console/shared";
+import { LEDGER_WINDOWS } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num, readJson } from "./db.js";
 
@@ -1081,6 +1085,79 @@ function account(v: unknown, rules: Record<string, unknown>, lev: Leveraged = NO
     wheel: wheel(a["wheel"]),
     pmcc: pmcc(a["pmcc"], rules),
     premium: premium(a["premium"]),
+    ledger: ledger(a["ledger"]),
+  };
+}
+
+function ledgerBucket(v: unknown): ManageLedgerBucket {
+  const b = rec(v);
+  return {
+    puts: num(b["puts"]) ?? 0,
+    calls: num(b["calls"]) ?? 0,
+    shares: num(b["shares"]) ?? 0,
+    dividends: num(b["dividends"]) ?? 0,
+    fees: num(b["fees"]) ?? 0,
+    net: num(b["net"]) ?? 0,
+    legs: num(b["legs"]) ?? 0,
+  };
+}
+
+function ledgerWindows(v: unknown): Partial<Record<ManageLedgerWindow, ManageLedgerBucket>> {
+  const w = rec(v);
+  const out: Partial<Record<ManageLedgerWindow, ManageLedgerBucket>> = {};
+  for (const k of LEDGER_WINDOWS) if (w[k] !== undefined) out[k] = ledgerBucket(w[k]);
+  return out;
+}
+
+/** The ledger, passed through; null when the evaluation carries none (before 2026-11-04). */
+function ledger(v: unknown): ManageLedger | null {
+  if (v === null || v === undefined) return null;
+  const l = rec(v);
+  const ex = rec(l["excluded"]);
+  const z = rec(ex["zero_dte"]);
+  const u = rec(ex["unmatched"]);
+  return {
+    error: str(l["error"]),
+    historyFrom: str(l["history_from"]),
+    rows: num(l["rows"]),
+    windows: ledgerWindows(l["windows"]),
+    months: arr(l["months"]).map((raw) => {
+      const m = rec(raw);
+      const b = ledgerBucket(m);
+      return { month: str(m["month"]) ?? "", puts: b.puts, calls: b.calls, shares: b.shares, dividends: b.dividends, fees: b.fees, net: b.net };
+    }),
+    names: arr(l["names"]).map((raw) => {
+      const n = rec(raw);
+      return { underlying: str(n["underlying"]) ?? "?", windows: ledgerWindows(n["windows"]) };
+    }),
+    lots: arr(l["lots"]).map((raw) => {
+      const x = rec(raw);
+      return {
+        underlying: str(x["underlying"]) ?? "?",
+        symbol: str(x["symbol"]) ?? "?",
+        right: str(x["right"]) ?? "?",
+        opened: str(x["opened"]),
+        closed: str(x["closed"]) ?? "",
+        how: str(x["how"]) ?? "",
+        net: num(x["net"]) ?? 0,
+        fees: num(x["fees"]) ?? 0,
+      };
+    }),
+    open: arr(l["open"]).map((raw) => {
+      const x = rec(raw);
+      return {
+        underlying: str(x["underlying"]) ?? "?",
+        symbol: str(x["symbol"]) ?? "?",
+        right: str(x["right"]) ?? "?",
+        opened: str(x["opened"]),
+        quantity: num(x["quantity"]),
+        net: num(x["net"]) ?? 0,
+      };
+    }),
+    excluded: {
+      zeroDte: { legs: num(z["legs"]) ?? 0, net: num(z["net"]) ?? 0, underlyings: strs(z["underlyings"]) },
+      unmatched: { legs: num(u["legs"]) ?? 0, net: num(u["net"]) ?? 0 },
+    },
   };
 }
 

@@ -678,6 +678,14 @@ manage's reason where manage refused one. There is no earnings column: manage dr
 report inside it, so a known date is always after expiry. An unknown one is an `earnings unknown`
 chip on the name.
 
+**Live -> wheel's ledger** (2026-11-04, `pages/Live/LedgerDesk.tsx`) sits above the cycles: manage's
+`ledger` for the window in `?lw=` (1M, 3M, 6M, 1Y, YTD, ALL; ALL by default) as tiles (net, puts,
+calls, shares, dividends, fees), each month's net as a bar about zero (its sources in the bar's
+title), the 0DTE legs left out with their count and net, and a card per name with something closed
+in the window. A card opens the name's closed spans and what it still holds (`?ledger=`), with a CSV
+of the spans; the header's CSV is every name's. Every figure is manage's for the window shown, never
+a sum worked out on the page (`web/test/ledgerDesk.test.tsx` gives a net its parts do not add to).
+
 **The Live page's `wheel` tab** (2026-10-20, `pages/Live/WheelCards.tsx`) is the third view of the
 same evaluation: the account's `wheel` (packages/manage `wheel.py`, docs/skate-plan.md step 5), one
 card per cycle. Like its siblings it never leaves the rail (there is no manage switch in the features
