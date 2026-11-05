@@ -4630,6 +4630,15 @@ store holds them.*
   - **A fail or no verdict:** the gate stays off every arm, and the contributor's paper arms are
     read as exploratory. Item 42 still runs, to test the strategy itself.
 
+- **Result (2026-11-02, provisional): fail, all four arms; the holdout is not read.** In the design
+  window the three `be10` arms lose on their own and none beats `be10-skip`. `live-1400-multi` makes
+  money on its own but trails `live-1400` in both halves. The holdout ran straight
+  after, as declared, and is reported only: a holdout counts after a design pass, and there was
+  none. Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item41/`).
+- **What this decides:** the fail branch. The gate stays off every arm and the contributor's paper
+  arms read as exploratory. Item 42 runs to test the break-even condor itself, and item 44 still
+  crosses the gate with width.
+
 ### 42. The break-even condor at its own wing widths, with and without the stabilization gate
 
 *Source: the user, 2026-10-31, choosing "both, in order" over testing at 10 points alone. The
@@ -4753,6 +4762,26 @@ of it is run.*
     `live-1400`, not decided here.
   - **A fail or no verdict:** live stays at 10 wide, and width up to 30 is closed as a lever for the
     14:00 rule. Item 44 still runs.
+
+- **Result (2026-11-04, provisional): `w15` and `w20` pass; `w25` and `w30` fail.**
+  - **Design:** all four arms beat `w10` per session with a t above 2, clear Holm, are positive in
+    both halves, and stay positive at 1.5× fees. `w25` and `w30` fail the buying-power check: they
+    earn more in dollars but less per dollar held than `w10`, the "paying more by risking more"
+    rival. `w15` and `w20` pass every check.
+  - **Holdout:** `w15` and `w20` each beat `w10` with a t above 2 (`w20` only just). `w15` also
+    keeps its net over buying power at least `w10`'s there; `w20` does not, which the holdout rule
+    does not judge.
+  - **Store coverage:** entries with an unquoted tick grow with width, as expected; the paired
+    difference over only the sessions both arms entered agrees with the verdict in both windows.
+  - **The floor and ceiling:** `live-1400` beat `w10` in the design window and the two were level in
+    the holdout, so the gates earn their keep at 10 wide. Width with the gates on is not tested
+    here, and the credit floor, a share of the width, would refuse more of the wider condors.
+  - Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item43/`).
+- **What this decides:** the pass branch, with `w15` the cleaner of the two. Nothing changes until
+  MEIC validation unlocks (queue row 46, after 2026-11-09). Then a proposal moves `live.arm`'s width
+  at a declared boundary, with the kill criteria and the buying-power cap re-derived from that arm's
+  replay. Before it, the width runs once with live's floor and ceiling on, since the result above
+  holds only without them. Item 44 still runs.
 
 ### 44. The stabilization gate across wing widths 10 to 40 on MEIC's live rule
 

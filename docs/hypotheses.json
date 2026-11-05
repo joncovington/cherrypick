@@ -1478,7 +1478,7 @@
       "id": 41,
       "study": "item41",
       "title": "The stabilization entry gate at real quotes: does waiting for flat five-minute bars improve the break-even condor or the 14:00 rule?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "entry-filter",
       "side": "neutral",
@@ -1512,9 +1512,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#41-the-stabilization-entry-gate-at-real-quotes-does-waiting-for-flat-five-minute-bars-improve-the-break-even-condor-or-the-1400-rule",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item41/study-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item41/study-holdout-2025-07-01-2026-10-12.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "every arm fails in the design window, so the holdout is not read; the gate stays off every arm and the contributor's paper arms read as exploratory"
     },
     {
       "id": 42,
@@ -1558,7 +1562,7 @@
       "id": 43,
       "study": "item43",
       "title": "The wing width of MEIC's live rule: 15, 20, 25 and 30 against 10",
-      "status": "declared",
+      "status": "passed",
       "legacy": false,
       "setup": "wing-width",
       "side": "neutral",
@@ -1596,9 +1600,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#43-the-wing-width-of-meics-live-rule-15-20-25-and-30-against-10",
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item43/study-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item43/study-holdout-2025-07-01-2026-10-12.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "provisional: w15 and w20 pass both windows, w15 the cleaner; w25 and w30 fail on net over buying power; the pass is against an ungated 10, so live's width waits on item 50 (the gates on) and MEIC validation"
     },
     {
       "id": 44,
