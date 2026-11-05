@@ -1,12 +1,12 @@
 """The PMCC view: a covered call written against a long call instead of shares (docs/skate-plan.md
 step 6), recognised, linked from the broker's trade history, and checked against today.
 
-**Recognition.** A name is a PMCC candidate when its calls are exactly one long, bought with at least
-`min_long_days` left (today's days when the purchase predates the history), and one short of the
-same size, at or above the long's strike, with at most `max_short_days` left (and no shares, which
-would make the short a covered call). The long's days are judged at its purchase because its roll
-comes at 90-120 days left: a bar on today's days would drop the PMCC before then. Shape alone does
-not make a PMCC: the long must have been **entered at `entry_min_delta` or more** (0.80), solved from
+**Recognition.** A name is a PMCC candidate when its calls are exactly one long and one short of the
+same size, the short expiring first, at or above the long's strike (and no shares, which would make
+the short a covered call). Neither leg's days left decides it: the standard definition (user,
+2026-11-04) lets the short's expiry and delta vary, and a long running short of time is the
+`roll_long` flag's, not a reason to drop the view. Shape alone does
+not make a PMCC: the long must have been **entered at `entry_min_delta` or more** (0.70), solved from
 its opening fill and that day's close (the snapshot's `underlying_history`, v13) with the dividend
 yield carried (Merton), or the operator must say so (`positions.<SYMBOL>.intent: "pmcc"`).
 `intent: "diagonal"` keeps a trade out whatever its delta. A delta at entry that cannot be solved (no
@@ -29,7 +29,9 @@ net cost is every linked row's cash (the long bought, any long it was rolled fro
 and bought back), so a premium collected lowers it. The width check is the strategy's own: the short
 strike less the long strike must exceed that net cost per share, or an assignment (the long exercised
 to deliver, its time value forfeited) locks in a loss. The P&L if assigned is (short strike - long
-strike - net cost per share) x 100 x contracts, gross; with the linked fees, net. Skate yield is a
+strike - net cost per share) x 100 x contracts, gross; with the linked fees, net. A net cost that
+passes but is over `width.warn_share` of the width (0.75) is flagged `thin`: a call-away then earns
+under a third of the cost, and it is a flag, not a rule that fires. Skate yield is a
 COMPARISON figure: the shorts' P&L to date (closed ones realised, the open one at its mark) over the
 long's own cost, x 365 / days since it was bought; None under a week, flagged past 500%.
 
@@ -97,10 +99,8 @@ def candidate(raw_legs: list[dict[str, Any]], session: date, cfg: dict[str, Any]
     le, se = str(long.get("expiration") or ""), str(short.get("expiration") or "")
     if lk is None or sk is None or not le or not se or se >= le or sk < lk - EPS:
         return None
-    if not 0 <= _days(se, session) <= int(cfg["max_short_days"]):
-        return None
-    # The long's `min_long_days` is judged on the day it was bought (`judge`), not today: a PMCC's long
-    # is rolled at 90-120 days left, so a bar on today's days would drop it before it ever got there.
+    if _days(se, session) < 0:
+        return None  # an expired short the broker still lists is no position to judge
     return {"long": long, "short": short}
 
 
@@ -387,11 +387,10 @@ def judge(
 
     linked = _link(rows, long_sym, short_sym, held, str(long_raw["expiration"]))
     reconciled = not linked["problems"]
-    # At least `min_long_days` left when it was bought; today's days when the purchase is not in the history.
+    # The long's days left when it was bought (shown, never a gate); today's when the purchase is not in
+    # the history.
     opened = str(_wheel._day(linked["opened_rows"][0])) if linked["opened_rows"] else None
     long_days = _days(str(long_raw["expiration"]), date.fromisoformat(opened) if opened else session)
-    if long_days < int(cfg["recognize"]["min_long_days"]):
-        return None
 
     # ---- the long
     lk, lexp = float(long_raw["strike"]), str(long_raw["expiration"])
@@ -462,12 +461,18 @@ def judge(
     sk, sexp = float(short_raw["strike"]), str(short_raw["expiration"])
     width = sk - lk
     net_ps = None if net_cost is None else net_cost / (MULTIPLIER * qty)
+    passes = None if net_ps is None else width > net_ps + EPS
+    warn = float(cfg["width"]["warn_share"])
+    share = None if net_ps is None or width <= EPS else net_ps / width
     width_view = {
         "width": width,
         "net_cost": net_cost,
         "net_cost_per_share": net_ps,
         "basis": basis,
-        "passes": None if net_ps is None else width > net_ps + EPS,
+        "passes": passes,
+        "cost_share": share,
+        "warn_share": warn,
+        "thin": None if share is None else bool(passes) and share > warn + EPS,
         "pnl_if_assigned": None if net_ps is None else (width - net_ps) * MULTIPLIER * qty,
         "pnl_if_assigned_net": None
         if net_ps is None or basis != "linked orders"

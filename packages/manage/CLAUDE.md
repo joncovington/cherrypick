@@ -56,8 +56,8 @@ of that day, not today's.
   its orders reproduces today's quantities; otherwise the trade falls back to `expiry_chain` (split by
   expiry, a diagonal's short kept with its long) priced from the open legs, labelled `open_legs`.
   Two joins: a short call alone in its chain and the long call the PMCC view links it to, when that
-  link reconciles, are one trade (`grouped_by: "pmcc link"`), its basis every linked order; past the
-  link's 60 days, a lone short call and the one lone long call covering it (later or equal expiry,
+  link reconciles, are one trade (`grouped_by: "pmcc link"`), its basis every linked order; where the
+  link does not reach (no reconciled link), a lone short call and the one lone long call covering it (later or equal expiry,
   lower or equal strike, its quantity), both reconciled chains and no shares on the name, are one
   trade too (`grouped_by: "covered call"`), its basis the two chains.
 - **Credit or debit is decided by the net open cost**, never by the strategy's name.

@@ -304,13 +304,14 @@ it a diagonal, and `roll.diagonal_short` rolls the short at 21 days or 80% captu
 does not make a PMCC: the 2026-10-16 evaluation's TLT (long 80 call Jan 2029, short 85 call
 Jan 2027) has the shape but was entered as a diagonal, and stays one. What it adds:
 
-- **Recognition**: a call diagonal (a long with at least 180 days left, a short at or above its
-  strike with 60 days or fewer, one short per long) is a PMCC only when the long was **entered at
-  0.80 delta or higher**, or when `manage.json` says so (`positions.<SYMBOL>.intent: "pmcc"`). An
+- **Recognition**: a call diagonal (one long, one short of the same size at or above its strike
+  expiring first) is a PMCC only when the long was **entered at 0.70 delta or higher** (the
+  standard definition, user 2026-11-04; it was the method's 0.80, with a 180-day long and a 60-day
+  short, until then), or when `manage.json` says so (`positions.<SYMBOL>.intent: "pmcc"`). An
   intent of `"diagonal"` keeps a trade out whatever its delta. Everything else stays under the
   diagonal rules it has today.
 - **The long**: the view shows its delta at entry (solved from the opening fill and that day's
-  close; the method enters at 0.80 or higher) and its delta today, and flags a long
+  close; the method enters at 0.80 or higher, the view recognises 0.70) and its delta today, and flags a long
   that has drifted below a configured floor as a candidate to roll down. The solver has to carry
   the dividend yield: TLT's long (80 strike, stock at 80.16, ~4.3% yield) is about 0.49 delta at
   its mid, and without the yield the model can't price it at all. Also shown:

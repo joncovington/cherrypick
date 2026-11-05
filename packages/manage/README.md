@@ -37,14 +37,15 @@ the page says so. A net credit is a **credit trade**, a net debit a **debit trad
 Two exceptions join two chains. A short call sold in an order of its own, after the last one sold
 against a long call expired, is a chain of its own, and alone it reads as a naked call. When the PMCC
 view links that short to the long call it is sold against, and the link reconciles (the PMCC shape:
-one long, one short of the same size at or above its strike within 60 days, no shares; its orders
+one long, one short of the same size at or above its strike expiring first, no shares; its orders
 replaying to exactly those two legs), the two are one trade (`grouped_by: "pmcc link"`), whether or
 not the trade is recognised as a PMCC: coverage is a fact about the legs. Its basis is every order the
 link found, the earlier shorts' premiums included. Only a group holding the long or the short alone
 is moved; an unreconciled link or a group with other legs keeps the chains' grouping.
 
-The second covers what the link cannot reach, a short more than 60 days out (`grouped_by: "covered
-call"`). When the name's groups hold exactly one long call alone and exactly one short call alone,
+The second covers what the link cannot reach (`grouped_by: "covered call"`): a long expiring with the
+short, a long covering more contracts than the short, or a link that does not reconcile. (Until
+2026-11-04 it also took every short more than 60 days out, which the PMCC shape then excluded.) When the name's groups hold exactly one long call alone and exactly one short call alone,
 both reconciled order chains, the long expiring on or after the short at or below its strike in at
 least its quantity, and the name holds no shares (shares covering a call are the wheel's), the two
 are one trade. Its basis is the two chains' orders; nothing links the shorts that expired earlier in
@@ -260,12 +261,13 @@ place of the shares. It is written into the evaluation as the account's `pmcc`, 
 whose calls have a PMCC's shape, recognised or not, naming the trades holding its legs. The `pmcc.*`
 rules in the table above read it.
 
-- **Shape.** One long call bought with at least 180 days left (judged on the day it was bought: it is
-  rolled at 90-120 days left, and a bar on today's days would drop it before then), one short call of
-  the same size at or above its strike with 60 days or fewer, no shares. The 10-16 TLT diagonal
-  (short Jan 2027) is not one: its short is too far out.
-- **Recognition.** Shape alone does not make a PMCC. The long must have been entered at 0.80 delta or
-  more, solved from its opening fill and that day's close (snapshot v13's `underlying_history`, from
+- **Shape.** One long call and one short call of the same size, the short expiring first at or above
+  the long's strike, no shares. Neither leg's days left decides it (the standard definition, user
+  2026-11-04: the short's expiry and delta may vary). Until then a long bought with under 180 days
+  left or a short over 60 days out kept a diagonal out of the view; a long running short of time is
+  now the roll flag's (`roll_long`, 120 days).
+- **Recognition.** Shape alone does not make a PMCC. The long must have been entered at 0.70 delta or
+  more (0.80, the method's own floor, until 2026-11-04), solved from its opening fill and that day's close (snapshot v13's `underlying_history`, from
   the technicals history store) with the dividend yield carried: the dividends gone ex in the year
   before, over the close. Without the yield a long-dated call on a high-yield fund reads as all
   intrinsic, a delta of 1. A delta the snapshot cannot solve (no close for the day yet, a split since,
@@ -496,7 +498,7 @@ are the comparison. A book that keeps far less than it collects is paying for it
 - **Earnings dates are the broker's expected dates**, which can move.
 - **SPX 0DTE is left out** (`exclude.zero_dte_underlyings`): it is the flies live loop's own book,
   managed by that loop and cash-settled at the close.
-- **A covered call joined past 60 days counts only its two chains.** Earlier shorts sold in orders of
+- **A covered call the PMCC link does not reach counts only its two chains.** Earlier shorts sold in orders of
   their own and expired are not in its basis, and an ambiguous pairing (two lone longs or shorts on
   one name) is left split.
 - **A PMCC between shorts is not shown.** With no short open the long is a long call and the view

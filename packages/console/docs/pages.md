@@ -716,7 +716,9 @@ live-switch rule runs: the paper module has no live gate, the features reply nam
 tab would otherwise vanish (`visibility.test.ts`, shown to fail with the check removed). The reader
 passes `pmcc` and each trade's `pmcc` note (or its `error`) through, nulls kept; an evaluation from
 before the view has `pmcc: null` and says so, and an empty one says how a PMCC is recognised (a long
-call entered at 0.80 delta or more, or `intent: "pmcc"`). A card shows the long (delta at entry or
+call entered at 0.70 delta or more, or `intent: "pmcc"`; an evaluation from before 2026-11-04
+also names its day limits). The width card says "passes, thin" where manage flags a passing cost over
+three quarters of the width, with the cost's share beside it. A card shows the long (delta at entry or
 "delta at entry unknown" with manage's reason, today's delta, extrinsic share, days left, the roll
 flag), the width check with the P&L if assigned gross and net of fees, the long's net cost after
 premiums, the short's check (band or "band not in the snapshot", assignment exposure, N(d2),

@@ -78,6 +78,9 @@ function position(over: Partial<ManagePmccPosition> = {}): ManagePmccPosition {
       netCostPerShare: 7.62,
       basis: "linked orders",
       passes: false,
+      costShare: 1.524,
+      warnShare: 0.75,
+      thin: false,
       pnlIfAssigned: -262,
       pnlIfAssignedNet: -265.3,
       assumes: "the long exercised to deliver the shares; selling it instead also keeps its time value",
@@ -288,7 +291,27 @@ describe("the pmcc tab", () => {
     expect(out2).not.toMatch(/ not exposed /);
   });
 
-  it("names every recognition limit from the evaluation's own ruleset, and no number without one", () => {
+  it("says a pass manage flags thin, with the cost's share of the width, and only on manage's flag", () => {
+    const p = position();
+    p.width = { ...p.width, width: 15, netCostPerShare: 12.6, costShare: 0.84, passes: true, thin: true };
+    const out = render(account(view({ positions: [p] })));
+    expect(out).toMatch(/width check passes, thin /);
+    expect(out).toContain("cost as a share of the width 84% (thin over 75%)");
+    // The same 84%, not flagged by manage: a plain pass.
+    p.width = { ...p.width, thin: false };
+    const plain = render(account(view({ positions: [p] })));
+    expect(plain).toMatch(/width check passes /);
+    expect(plain).not.toMatch(/passes, thin/);
+    // An evaluation from before the flag: no share row, a plain chip.
+    p.width = { ...p.width, costShare: null, warnShare: null, thin: null };
+    expect(render(account(view({ positions: [p] })))).not.toContain("cost as a share of the width");
+  });
+
+  it("names the standard definition's one limit, and an older evaluation's day limits in its own numbers", () => {
+    const now = render(account(view({ positions: [], recognize: { entryMinDelta: 0.7, minLongDays: null, maxShortDays: null } })));
+    expect(now).toContain("a long call entered at 0.70 delta or more (or a name given intent");
+    expect(now).toContain("one shorter-dated call of the same size sold against it, at or above");
+    expect(now).not.toMatch(/\d+ days/);
     const empty = render(account(view({ positions: [], recognize: { entryMinDelta: 0.8, minLongDays: 180, maxShortDays: 60 } })));
     expect(empty).toContain("at least 180 days left when it was bought");
     expect(empty).toContain("at most 60 days left");

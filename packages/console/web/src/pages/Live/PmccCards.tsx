@@ -38,12 +38,13 @@ export const NO_PMCC = "no PMCC: one is recognised when";
  *  judged by. */
 export function noPmccText(rc: ManagePmccRecognize | null | undefined): string {
   const delta = rc?.entryMinDelta != null ? rc.entryMinDelta.toFixed(2) : "the entry floor";
-  const long = rc?.minLongDays != null ? `at least ${rc.minLongDays} days` : "enough days";
-  const short = rc?.maxShortDays != null ? `at most ${rc.maxShortDays} days` : "few enough days";
+  // An evaluation from before 2026-11-04 was also judged by days left; say so in its own numbers.
+  const long = rc?.minLongDays != null ? `, with at least ${rc.minLongDays} days left when it was bought` : "";
+  const short = rc?.maxShortDays != null ? ` with at most ${rc.maxShortDays} days left` : "";
   return (
-    `${NO_PMCC} a long call entered at ${delta} delta or more, with ${long} left when it was ` +
-    `bought (or a name given intent: "pmcc" in the ruleset), has one shorter-dated call sold against it with ${short} ` +
-    "left, at or above the long's strike, and no shares on the name"
+    `${NO_PMCC} a long call entered at ${delta} delta or more${long} (or a name given intent: "pmcc" in ` +
+    `the ruleset), has one shorter-dated call of the same size sold against it${short}, at or above the ` +
+    "long's strike, and no shares on the name"
   );
 }
 
@@ -55,10 +56,13 @@ function delta(v: number | null): string {
   return v === null ? "—" : v.toFixed(2);
 }
 
-/** Manage's width verdict. Null is "no cost to judge it against", never a pass. */
-export function WidthChip({ passes }: { passes: boolean | null }) {
+/** Manage's width verdict. Null is "no cost to judge it against", never a pass. A pass manage flags
+ *  thin (the cost over three quarters of the width) says so; the flag is manage's, never worked out
+ *  here from the figures. */
+export function WidthChip({ passes, thin = null }: { passes: boolean | null; thin?: boolean | null }) {
   if (passes === null) return <span className="chip muted">unknown</span>;
-  return passes ? <span className="chip">passes</span> : <span className="chip chip-warn">fails</span>;
+  if (!passes) return <span className="chip chip-warn">fails</span>;
+  return thin ? <span className="chip chip-warn">passes, thin</span> : <span className="chip">passes</span>;
 }
 
 /** Manage's early-assignment flag. Null is "not judged" (no mark), never "not exposed". */
@@ -121,11 +125,14 @@ function WidthCard({ p }: { p: ManagePmccPosition }) {
   const w = p.width;
   const openLegs = w.basis === "open_legs";
   return (
-    <DetailCard title="width check" aside={<WidthChip passes={w.passes} />}>
+    <DetailCard title="width check" aside={<WidthChip passes={w.passes} thin={w.thin} />}>
       <Kv
         rows={[
           ["strike width", share(w.width)],
           ["long's net cost after premiums", `${fmtMoney(w.netCost)} (${share(w.netCostPerShare)})`],
+          ...(w.costShare === null
+            ? []
+            : ([["cost as a share of the width", `${pct(w.costShare)}${w.warnShare === null ? "" : ` (thin over ${pct(w.warnShare)})`}`]] as [string, string][])),
           ["P&L if assigned, gross", <Money key="g" v={w.pnlIfAssigned} />],
           ["P&L if assigned, net of fees", w.pnlIfAssignedNet === null ? (openLegs ? "n/r: the orders do not reconcile" : "—") : <Money key="n" v={w.pnlIfAssignedNet} />],
           ["cost from", openLegs ? "the open legs' prices (earlier shorts not counted)" : (w.basis ?? "—")],
