@@ -8123,7 +8123,8 @@ select.text-input {
   background: var(--accent);
 }
 
-.lim-fill.is-near {
+.lim-fill.is-near,
+.lim-fill.is-under {
   background: var(--verdict-fail);
 }
 

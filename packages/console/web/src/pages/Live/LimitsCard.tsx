@@ -12,6 +12,7 @@ import { fmtCash } from "../../lib/format";
 const STATE_CHIP: Record<string, string> = {
   over: "chip chip-bad",
   near: "chip chip-warn",
+  under: "chip chip-warn",
   within: "chip",
   unknown: "chip muted",
   "no limit": "chip muted",

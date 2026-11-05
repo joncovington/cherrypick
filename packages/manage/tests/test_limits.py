@@ -108,6 +108,14 @@ def test_a_leg_with_no_mark_makes_the_day_unknown_never_zero():
     assert "has no mark" in out["day_loss"]["why"] and row(out, "day_loss")["state"] == "unknown"
 
 
+def test_below_a_floor_is_under_not_over():
+    # Theta's band has a floor above zero: too little theta is `under`. A band through zero (delta)
+    # and the day's loss face a negative edge, where past it is still `over`.
+    out = read(book={**BOOK, "theta_ex_front": 6.0})
+    assert row(out, "theta")["state"] == "under"
+    assert row(out, "delta")["state"] == "over"
+
+
 def test_no_band_and_no_limit_is_unknown_or_no_limit():
     out = read(book={**BOOK, "bands": {}, "bwd": None})
     assert row(out, "delta")["state"] == "unknown"
