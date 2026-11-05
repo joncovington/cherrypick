@@ -23,6 +23,7 @@ __all__ = [
     "implied_vol",
     "intrinsic",
     "leg_value_at",
+    "outliving_unpriced",
     "payoff_profile",
     "price",
 ]
@@ -65,6 +66,15 @@ def leg_value_at(leg: dict[str, Any], spot: float, years_left: float, rate: floa
     else:
         unit = intrinsic(spot, float(leg["strike"]), leg["right"])
     return qty * MULTIPLIER * unit
+
+
+def outliving_unpriced(legs: list[dict[str, Any]], horizon: str) -> bool:
+    """Whether an option leg that outlives the `horizon` expiry has no IV.
+
+    Such a leg is valued at the horizon at its intrinsic, its remaining time thrown away: a long-dated
+    call under a near short read a best case of exactly the strike width. A profile over it is wrong, so
+    callers model none."""
+    return any(leg.get("right") and leg.get("iv") is None and leg["expiration"] > horizon for leg in legs)
 
 
 def payoff_profile(

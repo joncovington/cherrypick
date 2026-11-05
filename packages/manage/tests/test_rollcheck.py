@@ -60,6 +60,26 @@ def test_glds_october_roll_is_flagged_as_risky():
     assert out["max_loss_after"] > out["max_loss_before"]
 
 
+def test_no_max_loss_is_modelled_over_a_long_with_no_iv():
+    # A long call whose mid sits under the no-dividend floor has no IV. Valued at intrinsic at the short's
+    # expiry it lost its remaining time, and the max loss before and after the roll was a wrong number.
+    held = run(
+        [leg(1, "C", 100, "2028-12-15", 5.50, 6.00), leg(-1, "C", 106, "2026-12-18", 0.60, 0.80)], spot=100.3
+    )
+    assert held["legs"][0]["iv"] is None
+    out = check(held, ["-1 2026-12-18 106C @0.80"], ["-1 2027-01-15 107C @1.00"], spot=100.3, net_liq=15000)
+    assert out["max_loss_before"] is None and out["max_loss_after"] is None
+    assert not any("can lose" in p or "budget" in p for p in out["problems"])
+    assert "max loss not modelled: a leg outliving the nearest expiry has no IV" in out["notes"]
+    # A long opened by the roll at a price under the floor is read the same way.
+    short = run([leg(-1, "C", 106, "2026-12-18", 0.60, 0.80)], spot=100.3)
+    out = check(short, [], ["+1 2028-12-15 100C @6.00"], spot=100.3)
+    assert (
+        out["max_loss_after"] is None
+        and "after the roll the modelled loss is unbounded" not in out["problems"]
+    )
+
+
 def test_a_debit_roll_is_rejected():
     t = run([leg(-1, "P", 16, "2026-11-20", 1.01, 1.445)], spot=15.225)
     out = check(t, ["-1 2026-11-20 16P @1.50"], ["-1 2026-12-18 14P @0.80"], spot=15.225)
