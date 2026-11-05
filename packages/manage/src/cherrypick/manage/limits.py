@@ -14,9 +14,10 @@ block, each beside what the book holds now.
 The candidate cap is `portfolio.candidates.notional_per_name_pct`, by the account's kind.
 
 Each row says whose limit it is (`yours`, `guidance band`, `candidate cap`, or `none`) and its state:
-`over` past it, `near` within the last `near_share` of the way to it, `within`, or `unknown` with no
-figure. The day's loss is an alert, not a band: `crossed` when the loss reaches it, which the
-orchestrator posts once a session. Advice only: a limit stops nothing and fires no rule.
+`over` past it, `under` below a floor above zero (theta's band), `near` within the last `near_share`
+of the way to it, `within`, or `unknown` with no figure. The day's loss is an alert, not a band:
+`crossed` when the loss reaches it, which the orchestrator posts once a session. Advice only: a limit
+stops nothing and fires no rule.
 """
 
 from __future__ import annotations
@@ -37,7 +38,10 @@ def _f(v: Any) -> float | None:
 def _state(value: float | None, low: float | None, high: float | None, near: float) -> str:
     if value is None or (low is None and high is None):
         return "unknown" if value is None else "within"
-    if (low is not None and value < low) or (high is not None and value > high):
+    if low is not None and value < low:
+        # Below a floor above zero (theta's band) is too little, not too much.
+        return "under" if low > 0 else "over"
+    if high is not None and value > high:
         return "over"
     # Near: in the last (1 - near) of the way from zero (or the band's middle) to the edge it faces.
     if low is not None and high is not None and low < 0 < high:

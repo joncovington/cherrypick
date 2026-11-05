@@ -514,8 +514,9 @@ block: beta-weighted delta (benchmark shares, +/-), dollar delta (+/-), theta a 
 theta band's figure without the front legs), vega (+/-), buying power used over net liq, and one
 name's worst case from open over net liq. A blank (null) limit falls back to the guidance band where
 there is one (delta, theta, buying power) or the candidate cap (one name, by the account's kind), and
-each row says whose limit it is; dollar delta and vega have none. A row is `over` past its limit,
-`near` past `near_share` (0.8) of the way, `within`, or `unknown` with no figure. The day's P&L (each
+each row says whose limit it is; dollar delta and vega have none. A row is `over` past its limit
+(`under` below a floor above zero, as theta's band has), `near` past `near_share` (0.8) of the way,
+`within`, or `unknown` with no figure. The day's P&L (each
 leg's mark less its previous close) is held against `day_loss_alert` dollars, else
 `day_loss_alert_pct` (2%) of net liq; a leg with no mark makes it unknown, never zero. Advice only: a
 limit stops nothing. The orchestrator posts the day's loss once a session when it crosses

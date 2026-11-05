@@ -807,7 +807,7 @@ export interface ManageLimitRow {
   low: number | null;
   high: number | null;
   source: string;
-  /** "within", "near", "over", "unknown" or "no limit". */
+  /** "within", "near", "over", "under" (below a floor above zero), "unknown" or "no limit". */
   state: string;
 }
 
