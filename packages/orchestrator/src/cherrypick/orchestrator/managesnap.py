@@ -778,6 +778,16 @@ def _store_spellings(name: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys((name, name.replace("/", "."), name.replace(".", "/"))))
 
 
+def _option_names(positions: dict[str, Any]) -> set[str]:
+    """Every underlying holding an option leg, in every account."""
+    return {
+        str(u.get("underlying") or "").upper()
+        for account in positions.get("accounts") or []
+        for u in account.get("underlyings") or []
+        if any(leg.get("right") in ("C", "P") for leg in u.get("legs") or [])
+    } - {""}
+
+
 def _long_call_openings(positions: dict[str, Any], history: dict[str, list]) -> dict[str, set[str]]:
     """{underlying: the days each long call held was bought to open}, from the trade history."""
     held: dict[str, set[str]] = {}
@@ -805,11 +815,13 @@ def underlying_history(
 ) -> tuple[dict[str, Any] | None, str | None]:
     """For each name holding a long call: its close on each day a held long call was bought to open,
     its dividends from a year before the earliest of those days to the session, and its splits since
-    that day, from the history store. Read-only; the store's own spelling (BRK.B) is tried after the
-    broker's (BRK/B)."""
+    that day, from the history store. Every other name holding an option gets its dividends of the
+    last year and no closes (2026-11-04), so manage's payoff can carry each name's yield rather than
+    assume none. Read-only; the store's own spelling (BRK.B) is tried after the broker's (BRK/B)."""
     from cherrypick.core.db import connect_ro
 
-    wanted = _long_call_openings(positions, history)
+    wanted: dict[str, set[str]] = {name: set() for name in _option_names(positions)}
+    wanted.update(_long_call_openings(positions, history))
     if not wanted:
         return {}, None
     path = history_db() if db is None else db
@@ -822,18 +834,22 @@ def underlying_history(
     out: dict[str, Any] = {}
     try:
         for name, days in sorted(wanted.items()):
-            first = min(days)
+            first = min(days) if days else session.isoformat()
             since = (date.fromisoformat(first) - timedelta(days=366)).isoformat()
             for store_sym in _store_spellings(name):
-                closes = {
-                    r["date"]: r["close"]
-                    for r in conn.execute(
-                        "SELECT date, close FROM bars WHERE symbol = ? AND date IN "
-                        f"({','.join('?' * len(days))})",
-                        (store_sym, *sorted(days)),
-                    )
-                    if r["close"] is not None
-                }
+                closes = (
+                    {
+                        r["date"]: r["close"]
+                        for r in conn.execute(
+                            "SELECT date, close FROM bars WHERE symbol = ? AND date IN "
+                            f"({','.join('?' * len(days))})",
+                            (store_sym, *sorted(days)),
+                        )
+                        if r["close"] is not None
+                    }
+                    if days
+                    else {}
+                )
                 through = conn.execute(
                     "SELECT MAX(date) FROM bars WHERE symbol = ?", (store_sym,)
                 ).fetchone()[0]

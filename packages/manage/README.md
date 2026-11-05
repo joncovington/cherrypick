@@ -471,6 +471,19 @@ orchestrator does not post the list (needs-a-look still posts). Before 09:30 is 
 evaluated leg also carries the broker's previous close (`prev_close`), from which the console marks
 the day's P&L live.
 
+## The payoff
+
+`payoff.py` (2026-11-04) draws each held name's P&L across its price: the legs' model value less
+their cost, whole position, on today, 7 and 14 days on (each before the nearest expiry) and at the
+nearest expiry, where the legs expiring then are worth intrinsic and later ones the model's. Each
+option leg's vol is solved from its mid with the name's dividend yield (the last year's dividends
+over today's price, from the snapshot's history-store read; none on record is said, and 0 used):
+Bjerksund-Stensland 2002 (`core.american`, early exercise) for an equity or ETF option, Black-Scholes
+for a cash-settled index root. So today's curve passes through today's P&L at today's price. A leg
+no vol prices nulls the dated curves rather than drawing them on a guess; the expiry curve needs no
+vol unless a later leg does. Breakevens are where the nearest-expiry curve crosses zero. A picture,
+not a rule.
+
 ## Needs a look
 
 `attention.py` (2026-11-04) measures every short option held against its strike: its distance out of

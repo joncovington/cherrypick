@@ -56,6 +56,8 @@ import type {
   ManageLedgerWindow,
   ManageAttention,
   ManageAttentionLeg,
+  ManagePayoff,
+  ManagePayoffName,
 } from "@console/shared";
 import { LEDGER_WINDOWS } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
@@ -1089,6 +1091,53 @@ function account(v: unknown, rules: Record<string, unknown>, lev: Leveraged = NO
     premium: premium(a["premium"]),
     ledger: ledger(a["ledger"]),
     attention: attention(a["attention"]),
+    payoff: payoff(a["payoff"]),
+  };
+}
+
+/** A list of numbers, or null when any entry is not one: a point is never filled in as zero. */
+function allNums(v: unknown): number[] | null {
+  const out = arr(v).map((x) => num(x));
+  return out.every((x): x is number => x !== null) ? out : null;
+}
+
+/** Each held name's payoff, passed through; null when the evaluation carries none (before 2026-11-04).
+ *  A curve with an unreadable point reads as not drawn, as manage writes a curve it cannot draw. */
+function payoff(v: unknown): ManagePayoff | null {
+  if (v === null || v === undefined) return null;
+  return {
+    names: arr(rec(v)["names"]).map((raw): ManagePayoffName => {
+      const n = rec(raw);
+      const grid = allNums(n["grid"]) ?? [];
+      return {
+        underlying: str(n["underlying"]) ?? "?",
+        spot: num(n["spot"]),
+        model: str(n["model"]) ?? "?",
+        divYield: num(n["div_yield"]),
+        yieldSource: str(n["yield_source"]),
+        why: str(n["why"]),
+        rate: num(n["rate"]),
+        cost: num(n["cost"]),
+        pnlNow: num(n["pnl_now"]),
+        grid,
+        curves: arr(n["curves"]).map((c) => {
+          const x = rec(c);
+          const pnl = allNums(x["pnl"]);
+          return {
+            label: str(x["label"]) ?? "",
+            date: str(x["date"]) ?? "",
+            days: num(x["days"]) ?? 0,
+            expiry: x["expiry"] === true,
+            pnl: pnl !== null && pnl.length === grid.length && grid.length > 0 ? pnl : null,
+          };
+        }),
+        breakevens: allNums(n["breakevens"]) ?? [],
+        legs: arr(n["legs"]).map((l) => {
+          const x = rec(l);
+          return { leg: str(x["leg"]) ?? "?", quantity: num(x["quantity"]), mid: num(x["mid"]), iv: num(x["iv"]) };
+        }),
+      };
+    }),
   };
 }
 

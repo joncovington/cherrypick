@@ -790,6 +790,41 @@ export interface ManageAccount {
   ledger: ManageLedger | null;
   /** Needs a look (2026-11-04); null on an evaluation from before it. */
   attention: ManageAttention | null;
+  /** Each held name's payoff (2026-11-04); null on an evaluation from before it. */
+  payoff: ManagePayoff | null;
+}
+
+/** One P&L curve across the grid: today, a later date, or the nearest expiry. Null P&L: a leg no
+ *  vol prices, so the dated curve is not drawn. */
+export interface ManagePayoffCurve {
+  label: string;
+  date: string;
+  days: number;
+  expiry: boolean;
+  pnl: number[] | null;
+}
+
+/** One held name's payoff (packages/manage `payoff.py`): whole-position P&L, signed. */
+export interface ManagePayoffName {
+  underlying: string;
+  spot: number | null;
+  /** "american" (Bjerksund-Stensland 2002) or "european" (a cash-settled index). */
+  model: string;
+  divYield: number | null;
+  yieldSource: string | null;
+  /** Why there is no payoff (no price, no option leg, a leg with no cost); null when there is one. */
+  why: string | null;
+  rate: number | null;
+  cost: number | null;
+  pnlNow: number | null;
+  grid: number[];
+  curves: ManagePayoffCurve[];
+  breakevens: number[];
+  legs: Array<{ leg: string; quantity: number | null; mid: number | null; iv: number | null }>;
+}
+
+export interface ManagePayoff {
+  names: ManagePayoffName[];
 }
 
 /** One option leg held, against its strike (packages/manage `attention.py`). */

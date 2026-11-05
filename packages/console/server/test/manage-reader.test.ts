@@ -145,6 +145,36 @@ describe("readManage", () => {
     expect(readManage(config).accounts[0]!.ledger).toBeNull();
   });
 
+  it("passes the payoff through, a curve with a bad point not drawn, and null before it existed", () => {
+    const doc = evalDoc("2026-11-04");
+    const [account] = doc["accounts"] as Array<Record<string, unknown>>;
+    account!["payoff"] = {
+      names: [
+        {
+          underlying: "AAA", spot: 50.0, model: "american", div_yield: null, yield_source: "no dividend record: none assumed",
+          why: null, rate: 0.04, cost: -120.0, pnl_now: 30.0, grid: [40.0, 50.0, 60.0],
+          curves: [
+            { label: "today", date: "2026-11-04", days: 0, expiry: false, pnl: [-700.0, null, 100.0] },
+            { label: "at expiry 2026-12-18", date: "2026-12-18", days: 44, expiry: true, pnl: [-680.0, 120.0, 120.0] },
+          ],
+          breakevens: [46.8],
+          legs: [{ leg: "-1 2026-12-18 48P", quantity: -1.0, mid: 0.9, iv: 0.29 }],
+        },
+        { underlying: "BBB", spot: null, model: "american", div_yield: null, yield_source: null, why: "no price for the underlying" },
+      ],
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-04.json"), JSON.stringify(doc));
+    const p = readManage(config).accounts[0]!.payoff!;
+    const [aaa, bbb] = p.names;
+    expect(aaa).toMatchObject({ underlying: "AAA", model: "american", pnlNow: 30, cost: -120, grid: [40, 50, 60], breakevens: [46.8] });
+    expect(aaa!.curves[0]!.pnl).toBeNull(); // a null point: never drawn as zero
+    expect(aaa!.curves[1]).toMatchObject({ expiry: true, pnl: [-680, 120, 120] });
+    expect(aaa!.legs[0]).toEqual({ leg: "-1 2026-12-18 48P", quantity: -1, mid: 0.9, iv: 0.29 });
+    expect(bbb).toMatchObject({ why: "no price for the underlying", grid: [], curves: [] });
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-04.json"), JSON.stringify(evalDoc("2026-11-04")));
+    expect(readManage(config).accounts[0]!.payoff).toBeNull();
+  });
+
   it("passes needs-a-look through, nulls kept, and null before it existed", () => {
     const doc = evalDoc("2026-11-04");
     const [account] = doc["accounts"] as Array<Record<string, unknown>>;
