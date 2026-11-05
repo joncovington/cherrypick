@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import type { ManageTrade } from "@console/shared";
 import { MemoryRouter } from "react-router-dom";
 import { TradeDetail } from "../src/pages/Live/ManagePage";
-import { PositionCard, PositionCards, SpotLine, chainLegs, chainSteps, sortByPnl } from "../src/pages/Live/PositionCards";
+import { PositionCard, PositionCards, SpotLine, chainLegs, chainSteps, sessionClose, sortByPnl } from "../src/pages/Live/PositionCards";
 
 /**
  * The held-for-call chip and "waits for call" are packages/manage's `earnings_trade` verdict, read and
@@ -141,6 +141,24 @@ describe("the positions cards", () => {
     expect(text(cached)).toBe("49.00");
     expect(cached).toContain("muted");
     expect(renderToString(<SpotLine q={undefined} evaluated={null} />)).toBe("");
+  });
+
+  it("out of the session shows the last session's close from its daily candle, with its change on the one before", () => {
+    // Daily bars start at midnight UTC of their trading date.
+    const day = (d: string, c: number) => ({ t: Date.parse(`${d}T00:00:00Z`) / 1000, o: c, h: c, l: c, c, v: 0 });
+    const bars = [day("2026-11-02", 98), day("2026-11-03", 100), day("2026-11-04", 102.5)];
+    // 01:30 ET on the 5th, before the open: the 4th is the last session.
+    const pre = sessionClose([...bars, day("2026-11-05", 103)], new Date("2026-11-05T06:30:00Z"));
+    expect(pre).toEqual({ date: "2026-11-04", close: 102.5, change: 2.5, changePct: 2.5 });
+    // 17:00 ET on the 4th, after the close: today's bar is the session just ended.
+    expect(sessionClose(bars, new Date("2026-11-04T22:00:00Z"))?.date).toBe("2026-11-04");
+    // 08:00 ET on the 4th: the 4th's pre-market bar is not a session; the 3rd is.
+    expect(sessionClose(bars, new Date("2026-11-04T13:00:00Z"))).toEqual({ date: "2026-11-03", close: 100, change: 2, changePct: (2 / 98) * 100 });
+    expect(sessionClose([day("2026-11-04", 102.5)], new Date("2026-11-05T06:30:00Z"))).toEqual({ date: "2026-11-04", close: 102.5, change: null, changePct: null });
+    expect(sessionClose([], new Date())).toBeNull();
+    // The closed line wins over a live after-hours price, and says it is the close.
+    const live = { last: 101, prevClose: 102.5, source: "dxlink" as const, direction: "down" as const, ts: 1 };
+    expect(text(renderToString(<SpotLine q={live} evaluated={99} closed={pre} />))).toBe("102.50 +2.50 +2.50% close");
   });
 
   it("puts each leg on its own line, a buy green and a sell red, the side that set the net first", () => {

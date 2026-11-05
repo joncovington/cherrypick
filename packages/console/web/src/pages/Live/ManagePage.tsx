@@ -419,10 +419,12 @@ export function AccountTiles({ a, oversize }: { a: ManageAccount; oversize: numb
 
 /** Positions: a card per trade with its broker order chain (PositionCards), sorted by P&L. */
 function PositionsAccount({ a, loading, oversize }: { a: ManageAccount; loading: boolean; oversize: number | null }) {
+  // The watchdog's word on the session: out of it, each card shows the last session's close.
+  const inSession = useOverview().data?.watchdog?.inSession ?? true;
   return (
     <>
       <AccountTiles a={a} oversize={oversize} />
-      <PositionCards trades={a.trades} loading={loading} detail={(t) => <TradeDetail t={t} />} />
+      <PositionCards trades={a.trades} loading={loading} inSession={inSession} detail={(t) => <TradeDetail t={t} />} />
       {a.excluded.length > 0 && (
         <p className="muted" style={{ margin: 0 }}>
           not evaluated: {a.excluded.map((e) => `${e.underlying} (${e.legs} leg${e.legs === 1 ? "" : "s"}, ${e.reason})`).join("; ")}

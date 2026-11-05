@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { ManageChainOrder, ManageTrade } from "@console/shared";
+import type { CandleBar, ManageChainOrder, ManageTrade } from "@console/shared";
+import { useCandles } from "../../lib/useCandles";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
 import { ACTION_LABEL, ActionChip, Kv, Money, tone } from "./manageParts";
@@ -179,14 +180,87 @@ function PnlFigure({ t }: { t: ManageTrade }) {
   );
 }
 
+/** The last completed session's daily candle: its close, and its change on the session before. */
+export interface SessionClose {
+  date: string;
+  close: number;
+  change: number | null;
+  changePct: number | null;
+}
+
+function etClock(now: Date): { date: string; minutes: number } {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(now)
+      .map((p) => [p.type, p.value]),
+  );
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, minutes: Number(parts.hour) * 60 + Number(parts.minute) };
+}
+
 /**
- * The underlying's price beside its symbol: the live feed's price with its change and change % on the
- * day, against the feed's prior close, by the top bar's own rule (`chipState`). Without a live price it
- * is the evaluation's spot, muted, with no change: never a change between numbers from two sources.
+ * The newest completed session among daily candles (each starts at midnight UTC of its trading date).
+ * Before 09:30 ET a bar dated today is the pre-market forming, never a session, so it is skipped; from
+ * the close on, today's bar is the session just ended (a half day included).
  */
-export function SpotLine({ q, evaluated }: { q: QuoteState | undefined; evaluated: number | null }) {
+export function sessionClose(bars: CandleBar[], now: Date): SessionClose | null {
+  const et = etClock(now);
+  const done = bars
+    .map((b) => ({ date: new Date(b.t * 1000).toISOString().slice(0, 10), c: b.c, t: b.t }))
+    .filter((b) => b.date < et.date || (b.date === et.date && et.minutes >= 9 * 60 + 30))
+    .sort((a, b) => a.t - b.t);
+  const last = done[done.length - 1];
+  if (last === undefined) return null;
+  const prev = done[done.length - 2];
+  const change = prev === undefined ? null : last.c - prev.c;
+  return {
+    date: last.date,
+    close: last.c,
+    change,
+    changePct: change !== null && prev !== undefined && prev.c !== 0 ? (change / prev.c) * 100 : null,
+  };
+}
+
+/**
+ * The underlying's price beside its symbol. In the session: the live feed's price with its change and
+ * change % on the day, against the feed's prior close, by the top bar's own rule (`chipState`). Out of
+ * it: the last session's close from its daily candle, with its change on the session before. Without
+ * either it is the evaluation's spot, muted, with no change: never a change between numbers from two
+ * sources.
+ */
+export function SpotLine({
+  q,
+  evaluated,
+  closed = null,
+}: {
+  q: QuoteState | undefined;
+  evaluated: number | null;
+  /** Out of the session: the last session's close; null in the session or before the bars arrive. */
+  closed?: SessionClose | null;
+}) {
   const { price, change, changePct } = chipState(q);
   const live = q?.source === "dxlink" && price !== undefined;
+  if (closed !== null) {
+    return (
+      <span className="pos-card-spot" title={`the ${closed.date} session's close, from its daily candle`}>
+        {formatPrice("", closed.close)}
+        {closed.change !== null && closed.changePct !== null ? (
+          <span className={closed.change > 0 ? "pnl-pos" : closed.change < 0 ? "pnl-neg" : "muted"}>
+            {" "}
+            {formatChange("", closed.change)} {formatPct(closed.changePct)}
+          </span>
+        ) : null}
+        <span className="muted"> close</span>
+      </span>
+    );
+  }
   if (!live) {
     return evaluated === null ? null : (
       <span className="pos-card-spot muted" title="the evaluation's spot; no live price">
@@ -207,28 +281,31 @@ export function SpotLine({ q, evaluated }: { q: QuoteState | undefined; evaluate
   );
 }
 
-/** The card's spot, live on the quote socket, flashing on each tick as the top bar's chips do. */
-function CardSpot({ t }: { t: ManageTrade }) {
+/** The card's spot, live on the quote socket and flashing on each tick as the top bar's chips do; out
+ *  of the session (the watchdog's word), the last session's daily close. */
+function CardSpot({ t, inSession }: { t: ManageTrade; inSession: boolean }) {
   const q = useQuote(t.underlying);
+  const bars = useCandles(inSession ? "" : t.underlying, "1d");
+  const closed = inSession ? null : sessionClose(bars, new Date());
   const ref = useRef<HTMLSpanElement>(null);
   const prevTs = useRef(0);
   useEffect(() => {
     if (q === undefined || q.ts === prevTs.current) return;
     prevTs.current = q.ts;
     const el = ref.current;
-    if (el === null || q.direction === null || q.source !== "dxlink") return;
+    if (el === null || q.direction === null || q.source !== "dxlink" || !inSession) return;
     el.classList.remove("flash-up", "flash-down");
     void el.offsetWidth; // restart the animation
     el.classList.add(q.direction === "up" ? "flash-up" : "flash-down");
-  }, [q]);
+  }, [q, inSession]);
   return (
     <span ref={ref} className="pos-card-spot-wrap">
-      <SpotLine q={q} evaluated={t.spot} />
+      <SpotLine q={q} evaluated={t.spot} closed={closed} />
     </span>
   );
 }
 
-export function PositionCard({ t, onOpen }: { t: ManageTrade; onOpen: () => void }) {
+export function PositionCard({ t, onOpen, inSession = true }: { t: ManageTrade; onOpen: () => void; inSession?: boolean }) {
   const live = useLiveMarks()?.trades.get(t.tradeId);
   const livePnl = live ? (live.pnlNet ?? live.pnlGross) : null;
   const losing = t.pnlNet !== null && t.pnlNet < 0;
@@ -241,7 +318,7 @@ export function PositionCard({ t, onOpen }: { t: ManageTrade; onOpen: () => void
         <span className="pos-card-titles">
           <span className="pos-card-sym-line">
             <span className="pos-card-sym">{t.tradeId}</span>
-            <CardSpot t={t} />
+            <CardSpot t={t} inSession={inSession} />
           </span>
           <span className="pos-card-shape">{[t.shape, t.intent].filter(Boolean).join(" · ") || "—"}</span>
         </span>
@@ -349,7 +426,18 @@ function TradeDialog({
 }
 
 /** The board: filter and sort chips, then a card per trade. `detail` renders the evaluation tab. */
-export function PositionCards({ trades, loading, detail }: { trades: ManageTrade[]; loading: boolean; detail: (t: ManageTrade) => ReactNode }) {
+export function PositionCards({
+  trades,
+  loading,
+  detail,
+  inSession = true,
+}: {
+  trades: ManageTrade[];
+  loading: boolean;
+  detail: (t: ManageTrade) => ReactNode;
+  /** The watchdog's word on the session; out of it each card shows the last session's close. */
+  inSession?: boolean;
+}) {
   const [params, setParams] = useSearchParams();
   const lightbox = useOpenParam("trade");
   const order: PnlOrder = params.get("pnl") === "asc" ? "asc" : "desc";
@@ -399,7 +487,7 @@ export function PositionCards({ trades, loading, detail }: { trades: ManageTrade
       ) : (
         <div className="pos-cards">
           {shown.map((t) => (
-            <PositionCard key={t.tradeId} t={t} onOpen={() => lightbox.show(t.tradeId)} />
+            <PositionCard key={t.tradeId} t={t} inSession={inSession} onOpen={() => lightbox.show(t.tradeId)} />
           ))}
         </div>
       )}
