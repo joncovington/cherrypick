@@ -43,7 +43,26 @@ export interface ChainStep {
   fees: number | null;
   /** The chain's signed cash summed to this order; null once any earlier order's cash is unknown. */
   total: number | null;
-  legs: string[];
+  legs: ChainLeg[];
+}
+
+/** One leg of an order: its broker action (BTO, STO, BTC, STC) split off the rest of the line. */
+export interface ChainLeg {
+  action: string | null;
+  buy: boolean | null;
+  text: string;
+}
+
+/** An order's legs, one per line: the side that set the net first (a debit's buys, a credit's sells). */
+export function chainLegs(legs: string[], side: "cr" | "db" | null): ChainLeg[] {
+  const parsed = legs.map((l): ChainLeg => {
+    const [, action, text] = /^(BTO|STO|BTC|STC)\s+(.*)$/.exec(l) ?? [];
+    return action && text !== undefined ? { action, buy: action.startsWith("B"), text } : { action: null, buy: null, text: l };
+  });
+  if (side === null) return parsed;
+  const first = side === "db";
+  // A stable sort keeps the broker's order within each side.
+  return [...parsed].sort((a, b) => Number(b.buy === first) - Number(a.buy === first));
 }
 
 function priceText(price: number | null, side: "cr" | "db" | null): string {
@@ -64,7 +83,7 @@ export function chainSteps(t: ManageTrade): ChainStep[] {
         cash: o.net,
         fees: o.fees,
         total,
-        legs: o.legs,
+        legs: chainLegs(o.legs, o.netSide),
       };
     });
   }
@@ -108,15 +127,14 @@ function Timeline({ t, full }: { t: ManageTrade; full: boolean }) {
               {full ? <span className={`pos-step-cash ${tone(s.cash)}`}>{fmtCash(s.cash)}</span> : null}
             </div>
             {s.legs.length > 0 ? (
-              full ? (
-                <ul className="pos-legs">
-                  {s.legs.map((l) => (
-                    <li key={l}>{l}</li>
-                  ))}
-                </ul>
-              ) : (
-                <span className="pos-step-legs">{s.legs.join(" · ")}</span>
-              )
+              <ul className="pos-legs">
+                {s.legs.map((l, j) => (
+                  <li key={j} className="pos-leg">
+                    {l.action ? <span className={`pos-leg-act ${l.buy ? "is-buy" : "is-sell"}`}>{l.action}</span> : null}
+                    <span>{l.text}</span>
+                  </li>
+                ))}
+              </ul>
             ) : null}
             {full ? (
               <span className="pos-step-foot">

@@ -6826,10 +6826,41 @@ select.text-input {
   line-height: 1.5;
 }
 
+/* One leg per line, its broker action as a chip: a buy green, a sell red. */
 .pos-legs {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pos-leg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pos-leg-act {
+  flex: none;
+  min-width: 2.6em;
+  text-align: center;
+  font: 600 10px/1 var(--num-face);
+  letter-spacing: 0.06em;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+
+.pos-leg-act.is-buy {
+  color: var(--pos);
+  background: color-mix(in srgb, var(--pos) 14%, transparent);
+}
+
+.pos-leg-act.is-sell {
+  color: var(--neg);
+  background: color-mix(in srgb, var(--neg) 14%, transparent);
 }
 
 .pos-step-now-line {

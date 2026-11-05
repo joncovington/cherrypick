@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import type { ManageTrade } from "@console/shared";
 import { MemoryRouter } from "react-router-dom";
 import { TradeDetail } from "../src/pages/Live/ManagePage";
-import { PositionCard, PositionCards, chainSteps, sortByPnl } from "../src/pages/Live/PositionCards";
+import { PositionCard, PositionCards, chainLegs, chainSteps, sortByPnl } from "../src/pages/Live/PositionCards";
 
 /**
  * The held-for-call chip and "waits for call" are packages/manage's `earnings_trade` verdict, read and
@@ -129,6 +129,20 @@ describe("the positions cards", () => {
     expect(html).toContain("1 roll");
     expect(html).toContain("close at mid -$88.00");
     expect(html).toContain("taken in +$275.00");
+  });
+
+  it("puts each leg on its own line, a buy green and a sell red, the side that set the net first", () => {
+    // A debit opens with its buys on top, a credit with its sells, the broker's order kept within a side.
+    const debit = chainLegs(["STO 1 2026-12-18 106C @ 0.80", "BTO 1 2028-12-15 100C @ 9.00"], "db");
+    expect(debit.map((l) => l.action)).toEqual(["BTO", "STO"]);
+    expect(debit[0]).toEqual({ action: "BTO", buy: true, text: "1 2028-12-15 100C @ 9.00" });
+    expect(chainLegs(["BTO 1 90P", "STO 1 95P", "BTO 1 110C", "STO 1 105C"], "cr").map((l) => l.text)).toEqual(["1 95P", "1 105C", "1 90P", "1 110C"]);
+    expect(chainSteps(rolled)[1].legs.map((l) => l.action)).toEqual(["STO", "BTC"]);
+    // A line with no action keeps its text and gets no chip.
+    expect(chainLegs(["exercise 1 100C"], "db")).toEqual([{ action: null, buy: null, text: "exercise 1 100C" }]);
+    const html = renderToString(<PositionCard t={rolled} onOpen={() => undefined} />);
+    expect(html).toContain('class="pos-leg-act is-sell">STO');
+    expect(html).toContain('class="pos-leg-act is-buy">BTC');
   });
 
   it("stops the running total at an order whose cash is unknown, and falls back to the opening with no chain", () => {
