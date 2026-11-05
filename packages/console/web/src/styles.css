@@ -7974,3 +7974,119 @@ select.text-input {
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* Model a trade (2026-11-04, PayoffCard.tsx's second tab): legs to add, manage's model of them. */
+.pay-line.is-before {
+  stroke: var(--text-dim);
+  stroke-width: 1.5;
+  opacity: 0.6;
+}
+
+.pay-key.is-before::before {
+  border-top: 2px solid var(--text-dim);
+}
+
+.mdl {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mdl-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.mdl-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.mdl-row input,
+.mdl-row select {
+  font: inherit;
+  font-size: 13px;
+  min-height: 34px;
+  padding: 4px 8px;
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.mdl-row input[type="number"] {
+  width: 96px;
+}
+
+.mdl-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.mdl-tiles {
+  margin-top: 4px;
+}
+
+.mdl-caps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.mdl-caps li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(80px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.mdl-bar {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.mdl-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.mdl-caps li.is-over .mdl-bar > span {
+  background: var(--neg);
+}
+
+.mdl-caps li.is-over .mdl-num {
+  color: var(--neg);
+}
+
+.mdl-num {
+  font-family: var(--num-face);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .mdl-caps li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .mdl-bar {
+    grid-column: 1 / -1;
+  }
+}
