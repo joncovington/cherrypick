@@ -678,6 +678,12 @@ manage's reason where manage refused one. There is no earnings column: manage dr
 report inside it, so a known date is always after expiry. An unknown one is an `earnings unknown`
 chip on the name.
 
+**Live -> wheel's needs a look** (2026-11-04, `pages/Live/AttentionCard.tsx`) heads the tab: manage's
+`attention` items worst first, each with its level and why, a meter of its distance against the alert
+threshold (full at the strike or through it), spot and time value; and every leg expiring within the
+ruleset's days. The level is manage's, never worked out from the distance beside it
+(`web/test/attentionCard.test.tsx`).
+
 **Live -> wheel's ledger** (2026-11-04, `pages/Live/LedgerDesk.tsx`) sits above the cycles: manage's
 `ledger` for the window in `?lw=` (1M, 3M, 6M, 1Y, YTD, ALL; ALL by default) as tiles (net, puts,
 calls, shares, dividends, fees), each month's net as a bar about zero (its sources in the bar's

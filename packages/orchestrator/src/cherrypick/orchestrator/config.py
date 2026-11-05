@@ -460,6 +460,10 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # Post no more often than this (minutes; 0 = every run), so runs can be frequent for the
         # console while Discord hears hourly. The day's first run always posts; a failure always does.
         "notify_every_minutes": max(0, int(mg.get("notify_every_minutes", 0) or 0)),
+        # Needs a look (manage's `attention`): post a name the first time a short option on it is near
+        # its strike, in the money or likely exercised early, once a day, from the full runs and the
+        # minute re-marks alike (managealert.py). The thresholds are manage's ruleset.
+        "attention_notify": bool(mg.get("attention_notify", True)),
         # The quoted expiries the snapshot reads past each covered call, PMCC short and short put
         # (managesnap.roll_out_chains), and the cap on the broker reads that costs.
         "roll_out": {k: _int_or(ro.get(k), v) for k, v in ROLL_OUT_DEFAULTS.items()},

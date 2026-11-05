@@ -788,6 +788,38 @@ export interface ManageAccount {
   premium: ManagePremium | null;
   /** The ledger (2026-11-04); null before it existed and on an account that is not the designated one. */
   ledger: ManageLedger | null;
+  /** Needs a look (2026-11-04); null on an evaluation from before it. */
+  attention: ManageAttention | null;
+}
+
+/** One option leg held, against its strike (packages/manage `attention.py`). */
+export interface ManageAttentionLeg {
+  underlying: string;
+  symbol: string | null;
+  leg: string;
+  right: string;
+  strike: number | null;
+  expiration: string;
+  dte: number;
+  quantity: number;
+  spot: number | null;
+  /** Out of the money as a share of the strike; negative is in the money. Null without a spot. */
+  distance: number | null;
+  mid: number | null;
+  extrinsic: number | null;
+}
+
+/** A short option manage lists, with its level and why, worst first. */
+export interface ManageAttentionItem extends ManageAttentionLeg {
+  level: "early exercise" | "in the money" | "near" | string;
+  why: string;
+}
+
+export interface ManageAttention {
+  nearPct: number | null;
+  expiringDays: number | null;
+  items: ManageAttentionItem[];
+  expiring: ManageAttentionLeg[];
 }
 
 /** The ledger's windows, counted back from the session by the closing day. */

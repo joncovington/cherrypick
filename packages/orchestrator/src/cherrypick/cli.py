@@ -970,19 +970,38 @@ def _run_manage(cfg) -> None:
         notifier.notify(
             "INFO", "manage", title, message, embed, session=rec["session"], inputs=[written] if doc else ()
         )
+    if ok:
+        _manage_attention(cfg, settings, (result or {}).get("written"), rec["session"], notifier)
     _emit(rec)
+
+
+def _manage_attention(cfg, settings: dict, written: str | None, session: str | None, notifier) -> None:
+    """Post the evaluation's needs-a-look names not yet posted today (managealert.py). Best effort: a
+    failure here is logged and never fails the run that wrote the evaluation."""
+    if not settings.get("attention_notify"):
+        return
+    from cherrypick.orchestrator import managealert
+
+    try:
+        managealert.run(written, session, cfgmod.state_file("manage.attention-alerts.json"), notifier)
+    except Exception as exc:  # noqa: BLE001 -- an alert is a side effect; the evaluation is the product
+        _append_log(
+            _module_log("manage"), {"job": "manage-attention", "error": f"{type(exc).__name__}: {exc}"}
+        )
 
 
 def _run_manage_marks(cfg) -> None:
     """The `manage-marks` job, once a minute between the full snapshots: the day's stored snapshot moved
-    to the stream cache's newer quotes and evaluated again (packages/manage `remark`). No broker call,
-    no notification: the full `manage` run posts, and a missed minute costs a minute of freshness. Only
-    a failure is logged, so the manage log keeps one line per full run."""
+    to the stream cache's newer quotes and evaluated again (packages/manage `remark`). No broker call.
+    It posts only the needs-a-look names not yet posted today (`_manage_attention`): the full `manage`
+    run posts the list, and a missed minute costs a minute of freshness. Only a failure is logged, so
+    the manage log keeps one line per full run."""
     from cherrypick.orchestrator import managesnap
 
     hb_path = cfgmod.state_file("manage.marks.last.json")
     now = timeutil.now_et(cfg.get("timezone", "America/New_York"))
     rec: dict = {"at": now.isoformat(), "ok": True}
+    written: str | None = None
     try:
         overlay = managesnap.marks_overlay(now.date().isoformat(), now_iso=now.isoformat())
         if overlay is None:
@@ -1001,7 +1020,15 @@ def _run_manage_marks(cfg) -> None:
                 result = json.loads(r.stdout or "{}")
             except json.JSONDecodeError:
                 result = {"raw": (r.stdout or "")[:2000]}
-            rec.update({"remark": result.get("remark"), "counts": result.get("counts")})
+            rec.update(
+                {
+                    "remark": result.get("remark"),
+                    "counts": result.get("counts"),
+                    "session": result.get("session"),
+                }
+            )
+            if not result.get("stale"):
+                written = result.get("written")
             if result.get("stale"):
                 # A full snapshot landed between the cache read and the evaluation: the next minute
                 # reads against it.
@@ -1013,6 +1040,10 @@ def _run_manage_marks(cfg) -> None:
     write_json_atomic(hb_path, rec)
     if not rec["ok"]:
         _append_log(_module_log("manage"), {"job": "manage-marks", **rec})
+    elif written:
+        _manage_attention(
+            cfg, cfgmod.manage_settings(cfg), written, rec.get("session"), Notifier(cfg.get("notify"))
+        )
     _emit(rec)
 
 
