@@ -786,6 +786,51 @@ export interface ManageAccount {
   /** The premium pace; null before it existed (2026-10-30) and on an account that is not the broker
    *  tool's designated one (its history is that account's). */
   premium: ManagePremium | null;
+  /** The ledger (2026-11-04); null before it existed and on an account that is not the designated one. */
+  ledger: ManageLedger | null;
+}
+
+/** The ledger's windows, counted back from the session by the closing day. */
+export type ManageLedgerWindow = "1M" | "3M" | "6M" | "1Y" | "YTD" | "ALL";
+export const LEDGER_WINDOWS: ManageLedgerWindow[] = ["1M", "3M", "6M", "1Y", "YTD", "ALL"];
+
+/** What closed in a window (packages/manage `ledger.py`): whole-position dollars, net after fees;
+ *  `net` is puts + calls + shares + dividends; `fees` is what those spans paid (negative). */
+export interface ManageLedgerBucket {
+  puts: number;
+  calls: number;
+  shares: number;
+  dividends: number;
+  fees: number;
+  net: number;
+  legs: number;
+}
+
+/** One closed span (an option leg or a stock from flat back to flat) or a dividend. */
+export interface ManageLedgerLot {
+  underlying: string;
+  symbol: string;
+  /** "P" put, "C" call, "S" shares, "D" dividend. */
+  right: string;
+  opened: string | null;
+  closed: string;
+  how: string;
+  net: number;
+  fees: number;
+}
+
+/** The account's ledger: what each name has earned over the whole history. */
+export interface ManageLedger {
+  error: string | null;
+  historyFrom: string | null;
+  rows: number | null;
+  windows: Partial<Record<ManageLedgerWindow, ManageLedgerBucket>>;
+  months: Array<{ month: string; puts: number; calls: number; shares: number; dividends: number; fees: number; net: number }>;
+  names: Array<{ underlying: string; windows: Partial<Record<ManageLedgerWindow, ManageLedgerBucket>> }>;
+  lots: ManageLedgerLot[];
+  /** Legs and shares still held: the cash so far, never counted as kept. */
+  open: Array<{ underlying: string; symbol: string; right: string; opened: string | null; quantity: number | null; net: number }>;
+  excluded: { zeroDte: { legs: number; net: number; underlyings: string[] }; unmatched: { legs: number; net: number } };
 }
 
 /** One calendar month of the premium pace (packages/manage `premium.py`). */

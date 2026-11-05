@@ -116,6 +116,35 @@ describe("readManage", () => {
     expect(readManage(config).accounts[0]!.premium).toBeNull();
   });
 
+  it("passes the ledger through in the page's names, and null before it existed", () => {
+    const doc = evalDoc("2026-11-04");
+    const [account] = doc["accounts"] as Array<Record<string, unknown>>;
+    const b = { puts: 149, calls: 58, shares: 199.5, dividends: 26, fees: -3.5, net: 432.5, legs: 3 };
+    account!["ledger"] = {
+      error: null,
+      history_from: "2026-05-13",
+      rows: 7,
+      windows: { "1M": b, ALL: b },
+      months: [{ month: "2026-10", puts: 0, calls: 58, shares: 199.5, dividends: 0, fees: -2.5, net: 257.5 }],
+      names: [{ underlying: "AAA", windows: { ALL: b } }],
+      lots: [{ underlying: "AAA", symbol: "AAA   261120P00045000", right: "P", opened: "2026-08-03", closed: "2026-08-21", how: "assigned", net: 149, fees: -1 }],
+      open: [{ underlying: "BBB", symbol: "BBB   261218C00055000", right: "C", opened: "2026-10-22", quantity: -1, net: 79 }],
+      excluded: { zero_dte: { legs: 1, net: 299, underlyings: ["SPX"] }, unmatched: { legs: 0, net: 0 } },
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-04.json"), JSON.stringify(doc));
+    const l = readManage(config).accounts[0]!.ledger!;
+    expect(l).toMatchObject({ error: null, historyFrom: "2026-05-13", rows: 7 });
+    expect(l.windows["ALL"]).toEqual(b);
+    expect(l.windows["6M"]).toBeUndefined();
+    expect(l.months[0]).toEqual({ month: "2026-10", puts: 0, calls: 58, shares: 199.5, dividends: 0, fees: -2.5, net: 257.5 });
+    expect(l.names).toEqual([{ underlying: "AAA", windows: { ALL: b } }]);
+    expect(l.lots[0]).toMatchObject({ right: "P", how: "assigned", net: 149, fees: -1 });
+    expect(l.open[0]).toMatchObject({ underlying: "BBB", quantity: -1, net: 79 });
+    expect(l.excluded).toEqual({ zeroDte: { legs: 1, net: 299, underlyings: ["SPX"] }, unmatched: { legs: 0, net: 0 } });
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-04.json"), JSON.stringify(evalDoc("2026-11-04")));
+    expect(readManage(config).accounts[0]!.ledger).toBeNull();
+  });
+
   it("passes manage's pre-open flag through, and none on an evaluation without it", () => {
     const doc = { ...evalDoc("2026-10-21"), pre_open: { taken_at: "07:17", expiring_unpriced: ["SPCX"] } };
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-21.json"), JSON.stringify(doc));

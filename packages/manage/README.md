@@ -462,6 +462,19 @@ expiry for a diagonal). One earnings trade with no bounded loss refuses the whol
 freeing part of it. Only buying power is freed: their theta and delta still count. The console's
 income card switches between the two lists with a checkbox.
 
+## The ledger
+
+`ledger.py` (2026-11-04) reads the same account-wide history as the pace, now taken from the account's
+opening (snapshot `account_transactions` since `ACCOUNT_HISTORY_FROM`), and answers what each name has
+earned. **Puts** and **calls** are each option leg's flat-to-flat net after fees on its closing day
+(`premium.closed_lots`); **shares** are each stock span's, so an assigned put's premium is the put's and
+the stock's move is the shares', each once; **dividends** are on their day; **fees** are what the
+closed spans paid. `net` is puts + calls + shares + dividends, per name and for the account, over 1M,
+3M, 6M, 1Y, YTD and ALL by the closing day, and by calendar month. Every closed span is listed (`lots`,
+with how it ended), and what is still held is `open`, its cash so far, never counted as kept. The
+live loops' 0DTE legs and spans the history entered mid-position are counted aside with their legs
+and net, as the pace counts them. The console's Live -> wheel tab draws it above the cycles.
+
 ## The premium pace
 
 `premium.py` reads three figures side by side for the broker tool's designated account (the

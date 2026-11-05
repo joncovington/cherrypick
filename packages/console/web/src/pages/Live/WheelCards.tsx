@@ -11,6 +11,7 @@ import type {
 import { Card } from "../../components/DataTable";
 import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
+import { LedgerDesk } from "./LedgerDesk";
 import {
   ActionChip,
   DetailCard,
@@ -423,6 +424,16 @@ export function leftOutText(names: string[]): string | null {
 
 /** One account's wheel: a card per cycle, or a plain statement of why there is none. */
 export function WheelCards({ a }: { a: ManageAccount }) {
+  return (
+    <>
+      {a.ledger ? <LedgerDesk ledger={a.ledger} /> : null}
+      <WheelCycles a={a} />
+    </>
+  );
+}
+
+/** The wheel's cycles, a card each, or a plain statement of why there is none. */
+function WheelCycles({ a }: { a: ManageAccount }) {
   const w = a.wheel;
   if (w === null) {
     return (

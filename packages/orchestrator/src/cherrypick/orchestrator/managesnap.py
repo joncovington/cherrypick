@@ -161,6 +161,10 @@ LISTING_MAX_AGE_SECONDS = 3 * 86400
 # How far back a chain is rebuilt. A LEAPS-backed position can roll for a year; anything older than
 # this is reported as an incomplete chain rather than guessed.
 HISTORY_DAYS = 400
+# The account-wide read goes back before any account this suite trades could have opened, so manage's
+# ledger sees every trade (2026-11-04; it read HISTORY_DAYS before). The broker reads every page since
+# core's fix the same day; the account's history was about 0.9 MB at six months.
+ACCOUNT_HISTORY_FROM = "2000-01-01"
 # The band file is built at 06:45 ET from the previous session's bars, so it is normally one session
 # behind; two is one missed build, three two. Past that the range under the band is a week old and its
 # weekly expiries have begun to roll off, so the wheel check says it has no band rather than use it.
@@ -244,12 +248,15 @@ def transactions(
 
 
 def account_transactions(cfg: dict[str, Any], prefer: str | None = None) -> tuple[list, str | None]:
-    """The whole account's trade history reaching back HISTORY_DAYS, closed names included, for
-    manage's premium pace (v15): what was collected and kept on trades no longer held, which the
-    per-underlying read cannot see. One list; an error string when unavailable."""
-    since = (date.today() - timedelta(days=HISTORY_DAYS)).isoformat()
+    """The whole account's trade history since it opened (`ACCOUNT_HISTORY_FROM`), closed names
+    included, for manage's premium pace (v15) and its ledger (each name's earnings over every window,
+    ALL included): what was collected and kept on trades no longer held, which the per-underlying read
+    cannot see. One list; an error string when unavailable."""
     payload, error = _first_answer(
-        cfg, prefer, ["get_transactions", "--account_wide", "--since", since], timeout=180
+        cfg,
+        prefer,
+        ["get_transactions", "--account_wide", "--since", ACCOUNT_HISTORY_FROM],
+        timeout=180,
     )
     rows = payload.get("account")
     if error is None and not isinstance(rows, list):

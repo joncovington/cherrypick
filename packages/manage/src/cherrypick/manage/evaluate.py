@@ -29,6 +29,7 @@ from cherrypick.manage import candidates as _candidates
 from cherrypick.manage import chains as _chains
 from cherrypick.manage import explain as _explain
 from cherrypick.manage import hedge as _hedge
+from cherrypick.manage import ledger as _ledger
 from cherrypick.manage import pmcc as _pmcc
 from cherrypick.manage import portfolio as _portfolio
 from cherrypick.manage import premium as _premium
@@ -2412,6 +2413,17 @@ def evaluate(
             if account.get("designated") or n_accounts == 1
             else None
         )
+        # What each name has earned over the whole history (`ledger.py`), on the pace's account rule.
+        ledger = (
+            _ledger.reading(
+                snapshot.get("account_transactions") if "account_transactions" in snapshot else None,
+                snapshot.get("account_transactions_error"),
+                session,
+                rules,
+            )
+            if account.get("designated") or n_accounts == 1
+            else None
+        )
         # The legs left out above, split into the loops' and the hand's (`zerodte.py`); the same
         # account rule as the pace, since both read the designated account's history.
         zero_dte_names = {
@@ -2450,6 +2462,7 @@ def evaluate(
                 "counts": counts,
                 "portfolio": book,
                 "premium": premium,
+                "ledger": ledger,
                 "trades": trades,
                 "excluded": excluded,
                 "zero_dte": zero_dte,

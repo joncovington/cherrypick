@@ -104,36 +104,54 @@ def _months_back(session: date, n: int) -> list[str]:
     return out[::-1]
 
 
-def closed_lots(rows: list[dict[str, Any]], zero_dte: set[str]) -> dict[str, Any]:
-    """Every option leg's flat-to-flat spans: `lots` (closed on a known opening), `unmatched` (the
-    history begins mid-position) and `zero_dte` (excluded), each lot's net cash after fees."""
+def _is_share(row: dict[str, Any]) -> bool:
+    """A share row that moves shares (a trade or a delivery); a dividend is a Money Movement."""
+    return str(row.get("instrument_type") or "") == "Equity" and row.get("transaction_type") in {
+        "Trade",
+        "Receive Deliver",
+    }
+
+
+def closed_lots(rows: list[dict[str, Any]], zero_dte: set[str], shares: bool = False) -> dict[str, Any]:
+    """Every option leg's flat-to-flat spans (and, with `shares`, every stock's): `lots` (closed on a
+    known opening), `unmatched` (the history begins mid-position) and `zero_dte` (excluded), each
+    lot's net cash after fees (`net`), its gross cash (`gross`, so fees are `net - gross`) and the
+    sub-type of the row that closed it (`ended`)."""
     by_symbol: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in rows:
-        if _is_option(r) and r.get("symbol") and _et_day(r.get("executed_at")) is not None:
+        if not (_is_option(r) or (shares and _is_share(r))):
+            continue
+        if r.get("symbol") and _et_day(r.get("executed_at")) is not None:
             by_symbol[str(r["symbol"])].append(r)
     lots: list[dict[str, Any]] = []
     unmatched: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
+    still: list[dict[str, Any]] = []
     for symbol, legs in by_symbol.items():
         # Quantity rows before a cash-only row at the same instant, so the cash finds its lot.
         legs.sort(key=lambda r: (str(r.get("executed_at")), r.get("transaction_sub_type") in CASH_ONLY))
-        underlying = str(legs[0].get("underlying_symbol") or "").upper()
-        expiry = _occ_expiry(symbol)
-        qty, cash, opened, partial, last = 0.0, 0.0, None, False, None
+        underlying = str(legs[0].get("underlying_symbol") or legs[0].get("symbol") or "").upper()
+        expiry = _occ_expiry(symbol) if _is_option(legs[0]) else None
+        qty, cash, gross, opened, partial, last = 0.0, 0.0, 0.0, None, False, None
         for r in legs:
             day = _et_day(r.get("executed_at"))
             net = _f(r.get("net_value")) or 0.0
+            value = _f(r.get("value")) or 0.0
             dq = _signed_qty(r)
             if dq == 0.0 and r.get("transaction_sub_type") in CASH_ONLY:
                 if qty == 0.0 and last is not None:
                     last["net"] += net  # the settlement cash of the lot its quantity row just closed
+                    last["gross"] += value
+                    last["ended"] = r.get("transaction_sub_type")
                 else:
                     cash += net
+                    gross += value
                 continue
             if qty == 0.0:
-                opened, cash, partial = day, 0.0, _closing(r)
+                opened, cash, gross, partial = day, 0.0, 0.0, _closing(r)
             qty += dq
             cash += net
+            gross += value
             if abs(qty) < 1e-9:
                 qty = 0.0
                 lot = {
@@ -142,6 +160,8 @@ def closed_lots(rows: list[dict[str, Any]], zero_dte: set[str]) -> dict[str, Any
                     "opened": opened,
                     "closed": day,
                     "net": cash,
+                    "gross": gross,
+                    "ended": r.get("transaction_sub_type"),
                 }
                 if partial:
                     unmatched.append(lot)
@@ -157,7 +177,12 @@ def closed_lots(rows: list[dict[str, Any]], zero_dte: set[str]) -> dict[str, Any
             unmatched.append(
                 {"symbol": symbol, "underlying": underlying, "opened": opened, "closed": day, "net": cash}
             )
-    return {"lots": lots, "unmatched": unmatched, "zero_dte": excluded}
+        elif qty != 0.0:
+            # Still held: the cash so far (a short's credit, a long's cost), not yet kept or lost.
+            still.append(
+                {"symbol": symbol, "underlying": underlying, "opened": opened, "quantity": qty, "net": cash}
+            )
+    return {"lots": lots, "unmatched": unmatched, "zero_dte": excluded, "open": still}
 
 
 def collected_orders(rows: list[dict[str, Any]], zero_dte: set[str]) -> list[dict[str, Any]]:
