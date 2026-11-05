@@ -464,6 +464,8 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # its strike, in the money or likely exercised early, once a day, from the full runs and the
         # minute re-marks alike (managealert.py). The thresholds are manage's ruleset.
         "attention_notify": bool(mg.get("attention_notify", True)),
+        # The day's loss past its alert (manage's `limits`): one post a session (managealert.py).
+        "day_loss_notify": bool(mg.get("day_loss_notify", True)),
         # The quoted expiries the snapshot reads past each covered call, PMCC short and short put
         # (managesnap.roll_out_chains), and the cap on the broker reads that costs.
         "roll_out": {k: _int_or(ro.get(k), v) for k, v in ROLL_OUT_DEFAULTS.items()},

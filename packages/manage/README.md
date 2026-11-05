@@ -507,6 +507,21 @@ index), `in the money`, or `near` (within `attention.near_pct`, 3%), worst first
 A reading, not a rule: it fires nothing. The orchestrator posts each listed name once a session
 (`managealert.py`), from the full runs and the minute re-marks; the console draws it on Live -> wheel.
 
+## Your limits
+
+`limits.py` (2026-11-04) sets each of the book's measures beside a limit from the ruleset's `limits`
+block: beta-weighted delta (benchmark shares, +/-), dollar delta (+/-), theta a day (a ceiling, on the
+theta band's figure without the front legs), vega (+/-), buying power used over net liq, and one
+name's worst case from open over net liq. A blank (null) limit falls back to the guidance band where
+there is one (delta, theta, buying power) or the candidate cap (one name, by the account's kind), and
+each row says whose limit it is; dollar delta and vega have none. A row is `over` past its limit,
+`near` past `near_share` (0.8) of the way, `within`, or `unknown` with no figure. The day's P&L (each
+leg's mark less its previous close) is held against `day_loss_alert` dollars, else
+`day_loss_alert_pct` (2%) of net liq; a leg with no mark makes it unknown, never zero. Advice only: a
+limit stops nothing. The orchestrator posts the day's loss once a session when it crosses
+(`managealert.run_day_loss`, `manage.day_loss_notify`); the console draws the rows on Live ->
+portfolio, and Config -> Position rules sets them.
+
 ## The ledger
 
 `ledger.py` (2026-11-04) reads the same account-wide history as the pace, now taken from the account's

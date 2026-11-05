@@ -279,6 +279,23 @@ DEFAULT_RULES: dict[str, Any] = {
     # evaluation says `early`, surfaces show prices, P&L and needs-a-look and hold the verdicts back,
     # and the orchestrator does not post the list (user, 2026-11-04).
     "early": {"verdicts_from": "10:00"},
+    # Your limits (limits.py, 2026-11-04), each beside the book on Live -> portfolio. Blank (null)
+    # falls back to the guidance band where one exists (delta, theta, buying power) or the candidate
+    # cap (one name); dollar delta and vega have none. `delta_bwd`, `dollar_delta` and `vega` are +/-;
+    # `theta_day` a ceiling in dollars a day; `buying_power_pct` and `per_name_pct` shares of net liq.
+    # The day's loss posts once a session at `day_loss_alert` dollars, else `day_loss_alert_pct` of
+    # net liq. `near_share`: a row is near past this share of the way to its limit.
+    "limits": {
+        "delta_bwd": None,
+        "dollar_delta": None,
+        "theta_day": None,
+        "vega": None,
+        "buying_power_pct": None,
+        "per_name_pct": None,
+        "day_loss_alert": None,
+        "day_loss_alert_pct": 0.02,
+        "near_share": 0.8,
+    },
     "pricing": {"rate": 0.04, "grid_low": 0.01, "grid_high": 3.0, "grid_steps": 600},
     # The account as one book (portfolio.py, docs/portfolio-guidance-plan.md). Every band is a retail
     # heuristic with no published out-of-sample evidence, hence the low confidences.

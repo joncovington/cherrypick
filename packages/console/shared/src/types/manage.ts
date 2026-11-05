@@ -792,6 +792,29 @@ export interface ManageAccount {
   attention: ManageAttention | null;
   /** Each held name's payoff (2026-11-04); null on an evaluation from before it. */
   payoff: ManagePayoff | null;
+  /** Your limits beside the book (2026-11-04); null on an evaluation from before them. */
+  limits: ManageLimits | null;
+}
+
+/** One measure against its limit (packages/manage `limits.py`). `source` says whose limit it is:
+ *  "yours", "guidance band", "candidate cap", "share of net liq" or "none". */
+export interface ManageLimitRow {
+  id: string;
+  label: string;
+  /** "shares", "$" or "share" (of net liq). */
+  unit: string;
+  value: number | null;
+  low: number | null;
+  high: number | null;
+  source: string;
+  /** "within", "near", "over", "unknown" or "no limit". */
+  state: string;
+}
+
+export interface ManageLimits {
+  rows: ManageLimitRow[];
+  unknownNames: string[];
+  dayLoss: { pnl: number | null; alert: number | null; crossed: boolean | null; why: string | null };
 }
 
 /** One P&L curve across the grid: today, a later date, or the nearest expiry. Null P&L: a leg no

@@ -10,6 +10,7 @@ import { fmtCash, fmtMoney } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
 import { ActionChip, DetailCard, Kv, Money, VerdictsHeld, ageText, etStamp, tone } from "./manageParts";
 import { BandsHistoryCard } from "./BandsHistory";
+import { LimitsCard } from "./LimitsCard";
 import { PortfolioCards } from "./PortfolioCards";
 import { PremiumPaceCard } from "./PremiumPace";
 import { ScenarioCards } from "./ScenarioCards";
@@ -437,6 +438,7 @@ function PortfolioAccount({ a, oversize }: { a: ManageAccount; oversize: number 
   return (
     <>
       <AccountTiles a={a} oversize={oversize} />
+      {a.limits ? <LimitsCard limits={a.limits} /> : null}
       <LiveGreeksCard a={a} />
       {a.portfolio ? (
         <PortfolioCards

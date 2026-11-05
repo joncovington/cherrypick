@@ -987,18 +987,21 @@ def _manage_full(cfg) -> dict:
 
 
 def _manage_attention(cfg, settings: dict, written: str | None, session: str | None, notifier) -> None:
-    """Post the evaluation's needs-a-look names not yet posted today (managealert.py). Best effort: a
-    failure here is logged and never fails the run that wrote the evaluation."""
-    if not settings.get("attention_notify"):
-        return
+    """Post the evaluation's needs-a-look names not yet posted today, and the day's loss once a session
+    when it crosses its alert (managealert.py). Best effort: a failure here is logged and never fails
+    the run that wrote the evaluation."""
     from cherrypick.orchestrator import managealert
 
-    try:
-        managealert.run(written, session, cfgmod.state_file("manage.attention-alerts.json"), notifier)
-    except Exception as exc:  # noqa: BLE001 -- an alert is a side effect; the evaluation is the product
-        _append_log(
-            _module_log("manage"), {"job": "manage-attention", "error": f"{type(exc).__name__}: {exc}"}
-        )
+    posts = []
+    if settings.get("attention_notify"):
+        posts.append(("manage-attention", managealert.run, "manage.attention-alerts.json"))
+    if settings.get("day_loss_notify"):
+        posts.append(("manage-day-loss", managealert.run_day_loss, "manage.day-loss-alert.json"))
+    for job, post, state in posts:
+        try:
+            post(written, session, cfgmod.state_file(state), notifier)
+        except Exception as exc:  # noqa: BLE001 -- an alert is a side effect; the evaluation is the product
+            _append_log(_module_log("manage"), {"job": job, "error": f"{type(exc).__name__}: {exc}"})
 
 
 def _run_manage_marks(cfg) -> None:
