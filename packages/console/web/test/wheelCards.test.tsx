@@ -167,7 +167,7 @@ function trade(over: Partial<ManageTrade> = {}): ManageTrade {
 }
 
 function wheel(over: Partial<ManageWheel> = {}): ManageWheel {
-  return { cycles: [cycle()], flagged: [], outside: {}, bandsDay: null, bandsMissing: "the snapshot carries no skate bands", error: null, ...over };
+  return { cycles: [cycle()], flagged: [], outside: {}, leftOut: [], bandsDay: null, bandsMissing: "the snapshot carries no skate bands", error: null, ...over };
 }
 
 function account(w: ManageWheel | null, trades: ManageTrade[] = [trade()]): ManageAccount {
@@ -319,6 +319,19 @@ describe("the wheel tab", () => {
     expect(out).toContain("ABC: 2026-10-02 sold 1 2026-11-20 60C, no shares behind it");
     expect(out).not.toContain("DEF:");
     expect(render(account(wheel()))).not.toContain("history outside any cycle");
+  });
+
+  it("a cycle flat at a loss reads as waiting for a put, counted apart from the open ones", () => {
+    const waiting = cycle({ status: "waiting", flat: true, openOptions: [], today: [], shares: 0 });
+    const out = render(account(wheel({ cycles: [cycle(), waiting] })));
+    expect(out).toContain("1 open · 1 waiting for a put");
+    expect(out).toContain("flat · waiting for a put");
+  });
+
+  it("says once which cash-settled index names were left out, and nothing when none were", () => {
+    const out = render(account(wheel({ leftOut: ["SPX", "XSP"] })));
+    expect(out).toContain("left out, cash-settled (no shares are ever delivered): SPX, XSP");
+    expect(render(account(wheel()))).not.toContain("left out, cash-settled");
   });
 });
 

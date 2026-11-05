@@ -429,7 +429,8 @@ export interface ManageWheelCheck {
  *  received); bases and breakeven are per share; fees are signed as the broker writes them (−). */
 export interface ManageWheelCycle {
   underlying: string;
-  status: "open" | "complete" | "unreconciled" | string;
+  /** "waiting" (2026-11-04): flat at a loss, nothing held, until the next put continues it. */
+  status: "open" | "waiting" | "complete" | "unreconciled" | string;
   reconciled: boolean | null;
   problems: string[];
   flat: boolean | null;
@@ -471,6 +472,8 @@ export interface ManageWheel {
   flagged: Array<{ underlying: string; date: string | null; kind: string; row: string | null }>;
   /** Per name, history rows that moved outside any cycle. */
   outside: Record<string, string[]>;
+  /** Cash-settled index names left out of the view (no shares are delivered); empty before 2026-11-04. */
+  leftOut: string[];
   bandsDay: string | null;
   bandsMissing: string | null;
   /** Why the account has no view (not the designated account, no history, the view failed). */

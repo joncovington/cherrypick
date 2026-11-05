@@ -554,6 +554,7 @@ describe("readManage", () => {
       ],
       flagged: [{ underlying: "ABC", date: "2026-09-03", kind: "share delivery", row: "Receive Deliver 100 ABC" }],
       outside: { ABC: ["2026-08-01: STO 1 ABC (no cycle running)"] },
+      left_out: ["SPX"],
       bands_day: null,
       bands_missing: "the snapshot carries no skate bands",
       error: null,
@@ -586,6 +587,7 @@ describe("readManage", () => {
     expect(w.bandsMissing).toBe("the snapshot carries no skate bands");
     expect(w.flagged).toEqual([{ underlying: "ABC", date: "2026-09-03", kind: "share delivery", row: "Receive Deliver 100 ABC" }]);
     expect(w.outside).toEqual({ ABC: ["2026-08-01: STO 1 ABC (no cycle running)"] });
+    expect(w.leftOut).toEqual(["SPX"]);
     const [xyz, abc] = w.cycles;
     expect(xyz).toMatchObject({
       underlying: "XYZ", status: "open", netCash: 100, fees: -1.1, netPremium: 100, pnlNet: -21.1, days: 12,

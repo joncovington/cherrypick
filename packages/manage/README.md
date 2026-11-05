@@ -216,7 +216,10 @@ cycle, and names the evaluated trades holding its legs. The `wheel.*` rules in t
   is the wheel basis, or with only a put open its strike less the net cash per share. Option and stock
   P&L are apart, realised and unrealised apart; `pnl_net` adds fees and is null when any part is
   unknown. A cycle is **complete** when it is flat and its credits exceed its debits; one flat at a
-  loss stays open, and the next put on the name continues it.
+  loss is not complete: until the next put on the name continues it, nothing is held and its
+  status is `waiting` (2026-11-04; it read `open` before). A cash-settled index
+  (`expiry.cash_settled_roots`) is never a wheel: no shares are delivered there, so the name is left
+  out and listed in `left_out`, not read as cycles and "assignment without shares" flags.
 - **Skate yield** is a comparison figure: net P&L over time-weighted capital (strike x 100 per open put,
   the shares' cost while held; a covered call adds none), x 365 / days. None under seven days, and
   flagged past 500%.

@@ -2035,11 +2035,13 @@ def _wheel_view(
     metrics: dict[str, Any],
     snapshot: dict[str, Any],
     trades: list[dict[str, Any]],
+    cash_roots: list[str] | None = None,
 ) -> dict[str, Any]:
     """The account's wheel cycles (`wheel.py`), each naming the evaluated trades that hold its legs.
 
     The trade history and the day's orders are the broker tool's designated account's, so only that
-    account (or the only one) gets a view; the others say why they have none.
+    account (or the only one) gets a view; the others say why they have none. Cash-settled index names
+    (`expiry.cash_settled_roots`) are left out: no shares are ever delivered there.
     """
     if not (account.get("designated") or n_accounts == 1):
         return {"cycles": [], "error": "the trade history is the designated account's"}
@@ -2056,6 +2058,7 @@ def _wheel_view(
             metrics,
             snapshot.get("working_orders"),
             snapshot.get("skate_bands"),
+            cash_roots=set(cash_roots or ()),
         )
     except Exception as exc:  # noqa: BLE001 -- the wheel view is a reading; the evaluation is the product
         return {"cycles": [], "error": f"wheel view failed: {type(exc).__name__}: {exc}"[:300]}
@@ -2310,6 +2313,7 @@ def evaluate(
             metrics,
             snapshot,
             trades,
+            rules["expiry"]["cash_settled_roots"],
         )
         pmcc_view = _pmcc_view(
             account,

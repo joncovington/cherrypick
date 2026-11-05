@@ -664,6 +664,7 @@ function wheel(v: unknown): ManageWheel | null {
       return { underlying: str(f["underlying"]) ?? "?", date: str(f["date"]), kind: str(f["kind"]) ?? "?", row: str(f["row"]) };
     }),
     outside,
+    leftOut: strs(w["left_out"]),
     bandsDay: str(w["bands_day"]),
     bandsMissing: str(w["bands_missing"]),
     error: str(w["error"]),

@@ -11,7 +11,11 @@ A cycle starts when a wheel put is sold to open, or shares arrive (bought, or de
 no cycle running. It takes in every wheel chain, share trade, delivery and dividend on that name until
 it is flat (no shares, no open wheel option) with credits exceeding debits: then it is COMPLETE. A cycle
 that goes flat at a loss is not complete; the next put on the name continues it, since that is what
-wheeling a loser back is.
+wheeling a loser back is. Until that put, nothing is held: its status is WAITING, not open.
+
+A cash-settled index (`expiry.cash_settled_roots`, passed as `cash_roots`) is never a wheel: an
+exercise there is cash, no shares are delivered, so the name is left out (`left_out`) rather than
+read as cycles, "assignment without shares" flags and rows outside any cycle.
 
 **Assignment** is matched option row to share row (`match_deliveries`): both Receive Deliver rows on
 the same name (the history is the designated account's, one account, so account matches by
@@ -680,7 +684,8 @@ def _accounting(cy: _Cycle, held_legs: dict[str, dict], session: date) -> dict[s
         yld = pnl_net / avg_capital * 365.0 / days
 
     flat = cy.flat()
-    status = "complete" if cy.end is not None else "open"
+    # Flat but not complete: gone flat at a loss, waiting for the next put to continue it.
+    status = "complete" if cy.end is not None else "waiting" if flat else "open"
     if cy.problems:
         status = "unreconciled"
     return {
@@ -836,15 +841,18 @@ def build(
     metrics: dict[str, Any] | None = None,
     orders: list[dict[str, Any]] | None = None,
     bands: dict[str, Any] | None = None,
+    cash_roots: set[str] | frozenset[str] | None = None,
 ) -> dict[str, Any]:
-    """The account's wheel view: {"cycles": [...], "flagged": [...], "outside": {...}}.
+    """The account's wheel view: {"cycles": [...], "flagged": [...], "outside": {...}, "left_out": [...]}.
 
     `underlyings` is the positions' per-name legs (raw, as the snapshot holds them), `history` the
     trade history by name. A name appears when it holds a short put, shares or a short call, or its
-    history holds a cycle.
+    history holds a cycle; a cash-settled index in `cash_roots` never does, and is listed in
+    `left_out` when it has history or legs.
     """
     history = history or {}
     metrics = metrics or {}
+    roots = {r.upper() for r in cash_roots or ()}
     legs_by_name: dict[str, dict[str, dict]] = {}
     for u in underlyings or []:
         name = str(u.get("underlying") or "").upper()
@@ -852,7 +860,10 @@ def build(
             sym = _sym(leg.get("symbol"))
             legs_by_name.setdefault(name, {})[sym.upper() if not occ(sym) else sym] = leg
     cycles, flagged, outside = [], [], {}
-    for name in sorted(set(history) | set(legs_by_name)):
+    names = {n.upper() for n in history} | set(legs_by_name)
+    left_out = sorted(n for n in names if n in roots)
+    history = {k.upper(): v for k, v in history.items()}
+    for name in sorted(names - set(left_out)):
         held_legs = legs_by_name.get(name, {})
         held = {s: _num(leg.get("quantity")) or 0.0 for s, leg in held_legs.items()}
         found = _name(name, history.get(name) or [], held, session)
@@ -866,11 +877,17 @@ def build(
         flagged += [{"underlying": name, **f} for f in found["flagged"]]
         if found["outside"]:
             outside[name] = found["outside"]
-    cycles.sort(key=lambda c: (c["end"] is not None, c["underlying"], c["start"]))
+
+    # Running cycles first, then those waiting for their next put, then the complete ones.
+    def rank(c: dict[str, Any]) -> int:
+        return 2 if c["end"] is not None else 1 if c["status"] == "waiting" else 0
+
+    cycles.sort(key=lambda c: (rank(c), c["underlying"], c["start"]))
     return {
         "cycles": cycles,
         "flagged": flagged,
         "outside": outside,
+        "left_out": left_out,
         "bands_day": (bands or {}).get("day"),
         "bands_missing": None if bands else "the snapshot carries no skate bands",
     }

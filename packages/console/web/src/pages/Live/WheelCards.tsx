@@ -405,6 +405,22 @@ export function CycleCard({ c, trades }: { c: ManageWheelCycle; trades: ManageTr
 
 export const NO_WHEEL = "no wheel running: a wheel starts with a short put sold alone or shares held";
 
+/** The cycles by manage's status: "2 open · 1 waiting for a put · 3 complete". */
+export function cycleCount(cycles: ManageWheelCycle[]): string {
+  const n = (s: string) => cycles.filter((c) => c.status === s).length;
+  const parts: string[] = [];
+  const running = n("open") + n("unreconciled");
+  if (running) parts.push(`${running} open`);
+  if (n("waiting")) parts.push(`${n("waiting")} waiting for a put`);
+  if (n("complete")) parts.push(`${n("complete")} complete`);
+  return parts.length ? parts.join(" · ") : `${cycles.length} cycle${cycles.length === 1 ? "" : "s"}`;
+}
+
+/** Cash-settled index names manage left out of the wheel, said once: no shares are delivered there. */
+export function leftOutText(names: string[]): string | null {
+  return names.length ? `left out, cash-settled (no shares are ever delivered): ${names.join(", ")}` : null;
+}
+
 /** One account's wheel: a card per cycle, or a plain statement of why there is none. */
 export function WheelCards({ a }: { a: ManageAccount }) {
   const w = a.wheel;
@@ -431,13 +447,18 @@ export function WheelCards({ a }: { a: ManageAccount }) {
       ) : (
         <>
           <p className="muted" style={{ margin: 0 }}>
-            {a.account ?? "?"} · {w.cycles.length} cycle{w.cycles.length === 1 ? "" : "s"}
+            {a.account ?? "?"} · {cycleCount(w.cycles)}
             {w.bandsMissing ? ` · skate bands: ${w.bandsMissing}` : w.bandsDay ? ` · skate bands from ${w.bandsDay}` : ""}
           </p>
           {w.cycles.map((c) => (
             <CycleCard key={`${c.underlying}-${c.start ?? ""}`} c={c} trades={a.trades} />
           ))}
         </>
+      )}
+      {leftOutText(w.leftOut) && (
+        <p className="muted" style={{ margin: 0 }}>
+          {leftOutText(w.leftOut)}
+        </p>
       )}
       {flagged.length > 0 && (
         <Card title="deliveries nothing explains">
