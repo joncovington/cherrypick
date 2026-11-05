@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { CANDLE_PERIODS, type CandleBar, type CandleMessage, type CandlePeriod } from "@console/shared";
+import { SOCKET_CANDLE_PERIODS, type CandleBar, type CandleMessage, type CandlePeriod } from "@console/shared";
 import type { MarketDataService } from "./marketData.js";
 
 /**
@@ -32,6 +32,8 @@ const LOOKBACK_MS: Record<CandlePeriod, number> = {
   "1m": 86_400_000,
   "5m": 3 * 86_400_000,
   "15m": 7 * 86_400_000,
+  // Two sessions are all a card reads; two weeks spans any holiday run.
+  "1d": 14 * 86_400_000,
 };
 /** A snapshot that never sends its end flag (or a symbol with no bars at all) is declared complete
  *  after this much silence, so a viewer is not left waiting on an empty chart forever. */
@@ -48,7 +50,7 @@ const SNAPSHOT_SNIP = 0x10;
 const SYMBOL_RE = /^[A-Za-z0-9./:_$^-]{1,48}$/;
 
 export function isCandlePeriod(p: unknown): p is CandlePeriod {
-  return typeof p === "string" && (CANDLE_PERIODS as readonly string[]).includes(p);
+  return typeof p === "string" && (SOCKET_CANDLE_PERIODS as readonly string[]).includes(p);
 }
 
 export function isCandleSymbol(s: unknown): s is string {

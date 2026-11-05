@@ -2,7 +2,11 @@ import type { MarketDataState } from "./status.js";
 
 /** Candle widths the live chart offers. Extended hours always: an overnight futures chart is the point. */
 export const CANDLE_PERIODS = ["1m", "5m", "15m"] as const;
-export type CandlePeriod = (typeof CANDLE_PERIODS)[number];
+/** Every width the socket serves: the chart's, and the daily bar (2026-11-05), whose close is the
+ *  session's official close (`{=d}`; `tho=true` carries the last regular trade instead). A position
+ *  card shows it outside the session. */
+export const SOCKET_CANDLE_PERIODS = [...CANDLE_PERIODS, "1d"] as const;
+export type CandlePeriod = (typeof SOCKET_CANDLE_PERIODS)[number];
 
 /** Browser → server. */
 export type ClientMessage =
