@@ -683,6 +683,12 @@ manage's reason where manage refused one. There is no earnings column: manage dr
 report inside it, so a known date is always after expiry. An unknown one is an `earnings unknown`
 chip on the name.
 
+**Live -> wheel's payoff** (2026-11-04, `pages/Live/PayoffCard.tsx`): a strip of held names, each
+with manage's P&L now and breakevens, opening its chart in the lightbox (`?payoff=`): the nearest
+expiry's curve always, a dated curve by chip, the evaluation's price and the stream's live price
+marked, the legs with their solved vols, and the model, rate and yield source stated. A curve manage
+could not draw (a leg no vol prices), or with an unreadable point, is not drawn, never zero-filled.
+
 **Live -> wheel's needs a look** (2026-11-04, `pages/Live/AttentionCard.tsx`) heads the tab: manage's
 `attention` items worst first, each with its level and why, a meter of its distance against the alert
 threshold (full at the strike or through it), spot and time value; and every leg expiring within the

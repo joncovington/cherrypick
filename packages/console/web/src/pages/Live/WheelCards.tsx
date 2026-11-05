@@ -12,6 +12,7 @@ import { Card } from "../../components/DataTable";
 import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
 import { AttentionCard } from "./AttentionCard";
+import { PayoffStrip } from "./PayoffCard";
 import { LedgerDesk } from "./LedgerDesk";
 import {
   ActionChip,
@@ -428,6 +429,7 @@ export function WheelCards({ a }: { a: ManageAccount }) {
   return (
     <>
       {a.attention ? <AttentionCard a={a.attention} /> : null}
+      {a.payoff ? <PayoffStrip payoff={a.payoff} /> : null}
       {a.ledger ? <LedgerDesk ledger={a.ledger} /> : null}
       <WheelCycles a={a} />
     </>

@@ -689,6 +689,20 @@ def test_the_long_call_s_entry_close_dividends_and_splits_are_copied(tmp_path):
     }
 
 
+def test_every_other_option_name_gets_its_last_year_of_dividends_and_no_closes(tmp_path):
+    # 2026-11-04: the payoff carries each name's yield, so a name holding only a put is read too.
+    db = _store(
+        tmp_path / "history.db",
+        bars=[("XYZ", "2026-09-25", 50.0), ("ABC", "2026-10-19", 11.0)],
+        dividends=[("ABC", "2025-10-01", 0.10), ("ABC", "2026-01-15", 0.12), ("ABC", "2026-10-15", 0.12)],
+    )
+    got, error = managesnap.underlying_history(date(2026, 10, 19), HELD, OPENED, db)
+    assert error is None
+    assert got["ABC"]["closes"] == {}
+    assert got["ABC"]["dividends"] == [["2026-01-15", 0.12], ["2026-10-15", 0.12]]  # the year to the session
+    assert got["XYZ"]["closes"] == {"2026-09-25": 50.0}  # the long call's read is as it was
+
+
 def test_a_long_bought_before_the_store_s_last_bar_has_no_close_and_says_nothing_else(tmp_path):
     db = _store(tmp_path / "history.db", bars=[("XYZ", "2026-09-24", 49.0)])
     got, error = managesnap.underlying_history(date(2026, 10, 19), HELD, OPENED, db)

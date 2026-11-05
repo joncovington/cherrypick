@@ -31,6 +31,7 @@ from cherrypick.manage import chains as _chains
 from cherrypick.manage import explain as _explain
 from cherrypick.manage import hedge as _hedge
 from cherrypick.manage import ledger as _ledger
+from cherrypick.manage import payoff as _payoff
 from cherrypick.manage import pmcc as _pmcc
 from cherrypick.manage import portfolio as _portfolio
 from cherrypick.manage import premium as _premium
@@ -2448,6 +2449,8 @@ def evaluate(
         )
         # Every short option held against its strike, and what expires soon (`attention.py`).
         attention = _attention.reading(account.get("underlyings"), metrics, session, rules)
+        # Each held name's P&L across its price, at expiry and on dates before it (`payoff.py`).
+        payoff = _payoff.reading(trades, metrics, snapshot, session, rules)
         # What each name has earned over the whole history (`ledger.py`), on the pace's account rule.
         ledger = (
             _ledger.reading(
@@ -2499,6 +2502,7 @@ def evaluate(
                 "premium": premium,
                 "ledger": ledger,
                 "attention": attention,
+                "payoff": payoff,
                 "trades": trades,
                 "excluded": excluded,
                 "zero_dte": zero_dte,
