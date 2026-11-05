@@ -654,6 +654,7 @@ describe("readManage", () => {
           },
           width: {
             width: 5.0, net_cost: 762.0, net_cost_per_share: 7.62, basis: "linked orders", passes: false,
+            cost_share: 1.524, warn_share: 0.75, thin: false,
             pnl_if_assigned: -262.0, pnl_if_assigned_net: -265.3, assumes: "the long exercised to deliver the shares",
           },
           shorts: [
@@ -694,6 +695,7 @@ describe("readManage", () => {
     expect(a.pmcc!.bandsMissing).toBe("band not in the snapshot");
     expect(p).toMatchObject({ underlying: "XYZ", recognized: true, reconciled: true, longCost: 1512, premiums: 750, orders: ["1", "2"], tradeIds: ["KO"] });
     expect(p.width).toMatchObject({ passes: false, pnlIfAssigned: -262, pnlIfAssignedNet: -265.3, netCostPerShare: 7.62, basis: "linked orders" });
+    expect(p.width).toMatchObject({ costShare: 1.524, warnShare: 0.75, thin: false });
     expect(p.long).toMatchObject({ deltaAtEntry: 0.8248, deltaAtEntryWhy: null, extrinsicShare: 0.625, roll: [], rollDeltaUnknown: false });
     expect(p.long.entryFills[0]).toMatchObject({ divYield: 0, iv: 0.3 });
     expect(p.short.assignment).toEqual({ nearZero: false, dividend: false, exposed: false, why: null, exDividendDate: null, dividendAmount: null });

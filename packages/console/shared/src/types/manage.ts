@@ -215,6 +215,12 @@ export interface ManagePmccWidth {
   /** "linked orders", or "open_legs" when the orders do not reconcile. */
   basis: string | null;
   passes: boolean | null;
+  /** Net cost per share over the width; null before 2026-11-04 or with no cost to judge. */
+  costShare: number | null;
+  /** The share over which a passing check is flagged thin (0.75); null before 2026-11-04. */
+  warnShare: number | null;
+  /** Manage's flag: passes, but the cost is over `warnShare` of the width. Null = not judged. */
+  thin: boolean | null;
   pnlIfAssigned: number | null;
   pnlIfAssignedNet: number | null;
   assumes: string | null;
@@ -277,7 +283,9 @@ export interface ManagePmccPosition {
   tradeIds: string[];
 }
 
-/** The ruleset's PMCC recognition limits (`pmcc.recognize`), from the evaluation's own rules. */
+/** The ruleset's PMCC recognition limits (`pmcc.recognize`), from the evaluation's own rules. The
+ *  day limits are an evaluation's from before 2026-11-04 only (null since: neither leg's days left
+ *  decides a PMCC under the standard definition). */
 export interface ManagePmccRecognize {
   entryMinDelta: number | null;
   minLongDays: number | null;

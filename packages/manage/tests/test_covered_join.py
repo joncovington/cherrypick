@@ -8,7 +8,7 @@ from test_wheel import occ, opt_leg, rd, share_leg, tx
 from cherrypick.manage import evaluate as ev
 from cherrypick.manage import rules as _rules
 
-FAR = occ("2027-01-15", "C", 55)  # 94 days out: past the PMCC view's 60
+FAR = occ("2027-01-15", "C", 55)  # 94 days out (past the PMCC view's old 60-day limit)
 
 
 def split(short=FAR, short_qty=1, long_qty=1, long=LONG, short_price=1.20):
@@ -28,12 +28,14 @@ def by(t):
 
 
 def test_a_separate_short_past_sixty_days_is_one_diagonal_with_its_long():
+    # The PMCC link takes it since 2026-11-04 (a short's days left no longer keep it out of the view);
+    # the trade and its basis are what the covered-call join made of it before.
     a = evaluate(split())
     (t,) = a["trades"]
-    assert t["grouped_by"] == "covered call" and t["shape"] == "diagonal" and t["trade_id"] == "XYZ"
+    assert t["grouped_by"] == "pmcc link" and t["shape"] == "diagonal" and t["trade_id"] == "XYZ"
     # Both chains' orders: the long with the May short sold beside it, and the January short.
     assert t["cost"] == DEEP * 100 - 150.0 - 120.0 and len(t["chain"]["orders"]) == 2
-    assert "risk.oversize" not in by(t) and a["pmcc"]["positions"] == [] and a["grouping_errors"] == []
+    assert "risk.oversize" not in by(t) and len(a["pmcc"]["positions"]) == 1 and a["grouping_errors"] == []
 
 
 def test_the_chains_alone_split_it():

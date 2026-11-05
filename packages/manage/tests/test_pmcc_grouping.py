@@ -32,7 +32,8 @@ def test_the_link_joins_them_into_one_diagonal_with_every_linked_order_as_its_ba
 
 
 def test_a_diagonal_entered_as_one_order_is_untouched():
-    # TLT's shape: one order, a short further out than a PMCC's. One chain already, nothing joined.
+    # One order, a short 94 days out: one chain already, nothing joined. The view lists it (since
+    # 2026-11-04 a short's days left no longer keep a diagonal out of it).
     short = occ("2027-01-15", "C", 55)
     rows = [
         tx(1, f"{ENTRY}T15:00:00Z", "Buy to Open", LONG, 1, DEEP),
@@ -40,15 +41,18 @@ def test_a_diagonal_entered_as_one_order_is_untouched():
     ]
     a = evaluate(snapshot(rows, legs(short=short)))
     (t,) = a["trades"]
-    assert t["grouped_by"] is None and a["pmcc"]["positions"] == []
+    assert t["grouped_by"] is None and view_of(a)["recognized"] is True
 
 
-def test_a_separate_short_further_out_than_a_pmcc_s_is_not_the_pmcc_link_s():
-    # Past 60 days the PMCC view has no entry; the covered-call join takes it (test_covered_join.py).
+def test_a_separate_short_further_out_is_the_pmcc_link_s_too():
+    # Past 60 days was the covered-call join's until 2026-11-04; the PMCC view now links it, with the
+    # same orders as its basis (test_covered_join.py keeps the cases the link leaves split).
     short = occ("2027-01-15", "C", 55)
     rows = [*history()[:3], tx(2, "2026-09-25T15:00:00Z", "Sell to Open", short, 1, 1.20)]
     a = evaluate(snapshot(rows, legs(short=short)))
-    assert a["pmcc"]["positions"] == [] and [t["grouped_by"] for t in a["trades"]] == ["covered call"]
+    (t,) = a["trades"]
+    assert t["grouped_by"] == "pmcc link" and t["cost"] == DEEP * 100 - 150.0 - 120.0
+    assert view_of(a)["trade_ids"] == ["XYZ"]
 
 
 def test_an_unreconciled_link_is_never_joined():

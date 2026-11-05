@@ -149,16 +149,15 @@
     }
   },
   "pmcc": {
-    "_comment": "The PMCC view. A call diagonal (a long bought with min_long_days or more left, one short of the same size at or above its strike with max_short_days or fewer) is a PMCC only when its long was entered at entry_min_delta or more, or positions.<SYMBOL>.intent is \"pmcc\"; \"diagonal\" keeps it out. Its rules fire only on a recognised PMCC whose orders reconcile, rank with the diagonal rules by action, and give way to the diagonal's credit roll.",
+    "_comment": "The PMCC view. A call diagonal (one long call, one short call of the same size at or above its strike expiring first, no shares; neither leg's days left decides it) is a PMCC only when its long was entered at entry_min_delta or more, or positions.<SYMBOL>.intent is \"pmcc\"; \"diagonal\" keeps it out. Its rules fire only on a recognised PMCC whose orders reconcile, rank with the diagonal rules by action, and give way to the diagonal's credit roll.",
     "recognize": {
-      "min_long_days": 180,
-      "max_short_days": 60,
-      "entry_min_delta": 0.8
+      "entry_min_delta": 0.7
     },
     "width": {
-      "_comment": "Roll or close when the short strike less the long strike does not exceed the long's net cost per share after every premium collected: an assignment there locks in a loss.",
+      "_comment": "Roll or close when the short strike less the long strike does not exceed the long's net cost per share after every premium collected: an assignment there locks in a loss. A net cost over warn_share of the width passes but is flagged thin (a call-away then earns under a third of the cost).",
       "enabled": true,
-      "confidence": 65
+      "confidence": 65,
+      "warn_share": 0.75
     },
     "assignment": {
       "_comment": "Roll or close a short in the money with less time value than the next dividend before an ex-date inside its life, or under near_zero_extrinsic at any time.",

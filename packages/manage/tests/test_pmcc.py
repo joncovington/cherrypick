@@ -103,7 +103,8 @@ def test_a_long_entered_near_the_money_stays_a_diagonal():
         snapshot(history(long=near, long_price=price), legs(long=near, long_price=price, long_mid=9.0))
     )
     v = view_of(a)
-    assert not v["recognized"] and "under 0.80): a diagonal" in v["recognized_by"]
+    assert v["long"]["delta_at_entry"] < 0.70
+    assert not v["recognized"] and "under 0.70): a diagonal" in v["recognized_by"]
     # The view lists it; no PMCC rule judges it, whatever its numbers.
     assert not any(r.startswith("pmcc") for r in fired(trade_of(a, SHORT)))
 
@@ -158,16 +159,38 @@ def test_the_solver_carries_the_dividend_yield():
     assert v["long"]["delta_at_entry"] > 0.95  # the guess the yield prevents
 
 
+def test_a_long_entered_between_0_70_and_0_80_is_a_pmcc():
+    # The standard definition (2026-11-04): 0.70 delta or more at entry, not the method's 0.80.
+    mid = occ(LONG_EXP, "C", 45)
+    price = fill(45, 0.30)
+    v = view_of(
+        evaluate(
+            snapshot(history(long=mid, long_price=price), legs(long=mid, long_price=price, long_mid=11.0))
+        )
+    )
+    assert 0.70 <= v["long"]["delta_at_entry"] < 0.80
+    assert v["recognized"] and "(at least 0.70)" in v["recognized_by"]
+
+
+def test_a_short_far_out_is_still_a_pmcc():
+    # The short's expiry may vary: one 94 days out is judged as a PMCC, where it was a diagonal past 60.
+    far = occ("2027-01-15", "C", 55)
+    a = evaluate(snapshot(history(short=far), legs(short=far, short_mid=1.00)))
+    v = view_of(a)
+    assert v["recognized"] and v["reconciled"] and v["short"]["dte"] == 94
+    assert trade_of(a, far)["grouped_by"] == "pmcc link"
+
+
 @pytest.mark.parametrize(
     "case",
-    ["short too far out", "short under the long", "shares held", "two shorts"],
+    ["short under the long", "shares held", "two shorts", "short expiring with the long"],
 )
 def test_other_shapes_are_not_candidates(case):
     session = date.fromisoformat(SESSION)
     cfg = _rules.DEFAULT_RULES["pmcc"]["recognize"]
     base = legs()
-    if case == "short too far out":  # the plan's 10-16 TLT: a short 61+ days out is a diagonal
-        base[1] = opt_leg(occ("2027-01-15", "C", 55), -1, 1.0, 1.2)
+    if case == "short expiring with the long":
+        base[1] = opt_leg(occ(LONG_EXP, "C", 55), -1, 3.0, 3.2)
     elif case == "short under the long":
         base[1] = opt_leg(occ("2026-11-20", "C", 35), -1, 15.0, 15.0)
     elif case == "shares held":
@@ -178,21 +201,21 @@ def test_other_shapes_are_not_candidates(case):
     assert pmcc.candidate(legs(), session, cfg) is not None
 
 
-def test_the_long_s_days_are_judged_when_it_was_bought():
-    # A December long bought on 06-29 had 172 days left: never a PMCC's long. Bought on 04-01 (261
-    # days), the same long, with 66 left today, is one, and is due a roll.
+def test_the_long_s_days_left_never_decide_it():
+    # A December long bought on 06-29 had 172 days left; under the 180-day gate it was no PMCC at all.
+    # Now its delta at entry decides, and its 66 days left today are the roll flag's.
     dec = occ("2026-12-18", "C", 40)
-    cur = legs(long=dec, long_mid=10.2)
-
-    def bought(day):
-        return [
-            tx(1, f"{day}T15:00:00Z", "Buy to Open", dec, 1, 11.0),
-            tx(2, "2026-09-25T15:00:00Z", "Sell to Open", SHORT, 1, 1.20),
-        ]
-
-    assert evaluate(snapshot(bought("2026-06-29"), cur))["pmcc"]["positions"] == []
-    v = view_of(evaluate(snapshot(bought(ENTRY), cur)))
-    assert v["long"]["days_at_entry"] == 261 and v["long"]["dte"] == 66 and v["long"]["roll"]
+    price = fill(40, 0.30, day="2026-06-29", exp="2026-12-18")
+    cur = legs(long=dec, long_mid=10.2, long_price=price)
+    rows = [
+        tx(1, "2026-06-29T15:00:00Z", "Buy to Open", dec, 1, price),
+        tx(2, "2026-09-25T15:00:00Z", "Sell to Open", SHORT, 1, 1.20),
+    ]
+    hist = {"XYZ": {"closes": {"2026-06-29": 50.0}, "dividends": [], "splits": []}}
+    v = view_of(evaluate(snapshot(rows, cur, hist=hist)))
+    assert v["long"]["days_at_entry"] == 172 and v["long"]["dte"] == 66
+    assert v["recognized"] and v["long"]["delta_at_entry"] >= 0.70
+    assert v["long"]["roll"] == ["66 days left (roll at 120)"]
 
 
 # --------------------------------------------------------------------------- linking and money
@@ -252,6 +275,23 @@ def test_a_failed_width_check_is_rolled_or_closed():
 def test_a_passing_width_check_fires_nothing():
     a = evaluate(snapshot(history(), legs()))
     assert not any(r.startswith("pmcc") for r in fired(trade_of(a, SHORT)))
+
+
+def test_a_cost_over_three_quarters_of_the_width_passes_but_is_thin():
+    # The 40/55 diagonal's net cost is over 75% of its 15 width: it passes, flagged thin, nothing fires.
+    a = evaluate(snapshot(history(), legs()))
+    w = view_of(a)["width"]
+    assert w["passes"] is True and w["warn_share"] == 0.75
+    assert w["cost_share"] == pytest.approx(w["net_cost_per_share"] / 15.0) and w["cost_share"] > 0.75
+    assert w["thin"] is True
+    assert not any(r.startswith("pmcc") for r in fired(trade_of(a, SHORT)))
+    # A 60 strike makes it 20 wide: under 75%, not thin.
+    wide = occ("2026-11-20", "C", 60)
+    w = view_of(evaluate(snapshot(history(short=wide), legs(short=wide, short_mid=0.20))))["width"]
+    assert w["cost_share"] < 0.75 and w["thin"] is False
+    # A failing check is never "thin": it is the rule's.
+    w = view_of(evaluate(narrow()))["width"]
+    assert w["passes"] is False and w["thin"] is False
 
 
 # --------------------------------------------------------------------------- pmcc.assignment

@@ -2136,7 +2136,7 @@ def _join_pmcc(
     A short call sold in an order of its own (after the last one expired) is a chain of its own, so
     `group_trades` makes it a naked call beside a lone long call. The rule is the narrowest that
     mends that: the two are joined only when the PMCC view has linked them and they RECONCILE (the
-    view's shape: one long, one short of the same size at or above its strike within 60 days, no
+    view's shape: one long, one short of the same size at or above its strike expiring first, no
     shares; its orders replaying to exactly those two legs), recognised as a PMCC or not, since
     coverage is a fact about the legs and not about intent; and only when each sits alone in its own
     group, so no other trade's legs move. The joined trade's basis is every order the view linked,
@@ -2168,9 +2168,10 @@ def _join_covered(
     history: list[dict[str, Any]] | None,
     rules: dict[str, Any],
 ) -> list[tuple[list[dict[str, Any]], dict[str, Any] | None]]:
-    """Join a short call that a long call on the name covers into one trade with it, whatever the
-    short's days left: the case the PMCC link (`_join_pmcc`, 60 days at most) leaves split, a short
-    sold in an order of its own against a long call it is not linked to.
+    """Join a short call that a long call on the name covers into one trade with it: the cases the PMCC
+    link (`_join_pmcc`) leaves split, a short sold in an order of its own against a long call it is
+    not linked to (expiring with it, covering more contracts than it, or a link that does not
+    reconcile).
 
     The rule, as narrow as the PMCC link's: on `order_chain` grouping, among the name's groups, there
     is exactly one holding a single long call and nothing else and exactly one holding a single short
