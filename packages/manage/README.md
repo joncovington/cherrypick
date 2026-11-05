@@ -484,6 +484,18 @@ no vol prices nulls the dated curves rather than drawing them on a guess; the ex
 vol unless a later leg does. Breakevens are where the nearest-expiry curve crosses zero. A picture,
 not a rule.
 
+## Model a trade
+
+`model.py` (2026-11-04, `python -m cherrypick.manage model`) draws proposed legs on a held name's
+payoff with what it holds, against the stored snapshot. A leg given a price is taken at it and its vol
+solved from it; one with none is priced at the name's IV index, and says so. For the proposed legs
+alone: the net credit or debit, the model's delta and theta a day, and the worst case at their
+nearest expiry from zero to three times today's price (the buying power a defined-risk trade holds
+in a cash account; a worst case still falling at three times is unbounded, stated, never a number).
+Against the candidate caps (`portfolio.candidates`, by the account's kind): the worst case over net
+liq, the name's worst case with it, and buying power in use with it. The name's implied vol and its
+30-day realised are shown beside each other, never ranked on. Advice only: nothing is sent.
+
 ## Needs a look
 
 `attention.py` (2026-11-04) measures every short option held against its strike: its distance out of

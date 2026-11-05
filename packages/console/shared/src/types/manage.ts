@@ -827,6 +827,32 @@ export interface ManagePayoff {
   names: ManagePayoffName[];
 }
 
+/** Model a trade (packages/manage `model.py`, `python -m cherrypick.manage model`): proposed legs on a
+ *  name against the stored snapshot. Advice only: nothing is sent. Whole-position dollars, signed. */
+export interface ManageModelResult {
+  ok: boolean;
+  error: string | null;
+  session: string | null;
+  underlying: string | null;
+  spot: number | null;
+  model: string | null;
+  legs: Array<{ leg: string; price: number; priceSource: string; iv: number | null; delta: number | null; thetaDay: number | null }>;
+  /** + a net credit, − a debit, for the proposed legs alone. */
+  net: number | null;
+  delta: number | null;
+  thetaDay: number | null;
+  /** The proposed legs' worst case at their nearest expiry (negative); null when unbounded. */
+  worstCase: number | null;
+  worstCaseAt: number | null;
+  unbounded: boolean;
+  accountBasis: string | null;
+  caps: Array<{ label: string; value: number | null; cap: number | null; over: boolean | null }>;
+  ivIndex: number | null;
+  hv30Day: number | null;
+  before: ManagePayoffName | null;
+  after: ManagePayoffName | null;
+}
+
 /** One option leg held, against its strike (packages/manage `attention.py`). */
 export interface ManageAttentionLeg {
   underlying: string;

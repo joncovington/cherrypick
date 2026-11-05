@@ -18,6 +18,10 @@ a mirror with a test against the module itself. These are the current ones.
   change for flies; the test tolerates a different pick only when both peaks agree to the cent. The
   forest sentence says what the floor knows and no more ("from 7659 upward", "at or below 7645",
   "locked").
+- **Model a trade is bridged** (`services/manageModelBridge.ts`, 2026-11-04): `/api/manage/model`
+  runs `python -m cherrypick.manage model` with the name and the leg text, refused here before any
+  process starts unless both read as manage reads them (`LEG`, `server/test/manage-model-bridge.test.ts`).
+  The pricing is manage's American model and the caps its ruleset's; it prices and sends nothing.
 - **bwb evidence is bridged** (`services/bwbEvidenceBridge.ts`): `live-gap` (the live arm against
   paper's same arm, refusals named with their gate, e.g. `live.vix9d_vix_max`), `entry-context`,
   `regime-split` and `iv-premium` (the `vol` tab). Each verb opens the ledger read-only.

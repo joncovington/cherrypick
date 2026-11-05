@@ -190,6 +190,19 @@ def cmd_check_roll(args) -> dict:
     return {"ok": False, "error": f"no trade {args.trade!r} in the {result['session']} snapshot; have {ids}"}
 
 
+def cmd_model(args) -> dict:
+    """Model proposed legs on a name against the stored snapshot (latest by default): the payoff
+    before and after, the legs' greeks and worst case, and the caps it would use. Sends nothing."""
+    from cherrypick.manage import model as _model
+
+    snapshot = _stored(args.session)
+    if snapshot is None:
+        return {"ok": False, "error": "no stored snapshot; run `run.py manage` first"}
+    rules, _warnings, _source = _rules.load(Path(args.rules) if args.rules else None)
+    result = _evaluate.evaluate(snapshot, rules)
+    return _model.model(result, snapshot, rules, args.underlying, args.leg)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -218,6 +231,13 @@ def main() -> None:
     )
     p_check.add_argument("--session", default=None)
     p_check.add_argument("--rules", default=None)
+    p_model = sub.add_parser("model")
+    p_model.add_argument("--underlying", required=True, help="the name, as the page shows it, e.g. SOXL")
+    p_model.add_argument(
+        "--leg", action="append", default=[], help="a leg to add, '-1 2026-12-18 46P @ 1.05' (price optional)"
+    )
+    p_model.add_argument("--session", default=None)
+    p_model.add_argument("--rules", default=None)
     args = parser.parse_args()
     commands = {
         "evaluate": cmd_evaluate,
@@ -225,6 +245,7 @@ def main() -> None:
         "reevaluate": cmd_reevaluate,
         "rules": cmd_rules,
         "check-roll": cmd_check_roll,
+        "model": cmd_model,
     }
     try:
         result = commands[args.command](args)

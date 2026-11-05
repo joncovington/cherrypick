@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { ManagePayoff, ManagePayoffName } from "@console/shared";
-import { PayoffStrip, chartGeometry } from "../src/pages/Live/PayoffCard";
+import { PayoffStrip, chartGeometry, legText } from "../src/pages/Live/PayoffCard";
 
 /**
  * Live → wheel's payoff draws manage's `payoff`: the strip shows each name's P&L now and breakevens as
@@ -91,5 +91,26 @@ describe("the chart's geometry", () => {
     );
     expect(g.lo).toBe(-5);
     expect(g.hi).toBe(15);
+  });
+
+  it("takes the modelled trade's 'before' curve into the scale", () => {
+    const g = chartGeometry(name(), [1], [[-2000, 0, 50]]);
+    expect(g.lo).toBe(-2000);
+  });
+});
+
+describe("the model a trade form", () => {
+  const leg = { side: "sell" as const, qty: "1", expiry: "2026-12-18", strike: "46", right: "P" as const, price: "" };
+
+  it("writes the leg text manage reads, the price only when given", () => {
+    expect(legText(leg)).toBe("-1 2026-12-18 46P");
+    expect(legText({ ...leg, side: "buy", qty: "2", strike: "46.5", right: "C", price: "1.05" })).toBe("+2 2026-12-18 46.5C @ 1.05");
+  });
+
+  it("is not ready until every field is filled in", () => {
+    expect(legText({ ...leg, strike: "" })).toBeNull();
+    expect(legText({ ...leg, qty: "0" })).toBeNull();
+    expect(legText({ ...leg, expiry: "" })).toBeNull();
+    expect(legText({ ...leg, price: "-1" })).toBeNull();
   });
 });

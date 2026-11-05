@@ -689,6 +689,13 @@ expiry's curve always, a dated curve by chip, the evaluation's price and the str
 marked, the legs with their solved vols, and the model, rate and yield source stated. A curve manage
 could not draw (a leg no vol prices), or with an unreadable point, is not drawn, never zero-filled.
 
+The payoff lightbox's second tab, **model a trade** (2026-11-04), takes up to six legs (side,
+contracts, expiry, strike, right, an optional price) and shows manage's model of them
+(`/api/manage/model`, bridged): the credit or debit, the worst case at expiry (or "unbounded"),
+delta and theta, implied against realised vol, the chart with the trade over the name's expiry curve
+without it, each leg's price and where it came from, and the candidate caps as bars, red past a cap.
+It prices a hypothesis; nothing is sent, and the console still has no order path.
+
 **Live -> wheel's needs a look** (2026-11-04, `pages/Live/AttentionCard.tsx`) heads the tab: manage's
 `attention` items worst first, each with its level and why, a meter of its distance against the alert
 threshold (full at the strike or through it), spot and time value; and every leg expiring within the
