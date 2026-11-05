@@ -8,7 +8,7 @@ import { useOverview } from "../../lib/api";
 import { parseSuiteTs } from "../../lib/etTime";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
-import { ActionChip, DetailCard, Kv, Money, VerdictsHeld, ageText, etStamp, tone } from "./manageParts";
+import { ActionChip, DetailCard, Kv, Money, Upside, VerdictsHeld, ageText, etStamp, tone } from "./manageParts";
 import { BandsHistoryCard } from "./BandsHistory";
 import { LimitsCard } from "./LimitsCard";
 import { PortfolioCards } from "./PortfolioCards";
@@ -246,7 +246,7 @@ export function TradeDetail({ t }: { t: ManageTrade }) {
             <Kv
               rows={[
                 ["max loss from open", t.profile.unboundedLow ? "unbounded" : <Money key="m" v={t.profile.maxLossFromOpen} />],
-                ["left to win", <Money key="w" v={t.profile.upsideFromNow} />],
+                ["left to win", <Upside key="w" v={t.profile.upsideFromNow} />],
                 ["left to lose", <Money key="l" v={t.profile.downsideFromNow} />],
               ]}
             />

@@ -88,6 +88,11 @@ export function Money({ v }: { v: number | null }) {
   return <span className={tone(v)}>{fmtMoney(v)}</span>;
 }
 
+/** What a trade can still win: green when there is something to win, neutral otherwise, never red. */
+export function Upside({ v }: { v: number | null }) {
+  return <span className={v === null ? "muted" : v > 0 ? "pnl-pos" : ""}>{fmtMoney(v)}</span>;
+}
+
 /** A per-share price, labelled as one. */
 export function share(v: number | null): string {
   return v === null ? "—" : `${v.toFixed(2)} a share`;
