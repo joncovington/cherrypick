@@ -95,11 +95,18 @@ export function yesNo(v: boolean | null, yes: string, no: string): string {
   return v === null ? "—" : v ? yes : no;
 }
 
-const STATUS_CHIP: Record<string, string> = { open: "chip", complete: "chip chip-hold", unreconciled: "chip chip-warn" };
+const STATUS_CHIP: Record<string, string> = {
+  open: "chip",
+  waiting: "chip muted",
+  complete: "chip chip-hold",
+  unreconciled: "chip chip-warn",
+};
+const STATUS_LABEL: Record<string, string> = { waiting: "flat · waiting for a put" };
 
-/** A wheel cycle's or a PMCC's status: open, complete, or unreconciled (amber). */
+/** A wheel cycle's or a PMCC's status: open, waiting (a wheel cycle flat at a loss, nothing held),
+ *  complete, or unreconciled (amber). */
 export function StatusChip({ status }: { status: string }) {
-  return <span className={STATUS_CHIP[status] ?? "chip"}>{status}</span>;
+  return <span className={STATUS_CHIP[status] ?? "chip"}>{STATUS_LABEL[status] ?? status}</span>;
 }
 
 /** Manage's `tested` flag. Null is "no price for the underlying", never "not tested". */

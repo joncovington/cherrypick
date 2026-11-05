@@ -265,6 +265,51 @@ def test_a_cycle_flat_at_a_loss_is_not_complete_and_the_next_put_continues_it():
     assert c["breakeven"]["price"] == pytest.approx(45 - (-110 + 3 * FEE) / 100)
 
 
+def test_a_cycle_flat_at_a_loss_with_no_put_yet_is_waiting_not_open():
+    # Nothing is held: it is not a running wheel, and not complete. It waits for the next put.
+    history = [
+        tx(1, "2026-08-03T15:00:00Z", "Sell to Open", PUT50, 1, 1.00),
+        tx(2, "2026-08-18T15:00:00Z", "Buy to Close", PUT50, 1, 3.00),
+    ]
+    (c,) = build(history)["cycles"]
+    assert c["status"] == "waiting" and c["flat"] and c["end"] is None and c["reconciled"]
+    assert c["today"] == []
+    # A running cycle sorts before it, a complete one after.
+    aaa = occ("2026-11-20", "P", 30, root="AAA")
+    bbb = occ("2026-07-17", "P", 20, root="BBB")
+    out = wheel.build(
+        [{"underlying": "AAA", "legs": [opt_leg(aaa, -1, 0.5, 1.0)]}],
+        {
+            "XYZ": history,
+            "AAA": [tx(9, "2026-10-01T15:00:00Z", "Sell to Open", aaa, 1, 1.00)],
+            "BBB": [
+                tx(8, "2026-07-01T15:00:00Z", "Sell to Open", bbb, 1, 0.50),
+                rd("2026-07-17T22:00:00Z", "Expiration", "Buy to Close", bbb, 1),
+            ],
+        },
+        date(2026, 10, 13),
+    )
+    got = [(c["underlying"], c["status"]) for c in out["cycles"]]
+    assert got == [("AAA", "open"), ("XYZ", "waiting"), ("BBB", "complete")]
+
+
+def test_a_cash_settled_index_is_left_out_of_the_wheel():
+    # An index spread exercised is cash: no shares are ever delivered, so it is no wheel and no
+    # "assignment without shares".
+    spx = occ("2026-10-16", "P", 5000, root="SPX")
+    spx_rows = [
+        tx(7, "2026-10-01T15:00:00Z", "Sell to Open", spx, 1, 5.00),
+        rd("2026-10-16T22:00:00Z", "Assignment", "Buy to Close", spx, 1),
+    ]
+    session = date(2026, 10, 20)
+    out = wheel.build([], {"SPX": spx_rows, "XYZ": PLAIN}, session, cash_roots={"SPX", "XSP"})
+    assert [c["underlying"] for c in out["cycles"]] == ["XYZ"]
+    assert out["flagged"] == [] and "SPX" not in out["outside"] and out["left_out"] == ["SPX"]
+    # Without the roots, the old reading: an assignment with no shares, flagged.
+    out = wheel.build([], {"SPX": spx_rows}, session)
+    assert any(f["kind"] == "assignment without shares" for f in out["flagged"]) and out["left_out"] == []
+
+
 # --------------------------------------------------------------------------- assignment matching
 def test_assignment_matching_rules_each_refuse_a_wrong_row():
     opt = rd("2026-08-21T22:00:00Z", "Assignment", "Buy to Close", PUT50, 1)
@@ -446,6 +491,20 @@ def test_the_evaluation_carries_the_designated_account_s_cycles():
     assert c["status"] == "open" and c["trade_ids"]
     assert set(c["trade_ids"]) <= {t["trade_id"] for t in mine["trades"]}
     assert theirs["wheel"]["cycles"] == [] and theirs["wheel"]["error"]
+
+
+def test_the_evaluation_leaves_the_ruleset_s_cash_settled_roots_out_of_the_wheel():
+    spx = occ("2026-08-21", "P", 5000, root="SPX")
+    legs = [share_leg(100, 51.0, 50.0), opt_leg(CALL52, -1, 0.50, 0.80)]
+    acct = {"account": "****1234", "designated": True, "underlyings": [{"underlying": "XYZ", "legs": legs}]}
+    snap = _snapshot([acct], PLAIN[:4])
+    snap["transactions"]["SPX"] = [
+        tx(7, "2026-08-01T15:00:00Z", "Sell to Open", spx, 1, 5.00),
+        rd("2026-08-21T22:00:00Z", "Assignment", "Buy to Close", spx, 1),
+    ]
+    (a,) = ev.evaluate(snap, _rules.effective(None)[0])["accounts"]
+    assert a["wheel"]["left_out"] == ["SPX"]
+    assert [c["underlying"] for c in a["wheel"]["cycles"]] == ["XYZ"] and a["wheel"]["flagged"] == []
 
 
 def test_no_history_means_no_wheel_view():

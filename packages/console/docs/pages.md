@@ -684,7 +684,9 @@ card per cycle. Like its siblings it never leaves the rail (there is no manage s
 reply; the shared header says when no evaluation exists). The reader passes `wheel` and each trade's
 `wheel` notes through with every null kept null; an evaluation written before the view has
 `wheel: null` and the tab says so, and an account with no cycle states "no wheel running" with the
-view's `error` when it has one. A card shows status (an unreconciled cycle lists its problems and
+view's `error` when it has one. The line above the cards counts them by status (open, waiting for
+a put, complete), and the cash-settled index names manage left out are said once below them. A card
+shows status ("flat · waiting for a put" for a cycle flat at a loss with nothing held; an unreconciled cycle lists its problems and
 gets **no wheel rule**, only "check it by hand"), days, the money in the suite's layout (signed cash,
 fees a cost shown once, the bases and breakeven per share and labelled so), option and stock P&L
 apart, realised and unrealised apart, `pnl_net`, the skate yield as a comparison figure, today's
