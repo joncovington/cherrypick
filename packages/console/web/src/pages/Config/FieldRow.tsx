@@ -105,6 +105,26 @@ export function FieldRow({ target, field }: { target: ConfigTargetId; field: Res
               if (e.target.value !== "" && Number.isFinite(n)) set(n);
             }}
           />
+        ) : type === "optionalNumber" ? (
+          // Blank is a value here: the key left to its default (null), staged like any other edit.
+          <input
+            id={id}
+            className="num-input"
+            type="number"
+            value={typeof current === "number" ? current : ""}
+            placeholder="default"
+            min={min}
+            max={max}
+            step={step ?? 1}
+            onChange={(e) => {
+              if (e.target.value.trim() === "") {
+                set(null);
+                return;
+              }
+              const n = Number(e.target.value);
+              if (Number.isFinite(n)) set(n);
+            }}
+          />
         ) : type === "stringList" ? (
           <ListInput value={Array.isArray(current) ? current.map(String) : []} onChange={set} />
         ) : (

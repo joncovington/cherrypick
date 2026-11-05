@@ -246,6 +246,18 @@
     "_comment": "Marks taken between the open (09:30) and verdicts_from (New York) are the opening scramble: the evaluation is marked early, surfaces show prices, P&L and needs-a-look but hold the verdicts back, and the orchestrator does not post the list.",
     "verdicts_from": "10:00"
   },
+  "limits": {
+    "_comment": "Your limits, each beside the book on Live -> portfolio. Blank (null) falls back to the guidance band where one exists (delta, theta, buying power) or the candidate cap (one name); dollar delta and vega have none. delta_bwd, dollar_delta and vega are +/-; theta_day a ceiling in dollars a day; buying_power_pct and per_name_pct shares of net liq. The day's loss posts once a session at day_loss_alert dollars, else day_loss_alert_pct of net liq. near_share: a row is near past this share of the way to its limit.",
+    "delta_bwd": null,
+    "dollar_delta": null,
+    "theta_day": null,
+    "vega": null,
+    "buying_power_pct": null,
+    "per_name_pct": null,
+    "day_loss_alert": null,
+    "day_loss_alert_pct": 0.02,
+    "near_share": 0.8
+  },
   "pricing": {
     "rate": 0.04,
     "grid_low": 0.01,

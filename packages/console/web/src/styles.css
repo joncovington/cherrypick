@@ -8090,3 +8090,60 @@ select.text-input {
     grid-column: 1 / -1;
   }
 }
+
+/* Live -> portfolio's your limits (2026-11-04, pages/Live/LimitsCard.tsx). */
+.lim-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lim-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(80px, 1fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.lim-bar {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.lim-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.lim-fill.is-near {
+  background: var(--verdict-fail);
+}
+
+.lim-fill.is-over {
+  background: var(--neg);
+}
+
+.lim-num {
+  font-family: var(--num-face);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .lim-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .lim-bar,
+  .lim-num {
+    grid-column: 1 / -1;
+  }
+}

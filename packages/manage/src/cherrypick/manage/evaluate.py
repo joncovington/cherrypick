@@ -31,6 +31,7 @@ from cherrypick.manage import chains as _chains
 from cherrypick.manage import explain as _explain
 from cherrypick.manage import hedge as _hedge
 from cherrypick.manage import ledger as _ledger
+from cherrypick.manage import limits as _limits
 from cherrypick.manage import payoff as _payoff
 from cherrypick.manage import pmcc as _pmcc
 from cherrypick.manage import portfolio as _portfolio
@@ -2451,6 +2452,8 @@ def evaluate(
         attention = _attention.reading(account.get("underlyings"), metrics, session, rules)
         # Each held name's P&L across its price, at expiry and on dates before it (`payoff.py`).
         payoff = _payoff.reading(trades, metrics, snapshot, session, rules)
+        # Your limits beside the book, and the day's loss against its alert (`limits.py`).
+        limits = _limits.reading(book, trades, account.get("underlyings"), account.get("account_type"), rules)
         # What each name has earned over the whole history (`ledger.py`), on the pace's account rule.
         ledger = (
             _ledger.reading(
@@ -2503,6 +2506,7 @@ def evaluate(
                 "ledger": ledger,
                 "attention": attention,
                 "payoff": payoff,
+                "limits": limits,
                 "trades": trades,
                 "excluded": excluded,
                 "zero_dte": zero_dte,

@@ -72,3 +72,29 @@ def test_nothing_listed_or_no_evaluation_posts_nothing(tmp_path):
     assert managealert.run(None, "2026-11-04", state, n) == []
     assert managealert.run(str(tmp_path / "missing.json"), "2026-11-04", state, n) == []
     assert n.sent == [] and not state.exists()
+
+
+def day_eval(tmp_path, session, day):
+    doc = {"session": session, "accounts": [{"account": "****0000", "limits": {"day_loss": day}}]}
+    p = tmp_path / f"eval-day-{session}.json"
+    p.write_text(json.dumps(doc), encoding="utf-8")
+    return str(p)
+
+
+def test_the_day_s_loss_posts_once_when_crossed_and_not_before(tmp_path):
+    state, n = tmp_path / "day.json", FakeNotifier()
+    quiet = day_eval(tmp_path, "2026-11-04", {"pnl": -120.0, "alert": -270.0, "crossed": False})
+    assert managealert.run_day_loss(quiet, "2026-11-04", state, n) is False and n.sent == []
+    hit = day_eval(tmp_path, "2026-11-04", {"pnl": -310.5, "alert": -270.0, "crossed": True})
+    assert managealert.run_day_loss(hit, "2026-11-04", state, n) is True
+    ((level, key, title, message, session),) = n.sent
+    assert level == "WARNING" and key == "manage.day_loss" and session == "2026-11-04"
+    assert "$-310.50" in title and "past the alert at $-270.00" in message and "****0000" in message
+    # The next minute, still past it: once a session.
+    assert managealert.run_day_loss(hit, "2026-11-04", state, n) is False and len(n.sent) == 1
+    # The next session starts afresh.
+    again = day_eval(tmp_path, "2026-11-05", {"pnl": -400.0, "alert": -270.0, "crossed": True})
+    assert managealert.run_day_loss(again, "2026-11-05", state, n) is True
+    # No figure (a leg unmarked) is never a cross.
+    blank = day_eval(tmp_path, "2026-11-06", {"pnl": None, "alert": -270.0, "crossed": None})
+    assert managealert.run_day_loss(blank, "2026-11-06", state, n) is False

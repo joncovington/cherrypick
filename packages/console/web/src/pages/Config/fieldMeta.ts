@@ -13,7 +13,8 @@ import type { ConfigTargetId, ConfigTargetModel } from "@console/shared";
  */
 
 export type FieldSection = "arms" | "modules" | "timing" | "notify" | "rules";
-export type FieldType = "boolean" | "number" | "string" | "time" | "stringList" | "enum";
+/** `optionalNumber`: a number that may be blank (null), as a limit left to its default is. */
+export type FieldType = "boolean" | "number" | "optionalNumber" | "string" | "time" | "stringList" | "enum";
 
 export interface FieldMeta {
   target: ConfigTargetId;
@@ -297,6 +298,91 @@ export const FIELDS: FieldMeta[] = [
     section: "rules",
   },
   { target: "manage", pointer: "/credit/time_exit/dte", label: "Credit: close at DTE", type: "number", min: 0, max: 60, section: "rules" },
+  // Your limits (2026-11-04, manage's limits.py, shown on Live -> portfolio). Blank uses the guidance
+  // band or the candidate cap where one exists.
+  {
+    target: "manage",
+    pointer: "/limits/delta_bwd",
+    label: "Limit: delta, beta-weighted (± benchmark shares)",
+    help: "Blank: the evaluation's delta band.",
+    type: "optionalNumber",
+    min: 0,
+    step: 1,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/limits/dollar_delta",
+    label: "Limit: dollar delta (± $)",
+    help: "Blank: no limit.",
+    type: "optionalNumber",
+    min: 0,
+    step: 100,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/limits/theta_day",
+    label: "Limit: theta a day (most, $)",
+    help: "On the theta band's figure, without the legs about to expire. Blank: the theta band.",
+    type: "optionalNumber",
+    min: 0,
+    step: 1,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/limits/vega",
+    label: "Limit: vega (± $ a vol point)",
+    help: "Blank: no limit.",
+    type: "optionalNumber",
+    min: 0,
+    step: 5,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/limits/buying_power_pct",
+    label: "Limit: buying power used (share of net liq)",
+    help: "Blank: the VIX-scaled buying-power band.",
+    type: "optionalNumber",
+    min: 0,
+    max: 1,
+    step: 0.05,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/limits/per_name_pct",
+    label: "Limit: one name's worst case (share of net liq)",
+    help: "Blank: the candidate cap by account kind.",
+    type: "optionalNumber",
+    min: 0,
+    max: 1,
+    step: 0.05,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/limits/day_loss_alert",
+    label: "Alert: the day's loss ($)",
+    help: "Posted once a session when the day's P&L on the marks reaches it. Blank: the share of net liq below.",
+    type: "optionalNumber",
+    min: 0,
+    step: 50,
+    section: "rules",
+  },
+  {
+    target: "manage",
+    pointer: "/limits/day_loss_alert_pct",
+    label: "Alert: the day's loss (share of net liq)",
+    help: "Used when the dollar alert above is blank.",
+    type: "number",
+    min: 0,
+    max: 0.2,
+    step: 0.005,
+    section: "rules",
+  },
   {
     target: "manage",
     pointer: "/credit/close_before_earnings/enabled",

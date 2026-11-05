@@ -65,3 +65,47 @@ def run(written: str | None, session: str | None, state_path: Path, notifier: An
     title, text = message(fresh)
     notifier.notify("WARNING", "manage.attention", title, text, session=state["session"])
     return sorted({str(i.get("underlying")) for i in fresh})
+
+
+# --------------------------------------------------------------------------- the day's loss
+def day_loss_due(
+    doc: dict[str, Any], sent: dict[str, Any] | None, session: str | None
+) -> dict[str, Any] | None:
+    """The first account whose day's loss crossed its alert (manage's `limits.day_loss`), unless one
+    was already posted this session; None otherwise."""
+    if (sent or {}).get("session") == session:
+        return None
+    for account in doc.get("accounts") or []:
+        day = ((account.get("limits") or {}).get("day_loss")) or {}
+        if day.get("crossed") is True:
+            return {"account": account.get("account"), **day}
+    return None
+
+
+def run_day_loss(written: str | None, session: str | None, state_path: Path, notifier: Any) -> bool:
+    """Post the day's loss once a session when it crosses its alert (your `limits.day_loss_alert`, or
+    `day_loss_alert_pct` of net liq). True when it posted."""
+    if not written:
+        return False
+    try:
+        doc = json.loads(Path(written).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    try:
+        sent = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        sent = None
+    session = session or doc.get("session")
+    hit = day_loss_due(doc, sent, session)
+    if hit is None:
+        return False
+    write_json_atomic(state_path, {"session": session, "pnl": hit.get("pnl")}, indent=None)
+    notifier.notify(
+        "WARNING",
+        "manage.day_loss",
+        f"Day's loss past your alert: ${hit['pnl']:,.2f}",
+        f"{hit.get('account') or 'the account'}: the day's P&L on the marks is ${hit['pnl']:,.2f}, past the "
+        f"alert at ${hit['alert']:,.2f}. Posted once a session; see the console's Live -> portfolio.",
+        session=session,
+    )
+    return True

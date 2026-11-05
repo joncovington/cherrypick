@@ -58,6 +58,7 @@ import type {
   ManageAttentionLeg,
   ManagePayoff,
   ManagePayoffName,
+  ManageLimits,
 } from "@console/shared";
 import { LEDGER_WINDOWS } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
@@ -1092,6 +1093,31 @@ function account(v: unknown, rules: Record<string, unknown>, lev: Leveraged = NO
     ledger: ledger(a["ledger"]),
     attention: attention(a["attention"]),
     payoff: payoff(a["payoff"]),
+    limits: limits(a["limits"]),
+  };
+}
+
+/** Your limits beside the book, passed through; null on an evaluation from before them. */
+function limits(v: unknown): ManageLimits | null {
+  if (v === null || v === undefined) return null;
+  const l = rec(v);
+  const d = rec(l["day_loss"]);
+  return {
+    rows: arr(l["rows"]).map((raw) => {
+      const r = rec(raw);
+      return {
+        id: str(r["id"]) ?? "?",
+        label: str(r["label"]) ?? "?",
+        unit: str(r["unit"]) ?? "",
+        value: num(r["value"]),
+        low: num(r["low"]),
+        high: num(r["high"]),
+        source: str(r["source"]) ?? "none",
+        state: str(r["state"]) ?? "unknown",
+      };
+    }),
+    unknownNames: strs(l["unknown_names"]),
+    dayLoss: { pnl: num(d["pnl"]), alert: num(d["alert"]), crossed: flag(d["crossed"]), why: str(d["why"]) },
   };
 }
 
