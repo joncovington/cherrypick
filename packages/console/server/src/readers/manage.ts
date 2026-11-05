@@ -674,6 +674,7 @@ function wheel(v: unknown): ManageWheel | null {
     }),
     outside,
     leftOut: strs(w["left_out"]),
+    names: Array.isArray(w["names"]) ? strs(w["names"]) : null,
     bandsDay: str(w["bands_day"]),
     bandsMissing: str(w["bands_missing"]),
     error: str(w["error"]),
@@ -1229,6 +1230,7 @@ function ledger(v: unknown): ManageLedger | null {
   const u = rec(ex["unmatched"]);
   return {
     error: str(l["error"]),
+    scope: Array.isArray(l["scope"]) ? strs(l["scope"]) : null,
     historyFrom: str(l["history_from"]),
     rows: num(l["rows"]),
     windows: ledgerWindows(l["windows"]),

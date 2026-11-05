@@ -474,6 +474,8 @@ export interface ManageWheel {
   outside: Record<string, string[]>;
   /** Cash-settled index names left out of the view (no shares are delivered); empty before 2026-11-04. */
   leftOut: string[];
+  /** The wheel's names, each with a cycle: the wheel tab shows these and no other. Null before 2026-11-05. */
+  names: string[] | null;
   bandsDay: string | null;
   bandsMissing: string | null;
   /** Why the account has no view (not the designated account, no history, the view failed). */
@@ -938,6 +940,8 @@ export interface ManageLedgerLot {
 /** The account's ledger: what each name has earned over the whole history. */
 export interface ManageLedger {
   error: string | null;
+  /** The names it counts (the wheel's), every total and month over them alone; null: the whole account. */
+  scope: string[] | null;
   historyFrom: string | null;
   rows: number | null;
   windows: Partial<Record<ManageLedgerWindow, ManageLedgerBucket>>;

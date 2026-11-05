@@ -97,14 +97,30 @@ def _how(ended: Any) -> str:
 
 
 def reading(
-    rows: list[dict[str, Any]] | None, error: str | None, session: date, rules: dict[str, Any]
+    rows: list[dict[str, Any]] | None,
+    error: str | None,
+    session: date,
+    rules: dict[str, Any],
+    scope: list[str] | None = None,
 ) -> dict[str, Any]:
-    """The account's ledger: per name and window, by month, every closed span, and what is still held."""
+    """The account's ledger: per name and window, by month, every closed span, and what is still held.
+
+    With `scope` (the wheel's names), only those names count, in every total and month; `scope` says so.
+    """
     if rows is None or error:
-        return {"error": error or "no account-wide history in this snapshot", "names": [], "windows": {}}
+        return {
+            "error": error or "no account-wide history in this snapshot",
+            "scope": scope,
+            "names": [],
+            "windows": {},
+        }
     zero_dte = {str(s).upper() for s in ((rules.get("exclude") or {}).get("zero_dte_underlyings") or [])}
     spans = _premium.closed_lots(rows, zero_dte, shares=True)
     divs = _dividends(rows)
+    if scope is not None:
+        keep = set(scope)
+        spans = {k: [s for s in v if s["underlying"] in keep] for k, v in spans.items()}
+        divs = [d for d in divs if d["underlying"] in keep]
     windows = [(name, _since(session, name, days)) for name, days in WINDOWS]
     months = _premium._months_back(session, MONTHS)
 
@@ -183,6 +199,7 @@ def reading(
     )
     return {
         "error": None,
+        "scope": scope,
         "history_from": first.isoformat() if first else None,
         "rows": len(rows),
         "windows": {w: _rounded(b) for w, b in account.items()},

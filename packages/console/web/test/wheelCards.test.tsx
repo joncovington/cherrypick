@@ -167,7 +167,7 @@ function trade(over: Partial<ManageTrade> = {}): ManageTrade {
 }
 
 function wheel(over: Partial<ManageWheel> = {}): ManageWheel {
-  return { cycles: [cycle()], flagged: [], outside: {}, leftOut: [], bandsDay: null, bandsMissing: "the snapshot carries no skate bands", error: null, ...over };
+  return { cycles: [cycle()], flagged: [], outside: {}, leftOut: [], names: null, bandsDay: null, bandsMissing: "the snapshot carries no skate bands", error: null, ...over };
 }
 
 function account(w: ManageWheel | null, trades: ManageTrade[] = [trade()]): ManageAccount {
