@@ -588,6 +588,8 @@
     "at": "10:00",
     "also_at": [],
     "notify": true,
+    "_attention_note": "Needs a look: after every full run and every minute re-mark, post the names whose short options manage lists as near their strike, in the money or likely exercised early (its `attention` block; thresholds in manage's ruleset) -- each name once a session, all its legs in one post.",
+    "attention_notify": true,
     "_roll_out_note": "The quoted expiries the snapshot carries past each short a roll would move out in time: a covered call, a PMCC's short and a short put (no long put on the name), each within 'max_short_days' of expiry. One read per expiry per name (plus one listing per name when the stream cache does not hold it): the next 'expiries', before the long's expiry for a PMCC and within 'max_days' of the short's otherwise, each quoted 40 strikes either side of the short's strike. 'max_calls' and 'max_seconds' cap the step; what they cut is recorded in the snapshot, never fatal.",
     "roll_out": {
       "expiries": 5,
@@ -596,7 +598,7 @@
       "max_calls": 30,
       "max_seconds": 300
     },
-    "_marks_note": "Between the full runs, the `manage-marks` job moves the day's stored snapshot to the stream cache's quotes every 'interval_seconds' (at least 30) from 'start' to 'end' ET and evaluates it again (packages/manage `remark`): legs and spots re-priced, nothing else re-read. No broker call, no post. On whenever manage is; 'enabled': false turns it off alone.",
+    "_marks_note": "Between the full runs, the `manage-marks` job moves the day's stored snapshot to the stream cache's quotes every 'interval_seconds' (at least 30) from 'start' to 'end' ET and evaluates it again (packages/manage `remark`): legs and spots re-priced, nothing else re-read. No broker call; it posts only a needs-a-look name not yet posted today ('attention_notify'). On whenever manage is; 'enabled': false turns it off alone.",
     "marks": {
       "enabled": true,
       "interval_seconds": 60,

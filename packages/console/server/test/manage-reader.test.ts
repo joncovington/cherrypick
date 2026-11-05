@@ -145,6 +145,29 @@ describe("readManage", () => {
     expect(readManage(config).accounts[0]!.ledger).toBeNull();
   });
 
+  it("passes needs-a-look through, nulls kept, and null before it existed", () => {
+    const doc = evalDoc("2026-11-04");
+    const [account] = doc["accounts"] as Array<Record<string, unknown>>;
+    const leg = {
+      underlying: "AAA", symbol: "AAA   261218P00049000", leg: "2026-12-18 49P", right: "P", strike: 49.0,
+      expiration: "2026-12-18", dte: 44, quantity: -1.0, spot: null, distance: null, mid: 0.9, extrinsic: null,
+    };
+    account!["attention"] = {
+      near_pct: 0.03,
+      expiring_days: 7,
+      items: [{ ...leg, spot: 50.0, distance: 0.0204, extrinsic: 0.9, level: "near", why: "2.0% from the strike (alert at 3%)" }],
+      expiring: [leg],
+      names: ["AAA"],
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-04.json"), JSON.stringify(doc));
+    const a = readManage(config).accounts[0]!.attention!;
+    expect(a).toMatchObject({ nearPct: 0.03, expiringDays: 7 });
+    expect(a.items[0]).toMatchObject({ underlying: "AAA", leg: "2026-12-18 49P", distance: 0.0204, level: "near", quantity: -1 });
+    expect(a.expiring[0]).toMatchObject({ spot: null, distance: null, extrinsic: null, mid: 0.9 });
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-04.json"), JSON.stringify(evalDoc("2026-11-04")));
+    expect(readManage(config).accounts[0]!.attention).toBeNull();
+  });
+
   it("passes manage's pre-open flag through, and none on an evaluation without it", () => {
     const doc = { ...evalDoc("2026-10-21"), pre_open: { taken_at: "07:17", expiring_unpriced: ["SPCX"] } };
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-21.json"), JSON.stringify(doc));

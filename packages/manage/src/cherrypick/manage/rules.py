@@ -270,6 +270,11 @@ DEFAULT_RULES: dict[str, Any] = {
     # Legs left out of the evaluation entirely. SPX 0DTE is the flies live loop's own book: it is
     # managed by that loop and settles in cash at the close, so judging it here only adds noise.
     "exclude": {"zero_dte_underlyings": ["SPX"]},
+    # Needs a look (attention.py, user 2026-11-04): a short option out of the money by `near_pct` of
+    # its strike or less, in the money, or likely to be exercised early (a call's time value under the
+    # dividend going ex before expiry, or any short's under `near_zero_extrinsic`); and every leg with
+    # `expiring_days` or fewer left. A reading, not a rule: it fires nothing.
+    "attention": {"near_pct": 0.03, "near_zero_extrinsic": 0.05, "expiring_days": 7},
     "pricing": {"rate": 0.04, "grid_low": 0.01, "grid_high": 3.0, "grid_steps": 600},
     # The account as one book (portfolio.py, docs/portfolio-guidance-plan.md). Every band is a retail
     # heuristic with no published out-of-sample evidence, hence the low confidences.

@@ -54,6 +54,8 @@ import type {
   ManageLedger,
   ManageLedgerBucket,
   ManageLedgerWindow,
+  ManageAttention,
+  ManageAttentionLeg,
 } from "@console/shared";
 import { LEDGER_WINDOWS } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
@@ -1086,6 +1088,40 @@ function account(v: unknown, rules: Record<string, unknown>, lev: Leveraged = NO
     pmcc: pmcc(a["pmcc"], rules),
     premium: premium(a["premium"]),
     ledger: ledger(a["ledger"]),
+    attention: attention(a["attention"]),
+  };
+}
+
+function attentionLeg(v: unknown): ManageAttentionLeg {
+  const x = rec(v);
+  return {
+    underlying: str(x["underlying"]) ?? "?",
+    symbol: str(x["symbol"]),
+    leg: str(x["leg"]) ?? "?",
+    right: str(x["right"]) ?? "?",
+    strike: num(x["strike"]),
+    expiration: str(x["expiration"]) ?? "",
+    dte: num(x["dte"]) ?? 0,
+    quantity: num(x["quantity"]) ?? 0,
+    spot: num(x["spot"]),
+    distance: num(x["distance"]),
+    mid: num(x["mid"]),
+    extrinsic: num(x["extrinsic"]),
+  };
+}
+
+/** Needs a look, passed through; null when the evaluation carries none (before 2026-11-04). */
+function attention(v: unknown): ManageAttention | null {
+  if (v === null || v === undefined) return null;
+  const a = rec(v);
+  return {
+    nearPct: num(a["near_pct"]),
+    expiringDays: num(a["expiring_days"]),
+    items: arr(a["items"]).map((raw) => {
+      const x = rec(raw);
+      return { ...attentionLeg(raw), level: str(x["level"]) ?? "?", why: str(x["why"]) ?? "" };
+    }),
+    expiring: arr(a["expiring"]).map(attentionLeg),
   };
 }
 

@@ -236,6 +236,12 @@
       "SPX"
     ]
   },
+  "attention": {
+    "_comment": "Needs a look: a short option out of the money by near_pct of its strike or less, in the money, or likely to be exercised early (a call's time value under the dividend going ex before expiry, or any short's under near_zero_extrinsic); and every leg with expiring_days or fewer left. A reading, not a rule: it fires nothing. The orchestrator posts a name the first time it appears in a day.",
+    "near_pct": 0.03,
+    "near_zero_extrinsic": 0.05,
+    "expiring_days": 7
+  },
   "pricing": {
     "rate": 0.04,
     "grid_low": 0.01,

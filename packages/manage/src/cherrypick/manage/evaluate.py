@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 
 from cherrypick.core import calendar as _calendar
 
+from cherrypick.manage import attention as _attention
 from cherrypick.manage import candidates as _candidates
 from cherrypick.manage import chains as _chains
 from cherrypick.manage import explain as _explain
@@ -2413,6 +2414,8 @@ def evaluate(
             if account.get("designated") or n_accounts == 1
             else None
         )
+        # Every short option held against its strike, and what expires soon (`attention.py`).
+        attention = _attention.reading(account.get("underlyings"), metrics, session, rules)
         # What each name has earned over the whole history (`ledger.py`), on the pace's account rule.
         ledger = (
             _ledger.reading(
@@ -2463,6 +2466,7 @@ def evaluate(
                 "portfolio": book,
                 "premium": premium,
                 "ledger": ledger,
+                "attention": attention,
                 "trades": trades,
                 "excluded": excluded,
                 "zero_dte": zero_dte,

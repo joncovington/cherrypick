@@ -462,6 +462,17 @@ expiry for a diagonal). One earnings trade with no bounded loss refuses the whol
 freeing part of it. Only buying power is freed: their theta and delta still count. The console's
 income card switches between the two lists with a checkbox.
 
+## Needs a look
+
+`attention.py` (2026-11-04) measures every short option held against its strike: its distance out of
+the money as a share of the strike (negative is in the money) and its time value. A short is listed
+`early exercise` (a call in the money with less time value than a dividend going ex before expiry, or
+any short in the money with time value under `attention.near_zero_extrinsic`; never a cash-settled
+index), `in the money`, or `near` (within `attention.near_pct`, 3%), worst first; every leg with
+`attention.expiring_days` (7) or fewer left is listed apart. The live loops' 0DTE legs are left out.
+A reading, not a rule: it fires nothing. The orchestrator posts each listed name once a session
+(`managealert.py`), from the full runs and the minute re-marks; the console draws it on Live -> wheel.
+
 ## The ledger
 
 `ledger.py` (2026-11-04) reads the same account-wide history as the pace, now taken from the account's

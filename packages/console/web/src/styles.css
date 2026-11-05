@@ -5919,6 +5919,7 @@ select.text-input {
 .lt-board,
 .pmcc-board,
 .ldg-board,
+.att-board,
 .study-dialog-wrap {
   --num-face: "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
   font-family: "Inter Variable", Inter, "Segoe UI", system-ui, sans-serif;
@@ -7687,5 +7688,140 @@ select.text-input {
 
   .ldg-windows {
     margin-left: 0;
+  }
+}
+
+/* Live -> wheel's needs a look (2026-11-04, pages/Live/AttentionCard.tsx): manage's attention list,
+   worst first, with a meter of the distance against the alert threshold, and what expires soon. */
+.att-board {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.att-col {
+  flex: 2 1 520px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-sunken);
+}
+
+.att-side {
+  flex: 1 1 300px;
+}
+
+.att-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+}
+
+.att-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.att-list,
+.att-exp {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.att-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(80px, 1fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.att-leg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+.att-name {
+  font-family: var(--num-face);
+  font-weight: 600;
+}
+
+.att-why {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.att-meter {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.att-fill {
+  display: block;
+  height: 100%;
+}
+
+.att-fill.is-warn {
+  background: var(--verdict-fail);
+}
+
+.att-fill.is-bad {
+  background: var(--neg);
+}
+
+.att-nums {
+  font-family: var(--num-face);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.att-chip {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px dashed currentColor;
+  white-space: nowrap;
+}
+
+.att-chip.is-warn {
+  color: var(--verdict-fail);
+}
+
+.att-chip.is-bad {
+  color: var(--neg);
+}
+
+.att-exp li {
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .att-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .att-meter,
+  .att-nums {
+    grid-column: 1 / -1;
   }
 }
