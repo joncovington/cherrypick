@@ -90,7 +90,7 @@ only ever turn a *hold* into a *close*, never the reverse.
    has gone, `front_expiry` when only a calendar's front month has and the back is closed at its own
    real market. See *Settlement* below. Since 2026-09-24 reaching this step is a **failed exit**
    (the settle event carries `failed_exit`): step 1 should have traded the position out.
-1. **Expiry close** — from `expiry_close_time` (15:30 ET; 12:30 on an early-close day) on the expiration day of **any** leg,
+1. **Expiry close** — from `expiry_close_time` (15:20 ET, 40 minutes before the close; 12:20 on an early-close day; 15:30 before 2026-11-05) on the expiration day of **any** leg,
    every position closes, whatever its P&L and whatever else is true. These are physically settled
    single names: an ITM leg that expires is an exercise or an assignment — shares, an overnight gap
    and fees — so the house rule is to trade out, never to settle. Read off each leg's own symbol, so
@@ -105,6 +105,27 @@ only ever turn a *hold* into a *close*, never the reverse.
    acts. The report has not happened, and a fresh mark is only the spread. Reason `entry_session`
    (a hold). Added 2026-10-17, after 23 positions were closed minutes after the 15:35 scan
    (docs/operating-history.md).
+2c. **Assignment-risk guard** — any **short** leg in the money that its holder has reason to exercise
+   early closes the whole position (reason `assignment_risk`). Two rules, per share, on the leg's mid:
+   (a) a **call** whose time value (mid less intrinsic) is below the next cash dividend going ex after
+   today and on or before that leg's expiry; (b) a short that is **deep** in the money with nothing
+   left to sell, meaning all of: intrinsic at least `assignment_deep_itm_pct` (0.03) of the strike,
+   time value below `assignment_extrinsic_floor` (0.05), and it is **not** the leg's own expiration
+   day (the expiry close owns that day). A slightly-in-the-money short a day or two out routinely
+   has under a nickel of time value after the IV crush and is not closed by this rule. Equity and ETF options only: a cash-settled index root is
+   never assigned and is skipped. It sits ahead of the strategy because the strategy's thresholds do
+   not price this risk and a `close_side` would leave the short open; it sits behind the entry
+   session, so a fresh position is not closed on its opening spread. The event records the leg,
+   spot, mid, intrinsic, time value, the rule, and for a call the dividend, ex-date and its source.
+   The dividend comes from the local Dolt `stocks.dividend` table, never the network: a declared
+   future ex-date if the table has one, otherwise the last ex-date plus the median gap between the
+   recent ones, with the last amount (`projected`). That table is a history, so projection is the
+   usual case. A name with fewer than two dividends, an irregular cadence, a payer that has stopped,
+   or a failed lookup is recorded as `dividend_known: false` and only rule (b) applies. Subject to
+   the spread gate and its 30-minute patience like any discretionary exit, **except** when the ex-date
+   is the next trading day: the exercise decision is made that evening, so that close is `urgent`
+   and is not held by `spread_too_wide` or the per-tick cap (it still waits for `exec_window_start`).
+   Switch off with `assignment_guard: false`.
 3. **The strategy's own `evaluate_position`** — profit target, stop, leg-delta stops, and (for the
    calendars) the front-expiration time stop. Thresholds live in `strategies.<name>` and are listed
    below. The management layer never restates them.
@@ -152,7 +173,9 @@ verdict with `executed = 0` and the gate that held it, and the next tick reconsi
 
 **The expiry close is not held back by `spread_too_wide` or `tick_execution_cap`.** A market too
 wide to take a profit at is still one to pay on the way out of an expiration; the wider fill is
-recorded as slippage, because the alternative is an exercise or an assignment.
+recorded as slippage, because the alternative is an exercise or an assignment. An `assignment_risk`
+close whose dividend goes ex the next trading day is treated the same way (step 2c); the other
+assignment-risk closes wait on the gate and its patience.
 
 **Settlement is not gated by any of these**, and that is the point of it being step 0. An expired
 contract quotes a zero bid against a stale ask, which is a 200% spread against a 0.35 policy, so a
@@ -167,7 +190,7 @@ Every close records one, on the trade itself (`trades.exit_reason`). Before this
 `scan_log`, joinable back to a trade by nothing better than (date, symbol, strategy) — which cannot
 identify a position held across several sessions at all.
 
-`profit_target` · `stop_loss` · `pead_loser` · `max_hold` · `expiry_close` · `pin_risk` · `leg_stop_delta` ·
+`profit_target` · `stop_loss` · `pead_loser` · `max_hold` · `expiry_close` · `pin_risk` · `assignment_risk` · `leg_stop_delta` ·
 `time_exit` · `iv_crush_backstop` · `close_window` · `expired` · `front_expiry` ·
 `legacy_next_morning` (every pre-cutover exit).
 
@@ -251,7 +274,7 @@ and the number is a reasoned starting point. Say which, always — the two invit
 | `directional_credit_spread` | 50% of credit | 2.0× credit | 3 sessions | **House rule.** No published backtest of stop multiples for an *overnight earnings* vertical was found; this is the generic credit-spread convention carried over. Stop widened from 1.5× at the cutover to match it. |
 | `broken_wing_butterfly` | 25% of credit | 2.0× credit, plus `leg_stop_delta_abs` 0.60 | 3 sessions | **House rule.** tastylive has traded BWBs into earnings but published no management study. Exits through the *credit*-spread path despite pricing as a net debit. |
 | `double_calendar` | 15% of debit | 50% of debit | front-leg 5 DTE; leg-delta 0.45 | **Research-backed.** A 30-name backtest puts the target at 15% of debit, usually hit within minutes of the open, at an 87% win rate. Stop and time exit from the same source. |
-| `expected_move_butterfly` | fly worth 50% of its width (far touch) | none (the debit is the max loss) | the 15:30 expiry close; not in `OVERNIGHT` | **House rule, from history.** `scripts/emfly_history.py`: holding to expiry or to this take-profit lost least of six rules on 4,950 events; closing on the reaction day lost most. |
+| `expected_move_butterfly` | fly worth 50% of its width (far touch) | none (the debit is the max loss) | the 15:20 expiry close; not in `OVERNIGHT` | **House rule, from history.** `scripts/emfly_history.py`: holding to expiry or to this take-profit lost least of six rules on 4,950 events; closing on the reaction day lost most. |
 | `atm_calendar` | 15% of debit | 50% of debit | front-leg 5 DTE | **Thin.** No earnings-specific backtest as clean as the double calendar's; aligned with it deliberately rather than guessed at separately. |
 
 The credit strategies all run through `scanner.evaluate_credit_spread_exit()`:

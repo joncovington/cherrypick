@@ -116,7 +116,7 @@ The full rule set, the thresholds, and the execution gates are in
    rather than revert.
 3. **A winner short of its target is held** — that is the change. It carries overnight and is
    re-marked from the next open, up to a three-session cap.
-4. **15:30 on any leg's expiration day** — the expiry close, whatever the P&L.
+4. **15:20 on any leg's expiration day** — the expiry close, whatever the P&L.
 5. **Every close is confirmed through the broker** before it is recorded, even when the cache decided
    it.
 

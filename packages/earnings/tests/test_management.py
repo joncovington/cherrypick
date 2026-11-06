@@ -77,7 +77,12 @@ CONFIG = {
 }
 
 
-def evaluate(t, snap, *, now=None, sessions_held=1, first=True, config=None):
+# The stub quotes above are not marks of an in-the-money short (mid 0.01 under a 50-dollar intrinsic),
+# so a test of another rule at a deep in-the-money spot turns the assignment guard off.
+NO_GUARD = {**CONFIG, "management": {"assignment_guard": False}}
+
+
+def evaluate(t, snap, *, now=None, sessions_held=1, first=True, config=None, dividend_lookup=None):
     return management.evaluate(
         t,
         snap,
@@ -85,6 +90,7 @@ def evaluate(t, snap, *, now=None, sessions_held=1, first=True, config=None):
         now=now or at("10:00"),
         sessions_held=sessions_held,
         is_first_check_of_day=first,
+        dividend_lookup=dividend_lookup,
     )
 
 
@@ -325,7 +331,7 @@ def test_the_pin_guard_does_not_fire_before_expiration_day():
 
 def test_a_short_strike_far_from_spot_is_not_pin_risk():
     t = trade(expiration="2026-08-12")
-    assert evaluate(t, snapshot(4.50, spot=205.0), now=at("15:30")).action == "hold"
+    assert evaluate(t, snapshot(4.50, spot=205.0), now=at("15:30"), config=NO_GUARD).action == "hold"
 
 
 def test_the_pin_guard_skips_when_spot_is_unknown():
@@ -470,21 +476,23 @@ def test_unrealized_pnl_counts_every_contract():
 
 
 # --------------------------------------------------------------------------- the expiry close
-def test_every_position_is_closed_at_1530_on_its_expiration_day():
-    """Physically settled single names are traded out, never settled: from 15:30 on a leg's
+def test_every_position_is_closed_at_1520_on_its_expiration_day():
+    """Physically settled single names are traded out, never settled: from 15:20 on a leg's
     expiration day the position closes whatever its P&L -- here a winner short of its target, far from spot,
     that every other rule would carry."""
-    decision = evaluate(trade(), snapshot(4.50, spot=240.0), now=at("15:30", "2026-08-21"))
+    decision = evaluate(trade(), snapshot(4.50, spot=240.0), now=at("15:20", "2026-08-21"))
     assert decision.action == "close_all" and decision.reason == "expiry_close"
     assert len(decision.detail["expiring"]) == 4
 
 
 def test_the_expiry_close_waits_for_its_time():
-    assert evaluate(trade(), snapshot(4.50, spot=240.0), now=at("15:29", "2026-08-21")).action == "hold"
+    now = at("15:19", "2026-08-21")
+    assert evaluate(trade(), snapshot(4.50, spot=240.0), now=now, config=NO_GUARD).action == "hold"
 
 
 def test_the_expiry_close_does_not_fire_on_any_other_day():
-    assert evaluate(trade(), snapshot(4.50, spot=240.0), now=at("15:30", "2026-08-20")).action == "hold"
+    now = at("15:30", "2026-08-20")
+    assert evaluate(trade(), snapshot(4.50, spot=240.0), now=now, config=NO_GUARD).action == "hold"
 
 
 def test_the_expiry_close_reads_each_legs_own_expiry():

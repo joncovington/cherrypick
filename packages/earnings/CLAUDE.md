@@ -60,7 +60,9 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
   pool across it). A winner short of target is carried up to three *trading* sessions; a loser
   closes on the first morning (post-earnings drift continues). **Nothing but the expiry close and
   the pin guard acts on the entry session** (`sessions_held == 0`): the report has not happened, and
-  a fresh mark is just the spread (docs/operating-history.md). Quotes come from the stream cache
+  a fresh mark is just the spread (docs/operating-history.md). **From 2026-11-05 the expiry close is
+  at 15:20 (40 minutes before the close, was 15:30) and an in-the-money short with no time value left
+  closes as `assignment_risk`** (docs/10-exits.md); never pool across that either. Quotes come from the stream cache
   first, the broker only for unsubscribed legs and to confirm a close.
 - **Expired positions are SETTLED, not traded out** (2026-08-31, its own break). An expired leg is
   refused as a mark (`provider`) and resolved at intrinsic against the expiration day's close from
