@@ -691,6 +691,21 @@ def test_the_first_check_is_read_from_the_ledger_not_from_memory(priced):
     assert paper_loop._first_check_of_day(trade, CONFIG, at("09:40", "2026-08-13")) is True
 
 
+def test_a_first_morning_winner_that_is_a_loser_on_its_second_morning_is_not_pead_closed(priced):
+    """The evidence behind the gate covers the first morning only. A position carried as a winner and
+    underwater on day 2 (short of its stop) runs on; it is not a `pead_loser`."""
+    open_trade()
+    priced(quotes_pricing(4.50))
+    paper_loop.run_iteration(CONFIG, at("09:30"))
+    paper_loop.run_iteration(CONFIG, at("09:40"))
+    priced(quotes_pricing(6.00))
+    for hhmm in ("09:30", "09:40", "09:50"):
+        paper_loop.run_iteration(CONFIG, at(hhmm, "2026-08-13"))
+
+    assert len(db_paper.cmd_get_open_positions(_ns())["positions"]) == 1
+    assert _closed_reasons() == []
+
+
 def test_a_carried_winner_is_not_gated_again_before_the_session_cap(priced):
     """Day 1 and day 2 each judge the position once at 09:40; day 3 belongs to the session cap."""
     open_trade()

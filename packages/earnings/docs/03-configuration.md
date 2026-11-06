@@ -348,7 +348,7 @@ Common keys apply to every strategy; `management.<strategy>` overrides them for 
 | Key | Default | What it does |
 |---|---|---|
 | `hold_winners_max_days` | `3` | Session cap for the four overnight structures. **Trading** sessions, so a weekend cannot spend it. The calendars are exempt — they run their own front-expiration stop. |
-| `close_losers_first_morning` | `true` | The PEAD gate. A position at or below breakeven closes on the first check that can act (the first evaluation at or after `exec_window_start` that no gate held); a winner may carry. |
+| `close_losers_first_morning` | `true` | The PEAD gate. A position at or below breakeven closes on the first check that can act on the first morning after entry (the first evaluation at or after `exec_window_start` that no gate held); a winner may carry. |
 | `exec_window_start` | `"09:40"` | Before this, decisions are recorded and not acted on. Opening spreads can exceed the edge being managed. |
 | `max_leg_spread_pct` | `0.35` | Widest leg spread (of mid) still worth acting on. |
 | `max_leg_spread_abs` | `0.05` | A leg is refused only when wide in percent AND in money. |

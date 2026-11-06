@@ -180,6 +180,11 @@ def test_first_check_pending_is_spent_only_by_an_ungated_decision_in_the_exec_wi
     assert not pending({"occurred_at": t0940, "gate": None, "reason": "working"})
 
 
+def test_the_pead_gate_acts_on_the_first_session_after_entry_only():
+    assert evaluate(trade(), snapshot(6.00), sessions_held=1, first=True).reason == "pead_loser"
+    assert evaluate(trade(), snapshot(6.00), sessions_held=2, first=True).action == "hold"
+
+
 def test_a_position_exactly_at_breakeven_is_treated_as_a_loser():
     """Nothing has been earned, and the drift risk of holding is the same — so it closes."""
     decision = evaluate(trade(), snapshot(5.00), first=True)

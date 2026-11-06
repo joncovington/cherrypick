@@ -364,8 +364,17 @@ def evaluate(
             return Decision("close_all", "max_hold", {"sessions_held": sessions_held, "pnl": pnl})
 
     # The PEAD gate. A winner may carry; a loser closes on the first reliable marks, because the gap
-    # that put it there tends to continue rather than revert.
-    if strategy in OVERNIGHT and is_first_check_of_day and policy["close_losers_first_morning"] and pnl <= 0:
+    # that put it there tends to continue rather than revert. First MORNING only (`sessions_held == 1`,
+    # the first session after the afternoon entry, whether the report was after that close or before
+    # the next open): the evidence covers that morning, so a carried winner that turns loser later
+    # runs to its stop, target or the session cap.
+    if (
+        strategy in OVERNIGHT
+        and sessions_held == 1
+        and is_first_check_of_day
+        and policy["close_losers_first_morning"]
+        and pnl <= 0
+    ):
         return Decision("close_all", "pead_loser", {"pnl": pnl})
 
     return Decision("hold", "working", {"pnl": pnl, "exit_debit": exit_debit})

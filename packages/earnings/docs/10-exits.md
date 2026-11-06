@@ -111,7 +111,7 @@ only ever turn a *hold* into a *close*, never the reverse.
 4. **Session cap** — an overnight structure closes after `hold_winners_max_days` (3) sessions
    whatever the verdict. Counted in **trading** sessions, so a Friday entry still open on Monday has
    been held one session, not three, and a weekend cannot spend the budget. Reason `max_hold`.
-5. **PEAD gate** — on the first check of a day, a position at or below breakeven closes. Holding a
+5. **PEAD gate** — on the first check of the first session after entry, a position at or below breakeven closes. Holding a
    winner past the first morning is worth roughly +1.4pp on average as the residual crush drains over
    three to five sessions; holding a **loser** fights post-earnings drift, which continues rather than
    reverting. Reason `pead_loser`; disable per strategy with `close_losers_first_morning: false`.
@@ -125,8 +125,9 @@ only ever turn a *hold* into a *close*, never the reverse.
    `management_events`, so a restart does not change it). A `pead_loser` verdict held by
    `spread_too_wide`, `tick_execution_cap`, `close_failed` or an unusable mark has not been acted
    on, so the next tick is owed the same check; the spread-gate patience then settles it. A winner
-   is judged once and carried. The check is per session: a position carried into a second session is
-   owed one there too.
+   is judged once and carried. The gate acts on that first morning only (`sessions_held == 1`): a
+   winner that turns loser on its second morning is not closed as `pead_loser`; it runs to its stop,
+   target or the session cap.
 
    **The twin.** `close_losers_first_morning` is also an advice param, named
    `<strategy>.close_losers_first_morning` and bounded like any other (`{"choices": [false]}`). It is
