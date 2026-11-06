@@ -337,6 +337,23 @@ export function etaText(seconds: number | null): string | null {
   return `about ${String(h)} h ${String(mins % 60)} min left`;
 }
 
+/** "57.2 s/session", "4.0 symbol-days/s" (the orchestrator's wording); null without a rate. */
+export function rateText(rate: ResearchProgress["rate"]): string | null {
+  if (rate === null || !(rate.secondsEach > 0)) return null;
+  const { phase, secondsEach } = rate;
+  if (secondsEach >= 1) {
+    const one = phase.endsWith("s") && !phase.endsWith("ss") ? phase.slice(0, -1) : phase;
+    return `${secondsEach.toFixed(1)} s/${one}`;
+  }
+  return `${(1 / secondsEach).toFixed(1)} ${phase}/s`;
+}
+
+/** The rate and the time left side by side ("57.2 s/session · about 3 h 50 min left"). */
+export function paceText(p: ResearchProgress | null | undefined): string {
+  if (!p) return "";
+  return [rateText(p.rate), etaText(p.etaSeconds)].filter((x) => x !== null).join(" · ");
+}
+
 /** A study's register title, heading only, else its slug. */
 function studyTitle(study: string, studies?: StudyIndex): string {
   const row = studies?.byStudy.get(study);
@@ -391,7 +408,7 @@ function RunningTile({ t, studies, nowMs, onOpen }: { t: ResearchTask; studies?:
         {pct !== null ? (
           <span className="q-pct">
             <span className="q-pct-num">{pct}%</span>
-            <span className="study-tile-sub">{etaText(t.progress?.etaSeconds ?? null) ?? ""}</span>
+            <span className="study-tile-sub">{paceText(t.progress)}</span>
           </span>
         ) : null}
         {t.progress ? <PhaseMeters p={t.progress} /> : <span className="study-tile-sub">No progress file yet.</span>}
@@ -503,7 +520,7 @@ function TaskOverview({ t, studies, nowMs }: { t: ResearchTask; studies?: StudyI
           {t.progress.fraction !== null ? (
             <div className="q-pct">
               <span className="q-pct-num">{Math.round(t.progress.fraction * 100)}%</span>
-              <span className="muted">{etaText(t.progress.etaSeconds) ?? ""}</span>
+              <span className="muted">{paceText(t.progress)}</span>
             </div>
           ) : null}
           <PhaseMeters p={t.progress} />
@@ -551,7 +568,7 @@ function HandOverview({ p }: { p: ResearchProgress }) {
       {p.fraction !== null ? (
         <div className="q-pct">
           <span className="q-pct-num">{Math.round(p.fraction * 100)}%</span>
-          <span className="muted">{etaText(p.etaSeconds) ?? ""}</span>
+          <span className="muted">{paceText(p)}</span>
         </div>
       ) : null}
       <PhaseMeters p={p} />

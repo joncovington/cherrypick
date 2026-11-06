@@ -8,6 +8,7 @@ const p = {
   phases: [{ name: "sessions", done: 2, total: 4, unit: "days", current: "2026-10-15" }],
   fraction: 0.5,
   etaSeconds: 600,
+  rate: null,
   ageSeconds: 3,
   line: "sessions 2/4 days (2026-10-15) · ~00:10 remaining",
   note: null,

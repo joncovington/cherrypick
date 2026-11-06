@@ -78,6 +78,9 @@ export interface ResearchProgress {
   /** The overall share done across nested phases, 0-1; null when no phase has a total. */
   fraction: number | null;
   etaSeconds: number | null;
+  /** The innermost counted phase's average seconds per item, items a resume skipped aside; null
+   *  before anything is counted or once the job has ended. */
+  rate: { phase: string; secondsEach: number } | null;
   /** Seconds since the job last wrote. */
   ageSeconds: number | null;
   /** The orchestrator's one-line reading, e.g. "decisions 1/3 replays (vendor) · sessions 2/4 days". */

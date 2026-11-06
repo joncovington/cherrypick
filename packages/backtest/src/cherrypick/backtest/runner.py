@@ -723,7 +723,9 @@ def run(
     rep.phase("sessions", total=len(todo), unit="days")
     with ThreadPoolExecutor(max_workers=max(1, workers or core_procs.default_workers())) as pool:
         for day, out, rows in pool.map(one, todo):
-            rep.advance("sessions", current=day)  # a refused session is done too: it is counted, not lost
+            # A refused session is done too: it is counted, not lost. A finished one read back from an
+            # interrupted run is skipped: done, but no part of the rate or the time left.
+            rep.advance("sessions", current=day, skipped=day in finished)
             if not out.get("ok"):
                 refused[day] = str(out.get("error"))[:200]
                 log(f"{day} refused: {refused[day]}")
