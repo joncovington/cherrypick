@@ -8,6 +8,9 @@ import { TimeSpreadTable } from "../../components/TimeSpreadTable";
  * then the ones that do not. Every figure is the package's. NO TESTED EDGE: ordered by the front/back
  * IV ratio, the hypothesis item 54 tests.
  */
+/** The card lists this many of the too-big rows; manage sends them all for the screener tab. */
+export const TOO_BIG_SHOWN = 30;
+
 export function TimeSpreadsCard({ t }: { t: ManageTimeSpreads | null }) {
   if (!t) return null;
   const dropped = Object.entries(t.dropped)
@@ -33,8 +36,11 @@ export function TimeSpreadsCard({ t }: { t: ManageTimeSpreads | null }) {
           {t.fitsTotal > t.fits.length && <p className="muted pf-caption">the first {t.fits.length} of {t.fitsTotal} that fit</p>}
           {t.tooBig.length > 0 && (
             <>
-              <p className="muted pf-caption">too big for the account today ({t.tooBigTotal}), with the cap that stops each:</p>
-              <TimeSpreadTable rows={t.tooBig} sized />
+              <p className="muted pf-caption">
+                too big for the account today ({t.tooBigTotal}), with the cap that stops each
+                {t.tooBig.length > TOO_BIG_SHOWN ? `; the first ${TOO_BIG_SHOWN}, every one on Screeners, time spreads` : ""}:
+              </p>
+              <TimeSpreadTable rows={t.tooBig.slice(0, TOO_BIG_SHOWN)} sized />
             </>
           )}
         </>

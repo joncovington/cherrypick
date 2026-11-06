@@ -90,3 +90,14 @@ def test_no_reading_and_the_switch():
     assert missing["error"] == "no time-spread reading today" and missing["fits"] == []
     off, _ = _rules.effective({"portfolio": {"time_spreads": {"enabled": False}}})
     assert run(rules=off) is None
+
+
+def test_show_cuts_the_rows_that_fit_but_every_row_too_big_is_listed():
+    # The screener tab marks each scanned row from too_big, so none may be cut by `show`.
+    one, _ = _rules.effective({"portfolio": {"time_spreads": {"show": 1}}})
+    out = run(book(net_liq=5000.0, used=0.0), rules=one)
+    assert out["too_big_total"] > 1
+    assert len(out["too_big"]) == out["too_big_total"]
+    assert all(r["binding"] for r in out["too_big"])
+    wide = run(book(net_liq=60000.0), rules=one)
+    assert wide["fits_total"] > 1 and len(wide["fits"]) == 1

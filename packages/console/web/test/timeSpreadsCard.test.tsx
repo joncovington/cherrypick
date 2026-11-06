@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ManageTimeSpreads, TimeSpreadStructure } from "@console/shared";
-import { TimeSpreadsCard } from "../src/pages/Live/TimeSpreadsCard";
+import { TOO_BIG_SHOWN, TimeSpreadsCard } from "../src/pages/Live/TimeSpreadsCard";
 
 /**
  * The time-spread card draws manage's rows and decides nothing; it always says there is no tested
@@ -84,6 +84,19 @@ describe("TimeSpreadsCard", () => {
   it("says when bullish structures are held back", () => {
     const html = render({ ...BASE, deltaFilter: { bookBwd: 150, limit: 100, bullishHeldBack: true } });
     expect(html).toContain("bullish structures held back");
+  });
+
+  it("lists the first of many too-big rows and points at the screener tab for the rest", () => {
+    const many = Array.from({ length: TOO_BIG_SHOWN + 5 }, (_, i) => ({
+      ...ROW,
+      label: `put calendar 2026-11-13/2026-12-18 ${200 + i}/${200 + i}P`,
+      units: 0,
+      binding: "per-trade risk",
+    }));
+    const html = render({ ...BASE, tooBig: many, tooBigTotal: many.length });
+    expect(html).toContain(`the first ${TOO_BIG_SHOWN}, every one on Screeners, time spreads`);
+    expect(html).toContain(`${200 + TOO_BIG_SHOWN - 1}/${200 + TOO_BIG_SHOWN - 1}P`);
+    expect(html).not.toContain(`${200 + TOO_BIG_SHOWN}/${200 + TOO_BIG_SHOWN}P`);
   });
 
   it("shows the reading's error instead of rows", () => {
