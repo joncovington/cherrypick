@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type {
   ManageTimeSpreads,
+  TimeSpreadLeg,
   TimeSpreadStructure,
   TimeSpreadTerm,
   TimeSpreadsPayload,
@@ -62,6 +63,23 @@ function days(dir: string): string[] {
   }
 }
 
+function legOf(v: unknown): TimeSpreadLeg | null {
+  const l = rec(v);
+  if (Object.keys(l).length === 0) return null;
+  const right = str(l["right"]);
+  return { strike: num(l["strike"]), right: right === "C" || right === "P" ? right : null, option: str(l["option"]) };
+}
+
+function quotesOf(v: unknown): TimeSpreadStructure["entryQuotes"] {
+  const q = arr(v);
+  if (q.length !== 2) return null;
+  const pair = (x: unknown): [number | null, number | null] => {
+    const a = arr(x);
+    return [num(a[0]), num(a[1])];
+  };
+  return [pair(q[0]), pair(q[1])];
+}
+
 export function structureOf(v: unknown): TimeSpreadStructure {
   const r = rec(v);
   const dir = str(r["direction"]);
@@ -76,6 +94,10 @@ export function structureOf(v: unknown): TimeSpreadStructure {
     ratio: num(r["ratio"]),
     ivRank: num(r["iv_rank"]),
     sector: str(r["sector"]),
+    earningsDate: str(r["earnings_date"]),
+    longLeg: legOf(r["long"]),
+    shortLeg: legOf(r["short"]),
+    entryQuotes: quotesOf(r["entry_quotes"]),
     debitMid: num(r["debit_mid"]),
     debitNatural: num(r["debit_natural"]),
     gap: num(r["gap"]),
@@ -117,7 +139,30 @@ function termOf(v: unknown): TimeSpreadTerm {
   };
 }
 
+/**
+ * The account's sizing of a day's scan: the first account in that day's manage evaluation that carries
+ * `portfolio.time_spreads`. Never returns an account number. The note says why there is nothing.
+ */
+export function readAccountTimeSpreads(
+  config: ConsoleConfig,
+  day: string,
+): { account: ManageTimeSpreads | null; accountNote: string | null } {
+  let doc: Record<string, unknown>;
+  try {
+    doc = rec(JSON.parse(fs.readFileSync(path.join(config.paths.manageDir, `eval-${day}.json`), "utf-8")));
+  } catch {
+    return { account: null, accountNote: `no manage evaluation for ${day}, so nothing is sized to the account` };
+  }
+  for (const a of arr(doc["accounts"])) {
+    const ts = rec(rec(a)["portfolio"])["time_spreads"];
+    if (ts !== undefined && ts !== null) return { account: manageTimeSpreads(ts), accountNote: null };
+  }
+  return { account: null, accountNote: `the ${day} evaluation carries no time-spread rows, so nothing is sized to the account` };
+}
+
 const EMPTY: Omit<TimeSpreadsPayload, "day" | "days" | "error"> = {
+  account: null,
+  accountNote: null,
   takenAt: null,
   complete: false,
   problem: null,
@@ -162,6 +207,7 @@ export function readTimeSpreads(config: ConsoleConfig, day: string | null): Time
     terms,
     structures: arr(doc["structures"]).map(structureOf),
     dropped: counts(doc["structures_dropped"]),
+    ...readAccountTimeSpreads(config, want),
     error: null,
   };
 }

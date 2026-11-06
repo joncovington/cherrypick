@@ -42,8 +42,21 @@ const STRUCTURE = {
   value_stop: 1.28,
   roll_by: "2026-11-10",
   max_loss: 256.0,
+  earnings_date: "2026-12-01",
+  long: { strike: 100, right: "P", option: "XYZ   261218P00100000" },
+  short: { strike: 100, right: "P", option: "XYZ   261113P00100000" },
+  entry_quotes: [
+    [4.1, 4.3],
+    [1.6, 1.7],
+  ],
   modelled: true,
 };
+
+function writeEval(day: string, doc: unknown): void {
+  const dir = path.join(tmp, "manage");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `eval-${day}.json`), JSON.stringify(doc));
+}
 
 function write(day: string, doc: unknown): void {
   const dir = path.join(tmp, "time-spreads");
@@ -89,6 +102,57 @@ describe("readTimeSpreads", () => {
     expect(got.structures[0]).toMatchObject({ underlying: "XYZ", debitMid: 2.56, priceStop: [91.0, null], rollBy: "2026-11-10" });
     expect(got.dropped).toEqual({ "fails the leg bars as one order": 3 });
     expect(got.order).toMatch(/untested/);
+  });
+
+  it("carries the legs, their quotes and the earnings date", () => {
+    write("2026-11-06", { rows: [], structures: [STRUCTURE] });
+    const s = readTimeSpreads(config, null).structures[0]!;
+    expect(s.earningsDate).toBe("2026-12-01");
+    expect(s.longLeg).toEqual({ strike: 100, right: "P", option: "XYZ   261218P00100000" });
+    expect(s.shortLeg?.option).toBe("XYZ   261113P00100000");
+    expect(s.entryQuotes).toEqual([
+      [4.1, 4.3],
+      [1.6, 1.7],
+    ]);
+  });
+
+  it("says why nothing is sized when the day has no evaluation, or one without time spreads", () => {
+    write("2026-11-06", { rows: [], structures: [STRUCTURE] });
+    const none = readTimeSpreads(config, null);
+    expect(none.account).toBeNull();
+    expect(none.accountNote).toMatch(/no manage evaluation for 2026-11-06/);
+    writeEval("2026-11-06", { accounts: [{ account: "****1234", portfolio: {} }] });
+    const bare = readTimeSpreads(config, null);
+    expect(bare.account).toBeNull();
+    expect(bare.accountNote).toMatch(/carries no time-spread rows/);
+  });
+
+  it("reads the account's sizing from that day's evaluation, without the account number", () => {
+    write("2026-11-06", { rows: [], structures: [STRUCTURE] });
+    writeEval("2026-11-06", {
+      accounts: [
+        { account: "****1234", portfolio: null },
+        {
+          account: "****5678",
+          portfolio: {
+            time_spreads: {
+              source_session: "2026-11-06",
+              bp_cap_pct: 0.6,
+              fits: [{ ...STRUCTURE, units: 2, binding: null }],
+              fits_total: 1,
+              too_big: [{ ...STRUCTURE, label: "other", units: 0, binding: "per-trade risk" }],
+              too_big_total: 5,
+            },
+          },
+        },
+      ],
+    });
+    const got = readTimeSpreads(config, null);
+    expect(got.accountNote).toBeNull();
+    expect(got.account?.fits[0]).toMatchObject({ units: 2 });
+    expect(got.account?.tooBig[0]).toMatchObject({ binding: "per-trade risk" });
+    expect(got.account?.tooBigTotal).toBe(5);
+    expect(JSON.stringify(got)).not.toContain("5678");
   });
 });
 
