@@ -77,6 +77,10 @@ from cherrypick.manage import wheel as _wheel
 
 MULTIPLIER = pricing.MULTIPLIER
 EPS = 1e-9
+# A long call sold within this many days of a new long's purchase, either way, may be the same roll
+# done in two orders (`_link`); and how far back a chain of confirmed rolls is followed.
+ROLL_WINDOW_DAYS = 5
+MAX_ROLLS = 20
 SHORT_SIDE = _wheel.SHORT_SIDE
 
 
@@ -136,10 +140,50 @@ def _solve(spot, strike, years, mid, right, rate, div) -> tuple[float | None, fl
 
 
 # --------------------------------------------------------------------------- linking
+def _episodes(rows: list[dict[str, Any]], symbol: str) -> list[dict[str, Any]]:
+    """A contract's holdings, oldest first, each from a buy to open off flat to the row that made it flat
+    again: {opened_rows, opened, closed (None while held), sold (closed by a sale to close)}."""
+    out: list[dict[str, Any]] = []
+    pos, cur = 0.0, None
+    for r in sorted((r for r in rows if _sym(r.get("symbol")) == symbol), key=_wheel._key):
+        pos += _wheel._signed(r)
+        if r.get("action") == "Buy to Open" and r.get("transaction_type") == "Trade":
+            if cur is None:
+                cur = {
+                    "opened_rows": [],
+                    "opened": str(r.get("executed_at") or ""),
+                    "closed": None,
+                    "sold": False,
+                }
+                out.append(cur)
+            cur["opened_rows"].append(r)
+        if abs(pos) < EPS and cur is not None:
+            cur["closed"] = str(r.get("executed_at") or "")
+            cur["sold"] = r.get("action") == "Sell to Close" and r.get("transaction_type") == "Trade"
+            cur = None
+    return out
+
+
+def _days_apart(a: str, b: str) -> int:
+    return abs((date.fromisoformat(a[:10]) - date.fromisoformat(b[:10])).days)
+
+
 def _link(
-    rows: list[dict[str, Any]], long_sym: str, short_sym: str, held: dict[str, float], long_exp: str
+    rows: list[dict[str, Any]],
+    long_sym: str,
+    short_sym: str,
+    held: dict[str, float],
+    long_exp: str,
+    rules: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """The orders behind this long and every short sold against it, and whether they reconcile."""
+    """The orders behind this long and every short sold against it, and whether they reconcile.
+
+    The chain runs back through every long it was rolled from: in one order (the roll touches both
+    contracts, so they share a component), or in two that `trades.<LONG>.continues` names (a sale of the
+    old long and a separate buy of the new, which no order links). Its money, and the shorts sold
+    against it, start at the chain's first long. A long call sold within `ROLL_WINDOW_DAYS` of this
+    one's purchase that nothing links is reported as a possible two-order roll, never stitched on a
+    guess: until it is confirmed the chain's cost leaves the old long out."""
     rows = sorted(rows, key=_wheel._key)
     trades = [r for r in rows if r.get("transaction_type") == "Trade" and r.get("order_id") is not None]
     options = [r for r in trades if _wheel._is_option(r)]
@@ -147,18 +191,71 @@ def _link(
     problems: list[str] = []
 
     # The long's position since it was last flat: when it was bought, and at what.
-    pos, opened_rows = 0.0, []
-    for r in sorted((r for r in options + deliveries if _sym(r.get("symbol")) == long_sym), key=_wheel._key):
-        pos += _wheel._signed(r)
-        if r.get("action") == "Buy to Open" and r.get("transaction_type") == "Trade":
-            opened_rows.append(r)
-        if abs(pos) < EPS:
-            opened_rows = []
+    current = [e for e in _episodes(options + deliveries, long_sym) if e["closed"] is None]
+    opened_rows = current[-1]["opened_rows"] if current else []
     if not opened_rows:
         return {"problems": ["the long's opening predates the history"], "orders": [], "opened_rows": []}
     since = str(opened_rows[0].get("executed_at") or "")
 
     comp_of, _ = _wheel._components(options)
+    home = comp_of[opened_rows[0]["order_id"]]
+    homes = {home}
+    # Two-order rolls the operator confirmed, followed back (each old long may continue another).
+    entries = {
+        contract_key(k): v for k, v in ((rules or {}).get("trades") or {}).items() if isinstance(v, dict)
+    }
+    continued: list[str] = []
+    at, opened_at = long_sym, since
+    for _ in range(MAX_ROLLS):
+        old = _sym((entries.get(contract_key(at)) or {}).get("continues") or "")
+        if not old:
+            break
+        if old in continued or old == long_sym:
+            problems.append(f"trades.{at}.continues: {_wheel._label(old)} is already in this chain")
+            break
+        sold = [
+            e
+            for e in _episodes(options + deliveries, old)
+            if e["sold"] and e["closed"] and _days_apart(e["closed"], opened_at) <= ROLL_WINDOW_DAYS
+        ]
+        if not sold:
+            problems.append(
+                f"trades.{at}.continues: no {_wheel._label(old)} sold to close within "
+                f"{ROLL_WINDOW_DAYS} days of {opened_at[:10]}; not linked"
+            )
+            break
+        episode = sold[-1]
+        homes.add(comp_of[episode["opened_rows"][0]["order_id"]])
+        continued.append(old)
+        at, opened_at = old, episode["opened"]
+    # The chain's first long: the earliest other call bought to open in any of its components, a long it
+    # was rolled from. This long's own earlier holdings are not a roll and do not move the start.
+    starts = [
+        str(r.get("executed_at") or "")
+        for r in options
+        if comp_of[r["order_id"]] in homes
+        and r.get("action") == "Buy to Open"
+        and _sym(r.get("symbol")) != long_sym
+        and (_wheel.occ(_sym(r.get("symbol"))) or {}).get("right") == "C"
+    ]
+    chain_since = min([since, *starts])
+
+    # A long call sold close to this purchase that nothing links: possibly a roll in two orders.
+    possible_roll = None
+    if not continued:
+        for sym in sorted({_sym(r.get("symbol")) for r in options} - {long_sym}):
+            leg = _wheel.occ(sym) or {}
+            if leg.get("right") != "C":
+                continue
+            for e in _episodes(options + deliveries, sym):
+                c = comp_of.get(e["opened_rows"][0]["order_id"]) if e["opened_rows"] else None
+                near = e["sold"] and e["closed"] and _days_apart(e["closed"], since) <= ROLL_WINDOW_DAYS
+                if (
+                    near
+                    and c not in homes
+                    and (possible_roll is None or e["closed"] > possible_roll["closed"])
+                ):
+                    possible_roll = {"symbol": sym, "leg": _wheel._label(sym), "closed": e["closed"][:10]}
     rights: dict[int, set] = defaultdict(set)
     short_only: dict[int, bool] = defaultdict(lambda: True)
     first: dict[int, str] = {}
@@ -171,22 +268,21 @@ def _link(
         if str(r.get("action") or "") not in SHORT_SIDE:
             short_only[c] = False
         first.setdefault(c, str(r.get("executed_at") or ""))
-    home = comp_of[opened_rows[0]["order_id"]]
-    if rights[home] != {"C"}:
+    if any(rights[h] != {"C"} for h in homes):
         problems.append("the long's order chain holds legs other than calls")
-    linked = {home} | {
+    linked = homes | {
         c
         for c in rights
-        if c != home
+        if c not in homes
         and rights[c] == {"C"}
         and short_only[c]
-        and first[c] >= since
+        and first[c] >= chain_since
         and all(str(e) < long_exp for e in expiries[c])
     }
     mine = [r for r in options if comp_of[r["order_id"]] in linked]
     symbols = {_sym(r.get("symbol")) for r in mine}
     delivered = [
-        r for r in deliveries if _sym(r.get("symbol")) in symbols and str(r.get("executed_at")) >= since
+        r for r in deliveries if _sym(r.get("symbol")) in symbols and str(r.get("executed_at")) >= chain_since
     ]
     for r in delivered:
         if str(r.get("transaction_sub_type") or "") in _wheel.SHARE_MOVING:
@@ -209,6 +305,9 @@ def _link(
         "delivered": delivered,
         "opened_rows": opened_rows,
         "since": since[:10],
+        "chain_since": chain_since[:10],
+        "continued": continued,
+        "possible_roll": possible_roll,
         "orders": sorted({r["order_id"] for r in mine}, key=str),
     }
 
@@ -453,7 +552,7 @@ def judge(
     hist = (snapshot.get("underlying_history") or {}).get(underlying)
     div_today = _yield(hist, session.isoformat(), spot)
 
-    linked = _link(rows, long_sym, short_sym, held, str(long_raw["expiration"]))
+    linked = _link(rows, long_sym, short_sym, held, str(long_raw["expiration"]), rules)
     reconciled = not linked["problems"]
     intent_source = "symbol" if intent in ("pmcc", "diagonal") else None
     on_contract = contract_intent(rules, long_sym)
@@ -676,6 +775,11 @@ def judge(
         "width": width_view,
         "shorts": shorts,
         "orders": linked.get("orders") or [],
+        # The chain: the first long's purchase it runs from, the longs a confirmed two-order roll
+        # stitched on (`trades.<LONG>.continues`), and a long sold near this purchase that nothing links.
+        "chain_since": linked.get("chain_since"),
+        "continued": linked.get("continued") or [],
+        "possible_roll": linked.get("possible_roll"),
         "net_cash": net_cash,
         "fees": fees,
         "long_cost": long_cost,

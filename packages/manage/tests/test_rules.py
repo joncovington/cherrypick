@@ -54,6 +54,22 @@ def test_a_trades_entry_that_does_nothing_says_so():
     ]
 
 
+def test_a_continues_must_name_another_call_contract():
+    _, warnings = _rules.effective(
+        {
+            "trades": {
+                "XYZ 280616C00040000": {"continues": "XYZ 280121C00040000"},
+                "XYZ 280617C00040000": {"continues": "XYZ  280617C00040000"},
+                "XYZ 280618C00040000": {"continues": "XYZ"},
+            }
+        }
+    )
+    assert warnings == [
+        "trades.XYZ 280617C00040000.continues: a long cannot continue itself, ignored",
+        "trades.XYZ 280618C00040000.continues: not a call contract, ignored",
+    ]
+
+
 def test_a_shape_target_may_be_added_changed_or_misspelt():
     rules, warnings = _rules.effective(
         {

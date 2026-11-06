@@ -73,7 +73,9 @@ of that day, not today's.
 - **A PMCC is recognised, never assumed** (`pmcc.py`). The shape is a call diagonal; it is a PMCC only
   when the long's delta at entry clears the floor, or an intent says `"pmcc"`: `trades.<LONG CONTRACT>`
   for that PMCC alone, beating `positions.<SYMBOL>` for the name. A rolled long is a new PMCC and does
-  not inherit its old contract's intent (user, 2026-11-06). That
+  not inherit its old contract's intent (user, 2026-11-06), but its money does: the chain runs back
+  through a roll in one order, or one in two orders that `trades.<NEW LONG>.continues` confirms; an
+  unconfirmed one is flagged (`possible_roll`), never stitched on a guess. That
   delta is recorded once from the first full snapshot after the fill (`entrydelta.py`, the store
   `entry-deltas.json`, never rewritten; each snapshot carries its rows' records so a re-run reads the
   same one), else solved from the fill and that day's close, dividend yield carried either way. A delta

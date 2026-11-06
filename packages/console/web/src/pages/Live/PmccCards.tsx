@@ -106,6 +106,13 @@ export function intentWords(p: ManagePmccPosition): string {
   return key ? `${set} · ${key}` : set;
 }
 
+/** Where the chain's money runs from: this long alone, or back through the longs it was rolled from. */
+export function chainWords(p: ManagePmccPosition): string {
+  const stitched = p.continued.length ? `; continues ${p.continued.join(", ")} (two-order roll, confirmed)` : "";
+  if (!p.chainSince || p.chainSince === p.long.opened) return `this long only${stitched}`;
+  return `since ${p.chainSince}, through its rolls${stitched}`;
+}
+
 function PositionFacts({ p }: { p: ManagePmccPosition }) {
   return (
     <DetailCard title="position" aside={<StatusChip status={status(p)} />}>
@@ -116,6 +123,7 @@ function PositionFacts({ p }: { p: ManagePmccPosition }) {
           ["intent", intentWords(p)],
           ["underlying", px(p.spot)],
           ["long bought", p.long.opened ?? "before the history"],
+          ["chain", chainWords(p)],
           ["trades", p.tradeIds.length ? p.tradeIds.join(", ") : "none"],
         ]}
       />
@@ -174,6 +182,20 @@ function LongCard({ p }: { p: ManagePmccPosition }) {
   );
 }
 
+/** The width check's caveat for a possible two-order roll of the long: the chain's cost may leave the
+ * old long out, so the check may pass a short whose assignment would lock in a loss. Says how to
+ * confirm it (`trades.<this long>.continues`). Null when manage saw none. */
+export function twoOrderRollWords(p: ManagePmccPosition): string | null {
+  const r = p.possibleRoll;
+  if (!r) return null;
+  const key = p.intentKey ?? "this long";
+  return (
+    `possibly rolled in two orders: the ${r.leg} was sold on ${r.closed} and nothing links it to this long, ` +
+    `so its cash is left out of the cost above. If it was a roll, set trades "${key}": ` +
+    `{"continues": "${r.symbol}"} in manage's config.`
+  );
+}
+
 function WidthCard({ p }: { p: ManagePmccPosition }) {
   const w = p.width;
   const openLegs = w.basis === "open_legs";
@@ -192,6 +214,11 @@ function WidthCard({ p }: { p: ManagePmccPosition }) {
         ]}
       />
       {w.assumes ? <p className="md-note">assumes {w.assumes}</p> : null}
+      {twoOrderRollWords(p) ? (
+        <p className="md-note">
+          <span className="chip chip-warn">check the roll</span> {twoOrderRollWords(p)}
+        </p>
+      ) : null}
     </DetailCard>
   );
 }

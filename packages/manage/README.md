@@ -283,8 +283,14 @@ rules in the table above read it.
   Anything not recognised keeps its diagonal rules and nothing else.
 - **Linking.** A short sold after the last one expired is an order chain of its own, so the view links
   the long and its shorts as the wheel view links a wheel: the long's chain, and every chain on the
-  name made only of calls sold to open and bought back, expiring before the long, opened since it was
-  bought. They must replay to today's long and short. History that starts after the long was bought,
+  name made only of calls sold to open and bought back, expiring before the long, opened since the
+  chain's first long was bought. A roll of the long in one order links the old long (the order touches
+  both contracts); a roll in two orders (the old long sold, the new one bought separately) links only
+  when `trades.<NEW LONG>.continues` names the old contract. A long call sold within five days of the
+  long's purchase that nothing links is flagged as a possible two-order roll, never stitched on a
+  guess: until it is confirmed, the cost leaves the old long out and the width check may pass a short
+  whose assignment would lock in a loss. Recognition stays the newest long's own. They must replay to
+  today's long and short. History that starts after the long was bought,
   an assignment or exercise, or a contract the history never opened makes the PMCC **unreconciled**:
   its money is shown as far as the rows go (the width check on the open legs' prices, labelled so),
   and it gets only a review saying why (`pmcc_data`, no confidence).
