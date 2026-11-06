@@ -280,6 +280,16 @@ function trade(v: unknown): ManageTrade {
 
 /* ------------------------------------------------------------------ the PMCC view (pmcc.py) */
 
+/** A possible two-order roll, whole or not at all. */
+function possibleRollOf(v: unknown): { symbol: string; leg: string; closed: string } | null {
+  if (v === null || v === undefined || typeof v !== "object") return null;
+  const r = rec(v);
+  const symbol = str(r["symbol"]);
+  const leg = str(r["leg"]);
+  const closed = str(r["closed"]);
+  return symbol && leg && closed ? { symbol, leg, closed } : null;
+}
+
 /** manage's three-way recognition; anything else (an evaluation written before it) is null. */
 function recognitionOf(v: unknown): "pmcc" | "diagonal" | "unknown" | null {
   return v === "pmcc" || v === "diagonal" || v === "unknown" ? v : null;
@@ -429,6 +439,9 @@ function pmccPosition(v: unknown): ManagePmccPosition {
       };
     }),
     orders: arr(p["orders"]).map(ident).filter((x): x is string => x !== null),
+    chainSince: str(p["chain_since"]),
+    continued: strs(p["continued"]),
+    possibleRoll: possibleRollOf(p["possible_roll"]),
     netCash: num(p["net_cash"]),
     fees: num(p["fees"]),
     longCost: num(p["long_cost"]),

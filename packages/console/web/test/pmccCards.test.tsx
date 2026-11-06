@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ManageAccount, ManagePmcc, ManagePmccPosition, ManageTrade } from "@console/shared";
-import { NO_PMCC, PmccCards, entryWords, intentWords, kindOf, rollWords } from "../src/pages/Live/PmccCards";
+import {
+  NO_PMCC,
+  PmccCards,
+  chainWords,
+  entryWords,
+  intentWords,
+  kindOf,
+  rollWords,
+  twoOrderRollWords,
+} from "../src/pages/Live/PmccCards";
 import { aligned, inView, tables } from "./viewTables";
 
 /**
@@ -93,6 +102,9 @@ function position(over: Partial<ManagePmccPosition> = {}): ManagePmccPosition {
       { symbol: "XYZ 261120C00045000", leg: "2026-11-20 45C", sold: "2026-09-25", soldPrice: 6, cash: 600, fees: -1.1, status: "open" },
     ],
     orders: ["1", "2"],
+    chainSince: "2026-04-01",
+    continued: [],
+    possibleRoll: null,
     netCash: -762,
     fees: -3.3,
     longCost: 1512,
@@ -247,6 +259,25 @@ describe("the pmcc tab", () => {
     expect(out).not.toContain("credit.take_profit");
     expect(out).toContain("2026-12-18 48C at 0.25 delta");
     expect(out).toContain("check-roll ok");
+  });
+
+  it("the chain row says where the money runs from, and a possible two-order roll is flagged on the width check", () => {
+    expect(chainWords(position())).toBe("this long only");
+    expect(chainWords(position({ chainSince: "2025-11-03" }))).toBe("since 2025-11-03, through its rolls");
+    expect(chainWords(position({ chainSince: "2025-11-03", continued: ["XYZ 270115C00038000"] }))).toBe(
+      "since 2025-11-03, through its rolls; continues XYZ 270115C00038000 (two-order roll, confirmed)",
+    );
+
+    expect(twoOrderRollWords(position())).toBeNull();
+    const maybe = position({ possibleRoll: { symbol: "XYZ 270115C00038000", leg: "2027-01-15 38C", closed: "2026-03-30" } });
+    const words =
+      'possibly rolled in two orders: the 2027-01-15 38C was sold on 2026-03-30 and nothing links it to this long, ' +
+      'so its cash is left out of the cost above. If it was a roll, set trades "XYZ 280121C00040000": ' +
+      '{"continues": "XYZ 270115C00038000"} in manage\'s config.';
+    expect(twoOrderRollWords(maybe)).toBe(words);
+    const out = render(account(view({ positions: [maybe] })));
+    expect(out).toContain(`check the roll ${words}`);
+    expect(render(account(view()))).not.toContain("check the roll");
   });
 
   it("the intent row says what is set and where, and gives the key that sets it on this PMCC alone", () => {

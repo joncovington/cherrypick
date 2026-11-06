@@ -287,6 +287,14 @@ export interface ManagePmccPosition {
   width: ManagePmccWidth;
   shorts: ManagePmccShortSold[];
   orders: string[];
+  /** The chain's first long's purchase, which its money and shorts run from (earlier than `long.opened`
+   * after a roll). */
+  chainSince: string | null;
+  /** The longs a confirmed two-order roll stitched on (`trades.<LONG>.continues`), newest first. */
+  continued: string[];
+  /** A long call sold close to this long's purchase that nothing links: possibly a roll in two orders,
+   * whose cash the chain leaves out until it is confirmed. */
+  possibleRoll: { symbol: string; leg: string; closed: string } | null;
   netCash: number | null;
   fees: number | null;
   longCost: number | null;

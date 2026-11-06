@@ -756,7 +756,10 @@ Each card's title, visible while collapsed, carries manage's `recognition` as a 
 bought today before its close is in). An undecided candidate is never called a diagonal; an
 evaluation written before the field says only `not a PMCC`. The position card's `intent` row says
 what intent is set and where (on this long, or on the name for every PMCC on it) and gives the
-`trades` key that sets it on this PMCC alone (manage's `trades.<long contract>.intent`).
+`trades` key that sets it on this PMCC alone (manage's `trades.<long contract>.intent`). Its `chain`
+row says where the money runs from (this long only, or since the chain's first long through its
+rolls, with any confirmed two-order roll). A possible two-order roll manage could not link puts a
+`check the roll` note on the width check, with the `continues` line to add.
 It is the **real account's** PMCCs, not the paper pmcc module's page. Its id is a trading-module id,
 so `visibility.ts` lists the account-wide Live tabs (`LIVE_ACCOUNT_WIDE`) and shows them before the
 live-switch rule runs: the paper module has no live gate, the features reply names it false, and the

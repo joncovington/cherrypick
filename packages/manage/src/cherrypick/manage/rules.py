@@ -441,7 +441,7 @@ DEFAULT_RULES: dict[str, Any] = {
 }
 
 # What a `trades` entry may hold, and the intents it may set.
-TRADE_KEYS = frozenset({"intent", "note"})
+TRADE_KEYS = frozenset({"intent", "continues", "note"})
 TRADE_INTENTS = frozenset({"pmcc", "diagonal"})
 
 # Every rule id an override's `disable` list may name.
@@ -563,17 +563,29 @@ def _check_positions(rules: dict[str, Any], warnings: list[str]) -> None:
                 warnings.append(f"positions.{sym}.disable: unknown rule '{rule}'")
 
 
+def _is_call_contract(key: str) -> bool:
+    """An OCC call contract, spaces ignored: a root, then YYMMDD, C, and the strike in eight digits."""
+    compact = "".join(str(key).split()).upper()
+    code = compact[-15:]
+    return len(compact) > 15 and code[6] == "C" and (code[:6] + code[7:]).isdigit()
+
+
 def _check_trades(rules: dict[str, Any], warnings: list[str]) -> None:
-    """Say what a `trades` entry holds that does nothing: a key that is not a call contract, a field
-    other than intent and note, an intent other than pmcc or diagonal."""
+    """Say what a `trades` entry holds that does nothing: a key or a `continues` that is not a call
+    contract, a field other than intent, continues and note, an intent other than pmcc or diagonal, a
+    long that continues itself."""
     for key, entry in (rules.get("trades") or {}).items():
         if key.startswith("_"):
             continue
-        compact = "".join(str(key).split()).upper()
-        code = compact[-15:]
-        if len(compact) <= 15 or len(code) != 15 or code[6] != "C" or not (code[:6] + code[7:]).isdigit():
+        if not _is_call_contract(key):
             warnings.append(f"trades.{key}: not a call contract (e.g. 'XYZ 280121C00040000'), ignored")
             continue
+        if isinstance(entry, dict) and "continues" in entry:
+            old = entry["continues"]
+            if not isinstance(old, str) or not _is_call_contract(old):
+                warnings.append(f"trades.{key}.continues: not a call contract, ignored")
+            elif "".join(old.split()).upper() == "".join(key.split()).upper():
+                warnings.append(f"trades.{key}.continues: a long cannot continue itself, ignored")
         if not isinstance(entry, dict):
             warnings.append(f"trades.{key}: expected an object")
             continue
