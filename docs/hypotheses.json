@@ -2060,6 +2060,44 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 54,
+      "study": "item54",
+      "title": "Does the front/back IV ratio predict a time spread's profit?",
+      "status": "declared",
+      "legacy": false,
+      "setup": "term-structure",
+      "side": "neutral",
+      "structure": "time-spread",
+      "window": "weekly",
+      "measure": "net per trade in percent of the debit, after the suite's slippage and per-leg fees both ways: the time-spread scanner's own structures (cherrypick.manage.timespreads) on stored end-of-day chains, one of each kind held to the short's expiry (the put and call calendar at the strike nearest the stock, the put and call diagonal whose long is nearest 0.65 delta), entries every second Monday on the 40 tradable names with the highest median dollar volume, the front the weekly 5-16 days out nearest 11, the back the monthly 30-75 days out nearest the middle",
+      "expected": "none declared: the ratio orders the scanner's rows as an untested hypothesis and stays labelled so unless a ratio test is confirmed",
+      "sample": "the licensed eod_chains.db, fetched by the plan's request file through the research queue (three chains a trade); design: entries 2016-01-01..2020-12-31, holdout 2021-01-01..2026-12-31 read after the design whatever it shows; < 40 trades in a test's window = no verdict",
+      "rule": "12 tests (4 structures x ratio rank, top third, verdict), Holm at 0.05 on the one-sided p in the design: the Spearman correlation of the ratio with the net above zero; the top third's mean net above zero (sessions as clusters); the not-'loses unchanged' rows' mean above the 'loses unchanged' rows' (Welch); a design pass also above zero at 1.5x fees and a quarter of the spread and with the best five sessions removed; confirmed only by the holdout's same sign at p < 0.05. A confirmed ratio test lets the scanner rank that structure by the ratio; a confirmed verdict test drops its 'loses unchanged' rows; anything less leaves the order labelled untested",
+      "mechanism": "a front week priced rich to the back month sells variance the stock does not then realise before the short expires, while the back leg keeps its value",
+      "rivals": [
+        {
+          "explanation": "the ratio is high only around events the screen already excludes",
+          "check": "earnings before the back expiry are excluded by the builder's own prefilter in the live scanner; reported here by the drop counts, and the verdict test is read beside it"
+        },
+        {
+          "explanation": "costs: a rich front week is also a wide one",
+          "check": "the passing estimate must stay above zero at 1.5x fees and a quarter of the spread"
+        },
+        {
+          "explanation": "a few sessions carry it",
+          "check": "above zero with the best five sessions removed; the holdout read whatever the design shows"
+        },
+        {
+          "explanation": "hindsight: today's liquid names survived",
+          "check": "declared limit (B11): the universe is today's label; the paired reading within it (rank and verdict) shares the bias, the top-third mean does not and is read with that in mind"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#54-does-the-frontback-iv-ratio-predict-a-time-spreads-profit",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []

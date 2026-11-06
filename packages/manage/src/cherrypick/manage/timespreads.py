@@ -249,6 +249,10 @@ def describe(
         "value_stop": round(debit * (1 - float(db["stop"]["loss_fraction"])), 2),
         "roll_by": _roll_day(date.fromisoformat(front["expiration"]), int(rules["expiry"]["close_by_dte"])),
         "max_loss": round(debit * pricing.MULTIPLIER, 2),
+        "long_delta": round(long_leg["delta"], 4),
+        "short_delta": round(short_leg["delta"], 4),
+        # Each leg's quote as it was priced, long first: what a replay charges slippage on.
+        "entry_quotes": [[o["bid"], o["ask"]] for o, _, _ in legs],
         "modelled": True,
     }, None
 
