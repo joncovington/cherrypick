@@ -20,6 +20,13 @@ export interface TimeSpreadTerm {
   why: string[];
 }
 
+/** One leg of a structure: its strike, right and OCC option symbol. */
+export interface TimeSpreadLeg {
+  strike: number | null;
+  right: "C" | "P" | null;
+  option: string | null;
+}
+
 /** One calendar or diagonal, modelled at each leg's own IV. Per share unless named `pnl*`/`maxLoss`
  *  (whole-position dollars for one unit). The sizing fields are set only on the account's rows. */
 export interface TimeSpreadStructure {
@@ -33,6 +40,12 @@ export interface TimeSpreadStructure {
   ratio: number | null;
   ivRank: number | null;
   sector: string | null;
+  earningsDate: string | null;
+  /** The long (back) and short (front) legs. */
+  longLeg: TimeSpreadLeg | null;
+  shortLeg: TimeSpreadLeg | null;
+  /** [bid, ask] of the long leg, then of the short leg, when the scan read them. */
+  entryQuotes: [[number | null, number | null], [number | null, number | null]] | null;
   debitMid: number | null;
   debitNatural: number | null;
   gap: number | null;
@@ -74,6 +87,10 @@ export interface TimeSpreadsPayload {
   terms: TimeSpreadTerm[];
   structures: TimeSpreadStructure[];
   dropped: Record<string, number>;
+  /** The account's sizing of these rows, from the same day's evaluation; null when it has none. */
+  account: ManageTimeSpreads | null;
+  /** Why `account` is null (no evaluation that day, or none carrying time spreads). */
+  accountNote: string | null;
   error: string | null;
 }
 

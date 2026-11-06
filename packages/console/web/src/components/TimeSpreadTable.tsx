@@ -10,11 +10,11 @@ import { fmtCash } from "../lib/format";
  * levels a person manages the trade by, so the row stays narrow.
  */
 
-function per(v: number | null): string {
+export function per(v: number | null): string {
   return v === null ? "—" : `${v.toFixed(2)} db`;
 }
 
-function pct(v: number | null): string {
+export function pct(v: number | null): string {
   return v === null ? "—" : `${Math.round(v * 100)}%`;
 }
 
@@ -22,7 +22,7 @@ function px(v: number | null): string {
   return v === null ? "none" : `$${v.toFixed(2)}`;
 }
 
-function bandText(b: [number | null, number | null] | null): string {
+export function bandText(b: [number | null, number | null] | null): string {
   return b === null ? "—" : `${px(b[0])} / ${px(b[1])}`;
 }
 
