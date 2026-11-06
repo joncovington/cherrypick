@@ -57,6 +57,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from collections.abc import Callable
@@ -83,6 +84,11 @@ WINDOWS = ("validation", "design", "holdout")
 
 class RunRefused(ValueError):
     pass
+
+
+class _CodeChanged(BaseException):
+    """The replay's code changed mid-run and replays differently. Not an `Exception`, so no session's
+    own refusal swallows it; the run turns it into a `RunRefused`."""
 
 
 def _flies_config_text() -> tuple[str, Path]:
@@ -703,9 +709,43 @@ def run(
     if resumed:
         log(f"resuming run {run_id}: {len(finished)} of {len(todo)} sessions already replayed")
 
+    # The replay's code can change under a running run: each session's replay is a fresh subprocess,
+    # so a merge pulled into the checkout mid-run reaches every session after it (item 44's design run,
+    # 2026-11-06). Before each replay the code is read again; on a change, the run's own finished
+    # sessions are sampled on the new code, as a takeover is (`verify`). Identical: the change is
+    # recorded and the run goes on. Different: the run stops, its finished sessions kept.
+    code_lock = threading.Lock()
+    current = {"code": code}
+    code_changes: list[dict] = []
+
+    def code_unchanged_or_verified(day: str) -> None:
+        if not clean or _code_pin(mod.name) == current["code"]:
+            return
+        with code_lock:
+            now = _code_pin(mod.name)
+            if now == current["code"]:
+                return  # another session's check has already taken the change
+            done = [d for d, _ in todo if (ledger_dir / f"{d}.ok.json").is_file()]
+            check = verify(ledger_dir) if done else {"sessions": [], "of": 0, "identical": True}
+            code_changes.append({"before_session": day, "code_from": current["code"], "code_to": now,
+                                 "verified": check})  # fmt: skip
+            if not check.get("identical"):
+                raise _CodeChanged(
+                    f"the replay's code changed mid-run (before {day}) and its sampled sessions replay "
+                    "differently: stopped, its finished sessions kept"
+                )
+            n = len(check["sessions"])
+            log(f"the replay's code changed before {day}; {n} sessions replayed identically")
+            current["code"] = now
+            _pending_path(_spec_key(parts)).write_text(
+                json.dumps({"run_id": run_id, "pid": os.getpid(), "code": now}), encoding="utf-8"
+            )
+
     def one(item):
         day, close = item
         db, marker = ledger_dir / f"{day}.db", ledger_dir / f"{day}.ok.json"
+        if day not in finished:
+            code_unchanged_or_verified(day)  # a stop goes past the session's own refusal below
         try:
             if day in finished:
                 return day, json.loads(marker.read_text(encoding="utf-8")), read_rows(db)
@@ -722,7 +762,15 @@ def run(
     rep = core_progress.Reporter(f"backtest-run-{mod.name}")
     rep.phase("sessions", total=len(todo), unit="days")
     with ThreadPoolExecutor(max_workers=max(1, workers or core_procs.default_workers())) as pool:
-        for day, out, rows in pool.map(one, todo):
+
+        def outcomes():
+            try:
+                yield from pool.map(one, todo)
+            except _CodeChanged as exc:
+                rep.finish("failed")
+                raise RunRefused(str(exc)) from None
+
+        for day, out, rows in outcomes():
             # A refused session is done too: it is counted, not lost. A finished one read back from an
             # interrupted run is skipped: done, but no part of the rate or the time left.
             rep.advance("sessions", current=day, skipped=day in finished)
@@ -768,6 +816,8 @@ def run(
         if taken.get("code_from"):  # taken over across a code change, on a verified sample
             report["resumed"].update({"code_from": taken["code_from"], "code_to": code,
                                       "verified": taken["verified"]})  # fmt: skip
+    if code_changes:  # the code changed under the run, each change on a verified sample
+        report["code_changes"] = code_changes
     if mod.name == "flies":  # the keys every flies report has carried
         report["flies_config"] = str(config_paths["flies"])
         report["flies_config_snapshot"] = str(snapshot)
