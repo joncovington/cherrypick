@@ -91,7 +91,7 @@ the whole edge: capturing the IV crush that happens around the report, not durin
 afternoon before it). See `CLAUDE.md`'s Loop Steps for the full mechanics.
 
 The unattended paper loop manages positions instead: it holds them on the entry session, then
-applies the PEAD gate, a three-session cap and the 15:30 expiry close — see
+applies the PEAD gate, a three-session cap and the 15:20 expiry close — see
 [Exit Strategy Guide](./10-exits.md).
 
 ---
@@ -173,7 +173,7 @@ All seven strategies are defined-risk — max loss is known at entry for every o
 | `broken_wing_butterfly` | Skip-strike butterfly, wings sized to skew | Credit | Overnight |
 | `atm_calendar` | Short front-month + long back-month, one side | Debit | Multi-day |
 | `double_calendar` | ATM calendar on both call and put side | Debit | Multi-day |
-| `expected_move_butterfly` | 1-2-1 fly, body at spot ± EM, side by rr25 skew (paper only) | Debit | To the 15:30 expiry close or take-profit |
+| `expected_move_butterfly` | 1-2-1 fly, body at spot ± EM, side by rr25 skew (paper only) | Debit | To the 15:20 expiry close or take-profit |
 
 The two calendars open nothing in the forced-sampling books from 2026-10-15.
 

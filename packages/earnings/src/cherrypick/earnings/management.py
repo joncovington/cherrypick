@@ -16,7 +16,8 @@ about — the ones that need the position's whole history rather than one tick:
   * the PEAD gate: a loser closes the first morning, a winner may carry (see `_HOLD_NOTE`),
   * the session cap: three sessions and out, whatever the verdict,
   * the pin guard: no short strike left near spot in the last hour of its expiration day,
-  * the expiry close: nothing held through any leg's expiration (see `_expiry_close_due`).
+  * the expiry close: nothing held through any leg's expiration (see `_expiry_close_due`),
+  * the assignment guard: no short left in the money with nothing to sell (see `_assignment_risk`).
 
 The research behind each is in docs/10-exits.md, per strategy, with the ones that are house rules
 rather than published findings marked as such.
@@ -31,6 +32,7 @@ from datetime import time as _time
 
 # One ET for the suite — see cherrypick.core.clock. Re-exported: callers and tests read
 # `management.ET` rather than deriving their own.
+from cherrypick.core import calendar as _calendar
 from cherrypick.core.clock import ET  # noqa: F401
 
 from cherrypick.earnings import provider, scanner, session_clock
@@ -108,7 +110,15 @@ POLICY_DEFAULTS = {
     # or any other rule. These are physically settled single names: an ITM leg that expires is an
     # exercise or an assignment -- shares, overnight gap risk, and fees -- so the house rule is to
     # trade out, never to settle. Matches MEIC's physical-settlement force close.
-    "expiry_close_time": "15:30",
+    #
+    # 15:20, 40 minutes before the close (15:30 before 2026-11-05). It leaves 15 minutes of margin
+    # before the 15:35 entry scan, which takes the single-writer lock.
+    "expiry_close_time": "15:20",
+    # Early-exercise guard: close when a short leg is in the money with so little time value that its
+    # holder gains by exercising (see `_assignment_risk`). The floor is per share.
+    "assignment_guard": True,
+    "assignment_extrinsic_floor": 0.05,
+    "assignment_deep_itm_pct": 0.03,
     # Pin risk: a short strike sitting on spot into the close of its expiration day.
     "pin_guard_dollars": 1.00,
     "pin_guard_window_minutes": 60,
@@ -265,14 +275,110 @@ def _expiry_close_due(legs: list[dict], policy: dict, now: datetime) -> list[str
     try:
         hour, minute = (int(x) for x in str(policy["expiry_close_time"]).split(":"))
     except (KeyError, TypeError, ValueError):
-        hour, minute = 15, 30
+        hour, minute = 15, 20
     # An early-close day shifts the configured time by however much earlier it closes, so the same
-    # offset from the close holds: 12:30 on a 13:00 close, 15:30 on a normal one.
+    # offset from the close holds: 12:20 on a 13:00 close, 15:20 on a normal one.
     due = hour * 60 + minute - session_clock.for_date(now.date()).shift
     if now.hour * 60 + now.minute < due:
         return []
     today = now.date()
     return [leg["symbol"] for leg in legs if provider.expiry_from_occ(leg.get("symbol") or "") == today]
+
+
+# Index roots settle in cash, so there is nothing to be assigned. Equity and ETF options are the rest.
+CASH_SETTLED_ROOTS = frozenset(
+    {"SPX", "SPXW", "SPXPM", "XSP", "NDX", "NDXP", "XND", "RUT", "RUTW", "DJX", "OEX", "XEO", "VIX", "VIXW"}
+)
+
+
+def _leg_mid(quote: dict | None) -> float | None:
+    if not quote:
+        return None
+    mid = quote.get("mid")
+    if mid is None and quote.get("bid") is not None and quote.get("ask") is not None:
+        mid = (quote["bid"] + quote["ask"]) / 2
+    return mid
+
+
+def _assignment_risk(legs, quotes, spot, policy, now, dividend_lookup) -> tuple[dict, bool] | None:
+    """A short leg in the money that its holder has a reason to exercise early: `(detail, urgent)`.
+
+    The rule is the one `manage.attention` applies to a real book. A short in the money is exercised
+    early when exercising beats selling it, which is when its time value (mid less intrinsic) is
+    gone: (a) a CALL whose time value is below the next cash dividend going ex after today and on or
+    before the leg's own expiry -- the holder takes the shares to collect the dividend; (b) a short
+    that is DEEP in the money (intrinsic at least `assignment_deep_itm_pct` of the strike, 3%) with
+    time value under `assignment_extrinsic_floor` (0.05 a share), nothing left to sell, and not on
+    its own expiration day (the expiry close owns that day). A slightly-in-the-money short a day or
+    two out routinely has under a nickel after the IV crush and is not a real exercise risk.
+    Cash-settled index roots cannot be assigned and are skipped.
+
+    `dividend_lookup(symbol, today)` is injected so this module stays free of I/O; none given, or an
+    answer of unknown, leaves rule (b) alone and records that the dividend was unknown. `urgent` is
+    set when the ex-date is the next trading day: the exercise decision is made tonight, so the close
+    may not wait on the spread gate.
+    """
+    if spot is None or not policy.get("assignment_guard", True):
+        return None
+    floor = float(policy.get("assignment_extrinsic_floor", 0.05))
+    deep_pct = float(policy.get("assignment_deep_itm_pct", 0.03))
+    today = now.date()
+    dividends: dict[str, dict] = {}
+    for leg in legs:
+        symbol = leg.get("symbol") or ""
+        if leg.get("action") != "Sell to Open" or len(symbol) < 16:
+            continue
+        root, right, strike = symbol[:-15].strip().upper(), symbol[-9].upper(), strike_from_occ(symbol)
+        expiry = provider.expiry_from_occ(symbol)
+        mid = _leg_mid(quotes.get(symbol))
+        if root in CASH_SETTLED_ROOTS or right not in ("C", "P") or strike is None or expiry is None:
+            continue
+        if expiry < today or mid is None:
+            continue
+        intrinsic = max(0.0, spot - strike) if right == "C" else max(0.0, strike - spot)
+        if intrinsic <= 0:
+            continue
+        time_value = mid - intrinsic
+        detail = {
+            "leg": symbol,
+            "strike": strike,
+            "right": right,
+            "spot": spot,
+            "mid": mid,
+            "intrinsic": round(intrinsic, 4),
+            "time_value": round(time_value, 4),
+        }
+        dividend = None
+        if right == "C" and dividend_lookup is not None:
+            if root not in dividends:
+                dividends[root] = dividend_lookup(root, today)
+            dividend = dividends[root]
+            detail["dividend_known"] = bool(dividend.get("known"))
+            if not dividend.get("known"):
+                detail["dividend_note"] = dividend.get("note")
+        if right == "C" and dividend and dividend.get("known"):
+            ex_date = date.fromisoformat(dividend["ex_date"])
+            detail.update(
+                {
+                    "dividend": dividend["amount"],
+                    "ex_date": dividend["ex_date"],
+                    "dividend_source": dividend.get("source"),
+                }
+            )
+            if today < ex_date <= expiry and time_value < dividend["amount"]:
+                urgent = ex_date == _calendar.next_trading_day(today)
+                return {**detail, "rule": "dividend", "urgent": urgent}, urgent
+        itm_pct = intrinsic / strike
+        detail["itm_pct"] = round(itm_pct, 4)
+        if itm_pct >= deep_pct and time_value < floor and expiry > today:
+            return {
+                **detail,
+                "rule": "extrinsic_floor",
+                "floor": floor,
+                "deep_itm_pct": deep_pct,
+                "urgent": False,
+            }, False
+    return None
 
 
 def _strategy_verdict(trade: dict, quotes: dict, config: dict, *, open_legs, is_first_check_of_day, now):
@@ -302,12 +408,16 @@ def evaluate(
     sessions_held: int | None,
     is_first_check_of_day: bool = False,
     open_legs: list[dict] | None = None,
+    dividend_lookup=None,
 ) -> Decision:
     """What should happen to this position, given a priced snapshot and the clock.
 
     Order of precedence, and why: the expiry close first, because holding a physically settled
     position through expiration is not an outcome any other rule may trade against; then the pin
-    guard, because it is about an outcome nothing else prices; then the strategy's own verdict, which owns every threshold; then the two rules that
+    guard, because it is about an outcome nothing else prices; then the entry-session hold; then the
+    assignment-risk guard, ahead of the strategy because a short that is likely to be exercised early
+    is a risk the strategy's thresholds do not price, and a strategy's `close_side` would leave it
+    open; then the strategy's own verdict, which owns every threshold; then the two rules that
     need more than one tick to see -- the session cap and the PEAD gate -- which only ever turn a
     hold into a close, never the reverse.
     """
@@ -338,6 +448,10 @@ def evaluate(
     # above, which are about expiry rather than the trade, outrank this.
     if sessions_held == 0:
         return Decision("hold", "entry_session", {})
+
+    risk = _assignment_risk(legs, quotes, snapshot.get("spot"), policy, now, dividend_lookup)
+    if risk is not None:
+        return Decision("close_all", "assignment_risk", risk[0])
 
     verdict = _strategy_verdict(
         trade,
@@ -426,12 +540,21 @@ MUST_EXIT = ("expiry_close",)
 
 
 def execution_gate(
-    snapshot: dict, config: dict, strategy: str, *, now: datetime, reason: str | None = None
+    snapshot: dict,
+    config: dict,
+    strategy: str,
+    *,
+    now: datetime,
+    reason: str | None = None,
+    urgent: bool = False,
 ) -> str | None:
     """Why this mark may not be acted on, or None if it may.
 
     A `reason` in MUST_EXIT is not held back by the spread gate: the wider market is paid and
-    recorded as slippage, because the alternative is an exercise or an assignment.
+    recorded as slippage, because the alternative is an exercise or an assignment. So is an
+    `urgent` close -- an assignment-risk close whose dividend goes ex the next trading day, which is
+    decided tonight. Any other assignment-risk close waits on the gate like a discretionary one, and
+    is taken anyway after `spread_gate_patience_minutes`.
 
     Separate from `evaluate` so a blocked verdict is still a verdict: it gets recorded with the gate
     that held it, and the next tick reconsiders. Folding this into the decision would make an exit
@@ -445,7 +568,7 @@ def execution_gate(
     if now.timetz().replace(tzinfo=None) < exec_window_start(policy):
         return "before_exec_window"
 
-    if reason not in MUST_EXIT and _spread_blocks(snapshot, policy):
+    if reason not in MUST_EXIT and not urgent and _spread_blocks(snapshot, policy):
         return "spread_too_wide"
     return None
 

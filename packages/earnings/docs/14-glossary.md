@@ -133,8 +133,12 @@ multi-day calendar hold, closed out by this mechanism if nothing else has closed
 [Exit Strategy Guide](./10-exits.md).
 
 **Expiry Close** (`management.expiry_close_time`)
-From 15:30 on any leg's expiration day, the position closes regardless of P&L. The spread gate does
-not hold it back.
+From 15:20 on any leg's expiration day (12:20 on an early-close day), the position closes regardless
+of P&L. The spread gate does not hold it back.
+
+**Assignment Risk** (`management.assignment_extrinsic_floor`)
+A short leg in the money with so little time value that its holder gains by exercising early. The
+position closes; see *Assignment-risk guard* in [Exit Strategy Guide](./10-exits.md).
 
 **Entry Session**
 The session a position opens on. Nothing acts on it then except the expiry close and the pin

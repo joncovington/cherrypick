@@ -284,7 +284,7 @@ def fetch_expected_move_butterfly_order(
 def evaluate_position(
     position: dict, quotes: dict, config: dict, is_first_check_of_day: bool = False
 ) -> dict:
-    """Hold to the expiry close (management's 15:30 rule), closing earlier only at the take-profit:
+    """Hold to the expiry close (management's 15:20 rule), closing earlier only at the take-profit:
     the fly worth `take_profit_width_frac` of its width at the close price (far touch, the
     harness's exit convention). In the study this rule lost least of the six it compared on the
     same entries; closing on the reaction day paid a second set of costs on an unmatured fly and

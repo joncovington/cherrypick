@@ -74,24 +74,24 @@ def wired(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------- the clock itself
 def test_a_normal_day_keeps_the_old_times():
     c = session_clock.for_date(date.fromisoformat(NORMAL))
-    assert (c.half_day, c.close, c.expiry_close, c.management_end) == (False, 960, 930, 940)
+    assert (c.half_day, c.close, c.expiry_close, c.management_end) == (False, 960, 920, 940)
     assert (c.eod_start, c.eod_end) == (960, 990)
 
 
 def test_the_half_day_shifts_every_time_by_the_same_three_hours():
     c = session_clock.for_date(date.fromisoformat(HALF))
-    assert (c.half_day, c.close, c.expiry_close, c.management_end) == (True, 780, 750, 760)
+    assert (c.half_day, c.close, c.expiry_close, c.management_end) == (True, 780, 740, 760)
     assert (c.eod_start, c.eod_end) == (780, 810)
 
 
 # --------------------------------------------------------------------------- expiry close and pin guard
-def test_the_expiry_close_fires_at_half_past_twelve_on_a_half_day():
-    assert _decide(at("12:25"), spot=250.0).action == "hold"
-    d = _decide(at("12:45"), spot=250.0)
+def test_the_expiry_close_fires_at_twenty_past_twelve_on_a_half_day():
+    assert _decide(at("12:19"), spot=250.0).action == "hold"
+    d = _decide(at("12:20"), spot=250.0)
     assert d.action == "close_all" and d.reason == "expiry_close"
 
 
-def test_the_expiry_close_still_waits_for_15_30_on_a_normal_day():
+def test_the_expiry_close_waits_for_15_20_on_a_normal_day():
     legs = json.loads(TRADE["legs_json"])
     normal_legs = [dict(leg, symbol=leg["symbol"].replace("261127", "260812")) for leg in legs]
     trade = dict(TRADE, expiration=NORMAL, legs_json=json.dumps(normal_legs))
@@ -100,7 +100,10 @@ def test_the_expiry_close_still_waits_for_15_30_on_a_normal_day():
     assert management.evaluate(trade, snap, cfg, now=at("12:45", NORMAL), sessions_held=1).reason != (
         "expiry_close"
     )
-    d = management.evaluate(trade, snap, cfg, now=at("15:30", NORMAL), sessions_held=1)
+    assert management.evaluate(trade, snap, cfg, now=at("15:19", NORMAL), sessions_held=1).reason != (
+        "expiry_close"
+    )
+    d = management.evaluate(trade, snap, cfg, now=at("15:20", NORMAL), sessions_held=1)
     assert d.reason == "expiry_close"
 
 
