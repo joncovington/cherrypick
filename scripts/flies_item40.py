@@ -1,7 +1,7 @@
 """Item 40, legged flies without the strand tail (docs/edge-hypotheses-plan.md): a fixed stop on an
 uncompleted vertical, and the whole fly bought at once, each against flies' `control`.
 
-    python scripts/flies_item40.py study --window design|holdout [--workers 8] [--json PATH]
+    python scripts/flies_item40.py study --window design|holdout [--workers N] [--json PATH]
     python scripts/flies_item40.py report [--json PATH]
 
 Runs the backtest's own flies replay (`cherrypick.backtest.runner`, flies' own rules over the 60 s
@@ -40,6 +40,7 @@ from pathlib import Path
 
 from cherrypick.core import home, robustness
 from cherrypick.core import stats as core_stats
+from cherrypick.core.procs import default_workers
 
 ARMS = ("strand-stop", "whole-fly")
 STOP_FRACTION = 0.5
@@ -556,7 +557,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     st = sub.add_parser("study", help="run a window and state the verdict")
     st.add_argument("--window", required=True, choices=("design", "holdout"))
-    st.add_argument("--workers", type=int, default=8)
+    st.add_argument("--workers", type=int, default=default_workers())
     st.add_argument("--json", default=None)
     st.set_defaults(fn=cmd_study)
     rp = sub.add_parser("report", help="results.md from an existing results.json (local)")

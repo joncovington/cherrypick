@@ -1,6 +1,6 @@
 """Replay the expected-move butterfly over every earnings event in the local Dolt clones.
 
-    python scripts/emfly_history.py [--start 2020-01-01] [--end 2026-10-02] [--workers 8]
+    python scripts/emfly_history.py [--start 2020-01-01] [--end 2026-10-02] [--workers N]
         [--min-dollar-volume 100e6] [--min-price 10] [--cache FILE] [--json FILE] [--limit N]
 
 **The question.** A debit butterfly whose body sits one expected move from spot (the SCHW example:
@@ -76,6 +76,7 @@ from cherrypick.technicals import trend as _trend
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import premium_cycle_replay as _pcr  # noqa: E402 -- the smile model, shared rather than copied
+from cherrypick.core.procs import default_workers
 
 MULT = 100
 K_GRID = (0.5, 0.75, 1.0, 1.25)
@@ -755,7 +756,7 @@ def main(argv=None) -> int:
     ap.add_argument("--end", default="2026-10-02")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=3306)
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=default_workers())
     ap.add_argument("--min-dollar-volume", type=float, default=100e6)
     ap.add_argument("--min-price", type=float, default=10.0)
     ap.add_argument("--max-dte", type=int, default=17)

@@ -4,7 +4,7 @@ over the wide SPX store (`SPX-60s-wide.db`, 40 strikes each side).
 
     python scripts/meic_wing_width_item44.py --step coverage
     python scripts/meic_wing_width_item44.py --step plan
-    python scripts/meic_wing_width_item44.py --step study --window design|holdout [--workers 8]
+    python scripts/meic_wing_width_item44.py --step study --window design|holdout [--workers N]
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`) over the wide store, provisionally:
 MEIC history has not unlocked and the wide store is never validated. Writes under the backtest data dir
@@ -43,6 +43,7 @@ from pathlib import Path
 from cherrypick.backtest import paths, results, runner, store
 from cherrypick.backtest import settings as _settings
 from cherrypick.core import home
+from cherrypick.core.procs import default_workers
 
 ITEM = 44
 SCRIPTS = Path(__file__).resolve().parent
@@ -338,7 +339,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--step", required=True, choices=("coverage", "plan", "study"))
     ap.add_argument("--window", choices=("design", "holdout"), default="design")
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=default_workers())
     args = ap.parse_args(argv)
     s = _settings.load(None)
     steps = {"coverage": lambda: coverage(s), "plan": lambda: plan(s),

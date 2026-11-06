@@ -1,6 +1,6 @@
 """Plan item 14's (or 17's) trades: the credit spreads each selector and baselines take, the chains to fetch.
 
-    python scripts/credit_spread_plan.py [--item 14|17] [--workers 14] [--out DIR] [--limit-names N]
+    python scripts/credit_spread_plan.py [--item 14|17] [--workers N] [--out DIR] [--limit-names N]
 
 **Item 17** (`--item 17`, 2026-10-24; our own credit-spread list) is the same planner with its own
 declared spec (`ITEMS`): every one of the four chart setups and its short mirror as a selector of its
@@ -63,6 +63,7 @@ from pathlib import Path
 
 from cherrypick.core import calendar as cal
 from cherrypick.core import home
+from cherrypick.core.procs import default_workers
 
 SEED = 20261020
 BASELINES = 5
@@ -408,7 +409,7 @@ def main(argv: list[str] | None = None) -> int:
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--item", type=int, choices=sorted(ITEMS), default=14)
-    ap.add_argument("--workers", type=int, default=14)
+    ap.add_argument("--workers", type=int, default=default_workers())
     ap.add_argument("--out", type=Path, help="default: results/research/item<N> under the backtest data dir")
     ap.add_argument("--limit-names", type=int, help="plan only the first N names (a trial)")
     ap.add_argument("--board", type=Path, help="plan selector B only, from scripts/board_history.py's output")

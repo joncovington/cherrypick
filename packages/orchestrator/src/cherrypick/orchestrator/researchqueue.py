@@ -72,6 +72,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as _home
+from cherrypick.core import procs as _procs
 from cherrypick.core import progress as _progress
 
 from .util import CREATE_NO_WINDOW, pid_alive
@@ -840,9 +841,14 @@ def run_next(
                 stderr=fh,
                 cwd=str(repo_root()),
                 text=True,
-                creationflags=CREATE_NO_WINDOW,
+                # Below normal: unthrottled research takes only the CPU the live and paper loops leave,
+                # and the task's replays inherit the class (2026-11-05).
+                creationflags=CREATE_NO_WINDOW | _procs.BELOW_NORMAL_PRIORITY_CLASS,
                 env=env,
             )
+            # The opt-out is not inherited from the queue's job: a task left to Windows ran throttled
+            # under the service (2026-11-05). The backtest runner opts out each replay it starts.
+            _procs.never_throttle_child(proc)
             conn.execute(
                 "UPDATE tasks SET status = 'running', started_at = ?, runs = runs + 1, pid = ?, note = NULL"
                 " WHERE id = ?",

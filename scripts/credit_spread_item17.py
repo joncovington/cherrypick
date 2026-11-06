@@ -75,6 +75,7 @@ from pathlib import Path
 
 from cherrypick.core import bs, fees, home, legbars, robustness
 from cherrypick.core import stats as core_stats
+from cherrypick.core.procs import default_workers
 
 # ------------------------------------------------------------------------------------ the declaration
 DECLARED_START = "2020-01-22"
@@ -1200,7 +1201,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--account", type=float, help="item 18 B13: the account for the 10%% size line")
     ap.add_argument("--chains-db", type=Path)
     ap.add_argument("--history-db", type=Path)
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=default_workers())
     ap.add_argument("--limit-names", type=int, help="price only the first N names (a trial, not the test)")
     ap.add_argument("--skip-45-60", action="store_true", help="skip the reported-only 45-60 day pricing")
     ap.add_argument(

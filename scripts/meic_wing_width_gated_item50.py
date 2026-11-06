@@ -2,7 +2,7 @@
 entering once a day, 14:00-14:30, at 15 and 20 points wide with its credit floor and call-delta
 ceiling as live has them, each paired with the same rule at its own 10.
 
-    python scripts/meic_wing_width_gated_item50.py --window design|holdout [--workers 8] [--json PATH]
+    python scripts/meic_wing_width_gated_item50.py --window design|holdout [--workers N] [--json PATH]
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine over the 60 s
 vendor store), provisionally because MEIC history has not unlocked. The holdout is spent by this run,
@@ -36,6 +36,7 @@ from cherrypick.backtest import grid, paths, runner
 from cherrypick.backtest import settings as _settings
 from cherrypick.core import home
 from cherrypick.core import stats as core_stats
+from cherrypick.core.procs import default_workers
 
 _spec = importlib.util.spec_from_file_location(
     "meic_wing_width_item43", Path(__file__).with_name("meic_wing_width_item43.py")
@@ -148,7 +149,7 @@ def grid_block(doc: dict) -> dict:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--window", choices=("design", "holdout"), required=True)
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=default_workers())
     ap.add_argument("--json", default=None)
     args = ap.parse_args(argv)
 

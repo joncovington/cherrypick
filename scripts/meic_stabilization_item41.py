@@ -2,7 +2,7 @@
 condor at 10-point wings with and without the gate, and the 14:00 rule with and without it.
 
     python scripts/meic_stabilization_item41.py --step plan
-    python scripts/meic_stabilization_item41.py --step study --window design|holdout [--workers 8]
+    python scripts/meic_stabilization_item41.py --step study --window design|holdout [--workers N]
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine over the 60 s
 vendor store), provisionally because MEIC history has not unlocked. Writes under the backtest data dir
@@ -41,6 +41,7 @@ from cherrypick.backtest import settings as _settings
 from cherrypick.core import home, robustness
 from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
+from cherrypick.core.procs import default_workers
 
 ITEM = 41
 SYMBOL = "SPX"
@@ -389,7 +390,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--step", required=True, choices=("plan", "study"))
     ap.add_argument("--window", choices=("design", "holdout"), default="design")
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=default_workers())
     args = ap.parse_args(argv)
     s = _settings.load(None)
     out = plan(s) if args.step == "plan" else study(s, args.window, args.workers)

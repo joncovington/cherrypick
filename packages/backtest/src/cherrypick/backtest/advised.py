@@ -14,16 +14,17 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+from cherrypick.core import procs as core_procs
 
 from . import runner
 
 
 def _advisor(*args: str) -> dict:
-    proc = subprocess.run(
+    proc = core_procs.run_unthrottled(
         [sys.executable, "-m", "cherrypick.advisor", *args], capture_output=True, text=True, timeout=600
     )
     try:

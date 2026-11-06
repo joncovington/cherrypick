@@ -2,7 +2,7 @@
 test): one condor a session entered in a 30-minute slot, 12:00 to 13:30, each paired with the same rule
 at 14:00, the slot live trades.
 
-    python scripts/meic_entry_slot_item24.py --window design|holdout --delta D [--workers 8] [--json PATH]
+    python scripts/meic_entry_slot_item24.py --window design|holdout --delta D [--workers N] [--json PATH]
     python scripts/meic_entry_slot_item24.py --annotate FILE [FILE ...]
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine over the 60 s
@@ -38,6 +38,7 @@ from cherrypick.backtest import grid, paths, results, runner
 from cherrypick.backtest import settings as _settings
 from cherrypick.core import home, robustness
 from cherrypick.core import stats as core_stats
+from cherrypick.core.procs import default_workers
 
 BASE_ARM = "pm-200"
 BASE = "s1400"
@@ -205,7 +206,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--window", choices=("design", "holdout"))
     ap.add_argument("--delta", type=float)
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=default_workers())
     ap.add_argument("--json", default=None)
     ap.add_argument(
         "--annotate", nargs="+", metavar="FILE", help="add the grid block to result files; no replay"

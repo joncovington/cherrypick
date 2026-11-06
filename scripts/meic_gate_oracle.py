@@ -1,6 +1,6 @@
 """The gates-off oracle on one MEIC arm (`cherrypick.backtest.gateoracle`): what each gate it has on adds.
 
-    python scripts/meic_gate_oracle.py --arm pm-200 [--window design|validation] [--workers 8]
+    python scripts/meic_gate_oracle.py --arm pm-200 [--window design|validation] [--workers N]
 
 Replays the arm, the arm with every listed gate off (`<arm>-open`) and the arm without each gate in
 turn (`<arm>-no-<gate>`) through the backtest's own MEIC replay over the 60 s vendor store,
@@ -24,6 +24,7 @@ from pathlib import Path
 from cherrypick.backtest import gateoracle, paths, runner
 from cherrypick.backtest import settings as _settings
 from cherrypick.core import home
+from cherrypick.core.procs import default_workers
 
 CADENCE = 60
 WINDOWS = ("design", "validation")
@@ -114,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--arm", required=True)
     p.add_argument("--window", choices=WINDOWS, default="design")
-    p.add_argument("--workers", type=int, default=8)
+    p.add_argument("--workers", type=int, default=default_workers())
     args = p.parse_args(argv)
 
     settings = _settings.load(None)

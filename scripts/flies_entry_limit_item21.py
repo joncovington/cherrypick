@@ -1,7 +1,7 @@
 """Item 21, legged flies with a resting entry limit (docs/edge-hypotheses-plan.md): control's legged SPX
 0DTE flies, with the entry resting above mid and filled only by the market reaching it.
 
-    python scripts/flies_entry_limit_item21.py --window design|holdout [--workers 8] [--json PATH]
+    python scripts/flies_entry_limit_item21.py --window design|holdout [--workers N] [--json PATH]
 
 Runs the backtest's own flies replay (`cherrypick.backtest.runner`, flies' own rules over the 60 s
 vendor store), provisionally because flies history cannot unlock: its validation stopped at five
@@ -36,6 +36,7 @@ from cherrypick.backtest import paths, results, runner
 from cherrypick.backtest import settings as _settings
 from cherrypick.core import home, robustness
 from cherrypick.core import stats as core_stats
+from cherrypick.core.procs import default_workers
 
 OFFSETS = {"000": 0.0, "005": 0.05, "010": 0.10}
 WINDOW_SECONDS = 120
@@ -160,7 +161,7 @@ def session_rows(run_id: str) -> dict[str, dict[str, dict]]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--window", required=True, choices=("design", "holdout"))
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=default_workers())
     ap.add_argument("--json", default=None)
     args = ap.parse_args(argv)
 
