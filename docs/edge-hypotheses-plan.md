@@ -5636,6 +5636,63 @@ a cheap back month. Declared before any of its inputs are fetched.*
   - The control gets the leg checks (two-sided, spread at most 15% of mid) and not the event-level
     filters (close, expected move, open interest).
 
+### 53. The time exit for short premium opened inside 30 DTE
+
+*Source: the user, 2026-11-06. The manage package's 21-day time exit fired on the first day for any
+trade opened that close to expiry, so manage now skips it for a trade opened inside it and manages that
+trade by its 50% take profit, its stop and the close three days out. The 21-day exit was tested only on
+trades opened about 45 days out (the 2026-10-20 strangle management test). Declared before the design is
+run; the plan step has only counted the cells.*
+
+- **Question:** for short premium opened at 7, 14, 21 and 28 DTE, does any management beat manage's new
+  default after costs, on the same trades, in both windows?
+- **Where the edge would live:** **exit timing** inside the last weeks, where gamma is highest. **What
+  would falsify a challenger:** its paired difference over A at or below zero after costs, or a worse
+  tail than A's in either window.
+- **Look-alikes, said out loud:** the 2026-10-20 strangle management test (45 DTE entries: 50%-or-21-DTE
+  stayed, both stops failed); the MEIC stop backtests (0DTE stops lost); item 25 (the skate expiry).
+- **Trades:** on each standard monthly expiry in the store, for each target DTE, the stored session whose
+  days to expiry are the target to 3 more, the nearest to the target. One-lot SPY:
+  - **strangle:** short the out-of-the-money call and put whose |delta| is nearest 0.16, two-sided only;
+  - **condor:** the same shorts, long wings at the listed strike nearest 1% of the entry spot beyond each.
+- **Arms**, on the same trades:
+  - **A** (manage's default since 2026-11-06): 50% take profit; manage's credit stop (a loss of 1x the
+    credit, or half the max loss when that is smaller); close at 3 DTE.
+  - **B:** A plus a time exit at round(entry DTE x 21/45) days left, the share of life the 21-of-45 rule
+    keeps (7 at 14 DTE, 10 at 21, 13 at 28). At 7 DTE it is the 3-DTE close, so B is not judged there.
+  - **C:** 50% take profit and the 3-DTE close, no stop.
+  - **D:** hold to the 3-DTE close (the control).
+- **Marks and fills:** the store's 15:45 ET mids, one a session. A trigger fires on the first mark that
+  reaches it, checked in the order 3-DTE close, stop, take profit, B's exit, and fills at that mark.
+  Sold and bought back at mid with the suite's slippage (`fees.slippage_dollars`) and per-leg fees
+  (`fees.ic_open_fee`, `fees.ic_close_fee`) each way. Stress: 1.5x fees and a quarter of the spread. A
+  leg without a two-sided quote on a mark holds every trigger but the 3-DTE close that day; at a forced
+  close it is priced adversely (a short at intrinsic plus its entry spread, a long at intrinsic less it,
+  never below zero), and the count is reported.
+- **Measured:** net per trade in basis points of 100 x the entry spot (so the years add up); dollars,
+  the win share, the exits by reason, the worst trade and the worst-5% mean beside it.
+- **Windows:** design entries 2017-01-01 to 2021-12-31; holdout entries 2022-01-01 to 2026-12-31, read
+  after the design whatever it shows. Fewer than 40 trades in a cell's window is no verdict for that cell.
+- **Pass-or-fail rule:** 22 tests, one per (structure, entry DTE, challenger), Holm at 0.05 on the
+  one-sided t of the paired difference over A (each trade is its own expiry, so its own cluster). In
+  the design: the difference above zero under Holm; above zero at the stress; above zero with the best
+  five removed; and the challenger's worst-5% mean no worse than A's. Then in the holdout: the
+  difference above zero and the tail no worse. Each arm's own net is reported, not judged.
+- **Declared limits (B11):** once-a-session marks, so a stop or a target between marks fills at the next
+  one (every arm reads the same marks, so the paired difference shares the bias); monthly expiries only,
+  so one entry a month per entry DTE, not weekly, since the store holds no SPY weeklies; early assignment
+  and ex-dividend exercise not modelled; deltas are the store's.
+- **Data:** the licensed `SPY-monthly-1545.db` (`scripts/fetch_spy_monthly_1545.py`), already stored; no
+  fetch. `scripts/time_exit_entry_dte_item53.py plan|design|holdout` writes under
+  `results/research/item53/`; the register records verdicts only.
+- **Decides:**
+  - **B confirmed for an entry DTE:** a proposal to give manage a scaled time exit for trades opened at
+    that DTE, in place of `skip_if_entered_inside`, at a declared boundary.
+  - **C confirmed:** a proposal to drop the stop for trades opened at that DTE.
+  - **D confirmed:** a proposal to drop the 50% take profit for them.
+  - **Nothing confirmed:** manage's default stands (`skip_if_entered_inside` on, arm A) and the question
+    is closed. Whether short-dated premium earns at all is reported, not decided here.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
