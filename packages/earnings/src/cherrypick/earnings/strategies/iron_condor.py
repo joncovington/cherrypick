@@ -98,7 +98,7 @@ def fetch_price_and_term_structure(
                 "expected_move_dollars": ts["expected_move_dollars"],
                 **scanner.term_inputs(ts),
                 "expected_move_pct": ts["expected_move_pct"],
-                "front_expiration_days": (front_exp - date.today()).days,
+                "front_expiration_days": (front_exp - scanner.et_today()).days,
                 "chain_complete": True,
                 "realized_move_dispersion_pct": realized_move_dispersion,
                 **liquidity,
@@ -252,6 +252,15 @@ def fetch_iron_condor_order(
             return {"ok": False, "error": "no quote data for wing strikes"}
 
         net_credit = strangle_credit - long_call["mid"] - long_put["mid"]
+        structure_error = scanner.iron_structure_error(
+            short_call_strike,
+            short_put_strike,
+            float(long_call["strike_price"]),
+            float(long_put["strike_price"]),
+            net_credit,
+        )
+        if structure_error:
+            return {"ok": False, "error": f"malformed structure: {structure_error}"}
 
         order = {
             "order_type": "Limit",

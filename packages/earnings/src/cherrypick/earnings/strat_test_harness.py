@@ -55,7 +55,6 @@ import concurrent.futures as _cf
 import json
 import sys
 import time
-from datetime import date as _date
 from datetime import datetime as _dt
 
 from cherrypick.earnings import (
@@ -65,6 +64,7 @@ from cherrypick.earnings import (
     management,
     rank_strategies,
     scanner,
+    session_clock,
     sizing,
     symbol_watch,
     universe,
@@ -582,6 +582,10 @@ def _past_entry_window(config: dict) -> bool:
     fixtures that have no window to respect, and a guard that refuses every entry when a key is
     missing would be worse than the unbounded loop it replaces.
     """
+    now = _now_et()
+    if session_clock.for_date(now.date()).half_day:
+        # The window (15:55) is after a 13:00 close: nothing opens on an early-close day.
+        return True
     end = config.get("entry_window_end")
     if not end:
         return False
@@ -589,7 +593,6 @@ def _past_entry_window(config: dict) -> bool:
         hour, minute = (int(x) for x in str(end).split(":"))
     except (TypeError, ValueError):
         return False
-    now = _now_et()
     return (now.hour, now.minute) >= (hour, minute)
 
 
@@ -611,7 +614,7 @@ def cmd_run_entries(args) -> dict:
             "copy each from packages/earnings/config/config.example.json",
         }
 
-    scan_date = str(_date.today())
+    scan_date = str(scanner.et_today())
     calendar_timeout = config.get("dolt_calendar_timeout_seconds", 30)
     # This morning's forward scan no longer GATES which unannotated calendar rows are admissible
     # as AMC -- every unannotated row is admitted now (see scanner.fetch_entry_window_calendar for
@@ -940,7 +943,7 @@ def _log_close_decision(trade: dict, outcome: str, reason: str | None) -> None:
             argparse.Namespace(
                 data=json.dumps(
                     {
-                        "scan_date": _date.today().isoformat(),
+                        "scan_date": scanner.et_today().isoformat(),
                         "strategy": trade.get("strategy"),
                         "symbol": trade.get("symbol"),
                         # A close is not a screening decision. It used to be marked by
@@ -964,7 +967,7 @@ def cmd_run_closes(args) -> dict:
         return {"ok": False, "error": "tastytrade connection failed"}
 
     config = scanner._load_config()
-    _capture_market_context(_date.today().isoformat())  # close-session morning VIX for the analysis
+    _capture_market_context(scanner.et_today().isoformat())  # close-session morning VIX for the analysis
     positions = db_paper.cmd_get_open_positions(argparse.Namespace())["positions"]
     positions = [p for p in positions if _is_strat_test_book(p.get("arm"))]
 

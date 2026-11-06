@@ -126,5 +126,5 @@ def test_live_mode_uses_injected_nlv_not_paper_capital():
         "available_capital_paper_mode": 999999,
     }
     order = {"strategy": "atm_calendar", "debit": 3.12}
-    result = sizing.compute_position_size(order, STRATEGY_CONFIG, config)
+    result = sizing.compute_position_size(order, STRATEGY_CONFIG, config, live=True)
     assert result["risk_budget"] == pytest.approx(50000 * 0.05)

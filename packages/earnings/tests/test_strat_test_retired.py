@@ -40,12 +40,7 @@ def test_the_retired_strategies_are_all_still_registered():
 def _drive(monkeypatch, today):
     rows = []
 
-    class _Today(dt.date):
-        @classmethod
-        def today(cls):
-            return today
-
-    monkeypatch.setattr(r, "_date", _Today)
+    monkeypatch.setattr(scanner, "et_today", lambda: today)
     monkeypatch.setattr(rank_strategies, "_ensure_dolt_running", lambda: True)
     monkeypatch.setattr(rank_strategies, "_verify_tastytrade_connection", lambda: True)
     monkeypatch.setattr(r, "_capture_market_context", lambda day: None)

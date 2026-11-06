@@ -33,7 +33,7 @@ from datetime import time as _time
 # `management.ET` rather than deriving their own.
 from cherrypick.core.clock import ET  # noqa: F401
 
-from cherrypick.earnings import provider, scanner
+from cherrypick.earnings import provider, scanner, session_clock
 from cherrypick.earnings.strategies import (
     atm_calendar,
     broken_wing_butterfly,
@@ -233,7 +233,7 @@ def _pin_risk(trade: dict, legs: list[dict], spot: float | None, policy: dict, n
         return False
     if now.date() != expiry:
         return False
-    minutes_left = (16 * 60) - (now.hour * 60 + now.minute)
+    minutes_left = session_clock.for_date(now.date()).close - (now.hour * 60 + now.minute)
     if minutes_left > policy["pin_guard_window_minutes"] or minutes_left < 0:
         return False
     return any(abs(strike - spot) <= policy["pin_guard_dollars"] for strike in short_strikes(legs))
@@ -253,7 +253,10 @@ def _expiry_close_due(legs: list[dict], policy: dict, now: datetime) -> list[str
         hour, minute = (int(x) for x in str(policy["expiry_close_time"]).split(":"))
     except (KeyError, TypeError, ValueError):
         hour, minute = 15, 30
-    if now.timetz().replace(tzinfo=None) < _time(hour, minute):
+    # An early-close day shifts the configured time by however much earlier it closes, so the same
+    # offset from the close holds: 12:30 on a 13:00 close, 15:30 on a normal one.
+    due = hour * 60 + minute - session_clock.for_date(now.date()).shift
+    if now.hour * 60 + now.minute < due:
         return []
     today = now.date()
     return [leg["symbol"] for leg in legs if provider.expiry_from_occ(leg.get("symbol") or "") == today]

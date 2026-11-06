@@ -29,6 +29,14 @@ so a tick can be reasoned about without knowing anything about the tick before i
 | `entry` | 15:35, once daily | the forced-sampling entry scan |
 | `eod` | 16:00–16:30 | bounds the session and records an iteration; writes nothing since the reports moved to `packages/review` (2026-08-13) |
 
+The times above are for a normal 16:00 close. On an early-close day (13:00; 2026-11-27, 2026-12-24)
+every clock is the same offset from that day's close, from one pure function of the date
+(`session_clock.for_date`): the expiry close at close − 30 minutes (12:30), the pin guard window
+ending at the close, `management` ending at close − 20 minutes (12:40), and `eod` from the close
+for 30 minutes (13:00–13:30). No `entry` phase runs: the tick that reaches `eod` records
+`half_day_no_entries` in the entry heartbeat and the run trail instead, so a quiet night is
+distinguishable from a scan that never ran.
+
 The open window is a phase of its own because the first ten minutes of an earnings name's options are
 not reliably priceable — spreads can be wider than the edge being managed, so a target computed off
 that mid is arithmetic rather than a price. Marks are still recorded through it, and a decision
@@ -82,7 +90,7 @@ only ever turn a *hold* into a *close*, never the reverse.
    has gone, `front_expiry` when only a calendar's front month has and the back is closed at its own
    real market. See *Settlement* below. Since 2026-09-24 reaching this step is a **failed exit**
    (the settle event carries `failed_exit`): step 1 should have traded the position out.
-1. **Expiry close** — from `expiry_close_time` (15:30 ET) on the expiration day of **any** leg,
+1. **Expiry close** — from `expiry_close_time` (15:30 ET; 12:30 on an early-close day) on the expiration day of **any** leg,
    every position closes, whatever its P&L and whatever else is true. These are physically settled
    single names: an ITM leg that expires is an exercise or an assignment — shares, an overnight gap
    and fees — so the house rule is to trade out, never to settle. Read off each leg's own symbol, so

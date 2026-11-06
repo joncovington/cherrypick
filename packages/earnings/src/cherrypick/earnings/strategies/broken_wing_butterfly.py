@@ -109,7 +109,7 @@ def fetch_price_and_expected_move(
                 "expected_move_pct": expected_move_pct,
                 "skew_abs": abs(side_result["skew"]),
                 "side": side_result["side"],
-                "front_expiration_days": (front_exp - date.today()).days,
+                "front_expiration_days": (front_exp - scanner.et_today()).days,
                 "chain_complete": True,
                 "realized_move_dispersion_pct": realized_move_dispersion,
                 **liquidity,

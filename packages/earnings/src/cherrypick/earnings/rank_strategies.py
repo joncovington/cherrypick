@@ -601,7 +601,7 @@ def cmd_get_ranked_symbols(args) -> dict:
 
     # From 2026-10-28 only a name the suite's liquidity verdict calls tradable is ranked for entry
     # (universe.py; docs/operating-history.md). A refused name keeps its row and says why.
-    scan_session = str(scanner._date.today())
+    scan_session = str(scanner.et_today())
     verdict = universe.load()
     refused = {
         s["symbol"]: why
@@ -653,7 +653,7 @@ def cmd_get_ranked_symbols(args) -> dict:
             s["outcome"] = refused[s["symbol"]].split(":")[0]  # not_tradable | liquidity_verdict_unavailable
             s["reason"] = refused[s["symbol"]]
 
-    scan_date = str(scanner._date.today())
+    scan_date = str(scanner.et_today())
     for s in per_symbol:
         s["timing_assumed"] = timing_assumed_by_symbol.get(s["symbol"])
         _log_symbol_decision(scan_date, s, paper_mode)

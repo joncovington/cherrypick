@@ -15,8 +15,8 @@ a given profile may open for a given order -- or rejects it -- from three inputs
   quantity          = floor(risk_budget / per_contract_loss), capped by
                       max_contracts_per_leg, rejected if < 1
 
-Capital in paper mode is config's `available_capital_paper_mode` (never a real
-broker balance). In live mode the caller passes the real NLV in via
+Capital is config's `available_capital_paper_mode` (never a real broker balance), whatever
+the live flag says. A live caller passes `live=True` and the real NLV in via
 config["_live_nlv"]; this module does not call the broker.
 
 Per-contract max loss (strikes in points, one contract = 100 shares):
@@ -92,14 +92,19 @@ def per_contract_max_loss(order: dict, config: dict) -> float | None:
     return None
 
 
-def _capital_basis(config: dict) -> float:
-    """Simulated paper capital, or the real NLV the caller injected for live."""
-    if config.get("enable_live_trading", False):
+def _capital_basis(config: dict, *, live: bool = False) -> float:
+    """Simulated paper capital, unless a LIVE caller asks for the real NLV it injected.
+
+    The live flag in the config is not the question: paper entries run all day beside an armed live
+    book, and nothing injects `_live_nlv` for them, so reading the flag made every paper entry
+    size against 0 and fail `risk_cap_exceeded` the day live was armed. Live sizing is something
+    the caller asks for."""
+    if live and config.get("enable_live_trading", False):
         return float(config.get("_live_nlv", 0.0))
     return float(config.get("available_capital_paper_mode", 0.0))
 
 
-def compute_position_size(order: dict, strategy_config: dict, config: dict) -> dict:
+def compute_position_size(order: dict, strategy_config: dict, config: dict, *, live: bool = False) -> dict:
     """Contracts a profile may open for `order` under its risk cap.
 
     Returns {ok, quantity, per_contract_loss, risk_budget, capital_at_risk,
@@ -107,7 +112,7 @@ def compute_position_size(order: dict, strategy_config: dict, config: dict) -> d
     one contract's max loss exceeds the risk budget, or "max_loss_unverified"
     when per-contract loss can't be computed from the order.
     """
-    capital = _capital_basis(config)
+    capital = _capital_basis(config, live=live)
     base_pct = strategy_config.get("max_risk_per_trade_pct")
     multiplier = config.get("risk_pct_multiplier", 1.0)
     if base_pct is None:

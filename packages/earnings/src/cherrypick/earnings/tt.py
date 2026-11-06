@@ -52,6 +52,7 @@ from cherrypick.core.redact import mask_account, redact_accounts
 
 from cherrypick.earnings import credentials as _creds
 from cherrypick.earnings import paths as _paths
+from cherrypick.earnings import provider as _provider
 from cherrypick.earnings.session import get_session
 
 
@@ -137,6 +138,17 @@ async def _trading_account(account_number: str | None = None):
 _strike = _broker.strike_of
 _nearest_expiration = _broker.nearest_expiration
 _atm_window = _broker.atm_window
+
+
+def _quote_fields(bid, ask) -> dict:
+    """`{bid, ask, mid}` for one chain entry. A crossed or empty book (bid > ask, a 0/0 quote, a
+    non-positive ask) is a dead or torn read, so it is reported as no quote at all: null, never a
+    zero or a mid between two numbers that cannot both be right. A side that simply did not arrive
+    leaves the other as received and the mid null."""
+    if bid is not None and ask is not None and not _provider.sane_book(bid, ask):
+        return {"bid": None, "ask": None, "mid": None}
+    mid = round((bid + ask) / 2, 4) if bid is not None and ask is not None else None
+    return {"bid": bid, "ask": ask, "mid": mid}
 
 
 # On-demand DXLink collectors — thin shims over cherrypick.core.dxfeed. Passing get_session() in
@@ -376,13 +388,7 @@ async def cmd_get_option_chain(args) -> dict:
                 for entry in entries:
                     q = quotes.get(entry.get("streamer_symbol"))
                     if q is not None:
-                        bid = _num(q.bid_price)
-                        ask = _num(q.ask_price)
-                        entry["bid"] = bid
-                        entry["ask"] = ask
-                        entry["mid"] = (
-                            round((bid + ask) / 2, 4) if bid is not None and ask is not None else None
-                        )
+                        entry.update(_quote_fields(_num(q.bid_price), _num(q.ask_price)))
                         received += 1
             result["quotes_included"] = True
             result["quotes_complete"] = received == len(streamer_symbols)

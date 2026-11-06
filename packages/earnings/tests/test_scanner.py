@@ -52,13 +52,13 @@ def test_avg_volume_bounds_the_scan_by_date(monkeypatch):
     assert "date >= %s" in cur.sql
     symbol, cutoff, days = cur.params
     assert symbol == "FAC" and days == 30
-    assert cutoff == (date.today() - timedelta(days=120)).isoformat()
+    assert cutoff == (scanner.et_today() - timedelta(days=120)).isoformat()
 
 
 def test_avg_volume_lookback_window_is_configurable(monkeypatch):
     cur = _capture_dolt(monkeypatch, {"avg_volume": 1.0})
     scanner.fetch_avg_volume("FAC", {"avg_volume_lookback_days": 45})
-    assert cur.params[1] == (date.today() - timedelta(days=45)).isoformat()
+    assert cur.params[1] == (scanner.et_today() - timedelta(days=45)).isoformat()
 
 
 def test_nearest_close_on_or_before_bounds_how_far_back_it_walks(monkeypatch):

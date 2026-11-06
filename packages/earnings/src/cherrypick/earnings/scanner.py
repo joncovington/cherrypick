@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import calendar as _calendar
+from cherrypick.core import clock as _clock
 from cherrypick.core import structures
 from cherrypick.core.livepositions import parse_occ
 
@@ -179,9 +180,9 @@ def fetch_entry_window_calendar(
     plus `timing_assumed`, so the review trail records where the timing came from
     rather than presenting a guess as calendar fact.
 
-    `today` is a test hook (real callers omit it and get `_date.today()`).
+    `today` is a test hook (real callers omit it and get `et_today()`).
     """
-    today = today or _date.today()
+    today = today or et_today()
     next_session = _calendar.next_trading_day(today)
 
     today_rows = fetch_dolthub_calendar(str(today), config)
@@ -768,7 +769,7 @@ def fetch_avg_volume(symbol: str, config: dict, days: int = 30) -> float | None:
     recent one on file.
     """
     lookback_days = config.get("avg_volume_lookback_days", 120)
-    cutoff = (_date.today() - timedelta(days=lookback_days)).isoformat()
+    cutoff = (et_today() - timedelta(days=lookback_days)).isoformat()
     conn = _dolt_connect(config, config.get("dolthub_stocks_database", "stocks"))
     try:
         cur = conn.cursor(dictionary=True)
@@ -1493,6 +1494,33 @@ def atm_entry(entries: list[dict], option_type: str, underlying_price: float) ->
     if not matches:
         return None
     return min(matches, key=lambda e: abs(float(e["strike_price"]) - underlying_price))
+
+
+def et_today() -> _date:
+    """Today's session date in Eastern, never the host's local date: a host east of ET is already
+    on tomorrow's date for the last hours of the entry window, and would file the scan, the front
+    expiration's days-out and the carried-position count under the wrong session."""
+    return _clock.now_et().date()
+
+
+def iron_structure_error(
+    short_call: float, short_put: float, long_call: float, long_put: float, net_credit: float
+) -> str | None:
+    """Why an iron fly / iron condor's strikes and credit make a malformed order, or None.
+
+    `nearest_strike_entry` picks the listed strike nearest a target and knows nothing of direction,
+    so on a sparse or irregular grid a wing can land at or inside its own short strike. Each wing
+    must be strictly beyond its short (call wing above the short call, put wing below the short
+    put), and the order must take in a credit: a structure that pays to open is not the trade this
+    module is measuring, and its limit price would route as a debit.
+    """
+    if long_call <= short_call:
+        return f"call wing {long_call:g} not above short call {short_call:g}"
+    if long_put >= short_put:
+        return f"put wing {long_put:g} not below short put {short_put:g}"
+    if round(net_credit, 2) <= 0:
+        return f"net credit {net_credit:.2f} is not positive"
+    return None
 
 
 def nearest_strike_entry(
