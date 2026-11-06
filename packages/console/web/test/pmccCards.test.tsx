@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ManageAccount, ManagePmcc, ManagePmccPosition, ManageTrade } from "@console/shared";
-import { NO_PMCC, PmccCards, entryWords, kindOf, rollWords } from "../src/pages/Live/PmccCards";
+import { NO_PMCC, PmccCards, entryWords, intentWords, kindOf, rollWords } from "../src/pages/Live/PmccCards";
 import { aligned, inView, tables } from "./viewTables";
 
 /**
@@ -31,6 +31,8 @@ function position(over: Partial<ManagePmccPosition> = {}): ManagePmccPosition {
     recognition: "pmcc",
     recognizedBy: "entered at 0.82 delta (at least 0.80)",
     intent: null,
+    intentSource: null,
+    intentKey: "XYZ 280121C00040000",
     reconciled: true,
     problems: [],
     spot: 43,
@@ -245,6 +247,19 @@ describe("the pmcc tab", () => {
     expect(out).not.toContain("credit.take_profit");
     expect(out).toContain("2026-12-18 48C at 0.25 delta");
     expect(out).toContain("check-roll ok");
+  });
+
+  it("the intent row says what is set and where, and gives the key that sets it on this PMCC alone", () => {
+    expect(intentWords(position())).toBe('none set · trades key "XYZ 280121C00040000"');
+    expect(intentWords(position({ intent: "pmcc", intentSource: "contract" }))).toBe(
+      'pmcc, set on this long · trades key "XYZ 280121C00040000"',
+    );
+    expect(intentWords(position({ intent: "diagonal", intentSource: "symbol" }))).toBe(
+      'diagonal, set on XYZ (every PMCC on the name) · trades key "XYZ 280121C00040000"',
+    );
+    // An evaluation written before the key: no key offered, never a guessed one.
+    expect(intentWords(position({ intentKey: null }))).toBe("none set");
+    expect(render(account(view()))).toContain('intent none set · trades key "XYZ 280121C00040000"');
   });
 
   it("the collapsed row names what manage decided: PMCC, diagonal, or not yet decided", () => {

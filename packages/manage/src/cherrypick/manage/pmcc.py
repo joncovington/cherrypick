@@ -7,7 +7,11 @@ the short a covered call). Neither leg's days left decides it: the standard defi
 2026-11-04) lets the short's expiry and delta vary, and a long running short of time is the
 `roll_long` flag's, not a reason to drop the view. Shape alone does
 not make a PMCC: the long must have been **entered at `entry_min_delta` or more** (0.70), or the
-operator must say so (`positions.<SYMBOL>.intent: "pmcc"`). The delta at entry is the one recorded
+operator must say so. The operator says it on the long's own contract (`trades.<LONG CONTRACT>.intent`,
+spaces ignored, e.g. `"XYZ 280121C00040000"`), or on the whole name (`positions.<SYMBOL>.intent`);
+the contract wins. A rolled long is a new PMCC (user, 2026-11-06): an intent set on the long it was
+rolled from does not carry over. The view names the key (`intent_key`) and where an intent came from
+(`intent_source`: `contract` or `symbol`). The delta at entry is the one recorded
 from the first full snapshot after the fill when there is one (`entrydelta.py`, carried in
 `snapshot.entry_deltas`), else solved from the opening fill and that day's close (the snapshot's
 `underlying_history`, v13), with the dividend yield carried (Merton) either way. A recorded delta
@@ -207,6 +211,20 @@ def _link(
         "since": since[:10],
         "orders": sorted({r["order_id"] for r in mine}, key=str),
     }
+
+
+def contract_key(symbol: Any) -> str:
+    """A contract as a `trades` key matches it: spaces dropped (the broker pads the root), upper case."""
+    return "".join(str(symbol or "").split()).upper()
+
+
+def contract_intent(rules: dict[str, Any], long_sym: str) -> str | None:
+    """The "pmcc" or "diagonal" intent `trades` sets on this exact long, else None. A rolled long is a
+    new PMCC (user, 2026-11-06): the long it was rolled from does not lend it an intent; it is decided
+    by its own entry, or by an intent set on its own contract."""
+    by_key = {contract_key(k): v for k, v in (rules.get("trades") or {}).items() if isinstance(v, dict)}
+    intent = (by_key.get(contract_key(long_sym)) or {}).get("intent")
+    return intent if intent in ("pmcc", "diagonal") else None
 
 
 def _shorts(rows: list[dict[str, Any]], delivered: list[dict[str, Any]], short_sym: str) -> list[dict]:
@@ -437,6 +455,10 @@ def judge(
 
     linked = _link(rows, long_sym, short_sym, held, str(long_raw["expiration"]))
     reconciled = not linked["problems"]
+    intent_source = "symbol" if intent in ("pmcc", "diagonal") else None
+    on_contract = contract_intent(rules, long_sym)
+    if on_contract is not None:
+        intent, intent_source = on_contract, "contract"
     # The long's days left when it was bought (shown, never a gate); today's when the purchase is not in
     # the history.
     opened = str(_wheel._day(linked["opened_rows"][0])) if linked["opened_rows"] else None
@@ -479,10 +501,11 @@ def judge(
 
     # ---- recognition
     floor = float(cfg["recognize"]["entry_min_delta"])
+    where = " (set on this long)" if intent_source == "contract" else ""
     if intent == "diagonal":
-        recognized, by = False, "intent: diagonal"
+        recognized, by = False, f"intent: diagonal{where}"
     elif intent == "pmcc":
-        recognized, by = True, "intent: pmcc"
+        recognized, by = True, f"intent: pmcc{where}"
     elif entry["delta"] is None:
         recognized, by = False, f"delta at entry unknown ({entry['why']})"
     elif entry["delta"] >= floor - EPS:
@@ -641,6 +664,9 @@ def judge(
         "recognition": recognition,
         "recognized_by": by,
         "intent": intent,
+        "intent_source": intent_source,
+        # The `trades` key that sets this PMCC's intent: the long's contract, as the broker spells it.
+        "intent_key": long_sym,
         "reconciled": reconciled,
         "problems": list(dict.fromkeys(linked["problems"])),
         "spot": spot,

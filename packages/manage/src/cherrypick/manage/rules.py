@@ -434,7 +434,15 @@ DEFAULT_RULES: dict[str, Any] = {
     # Per-underlying overrides: {"SPY": {"intent": "hedge", "disable": ["debit.stop"], "note": "..."}}.
     # `intent: "pmcc"` recognises a call diagonal as a PMCC; `"diagonal"` keeps it out (pmcc.py).
     "positions": {},
+    # Per-trade overrides, keyed by the PMCC's long contract (spaces ignored):
+    # {"XYZ 280121C00040000": {"intent": "pmcc", "note": "..."}}. Beats `positions.<SYM>.intent` for that
+    # PMCC alone. A rolled long is a new PMCC: its old contract's intent does not carry (pmcc.py).
+    "trades": {},
 }
+
+# What a `trades` entry may hold, and the intents it may set.
+TRADE_KEYS = frozenset({"intent", "note"})
+TRADE_INTENTS = frozenset({"pmcc", "diagonal"})
 
 # Every rule id an override's `disable` list may name.
 RULE_IDS = (
@@ -496,7 +504,7 @@ def _merge(base: Any, over: Any, path: str, warnings: list[str]) -> Any:
         if key not in base:
             warnings.append(f"{where}: unknown key, ignored")
             continue
-        if key == "positions":
+        if key in ("positions", "trades"):
             out[key] = copy.deepcopy(value) if isinstance(value, dict) else {}
             continue
         if key == "by_shape" and isinstance(value, dict):
@@ -555,11 +563,33 @@ def _check_positions(rules: dict[str, Any], warnings: list[str]) -> None:
                 warnings.append(f"positions.{sym}.disable: unknown rule '{rule}'")
 
 
+def _check_trades(rules: dict[str, Any], warnings: list[str]) -> None:
+    """Say what a `trades` entry holds that does nothing: a key that is not a call contract, a field
+    other than intent and note, an intent other than pmcc or diagonal."""
+    for key, entry in (rules.get("trades") or {}).items():
+        if key.startswith("_"):
+            continue
+        compact = "".join(str(key).split()).upper()
+        code = compact[-15:]
+        if len(compact) <= 15 or len(code) != 15 or code[6] != "C" or not (code[:6] + code[7:]).isdigit():
+            warnings.append(f"trades.{key}: not a call contract (e.g. 'XYZ 280121C00040000'), ignored")
+            continue
+        if not isinstance(entry, dict):
+            warnings.append(f"trades.{key}: expected an object")
+            continue
+        for field in entry:
+            if not field.startswith("_") and field not in TRADE_KEYS:
+                warnings.append(f"trades.{key}.{field}: unknown key, ignored")
+        if "intent" in entry and entry["intent"] not in TRADE_INTENTS:
+            warnings.append(f"trades.{key}.intent: '{entry['intent']}' is not pmcc or diagonal, ignored")
+
+
 def effective(overrides: dict[str, Any] | None) -> tuple[dict[str, Any], list[str]]:
     """The default with `overrides` merged over it, and every override that could not be applied."""
     warnings: list[str] = []
     rules = _merge(DEFAULT_RULES, overrides or {}, "", warnings)
     _check_positions(rules, warnings)
+    _check_trades(rules, warnings)
     return rules, warnings
 
 

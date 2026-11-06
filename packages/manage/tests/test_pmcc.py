@@ -127,6 +127,38 @@ def test_the_intent_decides_either_way():
     assert v["long"]["delta_at_entry"] is None and v["recognition"] == "diagonal"
 
 
+def test_an_intent_on_the_long_contract_decides_that_pmcc_and_beats_the_names():
+    snap = snapshot(history(), legs())
+    padded = LONG.replace(" ", "   ")  # as the broker pads the root; spaces never matter in a key
+    both = {"trades": {padded: {"intent": "diagonal"}}, "positions": {"XYZ": {"intent": "pmcc"}}}
+    v = view_of(evaluate(snap, both))
+    assert v["recognition"] == "diagonal" and v["intent_source"] == "contract"
+    assert v["recognized_by"] == "intent: diagonal (set on this long)"
+    assert v["intent_key"] == " ".join(LONG.split())  # as the card shows it, padding dropped
+    # The name's intent still decides when no contract says otherwise, and says where it came from.
+    v = view_of(evaluate(snap, {"positions": {"XYZ": {"intent": "diagonal"}}}))
+    assert v["intent_source"] == "symbol" and v["recognized_by"] == "intent: diagonal"
+    v = view_of(evaluate(snap))
+    assert v["intent_source"] is None and v["recognition"] == "pmcc"  # decided by its delta at entry
+    # An intent on another contract does nothing here.
+    other = occ("2028-01-21", "C", 45)
+    assert view_of(evaluate(snap, {"trades": {other: {"intent": "diagonal"}}}))["recognition"] == "pmcc"
+
+
+def test_a_rolled_long_is_a_new_pmcc_and_does_not_inherit_the_old_contracts_intent():
+    rolled = occ("2028-06-16", "C", 40)
+    rows = history() + [
+        tx(3, "2026-09-20T15:00:00Z", "Sell to Close", LONG, 1, 15.0),
+        tx(3, "2026-09-20T15:00:00Z", "Buy to Open", rolled, 1, 16.0),
+    ]
+    snap = snapshot(rows, legs(long=rolled, long_price=16.0))
+    v = view_of(evaluate(snap, {"trades": {LONG: {"intent": "pmcc"}}}))
+    assert v["intent_key"] == " ".join(rolled.split()) and v["intent_source"] is None
+    assert v["recognition"] == "unknown"  # its own entry decides: no close for its roll day
+    v = view_of(evaluate(snap, {"trades": {rolled: {"intent": "pmcc"}}}))
+    assert v["recognition"] == "pmcc" and v["intent_source"] == "contract"
+
+
 @pytest.mark.parametrize(
     "hist, why",
     [
