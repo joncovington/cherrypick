@@ -91,6 +91,85 @@ def test_the_long_is_the_standard_monthly_nearest_360_days():
     assert exp == s36.clock.standard_monthly(exp.year, exp.month)
 
 
+def test_the_long_is_drawn_only_from_what_the_vendor_listed_on_the_months_first_session():
+    """2026-11-05: the replay took every standard monthly a year out as listed. A fund's October
+    monthly is often listed only months before it expires, so the entry was refused (`no_long_chain`)
+    for most of each cycle. With the listing, the pick skips what was not listed."""
+    day = date(2016, 3, 17)
+    assert s36.probe_day(day) == date(2016, 3, 1)
+    assumed = s36.leap_for(day)
+    assert s36.leap_for(day, lambda g, e: True) == assumed  # everything listed: the old pick
+    only_jan = s36.leap_for(day, lambda g, e: e.month in (1, 6, 12))
+    assert only_jan.month in (1, 6, 12) and only_jan != assumed
+    assert 240 <= (only_jan - day).days <= 540
+    asked = []
+    s36.leap_for(day, lambda g, e: asked.append(g) or True)
+    assert set(asked) == {date(2016, 3, 1)}  # the probe session, not the day
+    assert s36.leap_for(day, lambda g, e: False) is None
+    sessions = s36.sessions_between(date(2016, 1, 4), date(2018, 6, 29))
+    cycles = s36.long_cycles(sessions, lambda g, e: e.month in (1, 6, 12))
+    assert cycles and all(exp.month in (1, 6, 12) for _, exp, _ in cycles)
+
+
+def test_the_listing_probes_cover_the_leap_band_from_each_months_first_session():
+    reqs = s36.listing_requests("QQQ")
+    days = sorted({r["start"] for r in reqs})
+    assert days[0] == "2016-01-04" and len(days) == len({d[:7] for d in days})  # one session a month
+    assert all(r["start"] == r["through"] and r["kind"] == "listing" and r["symbol"] == "QQQ" for r in reqs)
+    for r in reqs:
+        dte = (date.fromisoformat(r["expiration"]) - date.fromisoformat(r["start"])).days
+        assert 240 <= dte <= 571
+    by_day = {d: [r for r in reqs if r["start"] == d] for d in days}
+    assert all(10 <= len(v) <= 12 for v in by_day.values())
+    assert min(r["start"] for r in s36.listing_requests("PLTR")) >= "2020-09-01"
+    # a pick on any day of the month is among that month's probes
+    day = date(2016, 3, 30)
+    probed = {r["expiration"] for r in reqs if r["start"] == "2016-03-01"}
+    assert s36.leap_for(day).isoformat() in probed
+
+
+def test_the_listing_reads_the_stores_quotes_and_gaps_are_the_unanswered_probes(tmp_path):
+    from cherrypick.backtest import chainfetch
+
+    conn = sqlite3.connect(tmp_path / "c.db")
+    conn.executescript(chainfetch.SCHEMA)
+    reqs = s36.listing_requests("QQQ")
+    listed, unlisted = reqs[0], reqs[1]
+    conn.execute(
+        "INSERT INTO eod_chain_quotes VALUES ('QQQ', ?, ?, 100.0, 'C', 1.0, 1.1, NULL, NULL, NULL, NULL)",
+        (listed["start"], listed["expiration"]),
+    )
+    for r, status in ((listed, "complete"), (unlisted, "empty")):
+        conn.execute(
+            "INSERT INTO eod_chain_paths VALUES ('QQQ', ?, ?, ?, ?, 1, 0, NULL, 0)",
+            (r["expiration"], r["start"], r["through"], status),
+        )
+    conn.commit()
+    fn = s36.listing_from(conn, "QQQ")
+    g = date.fromisoformat(listed["start"])
+    assert fn(g, date.fromisoformat(listed["expiration"]))
+    assert not fn(g, date.fromisoformat(unlisted["expiration"]))
+    gaps = s36.listing_gaps(conn, "QQQ")
+    assert len(gaps) == len(reqs) - 2 and listed not in gaps and unlisted not in gaps
+    assert len(s36.listing_gaps(None, "QQQ")) == len(reqs)
+
+
+def test_plan_and_study_refuse_until_every_listing_probe_is_answered(tmp_path, monkeypatch, capsys):
+    from cherrypick.backtest import chainfetch
+
+    db = tmp_path / "eod_chains.db"
+    sqlite3.connect(db).executescript(chainfetch.SCHEMA)
+    monkeypatch.setattr(s36, "_chain_db", lambda: db)
+    assert s36.main(["plan", "--out-dir", str(tmp_path / "out"), "--ledger", str(tmp_path / "none.db")]) == 2
+    said = json.loads(capsys.readouterr().out)
+    assert said["listing_unanswered"]["QQQ"] == len(s36.listing_requests("QQQ"))
+    assert not (tmp_path / "out" / "chain_requests_SPY.json").exists()
+    assert s36.main(["listing", "--out-dir", str(tmp_path / "out")]) == 0
+    out = json.loads(capsys.readouterr().out)
+    written = chainfetch.read_path_requests(tmp_path / "out" / "listing_requests.json")
+    assert out["unanswered"] == len(written) == sum(v["probes"] for v in out["per_symbol"].values())
+
+
 def test_long_cycles_close_at_45_dte_and_reenter_the_next_session():
     sessions = s36.sessions_between(date(2016, 1, 4), date(2018, 6, 29))
     cycles = s36.long_cycles(sessions)
@@ -545,10 +624,43 @@ def test_a_symbol_is_judged_only_above_every_floor():
         fake_run("a", 100, 6), fake_run("b", 100, 6), set(), "design", date(2016, 1, 1), hi
     )
     assert not few_weeks["judged"]
-    missing = s36.judged_status(
-        fake_run("a", 130, 6), fake_run("b", 200, 6), set(), "design", date(2016, 1, 1), hi
-    )
+    base = fake_run("b", 200, 6)
+    for sn in base.snaps[131:]:
+        sn["priced"] = False  # a held leg without a quote: 70 of 200 weeks
+    missing = s36.judged_status(fake_run("a", 200, 6), base, set(), "design", date(2016, 1, 1), hi)
     assert not missing["judged"] and any("missing" in x for x in missing["reasons"])  # 35% of weeks unpriced
+
+
+def test_a_week_flat_by_the_rule_is_not_missing_and_one_flat_for_the_data_is():
+    """2026-11-05: weeks with no position counted as missing, so stops and gates read as gaps. The
+    declaration counts a week missing "for unlisted expiries or unusable quotes" only."""
+    hi = date(2021, 12, 31)
+
+    def flat(run, why, n=60):
+        for sn in run.snaps[1 : n + 1]:
+            sn.update(has_pos=False, cap=None, flat_why=why)
+        return run
+
+    for why in (None, "spread_too_wide", "delta_out_of_band"):  # a stop, or pmcc's own refusal
+        r = flat(fake_run("a", 200, 6), why)
+        assert s36.missing_weeks(r, set(), date(2016, 1, 1), hi) == set()
+        assert s36.week_ledger(r, set(), date(2016, 1, 1), hi)["flat_for_data"] == 0
+        st = s36.judged_status(r, fake_run("b", 200, 6), set(), "design", date(2016, 1, 1), hi)
+        assert not any("missing" in x for x in st["reasons"])
+    for why in s36.DATA_REFUSALS:
+        r = flat(fake_run("a", 200, 6), why)
+        assert len(s36.missing_weeks(r, set(), date(2016, 1, 1), hi)) == 60
+        assert s36.week_ledger(r, set(), date(2016, 1, 1), hi)["flat_for_data"] == 60
+        st = s36.judged_status(r, fake_run("b", 200, 6), set(), "design", date(2016, 1, 1), hi)
+        assert any("30% of weeks missing" in x for x in st["reasons"])
+
+
+def test_the_simulation_tags_a_flat_week_with_the_sessions_refusal():
+    m = make_market(end=date(2016, 6, 30), listed=lambda g, e: False)  # nothing listed: no long
+    r = s36.simulate(m, s36.SPECS["long-alone"])
+    assert r.counts["refused_no_leap_listed"] > 0
+    assert all(sn["flat_why"] == "no_leap_listed" for sn in r.snaps)
+    assert len(s36.missing_weeks(r, set(), START, date(2016, 6, 30))) == len(r.snaps) - 1
 
 
 def test_the_monthly_arm_is_judged_on_priced_cycles():
@@ -838,6 +950,12 @@ def test_the_store_is_subtracted_by_path_and_by_session_coverage():
     assert weekly in s36.stored_filter(reqs, set(list(answered)[:-1]), [])  # one session short: still asked
 
 
+def _everything_listed(monkeypatch):
+    """The listing answered and every monthly listed: the request counts the declaration gave."""
+    monkeypatch.setattr(s36, "listing_gaps", lambda conn, name: [])
+    monkeypatch.setattr(s36, "listing_from", lambda conn, name: lambda g, e: True)
+
+
 def test_plan_orders_spy_first_stocks_last_and_reports_counts(tmp_path, monkeypatch, capsys):
     from cherrypick.backtest import chainfetch
 
@@ -853,6 +971,7 @@ def test_plan_orders_spy_first_stocks_last_and_reports_counts(tmp_path, monkeypa
     conn.commit()
     conn.close()
     monkeypatch.setattr(s36, "_chain_db", lambda: db)
+    _everything_listed(monkeypatch)
     assert s36.main(["plan", "--out-dir", str(tmp_path / "out"), "--ledger", str(tmp_path / "none.db")]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["ledger"] == {"paths": 0, "paths_net": 0}
@@ -916,6 +1035,7 @@ def test_the_plan_requests_each_paper_entrys_own_legs_on_its_session(tmp_path, m
     conn.commit()
     conn.close()
     monkeypatch.setattr(s36, "_chain_db", lambda: db)
+    _everything_listed(monkeypatch)
     assert s36.main(["plan", "--out-dir", str(tmp_path / "out"), "--ledger", str(ledger)]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["ledger"] == {"paths": 4, "paths_net": 3}  # the stored weekly path answers one
