@@ -286,8 +286,11 @@ def _dolt_reject_result(name: str, reject_reasons: list[str], criteria: dict) ->
     }
 
 
-def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: dict) -> list[dict]:
-    """Evaluate every registered strategy for one symbol. Common signals
+def evaluate_symbol(
+    symbol: str, earnings_date, earnings_timing: str, config: dict, skip: frozenset = frozenset()
+) -> list[dict]:
+    """Evaluate every registered strategy for one symbol, except those named in `skip` (strategies
+    the caller will not open: they run no screen and get no result). Common signals
     (avg_volume, iv_rv_ratio, winrate) are fetched once here, not once per
     strategy, since none of them depend on strategy specifics. Returns one
     result per strategy: {"name", "accepted", "reject_reasons", "criteria",
@@ -301,6 +304,7 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
     winrate = winrate_result["winrate"]
     winrate_sample_size = winrate_result["sample_size"]
     move_stats = scanner.move_stats_from_quarters(symbol, winrate_result["realized_move_quarters"], config)
+    active = [entry for entry in STRATEGY_REGISTRY if entry["name"] not in skip]
 
     # Cheap pre-gate: skip the ~30s of live broker chain fetches when EVERY strategy would Reject
     # on a Dolt-only signal (avg_volume / iv_rv_ratio / winrate below its near-miss floor). No live
@@ -318,12 +322,12 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
         entry["name"]: _dolt_only_hard_fails(
             entry["strategy_config_fn"](config), avg_volume, iv_rv_ratio, winrate
         )
-        for entry in STRATEGY_REGISTRY
+        for entry in active
     }
-    if all(per_strategy_dolt_fails[entry["name"]] for entry in STRATEGY_REGISTRY):
+    if all(per_strategy_dolt_fails[entry["name"]] for entry in active):
         return [
             _dolt_reject_result(entry["name"], per_strategy_dolt_fails[entry["name"]], dict(dolt_criteria))
-            for entry in STRATEGY_REGISTRY
+            for entry in active
         ]
 
     # Every strategy's fetch re-requests the same option chain for this symbol; a
@@ -335,10 +339,10 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
         # chain fetches and reject it outright. Only a definitive "no chain" skips;
         # an ambiguous error falls through to the full evaluation below.
         if _has_listed_options(symbol) is False:
-            return [_no_options_result(entry["name"]) for entry in STRATEGY_REGISTRY]
+            return [_no_options_result(entry["name"]) for entry in active]
 
         results = []
-        for entry in STRATEGY_REGISTRY:
+        for entry in active:
             strategy_config = entry["strategy_config_fn"](config)
             criteria: dict = {}
 
