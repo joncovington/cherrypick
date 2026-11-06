@@ -1611,7 +1611,7 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": "provisional: w15 passes both windows; w20 passes the design window but fails the holdout on net over buying power; w25 and w30 fail on net over buying power; the pass is against an ungated 10, so live's width waits on item 50 (the gates on) and MEIC validation"
+      "outcome": "provisional: w15 and w20 pass both windows, w15 the cleaner; w25 and w30 fail on net over buying power; the pass is against an ungated 10, so live's width waits on item 50 (the gates on) and MEIC validation"
     },
     {
       "id": 44,
