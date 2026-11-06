@@ -9,7 +9,7 @@ import type {
 import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
- * The Live page's execution tab (B10): `python -m cherrypick.cli execution --json`, the orchestrator's
+ * The execution record (B10; a card on each live arm's Live tab, MEIC's today): `python -m cherrypick.cli execution --json`, the orchestrator's
  * `execution.py` over the live ledgers -- each live arm's fills against the mid at submit, fill rate,
  * overrides and the gap to its paper mirror, by week. Files only on the Python side; nothing here
  * touches an order. Every rule is the orchestrator's: this renames the reply and decides nothing.

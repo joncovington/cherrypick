@@ -7,6 +7,7 @@ import { HistoryTable } from "../../components/table/HistoryTable";
 import { fmtCash, fmtPrice } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
 import { HISTORY_COLUMNS, feesNetWords } from "../Meic/MeicTables";
+import { LiveExecutionCard } from "./LiveExecution";
 import { MeicLiveGapCard } from "./MeicLiveGap";
 import { MeicReadinessCard } from "./MeicReadinessCard";
 
@@ -294,6 +295,7 @@ export function MeicLivePage() {
       />
 
       <MeicLiveGapCard />
+      <LiveExecutionCard module="meic" />
     </div>
   );
 }

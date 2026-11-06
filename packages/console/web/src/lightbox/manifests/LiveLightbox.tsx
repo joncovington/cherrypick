@@ -3,7 +3,6 @@ import { PmccPage, PortfolioPage, PositionsPage, WheelPage } from "../../pages/L
 import { MeicLivePage, useLiveMeic } from "../../pages/Live/MeicLivePage";
 import { LiveTodayPage, suiteBadgeText, useLiveToday } from "../../pages/Live/LiveTodayPage";
 import { LoopPill } from "../../components/ScopeBar";
-import { ExecutionTab } from "../../pages/Live/ExecutionTab";
 import { AlertDaemonChip } from "../../components/AlertDaemonChip";
 import { LIVE_ACCOUNT_WIDE } from "../../lib/visibility";
 import { ModuleFrame } from "../ModuleFrame";
@@ -47,8 +46,6 @@ export const slides: SlideDef[] = [
   { id: "flies", label: "flies", render: () => <LivePage /> },
   // MEIC's live loop: arming, halt, orphans, held submissions, open ICs and resolved history.
   { id: "meic", label: "meic", render: () => <MeicLivePage /> },
-  // B10: each live arm's fills against the model and its overrides, by week, beside its P&L.
-  { id: "execution", label: "execution", render: () => <ExecutionTab /> },
 ];
 
 

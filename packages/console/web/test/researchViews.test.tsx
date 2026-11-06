@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { renderToString } from "react-dom/server";
 import type { ExecutionModule, ExecutionWeek, SliceCell, SliceDimensionRead, SliceReport } from "@console/shared";
-import { gapLine, overrideLine, tradesCell, windowLine } from "../src/pages/Live/ExecutionTab";
+import { ExecutionCard, executionCaption, gapLine, overrideLine, tradesCell, windowLine } from "../src/pages/Live/LiveExecution";
 import { dimensionLabel, dimensionSentence, fmtCi, fmtMean, fmtShare, overallSentence, placeboSentence } from "../src/pages/Compare/SlicesTab";
 
 const week = (over: Partial<ExecutionWeek>): ExecutionWeek => ({
@@ -18,7 +19,7 @@ const week = (over: Partial<ExecutionWeek>): ExecutionWeek => ({
   ...over,
 });
 
-describe("the execution tab's lines", () => {
+describe("the execution card's lines", () => {
   it("names a clean week clean and counts each override kind", () => {
     expect(overrideLine(week({}))).toBe("clean");
     const kinds = [{ kind: "manual_close", session: null, at: null }, { kind: "manual_close", session: null, at: null }, { kind: "kill_cleared", session: null, at: null }];
@@ -42,6 +43,16 @@ describe("the execution tab's lines", () => {
     };
     expect(gapLine(m)).toBe("live − live-shadow since 2026-10-15 over 3 working sessions: -$133.17 (missed -$172.48); largest: missed");
     expect(gapLine({ ...m, gap: null })).toBeNull();
+  });
+
+  it("on meic's tab, says which sessions its gap counts beside the condor-by-condor card", () => {
+    const m: ExecutionModule = { module: "meic", ok: true, reason: null, mirror: "live-shadow", weeks: [week({ trades: 2 })], gap: null, window: null };
+    const html = renderToString(<ExecutionCard m={m} />);
+    expect(html).toContain("execution by week — paper mirror live-shadow");
+    expect(executionCaption(m)).toContain("over every session live was working, so it also counts paper's entries live missed");
+    expect(executionCaption(m)).toContain("live vs paper above pairs only the condors both sides took");
+    const none = renderToString(<ExecutionCard m={{ ...m, ok: false, reason: "no live ledger" }} />);
+    expect(none).toContain("no live ledger");
   });
 });
 
