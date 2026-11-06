@@ -420,7 +420,8 @@ def _interrupted_run(s, cut: str) -> list[str]:
 STALE: list[str] = []
 
 
-def _rerun(s):
+def _rerun(s, read_rows=None):
+    read_rows = read_rows or _read
     replayed = []
 
     def replay(day, out, arms, history_db, settle, config):
@@ -430,7 +431,7 @@ def _rerun(s):
         return _replay(day, out, arms, history_db, settle, config)
 
     report = runner.run(
-        s, ["range-high"], "validation", replay=replay, read_rows=_read, workers=1, log=lambda _m: None
+        s, ["range-high"], "validation", replay=replay, read_rows=read_rows, workers=1, log=lambda _m: None
     )
     return report, replayed
 
@@ -483,9 +484,79 @@ def test_a_merge_outside_the_replay_s_code_still_resumes_and_one_inside_does_not
     assert report["resumed"] == {"sessions_reused": 1} and replayed == ["2026-10-15"]
     assert report["code_commit"] == "def456", "the run still records the commit it finished on"
     _interrupted_run(s, "2026-10-15")
-    monkeypatch.setattr(runner, "_code_pin", lambda module: "t1,t2,t9")  # the module's replay changed
+    monkeypatch.setattr(runner, "_code_pin", lambda module: "t1,t2,t9")  # the replay's code changed
+    report, replayed = _rerun(s, read_rows=_read_changed)
+    assert "resumed" not in report, "a change that moves a result starts afresh"
+    assert replayed == ["2026-10-14", "2026-10-14", "2026-10-15"], "the check's replay, then every session"
+
+
+def _read_changed(path):
+    """The replay's result moved: a session re-replayed by the check reads back differently."""
+    rows = _read(path)
+    return [{**r, "net_pnl": r["net_pnl"] + 1.0} for r in rows] if path.parent.name == "verify" else rows
+
+
+def test_a_code_change_that_replays_identically_is_taken_over_after_the_check(
+    world, clean_commit, monkeypatch
+):
+    """2026-11-05: #877 changed only how the runner starts replays, yet item 44 lost 469 sessions to
+    the code pin. A run on other code is taken over when its sampled sessions replay identically."""
+    s, _ = world
+    _interrupted_run(s, "2026-10-15")
+    monkeypatch.setattr(runner, "_code_pin", lambda module: "t1,t2,t9")
     report, replayed = _rerun(s)
-    assert "resumed" not in report and len(replayed) == 2
+    assert replayed == ["2026-10-14", "2026-10-15"], "the sampled finished session, then the one left"
+    resumed = report["resumed"]
+    assert resumed["sessions_reused"] == 1
+    assert resumed["code_from"] == "t1,t2,t3" and resumed["code_to"] == "t1,t2,t9"
+    assert resumed["verified"]["identical"] is True
+    assert resumed["verified"]["sessions"] == [{"session": "2026-10-14", "identical": True}]
+    assert _run_dirs() == {report["run_id"]}
+    assert not (paths.results_dir() / "runs" / report["run_id"] / "verify").exists(), "the check's copies go"
+
+
+def test_a_run_file_from_before_the_change_is_found_by_its_commit_s_code(world, clean_commit, monkeypatch):
+    """Run files written before 2026-11-06 are named by a key that holds the code. Item 44's 469
+    sessions sit behind one: it is found by recomputing that key under each recent commit's code."""
+    s, _ = world
+    seen = {}
+    real_claim = runner._claim
+
+    def spy(parts, code, module, verify):
+        seen["parts"] = parts
+        return real_claim(parts, code, module, verify)
+
+    monkeypatch.setattr(runner, "_claim", spy)
+    _interrupted_run(s, "2026-10-15")
+    monkeypatch.setattr(runner, "_claim", real_claim)
+    pending = paths.results_dir() / "runs" / "pending"
+    (spec_file,) = list(pending.iterdir())
+    run_id = json.loads(spec_file.read_text())["run_id"]
+    spec_file.unlink()  # as the old runner wrote it: named by the whole key, code and all, no code inside
+    legacy = runner._resume_key({**seen["parts"], "code": "t1,t2,t3"})
+    (pending / f"{legacy}.json").write_text(json.dumps({"run_id": run_id, "pid": 1}), encoding="utf-8")
+    monkeypatch.setattr(runner, "_code_pin", lambda module: "t1,t2,t9")
+    monkeypatch.setattr(runner, "_recent_pins", lambda module, limit=400: ["t1,t2,t9", "t1,t2,t3"])
+    report, _ = _rerun(s)
+    assert report["run_id"] == run_id and report["resumed"]["code_from"] == "t1,t2,t3"
+    assert not (pending / f"{legacy}.json").exists(), "the old file is superseded"
+
+
+def test_the_check_samples_the_ends_and_between_and_ignores_labels():
+    days = [f"2024-01-{d:02d}" for d in range(1, 21)]
+    sample = runner.verify_sample(days)
+    assert len(sample) == 5 and sample[0] == days[0] and sample[-1] == days[-1]
+    assert runner.verify_sample(days[:3]) == days[:3]
+    a = [{"arm": "x", "net_pnl": 1.0, "ic_order_id": "PAPER-x-1"}]
+    assert runner.same_rows(a, [{**a[0], "ic_order_id": "PAPER-x-2"}]), "an order id is a label"
+    assert not runner.same_rows(a, [{**a[0], "net_pnl": 1.01}])
+    assert not runner.same_rows(a, a + a)
+
+
+def test_the_recent_pins_are_this_repo_s_committed_trees():
+    pins = runner._recent_pins("meic", limit=5)
+    assert pins and pins[0] == runner._code_pin("meic").split("+")[0]
+    assert all(len(p.split(",")) == 3 for p in pins)
 
 
 def test_the_pin_is_the_runner_s_core_s_and_the_module_s_committed_trees():
