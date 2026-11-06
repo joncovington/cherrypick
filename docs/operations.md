@@ -88,6 +88,7 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `morning-factpack` | daily **08:30**, trading days | `run.py morning` | on | the overview's fact pack and GREEN/YELLOW/RED phase |
 | `morning-narrative` | daily **09:00**, trading days | `scripts/morning_narrative.py` | off, needs `claude` | |
 | `technicals-index-bars` | daily **06:00** | `scripts/fetch_index_bars.py` | on with `dolt` | |
+| `vol-curve-bars` | daily **16:30**, trading days | `scripts/fetch_vol_curve_bars.py` | on | 5m and 1h bars of the VIX term structure and SPX, kept in `~/.cherrypick/data/market-files/vol_curve_bars.db`; the feed itself keeps only months |
 | `technicals-land` | daily **06:15** | `-m cherrypick.technicals land` | on with `dolt` | lands the end-of-day store from the Dolt clones |
 | `technicals-report` | daily **06:30** | `-m cherrypick.technicals report` | on with `dolt` | disabled with `technicals-land` |
 | `technicals-dollar-volume` | daily **18:35**, trading days | `scripts/fetch_dollar_volume.py` | on (no `dolt` needed) | each name's 50-session dollar volume from the broker's candles; the security list and the liquidity verdict read it |

@@ -39,7 +39,7 @@ it's what the code actually reads.
 | `finnhub_api_key_env_var` | Name of the environment variable holding a Finnhub API key, if you're using it as a supplementary data source. Not required for the core scan/rank/order pipeline, which runs entirely on tastytrade + Dolt. |
 | `entry_window_start` / `entry_window_end` | The window before close where new positions get opened, e.g. `15:30`–`15:55` ET. These are ET times regardless of your local timezone. |
 | `entry_scan_at` | When the automated loop starts its forced-sampling entry scan (default `15:35`). Distinct from `entry_window_start`, and must leave room for the scan to finish before `entry_window_end`. |
-| `entry_scan_budget_seconds` / `entry_scan_workers` | Bounds on the entry scan (example: 1500 s, 4 workers). The morning snapshot orders the universe so a budget that binds still finishes the liquid names first. |
+| `entry_scan_budget_seconds` / `entry_scan_workers` | Bounds on the entry scan (example: 1500 s, 4 workers). The morning snapshot orders the universe so a budget that binds still finishes the liquid names first, and from 2026-11-05 names the liquidity verdict refuses are screened after every tradable one, only with the budget left. |
 | `symbol_watch` | The pre-market forward scan the loop runs itself (`enabled`, `at` `06:30`, `days` 10 trading days, `liquid_only`, `tier_thresholds` in the example). It pre-filters the entry scan on stable criteria only and never decides an entry. |
 | `dolt_calendar_timeout_seconds` / `dolt_symbol_timeout_seconds` | Per-query bounds on the Dolt calendar and per-symbol reads (example: 30 / 90), so a hung query cannot hold the loop's lock. |
 | `close_window_start` | Next-morning time where Step 3's unconditional close-window backstop kicks in, e.g. `09:45` ET — chosen to be after the open's initial volatility has settled a bit. |
@@ -348,7 +348,7 @@ Common keys apply to every strategy; `management.<strategy>` overrides them for 
 | Key | Default | What it does |
 |---|---|---|
 | `hold_winners_max_days` | `3` | Session cap for the four overnight structures. **Trading** sessions, so a weekend cannot spend it. The calendars are exempt — they run their own front-expiration stop. |
-| `close_losers_first_morning` | `true` | The PEAD gate. A position at or below breakeven closes on the first check of a day; a winner may carry. |
+| `close_losers_first_morning` | `true` | The PEAD gate. A position at or below breakeven closes on the first check that can act on the first morning after entry (the first evaluation at or after `exec_window_start` that no gate held); a winner may carry. |
 | `exec_window_start` | `"09:40"` | Before this, decisions are recorded and not acted on. Opening spreads can exceed the edge being managed. |
 | `max_leg_spread_pct` | `0.35` | Widest leg spread (of mid) still worth acting on. |
 | `max_leg_spread_abs` | `0.05` | A leg is refused only when wide in percent AND in money. |

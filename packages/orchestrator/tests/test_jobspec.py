@@ -355,6 +355,7 @@ def test_derive_full_suite_job_table():
         "technicals-land",
         "technicals-dividends",
         "technicals-index-bars",
+        "vol-curve-bars",
         "technicals-iv-rank",
         "technicals-dollar-volume",
         "technicals-earnings-times",
@@ -1503,6 +1504,19 @@ def test_the_index_bar_fetch_runs_before_the_landing_that_reads_it():
     cfg = suite_cfg()
     cfg["technicals"] = {"index_bars": False}
     assert not {j.id: j for j in derive(cfg)[0]}["technicals-index-bars"].enabled
+
+
+def test_the_vol_curve_bar_fetch_runs_after_the_indexes_final_prints_without_dolt():
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    job = by_id["vol-curve-bars"]
+    assert job.enabled and job.argv[-1].endswith("fetch_vol_curve_bars.py")
+    assert job.at_et >= "16:15" and job.trading_days_only
+    no_dolt = suite_cfg()
+    no_dolt["capabilities"]["dolt"] = False
+    assert {j.id: j for j in derive(no_dolt)[0]}["vol-curve-bars"].enabled
+    cfg = suite_cfg()
+    cfg["technicals"] = {"vol_curve_bars": False}
+    assert not {j.id: j for j in derive(cfg)[0]}["vol-curve-bars"].enabled
 
 
 def test_earnings_moves_are_priced_after_the_close_and_before_the_pack():
