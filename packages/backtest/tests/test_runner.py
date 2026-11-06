@@ -571,6 +571,45 @@ def test_the_check_samples_the_ends_and_between_and_ignores_labels():
     assert not runner.same_rows(a, a + a)
 
 
+def _pin_switches_after_the_first_session(monkeypatch):
+    """The checkout's code moves once the run's first session is finished, as a merge pulled mid-run
+    reaches every replay after it (item 44's design run, 2026-11-06)."""
+
+    def pin(module):
+        done = list((paths.results_dir() / "runs").glob("*/2026-10-14.ok.json"))
+        return "t1,t2,t9" if done else "t1,t2,t3"
+
+    monkeypatch.setattr(runner, "_code_pin", pin)
+
+
+def test_a_code_change_mid_run_that_replays_identically_is_recorded(world, clean_commit, monkeypatch):
+    s, _ = world
+    _pin_switches_after_the_first_session(monkeypatch)
+    report = runner.run(
+        s, ["range-high"], "validation", replay=_replay, read_rows=_read, workers=1, log=lambda _m: None
+    )
+    (change,) = report["code_changes"]
+    assert change["before_session"] == "2026-10-15"
+    assert (change["code_from"], change["code_to"]) == ("t1,t2,t3", "t1,t2,t9")
+    assert change["verified"]["identical"] is True
+    assert change["verified"]["sessions"] == [{"session": "2026-10-14", "identical": True}]
+    assert set(report["arms"]) == {"control", "range-high"}
+
+
+def test_a_code_change_mid_run_that_replays_differently_stops_the_run(world, clean_commit, monkeypatch):
+    s, _ = world
+    _pin_switches_after_the_first_session(monkeypatch)
+    with pytest.raises(runner.RunRefused, match="changed mid-run"):
+        runner.run(
+            s, ["range-high"], "validation", replay=_replay, read_rows=_read_changed, workers=1,
+            log=lambda _m: None,
+        )  # fmt: skip
+    (run_dir,) = [p for p in (paths.results_dir() / "runs").iterdir() if p.is_dir() and p.name != "pending"]
+    assert (run_dir / "2026-10-14.ok.json").is_file(), "the finished session is kept"
+    assert not (run_dir / "2026-10-15.ok.json").exists(), "nothing replays on the code that differs"
+    assert list((paths.results_dir() / "runs" / "pending").iterdir()), "the run stays resumable"
+
+
 def test_the_recent_pins_are_this_repo_s_committed_trees():
     pins = runner._recent_pins("meic", limit=5)
     assert pins and pins[0] == runner._code_pin("meic").split("+")[0]
