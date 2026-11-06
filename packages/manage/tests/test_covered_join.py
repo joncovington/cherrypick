@@ -32,7 +32,7 @@ def test_a_separate_short_past_sixty_days_is_one_diagonal_with_its_long():
     # the trade and its basis are what the covered-call join made of it before.
     a = evaluate(split())
     (t,) = a["trades"]
-    assert t["grouped_by"] == "pmcc link" and t["shape"] == "diagonal" and t["trade_id"] == "XYZ"
+    assert t["grouped_by"] == "pmcc link" and t["shape"] == "diagonal" and t["trade_id"] == "XYZ-260401-1"
     # Both chains' orders: the long with the May short sold beside it, and the January short.
     assert t["cost"] == DEEP * 100 - 150.0 - 120.0 and len(t["chain"]["orders"]) == 2
     assert "risk.oversize" not in by(t) and len(a["pmcc"]["positions"]) == 1 and a["grouping_errors"] == []
@@ -146,5 +146,5 @@ def test_the_wheel_and_pmcc_views_still_name_the_right_trades():
     a = ev.evaluate(snap, _rules.effective(None)[0])["accounts"][0]
     ids = {t["trade_id"]: {leg["symbol"] for leg in t["legs"]} for t in a["trades"]}
     (cycle,) = a["wheel"]["cycles"]
-    assert cycle["trade_ids"] == ["ABC"] and put in ids["ABC"]
-    assert ids["XYZ"] == {LONG, FAR}
+    assert cycle["trade_ids"] == ["ABC-261001-1"] and put in ids["ABC-261001-1"]
+    assert ids["XYZ-260401-1"] == {LONG, FAR}

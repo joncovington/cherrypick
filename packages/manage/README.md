@@ -29,6 +29,18 @@ so a roll's credit counts. GLD on 2026-10-13 was opened for 8.33 db and rolled t
 each other are two trades (SOFI's short put and its call spread). The chain's recorded fees give a net
 P&L beside the gross one.
 
+**Every trade has a stable ID** (`tradeids.py`), `<NAME>-<YYMMDD>-<n>`: its name, the day its chain
+opened, and `n` for trades opened on the name that day (`XYZ-260401-1`). It is assigned once and kept
+in `trade-ids.json` with every order the chain has held, so a roll keeps it and a new trade on the name
+never renumbers it (the old `XYZ#2` labels did). A trade whose chain can no longer be rebuilt (its
+opening has left the 400 days of history read a name) keeps its ID by its exact legs. A join that makes
+one trade of two keeps the older ID and the card says the other was merged into it. A trade with
+neither a chain nor a match gets a provisional `<NAME>-open-<hash>` until its orders are known. Each
+snapshot carries the IDs, so a re-run and the minute's re-marks give the same ones. The ID is what the
+cards show, what `check-roll --trade` takes (a bare name still works for a name's only trade), and a
+`trades.<ID>` key in the overrides: `intent`, `note` and `disable` for that trade alone, read over the
+name's `positions.<SYMBOL>`.
+
 A chain is used only when its own orders, replayed, leave exactly the quantities held today. When the
 history is missing, starts after the position did, or the broker moved a leg without an order, the
 trade falls back to grouping by expiry (a diagonal stays whole) and is priced from its open legs, and

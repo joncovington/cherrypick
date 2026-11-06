@@ -30,6 +30,7 @@ from cherrypick.manage import paths as _paths
 from cherrypick.manage import remark as _remark
 from cherrypick.manage import rules as _rules
 from cherrypick.manage import stream_request as _stream_request
+from cherrypick.manage import tradeids as _tradeids
 
 
 def _run(snapshot: dict, rules_path: str | None, *, store: bool = True) -> dict:
@@ -43,6 +44,10 @@ def _run(snapshot: dict, rules_path: str | None, *, store: bool = True) -> dict:
     if store:
         write_json_atomic(_paths.snapshot_path(session), snapshot)
         _paths.marks_path(session).unlink(missing_ok=True)
+        # Only a full snapshot adds to the trade IDs: a re-mark or a re-run reads the ones it carries.
+        if result.get("ok") and "trade_ids" in snapshot:
+            trades = [t for a in result["accounts"] for t in a["trades"]]
+            _tradeids.record(_paths.trade_ids_path(), snapshot["trade_ids"], trades, session)
     target = _paths.eval_path(session)
     write_json_atomic(target, result)
     # The held legs, declared to the streamer so the console can mark them live until the next run.
@@ -105,6 +110,9 @@ def cmd_evaluate(args) -> dict:
     if "entry_deltas" not in snapshot and snapshot.get("session"):
         rules, _, _ = _rules.load(Path(args.rules) if args.rules else None)
         snapshot["entry_deltas"] = _entrydelta.record(snapshot, rules, _paths.entry_deltas_path())
+    # The trade IDs as they stand, carried so a re-run of this snapshot assigns the same ones.
+    if "trade_ids" not in snapshot:
+        snapshot["trade_ids"], _ = _tradeids.load(_paths.trade_ids_path())
     return _run(snapshot, args.rules)
 
 
@@ -168,6 +176,12 @@ def cmd_check_roll(args) -> dict:
     rules, _warnings, _source = _rules.load(Path(args.rules) if args.rules else None)
     result = _evaluate.evaluate(snapshot, rules)
     wanted = args.trade.upper()
+    # A trade by its stable ID; a bare name stands for its one trade when it has only one.
+    on_name = [
+        t for a in result["accounts"] for t in a["trades"] if str(t.get("underlying", "")).upper() == wanted
+    ]
+    if len(on_name) == 1:
+        wanted = str(on_name[0].get("trade_id", "")).upper()
     for account in result["accounts"]:
         for trade in account["trades"]:
             if str(trade.get("trade_id", "")).upper() == wanted:

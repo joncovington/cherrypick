@@ -33,6 +33,12 @@ def entry_deltas_path() -> Path:
     return data_dir() / "entry-deltas.json"
 
 
+def trade_ids_path() -> Path:
+    """Each trade's stable ID and the orders and legs it has held (tradeids.py); added to, never
+    rewritten."""
+    return data_dir() / "trade-ids.json"
+
+
 def marks_path(session: str) -> Path:
     """The newest quotes the session's snapshot was moved to (`remark`), while that snapshot stands."""
     return data_dir() / f"marks-{session}.json"

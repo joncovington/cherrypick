@@ -20,7 +20,7 @@ def test_the_chains_alone_split_a_short_sold_in_its_own_order():
 def test_the_link_joins_them_into_one_diagonal_with_every_linked_order_as_its_basis():
     a = evaluate(snapshot(history(), legs()))
     (t,) = a["trades"]
-    assert t["trade_id"] == "XYZ" and t["grouped_by"] == "pmcc link"
+    assert t["trade_id"] == "XYZ-260401-1" and t["grouped_by"] == "pmcc link"
     assert t["shape"] == "diagonal" and t["basis"] == "order_chain"
     # The long, the May short sold with it, and the November short sold alone: the basis counts both
     # premiums, as the PMCC view's net cost does.
@@ -28,7 +28,7 @@ def test_the_link_joins_them_into_one_diagonal_with_every_linked_order_as_its_ba
     assert len(t["chain"]["orders"]) == 2
     # No naked-call reading: the short is covered, so no unbounded-loss review.
     assert "risk.oversize" not in rules_of(t)
-    assert view_of(a)["trade_ids"] == ["XYZ"] and view_of(a)["grouping"].startswith("joined")
+    assert view_of(a)["trade_ids"] == ["XYZ-260401-1"] and view_of(a)["grouping"].startswith("joined")
 
 
 def test_a_diagonal_entered_as_one_order_is_untouched():
@@ -52,7 +52,7 @@ def test_a_separate_short_further_out_is_the_pmcc_link_s_too():
     a = evaluate(snapshot(rows, legs(short=short)))
     (t,) = a["trades"]
     assert t["grouped_by"] == "pmcc link" and t["cost"] == DEEP * 100 - 150.0 - 120.0
-    assert view_of(a)["trade_ids"] == ["XYZ"]
+    assert view_of(a)["trade_ids"] == ["XYZ-260401-1"]
 
 
 def test_an_unreconciled_link_is_never_joined():
@@ -115,11 +115,13 @@ def test_the_wheel_and_pmcc_views_name_the_regrouped_trades():
     a = ev.evaluate(snap, _rules.effective(None)[0])["accounts"][0]
     ids = {t["trade_id"]: t for t in a["trades"]}
     (cycle,) = a["wheel"]["cycles"]
-    assert cycle["trade_ids"] == ["ABC"] and put in {leg["symbol"] for leg in ids["ABC"]["legs"]}
+    assert cycle["trade_ids"] == ["ABC-261001-1"] and put in {
+        leg["symbol"] for leg in ids["ABC-261001-1"]["legs"]
+    }
     (v,) = a["pmcc"]["positions"]
-    assert v["trade_ids"] == ["XYZ"]
-    assert {LONG, SHORT} <= {leg["symbol"] for leg in ids["XYZ"]["legs"]}
-    assert OLD_SHORT not in {leg["symbol"] for leg in ids["XYZ"]["legs"]}
+    assert v["trade_ids"] == ["XYZ-260401-1"]
+    assert {LONG, SHORT} <= {leg["symbol"] for leg in ids["XYZ-260401-1"]["legs"]}
+    assert OLD_SHORT not in {leg["symbol"] for leg in ids["XYZ-260401-1"]["legs"]}
 
 
 # --------------------------------------------------------------------------- the join itself

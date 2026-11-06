@@ -213,6 +213,8 @@ function trade(v: unknown): ManageTrade {
   const kind = kinds.find((k) => k === t["kind"]) ?? null;
   return {
     tradeId: str(t["trade_id"]) ?? str(t["underlying"]) ?? "?",
+    tradeIdProvisional: t["trade_id_provisional"] === true,
+    mergedIds: strs(t["merged_ids"]),
     underlying: str(t["underlying"]) ?? "?",
     spot: num(t["spot"]),
     kind,

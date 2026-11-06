@@ -51,6 +51,11 @@ of that day, not today's.
 
 ## Rules the evaluation enforces
 
+- **A trade keeps one ID for life** (`tradeids.py`, store `trade-ids.json`, added to and never
+  rewritten): matched by its orders, else by its exact legs, merged into the older on a join, provisional
+  only with neither. It is assigned before the trade is judged, since `trades.<ID>` overrides are read
+  over `positions.<SYM>`; the snapshot carries the store so re-runs and re-marks reproduce it. Never
+  number a name's trades by position again.
 - **A trade is its order chain.** `trade_grouping: order_chain` (`chains.py`) rebuilds the broker's
   chain from trade history — opening order and every roll — and takes its net cash as the basis; the
   positions endpoint's per-leg average price drops a roll's credit. A chain counts only when replaying

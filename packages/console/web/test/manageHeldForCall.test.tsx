@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import type { ManageTrade } from "@console/shared";
 import { MemoryRouter } from "react-router-dom";
 import { TradeDetail } from "../src/pages/Live/ManagePage";
-import { PositionCard, PositionCards, SpotLine, chainLegs, chainSteps, sessionClose, sortByPnl } from "../src/pages/Live/PositionCards";
+import { PositionCard, PositionCards, SpotLine, chainLegs, chainSteps, idChips, sessionClose, sortByPnl } from "../src/pages/Live/PositionCards";
 
 /**
  * The held-for-call chip and "waits for call" are packages/manage's `earnings_trade` verdict, read and
@@ -23,6 +23,8 @@ function text(html: string): string {
 function trade(over: Partial<ManageTrade>): ManageTrade {
   return {
     tradeId: "XYZ",
+    tradeIdProvisional: false,
+    mergedIds: [],
     underlying: "XYZ",
     spot: 190,
     kind: "credit",
@@ -107,6 +109,8 @@ describe("the positions cards", () => {
   });
   const rolled = trade({
     tradeId: "IWM",
+    tradeIdProvisional: false,
+    mergedIds: [],
     action: "TAKE_PROFIT",
     pnlGross: 187,
     pnlNet: 185.2,
@@ -191,6 +195,13 @@ describe("the positions cards", () => {
     const unread = renderToString(<PositionCard t={trade({ pnlGross: -57, pnlNet: null })} onOpen={() => undefined} />);
     expect(text(unread)).not.toContain("-$57.00");
     expect(unread).not.toContain("pos-card is-neg");
+  });
+
+  it("a trade's ID says when it is provisional or the survivor of a join, and nothing when settled", () => {
+    const chips = (t: ManageTrade) => renderToString(<>{idChips(t)}</>);
+    expect(text(chips(trade({})))).toBe("");
+    expect(text(chips(trade({ tradeIdProvisional: true })))).toBe("provisional ID");
+    expect(text(chips(trade({ mergedIds: ["XYZ-260925-1"] })))).toBe("merged XYZ-260925-1");
   });
 
   it("a settling trade says so on its card", () => {

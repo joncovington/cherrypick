@@ -70,7 +70,14 @@ export interface ManageLevel {
 }
 
 export interface ManageTrade {
+  /** The trade's stable ID (packages/manage `tradeids.py`), `<NAME>-<YYMMDD>-<n>`: kept through rolls
+   * and other trades on the name. An evaluation written before it carries the old `XYZ#n` label. */
   tradeId: string;
+  /** True when the trade has no order chain yet, so its ID (`<NAME>-open-<hash>`) changes once its
+   * orders are known. */
+  tradeIdProvisional: boolean;
+  /** Stable IDs folded into this one (a join made one trade of two); the older ID is kept. */
+  mergedIds: string[];
   underlying: string;
   spot: number | null;
   /** `directional`: opened near even money (a super bear or bull, a risk reversal), judged on risk. */

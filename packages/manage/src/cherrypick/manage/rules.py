@@ -24,6 +24,7 @@ from cherrypick.core import home as _home
 from cherrypick.core import incomerules as _income
 
 from cherrypick.manage import shapes as _shapes
+from cherrypick.manage import tradeids as _tradeids
 
 RULESET_NAME = "manage-2026-10"
 
@@ -434,15 +435,18 @@ DEFAULT_RULES: dict[str, Any] = {
     # Per-underlying overrides: {"SPY": {"intent": "hedge", "disable": ["debit.stop"], "note": "..."}}.
     # `intent: "pmcc"` recognises a call diagonal as a PMCC; `"diagonal"` keeps it out (pmcc.py).
     "positions": {},
-    # Per-trade overrides, keyed by the PMCC's long contract (spaces ignored):
-    # {"XYZ 280121C00040000": {"intent": "pmcc", "note": "..."}}. Beats `positions.<SYM>.intent` for that
-    # PMCC alone. A rolled long is a new PMCC: its old contract's intent does not carry (pmcc.py).
+    # Per-trade overrides, keyed two ways. By a trade's stable ID (tradeids.py), as `positions.<SYM>`
+    # takes for a name but for that trade alone: {"XYZ-260401-1": {"intent": "hedge", "disable":
+    # ["debit.stop"], "note": "..."}}, read over the name's. By a PMCC's long contract (spaces ignored),
+    # for the PMCC view: {"XYZ 280121C00040000": {"intent": "pmcc", "continues": "...", "note": "..."}}.
+    # A rolled long is a new PMCC: its old contract's intent does not carry (pmcc.py).
     "trades": {},
 }
 
-# What a `trades` entry may hold, and the intents it may set.
+# What a `trades` entry may hold, by its key: a PMCC's long contract, or a trade's stable ID.
 TRADE_KEYS = frozenset({"intent", "continues", "note"})
 TRADE_INTENTS = frozenset({"pmcc", "diagonal"})
+TRADE_ID_KEYS = frozenset({"intent", "disable", "note"})
 
 # Every rule id an override's `disable` list may name.
 RULE_IDS = (
@@ -571,14 +575,29 @@ def _is_call_contract(key: str) -> bool:
 
 
 def _check_trades(rules: dict[str, Any], warnings: list[str]) -> None:
-    """Say what a `trades` entry holds that does nothing: a key or a `continues` that is not a call
-    contract, a field other than intent, continues and note, an intent other than pmcc or diagonal, a
-    long that continues itself."""
+    """Say what a `trades` entry holds that does nothing. Keyed by a trade ID: a field other than intent,
+    disable and note, or a rule `disable` does not know. Keyed by a long contract: a `continues` that is
+    not a call contract or names its own long, a field other than intent, continues and note, an intent
+    other than pmcc or diagonal. Any other key."""
     for key, entry in (rules.get("trades") or {}).items():
         if key.startswith("_"):
             continue
+        if _tradeids.is_trade_id(key):
+            if not isinstance(entry, dict):
+                warnings.append(f"trades.{key}: expected an object")
+                continue
+            for field in entry:
+                if not field.startswith("_") and field not in TRADE_ID_KEYS:
+                    warnings.append(f"trades.{key}.{field}: unknown key for a trade ID, ignored")
+            for rule in entry.get("disable") or []:
+                if rule not in RULE_IDS:
+                    warnings.append(f"trades.{key}.disable: unknown rule '{rule}'")
+            continue
         if not _is_call_contract(key):
-            warnings.append(f"trades.{key}: not a call contract (e.g. 'XYZ 280121C00040000'), ignored")
+            warnings.append(
+                f"trades.{key}: neither a trade ID (e.g. 'XYZ-260401-1') nor a call contract "
+                "(e.g. 'XYZ 280121C00040000'), ignored"
+            )
             continue
         if isinstance(entry, dict) and "continues" in entry:
             old = entry["continues"]
@@ -623,9 +642,23 @@ def load(path: Path | None = None) -> tuple[dict[str, Any], list[str], str | Non
     return rules, warnings, str(target)
 
 
-def disabled(rules: dict[str, Any], underlying: str, rule_id: str) -> bool:
-    entry = (rules.get("positions") or {}).get(underlying) or {}
-    if rule_id in (entry.get("disable") or []):
+def override(rules: dict[str, Any], underlying: str, trade_id: str | None = None) -> dict[str, Any]:
+    """The overrides that apply to one trade: the name's (`positions.<SYM>`) with the trade's own
+    (`trades.<ID>`) over them, field by field; `disable` lists add up."""
+    name = (rules.get("positions") or {}).get(underlying) or {}
+    own = ((rules.get("trades") or {}).get(trade_id) or {}) if trade_id else {}
+    if not isinstance(name, dict):
+        name = {}
+    if not isinstance(own, dict):
+        own = {}
+    out = {**name, **{k: v for k, v in own.items() if not k.startswith("_")}}
+    out["disable"] = list(dict.fromkeys([*(name.get("disable") or []), *(own.get("disable") or [])]))
+    return out
+
+
+def disabled(rules: dict[str, Any], underlying: str, rule_id: str, trade_id: str | None = None) -> bool:
+    """Whether a rule is off for this trade: by the name's or the trade's `disable`, or its section."""
+    if rule_id in override(rules, underlying, trade_id)["disable"]:
         return True
     section, _, name = rule_id.partition(".")
     node = rules.get(section) or {}

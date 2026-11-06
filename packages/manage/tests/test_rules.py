@@ -49,9 +49,34 @@ def test_a_trades_entry_that_does_nothing_says_so():
     assert warnings == [
         "trades.XYZ   280121C00040000.disable: unknown key, ignored",
         "trades.XYZ   280121C00040000.intent: 'hedge' is not pmcc or diagonal, ignored",
-        "trades.XYZ: not a call contract (e.g. 'XYZ 280121C00040000'), ignored",
-        "trades.XYZ 280121P00040000: not a call contract (e.g. 'XYZ 280121C00040000'), ignored",
+        "trades.XYZ: neither a trade ID (e.g. 'XYZ-260401-1') nor a call contract "
+        "(e.g. 'XYZ 280121C00040000'), ignored",
+        "trades.XYZ 280121P00040000: neither a trade ID (e.g. 'XYZ-260401-1') nor a call contract "
+        "(e.g. 'XYZ 280121C00040000'), ignored",
     ]
+
+
+def test_a_trade_id_entry_takes_intent_disable_and_note():
+    rules, warnings = _rules.effective(
+        {
+            "positions": {"XYZ": {"disable": ["credit.stop"], "note": "the name", "intent": "income"}},
+            "trades": {
+                "XYZ-260401-1": {"intent": "hedge", "disable": ["debit.stop"], "note": "this one"},
+                "XYZ-260401-2": {"continues": "XYZ 280121C00040000", "disable": ["debit.stopp"]},
+            },
+        }
+    )
+    assert warnings == [
+        "trades.XYZ-260401-2.continues: unknown key for a trade ID, ignored",
+        "trades.XYZ-260401-2.disable: unknown rule 'debit.stopp'",
+    ]
+    own = _rules.override(rules, "XYZ", "XYZ-260401-1")
+    assert own["intent"] == "hedge" and own["note"] == "this one"
+    assert own["disable"] == ["credit.stop", "debit.stop"]  # the name's and the trade's add up
+    assert _rules.disabled(rules, "XYZ", "debit.stop", "XYZ-260401-1")
+    assert not _rules.disabled(rules, "XYZ", "debit.stop", "XYZ-260402-1")  # another trade on the name
+    assert _rules.disabled(rules, "XYZ", "credit.stop", "XYZ-260402-1")  # the name's still applies
+    assert _rules.override(rules, "XYZ")["intent"] == "income"
 
 
 def test_a_continues_must_name_another_call_contract():

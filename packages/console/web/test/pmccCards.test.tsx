@@ -136,6 +136,8 @@ function position(over: Partial<ManagePmccPosition> = {}): ManagePmccPosition {
 function trade(over: Partial<ManageTrade> = {}): ManageTrade {
   return {
     tradeId: "XYZ#2",
+    tradeIdProvisional: false,
+    mergedIds: [],
     underlying: "XYZ",
     spot: 43,
     kind: "credit",
