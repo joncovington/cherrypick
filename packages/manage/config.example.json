@@ -153,6 +153,11 @@
     "recognize": {
       "entry_min_delta": 0.7
     },
+    "entry_record": {
+      "_comment": "The long's delta at entry, recorded once from the first full snapshot after a call is bought (the underlying's price there, about 30-90 s after the fill), and preferred to the solve from the entry day's close. A fill whose snapshot came more than max_gap_seconds after it is not recorded and keeps the close. Each record carries the delta at a two-standard-deviation move over the gap, and a band across the floor is said in the recognition.",
+      "enabled": true,
+      "max_gap_seconds": 300
+    },
     "width": {
       "_comment": "Roll or close when the short strike less the long strike does not exceed the long's net cost per share after every premium collected: an assignment there locks in a loss. A net cost over warn_share of the width passes but is flagged thin (a call-away then earns under a third of the cost).",
       "enabled": true,

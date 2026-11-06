@@ -6,9 +6,13 @@ same size, the short expiring first, at or above the long's strike (and no share
 the short a covered call). Neither leg's days left decides it: the standard definition (user,
 2026-11-04) lets the short's expiry and delta vary, and a long running short of time is the
 `roll_long` flag's, not a reason to drop the view. Shape alone does
-not make a PMCC: the long must have been **entered at `entry_min_delta` or more** (0.70), solved from
-its opening fill and that day's close (the snapshot's `underlying_history`, v13) with the dividend
-yield carried (Merton), or the operator must say so (`positions.<SYMBOL>.intent: "pmcc"`).
+not make a PMCC: the long must have been **entered at `entry_min_delta` or more** (0.70), or the
+operator must say so (`positions.<SYMBOL>.intent: "pmcc"`). The delta at entry is the one recorded
+from the first full snapshot after the fill when there is one (`entrydelta.py`, carried in
+`snapshot.entry_deltas`), else solved from the opening fill and that day's close (the snapshot's
+`underlying_history`, v13), with the dividend yield carried (Merton) either way. A recorded delta
+whose fill-time band (the underlying's likely move between the fill and the snapshot) straddles the
+floor says so in `recognized_by`.
 `intent: "diagonal"` keeps a trade out whatever its delta. A delta at entry that cannot be solved (no
 close for the day in the snapshot, a split since, a fill no volatility prices) is UNKNOWN, never
 guessed, and an unknown delta does not recognise: the candidate is listed, says why, and stays under
@@ -246,24 +250,49 @@ def _entry_delta(
     hist: dict[str, Any] | None,
     session: date,
     rate: float,
+    recorded: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """The long's delta at entry, from each opening fill and that day's close; the lowest when it was
-    bought on more than one day (every lot must clear the bar). Unknown, with why, otherwise."""
+    """The long's delta at entry, per opening fill: the delta recorded at the fill when there is one
+    (entrydelta.py, `snapshot.entry_deltas`), else solved from the fill and that day's close; the
+    lowest when it was bought in more than one fill (every lot must clear the bar). Unknown, with why,
+    otherwise. A recorded delta stands through a later split: a delta has no share basis."""
     out: dict[str, Any] = {"delta": None, "why": None, "fills": []}
     if not opened_rows:
         out["why"] = "no opening fill in the history"
         return out
-    if not hist:
-        out["why"] = "the snapshot carries no close for the name (underlying_history, v13)"
-        return out
+    recorded = recorded or {}
     strike, exp = float(long_leg["strike"]), str(long_leg["expiration"])
     deltas = []
     for r in opened_rows:
         day = str(_wheel._day(r))
         price = _num(r.get("price"))
-        close = _num((hist.get("closes") or {}).get(day))
+        rec = recorded.get(str(r.get("id") or ""))
+        if rec and _num(rec.get("delta")) is not None:
+            out["fills"].append(
+                {
+                    "date": day,
+                    "price": price,
+                    "close": None,
+                    "div_yield": rec.get("div_yield"),
+                    "iv": rec.get("iv"),
+                    "delta": rec["delta"],
+                    "basis": "recorded",
+                    "spot": rec.get("spot"),
+                    "gap_seconds": rec.get("gap_seconds"),
+                    "delta_low": rec.get("delta_low"),
+                    "delta_high": rec.get("delta_high"),
+                    "broker_delta": rec.get("broker_delta"),
+                }
+            )
+            deltas.append(float(rec["delta"]))
+            continue
+        close = _num(((hist or {}).get("closes") or {}).get(day))
         fill = {"date": day, "price": price, "close": close, "div_yield": None, "iv": None, "delta": None}
+        fill["basis"] = "close"
         out["fills"].append(fill)
+        if not hist:
+            out["why"] = "the snapshot carries no close for the name (underlying_history, v13)"
+            continue
         if close is None:
             out["why"] = f"no close for {day} in the snapshot"
             continue
@@ -280,6 +309,25 @@ def _entry_delta(
     if deltas and len(deltas) == len(opened_rows):
         out["delta"], out["why"] = min(deltas), None
     return out
+
+
+def entry_band(entry: dict[str, Any], floor: float) -> str | None:
+    """Words for a recorded delta at entry whose fill-time band straddles `floor`, else None. The band
+    is the lowest fill's: the one the recognition rests on."""
+    recorded = [
+        f for f in entry.get("fills") or [] if f.get("basis") == "recorded" and f.get("delta") is not None
+    ]
+    if not recorded:
+        return None
+    low = min(recorded, key=lambda f: float(f["delta"]))
+    lo, hi = _num(low.get("delta_low")), _num(low.get("delta_high"))
+    if lo is None or hi is None or float(low["delta"]) != entry["delta"]:
+        return None
+    if lo < floor <= hi:
+        gap = _num(low.get("gap_seconds"))
+        when = f" over the {gap:.0f} s to the snapshot" if gap is not None else ""
+        return f"close to the floor: {lo:.2f}-{hi:.2f} at the underlying's likely move{when}"
+    return None
 
 
 # --------------------------------------------------------------------------- roll candidates
@@ -401,7 +449,7 @@ def judge(
     _, ldelta = _solve(spot, lk, ldays / 365.0, lmid, "C", rate, div_today)
     lintr = bs.intrinsic(spot, lk, "C") if spot else None
     lext = None if lmid is None or lintr is None else lmid - lintr
-    entry = _entry_delta(linked["opened_rows"], long_raw, hist, session, rate)
+    entry = _entry_delta(linked["opened_rows"], long_raw, hist, session, rate, snapshot.get("entry_deltas"))
     rl = cfg["roll_long"]
     roll_long = []
     if ldays <= int(rl["days_left"]):
@@ -445,6 +493,12 @@ def judge(
     # says whether "not recognised" was decided (a diagonal) or could not be (unknown, for now).
     undecided = intent not in ("pmcc", "diagonal") and entry["delta"] is None
     recognition = "pmcc" if recognized else ("unknown" if undecided else "diagonal")
+    # A recorded delta whose fill-time band straddles the floor is said so: the underlying moved between
+    # the fill and the snapshot it was read from, so the side of the floor it lands on is not certain.
+    if intent not in ("pmcc", "diagonal") and entry["delta"] is not None:
+        band = entry_band(entry, floor)
+        if band:
+            by += f"; {band}"
 
     # ---- money
     cash_rows = linked.get("rows") or []

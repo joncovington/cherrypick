@@ -202,6 +202,10 @@ DEFAULT_RULES: dict[str, Any] = {
         # The standard definition (user, 2026-11-04): the long entered at 0.70 delta or more; the short's
         # expiry and delta may vary. Neither leg's days left decides it (the long's roll is `roll_long`).
         "recognize": {"entry_min_delta": 0.70},
+        # The delta at entry recorded from the first full snapshot after a call is bought
+        # (entrydelta.py), preferred to the close-based solve. A fill whose snapshot came more than
+        # `max_gap_seconds` after it is not recorded and keeps the close.
+        "entry_record": {"enabled": True, "max_gap_seconds": 300},
         # The short strike less the long strike must exceed the long's net cost per share after every
         # premium collected, or an assignment (the long exercised to deliver) locks in a loss. A net cost
         # over `warn_share` of the width passes but is flagged thin: a call-away then earns under a third

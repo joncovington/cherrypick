@@ -781,7 +781,8 @@ describe("readManage", () => {
     expect(p.width).toMatchObject({ passes: false, pnlIfAssigned: -262, pnlIfAssignedNet: -265.3, netCostPerShare: 7.62, basis: "linked orders" });
     expect(p.width).toMatchObject({ costShare: 1.524, warnShare: 0.75, thin: false });
     expect(p.long).toMatchObject({ deltaAtEntry: 0.8248, deltaAtEntryWhy: null, extrinsicShare: 0.625, roll: [], rollDeltaUnknown: false });
-    expect(p.long.entryFills[0]).toMatchObject({ divYield: 0, iv: 0.3 });
+    // Written before the record: no basis, never guessed.
+    expect(p.long.entryFills[0]).toMatchObject({ divYield: 0, iv: 0.3, basis: null, gapSeconds: null, deltaLow: null });
     expect(p.short.assignment).toEqual({ nearZero: false, dividend: false, exposed: false, why: null, exDividendDate: null, dividendAmount: null });
     expect(p.short.earnings).toEqual({ date: null, inside: null, why: "no report date in the snapshot" });
     expect(p.short.band).toBeNull();

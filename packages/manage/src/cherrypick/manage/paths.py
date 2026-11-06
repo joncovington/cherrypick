@@ -27,6 +27,12 @@ def snapshot_path(session: str) -> Path:
     return data_dir() / f"snapshot-{session}.json"
 
 
+def entry_deltas_path() -> Path:
+    """Each call's delta at entry, recorded once from the first full snapshot after its fill
+    (entrydelta.py); never rewritten."""
+    return data_dir() / "entry-deltas.json"
+
+
 def marks_path(session: str) -> Path:
     """The newest quotes the session's snapshot was moved to (`remark`), while that snapshot stands."""
     return data_dir() / f"marks-{session}.json"

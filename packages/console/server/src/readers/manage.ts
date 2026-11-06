@@ -338,6 +338,10 @@ function pmccLong(v: unknown): ManagePmccLong {
         divYield: num(f["div_yield"]),
         iv: num(f["iv"]),
         delta: num(f["delta"]),
+        basis: f["basis"] === "recorded" || f["basis"] === "close" ? f["basis"] : null,
+        gapSeconds: num(f["gap_seconds"]),
+        deltaLow: num(f["delta_low"]),
+        deltaHigh: num(f["delta_high"]),
       };
     }),
     delta: num(l["delta"]),

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ManageAccount, ManagePmcc, ManagePmccPosition, ManageTrade } from "@console/shared";
-import { NO_PMCC, PmccCards, kindOf, rollWords } from "../src/pages/Live/PmccCards";
+import { NO_PMCC, PmccCards, entryWords, kindOf, rollWords } from "../src/pages/Live/PmccCards";
 import { aligned, inView, tables } from "./viewTables";
 
 /**
@@ -269,6 +269,28 @@ describe("the pmcc tab", () => {
     // An evaluation written before `recognition` cannot tell the two apart, so it says only "not a PMCC".
     expect(kindOf(position({ recognized: false, recognition: null }))).toMatchObject({ kind: "not a PMCC", recognised: "no" });
     expect(kindOf(position({ recognition: null })).kind).toBe("PMCC");
+  });
+
+  it("the delta at entry says where it came from: recorded after the fill, or the entry day's close", () => {
+    const base = { price: 10.0, close: null, divYield: 0, iv: 0.3 };
+    const recorded = position();
+    recorded.long = {
+      ...recorded.long,
+      deltaAtEntry: 0.84,
+      entryFills: [{ ...base, date: "2026-10-13", delta: 0.84, basis: "recorded", gapSeconds: 61.4, deltaLow: 0.833, deltaHigh: 0.846 }],
+    };
+    expect(entryWords(recorded)).toBe("0.84 (recorded 61 s after the fill, 0.83-0.85 at the likely move)");
+    expect(render(account(view({ positions: [recorded] })))).toContain("delta at entry 0.84 (recorded 61 s after the fill");
+
+    const fromClose = position();
+    fromClose.long = {
+      ...fromClose.long,
+      deltaAtEntry: 0.82,
+      entryFills: [{ ...base, close: 50, date: "2026-04-01", delta: 0.82, basis: "close", gapSeconds: null, deltaLow: null, deltaHigh: null }],
+    };
+    expect(entryWords(fromClose)).toBe("0.82 (from the 2026-04-01 close)");
+    // An evaluation written before the record: the bare figure, never a guessed source.
+    expect(entryWords(position())).toBe("0.82");
   });
 
   it("an unknown delta at entry says so, never a number", () => {
