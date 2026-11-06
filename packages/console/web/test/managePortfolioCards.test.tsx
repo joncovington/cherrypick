@@ -96,6 +96,7 @@ function reading(over: Partial<ManagePortfolio> = {}): ManagePortfolio {
     ],
     hedges: null,
     candidates: null,
+    timeSpreads: null,
     brokerCheck: null,
     ...over,
   };

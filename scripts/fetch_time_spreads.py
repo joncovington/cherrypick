@@ -236,6 +236,13 @@ def main(argv: list[str] | None = None) -> int:
         "shortlist": short,
         "chains": chains,
     }
+    # The structures as manage would build them, unsized, for the Screeners tab (a reader there does
+    # no option maths). Manage rebuilds them from the chains when it sizes them to the account.
+    from cherrypick.manage import rules as _rules
+
+    rules = _rules.load(None)[0]
+    built = ts.build_all(doc, today, rules)
+    doc["structures"], doc["structures_dropped"] = built["rows"], built["dropped"]
     path = out_path(today, bool(args.limit))
     ub._write_json(path, doc)
     summary = {
@@ -246,13 +253,10 @@ def main(argv: list[str] | None = None) -> int:
         "passing": doc["passing"],
         "shortlist": len(short),
         "chains": sum(1 for c in chains.values() if not c.get("error")),
+        "structures": len(built["rows"]),
         "problem": problem,
     }
     if args.show:
-        from cherrypick.manage import rules as _rules
-
-        rules = _rules.effective(None)[0]
-        built = ts.build_all(doc, today, rules)
         summary["structures"] = [
             {
                 k: r.get(k)

@@ -4,6 +4,8 @@
  * them. Money is whole-position dollars, signed cash flow, and every P&L is a mark P&L GROSS of fees.
  */
 
+import type { ManageTimeSpreads } from "./timeSpreads.js";
+
 export type ManageAction =
   | "ROLL_FOR_CREDIT"
   | "CLOSE"
@@ -677,6 +679,8 @@ export interface ManagePortfolio {
   scenarios: ManageScenarios | null;
   ladder: ManageLadder | null;
   candidates: ManageCandidates | null;
+  /** The time-spread scanner's rows sized to the account; null on an evaluation from before them. */
+  timeSpreads: ManageTimeSpreads | null;
   /** Null on an evaluation from before snapshot v9, which carried no broker greeks. */
   brokerCheck: ManageBrokerCheck | null;
 }

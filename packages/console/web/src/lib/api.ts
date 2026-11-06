@@ -34,6 +34,7 @@ import type {
   IncomeListPayload,
   CreditSpreadPayload,
   ValuationPayload,
+  TimeSpreadsPayload,
   PmccPayload,
   PmccCycleRow,
   PmccHistory,
@@ -255,6 +256,16 @@ export function useValuation(day: string | null) {
     queryKey: ["valuation", day],
     queryFn: () => getJson<ValuationPayload>(`/api/screeners/valuation${day ? `?day=${encodeURIComponent(day)}` : ""}`),
     // Built once a session, in the morning after the statements landing.
+    refetchInterval: 300_000,
+  });
+}
+
+/** The time-spread scanner's day (scripts/fetch_time_spreads.py): no tested edge. */
+export function useTimeSpreads(day: string | null) {
+  return useQuery<TimeSpreadsPayload>({
+    queryKey: ["time-spreads", day],
+    queryFn: () => getJson<TimeSpreadsPayload>(`/api/screeners/time-spreads${day ? `?day=${encodeURIComponent(day)}` : ""}`),
+    // Scanned about 10:30 ET, or on demand.
     refetchInterval: 300_000,
   });
 }

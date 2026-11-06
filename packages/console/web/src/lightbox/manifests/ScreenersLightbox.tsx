@@ -5,6 +5,7 @@ import { NeedsDolt } from "../../pages/Screeners/NeedsDolt";
 import { IncomeListsTab } from "../../pages/Screeners/OwnListTab";
 import { SignalBoardTab } from "../../pages/Screeners/SignalBoardTab";
 import { SkateTab } from "../../pages/Screeners/SkateTab";
+import { TimeSpreadsTab } from "../../pages/Screeners/TimeSpreadsTab";
 import { ValuationTab } from "../../pages/Screeners/ValuationTab";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
@@ -23,6 +24,8 @@ export const slides: SlideDef[] = [
         <CreditSpreadTab />
       </NeedsDolt>
     ) },
+  // The time-spread scanner (2026-11-06): broker reads only, no Dolt. No tested edge.
+  { id: "time-spreads", label: "time spreads", render: () => <TimeSpreadsTab /> },
   // The fair-value file (2026-10-27) is built from Dolt's annual statements in the history store.
   { id: "valuation", label: "fair value", render: () => (
       <NeedsDolt slide="valuation" label="fair value">
