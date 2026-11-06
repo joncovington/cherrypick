@@ -447,7 +447,15 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     mg = cfg.get("manage", {}) or {}
     ro = mg.get("roll_out") if isinstance(mg.get("roll_out"), dict) else {}
     mk = mg.get("marks") if isinstance(mg.get("marks"), dict) else {}
+    ts = mg.get("time_spreads") if isinstance(mg.get("time_spreads"), dict) else {}
     return {
+        # The time-spread scanner (docs/time-spread-scanner-plan.md, `run.py time-spreads`): a read-only
+        # scan of the tradable names' term structure and the shortlist's chains, then one full snapshot
+        # so the portfolio page sizes the rows. On whenever manage is; 'enabled': false turns it off alone.
+        "time_spreads": {
+            "enabled": bool(mg.get("enabled", False)) and bool(ts.get("enabled", True)),
+            "at": str(ts.get("at", "10:30")),
+        },
         "enabled": bool(mg.get("enabled", False)),
         # ET. 10:00 leaves the open's first half hour to settle the marks the rules are judged on.
         "at": mg.get("at", "10:00"),

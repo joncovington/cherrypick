@@ -75,6 +75,8 @@ CATCHUP_MINUTES = {
     # The day's further runs (`manage.also_at`) are refreshes: a missed one is overtaken by the next,
     # so it catches up for an hour and no more.
     "manage-eval-also": 60,
+    # The time-spread scan quotes the front week: an hour late is still that session's scan.
+    "manage-time-spreads": 60,
     # The market files: the evening fetch is good until the pack builds at 08:30, and the pre-pack
     # retry is worth nothing after it.
     # The end-of-day landing reads the local Dolt clones; a late one is the same landing, and the
@@ -1821,6 +1823,23 @@ def derive_jobs(
                 enabled_reason="" if mg["enabled"] else "disabled in config (manage)",
             ),
         )
+    # --- manage-time-spreads: the time-spread scanner (docs/time-spread-scanner-plan.md). Read-only REST
+    # (the script refuses outside regular hours), then one full manage snapshot so the portfolio page
+    # sizes the rows. No tested edge: the rows say so.
+    ts = mg["time_spreads"]
+    add(
+        "manage-time-spreads",
+        lambda: JobSpec(
+            id="manage-time-spreads",
+            argv=_run_py(pythonw, launcher, "time-spreads"),
+            kind=KIND_DAILY,
+            at_et=ts["at"],
+            catchup_minutes=CATCHUP_MINUTES["manage-time-spreads"],
+            trading_days_only=True,
+            enabled=ts["enabled"],
+            enabled_reason="" if ts["enabled"] else "disabled in config (manage, or manage.time_spreads)",
+        ),
+    )
     # --- manage-marks: between the full runs, the day's snapshot moved to the stream cache's quotes
     # (packages/manage `remark`). No broker call; stands down until the day's first snapshot is stored.
     mk = mg["marks"]
