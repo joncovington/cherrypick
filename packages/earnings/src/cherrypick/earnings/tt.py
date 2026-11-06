@@ -64,6 +64,13 @@ def _load_config() -> dict:
     return {}
 
 
+def live_arm_refusal() -> str | None:
+    """Why an opening live order is refused for want of today's arm (`live_arm.py`), else None."""
+    from cherrypick.earnings import live_arm
+
+    return live_arm.refusal()
+
+
 def _live_trading_enabled() -> bool:
     """Live is armed by the config key and nothing else (2026-09-17). Until then an absent key fell
     back to an ENABLE_LIVE_TRADING environment variable -- a live-arming path outside the guarded
@@ -534,6 +541,16 @@ async def cmd_execute_trade(args) -> dict:
                 "ok": False,
                 "error": "halt flag present -- no new live position while the suite is halted (closes are unaffected)",
             }
+        # The per-day arm (2026-11-06): an opening order needs today's human-written arm record, as
+        # every other live module does. A close is never held back.
+        if _broker.opens_position(spec):
+            not_armed = live_arm_refusal()
+            if not_armed:
+                return {
+                    "ok": False,
+                    "error": f"earnings live is not armed for today ({not_armed}); arm with "
+                    "`python -m cherrypick.earnings.live_arm arm --confirm YES` (closes are unaffected)",
+                }
     # The submission's own identity (2026-09-17): tastytrade does not deduplicate retries, and this
     # is a one-shot command a human re-runs on an error. Sent as the order's external identifier
     # and reported back, so a timeout after the broker accepted is recovered below by reading
