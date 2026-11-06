@@ -106,16 +106,17 @@ YAHOO = {"VIX": "^VIX", "VIX9D": "^VIX9D", "VIX3M": "^VIX3M"}
 YAHOO_SPX = "^GSPC"
 
 ALIGNMENT = (
-    "Both sources are cut into bars with a start and an end. The broker's hourly bars start on the hour "
-    "(its 09:00 bar holds 09:30-10:00) and end an hour later; Yahoo's start at :30 (09:30, 10:30, ...) "
-    "and end an hour later. A bar's end is capped at 16:00 ET, so Yahoo's 15:30 bar ends at 16:00, the "
-    "same instant as the broker's 15:00 bar. A reading at time T is the close of the last bar whose end "
-    "is at or before T on that day, never a bar still in progress. Validation reads each source at each "
-    "whole hour 11:00-16:00 ET, for VIX, VIX9D and VIX3M: Yahoo's reading is the close of the bar that "
-    "ended at T-30 minutes (T at 16:00 excepted, where both end at T) and the broker's the close of the "
-    "bar that ended at T. The 30 minutes of staleness is the practical gap between the sources, not a "
-    "defect to correct, and is included in the judged agreement; the 16:00 readings, which end at the "
-    "same instant, are reported alone beside it."
+    "Both sources are cut into bars with a start and an end. Yahoo's hourly VIX9D and VIX3M bars start at "
+    ":30 (09:30, 10:30, ...) and its VIX bars on the hour; each ends an hour later, the last capped at "
+    "16:00 ET, so all three end together only at 16:00 and the state comparison is read there. A bar starting at or after 16:00 (the "
+    "indexes' after-close prints) is no bar of the session and is left out of every reading. A reading at "
+    "time T is the close of the last bar whose end is at or before T on that day, never a bar still in "
+    "progress. Judged (the declaration's 'closes on shared bars'): each Yahoo bar's close against the "
+    "broker's close at the same instant, the broker's 5-minute bar ending exactly at that bar's end, for "
+    "VIX, VIX9D and VIX3M, and the state each source gives at that instant. The broker's 5-minute history "
+    "begins 2026-08-10 (VIX 2026-08-25), so the judged comparison covers the days both hold, inside the "
+    "declared span. Reported only: the first build's reading of each source at whole hours 11:00-16:00 "
+    "from the broker's hourly bars, where Yahoo's reading is up to 30 minutes older than the broker's."
 )
 
 
@@ -203,11 +204,13 @@ def bar_end(day: str, hhmm: str, width_min: int = 60) -> datetime:
     return min(start + timedelta(minutes=width_min), close)
 
 
-def build_series(rows: Iterable[tuple[str, str, str, float]]) -> Series:
-    """Series from (symbol, et_day, et_start 'HH:MM', close) rows."""
+def build_series(rows: Iterable[tuple[str, str, str, float]], width_min: int = 60) -> Series:
+    """Series from (symbol, et_day, et_start 'HH:MM', close) rows of bars `width_min` wide."""
     out: Series = {}
     for sym, day, hhmm, close in rows:
-        out.setdefault(sym, {}).setdefault(day, []).append((bar_end(day, hhmm), float(close)))
+        if hhmm >= "16:00":
+            continue  # the after-close prints: no bar of the session
+        out.setdefault(sym, {}).setdefault(day, []).append((bar_end(day, hhmm, width_min), float(close)))
     for by_day in out.values():
         for bars in by_day.values():
             bars.sort()
@@ -240,7 +243,7 @@ def load_series(db: Path, table: str, interval: str | None = None, symbols=SYMBO
         if interval is not None:
             sql += " AND interval = ?"
             args.append(interval)
-        return build_series(conn.execute(sql, args))
+        return build_series(conn.execute(sql, args), 5 if interval == "5m" else 60)
     finally:
         conn.close()
 
@@ -371,10 +374,53 @@ def cmd_fetch_yahoo(args) -> int:
 # --------------------------------------------------------------------------- validation
 
 
+def _close_ending_at(series: Series, symbol: str, when: datetime) -> float | None:
+    """The close of the bar that ends exactly at `when`, or None."""
+    for end, close in series.get(symbol, {}).get(when.date().isoformat(), []):
+        if end == when:
+            return close
+    return None
+
+
+def validate_same_instant(yahoo: Series, broker5m: Series, span: tuple[str, str]) -> dict | None:
+    """The judged validation (`ALIGNMENT`): each Yahoo bar's close against the broker's 5-minute close
+    ending at the same instant, and the two sources' states there, on the days the broker's 5-minute
+    series holds all three symbols inside `span`. None when no instant is shared."""
+    days = sorted(
+        d
+        for d in set.intersection(*(set(yahoo.get(s, {})) & set(broker5m.get(s, {})) for s in SYMBOLS))
+        if span[0] <= d <= span[1]
+    )
+    close_n = close_ok = state_n = state_ok = 0
+    for d in days:
+        ends = sorted({end for s in SYMBOLS for end, _ in yahoo[s].get(d, [])})
+        for end in ends:
+            for s in SYMBOLS:
+                y, b = _close_ending_at(yahoo, s, end), _close_ending_at(broker5m, s, end)
+                if y is None or b is None:
+                    continue
+                close_n += 1
+                close_ok += abs(y / b - 1.0) <= CLOSE_TOL
+            ys = state_of(*(_close_ending_at(yahoo, s, end) for s in ("VIX", "VIX3M", "VIX9D")))
+            bs = state_of(*(_close_ending_at(broker5m, s, end) for s in ("VIX", "VIX3M", "VIX9D")))
+            if ys is not None and bs is not None:
+                state_n += 1
+                state_ok += ys == bs
+    if not close_n or not state_n:
+        return None
+    close_share, state_share = close_ok / close_n, state_ok / state_n
+    return {
+        "span": [days[0], days[-1]],
+        "days": len(days),
+        "close_within_1pct": {"n": close_n, "ok": close_ok, "share": round(close_share, 4), "bar": SHARE_BAR},
+        "state_agreement": {"n": state_n, "ok": state_ok, "share": round(state_share, 4), "bar": SHARE_BAR},
+        "passed": close_share >= SHARE_BAR and state_share >= SHARE_BAR,
+    }
+
+
 def validate_series(yahoo: Series, broker: Series, span: tuple[str, str]) -> dict | None:
-    """Yahoo against the broker over `span`, on the days both hold all three symbols, at each whole hour
-    11:00-16:00 ET (`ALIGNMENT`). Closes match within `CLOSE_TOL`; states agree where each source reads all
-    three symbols. None when no day is shared."""
+    """Reported only: Yahoo against the broker's hourly bars over `span` at each whole hour 11:00-16:00
+    ET, where Yahoo's reading is up to 30 minutes older (`ALIGNMENT`). None when no day is shared."""
     days = sorted(
         d
         for d in set.intersection(*(set(yahoo.get(s, {})) & set(broker.get(s, {})) for s in SYMBOLS))
@@ -432,14 +478,23 @@ def cmd_validate(args) -> int:
             print(f"missing {p}: nothing to validate", file=sys.stderr)
             return 2
     yahoo = load_series(y_path, "yahoo_bars")
-    broker = load_series(b_path, "vol_curve_bars", interval="1h")
-    result = validate_series(yahoo, broker, VALIDATION_SPAN)
-    if result is None:
+    judged = validate_same_instant(
+        yahoo, load_series(b_path, "vol_curve_bars", interval="5m"), VALIDATION_SPAN
+    )
+    if judged is None:
         print(
-            "no shared days with all three symbols in both sources: validation not written", file=sys.stderr
+            "no shared instant with all three symbols in both sources: validation not written",
+            file=sys.stderr,
         )
         return 2
-    result = {"item": ITEM, "verdict": "pass" if result["passed"] else "fail", **result}
+    hourly = validate_series(yahoo, load_series(b_path, "vol_curve_bars", interval="1h"), VALIDATION_SPAN)
+    result = {
+        "item": ITEM,
+        "verdict": "pass" if judged["passed"] else "fail",
+        **judged,
+        "alignment": ALIGNMENT,
+        "reported_whole_hours_hourly_bars": hourly,
+    }
     path = out_dir() / "validation.json"
     path.write_text(json.dumps(result, indent=1), encoding="utf-8")
     print(json.dumps({"written": str(path), "verdict": result["verdict"]}, indent=1))

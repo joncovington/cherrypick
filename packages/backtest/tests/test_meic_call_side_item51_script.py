@@ -498,6 +498,54 @@ def test_only_shared_days_in_the_span_count():
     assert st.validate_series(y, b, ("2026-03-01", "2026-11-05")) is None
 
 
+def five_minute_broker(days, level_at):
+    """Invented broker 5-minute bars, 09:30-15:55 starts, each close `level_at(symbol, end)`."""
+    rows = []
+    for d in days:
+        for sym in ("VIX", "VIX3M", "VIX9D"):
+            for m in range(9 * 60 + 30, 16 * 60, 5):
+                start = f"{m // 60:02d}:{m % 60:02d}"
+                end = st.bar_end(d, start, 5)
+                rows.append((sym, d, start, level_at(sym, end)))
+    return st.build_series(rows, 5)
+
+
+def test_validation_compares_each_yahoo_bar_with_the_broker_at_the_same_instant():
+    """2026-11-05: the first build read each source at whole hours, so Yahoo's reading was up to 30
+    minutes older than the broker's and a moving market failed it. The judged comparison is the same
+    instant: each Yahoo bar's close against the broker's 5-minute bar ending when it ends."""
+    days = ("2026-09-01", "2026-09-02")
+    base = {"VIX": 20.0, "VIX3M": 22.0, "VIX9D": 18.0}
+
+    def trending(sym, end):  # a market that rises every minute: whole-hour readings 30 minutes apart differ
+        return base[sym] * (1 + 0.0005 * (end.hour * 60 + end.minute - 570))
+
+    broker = five_minute_broker(days, trending)
+    yahoo_rows = []
+    for d in days:
+        for sym in base:
+            for h in range(9, 16):
+                start = f"{h:02d}:30"
+                yahoo_rows.append((sym, d, start, trending(sym, st.bar_end(d, start))))
+    yahoo = st.build_series(yahoo_rows)
+    r = st.validate_same_instant(yahoo, broker, SPAN)
+    assert r["passed"] and r["close_within_1pct"]["share"] == 1.0 and r["state_agreement"]["share"] == 1.0
+    assert r["close_within_1pct"]["n"] == 2 * 3 * 7  # every Yahoo bar of both days, three symbols
+    # the same instants with Yahoo 2% off fail
+    off = {s: {d: [(e, c * 1.02) for e, c in bars_] for d, bars_ in by.items()} for s, by in yahoo.items()}
+    assert st.validate_same_instant(off, broker, SPAN)["passed"] is False
+    # no broker 5-minute day in the span: nothing to judge
+    assert st.validate_same_instant(yahoo, broker, ("2026-10-01", "2026-11-05")) is None
+
+
+def test_after_close_prints_are_no_bar_of_the_session():
+    # the broker's 16:00 bar holds the indexes' 16:00-16:15 prints; capped at 16:00 it would be read
+    # at 16:00 in place of the session's last bar
+    s = st.build_series(bars("VIX", "2026-09-01", {"15:00": 3.0, "16:00": 9.0}))
+    assert st.read_at(s, "VIX", datetime(2026, 9, 1, 16, 0, tzinfo=ET)) == 3.0
+    assert len(s["VIX"]["2026-09-01"]) == 1
+
+
 def test_part_two_refuses_until_validation_passed(tmp_path, monkeypatch):
     monkeypatch.setattr(st, "out_dir", lambda: tmp_path)
     with pytest.raises(SystemExit, match="validate"):
