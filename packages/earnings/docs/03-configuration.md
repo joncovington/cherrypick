@@ -355,7 +355,8 @@ Common keys apply to every strategy; `management.<strategy>` overrides them for 
 | `max_leg_spread_abs_zero_bid` | `0.20` | The looser money floor for a leg quoting a 0.00 bid. |
 | `expiry_close_time` | `"15:20"` | From this time on any leg's expiration day the position closes, whatever its P&L. Neither the spread gate nor the per-tick cap holds it back. 40 minutes before the close (12:20 on an early-close day); it was `"15:30"` before 2026-11-05. |
 | `assignment_guard` | `true` | Close a position holding a short leg in the money that its holder has reason to exercise early (see [10-exits.md](10-exits.md)). |
-| `assignment_extrinsic_floor` | `0.05` | Per share. An in-the-money short with less time value than this closes. |
+| `assignment_extrinsic_floor` | `0.05` | Per share. A deep in-the-money short with less time value than this closes (not on its expiration day). |
+| `assignment_deep_itm_pct` | `0.03` | How far in the money, as a fraction of the strike, a short must be for the floor rule to apply. |
 | `pin_guard_dollars` | `1.00` | A short strike this close to spot, late on its expiration day, closes the position. |
 | `pin_guard_window_minutes` | `60` | How late "late" is. |
 | `max_executions_per_tick` | `3` | Bounds one tick; the rest are deferred a minute, not dropped. |

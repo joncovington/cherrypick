@@ -138,6 +138,35 @@ def test_a_deep_itm_short_with_under_a_nickel_of_time_value_closes_without_a_div
     assert d.detail["time_value"] == 0.03
 
 
+def test_a_slightly_itm_short_with_no_time_value_the_morning_after_does_not_close():
+    trade, legs = position()
+    # spot 191.9: the 190 call is 1% in the money, intrinsic 1.90, mid 1.92 -- the post-crush shape.
+    d = decide(trade, snapshot(legs, spot=191.9, short_call_mid=1.92))
+    assert d.reason != "assignment_risk"
+
+
+def test_a_four_percent_itm_short_with_no_time_value_closes():
+    trade, legs = position()
+    d = decide(trade, snapshot(legs, spot=198.0, short_call_mid=8.02))
+    assert d.reason == "assignment_risk" and d.detail["rule"] == "extrinsic_floor"
+    assert d.detail["time_value"] == 0.02 and 0.04 <= d.detail["itm_pct"] < 0.05
+
+
+def test_the_depth_threshold_is_configurable():
+    trade, legs = position()
+    snap = snapshot(legs, spot=191.9, short_call_mid=1.92)
+    config = {**CONFIG, "management": {"assignment_deep_itm_pct": 0.005}}
+    assert decide(trade, snap, config=config).reason == "assignment_risk"
+
+
+def test_a_deep_itm_short_on_its_expiration_day_is_left_to_the_expiry_close():
+    trade, legs = position()
+    snap = snapshot(legs, spot=210.0, short_call_mid=20.02)
+    d = decide(trade, snap, now=at("10:00", EXPIRY))
+    assert d.reason != "assignment_risk"
+    assert decide(trade, snap, now=at("15:20", EXPIRY)).reason == "expiry_close"
+
+
 def test_the_floor_applies_to_a_short_put_too():
     trade, legs = position()
     # spot 170 puts the 190 put 20 in the money. The call is far out, so only the put can fire.

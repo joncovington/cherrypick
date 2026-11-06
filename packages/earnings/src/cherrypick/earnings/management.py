@@ -118,6 +118,7 @@ POLICY_DEFAULTS = {
     # holder gains by exercising (see `_assignment_risk`). The floor is per share.
     "assignment_guard": True,
     "assignment_extrinsic_floor": 0.05,
+    "assignment_deep_itm_pct": 0.03,
     # Pin risk: a short strike sitting on spot into the close of its expiration day.
     "pin_guard_dollars": 1.00,
     "pin_guard_window_minutes": 60,
@@ -292,8 +293,11 @@ def _assignment_risk(legs, quotes, spot, policy, now, dividend_lookup) -> tuple[
     The rule is the one `manage.attention` applies to a real book. A short in the money is exercised
     early when exercising beats selling it, which is when its time value (mid less intrinsic) is
     gone: (a) a CALL whose time value is below the next cash dividend going ex after today and on or
-    before the leg's own expiry -- the holder takes the shares to collect the dividend; (b) any short
-    whose time value is under `assignment_extrinsic_floor` (0.05 a share), nothing left to sell.
+    before the leg's own expiry -- the holder takes the shares to collect the dividend; (b) a short
+    that is DEEP in the money (intrinsic at least `assignment_deep_itm_pct` of the strike, 3%) with
+    time value under `assignment_extrinsic_floor` (0.05 a share), nothing left to sell, and not on
+    its own expiration day (the expiry close owns that day). A slightly-in-the-money short a day or
+    two out routinely has under a nickel after the IV crush and is not a real exercise risk.
     Cash-settled index roots cannot be assigned and are skipped.
 
     `dividend_lookup(symbol, today)` is injected so this module stays free of I/O; none given, or an
@@ -304,6 +308,7 @@ def _assignment_risk(legs, quotes, spot, policy, now, dividend_lookup) -> tuple[
     if spot is None or not policy.get("assignment_guard", True):
         return None
     floor = float(policy.get("assignment_extrinsic_floor", 0.05))
+    deep_pct = float(policy.get("assignment_deep_itm_pct", 0.03))
     today = now.date()
     dividends: dict[str, dict] = {}
     for leg in legs:
@@ -350,8 +355,16 @@ def _assignment_risk(legs, quotes, spot, policy, now, dividend_lookup) -> tuple[
             if today < ex_date <= expiry and time_value < dividend["amount"]:
                 urgent = ex_date == _calendar.next_trading_day(today)
                 return {**detail, "rule": "dividend", "urgent": urgent}, urgent
-        if time_value < floor:
-            return {**detail, "rule": "extrinsic_floor", "floor": floor, "urgent": False}, False
+        itm_pct = intrinsic / strike
+        detail["itm_pct"] = round(itm_pct, 4)
+        if itm_pct >= deep_pct and time_value < floor and expiry > today:
+            return {
+                **detail,
+                "rule": "extrinsic_floor",
+                "floor": floor,
+                "deep_itm_pct": deep_pct,
+                "urgent": False,
+            }, False
     return None
 
 

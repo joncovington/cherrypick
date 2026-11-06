@@ -108,8 +108,11 @@ only ever turn a *hold* into a *close*, never the reverse.
 2c. **Assignment-risk guard** — any **short** leg in the money that its holder has reason to exercise
    early closes the whole position (reason `assignment_risk`). Two rules, per share, on the leg's mid:
    (a) a **call** whose time value (mid less intrinsic) is below the next cash dividend going ex after
-   today and on or before that leg's expiry; (b) **any** short whose time value is below
-   `assignment_extrinsic_floor` (0.05). Equity and ETF options only: a cash-settled index root is
+   today and on or before that leg's expiry; (b) a short that is **deep** in the money with nothing
+   left to sell, meaning all of: intrinsic at least `assignment_deep_itm_pct` (0.03) of the strike,
+   time value below `assignment_extrinsic_floor` (0.05), and it is **not** the leg's own expiration
+   day (the expiry close owns that day). A slightly-in-the-money short a day or two out routinely
+   has under a nickel of time value after the IV crush and is not closed by this rule. Equity and ETF options only: a cash-settled index root is
    never assigned and is skipped. It sits ahead of the strategy because the strategy's thresholds do
    not price this risk and a `close_side` would leave the short open; it sits behind the entry
    session, so a fresh position is not closed on its opening spread. The event records the leg,
