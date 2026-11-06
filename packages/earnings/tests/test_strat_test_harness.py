@@ -148,6 +148,10 @@ def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monk
     assert [leg["quantity"] for leg in json.loads(row["legs_json"])] == [1, 2, 1]
     assert row["entry_credit"] == pytest.approx(2.80)
     assert row["entry_slippage"] == pytest.approx(0.0)
+    # The quote each leg was priced from rides in legs_json, for the slippage study.
+    entry_legs = {leg["symbol"]: leg for leg in json.loads(row["legs_json"])}
+    assert (entry_legs["BODY"]["entry_bid"], entry_legs["BODY"]["entry_ask"]) == (body, body)
+    assert entry_legs["NEAR"]["entry_quote_source"] == "rest"
 
     monkeypatch.setattr(runner.scanner, "fetch_quote_and_expirations", lambda s: {"ok": True, "price": 100.0})
     closed = runner.cmd_run_closes(argparse.Namespace())
@@ -156,6 +160,17 @@ def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monk
 
     done = db_paper.cmd_get_open_positions(argparse.Namespace())["positions"]
     assert done == []
+
+    conn = db_paper._conn()
+    try:
+        exit_legs = json.loads(conn.execute("SELECT exit_legs_json FROM trades").fetchone()[0])
+    finally:
+        conn.close()
+    assert {leg["symbol"]: (leg["bid"], leg["ask"]) for leg in exit_legs} == {
+        "NEAR": (near, near),
+        "BODY": (body, body),
+        "FAR": (far, far),
+    }
 
 
 # --- the R8 seam: multi-day strategies are managed, not force-closed -------------

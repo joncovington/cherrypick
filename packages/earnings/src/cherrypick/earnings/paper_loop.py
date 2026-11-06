@@ -412,6 +412,11 @@ def close_position(trade: dict, snap: dict, reason: str, config: dict, now: date
                     "exit_iv": harness._avg_sold_iv(legs, snap["quotes"]),
                     "exit_reason": reason,
                     "closed_at": now.timestamp(),
+                    # The quotes the exit was priced from, for the slippage study. A settled leg
+                    # was never traded, so it carries none.
+                    "exit_legs_json": scanner.exit_quote_record(
+                        legs, snap["quotes"], snap.get("source"), skip=settled
+                    ),
                 }
             )
         )

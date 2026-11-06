@@ -348,7 +348,13 @@ def evaluate_symbol(symbol: str, earnings_date, earnings_timing: str, config: di
             broker_error = None if broker.get("ok") else broker.get("error")
 
             scanner.apply_common_signals(
-                criteria, avg_volume, iv_rv_ratio, winrate, winrate_sample_size, move_stats
+                criteria,
+                avg_volume,
+                iv_rv_ratio,
+                winrate,
+                winrate_sample_size,
+                move_stats,
+                winrate_result.get("skip_counts"),
             )
 
             extra_fn = entry.get("extra_criteria_fn")
@@ -429,6 +435,7 @@ def reverify_symbol(
         winrate_result["winrate"],
         winrate_result["sample_size"],
         move_stats,
+        winrate_result.get("skip_counts"),
     )
 
     extra_fn = entry.get("extra_criteria_fn")

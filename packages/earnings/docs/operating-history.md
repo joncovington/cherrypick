@@ -324,3 +324,24 @@ for more than their width. Those losses could not have been filled. Found in the
   untouched. It backs the ledger up first and writes `paper_trades.db.exit-debit-clamped.json`
   beside it with every changed row's old and new values; a second run refuses.
 - **Why it lands at once:** a number recorded wrong, not a measurement change. No decision moves.
+
+## Leg quotes, term-structure inputs and the winrate fix (2026-11-05)
+
+Two recording additions and one correction to a recorded number. None changes a trade decision.
+
+- **Leg quotes.** Each leg in `trades.legs_json` carries `entry_bid`, `entry_ask`,
+  `entry_quote_source` and `entry_quote_age_seconds`, and `trades.exit_legs_json` holds the quote each
+  traded-out leg was closed from (`symbol`, `bid`, `ask`, `source`, `age_seconds`). They exist for a
+  slippage study (a capped fraction-of-spread model against an uncapped one and against half the
+  spread). Rows before 2026-11-05 are NULL and are not backfilled. A leg that settled carries no exit
+  quote.
+- **Term-structure inputs.** `entry_reviews` gains `front_iv`, `back_iv`, `front_dte`, `back_dte`,
+  `front_expiration` and `back_expiration`, so a replay can compute the per-day slope beside the
+  ratio the gate measures. The gate and its threshold are unchanged; the docs now say the gate is a
+  ratio and that -0.004 came from a per-day-slope definition.
+- **Winrate.** The backtest scored the full straddle against the realised move; it now scores the
+  expected move (straddle times the shared 0.85 factor), requires the exact sessions either side of
+  the report, and evaluates a NULL-timing quarter both ways, counting it only when the two agree. The
+  skip counts ride in `criteria_json` as `winrate_skips`. Winrate is off as a screen in the deployed
+  config, so this changes recorded winrates and ranking inputs only. A winrate recorded before this
+  date is on the old definition: do not pool it with one after.

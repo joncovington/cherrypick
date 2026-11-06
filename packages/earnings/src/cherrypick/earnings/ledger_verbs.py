@@ -25,6 +25,13 @@ from cherrypick.core import db as _db
 ConnFactory = Callable[[], sqlite3.Connection]
 
 
+def json_text(value) -> str | None:
+    """A JSON column's text: a string passes through, a list/dict is dumped, None stays NULL."""
+    if value is None or isinstance(value, str):
+        return value
+    return json.dumps(value)
+
+
 def arm_of(spec: dict, default: str | None = "default") -> str | None:
     """The arm a save spec is tagged with. The key was `profile` until 2026-09-24 (the column's old
     name) and is `arm` after it; a caller still sending `profile` is read, never dropped -- dropping
@@ -150,6 +157,12 @@ _ENTRY_REVIEW_COLUMNS = (
     "iv_rv_ratio",
     "iv_rv_source",
     "term_structure",
+    "front_iv",
+    "back_iv",
+    "front_dte",
+    "back_dte",
+    "front_expiration",
+    "back_expiration",
     "market_cap",
     "expected_move",
     "expected_move_pct",
@@ -189,6 +202,12 @@ def entry_review_values(spec: dict) -> tuple:
         spec.get("iv_rv_ratio"),
         spec.get("iv_rv_source"),
         spec.get("term_structure"),
+        spec.get("front_iv"),
+        spec.get("back_iv"),
+        spec.get("front_dte"),
+        spec.get("back_dte"),
+        spec.get("front_expiration"),
+        spec.get("back_expiration"),
         spec.get("market_cap"),
         spec.get("expected_move"),
         spec.get("expected_move_pct"),

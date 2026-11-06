@@ -544,18 +544,20 @@ def test_compute_winrate_no_earnings_dates(monkeypatch):
         "quarters": [],
         "realized_move_quarters": [],
         "skipped": [],
+        "skip_counts": {"gap": 0, "no_matching_option_chain_data": 0, "timing_unknown": 0},
     }
 
 
-def test_compute_winrate_skips_ambiguous_timing(monkeypatch):
+def test_compute_winrate_skips_a_quarter_it_cannot_price_either_way(monkeypatch):
     monkeypatch.setattr(
         scanner,
         "fetch_historical_earnings_dates",
         lambda *a, **k: [{"date": date(2026, 1, 1), "timing": "During Market"}],
     )
+    monkeypatch.setattr(scanner, "pre_and_reaction_closes", lambda *a, **k: None)
     result = scanner.compute_winrate("AAPL", {}, lookback_quarters=8)
     assert result["sample_size"] == 0
-    assert result["skipped"] == [{"date": "2026-01-01", "reason": "ambiguous_timing_or_no_price_data"}]
+    assert result["skipped"] == [{"date": "2026-01-01", "reason": "gap"}]
 
 
 def test_compute_winrate_computes_win_when_implied_exceeds_realized(monkeypatch):
@@ -607,6 +609,7 @@ def test_compute_winrate_realized_move_quarters_survives_missing_straddle(monkey
     assert result["quarters"] == []
     assert result["sample_size"] == 0
     assert result["skipped"] == [{"date": "2026-01-01", "reason": "no_matching_option_chain_data"}]
+    assert result["skip_counts"]["no_matching_option_chain_data"] == 1
     assert len(result["realized_move_quarters"]) == 1
     assert result["realized_move_quarters"][0]["realized_move"] == 3.0
     assert result["realized_move_quarters"][0]["pre_close"] == 100.0

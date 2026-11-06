@@ -44,6 +44,8 @@ import json
 import time
 from datetime import date
 
+from cherrypick.core.structures import STRADDLE_TO_EM_FACTOR
+
 from cherrypick.earnings import scanner
 
 
@@ -93,6 +95,9 @@ def fetch_price_and_term_structure(
             front_call["iv"],
             back_call["iv"],
             price,
+            front_exp,
+            back_exp,
+            date.today(),
         )
 
         winrate_result = scanner.compute_winrate(symbol, config, config.get("winrate_lookback_quarters", 8))
@@ -118,6 +123,7 @@ def fetch_price_and_term_structure(
                 "price": price,
                 "term_structure": ts["term_structure"],
                 "expected_move_dollars": ts["expected_move_dollars"],
+                **scanner.term_inputs(ts),
                 "expected_move_pct": ts["expected_move_pct"],
                 "skew_abs": abs(side_result["skew"]),
                 "side": side_result["side"],
@@ -281,7 +287,9 @@ def fetch_directional_credit_spread_order(
         atm_probe = scanner.fetch_front_back_atm_entries(symbol, front_exp, front_exp, price)
         if not atm_probe.get("ok"):
             return atm_probe
-        expected_move = 0.85 * (atm_probe["front_call"]["mid"] + atm_probe["front_put"]["mid"])
+        expected_move = STRADDLE_TO_EM_FACTOR * (
+            atm_probe["front_call"]["mid"] + atm_probe["front_put"]["mid"]
+        )
 
         # Wide strike window: the breakeven-anchored short strike can sit
         # meaningfully further OTM than the raw expected-move boundary,

@@ -412,6 +412,22 @@ _MIGRATIONS = [
     # separate columns. `exit_cost` stays the total. 0 when every leg traded out; NULL where it was
     # never recorded.
     ("trades", "settlement_fees", "ALTER TABLE trades ADD COLUMN settlement_fees REAL"),
+    # The quote each leg was priced from at the CLOSE (2026-11-05): JSON list of {symbol, bid, ask,
+    # source, age_seconds}, beside the entry quotes that ride inside `legs_json`
+    # (entry_bid/entry_ask/entry_quote_source/entry_quote_age_seconds). Recorded for a later slippage
+    # study (capped fraction-of-spread model vs uncapped vs half-spread). NULL on rows closed before
+    # it existed, and never backfilled: a guessed quote would assert a market nobody saw. A leg that
+    # settled rather than traded out carries no quote.
+    ("trades", "exit_legs_json", "ALTER TABLE trades ADD COLUMN exit_legs_json TEXT"),
+    # The term-structure inputs behind `term_structure` (2026-11-05), so a replay can compute a
+    # per-day slope (back_iv - front_iv) / (back_dte - front_dte) beside the ratio the gate measures.
+    # NULL on rows written before, never backfilled.
+    ("entry_reviews", "front_iv", "ALTER TABLE entry_reviews ADD COLUMN front_iv REAL"),
+    ("entry_reviews", "back_iv", "ALTER TABLE entry_reviews ADD COLUMN back_iv REAL"),
+    ("entry_reviews", "front_dte", "ALTER TABLE entry_reviews ADD COLUMN front_dte INTEGER"),
+    ("entry_reviews", "back_dte", "ALTER TABLE entry_reviews ADD COLUMN back_dte INTEGER"),
+    ("entry_reviews", "front_expiration", "ALTER TABLE entry_reviews ADD COLUMN front_expiration TEXT"),
+    ("entry_reviews", "back_expiration", "ALTER TABLE entry_reviews ADD COLUMN back_expiration TEXT"),
 ]
 
 # Backfills that run once, when their column is first added. Keyed by "table.column" so a fresh
@@ -567,6 +583,11 @@ def cmd_save_leg_close(args) -> dict:
     return _verbs.save_leg_close(_conn, args)
 
 
+def _json_text(value) -> str | None:
+    """A JSON column's text: a string passes through, a list/dict is dumped, None stays NULL."""
+    return _verbs.json_text(value)
+
+
 def _close_refusal(conn, order_id) -> dict:
     """Why a close wrote nothing: the row is already closed (say so, loudly) or does not exist."""
     row = conn.execute("SELECT closed_at FROM trades WHERE order_id = ?", (order_id,)).fetchone()
@@ -605,7 +626,7 @@ def cmd_save_close(args) -> dict:
         cur = conn.execute(
             "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ?, exit_cost = ?, "
             "exit_slippage = ?, settlement_fees = ?, exit_iv = ?, status = 'closed', exit_reason = ?, "
-            "hold_days = ? WHERE order_id = ? AND closed_at IS NULL",
+            "hold_days = ?, exit_legs_json = ? WHERE order_id = ? AND closed_at IS NULL",
             (
                 spec.get("exit_debit"),
                 spec.get("pnl"),
@@ -616,6 +637,7 @@ def cmd_save_close(args) -> dict:
                 spec.get("exit_iv"),
                 spec.get("exit_reason"),
                 hold_days,
+                _json_text(spec.get("exit_legs_json")),
                 order_id,
             ),
         )
