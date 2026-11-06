@@ -763,8 +763,9 @@ passes `pmcc` and each trade's `pmcc` note (or its `error`) through, nulls kept;
 before the view has `pmcc: null` and says so, and an empty one says how a PMCC is recognised (a long
 call entered at 0.70 delta or more, or `intent: "pmcc"`; an evaluation from before 2026-11-04
 also names its day limits). The width card says "passes, thin" where manage flags a passing cost over
-three quarters of the width, with the cost's share beside it. A card shows the long (delta at entry or
-"delta at entry unknown" with manage's reason, today's delta, extrinsic share, days left, the roll
+three quarters of the width, with the cost's share beside it. A card shows the long (delta at entry
+with its source, "recorded N s after the fill" with the band the underlying's likely move puts on it
+or "from the <date> close", or "delta at entry unknown" with manage's reason, today's delta, extrinsic share, days left, the roll
 flag: amber "roll the long" only on a recognised PMCC, since manage raises that rule on no other; on
 any other candidate a muted "no roll rule" with the thresholds crossed shown as information), the width check with the P&L if assigned gross and net of fees, the long's net cost after
 premiums, the short's check (band or "band not in the snapshot", assignment exposure, N(d2),

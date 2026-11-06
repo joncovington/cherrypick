@@ -71,9 +71,12 @@ of that day, not today's.
   a running cycle that does not replay to today's positions is `unreconciled`; shares older than the
   history have `basis_known: false`, never the positions' open price.
 - **A PMCC is recognised, never assumed** (`pmcc.py`). The shape is a call diagonal; it is a PMCC only
-  when the long's delta at entry (its fill and that day's close, dividend yield carried) clears the
-  floor, or `positions.<SYMBOL>.intent` says `"pmcc"`. A delta that cannot be solved is unknown and
-  recognises nothing; a PMCC whose linked orders do not replay to today's legs gets a review only.
+  when the long's delta at entry clears the floor, or `positions.<SYMBOL>.intent` says `"pmcc"`. That
+  delta is recorded once from the first full snapshot after the fill (`entrydelta.py`, the store
+  `entry-deltas.json`, never rewritten; each snapshot carries its rows' records so a re-run reads the
+  same one), else solved from the fill and that day's close, dividend yield carried either way. A delta
+  that cannot be solved is unknown and recognises nothing; a PMCC whose linked orders do not replay to
+  today's legs gets a review only.
 - **P&L is a mark.** Gross always; net of the chain's recorded fees where a chain reconciled, and null (never gross relabelled) where it did not.
 - **The ruleset is data.** Thresholds and confidences live in `rules.DEFAULT_RULES` and the operator's
   `~/.cherrypick/config/manage.json`; an override key the default lacks is reported, never applied.

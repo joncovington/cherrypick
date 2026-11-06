@@ -24,6 +24,7 @@ from pathlib import Path
 
 from cherrypick.core.jsonio import write_json_atomic
 
+from cherrypick.manage import entrydelta as _entrydelta
 from cherrypick.manage import evaluate as _evaluate
 from cherrypick.manage import paths as _paths
 from cherrypick.manage import remark as _remark
@@ -99,6 +100,11 @@ def cmd_evaluate(args) -> dict:
     snapshot = json.loads(Path(args.snapshot).read_text(encoding="utf-8"))
     if "earnings_trades_seen" not in snapshot and snapshot.get("session"):
         snapshot["earnings_trades_seen"] = earnings_trades_seen(snapshot["session"])
+    # Only a full snapshot records a delta at entry: it is the one whose underlying price is read
+    # after the fill. A remark or a re-run reads the records the stored snapshot already carries.
+    if "entry_deltas" not in snapshot and snapshot.get("session"):
+        rules, _, _ = _rules.load(Path(args.rules) if args.rules else None)
+        snapshot["entry_deltas"] = _entrydelta.record(snapshot, rules, _paths.entry_deltas_path())
     return _run(snapshot, args.rules)
 
 

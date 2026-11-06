@@ -166,7 +166,22 @@ export interface ManagePmccLong {
   deltaAtEntry: number | null;
   /** Why the delta at entry is unknown, when it is. */
   deltaAtEntryWhy: string | null;
-  entryFills: Array<{ date: string | null; price: number | null; close: number | null; divYield: number | null; iv: number | null; delta: number | null }>;
+  entryFills: Array<{
+    date: string | null;
+    price: number | null;
+    close: number | null;
+    divYield: number | null;
+    iv: number | null;
+    delta: number | null;
+    /** "recorded" (from the first full snapshot after the fill) or "close" (the entry day's close);
+     * null on an evaluation written before the record. */
+    basis: "recorded" | "close" | null;
+    /** A recorded fill's: seconds from the fill to the snapshot, and the delta at a two-standard-
+     * deviation move of the underlying over them, either way. */
+    gapSeconds: number | null;
+    deltaLow: number | null;
+    deltaHigh: number | null;
+  }>;
   delta: number | null;
   intrinsic: number | null;
   extrinsic: number | null;

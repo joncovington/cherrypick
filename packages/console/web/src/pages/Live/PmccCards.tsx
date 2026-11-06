@@ -122,6 +122,22 @@ export function rollWords(p: ManagePmccPosition): { chip: string; chipClass: str
     : { chip: "no roll due", chipClass: "chip", row: "none due" };
 }
 
+/** The long's delta at entry with where it came from: recorded after the fill (with the gap and the
+ * band the underlying's move over it puts on the delta), or solved from the entry day's close. */
+export function entryWords(p: ManagePmccPosition): string {
+  const l = p.long;
+  if (l.deltaAtEntry === null) return `delta at entry unknown${l.deltaAtEntryWhy ? ` (${l.deltaAtEntryWhy})` : ""}`;
+  // The fill the delta rests on: the lowest, as manage takes it.
+  const f = l.entryFills.find((x) => x.delta === l.deltaAtEntry);
+  if (f?.basis === "recorded") {
+    const gap = f.gapSeconds === null ? "" : ` ${Math.round(f.gapSeconds)} s after the fill`;
+    const band = f.deltaLow === null || f.deltaHigh === null ? "" : `, ${delta(f.deltaLow)}-${delta(f.deltaHigh)} at the likely move`;
+    return `${delta(l.deltaAtEntry)} (recorded${gap}${band})`;
+  }
+  if (f?.basis === "close") return `${delta(l.deltaAtEntry)} (from the ${f.date ?? "entry day"} close)`;
+  return delta(l.deltaAtEntry);
+}
+
 function LongCard({ p }: { p: ManagePmccPosition }) {
   const l = p.long;
   const roll = rollWords(p);
@@ -130,10 +146,7 @@ function LongCard({ p }: { p: ManagePmccPosition }) {
       <Kv
         rows={[
           ["leg", `${l.quantity ?? "?"} ${l.leg}`],
-          [
-            "delta at entry",
-            l.deltaAtEntry === null ? `delta at entry unknown${l.deltaAtEntryWhy ? ` (${l.deltaAtEntryWhy})` : ""}` : delta(l.deltaAtEntry),
-          ],
+          ["delta at entry", entryWords(p)],
           ["delta today", l.delta === null ? "unknown" : delta(l.delta)],
           ["mid", share(l.mid)],
           ["intrinsic", share(l.intrinsic)],
