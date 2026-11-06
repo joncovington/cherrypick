@@ -90,7 +90,7 @@ only ever turn a *hold* into a *close*, never the reverse.
    has gone, `front_expiry` when only a calendar's front month has and the back is closed at its own
    real market. See *Settlement* below. Since 2026-09-24 reaching this step is a **failed exit**
    (the settle event carries `failed_exit`): step 1 should have traded the position out.
-1. **Expiry close** — from `expiry_close_time` (15:20 ET, 40 minutes before the close; 12:20 on an early-close day; 15:30 before 2026-11-05) on the expiration day of **any** leg,
+1. **Expiry close** — from `expiry_close_time` (15:20 ET, 40 minutes before the close; 12:20 on an early-close day; 15:30 before 2026-11-06) on the expiration day of **any** leg,
    every position closes, whatever its P&L and whatever else is true. These are physically settled
    single names: an ITM leg that expires is an exercise or an assignment — shares, an overnight gap
    and fees — so the house rule is to trade out, never to settle. Read off each leg's own symbol, so

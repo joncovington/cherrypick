@@ -111,7 +111,7 @@ POLICY_DEFAULTS = {
     # exercise or an assignment -- shares, overnight gap risk, and fees -- so the house rule is to
     # trade out, never to settle. Matches MEIC's physical-settlement force close.
     #
-    # 15:20, 40 minutes before the close (15:30 before 2026-11-05). It leaves 15 minutes of margin
+    # 15:20, 40 minutes before the close (15:30 before 2026-11-06). It leaves 15 minutes of margin
     # before the 15:35 entry scan, which takes the single-writer lock.
     "expiry_close_time": "15:20",
     # Early-exercise guard: close when a short leg is in the money with so little time value that its
