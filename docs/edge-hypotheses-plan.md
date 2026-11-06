@@ -5749,6 +5749,77 @@ chain is fetched; the plan step only counts the requests.*
   - **Nothing confirmed:** the ratio stays an untested ordering, labelled so, and the scanner stays a
     convenience, never presented as a source of trades.
 
+### 55. Does a defined-risk index collar improve a long-delta book after costs?
+
+*Source: the user, 2026-11-06. The manage package sizes an XSP vertical when the book's beta-weighted
+delta leaves its band (`hedge.py`); it now also offers a collar, the put debit spread funded by a call
+credit spread, labelled "no tested edge, research item 55". The user is not entering one; this declares
+the test that decides whether the label may come off. Declared before the design is run; the plan step
+has only counted the cycles.*
+
+- **Question:** for a long-delta book, does a defined-risk collar do better than no hedge, and better
+  than either single vertical manage already offers, once return is set against tail risk and costs are
+  paid?
+- **Where the edge would live:** **tail insurance paid for by capped upside**: a fall is covered by the
+  put spread and the call spread's credit pays for it. **What would falsify it:** the collar's
+  return-per-tail-risk ratio at or below the bare book's, or below the put spread's alone (the funding
+  is not worth the cap), or a worse tail than the comparison arm's, in either window.
+- **Look-alikes, said out loud:** the flies hedge overlay (a cheap single long as a hedge: paid twice,
+  recovered little, listed under "Not worth revisiting"); the curve and contango studies (a hedge's
+  cost eating its edge); the position-management ruleset's treatment of the XSP hedge (a convenience,
+  not a rule).
+- **Cycles:** one per standard monthly expiry in the store, entered at the stored session whose days to
+  expiry are 45 to 48, nearest 45, and closed at the first session three or fewer days from expiry.
+  The plan step found 60 design cycles and 57 holdout cycles; three expiries had no cycle (two with no
+  session in the entry window, one with no exit mark).
+- **The book:** 100 SPY shares, a delta-one stand-in for a long-delta options book; its change is the
+  share move. SPY stands in for XSP and SPX (the same index, and the one stored chain history with
+  deltas back to 2017).
+- **Arms**, on the same cycles, the hedges each scaled in fractional units to cut 20 shares of the
+  book's delta at entry (so the arms differ in shape and cost, not size). The strikes and widths are
+  `hedge.py`'s:
+  - **N:** no hedge (the control);
+  - **C:** a call credit spread, the short nearest 0.30 delta, the long five points above;
+  - **D:** a put debit spread, the long nearest 0.40 delta, the short five points below;
+  - **K:** D plus a call credit spread five points wide whose short, of |delta| from 0.05 to under
+    0.5, brings the combined net at mid nearest zero (a tie to the strike further out). A cycle where no
+    strike gets within 0.25 a share of zero is dropped from every arm and counted.
+- **Marks and fills:** the store's 15:45 ET mids. Each hedge leg at mid with the suite's slippage
+  (`fees.slippage_dollars`) and per-leg fees (`fees.ic_open_fee`, `fees.ic_close_fee`) each way; a
+  leg without a two-sided quote at the close is priced adversely (a short at intrinsic plus its entry
+  spread, a long at intrinsic less it, never below zero), and the count is reported. Stress: 1.5x fees
+  and a quarter of the spread.
+- **Measured:** the cycle's net in basis points of 100 x the entry spot (the share move plus the
+  hedge's net of costs), each arm's mean, win share, worst cycle and worst-20% mean, and beside them what
+  the hedge gave up on average and in the cycles where the book lost. The score is the **ratio**: the
+  mean over the absolute mean of the worst 20% of cycles, the denominator never under one basis point.
+- **Windows:** design entries 2017-01-01 to 2021-12-31; holdout 2022-01-01 to 2026-12-31, read after the
+  design whatever it shows. Fewer than 40 cycles in a window is no verdict.
+- **Pass-or-fail rule:** 5 tests (K against N, C against N, D against N, K against C, K against D),
+  Holm at 0.05 on the one-sided p that the first arm's ratio is not above the second's, from a seeded
+  stationary bootstrap of the paired cycles (mean block of two cycles, since neighbours overlap by
+  weeks; 10,000 resamples). In the design: the ratio difference above zero under Holm; above zero at the
+  stress; above zero with the five cycles on which the first arm gained most removed; and its worst-20%
+  mean no worse than the second's. Then in the holdout: the difference above zero at p < 0.05 with the
+  tail no worse. Each arm's own numbers are reported, not judged.
+- **Declared limits (B11):** a 45-day cycle a month, so about 60 cycles a window and the tests are
+  coarse; once-a-session marks and no managing before the close; early assignment and dividends on SPY
+  are not modelled (the real hedge is cash-settled and European); the book is shares, not the user's
+  options book, so how a hedge interacts with theta and gamma already held is not tested; the call
+  spread's strike is chosen at the entry mid, so the realised net is zero only before costs; fractional
+  units for equal delta, where a real 1-lot hedge is lumpier.
+- **Data:** the licensed `SPY-monthly-1545.db` (`scripts/fetch_spy_monthly_1545.py`), already stored; no
+  fetch. `scripts/index_collar_item55.py plan|design|holdout` writes under
+  `results/research/item55/`; the register records verdicts only.
+- **Decides:**
+  - **K confirmed against N, C and D:** the "no tested edge" label comes off the collar, with the
+    holdout's words in its place, at a declared boundary.
+  - **K confirmed against N only:** a vertical is the better hedge; the collar keeps its label.
+  - **C or D confirmed against N:** reported as evidence for the existing hedge; manage's confidence
+    for it is revisited at a declared boundary.
+  - **Nothing confirmed:** the collar stays offered, labelled untested, and a book that needs a hedge
+    is no better off for it than the single verticals show.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

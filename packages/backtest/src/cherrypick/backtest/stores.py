@@ -82,7 +82,8 @@ STORES: list[dict[str, str]] = [
         "file": "SPY-monthly-1545.db",
         "holds": "SPY standard-monthly chains at 15:45 ET, each trading day 2017 on",
         "built_by": "scripts/fetch_spy_monthly_1545.py",
-        "used_by": "the strangle-management test (2026-10-20)",
+        "used_by": "the strangle-management test (2026-10-20); items 53 and 55 "
+        "(scripts/time_exit_entry_dte_item53.py, scripts/index_collar_item55.py)",
     },
     {
         "file": "SPX-time-warp.db",

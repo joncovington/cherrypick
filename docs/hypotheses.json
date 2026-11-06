@@ -2098,6 +2098,48 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 55,
+      "study": "item55",
+      "title": "Does a defined-risk index collar improve a long-delta book after costs?",
+      "status": "declared",
+      "legacy": false,
+      "setup": "portfolio-hedge",
+      "side": "long",
+      "structure": "collar",
+      "window": "monthly",
+      "measure": "the cycle's net in basis points of the book's notional (100 x the entry spot), after the suite's slippage and per-leg fees both ways on the hedge: a 100-share SPY book (a delta-one stand-in for a long-delta book, SPY standing in for XSP and SPX) held from the stored session nearest 45 days before each standard monthly expiry to the first session three or fewer days before it, with no hedge (N), a call credit spread (C: short nearest 0.30 delta, five points wide), a put debit spread (D: long nearest 0.40 delta, five wide) or the collar (K: D plus the call credit spread whose strike brings the net at mid nearest zero, within 0.25 a share), each hedge scaled to cut 20 shares of the book's delta; an arm is scored by its mean over the absolute mean of its worst 20% of cycles (the denominator never under one basis point)",
+      "expected": "none declared: manage offers the collar as an untested hedge, labelled so; the study decides only whether the label may come off",
+      "sample": "the licensed SPY-monthly-1545.db, already stored (no fetch); design: entries 2017-01-01..2021-12-31, holdout 2022-01-01..2026-12-31 read after the design whatever it shows; < 40 cycles in a window = no verdict",
+      "rule": "5 tests (K against N, C against N, D against N, K against C, K against D), Holm at 0.05 on the one-sided p that the arm's return-per-tail-risk ratio is not above the other's, by a seeded stationary bootstrap of the paired cycles (mean block 2, 10,000 resamples): a design pass also needs the ratio difference above zero at 1.5x fees and a quarter of the spread, above zero with the five cycles on which the arm gained most removed, and the arm's worst-20% mean no worse than the other's; confirmed only by the holdout's same sign at p < 0.05 with the tail no worse. The collar's 'no tested edge' label comes off only if K is confirmed against N, C and D; anything less leaves it on",
+      "mechanism": "a put spread bought with the proceeds of a call spread sold insures the book against a fall for little or no premium, at the price of the gains past the short call strike; the edge, if there is one, is that the insurance is worth more than the capped upside",
+      "rivals": [
+        {
+          "explanation": "a long-delta book just earns the equity premium, and any hedge only gives it up",
+          "check": "the ratio scores the mean against the tail, and the mean give-up and the give-up in the cycles where the book lost are reported beside it; a hedge that only costs fails the ratio test against no hedge"
+        },
+        {
+          "explanation": "the call spread's cap costs more in rallies than the put spread saves in falls",
+          "check": "K is tested against D alone: the funding must earn its cap, or the cheaper single vertical wins"
+        },
+        {
+          "explanation": "costs: a four-leg structure pays double the fees and spreads of a vertical",
+          "check": "the passing estimate must stay above zero at 1.5x fees and a quarter of the spread"
+        },
+        {
+          "explanation": "a few cycles (one crash, one rally) carry it",
+          "check": "above zero with the five best cycles removed; the holdout read whatever the design shows, and the cycles overlap by weeks, so the bootstrap resamples blocks"
+        },
+        {
+          "explanation": "SPY is not XSP: dividends, early exercise and a different strike grid",
+          "check": "declared limit (B11): SPY stands in for the index because it is the one stored chain history with deltas back to 2017; XSP and SPX are cash-settled and European, so the real hedge carries no early-exercise risk that the SPY marks ignore"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#55-does-a-defined-risk-index-collar-improve-a-long-delta-book-after-costs",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
