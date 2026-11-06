@@ -16,7 +16,7 @@ strategies, **all defined-risk**: `iron_fly`, `double_calendar`, `iron_condor`, 
 (`docs/05-strategies.md`). `expected_move_butterfly` is **paper only**: it opens in `strat_test`
 from 2026-10-14 (`STRAT_TEST_STARTS`), and is never ranked as a symbol's best, so never propose it
 live. `atm_calendar` and
-`double_calendar` stay registered but open nothing in `strat_test` from 2026-10-15 (and run no screen from 2026-11-05), and
+`double_calendar` stay registered but open nothing in `strat_test` from 2026-10-15 (and run no screen from 2026-11-06), and
 `broken_wing_butterfly` from 2026-10-26 (`strat_test_harness.STRAT_TEST_RETIRED`, dated retirements;
 docs/operating-history.md). **Exits price at mid for positions entered from 2026-10-26**, natural
 side before (`scanner.exit_basis`; slippage is a cost on a mid fill only, `costs.exit_costs`) —
@@ -26,7 +26,10 @@ name is a recorded `not_tradable` drop, an unknown one is refused, and a missing
 refuses everything loudly, never silently. Never pool across that break either. **From 2026-10-30**
 a failed entry scan is retried inside the window, entries open as the scan goes, and a close the
 spread gate has held 30 minutes in a session is taken anyway (docs/operating-history.md); never pool
-across that one. Undefined-risk/naked
+across that one. **From 2026-11-06** the PEAD gate fires at the first executable check of the first
+morning, the scan screens tradable names first, the expected move is the report's own move, a short
+at assignment risk closes, and the expiry close is at 15:20 (docs/operating-history.md, the
+2026-11-06 boundary); never pool across it. Undefined-risk/naked
 strategies were deliberately removed — a naked short on a single-name gap can blow out arbitrarily
 overnight. New strategies go under `src/cherrypick/earnings/strategies/` without touching the engine.
 
@@ -60,8 +63,8 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
   pool across it). A winner short of target is carried up to three *trading* sessions; a loser
   closes on the first morning (post-earnings drift continues). **Nothing but the expiry close and
   the pin guard acts on the entry session** (`sessions_held == 0`): the report has not happened, and
-  a fresh mark is just the spread (docs/operating-history.md). **From 2026-11-05 the expiry close is
-  at 15:20 (40 minutes before the close, was 15:30) and an in-the-money short with no time value left
+  a fresh mark is just the spread (docs/operating-history.md). **From 2026-11-06 the expiry close is
+  at 15:20 (40 minutes before the close, was 15:30) and a short at assignment risk (a call under a coming dividend, or 3%+ in the money with no time value)
   closes as `assignment_risk`** (docs/10-exits.md); never pool across that either. Quotes come from the stream cache
   first, the broker only for unsubscribed legs and to confirm a close.
 - **Expired positions are SETTLED, not traded out** (2026-08-31, its own break). An expired leg is
@@ -80,7 +83,7 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
   which rows finish FIRST if `entry_scan_budget_seconds` binds. It must never gate admission (that
   gate caused a five-session outage; break `entry_calendar_admissibility_gate_removed`). Why AMC,
   never BMO: `docs/screening-criteria.md` Layer 0.
-- **The entry scan runs tradable names first (from 2026-11-05).** `run_entries` splits the calendar
+- **The entry scan runs tradable names first (from 2026-11-06).** `run_entries` splits the calendar
   with `universe.refusal` before screening: names the liquidity verdict calls tradable go first, in
   the calendar's own order, then refused names, which are screened only with the budget left and
   then recorded as before (screen rows, then the `not_tradable` execution drop; never opened). A

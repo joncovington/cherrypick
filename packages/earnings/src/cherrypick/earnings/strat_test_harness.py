@@ -671,7 +671,7 @@ def cmd_run_entries(args) -> dict:
     # yielded as it finishes. Write (this thread, below): order building + every paper-DB write, so
     # SQLite has one writer -- interleaved with the scan rather than after it (2026-10-29).
     #
-    # Order (2026-11-05 boundary): names the liquidity verdict calls tradable first, in the calendar's
+    # Order (2026-11-06 boundary): names the liquidity verdict calls tradable first, in the calendar's
     # own order, then the refused ones, which are screened only with whatever budget is left and
     # recorded exactly as before when they are. The pool takes names in this order, so a binding
     # budget can only drop refused names while any tradable name is still waiting. A missing or stale

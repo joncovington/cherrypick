@@ -5,7 +5,7 @@ A normal NYSE session closes at 16:00 ET and an early-close ("half") day at 13:0
 half day shifts them all by the same three hours instead of running them against a market that has
 already shut:
 
-    expiry close      40 minutes before the close      (15:20 normally; 15:30 before 2026-11-05)
+    expiry close      40 minutes before the close      (15:20 normally; 15:30 before 2026-11-06)
     pin guard window  ends at the close
     management        ends 20 minutes before the close (15:40 normally)
     eod               the close to 30 minutes after it (16:00-16:30 normally)

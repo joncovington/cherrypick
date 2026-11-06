@@ -345,3 +345,56 @@ Two recording additions and one correction to a recorded number. None changes a 
   skip counts ride in `criteria_json` as `winrate_skips`. Winrate is off as a screen in the deployed
   config, so this changes recorded winrates and ranking inputs only. A winrate recorded before this
   date is on the old definition: do not pool it with one after.
+
+## The 2026-11-06 boundary (declared 2026-11-05)
+
+The 2026-11-05 review of the module found five things that change which trades happen or when they
+close. The user decided each one that day and asked for them in one boundary, declared once they were
+ready. All five bind from the 2026-11-06 session, the first after they were merged and deployed.
+
+- **The PEAD gate fires (#874).** A loser was meant to close on the first morning after the report,
+  but "first check of the day" meant "no mark yet this session", and every position is marked from
+  09:30 while exits act only from 09:40. The gate had not fired since 10-17: 0 closes, 137 decisions
+  held at the gate. The first check is now the first ungated decision at or after the execution window,
+  read from `management_events` (restart-safe), and the gate acts on the first session after entry
+  only. A loser held by the spread gate is decided again on the next tick. A replay of the 35 positions
+  carried as first-morning losers from 10-19 put closing at 09:40 about $1.8k better than carrying,
+  with carrying better in 12 of 35; not conclusive, so the paired twin below measures it. The same flag
+  reaches each strategy's `evaluate_position(is_first_check_of_day=...)`, so the retired structures'
+  gap labels see the real first check too.
+- **The scan screens tradable names first (#872).** The liquidity verdict now splits the calendar
+  before the slow screen: tradable names first, refused names only with the budget left, recorded as
+  before. On 11-04 and 11-05 about half the screen rows ended as `entry_scan_budget_exceeded`, and
+  some tradable names were never screened. The three retired strategies no longer run their screen.
+- **The expected move is the report's move (#876).** It was 0.85 x the front straddle, and the front
+  expiry can sit up to nine days after the report, so the straddle carried ordinary time value. It is
+  now the event's variance, separated with the back expiry (ex-event variance from the two expiries,
+  event variance the front's less that), kept in the same units as before (0.85 x the straddle the
+  event alone would price). It moves the floor gates, the condor and credit-spread short strikes and
+  the expected-move butterfly's body and wings. Missing or invalid inputs fall back to the old figure
+  with a recorded reason. Each review records the method, both figures and the true one-SD move.
+  Item 31's study is pinned to the old definition (`expected_move_method: straddle`).
+- **A close on assignment risk (#875).** New exit `assignment_risk`: a short call in the money with
+  less time value than a dividend going ex after today and by its expiry (projected from the local
+  dividend history when no declared date exists), or a short at least 3% in the money with under $0.05
+  of time value before its expiry day. Never a cash-settled index. Through the normal spread gate,
+  except a dividend going ex on the next session, which bypasses the spread and per-tick limits.
+- **The expiry close at 15:20 (#875).** Forty minutes before the close (12:20 on a half day), where it
+  was thirty. On 10-23 the 26 expiry closes finished at 15:33, two minutes before the 15:35 entry scan
+  takes the single-writer lock.
+
+**The paired twin.** An advised twin, `advised:pead-gate-off:<strategy>`, opens beside every
+iron fly, iron condor, directional credit spread (and broken-wing butterfly, retired) control entry
+with identical legs, credit and costs and `close_losers_first_morning` off, so the gate is measured
+on the same trades. It is an advisor experiment, `pead-gate-off`; twins open from the first session
+after the advisor's nightly enact carries it, not on 2026-11-06 itself. Compare a control with its own
+twin only.
+
+**What to expect.** Fewer first-morning losers carried to a stop; more names screened on a heavy
+night, and more of them tradable; condor and credit-spread shorts a little closer to the money and
+butterflies a little tighter where the front expiry sits days after the report; a few early closes
+on deep in-the-money shorts; expiry-day books flat ten minutes earlier. Every arm's result reads from
+2026-11-06 or ends before it. Never pool across it.
+
+**Journal on the day:** one `review_2026_11` break dated 2026-11-06 in the paper ledger, recorded
+with `paper_loop record-break`.

@@ -39,7 +39,7 @@ it's what the code actually reads.
 | `finnhub_api_key_env_var` | Name of the environment variable holding a Finnhub API key, if you're using it as a supplementary data source. Not required for the core scan/rank/order pipeline, which runs entirely on tastytrade + Dolt. |
 | `entry_window_start` / `entry_window_end` | The window before close where new positions get opened, e.g. `15:30`–`15:55` ET. These are ET times regardless of your local timezone. |
 | `entry_scan_at` | When the automated loop starts its forced-sampling entry scan (default `15:35`). Distinct from `entry_window_start`, and must leave room for the scan to finish before `entry_window_end`. |
-| `entry_scan_budget_seconds` / `entry_scan_workers` | Bounds on the entry scan (example: 1500 s, 4 workers). The morning snapshot orders the universe so a budget that binds still finishes the liquid names first, and from 2026-11-05 names the liquidity verdict refuses are screened after every tradable one, only with the budget left. |
+| `entry_scan_budget_seconds` / `entry_scan_workers` | Bounds on the entry scan (example: 1500 s, 4 workers). The morning snapshot orders the universe so a budget that binds still finishes the liquid names first, and from 2026-11-06 names the liquidity verdict refuses are screened after every tradable one, only with the budget left. |
 | `symbol_watch` | The pre-market forward scan the loop runs itself (`enabled`, `at` `06:30`, `days` 10 trading days, `liquid_only`, `tier_thresholds` in the example). It pre-filters the entry scan on stable criteria only and never decides an entry. |
 | `dolt_calendar_timeout_seconds` / `dolt_symbol_timeout_seconds` | Per-query bounds on the Dolt calendar and per-symbol reads (example: 30 / 90), so a hung query cannot hold the loop's lock. |
 | `close_window_start` | Next-morning time where Step 3's unconditional close-window backstop kicks in, e.g. `09:45` ET — chosen to be after the open's initial volatility has settled a bit. |
@@ -353,7 +353,7 @@ Common keys apply to every strategy; `management.<strategy>` overrides them for 
 | `max_leg_spread_pct` | `0.35` | Widest leg spread (of mid) still worth acting on. |
 | `max_leg_spread_abs` | `0.05` | A leg is refused only when wide in percent AND in money. |
 | `max_leg_spread_abs_zero_bid` | `0.20` | The looser money floor for a leg quoting a 0.00 bid. |
-| `expiry_close_time` | `"15:20"` | From this time on any leg's expiration day the position closes, whatever its P&L. Neither the spread gate nor the per-tick cap holds it back. 40 minutes before the close (12:20 on an early-close day); it was `"15:30"` before 2026-11-05. |
+| `expiry_close_time` | `"15:20"` | From this time on any leg's expiration day the position closes, whatever its P&L. Neither the spread gate nor the per-tick cap holds it back. 40 minutes before the close (12:20 on an early-close day); it was `"15:30"` before 2026-11-06. |
 | `assignment_guard` | `true` | Close a position holding a short leg in the money that its holder has reason to exercise early (see [10-exits.md](10-exits.md)). |
 | `assignment_extrinsic_floor` | `0.05` | Per share. A deep in-the-money short with less time value than this closes (not on its expiration day). |
 | `assignment_deep_itm_pct` | `0.03` | How far in the money, as a fraction of the strike, a short must be for the floor rule to apply. |
