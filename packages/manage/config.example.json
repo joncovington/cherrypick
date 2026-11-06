@@ -75,6 +75,13 @@
       "max_share_of_width": 0.75,
       "confidence": 60
     },
+    "price_stop": {
+      "_comment": "A calendar's stop on the underlying's price: the band where its modelled value at the short's expiry (the long at its own IV) falls loss_share below the debit. Outside it the trade is reviewed, to close if the stock closes there. No outside test; the debit stop stays as the backstop.",
+      "enabled": true,
+      "shapes": ["calendar"],
+      "loss_share": 0.25,
+      "confidence": 45
+    },
     "time_exit": {
       "_comment": "A diagonal or calendar whose nearest short was sold short_term_short_days or fewer before its expiry (read off the order chain) runs on the long's clock instead: the time exit fires when the long it is sold against reaches time_spread_long_dte.",
       "enabled": true,
@@ -384,7 +391,7 @@
       "bp_warn_over": 0.1
     }
   },
-  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. intent \"pmcc\" recognises a call diagonal as a PMCC, \"diagonal\" keeps it out. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.time_exit, legs.short_take_profit, legs.long_vertical, roll.naked_put, roll.diagonal_short, roll.fly_off, roll.untested_side, wheel.take_profit, wheel.tested, wheel.next_leg, pmcc.width, pmcc.assignment, pmcc.roll_long, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power, portfolio.earnings_exposure, portfolio.expiry_concentration, portfolio.vol_expansion",
+  "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. intent \"pmcc\" recognises a call diagonal as a PMCC, \"diagonal\" keeps it out. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.price_stop, debit.time_exit, legs.short_take_profit, legs.long_vertical, roll.naked_put, roll.diagonal_short, roll.fly_off, roll.untested_side, wheel.take_profit, wheel.tested, wheel.next_leg, pmcc.width, pmcc.assignment, pmcc.roll_long, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power, portfolio.earnings_exposure, portfolio.expiry_concentration, portfolio.vol_expansion",
   "positions": {},
   "_trades_comment": "Per-trade overrides, keyed two ways. By a trade's stable ID as the cards show it (e.g. XYZ-260401-1), for that trade alone, read over positions.<SYMBOL>: {\"XYZ-260401-1\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"...\"}}; disable lists add up with the name's. By a PMCC's long contract as the broker spells it (spaces ignored), e.g. {\"XYZ 280121C00040000\": {\"intent\": \"pmcc\", \"note\": \"bought as a PMCC\"}}. intent \"pmcc\" or \"diagonal\" decides that PMCC alone and beats positions.<SYMBOL>.intent; the Live -> pmcc card shows the key. A rolled long is a new PMCC: the old contract's intent does not carry over. continues names the long this one replaced in a roll done in two orders, e.g. {\"XYZ 280616C00040000\": {\"continues\": \"XYZ 280121C00040000\"}}, so the old long's cash and the shorts sold against it stay in the chain (a roll in one order links on its own); the card flags a possible two-order roll and gives the line to add.",
   "trades": {}
