@@ -1,6 +1,6 @@
 """Replay the earnings-navigator spread over the earnings events in the local Dolt clones.
 
-    python scripts/earnings_navigator_history.py [--start 2020-01-01] [--end 2026-10-02] [--workers 8]
+    python scripts/earnings_navigator_history.py [--start 2020-01-01] [--end 2026-10-02] [--workers N]
         [--cache FILE] [--cutoffs FILE] [--json FILE] [--limit N] [--symbols A,B]
     python scripts/earnings_navigator_history.py --from-json FILE
 
@@ -78,6 +78,7 @@ from cherrypick.technicals import compass, history, levels, paths, round5, store
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_stock_universe as _bsu  # noqa: E402 -- the monthly-expiry rule, shared not copied
 import emfly_history as _em  # noqa: E402 -- the chain cache, bars and smile, shared not copied
+from cherrypick.core.procs import default_workers
 
 MULT = 100
 SETTLEMENT_PER_ITM_STRIKE = 5.00
@@ -602,7 +603,7 @@ def main(argv=None) -> int:
     ap.add_argument("--end", default="2026-10-02")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=3306)
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=default_workers())
     ap.add_argument("--min-dollar-volume", type=float, default=100e6)
     ap.add_argument("--min-price", type=float, default=10.0)
     ap.add_argument("--max-straddle-spread", type=float, default=0.15)

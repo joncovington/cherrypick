@@ -3,7 +3,7 @@ exactly as docs/theta-profits-be-condor.md gives it, 25-40-point wings with cred
 without the stabilization gate, over the wide SPX store (`SPX-60s-wide.db`, 40 strikes each side).
 
     python scripts/meic_be_condor_item42.py --step coverage
-    python scripts/meic_be_condor_item42.py --step study --window design|holdout [--workers 8]
+    python scripts/meic_be_condor_item42.py --step study --window design|holdout [--workers N]
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`) over the wide store, provisionally:
 that store is never validated. Writes under the backtest data dir (results/research/item42/), never
@@ -44,6 +44,7 @@ from cherrypick.backtest import settings as _settings
 from cherrypick.core import home
 from cherrypick.core import progress as core_progress
 from cherrypick.core import stats as core_stats
+from cherrypick.core.procs import default_workers
 
 ITEM = 42
 TAG = "wide"
@@ -332,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--step", required=True, choices=("coverage", "study"))
     ap.add_argument("--window", choices=("design", "holdout"), default="design")
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=default_workers())
     args = ap.parse_args(argv)
     s = _settings.load(None)
     out = coverage(s) if args.step == "coverage" else study(s, args.window, args.workers)

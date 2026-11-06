@@ -1,6 +1,6 @@
 """The signal board over history: each name's count of agreeing methods on every past session.
 
-    python scripts/board_history.py [--workers 12] [--start 2017-10-26] [--end 2025-06-30]
+    python scripts/board_history.py [--workers N] [--start 2017-10-26] [--end 2025-06-30]
                                     [--verify 400] [--out PATH] [--limit-names N]
 
 The live board (`cherrypick.technicals.board`) counts, for one session, how many of six methods
@@ -53,6 +53,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from cherrypick.core.procs import default_workers
 from cherrypick.technicals import (
     board,
     fundamentals,
@@ -337,7 +338,7 @@ def build_market(path: Path, lo: str, hi: str, workers: int, progress=print) -> 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--workers", type=int, default=12)
+    ap.add_argument("--workers", type=int, default=default_workers())
     ap.add_argument("--start", default=START)
     ap.add_argument("--end", default=END)
     ap.add_argument("--verify", type=int, default=400, help="name-sessions the look-ahead guard samples")

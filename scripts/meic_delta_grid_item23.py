@@ -1,7 +1,7 @@
 """Item 23, the short delta of MEIC's live rule (docs/edge-hypotheses-plan.md): `pm-200` entering once
 a day, 14:00-14:30, at 12, 20, 25 and 30 delta, each paired with the same rule at its own 16.
 
-    python scripts/meic_delta_grid_item23.py --window design|holdout [--workers 8] [--json PATH]
+    python scripts/meic_delta_grid_item23.py --window design|holdout [--workers N] [--json PATH]
     python scripts/meic_delta_grid_item23.py --annotate FILE [FILE ...]
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine over the 60 s
@@ -36,6 +36,7 @@ from cherrypick.backtest import grid, paths, results, runner
 from cherrypick.backtest import settings as _settings
 from cherrypick.core import home, robustness
 from cherrypick.core import stats as core_stats
+from cherrypick.core.procs import default_workers
 
 BASE_ARM = "pm-200"
 LIVE = "live-1400"
@@ -177,7 +178,7 @@ def grid_block(doc: dict) -> dict:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--window", choices=("design", "holdout"))
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=default_workers())
     ap.add_argument("--json", default=None)
     ap.add_argument(
         "--annotate", nargs="+", metavar="FILE", help="add the grid block to result files; no replay"

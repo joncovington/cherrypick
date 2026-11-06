@@ -60,6 +60,7 @@ import tempfile
 from pathlib import Path
 
 from cherrypick.core import db as core_db
+from cherrypick.core import procs as core_procs
 from cherrypick.core import progress, quotehistory
 
 from . import paths, store
@@ -258,7 +259,7 @@ def profile_layer(recorder_db: Path, vendor_db: Path, symbol: str, day: str) -> 
 
 def _flies_cli(args: list[str]) -> dict:
     """`python -m cherrypick.flies.cli <args>` with this interpreter; its JSON reply, or the failure."""
-    proc = subprocess.run(
+    proc = core_procs.run_unthrottled(
         [sys.executable, "-m", "cherrypick.flies.cli", *args],
         stdout=subprocess.PIPE,
         text=True,
@@ -277,7 +278,7 @@ def _flies_cli(args: list[str]) -> dict:
 
 def _meic_cli(args: list[str]) -> dict:
     """`python -m cherrypick.meic.replay <args>` with this interpreter; its JSON reply, or the failure."""
-    proc = subprocess.run(
+    proc = core_procs.run_unthrottled(
         [sys.executable, "-m", "cherrypick.meic.replay", *args],
         stdout=subprocess.PIPE,
         text=True,

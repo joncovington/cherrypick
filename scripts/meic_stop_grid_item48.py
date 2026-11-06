@@ -3,7 +3,7 @@
 ways -- as the loop fills it today, and as a stop-limit resting at the broker at both of its fill
 bounds -- against the same rule held to settlement.
 
-    python scripts/meic_stop_grid_item48.py --window design [--workers 8] [--json PATH]
+    python scripts/meic_stop_grid_item48.py --window design [--workers N] [--json PATH]
 
 Runs the backtest's own MEIC replay (`cherrypick.backtest.runner`, MEIC's own engine over the 60 s
 vendor store), provisionally because MEIC history has not unlocked. Design window only: `pm-200-1400`'s
@@ -39,6 +39,7 @@ from cherrypick.backtest import settings as _settings
 from cherrypick.core import home
 
 sys.path.insert(0, str(Path(__file__).parent))
+from cherrypick.core.procs import default_workers
 from meic_delta_grid_item23 import judge as _judge_vs  # noqa: E402
 from meic_delta_grid_item23 import own, paired, session_rows  # noqa: E402
 
@@ -97,7 +98,7 @@ def judge(tests: dict[str, dict]) -> None:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--window", choices=("design",), required=True)
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=default_workers())
     ap.add_argument("--json", default=None)
     args = ap.parse_args(argv)
 

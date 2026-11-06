@@ -58,6 +58,7 @@ from cherrypick.core import compare as core_compare
 from cherrypick.core import home as _home
 from cherrypick.core import ledgers as core_ledgers
 from cherrypick.core import looplock
+from cherrypick.core import procs as core_procs
 from cherrypick.core import progress as core_progress
 
 from . import paths, results, stats, store
@@ -241,7 +242,7 @@ def _fingerprint(conn, symbol: str, days: list[str], extra: dict | None = None) 
 
 
 def _replay(day: str, out: Path, arms: list[str], history_db: Path, settle: float, config: Path) -> dict:
-    proc = subprocess.run(
+    proc = core_procs.run_unthrottled(
         [sys.executable, "-m", "cherrypick.flies.cli", "--config", str(config), "replay", "--date", day,
          "--out", str(out),
          "--arms", ",".join(arms), "--history-db", str(history_db), "--settle-price", repr(settle)],
@@ -374,7 +375,7 @@ def _meic_replay(day: str, out: Path, arms: list[str], history_db: Path, settle:
         "MEIC_CONFIG": str(config),
         "MEIC_RISK_CONFIG": str(config.parent / "meic-risk.json"),
     }
-    proc = subprocess.run(
+    proc = core_procs.run_unthrottled(
         [sys.executable, "-m", "cherrypick.meic.replay", "run", "--date", day, "--out", str(out),
          "--arms", ",".join(arms), "--history-db", str(history_db), "--settle-price", repr(settle)],
         capture_output=True, text=True, timeout=3600, env=env,
@@ -457,7 +458,7 @@ def run(
     start: str | None = None,
     end: str | None = None,
     spend_holdout: bool = False,
-    workers: int = 4,
+    workers: int | None = None,
     extra_arms: dict[str, dict] | None = None,
     provisional: bool = False,
     unvalidated_holdout: bool = False,
@@ -577,7 +578,7 @@ def run(
     vix_by_session: dict[str, dict] = {}
     rep = core_progress.Reporter(f"backtest-run-{mod.name}")
     rep.phase("sessions", total=len(todo), unit="days")
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+    with ThreadPoolExecutor(max_workers=max(1, workers or core_procs.default_workers())) as pool:
         for day, out, rows in pool.map(one, todo):
             rep.advance("sessions", current=day)  # a refused session is done too: it is counted, not lost
             if not out.get("ok"):

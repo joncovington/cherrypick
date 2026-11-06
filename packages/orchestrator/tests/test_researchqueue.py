@@ -308,6 +308,39 @@ def test_one_run_takes_the_oldest_ready_row_and_notifies(files, tmp_path, monkey
     assert statuses == {"first": "done", "second": "queued"}
 
 
+def test_each_task_is_opted_out_of_power_throttling_at_its_spawn(files, tmp_path, monkeypatch):
+    """2026-11-05: the opt-out is not inherited, and the queue left its tasks to Windows, so every
+    study ran throttled under the service. Each spawned task is handed to `never_throttle_child`."""
+    monkeypatch.setattr(rq, "session_held", lambda state_dir=None: False)
+    monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
+    seen = []
+    monkeypatch.setattr(rq._procs, "never_throttle_child", lambda proc: seen.append(proc.pid) or True)
+    db = tmp_path / "q.db"
+    rq.add("item17", "fetch-chains", {"requests": str(files["req"])}, step="first", path=db)
+    result, spawned, _ = _run(db, "2026-10-24T20:00")
+    assert result["ran"] == 1 and len(spawned) == 1
+    assert seen == [4242]
+
+
+def test_each_task_runs_below_normal_priority(files, tmp_path, monkeypatch):
+    """Unthrottled research must take only the CPU the live and paper loops leave: each task is
+    started below normal priority, which its replays inherit."""
+    monkeypatch.setattr(rq, "session_held", lambda state_dir=None: False)
+    monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
+    monkeypatch.setattr(rq._procs, "BELOW_NORMAL_PRIORITY_CLASS", 0x4000)
+    flags = []
+
+    def spawn(argv, **kw):
+        flags.append(kw.get("creationflags", 0))
+        return _Proc(0, '{"complete": 1}')
+
+    db = tmp_path / "q.db"
+    rq.add("item17", "fetch-chains", {"requests": str(files["req"])}, step="first", path=db)
+    rq.run_next(path=db, now=lambda: _at("2026-10-24T20:00"), is_trading_day=_weekday, spawn=spawn,
+                notify=lambda *a: None)  # fmt: skip
+    assert len(flags) == 1 and flags[0] & 0x4000
+
+
 def test_the_job_runs_ready_rows_back_to_back_reading_config_before_each(files, tmp_path, monkeypatch):
     monkeypatch.setattr(rq, "session_held", lambda state_dir=None: False)
     monkeypatch.setattr(rq, "log_dir", lambda: tmp_path / "logs")
