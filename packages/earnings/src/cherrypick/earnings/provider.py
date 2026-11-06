@@ -63,6 +63,16 @@ def _fail(reason: str, **extra) -> dict:
     return {"ok": False, "reason": reason, **extra}
 
 
+def sane_book(bid, ask) -> bool:
+    """True when a bid/ask pair can be priced against: both present, a positive ask, a
+    non-negative bid, and not crossed. The stream path's rule (`streamcache.usable_quote`) for a
+    quote that carries no timestamp to judge staleness by, which is what the broker's REST payload
+    is: a 0/0 book or a crossed one is a torn read or a dead contract, never a price."""
+    if bid is None or ask is None:
+        return False
+    return not (ask <= 0 or bid < 0 or bid > ask)
+
+
 def spread_pct(quote: dict) -> float | None:
     """Bid-ask width as a fraction of mid — the sanity gate on whether a mark is worth acting on.
 

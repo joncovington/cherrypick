@@ -437,7 +437,7 @@ def evaluate_position(
     # The caller's session date when it supplies one. Reading the machine's date here made
     # the front-DTE stop depend on when the code happened to run rather than on the tick
     # being evaluated.
-    today = date.today() if now is None else now.date()
+    today = scanner.et_today() if now is None else now.date()
     days_to_front_expiration = (front_expiration - today).days
     if days_to_front_expiration <= cfg.get("exit_days_before_front_expiration", 5):
         return {"action": "close_all", "reason": "time_exit"}

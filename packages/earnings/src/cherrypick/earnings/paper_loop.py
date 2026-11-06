@@ -315,6 +315,13 @@ def _rest_snapshot(trade: dict) -> dict:
     }
     if any(q["bid"] is None or q["ask"] is None for q in quotes.values()):
         return {"ok": False, "reason": "missing_leg_quotes", "source": "rest"}
+    # The stream path refuses a crossed or empty book; the broker path must too, and it is the one
+    # that prices a close. The payload carries no quote time, so staleness cannot be judged here:
+    # a stale-but-sane book passes, which is why the close is still confirmed against this fetch
+    # taken moments earlier rather than against anything cached.
+    unusable = [s for s, q in quotes.items() if not provider.sane_book(q["bid"], q["ask"])]
+    if unusable:
+        return {"ok": False, "reason": "unusable_leg_quotes", "source": "rest", "unusable": unusable}
     widest = max((provider.spread_pct(q) or 0.0) for q in quotes.values())
     return {
         "ok": True,

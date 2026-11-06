@@ -195,12 +195,7 @@ _CAL = [{"symbol": "AAA", "date": "2026-10-20", "timing": "After market close"}]
 
 
 def _drive(monkeypatch, today):
-    class _Today(dt.date):
-        @classmethod
-        def today(cls):
-            return today
-
-    monkeypatch.setattr(harness, "_date", _Today)
+    monkeypatch.setattr(scanner, "et_today", lambda: today)
     monkeypatch.setattr(rank_strategies, "_ensure_dolt_running", lambda: True)
     monkeypatch.setattr(rank_strategies, "_verify_tastytrade_connection", lambda: True)
     monkeypatch.setattr(harness, "_capture_market_context", lambda day: None)

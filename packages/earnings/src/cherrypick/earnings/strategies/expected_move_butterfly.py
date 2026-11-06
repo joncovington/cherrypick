@@ -119,7 +119,7 @@ def fetch_price_and_expected_move(
                 "expected_move_pct": r["expected_move"] / r["price"],
                 "rr25": r["rr25"],
                 "side": r["side"],
-                "front_expiration_days": (r["front_exp"] - date.today()).days,
+                "front_expiration_days": (r["front_exp"] - scanner.et_today()).days,
                 "chain_complete": True,
                 **liquidity,
             },
