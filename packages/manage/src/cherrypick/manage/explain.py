@@ -89,6 +89,18 @@ def _close_cash(t: dict[str, Any]) -> str:
     return f"Closing at mid would {'bring in' if net >= 0 else 'cost'} about {_usd(net)}."
 
 
+def _skipped(t: dict[str, Any]) -> str:
+    """Why a trade opened inside its own time exit has no time exit."""
+    s = t.get("time_exit_skipped")
+    if not s:
+        return ""
+    return (
+        f" It was opened {s['entry_dte']} days before its {_day(s['expiration'])} expiry, inside the "
+        f"{s['limit']}-day time exit, so that exit does not apply: it is managed by its take profit, stop "
+        "and the expiry close."
+    )
+
+
 def _earnings(t: dict[str, Any]) -> str:
     er = t.get("earnings")
     if not er:
@@ -112,7 +124,7 @@ def _hold(t: dict[str, Any]) -> str:
             waits.append(f"cut it if it is down {_usd(-(stop['close_value'] - t['cost']))}")
         if te and te.get("date"):
             waits.append(f"close it on {_day(te['date'])} whatever happens")
-        return head + " It is waiting to " + "; ".join(waits) + "." + _earnings(t)
+        return head + " It is waiting to " + "; ".join(waits) + "." + _skipped(t) + _earnings(t)
     if t.get("kind") == "credit":
         if tp and tp.get("close_value") is not None:
             waits.append(f"take the profit once buying it back costs {_usd(tp['close_value'])} or less")
@@ -126,7 +138,7 @@ def _hold(t: dict[str, Any]) -> str:
     if te and te.get("date"):
         waits.append(f"close or roll it on {_day(te['date'])} whatever happens")
     tail = (" It is waiting to " + "; ".join(waits) + ".") if waits else ""
-    return head + tail + _earnings(t)
+    return head + tail + _skipped(t) + _earnings(t)
 
 
 def _earnings_hold(t: dict[str, Any]) -> str:
@@ -375,7 +387,7 @@ def _explain(t: dict[str, Any]) -> str:
             "the report."
         )
         return f"{pos} {why}{cash}{also}{conflict}{blocked}"
-    return f"{pos} {why}{cash}{also}{conflict}{_diagonal_blocked(rb)}{_earnings(t)}"
+    return f"{pos} {why}{cash}{also}{conflict}{_diagonal_blocked(rb)}{_skipped(t)}{_earnings(t)}"
 
 
 def _diagonal_blocked(rb: dict[str, Any]) -> str:

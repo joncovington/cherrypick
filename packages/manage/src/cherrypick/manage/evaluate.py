@@ -320,6 +320,7 @@ def evaluate_trade(
         "untested_roll": None,
         "wheel": None,
         "pmcc": None,
+        "time_exit_skipped": None,
         "fired": [],
         "exit_levels": {},
     }
@@ -527,7 +528,12 @@ def evaluate_trade(
                 )
             )
         te = rules["credit"]["time_exit"]
-        if trade["nearest_short_dte"] is not None:
+        inside = (
+            _entered_inside(trade, chain, short_expiries[0], int(te["dte"]), te, "credit.time_exit")
+            if trade["nearest_short_dte"] is not None
+            else None
+        )
+        if trade["nearest_short_dte"] is not None and not inside:
             trade["exit_levels"]["time_exit"] = {"date": _exit_day(_date(short_expiries[0]), int(te["dte"]))}
             if not off("credit.time_exit") and 0 <= trade["nearest_short_dte"] <= int(te["dte"]):
                 fired.append(
@@ -582,7 +588,12 @@ def evaluate_trade(
                 )
             )
         te = cr["time_exit"]
-        if trade["nearest_short_dte"] is not None:
+        inside = (
+            _entered_inside(trade, chain, short_expiries[0], int(te["dte"]), te, "credit.time_exit")
+            if trade["nearest_short_dte"] is not None
+            else None
+        )
+        if trade["nearest_short_dte"] is not None and not inside:
             trade["exit_levels"]["time_exit"] = {"date": _exit_day(_date(short_expiries[0]), int(te["dte"]))}
             if not off("credit.time_exit") and 0 <= trade["nearest_short_dte"] <= int(te["dte"]):
                 winner = pnl > 0
@@ -690,9 +701,14 @@ def evaluate_trade(
             limit = int(te["long_only_dte"])
             when = (_date(expiries[0]) - session).days if expiries else None
             anchor = _date(expiries[0]) if expiries else None
-        if anchor:
+        inside = (
+            _entered_inside(trade, chain, anchor.isoformat(), limit, te, "debit.time_exit")
+            if anchor
+            else None
+        )
+        if anchor and not inside:
             trade["exit_levels"]["time_exit"] = {"date": _exit_day(anchor, limit)}
-        if not off("debit.time_exit") and when is not None and 0 <= when <= limit:
+        if not inside and not off("debit.time_exit") and when is not None and 0 <= when <= limit:
             winner = pnl > 0
             fired.append(
                 _fire(
@@ -1496,6 +1512,51 @@ def _quoted_rolls(
     return out
 
 
+def _opened_on(chain: dict[str, Any] | None, symbols: set[str], action: str) -> date | None:
+    """The latest day an order in the chain did `action` ("sell to open", "buy to open") on any of
+    `symbols`, so a roll counts from the roll; None without a chain or such an order."""
+    days = [
+        _date(str(order.get("executed_at") or "")[:10])
+        for order in (chain or {}).get("orders") or []
+        for row in order.get("legs") or []
+        if " ".join(str(row.get("symbol") or "").split()) in symbols
+        and action in str(row.get("action") or "").lower()
+    ]
+    return max((d for d in days if d), default=None)
+
+
+def _entered_inside(
+    trade: dict[str, Any],
+    chain: dict[str, Any] | None,
+    expiry: str,
+    limit: int,
+    cfg: dict[str, Any],
+    rule: str,
+) -> dict[str, Any] | None:
+    """When the legs in `expiry` (the time exit's clock) were opened `limit` days or fewer before it,
+    the trade was entered inside its own time exit, which then never applies (user, 2026-11-06): the
+    21-day exit was tested on trades opened about 45 days out, and on one opened inside it, it only
+    says close on the first day. Recorded on the trade as `time_exit_skipped`; None when the exit
+    stands, including when no order chain says when the legs were opened."""
+    if not cfg.get("skip_if_entered_inside"):
+        return None
+    symbols = {_leg_symbol(leg) for leg in trade["legs"] if leg["right"] and leg["expiration"] == expiry}
+    opened = _opened_on(chain, symbols, "to open")
+    if opened is None:
+        return None
+    days = (_date(expiry) - opened).days
+    if days > limit:
+        return None
+    trade["time_exit_skipped"] = {
+        "rule": rule,
+        "expiration": expiry,
+        "opened_on": opened.isoformat(),
+        "entry_dte": days,
+        "limit": limit,
+    }
+    return trade["time_exit_skipped"]
+
+
 def _short_term_short(
     options: list[dict[str, Any]], chain: dict[str, Any] | None, cfg: dict[str, Any]
 ) -> dict[str, Any] | None:
@@ -1510,14 +1571,7 @@ def _short_term_short(
     if not any(leg["quantity"] > 0 and leg["expiration"] > front for leg in options):
         return None
     symbols = {_leg_symbol(leg) for leg in shorts if leg["expiration"] == front}
-    sold = [
-        str(order.get("executed_at") or "")[:10]
-        for order in chain.get("orders") or []
-        for row in order.get("legs") or []
-        if " ".join(str(row.get("symbol") or "").split()) in symbols
-        and "sell to open" in str(row.get("action") or "").lower()
-    ]
-    sold_on = max((_date(day) for day in sold if _date(day)), default=None)
+    sold_on = _opened_on(chain, symbols, "sell to open")
     if sold_on is None:
         return None
     days = (_date(front) - sold_on).days

@@ -34,9 +34,11 @@
       "confidence": 50
     },
     "time_exit": {
+      "_comment": "skip_if_entered_inside: a trade whose nearest short was opened dte days or fewer before its expiry (read off the order chain) skips this exit and is managed by its take profit, stop and the expiry close.",
       "enabled": true,
       "dte": 21,
       "roll_if_profitable": true,
+      "skip_if_entered_inside": true,
       "confidence": 75
     },
     "breached": {
@@ -80,6 +82,8 @@
       "long_only_dte": 14,
       "short_term_short_days": 14,
       "time_spread_long_dte": 21,
+      "_skip_comment": "skip_if_entered_inside: a trade whose clock leg was opened inside its own exit (a debit spread bought at short_leg_dte or fewer, a long option at long_only_dte or fewer) skips it.",
+      "skip_if_entered_inside": true,
       "roll_if_profitable": true,
       "confidence": 70
     }

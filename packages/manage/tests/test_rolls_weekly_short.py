@@ -103,9 +103,21 @@ def test_a_short_sold_a_month_out_keeps_the_21_day_exit():
 
 
 def test_the_long_inside_21_days_fires_the_time_exit():
-    t = run(
-        date(2026, 12, 28), legs=diagonal(short_exp="2027-01-08"), chain=opened("2026-12-28", "2027-01-08")
+    # The long bought Nov 25 (51 days out); the current short sold in a roll on Dec 28.
+    c = opened()
+    c["orders"].append(
+        {
+            "executed_at": "2026-12-28T15:00:00Z",
+            "role": "roll",
+            "net": 100.0,
+            "fees": -2.0,
+            "legs": [
+                {"symbol": occ(SHORT, 110), "action": "Buy to Close", "quantity": 1, "price": 1.0},
+                {"symbol": occ("2027-01-08", 110), "action": "Sell to Open", "quantity": 1, "price": 2.0},
+            ],
+        }
     )
+    t = run(date(2026, 12, 28), legs=diagonal(short_exp="2027-01-08"), chain=c)
     assert fired(t)["debit.time_exit"] == ev.ROLL_OR_CLOSE
     assert "the long is 18 DTE" in next(f["reason"] for f in t["fired"] if f["rule"] == "debit.time_exit")
     assert "runs on its long's clock" in t["explanation"]

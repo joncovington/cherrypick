@@ -75,7 +75,17 @@ DEFAULT_RULES: dict[str, Any] = {
             # licensed history (its plan and results stay under ~/.cherrypick, by the data licence).
             "confidence": 50,
         },
-        "time_exit": {"enabled": True, "dte": 21, "roll_if_profitable": True, "confidence": 75},
+        "time_exit": {
+            "enabled": True,
+            "dte": 21,
+            "roll_if_profitable": True,
+            # A trade whose nearest short was opened `dte` days or fewer before its expiry (read off the
+            # order chain) was entered inside this exit, which then does not apply: it is managed by its
+            # take profit, stop and the expiry close. The exit was tested on trades opened about 45 days
+            # out; one opened inside it was only ever told to close on day one (user, 2026-11-06).
+            "skip_if_entered_inside": True,
+            "confidence": 75,
+        },
         # Thesis rule: a short strike is in the money and what is left to win, against what is left to
         # lose, is below the entry standard (1/3 of width = 0.5 reward per unit of risk).
         "breached": {"enabled": True, "min_reward_to_risk": 0.50, "confidence": 70},
@@ -117,6 +127,9 @@ DEFAULT_RULES: dict[str, Any] = {
             # short's clock stands.
             "short_term_short_days": 14,
             "time_spread_long_dte": 21,
+            # As credit.time_exit's: a trade whose clock leg was opened inside its own exit (a debit
+            # spread bought at 21 DTE or fewer, a long option at 14 or fewer) skips it.
+            "skip_if_entered_inside": True,
             "roll_if_profitable": True,
             "confidence": 70,
         },
