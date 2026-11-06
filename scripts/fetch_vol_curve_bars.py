@@ -19,6 +19,10 @@ replaces the one held, so a corrected candle lands.
 refetched. The summary says the earliest bar received and whether the feed flagged the burst
 SNAP_SNIP (clipped).
 
+**Exit.** Non-zero on a failed fetch, missing credentials, or when one of `REQUIRED` (the tenors the
+curve's state is read from) comes back with no bars, so the job retries. Any other series coming back
+empty is a warning in the summary, not a failure: one quiet symbol should not fail the job every day.
+
 Read-only against the broker. A script, not package code, because it reaches the network. Run after
 the indexes' final prints (16:15 ET).
 
@@ -43,6 +47,8 @@ from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 
 _ET = ZoneInfo("America/New_York")
 SYMBOLS = ("VIX1D", "VIX9D", "VIX", "VIX3M", "VIX6M", "VIX1Y", "VVIX", "SPX")
+# The tenors the curve's state is read from (item 51): an empty one fails the run, any other warns.
+REQUIRED = ("VIX9D", "VIX", "VIX3M")
 WIDTH_MS = {"5m": 5 * 60_000, "1h": 60 * 60_000}
 # How far back the feed gives, with a margin: it clips to about 3 months of 5m and 10 months of 1h.
 DEPTH_DAYS = {"5m": 120, "1h": 400}
@@ -218,6 +224,16 @@ async def run(session, conn: sqlite3.Connection, now: datetime, full: bool = Fal
     return out
 
 
+def outcome(summary: list[dict]) -> dict:
+    """The run's verdict from its per-series summary: `ok` false only when a `REQUIRED` series came
+    back with no bars; every empty series is listed either way."""
+    empty = [f"{r['symbol']} {r['interval']}" for r in summary if r["received"] == 0]
+    failed = [
+        f"{r['symbol']} {r['interval']}" for r in summary if r["received"] == 0 and r["symbol"] in REQUIRED
+    ]
+    return {"ok": not failed, "empty": empty, "required_empty": failed}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--full", action="store_true", help="refetch the feed's full depth for every series")
@@ -238,9 +254,9 @@ def main(argv=None) -> int:
             return 1
     finally:
         conn.close()
-    empty = [f"{r['symbol']} {r['interval']}" for r in summary if r["received"] == 0]
-    print(json.dumps({"ok": not empty, "empty": empty, "db": str(db_path()), "series": summary}, indent=2))
-    return 0 if not empty else 1
+    verdict = outcome(summary)
+    print(json.dumps({**verdict, "db": str(db_path()), "series": summary}, indent=2))
+    return 0 if verdict["ok"] else 1
 
 
 if __name__ == "__main__":

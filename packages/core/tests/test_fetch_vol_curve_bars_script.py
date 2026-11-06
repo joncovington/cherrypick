@@ -145,3 +145,18 @@ def test_run_asks_deep_for_a_series_never_held_and_shallow_for_one_held():
     vix = next(r for r in summary if r["symbol"] == "VIX" and r["interval"] == "5m")
     spx = next(r for r in summary if r["symbol"] == "SPX" and r["interval"] == "5m")
     assert vix["deep"] is False and spx["deep"] is True and vix["written"] == 1
+
+
+def test_an_empty_series_warns_unless_it_is_a_tenor_the_state_is_read_from():
+    def row(sym, interval, received):
+        return {"symbol": sym, "interval": interval, "received": received}
+
+    full = [row(s, iv, 10) for s in fvc.SYMBOLS for iv in fvc.WIDTH_MS]
+    assert fvc.outcome(full) == {"ok": True, "empty": [], "required_empty": []}
+    quiet = [r if (r["symbol"], r["interval"]) != ("VIX1D", "5m") else row("VIX1D", "5m", 0) for r in full]
+    got = fvc.outcome(quiet)
+    assert got["ok"] and got["empty"] == ["VIX1D 5m"] and got["required_empty"] == []
+    for sym in fvc.REQUIRED:
+        gone = [r if (r["symbol"], r["interval"]) != (sym, "1h") else row(sym, "1h", 0) for r in full]
+        got = fvc.outcome(gone)
+        assert not got["ok"] and got["required_empty"] == [f"{sym} 1h"]
