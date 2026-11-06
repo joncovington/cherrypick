@@ -33,7 +33,7 @@ before the close and closes in the next morning's close window (the calendars ca
 unattended paper loop manages positions instead: a loser closes on the first morning, a winner short
 of its target can be carried up to three trading sessions, and anything that expires is settled at
 intrinsic. Nothing but the expiry close and the pin guard acts on the entry session, and
-`expected_move_butterfly` is held to the 15:30 expiry close or its take-profit.
+`expected_move_butterfly` is held to the 15:20 expiry close or its take-profit.
 
 Every strategy is **defined-risk**: max loss is known at entry. Undefined-risk/naked strategies
 (naked straddles, strangles, naked puts/calls) were deliberately excluded — a single-name

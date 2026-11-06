@@ -346,7 +346,7 @@
       "_strikes_note": "Body: the listed strike nearest spot +/- body_em_multiple x EM (EM = 0.85 x the front ATM straddle). Wings: the symmetric listed distance nearest wing_em_multiple x EM, refused (no_symmetric_wings) when none lies within 0.5-1.5x of it.",
       "body_em_multiple": 1.0,
       "wing_em_multiple": 0.85,
-      "_exit_note": "Held to management's 15:30 expiry close, or closed when the fly is worth take_profit_width_frac of its width at the far touch. No stop (the debit is the max loss) and no first-morning loser close: in the study closing on the reaction day lost most of the six rules compared. House rule from the study, not research-backed.",
+      "_exit_note": "Held to management's 15:20 expiry close, or closed when the fly is worth take_profit_width_frac of its width at the far touch. No stop (the debit is the max loss) and no first-morning loser close: in the study closing on the reaction day lost most of the six rules compared. House rule from the study, not research-backed.",
       "take_profit_width_frac": 0.5,
       "max_risk_per_trade_pct": 0.05,
       "min_price": 10.0,

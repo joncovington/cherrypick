@@ -13,7 +13,7 @@ Two shared facts apply to every strategy below, so they aren't repeated seven ti
   the morning after entry (changed 2026-08-12; a measurement break, never pool across it). Each
   strategy owns its own profit target and stop, listed below; on top of those sit the rules that need
   more than one tick to see — the PEAD gate (a winner may carry, a loser closes the first morning),
-  a three-session cap on the four overnight structures, a pin guard on expiration day, and the 15:30
+  a three-session cap on the four overnight structures, a pin guard on expiration day, and the 15:20
   expiry close on any leg's expiration day. Nothing but those last two acts on the entry session
   (`entry_session`, 2026-10-17). `expected_move_butterfly` is exempt from the PEAD gate and the
   session cap. Marks are
@@ -241,7 +241,7 @@ Between them nothing opens (`direction_signal_neutral`). The cuts are the 2020-2
 wings are the symmetric listed distance nearest `wing_em_multiple` x EM (0.85). A candidate with no
 symmetric pair within 0.5-1.5x of that is refused; the wings are never snapped one at a time.
 
-**Exit:** held to the 15:30 expiry close, or closed at the far touch once the fly is worth
+**Exit:** held to the 15:20 expiry close, or closed at the far touch once the fly is worth
 `take_profit_width_frac` (0.5) of its width. No stop: the debit is the max loss. It is not in
 `management.OVERNIGHT`, so neither the first-morning loser close nor the three-session cap applies.
 In the study, closing on the reaction day lost the most of the six exit rules compared.

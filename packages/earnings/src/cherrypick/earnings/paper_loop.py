@@ -49,6 +49,7 @@ from cherrypick.earnings import (
     advice,
     costs,
     db_paper,
+    dividends,
     management,
     provider,
     scanner,
@@ -484,7 +485,7 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
             # No execution cap and no exec window: settling is bookkeeping about something that has
             # already happened, not an order competing for the broker's attention. It is also a
             # FAILED exit for any leg that reached its expiration: `management._expiry_close_due`
-            # trades every position out from 15:30 on expiration day, so a settlement means that
+            # trades every position out from 15:20 on expiration day, so a settlement means that
             # close never happened (no quotes, or the loop was down). The event says so.
             result = close_position(trade, settled, settle_reason, config, now)
             if not result.get("ok"):
@@ -538,12 +539,14 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
             sessions_held=sessions_held,
             is_first_check_of_day=first_check,
             open_legs=open_legs,
+            dividend_lookup=dividends.lookup_for(config),
         )
+        urgent = bool(decision.detail.get("urgent"))
         gate = (
             None
             if not decision.closes
             else management.execution_gate(
-                snap, config, trade.get("strategy") or "", now=now, reason=decision.reason
+                snap, config, trade.get("strategy") or "", now=now, reason=decision.reason, urgent=urgent
             )
         )
         patience = None
@@ -556,7 +559,12 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
         # The per-tick cap spreads discretionary exits across ticks; an expiry close is not
         # discretionary, and a book with many positions expiring the same day must not queue
         # past the bell behind it.
-        if decision.closes and actions >= max_executions and decision.reason not in management.MUST_EXIT:
+        if (
+            decision.closes
+            and actions >= max_executions
+            and decision.reason not in management.MUST_EXIT
+            and not urgent
+        ):
             gate = gate or "tick_execution_cap"
 
         if not decision.closes or gate:

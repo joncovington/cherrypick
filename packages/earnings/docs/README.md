@@ -52,7 +52,7 @@ The two calendars stay registered but open nothing in the forced-sampling books 
   The unattended paper loop manages positions instead (since 2026-08-12): a loser closes on the
   first morning, a winner short of target may be carried up to three trading sessions
   (`management.hold_winners_max_days`), nothing acts on the entry session but the expiry close and
-  the pin guard, nothing is held through a leg's expiration (the 15:30 expiry close), and an expired
+  the pin guard, nothing is held through a leg's expiration (the 15:20 expiry close), and an expired
   position is settled at intrinsic.
 - **Entry Gate**: IV/RV ratio, term structure, and liquidity — see
   [Screening Criteria](./screening-criteria.md) for the full hard-filter list.
@@ -132,10 +132,10 @@ Calendar Strategies (ATM Calendar, Double Calendar):
 Expected-Move Butterfly (paper only):
   Profit Target: fly worth 50% of its width
   Stop Loss: none (the debit is the max loss)
-  Held to the 15:30 expiry close otherwise
+  Held to the 15:20 expiry close otherwise
 
 Every strategy (paper loop): held on its entry session; closed from
-15:30 on any leg's expiration day.
+15:20 on any leg's expiration day.
 ```
 
 In the agent-driven loop every strategy closes by the next morning's close window regardless of
