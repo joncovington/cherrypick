@@ -89,6 +89,18 @@ def _close_cash(t: dict[str, Any]) -> str:
     return f"Closing at mid would {'bring in' if net >= 0 else 'cost'} about {_usd(net)}."
 
 
+def _skipped(t: dict[str, Any]) -> str:
+    """Why a trade opened inside its own time exit has no time exit."""
+    s = t.get("time_exit_skipped")
+    if not s:
+        return ""
+    return (
+        f" It was opened {s['entry_dte']} days before its {_day(s['expiration'])} expiry, inside the "
+        f"{s['limit']}-day time exit, so that exit does not apply: it is managed by its take profit, stop "
+        "and the expiry close."
+    )
+
+
 def _earnings(t: dict[str, Any]) -> str:
     er = t.get("earnings")
     if not er:
@@ -112,7 +124,7 @@ def _hold(t: dict[str, Any]) -> str:
             waits.append(f"cut it if it is down {_usd(-(stop['close_value'] - t['cost']))}")
         if te and te.get("date"):
             waits.append(f"close it on {_day(te['date'])} whatever happens")
-        return head + " It is waiting to " + "; ".join(waits) + "." + _earnings(t)
+        return head + " It is waiting to " + "; ".join(waits) + "." + _skipped(t) + _earnings(t)
     if t.get("kind") == "credit":
         if tp and tp.get("close_value") is not None:
             waits.append(f"take the profit once buying it back costs {_usd(tp['close_value'])} or less")
@@ -126,7 +138,7 @@ def _hold(t: dict[str, Any]) -> str:
     if te and te.get("date"):
         waits.append(f"close or roll it on {_day(te['date'])} whatever happens")
     tail = (" It is waiting to " + "; ".join(waits) + ".") if waits else ""
-    return head + tail + _earnings(t)
+    return head + tail + _skipped(t) + _earnings(t)
 
 
 def _earnings_hold(t: dict[str, Any]) -> str:
@@ -226,6 +238,14 @@ def _explain(t: dict[str, Any]) -> str:
     elif rule in ("credit.time_exit", "debit.time_exit"):
         dte = t.get("nearest_short_dte")
         when = f"The nearest short leg expires in {dte} days. " if dte is not None else ""
+        st = t.get("short_term_short")
+        te_day = (t.get("exit_levels") or {}).get("time_exit", {}).get("date")
+        if st and rule == "debit.time_exit":
+            # A short written week by week runs on the long's clock, not its own.
+            when = (
+                f"The short is sold week by week, so this trade runs on its long's clock, and the long's "
+                f"time exit ({_day(te_day)}) has come. "
+            )
         if action == "ROLL_OR_CLOSE":
             why = (
                 when + "In the last three weeks the remaining premium comes with the most risk, so the rule "
@@ -318,7 +338,9 @@ def _explain(t: dict[str, Any]) -> str:
         why = (
             f"The short side of this diagonal is due ({due}). Rather than close the trade, roll the short "
             f"structure out: close the {front} legs and sell the same strikes for {when}, about {per_unit} "
-            f"a unit (roughly {total} in credit, an estimate from today's volatility). The long keeps "
+            f"a unit (roughly {total} in credit, "
+            + ("an estimate from today's volatility" if r.get("modelled", True) else "at today's quoted mids")
+            + "). The long keeps "
             "working underneath, and the new short stays beyond its breakeven. Only send it for a net "
             "credit; if it will not fill for one, close the short side instead."
         )
@@ -365,7 +387,7 @@ def _explain(t: dict[str, Any]) -> str:
             "the report."
         )
         return f"{pos} {why}{cash}{also}{conflict}{blocked}"
-    return f"{pos} {why}{cash}{also}{conflict}{_diagonal_blocked(rb)}{_earnings(t)}"
+    return f"{pos} {why}{cash}{also}{conflict}{_diagonal_blocked(rb)}{_skipped(t)}{_earnings(t)}"
 
 
 def _diagonal_blocked(rb: dict[str, Any]) -> str:

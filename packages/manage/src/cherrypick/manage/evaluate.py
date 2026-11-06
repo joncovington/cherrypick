@@ -74,6 +74,8 @@ DIRECTION = {
     ROLL_OR_CLOSE: "roll",
     ROLL_FOR_CREDIT: "roll",
 }
+# Shorts sold against a later long: the shapes whose short can be written week by week.
+TIME_SPREADS = {"diagonal", "calendar"}
 
 
 # --------------------------------------------------------------------------- small helpers
@@ -264,6 +266,7 @@ def evaluate_trade(
     pmcc_ctx: dict[str, Any] | None = None,
     broker_greeks: dict[str, dict] | None = None,
     trade_id: str | None = None,
+    roll_out: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """`trade_id` is the trade's stable ID (tradeids.py): its own overrides (`trades.<ID>`: intent, note,
     disable) are read over the name's (`positions.<SYM>`).
@@ -274,7 +277,8 @@ def evaluate_trade(
     "<UNDERLYING>|<expiry>", that a strangle's untested side is rolled along. `wheel_ctx` is the wheel
     cycles holding this trade's legs (`_wheel_context`), which the wheel rules read; `pmcc_ctx` the PMCC
     view entries whose short this trade holds (`_pmcc_context`), which the PMCC rules read.
-    `broker_greeks` is the snapshot's per-leg broker greeks, whose IV a leg with a wide quote takes."""
+    `broker_greeks` is the snapshot's per-leg broker greeks, whose IV a leg with a wide quote takes.
+    `roll_out` is the snapshot's roll-out chains (v14), which a weekly short's roll is priced on."""
     metrics = metrics or {}
     spot = _f(metrics.get("last"))
     pr = rules["pricing"]
@@ -316,6 +320,7 @@ def evaluate_trade(
         "untested_roll": None,
         "wheel": None,
         "pmcc": None,
+        "time_exit_skipped": None,
         "fired": [],
         "exit_levels": {},
     }
@@ -378,6 +383,13 @@ def evaluate_trade(
         trade["profile"] = profile
 
     trade["shape"] = _shapes.classify(options, cost)
+    # A diagonal or calendar whose short was sold close to its expiry is managed on the long's clock.
+    short_term = (
+        _short_term_short(options, chain, rules["debit"]["time_exit"])
+        if trade["shape"] in TIME_SPREADS
+        else None
+    )
+    trade["short_term_short"] = short_term
     # A trade opened near even money (a super bear or bull, a risk reversal) earns from direction, not
     # premium: a percentage of a tiny credit or debit measures nothing, so it is judged on what it can
     # still win and lose instead.
@@ -516,7 +528,12 @@ def evaluate_trade(
                 )
             )
         te = rules["credit"]["time_exit"]
-        if trade["nearest_short_dte"] is not None:
+        inside = (
+            _entered_inside(trade, chain, short_expiries[0], int(te["dte"]), te, "credit.time_exit")
+            if trade["nearest_short_dte"] is not None
+            else None
+        )
+        if trade["nearest_short_dte"] is not None and not inside:
             trade["exit_levels"]["time_exit"] = {"date": _exit_day(_date(short_expiries[0]), int(te["dte"]))}
             if not off("credit.time_exit") and 0 <= trade["nearest_short_dte"] <= int(te["dte"]):
                 fired.append(
@@ -571,7 +588,12 @@ def evaluate_trade(
                 )
             )
         te = cr["time_exit"]
-        if trade["nearest_short_dte"] is not None:
+        inside = (
+            _entered_inside(trade, chain, short_expiries[0], int(te["dte"]), te, "credit.time_exit")
+            if trade["nearest_short_dte"] is not None
+            else None
+        )
+        if trade["nearest_short_dte"] is not None and not inside:
             trade["exit_levels"]["time_exit"] = {"date": _exit_day(_date(short_expiries[0]), int(te["dte"]))}
             if not off("credit.time_exit") and 0 <= trade["nearest_short_dte"] <= int(te["dte"]):
                 winner = pnl > 0
@@ -663,23 +685,37 @@ def evaluate_trade(
                 )
             )
         te = db["time_exit"]
-        if shorts:
+        clock = "nearest short" if shorts else "nearest leg"
+        if short_term:
+            # The short is written week by week: the trade's clock is the long it is sold against.
+            anchor = min(
+                _date(leg["expiration"])
+                for leg in options
+                if leg["quantity"] > 0 and leg["expiration"] > short_term["expiration"]
+            )
+            limit, when, clock = int(te["time_spread_long_dte"]), (anchor - session).days, "the long"
+        elif shorts:
             limit, when = int(te["short_leg_dte"]), trade["nearest_short_dte"]
             anchor = _date(short_expiries[0])
         else:
             limit = int(te["long_only_dte"])
             when = (_date(expiries[0]) - session).days if expiries else None
             anchor = _date(expiries[0]) if expiries else None
-        if anchor:
+        inside = (
+            _entered_inside(trade, chain, anchor.isoformat(), limit, te, "debit.time_exit")
+            if anchor
+            else None
+        )
+        if anchor and not inside:
             trade["exit_levels"]["time_exit"] = {"date": _exit_day(anchor, limit)}
-        if not off("debit.time_exit") and when is not None and 0 <= when <= limit:
+        if not inside and not off("debit.time_exit") and when is not None and 0 <= when <= limit:
             winner = pnl > 0
             fired.append(
                 _fire(
                     "debit.time_exit",
                     ROLL_OR_CLOSE if winner and te["roll_if_profitable"] else CLOSE,
                     te["confidence"],
-                    f"{'nearest short' if shorts else 'nearest leg'} is {when} DTE (exit at {limit}); "
+                    f"{clock} is {when} DTE (exit at {limit}); "
                     + (
                         "profitable, so the shorts may roll out, for a net credit only"
                         if winner
@@ -950,9 +986,19 @@ def evaluate_trade(
     rd = rules["roll"]["diagonal_short"]
     names = {f["rule"] for f in fired}
     due = {"credit.time_exit", "debit.time_exit", "legs.short_take_profit"} & names
+    if short_term:
+        # A short written week by week is due when the expiry close reaches it, not three weeks out.
+        front = {_label(leg) for leg in shorts if leg["expiration"] == short_term["expiration"]}
+        if any(
+            f["rule"] == "expiry" and f["action"] == CLOSE_LEGS and front & set(f["legs"] or [])
+            for f in fired
+        ):
+            due.add("expiry")
     stopped = {"debit.stop", "credit.stop"} & names
     if due and spot and not off("roll.diagonal_short"):
-        roll, blocked = _diagonal_roll(options, session, spot, rate, rd, cost)
+        roll, blocked = _diagonal_roll(
+            options, session, spot, rate, rd, cost, short_term=short_term is not None, roll_out=roll_out
+        )
         if stopped and (roll or blocked):
             # A stopped trade is not rolled whatever else holds: its long has failed.
             blocked, roll = {"reason": "stopped", "rules": sorted(stopped)}, None
@@ -974,7 +1020,9 @@ def evaluate_trade(
                     rd["confidence"],
                     f"roll the {roll['from']} short structure out to {roll['expiration']} "
                     "at the same strikes "
-                    f"for about {roll['credit']:.2f} cr (modelled), keeping the long; "
+                    f"for about {roll['credit']:.2f} cr "
+                    f"({'modelled' if roll['modelled'] else 'quoted mid'}), "
+                    "keeping the long; "
                     "only for a net credit",
                     roll["legs"],
                 )
@@ -1361,12 +1409,17 @@ def _diagonal_roll(
     rate: float,
     cfg: dict[str, Any],
     cost: float,
+    *,
+    short_term: bool = False,
+    roll_out: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """(roll, None) or (None, why not) for a diagonal's short structure.
+    """(roll, None) or (None, why not) for a diagonal's (or calendar's) short structure.
 
     The structure is every leg in the nearest expiry that holds a short; the longs it is sold against
     are the legs expiring later. Priced at each leg's own IV on the new expiry (flat term structure), so
-    the credit is an estimate.
+    the credit is an estimate. A `short_term` short (sold week by week) rolls to the first expiry the
+    snapshot's roll-out chains quote at least `short_term_out_days` later, else the first monthly that
+    far out, and takes a leg's quoted mid where that chain has its strike.
     """
     shorts = [leg for leg in options if leg["quantity"] < 0]
     if not shorts:
@@ -1376,16 +1429,27 @@ def _diagonal_roll(
     longs = [leg for leg in options if leg["expiration"] > front and leg["quantity"] > 0]
     if not longs or any(leg["iv"] is None or leg["mid"] is None for leg in group):
         return None, None  # not a diagonal, or the front cannot be priced
-    new_exp = _monthly_on_or_after(_date(front) + timedelta(days=int(cfg["out_days"])))
+    out_days = int(cfg["short_term_out_days" if short_term else "out_days"])
+    min_long = int(cfg["short_term_min_long_days" if short_term else "min_long_days"])
+    earliest = _date(front) + timedelta(days=out_days)
+    quoted = _quoted_rolls(roll_out, group, earliest) if short_term else {}
+    new_exp = min(quoted) if quoted else _monthly_on_or_after(earliest)
     long_exp = min(_date(leg["expiration"]) for leg in longs)
-    if (long_exp - new_exp).days < int(cfg["min_long_days"]):
+    if (long_exp - new_exp).days < min_long:
         return None, {
             "reason": "long_too_short",
             "long_expiration": long_exp.isoformat(),
-            "min_days": int(cfg["min_long_days"]),
+            "min_days": min_long,
         }
     years = (new_exp - session).days / 365.0
-    new_mids = [pricing.price(spot, leg["strike"], years, leg["iv"], leg["right"], rate) for leg in group]
+    on_chain = quoted.get(new_exp) or {}
+    new_mids = [
+        on_chain[(leg["right"], leg["strike"])]
+        if (leg["right"], leg["strike"]) in on_chain
+        else pricing.price(spot, leg["strike"], years, leg["iv"], leg["right"], rate)
+        for leg in group
+    ]
+    modelled = any((leg["right"], leg["strike"]) not in on_chain for leg in group)
     unit = reduce(math.gcd, [int(abs(leg["quantity"])) or 1 for leg in group])
     net = sum(leg["quantity"] * (leg["mid"] - new) for leg, new in zip(group, new_mids, strict=True))
     credit = net / unit
@@ -1404,7 +1468,11 @@ def _diagonal_roll(
     ]
     open_rows = [
         f"{'STO' if leg['quantity'] < 0 else 'BTO'} {abs(leg['quantity']):g} {new_exp.isoformat()} "
-        f"{leg['strike']:g}{leg['right']} @ ~{new:.2f} (modelled)"
+        + (
+            f"{leg['strike']:g}{leg['right']} @ {new:.2f} (quoted mid)"
+            if (leg["right"], leg["strike"]) in on_chain
+            else f"{leg['strike']:g}{leg['right']} @ ~{new:.2f} (modelled)"
+        )
         for leg, new in zip(group, new_mids, strict=True)
     ]
     return (
@@ -1415,11 +1483,101 @@ def _diagonal_roll(
             "strike": shorts[0]["strike"],
             "credit": credit,
             "net": net * pricing.MULTIPLIER,
-            "modelled": True,
+            "modelled": modelled,
             "legs": close_rows + open_rows,
         },
         None,
     )
+
+
+def _quoted_rolls(
+    roll_out: dict[str, Any] | None, group: list[dict[str, Any]], earliest: date
+) -> dict[date, dict[tuple[str, float], float]]:
+    """{expiry: {(right, strike): mid}} for each expiry on or after `earliest` that the snapshot's
+    roll-out chains (v14) quote for the short structure's name, two-sided quotes only. An expiry
+    there is a listed one, so a weekly roll never lands on a date the name does not trade."""
+    out: dict[date, dict[tuple[str, float], float]] = {}
+    name = str(group[0].get("underlying") or "")
+    for right in sorted({leg["right"] for leg in group}):
+        for chain in _wheel.roll_out_for(roll_out, name, right):
+            exp = _date(chain["expiration"])
+            if exp is None or exp < earliest:
+                continue
+            book = out.setdefault(exp, {})
+            for o in chain["options"]:
+                k, bid, ask = _f(o.get("strike")), _f(o.get("bid")), _f(o.get("ask"))
+                if k is None or bid is None or ask is None or bid < 0 or ask <= 0 or ask < bid:
+                    continue
+                book.setdefault((right, k), (bid + ask) / 2.0)
+    return out
+
+
+def _opened_on(chain: dict[str, Any] | None, symbols: set[str], action: str) -> date | None:
+    """The latest day an order in the chain did `action` ("sell to open", "buy to open") on any of
+    `symbols`, so a roll counts from the roll; None without a chain or such an order."""
+    days = [
+        _date(str(order.get("executed_at") or "")[:10])
+        for order in (chain or {}).get("orders") or []
+        for row in order.get("legs") or []
+        if " ".join(str(row.get("symbol") or "").split()) in symbols
+        and action in str(row.get("action") or "").lower()
+    ]
+    return max((d for d in days if d), default=None)
+
+
+def _entered_inside(
+    trade: dict[str, Any],
+    chain: dict[str, Any] | None,
+    expiry: str,
+    limit: int,
+    cfg: dict[str, Any],
+    rule: str,
+) -> dict[str, Any] | None:
+    """When the legs in `expiry` (the time exit's clock) were opened `limit` days or fewer before it,
+    the trade was entered inside its own time exit, which then never applies (user, 2026-11-06): the
+    21-day exit was tested on trades opened about 45 days out, and on one opened inside it, it only
+    says close on the first day. Recorded on the trade as `time_exit_skipped`; None when the exit
+    stands, including when no order chain says when the legs were opened."""
+    if not cfg.get("skip_if_entered_inside"):
+        return None
+    symbols = {_leg_symbol(leg) for leg in trade["legs"] if leg["right"] and leg["expiration"] == expiry}
+    opened = _opened_on(chain, symbols, "to open")
+    if opened is None:
+        return None
+    days = (_date(expiry) - opened).days
+    if days > limit:
+        return None
+    trade["time_exit_skipped"] = {
+        "rule": rule,
+        "expiration": expiry,
+        "opened_on": opened.isoformat(),
+        "entry_dte": days,
+        "limit": limit,
+    }
+    return trade["time_exit_skipped"]
+
+
+def _short_term_short(
+    options: list[dict[str, Any]], chain: dict[str, Any] | None, cfg: dict[str, Any]
+) -> dict[str, Any] | None:
+    """A time spread's nearest short when it was sold `short_term_short_days` or fewer before its
+    expiry: {expiration, sold_on, days}. Read off the order chain (the latest order that sold one of
+    its legs to open, so a roll counts from the roll); None without a chain, without a long expiring
+    after the short, or when the short was sold further out."""
+    shorts = [leg for leg in options if leg["quantity"] < 0]
+    if not chain or not shorts:
+        return None
+    front = min(leg["expiration"] for leg in shorts)
+    if not any(leg["quantity"] > 0 and leg["expiration"] > front for leg in options):
+        return None
+    symbols = {_leg_symbol(leg) for leg in shorts if leg["expiration"] == front}
+    sold_on = _opened_on(chain, symbols, "sell to open")
+    if sold_on is None:
+        return None
+    days = (_date(front) - sold_on).days
+    if days > int(cfg["short_term_short_days"]):
+        return None
+    return {"expiration": front, "sold_on": sold_on.isoformat(), "days": days}
 
 
 def _monthly_on_or_after(day: date) -> date:
@@ -2422,6 +2580,7 @@ def evaluate(
                     _pmcc_context(pmcc_view, group, account),
                     snapshot.get("broker_greeks"),
                     trade_id=ident["trade_id"],
+                    roll_out=snapshot.get("roll_out_chains"),
                 )
                 trade["trade_id"] = ident["trade_id"]
                 trade["trade_id_provisional"] = ident["provisional"]

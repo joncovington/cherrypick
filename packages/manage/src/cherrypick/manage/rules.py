@@ -75,7 +75,17 @@ DEFAULT_RULES: dict[str, Any] = {
             # licensed history (its plan and results stay under ~/.cherrypick, by the data licence).
             "confidence": 50,
         },
-        "time_exit": {"enabled": True, "dte": 21, "roll_if_profitable": True, "confidence": 75},
+        "time_exit": {
+            "enabled": True,
+            "dte": 21,
+            "roll_if_profitable": True,
+            # A trade whose nearest short was opened `dte` days or fewer before its expiry (read off the
+            # order chain) was entered inside this exit, which then does not apply: it is managed by its
+            # take profit, stop and the expiry close. The exit was tested on trades opened about 45 days
+            # out; one opened inside it was only ever told to close on day one (user, 2026-11-06).
+            "skip_if_entered_inside": True,
+            "confidence": 75,
+        },
         # Thesis rule: a short strike is in the money and what is left to win, against what is left to
         # lose, is below the entry standard (1/3 of width = 0.5 reward per unit of risk).
         "breached": {"enabled": True, "min_reward_to_risk": 0.50, "confidence": 70},
@@ -109,6 +119,17 @@ DEFAULT_RULES: dict[str, Any] = {
             "short_leg_dte": 21,
             # A trade of long options only is out before the final weeks' decay.
             "long_only_dte": 14,
+            # A diagonal or calendar whose nearest short was sold this many days or fewer before its
+            # expiry is a short written week by week against the long: the 21-day clock above would fire
+            # the day it is sold, so its time exit counts on the long it is sold against instead, at
+            # `time_spread_long_dte`, and the short itself is rolled by roll.diagonal_short (user,
+            # 2026-11-06). Needs the order chain to know when the short was sold; without one the
+            # short's clock stands.
+            "short_term_short_days": 14,
+            "time_spread_long_dte": 21,
+            # As credit.time_exit's: a trade whose clock leg was opened inside its own exit (a debit
+            # spread bought at 21 DTE or fewer, a long option at 14 or fewer) skips it.
+            "skip_if_entered_inside": True,
             "roll_if_profitable": True,
             "confidence": 70,
         },
@@ -150,6 +171,13 @@ DEFAULT_RULES: dict[str, Any] = {
             "out_days": 28,
             "min_credit": 0.10,
             "min_long_days": 45,
+            # A short-term short (debit.time_exit's `short_term_short_days`) is due at the expiry close
+            # or when captured, and rolls to the first expiry at least `short_term_out_days` after it
+            # that the snapshot quotes (the roll-out chains), else the first monthly that far out; at
+            # the quoted mid where the chain has the strike, modelled otherwise. The long must outlive
+            # the new short by `short_term_min_long_days`, the long's own time exit.
+            "short_term_out_days": 7,
+            "short_term_min_long_days": 21,
             "skip_through_earnings": False,
             "confidence": 60,
         },
