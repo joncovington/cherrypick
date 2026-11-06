@@ -35,6 +35,16 @@ runner, `core` and its module (`_code_pin`); it imports nothing else. Pinned by 
 anywhere (a console page, another study's script) meant an interrupted run could not resume: item 41's
 design run lost 147 sessions to a reboot after two unrelated merges. The commit is still recorded on the
 run.
+
+**A change to that code is verified, not refused (2026-11-06).** The trees still moved with changes that
+alter no result: #877 changed only how the runner starts its replays, and item 44's design run lost 469
+sessions. Now an interrupted run is matched on every input but the code (`_spec_key`), and its code is
+kept in its run file. On the same code it resumes as before. On other code, `VERIFY_SESSIONS` of its
+finished sessions (the first, the last and evenly between) are replayed again on this code; only when
+every one reads back identically (`same_rows`, an order id aside) is the run taken over, and its report
+records both codes and the check. Any difference starts the run afresh. A run file written before this
+(named by the whole key, code included) is found by recomputing that key under each recent commit's code
+(`_recent_pins`).
 """
 
 from __future__ import annotations
@@ -43,6 +53,7 @@ import csv
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -143,11 +154,20 @@ def _code_pin(module: str) -> str | None:
 
 
 def _resume_key(parts: dict) -> str | None:
-    """What an interrupted run must match to be resumed; None when no clean tree pins the code."""
+    """The key a run file was named by until 2026-11-06: every input, the code included. None when no
+    clean tree pins the code. Still how a run file from before then is found (`_candidates`)."""
     code = parts.get("code")
     if not code or code.endswith("+dirty"):
         return None
     return hashlib.sha256(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+def _spec_key(parts: dict) -> str:
+    """What an interrupted run must match to be taken over: every input but the code. The code is kept
+    in the run file, and a run whose code differs is taken over only after `VERIFY_SESSIONS` of its
+    finished sessions replay identically on this code."""
+    rest = {k: v for k, v in parts.items() if k != "code"}
+    return "spec-" + hashlib.sha256(json.dumps(rest, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
 def _pending_path(key: str) -> Path:
@@ -158,23 +178,111 @@ def _new_run_id() -> str:
     return time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
 
 
-def _claim(key: str | None) -> tuple[str, bool]:
-    """This run's id, and whether it takes over an interrupted run with the same key. A run whose owner
-    is still alive is left alone, and this one starts afresh without a claim of its own."""
-    if key is None:
-        return _new_run_id(), False
-    pending = _pending_path(key)
+#: Finished sessions re-replayed before a run is taken over across a change to the replay's code.
+VERIFY_SESSIONS = 5
+#: Commits searched for the code of a run file written before 2026-11-06 (named by `_resume_key`).
+LEGACY_COMMITS = 400
+#: A row's fields that label it rather than describe its outcome: an order id carries the wall clock.
+LABEL_FIELDS = frozenset({"ic_order_id"})
+
+
+def _recent_pins(module: str, limit: int = LEGACY_COMMITS) -> list[str]:
+    """The replay's code (`_code_pin`'s form) at each of the last `limit` commits, newest first and
+    each once: the code a run file written before 2026-11-06 may have been named under."""
+    root = Path(__file__).resolve().parents[5]
+    trees = ("packages/backtest/src", "packages/core/cherrypick", f"packages/{module}/src")
     try:
-        prior = json.loads(pending.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        prior = None
-    if prior and looplock.pid_alive(prior.get("pid")):
-        return _new_run_id(), False
-    resumed = bool(prior) and (paths.results_dir() / "runs" / str(prior.get("run_id"))).is_dir()
-    run_id = prior["run_id"] if resumed else _new_run_id()
+        commits = subprocess.run(
+            ["git", "-C", str(root), "rev-list", "-n", str(limit), "HEAD"], capture_output=True, text=True
+        ).stdout.split()
+        lines = "".join(f"{c}:{t}\n" for c in commits for t in trees)
+        out = subprocess.run(
+            ["git", "-C", str(root), "cat-file", "--batch-check=%(objectname)"],
+            input=lines, capture_output=True, text=True,
+        ).stdout.split()  # fmt: skip
+    except OSError:
+        return []
+    pins: list[str] = []
+    for i in range(0, len(out) - len(trees) + 1, len(trees)):
+        group = out[i : i + len(trees)]
+        if any(len(x) != 40 for x in group):  # "<name> missing": the tree did not exist then
+            continue
+        pin = ",".join(group)
+        if pin not in pins:
+            pins.append(pin)
+    return pins
+
+
+def _candidates(parts: dict, module: str) -> list[dict]:
+    """Interrupted runs with this run's inputs, the code aside: from the run file named by
+    `_spec_key`, and from any named by `_resume_key` under a recent commit's code. Each as
+    {run_id, pid, code, file}, its directory still on disk."""
+    found: list[dict] = []
+    files = [(_pending_path(_spec_key(parts)), None)]
+    files += [(_pending_path(str(_resume_key({**parts, "code": pin}))), pin) for pin in _recent_pins(module)]
+    for path, pin in files:
+        try:
+            prior = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        code = prior.get("code", pin)
+        run_dir = paths.results_dir() / "runs" / str(prior.get("run_id"))
+        if code and run_dir.is_dir():
+            found.append({"run_id": prior["run_id"], "pid": prior.get("pid"), "code": code, "file": path})
+    return found
+
+
+def verify_sample(days: list[str], n: int = VERIFY_SESSIONS) -> list[str]:
+    """The finished sessions re-replayed before a takeover: the first, the last and evenly between,
+    `n` in all (every one when there are fewer)."""
+    days = sorted(days)
+    if len(days) <= n:
+        return days
+    return sorted({days[round(i * (len(days) - 1) / (n - 1))] for i in range(n)})
+
+
+def same_rows(a: list[dict], b: list[dict]) -> bool:
+    """Whether two replays of a session read back the same, `LABEL_FIELDS` aside."""
+
+    def strip(rows):
+        return [{k: v for k, v in r.items() if k not in LABEL_FIELDS} for r in rows]
+
+    return strip(a) == strip(b)
+
+
+def _claim(
+    parts: dict, code: str | None, module: str, verify: Callable[[Path], dict]
+) -> tuple[str, dict | None]:
+    """This run's id and, when it takes over an interrupted run, how: {sessions_from, code_from,
+    verified}. A run whose owner is still alive is never taken over. Among the rest, the one with the
+    most finished sessions is tried first; a run on other code is taken over only when `verify` finds
+    its sampled sessions identical on this code. Without a clean code pin nothing is resumed and no
+    run file is written."""
+    if not code or code.endswith("+dirty"):
+        return _new_run_id(), None
+    runs = paths.results_dir() / "runs"
+    cands = [c for c in _candidates(parts, module) if not looplock.pid_alive(c["pid"])]
+    cands.sort(key=lambda c: -len(list((runs / c["run_id"]).glob("*.ok.json"))))
+    run_id, taken = _new_run_id(), None
+    for c in cands:
+        if c["code"] == code:
+            run_id, taken = c["run_id"], {"code_from": None, "verified": None}
+            break
+        check = verify(runs / c["run_id"])
+        if check.get("identical"):
+            run_id, taken = c["run_id"], {"code_from": c["code"], "verified": check}
+            break
+    if taken is not None:
+        # The run taken over keeps the spec-keyed file below. Every other interrupted run with these
+        # inputs is retired with it: one run file per spec, and a later run never takes over a
+        # duplicate. Their directories stay on disk.
+        for c in cands:
+            if c["file"] != _pending_path(_spec_key(parts)):
+                c["file"].unlink(missing_ok=True)
+    pending = _pending_path(_spec_key(parts))
     pending.parent.mkdir(parents=True, exist_ok=True)
-    pending.write_text(json.dumps({"run_id": run_id, "pid": os.getpid()}), encoding="utf-8")
-    return run_id, resumed
+    pending.write_text(json.dumps({"run_id": run_id, "pid": os.getpid(), "code": code}), encoding="utf-8")
+    return run_id, taken
 
 
 def _discard_ledger(db: Path) -> None:
@@ -530,20 +638,16 @@ def run(
     finally:
         vconn.close()
     code_commit = _code_commit()
-    key = _resume_key(
-        {
-            "module": mod.name, "window": window, "span": [lo, hi], "symbol": symbol.upper(),
-            "cadence": cadence, "arms": arms, "hashes": hashes, "config": config,
-            "fingerprint": fingerprint, "code": _code_pin(mod.name),
-            "provisional": provisional, "unvalidated_holdout": unvalidated_holdout,
-        }
-    )  # fmt: skip
-    if key is None:
+    code = _code_pin(mod.name)
+    parts = {
+        "module": mod.name, "window": window, "span": [lo, hi], "symbol": symbol.upper(),
+        "cadence": cadence, "arms": arms, "hashes": hashes, "config": config,
+        "fingerprint": fingerprint, "code": code,
+        "provisional": provisional, "unvalidated_holdout": unvalidated_holdout,
+    }  # fmt: skip
+    clean = bool(code) and not code.endswith("+dirty")
+    if not clean:
         log("this run cannot resume if interrupted: the replay's code has uncommitted changes")
-    run_id, resumed = _claim(key)
-    ledger_dir = paths.results_dir() / "runs" / run_id
-    ledger_dir.mkdir(parents=True, exist_ok=True)
-    snapshot = mod.snapshot(config, ledger_dir)
     refused: dict[str, str] = {}
     todo = []
     for day, close in days:
@@ -551,6 +655,45 @@ def run(
             refused[day] = "no_settle_price"
         else:
             todo.append((day, close))
+    closes = dict(todo)
+
+    def verify(run_dir: Path) -> dict:
+        """Re-replay a sample of `run_dir`'s finished sessions on this code beside its ledgers, and
+        whether every one reads back as it did (`same_rows`). The copies are removed after."""
+        marked = [d for d, _ in todo if (run_dir / f"{d}.ok.json").is_file()]
+        sample = verify_sample(marked)
+        snap = mod.snapshot(config, run_dir)
+        scratch = run_dir / "verify"
+        scratch.mkdir(exist_ok=True)
+
+        def check(day: str) -> dict:
+            fresh = scratch / f"{day}.db"
+            _discard_ledger(fresh)
+            try:
+                out = replay(day, fresh, arms, history_db, closes[day], snap)
+                same = bool(out.get("ok")) and same_rows(read_rows(fresh), read_rows(run_dir / f"{day}.db"))
+            except Exception as exc:  # noqa: BLE001 -- a check that cannot run is a check that fails
+                log(f"verify {day}: {type(exc).__name__}: {exc}")
+                same = False
+            return {"session": day, "identical": same}
+
+        try:  # the sample replays at once, each its own subprocess, as the sessions themselves do
+            with ThreadPoolExecutor(
+                max_workers=max(1, min(len(sample), workers or core_procs.default_workers()))
+            ) as pool:
+                checked = list(pool.map(check, sample))
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+        identical = bool(checked) and len(checked) == len(sample) and all(c["identical"] for c in checked)
+        log(f"verify {run_dir.name}: {len(checked)} of {len(marked)} finished sessions re-replayed, "
+            f"{'identical' if identical else 'NOT identical'}")  # fmt: skip
+        return {"sessions": checked, "of": len(marked), "identical": identical}
+
+    run_id, taken = _claim(parts, code, mod.name, verify)
+    resumed = taken is not None
+    ledger_dir = paths.results_dir() / "runs" / run_id
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    snapshot = mod.snapshot(config, ledger_dir)
     # A session is finished once its marker is written; anything else in the directory is a replay the
     # interruption cut short, and goes before it runs again.
     finished = {day for day, _ in todo if (ledger_dir / f"{day}.ok.json").is_file()}
@@ -620,6 +763,9 @@ def run(
     )
     if resumed:
         report["resumed"] = {"sessions_reused": len(finished)}
+        if taken.get("code_from"):  # taken over across a code change, on a verified sample
+            report["resumed"].update({"code_from": taken["code_from"], "code_to": code,
+                                      "verified": taken["verified"]})  # fmt: skip
     if mod.name == "flies":  # the keys every flies report has carried
         report["flies_config"] = str(config_paths["flies"])
         report["flies_config_snapshot"] = str(snapshot)
@@ -667,8 +813,8 @@ def run(
     rconn.close()
     out_path = paths.results_dir() / "runs" / f"{run_id}.json"
     out_path.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
-    if key is not None:
-        _pending_path(key).unlink(missing_ok=True)  # recorded: never taken over again
+    if clean:
+        _pending_path(_spec_key(parts)).unlink(missing_ok=True)  # recorded: never taken over again
     report["written"] = str(out_path)
     rep.finish("done")
     return report
