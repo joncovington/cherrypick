@@ -376,6 +376,28 @@ def test_an_out_of_the_money_short_is_not_exposed():
     assert view_of(a)["short"]["assignment"]["exposed"] is False
 
 
+@pytest.mark.parametrize(
+    ("date_", "time_", "inside", "past"),
+    [
+        ("2026-10-27", None, True, False),  # inside the November short's life
+        ("2026-12-01", None, False, False),  # after it expires
+        ("2026-10-13", "AMC", True, False),  # today after the close: still to come
+        ("2026-10-13", "BMO", False, True),  # today before the open: already out
+        ("2026-09-30", None, False, True),  # the broker still lists the last report
+    ],
+)
+def test_a_report_already_out_is_said_and_never_read_as_after_the_expiry(date_, time_, inside, past):
+    m = {"earnings_date": date_, **({"earnings_time": time_} if time_ else {})}
+    er = view_of(evaluate(snapshot(history(), legs(), metrics=m)))["short"]["earnings"]
+    assert (er["date"], er["inside"], er["past"]) == (date_, inside, past)
+    assert ("already out" in er["why"]) if past else "why" not in er
+
+
+def test_no_report_date_is_unknown_not_past():
+    er = view_of(evaluate(snapshot(history(), legs())))["short"]["earnings"]
+    assert er["inside"] is None and er["past"] is None and er["why"] == "no report date in the snapshot"
+
+
 # --------------------------------------------------------------------------- pmcc.roll_long
 def test_a_long_near_its_expiry_or_its_delta_floor_is_reviewed():
     # 100 days left, still deep: the days fire it.

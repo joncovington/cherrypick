@@ -333,7 +333,8 @@ rules in the table above read it.
   roll flag. The short: tested or not, against today's skate call band moved to today's price ("band
   not in the snapshot" without one), early-assignment exposure, its chance of finishing in the money
   (N(d2)), and an earnings report inside its life ("no report date" for a name without one, never
-  "clear").
+  "clear"; a date already out, which the broker lists until it has the next one, is `past`, never
+  read as after the expiry).
 
 **The PMCC rules and the diagonal rules.** A recognised PMCC is still a diagonal, and every diagonal
 rule still judges it. The PMCC rules fire into the trade holding the short and rank by action like

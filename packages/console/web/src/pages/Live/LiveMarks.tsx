@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { ManageAccount, ManageLiveAccount, ManageLivePayload, ManageLiveTrade } from "@console/shared";
+import type { ManageAccount, ManageBand, ManageLiveAccount, ManageLivePayload, ManageLiveTrade } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { ageText, tone } from "./manageParts";
@@ -217,9 +217,7 @@ export function LiveGreeksCard({ a }: { a: ManageAccount }) {
               {fmtCash(l.theta)}
             </td>
             <td style={{ textAlign: "right" }}>{fmtCash(p.theta)}</td>
-            <td>
-              {bands ? `${pct2(bands.theta.low)} to ${pct2(bands.theta.high)} of net liq ` : "—"}
-            </td>
+            <td>{bands ? thetaBandWords(bands.theta, netLiq) : "—"}</td>
           </tr>
         </tbody>
       </table>
@@ -229,4 +227,14 @@ export function LiveGreeksCard({ a }: { a: ManageAccount }) {
 
 function pct2(v: number | null): string {
   return v === null ? "—" : `${(v * 100).toFixed(2)}%`;
+}
+
+/** The theta band in the row's own unit, dollars a day, with its share of net liq beside it. The
+ *  dollars are the band times the evaluation's net liq, as manage's limits row states them
+ *  (`limits.py`, "the theta band x net liq"), so the two cards cannot show different bands. */
+export function thetaBandWords(band: Pick<ManageBand, "low" | "high">, netLiq: number | null): string {
+  const share = `${pct2(band.low)} to ${pct2(band.high)} of net liq`;
+  if (!netLiq) return share;
+  const usd = (v: number | null) => (v === null ? "—" : fmtCash(v * netLiq));
+  return `${usd(band.low)} to ${usd(band.high)} (${share})`;
 }

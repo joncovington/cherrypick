@@ -627,7 +627,7 @@ a 0DTE session, and red there would teach the eye to pass over red. Pinned by `s
 (`readers/manage.ts`); they were one `manage` tab until 2026-10-18, and `/live/manage` lands on
 `positions`. `positions` is a card per trade (2026-11-04, `pages/Live/PositionCards.tsx`; it was two
 tables, action needed and holding), titled by manage's stable trade ID (`XYZ-260401-1`, kept through
-rolls; the dialog marks a provisional ID and any ID a join merged into it): the trade's action, its P&L net of fees, capture and short DTE,
+rolls; the dialog marks a provisional ID and any ID a join merged into it): the trade's action, its P&L net of fees, capture (manage's gross figure, the one take-profit judges, so labelled before fees) and short DTE,
 and its broker order chain down the card (open, rolls, then "now, close at mid" with what the chain
 took in), from manage's own `chain`. A trade with no reconciled chain shows its opening alone and
 says so. A losing trade is red, edge included. Chips filter (all, needs action, rolled) and sort by

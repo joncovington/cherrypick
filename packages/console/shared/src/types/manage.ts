@@ -225,7 +225,8 @@ export interface ManagePmccShort {
     exDividendDate: string | null;
     dividendAmount: number | null;
   };
-  earnings: { date: string | null; inside: boolean | null; why: string | null };
+  /** `past`: the date is a report already out (the broker lists the last one until the next); null when no date, or on an evaluation from before manage said. */
+  earnings: { date: string | null; inside: boolean | null; past: boolean | null; why: string | null };
 }
 
 /** The strategy's width check, as manage judged it. Money is whole-position dollars. */

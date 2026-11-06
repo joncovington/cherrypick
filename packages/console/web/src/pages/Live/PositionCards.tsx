@@ -101,10 +101,12 @@ function pct(v: number | null): string {
   return v === null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(0)}%`;
 }
 
-/** What capture means on this trade: a credit's share kept, a debit's return. */
-function captureText(t: ManageTrade): string | null {
+/** What capture means on this trade: a credit's share kept, a debit's return. It is manage's gross
+ *  figure (the one its take-profit judges), so beside the card's net P&L it says so. */
+export function captureText(t: ManageTrade): string | null {
   if (t.capture === null) return null;
-  return t.kind === "debit" ? `${pct(t.capture)} on the debit` : `${pct(t.capture)} of the credit kept`;
+  const share = t.kind === "debit" ? `${pct(t.capture)} on the debit` : `${pct(t.capture)} of the credit kept`;
+  return `${share}, before fees`;
 }
 
 function dteText(t: ManageTrade): string | null {

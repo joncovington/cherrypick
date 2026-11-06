@@ -393,7 +393,7 @@ function pmccShort(v: unknown): ManagePmccShort {
       exDividendDate: str(a["ex_dividend_date"]),
       dividendAmount: num(a["dividend_amount"]),
     },
-    earnings: { date: str(e["date"]), inside: flag(e["inside"]), why: str(e["why"]) },
+    earnings: { date: str(e["date"]), inside: flag(e["inside"]), past: flag(e["past"]), why: str(e["why"]) },
   };
 }
 

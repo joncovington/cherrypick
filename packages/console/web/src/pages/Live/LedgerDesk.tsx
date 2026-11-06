@@ -229,6 +229,14 @@ function NameDialog({
 }
 
 /** The ledger above the wheel's cycles: tiles for the window, the months, a card per name. */
+/** The ledger's head line. The row count and its start date are the account's whole history (manage's
+ *  `ledger.rows` and `history_from` are read before the scope is applied), so they are said as the
+ *  account's, never placed after the names as if they were theirs. */
+export function ledgerHeadWords(ledger: Pick<ManageLedger, "scope" | "historyFrom" | "rows">): string {
+  const names = ledger.scope === null ? "" : `${ledger.scope.length ? ledger.scope.join(", ") : "no wheel names"} · `;
+  return `${names}read from the account's ${ledger.rows ?? "?"} history rows since ${ledger.historyFrom ?? "?"} · by closing day`;
+}
+
 export function LedgerDesk({ ledger }: { ledger: ManageLedger | null }) {
   const [params, setParams] = useSearchParams();
   const lightbox = useOpenParam("ledger");
@@ -253,8 +261,7 @@ export function LedgerDesk({ ledger }: { ledger: ManageLedger | null }) {
       <div className="ldg-head">
         <span className="ldg-title">ledger</span>
         <span className="muted">
-          {ledger.scope === null ? "" : `${ledger.scope.length ? ledger.scope.join(", ") : "no wheel names"} · `}since{" "}
-          {ledger.historyFrom ?? "?"} · {ledger.rows ?? "?"} history rows · by closing day
+          {ledgerHeadWords(ledger)}
         </span>
         <div className="ldg-windows" role="group" aria-label="Window">
           {LEDGER_WINDOWS.map((w) => (
