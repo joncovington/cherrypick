@@ -5524,6 +5524,95 @@ hourly break-even condor's entries made while inverted lost, nearly all of it on
   - **A fail or no verdict:** the call side stays, and the curve stays a reported column on the
     trades, re-read when part 2 has its sessions.
 
+### 52. Diagonals across an earnings report: the short weekly takes the crush, the monthly long keeps its value
+
+*Source: the user, 2026-11-06, after the earnings review. A 40-delta long in the next monthly and a
+20-delta short in the weekly that expires just after the report, entered the afternoon before it, so
+the short leg goes through the report and takes its fall in implied volatility while the monthly long
+falls less. Also the textbook double diagonal, one diagonal picked against the skew, and a filter for
+a cheap back month. Declared before any of its inputs are fetched.*
+
+- **Question:** does a diagonal entered the session before a report, short a weekly that expires after
+  it and long the next monthly, earn after costs when closed at the reaction session's close, more than
+  the same diagonal on the same name four weeks from any report?
+- **Where the edge would live:** the **term structure around an event** (the report weekly's implied
+  volatility collapses after the report while the monthly's moves much less), and for arm C a
+  **selection signal** (the 25-delta risk reversal, which the 2026-10-13 study found contrarian at 53%
+  out of sample). **What would falsify it:** the mean net at or below zero after costs; or positive,
+  but the no-report control earns as much (ordinary calendar decay, not the report); or the back month
+  falls with the front, as the 2026-11-04 check of one name suggested (post-report front volatility near
+  1.07 times the ex-event base), so the long leg gives back what the short earned.
+- **Look-alikes, said out loud:** the retired `atm_calendar` and `double_calendar` paper books (both
+  lost heavily, 2026-07-15 to 10-15: at-the-money, so a move past the strike costs them; this item's
+  strikes sit away from the money and the double diagonal's longs are wings); the 2026-10-17 time-spread
+  screen (step 0 separated calendar winners only weakly); item 31 (the module's weekly fly, condor and
+  spread, whose G1 gate is the rich-premium selector); item 47 (a monthly strangle across the report).
+  The expected-move fly and the navigator history found single-name event premium about fair at mid.
+- **Events:** item 31's list and timing (the 158 names the liquidity verdict calls tradable, hindsight,
+  B11; stated-timing Dolt `earnings_calendar` rows; item 31's entry and reaction sessions). Item 31's
+  functions are imported, so the two cannot drift. Each event must also have, at the entry session's
+  close: a close of at least $10; a weekly expiring on or after the reaction session and within 9
+  calendar days of the report; the next standard monthly at least 14 calendar days after that weekly;
+  every leg two-sided, with its spread at most 15% of its mid; combined open interest at least the
+  earnings module's floor on each expiry; and an expected move of at least $0.90 (0.85 times the
+  weekly's at-the-money straddle). An event that fails one is dropped and counted by reason.
+- **Strikes:** by delta at the entry session's close, from the chain's own greeks where present, else
+  solved from the mid with `core.american` and the name's trailing dividend yield; the listed strike
+  nearest the target delta. One contract a leg.
+- **Arms** (all judged, Holm across them):
+  - **A-call:** long the 40-delta call in the monthly, short the 20-delta call in the weekly.
+  - **A-put:** the same on the put side.
+  - **B1:** both of A's diagonals together (longs at 40 delta, inside the shorts).
+  - **B2, the textbook double diagonal:** short the 20-delta call and put in the weekly, long the
+    10-delta call and put in the monthly (wings outside the shorts).
+  - **C, against the skew:** one of A's diagonals, the side picked from the 25-delta risk reversal at
+    entry: the call side when puts are priced richer, the put side when calls are. The two cuts are the
+    risk-reversal terciles of the design window; the middle tercile takes no trade.
+- **The cheap-back-month split, on every arm:** the monthly's at-the-money implied volatility at entry
+  against the name's own trailing 252 sessions of the same measure (from Dolt `options.option_chain`,
+  leaving out the five sessions either side of earlier reports). `cheap` is the bottom tercile of the
+  design window. Each arm is reported whole and `cheap`; the `cheap` cut of each arm is judged as its
+  own arm under the same Holm family.
+- **The fills:** opened at the entry session's end-of-day quotes at mid less the suite's slippage (0.125
+  of the spread, `fees.slippage_dollars`, per leg); closed at the reaction session's end-of-day quotes
+  at mid plus the same; fees per contract per leg from `cherrypick.core.fees`. A leg with no two-sided
+  exit quote is closed at its intrinsic value against the reaction close plus its entry spread, and the
+  count is reported. Stress: 1.5x fees and half the spread, because the 2026-11-05 review found the
+  slippage cap light on wide wings.
+- **Exits:** judged on the **reaction session's close**. Two declared variants, reported, not judged:
+  the next session's close, and holding the short to its expiry's close with the long closed then.
+- **Measured:** net per trade in dollars, and as a share of the debit paid. The credit or debit and the
+  worst trade are reported beside it.
+- **The control:** item 31's control session (the same weekday four weeks earlier, then later, then five
+  weeks earlier, with no report from three sessions before it through the monthly's expiry): the same
+  arm rule on that session's weekly and next monthly, closed at the next session's close. Paired per
+  event. An event whose control has no weekly is left out of the paired difference and counted.
+- **Windows:** item 31's: design 2020-01-22 to 2023-12-31, holdout 2024-01-02 to 2026-07-14. Time-halves
+  split at 2022-07-01; name-halves by `name_half`. Weeklies were listed on fewer names before 2022, so
+  the design window leans to large names; the count of names per year is reported.
+- **Pass-or-fail rule (per arm):** in the design window, the mean net above zero with a one-sided
+  date-clustered t above 2 (Holm-adjusted across the arms); the paired difference over the control
+  above zero with a t above 2; above zero in both time-halves and both name-halves; above zero at the
+  stress and with the best five trades removed. Then, in the holdout, the mean net and the paired
+  difference are both above zero. Fewer than 150 design trades or 100 holdout trades is no verdict. The
+  holdout is read after the design whatever the design shows, and counts only after a design pass.
+- **Declared limits (B11):** end-of-day quotes, not the 15:35 scan's; no profit target, stop or roll
+  inside the hold; early assignment of a short weekly that ends in the money is not modelled (the judged
+  exit closes before it matters); the tradable label is hindsight; deltas from end-of-day greeks.
+- **Data:** the licensed end-of-day chains, fetched as research-queue rows after item 31's study: the
+  report weekly and the next monthly on the entry and reaction sessions (and the next session, for the
+  day-2 variant), for each event and its control; Dolt for the back-month history and the skew cuts.
+  A script `scripts/earnings_diagonal_item52.py requests|study` writes the requests and runs the study;
+  it is written and reviewed before anything is fetched. Results stay under the backtest data
+  directory; the register records verdicts only.
+- **Decides:**
+  - **A pass:** not a live change. Each passing arm becomes a paper strategy in the earnings module at a
+    declared boundary, under the liquidity verdict and the 2026-11-06 guards, read on reports after
+    2026-07-14 first.
+  - **A fail:** diagonals across a report are closed with the calendars. If B2 fails with the `cheap`
+    cut too, the back-month wing does not rescue a short report strangle, and item 47's verdict is read
+    beside it.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
