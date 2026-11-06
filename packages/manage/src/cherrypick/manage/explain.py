@@ -171,6 +171,46 @@ def _earnings_hold(t: dict[str, Any]) -> str:
     return head + f" The {names} would act today; for an earnings trade it waits for the call."
 
 
+def collar(
+    sold_right: str,
+    bought_strike: float,
+    bought_delta: float,
+    sold_strike: float,
+    sold_delta: float,
+    net: float,
+) -> str:
+    """The plain statement that travels with a hedge collar (hedge.py): its label, what it gives up and
+    the skew point. `sold_right` is the sold spread's side: C for a book that is too long."""
+    long_book = sold_right == "C"
+    cost = (
+        "about cost-neutral"
+        if abs(net) < 0.005
+        else f"{abs(net):.2f} a share {'credit' if net > 0 else 'debit'} at mid"
+    )
+    if long_book:
+        shape = f"the bought put spread at {bought_strike:g} funded by a sold call spread at {sold_strike:g}"
+        gives_up = f"the upside past the {sold_strike:g} short call strike"
+        call_delta, put_delta = sold_delta, bought_delta
+        deltas = f"the sold call is {call_delta:.2f} delta, the bought put {put_delta:.2f}"
+    else:
+        shape = f"the bought call spread at {bought_strike:g} funded by a sold put spread at {sold_strike:g}"
+        gives_up = f"the downside gain past the {sold_strike:g} short put strike"
+        call_delta, put_delta = bought_delta, sold_delta
+        deltas = f"the bought call is {call_delta:.2f} delta, the sold put {put_delta:.2f}"
+    # Put skew makes an outright zero-cost collar's call the nearer to the money. The wings of a
+    # spread collar can undo that, so the claim is made only where this chain shows it.
+    skew = (
+        f"With put skew a zero-cost collar's call sits nearer the money than its put: {deltas}."
+        if call_delta > put_delta
+        else "Put skew usually puts a zero-cost collar's call nearer the money than its put, but "
+        f"with these spreads' wings it does not here: {deltas}."
+    )
+    return (
+        f"No tested edge, research item 55. A collar is {shape}, {cost}. It gives up {gives_up}: "
+        f"the sold spread offsets the book's gains there, up to its width. {skew}"
+    )
+
+
 def explain(t: dict[str, Any]) -> str:
     et = t.get("earnings_trade") or {}
     if not et.get("kept"):

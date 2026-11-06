@@ -2,13 +2,18 @@
 
 Piece 3 of docs/portfolio-guidance-plan.md. Offered only when `portfolio.delta` fired, from the one
 quoted XSP expiry the snapshot carries (`hedge_chain`), so a past session re-evaluates to the same
-suggestion. Two kinds, each shown with what it does to the whole book:
+suggestion. Three kinds, each shown with what it does to the whole book:
 
 - a CREDIT spread on the side the book leans away from (too long: sell a call spread). It cuts delta
   and adds theta, and adds the short gamma that comes with theta;
 - a DEBIT spread on the side the book leans toward (too long: buy a put spread). It cuts delta and
   usually costs a little theta; with skew it can cost none (the 760/755 XSP put spread on 2026-10-18
-  was +$0.12 a day), so the figure is stated, never assumed.
+  was +$0.12 a day), so the figure is stated, never assumed;
+- a COLLAR, the two together, the credit side chosen so the net is as near zero cost as the chain
+  allows (too long: the put debit spread plus a call credit spread; too short: the mirror). Both halves
+  are verticals, so no call is ever naked and the account can be a cash one or an IRA. It is labelled
+  plainly: no tested edge, research item 55. It gives up the upside past the short call strike, and with
+  put skew a zero-cost collar's call sits nearer the money than its put.
 
 A hedge ties up its max loss like any trade, so its size is also held under the total buying-power
 cap, and one that cannot fit a single spread says so.
@@ -26,6 +31,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from cherrypick.manage import explain as _explain
 from cherrypick.manage import portfolio as _portfolio
 from cherrypick.manage import pricing
 
@@ -95,6 +101,84 @@ def _structure(kind: str, need: float, options: list[dict[str, Any]], cfg: dict[
     return (name, [(long_, 1), (short, -1)]) if short and long_ else None
 
 
+COLLAR_LABEL = "no tested edge, research item 55"
+
+
+def _net_credit(legs: list[tuple[dict[str, Any], int]]) -> float:
+    """Per share, + a credit received, priced at mid."""
+    return -sum(q * o["mid"] for o, q in legs)
+
+
+def _collar(need: float, options: list[dict[str, Any]], cfg: dict[str, Any]) -> tuple[str, list] | str:
+    """(name, four legs) for one unit, or the reason the chain cannot build it.
+
+    The debit half is the existing one (long near `debit_long_delta`, the wing `width` beyond). The
+    credit half is a vertical on the other side of the money, its short the out-of-the-money strike
+    that brings the whole to the net nearest zero (a tie goes to the one further out, which gives up
+    less).
+    """
+    ccfg = cfg.get("collar") or {}
+    reduce = need < 0
+    debit = _structure("debit", need, options, cfg)
+    if debit is None:
+        return "the chain has no strikes for the bought spread"
+    right = "C" if reduce else "P"
+    outward = 1.0 if reduce else -1.0
+    floor = float(ccfg.get("min_short_delta", 0.05))
+    width = float(cfg["width"])
+    best = None
+    for short in options:
+        if short["right"] != right or not floor <= abs(short["delta"]) < 0.5:
+            continue
+        long_ = _wing(options, short, width, outward)
+        if long_ is None:
+            continue
+        credit_half = [(short, -1), (long_, 1)]
+        net = _net_credit(debit[1]) + _net_credit(credit_half)
+        key = (round(abs(net), 6), abs(short["delta"]))
+        if best is None or key < best[0]:
+            best = (key, credit_half, net)
+    if best is None:
+        return "the chain has no strike to sell the other side against"
+    tolerance = float(ccfg.get("max_net", 0.25))
+    if abs(best[2]) > tolerance:
+        return (
+            f"no strike makes the collar cost-neutral: the nearest is {abs(best[2]):.2f} a share "
+            f"{'credit' if best[2] > 0 else 'debit'}, past the {tolerance:.2f} allowed"
+        )
+    sold = "call credit spread" if reduce else "put credit spread"
+    return f"collar ({debit[0]} + {sold}), {COLLAR_LABEL}", [*debit[1], *best[1]]
+
+
+def _expiry_worst(legs: list[tuple[dict[str, Any], int]], credit: float) -> float:
+    """The most one unit can lose at expiry, per share (never below zero). The payoff is piecewise
+    linear, so its low is at a strike, at zero or far above the highest strike."""
+    strikes = sorted({o["strike"] for o, _ in legs})
+    points = [0.0, *strikes, strikes[-1] * 2 + 1]
+
+    def pay(spot: float) -> float:
+        return credit + sum(
+            q * (max(spot - o["strike"], 0.0) if o["right"] == "C" else max(o["strike"] - spot, 0.0))
+            for o, q in legs
+        )
+
+    return max(0.0, -min(pay(x) for x in points))
+
+
+def _collar_note(legs: list[tuple[dict[str, Any], int]], net: float) -> str:
+    """The plain statement that travels with a collar (explain.collar). The legs are the bought
+    spread's two, then the sold spread's: its short is the third."""
+    bought, sold = legs[0][0], legs[2][0]
+    return _explain.collar(
+        sold_right=sold["right"],
+        bought_strike=bought["strike"],
+        bought_delta=abs(bought["delta"]),
+        sold_strike=sold["strike"],
+        sold_delta=abs(sold["delta"]),
+        net=net,
+    )
+
+
 def suggest(
     reading: dict[str, Any],
     chain: dict[str, Any] | None,
@@ -143,6 +227,19 @@ def suggest(
             out["suggestions"].append({"kind": kind, "error": "the chain has no strikes to build it"})
             continue
         out["suggestions"].append(_size(kind, *built, need, scale, reading, rules, chain))
+    if (cfg.get("collar") or {}).get("enabled"):
+        collar = _collar(need, options, cfg)
+        if isinstance(collar, str):
+            out["suggestions"].append(
+                {
+                    "kind": "collar",
+                    "structure": f"collar, {COLLAR_LABEL}",
+                    "error": collar,
+                    "edge": COLLAR_LABEL,
+                }
+            )
+        else:
+            out["suggestions"].append(_size("collar", *collar, need, scale, reading, rules, chain))
     return out
 
 
@@ -168,6 +265,10 @@ def _size(
         natural = -sum(q * (o["ask"] if q > 0 else o["bid"]) for o, q in legs)
     width = abs(legs[0][0]["strike"] - legs[1][0]["strike"])
     unit_max_loss = (width - mid) * MULTIPLIER if mid > 0 else -mid * MULTIPLIER
+    if kind == "collar":
+        # Four legs: the worst of the whole at expiry, which holds the credit half's max loss and the
+        # debit paid together. It is what counts against the cap.
+        unit_max_loss = _expiry_worst(legs, mid) * MULTIPLIER
 
     if unit_bwd == 0 or unit_bwd * need < 0:
         return {"kind": kind, "structure": name, "error": "the spread does not move delta the way needed"}
@@ -179,7 +280,7 @@ def _size(
     # A debit spread is exempt from the cap (the user's call, 2026-10-18): its whole cost is its
     # worst case, and it only lowers the book's, so refusing it on buying power refuses the safer
     # trade. It is offered past the cap and says so (`past_cap`).
-    if net_liq and used is not None and unit_max_loss > 0 and kind == "credit":
+    if net_liq and used is not None and unit_max_loss > 0 and kind in ("credit", "collar"):
         room = cap * net_liq - used
         fits = int(room // unit_max_loss)
         if fits < 1:
@@ -201,7 +302,9 @@ def _size(
     gamma = reading.get("gamma_bench")
     after_gamma = gamma + units * unit_gamma if gamma is not None else None
     max_loss = units * unit_max_loss
+    extra = {"edge": COLLAR_LABEL, "note": _collar_note(legs, mid)} if kind == "collar" else {}
     return {
+        **extra,
         "kind": kind,
         "structure": name,
         "units": units,
@@ -238,6 +341,7 @@ def _size(
             if used is not None and net_liq
             else None,
         },
-        # Only a debit spread can be offered past the cap; it says so rather than hiding it.
+        # Only a debit spread can be offered past the cap (a collar holds a credit half, so it is held
+        # under it like a credit spread); it says so rather than hiding it.
         "past_cap": bool(net_liq and used is not None and (used + max_loss) / net_liq > cap),
     }
