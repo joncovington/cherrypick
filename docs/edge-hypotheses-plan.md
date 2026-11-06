@@ -5430,6 +5430,100 @@ is run.*
   - **A fail or no verdict otherwise:** live stays at 10 wide with its gates, and item 43's pass is
     read as a result about the ungated rule only.
 
+### 51. Dropping the call side when the VIX curve is stressed
+
+*Source: the user, 2026-11-05, after a session whose VIX curve inverted forty minutes after the open
+and stayed inverted, VIX9D its peak for most of the day: "is this something to gate on?" An
+exploratory look the same day, over 2026-01-26..2026-10-12 with intraday VIX bars from the broker's
+feed, read three things, recorded here in words only: on inverted readings the rest of the day moved
+more against what VIX1D priced, most clearly before midday and when SPX had barely moved yet; the
+hourly break-even condor's entries made while inverted lost, nearly all of it on one episode
+(March to early April 2026); and the loss sat on the call side, not the put side. That look spent
+2026-01-26..2026-10-12 for this question. Declared here before any of the rest is read.*
+
+- **Question:** when the VIX curve is stressed, read at the open (part 1) or at the entry's hour
+  (part 2), does the condor do better as its put side alone: the same entries, with the call side
+  never opened?
+- **Where the edge would live:** **avoiding a losing side**, not a new premium. On stress days put
+  skew is rich, so the 12-delta put sits far away with a fat credit while the call sits close for a
+  thin one, and sell-offs carry sharp relief rallies through it. The edge, if real, is a side whose
+  expectation turns negative on those days.
+- **Look-alikes:** items 41 and 44 (entry gates); MEIC's live call-delta ceiling; MEIC's VIX, VIX1D
+  and ATR pauses, switched off in `pm-200` and never tested at real quotes; bwb's VIX9D/VIX gate
+  (modelled only); the GEX sign gate and the VIX-expiry gate (both failed).
+- **Rival explanations, each with its check:**
+  - *One episode:* stress clusters in time. **Check:** the paired difference must be positive in
+    both time-halves, and is reported by year and with each stress episode removed in turn.
+  - *The move already made:* a curve stressed at the open often follows a large overnight move.
+    **Check:** reported by SPX's move from the open to each entry, in bins fixed here (under 0.5%,
+    0.5–1%, 1% or more), and by the overnight gap.
+  - *Less risk, not an edge:* a put side alone holds a different maximum loss. **Check:** net over
+    buying power reported for both, and the verdict is read alongside it.
+  - *Fee savings:* a side never opened pays no fees. **Check:** the variant must pass with the call
+    side's fees not credited back (judged), and is also reported with them credited.
+  - *A blurry signal:* the open catches about half the sessions the intraday curve inverted on, and
+    flags others that never inverted. **Check:** part 2 reads the curve at the entry's hour.
+  - *A second source's errors:* **Check:** part 2's validation against the broker's bars.
+  - *Six looks a part:* **Check:** Holm across each part's six cells; the arms, states and bins are
+    fixed here.
+- **The structure:**
+  - **Bases**, read from existing runs, no new replay: `be` (item 42's break-even condor at its own
+    wings), `live-1400` (item 23's and item 43's live rule, gates on) and `w15` (item 43).
+  - **Variant**, per base: on a flagged session, every entry's call side is removed. Its net is the
+    condor's net less the call side's: the call legs' P&L as they traded, less half the trade's fees
+    (two of its four legs). The put side keeps the stop it traded with, an order a put spread alone
+    can carry. On an unflagged session the variant is the base.
+  - **Flags**, from the exchange's daily files at the open, both judged: **inverted**, VIX over VIX3M
+    at 1 or above; **front hump**, VIX9D over VIX at 1 or above with VIX under VIX3M.
+  - Six cells: three bases by two flags.
+- **Measured:** per flagged session, the variant's net less the base's (the call side's net with the
+  sign reversed), in dollars at one condor.
+- **Window and sample:**
+  - **Design:** 2022-05-16 to 2025-06-30, the runs items 42 and 43 already hold. Fewer than 30 flagged
+    sessions in a cell is no verdict for that cell.
+  - **Holdout:** 2025-07-01 to 2026-01-23, which no look has touched, and every session after
+    2026-10-12 once the store is extended. 2026-01-26..2026-10-12 is reported, never judged. Fewer
+    than 20 flagged sessions is no verdict; the holdout is re-read as sessions accrue.
+  - **Provisional:** MEIC validation has not unlocked.
+- **Pass-or-fail rule**, per cell, all must hold:
+  - the paired difference has a mean above zero and a one-sided t above 2, one session one
+    observation;
+  - Holm across the six cells;
+  - the paired difference positive in each time-half;
+  - still positive with the call side's fees not credited back, and with the best year removed;
+  - then the holdout: the paired difference with a mean above zero.
+- **Part 2, the curve at the entry's hour:** the broker's feed keeps about three months of 5-minute
+  and ten months of hourly index bars, but Yahoo's public hourly bars for VIX, VIX9D and VIX3M reach
+  back to 2024-01-19 (probed 2026-11-05). The same variant, flagged by the curve at each entry's
+  time (the close of the last hourly bar finished by then; inverted and front hump as above), judged
+  with the same rule:
+  - **Validation first:** over 2026-01-26..2026-11-05, where both sources hold hourly bars, Yahoo's
+    closes must match the broker's (`vol_curve_bars.db`) within 1% on at least 95% of shared bars, and
+    the state they give must agree on at least 95% of shared readings. Otherwise part 2 runs on the
+    broker's recorded bars only, forward.
+  - **Design:** 2024-01-19 to 2025-06-30. **Holdout:** 2025-07-01 to 2026-01-23, and sessions after
+    2026-10-12 as the store is extended; 2026-01-26..2026-10-12 reported only. Fewer than 20 sessions
+    with an inverted reading at an entry is no verdict for a cell.
+  - Part 2's six cells take their own Holm; parts 1 and 2 are read side by side, neither alone
+    decides.
+  - Yahoo's bars are fetched by script into `~/.cherrypick` for personal use, never into the repo.
+  - `vol-curve-bars` records the broker's bars from 2026-11-05 on, so the 5-minute reading accrues
+    forward and is reported beside the hourly one.
+- **Declared limits (B11):** the variant is the condor's put side as it traded, not a replay of a
+  put spread entered alone: a put-only entry could fill, refuse or stop differently, and its credit
+  floor would read differently. The open's curve is a daily print. 60 s ticks, as items 42 and 43.
+- **Name split (B9):** does not apply; one symbol.
+- **Data:** no new vendor fetch. A script reads the existing runs' per-entry ledgers (`ic_trades`,
+  `ic_spread_legs`) and the exchange's daily VIX, VIX9D and VIX3M files; for part 2, Yahoo's hourly
+  bars (a fetch step into `~/.cherrypick`) and the recorded `vol_curve_bars.db`. Results go under the
+  backtest data directory only; this plan records the verdict.
+- **Decides:**
+  - **A pass:** not a live change. It earns a replay of the real thing: a put spread entered alone and
+    a call moved further out on flagged sessions, which needs an optional per-side delta in MEIC's
+    strike selection (default off, so no running arm's measurement moves), declared as its own item.
+  - **A fail or no verdict:** the call side stays, and the curve stays a reported column on the
+    trades, re-read when part 2 has its sessions.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

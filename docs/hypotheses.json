@@ -1925,6 +1925,56 @@
       "results": [],
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 51,
+      "study": "item51",
+      "title": "Dropping the call side when the VIX curve is stressed",
+      "status": "declared",
+      "legacy": false,
+      "setup": "curve-gate",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "per flagged session, the variant's net less the base's in $ at one condor: the condor with every entry's call side removed (call legs' P&L as traded, less half the trade's fees), for be, live-1400 and w15; flagged by the VIX curve at the open (part 1) or at the entry's hour (part 2): inverted (VIX/VIX3M >= 1) or front hump (VIX9D/VIX >= 1, VIX < VIX3M)",
+      "expected": "a positive paired difference per flagged session: the call side loses on stressed sessions",
+      "sample": "part 1: design 2022-05-16..2025-06-30 from items 42 and 43's runs, holdout 2025-07-01..2026-01-23 plus sessions after 2026-10-12; part 2: hourly curve from Yahoo's public bars, design 2024-01-19..2025-06-30, same holdout, after a validation against the broker's recorded bars; 2026-01-26..2026-10-12 reported only (explored 2026-11-05); provisional, MEIC history unvalidated; < 30 (part 1) or < 20 (part 2) flagged sessions = no verdict",
+      "rule": "per cell (3 bases x 2 flags, Holm across each part's six): paired mean > 0 with one-sided t > 2, positive in both time-halves, positive with the call side's fees not credited back and with the best year removed; then holdout mean > 0",
+      "mechanism": "on stress days put skew is rich, so the 12-delta put sits far for a fat credit while the call sits close for a thin one, and sell-offs carry sharp relief rallies through it; the call side's expectation may turn negative",
+      "rivals": [
+        {
+          "explanation": "one episode",
+          "check": "positive in both time-halves; by year and with each stress episode removed"
+        },
+        {
+          "explanation": "the move already made",
+          "check": "reported by SPX's move from the open to entry (< 0.5%, 0.5-1%, >= 1%) and by the overnight gap"
+        },
+        {
+          "explanation": "less risk, not an edge",
+          "check": "net over buying power reported for both"
+        },
+        {
+          "explanation": "fee savings",
+          "check": "judged with the call side's fees not credited back"
+        },
+        {
+          "explanation": "a blurry signal",
+          "check": "part 2 reads the curve at the entry's hour"
+        },
+        {
+          "explanation": "a second source's errors",
+          "check": "Yahoo's hourly closes within 1% of the broker's on >= 95% of shared bars, states agreeing on >= 95%"
+        },
+        {
+          "explanation": "six looks a part",
+          "check": "Holm across each part's six cells; arms, states and bins fixed at declaration"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#51-dropping-the-call-side-when-the-vix-curve-is-stressed",
+      "results": [],
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
