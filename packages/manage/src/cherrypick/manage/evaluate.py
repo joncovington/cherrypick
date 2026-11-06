@@ -112,6 +112,11 @@ def _exit_day(expiry: date, dte: int) -> str:
     return (day if _calendar.is_trading_day(day) else _calendar.previous_trading_day(day)).isoformat()
 
 
+def _band_text(low: float | None, high: float | None) -> str:
+    """'340.12 / 405.30', with 'none' for a side the trade never loses that much on."""
+    return " / ".join(f"{x:,.2f}" if x is not None else "none" for x in (low, high))
+
+
 def _fire(rule: str, action: str, confidence: Any, reason: str, legs: list[str] | None = None) -> dict:
     return {"rule": rule, "action": action, "confidence": confidence, "reason": reason, "legs": legs}
 
@@ -684,6 +689,38 @@ def evaluate_trade(
                     f"(target +{gain:.0%}" + (f", a {trade['shape']}'s own" if gain_shaped else "") + ")",
                 )
             )
+        ps = db["price_stop"]
+        if trade["shape"] in ps["shapes"] and profile and spot and expiries and not off("debit.price_stop"):
+            share = float(ps["loss_share"])
+            horizon = max((_date(expiries[0]) - session).days, 0) / 365.0
+            band = pricing.price_band(legs, spot, horizon, rate, debit * (1 - share))
+            if band:
+                low, high = band
+                trade["exit_levels"]["price_stop"] = {
+                    "low": low,
+                    "high": high,
+                    "loss_share": share,
+                    "horizon": expiries[0],
+                    "modelled": True,
+                }
+                side = (
+                    "below"
+                    if low is not None and spot < low
+                    else "above"
+                    if high is not None and spot > high
+                    else None
+                )
+                if side:
+                    fired.append(
+                        _fire(
+                            "debit.price_stop",
+                            REVIEW,
+                            ps["confidence"],
+                            f"the underlying at {spot:,.2f} is {side} the price stop "
+                            f"({_band_text(low, high)}, where the trade is modelled to lose {share:.0%} of "
+                            f"the debit by {expiries[0]}); close if it closes there",
+                        )
+                    )
         te = db["time_exit"]
         clock = "nearest short" if shorts else "nearest leg"
         if short_term:
@@ -1455,7 +1492,14 @@ def _diagonal_roll(
     credit = net / unit
     # The long's breakeven after the roll (its credit counts): a short beyond it cannot lock in a loss.
     line = long_breakeven(longs, cost - net * pricing.MULTIPLIER)
+    # A short at its own long's strike (a calendar) is met, if assigned, by that long at the same
+    # strike: the strikes net to nothing and the trade can lose no more than its debit, which is its
+    # worst case anyway. The breakeven line is a diagonal's guard, and on a calendar it blocked every
+    # roll (user, 2026-11-06).
+    same_strike = {(leg["right"], leg["strike"]) for leg in longs}
     for short in (leg for leg in group if leg["quantity"] < 0):
+        if (short["right"], short["strike"]) in same_strike:
+            continue
         edge = line.get(short["right"])
         if edge is None:
             continue

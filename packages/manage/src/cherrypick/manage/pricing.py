@@ -26,6 +26,7 @@ __all__ = [
     "outliving_unpriced",
     "payoff_profile",
     "price",
+    "price_band",
 ]
 
 MULTIPLIER = 100.0
@@ -75,6 +76,24 @@ def outliving_unpriced(legs: list[dict[str, Any]], horizon: str) -> bool:
     call under a near short read a best case of exactly the strike width. A profile over it is wrong, so
     callers model none."""
     return any(leg.get("right") and leg.get("iv") is None and leg["expiration"] > horizon for leg in legs)
+
+
+def price_band(
+    legs: list[dict[str, Any]], spot: float, horizon_years: float, rate: float, floor: float
+) -> tuple[float | None, float | None] | None:
+    """The underlying prices either side of the trade's modelled best at the horizon where its value
+    falls to `floor` dollars: (low, high), a side None when the value never falls that far within half
+    to one and a half times `spot`. None when the trade is worth under `floor` at its best. Modelled
+    like `payoff_profile`, on a finer grid (0.05% of spot)."""
+    steps = 2000
+    grid = [spot * (0.5 + i / steps) for i in range(steps + 1)]
+    values = [sum(leg_value_at(leg, p, leg["years"] - horizon_years, rate) for leg in legs) for p in grid]
+    best = max(range(len(values)), key=values.__getitem__)
+    if values[best] < floor:
+        return None
+    lo = next((grid[i + 1] for i in range(best - 1, -1, -1) if values[i] < floor), None)
+    hi = next((grid[i - 1] for i in range(best + 1, len(grid)) if values[i] < floor), None)
+    return (round(lo, 2) if lo else None, round(hi, 2) if hi else None)
 
 
 def payoff_profile(

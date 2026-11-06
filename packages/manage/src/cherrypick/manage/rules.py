@@ -113,6 +113,12 @@ DEFAULT_RULES: dict[str, Any] = {
         # it loses. The strategy guide's entry rule, applied while the trade is held (the chain's net
         # debit, so the short calls rolled for credit count).
         "diagonal_width": {"enabled": True, "max_share_of_width": 0.75, "confidence": 60},
+        # A calendar's stop is the underlying's price, not the spread's: its quote is wide, and a move
+        # either way is what loses it. The band is where the modelled value at the short's expiry (the
+        # long at its own IV) falls to `loss_share` below the debit; outside it the trade is reviewed,
+        # to close if the stock CLOSES there (an intraday touch whipsaws). A modelled level with no
+        # outside test (user, 2026-11-06); the -50% debit stop stays as the backstop.
+        "price_stop": {"enabled": True, "shapes": ["calendar"], "loss_share": 0.25, "confidence": 45},
         "time_exit": {
             "enabled": True,
             # A debit trade carrying short legs (a diagonal) is managed when its nearest short is this close.
@@ -487,6 +493,7 @@ RULE_IDS = (
     "debit.stop",
     "debit.take_profit",
     "debit.diagonal_width",
+    "debit.price_stop",
     "debit.time_exit",
     "legs.short_take_profit",
     "legs.long_vertical",

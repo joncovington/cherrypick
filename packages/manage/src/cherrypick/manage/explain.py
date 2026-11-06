@@ -101,6 +101,15 @@ def _skipped(t: dict[str, Any]) -> str:
     )
 
 
+def _band(ps: dict[str, Any]) -> str:
+    """'below $340.12 or above $405.30' (a side the trade never loses that much on is left out)."""
+    sides = [
+        f"below ${ps['low']:,.2f}" if ps.get("low") else None,
+        f"above ${ps['high']:,.2f}" if ps.get("high") else None,
+    ]
+    return " or ".join(s for s in sides if s) or "none"
+
+
 def _earnings(t: dict[str, Any]) -> str:
     er = t.get("earnings")
     if not er:
@@ -135,6 +144,9 @@ def _hold(t: dict[str, Any]) -> str:
             waits.append(f"take profit, roll or add if it grows to {_usd(tp['close_value'])}")
         if stop and stop.get("close_value") is not None:
             waits.append(f"cut it if it falls to {_usd(stop['close_value'])}")
+    ps = levels.get("price_stop")
+    if ps and (ps.get("low") or ps.get("high")):
+        waits.append(f"close it if the stock closes {_band(ps)}")
     if te and te.get("date"):
         waits.append(f"close or roll it on {_day(te['date'])} whatever happens")
     tail = (" It is waiting to " + "; ".join(waits) + ".") if waits else ""
@@ -225,6 +237,15 @@ def _explain(t: dict[str, Any]) -> str:
             f"It has gained {_share(tp.get('target', 0.75))} or more on what you paid. The rule says take "
             "the profit, roll it to a new position, or add to it, rather than let the gain ride on to "
             f"expiry.{_target_note(tp)}"
+        )
+    elif rule == "debit.price_stop":
+        ps = (t.get("exit_levels") or {}).get("price_stop") or {}
+        why = (
+            f"The stock has moved outside this calendar's price stop ({_band(ps)}). A calendar earns most "
+            "with the stock near its strike when the short expires, and out there it is modelled to have "
+            f"lost {ps.get('loss_share', 0.25):.0%} of what you paid by {_day(ps.get('horizon'))}. Close it "
+            "if the stock closes beyond the stop; an intraday touch that comes back is not a reason. Rolling "
+            "the short to the strike nearest the stock re-centres it instead, if you still want the trade."
         )
     elif rule == "debit.diagonal_width":
         why = (
@@ -387,7 +408,11 @@ def _explain(t: dict[str, Any]) -> str:
             "the report."
         )
         return f"{pos} {why}{cash}{also}{conflict}{blocked}"
-    return f"{pos} {why}{cash}{also}{conflict}{_diagonal_blocked(rb)}{_skipped(t)}{_earnings(t)}"
+    stop = ""
+    ps = (t.get("exit_levels") or {}).get("price_stop")
+    if ps and rule != "debit.price_stop" and (ps.get("low") or ps.get("high")):
+        stop = f" Its price stop: close it if the stock closes {_band(ps)}."
+    return f"{pos} {why}{cash}{also}{conflict}{_diagonal_blocked(rb)}{_skipped(t)}{stop}{_earnings(t)}"
 
 
 def _diagonal_blocked(rb: dict[str, Any]) -> str:
@@ -433,6 +458,7 @@ PLAIN = {
     "debit.stop": "50% debit stop",
     "debit.take_profit": "debit take-profit rule",
     "debit.diagonal_width": "diagonal width check",
+    "debit.price_stop": "calendar price stop",
     "debit.time_exit": "time exit",
     "legs.short_take_profit": "short-leg buy-back rule",
     "legs.long_vertical": "long-spread sale",
