@@ -172,7 +172,7 @@ Far wing: buy 1x 145 put (wide, away from spot)
 
 ## 5. ATM Calendar
 
-**Retired from `strat_test` from 2026-10-15** (`STRAT_TEST_RETIRED`): still registered and screened,
+**Retired from `strat_test` from 2026-10-15** (`STRAT_TEST_RETIRED`): still registered, but from 2026-11-05 no longer screened,
 it opens nothing in the forced-sampling books.
 
 **Structure:** Sell a front-month ATM call, buy the same strike in a later monthly expiration.
@@ -200,7 +200,7 @@ Profit target: 15% → close once the spread is worth ~$0.345 (a $0.045 gain)
 
 ## 6. Double Calendar
 
-**Retired from `strat_test` from 2026-10-15** (`STRAT_TEST_RETIRED`): still registered and screened,
+**Retired from `strat_test` from 2026-10-15** (`STRAT_TEST_RETIRED`): still registered, but from 2026-11-05 no longer screened,
 it opens nothing in the forced-sampling books.
 
 **Structure:** An ATM calendar run on both the call and put side simultaneously — sell

@@ -130,6 +130,9 @@ CATCHUP_MINUTES = {
     "technicals-skate": 12 * 60,
     # Ahead of the 06:15 landing; a late fetch is the same fetch, and the landing after it picks it up.
     "technicals-index-bars": 12 * 60,
+    # Bars are keyed by their start and the fetch restates the last few sessions, so a late run is
+    # the same fetch; the feed keeps months of 5m, so a missed day is still there the next.
+    "vol-curve-bars": 12 * 60,
     # The vendor's sessions for the last few trading days; idempotent (complete sessions are
     # skipped), so a late run is the same fetch and the next night's covers a missed one anyway.
     "backtest-fetch": 12 * 60,
@@ -295,6 +298,7 @@ RETRY_ON_FAILURE = {
     "market-files": 2,
     "market-files-retry": 2,
     "technicals-index-bars": 2,
+    "vol-curve-bars": 2,
     "technicals-iv-rank": 2,
     "technicals-dollar-volume": 2,
     "technicals-dividends": 2,
@@ -1507,6 +1511,24 @@ def derive_jobs(
             trading_days_only=False,
             enabled=ixb_on,
             enabled_reason="" if ixb_on else "disabled in config (technicals.index_bars)",
+        ),
+    )
+    vcb_on = tc_free and tc["vol_curve_bars"]
+    add(
+        "vol-curve-bars",
+        lambda: JobSpec(
+            id="vol-curve-bars",
+            # A script, not package code: it reads the broker (DXLink 5m and 1h candles of the VIX
+            # term structure and SPX) with the shared credential, read-only. After the indexes'
+            # final prints at 16:15, so the day's last bar is finished. No Dolt, so it follows the
+            # block's switch, not the Dolt capability.
+            argv=(pythonw, _suite_script(launcher, "fetch_vol_curve_bars.py")),
+            kind=KIND_DAILY,
+            at_et=tc["vol_curve_bars_at"],
+            catchup_minutes=CATCHUP_MINUTES["vol-curve-bars"],
+            trading_days_only=True,
+            enabled=vcb_on,
+            enabled_reason="" if vcb_on else "disabled in config (technicals.vol_curve_bars)",
         ),
     )
     ivr_on = tc_free and tc["iv_rank"]
