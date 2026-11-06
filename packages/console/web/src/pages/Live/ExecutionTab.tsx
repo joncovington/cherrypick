@@ -15,6 +15,12 @@ const pct = (v: number | null) => (v === null ? "n/r" : `${Math.round(v * 100)}%
 const usd = (v: number | null) => (v === null ? "n/r" : fmtUsd(v));
 const tone = (v: number | null) => (v === null ? undefined : v >= 0 ? "num pnl-pos" : "num pnl-neg");
 
+/** The week's trade count, with any closed trade that has no recorded net said beside it: it is out
+ *  of the week's net (the orchestrator's `unpriced`), so the count must not hide it. */
+export function tradesCell(w: Pick<ExecutionWeek, "trades" | "unpriced">): string {
+  return w.unpriced ? `${w.trades} + ${w.unpriced} no net` : String(w.trades);
+}
+
 export function overrideLine(w: ExecutionWeek): string {
   if (w.clean) return "clean";
   const counts = new Map<string, number>();
@@ -71,7 +77,9 @@ function ModuleCard({ m }: { m: ExecutionModule }) {
               <tr key={w.week}>
                 <td>{w.week}</td>
                 <td className={tone(w.net)}>{fmtUsd(w.net)}</td>
-                <td className="num">{w.trades}</td>
+                <td className="num" title={w.unpriced ? `${w.unpriced} more closed with no recorded net, left out of the week's net` : undefined}>
+                  {tradesCell(w)}
+                </td>
                 <td className="num">{w.orders}</td>
                 <td className="num">{pct(w.fillRate)}</td>
                 <td className={tone(w.slipDollars)}>{usd(w.slipDollars)}</td>

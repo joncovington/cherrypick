@@ -64,7 +64,14 @@ def test_weekly_reads_fill_rate_slippage_and_overrides_beside_net():
     ]  # fmt: skip
     [w] = ex.weekly(orders, [{"kind": "manual_close", "session": "2026-10-16"}], [_rec("2026-10-15", 31.0)])
     assert w["fill_rate"] == 0.5 and w["slip_dollars"] == 1.0 and w["net"] == 31.0
-    assert not w["clean"]
+    assert not w["clean"] and w["unpriced"] == 0
+
+
+def test_a_closed_trade_with_no_net_is_counted_apart_never_as_zero():
+    [w] = ex.weekly([], [], [_rec("2026-06-29", None), _rec("2026-06-30", -0.96)])
+    assert (w["net"], w["trades"], w["unpriced"]) == (-0.96, 1, 1)
+    report = ex.format_report({"meic": {"ok": True, "mirror": "m", "weeks": [w], "gap": {}, "window": {}}})
+    assert "over 1 (+1 with no net, left out)" in report
 
 
 def test_the_window_trigger_is_graded_but_only_reported():

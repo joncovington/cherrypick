@@ -957,7 +957,8 @@ several chances to disagree about which base a book shadows.
 
 **The book-review read surfaces (2026-10-24).** Live → `execution` (B10) renders the orchestrator's
 `execution --json` through `services/executionBridge.ts`: each live arm's week, fill rate, slippage
-against the mid at submit, overrides, and the gap to its paper mirror. Compare → `slices` (B5;
+against the mid at submit, overrides, and the gap to its paper mirror. A closed trade with no recorded
+net is out of its week's net and said beside the count (`unpriced`, "1 + 1 no net"), never counted as zero. Compare → `slices` (B5;
 under Backtest until 2026-10-30, `/backtest/slices` redirects) reads the `technicals slices` JSON
 under `data/technicals/slices/` (`readers/slices.ts`), behind the backtest gate because a report may
 come from a licensed replay: the tab fails closed (`FAIL_CLOSED_SLIDES`, `visibility.ts`; off, unknown
