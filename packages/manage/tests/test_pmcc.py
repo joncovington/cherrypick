@@ -91,6 +91,7 @@ def test_a_long_entered_deep_is_a_pmcc():
     a = evaluate(snapshot(history(), legs()))
     v = view_of(a)
     assert v["recognized"] and v["reconciled"], v["problems"]
+    assert v["recognition"] == "pmcc"
     assert 0.80 <= v["long"]["delta_at_entry"] < 0.90
     assert v["recognized_by"].startswith(f"entered at {v['long']['delta_at_entry']:.2f} delta")
     assert v["long"]["entry_fills"][0]["close"] == 50.0 and v["long"]["entry_fills"][0]["div_yield"] == 0.0
@@ -105,6 +106,7 @@ def test_a_long_entered_near_the_money_stays_a_diagonal():
     v = view_of(a)
     assert v["long"]["delta_at_entry"] < 0.70
     assert not v["recognized"] and "under 0.70): a diagonal" in v["recognized_by"]
+    assert v["recognition"] == "diagonal"
     # The view lists it; no PMCC rule judges it, whatever its numbers.
     assert not any(r.startswith("pmcc") for r in fired(trade_of(a, SHORT)))
 
@@ -114,10 +116,15 @@ def test_the_intent_decides_either_way():
     price = fill(50, 0.30)
     snap = snapshot(history(long=near, long_price=price), legs(long=near, long_price=price, long_mid=9.0))
     v = view_of(evaluate(snap, {"positions": {"XYZ": {"intent": "pmcc"}}}))
-    assert v["recognized"] and v["recognized_by"] == "intent: pmcc"
+    assert v["recognized"] and v["recognized_by"] == "intent: pmcc" and v["recognition"] == "pmcc"
     v = view_of(evaluate(snapshot(history(), legs()), {"positions": {"XYZ": {"intent": "diagonal"}}}))
     assert not v["recognized"] and v["recognized_by"] == "intent: diagonal"
+    assert v["recognition"] == "diagonal"
     assert v["long"]["delta_at_entry"] > 0.80  # out whatever its delta
+    # An intent decides even when the delta at entry cannot be solved.
+    out = {"positions": {"XYZ": {"intent": "diagonal"}}}
+    v = view_of(evaluate(snapshot(history(), legs(), hist=None), out))
+    assert v["long"]["delta_at_entry"] is None and v["recognition"] == "diagonal"
 
 
 @pytest.mark.parametrize(
@@ -132,6 +139,7 @@ def test_a_delta_at_entry_that_cannot_be_solved_is_unknown_and_does_not_recognis
     v = view_of(evaluate(snapshot(history(), legs(), hist=hist)))
     assert v["long"]["delta_at_entry"] is None and why in v["long"]["delta_at_entry_why"]
     assert not v["recognized"] and v["recognized_by"].startswith("delta at entry unknown")
+    assert v["recognition"] == "unknown"  # not decided, so never shown as a diagonal
 
 
 def test_the_solver_carries_the_dividend_yield():
