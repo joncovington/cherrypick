@@ -151,6 +151,14 @@ describe("meicExitKind", () => {
     expect(meicExitKind(10, "force_close_fomc", null, null, null)).toBe("closed");
     expect(meicExitKind(null, null, null, null, null)).toBeNull();
   });
+
+  it("never reads a stopped side's might-have-been settle value as a settlement", () => {
+    // Put stopped at 7.15; meic still records what the put would have settled at (10.00). The call
+    // expired worthless and nothing was charged: a stop, not a settlement.
+    expect(meicExitKind(-535, "stopped+expired_settlement", 0, 10, 0, "stopped", 7.15, null)).toBe("closed");
+    // The held side settling in the money is still a settlement.
+    expect(meicExitKind(-200, "stopped+expired_settlement", 0, 0, 3.2, "stopped", 4.1, null)).toBe("settled");
+  });
 });
 
 describe("meic's history date range", () => {

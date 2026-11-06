@@ -51,6 +51,7 @@ function toWeek(v: unknown): ExecutionWeek | null {
     week,
     net: n(r["net"]) ?? 0,
     trades: n(r["trades"]) ?? 0,
+    unpriced: n(r["unpriced"]) ?? 0,
     orders: n(r["orders"]) ?? 0,
     fillRate: n(r["fill_rate"]),
     slipDollars: n(r["slip_dollars"]),

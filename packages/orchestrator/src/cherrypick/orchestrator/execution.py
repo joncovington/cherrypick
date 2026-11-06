@@ -327,7 +327,7 @@ def _group(rows: list[dict], start: str) -> dict:
 # --------------------------------------------------------------------------- the weekly read
 def weekly(orders: list[dict], overrides: list[dict], live_records: list[dict]) -> list[dict]:
     weeks: dict[str, dict[str, Any]] = defaultdict(
-        lambda: {"orders": [], "overrides": [], "net": 0.0, "trades": 0}
+        lambda: {"orders": [], "overrides": [], "net": 0.0, "trades": 0, "unpriced": 0}
     )
     for o in orders:
         if o["session"]:
@@ -336,10 +336,16 @@ def weekly(orders: list[dict], overrides: list[dict], live_records: list[dict]) 
         if v.get("session"):
             weeks[week_of(v["session"])]["overrides"].append(v)
     for r in live_records:
-        if r.get("session") and r.get("net_pnl") is not None:
-            w = weeks[week_of(r["session"])]
-            w["net"] += float(r["net_pnl"])
-            w["trades"] += 1
+        if not r.get("session"):
+            continue
+        w = weeks[week_of(r["session"])]
+        # A closed trade with no recorded net is left out of the week's net, never counted as zero,
+        # and counted on its own so the week says it is missing one.
+        if r.get("net_pnl") is None:
+            w["unpriced"] += 1
+            continue
+        w["net"] += float(r["net_pnl"])
+        w["trades"] += 1
     out = []
     for wk in sorted(weeks):
         w = weeks[wk]
@@ -352,6 +358,7 @@ def weekly(orders: list[dict], overrides: list[dict], live_records: list[dict]) 
             "week": wk,
             "net": round(w["net"], 2),
             "trades": w["trades"],
+            "unpriced": w["unpriced"],
             "orders": len(w["orders"]),
             "fill_rate": round(len(filled) / len(decided), 3) if decided else None,
             "slip_dollars": round(sum(slips), 2) if slips else None,
@@ -420,7 +427,9 @@ def format_report(result: dict) -> str:
             fr = "n/r" if w["fill_rate"] is None else f"{w['fill_rate']:.0%}"
             slip = "n/r" if w["slip_dollars"] is None else f"{w['slip_dollars']:+.2f}"
             lines.append(
-                f"  {w['week']}  net {w['net']:+.2f} over {w['trades']}  orders {w['orders']}  fill {fr}"
+                f"  {w['week']}  net {w['net']:+.2f} over {w['trades']}"
+                + (f" (+{w['unpriced']} with no net, left out)" if w["unpriced"] else "")
+                + f"  orders {w['orders']}  fill {fr}"
                 f"  slip vs mid {slip}  overrides: {flags}"
             )
         g = m["gap"]

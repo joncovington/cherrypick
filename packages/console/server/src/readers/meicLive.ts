@@ -220,7 +220,8 @@ function readLedger(db: Database.Database, session: string): { open: LiveMeicOpe
   const history = db
     .prepare<[], Record<string, unknown>>(
       `SELECT id, trade_date, entry_time, symbol, put_strike, call_strike, wing_width,
-              net_credit, put_credit, call_credit, quantity, status, pnl, fees, exit_reason, iv_rank_at_entry, ${money}
+              net_credit, put_credit, call_credit, quantity, status, pnl, fees, exit_reason, iv_rank_at_entry,
+              put_stop_cost, call_stop_cost, ${money}
          FROM ic_trades WHERE status IN (${inList(RESOLVED_STATUSES)}) ORDER BY trade_date DESC, id DESC`,
     )
     .all()

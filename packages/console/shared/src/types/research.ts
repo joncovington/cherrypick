@@ -8,6 +8,8 @@ export interface ExecutionWeek {
   week: string;
   net: number;
   trades: number;
+  /** Closed trades that week with no recorded net: left out of `net` and `trades`, never counted as zero. */
+  unpriced: number;
   orders: number;
   /** Filled / (filled + missed); null with no decided order. */
   fillRate: number | null;

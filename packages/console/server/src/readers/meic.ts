@@ -288,6 +288,11 @@ const EMPTY_MEIC_TOTALS: MeicTradeTotals = {
  * How a closed iron condor left the book. A side held to the bell and settled in the money makes it
  * `settled`; otherwise a stop or a force-close makes it `closed`; otherwise it `expired` worthless.
  * The exit reason rides beside it for the detail (a stop on one side and an expiry on the other).
+ *
+ * `*_settle_value` is what a side would have been worth held to settlement, and meic records it for a
+ * stopped side too (`meic/db.py`: `settle_value < stop_cost` == the stop paid more than holding). So
+ * a side's settle value counts only when that side has no stop cost: a stop whose side would have
+ * finished in the money was a stop, not a settlement.
  */
 export function meicExitKind(
   pnl: number | null,
@@ -296,12 +301,15 @@ export function meicExitKind(
   putSettle: number | null,
   callSettle: number | null,
   status: string | null = null,
+  putStopCost: number | null = null,
+  callStopCost: number | null = null,
 ): MeicTradeRow["exitKind"] {
   // A partial condor's pnl is its stopped side alone; the held side has not resolved yet.
   if (pnl === null || status === "partial") return null;
   const reason = exitReason ?? "";
   const expired = reason.includes("expire");
-  const itm = (settlementFees ?? 0) > 0 || (putSettle ?? 0) > 0 || (callSettle ?? 0) > 0;
+  const held = (settle: number | null, stopCost: number | null) => (stopCost === null ? (settle ?? 0) : 0);
+  const itm = (settlementFees ?? 0) > 0 || held(putSettle, putStopCost) > 0 || held(callSettle, callStopCost) > 0;
   if (expired && itm) return "settled";
   if (reason.includes("stop") || reason.includes("force")) return "closed";
   return "expired";
@@ -336,6 +344,8 @@ export function meicTradeCash(r: Record<string, unknown>): Pick<
       num(r["put_settle_value"]),
       num(r["call_settle_value"]),
       str(r["status"]),
+      num(r["put_stop_cost"]),
+      num(r["call_stop_cost"]),
     ),
     gross,
     fees: total !== null && settlementFees !== null ? round2(total - settlementFees) : total,
@@ -407,7 +417,9 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
                   ${meicCol(db, "settlement_fees")} AS settlement_fees,
                   ${meicCol(db, "slippage_dollars")} AS slippage_dollars,
                   ${meicCol(db, "put_settle_value")} AS put_settle_value,
-                  ${meicCol(db, "call_settle_value")} AS call_settle_value`,
+                  ${meicCol(db, "call_settle_value")} AS call_settle_value,
+                  ${meicCol(db, "put_stop_cost")} AS put_stop_cost,
+                  ${meicCol(db, "call_stop_cost")} AS call_stop_cost`,
         from: "ic_trades",
         where: f.where,
         params: f.params,
@@ -2486,6 +2498,8 @@ export function readMeicSummary(
           toNum(r["put_settle_value"]),
           toNum(r["call_settle_value"]),
           str(r["status"]),
+          toNum(r["put_stop_cost"]),
+          toNum(r["call_stop_cost"]),
         );
         const held = meicHeldSide(r);
         return {

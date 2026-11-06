@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { ExecutionModule, ExecutionWeek, SliceCell, SliceDimensionRead, SliceReport } from "@console/shared";
-import { gapLine, overrideLine, windowLine } from "../src/pages/Live/ExecutionTab";
+import { gapLine, overrideLine, tradesCell, windowLine } from "../src/pages/Live/ExecutionTab";
 import { dimensionLabel, dimensionSentence, fmtCi, fmtMean, fmtShare, overallSentence, placeboSentence } from "../src/pages/Compare/SlicesTab";
 
 const week = (over: Partial<ExecutionWeek>): ExecutionWeek => ({
   week: "2026-W42",
   net: 0,
   trades: 0,
+  unpriced: 0,
   orders: 0,
   fillRate: null,
   slipDollars: null,
@@ -22,6 +23,11 @@ describe("the execution tab's lines", () => {
     expect(overrideLine(week({}))).toBe("clean");
     const kinds = [{ kind: "manual_close", session: null, at: null }, { kind: "manual_close", session: null, at: null }, { kind: "kill_cleared", session: null, at: null }];
     expect(overrideLine(week({ clean: false, overrides: kinds }))).toBe("manual close ×2, kill cleared");
+  });
+
+  it("says a closed trade with no recorded net beside the count, never hides it", () => {
+    expect(tradesCell(week({ trades: 1, unpriced: 1 }))).toBe("1 + 1 no net");
+    expect(tradesCell(week({ trades: 3 }))).toBe("3");
   });
 
   it("states the gap with its parts and the largest, or nothing without one", () => {

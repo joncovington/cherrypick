@@ -21,6 +21,7 @@ const EXEC = {
         week: "2026-W42",
         net: 43.04,
         trades: 2,
+        unpriced: 1,
         orders: 2,
         fill_rate: 1,
         slip_dollars: -1.49,
@@ -42,7 +43,7 @@ describe("the execution record", () => {
     expect(out.ok).toBe(true);
     const [meic, bwb] = out.data!.modules;
     expect(meic).toMatchObject({ module: "meic", ok: true, mirror: "live-shadow" });
-    expect(meic!.weeks[0]).toMatchObject({ fillRate: 1, slipDollars: -1.49, clean: false });
+    expect(meic!.weeks[0]).toMatchObject({ fillRate: 1, slipDollars: -1.49, clean: false, trades: 2, unpriced: 1 });
     expect(meic!.gap).toMatchObject({ total: -133.17, largest: "missed" });
     expect(meic!.window).toMatchObject({ n: 3, would: "too_few", baseline: 12 });
     expect(bwb).toMatchObject({ module: "bwb", ok: false, reason: "no live ledger", weeks: [] });
