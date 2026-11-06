@@ -46,7 +46,9 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
   **60-second supervisor tick** (`self_healing` job); this module has no scheduler of its own. Each
   tick derives its phase from the clock: forward scan ~06:30, mark-only through the opening spread
   window, mark/decide/act 09:40–15:40, the forced-sampling entry scan once at 15:35
-  (`entry_scan_at`), EOD 16:00–16:30, nothing off-session. It opens the strat_test books (every
+  (`entry_scan_at`), EOD 16:00–16:30, nothing off-session. These are a normal 16:00 close; on a
+  13:00 early-close day every exit clock is the same offset from that day's close and **no entry
+  scan runs** (`session_clock.py`, from 2026-11-05; docs/operating-history.md). It opens the strat_test books (every
   strategy clearing the screen on every viable name; per-strategy by default via
   `strat_test_portfolio`), always paper-only into `paper_trades.db`. No per-iteration agent.
 - **Two trails, different questions.** `state/earnings_entry.last.json` / `earnings_exit.last.json` are LATESTs — "is it alive" only.

@@ -292,3 +292,35 @@ per-arm result reads from 2026-10-30 or ends before it; never pool across the bo
 
 **Journal on the day:** one `entry_and_exit_patience` break dated 2026-10-30 in the paper ledger,
 recorded with `paper_loop record-break`.
+
+## Early-close days (from 2026-11-05)
+
+The loop kept fixed clock times for a 16:00 close, so on a 13:00 close (2026-11-27, then 2026-12-24)
+its expiry close, pin guard and management window ran against a market that had shut, and the
+entry scan started at 15:35 on chains nobody could trade. That would have recorded wrong numbers, so
+it landed at once rather than at a boundary.
+
+From 2026-11-05 every exit clock is the same offset from the day's close (expiry close at close minus
+30 minutes, pin guard to the close, management ending at close minus 20 minutes, eod from the
+close), and an early-close day runs **no entry scan**: it records `half_day_no_entries` in the entry
+heartbeat and the run log. A normal day is unchanged. Entries on an early-close day are absent by
+rule, not by a quiet screen; never read them as a zero-entry sample. Positions expiring that day
+still trade out at the shifted expiry close.
+
+## Exits priced past the payoff (to 2026-10-26, corrected 2026-11-05)
+
+Before the 2026-10-26 boundary a close was priced on the natural side and nothing held it inside
+what the structure can be worth. On wide-quoted expiry-day books the far touch went past the payoff
+range: long butterflies closed at a positive exit debit, an iron fly and an iron condor bought back
+for more than their width. Those losses could not have been filled. Found in the 2026-11-05 review.
+
+- **Size:** 17 closed rows, 13 of them `expected_move_butterfly` and the expiry close; gross P&L
+  +$1,101 once clamped. Six `atm_calendar` rows also lost more than their recorded risk, but a
+  calendar spans two expiries and has no payoff bound, so they are left as recorded.
+- **The fix in code** was already in place: every exit since 2026-10-26 is clamped to
+  `scanner.exit_debit_bounds`.
+- **The correction:** `scripts/earnings_clamp_exit_debits.py` (dry run by default) applies the same
+  clamp to the older rows: `exit_debit` and gross `pnl` only. Entry, costs, exit reason and timing are
+  untouched. It backs the ledger up first and writes `paper_trades.db.exit-debit-clamped.json`
+  beside it with every changed row's old and new values; a second run refuses.
+- **Why it lands at once:** a number recorded wrong, not a measurement change. No decision moves.

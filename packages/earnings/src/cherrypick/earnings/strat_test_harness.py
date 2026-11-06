@@ -64,6 +64,7 @@ from cherrypick.earnings import (
     management,
     rank_strategies,
     scanner,
+    session_clock,
     sizing,
     symbol_watch,
     universe,
@@ -581,6 +582,10 @@ def _past_entry_window(config: dict) -> bool:
     fixtures that have no window to respect, and a guard that refuses every entry when a key is
     missing would be worse than the unbounded loop it replaces.
     """
+    now = _now_et()
+    if session_clock.for_date(now.date()).half_day:
+        # The window (15:55) is after a 13:00 close: nothing opens on an early-close day.
+        return True
     end = config.get("entry_window_end")
     if not end:
         return False
@@ -588,7 +593,6 @@ def _past_entry_window(config: dict) -> bool:
         hour, minute = (int(x) for x in str(end).split(":"))
     except (TypeError, ValueError):
         return False
-    now = _now_et()
     return (now.hour, now.minute) >= (hour, minute)
 
 
