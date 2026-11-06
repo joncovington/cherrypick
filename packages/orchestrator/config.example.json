@@ -606,6 +606,11 @@
       "interval_seconds": 60,
       "start": "09:36",
       "end": "16:10"
+    },
+    "_time_spreads_note": "The time-spread scanner (docs/time-spread-scanner-plan.md): at 'at' ET on trading days the `manage-time-spreads` job runs `run.py time-spreads` -- a read-only scan of the tradable names' term structure and the shortlist's chains (scripts/fetch_time_spreads.py), then one full manage snapshot so Live, portfolio sizes the calendars and diagonals. No tested edge: the rows are ordered by the untested front/back IV ratio. On whenever manage is; 'enabled': false turns it off alone.",
+    "time_spreads": {
+      "enabled": true,
+      "at": "10:30"
     }
   },
   "morning_header": "x",

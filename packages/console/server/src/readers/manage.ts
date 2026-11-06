@@ -63,6 +63,7 @@ import type {
 import { LEDGER_WINDOWS } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num, readJson } from "./db.js";
+import { manageTimeSpreads } from "./timeSpreads.js";
 
 function rec(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -885,6 +886,7 @@ function portfolio(v: unknown, rules: Record<string, unknown>, lev: Leveraged = 
     scenarios: scenarios(p["scenarios"]),
     ladder: ladder(p["ladder"]),
     candidates: candidates(p["candidates"], rules, lev),
+    timeSpreads: manageTimeSpreads(p["time_spreads"]),
     brokerCheck: brokerCheck(p["broker_check"]),
   };
 }

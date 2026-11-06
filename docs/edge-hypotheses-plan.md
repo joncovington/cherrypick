@@ -5693,6 +5693,62 @@ run; the plan step has only counted the cells.*
   - **Nothing confirmed:** manage's default stands (`skip_if_entered_inside` on, arm A) and the question
     is closed. Whether short-dated premium earns at all is reported, not decided here.
 
+### 54. Does the front/back IV ratio predict a time spread's profit?
+
+*Source: the user, 2026-11-06, with the time-spread scanner (docs/time-spread-scanner-plan.md). The
+scanner orders its calendars and diagonals by the front week's IV over the back month's and builds a
+"loses with the stock unchanged" verdict per structure; neither has been tested. Declared before any
+chain is fetched; the plan step only counts the requests.*
+
+- **Question:** among the scanner's own structures, does a higher front/back ratio mean a better result
+  after costs, is the top third by ratio profitable on its own, and do the structures the builder calls
+  "loses unchanged" do worse than the rest?
+- **Where the edge would live:** a **term-structure premium**: the front week priced above what the stock
+  then does. **What would falsify it:** no positive rank relation between the ratio and the net, and a
+  top third that does not make money after costs, in either window.
+- **Look-alikes, said out loud:** the earnings time-spread step 0 (#348: nothing made money, the "loses
+  on an unchanged stock" verdict the only separator, exploratory); the calendars module's unconditional
+  SPY double calendars; the earnings navigator (lost after costs).
+- **Trades:** the 40 names the liquidity verdict calls tradable with the highest median dollar volume
+  today (a hindsight label, B11), entries every second Monday (the next trading day after a holiday)
+  2016-01-04 to 2026-09-28. The front is the weekly expiry 5 to 16 days out nearest 11 days, the back
+  the standard monthly 30 to 75 days out nearest the middle. The structures are built by the scanner's
+  own builder (`cherrypick.manage.timespreads.structures`) on the stored entry chains, and one of each
+  kind is held: the put and call calendar at the strike nearest the stock, the put and call diagonal
+  whose long is nearest 0.65 delta.
+- **The ratio:** front IV over back IV of the at-the-money put calendar's legs, solved from their mids at
+  the stock's close. An entry whose at-the-money calendar fails its gates has no ratio and no trade
+  (counted).
+- **Fills and exit:** entry at each leg's mid with the suite's slippage (`fees.slippage_dollars`) and
+  per-leg fees; held to the short's expiry, where the short is worth its intrinsic on that close and the
+  long is sold at the stored chain's mid that session less the same slippage, with the closing fees.
+  Stress: 1.5x fees and a quarter of the spread. A split inside the trade drops it; a long not quoted
+  two-sided at the exit drops it (counted).
+- **Measured:** the net in percent of the debit (a time spread's whole risk).
+- **Windows:** design entries 2016-01-01 to 2020-12-31; holdout 2021-01-01 to 2026-12-31, read after the
+  design whatever it shows. Fewer than 40 trades in a test's window is no verdict.
+- **Pass-or-fail rule:** 12 tests (4 structures x ratio rank, top third, verdict), Holm at 0.05 on the
+  one-sided p in the design: the Spearman rank correlation of the ratio with the net above zero; the top
+  third's mean net above zero with sessions as clusters; the mean net of the rows not called "loses
+  unchanged" above that of the rows called so (Welch). A design pass also needs the same above zero at
+  the stress and with the best five sessions removed. The holdout confirms it only with the same sign at
+  p < 0.05.
+- **Declared limits (B11):** the hindsight universe; end-of-day marks only, held to the short's expiry
+  (no take profit or stop tested here); early assignment not modelled; the store carries no open
+  interest, so the leg bars' open-interest test is not applied (the cost gate and two-sided quotes are);
+  the IVs are Black-Scholes at the scanner's rate with no dividends.
+- **Data:** end-of-day chains from the licensed `eod_chains.db`, fetched by the plan's request file
+  (three chains a trade: front and back at entry, the back at the front's expiry) through the research
+  queue's `fetch-chains`; closes and splits from the technicals history store.
+  `scripts/time_spread_ratio_item54.py plan|design|holdout` writes under `results/research/item54/`; the
+  register records verdicts only.
+- **Decides:**
+  - **A ratio test confirmed for a structure:** the scanner may rank that structure by the ratio, and
+    its "hypothesis, untested" label comes off for it.
+  - **The verdict test confirmed:** the scanner drops "loses unchanged" rows of that structure.
+  - **Nothing confirmed:** the ratio stays an untested ordering, labelled so, and the scanner stays a
+    convenience, never presented as a source of trades.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

@@ -465,6 +465,17 @@ DEFAULT_RULES: dict[str, Any] = {
             # beyond that `far_over`.
             "bp_warn_over": 0.10,
         },
+        # The time-spread scanner's rows sized to the account (timespreads.suggest, 2026-11-06): its
+        # own buying-power ceiling, the candidates' per-trade risk and other caps otherwise. Above
+        # `delta_limit` beta-weighted delta only neutral and bearish structures are listed. No
+        # structure here has a tested edge (item 54): rows are ordered by the front/back ratio.
+        "time_spreads": {
+            "enabled": True,
+            "max_bp_share": 0.60,
+            "delta_limit": 100.0,
+            "max_units": 2,
+            "show": 30,
+        },
     },
     # Per-underlying overrides: {"SPY": {"intent": "hedge", "disable": ["debit.stop"], "note": "..."}}.
     # `intent: "pmcc"` recognises a call diagonal as a PMCC; `"diagonal"` keeps it out (pmcc.py).

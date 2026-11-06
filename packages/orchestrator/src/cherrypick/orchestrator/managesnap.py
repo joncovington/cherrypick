@@ -113,6 +113,11 @@ Version 16 (2026-11-03) carries `live_known_orders`: every live loop's published
 loop's 0DTE fill from a hand-placed one by the loops' own belief, and a re-evaluation of the session
 gets the same answer. A local file read, never the broker. A folder that cannot be listed is
 `live_known_orders_error`; a snapshot without the field has no hand 0DTE view.
+
+Version 17 (2026-11-06) carries `time_spreads`: the session's own time-spread reading
+(scripts/fetch_time_spreads.py; docs/time-spread-scanner-plan.md), the shortlist's quoted chains manage
+builds calendars and diagonals from. A local file read, never the broker; only today's file counts, and
+its absence is the reading's `error`. A snapshot without the field has no time-spread rows.
 """
 
 from __future__ import annotations
@@ -132,7 +137,7 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 16
+SNAPSHOT_VERSION = 17
 # Greeks move far more slowly than a bid; the cache's are used up to this old, the feed's otherwise.
 GREEKS_MAX_AGE_SECONDS = 900.0
 # Monday reads Friday's afternoon reading; anything older is a stale book of quotes.
@@ -695,6 +700,27 @@ def income_reading(session: date, folder=None) -> dict[str, Any]:
     return {**doc, "error": None}
 
 
+def time_spreads_dir():
+    from cherrypick.core import home
+
+    return home.data_dir("time-spreads")
+
+
+def time_spreads_reading(session: date, folder=None) -> dict[str, Any]:
+    """The session's own time-spread reading (scripts/fetch_time_spreads.py), with `error` saying why
+    there is none. Only today's: its quotes size today's trades, and a day-old scan would offer a
+    front week already a day shorter. A `.trial` file is never read."""
+    folder = time_spreads_dir() if folder is None else folder
+    path = folder / f"{session.isoformat()}.json"
+    if not path.exists():
+        return {"error": "no time-spread reading today (scripts/fetch_time_spreads.py, about 10:30 ET)"}
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {"error": f"{path.name} is unreadable: {exc}"[:200]}
+    return {**doc, "error": None}
+
+
 def skate_dir():
     from cherrypick.core import home
 
@@ -983,6 +1009,7 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "roll_chains": chains,
         "roll_out_chains": roll_out,
         "income": income_reading(date.fromisoformat(session)),
+        "time_spreads": time_spreads_reading(date.fromisoformat(session)),
         "skate_bands": bands,
         "skate_bands_error": bands_error,
         "underlying_history": underlying,

@@ -389,6 +389,7 @@ def test_derive_full_suite_job_table():
         "morning-narrative",
         "manage-eval",
         "manage-marks",
+        "manage-time-spreads",
         "advisor-deep",
         *QUIKOPTIONS_JOBS,
     }
@@ -736,6 +737,22 @@ def test_manage_eval_off_by_default_and_runs_at_ten_on_trading_days_when_on():
     assert job.enabled and job.trading_days_only
     assert job.at_et == "10:00"
     assert job.argv[-1] == "manage"
+
+
+def test_the_time_spread_scan_follows_manage_and_has_its_own_switch():
+    """On whenever manage is, at 10:30 ET on trading days, running the `time-spreads` verb; off with
+    manage, and off alone by `manage.time_spreads.enabled`."""
+    cfg = suite_cfg()
+    cfg["manage"] = {"enabled": False}
+    off = {j.id: j for j in derive(cfg)[0]}["manage-time-spreads"]
+    assert not off.enabled and "manage.time_spreads" in off.enabled_reason
+    cfg["manage"] = {"enabled": True}
+    job = {j.id: j for j in derive(cfg)[0]}["manage-time-spreads"]
+    assert job.enabled and job.trading_days_only and job.at_et == "10:30"
+    assert job.argv[-1] == "time-spreads"
+    cfg["manage"] = {"enabled": True, "time_spreads": {"enabled": False, "at": "11:00"}}
+    alone = {j.id: j for j in derive(cfg)[0]}["manage-time-spreads"]
+    assert not alone.enabled and alone.at_et == "11:00"
 
 
 def test_manage_also_at_adds_one_job_per_further_time():

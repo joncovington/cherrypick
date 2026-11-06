@@ -9,6 +9,7 @@ import { fmtCash, fmtMoney } from "../../lib/format";
 import { useViewMode } from "../../lib/viewMode";
 import { Tile } from "../Flies/PerformanceTab";
 import { IncomeCard } from "./IncomeCard";
+import { TimeSpreadsCard } from "./TimeSpreadsCard";
 
 /**
  * The account read as one book (packages/manage `portfolio.py`), as cards: a dial for beta-weighted
@@ -555,6 +556,7 @@ export function PortfolioCards({
       {detail && scenarios}
       <HedgeCard p={p} />
       <IncomeCard c={p.candidates} />
+      <TimeSpreadsCard t={p.timeSpreads} />
     </>
   );
 }

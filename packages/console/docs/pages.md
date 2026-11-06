@@ -172,6 +172,13 @@ the setups watchlist:
 board. Then the income lists: short puts, covered calls and credit spreads, one tab each. The fidelity
 tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/reference.md`.
 
+- **Time spreads** (2026-11-06; `TimeSpreadsTab.tsx`, docs/time-spread-scanner-plan.md): the day's
+  calendars and diagonals on the names whose front week is priced rich to the back month, unsized,
+  from `scripts/fetch_time_spreads.py`'s file through `readers/timeSpreads.ts`
+  (`GET /api/screeners/time-spreads[?day=]`). Broker reads only, so no Dolt card. **No tested edge**:
+  rows are in the scan's order, by the front/back IV ratio, labelled an untested hypothesis (item 54),
+  and every figure is modelled. Live, portfolio shows the same rows sized to the account
+  (`TimeSpreadsCard.tsx`, manage's `book.time_spreads`), under the income card.
 - **The income lists are OURS only** (2026-10-24). The vendor's subscription ended, so its saved days
   are no longer shown, there is no source toggle, and the vendor reader and its route are gone. Its
   files stay on disk under `~/.cherrypick`. All three tabs read `technicals income-lists`' file through

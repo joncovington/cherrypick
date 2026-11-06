@@ -1004,6 +1004,47 @@ def _manage_attention(cfg, settings: dict, written: str | None, session: str | N
             _append_log(_module_log("manage"), {"job": job, "error": f"{type(exc).__name__}: {exc}"})
 
 
+def _run_time_spreads(cfg, force: bool = False) -> None:
+    """The time-spread scanner (docs/time-spread-scanner-plan.md): the `manage-time-spreads` job at
+    about 10:30 ET on trading days, or by hand (`--force` scans outside regular hours). Runs the
+    read-only scan script, then, when manage is on and the scan wrote the day's file, one full manage
+    snapshot so Live, portfolio sizes the new rows now rather than at the next full run. Advice only:
+    nothing on this path places an order."""
+    from cherrypick.orchestrator import jobspec
+
+    launcher = str(Path(__file__).resolve().parents[2] / "run.py")
+    script = jobspec._suite_script(launcher, "fetch_time_spreads.py")
+    log_path = _module_log("manage")
+    try:
+        r = subprocess.run(
+            [cfgmod.python_exe(), script, *(["--force"] if force else [])],
+            capture_output=True,
+            text=True,
+            timeout=1200,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        try:
+            result = json.loads(r.stdout or "{}")
+        except json.JSONDecodeError:
+            result = {"raw": (r.stdout or "")[-2000:]}
+        ok = r.returncode == 0 and result.get("ok", True) is not False
+        error = None if ok else (result.get("reason") or (r.stderr or "")[-500:])
+    except Exception as exc:  # noqa: BLE001 -- a failed scan is a missing card, never a trade
+        ok, result, error = False, {}, f"{type(exc).__name__}: {exc}"
+    rec = {
+        "job": "time-spreads",
+        "ok": ok,
+        "error": error,
+        **{k: result.get(k) for k in ("written", "passing", "structures")},
+    }
+    _append_log(log_path, rec)
+    if ok and result.get("written") and cfgmod.manage_settings(cfg)["enabled"]:
+        rec["manage"] = _manage_full(cfg).get("ok")
+    _emit({**result, **rec})
+    if not ok:
+        sys.exit(1)
+
+
 def _run_manage_marks(cfg) -> None:
     """The `manage-marks` job, once a minute between the full snapshots: the day's stored snapshot moved
     to the stream cache's newer quotes and evaluated again (packages/manage `remark`). No broker call.
@@ -2359,6 +2400,7 @@ def build_parser() -> argparse.ArgumentParser:
             "morning",
             "manage",
             "manage-marks",
+            "time-spreads",
             "restart-console",
             "power-watch",
             "live-positions",
@@ -2417,7 +2459,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--force",
         action="store_true",
         help="For init: overwrite an existing config.json. For install: proceed while flies is "
-        "live-armed today. For notify-status: post on a non-trading day too.",
+        "live-armed today. For notify-status: post on a non-trading day too. For time-spreads: scan "
+        "outside regular hours.",
     )
     parser.add_argument(
         "--date",
@@ -2783,6 +2826,7 @@ def main() -> None:
         "morning": lambda: _run_morning(cfg),
         "manage": lambda: _run_manage(cfg),
         "manage-marks": lambda: _run_manage_marks(cfg),
+        "time-spreads": lambda: _run_time_spreads(cfg, force=args.force),
         "restart-console": lambda: cmd_restart_console(cfg),
         "ps": lambda: cmd_ps(cfg),
         "restart": lambda: cmd_restart(cfg, args.name, direct=args.direct, result=args.result),

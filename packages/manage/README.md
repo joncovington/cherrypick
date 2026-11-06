@@ -505,6 +505,26 @@ expiry for a diagonal). One earnings trade with no bounded loss refuses the whol
 freeing part of it. Only buying power is freed: their theta and delta still count. The console's
 income card switches between the two lists with a checkbox.
 
+### Time spreads (`book.time_spreads`, 2026-11-06)
+
+The time-spread scanner's calendars and diagonals, sized to the account
+([docs/time-spread-scanner-plan.md](../../docs/time-spread-scanner-plan.md)). The snapshot carries the
+day's reading (`time_spreads`, snapshot v17: `scripts/fetch_time_spreads.py`, about 10:30 ET), and
+`timespreads.py` builds from its quoted chains: same-strike calendars at the money and one strike either
+side, and put and call diagonals (long 0.55-0.75 delta, short 0.15-0.35 beyond it, the debit at most 75%
+of the gap), each gated as one order by the leg bars and a natural fill within 15% of the debit. Every
+number on a row is modelled at each leg's own IV: profit at the short's expiry flat, up 5% and down 10%,
+the breakeven and 25%-loss price-stop bands, the take profit, value stop and roll date.
+
+Sizing reuses the candidates' caps (`candidates.size`: per-trade risk, the delta band), with three
+differences. A debit spread's max loss is its debit, so the debit is its risk, its buying power and its
+notional. The book's own buying-power band and theta caps are set aside for this block's ceiling
+(`portfolio.time_spreads.max_bp_share`, 60%), since the theta caps are a short-premium book's gamma
+guard and refuse every calendar on a small account; the theta a row adds is shown. Above
+`delta_limit` (+100) beta-weighted delta, bullish structures are held back and counted. A name or a
+sector already held is flagged on the row. **No structure here has a tested edge**: rows are ordered by
+the front/back IV ratio, labelled an untested hypothesis, until item 54 decides it.
+
 ## The opening half hour
 
 An evaluation of marks taken between 09:30 and `early.verdicts_from` (10:00) New York time carries

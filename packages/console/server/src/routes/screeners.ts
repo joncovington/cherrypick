@@ -8,6 +8,7 @@ import type {
   SignalBoardPayload,
   SkatePayload,
   SkateRecordPayload,
+  TimeSpreadsPayload,
   ValuationPayload,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
@@ -17,9 +18,16 @@ import { CREDIT_SPREADS, INCOME_LISTS, readCreditSpreadList, readIncomeList } fr
 import { readSignalBoard } from "../readers/signalBoard.js";
 import { readSkate } from "../readers/skate.js";
 import { readSkateRecord } from "../readers/skateRecord.js";
+import { readTimeSpreads } from "../readers/timeSpreads.js";
 import { readValuation } from "../readers/valuation.js";
 
 export function registerScreenerRoutes(app: FastifyInstance, config: ConsoleConfig): void {
+  // The time-spread scanner's file (scripts/fetch_time_spreads.py): no tested edge, ordered by the
+  // untested front/back IV ratio.
+  app.get<{ Querystring: { day?: string } }>(
+    "/api/screeners/time-spreads",
+    async (req): Promise<TimeSpreadsPayload> => readTimeSpreads(config, req.query.day ?? null),
+  );
   // The fair-value file (technicals valuation): one DCF estimate a name a session; tested 2018-26, no edge.
   app.get<{ Querystring: { day?: string } }>(
     "/api/screeners/valuation",
