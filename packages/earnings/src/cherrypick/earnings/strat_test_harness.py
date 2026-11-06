@@ -447,11 +447,12 @@ def _parallel_scan(calendar, config, workers, symbol_timeout, budget_seconds):
     return out
 
 
-def _scan_stream(calendar, config, workers, symbol_timeout, budget_seconds):
+def _scan_stream(calendar, config, workers, symbol_timeout, budget_seconds, skip=frozenset()):
     """Evaluate every calendar symbol's strategies concurrently, bounded two ways: each symbol by
     ``symbol_timeout`` (via _run_bounded) and the whole phase by ``budget_seconds``. Yields
     ``(entry, results, reason)`` as each symbol finishes, then one budget_exceeded row per symbol
-    that never did.
+    that never did. Symbols are dispatched in ``calendar`` order, so a budget that binds drops the
+    tail. ``skip`` names strategies that run no screen (retired ones).
 
     Yielded, not returned (2026-10-29): the caller opens each symbol's positions while the rest are
     still being scanned. Collected first, the write phase began only when the slowest symbol was done,
@@ -474,6 +475,8 @@ def _scan_stream(calendar, config, workers, symbol_timeout, budget_seconds):
         return
     done: set = set()
     pool = _cf.ThreadPoolExecutor(max_workers=max(1, workers))
+    # Passed only when there is something to skip, so a bare evaluate_symbol stand-in still fits.
+    extra = (skip,) if skip else ()
     try:
         fut_to_idx = {
             pool.submit(
@@ -484,6 +487,7 @@ def _scan_stream(calendar, config, workers, symbol_timeout, budget_seconds):
                 e["date"],
                 e["timing"],
                 config,
+                *extra,
             ): i
             for i, e in enumerate(calendar)
         }
@@ -660,7 +664,17 @@ def cmd_run_entries(args) -> dict:
     # Scan (parallel, broker reads only): every symbol's strategies evaluated concurrently, each
     # yielded as it finishes. Write (this thread, below): order building + every paper-DB write, so
     # SQLite has one writer -- interleaved with the scan rather than after it (2026-10-29).
-    scanned = _scan_stream(calendar, config, workers, symbol_timeout, budget)
+    #
+    # Order (2026-11-05 boundary): names the liquidity verdict calls tradable first, in the calendar's
+    # own order, then the refused ones, which are screened only with whatever budget is left and
+    # recorded exactly as before when they are. The pool takes names in this order, so a binding
+    # budget can only drop refused names while any tradable name is still waiting. A missing or stale
+    # verdict refuses everything, which leaves the order unchanged. Retired strategies run no screen.
+    refused_names = [e for e in calendar if universe.refusal(e["symbol"], scan_date, verdict)]
+    refused_ids = {id(e) for e in refused_names}
+    calendar = [e for e in calendar if id(e) not in refused_ids] + refused_names
+    retired = frozenset(n for n in STRAT_TEST_RETIRED if strategy_retired(n, scan_date))
+    scanned = _scan_stream(calendar, config, workers, symbol_timeout, budget, retired)
 
     for entry, results, scan_reason in scanned:
         symbol, earnings_date, timing = entry["symbol"], entry["date"], entry["timing"]

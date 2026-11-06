@@ -16,7 +16,7 @@ strategies, **all defined-risk**: `iron_fly`, `double_calendar`, `iron_condor`, 
 (`docs/05-strategies.md`). `expected_move_butterfly` is **paper only**: it opens in `strat_test`
 from 2026-10-14 (`STRAT_TEST_STARTS`), and is never ranked as a symbol's best, so never propose it
 live. `atm_calendar` and
-`double_calendar` stay registered but open nothing in `strat_test` from 2026-10-15, and
+`double_calendar` stay registered but open nothing in `strat_test` from 2026-10-15 (and run no screen from 2026-11-05), and
 `broken_wing_butterfly` from 2026-10-26 (`strat_test_harness.STRAT_TEST_RETIRED`, dated retirements;
 docs/operating-history.md). **Exits price at mid for positions entered from 2026-10-26**, natural
 side before (`scanner.exit_basis`; slippage is a cost on a mid fill only, `costs.exit_costs`) —
@@ -78,6 +78,13 @@ to late 2024. Small/mid-caps with only monthlies may legitimately fail the front
   which rows finish FIRST if `entry_scan_budget_seconds` binds. It must never gate admission (that
   gate caused a five-session outage; break `entry_calendar_admissibility_gate_removed`). Why AMC,
   never BMO: `docs/screening-criteria.md` Layer 0.
+- **The entry scan runs tradable names first (from 2026-11-05).** `run_entries` splits the calendar
+  with `universe.refusal` before screening: names the liquidity verdict calls tradable go first, in
+  the calendar's own order, then refused names, which are screened only with the budget left and
+  then recorded as before (screen rows, then the `not_tradable` execution drop; never opened). A
+  refused name the budget never reached is the ordinary `entry_scan_budget_exceeded` outcome. A
+  missing or stale verdict refuses everything, so the order is unchanged. Retired strategies run no
+  screen at all and leave no row.
 - **This module drives that scan itself.** The orchestrator's `symbol-watch` job, a second run of
   the same scan, was removed 2026-11-02; don't bring one back. `symbol_watch.py refresh`,
   `run_entries` and `run_closes` survive as manual/backfill verbs.
