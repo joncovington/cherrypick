@@ -292,3 +292,21 @@ per-arm result reads from 2026-10-30 or ends before it; never pool across the bo
 
 **Journal on the day:** one `entry_and_exit_patience` break dated 2026-10-30 in the paper ledger,
 recorded with `paper_loop record-break`.
+
+## Exits priced past the payoff (to 2026-10-26, corrected 2026-11-05)
+
+Before the 2026-10-26 boundary a close was priced on the natural side and nothing held it inside
+what the structure can be worth. On wide-quoted expiry-day books the far touch went past the payoff
+range: long butterflies closed at a positive exit debit, an iron fly and an iron condor bought back
+for more than their width. Those losses could not have been filled. Found in the 2026-11-05 review.
+
+- **Size:** 17 closed rows, 13 of them `expected_move_butterfly` and the expiry close; gross P&L
+  +$1,101 once clamped. Six `atm_calendar` rows also lost more than their recorded risk, but a
+  calendar spans two expiries and has no payoff bound, so they are left as recorded.
+- **The fix in code** was already in place: every exit since 2026-10-26 is clamped to
+  `scanner.exit_debit_bounds`.
+- **The correction:** `scripts/earnings_clamp_exit_debits.py` (dry run by default) applies the same
+  clamp to the older rows: `exit_debit` and gross `pnl` only. Entry, costs, exit reason and timing are
+  untouched. It backs the ledger up first and writes `paper_trades.db.exit-debit-clamped.json`
+  beside it with every changed row's old and new values; a second run refuses.
+- **Why it lands at once:** a number recorded wrong, not a measurement change. No decision moves.
