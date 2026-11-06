@@ -479,6 +479,7 @@ DEFAULT_RULES: dict[str, Any] = {
         # own buying-power ceiling, the candidates' per-trade risk and other caps otherwise. Above
         # `delta_limit` beta-weighted delta only neutral and bearish structures are listed. No
         # structure here has a tested edge (item 54): rows are ordered by the front/back ratio.
+        # `show` cuts the rows that fit; every row too big is listed, with the cap that stops it.
         "time_spreads": {
             "enabled": True,
             "max_bp_share": 0.60,

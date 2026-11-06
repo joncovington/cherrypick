@@ -433,7 +433,9 @@ def suggest(
         "bp_cap_pct": cap,
         "fits": fits[:show],
         "fits_total": len(fits),
-        "too_big": too_big[:show],
+        # Every row that does not fit, each with the cap that stops it: the screener tab marks each of
+        # the scan's rows from this list, so a cut list left rows it could not name a cap for.
+        "too_big": too_big,
         "too_big_total": len(too_big),
         "dropped": dropped,
         "error": None,

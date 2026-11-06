@@ -533,7 +533,9 @@ notional. The book's own buying-power band and theta caps are set aside for this
 (`portfolio.time_spreads.max_bp_share`, 60%), since the theta caps are a short-premium book's gamma
 guard and refuse every calendar on a small account; the theta a row adds is shown. Above
 `delta_limit` (+100) beta-weighted delta, bullish structures are held back and counted. A name or a
-sector already held is flagged on the row. **No structure here has a tested edge**: rows are ordered by
+sector already held is flagged on the row. `show` (30) cuts the list that fits; the ones too big are
+all listed, each with the cap that stops it, so the screener tab can mark every scanned row. **No
+structure here has a tested edge**: rows are ordered by
 the front/back IV ratio, labelled an untested hypothesis, until item 54 decides it.
 
 ## The opening half hour
