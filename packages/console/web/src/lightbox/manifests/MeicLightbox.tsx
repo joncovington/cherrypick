@@ -20,6 +20,7 @@ import { MeicForestCard } from "../../pages/Meic/MeicForestCard";
 import { MeicArmCards } from "../../pages/Meic/MeicArmCards";
 import { MeicPerformanceTab } from "../../pages/Meic/MeicPerformanceTab";
 import { MeicSession } from "../../pages/Meic/MeicSession";
+import { stepDay } from "../../lib/stepDay";
 import { MeicSummary } from "../../pages/Meic/SummarySlide";
 import { MeicHistoryTable, MeicPositionsTable, type MeicScope } from "../../pages/Meic/MeicTables";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
@@ -175,14 +176,16 @@ export function MeicLightbox({ slide }: { slide: string }) {
           day={day}
           canStepDay={(data?.summaries.length ?? 0) > 0}
           onDayStep={(delta) => {
-            const days = (data?.summaries ?? []).map((sm) => sm.summaryDate).sort();
+            // The walk lives in lib/stepDay.ts as a pure function — the summaries list cannot hold
+            // the current day between the first entry and the roll-up, and the session sits one
+            // past its newest end. A null return means "latest session", a value the header's
+            // select actually offers.
+            const days = (data?.summaries ?? []).map((sm) => sm.summaryDate);
             if (days.length === 0) return;
             const current = day ?? data?.session ?? null;
             if (current === null) return;
-            const i = days.indexOf(current);
-            if (i < 0) return;
-            const next = days[Math.max(0, Math.min(days.length - 1, i + delta))] ?? null;
-            if (next !== current && next !== null) setDay(next);
+            const next = stepDay(days, current, data?.session ?? null, delta);
+            if (next !== current) setDay(next);
           }}
         />
       ),
