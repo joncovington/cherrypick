@@ -761,7 +761,8 @@ call entered at 0.70 delta or more, or `intent: "pmcc"`; an evaluation from befo
 also names its day limits). The width card says "passes, thin" where manage flags a passing cost over
 three quarters of the width, with the cost's share beside it. A card shows the long (delta at entry or
 "delta at entry unknown" with manage's reason, today's delta, extrinsic share, days left, the roll
-flag), the width check with the P&L if assigned gross and net of fees, the long's net cost after
+flag: amber "roll the long" only on a recognised PMCC, since manage raises that rule on no other; on
+any other candidate a muted "no roll rule" with the thresholds crossed shown as information), the width check with the P&L if assigned gross and net of fees, the long's net cost after
 premiums, the short's check (band or "band not in the snapshot", assignment exposure, N(d2),
 earnings in its life), every short sold against the long, the skate yield as a comparison figure,
 and the `pmcc.*` rules with the roll candidates and check-roll verdicts. Unrecognised: "its diagonal
