@@ -116,6 +116,25 @@ only ever turn a *hold* into a *close*, never the reverse.
    three to five sessions; holding a **loser** fights post-earnings drift, which continues rather than
    reverting. Reason `pead_loser`; disable per strategy with `close_losers_first_morning: false`.
 
+   **"First check" means the first check that could act.** The loop marks every position from the
+   09:30 open, but nothing executes before `exec_window_start` (09:40). The gate used to count a
+   position's first check as "no mark yet this session", which the 09:30 mark spent, so it never
+   fired: from 2026-10-17 there were no executed `pead_loser` closes and 137 refused. A position
+   is now owed its first check of a session until an evaluation at or after the exec window start
+   comes back with no gate on it (`management.first_check_pending`, read from the session's
+   `management_events`, so a restart does not change it). A `pead_loser` verdict held by
+   `spread_too_wide`, `tick_execution_cap`, `close_failed` or an unusable mark has not been acted
+   on, so the next tick is owed the same check; the spread-gate patience then settles it. A winner
+   is judged once and carried. The check is per session: a position carried into a second session is
+   owed one there too.
+
+   **The twin.** `close_losers_first_morning` is also an advice param, named
+   `<strategy>.close_losers_first_morning` and bounded like any other (`{"choices": [false]}`). It is
+   stamped on the twin's row at entry and `management.effective_config` routes it into
+   `management.<strategy>`, so a twin of an experiment named `pead-gate-off` is opened beside every
+   overnight control entry with identical legs, credit and costs and carries a first-morning loser
+   that its control closes. It applies to the four overnight strategies only.
+
 ### Execution gates
 
 A close decided by the rules above is not necessarily taken on that tick. Each of these records the

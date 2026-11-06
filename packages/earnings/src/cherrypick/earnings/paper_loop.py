@@ -284,9 +284,14 @@ def refresh_stream_request(positions: list[dict]) -> None:
     stream_request.register(sorted({p["symbol"] for p in positions if p.get("symbol")}))
 
 
-def _first_check_of_day(order_id: str, session: str) -> bool:
-    marks = db_paper.cmd_get_marks(_ns(order_id=order_id, session_date=session, limit=1))["marks"]
-    return not marks
+def _first_check_of_day(trade: dict, config: dict, now: datetime) -> bool:
+    """Whether the position is still owed its first check of the session -- see
+    `management.first_check_pending`. Read from the events table, so it survives a restart."""
+    policy = management.policy_for(trade.get("strategy") or "", management.effective_config(trade, config))
+    events = db_paper.cmd_get_management_events(
+        _ns(order_id=trade["order_id"], session_date=now.date().isoformat(), limit=5000)
+    )["events"]
+    return management.first_check_pending(events, policy, now)
 
 
 def _rest_snapshot(trade: dict) -> dict:
@@ -429,7 +434,6 @@ def close_position(trade: dict, snap: dict, reason: str, config: dict, now: date
 def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
     """Mark every open position, decide, and act on what the gates allow."""
     positions = open_positions()
-    session = now.date().isoformat()
     policy = management.policy_for("", config)
     max_executions = int(policy.get("max_executions_per_tick", 3) or 3)
 
@@ -439,7 +443,7 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
 
     for trade in positions:
         open_capital += trade.get("capital_at_risk") or 0.0
-        first_check = _first_check_of_day(trade["order_id"], session)
+        first_check = _first_check_of_day(trade, config, now)
         snap, mark_id = mark_position(trade, config, now)
         marked += 1
         fresh += snap.get("fresh") or 0

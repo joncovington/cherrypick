@@ -73,7 +73,12 @@ def wired(tmp_path, monkeypatch):
 
 
 def open_trade(
-    order_id="T1", credit=5.00, opened_at=None, expiration="2026-08-21", profile="strat_test:iron_fly"
+    order_id="T1",
+    credit=5.00,
+    opened_at=None,
+    expiration="2026-08-21",
+    profile="strat_test:iron_fly",
+    advice_params=None,
 ):
     db_paper.cmd_save_trade(
         _ns(
@@ -88,6 +93,7 @@ def open_trade(
                     "profile": profile,
                     "quantity": 1,
                     "capital_at_risk": 500.0,
+                    "advice_params": json.dumps(advice_params) if advice_params else None,
                     "opened_at": opened_at
                     if opened_at is not None
                     else at("15:45", "2026-08-11").timestamp(),
@@ -607,3 +613,112 @@ def test_append_run_log_never_breaks_a_session(tmp_path, monkeypatch):
     monkeypatch.setattr(_home, "logs_dir", lambda: tmp_path / "nope" / "deeper")
     (tmp_path / "nope").write_text("not a directory", encoding="utf-8")
     pl.append_run_log({"phase": "entry"})  # must not raise
+
+
+# --------------------------------------------------------------------------- the PEAD gate across ticks
+def _events(order_id):
+    return db_paper.cmd_get_management_events(_ns(order_id=order_id, session_date=None, limit=None))["events"]
+
+
+def _closed_reasons():
+    return [
+        t["exit_reason"] for t in db_paper.cmd_get_pnl_summary(_ns(strategy=None, profile=None))["trades"]
+    ]
+
+
+def test_a_loser_marked_in_the_open_window_is_closed_at_the_first_executable_tick(priced):
+    """The gate never fired (0 executed `pead_loser` closes, 137 refused, from 2026-10-17): the loop
+    marks every position from the 09:30 open, the old "first check" meant "no mark yet", and the first
+    tick that could act was 09:40. Shown to fail by restoring that definition."""
+    order_id = open_trade()
+    priced(quotes_pricing(6.00))
+    paper_loop.run_iteration(CONFIG, at("09:30"))
+    assert db_paper.cmd_get_open_positions(_ns())["positions"], "09:30 cannot act"
+    paper_loop.run_iteration(CONFIG, at("09:40"))
+
+    assert db_paper.cmd_get_open_positions(_ns())["positions"] == []
+    assert _closed_reasons() == ["pead_loser"]
+    assert _events(order_id)[0]["executed"] == 1
+
+
+def test_a_winner_marked_at_the_open_is_carried_and_a_later_dip_is_not_gated(priced):
+    """Carrying the winner is what the gate is for; once the first executable tick has judged it, a
+    later dip below breakeven the same morning is not a second first check."""
+    open_trade()
+    priced(quotes_pricing(4.50))
+    paper_loop.run_iteration(CONFIG, at("09:30"))
+    paper_loop.run_iteration(CONFIG, at("09:40"))
+    priced(quotes_pricing(6.00))  # now a loser, still short of the stop
+    paper_loop.run_iteration(CONFIG, at("09:50"))
+    paper_loop.run_iteration(CONFIG, at("10:30"))
+
+    assert len(db_paper.cmd_get_open_positions(_ns())["positions"]) == 1
+
+
+def test_a_loser_held_by_the_spread_gate_is_decided_again_on_the_next_tick(priced):
+    """The first check is not spent by a verdict the gate refused: a loser the spread gate held at
+    09:40 is closed by `pead_loser` when the market narrows at 09:50, not carried because 09:40 went by."""
+    order_id = open_trade()
+    priced(quotes_pricing(5.10, spread=0.90))  # wide leg: prices the close at 6.00, a loser
+    paper_loop.run_iteration(CONFIG, at("09:30"))
+    paper_loop.run_iteration(CONFIG, at("09:40"))
+    held = _events(order_id)[0]
+    assert held["reason"] == "pead_loser" and held["gate"] == "spread_too_wide"
+    assert db_paper.cmd_get_open_positions(_ns())["positions"]
+
+    priced(quotes_pricing(6.00))
+    paper_loop.run_iteration(CONFIG, at("09:50"))
+    assert _closed_reasons() == ["pead_loser"]
+
+
+def test_a_loser_with_no_usable_mark_at_the_first_executable_tick_is_checked_when_one_arrives(priced):
+    open_trade()
+    priced(refusing())
+    paper_loop.run_iteration(CONFIG, at("09:40"))
+    priced(quotes_pricing(6.00))
+    paper_loop.run_iteration(CONFIG, at("09:45"))
+
+    assert _closed_reasons() == ["pead_loser"]
+
+
+def test_the_first_check_is_read_from_the_ledger_not_from_memory(priced):
+    """A restart between 09:40 and 09:50 changes nothing: the answer comes from the events table."""
+    open_trade()
+    priced(quotes_pricing(4.50))
+    paper_loop.run_iteration(CONFIG, at("09:40"))
+    trade = db_paper.cmd_get_open_positions(_ns())["positions"][0]
+    assert paper_loop._first_check_of_day(trade, CONFIG, at("09:50")) is False
+    assert paper_loop._first_check_of_day(trade, CONFIG, at("09:40", "2026-08-13")) is True
+
+
+def test_a_carried_winner_is_not_gated_again_before_the_session_cap(priced):
+    """Day 1 and day 2 each judge the position once at 09:40; day 3 belongs to the session cap."""
+    open_trade()
+    priced(quotes_pricing(4.50))
+    for day in ("2026-08-12", "2026-08-13"):
+        paper_loop.run_iteration(CONFIG, at("09:30", day))
+        paper_loop.run_iteration(CONFIG, at("09:40", day))
+        assert db_paper.cmd_get_open_positions(_ns())["positions"], day
+    paper_loop.run_iteration(CONFIG, at("09:30", "2026-08-14"))
+    paper_loop.run_iteration(CONFIG, at("09:40", "2026-08-14"))
+
+    assert _closed_reasons() == ["max_hold"]
+
+
+def test_a_twin_with_the_gate_off_carries_the_loser_its_control_closes(priced):
+    """The paired comparison (`pead-gate-off`): identical legs and credit, one policy key apart. The
+    param is stamped on the row, so the twin is managed under it at every later tick."""
+    control = open_trade("T1")
+    twin = open_trade(
+        "T2",
+        profile="advised:pead-gate-off:iron_fly",
+        advice_params={"close_losers_first_morning": False},
+    )
+    priced(quotes_pricing(6.00))
+    paper_loop.run_iteration(CONFIG, at("09:30"))
+    paper_loop.run_iteration(CONFIG, at("09:40"))
+
+    open_ids = [p["order_id"] for p in db_paper.cmd_get_open_positions(_ns())["positions"]]
+    assert open_ids == [twin]
+    assert _closed_reasons() == ["pead_loser"]
+    assert control not in open_ids

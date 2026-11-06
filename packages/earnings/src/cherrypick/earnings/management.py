@@ -143,6 +143,13 @@ def policy_for(strategy: str, config: dict) -> dict:
     return {**POLICY_DEFAULTS, **common, **per_strategy}
 
 
+# Advised params that are management POLICY rather than a strategy threshold. A twin states them in
+# the same dotted `<strategy>.<param>` form as every other param, but they belong to the policy
+# (`policy_for` reads `management.<strategy>`), not to the strategy's own block, which would never
+# look at them. `effective_config` is where the two are told apart.
+POLICY_PARAMS = ("close_losers_first_morning",)
+
+
 def effective_config(trade: dict, config: dict) -> dict:
     """`config` with this trade's frozen advised params overlaid onto its own strategy block.
 
@@ -167,10 +174,16 @@ def effective_config(trade: dict, config: dict) -> dict:
     if not params or not strategy:
         return config
     strategies = config.get("strategies") or {}
-    return {
+    policy_params = {k: v for k, v in params.items() if k in POLICY_PARAMS}
+    strategy_params = {k: v for k, v in params.items() if k not in POLICY_PARAMS}
+    out = {
         **config,
-        "strategies": {**strategies, strategy: {**(strategies.get(strategy) or {}), **params}},
+        "strategies": {**strategies, strategy: {**(strategies.get(strategy) or {}), **strategy_params}},
     }
+    if policy_params:
+        management = config.get("management") or {}
+        out["management"] = {**management, strategy: {**(management.get(strategy) or {}), **policy_params}}
+    return out
 
 
 def strategy_config(strategy: str, config: dict, policy: dict) -> dict:
@@ -358,6 +371,45 @@ def evaluate(
     return Decision("hold", "working", {"pnl": pnl, "exit_debit": exit_debit})
 
 
+def exec_window_start(policy: dict) -> _time:
+    """The wall-clock time (ET) from which a verdict may be acted on. Half days open at 09:30 like
+    any other, so the configured time needs no shift."""
+    try:
+        hour, minute = (int(x) for x in str(policy["exec_window_start"]).split(":"))
+        return _time(hour, minute)
+    except (KeyError, TypeError, ValueError):
+        return _time(9, 40)
+
+
+# Events that are not a decision: a hold recorded for want of a price, or before anything had
+# happened. They do not use up the first check.
+_NOT_A_CHECK = ("unpriceable", "unknown_strategy", "entry_session")
+
+
+def first_check_pending(events: list[dict], policy: dict, now: datetime) -> bool:
+    """Whether this position is still owed its "first check of the day" -- the check the PEAD gate
+    and the strategies' gap labels are about.
+
+    The first check is the first evaluation at which an exit could actually be executed: one taken at
+    or after the exec window start, whose verdict no gate refused. It is NOT "no mark yet": the loop
+    marks every position from the 09:30 open, and the window opens at 09:40, so that definition was
+    spent by a tick that could not act and the gate never fired (0 executed `pead_loser` closes
+    against 137 refused, 2026-10-17 on). It is also not "the first executable tick": a verdict held
+    by the spread gate, the per-tick cap or an unusable mark has not been acted on, so the next tick
+    is owed the same check and the gate patience then decides it -- the decision is not lost.
+
+    Pure over the session's management events (`occurred_at`, `gate`, `reason`), so a restarted
+    loop reaches the same answer from the ledger."""
+    start = datetime.combine(now.date(), exec_window_start(policy), tzinfo=now.tzinfo).timestamp()
+    for event in events:
+        if (event.get("occurred_at") or 0) < start or event.get("gate"):
+            continue
+        if event.get("reason") in _NOT_A_CHECK:
+            continue
+        return False
+    return True
+
+
 # Closes that must not wait for a better market. The expiry close's whole point is to be flat
 # before the bell; a spread too wide to take a profit at is still a spread to pay, and refusing it
 # is exactly how the 2026-08-28 positions ended up settling instead.
@@ -381,11 +433,7 @@ def execution_gate(
     if not snapshot.get("ok"):
         return "unusable_mark"
 
-    try:
-        hour, minute = (int(x) for x in str(policy["exec_window_start"]).split(":"))
-    except (TypeError, ValueError):
-        hour, minute = 9, 40
-    if now.timetz().replace(tzinfo=None) < _time(hour, minute):
+    if now.timetz().replace(tzinfo=None) < exec_window_start(policy):
         return "before_exec_window"
 
     if reason not in MUST_EXIT and _spread_blocks(snapshot, policy):

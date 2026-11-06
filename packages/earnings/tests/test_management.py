@@ -139,6 +139,47 @@ def test_the_pead_gate_can_be_turned_off_per_strategy():
     assert evaluate(trade(), snapshot(6.00), first=True, config=config).action == "hold"
 
 
+def test_a_twin_can_carry_a_first_morning_loser_through_its_own_stamped_param():
+    """`pead-gate-off`: `<strategy>.close_losers_first_morning` rides on the twin's row like any
+    advised param, lands in the management policy rather than the strategy block, and leaves the
+    control (and any other strategy) on the suite's policy."""
+    twin = {**trade(), "advice_params": json.dumps({"close_losers_first_morning": False})}
+    assert evaluate(twin, snapshot(6.00), first=True).action == "hold"
+    assert evaluate(trade(), snapshot(6.00), first=True).reason == "pead_loser"
+    other = {**trade("iron_condor"), "advice_params": json.dumps({"close_losers_first_morning": False})}
+    assert evaluate(other, snapshot(6.00), first=True).action == "hold"
+    cfg = management.effective_config(twin, CONFIG)
+    assert "close_losers_first_morning" not in cfg["strategies"]["iron_fly"]
+    assert cfg["management"]["iron_fly"] == {"close_losers_first_morning": False}
+    assert "iron_condor" not in cfg["management"]
+
+
+def test_a_twin_still_carries_its_other_params_beside_the_policy_one():
+    twin = {
+        **trade(),
+        "advice_params": json.dumps({"profit_target_pct": 0.4, "close_losers_first_morning": False}),
+    }
+    cfg = management.effective_config(twin, CONFIG)
+    assert cfg["strategies"]["iron_fly"]["profit_target_pct"] == 0.4
+    assert cfg["management"]["iron_fly"]["close_losers_first_morning"] is False
+
+
+def test_first_check_pending_is_spent_only_by_an_ungated_decision_in_the_exec_window():
+    policy = management.policy_for("iron_fly", CONFIG)
+    now = at("10:00")
+    t0930, t0940 = at("09:30").timestamp(), at("09:40").timestamp()
+
+    def pending(*events):
+        return management.first_check_pending(list(events), policy, now)
+
+    assert pending()
+    assert pending({"occurred_at": t0930, "gate": None, "reason": "working"})  # before the window
+    assert pending({"occurred_at": t0940, "gate": "spread_too_wide", "reason": "pead_loser"})
+    assert pending({"occurred_at": t0940, "gate": "unusable_mark", "reason": "missing_leg_quotes"})
+    assert pending({"occurred_at": t0940, "gate": None, "reason": "unpriceable"})
+    assert not pending({"occurred_at": t0940, "gate": None, "reason": "working"})
+
+
 def test_a_position_exactly_at_breakeven_is_treated_as_a_loser():
     """Nothing has been earned, and the drift risk of holding is the same — so it closes."""
     decision = evaluate(trade(), snapshot(5.00), first=True)
