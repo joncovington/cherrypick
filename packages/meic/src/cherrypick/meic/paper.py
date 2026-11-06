@@ -2018,7 +2018,10 @@ def _settle_stopped_trades(
 
 
 def _get_open_trades(symbol: str, profile: str, trade_date: str, db_path: str) -> list:
-    return [t for t in _get_open_trades_all(symbol, trade_date, db_path) if t.get("arm") == profile]
+    """One arm's open trades for this symbol+date, filtered in the query (2026-11-06). Reading every
+    arm's and keeping one, once per arm per tick, was 65% of a replayed session."""
+    result = _db(["get_open_trades", "--symbol", symbol, "--date", trade_date, "--arm", profile], db_path)
+    return result.get("open_trades", []) if result.get("ok") else []
 
 
 def _minutes_of_day(iso_str) -> int | None:
