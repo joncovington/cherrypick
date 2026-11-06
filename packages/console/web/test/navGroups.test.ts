@@ -58,8 +58,12 @@ describe("the live nav declaration", () => {
     // 2026-10-18: `manage` split in two and moved up beside `today`: both read the whole account.
     // 2026-10-20: the wheel joins them, the third view of the same evaluation.
     // 2026-10-20: then the PMCCs, the fourth view.
-    // 2026-10-24: execution (B10) last: each live arm's fills and overrides by week.
-    expect(navSlideIds("live")).toEqual(["today", "positions", "portfolio", "wheel", "pmcc", "flies", "meic", "execution"]);
+    // 2026-10-24: execution (B10) was a tab of its own; 2026-11-06 it became a card on meic's tab.
+    expect(navSlideIds("live")).toEqual(["today", "positions", "portfolio", "wheel", "pmcc", "flies", "meic"]);
+  });
+
+  it("sends the old execution tab to meic, where its card now sits", () => {
+    expect(resolveSlide("live", "execution", decl.slides)).toBe("meic");
   });
 
   it("sends the old manage tab to positions, so a bookmark still lands on the actions", () => {

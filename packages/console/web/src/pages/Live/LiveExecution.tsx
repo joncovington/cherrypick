@@ -4,11 +4,13 @@ import { fmtUsd } from "../../components/summary/kit";
 import { useBridged } from "../../lib/bridged";
 
 /**
- * The Live page's execution tab (B10, docs/trading-book-review-plan.md): each live arm's week beside
- * its P&L -- fill rate, slippage against the mid at submit, time to fill, and the human overrides
- * (a cleared kill block, a config change in session, a manual close). Below it, live against its
- * paper mirror over the sessions live was working, split into its parts with the largest named.
- * A losing week with clean execution reads differently from one with overrides. Read-only.
+ * A live arm's execution record (B10, docs/trading-book-review-plan.md), as a card on that arm's own
+ * Live tab: its week beside its P&L -- fill rate, slippage against the mid at submit, time to fill,
+ * and the human overrides (a cleared kill block, a config change in session, a manual close). Below
+ * it, live against its paper mirror over the sessions live was working, split into its parts with
+ * the largest named. A losing week with clean execution reads differently from one with overrides.
+ * Read-only. It was a Live tab of its own until 2026-11-06; on MEIC's tab it sits under the
+ * condor-by-condor live-vs-paper card, whose gap counts only the condors both sides took.
  */
 
 const pct = (v: number | null) => (v === null ? "n/r" : `${Math.round(v * 100)}%`);
@@ -45,10 +47,22 @@ export function windowLine(m: ExecutionModule): string | null {
   return `window trigger (reported, never enforced): last ${w.window} mean ${fmtUsd(w.mean)} vs baseline ${fmtUsd(w.baseline)}, z ${w.z.toFixed(2)} — would read ${w.would ?? "?"}`;
 }
 
-function ModuleCard({ m }: { m: ExecutionModule }) {
+const TITLE = "execution by week";
+
+/** The caption that keeps this card's gap and the live-vs-paper card's apart: the two measure
+ *  different sessions against the same paper arm, so each says which. */
+export function executionCaption(m: Pick<ExecutionModule, "mirror">): string {
+  return (
+    `fills against the mid at submit and every human override, beside each week's live net. The gap below is live less ` +
+    `${m.mirror ?? "its paper mirror"} over every session live was working, so it also counts paper's entries live ` +
+    `missed; live vs paper above pairs only the condors both sides took. Desk orders keep no ledger and are not read.`
+  );
+}
+
+export function ExecutionCard({ m }: { m: ExecutionModule }) {
   if (!m.ok) {
     return (
-      <Card title={m.module}>
+      <Card title={TITLE} collapseKey={`live-execution-${m.module}`}>
         <p className="muted">{m.reason ?? "no live ledger"}</p>
       </Card>
     );
@@ -56,7 +70,10 @@ function ModuleCard({ m }: { m: ExecutionModule }) {
   const gap = gapLine(m);
   const win = windowLine(m);
   return (
-    <Card title={`${m.module} · paper mirror ${m.mirror ?? "?"}`}>
+    <Card title={`${TITLE} — paper mirror ${m.mirror ?? "?"}`} collapseKey={`live-execution-${m.module}`}>
+      <p className="muted pf-caption" style={{ marginTop: 0 }}>
+        {executionCaption(m)}
+      </p>
       <div className="table-scroll">
         <table className="data-table num-from-2">
           <thead>
@@ -97,21 +114,23 @@ function ModuleCard({ m }: { m: ExecutionModule }) {
   );
 }
 
-export function ExecutionTab() {
+/** One live arm's execution card, read from the orchestrator's record (`execution --json`). A
+ *  failed read or a module the record does not carry says so in the card, never an empty table. */
+export function LiveExecutionCard({ module }: { module: string }) {
   const q = useBridged<ExecutionRecord>(["live-execution"], "/api/live/execution");
-  if (q.isLoading) return <p className="muted">Reading the live ledgers…</p>;
-  if (q.error || !q.data?.ok || !q.data.data) {
-    return <p className="pnl-neg">{q.data?.error ?? String(q.error ?? "execution record unavailable")}</p>;
+  const failed = q.error || (q.data !== undefined && (!q.data.ok || !q.data.data));
+  const m = q.data?.data?.modules.find((x) => x.module === module);
+  if (q.isLoading || failed || m === undefined) {
+    const why = q.isLoading
+      ? "reading the live ledger…"
+      : failed
+        ? (q.data?.error ?? String(q.error ?? "execution record unavailable"))
+        : `the execution record carries no ${module}`;
+    return (
+      <Card title={TITLE} collapseKey={`live-execution-${module}`}>
+        <p className={q.isLoading ? "muted" : "pnl-neg"}>{why}</p>
+      </Card>
+    );
   }
-  return (
-    <>
-      <p className="muted">
-        Each live arm by week: fills against the mid at submit, and every human override flagged beside the week's P&L.
-        Desk orders keep no ledger and are not read here.
-      </p>
-      {q.data.data.modules.map((m) => (
-        <ModuleCard key={m.module} m={m} />
-      ))}
-    </>
-  );
+  return <ExecutionCard m={m} />;
 }

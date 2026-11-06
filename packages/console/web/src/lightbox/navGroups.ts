@@ -311,8 +311,6 @@ export const LIVE_SLIDES = [
   { id: "pmcc", label: "pmcc" },
   { id: "flies", label: "flies" },
   { id: "meic", label: "meic" },
-  // B10 (2026-10-24): each live arm's fills and overrides by week, account-wide.
-  { id: "execution", label: "execution" },
 ] as const satisfies readonly NavSlide[];
 
 export const REPORTS_SLIDES = [
@@ -542,7 +540,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
     legacy: { birdseye: "tables", trades: "tables", spreads: "tables", voloi: "tables" },
   },
   // Simple leaves out flies (2026-10-21): the module is retired, and its live tab is its history.
-  live: { slides: LIVE_SLIDES, simple: ["today", "positions", "portfolio", "wheel", "pmcc", "meic"], legacy: { manage: "positions" } },
+  live: { slides: LIVE_SLIDES, simple: ["today", "positions", "portfolio", "wheel", "pmcc", "meic"], legacy: { manage: "positions", execution: "meic" } },
   charts: { slides: CHARTS_SLIDES },
   screeners: {
     slides: SCREENERS_SLIDES,

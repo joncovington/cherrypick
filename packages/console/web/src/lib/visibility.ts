@@ -104,7 +104,7 @@ export function liveLoopsInUse(d: LiveTodayPayload | undefined): LiveInUse {
 
 /** The Live tabs that read the whole account, not one live loop: always shown, and they wear the
  *  suite's badge. The one copy: `LiveLightbox` reads it rather than keeping its own. */
-export const LIVE_ACCOUNT_WIDE: ReadonlySet<string> = new Set(["today", "positions", "portfolio", "wheel", "pmcc", "execution"]);
+export const LIVE_ACCOUNT_WIDE: ReadonlySet<string> = new Set(["today", "positions", "portfolio", "wheel", "pmcc"]);
 
 /** Whether one tab of a visible page is shown: each module's advisor tab, the technicals chart, and
  *  each live loop's Live tab. Every tab of a fail-closed page follows the page.
