@@ -386,9 +386,11 @@ ready. All five bind from the 2026-11-06 session, the first after they were merg
 **The paired twin.** An advised twin, `advised:pead-gate-off:<strategy>`, opens beside every
 iron fly, iron condor, directional credit spread (and broken-wing butterfly, retired) control entry
 with identical legs, credit and costs and `close_losers_first_morning` off, so the gate is measured
-on the same trades. It is an advisor experiment, `pead-gate-off`; twins open from the first session
-after the advisor's nightly enact carries it, not on 2026-11-06 itself. Compare a control with its own
-twin only.
+on the same trades. It is an advisor experiment, `pead-gate-off` (`exp-2026-11-05-earnings-1`, 30
+sessions). The advisor has been paused since 2026-10-25, and activation refuses while it is, so the
+pause was lifted for the one `activate` call on 2026-11-05 and put back at once (both edits through
+the config editor, backed up). Activation wrote the 2026-11-06 artifact, so the twins open from
+2026-11-06 with the boundary. Compare a control with its own twin only.
 
 **What to expect.** Fewer first-morning losers carried to a stop; more names screened on a heavy
 night, and more of them tradable; condor and credit-spread shorts a little closer to the money and
