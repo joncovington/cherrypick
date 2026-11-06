@@ -223,6 +223,54 @@ def test_get_open_trades_filtered_by_symbol(db_path, capsys):
     assert out["open_trades"][0]["symbol"] == "XSP"
 
 
+def test_get_open_trades_by_arm_is_the_unfiltered_read_kept_to_that_arm(db_path, capsys):
+    """2026-11-06: the paper engine read every arm's open trades and kept one, once per arm per tick
+    (65% of a replayed session). The arm filter in the query returns exactly what that kept."""
+    for i, (arm, status) in enumerate(
+        [("a", "open"), ("b", "open"), ("a", "partial"), ("a", "expired"), ("b", "pending"), ("a", "open")]
+    ):
+        _insert_trade(db_path, ic_order_id=f"IC-{i}", symbol="SPX", status=status, arm=arm)
+    db.cmd_get_open_trades(argparse.Namespace(symbol="SPX", date="2026-07-02"))
+    every = json.loads(capsys.readouterr().out)["open_trades"]
+    for arm in ("a", "b", "c"):
+        db.cmd_get_open_trades(argparse.Namespace(symbol="SPX", date="2026-07-02", arm=arm))
+        mine = json.loads(capsys.readouterr().out)["open_trades"]
+        assert mine == [t for t in every if t["arm"] == arm]
+    assert len([t for t in every if t["arm"] == "a"]) == 3, "expired is not open"
+
+
+def test_inside_scratch_writes_one_kept_connection_serves_every_call(db_path, monkeypatch):
+    """A replayed session made ~17,000 calls, each opening its own connection (15% of the session).
+    Inside `scratch_writes()` one connection per ledger is kept, `close()` still discards what was
+    not committed, and the block's end closes it for real. Outside, each call opens its own."""
+    opened = []
+    real = db._db.connect
+
+    def counting(path, **kw):
+        conn = real(path, **kw)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(db._db, "connect", counting)
+    _insert_trade(db_path, ic_order_id="IC-1", symbol="SPX", status="open")
+    with db.scratch_writes():
+        for _ in range(5):
+            assert db.call("get_open_trades", db_path, symbol="SPX", date="2026-07-02")["ok"]
+        assert len(opened) == 1, "one connection for every call in the block"
+        conn = db._connect()
+        conn.execute("UPDATE ic_trades SET status = 'expired' WHERE ic_order_id = 'IC-1'")
+        conn.close()  # not committed: discarded, as closing a connection would
+        out = db.call("get_open_trades", db_path, symbol="SPX", date="2026-07-02")
+        assert [t["ic_order_id"] for t in out["open_trades"]] == ["IC-1"]
+        assert len(opened) == 1
+    with pytest.raises(sqlite3.ProgrammingError):
+        opened[0].execute("SELECT 1")  # closed when the block ended
+    assert db._KEPT is None
+    db.call("get_open_trades", db_path, symbol="SPX", date="2026-07-02")
+    db.call("get_open_trades", db_path, symbol="SPX", date="2026-07-02")
+    assert len(opened) == 3, "outside the block each call opens its own"
+
+
 def test_get_open_trades_filter_is_case_insensitive(db_path, capsys):
     _insert_trade(db_path, ic_order_id="IC-X", symbol="XSP", status="open")
     db.cmd_get_open_trades(argparse.Namespace(symbol="xsp"))

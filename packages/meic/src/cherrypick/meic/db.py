@@ -43,16 +43,50 @@ _SCRATCH_PRAGMAS = ("journal_mode=MEMORY", "synchronous=OFF", "foreign_keys=ON")
 _PRAGMAS = _LEDGER_PRAGMAS
 
 
+#: While `scratch_writes()` is on, one connection per ledger, kept open across calls. A replayed
+#: session made ~17,000 calls, each opening and closing its own connection: about 6 ms each on the
+#: suite's host, 15% of the session (profiled 2026-11-06). None outside the block.
+_KEPT: dict[str, sqlite3.Connection] | None = None
+
+
+class _Kept:
+    """A kept-open connection as a handler sees it. `close()` discards anything left uncommitted, as
+    closing a connection would, and leaves it open for the next call; the block's end closes it."""
+
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+
+    def close(self) -> None:
+        if self._conn.in_transaction:
+            self._conn.rollback()
+
+    def __enter__(self):
+        self._conn.__enter__()
+        return self
+
+    def __exit__(self, *exc):
+        return self._conn.__exit__(*exc)
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
 @contextlib.contextmanager
 def scratch_writes():
     """Open every connection inside the block with the scratch pragmas (the quote-history replay's
-    throwaway ledger). In-process only, and restored on exit."""
-    global _PRAGMAS
+    throwaway ledger), one per ledger kept open until the block ends. In-process only, and
+    restored on exit."""
+    global _PRAGMAS, _KEPT
     prev, _PRAGMAS = _PRAGMAS, _SCRATCH_PRAGMAS
+    prev_kept, _KEPT = _KEPT, {}
     try:
         yield
     finally:
-        _PRAGMAS = prev
+        for conn in _KEPT.values():
+            if conn.in_transaction:
+                conn.rollback()
+            conn.close()
+        _PRAGMAS, _KEPT = prev, prev_kept
 
 
 def tune_scratch(conn):
@@ -67,6 +101,11 @@ def tune_scratch(conn):
 def _connect():
     # cherrypick.core.db handles mkdir + row_factory=Row + pragmas. MEIC's additive/index/drop
     # migrations in cmd_init_db stay module-local (they're not the plain additive-only form).
+    if _KEPT is not None:  # inside scratch_writes(): the ledger's one kept-open connection
+        conn = _KEPT.get(_DB_PATH)
+        if conn is None:
+            conn = _KEPT[_DB_PATH] = _db.connect(_DB_PATH, pragmas=_PRAGMAS)
+        return _Kept(conn)
     return _db.connect(_DB_PATH, pragmas=_PRAGMAS)
 
 
@@ -690,6 +729,13 @@ def cmd_get_open_trades(args):
     if symbol:
         sql += " AND symbol = ?"
         params.append(symbol.upper())
+    # --arm (2026-11-06): one arm's trades only. The paper engine asked for every arm's and kept
+    # one, once per arm per tick; turning every open row into a dict 17 times a tick was 65% of a
+    # replayed session.
+    arm = getattr(args, "arm", None)
+    if arm:
+        sql += " AND arm = ?"
+        params.append(arm)
     rows = conn.execute(sql, params).fetchall()
     conn.close()
     _out({"ok": True, "open_trades": [dict(r) for r in rows]})
@@ -1698,6 +1744,7 @@ def main():
         help="Override trade_date to query (YYYY-MM-DD); defaults to the real "
         "system today. Used by paper-trading replay to query a historical day.",
     )
+    p_open.add_argument("--arm", default=None, help="Filter to one arm; omit for every arm")
     p_unsettled = sub.add_parser("get_unsettled_stopped_trades")
     p_unsettled.add_argument("--symbol", default=None, help="Filter to one symbol; omit for all symbols")
     p_unsettled.add_argument(
