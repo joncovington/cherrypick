@@ -200,6 +200,23 @@ _MIGRATIONS = [
     ("entry_reviews", "back_dte", "ALTER TABLE entry_reviews ADD COLUMN back_dte INTEGER"),
     ("entry_reviews", "front_expiration", "ALTER TABLE entry_reviews ADD COLUMN front_expiration TEXT"),
     ("entry_reviews", "back_expiration", "ALTER TABLE entry_reviews ADD COLUMN back_expiration TEXT"),
+    # Expected-move method (2026-11-06); see db_paper.py's copies for the reasoning.
+    (
+        "entry_reviews",
+        "expected_move_method",
+        "ALTER TABLE entry_reviews ADD COLUMN expected_move_method TEXT",
+    ),
+    (
+        "entry_reviews",
+        "expected_move_reason",
+        "ALTER TABLE entry_reviews ADD COLUMN expected_move_reason TEXT",
+    ),
+    (
+        "entry_reviews",
+        "expected_move_straddle",
+        "ALTER TABLE entry_reviews ADD COLUMN expected_move_straddle REAL",
+    ),
+    ("entry_reviews", "expected_move_event", "ALTER TABLE entry_reviews ADD COLUMN expected_move_event REAL"),
 ]
 
 

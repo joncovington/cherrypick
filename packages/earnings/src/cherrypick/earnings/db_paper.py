@@ -428,6 +428,28 @@ _MIGRATIONS = [
     ("entry_reviews", "back_dte", "ALTER TABLE entry_reviews ADD COLUMN back_dte INTEGER"),
     ("entry_reviews", "front_expiration", "ALTER TABLE entry_reviews ADD COLUMN front_expiration TEXT"),
     ("entry_reviews", "back_expiration", "ALTER TABLE entry_reviews ADD COLUMN back_expiration TEXT"),
+    # How the expected move was measured (2026-11-06, a declared measurement boundary): the method
+    # that produced `expected_move` (`event_variance`, or `straddle_fallback` with the reason),
+    # beside 0.85 x the front straddle (`expected_move_straddle`, dollars) and the event-variance
+    # move (`expected_move_event`, dollars; NULL when it could not be computed), so results can be
+    # read by method. NULL on rows written before, never backfilled: those are all the straddle
+    # definition, but the row does not say so and a guessed label would assert it.
+    (
+        "entry_reviews",
+        "expected_move_method",
+        "ALTER TABLE entry_reviews ADD COLUMN expected_move_method TEXT",
+    ),
+    (
+        "entry_reviews",
+        "expected_move_reason",
+        "ALTER TABLE entry_reviews ADD COLUMN expected_move_reason TEXT",
+    ),
+    (
+        "entry_reviews",
+        "expected_move_straddle",
+        "ALTER TABLE entry_reviews ADD COLUMN expected_move_straddle REAL",
+    ),
+    ("entry_reviews", "expected_move_event", "ALTER TABLE entry_reviews ADD COLUMN expected_move_event REAL"),
 ]
 
 # Backfills that run once, when their column is first added. Keyed by "table.column" so a fresh

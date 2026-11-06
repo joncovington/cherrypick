@@ -574,6 +574,10 @@ def study_config() -> dict:
         "tastytrade_costs": dict(COSTS),
         "symbol_screen": dict(SCREEN),
         "winrate_lookback_quarters": 8,
+        # The module's expected move became the event move on 2026-11-06. The study is pinned to the
+        # definition it was declared on (0.85 x the front straddle), through the module's own switch,
+        # so its numbers do not move with the live boundary.
+        "expected_move_method": "straddle",
         "management": {},
         "strategies": {
             name: {**DEFAULTS, **own, "_symbol_screen": dict(SCREEN)} for name, own in THRESHOLDS.items()

@@ -99,6 +99,7 @@ def fetch_price_and_term_structure(
             front_exp,
             back_exp,
             date.today(),
+            method=scanner.expected_move_method(config),
         )
         liquidity = scanner.fetch_liquidity_criteria(symbol, front_exp, expirations, front_call, front_put)
 
@@ -109,6 +110,7 @@ def fetch_price_and_term_structure(
                 "term_structure": ts["term_structure"],
                 "expected_move_dollars": ts["expected_move_dollars"],
                 **scanner.term_inputs(ts),
+                **scanner.move_inputs(ts),
                 "chain_complete": True,
                 **liquidity,
             },

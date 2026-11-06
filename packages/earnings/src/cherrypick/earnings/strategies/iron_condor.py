@@ -22,8 +22,6 @@ import json
 import time
 from datetime import date
 
-from cherrypick.core.structures import STRADDLE_TO_EM_FACTOR
-
 from cherrypick.earnings import scanner
 
 
@@ -72,6 +70,7 @@ def fetch_price_and_term_structure(
             front_exp,
             back_exp,
             date.today(),
+            method=scanner.expected_move_method(config),
         )
         liquidity = scanner.fetch_liquidity_criteria(symbol, front_exp, expirations, front_call, front_put)
 
@@ -97,6 +96,7 @@ def fetch_price_and_term_structure(
                 "term_structure": ts["term_structure"],
                 "expected_move_dollars": ts["expected_move_dollars"],
                 **scanner.term_inputs(ts),
+                **scanner.move_inputs(ts),
                 "expected_move_pct": ts["expected_move_pct"],
                 "front_expiration_days": (front_exp - scanner.et_today()).days,
                 "chain_complete": True,
@@ -194,16 +194,13 @@ def fetch_iron_condor_order(
         if front_exp is None:
             return {"ok": False, "error": err}
 
-        # ATM straddle mid (narrow window, front expiration used as its own
-        # "back" -- same reuse trick expected_move_butterfly.py uses) is the
-        # source of the expected-move calc; the back_call/back_iv it
-        # returns is discarded.
-        atm_probe = scanner.fetch_front_back_atm_entries(symbol, front_exp, front_exp, price)
-        if not atm_probe.get("ok"):
-            return atm_probe
-        expected_move = STRADDLE_TO_EM_FACTOR * (
-            atm_probe["front_call"]["mid"] + atm_probe["front_put"]["mid"]
-        )
+        # The short strikes sit at the expected move, which is the report's move from the two
+        # expiries' variances (straddle fallback recorded; scanner.resolve_expected_move).
+        probe = scanner.fetch_order_expected_move(symbol, front_exp, expirations, price, full_config)
+        if not probe.get("ok"):
+            return probe
+        em = probe["em"]
+        expected_move = em["expected_move_dollars"]
 
         # Wide strike window: need both short strikes (out at the
         # expected-move boundary) and wings potentially far beyond them.
@@ -306,6 +303,7 @@ def fetch_iron_condor_order(
             "long_call_strike": float(long_call["strike_price"]),
             "long_put_strike": float(long_put["strike_price"]),
             "expected_move": expected_move,
+            **scanner.move_inputs(em),
             "wing_width_target": wing_width,
             "wing_width_multiple_used": wing_multiple,
             "iv_rv_ratio": iv_rv_ratio,

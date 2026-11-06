@@ -34,8 +34,6 @@ Commands (see docs/reference.md's Tool Reference):
 
 from datetime import date, datetime
 
-from cherrypick.core import structures as _structures
-
 from cherrypick.earnings import scanner
 
 
@@ -106,6 +104,7 @@ def fetch_price_and_expected_move(
             front_exp,
             back_exp,
             date.today(),
+            method=scanner.expected_move_method(config),
         )
         liquidity = scanner.fetch_liquidity_criteria(symbol, front_exp, expirations, front_call, front_put)
 
@@ -116,6 +115,7 @@ def fetch_price_and_expected_move(
                 "term_structure": ts["term_structure"],
                 "expected_move_dollars": ts["expected_move_dollars"],
                 **scanner.term_inputs(ts),
+                **scanner.move_inputs(ts),
                 "expected_move_pct": ts["expected_move_pct"],
                 "chain_complete": True,
                 **liquidity,
@@ -255,7 +255,20 @@ def fetch_double_calendar_order(
         if front_atm_call.get("mid") is None or front_atm_put.get("mid") is None:
             return {"ok": False, "error": "no quote data for front-month ATM strikes"}
 
-        expected_move = _structures.expected_move(front_atm_call["mid"], front_atm_put["mid"])
+        # The report's move from two expiries' variances (straddle fallback recorded). The straddle
+        # method needs nothing beyond the chain already in hand.
+        if scanner.expected_move_method(full_config) == "straddle":
+            em = scanner.resolve_expected_move(
+                front_atm_call["mid"], front_atm_put["mid"], None, None, price, None, None, "straddle"
+            )
+        else:
+            probe = scanner.fetch_order_expected_move(
+                symbol, front_exp, expirations, price, full_config, min_days
+            )
+            if not probe.get("ok"):
+                return probe
+            em = probe["em"]
+        expected_move = em["expected_move_dollars"]
         call_target = price + expected_move
         put_target = price - expected_move
 
@@ -352,6 +365,7 @@ def fetch_double_calendar_order(
             "call_strike": call_strike,
             "put_strike": put_strike,
             "expected_move": expected_move,
+            **scanner.move_inputs(em),
             "debit": round(net_debit, 2),
         }
     except Exception as exc:
