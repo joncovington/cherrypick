@@ -5612,6 +5612,29 @@ a cheap back month. Declared before any of its inputs are fetched.*
   - **A fail:** diagonals across a report are closed with the calendars. If B2 fails with the `cheap`
     cut too, the back-month wing does not rescue a short report strangle, and item 47's verdict is read
     beside it.
+- **Clarified 2026-11-06, before any fetch** (what the script `scripts/earnings_diagonal_item52.py`
+  does where the stores or the text left a choice):
+  - The licensed end-of-day chains carry no greeks, so every delta is solved from the mid with
+    `core.american` at zero rate and the name's trailing-year dividend yield (broker dividend history
+    over the entry close). A name absent from that history is dropped (`no_dividend_record`); a name the
+    history lists with no dividends takes yield 0.
+  - Open interest comes from the separate open-interest store, fetched as its own queue row
+    (`fetch-oi`); the floor is the earnings module's 2,000 combined on each expiry.
+  - Which weeklies exist is found by staged requests: the store answers a (name, entry session, Friday)
+    request complete or empty. A report week with no listed weekly is dropped as `weekly_unlisted`.
+  - The stress lifts the 15%-of-mid slippage cap, so half the spread is half the spread on wide wings.
+  - A leg with no two-sided exit quote is closed adversely both ways: a short bought back at intrinsic
+    plus its entry spread, a long sold at the larger of zero and intrinsic less its entry spread.
+  - `rr25` is the expected-move fly study's definition (`scripts/emfly_history.py`), read on the report
+    weekly's entry chain with the same solver.
+  - The cheap measure is the third-Friday monthly nearest 30 days out (14 to 60), the mean of the call's
+    and put's `vol`, on the latest Dolt day up to two sessions before entry, against the trailing 252
+    sessions excluding five sessions either side of reports of the name. Fewer than 60 history days is
+    no reading: the event stays in the whole arms and out of the cheap cuts.
+  - Holm adjusts the net test only, as declared; the paired difference is t above 2 unadjusted. The
+    stricter reading (Holm on both) is reported beside the verdict, not judged.
+  - The control gets the leg checks (two-sided, spread at most 15% of mid) and not the event-level
+    filters (close, expected move, open interest).
 
 ## Not worth revisiting
 
