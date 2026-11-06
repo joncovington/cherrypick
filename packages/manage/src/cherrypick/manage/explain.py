@@ -226,6 +226,14 @@ def _explain(t: dict[str, Any]) -> str:
     elif rule in ("credit.time_exit", "debit.time_exit"):
         dte = t.get("nearest_short_dte")
         when = f"The nearest short leg expires in {dte} days. " if dte is not None else ""
+        st = t.get("short_term_short")
+        te_day = (t.get("exit_levels") or {}).get("time_exit", {}).get("date")
+        if st and rule == "debit.time_exit":
+            # A short written week by week runs on the long's clock, not its own.
+            when = (
+                f"The short is sold week by week, so this trade runs on its long's clock, and the long's "
+                f"time exit ({_day(te_day)}) has come. "
+            )
         if action == "ROLL_OR_CLOSE":
             why = (
                 when + "In the last three weeks the remaining premium comes with the most risk, so the rule "
@@ -318,7 +326,9 @@ def _explain(t: dict[str, Any]) -> str:
         why = (
             f"The short side of this diagonal is due ({due}). Rather than close the trade, roll the short "
             f"structure out: close the {front} legs and sell the same strikes for {when}, about {per_unit} "
-            f"a unit (roughly {total} in credit, an estimate from today's volatility). The long keeps "
+            f"a unit (roughly {total} in credit, "
+            + ("an estimate from today's volatility" if r.get("modelled", True) else "at today's quoted mids")
+            + "). The long keeps "
             "working underneath, and the new short stays beyond its breakeven. Only send it for a net "
             "credit; if it will not fill for one, close the short side instead."
         )

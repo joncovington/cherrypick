@@ -74,9 +74,12 @@
       "confidence": 60
     },
     "time_exit": {
+      "_comment": "A diagonal or calendar whose nearest short was sold short_term_short_days or fewer before its expiry (read off the order chain) runs on the long's clock instead: the time exit fires when the long it is sold against reaches time_spread_long_dte.",
       "enabled": true,
       "short_leg_dte": 21,
       "long_only_dte": 14,
+      "short_term_short_days": 14,
+      "time_spread_long_dte": 21,
       "roll_if_profitable": true,
       "confidence": 70
     }
@@ -109,6 +112,9 @@
       "out_days": 28,
       "min_credit": 0.1,
       "min_long_days": 45,
+      "_short_term_comment": "A short sold week by week (debit.time_exit.short_term_short_days) is due at the expiry close or when captured, and rolls to the first quoted expiry at least short_term_out_days later (else the first monthly that far out), while the long outlives it by short_term_min_long_days.",
+      "short_term_out_days": 7,
+      "short_term_min_long_days": 21,
       "skip_through_earnings": false,
       "confidence": 60
     },

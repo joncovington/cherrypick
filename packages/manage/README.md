@@ -152,9 +152,9 @@ presenter who cuts losers rather than the one who repairs them, and checked agai
 | `credit.take_profit` by shape | short straddle, iron butterfly, big and reverse big lizard at 25% of the credit | take profit | 55 | the tastylive Options Strategy Guide (2023): one strike is always in the money, so "we temper our profit target to 25%" | The 25%-loses-after-commissions result above was on OTM credit trades; none tested these shapes |
 | `debit.take_profit` by shape | calendar, call and put zebra at +25% on the debit | take profit, roll or add | 55 | the strategy guide: a calendar at 10–25% of the debit, a zebra at 25% | No outside test |
 | `debit.diagonal_width` | a two-leg diagonal (a PMCC or its put mirror) whose net debit, rolls counted, is over 75% of the distance between its strikes | review | 60 | the strategy guide's PMCC entry rule, applied while held | Option arithmetic: deep in the money both legs go to intrinsic and the spread to its width, so a net past the width loses there. A long with years left keeps time value and softens it (TLT on 2026-10-19: $572 in a $5-wide diagonal, long Jan 2029) |
-| `debit.time_exit` | nearest short at 21 DTE, or long-only at 14 DTE | roll or close | 70 | vendor | Long premium decays fastest in its last weeks |
+| `debit.time_exit` | nearest short at 21 DTE, or long-only at 14 DTE; a diagonal or calendar whose short was sold 14 days or fewer before its expiry at the long's 21 DTE | roll or close | 70 | vendor; the long's clock for a weekly short is your rule, 2026-11-06 | Long premium decays fastest in its last weeks. A one-week short is inside 21 days the day it is sold, so the short's clock fired on day one, with a time-exit date before the trade opened (2026-11-06) |
 | `roll.naked_put` | a naked short put a rule says to close: same strike, next monthly 4+ weeks out, modelled credit ≥ 0.10 | roll for credit (in the close's place) | 60 | your rule, 2026-10-14: rolling out in time for a credit can be useful, especially for naked short puts | Mixed: rolling tested short puts beat holding them (tastylive); repairing defined-risk spreads did not |
-| `roll.diagonal_short` | a diagonal's short structure at 21 DTE or 80% captured: same strikes, next monthly 4+ weeks out | roll for credit | 60 | your rule, 2026-10-14; the vendor's PMCC teaching (close or roll the short at 14-21 DTE) | Our own PMCC study: the short calls' edge rests on the IV assumption and the held long does most of the work, so the roll is routine, not a rescue |
+| `roll.diagonal_short` | a diagonal's short structure at 21 DTE or 80% captured: same strikes, next monthly 4+ weeks out; a weekly short at the expiry close or 80% captured: the first quoted expiry a week or more out, while the long outlives it by 21 days | roll for credit | 60 | your rule, 2026-10-14 (weekly shorts 2026-11-06); the vendor's PMCC teaching (close or roll the short at 14-21 DTE) | Our own PMCC study: the short calls' edge rests on the IV assumption and the held long does most of the work, so the roll is routine, not a rescue |
 | `legs.short_take_profit` | a short leg 80% captured, bought back with its wings | close legs | 85 | vendor: buy back nickels; close credit legs near max before earnings | Mechanically sound; nothing left to earn |
 | `legs.long_vertical` | a butterfly's (broken-wing, broken-heart) long spread worth 90% of its width: sell it, keeping the short spread; never inside the expiry window, where the whole trade closes | close legs | 50 | the tastylive Options Strategy Guide (2023): "we sell out of it to retain that value and either hold the credit spread, or manipulate the trade into something else like an iron condor" | No outside test. What is left is a short spread, and the explanation says what it costs to buy back and how wide it is |
 | `roll.fly_off` | a broken-wing butterfly opened for a net credit: buy the wing that makes it a plain butterfly, sell the wide one, when that costs no more than the credit; not inside the expiry window | review | 55 | the strategy guide: "our initial goal with BWBs is to remove risk by rolling into a symmetrical butterfly … for a debit less than the initial credit received" | No outside test. The new wing is modelled at an IV read between the body's and the old wing's, so the debit is an estimate: re-quote, and check the strike is listed |
@@ -203,6 +203,16 @@ reaches the 21-day exit or has given up 80% of its premium. It applies only when
 
 Earnings inside the new short's life are flagged, not blocked, because the long covers the short through
 a report. When the roll is not taken, the explanation says which condition stopped it.
+
+**A short written week by week runs on the long's clock** (user, 2026-11-06). When the order chain shows
+a diagonal's or calendar's nearest short was sold 14 days or fewer before its expiry
+(`debit.time_exit.short_term_short_days`; a roll counts from the order that sold the current short), the
+time exit fires when the long it is sold against reaches 21 DTE (`time_spread_long_dte`), not the short.
+The short is due for its roll at the expiry close (three days out) or when 80% captured, and rolls to the
+first expiry at least a week later that the snapshot's roll-out chains quote, at their mid where the chain
+has the strike (else the first monthly that far out, modelled), while the long outlives the new short by
+21 days (`short_term_min_long_days`). Every other condition above still holds. Without an order chain the
+sale date is unknown and the short's own 21-day clock stands.
 
 ## The wheel view
 

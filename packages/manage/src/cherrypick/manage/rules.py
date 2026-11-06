@@ -109,6 +109,14 @@ DEFAULT_RULES: dict[str, Any] = {
             "short_leg_dte": 21,
             # A trade of long options only is out before the final weeks' decay.
             "long_only_dte": 14,
+            # A diagonal or calendar whose nearest short was sold this many days or fewer before its
+            # expiry is a short written week by week against the long: the 21-day clock above would fire
+            # the day it is sold, so its time exit counts on the long it is sold against instead, at
+            # `time_spread_long_dte`, and the short itself is rolled by roll.diagonal_short (user,
+            # 2026-11-06). Needs the order chain to know when the short was sold; without one the
+            # short's clock stands.
+            "short_term_short_days": 14,
+            "time_spread_long_dte": 21,
             "roll_if_profitable": True,
             "confidence": 70,
         },
@@ -150,6 +158,13 @@ DEFAULT_RULES: dict[str, Any] = {
             "out_days": 28,
             "min_credit": 0.10,
             "min_long_days": 45,
+            # A short-term short (debit.time_exit's `short_term_short_days`) is due at the expiry close
+            # or when captured, and rolls to the first expiry at least `short_term_out_days` after it
+            # that the snapshot quotes (the roll-out chains), else the first monthly that far out; at
+            # the quoted mid where the chain has the strike, modelled otherwise. The long must outlive
+            # the new short by `short_term_min_long_days`, the long's own time exit.
+            "short_term_out_days": 7,
+            "short_term_min_long_days": 21,
             "skip_through_earnings": False,
             "confidence": 60,
         },
