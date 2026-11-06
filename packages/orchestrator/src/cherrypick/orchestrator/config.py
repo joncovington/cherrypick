@@ -645,6 +645,12 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # candle is final and lands the same morning.
         "index_bars": bool(tc.get("index_bars", True)),
         "index_bars_at": tc.get("index_bars_at", "06:00"),
+        # `vol_curve_bars_at`: scripts/fetch_vol_curve_bars.py, intraday (5m, 1h) bars of the VIX term
+        # structure and SPX, which the feed keeps for only months. After the indexes' final prints
+        # (16:15), so the day's last bar is a finished one. No Dolt; the shared broker credential,
+        # read-only.
+        "vol_curve_bars": bool(tc.get("vol_curve_bars", True)),
+        "vol_curve_bars_at": tc.get("vol_curve_bars_at", "16:30"),
     }
 
 
