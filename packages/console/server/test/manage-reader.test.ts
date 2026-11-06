@@ -720,7 +720,8 @@ describe("readManage", () => {
     acct["pmcc"] = {
       positions: [
         {
-          underlying: "XYZ", recognized: true, recognition: "pmcc", recognized_by: "entered at 0.82 delta (at least 0.80)", intent: null,
+          underlying: "XYZ", recognized: true, recognition: "pmcc", recognized_by: "entered at 0.82 delta (at least 0.80)", intent: "pmcc",
+          intent_source: "contract", intent_key: "XYZ 280121C00040000",
           reconciled: true, problems: [], spot: 43.0, div_yield: 0.0,
           long: {
             symbol: "XYZ 280121C00040000", leg: "2028-01-21 40C", strike: 40.0, expiration: "2028-01-21", dte: 465,
@@ -778,6 +779,7 @@ describe("readManage", () => {
     expect(a.pmcc!.error).toBeNull();
     expect(a.pmcc!.bandsMissing).toBe("band not in the snapshot");
     expect(p).toMatchObject({ underlying: "XYZ", recognized: true, recognition: "pmcc", reconciled: true, longCost: 1512, premiums: 750, orders: ["1", "2"], tradeIds: ["KO"] });
+    expect(p).toMatchObject({ intent: "pmcc", intentSource: "contract", intentKey: "XYZ 280121C00040000" });
     expect(p.width).toMatchObject({ passes: false, pnlIfAssigned: -262, pnlIfAssignedNet: -265.3, netCostPerShare: 7.62, basis: "linked orders" });
     expect(p.width).toMatchObject({ costShare: 1.524, warnShare: 0.75, thin: false });
     expect(p.long).toMatchObject({ deltaAtEntry: 0.8248, deltaAtEntryWhy: null, extrinsicShare: 0.625, roll: [], rollDeltaUnknown: false });
@@ -819,6 +821,7 @@ describe("readManage", () => {
     const p = a.pmcc!.positions[0]!;
     expect(p.recognized).toBe(false);
     expect(p.recognition).toBeNull(); // written before the field: never guessed from the flag
+    expect(p).toMatchObject({ intentSource: null, intentKey: null });
     expect(p.long.deltaAtEntry).toBeNull();
     expect(p.long.deltaAtEntryWhy).toBe("no close for 2026-04-01 in the snapshot");
     expect(p.long.rollDeltaUnknown).toBeNull();

@@ -71,7 +71,9 @@ of that day, not today's.
   a running cycle that does not replay to today's positions is `unreconciled`; shares older than the
   history have `basis_known: false`, never the positions' open price.
 - **A PMCC is recognised, never assumed** (`pmcc.py`). The shape is a call diagonal; it is a PMCC only
-  when the long's delta at entry clears the floor, or `positions.<SYMBOL>.intent` says `"pmcc"`. That
+  when the long's delta at entry clears the floor, or an intent says `"pmcc"`: `trades.<LONG CONTRACT>`
+  for that PMCC alone, beating `positions.<SYMBOL>` for the name. A rolled long is a new PMCC and does
+  not inherit its old contract's intent (user, 2026-11-06). That
   delta is recorded once from the first full snapshot after the fill (`entrydelta.py`, the store
   `entry-deltas.json`, never rewritten; each snapshot carries its rows' records so a re-run reads the
   same one), else solved from the fill and that day's close, dividend yield carried either way. A delta

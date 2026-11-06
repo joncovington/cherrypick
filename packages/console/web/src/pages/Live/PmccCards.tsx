@@ -93,6 +93,19 @@ export function kindOf(p: ManagePmccPosition): { kind: string; chipClass: string
   return { kind: "unknown", chipClass: "chip muted", recognised: "—" };
 }
 
+/** The intent row: what is set and where, and the key that sets it on this PMCC alone (manage's
+ * `trades.<long contract>.intent`), so it can be copied into the config as it stands. */
+export function intentWords(p: ManagePmccPosition): string {
+  const key = p.intentKey ? `trades key "${p.intentKey}"` : null;
+  const set =
+    p.intent && p.intentSource === "contract"
+      ? `${p.intent}, set on this long`
+      : p.intent && p.intentSource === "symbol"
+        ? `${p.intent}, set on ${p.underlying} (every PMCC on the name)`
+        : "none set";
+  return key ? `${set} · ${key}` : set;
+}
+
 function PositionFacts({ p }: { p: ManagePmccPosition }) {
   return (
     <DetailCard title="position" aside={<StatusChip status={status(p)} />}>
@@ -100,6 +113,7 @@ function PositionFacts({ p }: { p: ManagePmccPosition }) {
         rows={[
           ["recognised", kindOf(p).recognised],
           ["because", p.recognizedBy ?? "—"],
+          ["intent", intentWords(p)],
           ["underlying", px(p.spot)],
           ["long bought", p.long.opened ?? "before the history"],
           ["trades", p.tradeIds.length ? p.tradeIds.join(", ") : "none"],

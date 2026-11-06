@@ -35,6 +35,25 @@ def test_unknown_keys_and_rule_ids_are_reported_not_applied():
     assert rules["credit"]["take_profit"]["capture"] == 0.5
 
 
+def test_a_trades_entry_that_does_nothing_says_so():
+    _, warnings = _rules.effective(
+        {
+            "trades": {
+                "XYZ 280121C00040000": {"intent": "pmcc", "note": "ok"},
+                "XYZ   280121C00040000": {"intent": "hedge", "disable": ["debit.stop"]},
+                "XYZ": {"intent": "pmcc"},
+                "XYZ 280121P00040000": {"intent": "pmcc"},
+            }
+        }
+    )
+    assert warnings == [
+        "trades.XYZ   280121C00040000.disable: unknown key, ignored",
+        "trades.XYZ   280121C00040000.intent: 'hedge' is not pmcc or diagonal, ignored",
+        "trades.XYZ: not a call contract (e.g. 'XYZ 280121C00040000'), ignored",
+        "trades.XYZ 280121P00040000: not a call contract (e.g. 'XYZ 280121C00040000'), ignored",
+    ]
+
+
 def test_a_shape_target_may_be_added_changed_or_misspelt():
     rules, warnings = _rules.effective(
         {

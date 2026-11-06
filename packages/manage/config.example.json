@@ -375,5 +375,7 @@
     }
   },
   "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. intent \"pmcc\" recognises a call diagonal as a PMCC, \"diagonal\" keeps it out. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.time_exit, legs.short_take_profit, legs.long_vertical, roll.naked_put, roll.diagonal_short, roll.fly_off, roll.untested_side, wheel.take_profit, wheel.tested, wheel.next_leg, pmcc.width, pmcc.assignment, pmcc.roll_long, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power, portfolio.earnings_exposure, portfolio.expiry_concentration, portfolio.vol_expansion",
-  "positions": {}
+  "positions": {},
+  "_trades_comment": "Per-trade overrides, keyed by a PMCC's long contract as the broker spells it (spaces ignored), e.g. {\"XYZ 280121C00040000\": {\"intent\": \"pmcc\", \"note\": \"bought as a PMCC\"}}. intent \"pmcc\" or \"diagonal\" decides that PMCC alone and beats positions.<SYMBOL>.intent; the Live -> pmcc card shows the key. A rolled long is a new PMCC: the old contract's intent does not carry over.",
+  "trades": {}
 }

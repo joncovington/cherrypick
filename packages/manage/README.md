@@ -275,7 +275,11 @@ rules in the table above read it.
   before, over the close. Without the yield a long-dated call on a high-yield fund reads as all
   intrinsic, a delta of 1. A delta the snapshot cannot solve (no close for the day yet, a split since,
   a fill no volatility prices) is **unknown**, and an unknown delta recognises nothing.
-  `positions.<SYMBOL>.intent: "pmcc"` recognises a PMCC whatever its delta; `"diagonal"` keeps one out.
+  An intent decides whatever the delta: `"pmcc"` recognises a PMCC, `"diagonal"` keeps one out. Set it
+  on one PMCC by its long's contract, `trades.<LONG CONTRACT>.intent` (spaces ignored, e.g.
+  `"XYZ 280121C00040000"`; the Live → pmcc card shows the key), or on every PMCC on a name,
+  `positions.<SYMBOL>.intent`; the contract wins. A rolled long is a new PMCC: the old contract's
+  intent does not carry over, so it is decided by its own entry or an intent on its own contract.
   Anything not recognised keeps its diagonal rules and nothing else.
 - **Linking.** A short sold after the last one expired is an order chain of its own, so the view links
   the long and its shorts as the wheel view links a wheel: the long's chain, and every chain on the

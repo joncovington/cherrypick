@@ -274,6 +274,11 @@ export interface ManagePmccPosition {
   recognition: "pmcc" | "diagonal" | "unknown" | null;
   recognizedBy: string | null;
   intent: string | null;
+  /** Where the intent came from: set on this long's contract (`trades`) or on the name (`positions`);
+   * null when none is set or on an evaluation written before the field. */
+  intentSource: "contract" | "symbol" | null;
+  /** The `trades` key that would set this PMCC's intent: the long's contract. */
+  intentKey: string | null;
   reconciled: boolean | null;
   problems: string[];
   spot: number | null;

@@ -396,6 +396,8 @@ function pmccPosition(v: unknown): ManagePmccPosition {
     recognition: recognitionOf(p["recognition"]),
     recognizedBy: str(p["recognized_by"]),
     intent: str(p["intent"]),
+    intentSource: p["intent_source"] === "contract" || p["intent_source"] === "symbol" ? p["intent_source"] : null,
+    intentKey: str(p["intent_key"]),
     reconciled: flag(p["reconciled"]),
     problems: strs(p["problems"]),
     spot: num(p["spot"]),
