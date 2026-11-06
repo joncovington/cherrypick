@@ -191,6 +191,15 @@ _MIGRATIONS = [
     # Nullable and deliberately not backfilled -- NULL means "predates the distinction", which is
     # the truth; see db_paper.py's copy of this migration for the full reasoning.
     ("entry_reviews", "timing_assumed", "ALTER TABLE entry_reviews ADD COLUMN timing_assumed INTEGER"),
+    # Quote and term-structure recording (2026-11-05); see db_paper.py's copies for the reasoning.
+    # NULL on older rows, never backfilled.
+    ("trades", "exit_legs_json", "ALTER TABLE trades ADD COLUMN exit_legs_json TEXT"),
+    ("entry_reviews", "front_iv", "ALTER TABLE entry_reviews ADD COLUMN front_iv REAL"),
+    ("entry_reviews", "back_iv", "ALTER TABLE entry_reviews ADD COLUMN back_iv REAL"),
+    ("entry_reviews", "front_dte", "ALTER TABLE entry_reviews ADD COLUMN front_dte INTEGER"),
+    ("entry_reviews", "back_dte", "ALTER TABLE entry_reviews ADD COLUMN back_dte INTEGER"),
+    ("entry_reviews", "front_expiration", "ALTER TABLE entry_reviews ADD COLUMN front_expiration TEXT"),
+    ("entry_reviews", "back_expiration", "ALTER TABLE entry_reviews ADD COLUMN back_expiration TEXT"),
 ]
 
 
@@ -321,14 +330,15 @@ def cmd_save_close(args) -> dict:
     conn = _conn()
     try:
         cur = conn.execute(
-            "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ?, exit_cost = ?, exit_iv = ? "
-            "WHERE order_id = ?",
+            "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ?, exit_cost = ?, exit_iv = ?, "
+            "exit_legs_json = ? WHERE order_id = ?",
             (
                 spec.get("exit_debit"),
                 spec.get("pnl"),
                 spec.get("closed_at", time.time()),
                 spec.get("exit_cost"),
                 spec.get("exit_iv"),
+                _verbs.json_text(spec.get("exit_legs_json")),
                 order_id,
             ),
         )

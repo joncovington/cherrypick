@@ -166,7 +166,9 @@ access through `db.py` / `db_paper.py`, which apply idempotent `ALTER TABLE ADD 
   conditions for regime slicing. `entry_iv`/`exit_iv`: average live IV across the Sell-to-Open legs,
   for `strategy_metrics.iv_crush()`. Lifecycle fields: `status` (`open`/`closed`/`stranded`, written
   in the same statement as `closed_at`), `exit_reason`, `hold_days` (TRADING sessions), excursions,
-  `advice_params`.
+  `advice_params`. Quotes for the slippage study (from 2026-11-05, NULL before, never backfilled):
+  each `legs_json` leg carries `entry_bid`/`entry_ask` (+ source and age), and `exit_legs_json` holds
+  the quote each traded-out leg was closed from.
 - `trade_legs` — per-leg rows, only for strategies passing `legs` (`double_calendar` today).
 - `scan_log` — append-only, one row per candidate per scan **per stage**: `prefilter`, `screen`, or
   `execution` (`outcome` `opened`/`dropped` with the build/sizing/risk/quote failure) — so the
@@ -180,6 +182,8 @@ access through `db.py` / `db_paper.py`, which apply idempotent `ALTER TABLE ADD 
   (`scanner.richest_criteria`) plus the decision, recorded whether traded or not
   (`docs/screening-criteria.md`, "Recorded-only metrics"). `timing_assumed` is NULL on rows predating
   it — **deliberately not backfilled** (a 0 would assert every old row's timing was calendar-sourced).
+  The term-structure inputs (`front_iv`, `back_iv`, `front_dte`, `back_dte`, both expiration dates)
+  are NULL before 2026-11-05 likewise; the gate measures the ratio, not the per-day slope.
   Columns cover the always-screened signals (price, volume, winrate/sample, IV/RV and source, term
   structure, market cap, expected move, combined OI and volume, ATM spread) and the research metrics
   (`net_combo_spread_pct`, historical-move stats and `implied_vs_avg_actual`, `move_tail_veto`,

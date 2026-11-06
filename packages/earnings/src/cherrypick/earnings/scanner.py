@@ -340,29 +340,47 @@ def _nearest_close(symbol: str, date, direction: str, config: dict) -> dict | No
         conn.close()
 
 
+def _close_on(symbol: str, day, config: dict) -> dict | None:
+    """The close for `symbol` on exactly `day` from stocks.ohlcv, or None when there is no row.
+
+    An exact-date lookup on the table's key (date leads), so it costs one row, not a walk."""
+    conn = _dolt_connect(config, config.get("dolthub_stocks_database", "stocks"))
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT date, close FROM ohlcv WHERE act_symbol = %s AND date = %s", (symbol, day))
+        return cur.fetchone()
+    finally:
+        conn.close()
+
+
 def pre_and_reaction_closes(
     symbol: str, earnings_date, timing: str, config: dict
 ) -> tuple[dict, dict] | None:
     """Pick the pre-earnings and post-reaction trading-day closes based on `when`.
 
-    'After market close' -> pre = earnings_date's own close, reaction = next trading day.
-    'Before market open' -> pre = the prior trading day, reaction = earnings_date's own close.
-    Anything else (unknown/during-market) is deliberately not guessed at — callers should
-    skip the quarter rather than risk silently comparing the wrong two days.
+    'After market close' -> pre = earnings_date's own close, reaction = the next trading day.
+    'Before market open' -> pre = the previous trading day, reaction = earnings_date's own close.
+    The two days come from the NYSE calendar and each close must be the row for exactly that day:
+    a missing row (a data gap, a halt, a date that is not a session) returns None rather than
+    reaching for the nearest close, which used to score a print against a close up to ten days
+    from the report. Anything else (unknown/during-market) is deliberately not guessed at here;
+    `_compute_winrate_uncached` evaluates such a quarter both ways and keeps it only when the two
+    agree.
     """
-    if timing == "After market close":
-        pre = _nearest_close(symbol, earnings_date, "on_or_before", config)
-        reaction = _nearest_close(symbol, earnings_date, "after", config)
-    elif timing == "Before market open":
-        # strictly-before day for "pre", so subtract a day off the earnings_date's own
-        # date before doing an on_or_before lookup (which would otherwise just return
-        # earnings_date itself if the market happened to be open that day).
-        from datetime import timedelta
-
-        pre = _nearest_close(symbol, earnings_date - timedelta(days=1), "on_or_before", config)
-        reaction = _nearest_close(symbol, earnings_date - timedelta(days=1), "after", config)
+    if isinstance(earnings_date, str):
+        earnings_date = _date.fromisoformat(earnings_date)
+    if timing == TIMING_AMC:
+        if not _calendar.is_trading_day(earnings_date):
+            return None
+        pre_day, reaction_day = earnings_date, _calendar.next_trading_day(earnings_date)
+    elif timing == TIMING_BMO:
+        if not _calendar.is_trading_day(earnings_date):
+            return None
+        pre_day, reaction_day = _calendar.previous_trading_day(earnings_date), earnings_date
     else:
         return None
+    pre = _close_on(symbol, pre_day, config)
+    reaction = _close_on(symbol, reaction_day, config)
     if pre is None or reaction is None:
         return None
     return pre, reaction
@@ -445,15 +463,73 @@ def compute_winrate(symbol: str, config: dict, lookback_quarters: int = 8) -> di
     return result
 
 
+def _evaluated_quarter(row_date, pre: dict, reaction: dict, straddle: dict) -> dict:
+    """One scored quarter: the realised move against the EXPECTED move implied by the straddle.
+
+    The implied move is the straddle times the suite's straddle-to-expected-move factor
+    (`structures.STRADDLE_TO_EM_FACTOR`), the same correction the live expected move takes, because
+    the full straddle also prices the tails and so overstates the move a seller is paid for. Scoring
+    the full straddle against the realised move (as this did until 2026-11-05) flattered the
+    winrate."""
+    pre_close = float(pre["close"])
+    reaction_close = float(reaction["close"])
+    realized_move = abs(reaction_close - pre_close)
+    implied_move = structures.expected_move(straddle["straddle_mid"], 0.0)
+    return {
+        "earnings_date": str(row_date),
+        "pre_close": pre_close,
+        "reaction_close": reaction_close,
+        "realized_move": realized_move,
+        "implied_move": implied_move,
+        "straddle_mid": straddle["straddle_mid"],
+        "win": implied_move > realized_move,
+        "expiration_used": straddle["expiration"],
+    }
+
+
+def _unknown_timing_quarter(symbol: str, row_date, config: dict) -> tuple[dict | None, str]:
+    """A quarter whose report time is NULL/unknown, scored both ways (as BMO and as AMC).
+
+    Returns `(quarter, "")` only when both readings can be scored and agree on win or loss, taking
+    the AMC reading's figures; otherwise `(None, reason)` with reason `gap`, `no_matching_option_chain_data` or
+    `timing_unknown` (the two readings disagree). A coin-flip on the timing is never counted."""
+    scored = []
+    for timing in (TIMING_AMC, TIMING_BMO):
+        closes = pre_and_reaction_closes(symbol, row_date, timing, config)
+        if closes is None:
+            return None, "gap"
+        pre, reaction = closes
+        straddle = fetch_atm_straddle_price(
+            symbol, pre["date"], reaction["date"], float(pre["close"]), config
+        )
+        if straddle is None:
+            return None, "no_matching_option_chain_data"
+        scored.append(_evaluated_quarter(row_date, pre, reaction, straddle))
+    if scored[0]["win"] != scored[1]["win"]:
+        return None, "timing_unknown"
+    return {**scored[0], "timing_resolved_both_ways": True}, ""
+
+
 def _compute_winrate_uncached(symbol: str, config: dict, lookback_quarters: int = 8) -> dict:
     """Historical: over the last `lookback_quarters` earnings dates, what
-    fraction had the option-implied move (ATM straddle price) exceed the
-    actual realized move? A high winrate means this name's options have
-    historically overpriced its earnings moves -- relevant to any strategy
+    fraction had the option-implied EXPECTED move (the ATM straddle price times the shared
+    straddle-to-expected-move factor, 0.85) exceed the actual realized move? A high winrate means
+    this name's options have historically overpriced its earnings moves -- relevant to any strategy
     that sells that overpriced premium, not just iron flies specifically.
-    Quarters with any data gap (missing chain, ambiguous timing, no ohlcv
-    row) are skipped and counted separately, not silently treated as
-    losses or excluded from the reported sample size.
+
+    Known limit of the implied side: the straddle is taken on the first expiry on or after the
+    reaction day, as of the pre-report close. That expiry can carry up to nine more days of time
+    value than a straddle that expires the day after the report, which inflates the implied move
+    for names without a weekly. The data (one chain row set per date) gives no cleaner expiry, so
+    the choice stands and `expiration_used` records it for each quarter.
+
+    Quarters with a data gap are skipped and counted, not treated as losses and not left out of the
+    skip counts. The pre-close and reaction close must be the exact adjacent sessions around the
+    report (AMC: the report day and the next session; BMO: the previous session and the report
+    day), else the quarter is a `gap`. A quarter with NULL/unknown report time is scored both ways
+    (BMO and AMC) and counted only when the two agree on win or loss; otherwise it is skipped and
+    counted as `timing_unknown`. The result carries `sample_size` and `skip_counts` (`gap`,
+    `no_matching_option_chain_data`, `timing_unknown`) so a reader can tell a thin sample from a clean one.
 
     Also returns `realized_move_quarters`, a SEPARATE sample of the same
     earnings dates using only the realized-move side (pre/reaction closes --
@@ -467,9 +543,10 @@ def _compute_winrate_uncached(symbol: str, config: dict, lookback_quarters: int 
     own inline dispersion calc) should read `realized_move_quarters` instead
     of `quarters` -- it is typically fuller, sometimes reaching the full
     `lookback_quarters` even when `quarters` (winrate) cannot, purely because
-    OHLCV coverage runs deeper than option-chain coverage. `implied_vs_avg_actual`
-    (today's live implied move, already fetched by the current scan, divided by
-    this deeper historical average) benefits directly -- it needs no historical
+    OHLCV coverage runs deeper than option-chain coverage. A quarter with unknown report time
+    contributes to `quarters` only, never here, since its realized move depends on the timing.
+    `implied_vs_avg_actual` (today's live implied move, already fetched by the current scan,
+    divided by this deeper historical average) benefits directly -- it needs no historical
     option data at all, only this wider realized-move sample.
     """
     today = config.get("_as_of_date")  # test hook; production callers omit this
@@ -479,12 +556,27 @@ def _compute_winrate_uncached(symbol: str, config: dict, lookback_quarters: int 
     results = []
     realized_move_quarters = []
     skipped = []
+    skip_counts = {"gap": 0, "no_matching_option_chain_data": 0, "timing_unknown": 0}
+
+    def skip(row_date, reason: str) -> None:
+        skipped.append({"date": str(row_date), "reason": reason})
+        skip_counts[reason] += 1
+
     for row in earnings_dates:
         if len(results) >= lookback_quarters and len(realized_move_quarters) >= lookback_quarters:
             break
-        closes = pre_and_reaction_closes(symbol, row["date"], row["timing"], config)
+        timing = row["timing"]
+        if timing not in (TIMING_AMC, TIMING_BMO):
+            if len(results) < lookback_quarters:
+                quarter, reason = _unknown_timing_quarter(symbol, row["date"], config)
+                if quarter is None:
+                    skip(row["date"], reason)
+                else:
+                    results.append(quarter)
+            continue
+        closes = pre_and_reaction_closes(symbol, row["date"], timing, config)
         if closes is None:
-            skipped.append({"date": str(row["date"]), "reason": "ambiguous_timing_or_no_price_data"})
+            skip(row["date"], "gap")
             continue
         pre, reaction = closes
         pre_close = float(pre["close"])
@@ -504,20 +596,9 @@ def _compute_winrate_uncached(symbol: str, config: dict, lookback_quarters: int 
         if len(results) < lookback_quarters:
             straddle = fetch_atm_straddle_price(symbol, pre["date"], reaction["date"], pre_close, config)
             if straddle is None:
-                skipped.append({"date": str(row["date"]), "reason": "no_matching_option_chain_data"})
+                skip(row["date"], "no_matching_option_chain_data")
             else:
-                implied_move = straddle["straddle_mid"]
-                results.append(
-                    {
-                        "earnings_date": str(row["date"]),
-                        "pre_close": pre_close,
-                        "reaction_close": reaction_close,
-                        "realized_move": realized_move,
-                        "implied_move": implied_move,
-                        "win": implied_move > realized_move,
-                        "expiration_used": straddle["expiration"],
-                    }
-                )
+                results.append(_evaluated_quarter(row["date"], pre, reaction, straddle))
 
     sample_size = len(results)
     wins = sum(1 for r in results if r["win"])
@@ -529,6 +610,7 @@ def _compute_winrate_uncached(symbol: str, config: dict, lookback_quarters: int 
         "quarters": results,
         "realized_move_quarters": realized_move_quarters,
         "skipped": skipped,
+        "skip_counts": skip_counts,
     }
 
 
@@ -618,6 +700,7 @@ def apply_common_signals(
     winrate: float | None,
     winrate_sample_size: int,
     move_stats: dict | None = None,
+    winrate_skips: dict | None = None,
 ) -> None:
     """Merges the shared, non-strategy-specific screening signals into `criteria` (mutated
     in place): avg_volume/winrate as fetched, iv_rv_ratio preferring tastytrade's iv_30d/
@@ -638,6 +721,9 @@ def apply_common_signals(
     criteria["avg_volume"] = avg_volume
     criteria["winrate"] = winrate
     criteria["winrate_sample_size"] = winrate_sample_size
+    # What the backtest left out and why (gap / no_matching_option_chain_data / timing_unknown), so a small
+    # sample_size can be told from a clean one in criteria_json. None when the caller had no count.
+    criteria["winrate_skips"] = winrate_skips
 
     tastytrade_ratio = criteria.get("tastytrade_iv_rv_ratio")
     if tastytrade_ratio is not None:
@@ -920,8 +1006,32 @@ def fetch_front_back_atm_entries(symbol: str, front_expiration, back_expiration,
     return {"ok": True, "front_call": front_call, "front_put": front_put, "back_call": back_call}
 
 
+TERM_INPUT_KEYS = (
+    "front_iv",
+    "back_iv",
+    "front_dte",
+    "back_dte",
+    "front_expiration",
+    "back_expiration",
+)
+
+
+def term_inputs(ts: dict) -> dict:
+    """The recorded term-structure inputs of a `compute_expected_move_and_term_structure` result,
+    for a strategy to spread into its criteria dict (`criteria_json` and the `entry_reviews`
+    columns). A key the result does not carry comes back None, never zero."""
+    return {k: ts.get(k) for k in TERM_INPUT_KEYS}
+
+
 def compute_expected_move_and_term_structure(
-    front_call_mid: float, front_put_mid: float, front_iv: float, back_iv: float, underlying_price: float
+    front_call_mid: float,
+    front_put_mid: float,
+    front_iv: float,
+    back_iv: float,
+    underlying_price: float,
+    front_expiration=None,
+    back_expiration=None,
+    today=None,
 ) -> dict:
     """Pure calculation, no I/O. Term structure mirrors EarningsEdgeDetection's
     convention: negative values mean the front-month is richer than the
@@ -930,7 +1040,11 @@ def compute_expected_move_and_term_structure(
     which is backwards from docs/screening-criteria.md's -0.004 threshold
     (caught live during iron_fly.py's testing: the naive formula would have
     rejected a real earnings candidate whose front IV was ~64% richer than
-    back). expected_move applies the standard 0.85x straddle-to-expected-
+    back). This is a RATIO of the IV gap to the back IV. The -0.004 threshold
+    comes from a per-day-slope definition, (back_iv - front_iv) / (back_dte -
+    front_dte), so on this ratio it binds far less than that source implies;
+    the inputs are returned (and recorded) so a replay can compute the slope.
+    expected_move applies the standard 0.85x straddle-to-expected-
     move correction (e.g. AAPL $14.00 straddle -> $11.90 expected move),
     via cherrypick.core.structures so every module shares one factor --
     this only affects screening thresholds, not wing/strike sizing, which
@@ -939,11 +1053,64 @@ def compute_expected_move_and_term_structure(
     """
     term_structure = (back_iv - front_iv) / back_iv
     expected_move = structures.expected_move(front_call_mid, front_put_mid)
+    today = today or _date.today()
     return {
         "term_structure": term_structure,
         "expected_move_dollars": expected_move,
         "expected_move_pct": expected_move / underlying_price,
+        "front_iv": front_iv,
+        "back_iv": back_iv,
+        "front_dte": (front_expiration - today).days if front_expiration is not None else None,
+        "back_dte": (back_expiration - today).days if back_expiration is not None else None,
+        "front_expiration": str(front_expiration) if front_expiration is not None else None,
+        "back_expiration": str(back_expiration) if back_expiration is not None else None,
     }
+
+
+def with_entry_quotes(legs: list[dict], quotes: dict, source: str | None) -> list[dict]:
+    """`legs` with the quote each was priced from at entry stamped on: `entry_bid`, `entry_ask`,
+    `entry_quote_source` (`rest` for a broker chain read, `stream` for the cache) and
+    `entry_quote_age_seconds` (None when the source does not say). A leg with no quote in `quotes`
+    gets None for each, never a zero. Recorded for a later slippage study; nothing reads them to
+    trade, and the exit pricer ignores the extra keys."""
+    out = []
+    for leg in legs:
+        q = quotes.get(leg.get("symbol")) or {}
+        out.append(
+            {
+                **leg,
+                "entry_bid": q.get("bid"),
+                "entry_ask": q.get("ask"),
+                "entry_quote_source": source if q else None,
+                "entry_quote_age_seconds": q.get("age_seconds"),
+            }
+        )
+    return out
+
+
+def exit_quote_record(
+    legs: list[dict], quotes: dict, source: str | None, *, skip: set[str] | frozenset[str] = frozenset()
+) -> list[dict]:
+    """The quote each leg's exit was priced from, for `trades.exit_legs_json`: one `{symbol, bid,
+    ask, source, age_seconds}` per leg that has a quote. A leg in `skip` (one that settled at
+    intrinsic rather than trading out) or without a quote is left out, so the list never holds a
+    market nobody saw."""
+    out = []
+    for leg in legs:
+        symbol = leg.get("symbol")
+        q = quotes.get(symbol)
+        if symbol in skip or not q:
+            continue
+        out.append(
+            {
+                "symbol": symbol,
+                "bid": q.get("bid"),
+                "ask": q.get("ask"),
+                "source": source,
+                "age_seconds": q.get("age_seconds"),
+            }
+        )
+    return out
 
 
 def fetch_liquid_symbols() -> set[str] | None:
@@ -1447,6 +1614,12 @@ def build_entry_review_spec(
         "iv_rv_ratio": criteria.get("iv_rv_ratio"),
         "iv_rv_source": criteria.get("iv_rv_source"),
         "term_structure": criteria.get("term_structure"),
+        "front_iv": criteria.get("front_iv"),
+        "back_iv": criteria.get("back_iv"),
+        "front_dte": criteria.get("front_dte"),
+        "back_dte": criteria.get("back_dte"),
+        "front_expiration": criteria.get("front_expiration"),
+        "back_expiration": criteria.get("back_expiration"),
         "market_cap": criteria.get("market_cap"),
         "expected_move": criteria.get("expected_move_dollars") or criteria.get("expected_move"),
         "expected_move_pct": criteria.get("expected_move_pct"),
@@ -1808,6 +1981,7 @@ def run_candidate_scan(
             winrate["winrate"],
             winrate_sample_size,
             move_stats,
+            winrate.get("skip_counts"),
         )
 
         if extra_criteria_fn is not None:

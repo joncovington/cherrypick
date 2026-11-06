@@ -46,6 +46,18 @@ Steps) — there's no separate, hand-maintained routing table to keep in sync wi
 
 ---
 
+## What the term-structure gate measures
+
+`term_structure` is the ratio `(back_iv - front_iv) / back_iv`. The `-0.004` threshold was taken
+from a per-day-slope definition, `(back_iv - front_iv) / (back_dte - front_dte)`, so on the ratio it
+binds far less than that source implies: it asks for 0.4% of back IV, which nearly any backwardation
+clears. Treat it as "front is not below back", not as a margin. The inputs are recorded on every
+entry review (`front_iv`, `back_iv`, `front_dte`, `back_dte` and the two expiration dates, NULL
+before 2026-11-05) so the slope can be replayed. See [Screening Criteria](./screening-criteria.md),
+hard filter 4.
+
+---
+
 ## How the Winning Strategy Is Chosen
 
 Within a symbol, `rank_strategies.py` reuses `scanner.compute_composite_score()` — the same

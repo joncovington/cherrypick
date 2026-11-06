@@ -765,7 +765,11 @@ def cmd_run_entries(args) -> dict:
                 )
                 entry_iv = _avg_sold_iv(template_legs, leg_quotes)
 
-                scaled_legs = _with_streamer_symbols(_scaled_legs(template_legs, quantity), leg_quotes)
+                scaled_legs = scanner.with_entry_quotes(
+                    _with_streamer_symbols(_scaled_legs(template_legs, quantity), leg_quotes),
+                    leg_quotes,
+                    "rest",
+                )
                 per_contract = _per_contract_credit(order)
                 entry_credit = per_contract * quantity
 
@@ -1094,6 +1098,7 @@ def cmd_run_closes(args) -> dict:
                             "exit_cost": exit_costs["total_cost"],
                             "exit_slippage": exit_costs["slippage"],
                             "exit_iv": exit_iv,
+                            "exit_legs_json": scanner.exit_quote_record(legs, full_quotes, "rest"),
                         }
                     )
                 )

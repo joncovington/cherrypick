@@ -103,6 +103,9 @@ def fetch_price_and_expected_move(
             front_call["iv"],
             back_call["iv"],
             price,
+            front_exp,
+            back_exp,
+            date.today(),
         )
         liquidity = scanner.fetch_liquidity_criteria(symbol, front_exp, expirations, front_call, front_put)
 
@@ -112,6 +115,7 @@ def fetch_price_and_expected_move(
                 "price": price,
                 "term_structure": ts["term_structure"],
                 "expected_move_dollars": ts["expected_move_dollars"],
+                **scanner.term_inputs(ts),
                 "expected_move_pct": ts["expected_move_pct"],
                 "chain_complete": True,
                 **liquidity,
