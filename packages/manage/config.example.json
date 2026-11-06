@@ -369,7 +369,13 @@
       "debit_long_delta": 0.4,
       "width": 5,
       "max_units": 10,
-      "max_buying_power_pct": 0.5
+      "max_buying_power_pct": 0.5,
+      "collar": {
+        "_comment": "A third kind, with no tested edge (research item 55): the debit spread plus a credit spread on the other side (too long: a put debit spread and a call credit spread; too short: the mirror), the credit short chosen so the net at mid is nearest zero. Offered only when that net is within max_net a share, credit or debit, and the short is at least min_short_delta out. Both halves are verticals, so no call is naked. It gives up the move past the short strike, and with put skew the call sits nearer the money than the put. Its worst case at expiry counts against max_buying_power_pct like a credit spread's.",
+        "enabled": true,
+        "max_net": 0.25,
+        "min_short_delta": 0.05
+      }
     },
     "candidates": {
       "_comment": "Income trades from our own universe (the evening income reading), sized to the account. Structures: a short put at short_put_delta; a put credit spread short the out-of-the-money strike nearest spread_short_delta, long nearest spread_long_delta beyond it, at least spread_min_credit of the width at the working price (0: no floor; the credit and the odds are shown), and a call spread the same way only with call_spreads on -- the least-bad cell of the 2026-10 credit-spread studies, none of which found an edge after costs, so every spread says no tested edge; a covered call at covered_call_delta on held shares only, on its own expiry (the monthly 30-45 days out, else the cycle monthly). The two deltas are the Screeners lists' 16 (2026-10-19); a short put or covered call whose nearest strike misses its delta by more than delta_tolerance is not built, as the lists drop it. Each gets the largest quantity that keeps one unit's stress loss (a spread's max loss) under per_trade_risk_pct of net liq, a short put's notional under notional_per_name_pct (by account kind), buying power under the VIX-scaled cap (else max_buying_power_pct), delta in its band, theta under its ceiling and the name under max_name_theta_share of the book's theta; the cap that stops it is named. Listed by symbol: with no tested edge, any ranking would read as one. One stopped only by how full the book is (buying power, the theta ceiling) is listed as waiting, sized as if there were room and graded by the buying power it would leave: under the cap ok, up to bp_warn_over above it over, beyond that far over. Modelled at mid from a day-old reading: re-quote before sending.",

@@ -426,6 +426,16 @@ DEFAULT_RULES: dict[str, Any] = {
             # A credit spread never takes buying power used past this share of net liq. A debit spread
             # is exempt: it only lowers the book's worst case, so it is offered past the cap and says so.
             "max_buying_power_pct": 0.50,
+            # A third kind (research item 55, no tested edge): the debit spread plus a credit spread on
+            # the other side, the credit short chosen so the net is nearest zero cost, offered only when
+            # the nearest is within `max_net` a share (credit or debit) and its short is at least
+            # `min_short_delta` out. Both halves are verticals: no call is ever naked. Its whole worst
+            # case at expiry counts against `max_buying_power_pct` like a credit spread's.
+            "collar": {
+                "enabled": True,
+                "max_net": 0.25,
+                "min_short_delta": 0.05,
+            },
         },
         # Income trades from our own universe, sized to the account (candidates.py). The structures
         # are the screener rules on the cycle monthly; the caps scale with net liq. The short put and

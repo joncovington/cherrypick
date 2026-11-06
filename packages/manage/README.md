@@ -406,18 +406,29 @@ the band manage used and never works one out itself.
 
 **When `portfolio.delta` fires, a hedge is sized** (`hedge.py`) in XSP: European, cash-settled, a
 tenth of SPX, and allowed in an IRA as a defined-risk spread. The snapshot carries one quoted XSP
-expiry: the monthly 30–60 days out, preferring 45–60. Two verticals are offered, each `width` (5)
-points wide, sized toward a point a quarter of the band's width inside the breached edge:
+expiry: the monthly 30–60 days out, preferring 45–60. Two verticals and a collar are offered, each
+vertical `width` (5) points wide, sized toward a point a quarter of the band's width inside the
+breached edge:
 
 - a **credit spread** on the side the book leans away from, short near 30 delta. It cuts delta and
   adds theta, and the short gamma that comes with it;
 - a **debit spread** on the side it leans toward, long near 40 delta. It cuts delta and usually costs
-  a little theta.
+  a little theta;
+- a **collar** (`portfolio.hedge.collar`, **no tested edge, research item 55**): the debit spread
+  and a credit spread on the other side together, so a book too long buys the put spread and sells a
+  call spread, and a book too short mirrors it. The credit short is the out-of-the-money strike that
+  brings the net at mid nearest zero, and the collar is offered only if the nearest is within
+  `max_net` (0.25 a share); otherwise the card says why. Both halves are verticals, so no call is
+  ever naked and a cash account or an IRA can hold it. It gives up the upside past the short call
+  strike (the downside gain past the short put, for a book too short), and with put skew a zero-cost
+  collar's call sits nearer the money than its put. Its worst case at expiry (the credit half's max
+  loss and the debit paid, together) counts against the buying-power cap like a credit spread's. It
+  is offered because it was asked for, not because it works: item 55 is declared to test it.
 
 Each shows its legs, the mid and the natural price (sell at the bid, buy at the ask), the cash, the
 max loss, and the book after it: BWD (and whether that is inside the band the book would then have),
-theta, the break-even move and buying power used. A credit spread never takes buying power used past
-50% of net liq, and one that cannot fit says so. A debit spread is exempt: its cost is its whole
+theta, the break-even move and buying power used. A credit spread or a collar never takes buying
+power used past 50% of net liq, and one that cannot fit says so. A debit spread is exempt: its cost is its whole
 worst case and it only lowers the book's, so it is offered past the cap and marked `past_cap`. The
 mid is not a fill. Nothing is placed.
 

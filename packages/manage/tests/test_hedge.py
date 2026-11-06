@@ -15,12 +15,13 @@ DTE = 45
 IV = 0.18
 
 
-def _chain(spot=SPOT, iv=IV, strikes=range(440, 561), spread=0.10):
-    """A flat-IV chain priced by the model itself, so every leg's IV solves back to `iv`."""
+def _chain(spot=SPOT, iv=IV, strikes=range(440, 561), spread=0.10, skew=0.0):
+    """A chain priced by the model itself, so every leg's IV solves back to its own. Flat at `iv`, or
+    with `skew` vol points per unit of moneyness: lower strikes dearer, as a put skew has it."""
     years, options = DTE / 365.0, []
     for k in strikes:
         for right in ("C", "P"):
-            mid = pricing.price(spot, float(k), years, iv, right, 0.04)
+            mid = pricing.price(spot, float(k), years, iv + skew * (spot - k) / spot, right, 0.04)
             if mid < 0.05:
                 continue
             options.append(
@@ -68,7 +69,7 @@ def test_inside_the_band_no_hedge_is_offered():
 def test_too_long_sells_calls_and_buys_puts_and_lands_in_band():
     out = hedge.suggest(_book(60.0), _chain(), METRICS, SESSION, RULES)
     assert out["error"] is None and out["need"] < 0
-    credit, debit = out["suggestions"]
+    credit, debit, *_ = out["suggestions"]
     assert credit["structure"] == "call credit spread" and debit["structure"] == "put debit spread"
     for s in (credit, debit):
         assert s["bwd_change"] < 0
@@ -88,12 +89,12 @@ def test_too_long_sells_calls_and_buys_puts_and_lands_in_band():
 def test_a_credit_hedge_respects_the_cap_and_a_debit_hedge_is_offered_past_it():
     book = _book(60.0)
     book["buying_power_used"] = 7000.0  # 46.7% of 15,000: $500 left under the 50% cap
-    credit, debit = hedge.suggest(book, _chain(), METRICS, SESSION, RULES)["suggestions"]
+    credit, debit, *_ = hedge.suggest(book, _chain(), METRICS, SESSION, RULES)["suggestions"]
     if not credit.get("error"):
         assert credit["after"]["buying_power_used_pct"] <= 0.50 and not credit["past_cap"]
     # Already past the cap: the credit spread cannot be offered...
     book["buying_power_used"] = 7600.0
-    credit, debit = hedge.suggest(book, _chain(), METRICS, SESSION, RULES)["suggestions"]
+    credit, debit, *_ = hedge.suggest(book, _chain(), METRICS, SESSION, RULES)["suggestions"]
     assert "buying-power cap" in credit["error"]
     # ...but the debit spread only lowers the worst case, so it is offered, sized to the need, and
     # says it takes the account past the cap.
@@ -103,7 +104,7 @@ def test_a_credit_hedge_respects_the_cap_and_a_debit_hedge_is_offered_past_it():
 
 def test_too_short_sells_puts_and_buys_calls():
     out = hedge.suggest(_book(-60.0), _chain(), METRICS, SESSION, RULES)
-    credit, debit = out["suggestions"]
+    credit, debit, *_ = out["suggestions"]
     assert credit["structure"] == "put credit spread" and debit["structure"] == "call debit spread"
     assert credit["bwd_change"] > 0 and debit["bwd_change"] > 0
 
