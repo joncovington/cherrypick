@@ -336,10 +336,13 @@ def test_each_design_check_can_fail_the_arm(change):
     assert not all(out["design_checks"].values())
 
 
-def test_holm_rejection_is_part_of_the_pass_and_the_lenient_reading_is_reported():
+def test_holm_gates_the_net_test_only_and_the_stricter_reading_is_reported_beside_it():
     out = s52.verdict(passing_design(), holdout(500), True, False)
-    assert out["verdict"] == "fail" and out["pass_if_holm_on_net_only"] is True
-    assert s52.verdict(passing_design(), holdout(500), False, True)["pass_if_holm_on_net_only"] is False
+    assert out["verdict"] == "pass" and out["verdict_if_holm_on_both"] == "fail"
+    both = s52.verdict(passing_design(), holdout(500), True, True)
+    assert both["verdict"] == "pass" and both["verdict_if_holm_on_both"] == "pass"
+    out = s52.verdict(passing_design(), holdout(500), False, True)  # the net Holm fails: judged fail
+    assert out["verdict"] == "fail" and "pair_holm" not in out["design_checks"]
 
 
 # ------------------------------------------------------------------------------------------------

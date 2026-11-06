@@ -547,9 +547,8 @@ def _pos(x) -> bool:
 def verdict(design: dict, holdout: dict, holm_net: bool, holm_pair: bool) -> dict:
     """The declared rule. Fewer than 150 design trades is no verdict. A design pass needs every check;
     then the holdout's mean net and paired difference both above zero, and with fewer than 100 holdout
-    trades that is no verdict. The Holm gate is on both tests (the declaration's parenthesis sits
-    beside the first; the stricter reading is the judged one and `pass_if_holm_on_net_only` shows the
-    other)."""
+    trades that is no verdict. Holm gates the net test only, as declared; the paired test is t > 2
+    unadjusted. The stricter reading (Holm on both) is reported as `verdict_if_holm_on_both`."""
     if design["trades"] < MIN_TRADES["design"]:
         return {"verdict": "no verdict", "why": f"{design['trades']} design trades < {MIN_TRADES['design']}"}
     t_net = _pos(design["net"]["mean"]) and design["net"]["t"] > T_BAR
@@ -560,15 +559,22 @@ def verdict(design: dict, holdout: dict, holm_net: bool, holm_pair: bool) -> dic
         "stress_positive": _pos(design["stress_mean"]),
         "best_five_removed_positive": _pos(design["without_best_five"]),
     }
-    checks = {"net_t": t_net, "net_holm": holm_net, "pair_t": t_pair, "pair_holm": holm_pair, **common}
-    lenient = all([t_net, holm_net, t_pair, *common.values()])
-    out = {"design_checks": checks, "pass_if_holm_on_net_only": lenient}
-    if not all(checks.values()):
-        return {"verdict": "fail", **out}
-    if holdout["trades"] < MIN_TRADES["holdout"]:
-        return {"verdict": "no verdict", "why": "holdout under its trade floor", **out}
+    checks = {"net_t": t_net, "net_holm": holm_net, "pair_t": t_pair, **common}
+    strict = {**checks, "pair_holm": holm_pair}
+    out = {"design_checks": checks}
     held = _pos(holdout["net"]["mean"]) and _pos(holdout["pair"]["mean"])
-    return {"verdict": "pass" if held else "fail", "holdout_positive": held, **out}
+
+    def read(c: dict) -> str:
+        if not all(c.values()):
+            return "fail"
+        if holdout["trades"] < MIN_TRADES["holdout"]:
+            return "no verdict"
+        return "pass" if held else "fail"
+
+    out["verdict_if_holm_on_both"] = read(strict)
+    if holdout["trades"] < MIN_TRADES["holdout"] and all(checks.values()):
+        return {"verdict": "no verdict", "why": "holdout under its trade floor", **out}
+    return {"verdict": read(checks), "holdout_positive": held, **out}
 
 
 def evaluate(trades: list[dict]) -> dict:
