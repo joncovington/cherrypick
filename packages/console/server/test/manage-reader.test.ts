@@ -34,6 +34,8 @@ function evalDoc(session: string): Record<string, unknown> {
         trades: [
           {
             trade_id: "KO",
+            trade_id_provisional: false,
+            merged_ids: ["KO-260101-2"],
             underlying: "KO",
             kind: "debit",
             cost: 253,
@@ -114,6 +116,13 @@ describe("readManage", () => {
     });
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-30.json"), JSON.stringify(evalDoc("2026-10-30")));
     expect(readManage(config).accounts[0]!.premium).toBeNull();
+  });
+
+  it("passes a trade's stable-ID flags through, and settles them when an evaluation predates them", () => {
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-30.json"), JSON.stringify(evalDoc("2026-10-30")));
+    const [ko, other] = readManage(config).accounts[0]!.trades;
+    expect(ko).toMatchObject({ tradeId: "KO", tradeIdProvisional: false, mergedIds: ["KO-260101-2"] });
+    expect(other).toMatchObject({ tradeIdProvisional: false, mergedIds: [] });
   });
 
   it("passes the ledger through in the page's names, and null before it existed", () => {

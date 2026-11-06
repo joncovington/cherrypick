@@ -39,6 +39,7 @@ from cherrypick.manage import premium as _premium
 from cherrypick.manage import pricing
 from cherrypick.manage import rules as _rules
 from cherrypick.manage import shapes as _shapes
+from cherrypick.manage import tradeids as _tradeids
 from cherrypick.manage import wheel as _wheel
 from cherrypick.manage import zerodte as _zerodte
 
@@ -262,8 +263,12 @@ def evaluate_trade(
     wheel_ctx: dict[str, Any] | None = None,
     pmcc_ctx: dict[str, Any] | None = None,
     broker_greeks: dict[str, dict] | None = None,
+    trade_id: str | None = None,
 ) -> dict[str, Any]:
-    """`chain`, when the broker history reconciled one, sets the basis: the chain's net cash across its
+    """`trade_id` is the trade's stable ID (tradeids.py): its own overrides (`trades.<ID>`: intent, note,
+    disable) are read over the name's (`positions.<SYM>`).
+
+    `chain`, when the broker history reconciled one, sets the basis: the chain's net cash across its
     opening order and every roll, not the open legs' average prices. `seen` is the earnings trades the
     previous evaluation found (`earnings_trade`). `roll_chains` is the snapshot's quoted chains, keyed
     "<UNDERLYING>|<expiry>", that a strangle's untested side is rolled along. `wheel_ctx` is the wheel
@@ -275,12 +280,13 @@ def evaluate_trade(
     pr = rules["pricing"]
     rate = float(pr["rate"])
     legs = _legs(raw_legs, session, spot, rate, broker_greeks)
-    override = (rules.get("positions") or {}).get(underlying) or {}
+    override = _rules.override(rules, underlying, trade_id)
 
     def off(rule_id: str) -> bool:
-        return _rules.disabled(rules, underlying, rule_id)
+        return _rules.disabled(rules, underlying, rule_id, trade_id)
 
     trade: dict[str, Any] = {
+        "trade_id": trade_id,
         "underlying": underlying,
         "spot": spot,
         "intent": override.get("intent"),
@@ -1882,7 +1888,11 @@ def _recommend(trade: dict[str, Any], rules: dict[str, Any], legs: list[dict[str
         reason = "no rule fired; hold with the exit levels resting"
         rule = "hold"
         et = trade.get("earnings_trade")
-        if et and not et["passed"] and not _rules.disabled(rules, trade["underlying"], "earnings_trade"):
+        if (
+            et
+            and not et["passed"]
+            and not _rules.disabled(rules, trade["underlying"], "earnings_trade", trade.get("trade_id"))
+        ):
             # Held FOR the report, not in spite of it: the report is the trade, so no earnings penalty.
             rule = "earnings_trade"
             confidence = int(rules["earnings_trade"]["confidence"])
@@ -2336,6 +2346,8 @@ def evaluate(
     # to the open legs' prices, and says so.
     history = snapshot.get("transactions") or {}
     history_ok = "transactions" in snapshot and not snapshot.get("transactions_error")
+    # Stable trade IDs, against the store as this snapshot carried it (tradeids.py).
+    ids = _tradeids.Assigner(snapshot.get("trade_ids"))
     accounts = []
     for account in positions.get("accounts") or []:
         balances = account.get("balances") or {}
@@ -2393,7 +2405,9 @@ def evaluate(
                 grouping_errors.append(
                     f"{u['underlying']}: covered-call grouping failed: {type(exc).__name__}: {exc}"[:300]
                 )
-            for i, (group, chain) in enumerate(groups):
+            for group, chain in groups:
+                # The ID first: a trade's own overrides (`trades.<ID>`) are read while it is judged.
+                ident = ids.assign(u["underlying"], group, chain)
                 trade = evaluate_trade(
                     u["underlying"],
                     group,
@@ -2407,8 +2421,12 @@ def evaluate(
                     _wheel_context(wheel_view, group, snapshot, u["underlying"]),
                     _pmcc_context(pmcc_view, group, account),
                     snapshot.get("broker_greeks"),
+                    trade_id=ident["trade_id"],
                 )
-                trade["trade_id"] = u["underlying"] if len(groups) == 1 else f"{u['underlying']}#{i + 1}"
+                trade["trade_id"] = ident["trade_id"]
+                trade["trade_id_provisional"] = ident["provisional"]
+                trade["merged_ids"] = ident["merged"]
+                trade["trade_ident"] = ident
                 # How the legs became one trade: the broker's chains, unless a join made two into one.
                 trade["grouped_by"] = (chain or {}).get("grouped_by")
                 trades.append(trade)

@@ -13,6 +13,8 @@ import { WhatToDoList, todoList } from "../src/pages/Live/WhatToDo";
 const trade = (over: Partial<ManageTrade>) =>
   ({
     tradeId: "XYZ",
+    tradeIdProvisional: false,
+    mergedIds: [],
     action: "HOLD",
     reason: "no rule fired",
     nearestShortDte: 30,

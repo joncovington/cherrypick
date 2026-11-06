@@ -89,6 +89,8 @@ function cycle(over: Partial<ManageWheelCycle> = {}): ManageWheelCycle {
 function trade(over: Partial<ManageTrade> = {}): ManageTrade {
   return {
     tradeId: "XYZ",
+    tradeIdProvisional: false,
+    mergedIds: [],
     underlying: "XYZ",
     spot: 50,
     kind: "credit",

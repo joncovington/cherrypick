@@ -378,6 +378,25 @@ function ChainTab({ t }: { t: ManageTrade }) {
   );
 }
 
+/** What a trade's ID is: provisional (no order chain yet, so it will change once the orders are known),
+ * or the survivor of a join that folded other IDs into it. Nothing for a settled ID. */
+export function idChips(t: ManageTrade): ReactNode {
+  return (
+    <>
+      {t.tradeIdProvisional ? (
+        <span className="chip muted" title="no order chain yet: this ID changes once the trade's orders are known">
+          provisional ID
+        </span>
+      ) : null}
+      {t.mergedIds.length ? (
+        <span className="chip muted" title="a join made one trade of these; the older ID is kept">
+          merged {t.mergedIds.join(", ")}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 function TradeDialog({
   trades,
   index,
@@ -408,6 +427,7 @@ function TradeDialog({
             <>
               <ActionChip action={t.action} />
               <span className={`chip ${tone(t.pnlNet)}`}>{fmtMoney(t.pnlNet)}</span>
+              {idChips(t)}
             </>
           }
           tabs={tabs}
