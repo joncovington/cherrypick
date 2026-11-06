@@ -39,6 +39,7 @@ from cherrypick.manage import premium as _premium
 from cherrypick.manage import pricing
 from cherrypick.manage import rules as _rules
 from cherrypick.manage import shapes as _shapes
+from cherrypick.manage import timespreads as _timespreads
 from cherrypick.manage import tradeids as _tradeids
 from cherrypick.manage import wheel as _wheel
 from cherrypick.manage import zerodte as _zerodte
@@ -2659,6 +2660,16 @@ def evaluate(
             snapshot.get("working_orders"),
             # What the Screeners trades are judged to fit against (`candidates.screen_fit`).
             available_bp=_f(balances.get("derivative_buying_power")),
+        )
+        # The time-spread scanner's rows sized to this account (timespreads.suggest); no tested edge.
+        book["time_spreads"] = _timespreads.suggest(
+            snapshot.get("time_spreads"),
+            book,
+            trades,
+            session,
+            rules,
+            account.get("account_type"),
+            book.get("benchmark_spot"),
         )
         # The account-wide history is the broker tool's designated account's, so only that account
         # (or the only one) gets a pace; another account's would be someone else's trades.

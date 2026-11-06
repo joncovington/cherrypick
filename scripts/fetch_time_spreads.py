@@ -70,6 +70,7 @@ def metric_plain(m, sector: str | None) -> dict:
         "iv_30d": _f(m.implied_volatility_30_day),
         "hv_30d": _f(m.historical_volatility_30_day),
         "market_cap": _f(m.market_cap),
+        "beta": _f(getattr(m, "beta", None)),
         "earnings_date": str(earnings.expected_report_date)
         if earnings and earnings.expected_report_date
         else None,

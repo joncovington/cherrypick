@@ -128,6 +128,7 @@ def term_row(m: dict[str, Any], session: date, rule: dict[str, Any] = RULE) -> d
         "hv_30d": _f(m.get("hv_30d")),
         "market_cap": cap,
         "fund": not cap,
+        "beta": _f(m.get("beta")),
         "earnings_date": er.isoformat() if er else None,
         "sector": m.get("sector"),
         "passes": not why,
@@ -330,6 +331,7 @@ def build_all(
                     "ratio": term.get("ratio"),
                     "iv_rank": term.get("iv_rank"),
                     "sector": term.get("sector"),
+                    "beta": term.get("beta"),
                     "earnings_date": term.get("earnings_date"),
                     "spot": _f(((doc.get("chains") or {}).get(sym) or {}).get("spot")),
                     **r,
@@ -337,3 +339,98 @@ def build_all(
             )
     rows.sort(key=lambda r: (-(r["ratio"] or 0), r["underlying"], KINDS.index(r["kind"]), r["label"]))
     return {"rows": rows, "dropped": dropped, "order": HYPOTHESIS}
+
+
+# --------------------------------------------------------------------------- step 3: the account
+def suggest(
+    reading: dict[str, Any] | None,
+    book: dict[str, Any],
+    trades: list[dict[str, Any]],
+    session: date,
+    rules: dict[str, Any],
+    account_type: dict[str, Any] | None,
+    benchmark_spot: float | None,
+) -> dict[str, Any] | None:
+    """The day's structures sized to the account: each with a quantity and the cap that binds it
+    (the candidates' caps through `candidates.size`, plus this block's own buying-power ceiling).
+    Above `delta_limit` beta-weighted delta the bullish ones are held back. A name or a sector the
+    book already holds is flagged, never dropped. None when the block is off."""
+    cfg = (rules.get("portfolio") or {}).get("time_spreads") or {}
+    if cfg.get("enabled") is False:
+        return None
+    if not reading or reading.get("error") or not reading.get("rows"):
+        return {
+            "error": (reading or {}).get("error") or "the snapshot carries no time-spread reading",
+            "fits": [],
+            "too_big": [],
+        }
+    cand = rules["portfolio"]["candidates"]
+    basis = _candidates.account_basis(account_type)
+    built = build_all(reading, session, rules)
+    net_liq, used, bwd = book.get("net_liq"), book.get("buying_power_used"), book.get("bwd")
+    limit, cap = float(cfg["delta_limit"]), float(cfg["max_bp_share"])
+    held = {t["underlying"] for t in trades}
+    sector_of = {r["symbol"]: r.get("sector") for r in reading.get("rows") or []}
+    held_sectors = {sector_of.get(u) for u in held} - {None}
+    dropped = dict(built["dropped"])
+    bullish_held_back = bwd is not None and bwd > limit
+    fits, too_big = [], []
+    for r in built["rows"]:
+        if bullish_held_back and r["direction"] == "bullish":
+            dropped["bullish while the book is over its delta limit"] = (
+                dropped.get("bullish while the book is over its delta limit", 0) + 1
+            )
+            continue
+        beta, spot = r.get("beta"), r.get("spot")
+        scale = beta * spot / benchmark_spot if beta is not None and spot and benchmark_spot else None
+        debit = r["max_loss"]
+        u = {
+            "stress_loss": debit,  # a calendar or diagonal can lose no more than its debit
+            "notional": debit,  # the cash a debit spread puts at risk, not the shares it controls
+            "bp": debit,
+            "bwd": r["net_delta"] * scale if scale is not None else None,  # as candidates.unit
+            # The theta caps are the income candidates' (a short-premium book's gamma guard): a calendar
+            # earns its theta from the term spread, and on a small account they refuse every one. The
+            # row shows the theta it adds instead.
+            "theta": 0.0,
+        }
+        # room=True sets aside the candidates' own buying-power band (50%) and theta ceiling: this
+        # block's ceiling (`max_bp_share`) is applied below instead.
+        units, binding = _candidates.size(
+            u, book, r["underlying"], cand, basis, int(cfg["max_units"]), room=True
+        )
+        if net_liq and used is not None:
+            room = int(max(cap * net_liq - used, 0.0) // debit) if debit > 0 else 0
+            if room < units:
+                units, binding = room, f"buying power {cap:.0%}"
+        row = {
+            **r,
+            "units": units,
+            "binding": binding,
+            "held_name": r["underlying"] in held,
+            "held_sector": bool(r.get("sector")) and r.get("sector") in held_sectors,
+            "bp_after_pct": round((used + units * debit) / net_liq, 4)
+            if net_liq and used is not None
+            else None,
+        }
+        (fits if units >= 1 else too_big).append(row)
+    show = int(cfg["show"])
+    return {
+        "source_session": reading.get("session"),
+        "taken_at": reading.get("taken_at"),
+        "complete": reading.get("complete"),
+        "order": HYPOTHESIS,
+        "edge": "no tested edge",
+        "account_basis": basis,
+        "names": reading.get("read"),
+        "passing": reading.get("passing"),
+        "shortlist": reading.get("shortlist"),
+        "delta_filter": {"book_bwd": bwd, "limit": limit, "bullish_held_back": bullish_held_back},
+        "bp_cap_pct": cap,
+        "fits": fits[:show],
+        "fits_total": len(fits),
+        "too_big": too_big[:show],
+        "too_big_total": len(too_big),
+        "dropped": dropped,
+        "error": None,
+    }

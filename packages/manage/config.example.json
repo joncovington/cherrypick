@@ -389,6 +389,14 @@
       "show": 50,
       "show_too_big": 25,
       "bp_warn_over": 0.1
+    },
+    "time_spreads": {
+      "_comment": "The time-spread scanner's rows sized to the account: buying power after the trade at most max_bp_share of net liq, the candidates' per-trade risk and other caps otherwise, at most max_units. Above delta_limit beta-weighted delta only neutral and bearish structures are listed. No tested edge: rows are ordered by the front/back IV ratio, an untested hypothesis (item 54).",
+      "enabled": true,
+      "max_bp_share": 0.6,
+      "delta_limit": 100.0,
+      "max_units": 2,
+      "show": 30
     }
   },
   "_positions_comment": "Per-underlying overrides, e.g. {\"SPY\": {\"intent\": \"hedge\", \"disable\": [\"debit.stop\"], \"note\": \"portfolio hedge\"}}. intent \"pmcc\" recognises a call diagonal as a PMCC, \"diagonal\" keeps it out. Rule ids: expiry, credit.take_profit, credit.stop, credit.time_exit, credit.breached, credit.close_before_earnings, debit.stop, debit.take_profit, debit.diagonal_width, debit.price_stop, debit.time_exit, legs.short_take_profit, legs.long_vertical, roll.naked_put, roll.diagonal_short, roll.fly_off, roll.untested_side, wheel.take_profit, wheel.tested, wheel.next_leg, pmcc.width, pmcc.assignment, pmcc.roll_long, directional.take_profit, directional.stop, ex_dividend, risk.oversize, earnings_trade, portfolio.theta, portfolio.delta, portfolio.breakeven, portfolio.concentration, portfolio.buying_power, portfolio.earnings_exposure, portfolio.expiry_concentration, portfolio.vol_expansion",

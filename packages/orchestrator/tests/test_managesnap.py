@@ -55,7 +55,7 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 16
+    assert snap["snapshot_version"] == 17
     # v16: the loops' published order ids, read from the (isolated, empty) state folder
     assert snap["live_known_orders"] == {} and snap["live_known_orders_error"] is None
     assert snap["underlying_history"] == {} and snap["underlying_history_error"] is None  # no long call
