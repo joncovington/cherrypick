@@ -2022,6 +2022,44 @@
       "results": null,
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 53,
+      "study": "item53",
+      "title": "The time exit for short premium opened inside 30 DTE",
+      "status": "declared",
+      "legacy": false,
+      "setup": "short-dated-management",
+      "side": "neutral",
+      "structure": "short-strangle",
+      "window": "monthly",
+      "measure": "net per trade in basis points of 100 x the entry spot, after the suite's slippage and per-leg fees both ways: one-lot SPY short strangles (the calls and puts nearest 16 delta) and iron condors (the same shorts, wings at the strike nearest 1% of spot beyond each) opened at 15:45 ET on the stored session nearest 7, 14, 21 and 28 DTE (to 3 days more) on each standard monthly, managed four ways on the same trades: A (50% take profit, manage's credit stop, close at 3 DTE), B (A plus a time exit at round(entry DTE x 21/45) days left), C (50% and the 3-DTE close, no stop), D (hold to the 3-DTE close); judged as each challenger's paired difference over A",
+      "expected": "none declared: A is manage's default since 2026-11-06 and stays unless a challenger beats it on the same trades in both windows",
+      "sample": "the licensed SPY monthly chains at 15:45 ET (the store the 2026-10-20 strangle management test read); design: entries 2017-01-01..2021-12-31, holdout 2022-01-01..2026-12-31 read after the design whatever it shows; < 40 trades in a cell's design or holdout = no verdict for that cell",
+      "rule": "per (structure, entry DTE, challenger), 22 tests (B only at 14, 21 and 28 DTE, where it differs from A), Holm at 0.05 on the one-sided paired difference over A: in the design the difference above zero under Holm, above zero at 1.5x fees and a quarter of the spread, above zero with the best five removed, and the challenger's worst-5% mean no worse than A's; then in the holdout the difference above zero and the tail no worse. A confirmed challenger becomes a proposal for that entry DTE; anything less leaves A",
+      "mechanism": "the 21-day exit was tested on trades opened about 45 days out, where it leaves the last weeks' gamma; a trade opened inside 21 days is all last weeks, so either a shorter, scaled exit cuts the same gamma, or the take profit and the 3-day close already do and an exit only gives up premium",
+      "rivals": [
+        {
+          "explanation": "a challenger wins on mean but carries a worse tail",
+          "check": "the worst-5% mean must be no worse than A's in both windows; the worst trade is reported"
+        },
+        {
+          "explanation": "costs: the challenger trades more often, or less",
+          "check": "the paired difference must stay above zero at 1.5x fees and a quarter of the spread"
+        },
+        {
+          "explanation": "a few quiet months carry it",
+          "check": "above zero with the best five removed; the holdout read whatever the design shows"
+        },
+        {
+          "explanation": "once-a-session marks miss the stop and target between them",
+          "check": "declared limit: every arm reads the same 15:45 marks, so the paired difference shares the bias"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#53-the-time-exit-for-short-premium-opened-inside-30-dte",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
