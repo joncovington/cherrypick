@@ -1980,6 +1980,48 @@
       "results": [],
       "retest": null,
       "retests": []
+    },
+    {
+      "id": 52,
+      "study": "item52",
+      "title": "Diagonals across an earnings report: the short weekly takes the crush, the monthly long keeps its value",
+      "status": "declared",
+      "legacy": false,
+      "setup": "earnings-premium",
+      "side": "neutral",
+      "structure": "diagonal",
+      "window": "earnings",
+      "measure": "net per trade in dollars and as a share of the debit: one-lot diagonals opened at the entry session's end-of-day mid less 0.125 of the spread per leg and closed at the reaction session's, core.fees per leg each way; arms A-call and A-put (long the 40-delta in the next monthly at least 14 days after the weekly, short the 20-delta in the report weekly), B1 (both A diagonals), B2 (short the 20-delta call and put in the weekly, long the 10-delta call and put in the monthly), C (one A diagonal, side against the 25-delta risk reversal by design-window terciles); each also cut to cheap (the monthly's ATM IV in the bottom tercile of its own trailing 252 sessions); paired with the same arm on item 31's no-report control session",
+      "expected": "a positive mean net after costs at the reaction-session close, above the paired no-report control",
+      "sample": "item 31's events (158 names the liquidity verdict calls tradable on 2026-10-30, hindsight; Dolt stated-timing reports) with a weekly expiring on or after the reaction session within 9 days of the report, a close of at least $10, every leg two-sided with its spread at most 15% of mid, the module's open-interest floor on each expiry and an expected move of at least $0.90; design 2020-01-22..2023-12-31, holdout 2024-01-02..2026-07-14 read after the design whatever it shows; < 150 design or < 100 holdout trades = no verdict",
+      "rule": "per arm (Holm across the arms and their cheap cuts), in the design window: mean net > 0 with a one-sided date-clustered t > 2; paired difference over the control > 0 with t > 2; > 0 in each time-half (split 2022-07-01) and name-half; > 0 at 1.5x fees and half the spread and with the best 5 removed; then holdout mean net > 0 and paired difference > 0. Judged on the reaction-session close; the next-session close and holding the short to its expiry are reported variants",
+      "mechanism": "the report weekly's implied volatility collapses after the report while the next monthly's falls much less, so a short in the weekly and a long in the monthly keep the difference; for arm C, the risk reversal's contrarian lean picks the side",
+      "rivals": [
+        {
+          "explanation": "ordinary calendar decay, not the report",
+          "check": "paired control: the same arm on the same name four weeks from any report, closed the next session"
+        },
+        {
+          "explanation": "the back month falls with the front, so the long gives back what the short earned",
+          "check": "the cheap cut and the reported back-month IV change from entry to the reaction close"
+        },
+        {
+          "explanation": "costs take the spread on four single-name legs across two expiries",
+          "check": "net of core.fees and slippage; still above zero at 1.5x fees and half the spread"
+        },
+        {
+          "explanation": "a few quiet reports carry it",
+          "check": "above zero with the best five removed; worst trade reported; both time-halves and name-halves"
+        },
+        {
+          "explanation": "the skew side is noise",
+          "check": "C must pass on its own under Holm; its cuts are fitted on the design window only"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#52-diagonals-across-an-earnings-report-the-short-weekly-takes-the-crush-the-monthly-long-keeps-its-value",
+      "results": null,
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
