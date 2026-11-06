@@ -562,7 +562,7 @@ function Toolbar({
           ‹
         </button>
         <span>
-          {label} <span className="ts-muted">· {entriesFilled} entries filled</span>
+          {label} <span className="ts-muted">· {entriesFilled} settled</span>
           {openTrades > 0 && <span className="ts-muted"> · {openTrades} open, settling at the close</span>}
         </span>
         <button aria-label="next day" disabled={!canStepDay || range !== "day"} onClick={() => onDayStep(1)} title={range !== "day" ? "day stepping applies to the day range" : undefined}>
