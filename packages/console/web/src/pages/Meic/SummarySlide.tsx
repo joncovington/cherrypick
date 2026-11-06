@@ -535,6 +535,7 @@ function Toolbar({
   onRange,
   label,
   entriesFilled,
+  openTrades,
   canStepDay,
   onDayStep,
 }: {
@@ -542,6 +543,7 @@ function Toolbar({
   onRange: (r: Range) => void;
   label: string;
   entriesFilled: number;
+  openTrades: number;
   canStepDay: boolean;
   onDayStep: (delta: -1 | 1) => void;
 }) {
@@ -561,6 +563,7 @@ function Toolbar({
         </button>
         <span>
           {label} <span className="ts-muted">· {entriesFilled} entries filled</span>
+          {openTrades > 0 && <span className="ts-muted"> · {openTrades} open, settling at the close</span>}
         </span>
         <button aria-label="next day" disabled={!canStepDay || range !== "day"} onClick={() => onDayStep(1)} title={range !== "day" ? "day stepping applies to the day range" : undefined}>
           ›
@@ -635,6 +638,7 @@ export function MeicSummary({ mode, scope, day, onDayStep, canStepDay, today }: 
         onRange={setRange}
         label={windowLabel}
         entriesFilled={s?.hero.trades ?? 0}
+        openTrades={s?.hero.openTrades ?? 0}
         canStepDay={canStepDay}
         onDayStep={onDayStep}
       />
