@@ -67,12 +67,14 @@ import statistics
 import sys
 import time
 from datetime import date as _date
+from datetime import datetime as _datetime
 
 # Make `import paths` resolve when this file is imported (not run as the __main__ script, which
 # gets its own directory on sys.path automatically) -- mirrors credentials.py's self-insert.
 from cherrypick.core import calendar as _calendar
 from cherrypick.core import db as _db
 from cherrypick.core import profiles as _profiles
+from cherrypick.core.clock import ET as _ET
 
 from cherrypick.earnings import ledger_verbs as _verbs
 from cherrypick.earnings import paths as _paths
@@ -446,8 +448,10 @@ def session_span(opened_at, until) -> int | None:
     which callers must treat as "unknown", never as zero.
     """
     try:
-        start = _date.fromtimestamp(float(opened_at))
-        end = _date.fromtimestamp(float(until))
+        # Eastern, the session's own clock: the host's local date moves the day boundary for a
+        # host east of ET and miscounts a carried position by a whole session.
+        start = _datetime.fromtimestamp(float(opened_at), _ET).date()
+        end = _datetime.fromtimestamp(float(until), _ET).date()
     except (TypeError, ValueError, OSError, OverflowError):
         return None
     if end <= start:
@@ -563,6 +567,18 @@ def cmd_save_leg_close(args) -> dict:
     return _verbs.save_leg_close(_conn, args)
 
 
+def _close_refusal(conn, order_id) -> dict:
+    """Why a close wrote nothing: the row is already closed (say so, loudly) or does not exist."""
+    row = conn.execute("SELECT closed_at FROM trades WHERE order_id = ?", (order_id,)).fetchone()
+    if row is not None and row["closed_at"] is not None:
+        return {
+            "ok": False,
+            "error": f"trade {order_id} is already closed; the first close stands",
+            "already_closed": True,
+        }
+    return {"ok": False, "error": f"no open trade found for order_id {order_id}"}
+
+
 def cmd_save_close(args) -> dict:
     """Close a position. `exit_reason` names WHY from the lifecycle taxonomy (profit_target,
     stop_loss, wing_breach, side_breach, leg_delta_stop, time_stop, pin_risk, expiry_close, expired, front_expiry,
@@ -589,7 +605,7 @@ def cmd_save_close(args) -> dict:
         cur = conn.execute(
             "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ?, exit_cost = ?, "
             "exit_slippage = ?, settlement_fees = ?, exit_iv = ?, status = 'closed', exit_reason = ?, "
-            "hold_days = ? WHERE order_id = ?",
+            "hold_days = ? WHERE order_id = ? AND closed_at IS NULL",
             (
                 spec.get("exit_debit"),
                 spec.get("pnl"),
@@ -607,13 +623,16 @@ def cmd_save_close(args) -> dict:
         # still open so get_open_legs never reports legs of a closed position. Legs closed
         # individually beforehand (the agent path's close_side) keep their own close_price;
         # swept legs record none -- the position-level exit_debit is the priced exit.
+        if cur.rowcount == 0:
+            # Nothing was written, and nothing else is touched: a second close on a closed row must
+            # not overwrite the first close's price, reason or P&L.
+            conn.rollback()
+            return _close_refusal(conn, order_id)
         conn.execute(
             "UPDATE trade_legs SET status = 'closed', closed_at = ? WHERE order_id = ? AND status = 'open'",
             (spec.get("closed_at", time.time()), order_id),
         )
         conn.commit()
-        if cur.rowcount == 0:
-            return {"ok": False, "error": f"no open trade found for order_id {order_id}"}
     finally:
         conn.close()
     return {"ok": True, "order_id": order_id}

@@ -107,12 +107,7 @@ _CAL = [{"symbol": "AAA", "date": "2026-10-29", "timing": "After market close"}]
 def _drive(monkeypatch, today, verdict):
     rows = []
 
-    class _Today(dt.date):
-        @classmethod
-        def today(cls):
-            return today
-
-    monkeypatch.setattr(r, "_date", _Today)
+    monkeypatch.setattr(scanner, "et_today", lambda: today)
     monkeypatch.setattr(rank_strategies, "_ensure_dolt_running", lambda: True)
     monkeypatch.setattr(rank_strategies, "_verify_tastytrade_connection", lambda: True)
     monkeypatch.setattr(r, "_capture_market_context", lambda day: None)
@@ -172,11 +167,6 @@ def test_before_the_boundary_a_thin_name_still_reaches_its_order(monkeypatch):
 
 # --------------------------------------------------------------------------- the ranked (live) path
 def _ranked(monkeypatch, today, verdict):
-    class _Today(dt.date):
-        @classmethod
-        def today(cls):
-            return today
-
     cal = [
         {"symbol": "AAA", "date": "2026-10-29", "timing": "After market close"},
         {"symbol": "THIN", "date": "2026-10-29", "timing": "After market close"},
@@ -197,7 +187,7 @@ def _ranked(monkeypatch, today, verdict):
     def select(ranked, config):
         return {"selected": ranked, "skipped": []}
 
-    monkeypatch.setattr(scanner, "_date", _Today)
+    monkeypatch.setattr(scanner, "et_today", lambda: today)
     monkeypatch.setattr(rank_strategies, "_ensure_dolt_running", lambda: True)
     monkeypatch.setattr(rank_strategies, "_verify_tastytrade_connection", lambda: True)
     monkeypatch.setattr(scanner, "_load_config", lambda *a, **k: {"enable_live_trading": False})

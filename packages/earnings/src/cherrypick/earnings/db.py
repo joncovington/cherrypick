@@ -322,7 +322,7 @@ def cmd_save_close(args) -> dict:
     try:
         cur = conn.execute(
             "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ?, exit_cost = ?, exit_iv = ? "
-            "WHERE order_id = ?",
+            "WHERE order_id = ? AND closed_at IS NULL",
             (
                 spec.get("exit_debit"),
                 spec.get("pnl"),
@@ -332,12 +332,20 @@ def cmd_save_close(args) -> dict:
                 order_id,
             ),
         )
+        if cur.rowcount == 0:
+            # A second close on a closed row must not overwrite the first close's price or P&L.
+            row = conn.execute("SELECT closed_at FROM trades WHERE order_id = ?", (order_id,)).fetchone()
+            if row is not None and row["closed_at"] is not None:
+                return {
+                    "ok": False,
+                    "error": f"trade {order_id} is already closed; the first close stands",
+                    "already_closed": True,
+                }
+            return {"ok": False, "error": f"no open trade found for order_id {order_id}"}
         # The join on trades.closed_at already drops these from the producer's view; clearing them
         # too keeps the table an honest "open legs" set rather than a history.
         conn.execute("DELETE FROM open_leg_symbols WHERE order_id = ?", (order_id,))
         conn.commit()
-        if cur.rowcount == 0:
-            return {"ok": False, "error": f"no open trade found for order_id {order_id}"}
     finally:
         conn.close()
     return {"ok": True, "order_id": order_id}

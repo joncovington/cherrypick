@@ -47,6 +47,10 @@ Two shared facts apply to every strategy below, so they aren't repeated seven ti
 sides. Wing width is picked from IV/RV-banded multiples of the credit received
 (`wing_width_multiple_low/mid/high`, default 2.5×/3.0×/3.5×, scaled to this candidate's own
 IV/RV ratio — richer IV/RV earns a wider, more protective wing).
+The order builder refuses a malformed structure rather than sending it: each wing must sit strictly
+beyond its short strike (a sparse strike grid can otherwise put one at or inside it), and the net
+credit must be positive. The refusal is recorded as an `order_build_failed` drop at the execution
+stage. Iron condor builds under the same two checks.
 
 **Entry gate:** negative term structure (front IV meaningfully above back IV,
 `min_term_structure`), expected move above a dollar floor, ATM delta sanity check
