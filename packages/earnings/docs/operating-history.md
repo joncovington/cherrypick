@@ -293,6 +293,20 @@ per-arm result reads from 2026-10-30 or ends before it; never pool across the bo
 **Journal on the day:** one `entry_and_exit_patience` break dated 2026-10-30 in the paper ledger,
 recorded with `paper_loop record-break`.
 
+## Early-close days (from 2026-11-05)
+
+The loop kept fixed clock times for a 16:00 close, so on a 13:00 close (2026-11-27, then 2026-12-24)
+its expiry close, pin guard and management window ran against a market that had shut, and the
+entry scan started at 15:35 on chains nobody could trade. That would have recorded wrong numbers, so
+it landed at once rather than at a boundary.
+
+From 2026-11-05 every exit clock is the same offset from the day's close (expiry close at close minus
+30 minutes, pin guard to the close, management ending at close minus 20 minutes, eod from the
+close), and an early-close day runs **no entry scan**: it records `half_day_no_entries` in the entry
+heartbeat and the run log. A normal day is unchanged. Entries on an early-close day are absent by
+rule, not by a quiet screen; never read them as a zero-entry sample. Positions expiring that day
+still trade out at the shifted expiry close.
+
 ## Exits priced past the payoff (to 2026-10-26, corrected 2026-11-05)
 
 Before the 2026-10-26 boundary a close was priced on the natural side and nothing held it inside

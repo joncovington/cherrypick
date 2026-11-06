@@ -52,6 +52,7 @@ from cherrypick.earnings import (
     management,
     provider,
     scanner,
+    session_clock,
     settlement,
     stream_request,
     symbol_watch,
@@ -76,9 +77,7 @@ PHASE_EOD = "eod"
 
 _MARKET_OPEN = 9 * 60 + 30
 _PRE_OPEN = 9 * 60
-_MANAGEMENT_END = 15 * 60 + 40
-_EOD_START = 16 * 60
-_EOD_END = 16 * 60 + 30
+PHASE_REASON_HALF_DAY = "half_day_no_entries"
 
 
 def state_file(name: str) -> Path:
@@ -143,6 +142,7 @@ def phase_for(now: datetime, config: dict, *, entry_done: bool, forward_scan_don
     minute = _minutes(now)
     entry_at = _entry_minutes(config)
     scan_enabled, scan_at, _ = _forward_scan_settings(config)
+    clock = session_clock.for_date(now.date())
 
     # The forward scan runs pre-market on purpose. It is the slow, stable half of screening --
     # calendar, winrate, IV/RV, market cap, historical moves -- none of which needs a live session,
@@ -153,13 +153,14 @@ def phase_for(now: datetime, config: dict, *, entry_done: bool, forward_scan_don
         return PHASE_OFF_HOURS
     if minute < _MARKET_OPEN:
         return PHASE_PRE_OPEN
-    if entry_at <= minute <= _entry_deadline_minutes(config) and not entry_done:
+    # No entry scan on an early-close day: its 15:35 start and 15:55 deadline are after the close.
+    if not clock.half_day and entry_at <= minute <= _entry_deadline_minutes(config) and not entry_done:
         return PHASE_ENTRY
     if minute < _exec_window_minutes(config):
         return PHASE_OPEN_WINDOW
-    if minute < _MANAGEMENT_END:
+    if minute < clock.management_end:
         return PHASE_MANAGEMENT
-    if _EOD_START <= minute < _EOD_END:
+    if clock.eod_start <= minute < clock.eod_end:
         return PHASE_EOD
     return PHASE_OFF_HOURS
 
@@ -799,6 +800,15 @@ def run_iteration(config: dict | None = None, now: datetime | None = None) -> di
         # own prose was a second, unreconciled account of the same session. The phase is kept --
         # it still bounds the session and records an iteration -- it simply writes nothing now.
         record["eod"] = "superseded by packages/review"
+        if session_clock.for_date(now.date()).half_day and not entry_already_ran(session):
+            # An early-close day opens nothing. Say so once, in the entry heartbeat and the run
+            # trail, so a quiet night reads differently from a scan that never ran (the SLA check
+            # reads this heartbeat too).
+            entry = {"ok": True, "opened": [], "reason": PHASE_REASON_HALF_DAY}
+            record["entry"] = entry
+            hb = {"date": session, "phase": "entry", **entry}
+            write_heartbeat("entry", hb)
+            append_run_log({"ts": datetime.now(timezone.utc).isoformat(), **hb})
 
     duration_ms = int((time.time() - started) * 1000)
     db_paper.cmd_record_iteration(
