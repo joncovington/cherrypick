@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ManageAccount, ManagePmcc, ManagePmccPosition, ManageTrade } from "@console/shared";
-import { NO_PMCC, PmccCards, rollWords } from "../src/pages/Live/PmccCards";
+import { NO_PMCC, PmccCards, kindOf, rollWords } from "../src/pages/Live/PmccCards";
 import { aligned, inView, tables } from "./viewTables";
 
 /**
@@ -28,6 +28,7 @@ function position(over: Partial<ManagePmccPosition> = {}): ManagePmccPosition {
   return {
     underlying: "XYZ",
     recognized: true,
+    recognition: "pmcc",
     recognizedBy: "entered at 0.82 delta (at least 0.80)",
     intent: null,
     reconciled: true,
@@ -218,7 +219,7 @@ describe("the pmcc tab", () => {
 
   it("a recognised PMCC shows the long, the width check, the shorts sold, the yield and its rules", () => {
     const out = render(account(view()));
-    expect(out).toContain("XYZ · PMCC 2028-01-21 40C / 2026-11-20 45C");
+    expect(out).toContain("XYZ · 2028-01-21 40C / 2026-11-20 45C PMCC");
     expect(out).toContain("delta at entry 0.82");
     expect(out).toContain("delta today 0.71");
     expect(out).toContain("extrinsic 5.00 a share (63% of its price)");
@@ -246,8 +247,36 @@ describe("the pmcc tab", () => {
     expect(out).toContain("check-roll ok");
   });
 
+  it("the collapsed row names what manage decided: PMCC, diagonal, or not yet decided", () => {
+    const unknown = position({
+      recognized: false,
+      recognition: "unknown",
+      recognizedBy: "delta at entry unknown (no close for 2026-04-01 in the snapshot)",
+    });
+    const diagonal = position({ recognized: false, recognition: "diagonal", recognizedBy: "entered at 0.40 delta (under 0.70): a diagonal" });
+    const out = render(account(view({ positions: [position(), diagonal, unknown] })));
+    expect(out).toContain("XYZ · 2028-01-21 40C / 2026-11-20 45C PMCC position");
+    expect(out).toContain("XYZ · 2028-01-21 40C / 2026-11-20 45C diagonal position");
+    expect(out).toContain("XYZ · 2028-01-21 40C / 2026-11-20 45C PMCC? not yet decided position");
+    // An undecided candidate is never called a diagonal, on the row or in the card.
+    expect(kindOf(unknown)).toEqual({
+      kind: "PMCC? not yet decided",
+      chipClass: "chip muted",
+      recognised: "not yet: the delta at entry is unknown",
+    });
+    expect(kindOf(diagonal).recognised).toBe("no, a diagonal");
+    expect(rollWords(unknown).row).toBe("not raised, not yet a PMCC");
+    // An evaluation written before `recognition` cannot tell the two apart, so it says only "not a PMCC".
+    expect(kindOf(position({ recognized: false, recognition: null }))).toMatchObject({ kind: "not a PMCC", recognised: "no" });
+    expect(kindOf(position({ recognition: null })).kind).toBe("PMCC");
+  });
+
   it("an unknown delta at entry says so, never a number", () => {
-    const p = position({ recognized: false, recognizedBy: "delta at entry unknown (no close for 2026-04-01 in the snapshot)" });
+    const p = position({
+      recognized: false,
+      recognition: "unknown",
+      recognizedBy: "delta at entry unknown (no close for 2026-04-01 in the snapshot)",
+    });
     p.long = { ...p.long, deltaAtEntry: null, deltaAtEntryWhy: "no close for 2026-04-01 in the snapshot" };
     const out = render(account(view({ positions: [p] })));
     expect(out).toContain("delta at entry unknown (no close for 2026-04-01 in the snapshot)");
@@ -266,7 +295,7 @@ describe("the pmcc tab", () => {
     });
     expect(render(account(view({ positions: [pmcc] })))).toContain("the long roll the long leg");
 
-    const diagonal = position({ recognized: false, recognizedBy: "entered at 0.40 delta (under 0.70): a diagonal" });
+    const diagonal = position({ recognized: false, recognition: "diagonal", recognizedBy: "entered at 0.40 delta (under 0.70): a diagonal" });
     diagonal.long = { ...diagonal.long, roll: due };
     expect(rollWords(diagonal).chipClass).toBe("chip muted");
     const out = render(account(view({ positions: [diagonal] })));

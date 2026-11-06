@@ -12,7 +12,9 @@ yield carried (Merton), or the operator must say so (`positions.<SYMBOL>.intent:
 `intent: "diagonal"` keeps a trade out whatever its delta. A delta at entry that cannot be solved (no
 close for the day in the snapshot, a split since, a fill no volatility prices) is UNKNOWN, never
 guessed, and an unknown delta does not recognise: the candidate is listed, says why, and stays under
-the diagonal rules it always had.
+the diagonal rules it always had. `recognition` names which of the three a candidate is: `pmcc`,
+`diagonal` (decided: an intent or a delta under the floor) or `unknown` (not yet decided), so a
+reader never shows an undecided candidate as a diagonal.
 
 **Linking.** The long and its shorts are often not one order chain: a short sold after the last one
 expired opens a chain of its own. So the view links them as the wheel view does, through the contracts
@@ -439,6 +441,10 @@ def judge(
         recognized, by = True, f"entered at {entry['delta']:.2f} delta (at least {floor:.2f})"
     else:
         recognized, by = False, f"entered at {entry['delta']:.2f} delta (under {floor:.2f}): a diagonal"
+    # Which of the three it is. `recognized` stays a bool so an unknown keeps the diagonal rules; this
+    # says whether "not recognised" was decided (a diagonal) or could not be (unknown, for now).
+    undecided = intent not in ("pmcc", "diagonal") and entry["delta"] is None
+    recognition = "pmcc" if recognized else ("unknown" if undecided else "diagonal")
 
     # ---- money
     cash_rows = linked.get("rows") or []
@@ -578,6 +584,7 @@ def judge(
     view = {
         "underlying": underlying,
         "recognized": recognized,
+        "recognition": recognition,
         "recognized_by": by,
         "intent": intent,
         "reconciled": reconciled,

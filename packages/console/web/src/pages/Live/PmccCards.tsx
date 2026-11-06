@@ -78,12 +78,27 @@ function status(p: ManagePmccPosition): string {
 
 /* ------------------------------------------------------------------ the cards */
 
+/** What manage decided, in words for the card's title chip and the position card. An evaluation
+ * written before `recognition` falls back to the flag, and an unrecognised one there says only "not a
+ * PMCC", since it cannot tell a diagonal from a candidate not yet decided. */
+export function kindOf(p: ManagePmccPosition): { kind: string; chipClass: string; recognised: string } {
+  const r = p.recognition ?? (p.recognized === true ? "pmcc" : p.recognized === false ? null : undefined);
+  if (r === "pmcc") return { kind: "PMCC", chipClass: "chip", recognised: "yes" };
+  if (r === "diagonal") return { kind: "diagonal", chipClass: "chip muted", recognised: "no, a diagonal" };
+  if (r === "unknown") {
+    // Muted, not amber: nothing to act on, it is decided once the entry day's close is in.
+    return { kind: "PMCC? not yet decided", chipClass: "chip muted", recognised: "not yet: the delta at entry is unknown" };
+  }
+  if (r === null) return { kind: "not a PMCC", chipClass: "chip muted", recognised: "no" };
+  return { kind: "unknown", chipClass: "chip muted", recognised: "—" };
+}
+
 function PositionFacts({ p }: { p: ManagePmccPosition }) {
   return (
     <DetailCard title="position" aside={<StatusChip status={status(p)} />}>
       <Kv
         rows={[
-          ["recognised", p.recognized === null ? "—" : p.recognized ? "yes" : "no, a diagonal"],
+          ["recognised", kindOf(p).recognised],
           ["because", p.recognizedBy ?? "—"],
           ["underlying", px(p.spot)],
           ["long bought", p.long.opened ?? "before the history"],
@@ -99,7 +114,8 @@ function PositionFacts({ p }: { p: ManagePmccPosition }) {
 export function rollWords(p: ManagePmccPosition): { chip: string; chipClass: string; row: string } {
   const why = p.long.roll.join("; ");
   if (p.recognized !== true) {
-    return { chip: "no roll rule", chipClass: "chip muted", row: `not raised, not a PMCC${why ? ` (${why})` : ""}` };
+    const not = p.recognition === "unknown" ? "not yet a PMCC" : "not a PMCC";
+    return { chip: "no roll rule", chipClass: "chip muted", row: `not raised, ${not}${why ? ` (${why})` : ""}` };
   }
   return why
     ? { chip: "roll the long", chipClass: "chip chip-warn", row: why }
@@ -388,8 +404,17 @@ function ShortsSold({ p }: { p: ManagePmccPosition }) {
 }
 
 export function PmccCard({ p, trades }: { p: ManagePmccPosition; trades: ManageTrade[] }) {
+  const k = kindOf(p);
   return (
-    <Card title={`${p.underlying} · PMCC ${p.long.leg} / ${p.short.leg}`} collapseKey={`pmcc-${p.underlying}-${p.long.symbol}`}>
+    <Card
+      title={
+        <>
+          {`${p.underlying} · ${p.long.leg} / ${p.short.leg} `}
+          <span className={k.chipClass}>{k.kind}</span>
+        </>
+      }
+      collapseKey={`pmcc-${p.underlying}-${p.long.symbol}`}
+    >
       {p.reconciled === false && (
         <div className="pnl-neg">
           <p style={{ margin: 0 }}>does not reconcile: its money is shown as far as the rows go, not a basis to trade on</p>

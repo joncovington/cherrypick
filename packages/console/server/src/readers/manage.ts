@@ -280,6 +280,11 @@ function trade(v: unknown): ManageTrade {
 
 /* ------------------------------------------------------------------ the PMCC view (pmcc.py) */
 
+/** manage's three-way recognition; anything else (an evaluation written before it) is null. */
+function recognitionOf(v: unknown): "pmcc" | "diagonal" | "unknown" | null {
+  return v === "pmcc" || v === "diagonal" || v === "unknown" ? v : null;
+}
+
 function pmccNote(v: unknown): ManagePmccNote | null {
   if (v === null || v === undefined) return null;
   const n = rec(v);
@@ -384,6 +389,7 @@ function pmccPosition(v: unknown): ManagePmccPosition {
   return {
     underlying: str(p["underlying"]) ?? "?",
     recognized: flag(p["recognized"]),
+    recognition: recognitionOf(p["recognition"]),
     recognizedBy: str(p["recognized_by"]),
     intent: str(p["intent"]),
     reconciled: flag(p["reconciled"]),

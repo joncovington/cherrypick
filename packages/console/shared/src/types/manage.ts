@@ -254,6 +254,9 @@ export interface ManagePmccRoll {
 export interface ManagePmccPosition {
   underlying: string;
   recognized: boolean | null;
+  /** Which of the three manage decided: a PMCC, a diagonal, or unknown (not yet decided: the delta at
+   * entry could not be solved). Null on an evaluation written before the field. */
+  recognition: "pmcc" | "diagonal" | "unknown" | null;
   recognizedBy: string | null;
   intent: string | null;
   reconciled: boolean | null;

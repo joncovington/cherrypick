@@ -751,6 +751,10 @@ stays the closed-results comparison.
 **The Live page's `pmcc` tab** (2026-10-20, `pages/Live/PmccCards.tsx`) is the fourth view: the
 account's `pmcc` (packages/manage `pmcc.py`, docs/skate-plan.md step 6), one card per name whose calls
 have a PMCC's shape, recognised or not, in the wheel cards' columns wherever they mean the same thing.
+Each card's title, visible while collapsed, carries manage's `recognition` as a chip: `PMCC`,
+`diagonal`, or `PMCC? not yet decided` (the delta at entry could not be solved yet, for example a long
+bought today before its close is in). An undecided candidate is never called a diagonal; an
+evaluation written before the field says only `not a PMCC`.
 It is the **real account's** PMCCs, not the paper pmcc module's page. Its id is a trading-module id,
 so `visibility.ts` lists the account-wide Live tabs (`LIVE_ACCOUNT_WIDE`) and shows them before the
 live-switch rule runs: the paper module has no live gate, the features reply names it false, and the
