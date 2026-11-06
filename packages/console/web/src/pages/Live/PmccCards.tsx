@@ -94,13 +94,23 @@ function PositionFacts({ p }: { p: ManagePmccPosition }) {
   );
 }
 
+/** The long's roll chip and row. manage raises its long-roll rule only on a recognised PMCC, so on any
+ * other candidate the thresholds the long crossed are shown as information, never as a warning. */
+export function rollWords(p: ManagePmccPosition): { chip: string; chipClass: string; row: string } {
+  const why = p.long.roll.join("; ");
+  if (p.recognized !== true) {
+    return { chip: "no roll rule", chipClass: "chip muted", row: `not raised, not a PMCC${why ? ` (${why})` : ""}` };
+  }
+  return why
+    ? { chip: "roll the long", chipClass: "chip chip-warn", row: why }
+    : { chip: "no roll due", chipClass: "chip", row: "none due" };
+}
+
 function LongCard({ p }: { p: ManagePmccPosition }) {
   const l = p.long;
+  const roll = rollWords(p);
   return (
-    <DetailCard
-      title="the long"
-      aside={l.roll.length ? <span className="chip chip-warn">roll the long</span> : <span className="chip">no roll due</span>}
-    >
+    <DetailCard title="the long" aside={<span className={roll.chipClass}>{roll.chip}</span>}>
       <Kv
         rows={[
           ["leg", `${l.quantity ?? "?"} ${l.leg}`],
@@ -113,7 +123,7 @@ function LongCard({ p }: { p: ManagePmccPosition }) {
           ["intrinsic", share(l.intrinsic)],
           ["extrinsic", `${share(l.extrinsic)} (${pct(l.extrinsicShare)} of its price)`],
           ["days left", l.dte === null ? "—" : String(l.dte)],
-          ["roll", l.roll.length ? l.roll.join("; ") : "none due"],
+          ["roll", roll.row],
         ]}
       />
       {l.rollDeltaUnknown ? <p className="md-note">today's delta is unknown, so the delta floor was not checked</p> : null}

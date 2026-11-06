@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ManageAccount, ManagePmcc, ManagePmccPosition, ManageTrade } from "@console/shared";
-import { NO_PMCC, PmccCards } from "../src/pages/Live/PmccCards";
+import { NO_PMCC, PmccCards, rollWords } from "../src/pages/Live/PmccCards";
 import { aligned, inView, tables } from "./viewTables";
 
 /**
@@ -253,6 +253,29 @@ describe("the pmcc tab", () => {
     expect(out).toContain("delta at entry unknown (no close for 2026-04-01 in the snapshot)");
     expect(out).toContain("not recognised as a PMCC: its diagonal rules stand");
     expect(out).not.toContain("pmcc.width");
+  });
+
+  it("the roll warning shows only on a recognised PMCC; elsewhere the crossed thresholds are information", () => {
+    const due = ["40 days left (roll at 120)", "0.60 delta (under 0.70)"];
+    const pmcc = position();
+    pmcc.long = { ...pmcc.long, roll: due };
+    expect(rollWords(pmcc)).toEqual({
+      chip: "roll the long",
+      chipClass: "chip chip-warn",
+      row: "40 days left (roll at 120); 0.60 delta (under 0.70)",
+    });
+    expect(render(account(view({ positions: [pmcc] })))).toContain("the long roll the long leg");
+
+    const diagonal = position({ recognized: false, recognizedBy: "entered at 0.40 delta (under 0.70): a diagonal" });
+    diagonal.long = { ...diagonal.long, roll: due };
+    expect(rollWords(diagonal).chipClass).toBe("chip muted");
+    const out = render(account(view({ positions: [diagonal] })));
+    expect(out).not.toContain("roll the long");
+    expect(out).toContain("the long no roll rule leg");
+    expect(out).toContain("not raised, not a PMCC (40 days left (roll at 120); 0.60 delta (under 0.70))");
+
+    const unknown = position({ recognized: null, recognizedBy: null });
+    expect(rollWords(unknown).row).toBe("not raised, not a PMCC");
   });
 
   it("an unreconciled PMCC lists its problems and shows no rule", () => {
