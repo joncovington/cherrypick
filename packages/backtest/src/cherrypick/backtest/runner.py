@@ -273,9 +273,12 @@ def _claim(
             run_id, taken = c["run_id"], {"code_from": c["code"], "verified": check}
             break
     if taken is not None:
+        # The run taken over keeps the spec-keyed file below. Every other interrupted run with these
+        # inputs is retired with it: one run file per spec, and a later run never takes over a
+        # duplicate. Their directories stay on disk.
         for c in cands:
-            if c["run_id"] == run_id and c["file"] != _pending_path(_spec_key(parts)):
-                c["file"].unlink(missing_ok=True)  # superseded by the spec-keyed file below
+            if c["file"] != _pending_path(_spec_key(parts)):
+                c["file"].unlink(missing_ok=True)
     pending = _pending_path(_spec_key(parts))
     pending.parent.mkdir(parents=True, exist_ok=True)
     pending.write_text(json.dumps({"run_id": run_id, "pid": os.getpid(), "code": code}), encoding="utf-8")
@@ -662,22 +665,23 @@ def run(
         snap = mod.snapshot(config, run_dir)
         scratch = run_dir / "verify"
         scratch.mkdir(exist_ok=True)
-        checked = []
-        try:
-            for day in sample:
-                fresh = scratch / f"{day}.db"
-                _discard_ledger(fresh)
-                try:
-                    out = replay(day, fresh, arms, history_db, closes[day], snap)
-                    same = bool(out.get("ok")) and same_rows(
-                        read_rows(fresh), read_rows(run_dir / f"{day}.db")
-                    )
-                except Exception as exc:  # noqa: BLE001 -- a check that cannot run is a check that fails
-                    log(f"verify {day}: {type(exc).__name__}: {exc}")
-                    same = False
-                checked.append({"session": day, "identical": same})
-                if not same:
-                    break
+
+        def check(day: str) -> dict:
+            fresh = scratch / f"{day}.db"
+            _discard_ledger(fresh)
+            try:
+                out = replay(day, fresh, arms, history_db, closes[day], snap)
+                same = bool(out.get("ok")) and same_rows(read_rows(fresh), read_rows(run_dir / f"{day}.db"))
+            except Exception as exc:  # noqa: BLE001 -- a check that cannot run is a check that fails
+                log(f"verify {day}: {type(exc).__name__}: {exc}")
+                same = False
+            return {"session": day, "identical": same}
+
+        try:  # the sample replays at once, each its own subprocess, as the sessions themselves do
+            with ThreadPoolExecutor(
+                max_workers=max(1, min(len(sample), workers or core_procs.default_workers()))
+            ) as pool:
+                checked = list(pool.map(check, sample))
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
         identical = bool(checked) and len(checked) == len(sample) and all(c["identical"] for c in checked)
