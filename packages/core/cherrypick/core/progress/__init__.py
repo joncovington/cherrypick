@@ -129,15 +129,20 @@ class Reporter:
         if found is None:
             self.doc["phases"].append(entry)
         else:
+            found.pop("skipped", None)  # a reopened phase has skipped nothing yet
             found.update(entry)
         self._write(force=True)
 
-    def advance(self, name: str, n: int = 1, *, current: Any = None) -> None:
+    def advance(self, name: str, n: int = 1, *, current: Any = None, skipped: bool = False) -> None:
+        """Count `n` items of a phase done. `skipped` marks items done without work (a resumed job's
+        finished sessions): they count toward the share done, never toward the rate or the ETA."""
         found = self._find(name)
         if found is None:
             self.phase(name)
             found = self._find(name)
         found["done"] = int(found["done"]) + n
+        if skipped:
+            found["skipped"] = int(found.get("skipped") or 0) + n
         if current is not None:
             found["current"] = str(current)
         self._write()
@@ -217,13 +222,33 @@ def _fraction(phases: list[dict]) -> float | None:
 def _rate(phases: list[dict], now: float) -> dict | None:
     """The innermost phase that has counted something: its average seconds per item since it
     opened. An average, not the last item's time, so request jitter does not move it; a phase
-    reopened for each outer item restarts its clock, so there it is that item's average. Items a
-    resumed job skips count as done, so a resume reads fast until real work dominates."""
+    reopened for each outer item restarts its clock, so there it is that item's average. Items the
+    job skipped (`advance(..., skipped=True)`, a resume's finished sessions) are left out: until
+    2026-11-06 they counted, and a resumed run read 4 s a session where it took 57."""
     for p in reversed(phases):
-        done, started = int(p.get("done") or 0), p.get("started_at")
-        if done > 0 and started is not None and now > started:
-            return {"phase": p["name"], "seconds_each": round((now - started) / done, 2)}
+        worked, started = _worked(p), p.get("started_at")
+        if worked > 0 and started is not None and now > started:
+            return {"phase": p["name"], "seconds_each": round((now - started) / worked, 2)}
     return None
+
+
+def _worked(p: dict) -> int:
+    """A phase's items done by work, its skipped ones aside."""
+    return max(0, int(p.get("done") or 0) - int(p.get("skipped") or 0))
+
+
+def _eta(phases: list[dict], share: float, started: float, now: float) -> float | None:
+    """Seconds left. Across nested phases, the job's elapsed time scaled by its share left; where a
+    phase skipped items, that phase's own pace over the items it worked, so a resume does not read
+    as nearly finished."""
+    for p in phases:
+        skipped, total = int(p.get("skipped") or 0), p.get("total")
+        if skipped and total:
+            worked, begun = _worked(p), p.get("started_at")
+            if worked <= 0 or begun is None or now <= begun:
+                return None
+            return (now - begun) / worked * max(0, int(total) - int(p.get("done") or 0))
+    return (now - started) * (1 - share) / share
 
 
 def _per_item(name: str) -> str:
@@ -247,7 +272,7 @@ def _view(doc: dict, children: list[dict], now: float) -> dict:
     started = doc.get("started_at") or now
     eta = None
     if share and 0 < share < 1 and state == "running":
-        eta = (now - started) * (1 - share) / share
+        eta = _eta(phases, share, started, now)
     view = {
         "job": doc.get("job"),
         "pid": doc.get("pid"),

@@ -462,6 +462,24 @@ def test_an_interrupted_run_resumes_from_its_finished_sessions(world, clean_comm
     assert report["arms"] == whole["arms"], "a resumed run reports what an uninterrupted one does"
 
 
+def test_a_resumed_run_reports_its_reused_sessions_as_skipped(world, clean_commit, monkeypatch):
+    """2026-11-06: counted as worked, item 44's 493 reused sessions made its card read 4 s a session
+    and 18 minutes left. The runner marks them skipped, so the rate and the time left are the work's."""
+    s, _ = world
+    _interrupted_run(s, "2026-10-15")
+    advanced = []
+    real = runner.core_progress.Reporter
+
+    class Recording(real):
+        def advance(self, name, n=1, *, current=None, skipped=False):
+            advanced.append((current, skipped))
+            return super().advance(name, n, current=current, skipped=skipped)
+
+    monkeypatch.setattr(runner.core_progress, "Reporter", Recording)
+    _rerun(s)
+    assert advanced == [("2026-10-14", True), ("2026-10-15", False)]
+
+
 def test_a_run_is_not_resumed_when_any_input_changed(world, clean_commit):
     s, home = world
     _interrupted_run(s, "2026-10-15")

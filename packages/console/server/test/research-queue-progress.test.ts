@@ -11,6 +11,7 @@ const view = {
   ],
   fraction: 0.5,
   eta_s: 1800,
+  rate: { phase: "sessions", seconds_each: 57.25 },
   age_s: 4,
   line: "decisions 1/3 replays (vendor) · sessions 2/4 days (2026-10-15) · ~00:30 remaining",
   note: null,
@@ -22,6 +23,9 @@ describe("a job's progress (core.progress)", () => {
   it("renames the orchestrator's view and keeps every nested phase", () => {
     const p = toProgress(view);
     expect(p).toMatchObject({ file: "q3", state: "running", fraction: 0.5, etaSeconds: 1800, ageSeconds: 4 });
+    expect(p?.rate).toEqual({ phase: "sessions", secondsEach: 57.25 });
+    expect(toProgress({ ...view, rate: null })?.rate).toBeNull();
+    expect(toProgress({ ...view, rate: { phase: "sessions", seconds_each: 0 } })?.rate).toBeNull();
     expect(p?.phases.map((ph) => `${ph.name} ${ph.done}/${ph.total} ${ph.current}`)).toEqual([
       "decisions 1/3 vendor",
       "sessions 2/4 2026-10-15",

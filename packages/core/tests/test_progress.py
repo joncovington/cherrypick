@@ -119,6 +119,26 @@ def test_the_rate_is_the_innermost_counted_phase_per_item(tmp_path, monkeypatch)
     assert "(TSLA 2018-12-28) · 8.2 s/path · ~" in view["line"]
 
 
+def test_skipped_items_count_as_done_but_not_toward_the_rate_or_the_eta(tmp_path, monkeypatch):
+    """2026-11-06: item 44 resumed with 493 of 783 sessions finished; counted as worked, they read
+    4.3 s a session and 18 minutes left where it took 57 s and about four hours."""
+    monkeypatch.setattr(progress, "_pid_alive", lambda pid: True)
+    clock = Clock(1000.0)
+    path = tmp_path / "q7.json"
+    rep = progress.Reporter("run", path=path, clock=clock, throttle_s=0)
+    rep.phase("sessions", total=100, unit="days")
+    rep.advance("sessions", 60, skipped=True)  # a resume's finished sessions, read back at once
+    clock.t = 1600.0
+    rep.advance("sessions", 10)  # ten replayed in 600 s
+    view = progress.read_job("q7", tmp_path, now=clock.t)
+    assert view["fraction"] == 0.7, "skipped sessions still count toward the share done"
+    assert view["rate"] == {"phase": "sessions", "seconds_each": 60.0}
+    assert view["eta_s"] == 1800, "30 left at 60 s each"
+    assert "60.0 s/session" in view["line"] and "~00:30 remaining" in view["line"]
+    rep.phase("sessions", total=100)  # a phase reopened starts afresh
+    assert "skipped" not in rep.doc["phases"][0]
+
+
 def test_a_fast_phase_reads_as_items_per_second_and_an_uncounted_one_has_no_rate():
     def line(rate):
         return progress.summary_line({"phases": [], "eta_s": None, "rate": rate})

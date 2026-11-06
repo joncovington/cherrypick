@@ -67,6 +67,14 @@ function toResult(v: unknown): ResearchTaskResult | null {
 
 const PROGRESS_STATES = ["running", "done", "failed", "stalled", "orphaned"] as const;
 
+/** `core.progress`'s rate ({phase, seconds_each}), or null without a positive pace. */
+function toRate(v: unknown): ResearchProgress["rate"] {
+  const r = rec(v);
+  const phase = s(r["phase"]);
+  const each = n(r["seconds_each"]);
+  return phase !== null && each !== null && each > 0 ? { phase, secondsEach: each } : null;
+}
+
 /** A `core.progress` view, renamed; null for anything without a job name or a known state. */
 export function toProgress(v: unknown): ResearchProgress | null {
   const r = rec(v);
@@ -90,6 +98,7 @@ export function toProgress(v: unknown): ResearchProgress | null {
     phases,
     fraction: n(r["fraction"]),
     etaSeconds: n(r["eta_s"]),
+    rate: toRate(r["rate"]),
     ageSeconds: n(r["age_s"]),
     line: s(r["line"]) ?? "",
     note: s(r["note"]),

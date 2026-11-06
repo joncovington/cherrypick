@@ -13,6 +13,8 @@ import {
   etMs,
   etaText,
   headline,
+  paceText,
+  rateText,
   plan,
   queueItems,
   queuePollMs,
@@ -65,6 +67,7 @@ function byHand(over: Partial<ResearchProgress>): ResearchProgress {
     phases: [{ name: "sessions", done: 3, total: 10, unit: "days", current: "2026-10-14" }],
     fraction: 0.3,
     etaSeconds: 600,
+    rate: { phase: "sessions", secondsEach: 57.2 },
     ageSeconds: 2,
     line: "sessions 3/10 days (2026-10-14) · ~00:10 remaining",
     note: null,
@@ -285,6 +288,12 @@ describe("the research queue tab: helpers", () => {
     expect(etaText(600)).toBe("about 10 min left");
     expect(etaText(20)).toBe("under a minute left");
     expect(etaText(null)).toBeNull();
+    // the rate sits beside the time left (2026-11-06: the card showed only the time left)
+    expect(rateText({ phase: "sessions", secondsEach: 57.24 })).toBe("57.2 s/session");
+    expect(rateText({ phase: "symbol-days", secondsEach: 0.25 })).toBe("4.0 symbol-days/s");
+    expect(rateText(null)).toBeNull();
+    expect(paceText(byHand({ etaSeconds: 3900 }))).toBe("57.2 s/session · about 1 h 5 min left");
+    expect(paceText(byHand({ rate: null, etaSeconds: null }))).toBe("");
     expect(argRows({ requests: "C:\\a\\b\\requests.json", workers: 3, args: ["--item", "C:\\x\\y.json"] })).toEqual([
       ["requests", "requests.json"],
       ["workers", "3"],
