@@ -1336,7 +1336,7 @@
       "id": 38,
       "study": "item38",
       "title": "The calendars module's own rule at real quotes: does the weekly SPY double calendar earn after costs, entered Monday or the Friday before?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "calendars-whole-rule",
       "side": "neutral",
@@ -1386,7 +1386,8 @@
         "{home}/data/backtest/results/research/item38/results.json"
       ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "all four arms fail the design window and lose in the holdout: the gross per week is smaller than the fees and slippage, and the Friday entry, the low-volatility filter and the Friday-noon close each fail too; calendars stays in paper, retirement the user's call"
     },
     {
       "id": 39,
@@ -1554,9 +1555,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#42-the-break-even-condor-at-its-own-wing-widths-with-and-without-the-stabilization-gate",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item42/study-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item42/study-holdout-2025-07-01-2026-10-12.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "provisional: be passes the design window but its holdout mean, though positive, misses the t bar, so it fails; both gated arms fail against be in the design window; nothing changes, and be is the zero-day rule most worth a reread once more sessions are stored"
     },
     {
       "id": 43,
@@ -1606,7 +1611,7 @@
       ],
       "retest": null,
       "retests": [],
-      "outcome": "provisional: w15 and w20 pass both windows, w15 the cleaner; w25 and w30 fail on net over buying power; the pass is against an ungated 10, so live's width waits on item 50 (the gates on) and MEIC validation"
+      "outcome": "provisional: w15 passes both windows; w20 passes the design window but fails the holdout on net over buying power; w25 and w30 fail on net over buying power; the pass is against an ungated 10, so live's width waits on item 50 (the gates on) and MEIC validation"
     },
     {
       "id": 44,
