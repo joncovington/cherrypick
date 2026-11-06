@@ -20,6 +20,12 @@ Two shared facts apply to every strategy below, so they aren't repeated seven ti
   taken every minute but never acted on before 09:40, since opening spreads can exceed the edge being
   managed. See [Exit Strategy Guide](./10-exits.md) for the formulas, the execution gates, and which
   thresholds are research-backed rather than house rules.
+- **"Expected move" is the report's move** from 2026-11-06 (a measurement break, never pool across
+  it): event variance read from the front and back ATM IVs, in the units of the old 0.85 x front
+  straddle, falling back to that straddle when the inputs or the split are invalid. The floor gates,
+  the iron condor's and credit spread's short strikes, and the expected-move butterfly's body and
+  wings all use it, and each row records which method produced it. Definition, worked example and
+  fallback reasons: [Screening Criteria](./screening-criteria.md), gate 6.
 - **Every strategy shares the same liquidity/quality gates** (price floor, bid-ask spread,
   market cap, option volume, open interest, IV/RV ratio, winrate) with its own threshold values
   — see [Screening Criteria](./screening-criteria.md) for the full shared-gate reference and

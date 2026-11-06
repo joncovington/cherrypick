@@ -493,6 +493,22 @@ def test_each_screen_refuses_when_its_invariant_is_broken(earnings):
     assert refused(World()) == [], "the unbroken chain is admitted"
 
 
+def test_the_study_stays_on_the_straddle_expected_move(earnings):
+    """The module's expected move became the event move on 2026-11-06; the study is declared on the
+    straddle definition and must not move with it. It says so through the module's own switch."""
+    assert e31.study_config()["expected_move_method"] == "straddle"
+
+    def em_pct(cfg):
+        w = World(cfg=cfg)
+        w.lay_entry(front_vol=1.0, back_vol=0.5)
+        return w.trade("iron_condor")["em_pct"]
+
+    pinned = em_pct(e31.study_config())
+    event = em_pct({**e31.study_config(), "expected_move_method": "event_variance"})
+    assert pinned is not None and event is not None
+    assert event < pinned, "the event move is the smaller: the front straddle also holds time value"
+
+
 def test_a_price_under_ten_dollars_is_refused(earnings):
     w = World(close=8.0)
     w.lay_entry(spot=8.0, strikes=range(4, 13))

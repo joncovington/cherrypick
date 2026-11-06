@@ -447,9 +447,14 @@ def _compute_symbol_entry(
                         atm["front_call"]["iv"],
                         atm["back_call"]["iv"],
                         price,
+                        front_exp,
+                        back_exp,
+                        _scanner.et_today(),
+                        method=_scanner.expected_move_method(config),
                     )
                     criteria["term_structure"] = move["term_structure"]
                     criteria["expected_move_pct"] = move["expected_move_pct"]
+                    criteria["expected_move_method"] = move.get("expected_move_method")
                     criteria.update(
                         _scanner.fetch_liquidity_criteria(
                             symbol, front_exp, expirations, atm["front_call"], atm["front_put"]
@@ -481,6 +486,7 @@ def _compute_symbol_entry(
         "move_tail_veto": criteria.get("move_tail_veto"),
         "term_structure": criteria.get("term_structure"),
         "expected_move_pct": criteria.get("expected_move_pct"),
+        "expected_move_method": criteria.get("expected_move_method"),
         "implied_vs_avg_actual": criteria.get("implied_vs_avg_actual"),
         "market_cap": criteria.get("market_cap"),
         "iv_rank": criteria.get("iv_rank"),

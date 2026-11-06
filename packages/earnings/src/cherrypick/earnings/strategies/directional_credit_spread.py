@@ -44,8 +44,6 @@ import json
 import time
 from datetime import date
 
-from cherrypick.core.structures import STRADDLE_TO_EM_FACTOR
-
 from cherrypick.earnings import scanner
 
 
@@ -98,6 +96,7 @@ def fetch_price_and_term_structure(
             front_exp,
             back_exp,
             date.today(),
+            method=scanner.expected_move_method(config),
         )
 
         winrate_result = scanner.compute_winrate(symbol, config, config.get("winrate_lookback_quarters", 8))
@@ -124,6 +123,7 @@ def fetch_price_and_term_structure(
                 "term_structure": ts["term_structure"],
                 "expected_move_dollars": ts["expected_move_dollars"],
                 **scanner.term_inputs(ts),
+                **scanner.move_inputs(ts),
                 "expected_move_pct": ts["expected_move_pct"],
                 "skew_abs": abs(side_result["skew"]),
                 "side": side_result["side"],
@@ -284,12 +284,13 @@ def fetch_directional_credit_spread_order(
             return side_result
         side = side_result["side"]
 
-        atm_probe = scanner.fetch_front_back_atm_entries(symbol, front_exp, front_exp, price)
-        if not atm_probe.get("ok"):
-            return atm_probe
-        expected_move = STRADDLE_TO_EM_FACTOR * (
-            atm_probe["front_call"]["mid"] + atm_probe["front_put"]["mid"]
-        )
+        # The short strike is placed off the report's move (event variance from two expiries,
+        # straddle fallback recorded; scanner.resolve_expected_move).
+        probe = scanner.fetch_order_expected_move(symbol, front_exp, expirations, price, full_config)
+        if not probe.get("ok"):
+            return probe
+        em = probe["em"]
+        expected_move = em["expected_move_dollars"]
 
         # Wide strike window: the breakeven-anchored short strike can sit
         # meaningfully further OTM than the raw expected-move boundary,
@@ -361,6 +362,7 @@ def fetch_directional_credit_spread_order(
             "short_strike": short_strike,
             "long_strike": long_strike,
             "expected_move": expected_move,
+            **scanner.move_inputs(em),
             "breakeven": round(breakeven, 2),
             "wing_width_multiple_used": wing_multiple,
             "iv_rv_ratio": iv_rv_ratio,

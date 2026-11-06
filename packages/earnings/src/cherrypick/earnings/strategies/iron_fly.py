@@ -83,6 +83,7 @@ def fetch_price_and_term_structure(
             front_exp,
             back_exp,
             date.today(),
+            method=scanner.expected_move_method(config),
         )
         liquidity = scanner.fetch_liquidity_criteria(symbol, front_exp, expirations, front_call, front_put)
 
@@ -108,6 +109,7 @@ def fetch_price_and_term_structure(
                 "term_structure": ts["term_structure"],
                 "expected_move_dollars": ts["expected_move_dollars"],
                 **scanner.term_inputs(ts),
+                **scanner.move_inputs(ts),
                 "atm_delta_abs": abs(front_call["delta"]) if front_call.get("delta") is not None else None,
                 "front_expiration_days": (front_exp - scanner.et_today()).days,
                 "chain_complete": True,

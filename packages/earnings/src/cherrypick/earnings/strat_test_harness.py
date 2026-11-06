@@ -274,6 +274,12 @@ def _entry_context(criteria: dict, composite_score) -> dict:
         "iv_rv_ratio": criteria.get("iv_rv_ratio"),
         "term_structure": criteria.get("term_structure"),
         "expected_move_pct": criteria.get("expected_move_pct"),
+        # How the expected move was measured (2026-11-06 boundary), beside both numbers.
+        "expected_move_dollars": criteria.get("expected_move_dollars"),
+        "expected_move_method": criteria.get("expected_move_method"),
+        "expected_move_reason": criteria.get("expected_move_reason"),
+        "expected_move_straddle": criteria.get("expected_move_straddle"),
+        "expected_move_event": criteria.get("expected_move_event"),
         "iv_rank": criteria.get("iv_rank"),
         "iv_percentile": criteria.get("iv_percentile"),
         # Implied vs this name's own realized history -- the edge these plays actually harvest

@@ -33,8 +33,6 @@ Commands (see docs/reference.md's Tool Reference):
 import json
 from datetime import date
 
-from cherrypick.core.structures import STRADDLE_TO_EM_FACTOR
-
 from cherrypick.earnings import scanner
 
 NAME = "expected_move_butterfly"
@@ -68,9 +66,13 @@ def _atm_iv(front_call: dict, front_put: dict) -> float | None:
     return sum(ivs) / len(ivs) if ivs else None
 
 
-def _read(symbol: str, earnings_date: date, earnings_timing: str, config: dict) -> dict:
+def _read(
+    symbol: str, earnings_date: date, earnings_timing: str, config: dict, full_config: dict | None = None
+) -> dict:
     """Spot, front expiration, EM and the skew read -- shared by screening and the order build so
-    both see the same rule."""
+    both see the same rule. `config` is this strategy's sub-config; `full_config` carries the
+    top-level `expected_move_method`. The EM is the report's move from two expiries' variances
+    (straddle fallback recorded; scanner.resolve_expected_move)."""
     qe = scanner.fetch_quote_and_expirations(symbol)
     if not qe.get("ok"):
         return qe
@@ -78,10 +80,10 @@ def _read(symbol: str, earnings_date: date, earnings_timing: str, config: dict) 
     front_exp, err = scanner.select_front_expiration(expirations, earnings_date, earnings_timing)
     if front_exp is None:
         return {"ok": False, "error": err}
-    atm = scanner.fetch_front_back_atm_entries(symbol, front_exp, front_exp, price)
-    if not atm.get("ok"):
-        return atm
-    front_call, front_put = atm["front_call"], atm["front_put"]
+    probe = scanner.fetch_order_expected_move(symbol, front_exp, expirations, price, full_config or {})
+    if not probe.get("ok"):
+        return probe
+    front_call, front_put, em = probe["front_call"], probe["front_put"], probe["em"]
     skew = scanner.select_side(symbol, front_exp, price, config)
     if not skew.get("ok"):
         return skew
@@ -93,7 +95,8 @@ def _read(symbol: str, earnings_date: date, earnings_timing: str, config: dict) 
         "front_exp": front_exp,
         "front_call": front_call,
         "front_put": front_put,
-        "expected_move": STRADDLE_TO_EM_FACTOR * (front_call["mid"] + front_put["mid"]),
+        "expected_move": em["expected_move_dollars"],
+        "em": em,
         "rr25": rr,
         "side": side_for(rr, config),
     }
@@ -105,7 +108,7 @@ def fetch_price_and_expected_move(
     """Screening criteria. `config` is the full project config. Never raises."""
     strategy_config = _strategy_config(config)
     try:
-        r = _read(symbol, earnings_date, earnings_timing, strategy_config)
+        r = _read(symbol, earnings_date, earnings_timing, strategy_config, config)
         if not r.get("ok"):
             return r
         liquidity = scanner.fetch_liquidity_criteria(
@@ -117,6 +120,7 @@ def fetch_price_and_expected_move(
                 "price": r["price"],
                 "expected_move_dollars": r["expected_move"],
                 "expected_move_pct": r["expected_move"] / r["price"],
+                **scanner.move_inputs(r["em"]),
                 "rr25": r["rr25"],
                 "side": r["side"],
                 "front_expiration_days": (r["front_exp"] - scanner.et_today()).days,
@@ -185,7 +189,7 @@ def fetch_expected_move_butterfly_order(
     same discipline as every other order builder. Never raises."""
     config = _strategy_config(full_config)
     try:
-        r = _read(symbol, earnings_date, earnings_timing, config)
+        r = _read(symbol, earnings_date, earnings_timing, config, full_config)
         if not r.get("ok"):
             return r
         side = r["side"]
@@ -269,6 +273,7 @@ def fetch_expected_move_butterfly_order(
             "upper_strike": legs[2],
             "wing_width": width,
             "expected_move": em,
+            **scanner.move_inputs(r["em"]),
             "rr25": r["rr25"],
             "net_debit": round(net_debit, 2),
         }

@@ -31,6 +31,7 @@ from cherrypick.core import structures
 from cherrypick.core.livepositions import parse_occ
 
 from cherrypick.earnings import paths as _paths
+from cherrypick.earnings import time_spread as _time_spread
 
 TIMING_AMC = "After market close"
 TIMING_BMO = "Before market open"
@@ -1024,6 +1025,157 @@ def term_inputs(ts: dict) -> dict:
     return {k: ts.get(k) for k in TERM_INPUT_KEYS}
 
 
+# How the expected move is measured (declared boundary, 2026-11-06). `event_variance` reads the
+# report's own variance out of two expiries that both follow it; `straddle` is the earlier
+# definition, 0.85 x the front ATM straddle. The config key `expected_move_method` (top level)
+# chooses; the default is the event method. A study that must keep the old definition sets
+# `straddle` explicitly -- scripts/earnings_item31.py does.
+EXPECTED_MOVE_METHODS = ("event_variance", "straddle")
+DEFAULT_EXPECTED_MOVE_METHOD = "event_variance"
+
+# What was used, as recorded on criteria_json, entry_reviews and entry_context. `expected_move_method`
+# is the method that PRODUCED `expected_move_dollars`: `event_variance`, or `straddle_fallback` with
+# `expected_move_reason` saying why the event split could not be made. The straddle number and the
+# event number ride beside it so the two can be read side by side whichever was used.
+EXPECTED_MOVE_KEYS = (
+    "expected_move_method",
+    "expected_move_reason",
+    "expected_move_straddle",
+    "expected_move_event",
+    "event_move_sd_dollars",
+    "event_base_vol",
+)
+
+# A straddle on a normal move is worth sqrt(2/pi) of one standard deviation (the mean absolute
+# value of a normal), so an event of one-SD size E straddles at sqrt(2/pi) * E * spot. The suite's
+# expected move is `structures.STRADDLE_TO_EM_FACTOR` times a straddle, so the event move takes the
+# SAME factor on the event's straddle-equivalent. That keeps the number in the units every consumer
+# was calibrated on (floors, strike placement) and changes only what it measures: the report's move,
+# without the ordinary time value the front straddle also carries. The 1-SD dollars ride separately
+# as `event_move_sd_dollars`.
+EVENT_STRADDLE_PER_SD = (2.0 / 3.141592653589793) ** 0.5
+
+
+def expected_move_method(config) -> str:
+    """The configured method (top-level `expected_move_method`), default `event_variance`.
+    Anything else raises: a typo must not silently pick a definition."""
+    method = (config or {}).get("expected_move_method", DEFAULT_EXPECTED_MOVE_METHOD)
+    if method not in EXPECTED_MOVE_METHODS:
+        raise ValueError(f"expected_move_method must be one of {EXPECTED_MOVE_METHODS}, got {method!r}")
+    return method
+
+
+def move_inputs(em: dict) -> dict:
+    """The recorded `EXPECTED_MOVE_KEYS` of a `resolve_expected_move` (or compute_...) result, for a
+    strategy to spread into its criteria dict. A key the result lacks comes back None."""
+    return {k: em.get(k) for k in EXPECTED_MOVE_KEYS}
+
+
+def resolve_expected_move(
+    front_call_mid: float,
+    front_put_mid: float,
+    front_iv,
+    back_iv,
+    underlying_price: float,
+    front_dte,
+    back_dte,
+    method: str = DEFAULT_EXPECTED_MOVE_METHOD,
+) -> dict:
+    """The expected move in dollars and how it was made. Pure.
+
+    Event method: with front vol sf at T_f years and back vol sb at T_b years (T = calendar days /
+    365, the same convention as `time_spread.event_variance`, which does the arithmetic), the
+    ex-event variance rate is sx^2 = (sb^2 T_b - sf^2 T_f) / (T_b - T_f) and the event variance is
+    E^2 = sf^2 T_f - sx^2 T_f. E is the event's one-SD move as a share of spot. The result is
+    `STRADDLE_TO_EM_FACTOR * sqrt(2/pi) * E * spot` (see EVENT_STRADDLE_PER_SD).
+
+    Both expiries must follow the report: the front is the first expiry on or after the reaction
+    day and the back lies at least 21 days past it, so the pair holds the event once.
+
+    Fallback to `STRADDLE_TO_EM_FACTOR * front straddle` when an input is missing (`missing_inputs`)
+    or the split is invalid: `bad_inputs` (T_b not above T_f, a non-positive vol),
+    `back_variance_not_above_front` (sx^2 <= 0), `no_event_premium` (E^2 <= 0). `method="straddle"`
+    returns the old definition outright (`expected_move_reason` is `method_straddle_configured`).
+    Either way the straddle number and the event number (None when not computed) are returned."""
+    straddle_move = structures.expected_move(front_call_mid, front_put_mid)
+    out = {
+        "expected_move_dollars": straddle_move,
+        "expected_move_method": "straddle_fallback",
+        "expected_move_reason": None,
+        "expected_move_straddle": straddle_move,
+        "expected_move_event": None,
+        "event_move_sd_dollars": None,
+        "event_base_vol": None,
+    }
+    if method == "straddle":
+        out["expected_move_reason"] = "method_straddle_configured"
+        return out
+    if method != "event_variance":
+        raise ValueError(f"unknown expected-move method {method!r}")
+    if front_iv is None or back_iv is None or front_dte is None or back_dte is None:
+        out["expected_move_reason"] = "missing_inputs"
+        return out
+    split = _time_spread.event_variance(front_iv, front_dte, back_iv, back_dte)
+    if not split.get("ok"):
+        out["expected_move_reason"] = split["reason"]
+        return out
+    sd_dollars = split["event_move"] * underlying_price
+    event_move = structures.STRADDLE_TO_EM_FACTOR * EVENT_STRADDLE_PER_SD * sd_dollars
+    out.update(
+        expected_move_dollars=event_move,
+        expected_move_method="event_variance",
+        expected_move_event=event_move,
+        event_move_sd_dollars=sd_dollars,
+        event_base_vol=split["base_vol"],
+    )
+    return out
+
+
+def fetch_order_expected_move(
+    symbol: str, front_exp, expirations: list, price: float, config: dict, min_days_after: int = 21
+) -> dict:
+    """What an order builder needs of the expected move: the front ATM call/put entries and the
+    `resolve_expected_move` result for them, as {"ok": True, "front_call", "front_put", "em"}.
+
+    Under the `straddle` method this is exactly the old read (one narrow chain fetch, the front
+    expiry standing as its own back). Under the event method it reads the same back expiry the
+    screen uses (`select_back_expiration`, >= 21 days after the front) and, when that cannot be
+    had, takes the front-only read and the straddle fallback with the reason recorded."""
+    method = expected_move_method(config)
+
+    def probe(reason: str | None) -> dict:
+        atm = fetch_front_back_atm_entries(symbol, front_exp, front_exp, price)
+        if not atm.get("ok"):
+            return atm
+        em = resolve_expected_move(
+            atm["front_call"]["mid"], atm["front_put"]["mid"], None, None, price, None, None, method
+        )
+        if reason is not None and method != "straddle":
+            em["expected_move_reason"] = reason
+        return {"ok": True, "front_call": atm["front_call"], "front_put": atm["front_put"], "em": em}
+
+    if method == "straddle":
+        return probe(None)
+    back_exp = select_back_expiration(expirations, front_exp, min_days_after)
+    if back_exp is None:
+        return probe("no_back_expiration")
+    atm = fetch_front_back_atm_entries(symbol, front_exp, back_exp, price)
+    if not atm.get("ok"):
+        return probe("back_chain_unavailable")
+    today = et_today()
+    em = resolve_expected_move(
+        atm["front_call"]["mid"],
+        atm["front_put"]["mid"],
+        atm["front_call"]["iv"],
+        atm["back_call"]["iv"],
+        price,
+        (front_exp - today).days,
+        (back_exp - today).days,
+        method,
+    )
+    return {"ok": True, "front_call": atm["front_call"], "front_put": atm["front_put"], "em": em}
+
+
 def compute_expected_move_and_term_structure(
     front_call_mid: float,
     front_put_mid: float,
@@ -1033,6 +1185,7 @@ def compute_expected_move_and_term_structure(
     front_expiration=None,
     back_expiration=None,
     today=None,
+    method: str = DEFAULT_EXPECTED_MOVE_METHOD,
 ) -> dict:
     """Pure calculation, no I/O. Term structure mirrors EarningsEdgeDetection's
     convention: negative values mean the front-month is richer than the
@@ -1045,17 +1198,23 @@ def compute_expected_move_and_term_structure(
     comes from a per-day-slope definition, (back_iv - front_iv) / (back_dte -
     front_dte), so on this ratio it binds far less than that source implies;
     the inputs are returned (and recorded) so a replay can compute the slope.
-    expected_move applies the standard 0.85x straddle-to-expected-
-    move correction (e.g. AAPL $14.00 straddle -> $11.90 expected move),
-    via cherrypick.core.structures so every module shares one factor --
-    this only affects screening thresholds, not wing/strike sizing, which
-    each strategy's order-builder computes independently from its own
-    freshly-fetched straddle/strike prices.
+    expected_move is the report's move, not the straddle's: from 2026-11-06 it comes from the two
+    expiries' variances (`resolve_expected_move`), in the same units as the old 0.85x straddle
+    (e.g. AAPL $14.00 straddle -> $11.90), and falls back to that straddle number, recording why,
+    when the inputs are missing or the split is invalid. `method="straddle"` keeps the old
+    definition. This feeds the screening thresholds; each strategy's order-builder resolves its
+    own move from freshly-fetched prices (`fetch_order_expected_move`).
     """
     term_structure = (back_iv - front_iv) / back_iv
-    expected_move = structures.expected_move(front_call_mid, front_put_mid)
     today = today or _date.today()
+    front_dte = (front_expiration - today).days if front_expiration is not None else None
+    back_dte = (back_expiration - today).days if back_expiration is not None else None
+    em = resolve_expected_move(
+        front_call_mid, front_put_mid, front_iv, back_iv, underlying_price, front_dte, back_dte, method
+    )
+    expected_move = em["expected_move_dollars"]
     return {
+        **move_inputs(em),
         "term_structure": term_structure,
         "expected_move_dollars": expected_move,
         "expected_move_pct": expected_move / underlying_price,
@@ -1651,6 +1810,10 @@ def build_entry_review_spec(
         "market_cap": criteria.get("market_cap"),
         "expected_move": criteria.get("expected_move_dollars") or criteria.get("expected_move"),
         "expected_move_pct": criteria.get("expected_move_pct"),
+        "expected_move_method": criteria.get("expected_move_method"),
+        "expected_move_reason": criteria.get("expected_move_reason"),
+        "expected_move_straddle": criteria.get("expected_move_straddle"),
+        "expected_move_event": criteria.get("expected_move_event"),
         "combined_open_interest": criteria.get("combined_open_interest"),
         "combined_option_volume": criteria.get("combined_option_volume"),
         "bid_ask_spread_pct": criteria.get("bid_ask_spread_pct"),

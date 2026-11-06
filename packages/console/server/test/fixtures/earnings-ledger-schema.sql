@@ -41,7 +41,7 @@ CREATE TABLE entry_reviews (
     reason         TEXT,
     criteria_json  TEXT,
     logged_at      REAL,
-    arm            TEXT NOT NULL DEFAULT 'default', front_iv REAL, back_iv REAL, front_dte INTEGER, back_dte INTEGER, front_expiration TEXT, back_expiration TEXT,
+    arm            TEXT NOT NULL DEFAULT 'default', front_iv REAL, back_iv REAL, front_dte INTEGER, back_dte INTEGER, front_expiration TEXT, back_expiration TEXT, expected_move_method TEXT, expected_move_reason TEXT, expected_move_straddle REAL, expected_move_event REAL,
     UNIQUE(scan_date, symbol, arm)
 );
 CREATE TABLE loop_iterations (
