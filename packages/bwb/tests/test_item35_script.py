@@ -843,6 +843,33 @@ def test_the_feed_check_wants_the_store_spot_within_five_points_on_ninety_percen
     assert not b35.validate_entries({}, paper)["feed"]["passed"]
 
 
+def test_paper_entry_time_rounds_to_the_nearest_minute_et():
+    assert b35.nearest_minute("2024-01-02T10:00:29-05:00") == (10, 0)
+    assert b35.nearest_minute("2024-01-02T10:00:30-05:00") == (10, 1)
+    assert b35.nearest_minute("2024-01-02T15:00:50+00:00") == (10, 1)  # UTC, read in ET
+    assert b35.nearest_minute(None) is None and b35.nearest_minute("not a time") is None
+
+
+def test_the_feed_check_reads_the_store_at_paper_own_minute_when_given():
+    """2026-11-05: paper enters seconds after 10:00 and the store's 10:00 minute is its first second,
+    so a fast morning put the 10:00 read past the tolerance while paper's own minute agreed."""
+    days = [f"2024-01-{d:02d}" for d in range(2, 12)]
+    records = {d: replay_rec(d, 0.80, spot=5008.0) for d in days[:2]} | {
+        d: replay_rec(d, 0.80, spot=5001.0) for d in days[2:]
+    }
+    paper = [paper_row(d, 0.80) for d in days]
+    at_ten = b35.validate_entries(records, paper)["feed"]
+    assert not at_ten["passed"] and at_ten["minute"] == "10:00"  # 8/10 at 10:00
+    spots = {d: 5001.5 for d in days}
+    own = b35.validate_entries(records, paper, spots)["feed"]
+    assert own["passed"] and own["within"] == 10 and own["minute"] == "paper's own"
+    spots[days[0]] = 4990.0  # paper's own minute 10 points off as well: still 9/10
+    assert b35.validate_entries(records, paper, spots)["feed"]["passed"]
+    spots[days[1]] = 4990.0  # two days off at paper's own minute: 8/10 fails, the bar unchanged
+    assert not b35.validate_entries(records, paper, spots)["feed"]["passed"]
+    assert not b35.validate_entries(records, paper, {})["feed"]["passed"]  # no minute read is not a pass
+
+
 def test_paper_dates_the_store_does_not_cover_are_left_out_of_the_entry_check():
     records = {
         "2024-01-02": replay_rec("2024-01-02", 0.8),
