@@ -356,13 +356,19 @@ function PmccRules({ p, trades }: { p: ManagePmccPosition; trades: ManageTrade[]
   );
 }
 
+/** The short's earnings line. A report manage calls already out (the broker still lists the last
+ *  one) is said as such, never as falling after the expiry; an evaluation from before manage said
+ *  so carries no `past` and reads as it did. */
+export function earningsWords(e: ManagePmccPosition["short"]["earnings"]): string {
+  if (e.past === true) return `${e.date ?? "?"}: already reported; the next date is not known yet`;
+  if (e.inside === null) return e.why ?? "—";
+  return `${e.date ?? "?"}: ${e.inside ? "inside its life" : "after it expires"}`;
+}
+
 /** Today's check on the short, in the wheel's columns where they mean the same, then the PMCC's own. */
 function ShortCheck({ p }: { p: ManagePmccPosition }) {
   const s = p.short;
-  const earnings =
-    s.earnings.inside === null
-      ? (s.earnings.why ?? "—")
-      : `${s.earnings.date ?? "?"}: ${s.earnings.inside ? "inside its life" : "after it expires"}`;
+  const earnings = earningsWords(s.earnings);
   // No intrinsic column (2026-10-21): it is the mid less the extrinsic. The band, the strike against
   // it and N(d2) explain a roll; they are the detail view's.
   const cols = useColumns<Column<null>>([

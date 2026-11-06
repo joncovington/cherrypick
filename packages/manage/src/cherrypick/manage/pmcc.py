@@ -713,11 +713,24 @@ def judge(
         elif exposure["dividend"] is None:
             exposure["why"] = f"in the money over the {xd} ex-date; the dividend amount is unknown"
     ed = str(metrics.get("earnings_date") or "")[:10]
-    earnings = (
-        {"date": None, "inside": None, "why": "no report date in the snapshot"}
-        if not ed
-        else {"date": ed, "inside": session.isoformat() <= ed <= sexp}
-    )
+    # The broker keeps the last report's date until it lists the next one, so a date can already be
+    # out: before today, or today before the open (the earnings rule's own test). Out is neither
+    # inside the short's life nor after it.
+    from cherrypick.manage.evaluate import before_open  # evaluate imports this module
+
+    today = session.isoformat()
+    out = bool(ed) and (ed < today or (ed == today and before_open(metrics.get("earnings_time"))))
+    if not ed:
+        earnings = {"date": None, "inside": None, "past": None, "why": "no report date in the snapshot"}
+    elif out:
+        earnings = {
+            "date": ed,
+            "inside": False,
+            "past": True,
+            "why": f"last report {ed}, already out; the next date is not in the snapshot yet",
+        }
+    else:
+        earnings = {"date": ed, "inside": ed <= sexp, "past": False}
     short_view = {
         "symbol": short_sym,
         "leg": _wheel._label(short_sym),

@@ -746,7 +746,7 @@ describe("readManage", () => {
             quantity: -1.0, mid: 0.8, open_price: 6.0, tested: false, intrinsic: 0.0, extrinsic: 0.8, prob_itm: 0.3038,
             band: null, band_missing: "band not in the snapshot", beyond_band: null,
             assignment: { near_zero: false, dividend: false, exposed: false, why: null },
-            earnings: { date: null, inside: null, why: "no report date in the snapshot" },
+            earnings: { date: null, inside: null, past: null, why: "no report date in the snapshot" },
           },
           width: {
             width: 5.0, net_cost: 762.0, net_cost_per_share: 7.62, basis: "linked orders", passes: false,
@@ -802,7 +802,7 @@ describe("readManage", () => {
     // Written before the record: no basis, never guessed.
     expect(p.long.entryFills[0]).toMatchObject({ divYield: 0, iv: 0.3, basis: null, gapSeconds: null, deltaLow: null });
     expect(p.short.assignment).toEqual({ nearZero: false, dividend: false, exposed: false, why: null, exDividendDate: null, dividendAmount: null });
-    expect(p.short.earnings).toEqual({ date: null, inside: null, why: "no report date in the snapshot" });
+    expect(p.short.earnings).toEqual({ date: null, inside: null, past: null, why: "no report date in the snapshot" });
     expect(p.short.band).toBeNull();
     expect(p.short.probItm).toBeCloseTo(0.3038);
     expect(p.shorts.map((s) => s.status)).toEqual(["expiration", "open"]);
@@ -844,7 +844,7 @@ describe("readManage", () => {
     expect(p.long.rollDeltaUnknown).toBeNull();
     expect(p.short.tested).toBeNull();
     expect(p.short.assignment.exposed).toBeNull();
-    expect(p.short.earnings).toEqual({ date: null, inside: null, why: null });
+    expect(p.short.earnings).toEqual({ date: null, inside: null, past: null, why: null });
     expect(p.width.passes).toBeNull();
     expect(p.width.pnlIfAssigned).toBeNull();
     expect(p.rolls).toBeNull();

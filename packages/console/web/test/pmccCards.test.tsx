@@ -82,7 +82,7 @@ function position(over: Partial<ManagePmccPosition> = {}): ManagePmccPosition {
       bandMissing: "band not in the snapshot",
       beyondBand: null,
       assignment: { nearZero: false, dividend: false, exposed: false, why: null, exDividendDate: null, dividendAmount: null },
-      earnings: { date: null, inside: null, why: "no report date in the snapshot" },
+      earnings: { date: null, inside: null, past: null, why: "no report date in the snapshot" },
     },
     width: {
       width: 5,

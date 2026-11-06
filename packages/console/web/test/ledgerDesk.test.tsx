@@ -85,9 +85,9 @@ describe("the ledger", () => {
   });
 
   it("names the wheel's names it counts, or says it has none", () => {
-    expect(render(ledger({ scope: ["AAA", "BBB"] }))).toContain("AAA, BBB · since 2026-05-13");
-    expect(render(ledger({ scope: [] }))).toContain("no wheel names · since 2026-05-13");
-    expect(render(ledger())).toMatch(/ledger since 2026-05-13/);
+    expect(render(ledger({ scope: ["AAA", "BBB"] }))).toContain("AAA, BBB · read from the account's 1200 history rows since 2026-05-13");
+    expect(render(ledger({ scope: [] }))).toContain("no wheel names · read from the account's");
+    expect(render(ledger())).toMatch(/ledger read from the account's 1200 history rows since 2026-05-13/);
   });
 
   it("says what it left out with its count and net", () => {
