@@ -1,5 +1,6 @@
 """Item 36, pmcc's own rule at real quotes (docs/edge-hypotheses-plan.md, section 36).
 
+    python scripts/pmcc_item36.py listing [--out-dir DIR]  # the listing probes, a fetch-chain-paths file
     python scripts/pmcc_item36.py plan [--out-dir DIR]     # the fetch-chain-paths request files, with counts
     python scripts/pmcc_item36.py pilot [--symbol XSP(SPY)|all] # the guards on one symbol or all, no arm read
     python scripts/pmcc_item36.py study [--json PATH]      # guards, six arms, two baselines, the verdict
@@ -39,12 +40,20 @@ statistics.
   and baseline: its weeks are excluded and a position open on the split day is dropped unbooked.
 - The fetch skeleton is the no-stop long cycle; a stop re-entry onto an unstored long is a counted
   refusal (`no_long_chain`), not a gap in the plan.
+- The long is drawn from the standard monthlies the vendor listed on the first session of the month
+  (`listing` probes them; `plan` and `study` refuse until every probe is answered). A standard monthly a
+  year out is often not listed yet: until 2026-11-05 the replay assumed it was and refused the entry.
+  An expiry listed later in the month counts from the next month's probe.
+- A week is missing (the declaration's 20% floor) when a held leg had no quote, or when no position was
+  held because the last entry was refused for the data (`DATA_REFUSALS`); a week flat by the rule (a
+  stop, a gate, a refusal by pmcc's own selection) is not missing.
 """
 
 from __future__ import annotations
 
 import argparse
 import bisect
+import functools
 import json
 import math
 import random
@@ -110,6 +119,10 @@ REPLAY_CORRECTIONS = (
      "paper's entry spot and counts steps per leg (#786)", "why": "the 0.90 long sat ten points "
      "shallower than paper's; the broker's greeks carry no carry", "decided": "user",
      "before_read": True},
+    {"on": "2026-11-05", "what": "the long is drawn from the monthlies the vendor listed (the listing "
+     "probes); a week is missing only for a data refusal or an unquoted held leg, as declared", "why":
+     "the replay assumed every monthly a year out was listed and refused most entries, and counted flat "
+     "weeks as missing, so no fund was judged", "decided": "user", "before_read": False},
 )  # fmt: skip
 
 ARM_NAMES = ("shield", "shield_hold", "shield_guard", "hold-30d", "hold-30d-monthly", "hold-vrp")
@@ -129,6 +142,10 @@ MIN_CYCLES = 4
 MIN_WEEKS = {"design": 120, "holdout": 90}
 MIN_CYCLES_MONTHLY = {"design": 25, "holdout": 18}
 MAX_MISSING = 0.20
+#: Entry refusals that are the data's, not the rule's: a week flat after one of these is missing.
+DATA_REFUSALS = ("no_leap_listed", "no_long_chain", "short_chain_missing", "no_put_delta")
+#: The listing probe's reach: a monthly in the leap band from any day of the probe session's month.
+LISTING_BAND = (clock.LEAP_DEFAULTS["leap_dte_min"], clock.LEAP_DEFAULTS["leap_dte_max"] + 31)
 MIN_JUDGED_FUNDS = 4
 MIN_CELL_WEEKS = 40
 REPRODUCTION_FLOOR = 0.80
@@ -227,18 +244,46 @@ def listed_monthlies(day: date) -> list[str]:
     return out
 
 
-def leap_for(day: date) -> date | None:
-    pick = clock.leap_expiration(listed_monthlies(day), day)
+#: (probe session, expiry) -> whether the vendor listed the expiry that session (`listing_from`).
+Listed = Callable[[date, date], bool]
+
+
+@functools.cache
+def _month_first(year: int, month: int) -> date:
+    return sessions_between(date(year, month, 1), date(year, month, 28))[0]
+
+
+def probe_day(day: date) -> date:
+    """The listing probe's session for `day`: the first session of its month. An expiry listed then
+    stays listed through `day`; one listed later in the month counts from the next month's probe."""
+    return _month_first(day.year, day.month)
+
+
+def listing_candidates(g: date) -> list[date]:
+    """The standard monthlies a probe on `g` asks about: each that can fall in the leap band from a
+    day of g's month."""
+    lo, hi = LISTING_BAND
+    return [e for e in map(date.fromisoformat, listed_monthlies(g)) if lo <= (e - g).days <= hi]
+
+
+def leap_for(day: date, listed: Listed | None = None) -> date | None:
+    """pmcc's leap rule over the standard monthlies; with `listed`, only those the vendor listed on the
+    day's probe session (a standard monthly a year out is often not listed yet)."""
+    cands = listed_monthlies(day)
+    if listed is not None:
+        g = probe_day(day)
+        cands = [e for e in cands if listed(g, date.fromisoformat(e))]
+    pick = clock.leap_expiration(cands, day)
     return date.fromisoformat(pick["long_expiration"]) if pick else None
 
 
-def long_cycles(sessions: list[date]) -> list[tuple[date, date, date]]:
+def long_cycles(sessions: list[date], listed: Listed | None = None) -> list[tuple[date, date, date]]:
     """The no-stop skeleton: (entry session, long expiry, close session), the close being the first
     session at or under 45 DTE and the next entry the session after it."""
     out, i = [], 0
     while i < len(sessions):
         d = sessions[i]
-        exp = leap_for(d)
+        exp = leap_for(d, listed)
         if exp is None:
             i += 1
             continue
@@ -270,11 +315,13 @@ def gate_expiry(day: date) -> date | None:
     return min(ok, key=lambda e: (abs((e - day).days - aim), e)) if ok else None
 
 
-def split_excluded_weeks(sessions: list[date], split_days: list[date]) -> set[date]:
+def split_excluded_weeks(
+    sessions: list[date], split_days: list[date], listed: Listed | None = None
+) -> set[date]:
     """Week-ends of every skeleton long cycle that holds a split ex-date: dropped for every arm."""
     ends = week_ends(sessions)
     out: set[date] = set()
-    for d0, _exp, c in long_cycles(sessions):
+    for d0, _exp, c in long_cycles(sessions, listed):
         if any(d0 <= s <= c for s in split_days):
             k0, k1 = d0.isocalendar()[:2], c.isocalendar()[:2]
             out |= {e for e in ends if k0 <= e.isocalendar()[:2] <= k1}
@@ -342,6 +389,7 @@ class Market:
     dividends: list[tuple[date, float]] = field(default_factory=list)
     report_dates: list[date] = field(default_factory=list)
     split_days: list[date] = field(default_factory=list)
+    listed: Listed | None = None  # the vendor's listing; None takes every standard monthly as listed
     _bar_days: list[date] = field(default_factory=list)
     _chains: dict = field(default_factory=dict)
     _greeks: dict = field(default_factory=dict)
@@ -545,6 +593,7 @@ def simulate(
 
     def refuse(reason: str) -> None:
         cnt["refused_" + reason] += 1
+        state["refused"] = reason
 
     def marks(pos: Pos | None, d: date) -> tuple[float | None, float | None, bool]:
         """(long mark, short mark, complete) in dollars; a held leg without a quote is incomplete."""
@@ -670,7 +719,7 @@ def simulate(
         return datetime(d.year, d.month, d.day, mins // 60, mins % 60)
 
     def enter_call(d: date, s: float) -> None:
-        lexp = leap_for(d)
+        lexp = leap_for(d, m.listed)
         if lexp is None:
             return refuse("no_leap_listed")
         entries, quotes, greeks = m.view(d, lexp)
@@ -725,7 +774,7 @@ def simulate(
             sell_short(d, s, pos)
 
     def enter_put(d: date, s: float) -> None:
-        exp = leap_for(d)
+        exp = leap_for(d, m.listed)
         if exp is None:
             return refuse("no_leap_listed")
         g = m.greeks(d, exp, "P")
@@ -844,6 +893,7 @@ def simulate(
         run.snaps.append(
             {"end": d, "priced": True, "comps": comps, "cap": pos.capital if pos else None,
              "has_pos": pos is not None, "cash": cash_total[0],
+             "flat_why": state.get("refused") if pos is None else None,
              "marks": (lm if pos and pos.kind == "call" else 0.0)
              - (sm if pos and pos.kind == "call" else (lm if pos else 0.0))}
         )  # fmt: skip
@@ -851,6 +901,7 @@ def simulate(
     for d in sessions:
         s = m.closes[d]
         pos = state["pos"]
+        state["refused"] = None  # the snapshot's `flat_why` is this session's refusal, if any
         if pos is not None and any(pos.opened <= x <= d for x in m.split_days) and d in m.split_days:
             run.drops.append({"day": d.isoformat(), "opened": pos.opened.isoformat()})
             state["pos"], state["closed_on"] = None, d
@@ -891,9 +942,10 @@ def measured_weeks(run: Run, excluded: set[date] = frozenset()) -> dict[date, di
 
 def week_ledger(run: Run, excluded: set[date], lo: date, hi: date) -> dict:
     """How the weeks of [lo, hi] split: measured, flat (no position at the previous close), unpriced
-    (a held leg without a quote), excluded (a split cycle)."""
+    (a held leg without a quote), excluded (a split cycle); `flat_for_data` is the part of `flat`
+    after a data refusal."""
     got = measured_weeks(run, excluded)
-    out = dict.fromkeys(("measured", "flat", "unpriced", "excluded"), 0)
+    out = dict.fromkeys(("measured", "flat", "unpriced", "excluded", "flat_for_data"), 0)
     for prev, cur in zip(run.snaps, run.snaps[1:], strict=False):
         if not lo <= cur["end"] <= hi:
             continue
@@ -903,8 +955,26 @@ def week_ledger(run: Run, excluded: set[date], lo: date, hi: date) -> dict:
             out["measured"] += 1
         elif not prev["has_pos"]:
             out["flat"] += 1
+            out["flat_for_data"] += prev.get("flat_why") in DATA_REFUSALS
         else:
             out["unpriced"] += 1
+    return out
+
+
+def missing_weeks(run: Run, excluded: set[date], lo: date, hi: date) -> set[date]:
+    """The weeks of [lo, hi] the declaration counts as missing, "for unlisted expiries or unusable
+    quotes": a held leg without a quote at either close, or no position because the last entry was
+    refused for the data. A week flat by the rule (a stop, a gate, pmcc's own refusal) is not."""
+    out = set()
+    for prev, cur in zip(run.snaps, run.snaps[1:], strict=False):
+        if not lo <= cur["end"] <= hi or cur["end"] in excluded:
+            continue
+        if prev["has_pos"]:
+            unquoted = not prev["priced"] or not cur["priced"]
+        else:
+            unquoted = prev.get("flat_why") in DATA_REFUSALS
+        if unquoted:
+            out.add(cur["end"])
     return out
 
 
@@ -1052,14 +1122,15 @@ def judged_status(
     arm: Run, base: Run, excluded: set[date], half: str, lo: date, hi: date, *, monthly: bool = False
 ) -> dict:
     """Whether a symbol meets the floors for an arm in a half: completed long cycles, priced weeks (priced
-    monthly cycles for the monthly arm) and no more than 20% of the half's weeks missing."""
+    monthly cycles for the monthly arm) and no more than 20% of the half's weeks missing, a week
+    missing for either the arm or the base (`missing_weeks`)."""
     got = paired(measured_weeks(arm, excluded), measured_weeks(base, excluded), lo, hi)
     weeks = [s["end"] for s in base.snaps if lo <= s["end"] <= hi]
     cycles = sum(1 for c in base.cycles if lo.isoformat() <= c["day"] <= hi.isoformat())
     lives = [x for x in arm.shorts if lo.isoformat() <= x["sold"] <= hi.isoformat()]
     priced_cycles = sum(1 for x in lives if x["priced"])
     total = max(len(weeks), 1)
-    missing = 1 - len(got) / total
+    missing = len(missing_weeks(arm, excluded, lo, hi) | missing_weeks(base, excluded, lo, hi)) / total
     floor = MIN_CYCLES_MONTHLY[half] if monthly else MIN_WEEKS[half]
     have = priced_cycles if monthly else len(got)
     reasons = []
@@ -1223,7 +1294,7 @@ def listed_window(symbol: str) -> tuple[date, date]:
     return max(DESIGN[0], LISTED_FROM.get(symbol, DESIGN[0])), HOLDOUT[1]
 
 
-def path_requests(symbol: str, chain_symbol: str | None = None) -> list[dict]:
+def path_requests(symbol: str, chain_symbol: str | None = None, listed: Listed | None = None) -> list[dict]:
     """Every path request a full study of `symbol` needs, in the order of the plan's table: the
     year-long long and its put, each weekly short's path from 11 days out, the monthly short's earlier
     days, and the hold-vrp gate's Friday chain."""
@@ -1237,7 +1308,7 @@ def path_requests(symbol: str, chain_symbol: str | None = None) -> list[dict]:
             out.append({"symbol": chain_symbol, "expiration": exp.isoformat(), "start": start.isoformat(),
                         "through": through.isoformat(), "kind": kind})  # fmt: skip
 
-    cycles = long_cycles(sessions)
+    cycles = long_cycles(sessions, listed)
     for d0, exp, close in cycles:
         add("long", exp, d0, min(close, b))
     seen_weekly = set()
@@ -1353,6 +1424,68 @@ def stored_for(conn: sqlite3.Connection, chain_symbol: str) -> tuple[set, list]:
     return answered, paths
 
 
+def listing_requests(symbol: str) -> list[dict]:
+    """The listing probes for `symbol`: on the first session of each month of its window, one session
+    of every standard monthly that can fall in the leap band that month. The store answers each
+    `complete` (listed, quoted) or `empty` (not listed); `listing_from` reads the answers."""
+    chain_symbol = SYMBOLS[symbol][0]
+    a, b = listed_window(symbol)
+    out = []
+    for g in sorted({probe_day(d) for d in sessions_between(a, b)}):
+        for e in listing_candidates(g):
+            out.append({"symbol": chain_symbol, "expiration": e.isoformat(), "start": g.isoformat(),
+                        "through": g.isoformat(), "kind": "listing"})  # fmt: skip
+    return out
+
+
+def listing_gaps(conn: sqlite3.Connection | None, symbol: str) -> list[dict]:
+    """The listing probes the store has not answered: `plan` and `study` refuse while any remain."""
+    reqs = listing_requests(symbol)
+    return stored_filter(reqs, *stored_for(conn, SYMBOLS[symbol][0])) if conn else reqs
+
+
+def listing_from(conn: sqlite3.Connection, symbol: str) -> Listed:
+    """The vendor's listing on the probe sessions, read from the quotes the store holds there."""
+    chain_symbol = SYMBOLS[symbol][0]
+    days = sorted({r["start"] for r in listing_requests(symbol)})
+    have = {
+        (d, e)
+        for d in days
+        for (e,) in conn.execute(
+            "SELECT DISTINCT expiration FROM eod_chain_quotes WHERE symbol = ? AND session = ?",
+            (chain_symbol, d),
+        )
+    }
+    return lambda g, e: (g.isoformat(), e.isoformat()) in have
+
+
+def cmd_listing(args) -> int:
+    out_dir = Path(args.out_dir) if args.out_dir else _out_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    db = _chain_db()
+    conn = _ro(db) if db.exists() else None
+    gaps, per_symbol = [], {}
+    for name in SYMBOLS:
+        g = listing_gaps(conn, name)
+        per_symbol[name] = {"probes": len(listing_requests(name)), "unanswered": len(g)}
+        gaps += g
+    if conn:
+        conn.close()
+    path = out_dir / "listing_requests.json"
+    path.write_text(json.dumps({"requests": gaps}, indent=1), encoding="utf-8")
+    print(json.dumps({"per_symbol": per_symbol, "unanswered": len(gaps), "file": str(path)}, indent=1))
+    return 0
+
+
+def _refuse_unlisted(conn: sqlite3.Connection | None, names) -> bool:
+    """True (and says so) when a symbol's listing probes are not all answered."""
+    short = {n: len(listing_gaps(conn, n)) for n in names}
+    short = {n: k for n, k in short.items() if k}
+    if short:
+        print(json.dumps({"listing_unanswered": short, "next": "run listing, fetch its file, then this"}))
+    return bool(short)
+
+
 def ledger_requests(ledger: list[dict]) -> list[dict]:
     """The reproduction guard's own requests: each paper entry's long and short expiry on its entry
     session, one session each. The skeleton follows the replay's cycles, not the paper's, and ends with
@@ -1376,6 +1509,8 @@ def cmd_plan(args) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     db = _chain_db()
     conn = _ro(db) if db.exists() else None
+    if _refuse_unlisted(conn, SYMBOLS):
+        return 2
     ledger = ledger_requests(read_ledger(Path(args.ledger) if args.ledger else _ledger_path()))
     ledger_net = [
         r for sym in sorted({r["symbol"] for r in ledger})
@@ -1387,8 +1522,8 @@ def cmd_plan(args) -> int:
     order = ["XSP(SPY)", "QQQ", "IWM", "GLD", "SLV", "SMH", *STOCKS]
     per_symbol, files = {}, {}
     for name in order:
-        reqs = path_requests(name)
-        net = stored_filter(reqs, *stored_for(conn, SYMBOLS[name][0])) if conn else reqs
+        reqs = path_requests(name, listed=listing_from(conn, name))
+        net = stored_filter(reqs, *stored_for(conn, SYMBOLS[name][0]))
         per_symbol[name] = {
             "chain_symbol": SYMBOLS[name][0],
             "paths": len(reqs),
@@ -1435,6 +1570,7 @@ def load_market(name: str, vend: sqlite3.Connection, hist: sqlite3.Connection, r
         dividends=divs,
         report_dates=sorted(report_dates or []),
         split_days=sorted(splits),
+        listed=listing_from(vend, name),
     )  # fmt: skip
 
 
@@ -1554,7 +1690,8 @@ def run_checks(runs: dict, markets: dict[str, Market]) -> list[str]:
     """The accounting and coverage guards over finished runs."""
     out = []
     for (name, spec, scale), r in runs.items():
-        excl = split_excluded_weeks(markets[name].sessions, markets[name].split_days)
+        m = markets[name]
+        excl = split_excluded_weeks(m.sessions, m.split_days, m.listed)
         out += [f"{name} {spec} x{scale}: {x}" for x in (accounting_check(r) + coverage_check(r, excl))[:3]]
     return out
 
@@ -1638,7 +1775,7 @@ def holdout_passes(baselines: dict) -> bool:
 
 def analyse(runs: dict, markets: dict[str, Market], guards_ok: bool) -> dict:
     """The verdicts and every reported table from the runs. `runs[(symbol, spec, scale)]`."""
-    excluded = {n: split_excluded_weeks(m.sessions, m.split_days) for n, m in markets.items()}
+    excluded = {n: split_excluded_weeks(m.sessions, m.split_days, m.listed) for n, m in markets.items()}
     weekly = {k: measured_weeks(r, excluded[k[0]]) for k, r in runs.items()}
     funds = [f for f in FUNDS if f in markets]
 
@@ -1810,6 +1947,8 @@ def cmd_study(args, guards_only: bool = False) -> int:
     except Exception as exc:  # noqa: BLE001 -- stocks are reported only; funds do not need it
         reports, names = {}, [n for n in names if SYMBOLS[n][3] == "fund"]
         print(f"earnings calendar unreadable ({exc}); stocks left out", file=sys.stderr)
+    if _refuse_unlisted(vend, names):
+        return 2
     rep = core_progress.Reporter("item36-study")
     rep.phase("markets", total=len(names), unit="symbols")
     markets = {}
@@ -1982,6 +2121,9 @@ def cmd_report(args) -> int:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
+    li = sub.add_parser("listing", help="the listing probes the store has not answered, as a request file")
+    li.add_argument("--out-dir")
+    li.set_defaults(fn=cmd_listing)
     pl = sub.add_parser("plan", help="the fetch-chain-paths request files and counts")
     pl.add_argument("--out-dir")
     pl.add_argument("--ledger")
