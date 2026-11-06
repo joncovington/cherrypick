@@ -101,8 +101,10 @@ what it may write. The package's own CLAUDE.md holds the detail.
   must stay purgeable (a marked directory the backup skips). The network is reached by the fetch only,
   the key lives in the keyring only, and a run is a pure function of the local store. No AI, no broker.
 - **packages/desk** — ⚠️ **EXPERIMENTAL.** The suite's only *discretionary* live-order path (meic,
-  earnings, flies and bwb each have a live loop behind their own gate: `enable_live_trading` for meic
-  and earnings, flies' and bwb's own `live` gates and per-day arm). A
+  flies and bwb each have a live loop behind their own gate: `enable_live_trading` for meic, flies'
+  and bwb's own `live` gates and per-day arm; earnings has no live loop, and its hand-placed
+  `tt.py execute_trade --live` orders sit behind `enable_live_trading` and, from 2026-11-06, a
+  per-day arm for any order that opens). A
   foreground, human-initiated CLI, authorized entirely on its own (own config, own PIN, per-order
   ticket, own policy gates). Stores no broker secrets — it borrows a module's keyring session, because
   borrowing credentials is not borrowing permissions. No loop, no schedule, no ledger, never scheduled,
