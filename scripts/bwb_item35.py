@@ -103,6 +103,10 @@ REPLAY_CORRECTIONS = (
      "the feed (the store's spot within 5 points); the exact match is reported (#775)", "why": "12 "
      "of 37 matched, nearly every miss one $5 strike over from a different spot feed",
      "decided": "user", "before_read": True},
+    {"on": "2026-11-05", "what": "the feed check reads the store's spot at the minute nearest paper's "
+     "own entry time, not at 10:00", "why": "paper enters seconds after 10:00 and the store's minute is "
+     "its first second, so on a fast morning the index moved past the tolerance between the two reads",
+     "decided": "user", "before_read": True},
 )  # fmt: skip
 FLIP_TOL, FLIP_MATCH_MIN, FLIP_MIN_TICKS = 5.0, 0.80, 500
 BOUNDARY_DELTA = 0.99999  # the vendor's rounding of a delta of exactly minus one
@@ -883,22 +887,40 @@ def rule_check(overlap: dict[str, dict], records: dict[str, dict]) -> dict:
             "passed": n > 0 and share >= ENTRY_MATCH_MIN, "misses": misses}  # fmt: skip
 
 
-def feed_check(overlap: dict[str, dict], records: dict[str, dict]) -> dict:
-    """The store against the feed paper read: the store's 10:00 spot within `FEED_SPOT_TOL` index
-    points of paper's entry spot on at least `ENTRY_MATCH_MIN` of the entries with both."""
+def nearest_minute(entry_time: str | None) -> tuple[int, int] | None:
+    """Paper's entry time rounded to the nearest whole minute ET, or None when it is unreadable."""
+    try:
+        t = datetime.fromisoformat(entry_time).astimezone(ET)
+    except (TypeError, ValueError):
+        return None
+    t += timedelta(seconds=30)
+    return t.hour, t.minute
+
+
+def feed_check(
+    overlap: dict[str, dict], records: dict[str, dict], spots: dict[str, float] | None = None
+) -> dict:
+    """The store against the feed paper read: the store's spot within `FEED_SPOT_TOL` index points of
+    paper's entry spot on at least `ENTRY_MATCH_MIN` of the entries with both. `spots` is the store's
+    spot at the minute nearest paper's own entry time (`paper_spots`); without it the replay's 10:00
+    spot is read, which a fast morning moves past the tolerance in the seconds before paper enters."""
+    store = spots if spots is not None else {d: r.get("spot") for d, r in records.items()}
     gaps = [
-        abs(float(records[d]["spot"]) - float(p["entry_spot"]))
+        abs(float(store[d]) - float(p["entry_spot"]))
         for d, p in overlap.items()
-        if records[d].get("spot") is not None and p.get("entry_spot") is not None
+        if store.get(d) is not None and p.get("entry_spot") is not None
     ]
     within = sum(g <= FEED_SPOT_TOL for g in gaps)
     share = within / len(gaps) if gaps else 0.0
     return {"entries": len(gaps), "within": within, "tolerance": FEED_SPOT_TOL, "share": round(share, 4),
+            "minute": "paper's own" if spots is not None else "10:00",
             "median_gap": sorted(gaps)[len(gaps) // 2] if gaps else None,
             "passed": bool(gaps) and share >= ENTRY_MATCH_MIN}  # fmt: skip
 
 
-def validate_entries(records: dict[str, dict], paper: list[dict]) -> dict:
+def validate_entries(
+    records: dict[str, dict], paper: list[dict], spots: dict[str, float] | None = None
+) -> dict:
     """The replay's entries against the paper ledger's on the dates both cover. Gating: `rule_check`
     and `feed_check`. Reported: the exact match it gated on until 2026-11-01 (same expiry, same
     strikes, entry credit within a tick), which two feeds a second or a point apart cannot meet: the
@@ -909,7 +931,7 @@ def validate_entries(records: dict[str, dict], paper: list[dict]) -> dict:
         by_day.setdefault(p["entry_session"], p)
     # Dates the store covers: a paper entry whose expiry the store does not hold is not comparable.
     overlap = {d: p for d, p in by_day.items() if d in records and records[d].get("reason") != "not_in_store"}
-    rule, feed = rule_check(overlap, records), feed_check(overlap, records)
+    rule, feed = rule_check(overlap, records), feed_check(overlap, records, spots)
     matched, misses = 0, []
     for d, p in overlap.items():
         r = records[d]
@@ -1201,6 +1223,7 @@ PAPER_COLS = (
     "entry_credit",
     "entry_spot",
     "entry_expected_move",
+    "entry_time",
     "addon_fired_at",
     "entry_vix9d",
     "entry_vix",
@@ -1224,6 +1247,22 @@ def load_paper(path: Path, start: str) -> list[dict]:
         return [dict(r) for r in conn.execute(q, (start,))]
     finally:
         conn.close()
+
+
+def paper_spots(inp: Inputs, paper: list[dict]) -> dict[str, float]:
+    """{entry session: the store's spot at the minute nearest paper's entry time}, for the feed check.
+    A session whose time is unreadable or whose minute the store does not hold is left out."""
+    q = "SELECT spot FROM q WHERE expiration = ? AND ts = ? AND spot IS NOT NULL LIMIT 1"
+    out: dict[str, float] = {}
+    for p in paper:
+        d = p["entry_session"]
+        at = nearest_minute(p.get("entry_time"))
+        if d in out or at is None:
+            continue
+        row = inp.conn.execute(q, (p["expiration"], minute_ts(d, *at))).fetchone()
+        if row is not None:
+            out[d] = row[0]
+    return out
 
 
 def load_paper_flips(path: Path, start: str) -> list[tuple[str, int, float, str]]:
@@ -1264,7 +1303,8 @@ def run_validation(inp: Inputs, log=print) -> dict:
     paper = load_paper(inp.paper_db, start)
     days = [x for x in entry_days() if x[0] >= start]
     records = simulate_all(inp, days, log)
-    val = {"entries": validate_entries(records, paper), "fires": fire_agreement(records, paper)}
+    spots = paper_spots(inp, paper)
+    val = {"entries": validate_entries(records, paper, spots), "fires": fire_agreement(records, paper)}
     ticks = load_paper_flips(inp.paper_db, start)
     val["flip"] = validate_flip(flip_pairs(inp, ticks))
     val["gate"] = gate_agreement(
