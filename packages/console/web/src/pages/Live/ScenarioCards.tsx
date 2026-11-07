@@ -204,19 +204,24 @@ function ivText(shift: number): string {
   return `IV ${shift > 0 ? "+" : "−"}${Number.isInteger(pts) ? pts.toFixed(0) : pts.toFixed(1)} pts`;
 }
 
+const DEFAULT_HORIZON_DAYS = 7;
+
 function horizonLabel(days: number): string {
   return days === 0 ? "now" : `+${days} days`;
 }
 
 export function RiskMatrixCard({ p }: { p: ManagePortfolio }) {
-  const [at, setAt] = useState(0);
+  const [chosen, setChosen] = useState<number | null>(null);
   const s = p.scenarios;
   if (!s) return null;
   const benchmark = p.benchmark ?? "SPY";
   // An evaluation from before the horizons carries only the time-held-still matrix.
   const horizons: ManageMatrixHorizon[] =
     s.horizons.length > 0 ? s.horizons : [{ horizonDays: 0, windowDays: null, matrix: s.matrix, realistic: null }];
-  const h = horizons[Math.min(at, horizons.length - 1)]!;
+  // The card opens a week on, the decay in; a ruleset without a 7-day horizon opens on its first.
+  const pick = (days: number | null) => (days === null ? -1 : horizons.findIndex((x) => x.horizonDays === days));
+  const at = [pick(chosen), pick(DEFAULT_HORIZON_DAYS), 0].find((i) => i >= 0)!;
+  const h = horizons[at]!;
   const real = h.realistic;
   const all = [...h.matrix.flatMap((r) => r.pnl), ...(real?.pnl ?? [])].filter((v): v is number => v !== null);
   const maxAbs = Math.max(1, ...all.map(Math.abs));
@@ -252,7 +257,7 @@ export function RiskMatrixCard({ p }: { p: ManagePortfolio }) {
                 type="button"
                 className={i === at ? "mode-btn active" : "mode-btn"}
                 aria-pressed={i === at}
-                onClick={() => setAt(i)}
+                onClick={() => setChosen(x.horizonDays)}
                 title={x.horizonDays === 0 ? "time held still: what the book risks, without the decay it is paid" : `${x.horizonDays} days on, nothing done meanwhile: the decay is in`}
               >
                 {horizonLabel(x.horizonDays)}

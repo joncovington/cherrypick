@@ -622,13 +622,13 @@ describe("risk matrix horizons, history row and ideas", () => {
     scenarios: {
       ...base,
       horizons: [
+        { horizonDays: 0, windowDays: 5, matrix: base.matrix, realistic: null },
         {
-          horizonDays: 0,
+          horizonDays: 7,
           windowDays: 5,
           matrix: base.matrix,
           realistic: { ivShift: [0.08, 0, -0.03], vixMultiple: [1.4, 1, 0.85], windows: [30, null, 20], pnl: [-850, 0, -880] },
         },
-        { horizonDays: 7, windowDays: 5, matrix: base.matrix, realistic: null },
         { horizonDays: 21, windowDays: 14, matrix: base.matrix, realistic: null },
       ],
       realistic: { enabled: true, source: "cboe", since: "2006-01-01", through: "2026-10-30", vix: 20, error: null },
@@ -656,14 +656,30 @@ describe("risk matrix horizons, history row and ideas", () => {
     ],
   });
 
-  it("offers each horizon, starting now, and draws the history row with how it was read", () => {
+  it("offers each horizon, opening a week on, and draws the history row with how it was read", () => {
     const html = render(<RiskMatrixCard p={withHistory} />);
     expect(html.match(/class="mode-btn[^"]*"/g)).toHaveLength(3);
-    expect(html).toContain('aria-pressed="true"');
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(html).toMatch(/class="mode-btn active" aria-pressed="true"[^>]*>\+7 days</);
     expect(html).toContain("+21 days");
     expect(html).toContain("IV as history moves it");
     expect(html).toContain("over 30 windows of 5 trading days since 2006");
     expect(html).toContain("VIX ended ×1.40 (median), so IV +8 pts");
+    expect(html).toContain("7 days on with nothing done");
+  });
+
+  it("opens on the first horizon when the ruleset has no 7-day one", () => {
+    const noWeek = reading({
+      scenarios: {
+        ...base,
+        horizons: [
+          { horizonDays: 0, windowDays: 5, matrix: base.matrix, realistic: null },
+          { horizonDays: 21, windowDays: 14, matrix: base.matrix, realistic: null },
+        ],
+      },
+    });
+    const html = render(<RiskMatrixCard p={noWeek} />);
+    expect(html).toMatch(/class="mode-btn active" aria-pressed="true"[^>]*>now</);
     expect(html).toContain("time held still");
   });
 
