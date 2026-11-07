@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { StudyReport, StudyReportArm } from "@console/shared";
-import { ADVICE_WORD, ReportBody, measureT, measureValue, windowFill } from "../src/pages/Backtest/StudyReport";
+import { ADVICE_WORD, BASELINE_ROW, ReportBody, baselineRisk, measureT, measureValue, windowFill } from "../src/pages/Backtest/StudyReport";
 import { mondayOf } from "../src/pages/Backtest/StudyWeek";
 import { DIALOG_TABS } from "../src/pages/Backtest/StudyCards";
 
@@ -79,6 +79,23 @@ describe("the Report tab", () => {
     expect(html).toContain("Nothing to act on");
     expect(html).not.toContain("Every arm, by window");
     expect(html).not.toContain("Arm table");
+  });
+
+  it("draws the baseline's return on buying power as its own row, one bar per window", () => {
+    const report: StudyReport = {
+      ...REPORT,
+      arms: [arm({ perRiskBase: 0.03 }), arm({ window: "holdout", perRisk: 0.01, perRiskBase: 0.02 })],
+      measures: [{ key: "per_risk", label: "Return on buying power", note: "n", t: null }],
+    };
+    expect(baselineRisk(report, "design")).toBe(3);
+    expect(baselineRisk(report, "holdout")).toBe(2);
+    expect(baselineRisk(report, "whole")).toBeNull();
+    const html = renderToString(<ReportBody report={report} />);
+    expect(html).toContain(`>${BASELINE_ROW}</text>`);
+    expect(html).toContain(`${BASELINE_ROW} · design: 3.00`);
+    expect(html).toContain(`${BASELINE_ROW} · holdout: 2.00`);
+    // Another measure has no baseline row.
+    expect(renderToString(<ReportBody report={REPORT} />)).not.toContain(`>${BASELINE_ROW}</text>`);
   });
 
   it("reads each measure off the arm as the orchestrator stated it", () => {
