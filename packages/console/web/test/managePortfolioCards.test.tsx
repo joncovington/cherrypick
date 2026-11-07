@@ -852,7 +852,7 @@ describe("the portfolio tab, simple and detail", () => {
       const html = render(<IncomeCard c={c} />);
       expect(html).toContain("BIGP");
       expect(html).not.toContain("SMLP");
-      expect(html).toContain("1 under $25 hidden");
+      expect(html).toContain('<span class="premium-slider-hidden" aria-live="polite">1 hidden</span>');
       expect(html).toContain("Premium ≥ $25");
     } finally {
       writePref("minPremium.live-income", 0);
@@ -865,6 +865,10 @@ describe("the portfolio tab, simple and detail", () => {
     void writePref("minPremium.live-income", undefined);
     const fresh = render(<IncomeCard c={c} />);
     expect(fresh).toContain("Premium ≥ $50");
+    // The count's slot is there at every floor, so the row keeps its width while the slider moves.
+    void writePref("minPremium.live-income", 0);
+    expect(render(<IncomeCard c={c} />)).toContain("none hidden");
+    void writePref("minPremium.live-income", undefined);
     expect(fresh).toContain("BIGP");
     expect(fresh).not.toContain("SMLP");
     void writePref("minPremium.live-income", 0);

@@ -35,16 +35,22 @@ export function PremiumSlider({
   value,
   title,
   onChange,
+  hidden,
 }: {
   list: string;
   value: number;
   title: string;
   /** Called with the new floor after the preference is written (a page that keeps a URL copy syncs it). */
   onChange?: (v: number) => void;
+  /** How many rows the floor hides, said inside the slider's own chip. Its slot keeps its width at
+   *  zero, as the floor's label does from "any" to "$1,000", so nothing beside the slider changes size
+   *  while it is dragged and the thumb stays under the pointer (2026-11-06: the row jumped as a
+   *  separate "hidden" chip came and went). */
+  hidden?: number;
 }) {
   return (
-    <label className="chip" style={{ display: "inline-flex", alignItems: "center", gap: 6 }} title={title}>
-      Premium ≥ {value === 0 ? "any" : `$${value.toLocaleString()}`}
+    <label className="chip premium-slider" title={title}>
+      <span className="premium-slider-value">Premium ≥ {value === 0 ? "any" : `$${value.toLocaleString()}`}</span>
       <input
         type="range"
         aria-label="Minimum premium per contract"
@@ -58,6 +64,11 @@ export function PremiumSlider({
           onChange?.(v);
         }}
       />
+      {hidden !== undefined ? (
+        <span className="premium-slider-hidden" aria-live="polite">
+          {hidden > 0 ? `${hidden.toLocaleString()} hidden` : "none hidden"}
+        </span>
+      ) : null}
     </label>
   );
 }
