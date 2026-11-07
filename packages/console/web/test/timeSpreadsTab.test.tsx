@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { ManageTimeSpreads, TimeSpreadStructure, TimeSpreadsPayload } from "@console/shared";
 import { applyFilters, groupByName, joinAccount, NO_FILTERS } from "../src/lib/timeSpreadView";
-import { TimeSpreadScanTable } from "../src/components/TimeSpreadScanTable";
+import { writePref } from "../src/lib/prefs";
 
 /**
  * The time-spreads tab: the join to the account's sizing, the chips' filters, the group toggle and the
@@ -136,7 +136,7 @@ vi.mock("../src/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/lib/api")>()),
   useTimeSpreads: () => ({ data: payload, isLoading: false, isError: false, dataUpdatedAt: 0 }),
 }));
-const { TimeSpreadsTab } = await import("../src/pages/Screeners/TimeSpreadsTab");
+const { TimeSpreadsTab, scanHelp, scanModel, SPREAD_VIEW_SORTS } = await import("../src/pages/Screeners/TimeSpreadsTab");
 
 function base(over: Partial<TimeSpreadsPayload> = {}): TimeSpreadsPayload {
   return {
@@ -168,17 +168,27 @@ function render(url = "/screeners/time-spreads"): string {
   ).replace(/<!-- -->/g, "");
 }
 
+const text = (html: string) => html.replace(/<!-- -->/g, "").replace(/&#x27;/g, "'");
+const plain = (html: string) => text(html).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+/** The names on the page, in order: each card's aria-label starts with its symbol and its label. */
+const labels = (html: string) => [...html.matchAll(/aria-label="([A-Z]{3}): ([^"]+)"/g)].map((m) => `${m[1]} ${m[2]}`);
+
 describe("the time-spreads tab", () => {
-  it("keeps the no-edge and nothing-placed wording, and shows a flat table by default", () => {
+  it("keeps the no-edge and nothing-placed wording behind the ?, an amber flag on the card", () => {
     payload = base();
     const html = render();
-    expect(html).toContain("No tested edge.");
-    expect(html).toContain("item 54");
-    expect(html).toContain("re-quote before sending");
-    expect(html).toContain("Nothing here is placed.");
+    expect(html).toContain('<button type="button" class="help-flag" title="Open the ? for the full text">no tested edge</button>');
+    expect(html).toContain('aria-label="About time spreads"');
+    expect(html).not.toContain("Nothing here is placed.");
+    expect(html).not.toContain("re-quote before sending");
     expect(html).not.toContain("<details");
     expect(html).toContain("4 of 4");
     expect(html).not.toMatch(/<button[^>]*>(place|stage|send)/i);
+    const help = plain(renderToString(<>{scanHelp(payload).body}</>));
+    expect(help).toContain("item 54");
+    expect(help).toContain("re-quote before sending");
+    expect(help).toContain("Nothing here is placed.");
   });
 
   it("marks what fits, the stopping cap, and a held name", () => {
@@ -186,28 +196,31 @@ describe("the time-spreads tab", () => {
     const html = render();
     expect(html).toContain("fits ×2");
     expect(html).toContain("per-trade risk");
-    expect(html).toContain("sector held");
-    expect(html).toContain(" held<");
-    expect(html).toContain("1 fit, 2 too big");
+    expect(html).toContain(">sector held<");
+    expect(html).toContain(">held name<");
+    expect(plain(renderToString(<>{scanHelp(payload).body}</>))).toContain("1 fit, 2 too big");
   });
 
-  it("says when there is no sizing and shows the rows unmarked, with no fit chips", () => {
+  it("says when there is no sizing and shows the cards unmarked, with no fit chips", () => {
     payload = base({ account: null, accountNote: "no manage evaluation for 2026-11-06, so nothing is sized to the account" });
     const html = render();
-    expect(html).toContain("no manage evaluation for 2026-11-06");
-    expect(html).toContain("rows are shown unmarked");
+    expect(html).toContain("unmarked: no account sizing");
+    expect(plain(renderToString(<>{scanHelp(payload).body}</>))).toContain("no manage evaluation for 2026-11-06");
+    expect(plain(renderToString(<>{scanHelp(payload).body}</>))).toContain("cards are shown unmarked");
     expect(html).not.toContain("fits ×");
     expect(html).toContain("4 of 4");
   });
 
-  it("applies the chips from the URL", () => {
+  it("applies the filters from the URL, and says what is on in the summary", () => {
     payload = base();
     expect(render("/x?structure=diagonal")).toContain("2 of 4");
     expect(render("/x?right=call&direction=bullish")).toContain("1 of 4");
     expect(render("/x?maxdb=1.5")).toContain("2 of 4");
     expect(render("/x?fits=1")).toContain("1 of 4");
     expect(render("/x?structure=diagonal&fits=1")).toContain("no structure matches these filters");
-    expect(render("/x?fits=1")).toContain('aria-pressed="true"');
+    expect(render("/x?fits=1")).toContain(">fits only<");
+    expect(render("/x?structure=diagonal&right=put")).toContain('<span class="fs-badge">2</span>');
+    expect(render("/x")).not.toContain("fs-badge");
   });
 
   it("groups by name only when asked, one collapsible block a name with its header figures", () => {
@@ -220,43 +233,69 @@ describe("the time-spreads tab", () => {
     expect(html).toContain("earnings 2026-12-01");
     expect(html).toContain("1 of 2 fit");
     expect(render("/x?group=1&structure=diagonal").match(/<details/g)).toHaveLength(2);
+    // The choice sits beside cards / rows, and says it is pressed.
+    expect(html).toMatch(/aria-label="grouping"[^>]*><button[^>]*aria-pressed="true"[^>]*>by name</);
   });
 
   it("without sizing a group header counts rows, not fits", () => {
     payload = base({ account: null, accountNote: "none" });
     expect(render("/x?group=1")).toContain("2 rows");
   });
-});
 
-describe("the row detail", () => {
-  const views = joinAccount([A], account());
-  const draw = (initiallyOpen: string[]) =>
-    renderToString(<TimeSpreadScanTable rows={views} initiallyOpen={initiallyOpen} />).replace(/<!-- -->/g, "");
-
-  it("is closed until the row is opened", () => {
-    const html = draw([]);
-    expect(html).toContain('aria-expanded="false"');
-    expect(html).not.toContain("management levels");
-  });
-
-  it("shows the management levels and both legs with option symbols and quotes once open", () => {
-    const html = draw([`${A.underlying}|${A.label}`]);
-    expect(html).toContain('aria-expanded="true"');
-    expect(html).toContain("breakeven band $94.10 / $106.20");
-    expect(html).toContain("price stop band $91.00 / none");
-    expect(html).toContain("close if the stock closes beyond it");
-    expect(html).toContain("take profit 3.20 cr");
-    expect(html).toContain("value stop 1.28 cr");
+  it("draws each structure as the portfolio tab's trade card, with its legs, quotes and management levels in it", () => {
+    payload = base();
+    const html = text(render());
+    expect(html).toContain('class="pos-card tc-card"');
+    expect(html).toContain("tc-grid");
+    expect(html).not.toContain("<table");
+    // The sized structure is at its fitted size; the debit is whole-position dollars, a debit −.
+    expect(html).toContain("-$500.00"); // 2.50 × 100 × 2 units
+    expect(html).toContain("2.50 db at mid × 2");
+    expect(html).toContain("2 2026-11-13 100P @ 1.65");
+    expect(html).toContain("2 2026-12-18 100P @ 4.20");
+    expect(html).toContain("1.6 / 1.7");
+    expect(html).toContain("4.1 / 4.3");
+    // What the expanded row held: the take-profit and stops, the bands, the roll date.
+    expect(html).toContain("take profit 3.20 cr · value stop 1.28 cr");
+    expect(html).toContain("break-even $94.10 / $106.20");
+    expect(html).toContain("price stop $91.00 / none");
     expect(html).toContain("roll by 2026-11-10");
-    expect(html).toContain("max loss");
-    expect(html).toContain(`AAA-L-${A.label}`);
-    expect(html).toContain("bid 4.10 / ask 4.30");
-    expect(html).toContain("bid 1.60 / ask 1.70");
+    expect(html).toContain("max loss $500");
   });
 
-  it("shows what the scan has when the row has no quotes", () => {
+  it("shows what the scan has when a structure has no quotes", () => {
     const bare = joinAccount([row({ entryQuotes: null, longLeg: null, shortLeg: null })], null);
-    const html = renderToString(<TimeSpreadScanTable rows={bare} initiallyOpen={["AAA|" + bare[0]!.s.label]} />);
-    expect(html).toContain("roll by");
+    expect(scanModel(bare[0]!, 100).foot.join(" ")).toContain("roll by 2026-11-10");
+    expect(scanModel(bare[0]!, 100).legs.every((l) => l.text === "—")).toBe(true);
+  });
+
+  it("draws the max loss as the bar against the largest on the list, and fades what does not fit", () => {
+    const views = joinAccount([A, C], account());
+    const big = scanModel(views[0]!, 500); // A fits ×2: 250 × 2 = 500, the largest
+    const small = scanModel(views[1]!, 500); // C stopped: one unit, 250
+    expect(big.bar).toBe(100);
+    expect(small.bar).toBe(50);
+    expect(big.faded).toBeFalsy();
+    expect(small.faded).toBe(true);
+    expect(small.label).toContain("stopped by per-trade risk");
+  });
+
+  it("is cards by default and rows on request", () => {
+    payload = base();
+    expect(render()).toContain("tc-grid");
+    void writePref("view.time-spreads", "rows");
+    try {
+      const html = render();
+      expect(html).toContain("tr-list");
+      expect(html.match(/class="tr-row"/g)).toHaveLength(4);
+    } finally {
+      void writePref("view.time-spreads", undefined);
+    }
+  });
+
+  it("keeps the scan's order by default and offers no sort by credit, theta or take-profit", () => {
+    payload = base();
+    expect(labels(render()).map((l) => l.slice(0, 3))).toEqual(["AAA", "AAA", "BBB", "CCC"]);
+    expect(SPREAD_VIEW_SORTS.map((s) => s.id)).toEqual(["ratio", "symbol", "front", "debit", "maxloss"]);
   });
 });

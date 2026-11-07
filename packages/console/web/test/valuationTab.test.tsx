@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { ValuationModel, ValuationPayload, ValuationRow } from "@console/shared";
+import { sortRows } from "../src/components/FilterSort";
+import { writePref } from "../src/lib/prefs";
 
 /**
  * The fair-value tab: the standing no-edge note, the views, the symbol order, the pmcc badge and
@@ -65,7 +67,7 @@ vi.mock("../src/lib/api", async (importOriginal) => ({
   useValuation: () => ({ data: payload, isLoading: false, isError: false }),
 }));
 
-const { ValuationTab, ValuationDetail, applyView, riskOrder, stretch } = await import("../src/pages/Screeners/ValuationTab");
+const { ValuationTab, ValuationDetail, applyView, riskOrder, stretch, valueHelp, VALUE_SORTS } = await import("../src/pages/Screeners/ValuationTab");
 
 function detail(r: ValuationRow): string {
   return renderToString(<ValuationDetail r={r} rule={RULE} />).replace(/<!-- -->/g, "");
@@ -93,11 +95,74 @@ function base(rows: ValuationRow[]): ValuationPayload {
 }
 
 describe("the fair-value tab", () => {
-  it("always says the estimate was tested and has no edge", () => {
+  it("always flags that the estimate was tested and has no edge, the text behind the ?", () => {
     payload = base([row({})]);
-    expect(render()).toContain("Tested 2018–26: no edge.");
+    const html = render();
+    expect(html).toContain('<button type="button" class="help-flag" title="Open the ? for the full text">no edge</button>');
+    expect(html).toContain('aria-label="About fair value"');
+    expect(html).not.toContain("Cheap names did no better than rich ones");
     payload = base([]);
-    expect(render()).toContain("Tested 2018–26: no edge.");
+    expect(render()).toContain(">no edge<");
+    const help = renderToString(<>{valueHelp("public list", 0.02).body}</>).replace(/<!-- -->/g, "");
+    expect(help).toContain("Tested 2018–26: no edge");
+    expect(help).toContain("Cheap names did no better than rich ones");
+    expect(help).toContain("Reach");
+    expect(help).toContain("Stretch");
+    expect(help).toContain("How the value is made");
+  });
+
+  it("lists the names as rows by default, each opening the model, and as cards on request", () => {
+    payload = base([row({ symbol: "AAA", reach: "within history", impliedMargin: 0.1, bestMargin: 0.2 }), row({ symbol: "BBB" })]);
+    const rows = render();
+    expect(rows).toContain("vr-list");
+    expect(rows).not.toContain("tc-grid");
+    expect(rows.match(/class="vr-row"/g)).toHaveLength(2);
+    expect(rows).toContain('aria-label="AAA: open the model"');
+    expect(rows).toMatch(/class="mode-btn active" aria-pressed="true" aria-label="Rows"/);
+    void writePref("view.valuation", "cards");
+    try {
+      const cards = render();
+      expect(cards).toContain("tc-grid");
+      expect(cards).not.toContain("vr-list");
+      expect(cards.match(/class="pos-card tc-card vr-card"/g)).toHaveLength(2);
+      expect(cards).toContain("AAA · the model");
+      expect(cards).toContain("stretch 0.50×");
+      expect(cards).toContain("<svg"); // the stretch dial
+    } finally {
+      void writePref("view.valuation", undefined);
+    }
+  });
+
+  it("keeps the DCF out of the page: it opens in a lightbox, in tabs", () => {
+    payload = base([row({ symbol: "AAA", reach: "within history", impliedMargin: 0.1, bestMargin: 0.2, low: 60, high: 95 })]);
+    const html = render();
+    // Closed until a row is pressed: nothing of the detail is on the page.
+    for (const s of ["Valuation range", "Free cash flow forecast", "Key assumptions", "Discount rate (WACC)"]) expect(html).not.toContain(s);
+    const r = payload.rows[0]!;
+    const part = (section: "overview" | "forecast" | "value" | "inputs") => renderToString(<ValuationDetail r={r} rule={RULE} section={section} />).replace(/<!-- -->/g, "");
+    expect(part("overview")).toContain("Valuation range");
+    expect(part("overview")).not.toContain("Free cash flow forecast");
+    expect(part("overview")).not.toContain("Key assumptions");
+    expect(part("forecast")).toContain("Free cash flow forecast");
+    expect(part("forecast")).not.toContain("Valuation range");
+    expect(part("value")).toContain("From business value to value per share");
+    expect(part("value")).toContain("Key assumptions");
+    expect(part("value")).not.toContain("Free cash flow forecast");
+    expect(part("inputs")).toContain("not in this file");
+    // With no part named, the whole detail is drawn, as before.
+    expect(detail(r)).toContain("Valuation range");
+    expect(detail(r)).toContain("Free cash flow forecast");
+    expect(detail(r)).toContain("Key assumptions");
+  });
+
+  it("offers the risk order, name and stretch as sorts, never the gap", () => {
+    expect(VALUE_SORTS.map((s) => s.id)).toEqual(["risk", "symbol", "stretch"]);
+    const rows = [
+      row({ symbol: "LOW", reach: "within history", impliedMargin: 0.1, bestMargin: 0.2 }),
+      row({ symbol: "HIG", reach: "within history", impliedMargin: 0.18, bestMargin: 0.2 }),
+      row({ symbol: "NON" }),
+    ];
+    expect(sortRows(rows, VALUE_SORTS.find((s) => s.id === "stretch"), false).map((r) => r.symbol)).toEqual(["HIG", "LOW", "NON"]);
   });
 
   it("shows the valued names by default, never ordered by the gap, with the gap and range kept to the details", () => {
@@ -106,10 +171,10 @@ describe("the fair-value tab", () => {
     payload = base([aaa, row({ symbol: "ZZZ", gap: -0.5 })]);
     const html = render();
     expect(html.indexOf(">AAA<")).toBeLessThan(html.indexOf(">ZZZ<"));
-    expect(html).toContain("80.00");
+    expect(html).toContain("fair $80.00");
     expect(html).not.toContain("+25.0%"); // a row carries what the choice needs; the rest opens beneath it
     expect(html).not.toContain("WACC");
-    expect(html).toContain("Show AAA&#x27;s details");
+    expect(html).toContain(`aria-label="AAA: open the model"`);
     const d = detail(aaa);
     expect(d).toContain("−20.0%"); // the model's value against the price: 80 / 100 − 1
     expect(d).toContain("Low $60.00");

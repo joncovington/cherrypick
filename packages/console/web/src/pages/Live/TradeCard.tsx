@@ -43,6 +43,8 @@ export interface TradeCardModel {
   hideBar?: boolean;
   /** Shown for the reason in its foot, not offered: drawn faded. */
   faded?: boolean;
+  /** A button or two under the foot (a lightbox the card opens); drawn on the card, not on its row. */
+  extra?: ReactNode;
 }
 
 export function TradeCard({ m }: { m: TradeCardModel }) {
@@ -116,6 +118,7 @@ export function TradeCard({ m }: { m: TradeCardModel }) {
         <span>{m.foot[0]}</span>
         <span className="pos-card-reason">{m.foot[1]}</span>
       </span>
+      {m.extra ? <div className="tc-extra">{m.extra}</div> : null}
     </article>
   );
 }
