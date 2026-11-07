@@ -10,6 +10,7 @@ import type {
   TradingMode,
 } from "@console/shared";
 import type { ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Card } from "../DataTable";
 import { Section } from "../Section";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../CardHelp";
@@ -668,36 +669,77 @@ export function ArmCard({
   );
 }
 
-/** The anchor id of an arm's card, for the index's jump links. */
-function cardId(module: string, tag: string): string {
-  return `analysis-${module}-${tag}`.replace(/[^A-Za-z0-9_-]/g, "_");
+/** The arm whose sections show when no arm is picked in the header: the address's, else the first. */
+export function pickedArm(tags: readonly string[], asked: string | null): string | null {
+  if (tags.length === 0) return null;
+  return asked !== null && tags.includes(asked) ? asked : tags[0]!;
 }
 
 /**
- * Every arm on one line, with its net and sessions, for a page that would otherwise be forty long
- * cards: each name scrolls to its card. Shown only when no arm is picked in the header.
+ * Every arm in one table, with what says how it went: sessions, trades, net, the deepest fall and the
+ * worst trade. A row's name picks the arm whose sections show below; the pick is in the address
+ * (`?an-arm=`), so it links. Shown only when no arm is picked in the header and there is more than one.
  */
-export function ArmIndex({ module, groups }: { module: string; groups: Array<{ tag: string; analysis: ArmAnalysis }> }) {
+export function ArmPicker({
+  groups,
+  picked,
+  onPick,
+}: {
+  groups: Array<{ tag: string; analysis: ArmAnalysis }>;
+  picked: string | null;
+  onPick: (tag: string) => void;
+}) {
   return (
-    <div className="muted" style={{ fontSize: 12, display: "flex", flexWrap: "wrap", gap: "0.25rem 0.9rem" }}>
-      {groups.map((g) => {
-        const net = typeof g.analysis.reading["net_pnl"] === "number" ? (g.analysis.reading["net_pnl"] as number) : null;
-        return (
-          <button
-            key={g.tag}
-            type="button"
-            className="btn btn-quiet"
-            style={{ padding: 0, fontSize: 12 }}
-            onClick={() => document.getElementById(cardId(module, g.tag))?.scrollIntoView({ behavior: "smooth" })}
-            title={`${String(g.analysis.stress.sessions)} sessions`}
-          >
-            {g.tag} <span className={net === null ? "" : net >= 0 ? "pnl-pos" : "pnl-neg"}>{fmtMoney(net)}</span>
-          </button>
-        );
-      })}
+    <div className="table-scroll">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>arm</th>
+            <th className="num">sessions</th>
+            <th className="num">trades</th>
+            <th className="num">net</th>
+            <th className="num">deepest fall</th>
+            <th className="num">worst trade</th>
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map((g) => {
+            const a = g.analysis;
+            const net = typeof a.reading["net_pnl"] === "number" ? (a.reading["net_pnl"] as number) : null;
+            const deepest = loss(a.drawdowns?.deepest[0]?.depth ?? null);
+            const worst = a.worst_trade?.net ?? null;
+            return (
+              <tr key={g.tag}>
+                <td>
+                  <button type="button" className="chip" aria-pressed={g.tag === picked} onClick={() => onPick(g.tag)} title={`Show ${g.tag}'s analysis`}>
+                    {g.tag}
+                  </button>
+                </td>
+                <td className="num">{String(a.stress.sessions)}</td>
+                <td className="num">{a.coverage === undefined ? "—" : String(a.coverage.trades)}</td>
+                <td className={`num ${net === null ? "" : net >= 0 ? "pnl-pos" : "pnl-neg"}`}>{fmtMoney(net)}</td>
+                <td className={`num ${deepest === null ? "" : "pnl-neg"}`}>{fmtMoney(deepest)}</td>
+                <td className={`num ${worst === null ? "" : worst >= 0 ? "pnl-pos" : "pnl-neg"}`}>{fmtMoney(worst)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
+
+const PICKER_HELP: CardHelpContent = {
+  title: "Which arm",
+  body: (
+    <HelpSection title="Picking an arm">
+      <p>
+        Every arm read, each over its own window. Pick a name to show that arm&apos;s runs, drawdowns, durability and what was known at entry
+        below. Picking an arm in the header narrows the page to it instead.
+      </p>
+    </HelpSection>
+  ),
+};
 
 /** The reading card's ?: which window each arm was read over, in the slide's own words. */
 function readingHelp(era: { from: string | null; note: string | null; moduleEra: string | null }): CardHelpContent {
@@ -738,6 +780,16 @@ export function AnalysisSlide({
   arm?: string | null;
 }) {
   const { data, isLoading, dataUpdatedAt } = useModuleAnalysis(module, "current", mode);
+  const [params, setParams] = useSearchParams();
+  const pickArm = (tag: string) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p);
+        next.set("an-arm", tag);
+        return next;
+      },
+      { replace: true },
+    );
 
   if (isLoading || data === undefined) {
     return (
@@ -758,7 +810,11 @@ export function AnalysisSlide({
     );
   }
   // The arm picker, applied to what was read; an advised book stays with its arm.
-  const shown = data.groups.filter((g) => matchesArm(g.tag, arm));
+  const matching = data.groups.filter((g) => matchesArm(g.tag, arm));
+  // With no arm picked in the header and several read, one arm's sections show at a time.
+  const picking = arm === null && matching.length > 1;
+  const picked = picking ? pickedArm(matching.map((g) => g.tag), params.get("an-arm")) : null;
+  const shown = picking ? matching.filter((g) => g.tag === picked) : matching;
   return (
     <div className="pf-layout an-layout">
       <Section concept="stand" tag="the reading" question="What is being read?">
@@ -782,7 +838,6 @@ export function AnalysisSlide({
               {data.allocations.error}
             </p>
           )}
-          {arm === null && data.groups.length > 1 && <ArmIndex module={module} groups={data.groups} />}
           {arm !== null && (
             <p className="muted" style={{ fontSize: 12, margin: 0 }}>
               showing <strong>{arm}</strong>, picked in the header
@@ -793,6 +848,13 @@ export function AnalysisSlide({
           </p>
         </Card>
       </Section>
+      {picking && (
+        <Section concept="stand" tag="the arms" question="Which arm?">
+          <Card title={`arms · ${String(matching.length)}`} collapseKey={`analysis-${module}-arms`} updatedAt={dataUpdatedAt} help={PICKER_HELP}>
+            <ArmPicker groups={matching} picked={picked} onPick={pickArm} />
+          </Card>
+        </Section>
+      )}
       {shown.length === 0 ? (
         <Card title="analysis" updatedAt={dataUpdatedAt}>
           <p className="muted">
@@ -801,7 +863,7 @@ export function AnalysisSlide({
         </Card>
       ) : (
         shown.map((g) => (
-          <div key={g.tag} id={cardId(module, g.tag)}>
+          <div key={g.tag}>
             <ArmCard
               module={module}
               tag={g.tag}
