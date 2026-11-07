@@ -1,0 +1,106 @@
+{
+  "route": "/live/meic",
+  "note": "A loop that must not trade: the halt flag set, a submission the broker never answered, a fill the ledger never recorded, the broker failing, an orphaned order and a critical line.",
+  "widths": [
+    1440,
+    390
+  ],
+  "expect": [
+    "halt"
+  ],
+  "api": {
+    "/api/live/meic": {
+      "generatedAt": "2030-01-02T17:45:00Z",
+      "session": "2030-01-02",
+      "ledger": "ok",
+      "ledgerError": null,
+      "arm": {
+        "armed": false,
+        "date": null,
+        "at": null,
+        "stale": false,
+        "disarmTime": "15:45",
+        "pastDisarm": false,
+        "halted": true,
+        "liveEnabled": true,
+        "symbol": "XYZ"
+      },
+      "orphans": {
+        "at": "2030-01-02T14:00:00",
+        "orders": [
+          {
+            "orderId": "100001",
+            "status": "Live",
+            "underlyingSymbol": "XYZ",
+            "externalIdentifier": "ext-orphan"
+          }
+        ]
+      },
+      "held": {
+        "unresolved": [
+          "ext-held"
+        ],
+        "unrecorded": [
+          {
+            "ext": "ext-fill",
+            "orderId": "100002"
+          }
+        ]
+      },
+      "brokerHealth": {
+        "lastOkAt": "2030-01-02T13:50:00",
+        "failingSince": "2030-01-02T13:55:00",
+        "failures": 6,
+        "lastErrorAt": "2030-01-02T14:20:00",
+        "lastError": "made-up: session expired"
+      },
+      "open": [],
+      "history": [],
+      "totals": {
+        "trades": 0,
+        "sessions": 0,
+        "gross": 0,
+        "fees": 0,
+        "settlementFees": 0,
+        "settlementRecorded": 0,
+        "settlementTrades": 0,
+        "net": 0,
+        "feesTrades": 0,
+        "feesRecorded": 0,
+        "netRecorded": 0
+      },
+      "readiness": {
+        "ok": true,
+        "ready": false,
+        "blockers": [
+          "the suite halt flag is set"
+        ],
+        "warnings": [
+          "broker calls failing since 13:55"
+        ],
+        "openIcs": [],
+        "criticals": [
+          {
+            "at": "2030-01-02T14:00:00",
+            "message": "made-up: an order the ledger did not record"
+          }
+        ]
+      }
+    },
+    "/api/live/meic/gap": {
+      "twin": "live-shadow",
+      "ledger": "ok",
+      "since": "2030-01-01",
+      "rows": [],
+      "totals": {
+        "paired": 0,
+        "liveNet": 0,
+        "paperNet": 0,
+        "gap": 0,
+        "paperOnly": 0,
+        "paperOnlyNet": 0,
+        "liveOnly": 0
+      }
+    }
+  }
+}

@@ -1,0 +1,181 @@
+{
+  "route": "/live/meic",
+  "note": "Open condors in every state the card draws: both sides held and marked, an entry still working, a side stopped, and one left from an earlier session.",
+  "widths": [
+    1440,
+    390
+  ],
+  "expect": [
+    "of the credit kept",
+    "entry working at the broker",
+    "open \u00b7 overdue"
+  ],
+  "api": {
+    "/api/live/meic": {
+      "generatedAt": "2030-01-02T17:45:00Z",
+      "session": "2030-01-02",
+      "ledger": "ok",
+      "ledgerError": null,
+      "arm": {
+        "armed": true,
+        "date": "2030-01-02",
+        "at": "2030-01-02T09:00:00",
+        "stale": false,
+        "disarmTime": "15:45",
+        "pastDisarm": false,
+        "halted": false,
+        "liveEnabled": true,
+        "symbol": "XYZ"
+      },
+      "orphans": {
+        "at": null,
+        "orders": []
+      },
+      "held": {
+        "unresolved": [],
+        "unrecorded": []
+      },
+      "brokerHealth": null,
+      "open": [
+        {
+          "id": 1,
+          "tradeDate": "2030-01-02",
+          "entryTime": "2030-01-02T12:30:00",
+          "symbol": "XYZ",
+          "arm": "arm-a",
+          "status": "open",
+          "working": false,
+          "putStrike": 100,
+          "callStrike": 120,
+          "wingWidth": 10,
+          "quantity": 1,
+          "netCredit": 1.8,
+          "entryCash": 180,
+          "putHeld": true,
+          "callHeld": true,
+          "putClosing": false,
+          "callClosing": false,
+          "fillConfirmedAt": "2030-01-02T12:30:20",
+          "overdue": false,
+          "mark": {
+            "at": "2030-01-02T17:44:30.000Z",
+            "mids": {
+              "shortPut": 0.5,
+              "longPut": 0.1,
+              "shortCall": 0.35,
+              "longCall": 0.05
+            },
+            "closeCost": 0.7,
+            "exitCash": -70
+          }
+        },
+        {
+          "id": 2,
+          "tradeDate": "2030-01-02",
+          "entryTime": "2030-01-02T13:00:00",
+          "symbol": "XYZ",
+          "arm": "arm-a",
+          "status": "pending",
+          "working": true,
+          "putStrike": 105,
+          "callStrike": 125,
+          "wingWidth": 10,
+          "quantity": 1,
+          "netCredit": 1.6,
+          "entryCash": null,
+          "putHeld": false,
+          "callHeld": false,
+          "putClosing": false,
+          "callClosing": false,
+          "fillConfirmedAt": null,
+          "overdue": false,
+          "mark": null
+        },
+        {
+          "id": 3,
+          "tradeDate": "2030-01-02",
+          "entryTime": "2030-01-02T11:30:00",
+          "symbol": "XYZ",
+          "arm": "arm-a",
+          "status": "partial",
+          "working": false,
+          "putStrike": 95,
+          "callStrike": 115,
+          "wingWidth": 10,
+          "quantity": 1,
+          "netCredit": 2.0,
+          "entryCash": 200,
+          "putHeld": false,
+          "callHeld": true,
+          "putClosing": false,
+          "callClosing": false,
+          "fillConfirmedAt": "2030-01-02T12:30:20",
+          "overdue": false,
+          "mark": null
+        },
+        {
+          "id": 4,
+          "tradeDate": "2030-01-01",
+          "entryTime": "2030-01-01T12:30:00",
+          "symbol": "XYZ",
+          "arm": "arm-a",
+          "status": "open",
+          "working": false,
+          "putStrike": 90,
+          "callStrike": 110,
+          "wingWidth": 10,
+          "quantity": 1,
+          "netCredit": 1.8,
+          "entryCash": 180,
+          "putHeld": true,
+          "callHeld": true,
+          "putClosing": false,
+          "callClosing": false,
+          "fillConfirmedAt": "2030-01-02T12:30:20",
+          "overdue": true,
+          "mark": null
+        }
+      ],
+      "history": [],
+      "totals": {
+        "trades": 0,
+        "sessions": 0,
+        "gross": 0,
+        "fees": 0,
+        "settlementFees": 0,
+        "settlementRecorded": 0,
+        "settlementTrades": 0,
+        "net": 0,
+        "feesTrades": 0,
+        "feesRecorded": 0,
+        "netRecorded": 0
+      },
+      "readiness": {
+        "ok": true,
+        "ready": true,
+        "blockers": [],
+        "warnings": [],
+        "openIcs": [
+          "LIVE-XYZ-1 XYZ 100p/120c 10w, credit 1.8, holds both, stop 2.0x credit",
+          "LIVE-XYZ-3 XYZ 95p/115c 10w, credit 2.0, holds call, stop 2.0x credit"
+        ],
+        "criticals": []
+      }
+    },
+    "/api/live/meic/gap": {
+      "twin": "live-shadow",
+      "ledger": "ok",
+      "since": "2030-01-01",
+      "rows": [],
+      "totals": {
+        "paired": 0,
+        "liveNet": 0,
+        "paperNet": 0,
+        "gap": 0,
+        "paperOnly": 0,
+        "paperOnlyNet": 0,
+        "liveOnly": 0
+      }
+    }
+  }
+}

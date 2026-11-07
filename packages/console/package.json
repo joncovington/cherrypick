@@ -9,7 +9,8 @@
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "ui-check": "node tools/ui-check.mjs"
+    "ui-check": "node tools/ui-check.mjs",
+    "state-preview": "node tools/state-preview.mjs"
   },
   "devDependencies": {
     "@console/shared": "workspace:*",
