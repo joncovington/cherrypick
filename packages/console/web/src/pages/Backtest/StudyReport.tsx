@@ -46,6 +46,15 @@ export function measureValue(a: StudyReportArm, key: StudyMeasureKey): number | 
   }
 }
 
+/** The row that carries the baseline's own return on buying power. */
+export const BASELINE_ROW = "baseline";
+
+/** The baseline's return on buying power in `window`, in %, as the orchestrator stated it beside the arms. */
+export function baselineRisk(report: StudyReport, window: string): number | null {
+  const base = report.arms.find((a) => a.window === window && a.perRiskBase !== null)?.perRiskBase;
+  return base === undefined || base === null ? null : base * 100;
+}
+
 export function measureT(a: StudyReportArm, key: StudyMeasureKey | null): number | null {
   if (key === "paired") return a.paired?.t ?? null;
   if (key === "paired_both") return a.pairedBoth?.t ?? null;
@@ -160,7 +169,14 @@ export function ReportBody({ report }: { report: StudyReport }) {
   const shown = measure ? names.filter((a) => report.windows.some((w) => { const r = find(a, w); return r !== undefined && measureValue(r, measure.key) !== null; })) : [];
   const tKey = measure?.t ?? null;
   const hasT = tKey !== null && shown.some((a) => report.windows.some((w) => { const r = find(a, w); return r !== undefined && measureT(r, tKey) !== null; }));
-  const base = measure?.key === "per_risk" ? report.arms.find((a) => a.perRiskBase !== null)?.perRiskBase ?? null : null;
+  // Return on buying power: the baseline's own figure differs by window, so it is a row of its own.
+  const withBase = measure?.key === "per_risk" && report.windows.some((w) => baselineRisk(report, w) !== null);
+  const rows = withBase ? [BASELINE_ROW, ...shown] : shown;
+  const valueOf = (a: string, w: string): number | null => {
+    if (a === BASELINE_ROW && withBase) return baselineRisk(report, w);
+    const r = find(a, w);
+    return r && measure ? measureValue(r, measure.key) : null;
+  };
   return (
     <div className="study-report">
       <section>
@@ -216,7 +232,7 @@ export function ReportBody({ report }: { report: StudyReport }) {
           </div>
           <p className="muted">{measure.note}</p>
           <Legend windows={report.windows} />
-          <ArmBars arms={shown} windows={report.windows} label={measure.label} refs={base === null ? [] : [base * 100]} values={(a, w) => { const r = find(a, w); return r ? measureValue(r, measure.key) : null; }} />
+          <ArmBars arms={rows} windows={report.windows} label={measure.label} refs={[]} values={valueOf} />
           {hasT && tKey !== null ? (
             <>
               <div className="card-subhead">How strong is the evidence: t-statistic, dashed lines at ±2</div>
