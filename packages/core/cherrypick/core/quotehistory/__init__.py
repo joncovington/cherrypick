@@ -134,12 +134,13 @@ def session(
     return out
 
 
-def leg_symbol(symbol: str, expiration: str, right: str, strike: float) -> str:
+def leg_symbol(symbol: str, expiration: str, right: str, strike: float, *, root: str | None = None) -> str:
     """A streamer-style symbol for a recorded leg (`.SPXW261016P5800`), so a replayed ledger's leg
-    columns read as a live one's do. The `W` root is the 0DTE weekly the recorder keeps."""
+    columns read as a live one's do. The `W` root is the 0DTE weekly the recorder keeps; `root` names
+    another (`NDXP`, or `QQQ` for an ETF, whose weekly has no root of its own)."""
     yymmdd = date.fromisoformat(expiration).strftime("%y%m%d")
     k = int(strike) if float(strike).is_integer() else strike
-    return f".{symbol}W{yymmdd}{right}{k}"
+    return f".{root or symbol + 'W'}{yymmdd}{right}{k}"
 
 
 def profile_surface(rows: list[dict], spot: float) -> dict:

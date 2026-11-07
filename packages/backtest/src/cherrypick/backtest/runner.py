@@ -50,6 +50,7 @@ records both codes and the check. Any difference starts the run afresh. A run fi
 from __future__ import annotations
 
 import csv
+import functools
 import hashlib
 import json
 import os
@@ -482,18 +483,29 @@ def vix_source_of(counts: dict | None) -> str:
     return "mixed" if intraday else "cboe_fallback"
 
 
-def _meic_replay(day: str, out: Path, arms: list[str], history_db: Path, settle: float, config: Path) -> dict:
-    """`python -m cherrypick.meic.replay run` against this run's snapshot of both config files."""
+def _meic_replay(
+    day: str,
+    out: Path,
+    arms: list[str],
+    history_db: Path,
+    settle: float,
+    config: Path,
+    *,
+    symbol: str = "SPX",
+) -> dict:
+    """`python -m cherrypick.meic.replay run` against this run's snapshot of both config files. A symbol
+    other than SPX (item 68) is named; SPX's command line is the one it always was."""
     env = {
         **os.environ,
         "MEIC_CONFIG": str(config),
         "MEIC_RISK_CONFIG": str(config.parent / "meic-risk.json"),
     }
-    proc = core_procs.run_unthrottled(
-        [sys.executable, "-m", "cherrypick.meic.replay", "run", "--date", day, "--out", str(out),
-         "--arms", ",".join(arms), "--history-db", str(history_db), "--settle-price", repr(settle)],
-        capture_output=True, text=True, timeout=3600, env=env,
-    )  # fmt: skip
+    argv = [sys.executable, "-m", "cherrypick.meic.replay", "run", "--date", day, "--out", str(out),
+            "--arms", ",".join(arms), "--history-db", str(history_db),
+            "--settle-price", repr(settle)]  # fmt: skip
+    if symbol != "SPX":
+        argv += ["--symbol", symbol]
+    proc = core_procs.run_unthrottled(argv, capture_output=True, text=True, timeout=3600, env=env)
     try:
         return json.loads(proc.stdout)
     except json.JSONDecodeError:
@@ -515,6 +527,8 @@ class Module:
     inputs: Callable[[sqlite3.Connection, list[str]], dict] | None = None
     #: Whether the replay reports its per-tick VIX sources (`vix_sources`), recorded per session.
     reports_vix: bool = False
+    #: Whether the replay takes a `symbol` (MEIC, item 68); a module without one replays SPX only.
+    per_symbol: bool = False
 
 
 def _flies_load() -> tuple[dict, dict[str, Path]]:
@@ -552,6 +566,7 @@ MODULES = {
         _meic_replay,
         inputs=_meic_inputs,
         reports_vix=True,
+        per_symbol=True,
     ),
 }
 
@@ -598,7 +613,12 @@ def run(
     if module not in MODULES:
         raise RunRefused(f"module must be one of {sorted(MODULES)}")
     mod = MODULES[module]
-    replay = replay or mod.replay
+    symbol = symbol.upper()
+    if symbol != "SPX" and not mod.per_symbol:
+        raise RunRefused(f"{module}'s replay is SPX's only; {symbol} has no replay")
+    if replay is None:
+        # The symbol reaches the replay here, so every call below (the sessions and `verify`) carries it.
+        replay = functools.partial(mod.replay, symbol=symbol) if mod.per_symbol else mod.replay
     read_rows = read_rows or (lambda path: _ledger_rows(path, mod.schema))
     if window not in WINDOWS:
         raise RunRefused(f"window must be one of {WINDOWS}")
