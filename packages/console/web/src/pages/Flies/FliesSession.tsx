@@ -4,11 +4,14 @@ import { useAttempts } from "../../components/Attempts";
 import { useAdvisorModule, STATUS_LABEL } from "../../components/advisor/AdvisorSlide";
 import { Bullet } from "../../components/grid/Bullet";
 import { DivergingBars } from "../../components/grid/DivergingBars";
-import { GridCard, StatTile, type CardSpan } from "../../components/grid/GridCard";
+import { Card } from "../../components/DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { fmtMoney } from "../../lib/format";
 import { fliesQuery, useOpeningRange, type FliesFilter } from "../../lib/api";
 import { ForestCard } from "./ForestCard";
 import { SpotPathCard } from "./SpotPathCard";
+import { FliesLayout, FliesSection, TabLink } from "./FliesFilter";
+import type { ReactNode } from "react";
 
 /**
  * The flies session tab: what happened on ONE session, leading with shapes rather than columns.
@@ -62,16 +65,56 @@ export function useSessionAnalytics(mode: TradingMode, filter: FliesFilter, enab
 
 type Today = SessionAnalytics["today"];
 
-/** Net on the session, after fees. */
-export function NetTodayTile({ today, label = "net today", to = "/flies/history", span }: { today: Today | undefined; label?: string; to?: string; span?: CardSpan }) {
+/**
+ * One tile of the day's row: a card with its figure, one foot line and a link to the tab that holds
+ * the detail. What explains the figure sits behind the card's ?; a caveat that must not be missed is
+ * its amber flag. `value` is null for "not recorded", drawn as a dash, never a zero.
+ */
+export function FliesTile({
+  title,
+  value,
+  tone,
+  foot,
+  to,
+  toLabel,
+  help,
+  flag,
+  children,
+}: {
+  title: string;
+  value: string | null;
+  tone?: "pos" | "neg" | "dim";
+  foot?: ReactNode;
+  to?: string;
+  toLabel?: string;
+  help?: CardHelpContent;
+  flag?: string;
+  children?: ReactNode;
+}) {
+  const toneClass = value === null ? "" : tone === "pos" ? " pnl-pos" : tone === "neg" ? " pnl-neg" : tone === "dim" ? " muted" : "";
   return (
-    <StatTile
-      label={label}
+    <Card title={title} className="fl-w3 fl-tile" help={help} flag={flag}>
+      <div className={`fl-hero${toneClass}`}>{value ?? "—"}</div>
+      {children}
+      {foot !== undefined ? <p className="muted fl-state">{foot}</p> : null}
+      {to !== undefined ? (
+        <div className="pf-mores pf-push">
+          <TabLink to={to}>{toLabel ?? title}</TabLink>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+/** Net on the session, after fees. */
+export function NetTodayTile({ today, label = "net today", to = "/flies/history" }: { today: Today | undefined; label?: string; to?: string }) {
+  return (
+    <FliesTile
+      title={label}
       value={today !== undefined ? fmtMoney(today.netPnl) : null}
       tone={today !== undefined && today.netPnl >= 0 ? "pos" : "neg"}
       to={to}
-      toLabel="the session history behind this net"
-      span={span}
+      toLabel="history"
       foot={today === undefined ? "—" : `after fees · ${String(today.positions)} positions · fees ${fmtMoney(today.fees)}`}
     />
   );
@@ -89,20 +132,40 @@ function completionFoot(today: Today | undefined): string {
   return parts.join(" · ");
 }
 
-export function CompletionTile({ today, to = "/flies/completion", span }: { today: Today | undefined; to?: string; span?: CardSpan }) {
+export function CompletionTile({ today, to = "/flies/completion" }: { today: Today | undefined; to?: string }) {
   return (
-    <StatTile
-      label="completion"
+    <FliesTile
+      title="completion"
       value={today?.completionPct != null ? `${today.completionPct.toFixed(0)}%` : null}
       foot={completionFoot(today)}
       to={to}
-      toLabel="completion across the era"
-      span={span}
+      toLabel="completion"
     >
       <Bullet min={0} max={100} value={today?.completionPct ?? null} label="completion rate on this session" />
-    </StatTile>
+    </FliesTile>
   );
 }
+
+export const PEAK_RISK_HELP: CardHelpContent = {
+  title: "Daily peak risk",
+  body: (
+    <>
+      <HelpWarn title="The largest worst case">
+        <p>
+          The largest worst case the book carried at any moment this session: every open position's own worst case, net of fees and the
+          worst-case assignment fee, summed. It stands after settlement until the next session starts.
+        </p>
+      </HelpWarn>
+      <HelpSection title="Where the figure comes from">
+        <p>
+          Booked: flies' own figure, recorded on the settled book at actual fills. Recorded: the live loop's tick record, the figure its
+          buying-power cap reads; it can hold an entry's limit price before a better fill is reconciled, so it can sit a little above the
+          settled book's figure. Replayed: rebuilt from the positions' entries and completions. The foot says which.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
 
 /** The live pilot's view of one session — the Live page's own payload, asked for that date. */
 function useLiveSession(session: string | null) {
@@ -189,170 +252,180 @@ export function FliesSession({
   const settle = today?.settlement ?? null;
 
   return (
-    <div className="grid-12">
-      <NetTodayTile today={today} />
+    <FliesLayout>
+      <FliesSection concept="stand" name="the day" question="How did today go?">
+        <NetTodayTile today={today} />
 
-      <CompletionTile today={today} />
+        <CompletionTile today={today} />
 
-      <StatTile
-        label="daily peak risk"
-        value={peak !== null ? fmtMoney(peak.peak) : null}
-        tone={peak !== null && peak.peak > 0 ? "neg" : "dim"}
-        title={
-          "the largest worst case the book carried at any moment this session — every open position's own " +
-          "worst case net of fees and the worst-case assignment fee, summed — " +
-          (peak?.source === "booked"
-            ? "flies' own figure, recorded on the settled book at actual fills"
-            : peak?.source === "recorded"
-              ? "the live loop's tick record, the figure its buying-power cap reads; it can hold an entry's limit price before a better fill is reconciled, so it can sit a little above the settled book's figure"
-              : "replayed from the positions' entries and completions") +
-          "; it stands after settlement until the next session starts"
-        }
-        foot={
-          today === undefined || peak === null
-            ? "nothing entered on this session"
-            : [
-                peak.at !== null ? `peak at ${peak.at.slice(11, 16)} ET` : "no position could lose",
-                openRisk !== null ? `${fmtMoney(openRisk)} still at risk now` : today.open === 0 && today.positions > 0 ? "settled · until the next session" : null,
-                `${String(today.riskFree)} of ${String(today.positions)} risk-free`,
-              ]
-                .filter((s): s is string => s !== null)
-                .join(" · ")
-        }
-      />
-
-      {/* `attempts` counts every tick an arm evaluated, not every order it tried — across twelve
-          arms and a full session that runs to five figures, so it belongs in the foot as the
-          denominator it is rather than beside the fill count as if the two were comparable. */}
-      <StatTile
-        label="entries"
-        value={armRows.length === 0 ? null : String(fills)}
-        to="/flies/attempts"
-        toLabel="every attempt on this session"
-        foot={
-          armRows.length === 0
-            ? "no attempts recorded on this session"
-            : `from ${tries.toLocaleString()} evaluations over ${String(armRows.length)} arms`
-        }
-      />
-
-      <StatTile
-        label="opening range"
-        value={or?.rangePoints != null ? `${or.rangePoints.toFixed(1)} pts` : null}
-        to="/flies/openingrange"
-        toLabel="the opening range, bucket by bucket"
-        foot={
-          or === undefined
-            ? "—"
-            : or.complete && or.low !== null && or.high !== null
-              ? `${or.low.toFixed(0)}–${or.high.toFixed(0)} · 10:00 at ${or.last?.toFixed(2) ?? "—"}`
-              : (or.reason ?? `${String(or.bucketsPresent)} of ${String(or.bucketsExpected)} buckets`)
-        }
-      />
-
-      <StatTile
-        label="settlement"
-        value={settle !== null ? settle.price.toFixed(2) : null}
-        to="/flies/books"
-        toLabel="the books this print settled"
-        title="the print this session's books settled against, and where the module took it from"
-        foot={
-          settle === null
-            ? today !== undefined && today.open > 0
-              ? "not settled yet"
-              : "no settled book on this session"
-            : `${settle.source ?? "source not recorded"}${settle.at !== null ? ` · written ${settle.at.slice(11, 16)}` : ""}`
-        }
-      />
-
-      <StatTile
-        label="advice in force"
-        value={adv === undefined ? null : cells.length === 0 ? "none" : `${String(applied.length)} of ${String(cells.length)}`}
-        tone="dim"
-        to="/flies/advisor"
-        toLabel="the advisor's experiments on flies"
-        title="experiments whose advice the loop applied on this session, of those the advisor issued"
-        foot={adviceFoot}
-      />
-
-      <StatTile
-        label="live pilot"
-        to="/live/flies"
-        toLabel="the live pilot's day: arming, orders and fills"
-        value={lv === undefined ? null : liveTrades > 0 && liveNet !== null ? fmtMoney(liveNet) : armedHere ? "armed" : "off"}
-        tone={liveTrades > 0 && liveNet !== null ? (liveNet >= 0 ? "pos" : "neg") : "dim"}
-        foot={
-          lv === undefined
-            ? "—"
-            : `${
-                armedHere
-                  ? `armed · ${lv.arm.arm ?? "—"} ${lv.arm.symbol ?? ""}`
-                  : liveTrades > 0
-                    ? "traded this session"
-                    : "not armed for this session"
-              } · ${String(liveTrades)} live trade${liveTrades === 1 ? "" : "s"}`
-        }
-      />
-
-      {/* The hero. A butterfly only pays if spot walks away from its centre, so the shape of the
-          payoff is the session's actual subject and everything above is a number about it. */}
-      <ForestCard
-        mode={mode}
-        filter={filter}
-        variant="hero"
-        height={248}
-        to="/flies/books"
-      />
-
-      <GridCard
-        label="net by arm"
-        span={4}
-        h={304}
-        to="/flies/positions"
-        toLabel="the positions behind net by arm"
-        foot={
-          a === undefined
-            ? loading
-              ? "reading…"
-              : "—"
-            : `${String(a.byArm.reduce((n, r) => n + r.trades, 0))} trades · net of fees`
-        }
-      >
-        <DivergingBars
-          rows={(a?.byArm ?? []).map((r) => ({
-            label: r.arm,
-            value: r.net,
-            title: `${r.arm}: ${String(r.trades)} trades`,
-          }))}
-          format={fmtMoney}
-          emptyText={loading ? "reading…" : "nothing settled on this session yet"}
+        <FliesTile
+          title="daily peak risk"
+          value={peak !== null ? fmtMoney(peak.peak) : null}
+          tone={peak !== null && peak.peak > 0 ? "neg" : "dim"}
+          help={PEAK_RISK_HELP}
+          foot={
+            today === undefined || peak === null
+              ? "nothing entered on this session"
+              : [
+                  peak.at !== null ? `peak at ${peak.at.slice(11, 16)} ET` : "no position could lose",
+                  `${peak.source ?? "source not recorded"}`,
+                  openRisk !== null ? `${fmtMoney(openRisk)} still at risk now` : today.open === 0 && today.positions > 0 ? "settled · until the next session" : null,
+                  `${String(today.riskFree)} of ${String(today.positions)} risk-free`,
+                ]
+                  .filter((x): x is string => x !== null)
+                  .join(" · ")
+          }
         />
-      </GridCard>
 
-      <SpotPathCard mode={mode} filter={filter} arm={arm} />
+        {/* `attempts` counts every tick an arm evaluated, not every order it tried: across twelve
+            arms and a full session that runs to five figures, so it belongs in the foot as the
+            denominator it is rather than beside the fill count as if the two were comparable. */}
+        <FliesTile
+          title="entries"
+          value={armRows.length === 0 ? null : String(fills)}
+          to="/flies/attempts"
+          toLabel="attempts"
+          foot={armRows.length === 0 ? "no attempts recorded on this session" : `from ${tries.toLocaleString()} evaluations over ${String(armRows.length)} arms`}
+        />
 
+        <FliesTile
+          title="opening range"
+          value={or?.rangePoints != null ? `${or.rangePoints.toFixed(1)} pts` : null}
+          to="/flies/openingrange"
+          toLabel="opening range"
+          foot={
+            or === undefined
+              ? "—"
+              : or.complete && or.low !== null && or.high !== null
+                ? `${or.low.toFixed(0)}–${or.high.toFixed(0)} · 10:00 at ${or.last?.toFixed(2) ?? "—"}`
+                : (or.reason ?? `${String(or.bucketsPresent)} of ${String(or.bucketsExpected)} buckets`)
+          }
+        />
+
+        <FliesTile
+          title="settlement"
+          value={settle !== null ? settle.price.toFixed(2) : null}
+          to="/flies/books"
+          toLabel="books"
+          help={{
+            title: "Settlement",
+            body: (
+              <HelpSection title="The print">
+                <p>The print this session's books settled against, and where the module took it from.</p>
+              </HelpSection>
+            ),
+          }}
+          foot={
+            settle === null
+              ? today !== undefined && today.open > 0
+                ? "not settled yet"
+                : "no settled book on this session"
+              : `${settle.source ?? "source not recorded"}${settle.at !== null ? ` · written ${settle.at.slice(11, 16)}` : ""}`
+          }
+        />
+
+        <FliesTile
+          title="advice in force"
+          value={adv === undefined ? null : cells.length === 0 ? "none" : `${String(applied.length)} of ${String(cells.length)}`}
+          tone="dim"
+          to="/flies/advisor"
+          toLabel="advisor"
+          help={{
+            title: "Advice in force",
+            body: (
+              <HelpSection title="What is counted">
+                <p>Experiments whose advice the loop applied on this session, of those the advisor issued.</p>
+              </HelpSection>
+            ),
+          }}
+          foot={adviceFoot}
+        />
+
+        <FliesTile
+          title="live pilot"
+          to="/live/flies"
+          toLabel="live"
+          value={lv === undefined ? null : liveTrades > 0 && liveNet !== null ? fmtMoney(liveNet) : armedHere ? "armed" : "off"}
+          tone={liveTrades > 0 && liveNet !== null ? (liveNet >= 0 ? "pos" : "neg") : "dim"}
+          foot={
+            lv === undefined
+              ? "—"
+              : `${
+                  armedHere ? `armed · ${lv.arm.arm ?? "—"} ${lv.arm.symbol ?? ""}` : liveTrades > 0 ? "traded this session" : "not armed for this session"
+                } · ${String(liveTrades)} live trade${liveTrades === 1 ? "" : "s"}`
+          }
+        />
+      </FliesSection>
+
+      <FliesSection concept="dir" name="the book" question="What does the book look like?">
+        {/* The hero. A butterfly only pays if spot walks away from its centre, so the shape of the
+            payoff is the session's actual subject and everything above is a number about it. */}
+        <ForestCard mode={mode} filter={filter} variant="hero" height={248} to="/flies/forest" />
+
+        <Card
+          title="net by arm"
+          className="fl-w4"
+          help={{
+            title: "Net by arm",
+            body: (
+              <HelpSection title="What is shown">
+                <p>Each arm's net on this session, after fees, over the trades that settled.</p>
+              </HelpSection>
+            ),
+          }}
+        >
+          <DivergingBars
+            rows={(a?.byArm ?? []).map((r) => ({
+              label: r.arm,
+              value: r.net,
+              title: `${r.arm}: ${String(r.trades)} trades`,
+            }))}
+            format={fmtMoney}
+            emptyText={loading ? "reading…" : "nothing settled on this session yet"}
+          />
+          <p className="muted fl-state">{a === undefined ? (loading ? "reading…" : "—") : `${String(a.byArm.reduce((n, r) => n + r.trades, 0))} trades · net of fees`}</p>
+          <div className="pf-mores pf-push">
+            <TabLink to="/flies/positions">positions</TabLink>
+          </div>
+        </Card>
+      </FliesSection>
 
       {/* Why the quiet arms were quiet: the gates, or the market. Counts are evaluations refused,
           summed across arms, so one arm refusing every tick for an hour reads as a long bar. */}
-      <GridCard
-        label="why entries were refused"
-        span={4}
-        h={304}
-        to="/flies/attempts"
-        toLabel="every refusal, arm by arm"
-        foot={
-          armRows.length === 0
-            ? "no attempts recorded on this session"
-            : `${refusedTotal.toLocaleString()} refused evaluations · summed over ${String(armRows.length)} arms`
-        }
-      >
-        <DivergingBars
-          rows={refusalRows.map(([reason, n]) => ({ label: reason, value: n }))}
-          format={(v) => v.toLocaleString()}
-          tone="none"
-          emptyText={attempts.isLoading ? "reading…" : "nothing refused on this session"}
-        />
-      </GridCard>
-    </div>
+      <FliesSection concept="risk" name="why" question="Why were entries refused?">
+        <Card
+          title="refusals"
+          className="fl-w6"
+          help={{
+            title: "Refusals",
+            body: (
+              <HelpSection title="Summed across arms">
+                <p>
+                  Each gate's refused evaluations on this session, added over the arms, so one arm refusing every tick for an hour reads as
+                  a long bar. A refusal is an evaluation that placed nothing, not a missed trade.
+                </p>
+              </HelpSection>
+            ),
+          }}
+        >
+          <DivergingBars
+            rows={refusalRows.map(([reason, n]) => ({ label: reason, value: n }))}
+            format={(v) => v.toLocaleString()}
+            tone="none"
+            emptyText={attempts.isLoading ? "reading…" : "nothing refused on this session"}
+          />
+          <p className="muted fl-state">
+            {armRows.length === 0
+              ? "no attempts recorded on this session"
+              : `${refusedTotal.toLocaleString()} refused evaluations · summed over ${String(armRows.length)} arms`}
+          </p>
+          <div className="pf-mores pf-push">
+            <TabLink to="/flies/attempts">attempts</TabLink>
+          </div>
+        </Card>
+
+        <SpotPathCard mode={mode} filter={filter} arm={arm} />
+      </FliesSection>
+    </FliesLayout>
   );
 }
