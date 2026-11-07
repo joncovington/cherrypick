@@ -3,17 +3,23 @@ import { Link, useLocation } from "react-router-dom";
 import { fmtMoney, fmtPct } from "../../lib/format";
 import { useRegimeCuts } from "../../lib/api";
 import { armOfTag } from "../../lib/armTag";
+import { Card } from "../DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../CardHelp";
+import { useOpenParam } from "../../pages/Backtest/CardLightbox";
+import { BoxOpen, FliesBoxHost, type FliesBox } from "../../pages/Flies/FliesBoxes";
 
 /**
  * One arm's regime rows on the analysis page, from the module's NIGHTLY regime-cuts artifact
  * (`core.regimecuts`, the same payload the regime tab renders), never recomputed here.
  *
- * The artifact answers for a different window than the rest of the arm's card: it is scoped to the
- * arm's own era (its latest measurement break) as of the session it was cut, where the card reads
+ * The artifact answers for a different window than the rest of the arm's cards: it is scoped to the
+ * arm's own era (its latest measurement break) as of the session it was cut, where the cards read
  * the suite's evidence window live. So the panel names its own window and session every time it
  * draws, and shows only each dimension's single buckets -- the cross-tabs, paired tests and
  * multiplicity live on the regime tab, which this links to. The writer's `thin` and `fragile`
  * stamps pass through unchanged; a thin or fragile cell carries no tone.
+ *
+ * The card holds the reading in one line; the bucket table is its lightbox (2026-11-07).
  */
 
 export function RegimeSummary({ payload, tag }: { payload: RegimeCutsPayload; tag: string }) {
@@ -102,24 +108,71 @@ export function RegimeSummary({ payload, tag }: { payload: RegimeCutsPayload; ta
   );
 }
 
-/** The panel: one shared fetch of the module's cut (every arm card asks the same query), and a link
- *  to the regime tab carrying the current query string. */
+/** The card's one line: which session the cut is of, and how much it holds for this arm. Where the cut
+ *  is absent, failed or lacks the arm, the summary's own sentence says so. */
+function RegimeLine({ payload, tag }: { payload: RegimeCutsPayload; tag: string }) {
+  const arm = payload.status === "ok" ? payload.cuts.arms.find((a) => a.arm === armOfTag(tag)) : undefined;
+  if (payload.status !== "ok" || arm === undefined) return <RegimeSummary payload={payload} tag={tag} />;
+  const dims = Object.values(arm.dimensions);
+  const buckets = dims.reduce((n, d) => n + d.buckets.length, 0);
+  return (
+    <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+      nightly cut of {payload.cuts.session ?? "—"}: {String(dims.length)} dimension{dims.length === 1 ? "" : "s"}, {String(buckets)}{" "}
+      bucket{buckets === 1 ? "" : "s"} over {String(arm.sessions)} sessions
+      {payload.stale !== null && ` — older than the ledger, which has ${payload.stale.latestSession}`}
+    </p>
+  );
+}
+
+const REGIME_HELP: CardHelpContent = {
+  title: "Regime cuts",
+  body: (
+    <>
+      <HelpWarn title="A different window">
+        <p>
+          The nightly cut is scoped to the arm&apos;s own era (its latest measurement break) as of the session it was cut. The
+          other cards for this arm read the suite&apos;s evidence window live. The buckets box names the cut&apos;s window and
+          session every time.
+        </p>
+      </HelpWarn>
+      <HelpSection title="What is shown">
+        <p>
+          Each dimension&apos;s single buckets, from the module&apos;s nightly regime-cuts artifact and never recomputed here.
+          The cross-tabs, paired tests and multiplicity live on the regime tab. The writer&apos;s thin and fragile stamps pass
+          through unchanged, and a thin or fragile cell carries no tone.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
+
+/** The panel: one shared fetch of the module's cut (every arm card asks the same query). */
 export function ArmRegime({ module, tag }: { module: RegimeCutsModule; tag: string }) {
   const { data, isLoading } = useRegimeCuts(module);
   const { search } = useLocation();
+  const lb = useOpenParam("an");
+  const box: FliesBox = {
+    id: `${tag}~regime`,
+    kicker: `${tag} › regime`,
+    title: "Regime cuts",
+    tabs: [{ id: "buckets", label: "buckets" }],
+    body: () => (data === undefined ? null : <RegimeSummary payload={data} tag={tag} />),
+  };
+  const hasBuckets = data?.status === "ok" && data.cuts.arms.some((a) => a.arm === armOfTag(tag));
   return (
-    <>
-      <div className="card-subhead">
-        regime{" "}
-        <Link to={`/${module}/regime${search}`} style={{ fontSize: 11, textTransform: "none" }}>
-          full regime cuts ⤢
-        </Link>
-      </div>
+    <Card title="regime" collapseKey={`analysis-${module}-${tag}-regime`} help={REGIME_HELP} flag="different window">
       {isLoading || data === undefined ? (
         <span className="skeleton skeleton-text" style={{ width: "40%" }} />
       ) : (
-        <RegimeSummary payload={data} tag={tag} />
+        <RegimeLine payload={data} tag={tag} />
       )}
-    </>
+      <div className="pf-mores pf-push">
+        {hasBuckets && <BoxOpen lb={lb} id={box.id}>buckets</BoxOpen>}
+        <Link className="pf-more" to={`/${module}/regime${search}`}>
+          full regime cuts <span aria-hidden="true">›</span>
+        </Link>
+      </div>
+      <FliesBoxHost lb={lb} boxes={[box]} />
+    </Card>
   );
 }

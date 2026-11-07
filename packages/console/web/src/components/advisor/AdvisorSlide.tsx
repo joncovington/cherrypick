@@ -7,6 +7,9 @@ import type {
   AdvisorSessionCell,
 } from "@console/shared";
 import { PairTable } from "../../pages/Advisor/AdvisorPage";
+import { Card } from "../DataTable";
+import { Section } from "../Section";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../CardHelp";
 import { normalizeModulePayload } from "../../lib/advisorShape";
 import { gateDistance } from "./experimentStats";
 
@@ -234,20 +237,109 @@ function ConcludedList({ items }: { items: AdvisorExperiment[] }) {
   );
 }
 
+const RUNNING_HELP: CardHelpContent = {
+  title: "A running experiment",
+  body: (
+    <>
+      <HelpSection title="The two bars">
+        <p>
+          The first bar is the sessions the module actually applied the advice, over the experiment&apos;s length. The thin one
+          is calendar sessions since it started, against the stall budget (twice the length).
+        </p>
+      </HelpSection>
+      <HelpSection title="The overlay">
+        <p>The params the advisor admitted, run on the experiment&apos;s own advised arm against its base.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
+const VERDICT_HELP: CardHelpContent = {
+  title: "The comparison",
+  body: (
+    <HelpSection title="As of the last evening pass">
+      <p>
+        The advised arm against its base, as the advisor scored it at its last evening pass, never recomputed here. The gate is
+        what must be met before the comparison counts as measured.
+      </p>
+    </HelpSection>
+  ),
+};
+
+const SESSIONS_HELP: CardHelpContent = {
+  title: "Session by session",
+  body: (
+    <>
+      <HelpSection title="What counts">
+        <p>
+          Only an applied session advances the count. Carried means the params were already frozen on positions the module
+          still held; nothing new was decided and nothing was charged.
+        </p>
+      </HelpSection>
+      <HelpSection title="One strip per experiment">
+        <p>Where several experiments run at once, each is scored on its own arm and has its own strip.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
+const QUEUE_HELP: CardHelpContent = {
+  title: "Up next",
+  body: (
+    <HelpSection title="When a queued experiment starts">
+      <p>
+        A queued experiment activates at an evening pass once the module has a free slot. With no cap declared, every queued
+        experiment activates and runs on its own advised arm.
+      </p>
+    </HelpSection>
+  ),
+};
+
+const TOMORROW_HELP: CardHelpContent = {
+  title: "Tomorrow",
+  body: (
+    <>
+      <HelpWarn title="Advice can be off">
+        <p>
+          When advice is off, or no artifact was written, the module runs its baseline. An admitted param overlays the base for
+          the next session only.
+        </p>
+      </HelpWarn>
+    </>
+  ),
+};
+
+const CONCLUDED_HELP: CardHelpContent = {
+  title: "Recently concluded",
+  body: (
+    <HelpSection title="Verdicts">
+      <p>
+        The advisor&apos;s own status for each, and the model&apos;s recommendation where it gave one. Stalled, underpowered
+        and no-exposure are the advisor&apos;s stamps, not this page&apos;s.
+      </p>
+    </HelpSection>
+  ),
+};
+
 function RunningExperiment({ e, module }: { e: AdvisorActiveExperiment; module: string }) {
   return (
-    <section className="card">
-      <h2>
-        Running on {module}
-        <span className="muted"> · {e.name ?? e.id}</span>
-      </h2>
+    <Card
+      title={
+        <>
+          Running on {module}
+          <span className="muted"> · {e.name ?? e.id}</span>
+        </>
+      }
+      collapseKey={`advisor-${module}-running-${e.id}`}
+      help={RUNNING_HELP}
+    >
       <p className="muted">
         {e.tag ?? `advised:${e.baseProfile}`} against {e.baseProfile}
       </p>
       <p className="muted">{stub(e.hypothesis)}</p>
       <ParamRows params={e.params} />
       <Progress e={e} />
-    </section>
+    </Card>
   );
 }
 
@@ -255,102 +347,103 @@ function RunningExperiment({ e, module }: { e: AdvisorActiveExperiment; module: 
 export function AdvisorSlideBody({ data }: { data: AdvisorModulePayload }) {
   if (!data.storePresent) {
     return (
-      <section className="card">
-        <h2>Advisor</h2>
-        <p className="muted">the advisor has not run yet — nothing to show for {data.module}</p>
-      </section>
+      <div className="pf-layout">
+        <Card title="Advisor" collapseKey={`advisor-${data.module}-none`}>
+          <p className="muted">the advisor has not run yet — nothing to show for {data.module}</p>
+        </Card>
+      </div>
     );
   }
   const active = data.active;
   return (
-    <div className="cards cards-wide">
-      {active.length === 0 ? (
-        <section className="card">
-          <h2>Running on {data.module}</h2>
-          <p className="muted">
-            no active experiment{data.queued.length > 0 ? ` — ${data.queued.length} queued, activates at the next evening pass` : ""}
-          </p>
-        </section>
-      ) : (
-        active.map((e) => <RunningExperiment key={e.id} e={e} module={data.module} />)
-      )}
-
-      <section className="card">
-        <h2>Session by session</h2>
-        <SessionStrips cells={data.sessions} active={active} />
-        <div className="advisor-legend muted">
-          <span>
-            <i className="advisor-cell advisor-cell-enacted" /> applied
-          </span>
-          <span>
-            <i className="advisor-cell advisor-cell-carried" /> carried
-          </span>
-          <span>
-            <i className="advisor-cell advisor-cell-not_enacted" /> not applied
-          </span>
-          <span>
-            <i className="advisor-cell advisor-cell-no_artifact" /> nothing issued
-          </span>
-        </div>
-        <p className="muted">
-          Only an applied session advances the count. Carried means the params were already frozen on
-          positions the module still held; nothing new was decided and nothing was charged.
-          {active.length > 1 && " One strip per experiment: each is scored on its own arm."}
-        </p>
-      </section>
-
-      {active
-        .filter((e) => e.verdict !== null)
-        .map((e) => (
-          <section className="card" key={`verdict-${e.id}`}>
-            <h2>
-              {e.name ?? e.id} against {e.baseProfile}
-              <span className="muted"> · as of the last evening pass</span>
-            </h2>
-            <PairTable pairs={e.verdict!.pairs} />
-            {(() => {
-              const d = e.verdict!.pairs[0]?.delta;
-              const gate = gateDistance(e);
-              return (
-                <p className="muted">
-                  {d !== undefined && <>net delta {money(d["net_pnl"])}</>}
-                  {gate !== null && <> · gate: {gate}</>}
-                  {e.verdict!.noExposure != null && <> · no exposure: {e.verdict!.noExposure.detail}</>}
-                  {e.verdict!.noExposure == null && e.verdict!.underpowered && <> · below the gate, so not yet measured</>}
-                </p>
-              );
-            })()}
-          </section>
-        ))}
-
-      <section className="card">
-        <h2>Tomorrow</h2>
-        <Tomorrow data={data} />
-      </section>
-
-      <section className="card">
-        <h2>Up next</h2>
-        {data.queued.length === 0 ? (
-          <p className="muted">nothing queued</p>
+    <div className="pf-layout">
+      <Section concept="stand" tag="the experiment" question="What is running, and is it working?">
+        {active.length === 0 ? (
+          <Card title={`Running on ${data.module}`} collapseKey={`advisor-${data.module}-running`}>
+            <p className="muted">
+              no active experiment{data.queued.length > 0 ? ` — ${data.queued.length} queued, activates at the next evening pass` : ""}
+            </p>
+          </Card>
         ) : (
-          <ol className="advisor-queue">
-            {data.queued.map((q) => (
-              <li key={q.id}>
-                <strong>{q.name ?? q.id}</strong> <span className="muted">· {stub(q.hypothesis, 140)}</span>
-              </li>
-            ))}
-          </ol>
+          active.map((e) => <RunningExperiment key={e.id} e={e} module={data.module} />)
         )}
-        <p className="muted">
-          A queued experiment activates at an evening pass once the module has a free slot; with no cap declared,
-          every queued experiment activates and runs on its own advised book.
-        </p>
-      </section>
 
-      <section className="card">
-        <h2>Recently concluded</h2>
-        <ConcludedList items={data.concluded} />
-      </section>
+        {active
+          .filter((e) => e.verdict !== null)
+          .map((e) => (
+            <Card
+              key={`verdict-${e.id}`}
+              title={
+                <>
+                  {e.name ?? e.id} against {e.baseProfile}
+                  <span className="muted"> · as of the last evening pass</span>
+                </>
+              }
+              collapseKey={`advisor-${data.module}-verdict-${e.id}`}
+              help={VERDICT_HELP}
+            >
+              <PairTable pairs={e.verdict!.pairs} />
+              {(() => {
+                const d = e.verdict!.pairs[0]?.delta;
+                const gate = gateDistance(e);
+                return (
+                  <p className="muted">
+                    {d !== undefined && <>net delta {money(d["net_pnl"])}</>}
+                    {gate !== null && <> · gate: {gate}</>}
+                    {e.verdict!.noExposure != null && <> · no exposure: {e.verdict!.noExposure.detail}</>}
+                    {e.verdict!.noExposure == null && e.verdict!.underpowered && <> · below the gate, so not yet measured</>}
+                  </p>
+                );
+              })()}
+            </Card>
+          ))}
+      </Section>
+
+      <Section concept="hist" tag="the record" question="Which sessions did the advice apply to?">
+        <Card title="Session by session" collapseKey={`advisor-${data.module}-sessions`} help={SESSIONS_HELP}>
+          <SessionStrips cells={data.sessions} active={active} />
+          <div className="advisor-legend muted">
+            <span>
+              <i className="advisor-cell advisor-cell-enacted" /> applied
+            </span>
+            <span>
+              <i className="advisor-cell advisor-cell-carried" /> carried
+            </span>
+            <span>
+              <i className="advisor-cell advisor-cell-not_enacted" /> not applied
+            </span>
+            <span>
+              <i className="advisor-cell advisor-cell-no_artifact" /> nothing issued
+            </span>
+          </div>
+        </Card>
+      </Section>
+
+      <Section concept="room" tag="next" question="What does the module run next?">
+        <Card title="Tomorrow" collapseKey={`advisor-${data.module}-tomorrow`} help={TOMORROW_HELP}>
+          <Tomorrow data={data} />
+        </Card>
+
+        <Card title="Up next" collapseKey={`advisor-${data.module}-queue`} help={QUEUE_HELP}>
+          {data.queued.length === 0 ? (
+            <p className="muted">nothing queued</p>
+          ) : (
+            <ol className="advisor-queue">
+              {data.queued.map((q) => (
+                <li key={q.id}>
+                  <strong>{q.name ?? q.id}</strong> <span className="muted">· {stub(q.hypothesis, 140)}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </Card>
+      </Section>
+
+      <Section concept="edge" tag="concluded" question="What has it already settled?">
+        <Card title="Recently concluded" collapseKey={`advisor-${data.module}-concluded`} help={CONCLUDED_HELP}>
+          <ConcludedList items={data.concluded} />
+        </Card>
+      </Section>
     </div>
   );
 }
@@ -360,9 +453,9 @@ export function AdvisorSlide({ module }: { module: string }) {
   if (isLoading) return <span className="skeleton skeleton-text" style={{ width: "50%" }} />;
   if (isError || data === undefined)
     return (
-      <section className="card">
+      <Card title="Advisor" isError collapseKey={`advisor-${module}-error`}>
         <p className="pnl-neg">could not read the advisor store</p>
-      </section>
+      </Card>
     );
   return <AdvisorSlideBody data={data} />;
 }
