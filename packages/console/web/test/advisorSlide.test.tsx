@@ -110,6 +110,17 @@ describe("the module's advisor slide", () => {
     expect(html).toContain("flip-buffer-near-control");
   });
 
+  it("asks its questions in sections and keeps the captions behind the ?", () => {
+    const html = text(<AdvisorSlideBody data={payload()} />);
+    for (const q of ["What is running, and is it working?", "Which sessions did the advice apply to?", "What does the module run next?", "What has it already settled?"]) {
+      expect(html).toContain(q);
+    }
+    expect(html).not.toContain("Only an applied session advances the count");
+    expect(html).not.toContain("A queued experiment activates at an evening pass");
+    // The figures stay on the cards.
+    expect(html).toContain("9 of 15 sessions enacted");
+  });
+
   it("renders an honest empty view when nothing runs on the module", () => {
     const html = text(<AdvisorSlideBody data={payload({ active: [], queued: [], sessions: [] })} />);
     expect(html).toContain("no active experiment");

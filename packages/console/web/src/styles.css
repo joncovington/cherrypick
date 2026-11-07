@@ -9832,3 +9832,28 @@ button.chip[aria-pressed][data-hue="special"],
   gap: 0.35rem;
   min-width: 0;
 }
+
+/* redesign: shared-b (analysis: one block per arm, its name and window above its sections) */
+.an-arm {
+  display: grid;
+  gap: 1.1rem;
+  min-width: 0;
+}
+.an-arm-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+  padding: 0.2rem 0.15rem 0;
+  border-top: 1px solid var(--border-strong);
+}
+.an-arm-name {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.an-arm-head p {
+  margin: 0;
+}
+.an-layout {
+  gap: 1.6rem;
+}

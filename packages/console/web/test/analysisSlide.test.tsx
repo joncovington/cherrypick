@@ -1,9 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
+import { MemoryRouter } from "react-router-dom";
 import type { ArmAnalysis, Breakdowns, CapitalReading, DrawdownEpisode, ExecutionReading } from "@console/shared";
-import { ArmCard, BreakdownTables, CapitalTiles, ExecutionTable, WindowLine } from "../src/components/analysis/AnalysisSlide";
+import { ArmCard, BreakdownTables, CapitalTiles, EpisodesTable, ExecutionTable, WindowLine } from "../src/components/analysis/AnalysisSlide";
 
 const text = (node: React.ReactElement) => renderToString(node).replace(/<!--\s*-->/g, "");
+
+/** An arm card reads the URL for its open lightbox, so it renders inside a router. */
+const card = (a: ArmAnalysis) => text(<MemoryRouter><ArmCard module="flies" tag="control" a={a} updatedAt={0} /></MemoryRouter>);
 
 const episode = (over: Partial<DrawdownEpisode> = {}): DrawdownEpisode => ({
   peak_session: "2026-10-01",
@@ -55,36 +59,52 @@ function arm(over: Partial<ArmAnalysis> = {}): ArmAnalysis {
 
 describe("ArmCard", () => {
   it("shows a drawdown as a loss and the session runs beside the trade runs", () => {
-    const html = text(<ArmCard module="flies" tag="control" a={arm()} updatedAt={0} />);
+    const html = card(arm());
     expect(html).toContain("-$60.00");
     expect(html).toContain("22 W / 5 L");
     expect(html).toContain("1 down");
   });
 
   it("names a withheld stress test and draws its figures as dashes, never zero", () => {
-    const html = text(<ArmCard module="flies" tag="control" a={arm()} updatedAt={0} />);
+    const html = card(arm());
     expect(html).toContain("stress test withheld");
     expect(html).toContain("5 sessions, fewer than 20");
     expect(html).not.toContain("$0.00");
   });
 
   it("flags a sign flip and says when fewer winners were removed than asked", () => {
-    const html = text(<ArmCard module="flies" tag="control" a={arm()} updatedAt={0} />);
+    const html = card(arm());
     expect(html).toContain("sign flips");
     expect(html).toContain(" of 2");
   });
 
   it("says how many trades carry the spot fields when some do not", () => {
-    const html = text(<ArmCard module="flies" tag="control" a={arm()} updatedAt={0} />);
+    const html = card(arm());
     expect(html).toContain("18: entry spot");
   });
 
   it("marks an open drawdown as not yet recovered", () => {
     const open = episode({ recovered_session: null, open: true, sessions_recovering: null, days_recovering: null });
-    const html = text(
-      <ArmCard module="flies" tag="control" a={arm({ drawdowns: { count: 1, open, deepest: [open], longest_closed: null } })} updatedAt={0} />,
-    );
-    expect(html).toContain("not yet");
+    expect(text(<EpisodesTable episodes={[open]} />)).toContain("not yet");
+    // The open drawdown's depth is on the card; the episodes table is behind its button.
+    const html = card(arm({ drawdowns: { count: 1, open, deepest: [open], longest_closed: null } }));
+    expect(html).toContain("deepest drawdowns");
+    expect(html).not.toContain("not yet");
+  });
+
+  it("asks its questions in sections and keeps the long tables and the captions out of the card", () => {
+    const html = card(arm({ buckets: breakdowns() }));
+    for (const q of ["How has it run?", "How deep did it fall", "Does the edge survive", "What was known at entry"]) {
+      expect(html).toContain(q);
+    }
+    // The breakdown tables are a lightbox from the card: its summary and one button per cut stay.
+    expect(html).not.toContain("scheduled releases that day");
+    expect(html).toContain("not bucketed");
+    expect(html).toContain(">release<");
+    // The captions are behind the ? ; the amber flag stays beside the title.
+    expect(html).not.toContain("historical associations");
+    expect(html).not.toContain("winners are removed from the result");
+    expect(html).toContain("not predictions");
   });
 });
 
@@ -240,6 +260,15 @@ describe("BreakdownTables", () => {
   it("says when a dimension has nothing to break down, and why", () => {
     const html = text(<BreakdownTables b={breakdowns()} />);
     expect(html).toContain("hour of entry: nothing to break down (40 trades record no entry time)");
+  });
+});
+
+describe("BreakdownTables, one cut", () => {
+  it("draws only the dimension a lightbox tab asks for", () => {
+    const html = text(<BreakdownTables b={breakdowns()} only="weekday" />);
+    expect(html).toContain("day of week");
+    expect(html).not.toContain("scheduled releases that day");
+    expect(html).not.toContain("hour of entry");
   });
 });
 
