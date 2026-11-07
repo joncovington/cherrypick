@@ -235,6 +235,59 @@ export function valueHelp(universe: string | null | undefined, terminal: number 
             beyond, each least stretched first. Open a name for the model.
           </p>
         </HelpSection>
+        <HelpSection title="An example">
+          <p>
+            Three made-up companies. Each one&apos;s best operating margin of the last five fiscal years is 20%, and its best revenue growth
+            12%. The model works back from today&apos;s price to the long-run margin it needs (margin), and separately the first-year growth
+            (growth), every other input held.
+          </p>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th />
+                  <th>price / value</th>
+                  <th>margin</th>
+                  <th>growth</th>
+                  <th>reach</th>
+                  <th>stretch</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>A</td>
+                  <td>$85 / $90</td>
+                  <td>18%</td>
+                  <td>9%</td>
+                  <td>below value</td>
+                  <td>0.90×</td>
+                </tr>
+                <tr>
+                  <td>B</td>
+                  <td>$120 / $90</td>
+                  <td>22%</td>
+                  <td>10%</td>
+                  <td>within history</td>
+                  <td>1.10×</td>
+                </tr>
+                <tr>
+                  <td>C</td>
+                  <td>$150 / $90</td>
+                  <td>24%</td>
+                  <td>18%</td>
+                  <td>beyond history</td>
+                  <td>1.20×</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            <strong>A</strong> trades under its value: the price asks for nothing it has not done. <strong>B</strong> needs a 22% margin, more
+            than its 20% best, so its stretch is 22 ÷ 20 = 1.10×; but 10% growth alone would also do, and it has grown 12%, so its reach is
+            within history. <strong>C</strong> needs either a 24% margin or 18% growth, and has done neither: beyond history, at 24 ÷ 20 =
+            1.20×. Reach asks whether either road is one the company has travelled; stretch measures the margin road alone.
+          </p>
+        </HelpSection>
         <HelpSection title="How the value is made">
           <p>
             Five forecast years from the company's last five fiscal years (growth from the analysts' next-year sales where there is one, faded

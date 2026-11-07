@@ -92,6 +92,9 @@ export interface LiveMeicOpenRow {
   /** Null unless the entry filled, both sides are held, and all four legs have a two-sided quote in
    *  the stream cache under two minutes old. A part-marked condor is no mark. */
   mark: LiveMeicMark | null;
+  /** The row's fees so far (`ic_trades.fees`: the entry's, plus any stop's), whole-position dollars;
+   *  null while unrecorded, and on a working entry, which has paid none. */
+  feesToDate: number | null;
 }
 
 /** Totals over every resolved live row, in the standard's identities. */
