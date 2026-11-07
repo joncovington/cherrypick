@@ -98,13 +98,12 @@ export function runRow(r: BacktestRunListing, hit: StudyHit | undefined, nowMs: 
       <>
         <span className="chip muted">{r.module}</span>
         <span className="chip">{r.window}</span>
-        {r.provisional === true ? <span className="chip chip-warn">provisional</span> : null}
       </>
     ),
     title: hit ? splitTitle(hit.row.title)[0] : r.run_id,
     meta: (
       <>
-        {hit ? <span className={verdictChip(hit.result.summary)}>{hit.result.summary ?? "no verdict word"}</span> : "no study"} {span(r.span)}
+        {r.provisional === true ? <span className="chip chip-warn">provisional</span> : null} {hit ? <span className={verdictChip(hit.result.summary)}>{hit.result.summary ?? "no verdict word"}</span> : "no study"} {span(r.span)}
       </>
     ),
     end: `${fmtCount(r.sessions)} sessions · ${String(arms.length)} arm${arms.length === 1 ? "" : "s"} · ${runAge(r.created_at, nowMs)}`,

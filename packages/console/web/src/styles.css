@@ -9276,7 +9276,7 @@ button.chip[aria-pressed][data-hue="special"],
 .bt-row {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(96px, 0.8fr) minmax(0, 2.2fr) minmax(0, 1.8fr) minmax(0, 1fr) 12px;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(0, 2.2fr) minmax(0, 1.6fr) minmax(0, 1.3fr) 12px;
   gap: 10px;
   align-items: center;
   padding: 8px 12px;
@@ -9335,9 +9335,13 @@ button.chip[aria-pressed][data-hue="special"],
 .bt-row .study-tile-status {
   font-size: 12px;
 }
+.bt-row .q-pos {
+  font-size: 13px;
+  min-width: 1.4em;
+}
 @container trlist (max-width: 640px) {
   .bt-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
       "l e"
       "t t"
@@ -9346,6 +9350,7 @@ button.chip[aria-pressed][data-hue="special"],
   }
   .bt-row-lead {
     grid-area: l;
+    flex-wrap: nowrap;
   }
   .bt-row-end {
     grid-area: e;
