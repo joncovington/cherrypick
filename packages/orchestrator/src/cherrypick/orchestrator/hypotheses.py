@@ -167,7 +167,10 @@ def grid(data) -> dict | None:
 def _result(path: str, read, notes, version=lambda path: None, source: str = "register") -> dict:
     data, mtime = read(path)
     words = verdicts(data) if data is not None else None
-    window, span = (data or {}).get("window"), (data or {}).get("span")
+    # A study may list a trade file (a JSON list) among its results: it is there, and carries no
+    # window, run id or verdict of its own.
+    meta = data if isinstance(data, dict) else {}
+    window, span = meta.get("window"), meta.get("span")
     if isinstance(window, list):
         window, span = None, window
     distinct = sorted({w["verdict"] for w in words or []})
@@ -179,8 +182,8 @@ def _result(path: str, read, notes, version=lambda path: None, source: str = "re
         "modified": mtime,
         "window": window if isinstance(window, str) else None,
         "span": span if isinstance(span, list) and len(span) == 2 else None,
-        "run_id": (data or {}).get("run_id"),
-        "provisional": (data or {}).get("provisional"),
+        "run_id": meta.get("run_id"),
+        "provisional": meta.get("provisional"),
         "verdicts": words,
         "grid": grid(data),
         "summary": None if not distinct else distinct[0] if len(distinct) == 1 else "mixed",

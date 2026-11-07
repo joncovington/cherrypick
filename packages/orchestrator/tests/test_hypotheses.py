@@ -136,6 +136,12 @@ def test_board_joins_results_and_queue_and_groups_rows():
     stale = {"version": 1, "current": 2, "stale": True}
     out = hy.board({"hypotheses": [done]}, [], lambda p: files.get(p, (None, None)), version=lambda p: stale)
     assert [x["version"] for x in out["rows"][0]["results"]] == [stale, None]
+    # A trade file (a JSON list) among the results is present, with no window, run id or verdict.
+    trades = {**done, "results": ["{home}/r/trades.json"]}
+    out = hy.board({"hypotheses": [trades]}, [], lambda p: ([{"pnl": 1.0}], "2026-11-07T17:00:00"))
+    listed = out["rows"][0]["results"][0]
+    assert listed["present"] is True and listed["verdicts"] is None and listed["window"] is None
+    assert listed["run_id"] is None and listed["summary"] is None
     # A retired row closed without a run: finished, no results, never re-tested.
     retired = {**NEW, "id": 11, "study": "item11", "status": "retired", "legacy": True}
     out = hy.board({"hypotheses": [retired]}, [], lambda p: (None, None))
