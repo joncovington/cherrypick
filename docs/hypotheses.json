@@ -2335,6 +2335,49 @@
       "retest": null,
       "retests": [],
       "outcome": "design pass, holdout fail on both arms; the closing fly is closed as specified"
+    },
+    {
+      "id": 59,
+      "study": "item59",
+      "title": "The 45-day IWM condor: 16-delta shorts, 5-delta wings, closed at half its credit or at 21 days",
+      "status": "declared",
+      "legacy": false,
+      "setup": "short-dated-management",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "monthly",
+      "measure": "net per trade in $ at one contract: an IWM condor sold at about 45 days on each monthly cycle, closed at half its credit or at 21 days",
+      "expected": "a positive mean net per trade after the suite's tastytrade costs",
+      "sample": "design: cycles entered 2016-01-01..2021-12-31 (~70 trades); holdout 2022-01-01..2026-11-06 (~57) read only after a design pass; < 50 trades or > 5% without an exit mark = no verdict",
+      "rule": "one-sided t > 2 on trade nets, both design time-halves positive, positive at 1.5x costs; then the holdout with the same checks",
+      "mechanism": "index-ETF implied vol at 45 days sits above what the next three to four weeks deliver; unfiltered, one condor a cycle",
+      "rivals": [
+        {
+          "explanation": "market drift",
+          "check": "put and call verticals' gross reported apart"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "both design time-halves must pass; results by VIX band and year"
+        },
+        {
+          "explanation": "a few trades decide it",
+          "check": "five worst trades reported; bootstrapped drawdown beside a pass"
+        },
+        {
+          "explanation": "optimistic fills",
+          "check": "verdict at the working price both ways; mid and natural reported"
+        },
+        {
+          "explanation": "fees on two four-leg orders",
+          "check": "positive at 1.5x costs"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#59-the-45-day-iwm-condor-16-delta-shorts-5-delta-wings-closed-at-half-its-credit-or-at-21-days",
+      "results": [],
+      "retest": null,
+      "retests": [],
+      "outcome": null
     }
   ],
   "rule_changes": []
