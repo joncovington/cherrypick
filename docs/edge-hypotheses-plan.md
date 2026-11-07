@@ -5211,6 +5211,16 @@ buys it back the session after. Declared before any of its inputs are fetched.*
     results, and implied-against-past moves as a selector is closed for the module's G1 too, if item 31
     finds the same.
 
+- **Result (2026-11-07): fail.** The first run read no trades: the chain reader keyed the store's
+  rights by the stored word and found no straddle (corrected the same day, before any trade was read;
+  the script's `REPLAY_CORRECTIONS`). On the corrected run, `rich` fails the design window on its own
+  net, its paired difference over the control, both time-halves, both name-halves and the cost stress,
+  though it beats the unselected reports. No arm is above zero in the holdout.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item47/`).
+- **What this decides:** the fail branch. Selling single-name report premium through a strangle is
+  closed with the fly and navigator results, and implied-against-past moves as a selector is closed
+  for the module's G1 too: item 31 found the same.
+
 ### 48. The stop of MEIC's live rule: 1.8, 1.9, 2.0 and 2.2 times the credit, filled by the loop or resting at the broker
 
 *Source: the user, 2026-11-02. A quote outage held a live put side unmanaged for 79 minutes, and it

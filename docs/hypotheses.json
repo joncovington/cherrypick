@@ -1769,7 +1769,7 @@
       "id": 47,
       "study": "item47",
       "title": "Selling a report when its implied move is above its past moves: a monthly strangle closed the next day",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "earnings-premium",
       "side": "neutral",
@@ -1807,9 +1807,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#47-selling-a-report-when-its-implied-move-is-above-its-past-moves-a-monthly-strangle-closed-the-next-day",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item47/results.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "the rich arm fails the design window on its own net, its paired difference, both halves and the cost stress, though it does beat the unselected reports; the holdout agrees; selling single-name report premium through a strangle is closed with the fly and navigator results, and implied-against-past moves as a selector is closed for the module's G1 too, item 31 having found the same"
     },
     {
       "id": 48,
