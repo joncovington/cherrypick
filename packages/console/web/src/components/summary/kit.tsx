@@ -172,7 +172,7 @@ export function Gauge({
         <line x1={G.cx} y1={G.cy} x2={nx} y2={ny} className="ts-needle" strokeWidth={2} />
         <circle cx={G.cx} cy={G.cy} r={3.5} className="ts-needle" />
         <text x={8} y={100} className="ts-tick">{tick(min)}</text>
-        <text x={max >= 100 ? 160 : 168} y={100} className="ts-tick">{tick(max)}</text>
+        <text x={172} y={100} textAnchor="end" className="ts-tick">{tick(max)}</text>
       </svg>
       {showUsd ? (
         <div className={`ts-gauge-value ${dollars.amount >= 0 ? "ts-pos" : "ts-neg"}`}>{fmtUsd(dollars.amount)}</div>

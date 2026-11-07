@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { fmtMoney } from "../../components/DataTable";
+import { Card, fmtMoney } from "../../components/DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { AXIS_MUTED } from "../../components/Charts";
 import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
@@ -343,17 +344,49 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
     );
   }
 
+  const asEntered = !live && shown.length > 0;
+  const help: CardHelpContent = {
+    title: "The profit forest",
+    body: (
+      <>
+        {asEntered && (
+          <HelpWarn title="As entered, not as realised">
+            <p>
+              No position is open: a MEIC book resolves entirely at settlement, so this is the day's {data?.tradesToday} trades drawn as
+              entered, every one priced as if it had been held to expiry.{" "}
+              {stopped > 0 && <>{stopped} were stopped and never reached it, </>}
+              {expired} expired. A stopped side came off before expiry and its P&amp;L is not this curve. For an arm that stops, the wings
+              below are the loss its stops existed to prevent rather than one it ran; for an arm that holds to expiry they are real. Each
+              arm's realised figure sits beside it in the legend, and the dashed line is the total
+              {realisedNet !== null && <> at {fmtMoney(realisedNet)}</>}.
+            </p>
+          </HelpWarn>
+        )}
+        <HelpSection title="What is drawn">
+          <p>
+            Expiry payoff, not an intraday mark: nothing here is quoted live. Faint lines are the individual condors behind each arm's
+            aggregate; dashed ticks on the axis are strikes a stop has released back for re-entry.
+            {halfOpen > 0 && (
+              <>
+                {" "}
+                {halfOpen === 1 ? "One condor has" : `${halfOpen} condors have`} had one side stopped: each is drawn as its held side to
+                expiry plus what the stop already booked.
+              </>
+            )}
+          </p>
+        </HelpSection>
+      </>
+    ),
+  };
   return (
-    <section className="card">
-      <div className="panel-head-row">
-        <h2>
-          Payoff at expiry — the profit forest{data?.tradeDate != null ? ` (${data.tradeDate})` : ""}
-          {!live && shown.length > 0 && (
-            <span className="chain-badge chain-badge-short" style={{ marginLeft: "0.5rem" }} title="No position is open: this book resolved at settlement. Shown as ENTERED — the structure the session accumulated, not what any trade realized. A stopped side came off before expiry and its P&L is not this curve.">
-              as entered
-            </span>
-          )}
-        </h2>
+    <Card
+      title={`Payoff at expiry — the profit forest${data?.tradeDate != null ? ` (${data.tradeDate})` : ""}`}
+      className="lv-12"
+      collapseKey="meic-forest"
+      help={help}
+      flag={asEntered ? "as entered" : undefined}
+      controls={
+        <>
         <label className="muted lbl" title={`a minimum window in ${data?.symbol === "XSP" ? "XSP" : "SPX"} points; auto fits the condors drawn and spot`}>
           x width{" "}
           <select className="text-input" value={xwidth} onChange={(e) => setXwidth(e.target.value as (typeof X_WIDTHS)[number])}>
@@ -399,7 +432,9 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
           <input type="checkbox" checked={showNested} onChange={(e) => setShowNested(e.target.checked)} /> show each
           condor
         </label>
-      </div>
+        </>
+      }
+    >
       {isLoading ? (
         <span className="skeleton skeleton-text" style={{ width: "50%" }} />
       ) : shown.length === 0 ? (
@@ -442,36 +477,8 @@ export function MeicForestCard({ mode, scope }: { mode: TradingMode; scope: Meic
               </span>
             ))}
           </div>
-          <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
-            Expiry payoff, not an intraday mark — nothing here is quoted live. Faint lines are the individual condors
-            behind each arm's aggregate; dashed ticks on the axis are strikes a stop has released back for re-entry.
-            {halfOpen > 0 && (
-              <>
-                {" "}
-                {halfOpen === 1 ? "One condor has" : `${halfOpen} condors have`} had one side stopped: each is drawn as
-                its held side to expiry plus what the stop already booked.
-              </>
-            )}
-            {!live && (
-              <>
-                {" "}
-                <strong>No position is open</strong> — a MEIC book resolves entirely at settlement, so this is the
-                day's {data?.tradesToday} trades drawn <strong>as entered</strong>: every one priced as if it had been
-                held to expiry.{" "}
-                {stopped > 0 && (
-                  <>
-                    {stopped} were <strong>stopped</strong> and never reached it,{" "}
-                  </>
-                )}
-                {expired} expired. For an arm that stops, the wings below are the loss its stops existed to prevent
-                rather than one it ran; for an arm that holds to expiry they are real. Which is which is in the
-                legend — each arm's realised figure sits beside it, and the dashed line is the total
-                {realisedNet !== null && <> at {fmtMoney(realisedNet)}</>}.
-              </>
-            )}
-          </p>
         </>
       )}
-    </section>
+    </Card>
   );
 }

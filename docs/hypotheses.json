@@ -2186,7 +2186,7 @@
       "id": 56,
       "study": "item56",
       "title": "The wide wing when its floor allows, else live's 10: item 50's arms composed tick by tick",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "wing-width",
       "side": "neutral",
@@ -2224,9 +2224,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#56-the-wide-wing-when-its-floor-allows-else-lives-10-item-50s-arms-composed-tick-by-tick",
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item56/study-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item56/study-holdout-2025-07-01-2026-10-12.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "provisional: f15 and f20 both pass the design window, beating live-1400 on the same sessions and per dollar of buying power, but neither clears the holdout's t bar though both stay ahead there, so both fail; nothing changes live, and the fallback is the 0DTE rule most worth a reread on the sessions after 2026-10-12 once MEIC validation unlocks"
     },
     {
       "id": 57,

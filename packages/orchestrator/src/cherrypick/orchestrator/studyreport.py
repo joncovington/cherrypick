@@ -66,8 +66,8 @@ MEASURES = (
      "note": "The average per trade taken. It flatters an arm that skips its weaker trades, so read it "
              "beside net per session."},
     {"key": "per_risk", "label": "Return on buying power", "t": None,
-     "note": "Net over the buying power the arm ties up, in %. The dashed line is the baseline. Making "
-             "more dollars by risking more money is not an edge."},
+     "note": "Net over the buying power the arm ties up, in %. The baseline's own figure is drawn as the "
+             "first row, a bar per window. Making more dollars by risking more money is not an edge."},
     {"key": "entry_rate", "label": "Entries per session", "t": None,
      "note": "How often the arm traded: 1.0 is every session, 0.5 half of them; above 1, several "
              "entries a session."},

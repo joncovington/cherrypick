@@ -10,7 +10,7 @@ import { Section } from "../../components/Section";
 import { BoxOpen, FliesBoxHost, type FliesBox } from "./FliesBoxes";
 import { EquityUnderwater } from "../../components/EquityUnderwater";
 import { VoidedNote } from "./VoidedNote";
-import { DailyRiskTiles } from "../../components/performance/DailyRiskTiles";
+import { DailyRiskTiles, dailyRiskFlag, dailyRiskNote } from "../../components/performance/DailyRiskTiles";
 import { TileGrid } from "../../components/performance/TileGrid";
 
 interface Performance {
@@ -593,7 +593,12 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
             reason MEIC's is: the base under the curve is a drawing constant, these arms take one-lot
             entries and do not compound, and this is the most authoritative-looking chart on the page.
             The drawdown is real. */}
-        <Card title="equity and drawdown" collapseKey="flies-equity" help={EQUITY_HELP} flag="1-lot samples">
+        <Card
+          title="equity and drawdown"
+          collapseKey="flies-equity"
+          help={{ title: EQUITY_HELP.title, body: <>{EQUITY_HELP.body}{dailyRiskNote(data?.risk)}</> }}
+          flag={dailyRiskFlag(data?.risk) ?? "1-lot samples"}
+        >
           {isLoading ? (
             <span className="skeleton skeleton-text" style={{ width: "40%" }} />
           ) : (data?.equity.length ?? 0) === 0 ? (
