@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import type { LiveTodayPayload, ManagePayload, ManageTrade } from "@console/shared";
+import { Card } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { ACTION_PRIORITY, earningsInLife } from "./ManagePage";
 
 /**
@@ -77,18 +79,36 @@ const HEAD: Record<TodoGroup, string> = {
   income: "income",
 };
 
+export const WHAT_TO_DO_HELP: CardHelpContent = {
+  title: "What to do today",
+  body: (
+    <>
+      <HelpSection title="The groups">
+        <p>
+          A live loop that needs a person comes first, then the trades the position evaluation says to act on, shorts expiring this
+          week, reports before expiry, and income trades that fit the account&apos;s room.
+        </p>
+      </HelpSection>
+      <HelpSection title="Advice only">
+        <p>Advice only: nothing on this list places or changes an order.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
 /**
  * `evaluated` is the position evaluation's session, or null when it has not been read: then the list
  * holds only the live loops, and says so, so an empty list never reads as "nothing on the account".
  */
-export function WhatToDoList({ items, evaluated }: { items: TodoItem[]; evaluated: string | null }) {
+export function WhatToDoList({ items, evaluated, className }: { items: TodoItem[]; evaluated: string | null; className?: string }) {
   const groups = (Object.keys(HEAD) as TodoGroup[]).filter((g) => items.some((i) => i.group === g));
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>what to do today</h2>
-        <span className="card-asof">{evaluated !== null ? `positions as evaluated ${evaluated}` : "positions not read"}</span>
-      </div>
+    <Card
+      title="what to do today"
+      className={className}
+      help={WHAT_TO_DO_HELP}
+      controls={<span className="card-asof">{evaluated !== null ? `positions as evaluated ${evaluated}` : "positions not read"}</span>}
+    >
       {evaluated === null && (
         <p className="muted">The position evaluation has not been read, so only the live loops are listed.</p>
       )}
@@ -116,7 +136,6 @@ export function WhatToDoList({ items, evaluated }: { items: TodoItem[]; evaluate
           </div>
         ))
       )}
-      <p className="muted" style={{ fontSize: 11, margin: 0 }}>Advice only: nothing on this list places or changes an order.</p>
-    </section>
+    </Card>
   );
 }

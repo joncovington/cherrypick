@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ManageAccount, ManageLevel, ManagePayload, ManageTrade } from "@console/shared";
 import { Card } from "../../components/DataTable";
-import { HelpSection } from "../../components/CardHelp";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { TileGrid, tileCount } from "../../components/performance/TileGrid";
 import { useOverview } from "../../lib/api";
@@ -10,8 +10,10 @@ import { parseSuiteTs } from "../../lib/etTime";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
 import { ActionChip, DetailCard, Kv, Money, Upside, VerdictsHeld, ageText, etStamp, tone } from "./manageParts";
-import { PortfolioBoxes } from "./PortfolioBox";
-import { PortfolioLayout } from "./PortfolioLayout";
+import { PortfolioBoxes, type Box } from "./PortfolioBox";
+import { PortfolioLayout, Section } from "./PortfolioLayout";
+import { LiveBoxes, StateLine } from "./liveParts";
+import { BoxButton } from "./portfolioBoxContext";
 import { PmccCards } from "./PmccCards";
 import { WheelCards } from "./WheelCards";
 import { PositionCards } from "./PositionCards";
@@ -414,20 +416,44 @@ export function AccountTiles({ a, oversize }: { a: ManageAccount; oversize: numb
   return <TileGrid count={tileCount(tiles.length)}>{tiles.map((t) => t.node)}</TileGrid>;
 }
 
+const POSITIONS_HELP: CardHelpContent = {
+  title: "Reading the board",
+  body: (
+    <>
+      <HelpSection title="A card">
+        <p>
+          Each trade&apos;s action from the ruleset, its net P&amp;L, its capture before fees, the days to its nearest short and its order chain.
+          Opening a card shows the whole chain and the evaluation.
+        </p>
+      </HelpSection>
+      <HelpSection title="Sorts">
+        <p>P&amp;L by default; then days to the nearest short, capture, needs action first, and downside. Never credit or yield: nothing tested says either ranks a trade.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
+/** What the evaluation left out, as the state line under the board says it; null when it left nothing out. */
+export function notEvaluatedWords(excluded: ManageAccount["excluded"]): string | null {
+  if (excluded.length === 0) return null;
+  return `not evaluated: ${excluded.map((e) => `${e.underlying} (${e.legs} leg${e.legs === 1 ? "" : "s"}, ${e.reason})`).join("; ")}`;
+}
+
 /** Positions: a card per trade with its broker order chain (PositionCards), sorted by P&L. */
 function PositionsAccount({ a, loading, oversize }: { a: ManageAccount; loading: boolean; oversize: number | null }) {
   // The watchdog's word on the session: out of it, each card shows the last session's close.
   const inSession = useOverview().data?.watchdog?.inSession ?? true;
+  const left = notEvaluatedWords(a.excluded);
   return (
-    <>
+    <div className="pf-layout">
       <AccountTiles a={a} oversize={oversize} />
-      <PositionCards trades={a.trades} loading={loading} inSession={inSession} detail={(t) => <TradeDetail t={t} />} />
-      {a.excluded.length > 0 && (
-        <p className="muted" style={{ margin: 0 }}>
-          not evaluated: {a.excluded.map((e) => `${e.underlying} (${e.legs} leg${e.legs === 1 ? "" : "s"}, ${e.reason})`).join("; ")}
-        </p>
-      )}
-    </>
+      <Section concept="dir" question="What does each trade need?">
+        <Card title="positions" collapseKey={`positions-board-${a.account ?? "?"}`} className="lv-12" help={POSITIONS_HELP}>
+          <PositionCards trades={a.trades} loading={loading} inSession={inSession} detail={(t) => <TradeDetail t={t} />} />
+          {left !== null && <StateLine tone="warn">{left}</StateLine>}
+        </Card>
+      </Section>
+    </div>
   );
 }
 
@@ -506,6 +532,80 @@ export function snapshotLate(snapMs: number | null, nowMs: number, tradingDay: b
   return age > LATE_AFTER_MIN ? age : null;
 }
 
+/** The evaluation header, under its question on the positions tab (the other tabs draw it bare). */
+function EvalHead({ card, wrap }: { card: ReactNode; wrap: boolean }) {
+  if (!wrap) return <>{card}</>;
+  return (
+    <div className="pf-layout">
+      <Section concept="stand" question="Is the reading current?">
+        {card}
+      </Section>
+    </div>
+  );
+}
+
+function evalHelp(view: keyof typeof VIEW_TITLE): CardHelpContent {
+  return {
+    title: "Reading the evaluation",
+    body: (
+      <>
+        <HelpSection title="What this is">
+          <p>
+            Manage&apos;s evaluation of every trade in the account against the ruleset, every 30 minutes from 10:00 to 16:35 ET. Advice only:
+            marks are mids, and nothing here places an order.
+          </p>
+        </HelpSection>
+        <HelpSection title="The money">
+          <p>{VIEW_MONEY[view][0]!.toUpperCase() + VIEW_MONEY[view].slice(1)}.</p>
+        </HelpSection>
+      </>
+    ),
+  };
+}
+
+/** The ruleset as a lightbox (Live → positions): each setting on a line, then the raw JSON. */
+function flattenRules(v: unknown, path = ""): Array<[string, string]> {
+  if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+    return Object.entries(v as Record<string, unknown>).flatMap(([k, x]) => flattenRules(x, path === "" ? k : `${path}.${k}`));
+  }
+  return [[path, Array.isArray(v) ? JSON.stringify(v) : String(v)]];
+}
+
+export function rulesetBox(ruleset: string | null | undefined, rules: Record<string, unknown> | null | undefined): Box {
+  return {
+    id: "ruleset",
+    kicker: "position evaluation ›",
+    title: `Ruleset ${ruleset ?? "—"}`,
+    tabs: [
+      { id: "rules", label: "rules" },
+      { id: "raw", label: "raw" },
+    ],
+    body: (tab) =>
+      !rules ? (
+        <p className="muted">—</p>
+      ) : tab === "raw" ? (
+        <pre className="pf-ruleset">{JSON.stringify(rules, null, 2)}</pre>
+      ) : (
+        <table className="data-table lv-rules">
+          <thead>
+            <tr>
+              <th>setting</th>
+              <th>value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {flattenRules(rules).map(([k, x]) => (
+              <tr key={k}>
+                <td>{k}</td>
+                <td>{x}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ),
+  };
+}
+
 /**
  * The four tabs read one evaluation file (2026-10-18: split from the single `manage` tab, whose dozen
  * account cards had buried the action list; 2026-10-20: the wheel, then the PMCCs). Each keeps the
@@ -556,30 +656,24 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
 
   return (
     <LiveMarksContext.Provider value={wantLive && live?.payload.session === data?.session ? live : null}>
+    <LiveBoxes boxes={view === "positions" ? [rulesetBox(data?.ruleset, data?.rules)] : []}>
     <div className="view-fade" style={{ display: "grid", gap: "1rem" }}>
       {/* The card's "as of" is the snapshot's time, not the browser's last poll: the poll re-reads
           the same file every minute, and its clock said nothing about how old the marks were. */}
+      <EvalHead
+        wrap={view === "positions"}
+        card={
       <Card
         title={title}
         updatedAt={snapMs ?? undefined}
         isError={isError}
-        controls={picker}
-        help={{
-          title: "Reading the evaluation",
-          body: (
-            <>
-              <HelpSection title="What this is">
-                <p>
-                  Manage's evaluation of every trade in the account against the ruleset, every 30 minutes from 10:00 to 16:35 ET. Advice
-                  only: marks are mids, and nothing here places an order.
-                </p>
-              </HelpSection>
-              <HelpSection title="The money">
-                <p>{VIEW_MONEY[view]}.</p>
-              </HelpSection>
-            </>
-          ),
-        }}
+        help={evalHelp(view)}
+        controls={
+          <>
+            {picker}
+            <BoxButton id="ruleset">ruleset</BoxButton>
+          </>
+        }
       >
         <p className="muted" style={{ margin: 0 }}>
           {data?.session ?? "…"} · snapshot {etStamp(data?.snapshotGeneratedAt ?? null) ?? data?.snapshotGeneratedAt ?? "—"}
@@ -633,6 +727,8 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
           </p>
         ))}
       </Card>
+        }
+      />
       <VerdictsHeld.Provider value={data?.early ? (data.early.verdictsFrom ?? "10:00") : null}>
         {(data?.accounts ?? []).map((a) =>
           view === "positions" ? (
@@ -646,14 +742,8 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
           ),
         )}
       </VerdictsHeld.Provider>
-      {view === "positions" && (
-        <Card title="ruleset" collapseKey="manage-ruleset" defaultCollapsed>
-          <pre style={{ margin: 0, fontSize: "0.8rem", whiteSpace: "pre-wrap" }}>
-            {data?.rules ? JSON.stringify(data.rules, null, 2) : "—"}
-          </pre>
-        </Card>
-      )}
     </div>
+    </LiveBoxes>
     </LiveMarksContext.Provider>
   );
 }

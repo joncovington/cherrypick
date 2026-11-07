@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ExecutionModule, ExecutionWeek, SliceCell, SliceDimensionRead, SliceReport } from "@console/shared";
-import { ExecutionCard, executionCaption, gapLine, overrideLine, tradesCell, windowLine } from "../src/pages/Live/LiveExecution";
+import { ExecutionBody, executionCaption, gapLine, overrideLine, tradesCell, windowLine } from "../src/pages/Live/LiveExecution";
 import { dimensionLabel, dimensionSentence, fmtCi, fmtMean, fmtShare, overallSentence, placeboSentence } from "../src/pages/Compare/SlicesTab";
 
 const week = (over: Partial<ExecutionWeek>): ExecutionWeek => ({
@@ -45,13 +45,13 @@ describe("the execution card's lines", () => {
     expect(gapLine({ ...m, gap: null })).toBeNull();
   });
 
-  it("on meic's tab, says which sessions its gap counts beside the condor-by-condor card", () => {
+  it("in meic's lightbox, says which sessions its gap counts beside the condor-by-condor card", () => {
     const m: ExecutionModule = { module: "meic", ok: true, reason: null, mirror: "live-shadow", weeks: [week({ trades: 2 })], gap: null, window: null };
-    const html = renderToString(<ExecutionCard m={m} />);
-    expect(html).toContain("execution by week — paper mirror live-shadow");
+    const html = renderToString(<ExecutionBody m={m} />).replace(/<!-- -->/g, "");
+    expect(html).toContain("paper mirror live-shadow");
     expect(executionCaption(m)).toContain("over every session live was working, so it also counts paper's entries live missed");
-    expect(executionCaption(m)).toContain("live vs paper above pairs only the condors both sides took");
-    const none = renderToString(<ExecutionCard m={{ ...m, ok: false, reason: "no live ledger" }} />);
+    expect(executionCaption(m)).toContain("the live vs paper card pairs only the condors both sides took");
+    const none = renderToString(<ExecutionBody m={{ ...m, ok: false, reason: "no live ledger" }} />);
     expect(none).toContain("no live ledger");
   });
 });

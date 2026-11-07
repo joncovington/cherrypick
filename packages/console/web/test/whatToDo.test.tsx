@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { LiveTodayPayload, ManagePayload, ManageTrade } from "@console/shared";
-import { WhatToDoList, todoList } from "../src/pages/Live/WhatToDo";
+import { WHAT_TO_DO_HELP, WhatToDoList, todoList } from "../src/pages/Live/WhatToDo";
 
 /**
  * What to do today (2026-10-30, docs/console-review-plan.md batch 5): one list from the live loops'
@@ -86,7 +86,8 @@ describe("WhatToDoList", () => {
     expect(render([], "2026-10-30")).toContain("no position has an action");
   });
 
-  it("says it is advice only", () => {
-    expect(render([], "2026-10-30")).toContain("nothing on this list places or changes an order");
+  it("says it is advice only, behind the card's ? rather than in its body", () => {
+    expect(render([], "2026-10-30")).not.toContain("places or changes an order");
+    expect(renderToString(<>{WHAT_TO_DO_HELP.body}</>)).toContain("nothing on this list places or changes an order");
   });
 });

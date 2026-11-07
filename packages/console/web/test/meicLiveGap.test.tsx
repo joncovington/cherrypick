@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { MeicLiveGapPayload, MeicLiveGapSide } from "@console/shared";
-import { MeicLiveGapView } from "../src/pages/Live/MeicLiveGap";
+import { MeicLiveGapView, MeicLivePairs } from "../src/pages/Live/MeicLiveGap";
 
 /**
  * MEIC live against paper, the card (docs/console-review-plan.md batch 5): the reader's pairs and
@@ -51,8 +51,17 @@ describe("MeicLiveGapView", () => {
     expect(html).toContain("paper traded 1 condor live sat out ($175.00)");
   });
 
-  it("marks a session live did not trade, and shows each side's condor", () => {
+  it("the card is the summary: the pair-by-pair table waits in its lightbox", () => {
     const html = render(payload());
+    expect(html).not.toContain("not traded");
+    expect(html).not.toContain("<table");
+    expect(html).toContain("paired, not pooled");
+  });
+
+  it("marks a session live did not trade, and shows each side's condor", () => {
+    const html = renderToString(<MeicLivePairs d={payload()} />)
+      .replace(/<!-- -->/g, "")
+      .replace(/&#x27;/g, "'");
     expect(html).toMatch(/data-session="2026-10-21"[^>]*>|class="muted" data-session="2026-10-21"/);
     expect(html).toContain("not traded");
     expect(html).toContain("SPX 7600/7650 @ 1.62 · expired");
