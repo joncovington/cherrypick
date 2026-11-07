@@ -3,7 +3,8 @@ import type { ManageBpLevel, ManageCandidate, ManageCandidates, ManageTimeSpread
 import { Card } from "../../components/DataTable";
 import { PremiumSlider, useMinPremium } from "../../components/PremiumSlider";
 import { fmtMoney } from "../../lib/format";
-import { TimeSpreadsBody } from "./TimeSpreadsCard";
+import { TimeSpreadsBody, timeSpreadsHelp } from "./TimeSpreadsCard";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { TradeCards, candidateModel } from "./TradeCard";
 
 /**
@@ -306,7 +307,9 @@ export function perTradeCap(caps: ManageCandidates["caps"] | undefined, netLiq: 
   return share === null || netLiq === null ? null : share * netLiq;
 }
 
-function IncomeBody({ l, netLiq }: { l: IncomeList; netLiq: number | null }) {
+/** The income list. `captions` false where the card's ? holds the explanation (`incomeHelp`); the
+ *  ex-earnings line still shows, since it says what today's list is. */
+function IncomeBody({ l, netLiq, captions = true }: { l: IncomeList; netLiq: number | null; captions?: boolean }) {
   const { c, listed, whole } = l;
   const ex = whole.exEarnings;
   const excluded = Object.entries(c.excluded)
@@ -318,6 +321,8 @@ function IncomeBody({ l, netLiq }: { l: IncomeList; netLiq: number | null }) {
         <p className="muted">{c.error}</p>
       ) : (
         <>
+          {captions ? (
+          <>
           <p className="muted pf-caption" style={{ marginTop: 0 }}>
             from our own universe ({c.names ?? "—"} tradable names) on the cycle monthly, priced at mid from the {c.sourceSession ?? "—"}{" "}
             afternoon quotes: re-quote before sending · sized for {BASIS[c.accountBasis ?? ""] ?? "an account of unknown kind"}
@@ -330,6 +335,12 @@ function IncomeBody({ l, netLiq }: { l: IncomeList; netLiq: number | null }) {
             closing at half the credit did worse than holding. Listed by symbol, never ranked. Call spreads are off: short
             delta comes from the hedge when the book needs it.
           </p>
+          </>
+          ) : listed !== whole && ex ? (
+            <p className="muted pf-caption" style={{ marginTop: 0 }}>
+              ex earnings: {fmtMoney(ex.dollars)} of buying power treated as free ({ex.trades.join(", ")})
+            </p>
+          ) : null}
           {c.fits.length > 0 ? (
             <FitCards rows={c.fits} capDollars={perTradeCap(c.caps, netLiq)} />
           ) : (
@@ -346,12 +357,14 @@ function IncomeBody({ l, netLiq }: { l: IncomeList; netLiq: number | null }) {
           <TooBig rows={c.tooBig} total={c.tooBigTotal} />
         </>
       )}
+      {captions ? (
       <p className="muted pf-caption">
         caps: one trade's risk{capPct(c.caps?.perTradeRiskPct)} of net liq · a short put's strike
         {capPct(c.caps?.notionalPerNamePct)} of net liq ({c.accountBasis === "cash" ? "cash" : "margin"}) · buying power under
         the VIX cap · delta in band · theta under its ceiling · no name over{capPct(c.caps?.maxNameThetaShare) || " its share"} of
         the theta the account may carry. Retail heuristics, modelled at mid: nothing here is placed.
       </p>
+      ) : null}
     </>
   );
 }
@@ -385,6 +398,8 @@ export function AddingTradesCard({ c, t, netLiq }: { c: ManageCandidates | null;
   return (
     <Card
       title="adding trades"
+      help={tab === "income" && l ? incomeHelp(l.c) : t ? timeSpreadsHelp(t) : undefined}
+      flag="no tested edge"
       controls={
         <>
           <span className="mode-toggle" role="group" aria-label="list">
@@ -395,7 +410,61 @@ export function AddingTradesCard({ c, t, netLiq }: { c: ManageCandidates | null;
         </>
       }
     >
-      {tab === "income" && l ? <IncomeBody l={l} netLiq={netLiq} /> : t ? <TimeSpreadsBody t={t} capDollars={perTradeCap(c?.caps, netLiq)} /> : null}
+      {tab === "income" && l ? (
+        <IncomeBody l={l} netLiq={netLiq} captions={false} />
+      ) : t ? (
+        <TimeSpreadsBody t={t} capDollars={perTradeCap(c?.caps, netLiq)} captions={false} />
+      ) : null}
     </Card>
   );
+}
+function capitalised(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** The income list's explanation, behind the adding-trades card's ? on its income tab. */
+export function incomeHelp(c: ManageCandidates): CardHelpContent {
+  const left = Object.entries(c.excluded).map(([why, n]) => `${n} ${why}`);
+  return {
+    title: "Where these trades come from",
+    body: (
+      <>
+        <HelpWarn title="No tested edge">
+          <p>
+            The 2026-10 credit-spread studies found no short strike, direction signal or exit that earns after costs. A put spread short
+            near 0.20 delta, long near 0.10, held to expiry was the least bad, and closing at half the credit did worse than holding.
+          </p>
+        </HelpWarn>
+        <HelpSection title="Where they come from">
+          <p>
+            Our own universe ({c.names ?? "—"} tradable names) on the cycle monthly, priced at mid from the {c.sourceSession ?? "—"}{" "}
+            afternoon quotes. Re-quote before sending.
+          </p>
+        </HelpSection>
+        <HelpSection title="Sized for">
+          <p>{capitalised(BASIS[c.accountBasis ?? ""] ?? "an account of unknown kind")}.</p>
+        </HelpSection>
+        {left.length > 0 ? (
+          <HelpSection title="Left out">
+            <ul>
+              {left.map((x) => (
+                <li key={x}>{x}</li>
+              ))}
+            </ul>
+          </HelpSection>
+        ) : null}
+        <HelpSection title="Caps">
+          <p>
+            One trade's risk{capPct(c.caps?.perTradeRiskPct)} of net liq, a short put's strike{capPct(c.caps?.notionalPerNamePct)} of net liq,
+            buying power under the VIX cap, delta in band, theta under its ceiling, and no name over
+            {capPct(c.caps?.maxNameThetaShare) || " its share"} of the theta the account may carry. Retail heuristics, modelled at mid:
+            nothing here is placed.
+          </p>
+        </HelpSection>
+        <HelpSection title="How they are listed">
+          <p>By symbol, never ranked. Call spreads are off: short delta comes from the hedge when the book needs it.</p>
+        </HelpSection>
+      </>
+    ),
+  };
 }

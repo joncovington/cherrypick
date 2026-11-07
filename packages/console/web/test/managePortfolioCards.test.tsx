@@ -3,9 +3,10 @@ import { renderToString } from "react-dom/server";
 import type { ReactElement } from "react";
 import type { ManageAccount, ManageCandidate, ManageCandidateRoom, ManageCandidates, ManagePortfolio } from "@console/shared";
 import { AddingTradesCard, IncomeCard, netPrice } from "../src/pages/Live/IncomeCard";
-import { BandDial, BrokerCheckBody, ContributionBars, HedgeBody, placesApart } from "../src/pages/Live/PortfolioCards";
+import { BandDial, BrokerCheckBody, ContributionBars, HedgeBody, guidanceHelp, placesApart } from "../src/pages/Live/PortfolioCards";
+import { incomeHelp } from "../src/pages/Live/IncomeCard";
 import { PortfolioLayout } from "../src/pages/Live/PortfolioLayout";
-import { BuyingPowerCard, LadderCard, RiskGraphCard, RiskMatrixCard, ScenarioCards } from "../src/pages/Live/ScenarioCards";
+import { BuyingPowerCard, LadderCard, RiskGraphCard, RiskMatrixCard, ScenarioCards, matrixHelp } from "../src/pages/Live/ScenarioCards";
 import { inView, tables } from "./viewTables";
 import { writePref } from "../src/lib/prefs";
 
@@ -249,12 +250,19 @@ describe("the portfolio layout", () => {
     expect(html).not.toContain("+0.3<"); // never a share printed as a signed number
   });
 
-  it("states the ruleset's own confidence in the caption", () => {
-    const at55 = cards(reading({ ruleConfidence: { low: 55, high: 55 } }));
-    expect(at55).toContain("retail heuristics at confidence 55");
+  it("states the ruleset's own confidence behind the guidance's ?, and keeps the amber flag on the card", () => {
+    const help = (r: ManagePortfolio) => render(<>{guidanceHelp(r).body}</>);
+    const at55 = help(reading({ ruleConfidence: { low: 55, high: 55 } }));
+    expect(at55).toContain("Retail heuristics at confidence 55");
     expect(at55).not.toContain("confidence 40:");
-    expect(cards(reading({ ruleConfidence: { low: 35, high: 40 } }))).toContain("at confidence 35–40");
-    expect(cards(reading({ ruleConfidence: null }))).toContain("retail heuristics: no published evidence");
+    expect(help(reading({ ruleConfidence: { low: 35, high: 40 } }))).toContain("at confidence 35–40");
+    expect(help(reading({ ruleConfidence: null }))).toContain("Retail heuristics: no published evidence");
+    // On the card: the ? and the flag, and none of the explanation.
+    const html = cards(reading());
+    expect(html).toContain('aria-label="About portfolio guidance"');
+    expect(html).toContain('class="help-flag"');
+    expect(html).toContain("no published evidence</button>");
+    expect(html).not.toContain("Retail heuristics");
   });
 
   it("draws long and short delta without a sign tone", () => {
@@ -361,7 +369,11 @@ describe("ScenarioCards", () => {
     expect(html).toContain("pf-matrix-origin");
     expect(html).toContain("var(--neg)");
     expect(html).toContain("-$1,437");
-    expect(html).toContain("scaled to each leg");
+    // How the IV rows are weighted is behind the ?.
+    expect(html).not.toContain("scaled to each leg");
+    const s = reading().scenarios!;
+    const h = { horizonDays: 0, windowDays: null, matrix: s.matrix, realistic: null };
+    expect(render(<>{matrixHelp(s, h, null, false).body}</>)).toContain("scaled to each leg");
   });
 
   it("draws one line per horizon with a hover column per move", () => {
@@ -892,5 +904,27 @@ describe("the portfolio tab, simple and detail", () => {
     // A time spread's theta and profits are one unit's dollars (TimeSpreadTable), not per share.
     expect(html).toContain("theta +$3.00 per day");
     expect(html).toMatch(/pos-card-pnl pnl-neg">[-−]\$120\.00</); // the debit for one unit: 1.20 a share
+  });
+});
+
+describe("card help: the explanation behind the ?", () => {
+  it("draws the adding-trades card with its ? and amber flag, and its explanation only in the help", () => {
+    const c = income();
+    const html = render(<AddingTradesCard c={c} t={null} netLiq={10000} />);
+    expect(html).toContain('aria-label="About adding trades"');
+    expect(html).toContain("no tested edge</button>");
+    expect(html).not.toContain("No tested edge.");
+    expect(html).not.toContain("re-quote before sending ·");
+    const help = render(<>{incomeHelp(c).body}</>);
+    expect(help).toContain("No tested edge");
+    expect(help).toContain("458 tradable names");
+    expect(help).toContain("120 earnings inside the trade");
+    expect(help).toContain("One trade&#x27;s risk 3% of net liq");
+  });
+
+  it("keeps the standalone income card's captions, where there is no ?", () => {
+    const html = render(<IncomeCard c={income()} />);
+    expect(html).toContain("No tested edge.");
+    expect(html).not.toContain("help-q");
   });
 });

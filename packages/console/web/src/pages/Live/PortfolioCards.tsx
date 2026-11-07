@@ -10,6 +10,7 @@ import { limitChip, limitText, limitValue } from "./LimitsCard";
 import { RiskGraph } from "./ScenarioCards";
 import { TradeCards, hedgeModel } from "./TradeCard";
 import { BoxButton, BoxButtons } from "./portfolioBoxContext";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 /**
  * The account read as one book (packages/manage `portfolio.py`), as cards: a dial for beta-weighted
  * delta against its band, meters for theta and the break-even move, the stress line, where the delta
@@ -170,7 +171,7 @@ export function IncomeParentCard({ p, premium }: { p: ManagePortfolio; premium: 
   const target = premium?.target ?? null;
   const ratio = target?.ratio ?? null;
   return (
-    <Card title="income" className="pf-cq" controls={band && <BandChip inside={band.inside} />}>
+    <Card title="income" className="pf-cq" help={INCOME_HELP} controls={band && <BandChip inside={band.inside} />}>
       <DialBeside
         dial={
           pctBand ? (
@@ -199,8 +200,7 @@ export function IncomeParentCard({ p, premium }: { p: ManagePortfolio; premium: 
           {p.thetaExFront !== null && p.frontDte !== null
             ? `${fmtMoney(p.thetaExFront)} per day without legs ${p.frontDte} days or less from expiry`
             : `${fmtMoney(p.theta)} per day`}{" "}
-          · band {pctOf(band?.low ?? null, places)}–{pctOf(band?.high ?? null, places)} · theta is paid for by gamma, so more is not
-          more edge
+          · band {pctOf(band?.low ?? null, places)}–{pctOf(band?.high ?? null, places)}
         </p>
       </DialBeside>
       <BoxButtons>
@@ -220,7 +220,7 @@ export function DirectionCard({ p }: { p: ManagePortfolio }) {
   const places = band ? placesApart(band.value, [band.low, band.high], 1) : 1;
   const first = p.hedges?.suggestions.find((s) => !s.error) ?? null;
   return (
-    <Card title="direction" className="pf-cq" controls={band && <BandChip inside={band.inside} />}>
+    <Card title="direction" className="pf-cq" help={directionHelp(p)} controls={band && <BandChip inside={band.inside} />}>
       <DialBeside
         dial={
           band ? (
@@ -245,10 +245,6 @@ export function DirectionCard({ p }: { p: ManagePortfolio }) {
             </span>
           </p>
         ) : null}
-        <p className="muted pf-caption">
-          beta-weighted, in {p.benchmark ?? "SPY"} shares · band{" "}
-          {band?.basis === "theta" ? "scaled by theta" : "scaled by net liq (its floor: too little theta to scale by)"} · the broker's beta
-        </p>
       </DialBeside>
       <BoxButtons>
         <BoxButton id="overTime">over time</BoxButton>
@@ -319,12 +315,11 @@ export function StressCard({ p }: { p: ManagePortfolio }) {
     ...framing.map((f) => f.node),
   ].slice(0, 6);
   return (
-    <Card title="if the market moves" className="pf-cq">
+    <Card title="if the market moves" className="pf-cq" help={STRESS_HELP}>
       <div className="pf-stress">
         <div className={`pf-tiles pf-tiles-${tiles.length}`}>{tiles}</div>
         {p.scenarios ? <RiskGraph s={p.scenarios} benchmark={p.benchmark ?? "SPY"} spot={p.benchmarkSpot} small /> : null}
       </div>
-      <p className="muted pf-caption">modelled repricing at each name's beta, not a forecast</p>
       <BoxButtons>
         <BoxButton id="graph">risk graph</BoxButton>
       </BoxButtons>
@@ -372,7 +367,7 @@ export function ContributionCard({ p, figure }: { p: ManagePortfolio; figure: "b
   const c = p.brokerCheck;
   const gap = c ? (figure === "bwd" ? (c.bwdGap === null ? null : `${signed(c.bwdGap)} sh`) : c.thetaGap === null ? null : `${fmtCash(c.thetaGap)}/day`) : null;
   return (
-    <Card title={figure === "bwd" ? "where the delta comes from" : "where the theta comes from"}>
+    <Card title={figure === "bwd" ? "where the delta comes from" : "where the theta comes from"} help={contributionHelp(figure)}>
       <ContributionBars p={p} figure={figure} />
       <BoxButtons>
         <BoxButton id={figure === "bwd" ? "deltaAll" : "thetaAll"}>every name</BoxButton>
@@ -517,7 +512,7 @@ function confidenceText(c: ManagePortfolio["ruleConfidence"]): string {
 
 export function GuidanceCard({ p }: { p: ManagePortfolio }) {
   return (
-    <Card title="portfolio guidance">
+    <Card title="portfolio guidance" help={guidanceHelp(p)} flag="no published evidence">
       {p.guidance.length === 0 ? (
         <p className="muted">nothing outside its band today</p>
       ) : (
@@ -532,9 +527,6 @@ export function GuidanceCard({ p }: { p: ManagePortfolio }) {
           partial: {[...p.unmodelledLegs.map((l) => `${l} (not modelled)`), ...p.noBeta.map((u) => `${u} (no beta)`)].join(", ") || "no benchmark price"}
         </p>
       )}
-      <p className="muted pf-caption">
-        retail heuristics{confidenceText(p.ruleConfidence)}: no published evidence stands behind these bands
-      </p>
       <BoxButtons>
         <BoxButton id="hedge">a hedge, sized</BoxButton>
       </BoxButtons>
@@ -579,7 +571,7 @@ export function RoomCard({ p, limits }: { p: ManagePortfolio; limits: ManageLimi
   const short = (v: number) => `${Math.round(v)}`;
   const rows = (limits?.rows ?? []).filter((r) => r.id !== "buying_power");
   return (
-    <Card title="room to act" className="pf-cq" controls={band && <BandChip inside={band.inside} />}>
+    <Card title="room to act" className="pf-cq" help={ROOM_HELP} controls={band && <BandChip inside={band.inside} />}>
       <DialBeside
         dial={
           band && band.high !== null ? (
@@ -606,7 +598,6 @@ export function RoomCard({ p, limits }: { p: ManagePortfolio; limits: ManageLimi
             </li>
           ))}
         </ul>
-        <p className="muted pf-caption">the cap rises with VIX, since premium is richer · less room means less to adjust with when the market moves</p>
       </DialBeside>
       <BoxButtons>
         <BoxButton id="overTime">over time</BoxButton>
@@ -615,3 +606,127 @@ export function RoomCard({ p, limits }: { p: ManagePortfolio; limits: ManageLimi
     </Card>
   );
 }
+
+/* ---------------------------------------------------------------- each card's help (behind its ?) */
+
+export const INCOME_HELP: CardHelpContent = {
+  title: "Reading income",
+  body: (
+    <>
+      <HelpSection title="The dial">
+        <p>
+          Theta as a share of net liq per day, against the theta band. The band reads theta without the legs about to expire, so a
+          leg's last days do not make the book look better paid than it is.
+        </p>
+      </HelpSection>
+      <HelpSection title="The target">
+        <p>Theta against the premium pace's target, a share of net liq per day. The months collected and kept are under premium by month.</p>
+      </HelpSection>
+      <HelpSection title="More is not more edge">
+        <p>Theta is paid for by gamma: a book earning more per day is also short more movement.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
+/** Direction's help, naming what its band is scaled by today. */
+export function directionHelp(p: ManagePortfolio): CardHelpContent {
+  const basis = p.bands?.delta.basis ?? null;
+  return {
+    title: "Reading direction",
+    body: (
+      <>
+        <HelpSection title="The dial">
+          <p>
+            Beta-weighted delta: each position's delta times its name's beta, in {p.benchmark ?? "SPY"} shares, using the broker's beta.
+            Long and short carry no colour, since neither is a verdict.
+          </p>
+        </HelpSection>
+        <HelpSection title="The band">
+          <p>
+            {basis === "theta"
+              ? "Scaled by theta, so a book paid more may lean further."
+              : "Scaled by net liq: its floor, used when there is too little theta to scale by."}{" "}
+            Amber comes only from manage's own in/out flag, never from where the needle sits.
+          </p>
+        </HelpSection>
+        <HelpSection title="The hedge line">
+          <p>While delta is outside its band, manage sizes a hedge; its headline shows here and the cards open under a hedge, sized.</p>
+        </HelpSection>
+      </>
+    ),
+  };
+}
+
+export const STRESS_HELP: CardHelpContent = {
+  title: "Reading if the market moves",
+  body: (
+    <>
+      <HelpSection title="The shocks">
+        <p>The whole book repriced with the benchmark down and up, each name moved by its beta, its IV and time held still. A model, not a forecast.</p>
+      </HelpSection>
+      <HelpSection title="Break-even move">
+        <p>The move in a day at which a day's theta is gone (short gamma), or that the book needs to earn its theta back (long gamma). Hover it for the implied and realised moves.</p>
+      </HelpSection>
+      <HelpSection title="The graph">
+        <p>The book's P&L across moves, now and at the nearest expiry. The full graph, with every figure on hover, is under risk graph.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
+export function contributionHelp(figure: "bwd" | "theta"): CardHelpContent {
+  return {
+    title: figure === "bwd" ? "Where the delta comes from" : "Where the theta comes from",
+    body: (
+      <>
+        <HelpSection title="The bars">
+          <p>
+            {figure === "bwd"
+              ? "Each name's beta-weighted delta, biggest first. A ⚠ marks a name whose broker beta disagrees with its own correlation, so its delta may be misstated."
+              : "Each name's theta per day, biggest first, without the legs about to expire."}
+          </p>
+        </HelpSection>
+        <HelpSection title="Others">
+          <p>The names past the first five are summed into one row, so the rows add up to the book. Every name opens under every name.</p>
+        </HelpSection>
+        <HelpSection title="Against the broker's model">
+          <p>Our figures beside the same sums on the broker's own greeks; its button carries the gap.</p>
+        </HelpSection>
+      </>
+    ),
+  };
+}
+
+export function guidanceHelp(p: ManagePortfolio): CardHelpContent {
+  return {
+    title: "Reading the guidance",
+    body: (
+      <>
+        <HelpWarn title="No published evidence">
+          <p>Retail heuristics{confidenceText(p.ruleConfidence)}: no published evidence stands behind these bands.</p>
+        </HelpWarn>
+        <HelpSection title="Each item">
+          <p>A portfolio rule the book is outside of today: its reason, the rule's confidence, and the names driving it in each figure's own unit.</p>
+        </HelpSection>
+      </>
+    ),
+  };
+}
+
+export const ROOM_HELP: CardHelpContent = {
+  title: "Reading room to act",
+  body: (
+    <>
+      <HelpSection title="The dial">
+        <p>
+          Buying power used as a share of net liq, against a cap that rises with VIX, since premium is richer then. Less room means less
+          to adjust with when the market moves.
+        </p>
+      </HelpSection>
+      <HelpSection title="Your limits">
+        <p>Each measure beside the limit it is judged against, and manage's word on it. The full list and the ruleset open under your limits and ruleset.</p>
+      </HelpSection>
+    </>
+  ),
+};
