@@ -121,7 +121,7 @@ export function incomeModel(r: IncomeListRow, calls: boolean, farthest: number):
     key: r.symbol,
     symbol: r.symbol,
     spot: money(r.spot),
-    shape: `${calls ? "covered call" : "short put"} · ${r.dte} d${fund ? ` · ${r.type === "Exchange Traded Fund" ? "fund" : r.type}` : ""}`,
+    shape: `${calls ? "covered call" : "short put"} ${r.strike}${right} · ${r.dte} d${fund ? ` · ${r.type === "Exchange Traded Fund" ? "fund" : r.type}` : ""}`,
     chips: (
       <>
         {r.fit === true ? <span className="chip chip-ok">fits</span> : null}

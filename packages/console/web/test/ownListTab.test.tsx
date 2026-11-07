@@ -304,7 +304,7 @@ describe("the put or call card", () => {
     expect(html).toContain(">short puts<");
     expect(html).toContain(">covered calls<");
     expect(html).toMatch(/class="mode-btn active"[^>]*>covered calls</);
-    expect(html).toContain("covered call · 59 d");
+    expect(html).toContain("covered call 88C · 59 d");
     expect(html).toContain("1 2026-12-18 88C @ 1.23");
   });
 

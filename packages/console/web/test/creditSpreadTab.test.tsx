@@ -167,11 +167,38 @@ describe("our credit-spread list", () => {
     const html = render();
     expect(symbols(html)).toEqual(["NONE", "PICK"]);
     expect(html).toContain("no 35–40% width");
-    expect(html).toContain("no width to size");
+    expect(html).toContain("nearest 0.5 × move · credit 37% of the width");
     expect(help()).toContain("(1 of 2 have no such width)");
     const picked = render("/screeners/credit-spreads?picked=only");
     expect(symbols(picked)).toEqual(["PICK"]);
     expect(picked).toContain("1 with no 35–40% width hidden");
+  });
+
+  it("names the strikes in the shape line, and for a row with no pick shows the nearest width short of the rule", () => {
+    payload = base([
+      row({ symbol: "PICK" }),
+      row({
+        symbol: "NEAR",
+        spread: "call",
+        short: { strike: 104, delta: 0.3, iv: 0.3, bid: 0.9, ask: 1.0 },
+        pick: null,
+        widths: [
+          { unit: "strikes", size: 1, price: price({ long: 105, longDelta: 0.25, width: 1, creditWidth: 0.2 }) },
+          { unit: "strikes", size: 2, price: price({ long: 106, longDelta: 0.2, width: 2, creditWidth: 0.3 }) },
+          { unit: "strikes", size: 5, price: price({ long: 109, longDelta: 0.1, width: 5, creditWidth: 0.12 }) },
+        ],
+      }),
+      row({ symbol: "BARE", pick: null, widths: [{ unit: "strikes", size: 5, price: null }] }),
+    ]);
+    const html = render();
+    expect(html).toContain("bull put 96/94P · 31 d");
+    expect(html).toContain("bear call 104/106C · 31 d");
+    expect(html).toContain("nearest 2 strikes · credit 30% of the width");
+    expect(html).toContain("no width to size");
+    expect(html).toContain("1 2026-11-20 106C");
+    expect(html).toContain("nearest width, short of the 35–40% rule");
+    // Nothing priced: the short alone, as before.
+    expect(html).toContain("bull put 96P · 31 d");
   });
 
   it("hides earnings in the trade and a thin pick by default, each with an escape; a row with no pick is never called thin", () => {

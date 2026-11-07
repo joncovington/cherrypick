@@ -155,7 +155,7 @@ export function skateModel(v: SkateView, c: SkateConfig | null): TradeCardModel 
     symbol: v.row.symbol,
     symbolHref: `/charts/technicals?symbol=${encodeURIComponent(v.row.symbol)}`,
     spot: v.row.spot === null ? null : v.row.spot.toFixed(2),
-    shape: `${word} · ${shortDate(v.best.expiry)} · ${p.days} d`,
+    shape: `${word} ${p.strike}${right} · ${shortDate(v.best.expiry)} · ${p.days} d`,
     chips: (
       <>
         {p.soft.all ? (
