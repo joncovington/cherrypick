@@ -133,6 +133,16 @@ describe("Live → meic", () => {
     expect(renderToString(<TradeCard m={openModel(openRow())} />)).not.toContain("pos-bar");
   });
 
+  it("puts the history's net rule behind its ?, and its totals in chips that wrap inside the card", () => {
+    const totals = { trades: 3, sessions: 2, gross: 300, fees: 12, settlementFees: 1.5, settlementRecorded: 1.5, settlementTrades: 3, net: 286.5, feesTrades: 3, feesRecorded: 12, netRecorded: 286.5 };
+    const html = renderIn(<MeicLivePage />, [[["live-meic"], meicPayload({ totals })], [["live-meic-gap"], gapPayload]]);
+    expect(html).toContain('aria-label="About History — 0 resolved live"');
+    expect(html).not.toContain("Gross less fees less settlement");
+    const foot = html.slice(html.indexOf('class="lv-totals"'));
+    expect(foot.indexOf('class="lv-totals"')).toBe(0);
+    for (const part of [">3 trades · 2 sessions<", ">gross $300.00<", ">settlement $1.50<"]) expect(foot).toContain(part);
+  });
+
   it("flags live vs paper as paired, and opens execution from it as a lightbox, not a table on the page", () => {
     const html = page();
     expect(html).toContain("paired, not pooled");

@@ -5,7 +5,8 @@ import { FilterGroup, SortSection, sortRows, useSortChoice, type SortOption } fr
 import { Pager, usePage } from "../../components/ScopeBar";
 import { useListView, useViewChoice } from "../../components/ViewSwitch";
 import { useValuation } from "../../lib/api";
-import { BoxOpenButton, ScreenerCard, ScreenerLayout, ScreenerSection, SessionSelect, SymbolSearch, Tabs, useParamState, useScreenerBoxes, type ScreenerBox } from "./ScreenerParts";
+import { BoxOpenButton, ScreenerCard, ScreenerLayout, SessionSelect, SymbolSearch, Tabs, useParamState, useScreenerBoxes, type ScreenerBox } from "./ScreenerParts";
+import { Section } from "../../components/Section";
 import { Dial, ValuationDetail, flagText, money, needsGrowth, pct, stateLabel, stretch, stretchText, type DetailSection } from "./ValuationDetail";
 
 export { ValuationDetail, stretch } from "./ValuationDetail";
@@ -292,7 +293,7 @@ export function ValuationTab() {
 
   return (
     <ScreenerLayout>
-      <ScreenerSection concept="hist" tag="valuation" question="How much does the price ask of the business?">
+      <Section concept="hist" tag="valuation" question="How much does the price ask of the business?">
         <ScreenerCard
           title="fair value"
           help={valueHelp(data?.universe, data?.rule.terminalGrowth ?? undefined)}
@@ -345,7 +346,7 @@ export function ValuationTab() {
           )}
           {data && data.day !== null && all.length > 0 && shown.length === 0 && <p className="muted">Nothing matches these filters.</p>}
         </ScreenerCard>
-      </ScreenerSection>
+      </Section>
       {box.node}
     </ScreenerLayout>
   );

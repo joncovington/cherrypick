@@ -7,7 +7,8 @@ import { Tile } from "../../components/performance/Tile";
 import { fmtMoney } from "../../lib/format";
 import { useBridged } from "../../lib/bridged";
 import { useOpenParam } from "../Backtest/CardLightbox";
-import { FliesLayout, FliesSection } from "./FliesFilter";
+import { FliesLayout } from "./FliesFilter";
+import { Section } from "../../components/Section";
 import { BoxOpen, FliesBoxHost, type FliesBox } from "./FliesBoxes";
 
 /**
@@ -202,7 +203,7 @@ export function SelectorBody({ d, updatedAt }: { d: FliesSelectorSessions; updat
   const firstRead = dep?.first_read ?? null;
   return (
     <FliesLayout>
-      <FliesSection concept="edge" name="selector" question="Does the selector beat control when it departs?">
+      <Section concept="edge" tag="selector" question="Does the selector beat control when it departs?">
         <Card
           title="departures from control"
           collapseKey="flies-selector"
@@ -243,7 +244,7 @@ export function SelectorBody({ d, updatedAt }: { d: FliesSelectorSessions; updat
           )}
           {latest === null && <p className="muted sm">No selector model has been fitted on this machine (<code>run.py selector-fit --write</code>).</p>}
         </Card>
-      </FliesSection>
+      </Section>
       <FliesBoxHost lb={lb} boxes={boxes} />
     </FliesLayout>
   );
@@ -254,9 +255,9 @@ export function SelectorSlide() {
   const d = data?.data ?? null;
   const only = (card: ReactNode) => (
     <FliesLayout>
-      <FliesSection concept="edge" name="selector" question="Does the selector beat control when it departs?">
+      <Section concept="edge" tag="selector" question="Does the selector beat control when it departs?">
         {card}
-      </FliesSection>
+      </Section>
     </FliesLayout>
   );
 

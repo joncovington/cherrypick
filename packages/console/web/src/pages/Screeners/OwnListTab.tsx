@@ -9,7 +9,8 @@ import { useViewChoice } from "../../components/ViewSwitch";
 import { useIncomeList } from "../../lib/api";
 import { writePref } from "../../lib/prefs";
 import { TradeCards, dayMonth, type TradeCardModel } from "../Live/TradeCard";
-import { ScreenerCard, ScreenerLayout, ScreenerSection, SessionSelect, SymbolSearch, Tabs, useParamState } from "./ScreenerParts";
+import { ScreenerCard, ScreenerLayout, SessionSelect, SymbolSearch, Tabs, useParamState } from "./ScreenerParts";
+import { Section } from "../../components/Section";
 
 /**
  * Our own short-put and covered-call lists (2026-10-19): one row a name from the suite's universe,
@@ -315,7 +316,7 @@ export function OwnListTab({ list, tabs }: { list: IncomeList; tabs?: ReactNode 
 
   return (
     <ScreenerLayout>
-      <ScreenerSection concept="income" tag="candidates" question={`Which ${calls ? "covered calls" : "short puts"} fit?`}>
+      <Section concept="income" tag="candidates" question={`Which ${calls ? "covered calls" : "short puts"} fit?`}>
         <ScreenerCard
           title={TITLE[list].toLowerCase()}
           help={incomeHelp(list, calls, dropped)}
@@ -425,7 +426,7 @@ export function OwnListTab({ list, tabs }: { list: IncomeList; tabs?: ReactNode 
             <p className="muted">Nothing matches these filters.</p>
           )}
         </ScreenerCard>
-      </ScreenerSection>
+      </Section>
     </ScreenerLayout>
   );
 }

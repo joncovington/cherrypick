@@ -12,7 +12,7 @@ import { LiveBoxes, StateLine } from "./liveParts";
 import { MeicLiveGapCard, MeicLivePairs, useMeicLiveGap } from "./MeicLiveGap";
 import { MeicReadinessCard } from "./MeicReadinessCard";
 import type { Box } from "./PortfolioBox";
-import { Section } from "./PortfolioLayout";
+import { Section } from "../../components/Section";
 import { TradeCards, type TradeCardModel } from "./TradeCard";
 
 /**
@@ -328,11 +328,12 @@ export function MeicLivePage() {
             empty="no resolved live iron condors"
             updatedAt={dataUpdatedAt}
             dateRange={false}
+            help={HISTORY_HELP}
             footer={
               t !== undefined &&
               t.trades > 0 && (
                 <span
-                  className="chip"
+                  className="lv-totals"
                   title={
                     "Over every resolved live row. Gross − fees − settlement = net. " +
                     (t.net === null
@@ -343,9 +344,15 @@ export function MeicLivePage() {
                       : "")
                   }
                 >
-                  net {feesNetWords(t).net ?? <PnlCell v={t.net} />} · {t.trades} trades · {t.sessions} session{t.sessions === 1 ? "" : "s"} · gross{" "}
-                  {fmtMoney(t.gross)} · fees {feesNetWords(t).fees} · settlement{" "}
-                  {t.settlementFees === null ? `n/r (recorded on ${t.settlementTrades} of ${t.trades})` : fmtMoney(t.settlementFees)}
+                  <span className="chip">net {feesNetWords(t).net ?? <PnlCell v={t.net} />}</span>
+                  <span className="chip">
+                    {t.trades} trades · {t.sessions} session{t.sessions === 1 ? "" : "s"}
+                  </span>
+                  <span className="chip">gross {fmtMoney(t.gross)}</span>
+                  <span className="chip">fees {feesNetWords(t).fees}</span>
+                  <span className="chip">
+                    settlement {t.settlementFees === null ? `n/r (recorded on ${t.settlementTrades} of ${t.trades})` : fmtMoney(t.settlementFees)}
+                  </span>
                 </span>
               )
             }

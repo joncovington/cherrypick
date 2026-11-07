@@ -13,7 +13,8 @@ import { useMeasure } from "../../lib/useMeasure";
 import { Card } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { FilterGroup, FilterSortButton, FilterSortPanel, FilterSummary, FilterSwitch } from "../../components/FilterSort";
-import { ChoiceGroup, FliesLayout, FliesSection, TabLink } from "./FliesFilter";
+import { ChoiceGroup, FliesLayout, TabLink } from "./FliesFilter";
+import { Section } from "../../components/Section";
 import { CHART_GRID, CHART_GRID_STRONG } from "../../components/Charts";
 import { extendFlat, visibleYRange } from "../../components/chart/payoffWindow";
 
@@ -572,7 +573,7 @@ export function ForestCard({
   };
   return (
     <FliesLayout>
-      <FliesSection concept="dir" name="payoff" question="What does each arm pay at expiry?">
+      <Section concept="dir" tag="payoff" question="What does each arm pay at expiry?">
         <Card
           title={`the profit forest${data?.tradeDate !== null && data !== undefined ? ` — ${data.tradeDate}` : ""}`}
           help={FOREST_HELP}
@@ -614,7 +615,7 @@ export function ForestCard({
             />
           </FilterGroup>
         </FilterSortPanel>
-      </FliesSection>
+      </Section>
     </FliesLayout>
   );
 }

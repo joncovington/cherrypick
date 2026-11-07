@@ -7,7 +7,8 @@ import { Tile } from "../../components/performance/Tile";
 import { fmtMoney, fmtPct } from "../../lib/format";
 import { fmtGap, signTone, useBridged } from "../../lib/bridged";
 import { useOpenParam } from "../Backtest/CardLightbox";
-import { FliesLayout, FliesSection } from "./FliesFilter";
+import { FliesLayout } from "./FliesFilter";
+import { Section } from "../../components/Section";
 import { FliesBoxHost, type FliesBox } from "./FliesBoxes";
 
 /**
@@ -232,7 +233,7 @@ export function LiveGapBody({ d, updatedAt }: { d: FliesLiveGap; updatedAt?: num
   }));
   return (
     <FliesLayout>
-      <FliesSection concept="live" name="the pilot" question="Does live match paper?">
+      <Section concept="live" tag="the pilot" question="Does live match paper?">
         <Card
           title={`live vs paper — ${d.arm}`}
           collapseKey="flies-livegap"
@@ -243,8 +244,8 @@ export function LiveGapBody({ d, updatedAt }: { d: FliesLiveGap; updatedAt?: num
           <EraTiles label={`before ${breakFrom ?? "the break"} — ${RULE_LABEL.modelled_debit}`} era={d.eras.modelled_debit} />
           <EraTiles label={`from ${breakFrom ?? "the break"} — ${RULE_LABEL.pays_limit}`} era={d.eras.pays_limit} />
         </Card>
-      </FliesSection>
-      <FliesSection concept="hist" name="the gap" question="Why do the books differ?">
+      </Section>
+      <Section concept="hist" tag="the gap" question="Why do the books differ?">
         <Card title="why the books differ" collapseKey="flies-livegap-why" updatedAt={updatedAt} help={WHY_HELP} className="fl-wide">
           <WhyTable label={`before ${breakFrom ?? "the break"}`} why={d.eras.modelled_debit?.why} />
           <WhyTable label={`from ${breakFrom ?? "the break"}`} why={d.eras.pays_limit?.why} />
@@ -283,7 +284,7 @@ export function LiveGapBody({ d, updatedAt }: { d: FliesLiveGap; updatedAt?: num
             </table>
           </div>
         </Card>
-      </FliesSection>
+      </Section>
       <FliesBoxHost lb={lb} boxes={boxes} />
     </FliesLayout>
   );
@@ -331,9 +332,9 @@ export function LiveGapSlide() {
   const d = data?.data ?? null;
   const only = (card: ReactNode) => (
     <FliesLayout>
-      <FliesSection concept="live" name="the pilot" question="Does live match paper?">
+      <Section concept="live" tag="the pilot" question="Does live match paper?">
         {card}
-      </FliesSection>
+      </Section>
     </FliesLayout>
   );
 

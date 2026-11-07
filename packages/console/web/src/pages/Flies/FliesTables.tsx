@@ -16,7 +16,8 @@ import {
 } from "../../components/FilterSort";
 import { fmtCash, fmtPrice } from "../../lib/format";
 import { TradeCards, type TradeCardModel } from "../Live/TradeCard";
-import { ChoiceGroup, FliesLayout, FliesSection } from "./FliesFilter";
+import { ChoiceGroup, FliesLayout } from "./FliesFilter";
+import { Section } from "../../components/Section";
 import { clockTime, structureLabel, wingWidth } from "./structure";
 
 /**
@@ -121,7 +122,7 @@ export function PositionsCard({ data, paging, loading, isError, narrowed }: Prop
   };
   return (
     <FliesLayout>
-      <FliesSection concept="dir" name="entries" question="What did each arm enter?">
+      <Section concept="dir" tag="entries" question="What did each arm enter?">
         <Card
           title="positions"
           help={POSITION_HELP}
@@ -159,7 +160,7 @@ export function PositionsCard({ data, paging, loading, isError, narrowed }: Prop
             <ChoiceGroup label="show" value={show} options={SHOW} onChange={setShow} />
           </FilterGroup>
         </FilterSortPanel>
-      </FliesSection>
+      </Section>
     </FliesLayout>
   );
 }
@@ -208,7 +209,7 @@ export function BooksCard({ data, paging, loading, isError, busy }: Props) {
   const reset = () => setSortChoice({ id: "date", reversed: false });
   return (
     <FliesLayout>
-      <FliesSection concept="hist" name="books" question="How did each arm's book end each day?">
+      <Section concept="hist" tag="books" question="How did each arm's book end each day?">
         <Card title="books" help={BOOK_HELP} isError={isError} controls={<FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />}>
           <FilterSummary
             parts={[`by ${option?.label ?? sortChoice.id}${sortChoice.reversed ? ", reversed" : `, ${option?.hint ?? ""}`}`]}
@@ -266,7 +267,7 @@ export function BooksCard({ data, paging, loading, isError, busy }: Props) {
         <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
           <SortSection sorts={BOOK_SORTS} choice={sortChoice} fallback="date" onChange={setSortChoice} />
         </FilterSortPanel>
-      </FliesSection>
+      </Section>
     </FliesLayout>
   );
 }

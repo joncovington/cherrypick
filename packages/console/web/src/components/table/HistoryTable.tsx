@@ -1,4 +1,5 @@
 import { Fragment, type HTMLAttributes, type ReactNode } from "react";
+import type { CardHelpContent } from "../CardHelp";
 import { Card, SkeletonRows, sortRows, useSort } from "../DataTable";
 import { ColumnsMenu } from "./ColumnsMenu";
 import { DateRangeBar } from "./DateRange";
@@ -34,6 +35,7 @@ export function HistoryTable<R>({
   allLabel,
   allTitle,
   footer,
+  help,
   rowProps,
   expanded,
   detailClassName,
@@ -62,6 +64,8 @@ export function HistoryTable<R>({
   allLabel?: string;
   allTitle?: string;
   footer?: ReactNode;
+  /** What the card's ? opens: how to read the table and its totals. */
+  help?: CardHelpContent;
   rowProps?: (row: R) => HTMLAttributes<HTMLTableRowElement>;
   /** A detail row under this row, spanning every visible column; null when collapsed. */
   expanded?: (row: R) => ReactNode | null;
@@ -91,7 +95,7 @@ export function HistoryTable<R>({
     ? sortRows(rows, local, Object.fromEntries(defs.flatMap((d) => (d.sortValue ? [[d.id, d.sortValue]] : []))))
     : rows;
   return (
-    <Card title={title} updatedAt={updatedAt} isError={isError} className={className} collapseKey={`history-${table}`}>
+    <Card title={title} updatedAt={updatedAt} isError={isError} className={className} collapseKey={`history-${table}`} help={help}>
       <div className="history-controls">
         <ColumnsMenu defs={defs} layout={cols.layout} onChange={cols.setLayout} onReset={cols.reset} isDefault={cols.isDefault} />
         {filters}

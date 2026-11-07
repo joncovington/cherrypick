@@ -23,7 +23,8 @@ import {
   type SortOption,
 } from "../../components/FilterSort";
 import { useOpenParam } from "../Backtest/CardLightbox";
-import { FliesLayout, FliesSection } from "./FliesFilter";
+import { FliesLayout } from "./FliesFilter";
+import { Section } from "../../components/Section";
 import { BoxOpen, FliesBoxHost, type FliesBox } from "./FliesBoxes";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { ARM_COLORS, AXIS_FONT_FAMILY, AXIS_MUTED_HEX, SPOT_COLOR } from "../../components/chart/tokens";
@@ -508,14 +509,14 @@ export function AgentSlide({ mode, date }: { mode: TradingMode; date: string | n
   if (mode === "live") {
     return (
       <FliesLayout>
-        <FliesSection concept="stand" name="the agent" question="What is the agent doing?">
+        <Section concept="stand" tag="the agent" question="What is the agent doing?">
           <Card title="intraday agent">
             <p className="muted">
               This tab reads the paper arm and the module&apos;s qualification file, so it has no live view. The live shadow (chosen
               per day at /live-flies-start) is scored there and shown under &quot;live shadow&quot; in the Paper view.
             </p>
           </Card>
-        </FliesSection>
+        </Section>
       </FliesLayout>
     );
   }
@@ -523,11 +524,11 @@ export function AgentSlide({ mode, date }: { mode: TradingMode; date: string | n
   if (data === undefined) {
     return (
       <FliesLayout>
-        <FliesSection concept="stand" name="the agent" question="What is the agent doing?">
+        <Section concept="stand" tag="the agent" question="What is the agent doing?">
           <Card title="intraday agent">
             <p className="muted">{isLoading ? "reading…" : isError ? "the agent payload could not be read" : "—"}</p>
           </Card>
-        </FliesSection>
+        </Section>
       </FliesLayout>
     );
   }
@@ -583,7 +584,7 @@ export function AgentSlide({ mode, date }: { mode: TradingMode; date: string | n
 
   return (
     <FliesLayout>
-      <FliesSection concept="stand" name="the agent" question="What is the agent doing?">
+      <Section concept="stand" tag="the agent" question="What is the agent doing?">
         <Card title="intraday agent" collapseKey="flies-agent" updatedAt={dataUpdatedAt} help={AGENT_HELP} className="fl-wide">
           <TileGrid count={6}>
             <Tile
@@ -626,9 +627,9 @@ export function AgentSlide({ mode, date }: { mode: TradingMode; date: string | n
             )}
           </div>
         </Card>
-      </FliesSection>
+      </Section>
 
-      <FliesSection concept="hist" name="record" question="What has it decided?">
+      <Section concept="hist" tag="record" question="What has it decided?">
         <Card
           title="decisions"
           collapseKey="flies-agent-decisions"
@@ -701,7 +702,7 @@ export function AgentSlide({ mode, date }: { mode: TradingMode; date: string | n
             <BoxOpen lb={record} id="record" hot>the agent&apos;s record</BoxOpen>
           </div>
         </Card>
-      </FliesSection>
+      </Section>
       <FliesBoxHost lb={packs} boxes={packBoxes} />
       <FliesBoxHost lb={record} boxes={[recordBox]} />
     </FliesLayout>

@@ -18,7 +18,7 @@ import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
 import { ExpiringCard, NearStrikeCard, distanceWords } from "./AttentionCard";
 import { PayoffStrip } from "./PayoffCard";
 import { LedgerDesk } from "./LedgerDesk";
-import { Section } from "./PortfolioLayout";
+import { Section } from "../../components/Section";
 import { BoxButton, BoxButtons, PortfolioBoxContext } from "./portfolioBoxContext";
 import {
   ActionChip,

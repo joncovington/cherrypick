@@ -115,25 +115,6 @@ function MonthBars({ months }: { months: ManageLedger["months"] }) {
   );
 }
 
-function NameCard({ name, b, onOpen }: { name: string; b: ManageLedgerBucket; onOpen: () => void }) {
-  return (
-    <button type="button" className={b.net < 0 ? "ldg-card is-neg" : "ldg-card"} onClick={onOpen} aria-label={`Open ${name}'s ledger`}>
-      <span className="ldg-card-top">
-        <span className="ldg-card-name">{name}</span>
-        <span className={`ldg-card-net ${tone(b.net)}`}>{fmtCash(b.net)}</span>
-      </span>
-      <span className="ldg-card-parts">
-        puts {fmtCash(b.puts)} · calls {fmtCash(b.calls)}
-        {b.shares !== 0 ? ` · shares ${fmtCash(b.shares)}` : ""}
-        {b.dividends !== 0 ? ` · dividends ${fmtCash(b.dividends)}` : ""}
-      </span>
-      <span className="ldg-card-sub">
-        {b.legs} closed · fees {fmtCash(b.fees)}
-      </span>
-    </button>
-  );
-}
-
 type NameTab = "closed" | "held";
 
 function NameDialog({

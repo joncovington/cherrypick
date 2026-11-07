@@ -5,7 +5,8 @@ import { fmtMoney } from "../../lib/format";
 import { useBridged } from "../../lib/bridged";
 import { useOpenParam } from "../Backtest/CardLightbox";
 import { gateDescription } from "./gateGlossary";
-import { FliesLayout, FliesSection } from "./FliesFilter";
+import { FliesLayout } from "./FliesFilter";
+import { Section } from "../../components/Section";
 import { FliesBoxHost, type FliesBox } from "./FliesBoxes";
 
 /**
@@ -157,7 +158,7 @@ export function GatesBody({ d, updatedAt }: { d: FliesGateSessions; updatedAt?: 
   }));
   return (
     <FliesLayout>
-      <FliesSection concept="edge" name="gates" question="Does each gate beat control?">
+      <Section concept="edge" tag="gates" question="Does each gate beat control?">
         <Card title="gates vs control" collapseKey="flies-gates" updatedAt={updatedAt} help={gatesHelp(d)} flag="quiet sessions counted apart">
           <p className="muted sm">
             as of <strong>{d.as_of ?? "—"}</strong>
@@ -195,7 +196,7 @@ export function GatesBody({ d, updatedAt }: { d: FliesGateSessions; updatedAt?: 
             </table>
           </div>
         </Card>
-      </FliesSection>
+      </Section>
       <FliesBoxHost lb={lb} boxes={boxes} />
     </FliesLayout>
   );
@@ -208,33 +209,33 @@ export function GatesSlide() {
   if (isLoading) {
     return (
       <FliesLayout>
-        <FliesSection concept="edge" name="gates" question="Does each gate beat control?">
+        <Section concept="edge" tag="gates" question="Does each gate beat control?">
           <Card title="gates vs control">
             <span className="skeleton skeleton-text" style={{ width: "50%" }} />
           </Card>
-        </FliesSection>
+        </Section>
       </FliesLayout>
     );
   }
   if (data === undefined || !data.ok || d === null) {
     return (
       <FliesLayout>
-        <FliesSection concept="edge" name="gates" question="Does each gate beat control?">
+        <Section concept="edge" tag="gates" question="Does each gate beat control?">
           <Card title="gates vs control" isError>
             <p className="muted">{data?.error ?? "the gate-sessions read is unavailable"}</p>
           </Card>
-        </FliesSection>
+        </Section>
       </FliesLayout>
     );
   }
   if (d.ledger === "absent") {
     return (
       <FliesLayout>
-        <FliesSection concept="edge" name="gates" question="Does each gate beat control?">
+        <Section concept="edge" tag="gates" question="Does each gate beat control?">
           <Card title="gates vs control">
             <p className="muted">No flies paper ledger on this machine.</p>
           </Card>
-        </FliesSection>
+        </Section>
       </FliesLayout>
     );
   }

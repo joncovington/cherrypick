@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { Card, fmtMoney } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
-import { FliesLayout, FliesSection } from "./FliesFilter";
+import { FliesLayout } from "./FliesFilter";
+import { Section } from "../../components/Section";
 import { fliesQuery, type FliesFilter } from "../../lib/api";
 import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
@@ -398,7 +399,7 @@ export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter:
 
   return (
     <FliesLayout>
-      <FliesSection concept="stand" name="the day" question="How did the day actually go?">
+      <Section concept="stand" tag="the day" question="How did the day actually go?">
         <Card title={`session timeline${data?.date !== null && data !== undefined ? ` — ${data.date}` : ""}`} help={TIMELINE_HELP}>
           {isLoading ? (
             <span className="skeleton skeleton-text" style={{ width: "50%" }} />
@@ -424,7 +425,7 @@ export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter:
             </>
           )}
         </Card>
-      </FliesSection>
+      </Section>
     </FliesLayout>
   );
 }

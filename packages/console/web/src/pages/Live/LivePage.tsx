@@ -19,7 +19,7 @@ import { Pager, usePage } from "../../components/ScopeBar";
 import { LiveChart } from "./LiveChart";
 import { LiveBoxes, StateLine } from "./liveParts";
 import type { Box } from "./PortfolioBox";
-import { Section } from "./PortfolioLayout";
+import { Section } from "../../components/Section";
 import { BoxButton, BoxButtons } from "./portfolioBoxContext";
 import { TradeCards, type TradeCardModel } from "./TradeCard";
 
@@ -230,13 +230,6 @@ export function PerformanceBox({ perf, tab }: { perf: LivePerformance; tab: stri
 
 function hhmmOf(ts: string | null): string {
   return ts !== null && ts.length >= 16 ? ts.slice(11, 16) : "—";
-}
-
-function structure(p: LivePosition): string {
-  const w = p.wingWidth;
-  if (p.kind === "fly") return `${p.side} fly ${p.center} ±${w}`;
-  if (p.kind === "short_vertical") return `short ${p.side} ${p.center}/${p.side === "put" ? p.center - w : p.center + w}`;
-  return `${p.kind} ${p.side} ${p.center}`;
 }
 
 function fillState(p: LivePosition): string {
