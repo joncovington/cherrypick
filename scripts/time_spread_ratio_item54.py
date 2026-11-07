@@ -76,6 +76,15 @@ BEST_REMOVED = 5
 STRESS_FEES = 1.5
 STRESS_COSTS = {"tastytrade_costs": {"slippage_frac_of_spread": 0.25}}
 OPEN_INTEREST_UNKNOWN = 10**9  # the store has none: the leg bars' OI test is not applied (declared)
+#: The replay's corrections, oldest first (`orchestrator.studyversion`). A result written before the
+#: last of them is stale on the studies board.
+REPLAY_CORRECTIONS = (
+    {"on": "2026-11-07", "what": "the store's CALL and PUT are read as the builder's C and P, for the "
+     "chains and for the exit quotes", "why": "the builder keeps only options whose right is C or P, so "
+     "no stored option reached it and every entry dropped with no at-the-money calendar; the first run "
+     "held no trades", "decided": "user, 2026-11-07: fix the data gaps behind items 47 and 54",
+     "before_read": True},
+)  # fmt: skip
 
 
 # ------------------------------------------------------------------------------------------------
@@ -151,6 +160,11 @@ def window_of(entry: date) -> str | None:
     return None
 
 
+def right_of(stored: str) -> str:
+    """The store's right (CALL, PUT) as the scanner's builder spells it (C, P)."""
+    return stored[:1].upper()
+
+
 def view(rows: list[tuple], dte: int) -> dict:
     """A stored chain as the scanner's builder reads one expiry."""
     return {
@@ -158,7 +172,7 @@ def view(rows: list[tuple], dte: int) -> dict:
         "options": [
             {
                 "strike": float(k),
-                "right": r,
+                "right": right_of(r),
                 "bid": b,
                 "ask": a,
                 "volume": 0.0,
@@ -426,7 +440,8 @@ def run_all(out: Path) -> tuple[list[dict], dict]:
                     drops["no at-the-money calendar to read the ratio from"] += 1
                     continue
                 exit_rows = {
-                    (float(k), r): (bid, ask) for k, r, bid, ask in rows(f.isoformat(), b.isoformat())
+                    (float(k), right_of(r)): (bid, ask)
+                    for k, r, bid, ask in rows(f.isoformat(), b.isoformat())
                 }
                 for kind in STRUCTURES:
                     row = pick(built, kind, spot)
