@@ -6,8 +6,7 @@ import { useFlies, useFliesMeta, fliesQuery, type FliesFilter } from "../../lib/
 import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
-import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
-import { EraSelect, LoopPill, Pager, usePage } from "../../components/ScopeBar";
+import { LoopPill, usePage } from "../../components/ScopeBar";
 import { ModuleIntegrityStrip } from "../../components/ModuleIntegrityStrip";
 import type { TradingMode } from "@console/shared";
 import { ForestCard } from "../../pages/Flies/ForestCard";
@@ -25,15 +24,14 @@ import { PerformanceSlide } from "../../components/performance/PerformanceSlide"
 import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { ExperimentGuideView } from "../../components/ExperimentGuide";
-import { clockTime, structureLabel, wingWidth } from "../../pages/Flies/structure";
-import { fmtCash, fmtPrice } from "../../lib/format";
+import { BooksCard, PositionsCard } from "../../pages/Flies/FliesTables";
+import { FliesScopeFilter, FliesScopeSummary, NO_SCOPE, type FliesScope } from "../../pages/Flies/FliesFilter";
 import { RegimeCutsTab } from "../../components/RegimeCutsTab";
 import { ModuleFrame } from "../ModuleFrame";
 import { FLIES_SLIDES, type FliesSlideId } from "../navGroups";
 import { FliesSession } from "../../pages/Flies/FliesSession";
 import { AgentSlide } from "../../pages/Flies/AgentSlide";
 import type { SlideDef } from "../types";
-import { ArmSelect } from "../../components/ArmSelect";
 import { ModuleSummary } from "../../components/summary/ModuleSummary";
 
 /**
@@ -97,10 +95,10 @@ export function FliesLightbox({ slide }: { slide: string }) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [mode, setMode] = useMode();
-  const [arm, setArm] = useState<string | null>(null);
-  const [date, setDate] = useState<string | null>(null);
-  const [era, setEra] = useState<string | null>(null);
-  const [symbol, setSymbol] = useState<string | null>(null);
+  const [scope, setScope] = useState<FliesScope>(NO_SCOPE);
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const { arm, date, era, symbol } = scope;
+  const setDate = (d: string | null) => setScope((s) => ({ ...s, date: d }));
   const meta = useFliesMeta(mode, era);
   const resolvedDate = date ?? meta.data?.dates[0] ?? null;
   const filter: FliesFilter = { arm, date: resolvedDate, symbol, era };
@@ -119,10 +117,18 @@ export function FliesLightbox({ slide }: { slide: string }) {
 
   useEffect(() => {
     if (meta.data === undefined) return;
-    if (arm !== null && !meta.data.arms.includes(arm)) setArm(null);
-    if (date !== null && !meta.data.dates.includes(date)) setDate(null);
-    if (symbol !== null && !meta.data.symbols.includes(symbol)) setSymbol(null);
-  }, [meta.data, arm, date, symbol]);
+    // A pick the era's own options no longer hold would select nothing: back to the default.
+    const m = meta.data;
+    setScope((s) => {
+      const next = {
+        ...s,
+        arm: s.arm !== null && !m.arms.includes(s.arm) ? null : s.arm,
+        date: s.date !== null && !m.dates.includes(s.date) ? null : s.date,
+        symbol: s.symbol !== null && !m.symbols.includes(s.symbol) ? null : s.symbol,
+      };
+      return next.arm === s.arm && next.date === s.date && next.symbol === s.symbol ? s : next;
+    });
+  }, [meta.data]);
 
   const replayDay = (d: string) => {
     setDate(d);
@@ -203,104 +209,12 @@ export function FliesLightbox({ slide }: { slide: string }) {
     {
       id: "books",
       label: FLIES_LABEL.books,
-      render: () => (
-        <DataCard
-          title={`Books — ${(data?.books.total ?? 0).toLocaleString()} matching`}
-          headers={["date", "arm", "sym", "status", "floor", "band", "entry", "exit", "gross", "fees", "settle", "slip", "net"]}
-          numFrom={1}
-          loading={isLoading}
-          isError={isError}
-          busy={isPlaceholderData}
-          rowCount={data?.books.rows.length ?? 0}
-          footer={
-            (data?.books.total ?? 0) > 0 && (
-              <Pager
-                offset={data?.books.offset ?? booksPage.page.offset}
-                limit={data?.books.limit ?? booksPage.page.limit}
-                total={data?.books.total ?? 0}
-                onOffset={booksPage.setOffset}
-                onLimit={booksPage.setLimit}
-              />
-            )
-          }
-        >
-          {data?.books.rows.map((b) => (
-            <tr key={b.bookId}>
-              <td>{b.tradeDate}</td>
-              <td className="muted">{b.arm ?? "—"}</td>
-              <td>{b.symbol}</td>
-              <td>{b.status}</td>
-              <td>{b.floorHolds === null ? "—" : b.floorHolds ? "holds" : "no"}</td>
-              <td className="muted">{b.bandLow !== null && b.bandHigh !== null ? `${fmtNum(b.bandLow, 0)}–${fmtNum(b.bandHigh, 0)}` : "—"}</td>
-              <td>{fmtCash(b.entryCash)}</td>
-              <td>{b.status === "settled" ? fmtCash(b.exitCash) : "—"}</td>
-              <td>{b.status === "settled" ? fmtMoney(b.gross) : "—"}</td>
-              <td className="muted" title={b.settlementFees === null ? "the fee total: its settlement share was not recorded" : undefined}>
-                {fmtMoney(b.fees)}
-              </td>
-              <td className="muted">{b.settlementFees === null ? (b.status === "settled" ? "n/r" : "—") : fmtMoney(b.settlementFees)}</td>
-              <td className="muted" title={b.slippage === null ? "not recorded on every held position: flies records slippage from 2026-09-25 on: what a paper fill's model concedes, and on a live fill what the entry conceded against the mid it was asked from" : "conceded against mid — inside gross, never subtracted"}>
-                {b.slippage === null ? (b.status === "settled" ? "n/r" : "—") : fmtMoney(b.slippage)}
-              </td>
-              <td>{b.status === "settled" ? <PnlCell v={b.pnl} /> : <span className="muted">—</span>}</td>
-            </tr>
-          ))}
-        </DataCard>
-      ),
+      render: () => <BooksCard data={data} paging={booksPage} loading={isLoading} isError={isError} busy={isPlaceholderData} narrowed={arm !== null || date !== null} />,
     },
     {
       id: "positions",
       label: FLIES_LABEL.positions,
-      render: () => (
-        <DataCard
-          title={`Positions — ${(data?.positions.total ?? 0).toLocaleString()} matching`}
-          headers={["time", "sym", "arm", "mode", "kind", "centre", "wing", "qty", "price", "entry", "floor", "", "status"]}
-          numFrom={1}
-          loading={isLoading}
-          isError={isError}
-          busy={isPlaceholderData}
-          rowCount={data?.positions.rows.length ?? 0}
-          skeletonRows={10}
-          empty={arm !== null || date !== null ? "no matching positions" : "no positions today"}
-          footer={
-            (data?.positions.total ?? 0) > 0 && (
-              <Pager
-                offset={data?.positions.offset ?? positionsPage.page.offset}
-                limit={data?.positions.limit ?? positionsPage.page.limit}
-                total={data?.positions.total ?? 0}
-                onOffset={positionsPage.setOffset}
-                onLimit={positionsPage.setLimit}
-              />
-            )
-          }
-        >
-          {data?.positions.rows.map((p) => (
-            <tr key={p.positionId}>
-              <td className="muted">{clockTime(p.entryTime)}</td>
-              <td>{p.symbol}</td>
-              <td className="muted">{p.arm ?? "—"}</td>
-              <td className="muted">{p.entryMode ?? "—"}</td>
-              <td>{structureLabel(p.kind, p.side)}</td>
-              <td>{fmtNum(p.center, 0)}</td>
-              <td>{wingWidth(p.wingWidth, p.farWidth)}</td>
-              <td>{p.quantity ?? "—"}</td>
-              <td>{fmtPrice(p.net)}</td>
-              <td>{fmtCash(p.entryCash)}</td>
-              <td>{p.floorDollars !== null ? <PnlCell v={p.floorDollars} /> : "—"}</td>
-              <td>
-                {p.riskFree ? (
-                  <span className="chain-badge chain-badge-long">risk-free</span>
-                ) : p.kind === "fly" || p.kind === "iron_fly" ? (
-                  <span className="chain-badge chain-badge-short">floor negative</span>
-                ) : (
-                  <span className="chain-badge">at risk</span>
-                )}
-              </td>
-              <td>{p.status}</td>
-            </tr>
-          ))}
-        </DataCard>
-      ),
+      render: () => <PositionsCard data={data} paging={positionsPage} loading={isLoading} isError={isError} busy={isPlaceholderData} narrowed={arm !== null || date !== null} />,
     },
     {
       id: "history",
@@ -320,11 +234,33 @@ export function FliesLightbox({ slide }: { slide: string }) {
     },
   ];
 
+  // The scope's summary line sits over each tab it governs; the experiment guide reads the config, not
+  // a session, so it has none.
+  const scoped = slides.map((sl) =>
+    sl.id === "guide"
+      ? sl
+      : {
+          ...sl,
+          render: () => (
+            <>
+              <FliesScopeSummary
+                scope={scope}
+                meta={meta.data}
+                note={l?.underlyingPrice != null ? `spot ${l.underlyingPrice.toFixed(2)}` : null}
+                onOpen={() => setScopeOpen(true)}
+                onReset={() => setScope(NO_SCOPE)}
+              />
+              {sl.render()}
+            </>
+          ),
+        },
+  );
+
   return (
     <ModuleFrame
       module="flies"
       slide={slide}
-      slides={slides}
+      slides={scoped}
       badge={<PaperLiveBadge mode={mode} />}
       session={null}
       loopPill={
@@ -336,29 +272,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
       }
       headerControls={
         <>
-          <ArmSelect module="flies" value={arm} options={meta.data?.arms} onChange={setArm} />
-          {(meta.data?.symbols.length ?? 0) > 1 && (
-            <select className="chip review-session-select" value={symbol ?? ""} onChange={(e) => setSymbol(e.target.value === "" ? null : e.target.value)} aria-label="symbol filter">
-              <option value="">all symbols</option>
-              {meta.data?.symbols.map((sym) => (
-                <option key={sym} value={sym}>{sym}</option>
-              ))}
-            </select>
-          )}
-          <EraSelect
-            value={era}
-            eras={meta.data?.eras}
-            currentEra={meta.data?.currentEra}
-            onChange={setEra}
-            pooledLabel="all eras — pooled"
-            title="The XSP books (2026-07-29..07-31) are a different trade — 1-wide structures whose trading fees were 6.9% of premium collected against the SPX book's 3.7% (32% against 11% on the median completed fly). Pooling them distorts every per-arm breakdown."
-          />
-          <select className="chip review-session-select" value={date ?? ""} onChange={(e) => setDate(e.target.value === "" ? null : e.target.value)} aria-label="date filter">
-            <option value="">latest day</option>
-            {meta.data?.dates.map((d) => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
+          <FliesScopeFilter scope={scope} meta={meta.data} onChange={setScope} open={scopeOpen} onOpenChange={setScopeOpen} />
           {l?.underlyingPrice != null && <span className="chip">{l.underlyingPrice.toFixed(2)}</span>}
           <ModeToggle mode={mode} onChange={setMode} />
         </>

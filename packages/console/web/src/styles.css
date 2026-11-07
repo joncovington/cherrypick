@@ -9562,3 +9562,65 @@ button.chip[aria-pressed][data-hue="special"],
 .study-dialog-body p {
   overflow-wrap: anywhere;
 }
+
+/* redesign: flies-a */
+/* Flies session, forest, timeline, positions, books, history and opening range, laid out in the portfolio
+   tab's sections (pf-layout / pf-sec / pf-row). A flies card names its width: w3 four to a row, w4 and
+   w8 a third and two thirds, w6 halves; each folds by the width the page really has. */
+.pf-c-edge { --pf-c: var(--warn); }
+.pf-c-live { --pf-c: var(--live); }
+
+.pf-row > .card.fl-w3 { grid-column: span 3; }
+.pf-row > .card.fl-w4 { grid-column: span 4; }
+.pf-row > .card.fl-w6 { grid-column: span 6; }
+.pf-row > .card.fl-w8 { grid-column: span 8; }
+@container pf (max-width: 1100px) {
+  .pf-row > .card.fl-w3 { grid-column: span 6; }
+  .pf-row > .card.fl-w4,
+  .pf-row > .card.fl-w8 { grid-column: 1 / -1; }
+}
+@container pf (max-width: 760px) {
+  .pf-row > .card.fl-w6 { grid-column: 1 / -1; }
+}
+@container pf (max-width: 520px) {
+  .pf-row > .card.fl-w3 { grid-column: 1 / -1; }
+}
+
+/* A tile of the day: its figure, one state line, the link to its tab on the floor. */
+.fl-hero {
+  font-family: var(--num-face);
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0.25rem 0 0.4rem;
+  overflow-wrap: anywhere;
+}
+.fl-state {
+  margin: 0.5rem 0 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.fl-tile .stat-bullet,
+.fl-tile .bullet {
+  margin-top: 0.25rem;
+}
+
+/* The scope filter's panel: one field a group. */
+.fl-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.fl-choice {
+  flex-wrap: wrap;
+  height: auto;
+}
+
+/* A trade log row opened in place: its card, full width under the row. */
+.fl-open > td {
+  background: var(--surface-sunken);
+  padding: 10px 12px;
+}
+.fl-open .pos-card {
+  max-width: 460px;
+}
