@@ -109,7 +109,8 @@ def load_entry(db: sqlite3.Connection, day: str, at: str) -> tuple[float, dict] 
     if sample is None:
         return None
     spot = db.execute(
-        "SELECT spot FROM gex_spot_history WHERE symbol = 'SPX' AND trade_date = ? AND ts = ?", (day, sample[1])
+        "SELECT spot FROM gex_spot_history WHERE symbol = 'SPX' AND trade_date = ? AND ts = ?",
+        (day, sample[1]),
     ).fetchone()
     if spot is None:
         return None
@@ -126,7 +127,9 @@ def load_entry(db: sqlite3.Connection, day: str, at: str) -> tuple[float, dict] 
 def fly_legs(chain: dict, spot: float, wing: int) -> list | None:
     """Short call and put at the listed strike nearest spot, wings `wing` out. None when no strike
     lists both sides."""
-    centres = sorted({k for k, r in chain if (k, "C") in chain and (k, "P") in chain}, key=lambda k: (abs(k - spot), k))
+    centres = sorted(
+        {k for k, r in chain if (k, "C") in chain and (k, "P") in chain}, key=lambda k: (abs(k - spot), k)
+    )
     if not centres:
         return None
     k = centres[0]
@@ -188,10 +191,19 @@ def result(legs: list, got: float, settle_at: float) -> dict:
     owed, itm = settle(legs, settle_at)
     gross = round((got - owed) * 100, 2)
     cost = round(fees.ic_open_fee("SPX", 1, legs=4, sell_legs=2, ndigits=4) + fees.ic_expire_fee(itm), 2)
-    return {"credit": got, "owed": owed, "itm": itm, "gross": gross, "cost": cost, "net": round(gross - cost, 2)}
+    return {
+        "credit": got,
+        "owed": owed,
+        "itm": itm,
+        "gross": gross,
+        "cost": cost,
+        "net": round(gross - cost, 2),
+    }
 
 
-def run_session(entry: tuple[float, dict] | None, settle_at: float, *, arm: str, wing: int, fill: str) -> dict:
+def run_session(
+    entry: tuple[float, dict] | None, settle_at: float, *, arm: str, wing: int, fill: str
+) -> dict:
     if entry is None:
         return {"skip": "no entry quote"}
     spot, chain = entry
@@ -201,7 +213,11 @@ def run_session(entry: tuple[float, dict] | None, settle_at: float, *, arm: str,
     got = credit(chain, legs, fill)
     if got is None:
         return {"skip": "a leg not two-sided"}
-    return {"spot": spot, "shorts": sorted({k for (k, _), n in legs if n < 0}), **result(legs, got, settle_at)}
+    return {
+        "spot": spot,
+        "shorts": sorted({k for (k, _), n in legs if n < 0}),
+        **result(legs, got, settle_at),
+    }
 
 
 # --------------------------------------------------------------------------- calendar labels
@@ -286,7 +302,10 @@ def score(rows: list[dict], start: str, end: str) -> dict:
         "p": p_one(t, len(nets)),
         "halves": {h: round(statistics.fmean(v), 2) if v else None for h, v in halves.items()},
         "halves_n": {h: len(v) for h, v in halves.items()},
-        "official_close": {"n": len(official), "mean": round(statistics.fmean(official), 2) if official else None},
+        "official_close": {
+            "n": len(official),
+            "mean": round(statistics.fmean(official), 2) if official else None,
+        },
         "cost_stress": robustness.cost_stress(nets, costs, pass_stress=PASS_STRESS) if nets else None,
         "win_rate": round(sum(x > 0 for x in nets) / len(nets), 3) if nets else None,
         "mean_credit": round(statistics.fmean(r["credit"] for r in rows) * 100, 2) if rows else None,
@@ -341,7 +360,9 @@ def describe(rows: list[dict]) -> dict:
         ),
         "by_year": split(lambda r: r["day"][:4]),
         "itm_legs": dict(Counter(r["itm"] for r in rows)),
-        "worst_sessions": [{"day": r["day"], "net": r["net"]} for r in sorted(rows, key=lambda r: r["net"])[:WORST_N]],
+        "worst_sessions": [
+            {"day": r["day"], "net": r["net"]} for r in sorted(rows, key=lambda r: r["net"])[:WORST_N]
+        ],
     }
 
 
@@ -361,8 +382,12 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--start", default=DESIGN[0])
     ap.add_argument("--end", default=DESIGN[1])
-    ap.add_argument("--allow-holdout", action="store_true", help="an --end past the design window reads the holdout")
-    ap.add_argument("--account", type=float, help="B13's size line, passed at run time (never stored in the repo)")
+    ap.add_argument(
+        "--allow-holdout", action="store_true", help="an --end past the design window reads the holdout"
+    )
+    ap.add_argument(
+        "--account", type=float, help="B13's size line, passed at run time (never stored in the repo)"
+    )
     ap.add_argument("--json", type=Path, help="default: results/research/item58/study-<window>.json")
     args = ap.parse_args(argv)
     if args.end > DESIGN[1] and not args.allow_holdout:
@@ -394,7 +419,11 @@ def main(argv: list[str] | None = None) -> int:
         "tests": tests,
         "skips": {a: dict(working[a][1]) for a in ARMS},
         "describe": {a: describe(working[a][0]) for a in ARMS},
-        "other_fills": {f: {a: score(by_fill[f][a][0], args.start, args.end) for a in ARMS} for f in FILLS if f != "working"},
+        "other_fills": {
+            f: {a: score(by_fill[f][a][0], args.start, args.end) for a in ARMS}
+            for f in FILLS
+            if f != "working"
+        },
         "planned_mde_B12": {
             a: robustness.planned_mde([r["net"] for r in working[a][0]], len(working[a][0])) for a in ARMS
         },
@@ -420,7 +449,10 @@ def main(argv: list[str] | None = None) -> int:
                 account_share=0.10 if args.account else None,
                 pass_stress=PASS_STRESS,
             )
-            b13[a] = {**rep, "entry_time_means": {t: mean_at(at=t) for t in ("15:50", "15:53", ENTRY_TIME, "15:57")}}
+            b13[a] = {
+                **rep,
+                "entry_time_means": {t: mean_at(at=t) for t in ("15:50", "15:53", ENTRY_TIME, "15:57")},
+            }
         out["robustness_B13"] = b13
 
     target = args.json or (

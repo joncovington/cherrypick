@@ -93,7 +93,8 @@ def test_a_result_is_credit_less_what_is_owed_less_open_and_settlement_fees():
 
 def test_a_session_without_its_entry_minute_or_a_short_is_skipped_with_a_reason():
     assert cf.run_session(None, 5000.0, arm="fly", wing=10, fill="mid") == {"skip": "no entry quote"}
-    assert cf.run_session((SPOT, {}), 5000.0, arm="fly", wing=10, fill="mid") == {"skip": "no short strike"}
+    empty = cf.run_session((SPOT, {}), 5000.0, arm="fly", wing=10, fill="mid")
+    assert empty == {"skip": "no short strike"}
     r = cf.run_session((SPOT, CHAIN), 5000.0, arm="condor", wing=10, fill="mid")
     assert r["shorts"] == [5000, 5005] and r["net"] > 0
 
@@ -114,8 +115,8 @@ def test_vix_bands_are_labelled_from_the_prior_close():
 def _rows(nets: list[float], official_from: int = 0, start="2023-01-02") -> list[dict]:
     d0 = date.fromisoformat(start)
     return [
-        {"day": (d0 + timedelta(days=i)).isoformat(), "credit": 4.0, "gross": n + 15.0, "net": n, "cost": 15.0,
-         "settle_source": cf.OFFICIAL if i >= official_from else "thetadata:last_underlying"}
+        {"day": (d0 + timedelta(days=i)).isoformat(), "credit": 4.0, "gross": n + 15.0, "net": n,
+         "cost": 15.0, "settle_source": cf.OFFICIAL if i >= official_from else "thetadata:last_underlying"}
         for i, n in enumerate(nets)
     ]  # fmt: skip
 
