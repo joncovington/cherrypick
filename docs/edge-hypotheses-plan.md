@@ -6326,6 +6326,14 @@ any of it is run. No new fetch; the decision days are item 33's cached copy of t
 - **Data:** `scripts/afternoon_0dte_items60_62.py fomc`, `SPX-60s.db`. Results stay local.
 - **Decides:** a pass leads to a forward paper read on the next meetings; a fail or no verdict closes
   the FOMC expected-move fly as specified.
+- **Result (2026-11-07): fail; the FOMC expected-move fly is closed.**
+  - At the working price the mean net per decision day is negative, with a t below −2. Both halves
+    are negative, and it loses more at 1.5× costs.
+  - At mid it is positive but under the bar. At natural it is worse still.
+  - The placebo, the same rule on every other session, loses about as much, so decision days carry no
+    premium of their own here. A 10% decay target bought back on eight legs gives the spread most of
+    the credit.
+  - Local result: `~/.cherrypick/data/backtest/results/research/item60/study-2022-05-16-2026-11-06.json`.
 
 ### 61. The 13:45 sandwich read on 2025-26 (exploratory, item 9's rule)
 
@@ -6344,6 +6352,14 @@ windows, the other way. The user approved the read on 2026-11-07. Declared here 
   arms. The same script's read of 2022-05-16 to 2024-12-31 is reported beside it, so the two windows
   are priced the same way.
 - **No verdict is recorded.** The register row stays an observation.
+- **Read (2026-11-07), exploratory:** 2025-26 looks like 2022-24.
+  - Unfiltered, the rule is about zero at the working price in both windows.
+  - With item 9's filters it is positive at the quarter-of-the-way and mid fills in both windows, but
+    below the t bar, and 2023 lost.
+  - The fills real traders get on SPX condors sit between those two prices, so the filtered rule's
+    edge after costs is small and unproven: the same picture item 9 drew. Nothing changed between the
+    windows.
+  - Local results: `~/.cherrypick/data/backtest/results/research/item61/`.
 
 ### 62. Fade to the day's midpoint at 13:45: does SPX close toward it?
 
@@ -6370,6 +6386,12 @@ approved the test on 2026-11-07. Declared here before any of it is run.*
 - **Data:** `scripts/afternoon_0dte_items60_62.py fade`, `SPX-60s.db`. Results stay local.
 - **Decides:** a pass leads to a declared structure test (the one-sided fly) and a forward read; a
   fail closes the midpoint fade at 13:45.
+- **Result (2026-11-07): fail; the midpoint fade is closed.**
+  - In the design window the signal's mean is about zero in points, with a t near zero and a hit rate
+    below half.
+  - Neither side of the midpoint, no distance band and no year separates.
+  - The holdout is not read. The one-sided fly built on this signal is not tested.
+  - Local result: `~/.cherrypick/data/backtest/results/research/item62/study-2022-05-16-2024-12-31.json`.
 
 ## Not worth revisiting
 

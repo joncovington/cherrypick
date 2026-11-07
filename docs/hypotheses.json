@@ -2383,7 +2383,7 @@
       "id": 60,
       "study": "item60",
       "title": "FOMC expected-move flies: two short iron flies at the expected move, sold before the 14:00 statement",
-      "status": "declared",
+      "status": "failed",
       "setup": "event-gate",
       "side": "neutral",
       "structure": "iron-fly",
@@ -2409,10 +2409,12 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#60-fomc-expected-move-flies-two-short-iron-flies-at-the-expected-move-sold-before-the-1400-statement",
       "legacy": false,
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item60/study-2022-05-16-2026-11-06.json"
+      ],
       "retest": null,
       "retests": [],
-      "outcome": null
+      "outcome": "the FOMC expected-move fly is closed; negative at working, and the placebo days lose as much"
     },
     {
       "id": 61,
@@ -2440,16 +2442,19 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#61-the-1345-sandwich-read-on-2025-26-exploratory-item-9s-rule",
       "legacy": false,
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item61/study-2025-01-01-2026-11-06.json",
+        "{home}/data/backtest/results/research/item61/study-2022-05-16-2024-12-31.json"
+      ],
       "retest": null,
       "retests": [],
-      "outcome": null
+      "outcome": "2025-26 reads like 2022-24: unfiltered about zero, filtered small and below the t bar; item 9 stands"
     },
     {
       "id": 62,
       "study": "item62",
       "title": "Fade to the day's midpoint at 13:45: does SPX close toward it?",
-      "status": "declared",
+      "status": "failed",
       "setup": "mean-reversion",
       "side": "directional",
       "structure": "none",
@@ -2471,10 +2476,12 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#62-fade-to-the-days-midpoint-at-1345-does-spx-close-toward-it",
       "legacy": false,
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item62/study-2022-05-16-2024-12-31.json"
+      ],
       "retest": null,
       "retests": [],
-      "outcome": null
+      "outcome": "the midpoint fade at 13:45 is closed; no signal in the design window"
     }
   ],
   "rule_changes": []
