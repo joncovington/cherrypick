@@ -1,7 +1,20 @@
-import { useState } from "react";
-import type { ManageBpLevel, ManageCandidate, ManageCandidates, ManageTimeSpreads } from "@console/shared";
+import { useRef, useState } from "react";
+import type { ManageBpLevel, ManageCandidate, ManageCandidates, ManageTimeSpreads, TimeSpreadStructure } from "@console/shared";
 import { Card } from "../../components/DataTable";
-import { PremiumSlider, useMinPremium } from "../../components/PremiumSlider";
+import { PremiumSlider, defaultFloor, useMinPremium } from "../../components/PremiumSlider";
+import {
+  FilterGroup,
+  FilterSortButton,
+  FilterSortPanel,
+  FilterSummary,
+  FilterSwitch,
+  SortSection,
+  sortRows,
+  useSortChoice,
+  type SortChoice,
+  type SortOption,
+} from "../../components/FilterSort";
+import { writePref } from "../../lib/prefs";
 import { fmtMoney } from "../../lib/format";
 import { TimeSpreadsBody, timeSpreadsHelp } from "./TimeSpreadsCard";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
@@ -388,7 +401,27 @@ export function AddingTradesCard({ c, t, netLiq }: { c: ManageCandidates | null;
   const l = useIncomeList(c);
   // It opens on income whenever there is an income list (2026-11-06: the user's choice).
   const [tab, setTab] = useState<"income" | "spreads">(c ? "income" : "spreads");
+  const [incomeSort, setIncomeSort] = useSortChoice("adding-income", "symbol");
+  const [spreadSort, setSpreadSort] = useSortChoice("adding-spreads", "ratio");
+  const [panel, setPanel] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
   if (!c && !t) return null;
+  const onIncome = tab === "income" && l !== null;
+  const income = onIncome && l ? sortedIncome(l, incomeSort) : null;
+  const spreads = !onIncome && t ? sortedSpreads(t, spreadSort) : null;
+  const floorDefault = defaultFloor("live-income");
+  const changed = onIncome && l
+    ? (incomeSort.id !== "symbol" || incomeSort.reversed ? 1 : 0) + (l.minPremium !== floorDefault ? 1 : 0) + (l.exOn ? 1 : 0)
+    : spreadSort.id !== "ratio" || spreadSort.reversed ? 1 : 0;
+  const reset = () => {
+    if (onIncome && l) {
+      setIncomeSort({ id: "symbol", reversed: false });
+      void writePref("minPremium.live-income", undefined);
+      l.setExOn(false);
+    } else setSpreadSort({ id: "ratio", reversed: false });
+  };
+  const sortWords = (sorts: Array<{ id: string; label: string }>, ch: SortChoice) =>
+    `by ${sorts.find((s) => s.id === ch.id)?.label ?? ch.id}${ch.reversed ? ", reversed" : ""}`;
   const btn = (id: "income" | "spreads", label: string, n: number | null) => (
     <button type="button" className={tab === id ? "mode-btn active" : "mode-btn"} aria-pressed={tab === id} onClick={() => setTab(id)}>
       {label}
@@ -398,7 +431,7 @@ export function AddingTradesCard({ c, t, netLiq }: { c: ManageCandidates | null;
   return (
     <Card
       title="adding trades"
-      help={tab === "income" && l ? incomeHelp(l.c) : t ? timeSpreadsHelp(t) : undefined}
+      help={onIncome && l ? incomeHelp(l.c) : t ? timeSpreadsHelp(t) : undefined}
       flag="no tested edge"
       controls={
         <>
@@ -406,18 +439,98 @@ export function AddingTradesCard({ c, t, netLiq }: { c: ManageCandidates | null;
             {c ? btn("income", "income", l ? l.c.fits.length + l.c.waiting.length : null) : null}
             {t ? btn("spreads", "time spreads", t.fits.length) : null}
           </span>
-          {tab === "income" && l ? <IncomeControls l={l} /> : null}
+          <FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />
         </>
       }
     >
-      {tab === "income" && l ? (
-        <IncomeBody l={l} netLiq={netLiq} captions={false} />
-      ) : t ? (
-        <TimeSpreadsBody t={t} capDollars={perTradeCap(c?.caps, netLiq)} captions={false} />
+      {onIncome && l && income ? (
+        <>
+          <FilterSummary
+            parts={[l.minPremium === 0 ? "any premium" : `≥ $${l.minPremium.toLocaleString()}`, sortWords(INCOME_SORTS, incomeSort), ...(l.exOn ? ["ex earnings"] : [])]}
+            note={l.hidden > 0 ? `${l.hidden} hidden by the floor` : "none hidden"}
+            changed={changed}
+            onOpen={() => setPanel(true)}
+            onReset={reset}
+          />
+          <IncomeBody l={income} netLiq={netLiq} captions={false} />
+        </>
+      ) : spreads ? (
+        <>
+          <FilterSummary parts={[sortWords(SPREAD_SORTS, spreadSort)]} changed={changed} onOpen={() => setPanel(true)} onReset={reset} />
+          <TimeSpreadsBody t={spreads} capDollars={perTradeCap(c?.caps, netLiq)} captions={false} />
+        </>
       ) : null}
+      <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
+        {onIncome && l ? (
+          <>
+            <SortSection sorts={INCOME_SORTS} choice={incomeSort} fallback="symbol" onChange={setIncomeSort} />
+            <FilterGroup title="premium floor" note="one contract's credit">
+              <PremiumSlider
+                list="live-income"
+                value={l.minPremium}
+                title="Hide a trade whose credit for one contract is under this. An unpriced one stays shown. Remembered for next time."
+                hidden={l.hidden}
+              />
+            </FilterGroup>
+            {l.whole.exEarnings ? (
+              <FilterGroup title="buying power">
+                <FilterSwitch
+                  label="Ex earnings buying power"
+                  description="Size as if the earnings trades' buying power were already free: they close after the call."
+                  on={l.exOn && l.whole.exEarnings.list !== null}
+                  disabled={l.whole.exEarnings.list === null}
+                  title={l.whole.exEarnings.list ? undefined : (l.whole.exEarnings.error ?? "no ex-earnings list")}
+                  onChange={l.setExOn}
+                />
+              </FilterGroup>
+            ) : null}
+          </>
+        ) : (
+          <SortSection sorts={SPREAD_SORTS} choice={spreadSort} fallback="ratio" onChange={setSpreadSort} />
+        )}
+      </FilterSortPanel>
     </Card>
   );
 }
+
+/** A candidate's size: what fits today, or what it would take once there is room. */
+function sizeOf(c: ManageCandidate): number {
+  return c.units > 0 ? c.units : (c.ifRoom?.units ?? 0);
+}
+
+/** The income sorts: size, timing and fit, never credit or yield (no tested edge). */
+export const INCOME_SORTS: SortOption<ManageCandidate>[] = [
+  { id: "symbol", label: "symbol", hint: "A to Z", key: (c) => c.underlying },
+  { id: "expiry", label: "expiry", hint: "soonest first", key: (c) => c.dte },
+  {
+    id: "maxloss",
+    label: "max loss",
+    hint: "largest risk first",
+    key: (c) => (c.kind === "covered_call" || c.perUnit.stressLoss === null ? null : -Math.abs(c.perUnit.stressLoss) * sizeOf(c)),
+  },
+  { id: "delta", label: "delta it adds", hint: "most first", key: (c) => (c.perUnit.bwd === null ? null : -c.perUnit.bwd * sizeOf(c)) },
+  { id: "bpafter", label: "buying power after", hint: "least first (waiting trades)", key: (c) => c.ifRoom?.bpAfterPct ?? null },
+];
+
+/** The time-spread sorts; the scan's own order (the front/back IV ratio, untested) is the default. */
+export const SPREAD_SORTS: SortOption<TimeSpreadStructure>[] = [
+  { id: "ratio", label: "IV ratio (untested)", hint: "the scan's order", key: () => 0 },
+  { id: "symbol", label: "symbol", hint: "A to Z", key: (s) => s.underlying },
+  { id: "front", label: "front expiry", hint: "soonest first", key: (s) => s.front },
+  { id: "debit", label: "debit", hint: "smallest first", key: (s) => s.debitMid },
+  { id: "maxloss", label: "max loss", hint: "largest risk first", key: (s) => (s.maxLoss === null ? null : -Math.abs(s.maxLoss) * (s.units ?? 1)) },
+];
+
+function sortedIncome(l: IncomeList, ch: SortChoice): IncomeList {
+  const opt = INCOME_SORTS.find((s) => s.id === ch.id);
+  return { ...l, c: { ...l.c, fits: sortRows(l.c.fits, opt, ch.reversed), waiting: sortRows(l.c.waiting, opt, ch.reversed) } };
+}
+
+function sortedSpreads(t: ManageTimeSpreads, ch: SortChoice): ManageTimeSpreads {
+  const opt = SPREAD_SORTS.find((s) => s.id === ch.id);
+  return { ...t, fits: sortRows(t.fits, opt, ch.reversed) };
+}
+
 function capitalised(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

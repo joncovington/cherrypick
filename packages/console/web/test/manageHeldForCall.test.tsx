@@ -232,6 +232,12 @@ describe("the positions cards", () => {
     expect(desc).toContain("needs action 2");
     expect(desc).toContain("rolled 1");
     expect(desc.indexOf("185.20")).toBeLessThan(desc.indexOf("-$20.00"));
+    // The sort is behind the filter & sort button; the summary line says it, and nothing is counted changed.
+    expect(desc).toMatch(/by P&(amp;)?L, high to low/);
+    expect(desc).not.toContain("Filter and sort, 1 changed");
+    const dte = board("/live/positions?sort=dte&rev=1");
+    expect(dte).toContain("by days to the nearest short, reversed");
+    // An older link's pnl=asc still reads as P&L reversed.
     const asc = board("/live/positions?pnl=asc");
     expect(asc.indexOf("-$20.00")).toBeLessThan(asc.indexOf("185.20"));
     const act = board("/live/positions?show=act");

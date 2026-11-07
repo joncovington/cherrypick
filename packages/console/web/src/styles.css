@@ -8617,12 +8617,6 @@ button.chip[aria-pressed][data-hue="special"],
     transition: none;
   }
 }
-/* The positions tab's sort: its label beside the track, not inside it. */
-.pos-sort {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
 
 /* The premium slider (components/PremiumSlider.tsx): its floor's label and its hidden count each hold
    one width whatever they say, so dragging changes no width around the thumb and it stays under the
@@ -8820,5 +8814,322 @@ button.chip[aria-pressed][data-hue="special"],
       transform: translateY(8px);
       opacity: 0;
     }
+  }
+}
+/* ---------------------------------------------------------------------------------------------------
+   Filter & sort (components/FilterSort.tsx, 2026-11-06): one button in a card head, a summary line
+   under it, and a panel under the button (a sheet on a phone). */
+.fs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.22rem 0.65rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fs-btn svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+.fs-btn:hover,
+.fs-btn[aria-expanded="true"] {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.fs-btn:focus-visible,
+.fs-part:focus-visible,
+.fs-sort:focus-visible,
+.fs-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.fs-badge {
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 17px;
+  text-align: center;
+}
+@media (max-width: 600px) {
+  .fs-word {
+    display: none;
+  }
+}
+.fs-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.fs-part {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 9px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.fs-part:hover {
+  border-color: var(--accent);
+}
+.fs-reset {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.fs-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+}
+.fs-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+.fs-panel {
+  position: fixed;
+  width: 380px;
+  max-height: min(640px, calc(100vh - 80px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 0.45);
+  overflow: hidden;
+  outline: none;
+}
+.fs-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.fs-x {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.fs-body {
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 10px 14px 12px;
+  display: grid;
+  gap: 14px;
+}
+.fs-group-t {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-family: var(--num-face, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.fs-group-t span {
+  font-family: inherit;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.fs-sorts {
+  display: grid;
+  gap: 2px;
+}
+.fs-sort {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fs-sort:hover {
+  background: var(--surface-hover);
+}
+.fs-sort[aria-checked="true"] {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-hover));
+  border-color: var(--border-strong);
+}
+.fs-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  display: grid;
+  place-items: center;
+}
+.fs-sort[aria-checked="true"] .fs-dot {
+  border-color: var(--accent);
+}
+.fs-sort[aria-checked="true"] .fs-dot::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.fs-sort-name {
+  font-size: 13px;
+}
+.fs-sort-hint,
+.fs-sw-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.fs-def {
+  font-family: var(--num-face, ui-monospace, monospace);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.mode-toggle.fs-dir {
+  margin: 8px 0 0;
+}
+.fs-switch {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fs-switch:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.fs-track {
+  flex: none;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 10px;
+  background: var(--surface-hover);
+  border: 1px solid var(--border-strong);
+}
+.fs-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: left 0.15s ease;
+}
+.fs-switch[aria-checked="true"] .fs-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.fs-switch[aria-checked="true"] .fs-track::after {
+  left: 16px;
+  background: #fff;
+}
+.fs-sw-label {
+  font-size: 13px;
+}
+.fs-body > * {
+  min-width: 0;
+}
+.fs-body .premium-slider {
+  width: 100%;
+  justify-content: space-between;
+}
+.fs-body .premium-slider input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.fs-body .premium-slider-hidden {
+  min-width: 0;
+}
+.fs-group-t span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fs-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+}
+.fs-ghost,
+.fs-done {
+  border-radius: 7px;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.fs-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.fs-done {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #fff;
+}
+@media (max-width: 560px) {
+  .fs-scrim {
+    background: rgb(3 4 6 / 0.6);
+  }
+  .fs-panel {
+    top: auto !important;
+    left: 0 !important;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 86vh;
+    border-radius: 16px 16px 0 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }

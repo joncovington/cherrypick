@@ -22,6 +22,11 @@ export function premiumFloor(raw: unknown): number {
  *  the user's standing minimum). Every other list starts off. */
 const DEFAULT_FLOOR: Record<string, number> = { "live-income": 50 };
 
+/** A list's floor before anyone has set one (0 is off). */
+export function defaultFloor(list: string): number {
+  return DEFAULT_FLOOR[list] ?? 0;
+}
+
 /** The floor in force for a list: the URL's where it carries one, the remembered preference otherwise,
  *  and the list's default when neither is set (a remembered 0 stays off). */
 export function useMinPremium(list: string, override?: string | null): number {
