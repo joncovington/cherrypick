@@ -1,7 +1,6 @@
 import { createContext, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { ManageAccount, ManageBand, ManageLiveAccount, ManageLivePayload, ManageLiveTrade } from "@console/shared";
-import { Card } from "../../components/DataTable";
+import type { ManageLiveAccount, ManageLivePayload, ManageLiveTrade } from "@console/shared";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { ageText, tone } from "./manageParts";
 
@@ -175,66 +174,3 @@ export function LiveAccountLine({ a, closed = false }: { a: ManageLiveAccount; c
   );
 }
 
-/** Live → portfolio: the book's delta and theta from the streamed greeks, beside the evaluation's. */
-export function LiveGreeksCard({ a }: { a: ManageAccount }) {
-  const live = useLiveMarks();
-  if (!live || !a.portfolio) return null;
-  const l: ManageLiveAccount | undefined = live.payload.accounts.find((x) => x.account === a.account);
-  if (!l) return null;
-  const p = a.portfolio;
-  const bands = p.bands;
-  const netLiq = p.netLiq;
-  // The theta band is a share of net liq; the live figure is read against the evaluation's net liq.
-  const thetaShare = l.theta !== null && netLiq ? l.theta / netLiq : null;
-  return (
-    <Card title="live greeks" collapseKey="manage-live-greeks">
-      <p className="muted pf-caption" style={{ marginTop: 0 }}>
-        from the streamed greeks, beta-weighted with the evaluation's betas to {p.benchmark ?? "the benchmark"} · {l.legsWithGreeks} of{" "}
-        {l.legsTotal} legs streaming{l.legsWithGreeks < l.legsTotal ? ": a dash until every leg is" : ""} · the streamer's greeks, so
-        they differ a little from the evaluation's own model
-      </p>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th />
-            <th style={{ textAlign: "right" }}>live</th>
-            <th style={{ textAlign: "right" }}>evaluation</th>
-            <th title="the evaluation's band, for reading the live figure against; in or out is the evaluation's call, made at its next run">band</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>delta ({p.benchmark ?? "benchmark"} shares)</td>
-            <td style={{ textAlign: "right" }}>{l.bwd === null ? "—" : l.bwd.toFixed(1)}</td>
-            <td style={{ textAlign: "right" }}>{p.bwd === null ? "—" : p.bwd.toFixed(1)}</td>
-            <td>
-              {bands ? `${bands.delta.low?.toFixed(1) ?? "—"} to ${bands.delta.high?.toFixed(1) ?? "—"} ` : "—"}
-            </td>
-          </tr>
-          <tr>
-            <td>theta ($ a day)</td>
-            <td style={{ textAlign: "right" }} title={thetaShare === null ? undefined : `${(thetaShare * 100).toFixed(2)}% of net liq`}>
-              {fmtCash(l.theta)}
-            </td>
-            <td style={{ textAlign: "right" }}>{fmtCash(p.theta)}</td>
-            <td>{bands ? thetaBandWords(bands.theta, netLiq) : "—"}</td>
-          </tr>
-        </tbody>
-      </table>
-    </Card>
-  );
-}
-
-function pct2(v: number | null): string {
-  return v === null ? "—" : `${(v * 100).toFixed(2)}%`;
-}
-
-/** The theta band in the row's own unit, dollars a day, with its share of net liq beside it. The
- *  dollars are the band times the evaluation's net liq, as manage's limits row states them
- *  (`limits.py`, "the theta band x net liq"), so the two cards cannot show different bands. */
-export function thetaBandWords(band: Pick<ManageBand, "low" | "high">, netLiq: number | null): string {
-  const share = `${pct2(band.low)} to ${pct2(band.high)} of net liq`;
-  if (!netLiq) return share;
-  const usd = (v: number | null) => (v === null ? "—" : fmtCash(v * netLiq));
-  return `${usd(band.low)} to ${usd(band.high)} (${share})`;
-}

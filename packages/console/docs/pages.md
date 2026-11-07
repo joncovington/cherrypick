@@ -668,8 +668,9 @@ expiring legs unpriced). The contribution cards sum the names past their twelve 
 row, so the rows add up to the book. **Live marks** (2026-10-22, `readers/manageLive.ts`,
 `/api/manage/live`, `pages/Live/LiveMarks.tsx`) re-price the NEWEST evaluation's legs from the stream
 cache every five seconds: per-trade live P&L and capture on the evaluation's own basis, fees and
-capture denominator, an "at TP" / "at stop" chip against the evaluation's own levels, and the book's
-delta and theta from the streamed greeks with the evaluation's betas. Display only: no verdict is
+capture denominator, and an "at TP" / "at stop" chip against the evaluation's own levels (the
+portfolio tab's live greeks card, which repeated the evaluation's delta and theta, went on
+2026-11-06; the payload still carries the book's streamed delta and theta). Display only: no verdict is
 re-judged and no in/out-of-band flag is drawn for a live figure (that stays the evaluation's). A trade
 or book figure with any quote over 120 s old reads a dash, never part-marked. A past session shows
 none. Under the status line (2026-11-04) each account's day P&L (each leg's mark less the broker's

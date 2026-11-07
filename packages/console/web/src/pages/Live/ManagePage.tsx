@@ -18,7 +18,6 @@ import { PmccCards } from "./PmccCards";
 import { WheelCards } from "./WheelCards";
 import { PositionCards } from "./PositionCards";
 import {
-  LiveGreeksCard,
   LiveMarksContext,
   LiveStatus,
   liveMarks,
@@ -441,7 +440,6 @@ function PortfolioAccount({ a, oversize }: { a: ManageAccount; oversize: number 
     <>
       <AccountTiles a={a} oversize={oversize} />
       {a.limits ? <LimitsCard limits={a.limits} /> : null}
-      <LiveGreeksCard a={a} />
       {a.portfolio ? (
         <PortfolioCards
           p={a.portfolio}

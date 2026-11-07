@@ -3,7 +3,6 @@ import type { ManageTrade } from "@console/shared";
 import { earningsWords } from "../src/pages/Live/PmccCards";
 import { captureText } from "../src/pages/Live/PositionCards";
 import { ledgerHeadWords } from "../src/pages/Live/LedgerDesk";
-import { thetaBandWords } from "../src/pages/Live/LiveMarks";
 
 describe("the PMCC short's earnings line", () => {
   it("says a report already out as such, never as after the expiry", () => {
@@ -42,15 +41,5 @@ describe("the wheel ledger's head line", () => {
     expect(ledgerHeadWords({ scope: null, historyFrom: null, rows: null })).toBe(
       "read from the account's ? history rows since ? · by closing day",
     );
-  });
-});
-
-describe("the live greeks' theta band", () => {
-  it("is in the row's dollars, the band times net liq as manage's limits row states it", () => {
-    expect(thetaBandWords({ low: 0.001, high: 0.003 }, 20_000)).toBe("+$20.00 to +$60.00 (0.10% to 0.30% of net liq)");
-  });
-
-  it("falls back to the share without a net liq", () => {
-    expect(thetaBandWords({ low: 0.001, high: 0.003 }, null)).toBe("0.10% to 0.30% of net liq");
   });
 });
