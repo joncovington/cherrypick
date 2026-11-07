@@ -437,7 +437,23 @@ mid is not a fill. Nothing is placed.
 - a **risk matrix**: the book's P&L across SPY moves (−10% to +10%) and IV shifts (−5, 0, +5 points),
   each name moved by its beta, time held still. The shift is stated for a 30-day option and scaled
   to each leg by √(30 / DTE), so front months move most. A flat shift once showed the book *gaining*
-  $425 on +5 points, carried by long-dated longs, while the front months a vol spike hits were short;
+  $425 on +5 points, carried by long-dated longs, while the front months a vol spike hits were short.
+  Since 2026-11-06 it is stated at each of `scenarios.horizons` (now, +7 and +21 days, nothing done
+  meanwhile), since with time held still it shows what a short-premium book risks and never the decay
+  it is paid. Each horizon adds a **history row** (`spotvol.py`): IV moved by today's VIX times the
+  median end/start VIX ratio over past windows of that length (Cboe daily closes since 2006, carried in
+  snapshot v18) whose SPX move was near the column's. Over a week a 10% fall has lifted VIX about 1.4×
+  and a 10% rise cut it to about 0.85×: the answer bends and is lopsided, so it is read as medians, not
+  a slope;
+- **ideas** under the matrix (`ideas.py`, `portfolio.ideas`): a header, a subheader with the figures and
+  a plain-English paragraph on how a change would help, with the matrix's row now before and after
+  (the history row where there is one) and theta. Five kinds: broad indexes held together over a
+  budget (closing the biggest), one trade's income from a short leg about to expire (closing it),
+  trades over the per-trade cap (each resized to the cap), the cheap call side sold beside rich puts
+  (the calls dropped), and expiries over a planning target (no model: the change is where the next
+  trades go). An effect can make a cell worse, since dropping a side moves risk rather than removing
+  it, and the figures say so. Thresholds are ours, with no published evidence; ideas size, place and
+  close nothing;
 - a **risk graph**: P&L across SPY −15% to +15%, now and at the nearest expiry (legs expiring by then
   at intrinsic);
 - an **expiry ladder**: per expiry, the trades whose nearest short expires then, what they can still

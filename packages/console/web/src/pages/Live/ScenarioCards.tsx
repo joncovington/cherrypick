@@ -1,4 +1,5 @@
-import type { ManageLadder, ManagePortfolio, ManageScenarios } from "@console/shared";
+import { useState } from "react";
+import type { ManageIdea, ManageLadder, ManageMatrixHorizon, ManagePortfolio, ManageScenarios } from "@console/shared";
 import { AXIS_FONT, CHART_GRID, CHART_GRID_STRONG, niceTicks } from "../../components/Charts";
 import { Card } from "../../components/DataTable";
 import { DivergingBars } from "../../components/grid/DivergingBars";
@@ -196,11 +197,28 @@ export function ScenarioCards({ p }: { p: ManagePortfolio }) {
 
 /* ---------------------------------------------------------------- risk matrix */
 
+/** "IV +5 pts", "IV −2.3 pts", "IV unchanged": a shift in vol points for a 30-day option. */
+function ivText(shift: number): string {
+  if (Math.abs(shift) < 0.0005) return "IV unchanged";
+  const pts = Math.round(Math.abs(shift) * 1000) / 10;
+  return `IV ${shift > 0 ? "+" : "−"}${Number.isInteger(pts) ? pts.toFixed(0) : pts.toFixed(1)} pts`;
+}
+
+function horizonLabel(days: number): string {
+  return days === 0 ? "now" : `+${days} days`;
+}
+
 export function RiskMatrixCard({ p }: { p: ManagePortfolio }) {
+  const [at, setAt] = useState(0);
   const s = p.scenarios;
   if (!s) return null;
   const benchmark = p.benchmark ?? "SPY";
-  const all = s.matrix.flatMap((r) => r.pnl.filter((v): v is number => v !== null));
+  // An evaluation from before the horizons carries only the time-held-still matrix.
+  const horizons: ManageMatrixHorizon[] =
+    s.horizons.length > 0 ? s.horizons : [{ horizonDays: 0, windowDays: null, matrix: s.matrix, realistic: null }];
+  const h = horizons[Math.min(at, horizons.length - 1)]!;
+  const real = h.realistic;
+  const all = [...h.matrix.flatMap((r) => r.pnl), ...(real?.pnl ?? [])].filter((v): v is number => v !== null);
   const maxAbs = Math.max(1, ...all.map(Math.abs));
   const shade = (v: number | null) => {
     // A zero (rounded to the dollar) has no sign, so no tone: it is neither a gain nor a loss.
@@ -208,9 +226,42 @@ export function RiskMatrixCard({ p }: { p: ManagePortfolio }) {
     const alpha = Math.round((0.08 + 0.62 * (Math.abs(v) / maxAbs)) * 100);
     return `color-mix(in srgb, var(${v >= 0 ? "--pos" : "--neg"}) ${alpha}%, transparent)`;
   };
-  const rows = [...s.matrix].sort((a, b) => b.ivShift - a.ivShift);
+  const ofNetLiq = (v: number | null) =>
+    p.netLiq != null && v !== null ? ` (${((v / p.netLiq) * 100).toFixed(1)}% of net liq)` : "";
+  const rows = [...h.matrix].sort((a, b) => b.ivShift - a.ivShift);
+  const since = s.realistic?.since?.slice(0, 4) ?? null;
+  const realTitle = (j: number) => {
+    const m = s.moves[j]!;
+    const mult = real?.vixMultiple[j] ?? null;
+    const n = real?.windows[j] ?? null;
+    const shift = real?.ivShift[j] ?? null;
+    const head = `${benchmark} ${movePct(m)}, IV as history moves it`;
+    if (m === 0) return `${head}: IV unchanged · ${wholeCash(real?.pnl[j] ?? null)}${ofNetLiq(real?.pnl[j] ?? null)}`;
+    if (mult === null || shift === null) return `${head}: too few ${h.windowDays}-day windows with a move this size (${n ?? 0})`;
+    return `${head}: over ${n} windows of ${h.windowDays} trading days${since ? ` since ${since}` : ""} with a move this size, VIX ended ×${mult.toFixed(2)} (median), so ${ivText(shift)} · ${wholeCash(real?.pnl[j] ?? null)}${ofNetLiq(real?.pnl[j] ?? null)}`;
+  };
   return (
-    <Card title="risk matrix">
+    <Card
+      title="risk matrix"
+      controls={
+        horizons.length > 1 && (
+          <span className="mode-toggle pf-horizons" role="group" aria-label="horizon">
+            {horizons.map((x, i) => (
+              <button
+                key={x.horizonDays}
+                type="button"
+                className={i === at ? "mode-btn active" : "mode-btn"}
+                aria-pressed={i === at}
+                onClick={() => setAt(i)}
+                title={x.horizonDays === 0 ? "time held still: what the book risks, without the decay it is paid" : `${x.horizonDays} days on, nothing done meanwhile: the decay is in`}
+              >
+                {horizonLabel(x.horizonDays)}
+              </button>
+            ))}
+          </span>
+        )
+      }
+    >
       <div className="table-scroll">
         <table className="pf-matrix">
           <thead>
@@ -224,29 +275,113 @@ export function RiskMatrixCard({ p }: { p: ManagePortfolio }) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.ivShift}>
-                <th>IV {r.ivShift === 0 ? "unchanged" : `${r.ivShift > 0 ? "+" : "−"}${Math.round(Math.abs(r.ivShift) * 100)} pts`}</th>
+                <th>{ivText(r.ivShift)}</th>
                 {r.pnl.map((v, j) => (
                   <td
                     key={j}
                     style={{ background: shade(v) }}
                     className={s.moves[j] === 0 && r.ivShift === 0 ? "pf-matrix-origin" : undefined}
-                    title={`${benchmark} ${movePct(s.moves[j]!)}, IV ${r.ivShift === 0 ? "unchanged" : `${r.ivShift > 0 ? "+" : "−"}${Math.round(Math.abs(r.ivShift) * 100)} pts`}: ${wholeCash(v)}${
-                      p.netLiq != null && v !== null ? ` (${((v / p.netLiq) * 100).toFixed(1)}% of net liq)` : ""
-                    }`}
+                    title={`${benchmark} ${movePct(s.moves[j]!)}, ${ivText(r.ivShift)}: ${wholeCash(v)}${ofNetLiq(v)}`}
                   >
                     {wholeCash(v)}
                   </td>
                 ))}
               </tr>
             ))}
+            {real && (
+              <tr className="pf-matrix-real">
+                <th title="IV moved with the market as VIX has moved over past windows like this one">IV as history moves it</th>
+                {real.pnl.map((v, j) => (
+                  <td key={j} style={{ background: shade(v) }} title={realTitle(j)}>
+                    {wholeCash(v)}
+                  </td>
+                ))}
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
       <p className="muted pf-caption">
-        modelled P&L, time held still · each name moves by its beta · the IV shift is for a 30-day option
+        modelled P&L{h.horizonDays === 0 ? ", time held still" : `, ${h.horizonDays} days on with nothing done: legs expiring by then are worth their intrinsic value`} · each
+        name moves by its beta · the IV shift is for a 30-day option
         {s.ivShiftWeighting === "term" ? ", scaled to each leg by √(30 / days left), so front months move most" : ", applied to every leg alike"}
-        {" "}· in a selloff IV usually rises, so read the top left
+        {real
+          ? ` · the last row moves IV as VIX has moved over ${h.windowDays}-day stretches${since ? ` since ${since}` : ""} with a move that size (hover a cell)`
+          : s.realistic?.error
+            ? ` · no history row: ${s.realistic.error}`
+            : " · in a selloff IV usually rises, so read the top left"}
       </p>
+      <MatrixIdeas ideas={p.ideas} benchmark={benchmark} />
     </Card>
+  );
+}
+
+/* ---------------------------------------------------------------- ideas under the matrix */
+
+function Change({ before, after, money = wholeCash }: { before: number | null; after: number | null; money?: (v: number | null) => string }) {
+  const tone = before === null || after === null || Math.round(after) === Math.round(before) ? "" : after > before ? "pf-better" : "pf-worse";
+  return (
+    <span>
+      {money(before)} → <span className={tone}>{money(after)}</span>
+    </span>
+  );
+}
+
+function IdeaCard({ idea, benchmark }: { idea: ManageIdea; benchmark: string }) {
+  const e = idea.effect;
+  const ends =
+    e && e.moves.length > 1
+      ? [0, e.moves.length - 1].map((j) => ({ m: e.moves[j]!, before: e.before[j] ?? null, after: e.after[j] ?? null }))
+      : [];
+  const theta = (v: number | null) => (v === null ? "—" : `$${Math.round(v).toLocaleString("en-US")}`);
+  return (
+    <section className="md-card pf-idea" title={idea.trades.join(", ")}>
+      <h4 className="pf-idea-head">{idea.header}</h4>
+      <p className="pf-idea-sub">{idea.subheader}</p>
+      <p className="pf-guide-reason">{idea.explanation}</p>
+      {e && (
+        <>
+          <p className="muted pf-idea-change">
+            {e.change}, {e.basis === "realistic" ? "on the history row" : "IV unchanged"}, now:
+          </p>
+          <ul className="pf-guide-drivers">
+            <li>
+              <span>worst cell</span>
+              <Change before={e.worstBefore} after={e.worstAfter} />
+            </li>
+            {ends.map((x) => (
+              <li key={x.m}>
+                <span>
+                  {benchmark} {movePct(x.m)}
+                </span>
+                <Change before={x.before} after={x.after} />
+              </li>
+            ))}
+            <li>
+              <span>theta a day</span>
+              <Change before={e.thetaBefore} after={e.thetaAfter} money={theta} />
+            </li>
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
+export function MatrixIdeas({ ideas, benchmark }: { ideas: ManageIdea[]; benchmark: string }) {
+  if (ideas.length === 0) return null;
+  return (
+    <div className="pf-ideas">
+      <h3 className="pf-ideas-title">ideas for the matrix</h3>
+      <div className="pf-guide-grid">
+        {ideas.map((i) => (
+          <IdeaCard key={i.key} idea={i} benchmark={benchmark} />
+        ))}
+      </div>
+      <p className="muted pf-caption">
+        read off the book by fixed thresholds of ours, with no published evidence behind them · each figure reprices today's
+        legs under the change; nothing here sizes or places a trade · green is better than now, red worse
+      </p>
+    </div>
   );
 }

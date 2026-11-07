@@ -680,7 +680,11 @@ is `early` (marks from 09:30-10:00 ET) the page says so and every action chip re
 10:00", the action in its title (`VerdictsHeld`). `ScenarioCards.tsx` adds a
 buying-power dial (the cap is manage's, set by VIX), the expiry ladder with the earnings exposure,
 the risk graph and the risk matrix. Every figure is manage's repricing; the matrix states which IV
-weighting manage used, and a card manage wrote no reading for is not drawn. `IncomeCard.tsx` lists
+weighting manage used, and a card manage wrote no reading for is not drawn. The matrix has a horizon
+toggle (now, +7, +21 days: manage's `horizons`), a last row moving IV as history has (its cell titles
+say how many windows and what VIX did; when manage has no history the caption says why), and, inside the
+same card, manage's ideas for the matrix: header, subheader, explanation, and what the change does to
+the worst cell, the two end columns and theta, green where better than now and red where worse. `IncomeCard.tsx` lists
 manage's sized income trades in the package's own ranking (never re-sorted here), money in the suite's
 layout. Risk is the figure the per-trade cap was applied to: a short put's stress loss, never its
 strike. The card always says the prices are a day old and to re-quote before sending. Its "waiting

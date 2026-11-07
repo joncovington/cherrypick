@@ -2646,6 +2646,7 @@ def evaluate(
             account.get("account_type"),
             rules,
             snapshot.get("broker_greeks"),
+            snapshot.get("spot_vol_history"),
         )
         book["hedges"] = _hedge.suggest(book, snapshot.get("hedge_chain"), metrics, session, rules)
         book["candidates"] = _candidates.suggest(

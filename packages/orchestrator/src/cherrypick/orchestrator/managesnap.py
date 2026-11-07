@@ -118,6 +118,12 @@ Version 17 (2026-11-06) carries `time_spreads`: the session's own time-spread re
 (scripts/fetch_time_spreads.py; docs/time-spread-scanner-plan.md), the shortlist's quoted chains manage
 builds calendars and diagonals from. A local file read, never the broker; only today's file counts, and
 its absence is the reading's `error`. A snapshot without the field has no time-spread rows.
+
+Version 18 (2026-11-06) carries `spot_vol_history`: Cboe's daily SPX and VIX closes on or before the
+session (`market-files/cboe`, scripts/fetch_market_files.py), the days both list, so manage's risk
+matrix can move IV with the market as VIX has moved over windows like the one it models. A local file
+read; a missing or unreadable file is `spot_vol_history: null` with `spot_vol_history_error`, and the
+matrix then has no realistic row. A snapshot without the field is read exactly as before.
 """
 
 from __future__ import annotations
@@ -137,7 +143,7 @@ from . import doctor
 from . import positions as positions_mod
 from .util import first_json
 
-SNAPSHOT_VERSION = 17
+SNAPSHOT_VERSION = 18
 # Greeks move far more slowly than a bid; the cache's are used up to this old, the feed's otherwise.
 GREEKS_MAX_AGE_SECONDS = 900.0
 # Monday reads Friday's afternoon reading; anything older is a stale book of quotes.
@@ -721,6 +727,47 @@ def time_spreads_reading(session: date, folder=None) -> dict[str, Any]:
     return {**doc, "error": None}
 
 
+def cboe_dir():
+    from cherrypick.core import home
+
+    return home.data_dir("market-files") / "cboe"
+
+
+def _cboe_closes(path) -> dict[str, float]:
+    """One Cboe daily history file as {ISO date: close}: the last column is the close in both the
+    index files (DATE,SPX) and the OHLC ones (DATE,OPEN,HIGH,LOW,CLOSE). A row that does not parse is
+    skipped, as the header is."""
+    out: dict[str, float] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        cells = [c.strip() for c in line.split(",")]
+        if len(cells) < 2:
+            continue
+        try:
+            month, day, year = (int(x) for x in cells[0].split("/"))
+            close = float(cells[-1])
+        except ValueError:
+            continue
+        if close > 0:
+            out[date(year, month, day).isoformat()] = close
+    return out
+
+
+def spot_vol_history(session: date, folder=None) -> tuple[dict[str, Any] | None, str | None]:
+    """Cboe's SPX and VIX daily closes on or before `session`, on the days both list, oldest first, as
+    `rows` of [date, spx, vix]; or None and why."""
+    folder = cboe_dir() if folder is None else folder
+    try:
+        spx = _cboe_closes(folder / "SPX.csv")
+        vix = _cboe_closes(folder / "VIX.csv")
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, f"Cboe SPX/VIX history unreadable: {exc}"[:200]
+    through = session.isoformat()
+    days = sorted(d for d in spx.keys() & vix.keys() if d <= through)
+    if not days:
+        return None, "no Cboe SPX/VIX history (scripts/fetch_market_files.py)"
+    return {"source": "cboe", "rows": [[d, spx[d], vix[d]] for d in days]}, None
+
+
 def skate_dir():
     from cherrypick.core import home
 
@@ -989,6 +1036,7 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
     # Read after the broker's history, so an order a loop placed before that read is already listed
     # (each loop publishes its ledger's ids every tick).
     known_orders, known_orders_error = _execution.read_known_orders()
+    spot_vol, spot_vol_error = spot_vol_history(date.fromisoformat(session))
     return {
         "snapshot_version": SNAPSHOT_VERSION,
         "session": session,
@@ -1016,6 +1064,8 @@ def build(cfg: dict[str, Any]) -> dict[str, Any]:
         "underlying_history_error": underlying_error,
         "live_known_orders": known_orders,
         "live_known_orders_error": known_orders_error,
+        "spot_vol_history": spot_vol,
+        "spot_vol_history_error": spot_vol_error,
     }
 
 

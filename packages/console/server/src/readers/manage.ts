@@ -24,6 +24,8 @@ import type {
   ManageHedges,
   ManageLadder,
   ManageScenarios,
+  ManageMatrixHorizon,
+  ManageIdea,
   ManageHedgeSuggestion,
   ManagePortfolio,
   ManagePremium,
@@ -884,6 +886,7 @@ function portfolio(v: unknown, rules: Record<string, unknown>, lev: Leveraged = 
     hedges: hedges(p["hedges"]),
     vix: num(p["vix"]),
     scenarios: scenarios(p["scenarios"]),
+    ideas: arr(p["ideas"]).map(idea),
     ladder: ladder(p["ladder"]),
     candidates: candidates(p["candidates"], rules, lev),
     timeSpreads: manageTimeSpreads(p["time_spreads"]),
@@ -1046,17 +1049,71 @@ function nums(v: unknown): Array<number | null> {
   return arr(v).map((x) => num(x));
 }
 
+function matrixRows(v: unknown): Array<{ ivShift: number; pnl: Array<number | null> }> {
+  return arr(v).map((raw) => {
+    const row = rec(raw);
+    return { ivShift: num(row["iv_shift"]) ?? 0, pnl: nums(row["pnl"]) };
+  });
+}
+
+function horizon(raw: unknown): ManageMatrixHorizon {
+  const h = rec(raw);
+  const r = h["realistic"] === null || h["realistic"] === undefined ? null : rec(h["realistic"]);
+  return {
+    horizonDays: num(h["horizon_days"]) ?? 0,
+    windowDays: num(h["window_days"]),
+    matrix: matrixRows(h["matrix"]),
+    realistic: r
+      ? { ivShift: nums(r["iv_shift"]), vixMultiple: nums(r["vix_multiple"]), windows: nums(r["windows"]), pnl: nums(r["pnl"]) }
+      : null,
+  };
+}
+
+function idea(raw: unknown): ManageIdea {
+  const i = rec(raw);
+  const e = i["effect"] === null || i["effect"] === undefined ? null : rec(i["effect"]);
+  return {
+    key: str(i["key"]) ?? "",
+    header: str(i["header"]) ?? "",
+    subheader: str(i["subheader"]) ?? "",
+    explanation: str(i["explanation"]) ?? "",
+    trades: strs(i["trades"]),
+    effect: e
+      ? {
+          change: str(e["change"]) ?? "",
+          basis: str(e["basis"]) ?? "iv_held",
+          moves: nums(e["moves"]).filter((x): x is number => x !== null),
+          before: nums(e["before"]),
+          after: nums(e["after"]),
+          worstBefore: num(e["worst_before"]),
+          worstAfter: num(e["worst_after"]),
+          thetaBefore: num(e["theta_before"]),
+          thetaAfter: num(e["theta_after"]),
+        }
+      : null,
+  };
+}
+
 function scenarios(v: unknown): ManageScenarios | null {
   const s = rec(v);
   if (Object.keys(s).length === 0) return null;
   const graph = rec(s["graph"]);
+  const real = s["realistic"] === null || s["realistic"] === undefined ? null : rec(s["realistic"]);
   return {
     moves: nums(s["moves"]).filter((x): x is number => x !== null),
     ivShiftWeighting: str(s["iv_shift_weighting"]),
-    matrix: arr(s["matrix"]).map((raw) => {
-      const row = rec(raw);
-      return { ivShift: num(row["iv_shift"]) ?? 0, pnl: nums(row["pnl"]) };
-    }),
+    matrix: matrixRows(s["matrix"]),
+    horizons: arr(s["horizons"]).map(horizon),
+    realistic: real
+      ? {
+          enabled: real["enabled"] === true,
+          source: str(real["source"]),
+          since: str(real["since"]),
+          through: str(real["through"]),
+          vix: num(real["vix"]),
+          error: str(real["error"]),
+        }
+      : null,
     graph: {
       moves: nums(graph["moves"]).filter((x): x is number => x !== null),
       curves: arr(graph["curves"]).map((raw) => {
