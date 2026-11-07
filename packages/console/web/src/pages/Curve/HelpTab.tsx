@@ -1,5 +1,6 @@
 import type { CurvePayload } from "@console/shared";
 import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
+import { Section } from "../../components/Section";
 
 /**
  * What this experiment is, in the module's own terms -- the pmcc HelpTab precedent: curve's four
@@ -9,7 +10,8 @@ import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
 export function HelpTab({ data }: { data: CurvePayload | undefined }) {
   const p = data?.params;
   return (
-    <div className="cards cards-wide">
+    <div className="pf-layout">
+      <Section concept="stand" tag="the idea" question="What is curve?">
       <Card title="what curve is" collapseKey="curve-help-what" defaultCollapsed className="view-fade">
         <div className="pmcc-prose">
           <p>
@@ -28,8 +30,10 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
           </p>
         </div>
       </Card>
+      </Section>
 
-      <Card title="the four arms -- one variable each" collapseKey="curve-help-arms" defaultCollapsed>
+      <Section concept="dir" tag="the arms" question="How does each arm differ?">
+      <Card title="the four arms -- one variable each" collapseKey="curve-help-arms" defaultCollapsed className="lv-12">
         <div className="pmcc-prose">
           <dl className="pmcc-defs">
             <dt>control</dt>
@@ -71,8 +75,7 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
           </dl>
         </div>
       </Card>
-
-      <Card title="why the arms are only partly comparable" collapseKey="curve-help-pairing" defaultCollapsed>
+      <Card title="why the arms are only partly comparable" collapseKey="curve-help-pairing" defaultCollapsed className="lv-12">
         <div className="pmcc-prose">
           <p>
             <strong>control and noflip are exactly paired.</strong> They enter from the same plan on the same
@@ -89,7 +92,9 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
           </p>
         </div>
       </Card>
+      </Section>
 
+      <Section concept="risk" tag="the data" question="What is the regime series?">
       <Card title="the regime series, recorded every session" collapseKey="curve-help-regime" defaultCollapsed>
         <div className="pmcc-prose">
           <p>
@@ -101,7 +106,9 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
           </p>
         </div>
       </Card>
+      </Section>
 
+      <Section concept="edge" tag="the rules" question="What keeps the results honest?">
       <Card title="the honesty rules" collapseKey="curve-help-honesty" defaultCollapsed>
         <div className="pmcc-prose">
           <ol className="pmcc-rules">
@@ -137,6 +144,7 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
           </ol>
         </div>
       </Card>
+      </Section>
     </div>
   );
 }

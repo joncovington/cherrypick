@@ -8,7 +8,10 @@ import { useUrlDateRange } from "../../components/table/DateRange";
 import type { ColumnDef } from "../../components/table/columns";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { useContangoHistory } from "../../lib/api";
-import { GridCard, StatTile } from "../../components/grid/GridCard";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
+import { FliesTile } from "../Flies/FliesSession";
+import { TabLink } from "../Flies/FliesFilter";
 import { TimeLineChart, type TimeLineSeries } from "../../components/chart/TimeLineChart";
 import { SERIES_COLORS } from "../../components/Charts";
 import { DecisionsCard } from "../../components/DecisionsCard";
@@ -39,16 +42,30 @@ const pct = (v: number | null | undefined, digits = 1): string =>
 
 function absentCard() {
   return (
-    <div className="cards cards-wide">
-      <Card title="contango" collapseKey="contango-absent">
-        <p className="muted">
-          This module has not run on this machine -- there is no paper store at{" "}
-          <span className="mono">~/.cherrypick/data/contango/paper_trades.db</span> yet. It fills in after its first
-          decision window, ten minutes before a session's close.
-        </p>
-      </Card>
+    <div className="pf-layout">
+      <Section concept="stand" tag="not started" question="Has this module run on this machine?">
+        <Card title="contango" collapseKey="contango-absent">
+          <p className="muted">
+            This module has not run on this machine -- there is no paper store at{" "}
+            <span className="mono">~/.cherrypick/data/contango/paper_trades.db</span> yet. It fills in after its first
+            decision window, ten minutes before a session's close.
+          </p>
+        </Card>
+      </Section>
     </div>
   );
+}
+
+/** A card's ? holding one explanatory paragraph: the caption that used to sit under the figure. */
+function oneNote(title: string, heading: string, text: string): CardHelpContent {
+  return {
+    title,
+    body: (
+      <HelpSection title={heading}>
+        <p>{text}</p>
+      </HelpSection>
+    ),
+  };
 }
 
 function windowLabel(data: ContangoPayload | undefined): string {
@@ -92,13 +109,14 @@ export function ContangoToday({
   const thresholds = (data?.params.arms ?? []).map((a) => `${a.arm} ${String(a.enterBelow)}/${String(a.exitAtOrAbove)}`);
   const lines = navLines(metrics, false);
   return (
-    <div className="grid-12">
-      <StatTile
-        label="VIX/VIX3M today"
+    <div className="pf-layout">
+      <Section concept="stand" tag="the day" question="Where does each arm stand today?">
+      <FliesTile
+        title="VIX/VIX3M today"
         value={today?.usable ? fmtNum(today.ratio, 3) : null}
         tone="dim"
         to="/contango/regime"
-        toLabel="the regime series"
+        toLabel="regime"
         foot={
           today === undefined
             ? "no read yet this session"
@@ -108,13 +126,13 @@ export function ContangoToday({
         }
       />
       {(data?.arms ?? []).map((a) => (
-        <StatTile
+        <FliesTile
           key={a.arm}
-          label={a.arm}
+          title={a.arm}
           value={a.latestNav === null ? null : fmtMoney(a.latestNav)}
           tone="dim"
           to="/contango/arms"
-          toLabel="the arm comparison"
+          toLabel="arms"
           foot={
             <>
               {a.holding === null ? "holding nothing yet" : `${a.holding.symbol} ${String(a.holding.shares)} sh (${a.holding.role})`}
@@ -125,22 +143,36 @@ export function ContangoToday({
           }
         />
       ))}
-      <StatTile
-        label="decision window"
+      <FliesTile
+        title="decision window"
         value={windowLabel(data)}
         tone="dim"
         to="/contango/decisions"
-        toLabel="the decision journal"
+        toLabel="decisions"
         foot="12:50 on an early close · nothing fills after it"
       />
-      <GridCard label="NAV against buy-and-hold" span={6} h={304} to="/contango/performance" foot="each line rebased to the arm's starting capital · after every cost">
+      </Section>
+
+      <Section concept="hist" tag="the record" question="How have NAV and the regime moved lately?">
+      <Card
+        title="NAV against buy-and-hold"
+        className="fl-w6"
+        help={oneNote("NAV against buy-and-hold", "What is drawn", "Each line rebased to the arm's starting capital, after every cost.")}
+      >
         {lines.length === 0 ? (
           <p className="muted">{loading ? "reading…" : "no session decided yet"}</p>
         ) : (
           <TimeLineChart series={lines} height={240} />
         )}
-      </GridCard>
-      <GridCard label="VIX/VIX3M, recent sessions" span={6} h={304} to="/contango/regime" foot="the thresholds drawn flat · below them is contango">
+        <div className="pf-mores pf-push">
+          <TabLink to="/contango/performance">performance</TabLink>
+        </div>
+      </Card>
+      <Card
+        title="VIX/VIX3M, recent sessions"
+        className="fl-w6"
+        help={oneNote("VIX/VIX3M, recent sessions", "Reading the chart", "The thresholds are drawn flat; below them is contango.")}
+      >
         <RegimeRatioChart
           rows={(data?.regimeSeries ?? []).slice(-40)}
           thresholds={[...new Set((data?.params.arms ?? []).flatMap((a) => [a.enterBelow, a.exitAtOrAbove]))].map((v) => ({
@@ -149,7 +181,11 @@ export function ContangoToday({
           }))}
           height={240}
         />
-      </GridCard>
+        <div className="pf-mores pf-push">
+          <TabLink to="/contango/regime">regime</TabLink>
+        </div>
+      </Card>
+      </Section>
     </div>
   );
 }
@@ -164,8 +200,17 @@ export function ContangoRegime({ data }: { data: ContangoPayload | undefined }) 
   }
   const rows = [...(data?.regimeSeries ?? [])].reverse().slice(0, 120);
   return (
-    <div className="cards cards-wide">
-      <Card title="VIX/VIX3M, every session" collapseKey="contango-regime-chart">
+    <div className="pf-layout">
+      <Section concept="dir" tag="the regime" question="What has the VIX/VIX3M ratio done, session by session?">
+      <Card
+        title="VIX/VIX3M, every session"
+        collapseKey="contango-regime-chart"
+        help={oneNote(
+          "VIX/VIX3M, every session",
+          "Where the read comes from",
+          "Read from the stream at the decision tick, not the close the replay used. A stale or missing print is a refusal, never the last value carried forward.",
+        )}
+      >
         <RegimeRatioChart
           rows={data?.regimeSeries ?? []}
           thresholds={[...new Set((data?.params.arms ?? []).flatMap((a) => [a.enterBelow, a.exitAtOrAbove]))].map((v) => ({
@@ -174,12 +219,12 @@ export function ContangoRegime({ data }: { data: ContangoPayload | undefined }) 
           }))}
           height={260}
         />
-        <p className="integrity-note">
-          Read from the stream at the decision tick, not the close the replay used. A stale or missing print is a refusal,
-          never the last value carried forward.
-        </p>
       </Card>
+      </Section>
+
+      <Section concept="room" tag="the decisions" question="What did each arm do on each reading?">
       <DataCard
+        className="lv-12"
         title="the reading and what each arm did"
         headers={["date", "ratio", "VIX", "VIX3M", ...arms]}
         loading={data === undefined}
@@ -204,6 +249,7 @@ export function ContangoRegime({ data }: { data: ContangoPayload | undefined }) 
           </tr>
         ))}
       </DataCard>
+      </Section>
     </div>
   );
 }
@@ -213,8 +259,12 @@ export function ContangoArms({ data, metrics }: { data: ContangoPayload | undefi
   const rows = Object.entries(metrics?.arms ?? {});
   const bench = Object.entries(metrics?.benchmarks ?? {});
   return (
-    <div className="cards cards-wide">
+    <div className="pf-layout">
+      <Section concept="hist" tag="the arms" question="How does each arm compare with buy-and-hold?">
       <DataCard
+        className="lv-12"
+        help={ARMS_HELP}
+        flag="days, not trades"
         title="arms against buy-and-hold, on daily NAV"
         headers={["series", "days", "CAGR", "return", "max DD", "MAR", "Sortino", "worst day", "switches", "missed", "distributions", "vs its rule"]}
         loading={metrics === undefined}
@@ -261,25 +311,40 @@ export function ContangoArms({ data, metrics }: { data: ContangoPayload | undefi
           </tr>
         ))}
       </DataCard>
-      <Card title="what the comparison can and cannot say yet" collapseKey="contango-arms-note">
-        <p className="integrity-note">
-          Replayed from 2018-03 at 2 bps a side, control made 7.4% a year with a 39.8% max drawdown, flipexit 9.8% with
-          41.6%, and buy-and-hold SVXY 12.3% with 62.2%: the gate buys drawdown, not return. That is the reference this
-          table is read against. Days, not trades: with about 19 switches a year, the sample that matters is sessions,
-          and the Sortino and P(Sharpe&nbsp;&gt;&nbsp;0) on the performance page refuse below 14 of them.
-        </p>
-      </Card>
+      </Section>
     </div>
   );
 }
 
+const ARMS_HELP: CardHelpContent = {
+  title: "What the comparison can and cannot say yet",
+  body: (
+    <>
+      <HelpWarn title="Days, not trades">
+        <p>
+          With about 19 switches a year, the sample that matters is sessions, and the Sortino and P(Sharpe&nbsp;&gt;&nbsp;0) on the
+          performance page refuse below 14 of them.
+        </p>
+      </HelpWarn>
+      <HelpSection title="The reference this table is read against">
+        <p>
+          Replayed from 2018-03 at 2 bps a side, control made 7.4% a year with a 39.8% max drawdown, flipexit 9.8% with 41.6%, and
+          buy-and-hold SVXY 12.3% with 62.2%: the gate buys drawdown, not return.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
+
 export function ContangoPerformance({ data, metrics }: { data: ContangoPayload | undefined; metrics: ContangoMetrics | undefined }) {
   if (metrics !== undefined && !metrics.ok) {
     return (
-      <div className="cards cards-wide">
-        <Card title="performance" isError>
-          <p className="integrity-warn">{metrics.error}</p>
-        </Card>
+      <div className="pf-layout">
+        <Section concept="stand" tag="the reading" question="Why is there no NAV reading?">
+          <Card title="performance" isError>
+            <p className="integrity-warn">{metrics.error}</p>
+          </Card>
+        </Section>
         <PerformanceSlide module="contango" />
       </div>
     );
@@ -291,19 +356,28 @@ export function ContangoPerformance({ data, metrics }: { data: ContangoPayload |
   ];
   const windows = [...FIXED_STRESS_WINDOWS, ...inversionWindows(data?.regimeSeries ?? [])];
   return (
-    <div className="cards cards-wide">
-      <Card title="NAV, its own rule, and buy-and-hold" collapseKey="contango-perf-nav">
+    <div className="pf-layout">
+      <Section concept="stand" tag="NAV" question="What is each arm worth, against its own rule and buy-and-hold?">
+      <Card
+        title="NAV, its own rule, and buy-and-hold"
+        collapseKey="contango-perf-nav"
+        className="lv-12"
+        help={oneNote(
+          "NAV, its own rule, and buy-and-hold",
+          "The grey line",
+          "The grey line per arm is its rule replayed at 2 bps over this module's own recorded ratios and marks: where the arm drifts from it, the drift is execution (spread over 2 bps, whole shares, a missed window), not the rule.",
+        )}
+      >
         <TimeLineChart series={navLines(metrics, true)} height={260} />
-        <p className="integrity-note">
-          The grey line per arm is its rule replayed at 2 bps over this module's own recorded ratios and marks: where the
-          arm drifts from it, the drift is execution (spread over 2 bps, whole shares, a missed window), not the rule.
-        </p>
       </Card>
-      <Card title="below the peak" collapseKey="contango-perf-underwater">
+      <Card title="below the peak" collapseKey="contango-perf-underwater" className="lv-12">
         <UnderwaterChart series={named} kind="nav" />
       </Card>
+      </Section>
+
+      <Section concept="hist" tag="tear sheets" question="How did each arm do over its days, month by month?">
       {arms.map(([arm, m]) => (
-        <Card key={arm} title={`${arm} -- tear sheet over ${String(m.reading.days)} days`} collapseKey={`contango-perf-${arm}`}>
+        <Card key={arm} title={`${arm} -- tear sheet over ${String(m.reading.days)} days`} collapseKey={`contango-perf-${arm}`} className="lv-12">
           <NavTiles reading={m.reading} />
           <h3 className="muted" style={{ marginTop: 12 }}>
             by month
@@ -311,16 +385,25 @@ export function ContangoPerformance({ data, metrics }: { data: ContangoPayload |
           <MonthlyHeatmap monthly={m.reading.monthly} kind="nav" />
         </Card>
       ))}
-      <Card title="trailing 60-session return" collapseKey="contango-perf-rolling">
+      </Section>
+
+      <Section concept="risk" tag="stress" question="How did NAV hold up when the regime inverted?">
+      <Card title="trailing 60-session return" collapseKey="contango-perf-rolling" className="lv-12">
         <RollingChart series={named} window={60} kind="nav" />
       </Card>
-      <Card title="stress windows" collapseKey="contango-perf-stress">
+      <Card
+        title="stress windows"
+        collapseKey="contango-perf-stress"
+        className="lv-12"
+        help={oneNote(
+          "Stress windows",
+          "Fixed and live windows",
+          "The fixed windows predate this module and read \"not held\" until it has history there; the live rows are every stretch its own regime read sat at or above 1.0.",
+        )}
+      >
         <StressTable series={named} windows={windows} kind="nav" />
-        <p className="integrity-note">
-          The fixed windows predate this module and read "not held" until it has history there; the live rows are every
-          stretch its own regime read sat at or above 1.0.
-        </p>
       </Card>
+      </Section>
       <PerformanceSlide module="contango" />
     </div>
   );
@@ -357,19 +440,21 @@ export function ContangoCosts({ data }: { data: ContangoPayload | undefined }) {
   const avgBps = withBps.length === 0 ? null : withBps.reduce((t, f) => t + (f.slippageBps ?? 0), 0) / withBps.length;
   const missed = (data?.sessions ?? []).filter((s) => s.action === "missed");
   return (
-    <div className="cards cards-wide">
-      <div className="grid-12">
-        <StatTile label="slippage per fill" value={avgBps === null ? null : `${avgBps.toFixed(2)} bps`} tone="dim" foot={`against the replay's ${String(floor)} bps a side · ${String(withBps.length)} fills`} />
-        <StatTile
-          label="fees"
+    <div className="pf-layout">
+      <Section concept="risk" tag="costs" question="What did trading cost, and what did the cash fund pay?">
+        <FliesTile title="slippage per fill" value={avgBps === null ? null : `${avgBps.toFixed(2)} bps`} tone="dim" foot={`against the replay's ${String(floor)} bps a side · ${String(withBps.length)} fills`} />
+        <FliesTile
+          title="fees"
           value={withFees.length === 0 ? null : fmtMoney(withFees.reduce((t, f) => t + (f.fees ?? 0), 0))}
           tone="dim"
           foot={`SEC and TAF on sells; buys are free${withFees.length < fills.length ? ` · ${String(withFees.length)} of ${String(fills.length)} fills recorded` : ""}`}
         />
-        <StatTile label="missed windows" value={String(missed.length)} tone="dim" foot="an arm that could not act holds what it held" />
-        <StatTile label="distributions" value={fmtMoney((data?.distributions ?? []).reduce((t, d) => t + d.amount, 0))} tone="dim" foot="the cash fund's dividends, credited from the technicals store" />
-      </div>
+        <FliesTile title="missed windows" value={String(missed.length)} tone="dim" foot="an arm that could not act holds what it held" />
+        <FliesTile title="distributions" value={fmtMoney((data?.distributions ?? []).reduce((t, d) => t + d.amount, 0))} tone="dim" foot="the cash fund's dividends, credited from the technicals store" />
+      </Section>
+      <Section concept="hist" tag="fills" question="What did each fill cost?">
       <DataCard
+        className="lv-12"
         title="every fill"
         sort={fillSort}
         headers={[
@@ -404,6 +489,8 @@ export function ContangoCosts({ data }: { data: ContangoPayload | undefined }) {
           </tr>
         ))}
       </DataCard>
+      </Section>
+      <Section concept="room" tag="windows and cash" question="Which windows were missed, and what was credited?">
       <DataCard
         title="missed decision windows"
         headers={["session", "arm", "why", "holding"]}
@@ -449,6 +536,7 @@ export function ContangoCosts({ data }: { data: ContangoPayload | undefined }) {
           </tr>
         ))}
       </DataCard>
+      </Section>
     </div>
   );
 }
@@ -456,7 +544,8 @@ export function ContangoCosts({ data }: { data: ContangoPayload | undefined }) {
 export function ContangoPositions({ data }: { data: ContangoPayload | undefined }) {
   const open = (data?.stints ?? []).filter((s) => s.status === "open");
   return (
-    <div className="cards cards-wide">
+    <div className="pf-layout">
+      <Section concept="stand" tag="the book" question="What does each arm hold now?">
       <DataCard
         title="what each arm holds"
         headers={["arm", "symbol", "role", "since", "shares", "entry price", "entry", "mark", "unrealised net"]}
@@ -481,6 +570,7 @@ export function ContangoPositions({ data }: { data: ContangoPayload | undefined 
           </tr>
         ))}
       </DataCard>
+      </Section>
     </div>
   );
 }
@@ -558,9 +648,13 @@ function ContangoStintHistory({ data }: { data: ContangoPayload | undefined }) {
 export function ContangoHistory({ data }: { data: ContangoPayload | undefined }) {
   const sessions = data?.sessions ?? [];
   return (
-    <div className="cards cards-wide">
-      <ContangoStintHistory data={data} />
+    <div className="pf-layout">
+      <Section concept="hist" tag="the record" question="How did each holding stint end?">
+        <ContangoStintHistory data={data} />
+      </Section>
+      <Section concept="edge" tag="daily" question="What did each arm decide, and what was it worth, each day?">
       <DataCard
+        className="lv-12"
         title="daily NAV log"
         headers={["date", "arm", "ratio", "before → after", "action", "holding", "cash", "NAV"]}
         loading={data === undefined}
@@ -583,6 +677,7 @@ export function ContangoHistory({ data }: { data: ContangoPayload | undefined })
           </tr>
         ))}
       </DataCard>
+      </Section>
       <MeasurementBreaks breaks={data?.measurementBreaks ?? []} />
     </div>
   );
@@ -590,8 +685,10 @@ export function ContangoHistory({ data }: { data: ContangoPayload | undefined })
 
 export function ContangoDecisions() {
   return (
-    <div className="cards cards-wide">
-      <DecisionsCard module="contango" />
+    <div className="pf-layout">
+      <Section concept="add" tag="decisions" question="What did each arm decide, and why?">
+        <DecisionsCard module="contango" />
+      </Section>
     </div>
   );
 }
@@ -599,7 +696,8 @@ export function ContangoDecisions() {
 export function ContangoHelp({ data }: { data: ContangoPayload | undefined }) {
   const arms = data?.params.arms ?? [];
   return (
-    <div className="cards cards-wide">
+    <div className="pf-layout">
+      <Section concept="stand" tag="the idea" question="What is contango?">
       <Card title="what contango is" collapseKey="contango-help-what">
         <div className="pmcc-prose">
           <p>
@@ -610,6 +708,8 @@ export function ContangoHelp({ data }: { data: ContangoPayload | undefined }) {
           </p>
         </div>
       </Card>
+      </Section>
+      <Section concept="dir" tag="the arms" question="What does each arm hold, and when?">
       <Card title="the arms -- two thresholds each" collapseKey="contango-help-arms">
         <div className="pmcc-prose">
           <dl className="pmcc-defs">
@@ -626,6 +726,8 @@ export function ContangoHelp({ data }: { data: ContangoPayload | undefined }) {
           </dl>
         </div>
       </Card>
+      </Section>
+      <Section concept="edge" tag="the rules" question="What keeps the results honest?">
       <Card title="the honesty rules" collapseKey="contango-help-rules">
         <div className="pmcc-prose">
           <ol className="pmcc-rules">
@@ -637,6 +739,7 @@ export function ContangoHelp({ data }: { data: ContangoPayload | undefined }) {
           </ol>
         </div>
       </Card>
+      </Section>
     </div>
   );
 }

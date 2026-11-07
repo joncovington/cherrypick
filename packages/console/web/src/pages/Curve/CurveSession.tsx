@@ -1,11 +1,32 @@
 import type { CurvePayload } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { DivergingBars } from "../../components/grid/DivergingBars";
-import { GridCard, StatTile } from "../../components/grid/GridCard";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
 import { fmtMoney, fmtNum } from "../../lib/format";
 import { TimeLineChart } from "../../components/chart/TimeLineChart";
 import { SERIES_COLORS } from "../../components/Charts";
 import { useCurveEquity } from "../../lib/api";
+import { FliesTile } from "../Flies/FliesSession";
+import { TabLink } from "../Flies/FliesFilter";
+
+const EQUITY_HELP: CardHelpContent = {
+  title: "Marked equity by arm",
+  body: (
+    <HelpSection title="What is drawn">
+      <p>Open spreads at their marks, after every cost. The closed net by arm is in the foot.</p>
+    </HelpSection>
+  ),
+};
+
+const RATIO_HELP: CardHelpContent = {
+  title: "VIX/VIX3M, last 10 sessions",
+  body: (
+    <HelpSection title="Reading the bars">
+      <p>The ratio the entry gate reads, drawn from 1: left of centre is contango.</p>
+    </HelpSection>
+  ),
+};
 
 /**
  * curve's session tab: the resolved session (`data.session`) as tiles and shapes, every card linking
@@ -16,14 +37,16 @@ import { useCurveEquity } from "../../lib/api";
 export function CurveSession({ data, loading }: { data: CurvePayload | undefined; loading: boolean }) {
   if (data !== undefined && !data.dbPresent) {
     return (
-      <div className="cards cards-wide">
-        <Card title="curve" collapseKey="curve-absent">
-          <p className="muted">
-            This module has not run on this machine -- there is no paper store at{" "}
-            <span className="mono">~/.cherrypick/data/curve/paper_trades.db</span> yet. The page fills in once its first
-            scheduled session runs.
-          </p>
-        </Card>
+      <div className="pf-layout">
+        <Section concept="stand" tag="not started" question="Has this module run on this machine?">
+          <Card title="curve" collapseKey="curve-absent">
+            <p className="muted">
+              This module has not run on this machine -- there is no paper store at{" "}
+              <span className="mono">~/.cherrypick/data/curve/paper_trades.db</span> yet. The page fills in once its first
+              scheduled session runs.
+            </p>
+          </Card>
+        </Section>
       </div>
     );
   }
@@ -54,87 +77,82 @@ export function CurveSession({ data, loading }: { data: CurvePayload | undefined
     }));
 
   return (
-    <div className="grid-12">
-      <StatTile
-        label="regime today"
-        value={today?.ratio != null ? fmtNum(today.ratio, 3) : null}
-        tone="dim"
-        to="/curve/regime"
-        toLabel="the daily VIX/VIX3M regime read"
-        foot={
-          today === undefined
-            ? "no read recorded for this session"
-            : today.usable
-              ? `${today.regime ?? "—"}${today.hook ? " · hook" : ""} · VIX/VIX3M`
-              : `refused: ${today.refusal ?? "unusable"}`
-        }
-      />
-      <StatTile
-        label="open positions"
-        value={data === undefined ? null : String(data.openCount)}
-        to="/curve/positions"
-        toLabel="every open position, marked"
-        foot={
-          data === undefined
-            ? "—"
-            : open.length === 0
-              ? "nothing open"
-              : marked.length === 0
-                ? "no usable mark yet"
-              : `marked net ${fmtMoney(openNet)} · costs to date`
-        }
-      />
-      <StatTile
-        label="closed net"
-        value={data === undefined || closedPositions === 0 ? null : fmtMoney(closedNet)}
-        tone={closedPositions === 0 ? "dim" : closedNet >= 0 ? "pos" : "neg"}
-        to="/curve/history"
-        toLabel="every completed cycle"
-        foot={closedPositions === 0 ? "no cycle has completed yet" : `${String(closedPositions)} completed cycles · after every cost`}
-      />
-      <StatTile
-        label="flip divergence"
-        value={data === undefined ? null : String(data.flipDivergence.flipDivergenceCount)}
-        tone="dim"
-        to="/curve/arms"
-        toLabel="the noflip comparison"
-        foot={
-          data === undefined
-            ? "—"
-            : `noflip's effective sample · ${String(data.flipDivergence.controlFlipExits)} control flip exits`
-        }
-      />
-
-      <GridCard
-        label="marked equity by arm"
-        span={6}
-        h={304}
-        to="/curve/performance"
-        toLabel="the marked equity, its drawdowns and the closed-trade metrics"
-        foot={`open spreads at their marks, after every cost · closed net ${armRows.length === 0 ? "—" : armRows.map(([arm, t]) => `${arm} ${fmtMoney(t.net)}`).join(", ")}`}
-      >
-        {equityLines.length === 0 ? (
-          <p className="muted">{loading || equity.isLoading ? "reading…" : "not enough sessions yet"}</p>
-        ) : (
-          <TimeLineChart series={equityLines} height={240} />
-        )}
-      </GridCard>
-
-      <GridCard
-        label="VIX/VIX3M, last 10 sessions"
-        span={6}
-        h={304}
-        to="/curve/regime"
-        toLabel="the full regime series"
-        foot="the ratio the entry gate reads, drawn from 1 · left of centre is contango"
-      >
-        <DivergingBars
-          rows={recent.map((r) => ({ label: r.tradeDate, value: r.ratio === null ? null : r.ratio - 1, title: r.regime ?? undefined }))}
-          format={(v) => fmtNum(v + 1, 3)}
-          tone="none"
-          emptyText={loading ? "reading…" : "no regime read recorded yet"}
+    <div className="pf-layout">
+      <Section concept="stand" tag="the day" question="Where does the book stand today?">
+        <FliesTile
+          title="regime today"
+          value={today?.ratio != null ? fmtNum(today.ratio, 3) : null}
+          tone="dim"
+          to="/curve/regime"
+          toLabel="regime"
+          foot={
+            today === undefined
+              ? "no read recorded for this session"
+              : today.usable
+                ? `${today.regime ?? "—"}${today.hook ? " · hook" : ""} · VIX/VIX3M`
+                : `refused: ${today.refusal ?? "unusable"}`
+          }
         />
-      </GridCard>
+        <FliesTile
+          title="open positions"
+          value={data === undefined ? null : String(data.openCount)}
+          to="/curve/positions"
+          toLabel="positions"
+          foot={
+            data === undefined
+              ? "—"
+              : open.length === 0
+                ? "nothing open"
+                : marked.length === 0
+                  ? "no usable mark yet"
+                  : `marked net ${fmtMoney(openNet)} · costs to date`
+          }
+        />
+        <FliesTile
+          title="closed net"
+          value={data === undefined || closedPositions === 0 ? null : fmtMoney(closedNet)}
+          tone={closedPositions === 0 ? "dim" : closedNet >= 0 ? "pos" : "neg"}
+          to="/curve/history"
+          toLabel="history"
+          foot={closedPositions === 0 ? "no cycle has completed yet" : `${String(closedPositions)} completed cycles · after every cost`}
+        />
+        <FliesTile
+          title="flip divergence"
+          value={data === undefined ? null : String(data.flipDivergence.flipDivergenceCount)}
+          tone="dim"
+          to="/curve/arms"
+          toLabel="arms"
+          foot={data === undefined ? "—" : `noflip's effective sample · ${String(data.flipDivergence.controlFlipExits)} control flip exits`}
+        />
+      </Section>
+
+      <Section concept="hist" tag="the record" question="How have the regime and the book moved lately?">
+        <Card title="marked equity by arm" className="fl-w6" help={EQUITY_HELP}>
+          {equityLines.length === 0 ? (
+            <p className="muted">{loading || equity.isLoading ? "reading…" : "not enough sessions yet"}</p>
+          ) : (
+            <TimeLineChart series={equityLines} height={240} />
+          )}
+          <p className="muted fl-state">
+            closed net {armRows.length === 0 ? "—" : armRows.map(([arm, t]) => `${arm} ${fmtMoney(t.net)}`).join(", ")}
+          </p>
+          <div className="pf-mores pf-push">
+            <TabLink to="/curve/performance">performance</TabLink>
+          </div>
+        </Card>
+
+        <Card title="VIX/VIX3M, last 10 sessions" className="fl-w6" help={RATIO_HELP}>
+          <DivergingBars
+            rows={recent.map((r) => ({ label: r.tradeDate, value: r.ratio === null ? null : r.ratio - 1, title: r.regime ?? undefined }))}
+            format={(v) => fmtNum(v + 1, 3)}
+            tone="none"
+            emptyText={loading ? "reading…" : "no regime read recorded yet"}
+          />
+          <div className="pf-mores pf-push">
+            <TabLink to="/curve/regime">regime</TabLink>
+          </div>
+        </Card>
+      </Section>
     </div>
   );
 }

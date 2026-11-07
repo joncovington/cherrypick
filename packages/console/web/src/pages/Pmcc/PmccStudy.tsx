@@ -1,6 +1,7 @@
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { MarkedEquitySection } from "../../components/nav/MarkedEquitySection";
 import { CostsView } from "../../components/costs/CostsView";
+import { Section } from "../../components/Section";
 import { usePmccCosts, usePmccEquity } from "../../lib/api";
 
 /**
@@ -13,13 +14,15 @@ import { usePmccCosts, usePmccEquity } from "../../lib/api";
 export function PmccPerformance({ era }: { era: string | null }) {
   const equity = usePmccEquity(era);
   return (
-    <div className="cards cards-wide">
-      <MarkedEquitySection
-        equity={equity.data}
-        loading={equity.isLoading}
-        collapsePrefix="pmcc-perf"
-        note="Dollars from zero, net of costs to date: each closed position's net on its close session, each open one valued at the session's close by the tracker (the long at its mark, each short realised or marked, delivered shares at spot). A session where a position cannot be priced carries its last value and is counted."
-      />
+    <div className="pf-layout">
+      <Section concept="stand" tag="marked" question="What is the book worth each day, with every position at its close?">
+        <MarkedEquitySection
+          equity={equity.data}
+          loading={equity.isLoading}
+          collapsePrefix="pmcc-perf"
+          note="Dollars from zero, net of costs to date: each closed position's net on its close session, each open one valued at the session's close by the tracker (the long at its mark, each short realised or marked, delivered shares at spot). A session where a position cannot be priced carries its last value and is counted."
+        />
+      </Section>
       <PerformanceSlide module="pmcc" />
     </div>
   );
@@ -29,7 +32,7 @@ export function PmccPerformance({ era }: { era: string | null }) {
 export function PmccCosts({ era }: { era: string | null }) {
   const costs = usePmccCosts(era);
   return (
-    <div className="cards cards-wide">
+    <div className="pf-layout">
       <CostsView
         arms={costs.data?.arms ?? []}
         since={costs.data?.since ?? null}

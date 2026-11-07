@@ -9,6 +9,7 @@ import { HistoryTable } from "../../components/table/HistoryTable";
 import { useUrlDateRange } from "../../components/table/DateRange";
 import type { ColumnDef } from "../../components/table/columns";
 import { fmtStrike } from "../../lib/optionFormat";
+import { Section } from "../../components/Section";
 
 const MONEY = tradeMoneyColumns<CurveCycleRow>("the call credit spread's net credit, per share");
 
@@ -73,7 +74,8 @@ export function HistoryTab() {
   const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useCurveHistory({ arm, symbol, from, to }, page);
 
   return (
-    <div className="cards cards-wide">
+    <div className="pf-layout">
+      <Section concept="hist" tag="the record" question="How did each completed cycle end?">
       <HistoryTable
         table="curve-history"
         title="completed cycles"
@@ -115,6 +117,7 @@ export function HistoryTab() {
           )
         }
       />
+      </Section>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import { WeeklyByArmCard } from "../../pages/Pmcc/WeeklyByArmCard";
 import { HelpTab } from "../../pages/Pmcc/HelpTab";
 import { PmccCosts, PmccPerformance } from "../../pages/Pmcc/PmccStudy";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
+import { Section } from "../../components/Section";
 import { ModuleFrame } from "../ModuleFrame";
 import { PMCC_SLIDES, type PmccSlideId } from "../navGroups";
 import { PmccSession } from "../../pages/Pmcc/PmccSession";
@@ -41,10 +42,9 @@ export function PmccLightbox({ slide }: { slide: string }) {
       id: "decisions",
       label: PMCC_LABEL.decisions,
       render: () => (
-        <>
-        <AttemptsTab module="pmcc" mode="paper" date={null} />
-        <div className="cards cards-wide">
-          <div className="pmcc-activity">
+        <div className="pf-layout">
+          <AttemptsTab module="pmcc" mode="paper" date={null} />
+          <Section concept="add" tag="today" question="Which entries were tried today, and what did management decide?">
             {(() => {
               const attempts = data?.today.attempts.filter((a) => symbol === null || a.symbol === symbol) ?? [];
               return (
@@ -109,10 +109,11 @@ export function PmccLightbox({ slide }: { slide: string }) {
                 </DataCard>
               );
             })()}
-          </div>
-          <DecisionsCard module="pmcc" />
+          </Section>
+          <Section concept="risk" tag="entry decisions" question="Why did each arm enter or hold back?">
+            <DecisionsCard module="pmcc" />
+          </Section>
         </div>
-        </>
       ),
     },
     {
@@ -120,9 +121,13 @@ export function PmccLightbox({ slide }: { slide: string }) {
       label: PMCC_LABEL.arms,
       render: () => (
         <>
-          <div className="cards cards-wide">
-            <BookComparison data={data} updatedAt={dataUpdatedAt} symbol={symbol} />
-            <WeeklyByArmCard symbol={symbol} era={era} />
+          <div className="pf-layout">
+            <Section concept="hist" tag="the arms" question="How do the arms compare, after every cost?">
+              <BookComparison data={data} updatedAt={dataUpdatedAt} symbol={symbol} />
+            </Section>
+            <Section concept="edge" tag="weekly" question="Which arm did better week by week?">
+              <WeeklyByArmCard symbol={symbol} era={era} />
+            </Section>
           </div>
           <BookArmGuide module="pmcc" />
         </>
@@ -137,14 +142,16 @@ export function PmccLightbox({ slide }: { slide: string }) {
       id: "positions",
       label: PMCC_LABEL.positions,
       render: () => (
-        <div className="cards cards-wide">
-          {isLoading ? (
-            <DataCard title="open trades" headers={["symbol", "arm", "opened"]} loading rowCount={0} numFrom={3}>
-              {null}
-            </DataCard>
-          ) : (
-            <OpenTradesCard data={data} updatedAt={dataUpdatedAt} symbol={symbol} />
-          )}
+        <div className="pf-layout">
+          <Section concept="stand" tag="the book" question="What is open now, and how is it marked?">
+            {isLoading ? (
+              <DataCard title="open trades" headers={["symbol", "arm", "opened"]} loading rowCount={0} numFrom={3}>
+                {null}
+              </DataCard>
+            ) : (
+              <OpenTradesCard data={data} updatedAt={dataUpdatedAt} symbol={symbol} />
+            )}
+          </Section>
         </div>
       ),
     },

@@ -11,6 +11,7 @@ import { HistoryTable } from "../../components/table/HistoryTable";
 import { useUrlDateRange } from "../../components/table/DateRange";
 import type { ColumnDef } from "../../components/table/columns";
 import { EntrySpreadCell } from "./EntrySpread";
+import { Section } from "../../components/Section";
 
 /**
  * How a short leg left the arm.
@@ -274,7 +275,8 @@ export function HistoryTab() {
   const outstanding = assignments.data?.rows ?? [];
 
   return (
-    <div className="cards cards-wide">
+    <div className="pf-layout">
+      <Section concept="hist" tag="the record" question="How did each completed cycle end?">
       <HistoryTable
         table="pmcc-history"
         title="completed cycles"
@@ -323,7 +325,9 @@ export function HistoryTab() {
         expanded={(r) => (open === r.positionId ? <CycleDetail row={r} /> : null)}
         detailClassName="pmcc-detail-row"
       />
+      </Section>
 
+      <Section concept="risk" tag="delivery" question="Are any delivered shares still outstanding?">
       <Card title="delivered shares" collapseKey="pmcc-assignments">
         {outstanding.length === 0 ? (
           <p className="muted">
@@ -370,6 +374,7 @@ export function HistoryTab() {
           </div>
         )}
       </Card>
+      </Section>
     </div>
   );
 }
