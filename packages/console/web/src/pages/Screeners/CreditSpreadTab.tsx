@@ -244,6 +244,7 @@ export function creditModel(r: CreditSpreadRow, shareLabel: string, largest: num
   return {
     key: boxId(r),
     symbol: r.symbol,
+    symbolHref: `/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`,
     spot: money(r.spot),
     shape: `${r.spread === "put" ? "bull put" : "bear call"} · ${r.dte} d · ${dayMonth(r.expiry)}`,
     chips: (

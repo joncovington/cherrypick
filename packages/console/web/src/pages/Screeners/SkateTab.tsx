@@ -1,4 +1,4 @@
-import type { SkateBand, SkateConfig, SkatePayload, SkateSide } from "@console/shared";
+import type { SkateBand, SkateConfig, SkateSide } from "@console/shared";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { FilterGroup, FilterSwitch, SortSection, sortRows, useSortChoice, type SortChoice, type SortOption } from "../../components/FilterSort";
 import { Pager, usePage } from "../../components/ScopeBar";
@@ -152,6 +152,7 @@ export function skateModel(v: SkateView, c: SkateConfig | null): TradeCardModel 
   return {
     key: `${v.row.symbol}-${v.row.side}`,
     symbol: v.row.symbol,
+    symbolHref: `/charts/technicals?symbol=${encodeURIComponent(v.row.symbol)}`,
     spot: v.row.spot === null ? null : v.row.spot.toFixed(2),
     shape: `${word} · ${shortDate(v.best.expiry)} · ${p.days} d`,
     chips: (
