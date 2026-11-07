@@ -5903,6 +5903,79 @@ has only counted the cycles.*
   Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item55/`).
 - **What this decides:** nothing confirmed. The collar stays offered, labelled untested.
 
+### 56. The wide wing when its floor allows, else live's 10: item 50's arms composed tick by tick
+
+*Source: the user, 2026-11-07, after item 50's report: "I'd like the solution to this as well". Item 50
+failed both gated wide arms against `live-1400`, but on the sessions where both entered, each wide arm
+did better than live's 10: the trade it takes is better, and the credit floor, a share of the width,
+lets it enter too rarely to win over every session. This rule keeps the better trade where the floor
+allows it and the 10 where it does not. The idea came from item 50's figures in both windows, so it
+is declared here knowing neither window is clean; the clean check is named below.*
+
+- **Question:** does live's rule, entering at the first tick either width's gates pass and taking
+  the 15- (or 20-) point wing whenever that width qualifies at or before the 10, earn more per session
+  than live's 10 alone?
+- **Where the edge would live:** **premium**, with width as payoff shaping, as items 43 and 50. The
+  floor decides each session which width can be sold.
+- **Look-alikes:** item 43 (the widths ungated, passed against an ungated 10); item 50 (the widths
+  gated, failed against `live-1400`); item 44 (the stabilization gate across widths).
+- **Rival explanations, each with its check:**
+  - *Hindsight in the choice:* a fallback chosen per session by which width did better would win by
+    construction. **Check:** the width is chosen from the two entry times alone, the first passing
+    tick, the wide one on a tie; the outcome never enters the choice, and a test flips every outcome
+    and shows the choice does not move.
+  - *The windows were already read:* item 50's design and holdout prompted this. **Check:** the
+    verdict is judged as declared and reported as provisional and seen; a proposal waits for the
+    sessions after 2026-10-12, read once 100 are stored.
+  - *Paying more by risking more:* **Check:** the arm's net over buying power must be at least
+    `live-1400`'s over the same sessions.
+  - *A calm span:* **Check:** the paired difference must be positive in both time-halves.
+  - *Fees:* **Check:** the arm's own net is still positive at 1.5× fees.
+  - *Two runs mixed in the holdout:* item 23 spent `live-1400`'s holdout, so the holdout composes
+    item 50's wide run with item 23's recorded `live-1400` run, as item 50 judged them. **Check:**
+    each run's id is written beside the verdict.
+- **The structure:**
+  - `live-1400` is item 50's base: the registry's `pm-200` with entries 14:00–14:30, gates and all.
+  - `f15` and `f20`: in each session, the 15- (or 20-) point entry if item 50's `g15` (`g20`) entered
+    at or before `live-1400`, else `live-1400`'s entry, else no entry (at zero). Both arms enter at
+    most once a session at the first tick their gates pass, over the same ticks, with nothing but the
+    width different, so the composition is the rule replayed tick by tick. A session with two entries
+    in either arm stops the study.
+  - **Reported, never judged:** how often each width was taken, the sessions taken at 10 though the
+    wide width entered later in the window, and the fallback against item 50's gated wide arm alone.
+- **Costs:** MEIC paper's own model, as item 50.
+- **Measured:** each session's net in dollars at one condor, the taken entry's; each session's buying
+  power, the taken entry's.
+- **Window and sample:** item 50's runs over the 60 s vendor store.
+  - **Design:** 2022-05-16 to 2025-06-30. **Holdout:** 2025-07-01 to 2026-10-12, counting only
+    after a design pass.
+  - **Neither window is clean.** Both are judged as declared; the result is read as provisional and
+    seen. **The clean check:** the sessions after 2026-10-12, composed the same way once item 50's
+    arms are replayed over them, read once 100 are stored.
+  - **Provisional:** MEIC validation has not unlocked. Fewer than 100 sessions is no verdict.
+- **Pass-or-fail rule**, item 50's, per arm, all must hold:
+  - the paired difference against `live-1400` (one session one observation) has a mean above zero
+    and a one-sided t above 2;
+  - Holm across the two arms;
+  - the paired difference positive in each time-half of the window;
+  - the arm's own mean net above zero, and still positive at **1.5× fees**;
+  - its net over buying power at least `live-1400`'s over the same sessions;
+  - then the holdout: the paired difference with a mean above zero and a one-sided t above 2.
+- **Declared limits (B11):** item 43's and item 50's: 60 s ticks; strikes beyond the stored ~100
+  points do not exist here; a stop fills under the fill model. The composition assumes one entry a
+  session in each arm and refuses otherwise.
+- **Name split (B9):** does not apply; one symbol.
+- **Data:** no new store and no new replay. `scripts/meic_wing_fallback_item56.py --window
+  design|holdout` reads item 50's results and both runs' ledgers (entry times, buying power) and
+  writes under the backtest data directory only; this plan records the verdict.
+- **Decides:**
+  - **A pass:** nothing changes live yet. The fresh sessions are read when 100 are stored; if they
+    agree and MEIC validation has unlocked, a proposal at a declared boundary teaches the live rule
+    to fall back from the wide wing to 10 at the tick, with the kill criteria and buying-power cap
+    re-derived from the composed sessions.
+  - **A fail or no verdict:** live stays at 10 wide with its gates, and item 50's better wide trades
+    are read as too rare to use.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
