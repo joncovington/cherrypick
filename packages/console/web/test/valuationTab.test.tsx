@@ -111,6 +111,20 @@ describe("the fair-value tab", () => {
     expect(help).toContain("How the value is made");
   });
 
+  it("works reach and stretch through an example whose figures are the list's own rule", () => {
+    const help = renderToString(<>{valueHelp("public list", 0.02).body}</>).replace(/<!-- -->/g, "");
+    expect(help).toContain("An example");
+    // Each company's stretch is what `stretch` makes of its margins (best 20% in all three).
+    for (const [needs, shown] of [[0.18, "0.90×"], [0.22, "1.10×"], [0.24, "1.20×"]] as const) {
+      const v = stretch(row({ reach: "within history", impliedMargin: needs, bestMargin: 0.2 }));
+      expect(`${v!.toFixed(2)}×`).toBe(shown);
+      expect(help).toContain(`<td>${shown}</td>`);
+    }
+    for (const reach of ["below value", "within history", "beyond history"]) expect(help).toContain(`<td>${reach}</td>`);
+    // the case the example exists for: over 1× on margin, yet within history on growth
+    expect(help).toMatch(/<td>B<\/td>[\s\S]*?<td>within history<\/td><td>1\.10×<\/td>/);
+  });
+
   it("lists the names as rows by default, each opening the model, and as cards on request", () => {
     payload = base([row({ symbol: "AAA", reach: "within history", impliedMargin: 0.1, bestMargin: 0.2 }), row({ symbol: "BBB" })]);
     const rows = render();

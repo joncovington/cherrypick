@@ -9858,3 +9858,17 @@ button.chip[aria-pressed][data-hue="special"],
   font-size: 15px;
   font-weight: 700;
 }
+
+/* help-tables (2026-11-07): a table inside a card's ? scrolls in its own box instead of widening the
+   help body's grid column, which clipped every paragraph beside it; help tables sit a size smaller. */
+.help-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+.help-body .data-table {
+  font-size: 12px;
+}
+.help-body .data-table th,
+.help-body .data-table td {
+  padding: 4px 6px;
+  white-space: normal;
+}
