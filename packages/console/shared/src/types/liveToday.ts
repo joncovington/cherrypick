@@ -79,7 +79,8 @@ export interface LiveTodayLoop {
   entriesToday: number;
   /** null when the ledger could not be read. */
   today: LiveTodayMoney | null;
-  /** The loop's own intraday mark over what is open, where it records one. Never totalled: each loop marks differently. */
+  /** The loop's mark over what it holds, unrealised NET of fees to date on every loop (flies' `mark_pnl`,
+   *  bwb's unrealised net, MEIC's condors at mid less fees), so the suite totals them (`suite.unrealised`). */
   mark: { value: number | null; at: string | null; basis: string } | null;
   /** The loop's daily-loss breaker, mirrored from its own `daily_loss_tripped`. `figureKind` says
    *  whether that rule sums net or gross P&L: MEIC's sums the ledger's `pnl`, which is gross. */
@@ -128,6 +129,18 @@ export interface LiveTodaySuite {
   excluded: Array<{ loop: LiveLoopId; reason: string }>;
   /** Summed loops with a row resolved today whose fees were never recorded: net and fees are n/r. */
   feesUnrecorded: LiveLoopId[];
+  /** What the loops hold, at mark, net of fees to date: every loop's `mark` summed. A loop holding
+   *  nothing adds nothing; one holding something it cannot mark, or a ledger that could not be read,
+   *  makes the total n/r and is named. The hand trades are never in it. */
+  unrealised: {
+    value: number | null;
+    /** The oldest mark behind the total. */
+    at: string | null;
+    /** Loops holding something, marked and summed. */
+    summed: LiveLoopId[];
+    /** Loops holding something they could not mark, or whose ledger was unread: why the total is n/r. */
+    unmarked: Array<{ loop: LiveLoopId; reason: string }>;
+  };
 }
 
 /** One hand-placed order's fills today (manage's `zero_dte.orders`). Cash is signed: a credit is +. */

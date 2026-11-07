@@ -2021,7 +2021,7 @@
       "id": 52,
       "study": "item52",
       "title": "Diagonals across an earnings report: the short weekly takes the crush, the monthly long keeps its value",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "earnings-premium",
       "side": "neutral",
@@ -2055,9 +2055,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#52-diagonals-across-an-earnings-report-the-short-weekly-takes-the-crush-the-monthly-long-keeps-its-value",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item52/results.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "every arm judged fails the design window (A-call, A-put, B1, B2, C and A's cheap cuts); the cheap cuts of B1, B2 and C are no verdict on too few design trades, so B2's cheap cut's holdout is reported only; diagonals across a report are closed with the calendars, and the back-month wing does not rescue a short report strangle, beside item 47's fail"
     },
     {
       "id": 53,
@@ -2105,7 +2108,7 @@
       "id": 54,
       "study": "item54",
       "title": "Does the front/back IV ratio predict a time spread's profit?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "term-structure",
       "side": "neutral",
@@ -2135,9 +2138,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#54-does-the-frontback-iv-ratio-predict-a-time-spreads-profit",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item54/design.json",
+        "{home}/data/backtest/results/research/item54/holdout.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "one of the twelve tests passes the design window, the call calendar's ratio rank, and the holdout does not confirm it; nothing is confirmed, so the ratio stays an untested ordering, labelled so, and the scanner stays a convenience, never presented as a source of trades"
     },
     {
       "id": 55,
@@ -2529,6 +2536,49 @@
     {
       "id": 64,
       "study": "item64",
+      "title": "Defined-risk bullish structures on slow large caps, against holding the same delta in shares",
+      "status": "declared",
+      "legacy": false,
+      "setup": "structure-choice",
+      "side": "bullish",
+      "structure": "ratio-and-broken-wing",
+      "window": "monthly",
+      "measure": "per trade, net and excess (net less the entry delta held in shares from entry to exit) as a share of capital held, for four structures on ten slow large caps: a call backspread, two front call credit spreads with a back-month long call, a 1-3-2 put BWB, and the 1-3-2 calendarized; one observation is one cycle month, equal weight across names",
+      "expected": "a positive excess after costs for at least one structure, and the calendarized 1-3-2 ahead of the same-month one on return on capital; the declaration expects a fail beyond drift",
+      "sample": "design cycles entered 2016-01-01..2021-12-31 (~70 cycles of up to ten names); holdout 2022-01-01..2026-11-06 read only after a design pass; < 50 cycles or > 5% of a structure's entries without an exit mark = no verdict",
+      "rule": "per test (four structures and D less C): mean excess return on capital > 0, one-sided t > 2, Holm at 5% across the five; both design time-halves positive; for A to D the raw return on capital positive at 1.5x costs; then the holdout with the same checks",
+      "mechanism": "the backspread and the spreads-plus-long are long-delta bets with a cheapened call; the 1-3-2 sells put premium below the market; calendarizing changes the capital held and the exposure to the term structure",
+      "rivals": [
+        {
+          "explanation": "market drift",
+          "check": "the verdict is on the excess over the entry delta held in shares"
+        },
+        {
+          "explanation": "one name or one year",
+          "check": "equal weight across names per cycle; by name and by year; both halves"
+        },
+        {
+          "explanation": "one lucky structure of five",
+          "check": "Holm at 5% across the five tests"
+        },
+        {
+          "explanation": "fees on many legs",
+          "check": "raw return on capital positive at 1.5x costs"
+        },
+        {
+          "explanation": "optimistic fills",
+          "check": "the working price on every leg, open and close"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#64-defined-risk-bullish-structures-on-slow-large-caps-against-holding-the-same-delta-in-shares",
+      "results": [],
+      "retest": null,
+      "retests": [],
+      "outcome": null
+    },
+    {
+      "id": 65,
+      "study": "item65",
       "title": "The intraday premium map: implied against realised odds of SPX closing near its price, by time of day",
       "status": "observation",
       "setup": "entry-time",
@@ -2550,18 +2600,18 @@
           "check": "four band widths reported; linear interpolation declared"
         }
       ],
-      "pointer": "docs/edge-hypotheses-plan.md#64-the-intraday-premium-map-implied-against-realised-odds-of-spx-closing-near-its-price-by-time-of-day",
+      "pointer": "docs/edge-hypotheses-plan.md#65-the-intraday-premium-map-implied-against-realised-odds-of-spx-closing-near-its-price-by-time-of-day",
       "legacy": false,
       "results": [
-        "{home}/data/backtest/results/research/item64/map-2022-05-16-2026-11-06.json"
+        "{home}/data/backtest/results/research/item65/map-2022-05-16-2026-11-06.json"
       ],
       "retest": null,
       "retests": [],
       "outcome": "the chain overprices the move to the close; 13:30-14:00 is the one window with one sign in every year (MEIC's entry); costs, not timing, are the lever"
     },
     {
-      "id": 65,
-      "study": "item65",
+      "id": 66,
+      "study": "item66",
       "title": "Item 47's mirror: a long straddle across an earnings report when its implied move is below past moves",
       "status": "failed",
       "setup": "earnings-premium",
@@ -2587,10 +2637,10 @@
           "check": "positive at the stress"
         }
       ],
-      "pointer": "docs/edge-hypotheses-plan.md#65-item-47s-mirror-a-long-straddle-across-an-earnings-report-when-its-implied-move-is-below-past-moves",
+      "pointer": "docs/edge-hypotheses-plan.md#66-item-47s-mirror-a-long-straddle-across-an-earnings-report-when-its-implied-move-is-below-past-moves",
       "legacy": false,
       "results": [
-        "{home}/data/backtest/results/research/item65/results.json"
+        "{home}/data/backtest/results/research/item66/results.json"
       ],
       "retest": null,
       "retests": [],

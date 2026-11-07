@@ -1,11 +1,11 @@
-"""Item 64, the intraday premium map (docs/edge-hypotheses-plan.md): at each time of day, the SPX
+"""Item 65, the intraday premium map (docs/edge-hypotheses-plan.md): at each time of day, the SPX
 0DTE chain's implied probability that the index closes within +/- x% of its price at that time,
 against how often it did.
 
-    python scripts/intraday_premium_map_item64.py [--start D] [--end D] [--json PATH]
+    python scripts/intraday_premium_map_item65.py [--start D] [--end D] [--json PATH]
 
 Reads only `SPX-60s.db` (SPXW 0DTE at one minute, its spot trail and the SPX daily closes). Writes
-under the backtest data dir (results/research/item64/), never into the repo: the inputs are licensed.
+under the backtest data dir (results/research/item65/), never into the repo: the inputs are licensed.
 
 **The reading.** For each session, each time T in `TIMES` and each band x in `BANDS`:
 - spot S is the trail's value at T; the band is [S(1 - x), S(1 + x)];
@@ -165,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     ]
     rows = [r for d in days if d in closes for r in session(db, d, closes[d])]
     out = {
-        "item": 64,
+        "item": 65,
         "verdict": "measurement",
         "window": [args.start, args.end],
         "sessions": len(days),
@@ -177,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
         },
         "licence": "derived from licensed vendor history: stays under ~/.cherrypick, never in the repo",
     }
-    target = args.json or home.data_dir("backtest") / "results" / "research" / "item64" / (
+    target = args.json or home.data_dir("backtest") / "results" / "research" / "item65" / (
         f"map-{args.start}-{args.end}.json"
     )
     target.parent.mkdir(parents=True, exist_ok=True)

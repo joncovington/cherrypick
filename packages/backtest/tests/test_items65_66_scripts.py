@@ -1,4 +1,4 @@
-"""Hypotheses 64 and 65: the intraday premium map's digitals and the earnings straddle's selector,
+"""Hypotheses 65 and 66: the intraday premium map's digitals and the earnings straddle's selector,
 strike and pricing. Invented quotes only, no store.
 
 Each check is shown firing and failing, because a check that cannot fire reads as coverage it is not.
@@ -22,8 +22,8 @@ def _load(name):
     return module
 
 
-pm = _load("intraday_premium_map_item64")
-es = _load("earnings_straddle_item65")
+pm = _load("intraday_premium_map_item65")
+es = _load("earnings_straddle_item66")
 
 
 def bs_chain(spot=5000.0, vol=0.15, minutes=120, step=5, half=0.0):

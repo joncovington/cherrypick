@@ -1,7 +1,7 @@
-"""Item 65, item 47's mirror: a long straddle across an earnings report when its implied move is
+"""Item 66, item 47's mirror: a long straddle across an earnings report when its implied move is
 below its past moves (docs/edge-hypotheses-plan.md).
 
-    python scripts/earnings_straddle_item65.py [--host H] [--port P] [--out-dir DIR]
+    python scripts/earnings_straddle_item66.py [--host H] [--port P] [--out-dir DIR]
 
 Everything but the structure is item 47's, imported so the two cannot drift apart: item 31's events,
 calendar and paired control sessions, the past-move table, the expected move (0.85 x the front
@@ -20,7 +20,7 @@ less its entry spread, and counted. The control is the same straddle on item 31'
 own monthly and at-the-money strike), sold the session after.
 
 The measure is the net in basis points of the stock's notional (100 x the entry close). Results go under
-the backtest data dir (results/research/item65/), never into the repo: the inputs are licensed.
+the backtest data dir (results/research/item66/), never into the repo: the inputs are licensed.
 """
 
 from __future__ import annotations
@@ -129,7 +129,7 @@ def verdict(design: dict, holdout: dict, other_mean: float | None) -> dict:
 
 
 def cmd_study(args) -> int:
-    out = e47._dir(args.out_dir, "item65")
+    out = e47._dir(args.out_dir, "item66")
     if args.rescore:
         trades = json.loads((out / "trades.json").read_text(encoding="utf-8"))
         drops = json.loads((out / "drops.json").read_text(encoding="utf-8"))
@@ -203,7 +203,7 @@ def collect(args) -> tuple[list[dict], dict]:
 
 
 def score(trades: list[dict], drops: dict, out: Path) -> int:
-    result: dict = {"item": 65, "drops": dict(drops), "arms": {}}
+    result: dict = {"item": 66, "drops": dict(drops), "arms": {}}
     for window in ("design", "holdout"):
         w = [t for t in trades if t["window"] == window]
         for arm, pick in (
