@@ -10,7 +10,9 @@ import type {
   OptionsFlowDay,
 } from "@console/shared";
 import { GridCard, StatTile } from "../../components/grid/GridCard";
-import { SortTh, sortRows, useSort, type SortState } from "../../components/DataTable";
+import { Card, SortTh, sortRows, useSort, type SortState } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
 import { fmtCount, fmtDollarsShort, fmtNum, fmtPct } from "../../lib/format";
 
 /**
@@ -678,6 +680,33 @@ function DerivedCards({ day }: { day: OptionsFlowDay }) {
   );
 }
 
+const DERIVED_HELP: CardHelpContent = {
+  title: "Derived flow",
+  body: (
+    <HelpSection title="How a row is scored">
+      <p>
+        One row per order: an outright, a sweep or a spread, with prints at one timestamp grouped and rolls marked. Ranked by score, 0–100
+        and signed by the view: <strong>size</strong> (Δ$ on a fixed $100K–$50M log scale) × <strong>conviction</strong> (how far the fill
+        sat toward bid or ask; halved where the reported sentiment is the opposite) × <strong>purity</strong> (1 for a mid-delta bet, lower
+        for deep in the money, lottery tickets, rolls, near-max spreads and sold options) × <strong>opening</strong> (new positioning: from
+        the next morning&apos;s open interest once checked). The constants are provisional, to be judged against the outcome record.
+      </p>
+    </HelpSection>
+  ),
+};
+
+/** A card's help: one titled paragraph. */
+function helpOf(title: string, text: string): CardHelpContent {
+  return {
+    title,
+    body: (
+      <HelpSection title="Reading it">
+        <p>{text}</p>
+      </HelpSection>
+    ),
+  };
+}
+
 /** What verifies the table: the day's own checks and the running ones, laid out as recorded. */
 function ChecksCard({ checks, session }: { checks: DerivedFlowChecks; session: string }) {
   const v = checks.siteVote;
@@ -686,11 +715,15 @@ function ChecksCard({ checks, session }: { checks: DerivedFlowChecks; session: s
   const a = checks.audit;
   const r = checks.review;
   return (
-    <section className="card view-fade">
-      <div className="card-head">
-        <h2>Checks</h2>
-        <span className="card-asof">{session}</span>
-      </div>
+    <Card
+      title="Checks"
+      className="lv-12"
+      controls={
+        <>
+          <span className="card-asof">{session}</span>
+        </>
+      }
+    >
       <div className="table-scroll">
       <table className="data-table flow-table">
         <tbody>
@@ -739,7 +772,7 @@ function ChecksCard({ checks, session }: { checks: DerivedFlowChecks; session: s
         </tbody>
       </table>
       </div>
-    </section>
+    </Card>
   );
 }
 
@@ -747,60 +780,78 @@ export function FlowDerived({ day }: { day: OptionsFlowDay }) {
   const d = day.derived;
   if (d === null) {
     return (
-      <section className="card view-fade">
-        <div className="card-head">
-          <h2>Derived flow</h2>
-          <span className="card-asof">{day.session}</span>
-        </div>
+      <div className="pf-layout">
+      <Section concept="dir" tag="derived flow" question="Which flows mattered?">
+      <Card
+        title="Derived flow"
+        controls={
+          <>
+            <span className="card-asof">{day.session}</span>
+          </>
+        }
+      >
         <p className="muted">Not scored yet for this session (scripts/quikoptions_flow.py score).</p>
-      </section>
+      </Card>
+      </Section>
+      </div>
     );
   }
   return (
-    <>
-      <section className="card view-fade">
-        <div className="card-head">
-          <h2>Derived flow — every order, read and scored</h2>
-          <span className="card-asof">
-            {day.session}
-            {d.confirmedAt !== null ? " · open interest checked" : " · open interest not checked yet"}
-          </span>
-        </div>
-        <p className="muted">
-          One row per order: an outright, a sweep or a spread, with prints at one timestamp grouped and rolls marked.
-          Ranked by score, 0–100 and signed by the view: <strong>size</strong> (Δ$ on a fixed $100K–$50M log scale) ×{" "}
-          <strong>conviction</strong> (how far the fill sat toward bid or ask; halved where the reported
-          sentiment is the opposite) × <strong>purity</strong> (1 for a mid-delta bet, lower for deep in the money, lottery tickets,
-          rolls, near-max spreads and sold options) × <strong>opening</strong> (new positioning: from the next
-          morning&apos;s open interest once checked). The constants are provisional, to be judged against the outcome
-          record.
-        </p>
+    <div className="pf-layout">
+      <Section concept="dir" tag="derived flow" question="Which flows mattered?">
+      <Card
+        title="Derived flow — every order, read and scored"
+        className="lv-12"
+        help={DERIVED_HELP}
+        controls={
+          <>
+            <span className="card-asof">
+              {day.session}
+              {d.confirmedAt !== null ? " · open interest checked" : " · open interest not checked yet"}
+            </span>
+          </>
+        }
+      >
         <DerivedTable rows={d.flows} full />
         <FlagKey rows={d.flows} />
-      </section>
-      <ChecksCard checks={d.checks} session={day.session} />
-      <div className="cards cards-pairs">
-        <section className="card view-fade">
-          <div className="card-head">
-            <h2>Net by name</h2>
-            <span className="card-asof">{day.session}</span>
-          </div>
+      </Card>
+      <Card
+          title="Net by name"
+          controls={
+            <>
+              <span className="card-asof">{day.session}</span>
+            </>
+          }
+        >
           <NetByName names={d.names} each={10} />
-        </section>
-        <section className="card view-fade">
-          <div className="card-head">
-            <h2>Unread — the fill sat too near the middle</h2>
-            <span className="card-asof">{day.session}</span>
-          </div>
+        </Card>
+        <Card
+          title="Unread — the fill sat too near the middle"
+          help={{
+            title: "Unread flows",
+            body: (
+              <HelpSection title="Why they are listed">
+                <p>Listed for their size, never ranked: no read means no view.</p>
+              </HelpSection>
+            ),
+          }}
+          controls={
+            <>
+              <span className="card-asof">{day.session}</span>
+            </>
+          }
+        >
           {d.unread.length === 0 ? (
             <p className="muted">Every flow read.</p>
           ) : (
             <DerivedTable rows={d.unread} full={false} />
           )}
-          <p className="muted">Listed for their size, never ranked: no read means no view.</p>
-        </section>
-      </div>
-    </>
+        </Card>
+      </Section>
+      <Section concept="edge" tag="checks" question="Does the read hold up?">
+        <ChecksCard checks={d.checks} session={day.session} />
+      </Section>
+    </div>
   );
 }
 
@@ -942,15 +993,17 @@ export function FlowBirdseye({ day }: { day: OptionsFlowDay }) {
   const keys = day.birdseye[0] !== undefined ? Object.keys(day.birdseye[0].buckets) : [];
   const rowMax = (r: FlowBirdseyeRow) => maxOf(keys.map((k) => r.buckets[k] ?? null));
   return (
-    <section className="card view-fade">
-      <div className="card-head">
-        <h2>Trades by size</h2>
-        <span className="card-asof">QuikOptions, {day.session}</span>
-      </div>
-      <p className="muted">
-        As reported: the number of trades (not contracts) at each trade size, for its ten most
-        traded names. Each cell is shaded by its share of its own row.
-      </p>
+    <div className="pf-layout">
+    <Section concept="dir" tag="by size" question="Where are the trades concentrated?">
+    <Card
+      title="Trades by size"
+      help={helpOf("Trades by size", "As reported: the number of trades (not contracts) at each trade size, for its ten most traded names. Each cell is shaded by its share of its own row.")}
+      controls={
+        <>
+          <span className="card-asof">QuikOptions, {day.session}</span>
+        </>
+      }
+    >
       <div className="table-scroll">
         <table className="data-table flow-table">
           <thead>
@@ -990,72 +1043,90 @@ export function FlowBirdseye({ day }: { day: OptionsFlowDay }) {
           </tbody>
         </table>
       </div>
-    </section>
+    </Card>
+    </Section>
+    </div>
   );
 }
 
 export function FlowTrades({ day }: { day: OptionsFlowDay }) {
   return (
-    <div className="cards cards-pairs">
-      <section className="card view-fade">
-        <div className="card-head">
-          <h2>Largest by contracts</h2>
-          <span className="card-asof">QuikOptions, {day.session}</span>
-        </div>
+    <div className="pf-layout">
+    <Section concept="dir" tag="trades" question="What traded biggest?">
+      <Card
+        title="Largest by contracts"
+        help={helpOf("Largest by contracts", "The largest outrights — single-leg trades — ranked by number of contracts, not by premium. * Premium is derived (size × price × 100): none is reported for outrights. Side as reported, with where the fill sat.")}
+        controls={
+          <>
+            <span className="card-asof">QuikOptions, {day.session}</span>
+          </>
+        }
+      >
         <TradesTable rows={day.outrights} showTime />
-        <p className="muted">
-          The largest outrights — single-leg trades — ranked by number of contracts, not by premium. * Premium is
-          derived (size × price × 100): none is reported for outrights. Side as reported, with where the fill sat.
-        </p>
-      </section>
-      <section className="card view-fade">
-        <div className="card-head">
-          <h2>Top sweeps</h2>
-          <span className="card-asof">QuikOptions, {day.session}</span>
-        </div>
+      </Card>
+      <Card
+        title="Top sweeps"
+        help={helpOf("Top sweeps", "The largest sweeps by premium. A sweep carries no time.")}
+        controls={
+          <>
+            <span className="card-asof">QuikOptions, {day.session}</span>
+          </>
+        }
+      >
         <TradesTable rows={day.sweeps} showTime={false} />
-        <p className="muted">The largest sweeps by premium. A sweep carries no time.</p>
-      </section>
+      </Card>
+    </Section>
     </div>
   );
 }
 
 export function FlowSpreads({ day }: { day: OptionsFlowDay }) {
   return (
-    <section className="card view-fade">
-      <div className="card-head">
-        <h2>Top spreads</h2>
-        <span className="card-asof">QuikOptions, {day.session}</span>
-      </div>
+    <div className="pf-layout">
+    <Section concept="dir" tag="spreads" question="Which spreads traded?">
+    <Card
+      title="Top spreads"
+      className="lv-12"
+      help={helpOf("Top spreads", "Direction is read from the price's sign — a debit is a spread bought, a credit one sold — and checked against the delta's: a call spread bought is long delta, a put spread bought short it. Where the signs do not fit, direction is a dash. ⛓ marks rows printed together (same time and size), such as a roll. Price is the net per share; premium is whole-position dollars.")}
+      controls={
+        <>
+          <span className="card-asof">QuikOptions, {day.session}</span>
+        </>
+      }
+    >
       <SpreadsTable rows={day.spreads} full derived={day.derived} />
-      <p className="muted">
-        Direction is read from the price's sign — a debit is a spread bought, a credit one sold — and checked against the
-        delta's: a call spread bought is long delta, a put spread bought short it. Where the signs do not fit, direction is a
-        dash. ⛓ marks rows printed together (same time and
-        size), such as a roll. Price is the net per share; premium is whole-position dollars.
-      </p>
-    </section>
+    </Card>
+    </Section>
+    </div>
   );
 }
 
 export function FlowVolOiTables({ day }: { day: OptionsFlowDay }) {
   return (
-    <div className="cards cards-pairs">
-      <section className="card view-fade">
-        <div className="card-head">
-          <h2>Vol / OI — open interest over 100</h2>
-          <span className="card-asof">QuikOptions, {day.session}</span>
-        </div>
+    <div className="pf-layout">
+    <Section concept="dir" tag="vol / OI" question="Where is volume above open interest?">
+      <Card
+        title="Vol / OI — open interest over 100"
+        controls={
+          <>
+            <span className="card-asof">QuikOptions, {day.session}</span>
+          </>
+        }
+      >
         <VolOiTable rows={day.voloi} />
-      </section>
-      <section className="card view-fade">
-        <div className="card-head">
-          <h2>Vol / OI — openings</h2>
-          <span className="card-asof">QuikOptions, {day.session}</span>
-        </div>
+      </Card>
+      <Card
+        title="Vol / OI — openings"
+        help={helpOf("Openings", "New strikes: no open interest before the session, so V/OI is the volume itself.")}
+        controls={
+          <>
+            <span className="card-asof">QuikOptions, {day.session}</span>
+          </>
+        }
+      >
         <VolOiTable rows={day.openings} />
-        <p className="muted">New strikes: no open interest before the session, so V/OI is the volume itself.</p>
-      </section>
+      </Card>
+    </Section>
     </div>
   );
 }

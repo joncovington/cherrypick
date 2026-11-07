@@ -1,6 +1,10 @@
 import { useState } from "react";
 import type { PnlDay, PortfolioReading } from "@console/shared";
 import { Card, PnlCell } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { FilterGroup } from "../../components/FilterSort";
+import { Section } from "../../components/Section";
+import { useFilterPanel } from "../useFilterPanel";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { Tile } from "../../components/performance/Tile";
 import { fmtMoney, fmtPct } from "../../lib/format";
@@ -52,6 +56,8 @@ export function PortfolioView({ p }: { p: PortfolioReading }) {
   const thin = (periods: number) => periods < p.min_periods;
   return (
     <>
+      <Section concept="risk" question="Do the arms move together?">
+      <Card title="held together" help={HELD_HELP}>
       {p.failures.length > 0 && (
         <p style={{ fontSize: 12 }}>
           {p.failures.map((f) => (
@@ -104,8 +110,9 @@ export function PortfolioView({ p }: { p: PortfolioReading }) {
           title={p.weights === "equal_risk" ? "each arm scaled to the median arm's spread per period; see the scale column" : "dollars as each book booked them"}
         />
       </TileGrid>
+      </Card>
 
-      <div className="card-subhead">correlation, two ways</div>
+      <Card title="correlation, two ways" help={CORRELATION_HELP}>
       <div className="table-scroll">
         <table className="data-table">
           <thead>
@@ -141,8 +148,11 @@ export function PortfolioView({ p }: { p: PortfolioReading }) {
           </tbody>
         </table>
       </div>
+      </Card>
+      </Section>
 
-      <div className="card-subhead">each arm</div>
+      <Section concept="stand" tag="contribution" question="What does each arm add?">
+      <Card title="each arm" className="lv-12">
       <div className="table-scroll">
         <table className="data-table">
           <thead>
@@ -178,10 +188,10 @@ export function PortfolioView({ p }: { p: PortfolioReading }) {
           </tbody>
         </table>
       </div>
+      </Card>
 
       {p.worst_periods.length > 0 && (
-        <>
-          <div className="card-subhead">worst {unit}</div>
+        <Card title={`worst ${unit}`} className="lv-12">
           <div className="table-scroll">
             <table className="data-table">
               <thead>
@@ -209,11 +219,58 @@ export function PortfolioView({ p }: { p: PortfolioReading }) {
               </tbody>
             </table>
           </div>
-        </>
+        </Card>
       )}
+      </Section>
     </>
   );
 }
+
+const HELD_HELP: CardHelpContent = {
+  title: "Holding the arms together",
+  body: (
+    <HelpSection title="What the tiles say">
+      <p>
+        Effective arms is N for independent arms of equal size and 1 for one bet. Combining saves is how much smaller the combined drawdown
+        is than the arms' own drawdowns added up. Every figure says how many periods it rests on, and one under the minimum is marked thin.
+      </p>
+    </HelpSection>
+  ),
+};
+
+const CORRELATION_HELP: CardHelpContent = {
+  title: "Correlation, two ways",
+  body: (
+    <HelpSection title="Every period, and when both traded">
+      <p>
+        The first counts every period inside both arms' spans, a period an arm closed nothing counted as zero: do they lose together. The
+        second counts only periods both closed something: when both trade, do they move together.
+      </p>
+    </HelpSection>
+  ),
+};
+
+const PICK_HELP: CardHelpContent = {
+  title: "Which arms are held together",
+  body: (
+    <>
+      <HelpSection title="One arm per module">
+        <p>
+          Each module's arms are alternatives, so pick one each (or none). The default is control, else the module's first arm that is not an
+          advised experiment: a starting point, not a judgement of which arm is the strategy.
+        </p>
+      </HelpSection>
+      <HelpSection title="How the correlation is read">
+        <p>
+          Correlation is shown two ways: over every session or week in both arms' spans with a no-close period counted as zero, and over
+          periods both closed something. No ledger says whether an arm was running on a day it closed nothing, so zero is assumed only from its
+          first close. Multi-day modules book P&amp;L on the close, so a daily figure partly measures their exit calendars; weekly mostly
+          removes that.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
 
 export function PortfolioTab() {
   const [mode] = useMode();
@@ -227,22 +284,27 @@ export function PortfolioTab() {
   const pick = (module: string, tags: string[]) => (module in chosen ? chosen[module] ?? "" : (defaultArm(tags) ?? ""));
   const arms = [...modules.entries()].map(([m, tags]) => [m, pick(m, tags)] as const).filter(([, t]) => t !== "").map(([m, t]) => `${m}:${t}`);
   const { data, isLoading, isError, dataUpdatedAt } = usePortfolio(arms, period, weights, mode);
-  return (
-    <div className="cards cards-wide">
-      <Card title="portfolio — one arm per module, held together" updatedAt={dataUpdatedAt} isError={isError}>
-        <p className="muted" style={{ fontSize: 12 }}>
-          Each module&apos;s arms are alternatives, so pick one each (or none). Correlation is shown two ways: over every{" "}
-          {period === "week" ? "week" : "session"} in both arms&apos; spans with a no-close period counted as zero (do they lose
-          together), and over periods both closed something (when both trade, do they move together). No ledger says
-          whether an arm was running on a day it closed nothing, so zero is assumed only from its first close. Multi-day
-          modules book P&amp;L on the close, so a daily figure partly measures their exit calendars; weekly mostly removes
-          that.
-        </p>
-        <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center", marginBottom: "0.6rem" }}>
+  const changedPicks = [...modules.entries()].filter(([m, tags]) => pick(m, tags) !== (defaultArm(tags) ?? "")).length;
+  const changed = changedPicks + (period !== "day" ? 1 : 0) + (weights !== "equal_risk" ? 1 : 0);
+  const filter = useFilterPanel({
+    parts: [
+      arms.length === 0 ? "no arm chosen" : arms.join(", "),
+      period === "week" ? "weekly" : "daily",
+      weights === "booked" ? "as booked" : "equal risk",
+    ],
+    changed,
+    reset: () => {
+      setChosen({});
+      setPeriod("day");
+      setWeights("equal_risk");
+    },
+    children: (
+      <>
+        <FilterGroup title="arms" note="one per module">
           {[...modules.entries()].map(([m, tags]) => (
-            <label key={m} style={{ fontSize: 12 }}>
+            <label key={m} style={{ fontSize: 12, display: "block", marginBottom: "0.35rem" }}>
               {m}{" "}
-              <select className="chip review-session-select" value={pick(m, tags)} onChange={(e) => setChosen({ ...chosen, [m]: e.target.value })}>
+              <select className="chip review-session-select" aria-label={`${m} arm`} value={pick(m, tags)} onChange={(e) => setChosen({ ...chosen, [m]: e.target.value })}>
                 <option value="">none</option>
                 {tags.map((t) => (
                   <option key={t} value={t}>
@@ -252,15 +314,34 @@ export function PortfolioTab() {
               </select>
             </label>
           ))}
-          <select className="chip review-session-select" value={period} onChange={(e) => setPeriod(e.target.value === "week" ? "week" : "day")}>
+        </FilterGroup>
+        <FilterGroup title="period">
+          <select className="chip review-session-select" aria-label="period" value={period} onChange={(e) => setPeriod(e.target.value === "week" ? "week" : "day")}>
             <option value="day">daily</option>
             <option value="week">weekly</option>
           </select>
-          <select className="chip review-session-select" value={weights} onChange={(e) => setWeights(e.target.value === "booked" ? "booked" : "equal_risk")}>
+        </FilterGroup>
+        <FilterGroup title="weighting">
+          <select className="chip review-session-select" aria-label="weighting" value={weights} onChange={(e) => setWeights(e.target.value === "booked" ? "booked" : "equal_risk")}>
             <option value="equal_risk">equal risk</option>
             <option value="booked">as booked</option>
           </select>
-        </div>
+        </FilterGroup>
+      </>
+    ),
+  });
+  const ready = !calendar.isLoading && modules.size > 0 && arms.length > 0 && !isLoading && data !== undefined && data.ok;
+  return (
+    <div className="pf-layout">
+      <Section concept="stand" tag="the arms" question="Which arms am I holding together?">
+      <Card
+        title="one arm per module"
+        updatedAt={dataUpdatedAt}
+        isError={isError}
+        help={PICK_HELP}
+        controls={modules.size > 0 ? filter.button : null}
+      >
+        {modules.size > 0 ? filter.body : null}
         {calendar.isLoading ? (
           <span className="skeleton skeleton-text" style={{ width: "50%" }} />
         ) : modules.size === 0 ? (
@@ -272,9 +353,13 @@ export function PortfolioTab() {
         ) : !data.ok ? (
           <p className="muted">{data.error ?? "the portfolio read is unavailable"}</p>
         ) : (
-          <PortfolioView p={data} />
+          <p className="muted">
+            {data.arms.filter((a) => a.periods_traded > 0).length} arms held together, {data.period === "week" ? "weekly" : "daily"}.
+          </p>
         )}
       </Card>
+      </Section>
+      {ready && data !== undefined ? <PortfolioView p={data} /> : null}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
   TradesTable,
   stamp,
   totalsBySession,
+  windowNote,
 } from "../src/pages/Compare/CalendarTab";
 
 const text = (node: React.ReactElement) => renderToString(<MemoryRouter>{node}</MemoryRouter>).replace(/<!--\s*-->/g, "");
@@ -69,8 +70,14 @@ describe("CalendarView", () => {
 
   it("says which window it shows, and names a module that failed", () => {
     const html = text(<CalendarView data={data} visible={() => true} />);
-    expect(html).toContain("the suite window, not each arm");
+    expect(windowNote(data)).toContain("from 2026-08-21 — the suite window, not each arm");
     expect(html).toContain("could not be read");
+  });
+
+  it("narrows to the module and arm the card's filter names", () => {
+    const html = text(<CalendarView data={data} visible={() => true} module="flies" />);
+    expect(html).toContain("-$300.00");
+    expect(html).not.toContain("$500.00");
   });
 
   it("leaves out a module that is switched off", () => {

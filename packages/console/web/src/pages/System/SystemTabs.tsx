@@ -13,7 +13,11 @@ import { Link } from "react-router-dom";
 import { ModuleCellLink } from "../../components/ModuleLink";
 import { useFeatures } from "../../lib/useFeatures";
 import { isAdvisorPaused } from "../../lib/visibility";
-import { SortTh, sortRows, useSort } from "../../components/DataTable";
+import { Card, SortTh, sortRows, useSort } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { FilterGroup } from "../../components/FilterSort";
+import { Section } from "../../components/Section";
+import { useFilterPanel } from "../useFilterPanel";
 
 /**
  * The System page's tabs. Every figure is the server's reading of a file the suite wrote, and every
@@ -101,7 +105,7 @@ function Loading({ isError }: { isError: boolean }) {
 
 function Toggle<T extends string>({ value, options, onChange, label }: { value: T; options: readonly T[]; onChange: (v: T) => void; label: string }) {
   return (
-    <div className="mode-toggle" style={{ marginLeft: "auto" }} role="group" aria-label={label}>
+    <div className="mode-toggle" role="group" aria-label={label}>
       {options.map((o) => (
         <button key={o} type="button" className={value === o ? "mode-btn active" : "mode-btn"} onClick={() => onChange(o)}>
           {o}
@@ -111,16 +115,53 @@ function Toggle<T extends string>({ value, options, onChange, label }: { value: 
   );
 }
 
-function Section({ title, controls, children, note }: { title: string; controls?: ReactNode; children: ReactNode; note?: ReactNode }) {
+/** One system card: the page's own explanation (`note`) sits behind the card's ?, and a `filter` (the card's
+ *  local toggles behind filter & sort) puts its button in the head and its summary at the top of the body. */
+function SysCard({
+  title,
+  controls,
+  children,
+  note,
+  filter,
+  flag,
+  wide = false,
+}: {
+  title: string;
+  controls?: ReactNode;
+  children: ReactNode;
+  note?: ReactNode;
+  filter?: { button: ReactNode; body: ReactNode };
+  flag?: string;
+  /** A table too wide for half a row takes the whole row. */
+  wide?: boolean;
+}) {
+  const help: CardHelpContent | undefined =
+    note === undefined
+      ? undefined
+      : {
+          title: "About this card",
+          body: (
+            <HelpSection title="Where it comes from">
+              <p>{note}</p>
+            </HelpSection>
+          ),
+        };
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>{title}</h2>
-        {controls}
-      </div>
+    <Card
+      title={title}
+      className={wide ? "lv-12" : undefined}
+      help={help}
+      flag={flag}
+      controls={
+        <>
+          {controls}
+          {filter?.button}
+        </>
+      }
+    >
+      {filter?.body}
       {children}
-      {note !== undefined && <p className="muted system-note">{note}</p>}
-    </section>
+    </Card>
   );
 }
 
@@ -147,12 +188,19 @@ function FindingsCard({ title, findings: all, note }: { title: string; findings:
   const [scope, setScope] = useState<"not OK" | "all">("not OK");
   const notOk = all.filter((f) => f.status !== "OK");
   const findings = scope === "all" || notOk.length === 0 ? all : notOk;
+  const filter = useFilterPanel({
+    parts: [scope === "all" ? "every finding" : "findings not OK"],
+    note: `${String(findings.length)} of ${String(all.length)}`,
+    changed: scope === "all" ? 1 : 0,
+    reset: () => setScope("not OK"),
+    children: (
+      <FilterGroup title="show">
+        <Toggle value={scope} options={["not OK", "all"] as const} onChange={setScope} label={`${title} scope`} />
+      </FilterGroup>
+    ),
+  });
   return (
-    <Section
-      title={`${title} · ${String(notOk.length)} not OK of ${String(all.length)}`}
-      controls={<Toggle value={scope} options={["not OK", "all"] as const} onChange={setScope} label={`${title} scope`} />}
-      note={note}
-    >
+    <SysCard title={`${title} · ${String(notOk.length)} not OK of ${String(all.length)}`} filter={filter} note={note}>
       {notOk.length === 0 && scope === "not OK" && <p className="muted">Every finding is OK; showing all of them.</p>}
       <div className="table-scroll">
         <table className="data-table">
@@ -180,7 +228,7 @@ function FindingsCard({ title, findings: all, note }: { title: string; findings:
           </tbody>
         </table>
       </div>
-    </Section>
+    </SysCard>
   );
 }
 
@@ -198,20 +246,24 @@ export function HealthTab() {
   const otherFindings = data.watchdog.findings.filter((f) => !isSupervisorFinding(f.key));
 
   return (
-    <div className="system-page">
-      <div className="system-checks">
-        {data.checks.map((c) => (
-          <div key={c.key} className={`stat-tile system-check system-${c.level}`} title={`level from: ${c.source}`}>
-            <span className="stat-label">{c.label}</span>
-            <span className="system-check-value">{c.value}</span>
-            {c.lines.map((l, i) => (
-              <span key={i} className="system-check-line muted">
-                {l}
-              </span>
+    <div className="pf-layout">
+      <Section concept="stand" tag="the verdict" question="Is the suite healthy?">
+        <Card title="subsystems" help={CHECKS_HELP}>
+          <div className="system-checks">
+            {data.checks.map((c) => (
+              <div key={c.key} className={`stat-tile system-check system-${c.level}`} title={`level from: ${c.source}`}>
+                <span className="stat-label">{c.label}</span>
+                <span className="system-check-value">{c.value}</span>
+                {c.lines.map((l, i) => (
+                  <span key={i} className="system-check-line muted">
+                    {l}
+                  </span>
+                ))}
+              </div>
             ))}
           </div>
-        ))}
-      </div>
+        </Card>
+      </Section>
 
       <ModulesSection
         armDates={Object.fromEntries(data.live.modules.map((m) => [m.id, m.armDate]))}
@@ -223,23 +275,25 @@ export function HealthTab() {
         }
       />
 
-      <FindingsCard title="supervisor & jobs" findings={supervisorFindings} />
-      <FindingsCard
-        title="everything else"
-        findings={otherFindings}
-        note={`The watchdog last ran ${ago(data.watchdog.ageSeconds)} ago (${et(data.watchdog.at)}), every ${String(data.watchdog.intervalMinutes ?? "?")} min, overall ${data.watchdog.overall ?? "no report"}; a problem renotifies every ${String(data.watchdog.renotifyMinutes ?? "?")} min. "Since" is how long a finding has held that status.`}
-      />
+      <Section concept="risk" tag="the watchdog" question="What is the watchdog flagging?">
+        <FindingsCard title="supervisor & jobs" findings={supervisorFindings} />
+        <FindingsCard
+          title="everything else"
+          findings={otherFindings}
+          note={`The watchdog last ran ${ago(data.watchdog.ageSeconds)} ago (${et(data.watchdog.at)}), every ${String(data.watchdog.intervalMinutes ?? "?")} min, overall ${data.watchdog.overall ?? "no report"}; a problem renotifies every ${String(data.watchdog.renotifyMinutes ?? "?")} min. "Since" is how long a finding has held that status.`}
+        />
+      </Section>
 
-      <div className="cards cards-wide">
+      <Section concept="room" tag="notices" question="Who is told, and what is held?">
         {paused && (
-          <Section title="advisor">
+          <SysCard title="advisor">
             <p>
               <span className="chip chip-warn">paused</span> Nothing new activates and the model cannot change a running
               experiment. <Link to="/advisor">The Advisor page</Link> says what is held and how to release it.
             </p>
-          </Section>
+          </SysCard>
         )}
-        <Section title="notifications" note={data.notify.webhookNote}>
+        <SysCard title="notifications" note={data.notify.webhookNote}>
           <dl className="system-dl">
             <dt>channels</dt>
             <dd>{data.notify.channels.join(" · ") || "none"}</dd>
@@ -257,11 +311,23 @@ export function HealthTab() {
               )}
             </dd>
           </dl>
-        </Section>
-      </div>
+        </SysCard>
+      </Section>
     </div>
   );
 }
+
+const CHECKS_HELP: CardHelpContent = {
+  title: "The subsystem checks",
+  body: (
+    <HelpSection title="Where the levels come from">
+      <p>
+        Every figure is the server's reading of a file the suite wrote, and every colour is a level the server attached from the suite's
+        own verdict. Hover a tile for the source its level came from. This page decides layout, never health.
+      </p>
+    </HelpSection>
+  ),
+};
 
 // --------------------------------------------------------------------------- supervisor
 
@@ -288,6 +354,17 @@ export function SupervisorTab() {
   const problems = data?.jobs.filter((j) => jobMatches(j, "problems")).length ?? 0;
   const [filter, setFilter] = useState<(typeof JOB_FILTERS)[number]>("all");
   const jobSort = useSort();
+  const jobFilter = useFilterPanel({
+    parts: [filter === "all" ? "every job" : filter === "running" ? "running jobs" : "jobs needing attention"],
+    note: data === undefined ? null : `${String(data.jobs.filter((j) => jobMatches(j, filter)).length)} of ${String(data.jobs.length)}`,
+    changed: filter !== "all" ? 1 : 0,
+    reset: () => setFilter("all"),
+    children: (
+      <FilterGroup title="show">
+        <Toggle value={filter} options={JOB_FILTERS} onChange={setFilter} label="job filter" />
+      </FilterGroup>
+    ),
+  });
   if (data === undefined) return <Loading isError={isError} />;
   const hb = data.heartbeat;
   // State ranks by the level its chip is coloured with; next sorts only an enabled job's real next run.
@@ -307,7 +384,9 @@ export function SupervisorTab() {
   const deriveErrors = Object.entries(data.registry.deriveErrors);
 
   return (
-    <div className="system-page">
+    <div className="pf-layout">
+      <Section concept="stand" tag="the daemon" question="Is the supervisor alive?">
+      <Card title="supervisor" help={SUPERVISOR_HELP}>
       <div className="stats-grid">
         <div className={`stat-tile system-check system-${hb.alive ? "ok" : "critical"}`}>
           <span className="stat-label">supervisor</span>
@@ -342,9 +421,10 @@ export function SupervisorTab() {
           <span className="system-check-line muted">{deriveErrors.length === 0 ? "no derive errors" : `${String(deriveErrors.length)} derive error(s)`}</span>
         </div>
       </div>
+      </Card>
 
       {(deriveErrors.length > 0 || data.holds.length > 0 || data.restartRequests.length > 0) && (
-        <Section title="needs attention">
+        <SysCard title="needs attention">
           <ul className="system-list">
             {deriveErrors.map(([k, v]) => (
               <li key={k}>
@@ -362,10 +442,12 @@ export function SupervisorTab() {
               </li>
             ))}
           </ul>
-        </Section>
+        </SysCard>
       )}
+      </Section>
 
-      <Section title="daemons">
+      <Section concept="live" tag="running" question="What is running?">
+      <SysCard title="daemons" wide>
         <div className="table-scroll">
         <table className="data-table">
           <thead>
@@ -395,11 +477,12 @@ export function SupervisorTab() {
           </tbody>
         </table>
         </div>
-      </Section>
+      </SysCard>
 
-      <Section
+      <SysCard
         title={`jobs · ${String(problems)} need attention`}
-        controls={<Toggle value={filter} options={JOB_FILTERS} onChange={setFilter} label="job filter" />}
+        wide
+        filter={jobFilter}
         note="The supervisor's own registry, rewritten every pass. A daily or monthly job's next fire is not recorded, only its schedule and the last day it fired. Hover a state for why a job is disabled, an error for its full text."
       >
         <div className="table-scroll">
@@ -444,10 +527,23 @@ export function SupervisorTab() {
             </tbody>
           </table>
         </div>
+      </SysCard>
       </Section>
     </div>
   );
 }
+
+const SUPERVISOR_HELP: CardHelpContent = {
+  title: "The supervisor",
+  body: (
+    <HelpSection title="What the tiles say">
+      <p>
+        The supervisor's heartbeat, how long it has been up, how many jobs it runs, whether its anchor task is relaunching it, and when the job
+        registry was last written. A derive error, a held job or a pending restart appears under them.
+      </p>
+    </HelpSection>
+  ),
+};
 
 // --------------------------------------------------------------------------- modules
 
@@ -460,9 +556,10 @@ export function ModulesSection({ posture, armDates = {} }: { posture?: ReactNode
   const { data, isError } = useSystemModules();
   if (data === undefined) return <Loading isError={isError} />;
   return (
-    <div className="cards cards-wide">
-      <Section
+    <Section concept="live" tag="the modules" question="What is each module doing?">
+      <SysCard
         title="modules and live posture"
+        wide
         note="Live gate and arming are each module's own; heartbeat is its state/<module>.heartbeat; the ledger is its paper_trades.db; the stream request is what it asked the streamer for (state/stream_requests). Watchdog chips are its task and freshness findings."
       >
         {posture}
@@ -524,8 +621,8 @@ export function ModulesSection({ posture, armDates = {} }: { posture?: ReactNode
             </tbody>
           </table>
         </div>
-      </Section>
-    </div>
+      </SysCard>
+    </Section>
   );
 }
 
@@ -561,8 +658,9 @@ export function DataTab() {
     last: (f) => f.lastAt,
   });
   return (
-    <div className="system-page">
-      <Section title="freshness" note="When each scheduled artifact last landed, and whether its own run said ok.">
+    <div className="pf-layout">
+      <Section concept="live" tag="freshness" question="Is the data arriving?">
+      <SysCard title="freshness" wide note="When each scheduled artifact last landed, and whether its own run said ok.">
         <div className="table-scroll">
         <table className="data-table">
           <thead>
@@ -587,10 +685,10 @@ export function DataTab() {
           </tbody>
         </table>
         </div>
-      </Section>
+      </SysCard>
 
       {data.stream !== null && (
-        <Section
+        <SysCard wide
           title="stream cache"
           note="The shared cache every module reads, written by the streamer alone. Row counts and the newest write per table."
         >
@@ -630,11 +728,12 @@ export function DataTab() {
             </tbody>
           </table>
           </div>
-        </Section>
+        </SysCard>
       )}
 
-      <div className="cards cards-wide">
-        <Section
+      </Section>
+      <Section concept="room" tag="storage" question="How much room is left?">
+        <SysCard
           title="storage"
           note={
             data.storesMeasuredAt !== null
@@ -676,8 +775,8 @@ export function DataTab() {
           </table>
           </div>
           )}
-        </Section>
-        <Section title="reader failures" note="Stores whose reads have thrown since the console started. A failing store is served as empty, so this is the only place it shows.">
+        </SysCard>
+        <SysCard title="reader failures" note="Stores whose reads have thrown since the console started. A failing store is served as empty, so this is the only place it shows.">
           {data.readerFailures.length === 0 ? (
             <p className="muted">None since the console started.</p>
           ) : (
@@ -704,8 +803,8 @@ export function DataTab() {
             </table>
             </div>
           )}
-        </Section>
-      </div>
+        </SysCard>
+      </Section>
     </div>
   );
 }
@@ -720,7 +819,9 @@ export function EnvironmentTab() {
   const g = data.git;
   const stale = data.processes.filter((p) => p.stale === true);
   return (
-    <div className="system-page">
+    <div className="pf-layout">
+      <Section concept="stand" tag="the machine" question="What is this running on?">
+      <Card title="machine and runtime">
       <div className="stats-grid">
         <div className="stat-tile">
           <span className="stat-label">machine</span>
@@ -752,9 +853,11 @@ export function EnvironmentTab() {
           </span>
         </div>
       </div>
+      </Card>
+      </Section>
 
-      <div className="cards cards-wide">
-        <Section title="code" note={g.lastFetchAt !== null ? `Ahead/behind is against the last fetch (${agoIso(g.lastFetchAt)} ago); nothing here asks the network.` : "Ahead/behind is against the last fetch; nothing here asks the network."}>
+      <Section concept="dir" tag="code" question="What code is it running?">
+        <SysCard title="code" note={g.lastFetchAt !== null ? `Ahead/behind is against the last fetch (${agoIso(g.lastFetchAt)} ago); nothing here asks the network.` : "Ahead/behind is against the last fetch; nothing here asks the network."}>
           {g.error !== null ? (
             <p className="pnl-neg">{g.error}</p>
           ) : (
@@ -777,8 +880,8 @@ export function EnvironmentTab() {
               <dd className={g.dirtyFiles !== null && g.dirtyFiles > 0 ? "pnl-neg" : ""}>{g.dirtyFiles === 0 ? "clean" : `${String(g.dirtyFiles)} uncommitted file(s)`}</dd>
             </dl>
           )}
-        </Section>
-        <Section title="python packages">
+        </SysCard>
+        <SysCard title="python packages">
           <div className="table-scroll">
           <table className="data-table">
             <tbody>
@@ -791,10 +894,11 @@ export function EnvironmentTab() {
             </tbody>
           </table>
           </div>
-        </Section>
-      </div>
+        </SysCard>
+      </Section>
 
-      <Section
+      <Section concept="risk" tag="processes" question="Is anything running older code?">
+      <SysCard wide
         title={`processes · ${stale.length === 0 ? "all current" : `${String(stale.length)} running older code`}`}
         note="A process loads its code when it starts, so one whose packages' source changed on disk after that runs the older code until it restarts. Judged by the files, not by commits: committing after a restart changes nothing. The console runs its build, so for it the comparison is with the build it started on."
       >
@@ -836,6 +940,7 @@ export function EnvironmentTab() {
           </tbody>
         </table>
         </div>
+      </SysCard>
       </Section>
     </div>
   );
@@ -858,25 +963,44 @@ export function LogsTab() {
     if (level === "WARN") return l.level === "WARN" || l.level === "WARNING";
     return l.level === level;
   });
+  const filter = useFilterPanel({
+    parts: [source === "" ? "merged logs" : source, `last ${limit}`, level === "ALL" ? "every level" : level.toLowerCase()],
+    note: `${String(lines.length)} lines`,
+    changed: (source !== "" ? 1 : 0) + (limit !== "250" ? 1 : 0) + (level !== "ALL" ? 1 : 0),
+    reset: () => {
+      setSource("");
+      setLimit("250");
+      setLevel("ALL");
+    },
+    children: (
+      <>
+        <FilterGroup title="source">
+          <select className="chip review-session-select" value={source} onChange={(e) => setSource(e.target.value)} aria-label="log source">
+            <option value="">merged: watchdog · notify · trading loops</option>
+            {sources?.sources.map((s) => (
+              <option key={s.id} value={s.id} disabled={!s.exists}>
+                {s.id}
+                {s.exists ? "" : " (no file)"}
+              </option>
+            ))}
+          </select>
+        </FilterGroup>
+        <FilterGroup title="lines">
+          <Toggle value={limit} options={LOG_LIMITS} onChange={setLimit} label="line count" />
+        </FilterGroup>
+        <FilterGroup title="level">
+          <Toggle value={level} options={LOG_LEVELS} onChange={setLevel} label="log level filter" />
+        </FilterGroup>
+      </>
+    ),
+  });
   return (
-    <div className="system-page">
-      <Section
+    <div className="pf-layout">
+      <Section concept="live" tag="log" question="What has the suite logged?">
+      <SysCard
         title="logs"
-        controls={
-          <div className="system-log-controls">
-            <select value={source} onChange={(e) => setSource(e.target.value)} aria-label="log source">
-              <option value="">merged: watchdog · notify · trading loops</option>
-              {sources?.sources.map((s) => (
-                <option key={s.id} value={s.id} disabled={!s.exists}>
-                  {s.id}
-                  {s.exists ? "" : " (no file)"}
-                </option>
-              ))}
-            </select>
-            <Toggle value={limit} options={LOG_LIMITS} onChange={setLimit} label="line count" />
-            <Toggle value={level} options={LOG_LEVELS} onChange={setLevel} label="log level filter" />
-          </div>
-        }
+        wide
+        filter={filter}
         note="Newest first. Times are converted to ET from whatever each writer used (UTC, ET, or this machine's local time)."
       >
         {data === undefined ? (
@@ -897,6 +1021,7 @@ export function LogsTab() {
             ))}
           </div>
         )}
+      </SysCard>
       </Section>
     </div>
   );

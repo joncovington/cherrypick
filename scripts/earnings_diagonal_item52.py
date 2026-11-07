@@ -109,6 +109,16 @@ MEASURE_DTE = (14, 60, 30)  # the monthly the history reads: within the band, ne
 DESIGN, HOLDOUT = e47.DESIGN, e47.HOLDOUT
 HALF_START, MIN_TRADES, T_BAR = e47.HALF_START, e47.MIN_TRADES, e47.T_BAR
 ALPHA = e31.ALPHA
+#: The replay's corrections, oldest first (`orchestrator.studyversion`). A result written before the
+#: last of them is stale on the studies board.
+REPLAY_CORRECTIONS = (
+    {"on": "2026-11-07", "what": "an open-interest day the vendor answers 'no data' counts as answered, "
+     "so the study runs and drops that report as no_open_interest_day, as it drops any report with no "
+     "open-interest day", "why": "the study refused to run while any planned day was missing, and a few "
+     "name-days come back 'no data' on every fetch (most of them one ticker the vendor does not list "
+     "under its dotted spelling), so it could never run", "decided": "user, 2026-11-07: re-queue item 52 "
+     "until it runs", "before_read": True},
+)  # fmt: skip
 STRESS_FEES = 1.5
 # Half the spread, uncapped: the 2026-11-05 review found the 15%-of-mid cap light on wide wings, and a
 # capped half-spread would not be half the spread there.
@@ -630,11 +640,17 @@ def _status(conn) -> dict:
 
 
 def _oi_done(conn) -> set:
+    """The name-days the open-interest store answers: complete, empty, or refused with the vendor's
+    'no data' (permanent; a retry asks again and gets the same). A day refused for any other reason
+    (a server error, a timeout) is not answered, so the study waits for it."""
     if conn is None:
         return set()
     return {
         (s, d)
-        for s, d in conn.execute("SELECT symbol, session FROM oi_days WHERE status IN ('complete', 'empty')")
+        for s, d in conn.execute(
+            "SELECT symbol, session FROM oi_days WHERE status IN ('complete', 'empty') "
+            "OR (status = 'refused' AND reason LIKE 'no_data%')"
+        )
     }
 
 
