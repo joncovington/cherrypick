@@ -9834,3 +9834,22 @@ button.chip[aria-pressed][data-hue="special"],
 .an-layout {
   gap: 1.6rem;
 }
+
+/* redesign: today-open (Live > today: what is open at each loop's mark, under the realised net) */
+.lt-open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin: 0.2rem 0 0.6rem;
+  font-size: 13px;
+}
+.lt-open-lab {
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.lt-open-item {
+  font-family: var(--num-face);
+}
