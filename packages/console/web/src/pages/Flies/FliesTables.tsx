@@ -18,7 +18,7 @@ import { fmtCash, fmtPrice } from "../../lib/format";
 import { TradeCards, type TradeCardModel } from "../Live/TradeCard";
 import { ChoiceGroup, FliesLayout } from "./FliesFilter";
 import { Section } from "../../components/Section";
-import { clockTime, structureLabel, wingWidth } from "./structure";
+import { clockTime, structureLabel, structureLegs, wingWidth } from "./structure";
 
 /**
  * The positions and books tabs (2026-11-06), in the portfolio tab's layout: a position is a trade card
@@ -99,7 +99,11 @@ export function positionModel(p: FliesPositionRow): TradeCardModel {
     barTitle: "",
     label: `floor ${fmtCash(p.floorDollars)}`,
     open: { date: `${p.tradeDate.slice(5)} ${clockTime(p.entryTime)}`, price: fmtPrice(p.net) },
-    legs: [],
+    legs: structureLegs(p.kind, p.side, p.center, p.wingWidth, p.farWidth).map((l) => ({
+      buy: l.buy,
+      text: `${l.n * (p.quantity ?? 1)} ${l.strike}${l.right}`,
+      quote: null,
+    })),
     after: [p.status, ...(p.pnl !== null ? [`net ${fmtMoney(p.pnl)}`] : [])],
     foot: [`entry mode: ${p.entryMode ?? "—"}`, p.status],
   };

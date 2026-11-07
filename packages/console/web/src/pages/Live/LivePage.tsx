@@ -20,6 +20,7 @@ import { LiveChart } from "./LiveChart";
 import { LiveBoxes, StateLine } from "./liveParts";
 import type { Box } from "./PortfolioBox";
 import { Section } from "../../components/Section";
+import { structureLegs } from "../Flies/structure";
 import { BoxButton, BoxButtons } from "./portfolioBoxContext";
 import { TradeCards, type TradeCardModel } from "./TradeCard";
 
@@ -247,16 +248,8 @@ function fillState(p: LivePosition): string {
  * ledger's structure, centre and wing; any other kind is drawn without them.
  */
 export function positionModel(p: LivePosition, symbol: string): TradeCardModel {
-  const right = p.side === "call" ? "C" : "P";
   const q = p.quantity;
-  const leg = (buy: boolean, strike: number, n: number) => ({ buy, text: `${n * q} ${strike}${right}`, quote: null });
-  const w = p.wingWidth;
-  const legs =
-    p.kind === "fly"
-      ? [leg(true, p.center - w, 1), leg(false, p.center, 2), leg(true, p.center + w, 1)]
-      : p.kind === "short_vertical"
-        ? [leg(false, p.center, 1), leg(true, p.side === "put" ? p.center - w : p.center + w, 1)]
-        : [];
+  const legs = structureLegs(p.kind, p.side, p.center, p.wingWidth).map((l) => ({ buy: l.buy, text: `${l.n * q} ${l.strike}${l.right}`, quote: null }));
   const credit = fmtPrice(p.netCredit);
   const clock = hhmmOf(p.entryTime);
   const done = p.status === "settled";
@@ -264,7 +257,7 @@ export function positionModel(p: LivePosition, symbol: string): TradeCardModel {
     key: p.positionId,
     symbol: `${symbol} ${p.center}`,
     spot: null,
-    shape: `${p.kind === "fly" ? `${p.side} fly` : p.kind.replace(/_/g, " ")} · ${w} wide · ${clock}`,
+    shape: `${p.kind === "fly" ? `${p.side} fly` : p.kind.replace(/_/g, " ")} · ${p.wingWidth} wide · ${clock}`,
     chips: <span className={`chip ${p.riskFree ? "chip-ok" : ""}`}>{fillState(p)}</span>,
     cash: p.netCredit * 100 * q,
     side: [`credit ${credit}`, `floor ${p.floorDollars === null ? "—" : fmtMoney(p.floorDollars)}`],
