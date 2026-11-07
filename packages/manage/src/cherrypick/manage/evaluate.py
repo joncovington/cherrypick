@@ -135,7 +135,14 @@ _NO_EXTRINSIC = 0.01
 
 
 def _reprices(
-    leg: dict[str, Any], spot: float, strike: float, years: float, iv: float, right: str, rate: float
+    leg: dict[str, Any],
+    spot: float,
+    strike: float,
+    years: float,
+    iv: float,
+    right: str,
+    rate: float,
+    div: float = 0.0,
 ) -> bool:
     """Whether the broker's IV, priced in our model at the snapshot's spot, lands inside the leg's own
     quote. The broker computes its greeks on its own underlying price, which after the close on an
@@ -145,7 +152,7 @@ def _reprices(
     bid, ask = _f(leg.get("bid")), _f(leg.get("ask"))
     if bid is None or ask is None or ask < bid:
         return False
-    model = pricing.price(spot, strike, years, iv, right, rate)
+    model = pricing.model_price(spot, strike, years, iv, right, rate, div)
     return model is not None and bid - 1e-9 <= model <= ask + 1e-9
 
 
@@ -155,14 +162,18 @@ def _legs(
     spot: float | None,
     rate: float,
     broker_greeks: dict[str, dict] | None = None,
+    div_yield: float | None = None,
 ) -> list[dict[str, Any]]:
-    """Each leg's facts. Its IV is solved from its own mid, unless the snapshot flags the quote `wide`
+    """Each leg's facts. Its IV is solved from its own mid at the name's dividend yield (`div_yield`,
+    None when the snapshot has no dividend record for the name: priced at 0 and `div_source` says
+    so), unless the snapshot flags the quote `wide`
     and the broker has an IV for it: a wide mid is the midpoint of a market nobody quoted seriously
     (before the open, a 0.00/1.05 call), and the IVs solved off two such mids in one spread disagreed
     about twice as much as the broker's surface IVs did (median 0.030 against 0.014 over the wide
     pairs of 2026-10-20/21; on tight quotes ours agreed better, 0.005 against 0.010). The broker's IV
     is taken only when it prices the leg inside its quote at our spot (`_reprices`). `iv_source` says
     which: `mid`, `broker`, or `unpriceable` (no vol prices the mid; the leg is left unmodelled)."""
+    q = float(div_yield or 0.0)
     out = []
     for leg in raw:
         right = leg.get("right") if leg.get("right") in ("C", "P") else None
@@ -192,6 +203,10 @@ def _legs(
             "years": max(dte, 0) / 365.0 if dte is not None else 0.0,
             "iv": None,
             "iv_source": None,
+            # The yield the leg is modelled at, and where it came from: `history` (the snapshot's
+            # dividends gone ex in the year) or `none` (no record, priced at 0).
+            "div_yield": q if right else None,
+            "div_source": ("history" if div_yield is not None else "none") if right else None,
             "wide": bool(leg.get("wide")),
             "delta": None,
             "intrinsic": None,
@@ -209,23 +224,24 @@ def _legs(
             if dte and dte > 0:
                 broker_iv = _broker_iv(broker_greeks, leg.get("symbol")) if item["wide"] else None
                 if broker_iv is not None and not _reprices(
-                    leg, spot, strike, item["years"], broker_iv, right, rate
+                    leg, spot, strike, item["years"], broker_iv, right, rate, q
                 ):
                     broker_iv = None
                 if broker_iv is not None:
                     item["iv"], item["iv_source"] = broker_iv, "broker"
                 else:
-                    item["iv"] = pricing.implied_vol(spot, strike, item["years"], mid, right, rate)
+                    item["iv"] = pricing.implied_vol(spot, strike, item["years"], mid, right, rate, q)
                     item["iv_source"] = "mid" if item["iv"] else None
                     if item["iv"] and item["iv"] <= _IV_FLOOR and item["extrinsic"] > _NO_EXTRINSIC:
                         # The solver's floor, reached by a mid that still carries extrinsic: the mid
-                        # sits under what the model calls the least this option can be worth. That is
-                        # the model's missing dividend (TLT's 2029 80C, 2026-10-21: mid 7.10 under a
-                        # no-dividend floor of 10.00, read as delta 1.00 against the broker's 0.55),
-                        # not a vol of zero, so the leg is left unmodelled rather than given one.
+                        # sits under what the model calls the least this option can be worth. On a
+                        # high-yield name with no dividend record that is the missing dividend (a
+                        # long-dated call's mid under spot less the discounted strike, read as delta
+                        # 1.00 against the broker's 0.55), not a vol of zero, so the leg is left
+                        # unmodelled rather than given one.
                         item["iv"], item["iv_source"] = None, "unpriceable"
                 if item["iv"]:
-                    item["delta"] = pricing.delta(spot, strike, item["years"], item["iv"], right, rate)
+                    item["delta"] = pricing.delta(spot, strike, item["years"], item["iv"], right, rate, q)
         item["label"] = _label(item)
         out.append(item)
     return out
@@ -286,12 +302,12 @@ def evaluate_trade(
     view entries whose short this trade holds (`_pmcc_context`), which the PMCC rules read.
     `broker_greeks` is the snapshot's per-leg broker greeks, whose IV a leg with a wide quote takes.
     `roll_out` is the snapshot's roll-out chains (v14), which a weekly short's roll is priced on.
-    `div_yield` is the name's dividend yield (`_pmcc._yield`), which only the diagonal check carries."""
+    `div_yield` is the name's dividend yield (`_pmcc._yield`), which every leg is modelled at."""
     metrics = metrics or {}
     spot = _f(metrics.get("last"))
     pr = rules["pricing"]
     rate = float(pr["rate"])
-    legs = _legs(raw_legs, session, spot, rate, broker_greeks)
+    legs = _legs(raw_legs, session, spot, rate, broker_greeks, div_yield)
     override = _rules.override(rules, underlying, trade_id)
 
     def off(rule_id: str) -> bool:
@@ -769,9 +785,7 @@ def evaluate_trade(
     width = _diagonal_width(options) if trade["shape"] == "diagonal" else None
     if width and cost > 0 and not off("debit.diagonal_width"):
         share = float(dw["max_share_of_width"])
-        check = _diagonal_check(
-            options, cost, width, share, float(dw["run_past_short_moves"]), spot, pr, div_yield
-        )
+        check = _diagonal_check(options, cost, width, share, float(dw["run_past_short_moves"]), spot, pr)
         trade["diagonal_check"] = check
         if check["flag"]:
             fired.append(
@@ -1327,10 +1341,11 @@ def _untested_roll(
         toward = k > untested["strike"] if untested["right"] == "P" else k < untested["strike"]
         if not toward:
             continue
-        iv = pricing.implied_vol(spot, k, untested["years"], mid, untested["right"], rate)
+        q = float(untested.get("div_yield") or 0.0)
+        iv = pricing.implied_vol(spot, k, untested["years"], mid, untested["right"], rate, q)
         if not iv:
             continue
-        delta = pricing.delta(spot, k, untested["years"], iv, untested["right"], rate)
+        delta = pricing.delta(spot, k, untested["years"], iv, untested["right"], rate, q)
         past = k > tested["strike"] if untested["right"] == "P" else k < tested["strike"]
         (inversions if past else candidates).append((abs(abs(delta) - target), k, mid, delta))
     qty = abs(untested["quantity"])
@@ -1381,7 +1396,9 @@ def _fly_off(options: list[dict[str, Any]], spot: float, rate: float) -> dict[st
         return None
     t = (new_strike - body["strike"]) / (old["strike"] - body["strike"])
     iv = body["iv"] + t * (old["iv"] - body["iv"])
-    new_mid = pricing.price(spot, new_strike, old["years"], iv, old["right"], rate)
+    new_mid = pricing.model_price(
+        spot, new_strike, old["years"], iv, old["right"], rate, float(old.get("div_yield") or 0.0)
+    )
     qty = old["quantity"]
     per_unit = new_mid - old["mid"]
     exp = old["expiration"]
@@ -1425,7 +1442,6 @@ def _diagonal_check(
     moves: float,
     spot: float | None,
     pr: dict[str, Any],
-    div_yield: float | None = None,
 ) -> dict[str, Any]:
     """Whether a two-leg diagonal bought for `cost` has enough left to make, judged at the short's expiry.
 
@@ -1434,43 +1450,22 @@ def _diagonal_check(
     move (`moves` of them, the short's own IV) past the short strike must still be worth the net. With
     the long at intrinsic its best case is the width and the first test is the width test itself, so a
     long expiring soon after the short is judged as before; a long with years left keeps time value the
-    width ignores.
-
-    The rest of the evaluation ignores dividends; this check carries the name's yield (`div_yield`, the
-    year's dividends over today's price, as the PMCC view and the payoff chart read it), each leg's IV
-    re-solved from its mid with it and its value floored at intrinsic (early exercise). On a high-yield
-    name that matters most for the long: a long-dated call priced with no dividend has a floor of the
-    spot less the discounted strike, which its mid can sit under, and then no vol prices it at all.
-    Without a spot, or a leg no vol prices, it falls back to the width."""
+    width ignores. Each leg is priced at the name's dividend yield, as every leg in the evaluation is
+    (`pricing.leg_value_at`). Without a spot, or a leg no vol prices, it falls back to the width."""
     long = next(leg for leg in options if leg["quantity"] > 0)
     short = next(leg for leg in options if leg["quantity"] < 0)
-    rate, q = float(pr["rate"]), float(div_yield or 0.0)
-    ivs = {}
-    for leg in (long, short):
-        if q and spot and leg["mid"] is not None and leg["years"] > 0:
-            ivs[id(leg)] = pricing.implied_vol(
-                spot, leg["strike"], leg["years"], leg["mid"], leg["right"], rate, q
-            )
-        else:
-            ivs[id(leg)] = leg.get("iv")
-    if not spot or not ivs[id(long)] or not ivs[id(short)] or short["years"] <= 0:
+    if not spot or not long.get("iv") or not short.get("iv") or short["years"] <= 0:
         return {"basis": "width", "width": width, "flag": cost > share * width, "loses": cost >= width}
+    rate = float(pr["rate"])
     horizon = short["years"]
 
     def value(s: float) -> float:
-        total = 0.0
-        for leg in (long, short):
-            left = leg["years"] - horizon
-            unit = pricing.intrinsic(s, leg["strike"], leg["right"])
-            if left > 0:
-                unit = max(unit, pricing.price(s, leg["strike"], left, ivs[id(leg)], leg["right"], rate, q))
-            total += leg["quantity"] * pricing.MULTIPLIER * unit
-        return total
+        return sum(pricing.leg_value_at(leg, s, leg["years"] - horizon, rate) for leg in (long, short))
 
     steps = 2000  # half to one and a half times the spot, 0.05% apart, as the price stop's band
     best = max(value(spot * (0.5 + i / steps)) for i in range(steps + 1))
     best = max(best, value(short["strike"]))  # the peak sits at the short strike; never miss it on the grid
-    move = spot * float(ivs[id(short)]) * math.sqrt(horizon) * moves
+    move = spot * float(short["iv"]) * math.sqrt(horizon) * moves
     run_at = short["strike"] + move if short["right"] == "C" else short["strike"] - move
     run_value = value(run_at)
     thin = best < cost / share
@@ -1479,7 +1474,7 @@ def _diagonal_check(
         "basis": "modelled",
         "width": width,
         "horizon": short["expiration"],
-        "div_yield": div_yield,
+        "div_yield": long.get("div_yield"),
         "best": round(best, 2),
         "run_at": round(run_at, 2),
         "run_value": round(run_value, 2),
@@ -1584,7 +1579,9 @@ def _diagonal_roll(
     new_mids = [
         on_chain[(leg["right"], leg["strike"])]
         if (leg["right"], leg["strike"]) in on_chain
-        else pricing.price(spot, leg["strike"], years, leg["iv"], leg["right"], rate)
+        else pricing.model_price(
+            spot, leg["strike"], years, leg["iv"], leg["right"], rate, float(leg.get("div_yield") or 0.0)
+        )
         for leg in group
     ]
     modelled = any((leg["right"], leg["strike"]) not in on_chain for leg in group)
@@ -1757,7 +1754,9 @@ def _naked_put_roll(
     current = _date(leg["expiration"])
     new_exp = _monthly_on_or_after(current + timedelta(days=int(cfg["out_days"])))
     years = (new_exp - session).days / 365.0
-    new_mid = pricing.price(spot, leg["strike"], years, leg["iv"], "P", rate)
+    new_mid = pricing.model_price(
+        spot, leg["strike"], years, leg["iv"], "P", rate, float(leg.get("div_yield") or 0.0)
+    )
     qty = abs(sum(x["quantity"] for x in options))
     credit = new_mid - leg["mid"]
     return {

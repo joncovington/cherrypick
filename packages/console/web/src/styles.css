@@ -8777,6 +8777,12 @@ button.chip[aria-pressed][data-hue="special"],
 .help-body ul {
   padding-left: 18px;
 }
+/* The card-help sections inside a wide lightbox (Live → positions, pricing): the box has its own padding. */
+.help-body.pricing-help {
+  padding: 0;
+  overflow: visible;
+  max-width: 70ch;
+}
 .help-warn {
   border-left: 3px solid var(--warn);
   background: color-mix(in srgb, var(--warn) 7%, transparent);

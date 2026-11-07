@@ -37,8 +37,14 @@ export interface ManageLeg {
   iv: number | null;
   /** Where the IV came from (packages/manage `_legs`, 2026-10-21): solved from the leg's own `mid`,
    *  the `broker`'s (a wide quote, and only where it reprices inside it), or `unpriceable` (no vol
-   *  prices the mid under the no-dividend model, so the leg is unmodelled). Null: no IV was solved. */
+   *  prices the mid under the model, so the leg is unmodelled). Null: no IV was solved. */
   ivSource: "mid" | "broker" | "unpriceable" | null;
+  /** The dividend yield the leg is modelled at (2026-11-07): the name's dividends gone ex in the year
+   *  over today's price. Null on a share leg or an evaluation from before it was carried. */
+  divYield: number | null;
+  /** Where the yield came from: `history` (the snapshot's dividend record) or `none` (no record for
+   *  the name, priced at 0). Null as `divYield`. */
+  divSource: "history" | "none" | null;
   /** The snapshot's flag for a wide market on this leg; null on an evaluation that did not carry it. */
   wide: boolean | null;
 }

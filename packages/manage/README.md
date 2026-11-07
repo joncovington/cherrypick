@@ -151,7 +151,7 @@ presenter who cuts losers rather than the one who repairs them, and checked agai
 | `debit.take_profit` | +75% on the debit | take profit, roll or add | 65 | vendor (75–100%) | No outside test |
 | `credit.take_profit` by shape | short straddle, iron butterfly, big and reverse big lizard at 25% of the credit | take profit | 55 | the tastylive Options Strategy Guide (2023): one strike is always in the money, so "we temper our profit target to 25%" | The 25%-loses-after-commissions result above was on OTM credit trades; none tested these shapes |
 | `debit.take_profit` by shape | calendar, call and put zebra at +25% on the debit | take profit, roll or add | 55 | the strategy guide: a calendar at 10–25% of the debit, a zebra at 25% | No outside test |
-| `debit.diagonal_width` | a two-leg diagonal (a PMCC or its put mirror), on its net debit with rolls counted, modelled at the short's expiry with the long at its own IV and the name's dividend yield (the only rule that carries one): its best case under a third over the net (the net over 75% of the best case), or the spread worth under the net one expected move (the short's IV) past the short strike. With no IV to model, the net over 75% of the distance between the strikes | review | 60 | the strategy guide's PMCC entry rule, applied while held; modelled is your rule, 2026-11-07 | Option arithmetic: a long expiring soon after the short is worth about the width at best, so there the first test is the guide's 75%-of-width rule. A long with years left keeps time value at the short's expiry that the width ignored, and the width rule flagged such trades with plenty left to make. Without the yield a long-dated call on a high-yield ETF can have a mid under its no-dividend floor, and no vol prices it. Modelled, like every payoff level here; no outside test |
+| `debit.diagonal_width` | a two-leg diagonal (a PMCC or its put mirror), on its net debit with rolls counted, modelled at the short's expiry with the long at its own IV and the name's dividend yield: its best case under a third over the net (the net over 75% of the best case), or the spread worth under the net one expected move (the short's IV) past the short strike. With no IV to model, the net over 75% of the distance between the strikes | review | 60 | the strategy guide's PMCC entry rule, applied while held; modelled is your rule, 2026-11-07 | Option arithmetic: a long expiring soon after the short is worth about the width at best, so there the first test is the guide's 75%-of-width rule. A long with years left keeps time value at the short's expiry that the width ignored, and the width rule flagged such trades with plenty left to make. Modelled, like every payoff level here; no outside test |
 | `debit.price_stop` | a calendar: the underlying outside the band where the trade's modelled value at the short's expiry (the long at its own IV) is 25% under the debit | review (close if the stock closes there) | 45 | your rule, 2026-11-06 | No outside test. A calendar's quote is wide, so a stop on its price fills badly; the move is what loses it. Modelled, like every payoff level here; the −50% debit stop stays as the backstop |
 | `debit.time_exit` | nearest short at 21 DTE, or long-only at 14 DTE; a diagonal or calendar whose short was sold 14 days or fewer before its expiry at the long's 21 DTE; skipped when the clock leg was opened inside its own exit | roll or close | 70 | vendor; the long's clock for a weekly short and the skip are your rules, 2026-11-06 | Long premium decays fastest in its last weeks. A one-week short is inside 21 days the day it is sold, so the short's clock fired on day one, with a time-exit date before the trade opened (2026-11-06) |
 | `roll.naked_put` | a naked short put a rule says to close: same strike, next monthly 4+ weeks out, modelled credit ≥ 0.10 | roll for credit (in the close's place) | 60 | your rule, 2026-10-14: rolling out in time for a credit can be useful, especially for naked short puts | Mixed: rolling tested short puts beat holding them (tastylive); repairing defined-risk spreads did not |
@@ -382,8 +382,13 @@ quotes our own agreed better (0.005 against 0.010). The broker's IV is taken onl
 snapshot's spot, it lands inside the leg's own bid/ask: the broker figures its greeks on its own
 underlying price, which after the close on a report night is the after-hours print (META's 705C at
 16:35 ET on 2026-10-21 took an IV worth $10.40 against a 21.80/24.40 quote, and its bull call spread
-read a negative delta). A mid under the no-dividend model's floor (TLT's 2029 80C, a fund paying ~4%
-a year) solves to no vol at all; it is `unpriceable`, not IV zero and delta 1. A leg the model cannot price, or an
+read a negative delta). Every leg is solved and priced at the name's dividend yield (`div_yield`, the
+year's dividends gone ex over today's price from the snapshot's `underlying_history`; `div_source`
+`none` when the name has no record, priced at 0), its greeks with it, and a call's modelled value is
+floored at its intrinsic. Until 2026-11-07 the model carried no dividend, and a long-dated call on a
+high-yield fund had a mid under the no-dividend floor (spot less the discounted strike) that no vol
+priced. A mid under the model's floor still solves to no vol at all; it is `unpriceable`, not IV zero
+and delta 1. A leg the model cannot price, or an
 underlying with no beta, is named and left out, never counted as zero; the reading says it is
 partial. A leg expiring today is taken at its moneyness, with its remaining time value as that day's
 theta.
@@ -662,8 +667,10 @@ are the comparison. A book that keeps far less than it collects is paying for it
 
 ## Known limits
 
-- **Marks are mids** and the payoff model is Black-Scholes at today's IV per leg, with no dividends.
-  It bounds what a trade can still do; it is not a price.
+- **Marks are mids** and the payoff model is Black-Scholes-Merton at today's IV per leg and the
+  name's dividend yield, a call floored at intrinsic. It is European with a continuous yield: it
+  ignores early exercise beyond that floor and when a dividend falls, so it can differ by cents from
+  the payoff chart's American model. It bounds what a trade can still do; it is not a price.
 - **A run before the open reads yesterday's close** (2026-10-21). Spot and marks are the last
   session's, and an option expiring today has no quote, so its leg is unpriced and a name's delta
   reads off the stale spot. The evaluation says so (`pre_open`: the New York time it was taken, and

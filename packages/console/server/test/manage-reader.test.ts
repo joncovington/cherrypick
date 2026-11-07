@@ -944,8 +944,8 @@ describe("readManage", () => {
     const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
     const trades = acct["trades"] as Array<Record<string, unknown>>;
     trades[0]!["legs"] = [
-      { label: "-1 2026-11-20 42C", quantity: -1, mid: 0.92, iv: 0.19, iv_source: "broker", wide: true },
-      { label: "+1 2029-01-19 80C", quantity: 1, mid: 7.1, iv: null, iv_source: "unpriceable", wide: false },
+      { label: "-1 2026-11-20 42C", quantity: -1, mid: 0.92, iv: 0.19, iv_source: "broker", wide: true, div_yield: 0.031, div_source: "history" },
+      { label: "+1 2029-01-19 80C", quantity: 1, mid: 7.1, iv: null, iv_source: "unpriceable", wide: false, div_yield: 0, div_source: "none" },
       { label: "+1 2026-11-20 87.5P", quantity: 1, mid: 1.22, iv: 0.21 },
     ];
     trades[0]!["wheel"] = [
@@ -973,9 +973,10 @@ describe("readManage", () => {
     fs.writeFileSync(path.join(tmp, "manage", "eval-2026-10-21.json"), JSON.stringify(doc));
     const a = readManage(config).accounts[0]!;
     const [broker, unpriceable, older] = a.trades[0]!.legs;
-    expect(broker).toMatchObject({ iv: 0.19, ivSource: "broker", wide: true });
-    expect(unpriceable).toMatchObject({ iv: null, ivSource: "unpriceable", wide: false });
+    expect(broker).toMatchObject({ iv: 0.19, ivSource: "broker", wide: true, divYield: 0.031, divSource: "history" });
+    expect(unpriceable).toMatchObject({ iv: null, ivSource: "unpriceable", wide: false, divYield: 0, divSource: "none" });
     expect(older).toMatchObject({ iv: 0.21, ivSource: null, wide: null }); // before #504: unknown, never "mid"
+    expect(older).toMatchObject({ divYield: null, divSource: null }); // before 2026-11-07: no yield carried
     const [chains, income] = a.trades[0]!.wheel![0]!.rolls!;
     expect(chains).toMatchObject({ source: "roll-out chains", quotedAt: "2026-10-21T14:35:47-0600" });
     expect(chains!.considered).toEqual([

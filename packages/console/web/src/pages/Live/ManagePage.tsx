@@ -17,6 +17,7 @@ import { BoxButton } from "./portfolioBoxContext";
 import { PmccCards } from "./PmccCards";
 import { WheelCards } from "./WheelCards";
 import { PositionCards } from "./PositionCards";
+import { pricingBox } from "./PricingBox";
 import {
   LiveMarksContext,
   LiveStatus,
@@ -324,15 +325,23 @@ const IV_TITLE = {
     "the broker's IV: this leg's quote is wide, so an IV solved from its mid would be the midpoint of a market nobody quoted seriously; the broker's is used because it reprices the leg inside its quote",
   wide: "a wide quote, solved from its own mid anyway: the broker had no IV for it, or none that reprices it inside the quote",
   unpriceable:
-    "no volatility prices this mid under the model, which carries no dividend (the mid sits under the model's least possible value), so the leg is left unmodelled: no delta, theta or stress figure is taken from it",
+    "no volatility prices this mid under the model (the mid sits under the model's least possible value), so the leg is left unmodelled: no delta, theta or stress figure is taken from it",
 } as const;
+
+/** The dividend yield a leg was modelled at, for its IV's tooltip; empty on an evaluation without it. */
+export function yieldNote(l: Pick<Leg, "divYield" | "divSource">): string {
+  if (l.divYield === null) return "";
+  if (l.divSource === "none") return "; no dividend record for the name, so modelled at a 0% yield";
+  return `; modelled at the name's ${(l.divYield * 100).toFixed(2)}% dividend yield`;
+}
 
 /** A leg's IV with where it came from (packages/manage `_legs`): a broker IV beside a mid IV is
  *  marked, and a leg no IV prices says so rather than showing a blank. */
 export function IvCell({ l }: { l: ManageTrade["legs"][number] }) {
+  const note = yieldNote(l);
   if (l.ivSource === "unpriceable") {
     return (
-      <span className="muted" title={IV_TITLE.unpriceable}>
+      <span className="muted" title={IV_TITLE.unpriceable + note}>
         — unpriceable
       </span>
     );
@@ -341,19 +350,19 @@ export function IvCell({ l }: { l: ManageTrade["legs"][number] }) {
   const v = `${(l.iv * 100).toFixed(0)}%`;
   if (l.ivSource === "broker") {
     return (
-      <span title={IV_TITLE.broker}>
+      <span title={IV_TITLE.broker + note}>
         {v} <span className="muted">broker</span>
       </span>
     );
   }
   if (l.wide === true) {
     return (
-      <span title={IV_TITLE.wide}>
+      <span title={IV_TITLE.wide + note}>
         {v} <span className="muted">wide</span>
       </span>
     );
   }
-  return <>{v}</>;
+  return note ? <span title={`solved from this leg's own mid${note}`}>{v}</span> : <>{v}</>;
 }
 
 /** Actions that ask a person to do nothing today: a hold waits on its levels, a settling trade on the print. */
@@ -558,6 +567,13 @@ function evalHelp(view: keyof typeof VIEW_TITLE): CardHelpContent {
         <HelpSection title="The money">
           <p>{VIEW_MONEY[view][0]!.toUpperCase() + VIEW_MONEY[view].slice(1)}.</p>
         </HelpSection>
+        <HelpSection title="Marks and the model">
+          <p>
+            Values and P&amp;L are the broker&apos;s mids. Payoffs, price stops, roll costs and greeks are modelled from each
+            leg&apos;s own implied volatility, at the ruleset&apos;s interest rate and the name&apos;s dividend yield.
+            {view === "positions" ? " The pricing button above has the method and the yield each name was modelled at." : ""}
+          </p>
+        </HelpSection>
       </>
     ),
   };
@@ -656,7 +672,7 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
 
   return (
     <LiveMarksContext.Provider value={wantLive && live?.payload.session === data?.session ? live : null}>
-    <LiveBoxes boxes={view === "positions" ? [rulesetBox(data?.ruleset, data?.rules)] : []}>
+    <LiveBoxes boxes={view === "positions" ? [rulesetBox(data?.ruleset, data?.rules), pricingBox(data)] : []}>
     <div className="view-fade" style={{ display: "grid", gap: "1rem" }}>
       {/* The card's "as of" is the snapshot's time, not the browser's last poll: the poll re-reads
           the same file every minute, and its clock said nothing about how old the marks were. */}
@@ -672,6 +688,7 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
           <>
             {picker}
             <BoxButton id="ruleset">ruleset</BoxButton>
+            <BoxButton id="pricing">pricing</BoxButton>
           </>
         }
       >

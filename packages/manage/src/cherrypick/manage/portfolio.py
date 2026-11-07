@@ -84,7 +84,8 @@ def leg_greeks(leg: dict[str, Any], spot: float | None, rate: float) -> dict[str
             "basis": "expiring",
         }
     iv = leg.get("iv")
-    g = pricing.greeks(spot, strike, float(leg["years"]), iv, right, rate) if iv else None
+    q = float(leg.get("div_yield") or 0.0)
+    g = pricing.greeks(spot, strike, float(leg["years"]), iv, right, rate, q) if iv else None
     if g is None:
         return None
     return {
@@ -116,7 +117,8 @@ def _leg_value(
     if not leg.get("iv"):
         return None
     vol = max(float(leg["iv"]) + vol_shift, MIN_VOL)
-    return qty * MULTIPLIER * pricing.price(spot, strike, left, vol, right, rate)
+    q = float(leg.get("div_yield") or 0.0)
+    return qty * MULTIPLIER * pricing.model_price(spot, strike, left, vol, right, rate, q)
 
 
 # An IV shifted down past this is held here: a vol of zero prices every option at intrinsic, which
