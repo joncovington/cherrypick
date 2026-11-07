@@ -53,6 +53,11 @@ describe("positions", () => {
     expect(m.symbolHref).toBe("/charts/technicals?symbol=XYZ");
     expect(m.shape).toContain("5890");
   });
+  it("draws the order chain from the row's structure, at its quantity", () => {
+    const m = positionModel(pos({ quantity: 2 }));
+    expect(m.legs.map((l) => `${l.buy ? "BTO" : "STO"} ${l.text}`)).toEqual(["BTO 2 5880C", "STO 4 5890C", "BTO 2 5900C"]);
+    expect(positionModel(pos({ kind: "bwb", side: "put", wingWidth: 10, farWidth: 20 })).legs.map((l) => l.text)).toEqual(["1 5870P", "2 5890P", "1 5900P"]);
+  });
   it("opens on cards by default", () => {
     const data = { positions: { rows: [pos({})], total: 1, offset: 0, limit: 100 }, books: { rows: [], total: 0, offset: 0, limit: 100 } } as never;
     const out = html(<PositionsCard data={data} paging={{ page: { offset: 0, limit: 100 }, setOffset: () => {}, setLimit: () => {} }} loading={false} isError={false} busy={false} narrowed={false} />);
