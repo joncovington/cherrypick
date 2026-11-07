@@ -12,6 +12,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "time_spread_ratio_item54", SCRIPTS / "time_spread_ratio_item54.py"
@@ -153,7 +155,8 @@ def test_a_study_that_judged_nothing_is_no_verdict_not_failed():
 
 
 def stored_chain(dte, iv, spot=100.0):
-    """A chain as the vendor store holds it: (strike, right, bid, ask) with CALL and PUT."""
+    """A chain as the vendor store holds it: (strike, right, bid, ask) with CALL and PUT. Priced by
+    manage's own model, so it needs manage installed (the calendar test below skips without it)."""
     from cherrypick.manage import pricing
 
     out = []
@@ -168,11 +171,14 @@ def stored_chain(dte, iv, spot=100.0):
 
 def test_the_stores_call_and_put_are_read_as_the_builders_c_and_p():
     assert s54.right_of("CALL") == "C" and s54.right_of("PUT") == "P"
-    seen = {o["right"] for o in s54.view(stored_chain(7, 0.6), 7)["options"]}
+    # Invented quotes in the store's spelling; no pricing model needed to read them.
+    rows = [(100.0, "CALL", 2.0, 2.2), (100.0, "PUT", 1.9, 2.1), (105.0, "CALL", 0.5, 0.6)]
+    seen = {o["right"] for o in s54.view(rows, 7)["options"]}
     assert seen == {"C", "P"}
 
 
 def test_a_stored_chain_builds_the_calendar_the_ratio_is_read_from():
+    pytest.importorskip("cherrypick.manage")  # CI's backtest lane does not install manage
     from cherrypick.manage import rules as _rules
     from cherrypick.manage import timespreads as ts
 
