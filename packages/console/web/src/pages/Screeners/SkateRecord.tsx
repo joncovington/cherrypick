@@ -1,15 +1,24 @@
+import type { ReactNode } from "react";
 import type { SkateBand, SkateRecordBand, SkateRecordGroup, SkateRecordPayload, SkateRecordTest } from "@console/shared";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+import { TileGrid } from "../../components/performance/TileGrid";
 import { useSkateRecord } from "../../lib/api";
+import { ScreenerCard, ScreenerSection } from "./ScreenerParts";
 
 /**
  * The skate screen's forward record on the Skate tab (docs/skate-plan.md step 4). `technicals.skate_record`
  * keeps the rows the tab showed, settles them at expiry and writes its reading as `record.json`; this
  * shows that reading and decides nothing. Whether the record is decision-grade and whether a band
  * passes are the file's `decision_grade` and `passes`, never worked out here from the z scores, and
- * the declared test is stated from the file's own thresholds.
+ * the declared test is stated from the file's own thresholds (behind the card's ?).
  *
  * No tone before the record is decision-grade: a z score or a rate above implied is shown plainly,
- * because twenty expiries is what the test was declared against and an early lead is noise.
+ * because twenty expiries is what the test was declared against and an early lead is noise. The z
+ * meters are neutral for the same reason: they show how far a z is from the one the test needs, and
+ * say nothing about pass or fail.
+ *
+ * Redesign (2026-11-06): its own card in its own section, a block of tiles a band with z meters and
+ * the file's verdict as a chip; the declared test is behind the ?.
  */
 
 const DASH = "—";
@@ -51,43 +60,84 @@ export function testWords(t: SkateRecordTest | null): string {
   );
 }
 
-function GroupCells({ g }: { g: SkateRecordGroup | null }) {
+/** The ? behind the record's card: the declared test, and how the record is kept. */
+export function recordHelp(t: SkateRecordTest | null, ok: boolean): CardHelpContent {
+  return {
+    title: "The forward record",
+    body: (
+      <>
+        <HelpSection title="The declared test">
+          <p>{ok ? testWords(t) : "The declared test is stated here once the record is read."}</p>
+        </HelpSection>
+        <HelpSection title="How it is kept">
+          <p>
+            The technicals-skate job records the rows the skate card showed, settles them at expiry and writes its reading each morning.
+            Whether the record is decision-grade and whether a band passes are the file's own statements, never worked out here.
+          </p>
+        </HelpSection>
+        <HelpWarn title="No tone before decision-grade">
+          <p>A z score or a rate above implied is shown plainly until the record has the expiries the test was declared against: an early lead is noise.</p>
+        </HelpWarn>
+      </>
+    ),
+  };
+}
+
+/** A tile: label, figure, and under it a line; a z tile carries a meter against the z the test needs. */
+function RecordTile({ label, value, sub, z, need }: { label: string; value: string; sub?: string; z?: number | null; need?: number | null }) {
+  const fill = z === undefined ? null : z === null || need === null || need === undefined || need <= 0 ? 0 : Math.max(0, Math.min(1, z / need)) * 100;
+  return (
+    <div className="stat-tile">
+      <span className="stat-label">{label}</span>
+      <span className="stat-value">{value}</span>
+      {sub ? (
+        <span className="muted" style={{ fontSize: 10, display: "block" }}>
+          {sub}
+        </span>
+      ) : null}
+      {fill !== null ? (
+        <span className="pos-bar sc-zbar" title={need ? `z against the ${need} the test needs: no tone, it is not a verdict` : "the test's z is not stated"}>
+          <span className="pos-bar-fill tc-bar-cap" style={{ width: `${fill}%` }} />
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function groupTiles(prefix: string, g: SkateRecordGroup | null, need: number | null): ReactNode {
   return (
     <>
-      <td className="num">{count(g?.n ?? null)}</td>
-      <td className="num">
-        {pct(g?.rate ?? null)}
-        <span className="muted"> vs {pct(g?.implied ?? null)}</span>
-      </td>
-      <td className="num">{zText(g?.z ?? null)}</td>
+      <RecordTile label={`${prefix} · n`} value={count(g?.n ?? null)} />
+      <RecordTile label={`${prefix} · skated`} value={pct(g?.rate ?? null)} sub={`vs ${pct(g?.implied ?? null)} implied`} />
+      <RecordTile label={`${prefix} · z`} value={zText(g?.z ?? null)} z={g?.z ?? null} need={need} />
     </>
   );
 }
 
 /** The file's verdict for one band. Only a decision-grade record with a stated boolean shows pass or fail. */
-function VerdictCell({ b, grade, expiries, need }: { b: SkateRecordBand | null; grade: boolean; expiries: string; need: string }) {
+function Verdict({ b, grade, expiries, need }: { b: SkateRecordBand | null; grade: boolean; expiries: string; need: string }) {
   if (!grade) {
     return (
-      <td className="muted" title="The test is judged only once the record is decision-grade">
+      <span className="muted" title="The test is judged only once the record is decision-grade">
         not yet decision-grade ({expiries} of {need} expiries)
-      </td>
+      </span>
     );
   }
   if (b === null || b.passes === null) {
     return (
-      <td className="muted" title="The record is decision-grade but states no verdict for this band">
+      <span className="muted" title="The record is decision-grade but states no verdict for this band">
         no verdict stated
-      </td>
+      </span>
     );
   }
   return b.passes ? (
-    <td title="The record's verdict: the declared test passes on this band">
-      <span className="chip chip-ok">pass</span>
-    </td>
+    <span className="chip chip-ok" title="The record's verdict: the declared test passes on this band">
+      pass
+    </span>
   ) : (
-    <td title="The record's verdict: the declared test does not pass on this band">
-      <span className="chip chip-warn">fail</span>
-    </td>
+    <span className="chip chip-warn" title="The record's verdict: the declared test does not pass on this band">
+      fail
+    </span>
   );
 }
 
@@ -114,93 +164,82 @@ export function SkateRecordView({ data, isLoading, isError }: { data: SkateRecor
   const expiries = count(data?.expiries ?? null);
   const need = count(t?.minExpiries ?? null);
   const added = data ? Object.values(data.added).reduce((a, b) => a + b, 0) : 0;
+  const ok = data?.status === "ok";
   return (
-    <div style={{ marginTop: 16 }}>
-      <div className="card-head">
-        <h3>Forward record</h3>
-        {written && <span className="card-asof">written {written}</span>}
-      </div>
-      {isError && <p className="muted">Could not read the forward record.</p>}
-      {isLoading && <p className="muted">Reading the forward record…</p>}
-      {data?.status === "none" && (
-        <p className="muted">
-          No forward record written yet: the technicals-skate job writes it each morning, from the rows this tab showed. Until it
-          exists there is nothing to count, which is not the same as a count of zero.
-        </p>
-      )}
-      {data?.status === "unreadable" && (
-        <p className="chip chip-warn" style={{ whiteSpace: "normal" }}>
-          The forward record (record.json) could not be read, so nothing is shown. This is a failed read, not an empty record.
-        </p>
-      )}
-      {data?.status === "ok" && (
-        <>
-          <p>
-            {count(data.recorded)} rows recorded · {count(data.settled)} settled · {expiries} of {need} distinct expiries settled ·{" "}
-            {data.decisionGrade ? (
-              <strong>decision-grade</strong>
+    <ScreenerSection concept="hist" tag="forward record" question="Is it holding up?">
+      <ScreenerCard
+        title="forward record"
+        help={recordHelp(t, ok)}
+        extra={
+          ok ? (
+            data.decisionGrade ? (
+              <span className="chip">decision-grade</span>
             ) : (
-              <span className="muted">
-                not yet decision-grade ({expiries} of {need} expiries)
+              <span className="chip chip-warn">
+                not yet decision-grade · {expiries} of {need}
               </span>
-            )}
+            )
+          ) : null
+        }
+      >
+        {written && (
+          <p className="muted pf-caption" style={{ marginTop: 0 }}>
+            written {written}
           </p>
+        )}
+        {isError && <p className="muted">Could not read the forward record.</p>}
+        {isLoading && <p className="muted">Reading the forward record…</p>}
+        {data?.status === "none" && (
           <p className="muted">
-            Last run: {added} rows added
-            {data.settledNow
-              ? `, ${count(data.settledNow.skated)} skated, ${count(data.settledNow.tested)} tested and ${count(data.settledNow.through)} through settled, ${count(data.settledNow.waiting)} waiting on their expiry`
-              : ""}
-            .
+            No forward record written yet: the technicals-skate job writes it each morning, from the rows this tab showed. Until it
+            exists there is nothing to count, which is not the same as a count of zero.
           </p>
-          <div className="table-scroll">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Band</th>
-                  <th className="num" title={`Settled rows with history minus implied above ${gapWords(t?.gapHigh ?? null)}`}>
-                    High gap n
-                  </th>
-                  <th className="num" title="Skated rate (tested rows included) against the group's mean implied rate">
-                    Skated vs implied
-                  </th>
-                  <th className="num" title="Skates over the summed implied odds, in Poisson-binomial standard deviations">
-                    z
-                  </th>
-                  <th className="num" title={`Settled rows with history minus implied below ${gapWords(t?.gapLow ?? null)}`}>
-                    Below-zero n
-                  </th>
-                  <th className="num">Skated vs implied</th>
-                  <th className="num">z</th>
-                  <th className="num" title="Two-proportion z of the high-gap skate rate over the below-zero rate">
-                    z high over low
-                  </th>
-                  <th className="num" title="Settled rows that skated but touched the strike on the way">
-                    Tested
-                  </th>
-                  <th title="The record's own verdict, passed through">Verdict</th>
-                </tr>
-              </thead>
-              <tbody>
-                {BANDS.map(({ id, label }) => {
-                  const b = data.bands[id];
-                  return (
-                    <tr key={id} data-band={id}>
-                      <td>{label}</td>
-                      <GroupCells g={b?.highGap ?? null} />
-                      <GroupCells g={b?.belowZero ?? null} />
-                      <td className="num">{zText(b?.zHighOverLow ?? null)}</td>
-                      <td className="num">{count(b?.tested ?? null)}</td>
-                      <VerdictCell b={b} grade={data.decisionGrade} expiries={expiries} need={need} />
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-      <p className="muted">{data?.status === "ok" ? testWords(t) : "The declared test is stated here once the record is read."}</p>
-    </div>
+        )}
+        {data?.status === "unreadable" && (
+          <p className="chip chip-warn" style={{ whiteSpace: "normal" }}>
+            The forward record (record.json) could not be read, so nothing is shown. This is a failed read, not an empty record.
+          </p>
+        )}
+        {ok && (
+          <>
+            <p style={{ marginTop: 0 }}>
+              {count(data.recorded)} rows recorded · {count(data.settled)} settled · {expiries} of {need} distinct expiries settled ·{" "}
+              {data.decisionGrade ? (
+                <strong>decision-grade</strong>
+              ) : (
+                <span className="muted">
+                  not yet decision-grade ({expiries} of {need} expiries)
+                </span>
+              )}
+            </p>
+            <p className="muted pf-caption">
+              Last run: {added} rows added
+              {data.settledNow
+                ? `, ${count(data.settledNow.skated)} skated, ${count(data.settledNow.tested)} tested and ${count(data.settledNow.through)} through settled, ${count(data.settledNow.waiting)} waiting on their expiry`
+                : ""}
+              .
+            </p>
+            {BANDS.map(({ id, label }) => {
+              const b = data.bands[id];
+              return (
+                <div key={id} className="sc-band" data-band={id}>
+                  <div className="sc-band-head">
+                    <b>{label}</b>
+                    <Verdict b={b} grade={data.decisionGrade} expiries={expiries} need={need} />
+                  </div>
+                  <TileGrid count={4}>
+                    {groupTiles("high gap", b?.highGap ?? null, t?.zOneSided ?? null)}
+                    {groupTiles("below zero", b?.belowZero ?? null, t?.zOneSided ?? null)}
+                    <RecordTile label="z, high over low" value={zText(b?.zHighOverLow ?? null)} z={b?.zHighOverLow ?? null} need={t?.zOneSided ?? null} />
+                    <RecordTile label="tested" value={count(b?.tested ?? null)} sub="skated, but touched the strike" />
+                  </TileGrid>
+                </div>
+              );
+            })}
+          </>
+        )}
+      </ScreenerCard>
+    </ScreenerSection>
   );
 }
 
