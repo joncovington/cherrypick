@@ -2,6 +2,8 @@ import { AnalysisSlide } from "../../components/analysis/AnalysisSlide";
 import { useCalendars, useCalendarsPolicies } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
 import { LoopPill } from "../../components/ScopeBar";
 import { IntegrityStrip } from "../../pages/Calendars/IntegrityStrip";
 import { BookComparison, EntryWindowCard, PlanCard, PositionsCard } from "../../pages/Calendars/WeekCards";
@@ -16,6 +18,15 @@ import { CALENDARS_SLIDES, type CalendarsSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
 import { ModuleSummary } from "../../components/summary/ModuleSummary";
 import { BookArmGuide } from "../../components/ExperimentGuide";
+
+const DECISIONS_HELP: CardHelpContent = {
+  title: "Decisions today",
+  body: (
+    <HelpSection title="The collapsed journal">
+      <p>The collapsed narrative journal: a gate that blocks all morning is one row with a count, not four hundred rows.</p>
+    </HelpSection>
+  ),
+};
 
 const CALENDARS_LABEL = Object.fromEntries(CALENDARS_SLIDES.map((s) => [s.id, s.label])) as Record<CalendarsSlideId, string>;
 
@@ -39,9 +50,13 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
       id: "plan",
       label: CALENDARS_LABEL.plan,
       render: () => (
-        <div className="cards cards-wide">
-          <PlanCard data={data} updatedAt={dataUpdatedAt} />
-          <EntryWindowCard data={data} updatedAt={dataUpdatedAt} />
+        <div className="pf-layout">
+          <Section concept="stand" tag="the plan" question="What is this week's plan?">
+            <PlanCard data={data} updatedAt={dataUpdatedAt} />
+          </Section>
+          <Section concept="live" tag="entry day" question="What did the entry window do?">
+            <EntryWindowCard data={data} updatedAt={dataUpdatedAt} />
+          </Section>
         </div>
       ),
     },
@@ -49,8 +64,11 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
       id: "decisions",
       label: CALENDARS_LABEL.decisions,
       render: () => (
+        <div className="pf-layout">
+        <Section concept="live" tag="today" question="Why did today go the way it did?">
         <DataCard
           title="decisions today"
+          help={DECISIONS_HELP}
           headers={["arm", "reason", "occurrences", "last"]}
           loading={isLoading}
           isError={isError}
@@ -58,11 +76,6 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
           numFrom={2}
           empty="the journal recorded nothing on this session"
           updatedAt={dataUpdatedAt}
-          footer={
-            <p className="integrity-note">
-              The collapsed narrative journal: a gate that blocks all morning is one row with a count, not four hundred rows.
-            </p>
-          }
         >
           {data?.today.decisions.map((d) => (
             <tr key={`${d.arm}-${d.reason}-${String(d.accepted)}`}>
@@ -76,6 +89,8 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
             </tr>
           ))}
         </DataCard>
+        </Section>
+        </div>
       ),
     },
     {
@@ -83,8 +98,10 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
       label: CALENDARS_LABEL.arms,
       render: () => (
         <>
-          <div className="cards cards-wide">
-            <BookComparison data={data} updatedAt={dataUpdatedAt} />
+          <div className="pf-layout">
+            <Section concept="edge" tag="the arms" question="How did each arm do?">
+              <BookComparison data={data} updatedAt={dataUpdatedAt} />
+            </Section>
           </div>
           <BookArmGuide module="calendars" />
         </>
@@ -98,16 +115,20 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
       id: "positions",
       label: CALENDARS_LABEL.positions,
       render: () => (
-        <div className="cards cards-wide">
-          <PositionsCard
-            title="structures this week"
-            positions={data?.currentWeek.positions ?? []}
-            emptyText="no structure was opened for this week"
-            loading={isLoading}
-            updatedAt={dataUpdatedAt}
-          />
+        <div className="pf-layout">
+          <Section concept="stand" tag="this week" question="What was opened this week?">
+            <PositionsCard
+              title="structures this week"
+              positions={data?.currentWeek.positions ?? []}
+              emptyText="no structure was opened for this week"
+              loading={isLoading}
+              updatedAt={dataUpdatedAt}
+            />
+          </Section>
           {carriedOver.length > 0 && (
-            <PositionsCard title="open trades carried from earlier weeks" positions={carriedOver} emptyText="nothing carried" updatedAt={dataUpdatedAt} />
+            <Section concept="room" tag="carried" question="What is still open from earlier weeks?">
+              <PositionsCard title="open trades carried from earlier weeks" positions={carriedOver} emptyText="nothing carried" updatedAt={dataUpdatedAt} />
+            </Section>
           )}
         </div>
       ),

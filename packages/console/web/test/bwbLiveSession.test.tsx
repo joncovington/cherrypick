@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BwbPayload, TradingMode } from "@console/shared";
 import { BwbSession } from "../src/pages/Bwb/BwbSession";
-import { OpenTradesCard } from "../src/pages/Bwb/CurrentStateCards";
+import { BWB_OPEN_SORTS, OpenTradesCard } from "../src/pages/Bwb/CurrentStateCards";
 
 /**
  * bwb's session slide under the live toggle. The live ledger exists but has never held a position
@@ -81,10 +81,36 @@ describe("BWB open trades, a short row", () => {
         </MemoryRouter>
       </QueryClientProvider>,
     ).replace(/<!-- -->/g, "");
-    const head = html.slice(html.indexOf("<thead>"), html.indexOf("</thead>"));
-    for (const h of ["symbol", "arm", "opened → expiry", "entry", "add-on $", "mark (net of costs to date)"]) expect(head).toContain(h);
-    for (const h of ["qty", "spot", "peak |delta|"]) expect(head).not.toContain(`>${h}<`);
-    expect(html).toContain("below flip"); // the flag rides the symbol cell
-    expect(html).not.toContain("0.123"); // peak delta waits for the expanded line
+    // A trade card, in the order-chain style: the fly's three strikes, the body twice.
+    expect(html).not.toContain("<thead>");
+    expect(html).toContain("pos-card");
+    expect(html).toContain("1 6850P");
+    expect(html).toContain("2 6800P");
+    expect(html).toContain("1 6700P");
+    expect(html.match(/is-buy/g)?.length).toBe(2);
+    expect(html.match(/is-sell/g)?.length).toBe(1);
+    expect(html).toContain("below flip");
+    expect(html).toContain("marked net $35.00");
+    expect(html).toContain("peak |delta| 0.123");
+  });
+
+  it("offers sorts on timing, size and fit only -- never credit or yield", () => {
+    const allowed = ["time", "expiry", "size", "arm"];
+    expect(BWB_OPEN_SORTS.map((s) => s.id)).toEqual(allowed);
+    for (const s of BWB_OPEN_SORTS) expect(`${s.id} ${s.label}`).not.toMatch(/credit|yield|theta/i);
+  });
+
+  it("shows the add-on's strikes as their own legs once it has fired", () => {
+    const fired = { ...position, addonFiredAt: "2026-10-30T15:00:00", addonShortStrike: 6650, addonLongStrike: 6625, addOnCash: 40 };
+    const html = renderToString(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <OpenTradesCard data={{ ...payload("paper"), openPositions: [fired], openCount: 1 } as unknown as BwbPayload} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    ).replace(/<!-- -->/g, "");
+    expect(html).toContain("1 6650P add-on");
+    expect(html).toContain("1 6625P add-on");
+    expect(html).toContain("put BWB + add-on");
   });
 });

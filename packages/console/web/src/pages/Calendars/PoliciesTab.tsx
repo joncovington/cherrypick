@@ -2,6 +2,8 @@ import { Fragment } from "react";
 import type { CalendarsPolicyRow } from "@console/shared";
 import { useCalendarsPolicies } from "../../lib/api";
 import { Card, DataCard, fmtMoney, fmtPct, PnlCell, sortRows, useSort } from "../../components/DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
 
 /**
  * The exit-policy comparison table — the thing the module exists to produce.
@@ -33,84 +35,121 @@ const POLICIES: Record<string, string> = {
     "let the shorts settle and ride the longs to their own Monday expiration morning — the path arm's own shape.",
 };
 
+/** The table's method behind a ?, with the module's granularity caveat as the amber flag when it states one. */
+function introHelp(caveat: string | null | undefined): CardHelpContent {
+  return {
+    title: "Exit policies",
+    body: (
+      <>
+        {caveat != null && (
+          <HelpWarn title="Granularity caveat">
+            <p>{caveat}.</p>
+          </HelpWarn>
+        )}
+        <HelpSection title="What this table is">
+          <p>
+            One entry stream, two real arms, and a recorded per-tick mark path make every candidate exit rule answerable{" "}
+            <em>after the fact</em> without running it as its own arm. Each policy is replayed over the path arm&rsquo;s recorded marks, an
+            exact replay at the recorded prices, and the exit it would have taken is priced at that tick&rsquo;s own bid/ask through the
+            same cost stack the live arms use.
+          </p>
+        </HelpSection>
+        <HelpSection title="Pairing">
+          <p>
+            Pairing is exact by construction: every arm&rsquo;s week is entered from the same plan at the same fills, so this is a
+            like-for-like comparison rather than an estimate. That is also why the grid is not fifteen arms: one permissive arm answers the
+            whole thing.
+          </p>
+        </HelpSection>
+        <HelpSection title="Derivable">
+          <p>
+            <strong>derivable</strong> counts the weeks whose recorded path could answer this policy. A hole in the path is excluded and
+            counted as excluded: silently pricing a missing tick would let a feed outage flatter whichever policy it happened to favour.
+          </p>
+        </HelpSection>
+      </>
+    ),
+  };
+}
+
+const GRID_HELP: CardHelpContent = {
+  title: "The declared grid",
+  body: (
+    <>
+      <HelpSection title="Fixed up front">
+        <p>
+          Twelve rules, fixed before the first week was traded. The grid shows whether or not a week has been measured yet, so the
+          declaration can be read before any number exists to argue with.
+        </p>
+      </HelpSection>
+      <HelpSection title="Rules that never trigger">
+        <p>
+          Every whole-structure policy that never triggers falls through to the control terminal, which closes everything in the Friday exit
+          window, so a rule that never fires reports control&rsquo;s result rather than nothing. <span className="mono">touch-close-side</span>{" "}
+          is the one per-side rule; the expiry policies instead let the shorts settle and differ only in when the longs go.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
+
 export function PoliciesTab() {
   const { data, isLoading, isError, dataUpdatedAt } = useCalendarsPolicies();
 
   const structures = [...new Set((data?.policies ?? []).flatMap((p) => p.buckets.map((b) => b.structure)))].sort();
+  const help = introHelp(data?.caveat);
+  const flag = data?.caveat != null ? "granularity caveat" : undefined;
 
   return (
-    <div className="cards cards-wide">
-      <Card title="what this table is" collapseKey="cal-policies-intro" className="view-fade">
-        <div className="cal-prose">
-          <p>
-            One entry stream, two real arms, and a recorded per-tick mark path make every candidate exit rule
-            answerable <em>after the fact</em> without running it as its own arm. Each policy below is
-            replayed over the path arm&rsquo;s recorded marks — an exact replay at the recorded prices — and
-            the exit it would have taken is priced at that tick&rsquo;s own bid/ask through the same cost stack
-            the live arms use.
-          </p>
-          <p>
-            Pairing is exact by construction: every arm&rsquo;s week is entered from the same plan at the same
-            fills, so this is a like-for-like comparison rather than an estimate. That is also why the grid is
-            not fifteen arms — one permissive arm answers the whole thing.
-          </p>
-          {data?.caveat != null && (
-            <p className="integrity-warn">
-              <strong>Granularity caveat:</strong> {data.caveat}.
+    <div className="pf-layout">
+      <Section concept="edge" tag="exit rules" question="Which exit rule is worth anything?">
+        {data?.error != null && (
+          <Card title="derivation unavailable" collapseKey="cal-policies-error" isError className="lv-12">
+            <p className="integrity-err">{data.error}</p>
+          </Card>
+        )}
+
+        {data !== undefined && data.error === null && data.weeksConsidered === 0 && (
+          <Card title="no completed weeks" collapseKey="cal-policies-empty" className="view-fade lv-12" help={help} flag={flag}>
+            <p className="muted">
+              The derivation runs over weeks whose <span className="mono">path</span> positions have all closed.
+              None have yet, so there is no table — and a ranking over zero weeks would be worse than none. The
+              first entry to reach its Monday disposition fills this in.
             </p>
-          )}
-        </div>
-      </Card>
+          </Card>
+        )}
 
-      {data?.error != null && (
-        <Card title="derivation unavailable" collapseKey="cal-policies-error" isError>
-          <p className="integrity-err">{data.error}</p>
-        </Card>
-      )}
-
-      {data !== undefined && data.error === null && data.weeksConsidered === 0 && (
-        <Card title="no completed weeks" collapseKey="cal-policies-empty" className="view-fade">
-          <p className="muted">
-            The derivation runs over weeks whose <span className="mono">path</span> positions have all closed.
-            None have yet, so there is no table — and a ranking over zero weeks would be worse than none. The
-            first entry to reach its Monday disposition fills this in.
-          </p>
-        </Card>
-      )}
+        {structures.map((structure) => (
+          <PolicyTable
+            key={structure}
+            structure={structure}
+            policies={data?.policies ?? []}
+            loading={isLoading}
+            isError={isError}
+            updatedAt={dataUpdatedAt}
+            help={help}
+            flag={flag}
+          />
+        ))}
+      </Section>
 
       {/* The grid itself, whether or not a week has been measured yet. The module's second honesty
           rule is that the exit rules are declared UP FRONT and measured, never tuned mid-experiment
           — a page that showed them only once they had results would be a page you could not check
           that rule against, and it is exactly at the start, before any number exists to argue with,
           that the declaration is worth reading. */}
-      <Card title="the declared grid" collapseKey="cal-policies-grid" className="view-fade">
-        <dl className="cal-defs">
-          {Object.entries(POLICIES).map(([name, text]) => (
-            <Fragment key={name}>
-              <dt className="mono">{name}</dt>
-              <dd>{text}</dd>
-            </Fragment>
-          ))}
-        </dl>
-        <p className="integrity-note">
-          Twelve rules, fixed before the first week was traded. Every whole-structure policy that never
-          triggers falls through to the control terminal — close everything in the Friday exit window — so a
-          rule that never fires reports control&rsquo;s result rather than nothing.{" "}
-          <span className="mono">touch-close-side</span> is the one per-side rule; the expiry policies instead
-          let the shorts settle and differ only in when the longs go.
-        </p>
-      </Card>
-
-      {structures.map((structure) => (
-        <PolicyTable
-          key={structure}
-          structure={structure}
-          policies={data?.policies ?? []}
-          loading={isLoading}
-          isError={isError}
-          updatedAt={dataUpdatedAt}
-        />
-      ))}
+      <Section concept="room" tag="the grid" question="What does each rule do?">
+        <Card title="the declared grid" collapseKey="cal-policies-grid" className="view-fade lv-12" help={GRID_HELP}>
+          <dl className="cal-defs">
+            {Object.entries(POLICIES).map(([name, text]) => (
+              <Fragment key={name}>
+                <dt className="mono">{name}</dt>
+                <dd>{text}</dd>
+              </Fragment>
+            ))}
+          </dl>
+        </Card>
+      </Section>
     </div>
   );
 }
@@ -125,12 +164,16 @@ function PolicyTable({
   loading,
   isError,
   updatedAt,
+  help,
+  flag,
 }: {
   structure: string;
   policies: CalendarsPolicyRow[];
   loading: boolean;
   isError: boolean;
   updatedAt: number;
+  help: CardHelpContent;
+  flag?: string;
 }) {
   const sort = useSort();
   const rows = policies.flatMap((p) => {
@@ -165,13 +208,9 @@ function PolicyTable({
       numFrom={1}
       empty="nothing derived for this structure"
       updatedAt={updatedAt}
-      footer={
-        <p className="integrity-note">
-          <strong>derivable</strong> counts the weeks whose recorded path could answer this policy. A hole
-          in the path is excluded and counted as excluded — silently pricing a missing tick would let a
-          feed outage flatter whichever policy it happened to favour.
-        </p>
-      }
+      help={help}
+      flag={flag}
+      className="lv-12"
     >
       {shown.map(({ p, b }) => {
         const excluded = b.weeks - b.derivable;

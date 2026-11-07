@@ -8,6 +8,9 @@ import { Link } from "react-router-dom";
 import { FireCountsCard, OpenTradesCard } from "../../pages/Bwb/CurrentStateCards";
 import { BwbSession } from "../../pages/Bwb/BwbSession";
 import { DecisionsCard } from "../../components/DecisionsCard";
+import { Card } from "../../components/DataTable";
+import { HelpSection } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
 import { HistoryTab } from "../../pages/Bwb/HistoryTab";
 import { HelpTab } from "../../pages/Bwb/HelpTab";
 import { BwbLiveGapSlide } from "../../pages/Bwb/LiveGapSlide";
@@ -42,8 +45,10 @@ export function BwbLightbox({ slide }: { slide: string }) {
       id: "decisions",
       label: BWB_LABEL.decisions,
       render: () => (
-        <div className="cards cards-wide">
-          <DecisionsCard module="bwb" mode={mode} />
+        <div className="pf-layout">
+          <Section concept="live" tag="today" question="Why did each arm enter, or not?">
+            <DecisionsCard module="bwb" mode={mode} />
+          </Section>
         </div>
       ),
     },
@@ -52,25 +57,40 @@ export function BwbLightbox({ slide }: { slide: string }) {
       label: BWB_LABEL.arms,
       render: () => (
         <>
-          <div className="cards cards-wide">
-            {/* Net by arm left this tab 2026-10-30: the summary's by-arm card and Compare both answer
-                it, Compare with each arm paired against control. */}
-            <section className="card">
-              <p className="muted" style={{ margin: 0 }}>
-                Net by arm is on the <Link to="/bwb/summary">summary</Link>, and each arm against control, with paired
-                statistics, is on <Link to="/compare/arms">Compare</Link>. Until an arm&rsquo;s add-on fires, its positions
-                are the same as control&rsquo;s, an expected collision rather than a defect: read the fires below first.
-              </p>
-            </section>
-            <FireCountsCard
-              counts={data?.fireCounts ?? []}
-              correlationCaveat={
-                data?.correlationCaveat ?? "concurrent positions share regime context -- rows are not independent samples"
-              }
-              updatedAt={dataUpdatedAt}
-            />
+          <div className="pf-layout">
+            <Section concept="add" tag="the add-on" question="Which arms have fired?">
+              {/* Net by arm left this tab 2026-10-30: the summary's by-arm card and Compare both answer
+                  it, Compare with each arm paired against control. */}
+              <Card
+                title="net by arm"
+                collapseKey="bwb-arms-where"
+                help={{
+                  title: "Net by arm",
+                  body: (
+                    <HelpSection title="An expected collision">
+                      <p>
+                        Until an arm&rsquo;s add-on fires, its positions are the same as control&rsquo;s, an expected collision rather
+                        than a defect: read the fires first.
+                      </p>
+                    </HelpSection>
+                  ),
+                }}
+              >
+                <p className="muted" style={{ margin: 0 }}>
+                  Net by arm is on the <Link to="/bwb/summary">summary</Link>, and each arm against control, with paired
+                  statistics, is on <Link to="/compare/arms">Compare</Link>.
+                </p>
+              </Card>
+              <FireCountsCard
+                counts={data?.fireCounts ?? []}
+                correlationCaveat={
+                  data?.correlationCaveat ?? "concurrent positions share regime context -- rows are not independent samples"
+                }
+                updatedAt={dataUpdatedAt}
+              />
+            </Section>
+            <BookArmGuide module="bwb" />
           </div>
-          <BookArmGuide module="bwb" />
         </>
       ),
     },
@@ -83,7 +103,11 @@ export function BwbLightbox({ slide }: { slide: string }) {
       id: "positions",
       label: BWB_LABEL.positions,
       render: () => (
-        <div className="cards cards-wide">{isLoading ? null : <OpenTradesCard data={data} updatedAt={dataUpdatedAt} />}</div>
+        <div className="pf-layout">
+          <Section concept="stand" tag="open" question="What is open?">
+            {isLoading ? null : <OpenTradesCard data={data} updatedAt={dataUpdatedAt} />}
+          </Section>
+        </div>
       ),
     },
     { id: "history", label: BWB_LABEL.history, render: () => <HistoryTab mode={mode} /> },

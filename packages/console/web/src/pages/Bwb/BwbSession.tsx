@@ -1,5 +1,6 @@
 import type { BwbPayload, TradingMode } from "@console/shared";
 import { Card } from "../../components/DataTable";
+import { Section } from "../../components/Section";
 import { DivergingBars } from "../../components/grid/DivergingBars";
 import { GridCard, StatTile } from "../../components/grid/GridCard";
 import { fmtMoney } from "../../lib/format";
@@ -27,7 +28,8 @@ export function BwbSession({
   const book = data?.mode ?? mode;
   if (data !== undefined && !data.dbPresent) {
     return (
-      <div className="cards cards-wide">
+      <div className="pf-layout">
+        <Section concept="stand" question="Has this module run here?">
         <Card title="bwb" collapseKey="bwb-absent">
           {book === "live" ? (
             <p className="muted">
@@ -42,6 +44,7 @@ export function BwbSession({
             </p>
           )}
         </Card>
+        </Section>
       </div>
     );
   }
@@ -49,7 +52,8 @@ export function BwbSession({
   // row of tiles reading 0 that look like a measured quiet day.
   if (data !== undefined && book === "live" && data.fireCounts.length === 0 && data.openCount === 0) {
     return (
-      <div className="cards cards-wide">
+      <div className="pf-layout">
+        <Section concept="live" question="Has the live pilot traded?">
         <Card title="bwb · live" collapseKey="bwb-live-empty">
           <p className="muted">
             No live trades yet -- the live ledger holds no position. The pilot trades only on a day armed with{" "}
@@ -57,6 +61,7 @@ export function BwbSession({
             {data.today.lastIteration !== null && ` Last live loop iteration: ${data.today.lastIteration.phase} · ${data.today.lastIteration.status}.`}
           </p>
         </Card>
+        </Section>
       </div>
     );
   }
