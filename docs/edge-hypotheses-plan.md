@@ -69,6 +69,20 @@ written are not re-judged. The arithmetic is `cherrypick.core.robustness`
     thresholds if it goes live;
   - the largest size whose 99th-percentile drawdown stays inside a declared share of the account
     (`max_size`).
+- **The verdict fill for SPX and XSP studies** (from 2026-11-07, for declarations written after it).
+  - The verdict fill is the suite's slippage model: `fees.slippage_dollars`, an eighth of each leg's
+    bid-ask from mid, capped at its share of the mid.
+  - Halfway from mid to the natural fill (the "working" price items 22 and 58-61 used) is reported
+    beside it as the stress, and mid as context.
+  - Why: MEIC's live fills land closer to mid than either. As of 2026-11-07, 9 priced live entries
+    filled about 0.3% of the wing width from the mid credit at submit (`python -m cherrypick.cli
+    execution`), about $2 to $3 a condor. An eighth of each leg's spread is several times that on SPX
+    at midday.
+  - Declarations already written keep their declared fill; re-scoring them at another fill would be
+    choosing a fill after seeing results.
+  - The modules' own default (`DEFAULT_COSTS["slippage_frac_of_spread"]`) is not changed here. That is
+    measurement-affecting for every paper module, so it is proposed at a declared boundary once MEIC
+    live has 30 priced fills, with the per-structure fill measured from those fills.
 
 ## Data we already hold
 
