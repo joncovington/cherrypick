@@ -91,9 +91,13 @@ function render(url: string): string {
 }
 
 /** The symbols drawn, in order: a row's, or a card's. */
-const symbols = (html: string) => [...html.matchAll(/class="(?:tr-sym|pos-card-sym)">([A-Z]+)</g)].map((m) => m[1]);
+const symbols = (html: string) => [...html.matchAll(/class="(?:tr-sym|pos-card-sym)[^"]*"[^>]*>([A-Z]+)</g)].map((m) => m[1]);
 const card = (r: EarningsCalendarRow) =>
-  renderToString(<TradeCard m={earningsModel(r)} />)
+  renderToString(
+    <MemoryRouter>
+      <TradeCard m={earningsModel(r)} />
+    </MemoryRouter>,
+  )
     .replace(/<!-- -->/g, "")
     .replace(/&#x27;/g, "'");
 
@@ -143,6 +147,10 @@ describe("the earnings tab", () => {
     const cards = render("/screeners/earnings?day=2026-10-15");
     expect(cards.match(/tc-card/g)?.length).toBeGreaterThanOrEqual(4);
     expect(cards).not.toContain('class="tr-row"');
+  });
+
+  it("links the card's symbol to its chart", () => {
+    expect(card(row({ trade: trade() }))).toContain('href="/charts/technicals?symbol=AAA"');
   });
 
   it("groups by day under a heading with its count", () => {

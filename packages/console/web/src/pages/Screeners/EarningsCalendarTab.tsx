@@ -200,6 +200,7 @@ export function earningsModel(r: EarningsCalendarRow): TradeCardModel {
   return {
     key: `${r.date}-${r.symbol}`,
     symbol: r.symbol,
+    symbolHref: `/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`,
     spot: r.company,
     shape: [strong, word && `${word} ${strikes}`, moveWord && `exp. move ${moveWord}`].filter(Boolean).join(" · "),
     chips: (

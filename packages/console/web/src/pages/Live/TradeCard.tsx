@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { useListView } from "../../components/ViewSwitch";
 import type { ManageCandidate, ManageHedgeSuggestion, ManageHedges, TimeSpreadStructure } from "@console/shared";
 import { fmtCash, fmtMoney } from "../../lib/format";
@@ -20,6 +21,8 @@ export interface TradeCardLeg {
 export interface TradeCardModel {
   key: string;
   symbol: string;
+  /** Where the symbol links (its chart), on the card; a row's head is a button, so it links once opened. */
+  symbolHref?: string;
   spot: string | null;
   shape: string;
   chips: ReactNode;
@@ -44,7 +47,13 @@ export function TradeCard({ m }: { m: TradeCardModel }) {
       <span className="pos-card-head">
         <span className="pos-card-titles">
           <span className="pos-card-sym-line">
-            <span className="pos-card-sym">{m.symbol}</span>
+            {m.symbolHref ? (
+              <Link className="pos-card-sym module-link" to={m.symbolHref} title={`Open ${m.symbol}'s chart`}>
+                {m.symbol}
+              </Link>
+            ) : (
+              <span className="pos-card-sym">{m.symbol}</span>
+            )}
             {m.spot ? <span className="pos-card-spot">{m.spot}</span> : null}
           </span>
           <span className="pos-card-shape">{m.shape}</span>

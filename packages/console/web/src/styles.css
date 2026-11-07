@@ -9417,3 +9417,8 @@ button.chip[aria-pressed][data-hue="special"],
   flex-wrap: wrap;
   gap: 4px;
 }
+
+/* a trade card's spot slot can hold a company name, which wraps rather than running under the chips */
+.pos-card.tc-card .pos-card-spot {
+  white-space: normal;
+}
