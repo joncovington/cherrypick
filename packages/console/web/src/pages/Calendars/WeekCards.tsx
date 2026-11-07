@@ -2,7 +2,7 @@ import type { CalendarsPayload, CalendarsPosition } from "@console/shared";
 import { Card, DataCard, fmtMoney, fmtNum, fmtPct, PnlCell, sortRows, useSort } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import type { SortOption } from "../../components/FilterSort";
-import { fmtCash, fmtPrice } from "../../lib/format";
+import { fmtPrice } from "../../lib/format";
 import { dayMonth, type TradeCardLeg, type TradeCardModel } from "../Live/TradeCard";
 import { TradeListCard } from "../Live/TradeListCard";
 

@@ -3,7 +3,6 @@ import type { FliesBookRow, FliesPayload, FliesPositionRow } from "@console/shar
 import { Card, PnlCell, SkeletonRows, fmtMoney, fmtNum } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Pager } from "../../components/ScopeBar";
-import { ListViewContext, ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
 import {
   FilterGroup,
   FilterSortButton,
@@ -15,7 +14,8 @@ import {
   type SortOption,
 } from "../../components/FilterSort";
 import { fmtCash, fmtPrice } from "../../lib/format";
-import { TradeCards, type TradeCardModel } from "../Live/TradeCard";
+import { type TradeCardModel } from "../Live/TradeCard";
+import { TradeListCard } from "../Live/TradeListCard";
 import { ChoiceGroup, FliesLayout } from "./FliesFilter";
 import { Section } from "../../components/Section";
 import { clockTime, structureLabel, structureLegs, wingWidth } from "./structure";
@@ -112,58 +112,45 @@ export function positionModel(p: FliesPositionRow): TradeCardModel {
 export function PositionsCard({ data, paging, loading, isError, narrowed }: Props) {
   const rows = data?.positions.rows ?? [];
   const total = data?.positions.total ?? 0;
-  const [view, setView] = useViewChoice("flies-positions", "cards");
-  const [sortChoice, setSortChoice] = useSortChoice("flies-positions", "time");
   const [show, setShow] = useState<PositionShow>("all");
-  const [panel, setPanel] = useState(false);
-  const anchor = useRef<HTMLButtonElement>(null);
-  const option = POSITION_SORTS.find((o) => o.id === sortChoice.id);
-  const listed = sortRows(rows.filter((p) => positionShown(p, show)), option, sortChoice.reversed);
-  const changed = (show !== "all" ? 1 : 0) + (sortChoice.id !== "time" || sortChoice.reversed ? 1 : 0);
-  const reset = () => {
-    setShow("all");
-    setSortChoice({ id: "time", reversed: false });
-  };
   return (
     <FliesLayout>
       <Section concept="dir" tag="entries" question="What did each arm enter?">
-        <Card
+        <TradeListCard
+          card="flies-positions"
           title="positions"
           help={POSITION_HELP}
           isError={isError}
-          controls={
-            <>
-              <ViewSwitch view={view} onChange={setView} />
-              <FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />
-            </>
+          loading={loading}
+          rows={rows}
+          model={positionModel}
+          sorts={POSITION_SORTS}
+          fallback="time"
+          filter={{
+            keep: (r) => positionShown(r, show),
+            parts: show === "all" ? [] : [show === "free" ? "risk-free" : "at risk"],
+            changed: show !== "all" ? 1 : 0,
+            reset: () => setShow("all"),
+            panel: (
+              <FilterGroup title="show">
+                <ChoiceGroup label="show" value={show} options={SHOW} onChange={setShow} />
+              </FilterGroup>
+            ),
+          }}
+          note={(listed) => `${listed.toLocaleString()} of ${rows.length.toLocaleString()} on this page · ${total.toLocaleString()} matching`}
+          empty={(before) => (before > 0 ? "Nothing matches these filters on this page." : narrowed ? "no matching positions" : "no positions today")}
+          footer={
+            total > 0 && (
+              <Pager
+                offset={data?.positions.offset ?? paging.page.offset}
+                limit={data?.positions.limit ?? paging.page.limit}
+                total={total}
+                onOffset={paging.setOffset}
+                onLimit={paging.setLimit}
+              />
+            )
           }
-        >
-          <FilterSummary
-            parts={[`by ${option?.label ?? sortChoice.id}${sortChoice.reversed ? ", reversed" : `, ${option?.hint ?? ""}`}`, ...(show === "all" ? [] : [show === "free" ? "risk-free" : "at risk"])]}
-            note={`${listed.length.toLocaleString()} of ${rows.length.toLocaleString()} on this page · ${total.toLocaleString()} matching`}
-            changed={changed}
-            onOpen={() => setPanel(true)}
-            onReset={reset}
-          />
-          {loading ? (
-            <p className="muted">reading…</p>
-          ) : (
-            <ListViewContext.Provider value={view}>
-              <TradeCards models={listed.map(positionModel)} empty={rows.length > 0 ? "Nothing matches these filters on this page." : narrowed ? "no matching positions" : "no positions today"} />
-            </ListViewContext.Provider>
-          )}
-          {total > 0 && (
-            <div className="card-footer">
-              <Pager offset={data?.positions.offset ?? paging.page.offset} limit={data?.positions.limit ?? paging.page.limit} total={total} onOffset={paging.setOffset} onLimit={paging.setLimit} />
-            </div>
-          )}
-        </Card>
-        <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
-          <SortSection sorts={POSITION_SORTS} choice={sortChoice} fallback="time" onChange={setSortChoice} />
-          <FilterGroup title="show">
-            <ChoiceGroup label="show" value={show} options={SHOW} onChange={setShow} />
-          </FilterGroup>
-        </FilterSortPanel>
+        />
       </Section>
     </FliesLayout>
   );

@@ -4,6 +4,11 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { OptionsFlowDay } from "@console/shared";
 import { FlowDerived, FlowSpreads, FlowToday, contractLabel } from "../src/pages/Flow/FlowPage";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { FlowPostPage } from "../src/pages/Flow/FlowPostPage";
 
 /**
  * The Options flow page lays out the capture and decides nothing. What these guard is what the
@@ -246,5 +251,79 @@ describe("the Options flow page", () => {
     const unscored = render(<FlowSpreads day={{ ...day, derived: null }} />);
     expect(unscored).toContain(">call (CS)<");
     expect(unscored).toContain("call + put (RR)");
+  });
+});
+
+/**
+ * The daily Discord series (scripts/quikoptions_post.py) pictures console cards with
+ * `tools/ui-check.mjs --card "<name> — <session>"`, which finds a `section.gcard` whose `.gcard-head`
+ * holds that title and that has drawn an SVG. The names come from the orchestrator's config
+ * (`QUIKOPTIONS_CARDS`), and the script takes the ones in `POST_PAGE_CARDS` from `/post/flow`, the rest
+ * from the Options flow page. A layout pass that turns either page's cards into another kind of card,
+ * or renames one, stops the series silently at 17:00; this reads both lists and fails here instead.
+ */
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+
+function pyStrings(file: string, name: string): string[] {
+  const text = fs.readFileSync(path.join(REPO, file), "utf8");
+  const m = new RegExp(`^${name} = [({]([^)}]*)[)}]`, "m").exec(text);
+  if (m === null) throw new Error(`${name} not found in ${file}`);
+  return [...m[1]!.matchAll(/"([^"]+)"/g)].map((x) => x[1]!);
+}
+
+/** The capture's own rule, on server-rendered markup: the card's head holds the title, and it drew an SVG. */
+export function capturable(html: string, title: string): boolean {
+  return html
+    .split('<section class="gcard')
+    .slice(1)
+    .some((card) => {
+      const head = /class="gcard-head[^"]*"[^>]*>([\s\S]*?)<\/(?:div|header|h2|h3)>/.exec(card);
+      return head !== null && head[1]!.replace(/<[^>]+>/g, "").includes(title) && card.includes("<svg");
+    });
+}
+
+describe("the Discord series' captures", () => {
+  const cards = pyStrings("packages/orchestrator/src/cherrypick/orchestrator/config.py", "QUIKOPTIONS_CARDS");
+  const fromPost = new Set(pyStrings("scripts/quikoptions_post.py", "POST_PAGE_CARDS"));
+  const day = {
+    ...DAY,
+    events: [{ date: "2026-10-02", timeEt: "08:30", event: "Payrolls", impact: "H", actual: "100K", estimate: "90K", previous: "80K" }],
+  };
+
+  function postPage(): string {
+    const client = new QueryClient();
+    client.setQueryData(["options-flow", "2026-10-02"], { sessions: ["2026-10-02"], current: day });
+    return renderToString(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={["/post/flow?session=2026-10-02"]}>
+          <FlowPostPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    ).replace(/<!-- -->/g, "");
+  }
+
+  it("reads the card names from the config and the script", () => {
+    expect(cards).toContain("Trades");
+    expect(fromPost.has("Derived flow")).toBe(true);
+    expect(fromPost.has("Events")).toBe(true);
+  });
+
+  it("finds every post-page card on the post page, as the capture would", () => {
+    const html = postPage();
+    for (const name of fromPost) {
+      expect([name, capturable(html, `${name} — 2026-10-02`)]).toEqual([name, true]);
+    }
+  });
+
+  it("finds every other card on the Options flow page's today tab, as the capture would", () => {
+    const html = render(<FlowToday day={DAY} />);
+    for (const name of cards.filter((n) => !fromPost.has(n))) {
+      expect([name, capturable(html, `${name} — 2026-10-02`)]).toEqual([name, true]);
+    }
+  });
+
+  it("would refuse a card that is not a grid card or has no chart", () => {
+    expect(capturable('<section class="card"><div class="gcard-head">Trades — 2026-10-02</div><svg></svg></section>', "Trades — 2026-10-02")).toBe(false);
+    expect(capturable('<section class="gcard"><div class="gcard-head">Trades — 2026-10-02</div></section>', "Trades — 2026-10-02")).toBe(false);
   });
 });
