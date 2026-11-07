@@ -56,6 +56,11 @@ function pctFraction(v: number | null): number | null {
   return v === null ? null : v * 100;
 }
 
+/** The win-rate tile's second line: the rate the payoff needs, from `core.metrics.payoff`. */
+export function payoffNote(breakeven: number | null): string | null {
+  return breakeven === null ? null : `break-even ${fmtPct(breakeven * 100, 1)}`;
+}
+
 /**
  * `peakRisk` is flies' stand-in for return on capital, which its ledger cannot carry (a legged
  * book's risk depends on completion): Σ net over Σ session peak risk. Passed, it takes that tile's
@@ -75,6 +80,9 @@ export function MetricTiles({ reading, peakRisk }: { reading: Record<string, unk
   const maxDrawdown = num(reading, "max_drawdown");
   const returnOnCapital = num(reading, "return_on_capital");
   const captureRate = nested(reading, "capture_rate", "value");
+  const avgWin = num(reading, "avg_win");
+  const avgLoss = num(reading, "avg_loss");
+  const breakeven = num(reading, "breakeven_win_rate");
 
   // Twelve tiles, so TileGrid's 2/3/4/6 columns always come out even. The first six are edge, the
   // second six shape and risk; the per-session pair sits beside the per-trade Sharpe it corrects.
@@ -84,9 +92,25 @@ export function MetricTiles({ reading, peakRisk }: { reading: Record<string, unk
     <TileGrid count={12}>
       <Tile label="sample" value={sample === null ? "—" : String(sample)} tone="dim" />
       <Tile label="net P&L" value={fmtMoney(netPnl)} tone={tone(netPnl)} afterFees n={sample} />
-      <Tile label="win rate" value={fmtPct(pctFraction(winRate), 1)} n={sample} />
+      <Tile
+        label="win rate"
+        value={fmtPct(pctFraction(winRate), 1)}
+        n={sample}
+        note={payoffNote(breakeven) ?? undefined}
+        title={
+          breakeven !== null
+            ? "the win rate the average win and average loss need for the net to be zero. A win rate under it loses money however high it is"
+            : "no break-even win rate until the arm has both a winning and a losing trade"
+        }
+      />
       <Tile label="expectancy" value={fmtMoney(expectancy)} tone={tone(expectancy)} afterFees n={sample} />
-      <Tile label="profit factor" value={fmtNum(profitFactor)} n={sample} />
+      <Tile
+        label="profit factor"
+        value={fmtNum(profitFactor)}
+        n={sample}
+        note={avgWin !== null || avgLoss !== null ? [`avg win ${fmtMoney(avgWin)}`, `avg loss ${fmtMoney(avgLoss)}`] : undefined}
+        title="gross wins over gross losses; under it, the average winning and losing trade after fees"
+      />
       {peakRisk !== undefined ? (
         <Tile
           label="return on peak risk"

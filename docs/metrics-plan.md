@@ -87,6 +87,12 @@ Six additions, each with the shown-to-fail test the house rule requires:
 All six fold into `calibration_reading` with coverage counts, so `calibrate` and the advisor's
 promotion evidence pick them up through the one existing seam.
 
+Added 2026-11-07, report-only like the six: **`payoff`** — the average winning and losing trade, and
+the win rate they need to break even (`breakeven_win_rate`, on the same every-trade base as
+`win_rate`, scratches kept in the base). `None` unless the book has both a win and a loss. The
+performance tiles show it under the win rate: a 77% win rate whose losses average ten times its
+wins needs about 91%, and the win rate alone hides that.
+
 ## Phase 2 — MAE/MFE, read-side, over marks already recorded
 
 Maximum adverse/favorable excursion — the deepest a position went against its entry and the best

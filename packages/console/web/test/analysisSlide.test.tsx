@@ -78,6 +78,22 @@ describe("ArmCard", () => {
     expect(html).toContain(" of 2");
   });
 
+  it("draws days held as its own card, flagged as set by the exits, and none for a same-day book", () => {
+    const row = (bucket: string, net: number, thin: boolean) => ({
+      bucket, trades: 6, sessions: thin ? 2 : 6, net, win_rate: net > 0 ? 0.8 : 0.3, avg_net: net / 6, best: 50, worst: -90, thin,
+    }); // fmt: skip
+    const held = { min_sessions: 5, skipped: 3, rows: [row("1-6 days", 240, false), row("21+ days", -310, true)] };
+    const html = card(arm({ held }));
+    expect(html).toContain("by days held");
+    expect(html).toContain("set by the exits");
+    expect(html).toContain("21+ days");
+    expect(html).toContain("-$310.00");
+    expect(html).toContain("3 trades not bucketed");
+    // A book that never holds overnight (null) and a reply from before the cut (absent) draw nothing.
+    expect(card(arm({ held: null }))).not.toContain("by days held");
+    expect(card(arm())).not.toContain("by days held");
+  });
+
   it("says how many trades carry the spot fields when some do not", () => {
     const html = card(arm());
     expect(html).toContain("18: entry spot");
