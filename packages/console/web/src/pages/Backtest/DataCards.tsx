@@ -3,7 +3,9 @@ import { useSearchParams } from "react-router-dom";
 import type { BacktestGapStats, BacktestInventoryStore, BacktestOverview, BacktestSideReading, BacktestStore, BacktestValidation } from "@console/shared";
 import { HelpSection } from "../../components/CardHelp";
 import { Card } from "../../components/DataTable";
+import { ListViewContext, ViewSwitch, useListView, useViewChoice } from "../../components/ViewSwitch";
 import { fmtGap } from "../../lib/bridged";
+import { BtRows, type BtRow } from "./BtRows";
 import { fmtCount } from "../../lib/format";
 import { WithOverview, fmtBytes, mainTable, measure } from "./BacktestPage";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
@@ -186,6 +188,23 @@ function StoreTile({ s, domain, onOpen }: { s: StoreModel; domain: [number, numb
       </span>
     </button>
   );
+}
+
+/** A store's tile on one line: its state, its file, what it holds, its span and size. */
+export function storeRow(s: StoreModel, onOpen: () => void): BtRow {
+  const state = !s.present ? <span className="chip chip-warn">missing</span> : s.pending ? <span className="chip q-waiting">count pending</span> : <span className="chip chip-ok">on disk</span>;
+  const size = [s.bytes !== undefined ? fmtBytes(s.bytes) : null, s.present ? s.main.split(" · ")[0] : "rebuild with the code inside", s.refused > 0 ? `${fmtCount(s.refused)} refused` : null];
+  return {
+    key: s.file,
+    label: `Open store ${s.file}`,
+    lead: state,
+    title: <span className="d-file">{s.file}</span>,
+    meta: s.holds ?? "—",
+    end: [s.span ? `${s.span[0].slice(0, 7)} → ${s.span[1].slice(0, 7)}` : s.present ? "no dated table" : "not on disk", ...size].filter((x): x is string => x !== null && x !== undefined).join(" · "),
+    attention: !s.present,
+    data: { "data-store": s.file },
+    onOpen,
+  };
 }
 
 // ------------------------------------------------------------------ the lightbox
@@ -525,6 +544,8 @@ function LicenceTile({ d }: { d: BacktestOverview }) {
 
 export function DataCards({ d }: { d: BacktestOverview }) {
   const [params, setParams] = useSearchParams();
+  // Rows apply to the store list; the trust and licence panels above it stay.
+  const view = useListView();
   const lightbox = useOpenParam("item");
   const stores = storeModels(d);
   const raw = params.get("stores");
@@ -631,6 +652,8 @@ export function DataCards({ d }: { d: BacktestOverview }) {
           <p className="muted">No vendor store on this machine yet.</p>
         ) : shown.length === 0 ? (
           <p className="muted">No store matches this filter.</p>
+        ) : view === "rows" ? (
+          <BtRows rows={shown.map((s) => storeRow(s, () => lightbox.show(`store:${s.file}`)))} />
         ) : (
           <div className="study-tiles q-tiles">
             {shown.map((s) => (
@@ -645,6 +668,7 @@ export function DataCards({ d }: { d: BacktestOverview }) {
 }
 
 export function BacktestDataTab() {
+  const [view, setView] = useViewChoice("backtest-data");
   return (
     <WithOverview>
       {(d, updatedAt) => (
@@ -653,6 +677,7 @@ export function BacktestDataTab() {
             title="Data"
             collapseKey="backtest-data"
             updatedAt={updatedAt}
+            controls={<ViewSwitch view={view} onChange={setView} />}
             help={{
               title: "Reading the data tab",
               body: (
@@ -670,11 +695,16 @@ export function BacktestDataTab() {
                       not evidence.
                     </p>
                   </HelpSection>
+                  <HelpSection title="Cards or rows">
+                    <p>The switch in the card head lists the stores as rows, one line a store; a row opens the same store.</p>
+                  </HelpSection>
                 </>
               ),
             }}
           >
-            <DataCards d={d} />
+            <ListViewContext.Provider value={view}>
+              <DataCards d={d} />
+            </ListViewContext.Provider>
           </Card>
         </div>
       )}

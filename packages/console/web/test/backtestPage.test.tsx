@@ -6,6 +6,7 @@ import type { BacktestArmCards, BacktestOverview, BacktestRunCards, BacktestRunR
 import { trialsLine } from "../src/pages/Backtest/BacktestPage";
 import { BacktestDataTab, DataDialogBody, blocker, keepStore, storeModels, trustAnswer, yearDomain, type DataItem, type DataTab } from "../src/pages/Backtest/DataCards";
 import { BacktestRunsTab, RunDialogBody, initialRunTab, type RunTab } from "../src/pages/Backtest/RunsCards";
+import { writePref } from "../src/lib/prefs";
 
 /**
  * The Backtest page's data and runs tabs (validation folded into data 2026-10-30), rendered with the bridge's documents already in the query cache
@@ -260,6 +261,32 @@ describe("is history trusted?", () => {
   it("with every check within tolerance, it is the session count that stands in the way", () => {
     const html = render(<BacktestDataTab />, "/backtest/data", (c) => seedOverview(c));
     expect(html).toContain("Every check is within tolerance; it needs more sessions compared.");
+  });
+});
+
+describe("cards or rows on the runs and data cards", () => {
+  it("draws cards until a card chooses rows, then one row a run or store, each opening the same lightbox", () => {
+    const cards = render(<BacktestRunsTab />, "/backtest/runs", (c) => seedOverview(c));
+    expect(cards).toContain('aria-label="Rows"');
+    expect(cards).not.toContain('class="bt-row"');
+    try {
+      void writePref("view.backtest-runs", "rows");
+      void writePref("view.backtest-data", "rows");
+      const runs = render(<BacktestRunsTab />, "/backtest/runs", (c) => seedOverview(c));
+      expect(runs).not.toContain("r-tile");
+      expect(runs).toContain(`aria-label="Open run ${RUN_ID}" data-run="${RUN_ID}"`);
+      expect(runs).toContain("3 sessions · 1 arm");
+      expect(runs).toContain("2026-10-13 → 2026-10-15");
+      const data = render(<BacktestDataTab />, "/backtest/data", (c) => seedOverview(c));
+      // The trust panel stays; the store list is rows.
+      expect(data).toContain("Is history trusted?");
+      expect(data).not.toContain("study-tile d-store");
+      expect(data).toContain('aria-label="Open store SPX-60s.db" data-store="SPX-60s.db"');
+      expect(data).toContain("2 refused");
+    } finally {
+      void writePref("view.backtest-runs", undefined);
+      void writePref("view.backtest-data", undefined);
+    }
   });
 });
 

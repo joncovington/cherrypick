@@ -9269,6 +9269,104 @@ button.chip[aria-pressed][data-hue="special"],
     padding-left: 12px;
   }
 }
+/* The backtest tabs' rows (2026-11-07): a tile on one line; a row opens the tile's lightbox. */
+.bt-rows {
+  margin-top: 12px;
+}
+.bt-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(0, 2.2fr) minmax(0, 1.6fr) minmax(0, 1.3fr) 12px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.bt-row:hover {
+  background: var(--surface-hover);
+}
+.bt-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.bt-item.is-attn {
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+.bt-row-lead {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+  font-weight: 600;
+}
+.bt-row-title {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bt-row-meta,
+.bt-row-end {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bt-row-end {
+  text-align: right;
+}
+.bt-row-open {
+  color: var(--text-muted);
+}
+/* A verdict word keeps its tile's tone, at the row's size. */
+.bt-row .study-tile-word,
+.mf-layout[data-module="backtest"] .bt-row .study-tile-word {
+  font-size: 12.5px;
+}
+.bt-row .study-tile-status {
+  font-size: 12px;
+}
+.bt-row .q-pos {
+  font-size: 13px;
+  min-width: 1.4em;
+}
+@container trlist (max-width: 640px) {
+  .bt-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "l e"
+      "t t"
+      "m m";
+    row-gap: 3px;
+  }
+  .bt-row-lead {
+    grid-area: l;
+    flex-wrap: nowrap;
+  }
+  .bt-row-end {
+    grid-area: e;
+  }
+  .bt-row-title {
+    grid-area: t;
+    white-space: normal;
+  }
+  .bt-row-meta {
+    grid-area: m;
+    white-space: normal;
+  }
+  .bt-row-open {
+    display: none;
+  }
+}
 /* A trade card's leg: its quote and delta right-aligned and muted, so the legs read in the order chain's columns. */
 .tc-leg-quote {
   margin-left: auto;
