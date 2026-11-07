@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { FilterSortButton, FilterSortPanel, FilterSummary, SortSection, sortRows, type SortChoice, type SortOption } from "../../components/FilterSort";
 import { useSearchParams } from "react-router-dom";
 import type { CandleBar, ManageChainOrder, ManageTrade } from "@console/shared";
 import { useCandles } from "../../lib/useCandles";
@@ -447,7 +448,21 @@ function TradeDialog({
   );
 }
 
-/** The board: filter and sort chips, then a card per trade. `detail` renders the evaluation tab. */
+/** The positions board's sorts (2026-11-06): P&L by default, then timing, capture, action, risk. */
+export const POSITION_SORTS: SortOption<ManageTrade>[] = [
+  { id: "pnl", label: "P&L", hint: "high to low", key: (t) => (t.pnlNet === null ? null : -t.pnlNet) },
+  { id: "dte", label: "days to the nearest short", hint: "soonest first", key: (t) => t.nearestShortDte },
+  { id: "capture", label: "capture", hint: "most kept first", key: (t) => (t.capture === null ? null : -t.capture) },
+  {
+    id: "action",
+    label: "needs action first",
+    hint: "action first, then P&L",
+    key: (t) => (PASSIVE.has(t.action) ? 1e12 : 0) - (t.pnlNet ?? -1e11),
+  },
+  { id: "downside", label: "downside", hint: "largest first", key: (t) => t.profile?.downsideFromNow ?? null },
+];
+
+/** The board: the show chips and the filter & sort button, then a card per trade. `detail` renders the evaluation tab. */
 export function PositionCards({
   trades,
   loading,
@@ -462,7 +477,13 @@ export function PositionCards({
 }) {
   const [params, setParams] = useSearchParams();
   const lightbox = useOpenParam("trade");
-  const order: PnlOrder = params.get("pnl") === "asc" ? "asc" : "desc";
+  // The sort is in the URL (`?sort=<id>&rev=1`), so a link keeps it; an older link's `pnl=asc` is P&L reversed.
+  const legacyAsc = params.get("pnl") === "asc";
+  const sortId = POSITION_SORTS.some((s) => s.id === params.get("sort")) ? params.get("sort")! : "pnl";
+  const choice: SortChoice = { id: sortId, reversed: params.get("rev") === "1" || (sortId === "pnl" && legacyAsc && !params.get("sort")) };
+  const option = POSITION_SORTS.find((s) => s.id === choice.id);
+  const [panel, setPanel] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
   const raw = params.get("show");
   const filter: Filter = raw === "act" || raw === "rolled" ? raw : "all";
   const setParam = (k: string, v: string | null) => {
@@ -473,9 +494,20 @@ export function PositionCards({
   };
   const acting = trades.filter((t) => !PASSIVE.has(t.action));
   const rolled = trades.filter((t) => rolls(t) > 0);
-  const shown = sortByPnl(filter === "act" ? acting : filter === "rolled" ? rolled : trades, order);
+  const shown = sortRows(filter === "act" ? acting : filter === "rolled" ? rolled : trades, option, choice.reversed);
   // A trade named in the URL but filtered out still opens, stepping through every trade.
-  const stepTrades = shown.some((t) => t.tradeId === lightbox.open) ? shown : sortByPnl(trades, order);
+  const stepTrades = shown.some((t) => t.tradeId === lightbox.open) ? shown : sortRows(trades, option, choice.reversed);
+  const changed = choice.id !== "pnl" || choice.reversed ? 1 : 0;
+  const setSort = (c: SortChoice) => {
+    const next = new URLSearchParams(params);
+    next.delete("pnl");
+    if (c.id === "pnl") next.delete("sort");
+    else next.set("sort", c.id);
+    if (c.reversed) next.set("rev", "1");
+    else next.delete("rev");
+    setParams(next, { replace: true });
+  };
+  const reset = () => setSort({ id: "pnl", reversed: false });
   const index = stepTrades.findIndex((t) => t.tradeId === lightbox.open);
   const chip = (on: boolean) => (on ? "chip chip-ok" : "chip");
   if (loading && trades.length === 0) return <p className="muted">Loading the evaluation…</p>;
@@ -494,18 +526,17 @@ export function PositionCards({
             rolled {rolled.length}
           </button>
         </div>
-        <div className="pos-sort">
-          <span className="muted">sort by P&amp;L</span>
-          <div className="history-controls" role="group" aria-label="Sort by P&L">
-          <button type="button" className={chip(order === "desc")} aria-pressed={order === "desc"} onClick={() => setParam("pnl", null)}>
-            high → low
-          </button>
-          <button type="button" className={chip(order === "asc")} aria-pressed={order === "asc"} onClick={() => setParam("pnl", "asc")}>
-            low → high
-          </button>
-          </div>
-        </div>
+        <FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />
       </div>
+      <FilterSummary
+        parts={[`by ${option?.label ?? "P&L"}${choice.reversed ? ", reversed" : `, ${option?.hint ?? ""}`}`]}
+        changed={changed}
+        onOpen={() => setPanel(true)}
+        onReset={reset}
+      />
+      <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
+        <SortSection sorts={POSITION_SORTS} choice={choice} fallback="pnl" onChange={setSort} />
+      </FilterSortPanel>
       {shown.length === 0 ? (
         <p className="muted">{filter === "act" ? "Nothing to do today." : "No rolled trades."}</p>
       ) : (
