@@ -9783,3 +9783,42 @@ button.chip[aria-pressed][data-hue="special"],
 .fl-open .pos-card {
   max-width: 460px;
 }
+
+/* redesign: flies-b */
+.pf-c-edge { --pf-c: var(--amber-line); }
+.pf-c-live { --pf-c: var(--live); }
+.pf-c-hist { --pf-c: var(--text-muted); }
+.pf-row > .card.fl-wide {
+  grid-column: 1 / -1;
+}
+.pf-row > .card.fl-8 {
+  grid-column: span 8;
+}
+.pf-row > .card.fl-4 {
+  grid-column: span 4;
+}
+@container pf (max-width: 900px) {
+  .pf-row > .card.fl-8,
+  .pf-row > .card.fl-4 {
+    grid-column: 1 / -1;
+  }
+}
+.fl-chart {
+  margin-top: 0.75rem;
+}
+.fl-gloss {
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.fl-gloss dt {
+  margin: 0;
+}
+.fl-gloss dd {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.fl-layout td .pf-more {
+  white-space: nowrap;
+}
