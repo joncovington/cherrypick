@@ -5976,6 +5976,16 @@ is declared here knowing neither window is clean; the clean check is named below
   - **A fail or no verdict:** live stays at 10 wide with its gates, and item 50's better wide trades
     are read as too rare to use.
 
+- **Result (2026-11-07, provisional and seen): fail, both arms.**
+  `f15` and `f20` both pass the design window: the paired difference against `live-1400` clears its
+  t bar under Holm in both halves, each stays positive at 1.5x fees, and each earns at least
+  `live-1400`'s net over buying power. In the holdout both stay ahead of `live-1400` on average but
+  neither clears the t bar, so both fail as declared.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item56/`).
+- **What this decides:** the fail branch for now. Live stays at 10 wide with its gates. Of the 0DTE
+  width rules this is the one most worth the clean check: the sessions after 2026-10-12, read once
+  MEIC validation unlocks and 100 are stored.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
