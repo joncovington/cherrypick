@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { fliesQuery, type FliesFilter } from "../../lib/api";
@@ -19,7 +19,7 @@ import {
   useSortChoice,
   type SortOption,
 } from "../../components/FilterSort";
-import { FliesPage, FliesSection } from "./FliesLayout";
+import { FliesLayout, FliesSection } from "./FliesFilter";
 
 export interface JournalRow {
   arm: string;
@@ -233,7 +233,7 @@ export function JournalRows({ rows }: { rows: JournalRow[] }) {
  * the runs as rows. Green = entry taken; translucent red = refused. The arm and the decision narrow
  * both; the order of the rows sits behind the same filter & sort.
  */
-export function JournalBody({ rows, date, loading, filterSlot }: { rows: JournalRow[]; date: string | null; loading: boolean; filterSlot?: ReactNode }) {
+export function JournalBody({ rows, date, loading }: { rows: JournalRow[]; date: string | null; loading: boolean }) {
   const [sort, setSort] = useSortChoice("fl-decisions", "time");
   const [arm, setArm] = useState<string | null>(null);
   const [decision, setDecision] = useState<Decision>("all");
@@ -251,8 +251,8 @@ export function JournalBody({ rows, date, loading, filterSlot }: { rows: Journal
   const title = `decision journal${date !== null ? ` · ${date}` : ""}`;
 
   return (
-    <FliesPage filterSlot={filterSlot}>
-      <FliesSection concept="risk" tag="journal" question="What did each arm decide?">
+    <FliesLayout>
+      <FliesSection concept="risk" name="journal" question="What did each arm decide?">
         <Card
           title={title}
           collapseKey="flies-journal"
@@ -308,11 +308,11 @@ export function JournalBody({ rows, date, loading, filterSlot }: { rows: Journal
           )}
         </Card>
       </FliesSection>
-    </FliesPage>
+    </FliesLayout>
   );
 }
 
-export function JournalCard({ mode, filter, filterSlot }: { mode: TradingMode; filter: FliesFilter; filterSlot?: ReactNode }) {
+export function JournalCard({ mode, filter }: { mode: TradingMode; filter: FliesFilter }) {
   const { data, isLoading } = useJournal(mode, filter);
-  return <JournalBody rows={data?.rows ?? []} date={data?.date ?? null} loading={isLoading} filterSlot={filterSlot} />;
+  return <JournalBody rows={data?.rows ?? []} date={data?.date ?? null} loading={isLoading} />;
 }

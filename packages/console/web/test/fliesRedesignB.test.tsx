@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
 import { JOURNAL_SORTS, JournalBody, journalRows, type JournalRow } from "../src/pages/Flies/JournalCard";
 import { PerformanceTab, completionHelp } from "../src/pages/Flies/PerformanceTab";
-import { resolveBox, boxValue, type FliesBox } from "../src/pages/Flies/FliesLayout";
+import { resolveBox, boxValue, type FliesBox } from "../src/pages/Flies/FliesBoxes";
 import { sortRows } from "../src/components/FilterSort";
 
 /**
@@ -71,12 +71,6 @@ describe("the decisions tab", () => {
     const out = html(<JournalBody rows={[]} date="2026-11-06" loading={false} />);
     expect(out).toContain("no decisions recorded for this day");
     expect(out).not.toContain("<svg");
-  });
-
-  it("leaves the module-wide filter's slot where the tab's top is", () => {
-    const out = html(<JournalBody rows={rows} date={null} loading={false} filterSlot={<div id="slot-mark">the filter</div>} />);
-    expect(out.indexOf("slot-mark")).toBeGreaterThan(-1);
-    expect(out.indexOf("slot-mark")).toBeLessThan(out.indexOf("What did each arm decide?"));
   });
 });
 

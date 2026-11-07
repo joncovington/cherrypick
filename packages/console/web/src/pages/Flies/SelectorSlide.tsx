@@ -7,7 +7,8 @@ import { Tile } from "../../components/performance/Tile";
 import { fmtMoney } from "../../lib/format";
 import { useBridged } from "../../lib/bridged";
 import { useOpenParam } from "../Backtest/CardLightbox";
-import { BoxOpen, FliesBoxHost, FliesPage, FliesSection, type FliesBox } from "./FliesLayout";
+import { FliesLayout, FliesSection } from "./FliesFilter";
+import { BoxOpen, FliesBoxHost, type FliesBox } from "./FliesBoxes";
 
 /**
  * The selector arm (`run.py selector-sessions`, `analytics.selector_sessions`, bridged): what it
@@ -173,7 +174,7 @@ export function selectorHelp(d: FliesSelectorSessions): CardHelpContent {
   };
 }
 
-export function SelectorBody({ d, updatedAt, filterSlot }: { d: FliesSelectorSessions; updatedAt?: number; filterSlot?: ReactNode }) {
+export function SelectorBody({ d, updatedAt }: { d: FliesSelectorSessions; updatedAt?: number }) {
   const lb = useOpenParam("sel");
   const dep = d.departing;
   const latest = d.latest_model ?? null;
@@ -200,8 +201,8 @@ export function SelectorBody({ d, updatedAt, filterSlot }: { d: FliesSelectorSes
   }
   const firstRead = dep?.first_read ?? null;
   return (
-    <FliesPage filterSlot={filterSlot}>
-      <FliesSection concept="edge" tag="selector" question="Does the selector beat control when it departs?">
+    <FliesLayout>
+      <FliesSection concept="edge" name="selector" question="Does the selector beat control when it departs?">
         <Card
           title="departures from control"
           collapseKey="flies-selector"
@@ -244,19 +245,19 @@ export function SelectorBody({ d, updatedAt, filterSlot }: { d: FliesSelectorSes
         </Card>
       </FliesSection>
       <FliesBoxHost lb={lb} boxes={boxes} />
-    </FliesPage>
+    </FliesLayout>
   );
 }
 
-export function SelectorSlide({ filterSlot }: { filterSlot?: ReactNode } = {}) {
+export function SelectorSlide() {
   const { data, isLoading, dataUpdatedAt } = useBridged<FliesSelectorSessions>(["flies-selector"], "/api/flies/selector");
   const d = data?.data ?? null;
   const only = (card: ReactNode) => (
-    <FliesPage filterSlot={filterSlot}>
-      <FliesSection concept="edge" tag="selector" question="Does the selector beat control when it departs?">
+    <FliesLayout>
+      <FliesSection concept="edge" name="selector" question="Does the selector beat control when it departs?">
         {card}
       </FliesSection>
-    </FliesPage>
+    </FliesLayout>
   );
 
   if (isLoading) {
@@ -280,5 +281,5 @@ export function SelectorSlide({ filterSlot }: { filterSlot?: ReactNode } = {}) {
       </Card>,
     );
   }
-  return <SelectorBody d={d} updatedAt={dataUpdatedAt} filterSlot={filterSlot} />;
+  return <SelectorBody d={d} updatedAt={dataUpdatedAt} />;
 }

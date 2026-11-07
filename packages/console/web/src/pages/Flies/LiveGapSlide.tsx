@@ -7,7 +7,8 @@ import { Tile } from "../../components/performance/Tile";
 import { fmtMoney, fmtPct } from "../../lib/format";
 import { fmtGap, signTone, useBridged } from "../../lib/bridged";
 import { useOpenParam } from "../Backtest/CardLightbox";
-import { FliesBoxHost, FliesPage, FliesSection, type FliesBox } from "./FliesLayout";
+import { FliesLayout, FliesSection } from "./FliesFilter";
+import { FliesBoxHost, type FliesBox } from "./FliesBoxes";
 
 /**
  * Live vs paper, paired per session (`run.py live-gap`, `analytics.live_paper_gap`, bridged). Every
@@ -218,7 +219,7 @@ export const SESSIONS_HELP: CardHelpContent = {
   ),
 };
 
-export function LiveGapBody({ d, updatedAt, filterSlot }: { d: FliesLiveGap; updatedAt?: number; filterSlot?: ReactNode }) {
+export function LiveGapBody({ d, updatedAt }: { d: FliesLiveGap; updatedAt?: number }) {
   const lb = useOpenParam("lg");
   const breakFrom = d.completion_rule_from ?? null;
   const boxes: FliesBox[] = d.sessions.map((s) => ({
@@ -230,8 +231,8 @@ export function LiveGapBody({ d, updatedAt, filterSlot }: { d: FliesLiveGap; upd
     body: () => <SessionWhy s={s} />,
   }));
   return (
-    <FliesPage filterSlot={filterSlot}>
-      <FliesSection concept="live" tag="the pilot" question="Does live match paper?">
+    <FliesLayout>
+      <FliesSection concept="live" name="the pilot" question="Does live match paper?">
         <Card
           title={`live vs paper — ${d.arm}`}
           collapseKey="flies-livegap"
@@ -243,7 +244,7 @@ export function LiveGapBody({ d, updatedAt, filterSlot }: { d: FliesLiveGap; upd
           <EraTiles label={`from ${breakFrom ?? "the break"} — ${RULE_LABEL.pays_limit}`} era={d.eras.pays_limit} />
         </Card>
       </FliesSection>
-      <FliesSection concept="hist" tag="the gap" question="Why do the books differ?">
+      <FliesSection concept="hist" name="the gap" question="Why do the books differ?">
         <Card title="why the books differ" collapseKey="flies-livegap-why" updatedAt={updatedAt} help={WHY_HELP} className="fl-wide">
           <WhyTable label={`before ${breakFrom ?? "the break"}`} why={d.eras.modelled_debit?.why} />
           <WhyTable label={`from ${breakFrom ?? "the break"}`} why={d.eras.pays_limit?.why} />
@@ -284,7 +285,7 @@ export function LiveGapBody({ d, updatedAt, filterSlot }: { d: FliesLiveGap; upd
         </Card>
       </FliesSection>
       <FliesBoxHost lb={lb} boxes={boxes} />
-    </FliesPage>
+    </FliesLayout>
   );
 }
 
@@ -325,15 +326,15 @@ function SessionRows({ s, crossed, breakFrom, onOpen }: { s: LiveGapSession; cro
   );
 }
 
-export function LiveGapSlide({ filterSlot }: { filterSlot?: ReactNode } = {}) {
+export function LiveGapSlide() {
   const { data, isLoading, dataUpdatedAt } = useBridged<FliesLiveGap>(["flies-live-gap"], "/api/flies/live-gap");
   const d = data?.data ?? null;
   const only = (card: ReactNode) => (
-    <FliesPage filterSlot={filterSlot}>
-      <FliesSection concept="live" tag="the pilot" question="Does live match paper?">
+    <FliesLayout>
+      <FliesSection concept="live" name="the pilot" question="Does live match paper?">
         {card}
       </FliesSection>
-    </FliesPage>
+    </FliesLayout>
   );
 
   if (isLoading) {
@@ -359,5 +360,5 @@ export function LiveGapSlide({ filterSlot }: { filterSlot?: ReactNode } = {}) {
       </Card>,
     );
   }
-  return <LiveGapBody d={d} updatedAt={dataUpdatedAt} filterSlot={filterSlot} />;
+  return <LiveGapBody d={d} updatedAt={dataUpdatedAt} />;
 }
