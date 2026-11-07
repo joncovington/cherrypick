@@ -286,3 +286,11 @@ def test_a_cycle_is_dropped_with_the_reason():
     no_exit_spot = _sessions(100.0, 90.0)
     no_exit_spot[date(2027, 3, 17)] = (None, chain_at(90.0))
     assert s55.simulate(no_exit_spot, expiry)[1] == "no_exit_spot"
+
+
+def test_a_study_that_judged_nothing_is_no_verdict_not_failed():
+    nothing = {"a": {"decision": "no verdict"}, "b": {"decision": "no verdict"}}
+    assert s55.overall_verdict(nothing, []) == "no verdict"
+    judged = {"a": {"decision": "no verdict"}, "b": {"decision": "fail"}}
+    assert s55.overall_verdict(judged, []) == "failed"
+    assert s55.overall_verdict(judged, ["b"]) == "passed"

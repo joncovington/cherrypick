@@ -142,3 +142,11 @@ def test_the_verdict_test_compares_the_loses_unchanged_rows_with_the_rest():
             t["net_pct"] -= 20
     r = s54.reading(rows, "verdict")
     assert r["estimate"] > 15 and r["p"] < 0.001 and r["n_loses_unchanged"] == 50
+
+
+def test_a_study_that_judged_nothing_is_no_verdict_not_failed():
+    nothing = {"a": {"decision": "no verdict"}, "b": {"decision": "no verdict"}}
+    assert s54.overall_verdict(nothing, []) == "no verdict"
+    judged = {"a": {"decision": "no verdict"}, "b": {"decision": "fail"}}
+    assert s54.overall_verdict(judged, []) == "failed"
+    assert s54.overall_verdict(judged, ["b"]) == "passed"
