@@ -13,6 +13,8 @@ This module answers the questions asked before trusting an arm with money
 - `execution_sensitivity`  the net at multiples of the slippage each module modelled
 - `buckets.breakdowns`     P&L by weekday, entry hour, month and event day, one column set; plus
                            VIX and VIX/VIX3M at entry where the records were joined to the regime
+- `buckets.held_table`     P&L by days held, for books that hold overnight: an outcome of the exits,
+                           not something known at entry, so it is not among the breakdowns
 
 All of it is a pure function of the normalised records `core.ledgers` yields, so it reads paper,
 live and replay output the same way, and the same records always give the same answer: the
@@ -384,6 +386,9 @@ def arm_reading(records: Sequence[Mapping], allocations: Sequence[Mapping] | Non
         "stress": stress([v for _, v in dated]),
         "execution": execution_sensitivity(ordered),
         "buckets": buckets.breakdowns(ordered),
+        # Kept apart from the breakdowns, which hold only what was known at entry: the exit
+        # decides how long a trade is held. None for a book that never holds overnight.
+        "held": buckets.held_table(ordered),
         "capital": _capital(ordered, dated, allocations),
         "coverage": {
             "trades": len(ordered),

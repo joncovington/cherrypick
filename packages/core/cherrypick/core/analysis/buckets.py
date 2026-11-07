@@ -187,9 +187,53 @@ def attach_regime(records: Sequence[dict], markets_at: Callable[[list[float]], l
     return len(stamped)
 
 
+#: Days held, entry date to exit date in ET: a band is `[low, high)` days.
+HELD_EDGES = (1, 7, 21)
+HELD_BUCKETS = ("same day", "1-6 days", "7-20 days", "21+ days")
+
+
+def _et_date(stamp) -> date | None:
+    """The ET calendar date of an ISO timestamp; a naive one is already ET (every module here)."""
+    if not stamp:
+        return None
+    try:
+        t = datetime.fromisoformat(str(stamp))
+    except ValueError:
+        return None
+    return (t if t.tzinfo is None else t.astimezone(_ET)).date()
+
+
+def held(r: Mapping) -> str | None:
+    """How long the trade was held, in `HELD_BUCKETS`. None where either time is not recorded.
+
+    Not a dimension known at entry, so it is not in `DIMENSIONS`: the exit decides how long a trade
+    is held, and a losing trade left to run lands in the long bands for that reason alone. The table
+    says how the exits worked, never what to enter."""
+    opened, closed = _et_date(r.get("entry_time")), _et_date(r.get("exit_time"))
+    if opened is None or closed is None:
+        return None
+    days = (closed - opened).days
+    for edge, name in zip(HELD_EDGES, HELD_BUCKETS[:-1], strict=True):
+        if days < edge:
+            return name
+    return HELD_BUCKETS[-1]
+
+
+def held_table(records: Sequence[Mapping]) -> dict | None:
+    """P&L by days held, or None for a book whose every timed trade opened and closed on one day
+    (MEIC, flies): one same-day row would only restate the arm's total. Carries the thin threshold
+    its rows were marked at, as `breakdowns` does."""
+    t = table(records, held, "held")
+    if all(row["bucket"] == HELD_BUCKETS[0] for row in t["rows"]):
+        return None
+    return {"min_sessions": MIN_SESSIONS, **t}
+
+
 def _order(dimension: str, name: str) -> tuple:
     if name == UNMEASURED:
         return (99, name)
+    if dimension == "held":
+        return (HELD_BUCKETS.index(name) if name in HELD_BUCKETS else 98, name)
     if dimension == "weekday":
         return (_WEEKDAYS.index(name) if name in _WEEKDAYS else 99, name)
     if dimension == "event":

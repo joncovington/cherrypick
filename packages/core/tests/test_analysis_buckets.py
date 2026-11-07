@@ -72,3 +72,45 @@ def test_arm_reading_carries_every_breakdown(calendar):
     out = analysis.arm_reading([_r(1.0, "2026-10-14", "2026-10-14T10:00:00-04:00")])["buckets"]
     assert out["min_sessions"] == buckets.MIN_SESSIONS
     assert set(out) == {"min_sessions", "weekday", "hour", "month", "event"}
+
+
+def _held(net, entry, exit_):
+    return {**_r(net, exit_[:10], entry), "exit_time": exit_}
+
+
+def test_held_bands_count_et_calendar_days_from_entry_to_exit():
+    records = [
+        _held(5.0, "2026-10-05T10:00:00-04:00", "2026-10-05T15:00:00-04:00"),  # same day
+        # 03:30 UTC on the 6th is 23:30 ET on the 5th: read in ET, the same day it opened.
+        _held(4.0, "2026-10-05T10:00:00-04:00", "2026-10-06T03:30:00+00:00"),
+        _held(3.0, "2026-10-01T10:00:00", "2026-10-07T15:00:00"),  # 6 days, naive = ET
+        _held(-2.0, "2026-10-01T10:00:00", "2026-10-08T15:00:00"),  # 7 days
+        _held(-1.0, "2026-09-01T10:00:00", "2026-09-22T15:00:00"),  # 21 days
+    ]
+    assert [buckets.held(r) for r in records] == ["same day", "same day", "1-6 days", "7-20 days", "21+ days"]
+    assert buckets.held(_r(1.0, "2026-10-05", "2026-10-05T10:00:00")) is None  # no exit time
+
+
+def test_held_table_comes_in_band_order_and_counts_untimed_trades():
+    records = [
+        _held(-2.0, "2026-10-01T10:00:00", "2026-10-29T15:00:00"),
+        _held(5.0, "2026-10-05T10:00:00", "2026-10-05T15:00:00"),
+        _held(3.0, "2026-10-01T10:00:00", "2026-10-03T15:00:00"),
+        _r(1.0, "2026-10-05"),
+    ]
+    t = buckets.held_table(records)
+    rows = [(r["bucket"], r["net"]) for r in t["rows"]]
+    assert rows == [("same day", 5.0), ("1-6 days", 3.0), ("21+ days", -2.0)]
+    assert t["skipped"] == 1 and t["min_sessions"] == buckets.MIN_SESSIONS
+
+
+def test_held_table_is_absent_for_a_book_that_never_holds_overnight():
+    same_day = [_held(1.0, "2026-10-05T10:00:00", "2026-10-05T15:00:00"), _r(1.0, "2026-10-06")]
+    assert buckets.held_table(same_day) is None
+    assert buckets.held_table([]) is None
+
+
+def test_arm_reading_keeps_days_held_apart_from_the_entry_breakdowns(calendar):
+    out = analysis.arm_reading([_held(1.0, "2026-10-01T10:00:00", "2026-10-14T10:00:00")])
+    assert "held" not in out["buckets"]
+    assert [r["bucket"] for r in out["held"]["rows"]] == ["7-20 days"]

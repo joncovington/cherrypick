@@ -1,5 +1,5 @@
 import { Card, SortTh, sortRows, useSort } from "../DataTable";
-import { fmtMoney } from "../../lib/format";
+import { fmtMoney, fmtPct } from "../../lib/format";
 import type { ExitReasonRow, TradingMode } from "@console/shared";
 import { useModulePerformance, type PerformanceModuleId } from "../../lib/api";
 import { matchesArm } from "../../lib/armTag";
@@ -13,15 +13,28 @@ import { CumulativeCard } from "./CumulativeCard";
 import { PairedABCard } from "./PairedABCard";
 import { TradeNetHistogram } from "./TradeNetHistogram";
 
-/** The exit-reason tally, sortable once the reader's rows are known to be rows (not `unavailable`). */
-function ExitReasonsBody({ rows }: { rows: ExitReasonRow[] }) {
+/** A row's win rate as a fraction, or null for an empty row. */
+export function exitWinRate(r: ExitReasonRow): number | null {
+  return r.n > 0 ? r.wins / r.n : null;
+}
+
+/**
+ * The exit-reason tally, sortable once the reader's rows are known to be rows (not `unavailable`).
+ * Win rate and average net per reason say where an arm's money goes: a reason that wins most of
+ * its trades for little, beside one that loses rarely but large, is the shape the tiles' break-even
+ * win rate warns about, broken down by how each trade ended.
+ */
+export function ExitReasonsBody({ rows }: { rows: ExitReasonRow[] }) {
   const sort = useSort();
   const sorted = sortRows(rows, sort, {
     tag: (r) => r.tag,
     reason: (r) => r.reason,
     n: (r) => r.n,
+    win: exitWinRate,
+    avg: (r) => r.avgNet,
     net: (r) => r.net,
   });
+  const toned = (v: number | null) => (v === null ? "muted" : v >= 0 ? "pnl-pos" : "pnl-neg");
   return (
     <div className="table-scroll">
       <table className="data-table">
@@ -30,18 +43,25 @@ function ExitReasonsBody({ rows }: { rows: ExitReasonRow[] }) {
             <SortTh label="tag" k="tag" sort={sort} />
             <SortTh label="reason" k="reason" sort={sort} />
             <SortTh label="n" k="n" sort={sort} />
+            <SortTh label="win rate" k="win" sort={sort} />
+            <SortTh label="avg net" k="avg" sort={sort} />
             <SortTh label="net" k="net" sort={sort} />
           </tr>
         </thead>
         <tbody>
-          {sorted.map((r) => (
-            <tr key={`${r.tag}-${r.reason}`}>
-              <td>{r.tag}</td>
-              <td>{r.reason}</td>
-              <td>{r.n}</td>
-              <td className={r.net === null ? "muted" : r.net >= 0 ? "pnl-pos" : "pnl-neg"}>{fmtMoney(r.net)}</td>
-            </tr>
-          ))}
+          {sorted.map((r) => {
+            const win = exitWinRate(r);
+            return (
+              <tr key={`${r.tag}-${r.reason}`}>
+                <td>{r.tag}</td>
+                <td>{r.reason}</td>
+                <td>{r.n}</td>
+                <td>{fmtPct(win === null ? null : win * 100, 0)}</td>
+                <td className={toned(r.avgNet)}>{fmtMoney(r.avgNet)}</td>
+                <td className={toned(r.net)}>{fmtMoney(r.net)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
