@@ -144,6 +144,8 @@ export function usePage(resetKeys: unknown[] = [], initialLimit: number = FIRST_
   /** Cycle a column's sort: largest first, then smallest first, then the table's own order. Back
    *  to the first page, since the old offset points into a different ordering. */
   toggleSort: (key: string) => void;
+  /** Set the sort outright (a panel's radio), or clear it with no key. Back to the first page. */
+  setSort: (key?: string, dir?: "asc" | "desc") => void;
 } {
   const [page, setPage] = useState<PageState>({ ...FIRST_PAGE, limit: initialLimit });
   const key = JSON.stringify(resetKeys);
@@ -157,6 +159,7 @@ export function usePage(resetKeys: unknown[] = [], initialLimit: number = FIRST_
     setOffset: (offset: number) => setPage((p) => ({ ...p, offset })),
     setLimit: (limit: number) => setPage((p) => ({ ...p, limit, offset: Math.floor(p.offset / limit) * limit })),
     toggleSort: (key: string) => setPage((p) => ({ limit: p.limit, offset: 0, ...nextSort(p, key) })),
+    setSort: (key, dir) => setPage((p) => ({ limit: p.limit, offset: 0, ...(key === undefined ? {} : { sort: key, dir: dir ?? "desc" }) })),
   };
 }
 
