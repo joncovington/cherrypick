@@ -96,18 +96,43 @@ export function FilterSummary({ parts, note, changed, onOpen, onReset }: { parts
   );
 }
 
+const PANEL_WIDTH = 380;
+
+/** Where the panel goes for a button at `r`: below it when its content (`natural` px, capped at 640)
+ *  fits under the button or there is more room below than above, else above it; `maxHeight` is the
+ *  room on that side, so a tall panel scrolls inside rather than running off the screen. */
+export function panelPlacement(
+  r: { top: number; bottom: number; right: number },
+  natural: number,
+  viewportWidth: number,
+  viewportHeight: number,
+): { top: number; left: number; maxHeight: number } {
+  const height = Math.min(natural, 640);
+  const below = viewportHeight - r.bottom - 12;
+  const above = r.top - 12;
+  const fitsBelow = height <= below || below >= above;
+  const room = Math.max(160, fitsBelow ? below : above);
+  return {
+    top: fitsBelow ? r.bottom + 6 : r.top - 6 - Math.min(height, room),
+    left: Math.max(12, Math.min(r.right - PANEL_WIDTH, viewportWidth - PANEL_WIDTH - 12)),
+    maxHeight: room,
+  };
+}
+
 /** The panel, portalled; under its button on a wide screen, a sheet from the bottom on a phone. */
 export function FilterSortPanel({ open, onClose, onReset, anchor, children }: { open: boolean; onClose: () => void; onReset: () => void; anchor: RefObject<HTMLButtonElement | null>; children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
   const labelId = useId();
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
   useLayoutEffect(() => {
     if (!open) return;
+    // Under the button when it fits on screen, above it when it does not (2026-11-06: a card near the
+    // foot of the page opened its panel off the bottom), and never taller than the room it has, so it
+    // scrolls inside instead.
     const place = () => {
       const r = anchor.current?.getBoundingClientRect();
       if (!r) return;
-      const width = 380;
-      setPos({ top: r.bottom + 6, left: Math.max(12, Math.min(r.right - width, window.innerWidth - width - 12)) });
+      setPos(panelPlacement(r, box.current?.scrollHeight ?? 420, window.innerWidth, window.innerHeight));
     };
     place();
     window.addEventListener("resize", place);
@@ -144,7 +169,7 @@ export function FilterSortPanel({ open, onClose, onReset, anchor, children }: { 
         aria-modal="true"
         aria-labelledby={labelId}
         tabIndex={-1}
-        style={pos ? { top: pos.top, left: pos.left } : undefined}
+        style={pos ? { top: pos.top, left: pos.left, maxHeight: pos.maxHeight } : { visibility: "hidden" }}
       >
         <div className="fs-head">
           <b id={labelId}>Filter and sort</b>

@@ -78,11 +78,9 @@ export function TradeCard({ m }: { m: TradeCardModel }) {
             <ul className="pos-legs">
               {m.legs.map((l, j) => (
                 <li key={j} className="pos-leg">
-                  <span className={`pos-leg-act ${l.buy ? "is-buy" : "is-sell"}`}>{l.buy ? "buy" : "sell"}</span>
-                  <span>
-                    {l.text}
-                    {l.quote ? <span className="muted"> {l.quote}</span> : null}
-                  </span>
+                  <span className={`pos-leg-act ${l.buy ? "is-buy" : "is-sell"}`}>{l.buy ? "BTO" : "STO"}</span>
+                  <span>{l.text}</span>
+                  {l.quote ? <span className="tc-leg-quote">{l.quote}</span> : null}
                 </li>
               ))}
             </ul>
@@ -176,15 +174,15 @@ function signed(v: number | null, digits = 1): string {
   return v === null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(digits)}`;
 }
 
+/** "@ 1.84" from a bid and an ask: the leg's mid, as the order chain prints a fill. */
+function atMid(bid: number | null, ask: number | null): string {
+  return bid === null || ask === null ? "" : ` @ ${((bid + ask) / 2).toFixed(2)}`;
+}
+
 function quote(bid: number | null, ask: number | null, delta: number | null): string {
   const q = bid === null && ask === null ? "" : `${bid ?? "—"} / ${ask ?? "—"}`;
   const d = delta === null ? "" : `Δ ${delta.toFixed(2)}`;
   return [q, d].filter(Boolean).join(" · ");
-}
-
-/** "12/18" from "2026-12-18": the date as an option symbol shows it. */
-function mmdd(iso: string | null): string {
-  return iso ? `${iso.slice(5, 7)}/${iso.slice(8, 10)}` : "—";
 }
 
 /** "18 Dec" from "2026-12-18". */
@@ -239,10 +237,10 @@ export function candidateModel(
       c.kind === "covered_call"
         ? "covered by shares held"
         : `${c.kind === "short_put" ? "1st-percentile loss" : "max loss"} ${fmtMoney(risk)}${capDollars === null ? "" : ` of a ${fmtMoney(capDollars)} cap`}`,
-    open: { date: dayMonth(c.expiry), price },
+    open: { date: "proposed", price },
     legs: c.legs.map((l) => ({
       buy: l.quantity > 0,
-      text: `${Math.abs(l.quantity) * n} × ${c.underlying} ${mmdd(c.expiry)} ${l.strike}${l.right}`,
+      text: `${Math.abs(l.quantity) * n} ${c.expiry ?? "—"} ${l.strike}${l.right}${atMid(l.bid, l.ask)}`,
       quote: quote(l.bid, l.ask, l.delta),
     })),
     after: [
@@ -272,7 +270,8 @@ export function timeSpreadModel(s: TimeSpreadStructure, capDollars: number | nul
     [null, null],
     [null, null],
   ];
-  const leg = (l: TimeSpreadStructure["longLeg"], exp: string) => (l ? `${n} × ${s.underlying} ${mmdd(exp)} ${l.strike ?? "—"}${l.right ?? ""}` : "—");
+  const leg = (l: TimeSpreadStructure["longLeg"], exp: string, q: [number | null, number | null]) =>
+    l ? `${n} ${exp} ${l.strike ?? "—"}${l.right ?? ""}${atMid(q[0], q[1])}` : "—";
   const maxLoss = s.maxLoss === null ? null : Math.abs(s.maxLoss) * n;
   return {
     key: `${s.underlying}-${s.kind}-${s.front}-${s.back}-${s.label}`,
@@ -290,10 +289,10 @@ export function timeSpreadModel(s: TimeSpreadStructure, capDollars: number | nul
     bar: share(maxLoss, capDollars),
     barTitle: "the debit at risk, against the per-trade cap",
     label: `max loss ${fmtMoney(maxLoss)}${capDollars === null ? "" : ` of a ${fmtMoney(capDollars)} cap`}${s.binding ? ` · next stops at ${s.binding}` : ""}`,
-    open: { date: `${dayMonth(s.front)} / ${dayMonth(s.back)}`, price: s.debitMid === null ? "—" : `${s.debitMid.toFixed(2)} db` },
+    open: { date: "proposed", price: s.debitMid === null ? "—" : `${s.debitMid.toFixed(2)} db` },
     legs: [
-      { buy: false, text: leg(s.shortLeg, s.front), quote: quote(shortQ[0], shortQ[1], null) },
-      { buy: true, text: leg(s.longLeg, s.back), quote: quote(longQ[0], longQ[1], null) },
+      { buy: false, text: leg(s.shortLeg, s.front, shortQ), quote: quote(shortQ[0], shortQ[1], null) },
+      { buy: true, text: leg(s.longLeg, s.back, longQ), quote: quote(longQ[0], longQ[1], null) },
     ],
     after: [
       `theta ${fmtCash(s.thetaDay === null ? null : s.thetaDay * n)} per day`,
@@ -332,8 +331,13 @@ export function hedgeModel(s: ManageHedgeSuggestion, h: ManageHedges): TradeCard
     bar: covered,
     barTitle: "the share of the delta it needs that this hedge covers",
     label: `${s.units ?? "—"} unit${s.units === 1 ? "" : "s"} · covers ${signed(s.bwdChange)} of the ${signed(h.need)} sh needed · max loss ${fmtMoney(s.maxLoss)}`,
-    open: { date: dayMonth(h.expiration), price: s.priceLabel ?? "—" },
-    legs: s.legs.map((l) => ({ buy: l.quantity > 0, text: `${Math.abs(l.quantity)} × ${l.label}`, quote: quote(l.bid, l.ask, l.delta) })),
+    open: { date: "proposed", price: s.priceLabel ?? "—" },
+    // The label is "XSP 2026-12-18 785C": the root is the card's name, so the leg starts at its expiry.
+    legs: s.legs.map((l) => ({
+      buy: l.quantity > 0,
+      text: `${Math.abs(l.quantity)} ${l.label.replace(/^\S+\s+(?=\d{4}-)/, "")}${l.mid === null ? "" : ` @ ${l.mid.toFixed(2)}`}`,
+      quote: quote(l.bid, l.ask, l.delta),
+    })),
     after: a
       ? [`after: delta ${signed(a.bwd)} SPY sh`, `theta ${fmtMoney(a.theta)} per day`, `buying power ${pct(a.buyingPowerUsedPct)}`]
       : ["no after-figures"],
