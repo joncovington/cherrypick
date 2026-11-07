@@ -6457,6 +6457,90 @@ item 59's fetch and runs through item 59's script.*
   - **A fail or no verdict:** records that an early fixed exit does not improve the 45-day index
     condor. manage's 50%-or-21-days rule stands.
 
+### 64. Defined-risk bullish structures on slow large caps, against holding the same delta in shares
+
+*Source: the same 2026-11-07 scoreboard review as item 63 (kept local; none of its figures enter this
+repo). One trader's closed call backspreads (long two near-the-money calls, short one a strike up,
+60 to 150 days out, held days to weeks) on staples and other slow large caps mostly made money. The
+user asked for structures that are defined risk, so they can be held in an IRA, and named two
+calendarized versions of a broken-wing butterfly. Broker dry runs on 2026-11-07 (WMT and KMB, an IRA,
+nothing submitted) accepted all four and showed what each holds: the debit for the backspread and for
+the spreads with a back-month long, the expiry's maximum loss for the 1-3-2, and for the calendarized
+1-3-2 both front credit spreads at full width, about twice the 1-3-2's. Declared before any of the
+fetched paths are read.*
+
+- **Question:** do these four structures earn on slow large caps after costs, beyond what the same
+  delta in shares would have made over the same days? And does calendarizing the 1-3-2 pay for the
+  capital it ties up?
+- **Where the edge would live:** the backspread and the spreads-plus-long are bets on direction with
+  a cheapened long call; the 1-3-2 sells put premium below the market. The trader's winners came in a
+  month the names rallied, so **drift** is the first explanation and the test is built around it.
+- **Look-alikes:** items 14 to 16 sold single-name and fund credit spreads one side at a time and found
+  no strike with an edge after costs. The bwb module's two-year backtest of its SPX 1-3-2 lost on every
+  arm; that was 7-day index flies, not 45-day single names. No row has tested a backspread or a
+  calendarized butterfly. The prior is a fail beyond drift.
+- **Rival explanations, each with its check:**
+  - *Drift:* **Check:** the verdict is on the excess over the structure's entry delta held in shares
+    from entry to exit; the raw return and the shares' part are reported beside it.
+  - *One name or one year:* **Check:** equal weight across names in each cycle; results by name and
+    by year; both time-halves positive.
+  - *Five structures, one lucky:* **Check:** Holm at 5% across the five tests.
+  - *Fees on many legs:* **Check:** the raw return on capital positive at 1.5× costs.
+  - *Fills:* the working price on every leg, open and close.
+- **The names (declared, chosen with hindsight):** WMT, KMB, PG, KO, PEP, JNJ, MCD, COST, TJX, CL.
+  Each has weekly options and large daily volume today, so each passes the options-tradable label;
+  the label is today's, which B11 declares.
+- **The cycle:** for each name and each standard monthly expiry F, with B the next monthly, enter on
+  the session nearest 45 days before F (42 to 48). K1 is the listed strike nearest F's parity forward.
+  Calls step up and puts step down by at least 3% of the forward: K2 and K3 above, P2 and P3 below
+  (P1 = K1).
+- **The four structures** (+ bought, − sold):
+  - **A backspread:** B +2 K1 call, −1 K2 call.
+  - **B spreads plus a back-month long:** B +1 K1 call; F −2 K2 call, +2 K3 call.
+  - **C 1-3-2:** F +1 P1, −3 P2, +2 P3 puts.
+  - **D 1-3-2 calendarized:** B +1 P1, −1 P2 puts (the debit spread); F −2 P2, +2 P3 puts (the two
+    credit spreads).
+  Every short is covered by a long of the same type expiring no earlier, so each is defined risk.
+- **Capital:** what the broker held in the dry runs: the debit for A and B; C's maximum loss at
+  expiry; D's two lower widths less the net credit. A structure with no positive capital is no trade.
+- **Exit:** the whole structure on the first close whose gross gain reaches **25% of its capital**,
+  else on the first session **21 days or fewer before F**. Every leg at the working price. A session
+  where a leg does not price is passed over; no priced exit is skipped and counted.
+- **Costs:** the suite's tastytrade schedule on every contract, open and close
+  (`cherrypick.core.fees`). Nothing is held to expiry.
+- **Measured:** per trade, net and excess (net less the shares' part) as a share of capital. One
+  observation is one cycle month: the equal-weight mean over the names that entered.
+- **The fifth test:** per cycle, D's return on capital less C's, over the names that entered both.
+- **Window and sample:** **design** cycles whose planned entry falls 2016-01-01 to 2021-12-31, about
+  70 cycles of up to ten names; **holdout** 2022-01-01 to 2026-11-06, read only after a design pass.
+  Fewer than 50 cycles, or more than 5% of a structure's entries without an exit mark, is no verdict.
+- **Pass-or-fail rule**, per test, all must hold:
+  - the mean excess return on capital above zero, one-sided t above 2, and Holm at 5% across the
+    five tests;
+  - positive in each time-half of the design window;
+  - for A to D, the raw return on capital still positive at **1.5× costs**;
+  - then the holdout, with the same checks.
+- **Minimum detectable effect (B12):** computed per structure from the design window and recorded in
+  the local result before the holdout is read.
+- **Declared limits (B11):**
+  - end-of-day marks only;
+  - the shares' part uses F's parity forward as the stock price, so dividends inside the hold are not
+    in it;
+  - early assignment is not modelled: an in-the-money short call can be assigned before an
+    ex-dividend date, which in an IRA is closed for you;
+  - the names are today's.
+- **Robustness report beside a pass (B13), never used to re-choose:** the step at 2% and 5%; the target
+  at 15% and 40%; costs at 2×; by name.
+- **Data:** `scripts/backspread_bwb_item64.py requests` writes the path fetch (ten names, each monthly
+  from 2016, from 85 days out); `study` reads `eod_chains.db` and loads item 59's script for the
+  chain, forward and delta. Results go under the backtest data directory only.
+- **Decides:**
+  - **A pass:** that structure, with its robustness report, as a candidate for manage's IRA ideas,
+    for the user to review. Advice only.
+  - **D beats C:** calendarizing pays for its capital; otherwise the same-month 1-3-2 is the IRA form.
+  - **A fail or no verdict:** records that these structures add nothing beyond holding the shares on
+    slow large caps.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
