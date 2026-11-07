@@ -2181,6 +2181,52 @@
       "retest": null,
       "retests": [],
       "outcome": "none of the five tests is confirmed, so the collar keeps its \"no tested edge\" label and stays offered as an untested hedge"
+    },
+    {
+      "id": 56,
+      "study": "item56",
+      "title": "The wide wing when its floor allows, else live's 10: item 50's arms composed tick by tick",
+      "status": "declared",
+      "legacy": false,
+      "setup": "wing-width",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "summed net per session in $ at one condor, and buying power per session, per arm: live-1400 (pm-200 entering 14:00-14:30, floor and ceiling as live) and f15/f20, the same rule entering at the first tick either width's gates pass, at 15 (or 20) wide when that width qualifies at or before 10 does, else at 10; composed from item 50's recorded g15/g20 and live-1400 entries, no new replay",
+      "expected": "a positive paired difference per session against live-1400, at no worse net over buying power",
+      "sample": "design 2022-05-16..2025-06-30, holdout 2025-07-01..2026-10-12 (item 23's recorded live-1400 holdout, as item 50); both windows were read by item 50, whose sessions-both-entered figures prompted this, so neither is clean: the clean check is the sessions after 2026-10-12, read once 100 are stored; provisional, MEIC history being unvalidated; < 100 sessions = no verdict",
+      "rule": "item 50's, per arm: paired difference against live-1400 with mean > 0 and one-sided t > 2, Holm across the two arms, positive in both time-halves, own mean net > 0 and still positive at 1.5x fees, net over buying power >= live-1400's; then holdout mean > 0 with t > 2; a proposal needs the fresh sessions after 2026-10-12 to agree as well",
+      "mechanism": "item 50 found the gated wide condor beats live's 10 on the sessions both enter but enters too rarely to win overall; taking the wide one when its floor allows and the 10 otherwise keeps the better trade without giving up the sessions only the 10 can enter",
+      "rivals": [
+        {
+          "explanation": "hindsight in the choice",
+          "check": "a session's width is chosen from the two entry times alone, the first passing tick, the wide one on a tie; outcomes never enter the choice (tested)"
+        },
+        {
+          "explanation": "the windows were already read",
+          "check": "item 50 read both; the fresh sessions after 2026-10-12 are the clean check and a proposal waits for them"
+        },
+        {
+          "explanation": "paying more by risking more",
+          "check": "net over buying power at least live-1400's over the same sessions"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "paired difference positive in both time-halves"
+        },
+        {
+          "explanation": "fees",
+          "check": "own net positive at 1.5x fees"
+        },
+        {
+          "explanation": "two runs mixed in the holdout",
+          "check": "the holdout composes item 50's wide run with item 23's live-1400 run, as item 50 judged them; each run's id is recorded beside the verdict"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#56-the-wide-wing-when-its-floor-allows-else-lives-10-item-50s-arms-composed-tick-by-tick",
+      "results": [],
+      "retest": null,
+      "retests": []
     }
   ],
   "rule_changes": []
