@@ -2645,6 +2645,53 @@
       "retest": null,
       "retests": [],
       "outcome": "implied-against-past moves is closed as a selector both ways; cheap reports lose less but no arm earns after costs"
+    },
+    {
+      "id": 67,
+      "study": "item67",
+      "title": "The earnings module's rule with paper's spread screen: does what paper actually trades earn after costs?",
+      "status": "declared",
+      "legacy": false,
+      "setup": "earnings-premium",
+      "side": "neutral",
+      "structure": "iron-fly",
+      "window": "earnings",
+      "measure": "per trade, net dollars for the whole position and net as a share of capital at risk, for the iron fly, iron condor and directional credit spread, replayed exactly as item 31 replays them (the module's own builders, sizing and management, the 12.5% of the end-of-day spread from mid on each side, fees on both) on every event item 31 admitted and every event that passes all of its criteria except two spread checks: the study's point-in-time cap on the at-the-money spread and the module's own ceiling on it; paired with item 31's no-report control (same structure, same name, four weeks away)",
+      "expected": "a positive mean net share of capital at risk after costs, and a positive paired difference over the no-report control, on the events paper's spread screen admits",
+      "sample": "item 31's events and windows (names the liquidity verdict calls tradable on 2026-10-30, hindsight; Dolt stated-timing reports), design 2020-01-22..2023-12-31, holdout 2024-01-02..2026-07-14 run after the design whatever it shows; < 150 paired trades in an arm in the design window or < 100 in the holdout = no verdict; reports after 2026-11-06 are the untouched forward check",
+      "rule": "item 31's per arm, ungated only, Holm across three arms: mean net share of capital at risk > 0 with a one-sided date-clustered t > 2; mean paired difference > 0 on the same test; positive in each time-half and each name-half; positive at 1.5x fees and 25%-of-spread slippage and with the best 5 trades removed; then holdout mean net > 0 and paired difference > 0. Reported, never judged: each arm split by item 31's admission and by the at-the-money spread's terciles",
+      "mechanism": "item 31's: implied volatility into a report overstates the move that follows, so the seller of the event is paid for carrying it. The added claim is that the premium is also there on the wider-spread names paper's intraday screen admits and item 31's end-of-day screen turned away",
+      "rivals": [
+        {
+          "explanation": "ordinary overnight theta, not the report",
+          "check": "item 31's paired control: same structure, same name, four weeks away with no report; net positive with the pair not positive is 'pays, not for the report', not a pass"
+        },
+        {
+          "explanation": "hindsight: item 31 read the windows' admitted subset and a local diagnostic read the paper period, but the newly admitted wider-spread events were never read",
+          "check": "said as a limit; the clean check is reports after 2026-11-06, read once 100 trades per arm are stored, and a proposal waits for it"
+        },
+        {
+          "explanation": "costs on the wide names: the end-of-day spread haircut overstates the intraday spread paper pays",
+          "check": "positive at item 31's stress (1.5x fees, 25% of the spread); the by-tercile split shows whether the widest third carries or sinks the arm"
+        },
+        {
+          "explanation": "the screen difference is a data artefact: end-of-day quotes run wider than intraday ones, so the newly admitted events are not the events paper takes",
+          "check": "the reported admission split; the admitted half must reproduce item 31, and the wider-spread half is read apart from it"
+        },
+        {
+          "explanation": "a few names carry it",
+          "check": "both name-halves; no name above item 31's share cap; the top five names removed and reported"
+        },
+        {
+          "explanation": "one era",
+          "check": "both time-halves, then the holdout; 2020-02..06 removed and reported"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#67-the-earnings-modules-rule-with-papers-spread-screen-does-what-paper-actually-trades-earn-after-costs",
+      "results": [],
+      "retest": null,
+      "retests": [],
+      "outcome": null
     }
   ],
   "rule_changes": []
