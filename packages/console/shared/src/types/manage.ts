@@ -677,6 +677,9 @@ export interface ManagePortfolio {
   hedges: ManageHedges | null;
   vix: number | null;
   scenarios: ManageScenarios | null;
+  /** Ideas for reshaping the book (packages/manage `ideas.py`), shown under the risk matrix; empty on
+   *  an evaluation from before them. */
+  ideas: ManageIdea[];
   ladder: ManageLadder | null;
   candidates: ManageCandidates | null;
   /** The time-spread scanner's rows sized to the account; null on an evaluation from before them. */
@@ -797,6 +800,56 @@ export interface ManageScenarios {
   matrix: Array<{ ivShift: number; pnl: Array<number | null> }>;
   graph: { moves: number[]; curves: Array<{ horizonDays: number; pnl: Array<number | null> }> };
   leftOut: string[];
+  /** The matrix at each horizon (days on, nothing done meanwhile), the first being `matrix` itself;
+   *  empty on an evaluation from before them. */
+  horizons: ManageMatrixHorizon[];
+  /** Where the realistic rows come from; null on an evaluation from before them. */
+  realistic: {
+    enabled: boolean;
+    source: string | null;
+    since: string | null;
+    through: string | null;
+    vix: number | null;
+    /** Why there is no realistic row; null when there is one (or it is turned off). */
+    error: string | null;
+  } | null;
+}
+
+export interface ManageMatrixHorizon {
+  horizonDays: number;
+  /** The trading days of the history windows its realistic row reads. */
+  windowDays: number | null;
+  matrix: Array<{ ivShift: number; pnl: Array<number | null> }>;
+  /** IV moved as VIX has when SPX moved this much (per move): null with no history or no VIX. */
+  realistic: {
+    ivShift: Array<number | null>;
+    vixMultiple: Array<number | null>;
+    windows: Array<number | null>;
+    pnl: Array<number | null>;
+  } | null;
+}
+
+/** One idea for reshaping the book. Every word and figure is packages/manage's. */
+export interface ManageIdea {
+  key: string;
+  header: string;
+  subheader: string;
+  explanation: string;
+  trades: string[];
+  /** The matrix's row now before and after the change, and theta; null where the change is where the
+   *  next trades go, which the book cannot be repriced under. */
+  effect: {
+    change: string;
+    /** "realistic": the realistic row; "iv_held": IV unchanged. */
+    basis: string;
+    moves: number[];
+    before: Array<number | null>;
+    after: Array<number | null>;
+    worstBefore: number | null;
+    worstAfter: number | null;
+    thetaBefore: number | null;
+    thetaAfter: number | null;
+  } | null;
 }
 
 export interface ManageLadder {

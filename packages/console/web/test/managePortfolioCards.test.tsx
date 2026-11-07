@@ -68,7 +68,10 @@ function reading(over: Partial<ManagePortfolio> = {}): ManagePortfolio {
         ],
       },
       leftOut: [],
+      horizons: [],
+      realistic: null,
     },
+    ideas: [],
     ladder: {
       expiries: [
         { expiration: "2026-10-23", trades: ["RTX", "NFLX", "UAL", "CLF"], downside: -1064, downsideUnknown: 0, theta: 15.16 },
@@ -603,11 +606,88 @@ describe("risk matrix tone", () => {
         matrix: [{ ivShift: 0, pnl: [0, 0.4, -0.3] }],
         graph: { moves: [-0.1, 0, 0.1], curves: [{ horizonDays: 0, pnl: [0, 0, 0] }] },
         leftOut: [],
+        horizons: [],
+        realistic: null,
       },
     });
     const html = render(<RiskMatrixCard p={flat} />);
     expect(html).not.toContain("var(--pos)");
     expect(html).not.toContain("var(--neg)");
+  });
+});
+
+describe("risk matrix horizons, history row and ideas", () => {
+  const base = reading().scenarios!;
+  const withHistory = reading({
+    scenarios: {
+      ...base,
+      horizons: [
+        {
+          horizonDays: 0,
+          windowDays: 5,
+          matrix: base.matrix,
+          realistic: { ivShift: [0.08, 0, -0.03], vixMultiple: [1.4, 1, 0.85], windows: [30, null, 20], pnl: [-850, 0, -880] },
+        },
+        { horizonDays: 7, windowDays: 5, matrix: base.matrix, realistic: null },
+        { horizonDays: 21, windowDays: 14, matrix: base.matrix, realistic: null },
+      ],
+      realistic: { enabled: true, source: "cboe", since: "2006-01-01", through: "2026-10-30", vix: 20, error: null },
+    },
+    ideas: [
+      {
+        key: "index_bucket",
+        header: "AAA and BBB are one bet",
+        subheader: "Two trades can lose $900 together",
+        explanation: "These indexes rise and fall together.",
+        trades: ["AAA-1"],
+        effect: {
+          change: "closing the AAA iron condor",
+          basis: "realistic",
+          moves: [-0.1, 0, 0.1],
+          before: [-850, 0, -880],
+          after: [-600, 0, -1000],
+          worstBefore: -880,
+          worstAfter: -600,
+          thetaBefore: 40,
+          thetaAfter: 30,
+        },
+      },
+      { key: "expiry_cluster", header: "Two trades expire on 18 December", subheader: "Together $700", explanation: "Spread them.", trades: [], effect: null },
+    ],
+  });
+
+  it("offers each horizon, starting now, and draws the history row with how it was read", () => {
+    const html = render(<RiskMatrixCard p={withHistory} />);
+    expect(html.match(/class="mode-btn[^"]*"/g)).toHaveLength(3);
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain("+21 days");
+    expect(html).toContain("IV as history moves it");
+    expect(html).toContain("over 30 windows of 5 trading days since 2006");
+    expect(html).toContain("VIX ended ×1.40 (median), so IV +8 pts");
+    expect(html).toContain("time held still");
+  });
+
+  it("says why there is no history row rather than leaving it out silently", () => {
+    const html = render(
+      <RiskMatrixCard p={reading({ scenarios: { ...base, realistic: { enabled: true, source: null, since: "2006-01-01", through: null, vix: 25, error: "no SPX/VIX history in the snapshot" } } })} />,
+    );
+    expect(html).not.toContain("IV as history moves it");
+    expect(html).toContain("no history row: no SPX/VIX history in the snapshot");
+  });
+
+  it("puts the ideas under the matrix, each with its header, figures and what the change does", () => {
+    const html = render(<RiskMatrixCard p={withHistory} />);
+    expect(html.indexOf("pf-matrix")).toBeLessThan(html.indexOf("ideas for the matrix"));
+    expect(html).toContain("AAA and BBB are one bet");
+    expect(html).toContain("Two trades can lose $900 together");
+    expect(html).toContain("closing the AAA iron condor, on the history row, now:");
+    // Better than now is green, worse red; a cell that does not move carries no tone.
+    expect(html).toContain('-$880 → <span class="pf-better">-$600</span>');
+    expect(html).toContain('-$880 → <span class="pf-worse">-$1,000</span>');
+    expect(html).toContain('$40 → <span class="pf-worse">$30</span>');
+    // An idea with no model has no figures.
+    expect(html).toContain("Two trades expire on 18 December");
+    expect(render(<RiskMatrixCard p={reading()} />)).not.toContain("ideas for the matrix");
   });
 });
 

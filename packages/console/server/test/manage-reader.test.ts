@@ -261,6 +261,68 @@ describe("readManage", () => {
     expect(out.accounts[0]!.excluded).toEqual([]);
   });
 
+  it("passes the matrix's horizons, its history row and the ideas through", () => {
+    const doc = evalDoc("2026-11-06");
+    const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
+    acct["portfolio"] = {
+      benchmark: "SPY",
+      net_liq: 10000,
+      scenarios: {
+        moves: [-0.1, 0, 0.1],
+        iv_shift_weighting: "term",
+        matrix: [{ iv_shift: 0, pnl: [-900, 0, -800] }],
+        horizons: [
+          {
+            horizon_days: 0,
+            window_days: 5,
+            matrix: [{ iv_shift: 0, pnl: [-900, 0, -800] }],
+            realistic: { iv_shift: [0.08, 0, -0.03], vix_multiple: [1.4, 1, 0.85], windows: [30, null, 20], pnl: [-850, 0, -880] },
+          },
+          { horizon_days: 7, window_days: 5, matrix: [{ iv_shift: 0, pnl: [-950, 400, -820] }], realistic: null },
+        ],
+        realistic: { enabled: true, source: "cboe", since: "2006-01-01", through: "2026-10-30", vix: 20, error: null },
+        graph: { moves: [], curves: [] },
+        left_out: [],
+      },
+      ideas: [
+        {
+          key: "index_bucket",
+          header: "AAA and BBB are one bet",
+          subheader: "Two trades can lose $900 together",
+          explanation: "These indexes rise and fall together.",
+          trades: ["AAA-1", "BBB-1"],
+          effect: {
+            change: "closing the AAA iron condor",
+            basis: "realistic",
+            moves: [-0.1, 0, 0.1],
+            before: [-850, 0, -880],
+            after: [-600, 0, -500],
+            worst_before: -880,
+            worst_after: -600,
+            theta_before: 40,
+            theta_after: 30,
+          },
+        },
+        { key: "expiry_cluster", header: "Two trades expire on 18 December", subheader: "s", explanation: "e", trades: [], effect: null },
+      ],
+    };
+    fs.writeFileSync(path.join(tmp, "manage", "eval-2026-11-06.json"), JSON.stringify(doc));
+    const p = readManage(config, "2026-11-06").accounts[0]!.portfolio!;
+    const s = p.scenarios!;
+    expect(s.horizons.map((h) => h.horizonDays)).toEqual([0, 7]);
+    expect(s.horizons[0]!.realistic).toEqual({
+      ivShift: [0.08, 0, -0.03],
+      vixMultiple: [1.4, 1, 0.85],
+      windows: [30, null, 20],
+      pnl: [-850, 0, -880],
+    });
+    expect(s.horizons[1]!.realistic).toBeNull();
+    expect(s.realistic).toEqual({ enabled: true, source: "cboe", since: "2006-01-01", through: "2026-10-30", vix: 20, error: null });
+    expect(p.ideas.map((i) => i.key)).toEqual(["index_bucket", "expiry_cluster"]);
+    expect(p.ideas[0]!.effect).toMatchObject({ worstBefore: -880, worstAfter: -600, thetaAfter: 30, basis: "realistic" });
+    expect(p.ideas[1]!.effect).toBeNull();
+  });
+
   it("passes the portfolio reading through, and an older evaluation has none", () => {
     const doc = evalDoc("2026-10-19");
     const acct = (doc["accounts"] as Array<Record<string, unknown>>)[0]!;
@@ -408,6 +470,10 @@ describe("readManage", () => {
     expect(p.scenarios?.ivShiftWeighting).toBe("term");
     expect(p.scenarios?.matrix[0]).toEqual({ ivShift: 0.05, pnl: [-1437, -48, null] }); // a missing cell stays null
     expect(p.scenarios?.graph.curves[0]).toEqual({ horizonDays: 4, pnl: [-2533, 537, -4] });
+    // An evaluation from before the horizons and ideas: none, never a guess.
+    expect(p.scenarios?.horizons).toEqual([]);
+    expect(p.scenarios?.realistic).toBeNull();
+    expect(p.ideas).toEqual([]);
     expect(p.ladder?.expiries[0]).toEqual({ expiration: "2026-11-20", trades: ["META"], downside: -6837, downsideUnknown: 1, theta: 77.27 });
     expect(p.ladder?.earnings.thetaShare).toBe(0.724);
     expect(p.ladder?.earnings.byDate).toEqual([{ date: "2026-10-28", trades: ["META"], downside: -4292.5 }]);

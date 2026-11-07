@@ -359,7 +359,49 @@
       "moves": [-0.1, -0.05, -0.02, -0.01, 0.0, 0.01, 0.02, 0.05, 0.1],
       "iv_shifts": [-0.05, 0.0, 0.05],
       "iv_shift_weighting": "term",
-      "graph": [-0.15, 0.15, 0.01]
+      "graph": [-0.15, 0.15, 0.01],
+      "_horizons": "The matrix again at each of these many days on, nothing done meanwhile (legs expiring by then at intrinsic): with time held still it shows what the book risks and never the decay it is paid.",
+      "horizons": [0, 7, 21],
+      "realistic": {
+        "_comment": "A row with IV moved as VIX has moved when SPX moved this much: over windows of the horizon's trading days (never under min_window_days) since `since`, from the snapshot's Cboe closes, VIX's median end/start ratio among the windows whose SPX return was within `band` of the move's size (never under min_band). Fewer than min_windows such windows and the cell is blank. The shift is today's VIX x (ratio - 1) for a 30-day option, term-weighted like the other rows.",
+        "enabled": true,
+        "since": "2006-01-01",
+        "min_window_days": 5,
+        "band": 0.25,
+        "min_band": 0.005,
+        "min_windows": 10
+      }
+    },
+    "ideas": {
+      "_comment": "Ideas for reshaping the book, under the risk matrix: each states what the change would do to the matrix's row now (the realistic row where there is one) and to theta. The thresholds are ours, with no published evidence; ideas inform and never size, place or close anything.",
+      "enabled": true,
+      "show": 6,
+      "index_bucket": {
+        "_comment": "Broad indexes that move together, and the share of net liq they may risk between them (each trade's modelled downside from now, summed).",
+        "enabled": true,
+        "names": ["SPY", "QQQ", "IWM", "DIA", "XSP", "SPX", "NDX", "RUT", "VOO", "IVV", "RSP", "MDY"],
+        "max_pct_nlv": 0.05
+      },
+      "trade_size": {
+        "_comment": "One trade whose downside is over the candidates' per_trade_risk_pct of net liq.",
+        "enabled": true
+      },
+      "short_dated_theta": {
+        "_comment": "One trade paying over max_share of the book's theta from a short leg within_days or less from expiry: income that ends with the leg.",
+        "enabled": true,
+        "max_share": 0.25,
+        "within_days": 10
+      },
+      "call_side": {
+        "_comment": "Credit trades selling both sides whose short calls' IV is at most max_call_put_iv of their short puts': the cheap side sold for a like-sized loss (call spreads lost at every delta in the credit-spread studies, items 14-16).",
+        "enabled": true,
+        "max_call_put_iv": 0.75
+      },
+      "expiry_cluster": {
+        "_comment": "One expiry whose trades can lose over max_pct_nlv of net liq together: a planning target for spreading entries, tighter than the expiry_concentration review.",
+        "enabled": true,
+        "max_pct_nlv": 0.1
+      }
     },
     "hedge": {
       "_comment": "When portfolio.delta fires, size an XSP vertical toward a target `inset` of the band's width inside the breached edge: a credit spread (short at credit_short_delta) and a debit spread (long at debit_long_delta), each `width` points wide, at most max_units. A credit spread never takes buying power used past max_buying_power_pct of net liq; a debit spread only lowers the worst case, so it is offered past the cap and flagged. Priced at mid, with the natural price beside it; nothing is placed.",

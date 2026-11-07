@@ -37,8 +37,10 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from cherrypick.manage import ideas as _ideas
 from cherrypick.manage import pricing
 from cherrypick.manage import rules as _rules
+from cherrypick.manage import spotvol as _spotvol
 
 REVIEW = "REVIEW"
 MULTIPLIER = pricing.MULTIPLIER
@@ -295,6 +297,7 @@ def reading(
     account_type: dict[str, Any] | None,
     rules: dict[str, Any],
     broker_greeks: dict[str, dict] | None = None,
+    spot_vol: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cfg = rules["portfolio"]
     rate = float(rules["pricing"]["rate"])
@@ -308,6 +311,7 @@ def reading(
     per: dict[str, dict[str, Any]] = {}
     leg_thetas: list[tuple[str | None, float]] = []
     trade_theta: dict[int, float] = {}
+    leg_trade: dict[int, dict[str, Any]] = {}
     for trade in trades:
         und = trade["underlying"]
         spot = _f(trade.get("spot"))
@@ -344,6 +348,7 @@ def reading(
             row["legs"].append(leg)
             leg_thetas.append((leg.get("expiration"), g["theta"]))
             trade_theta[id(trade)] = trade_theta.get(id(trade), 0.0) + g["theta"]
+            leg_trade[id(leg)] = trade
 
     for row in per.values():
         if row["beta"] is not None and row["spot"] and bench_spot:
@@ -367,6 +372,7 @@ def reading(
     expected = bench_spot * iv * day if bench_spot and iv else None
     realised = bench_spot * hv_pct / 100.0 * day if bench_spot and hv_pct else None
     breakeven = _breakeven(theta, gamma_bench, bench_spot)
+    vix = _f(((metrics or {}).get(VIX) or {}).get("last"))
 
     used = _f(balances.get("used_derivative_buying_power"))
     # Concentration's theta share is of the theta that is not about to expire, like the band.
@@ -426,17 +432,81 @@ def reading(
             if u["beta_doubt"]
         ],
         "underlyings": underlyings,
-        "vix": _f(((metrics or {}).get(VIX) or {}).get("last")),
-        "scenarios": scenarios(rows, bench_spot, rate, cfg["scenarios"], net_liq),
+        "vix": vix,
+        "scenarios": scenarios(rows, bench_spot, rate, cfg["scenarios"], net_liq, vix, spot_vol),
         "ladder": ladder(trades, leg_thetas, trade_theta, theta),
         "broker_check": broker_check(trades, broker_greeks, metrics, bench_spot, rate),
     }
     out["bands"] = bands(out, cfg)
     out["guidance"] = guidance(out, rules)
+
+    weighted = cfg["scenarios"].get("iv_shift_weighting") == "term"
+    moves = [float(m) for m in cfg["scenarios"]["moves"]]
+    h0 = (out["scenarios"]["horizons"] or [{}])[0]
+    real = (h0.get("realistic") or {}).get("iv_shift") if h0.get("horizon_days") == 0 else None
+    shifts = real if real is not None else [0.0] * len(moves)
+
+    def price(scale: dict[int, float]) -> dict[str, Any]:
+        """The book with the legs in `scale` (by id) resized by their factor, 0 closing them: its
+        matrix row now -- the realistic one where there is one, IV held otherwise -- and its theta."""
+        kept = []
+        for r in rows:
+            legs = []
+            for leg in r["legs"]:
+                f = scale.get(id(leg), 1.0)
+                if f == 1.0:
+                    legs.append(leg)
+                elif f > 0:
+                    legs.append({**leg, "quantity": float(leg.get("quantity") or 0.0) * f})
+            kept.append({**r, "legs": legs})
+        th = 0.0
+        for r in kept:
+            for leg in r["legs"]:
+                g = leg_greeks(leg, r["spot"], rate)
+                th += g["theta"] if g else 0.0
+        return {"pnl": matrix_row(kept, bench_spot, rate, moves, shifts, 0.0, weighted), "theta": th}
+
+    out["ideas"] = _ideas.suggest(
+        out,
+        trades,
+        trade_theta,
+        price,
+        moves,
+        "realistic" if real is not None else "iv_held",
+        rules,
+    )
     return out
 
 
 VIX = "VIX"
+
+
+def realistic_shifts(curve: list[dict[str, Any]] | None, vix: float | None) -> list[float | None] | None:
+    """Per move, the 30-day IV shift (vol points as a fraction) VIX's historical answer to that move
+    makes from today's VIX: VIX x (multiple - 1). None without a curve or a VIX."""
+    if curve is None or not vix:
+        return None
+    return [
+        None if c["vix_multiple"] is None else round(vix / 100.0 * (c["vix_multiple"] - 1.0), 5) for c in curve
+    ]
+
+
+def matrix_row(
+    rows: list[dict[str, Any]],
+    bench_spot: float | None,
+    rate: float,
+    moves: list[float],
+    shifts: list[float | None],
+    years_ahead: float,
+    weighted: bool,
+) -> list[float | None]:
+    """One matrix row with its own IV shift per move; a move with no shift has no cell."""
+    return [
+        None
+        if shift is None
+        else round(book_pnl(rows, bench_spot, rate, move, shift, years_ahead, weighted)[0], 2)
+        for move, shift in zip(moves, shifts)
+    ]
 
 
 def scenarios(
@@ -445,10 +515,18 @@ def scenarios(
     rate: float,
     cfg: dict[str, Any],
     net_liq: float | None,
+    vix: float | None = None,
+    spot_vol: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The book repriced across benchmark moves: a matrix against IV shifts (time held still), and a
     risk graph at two horizons -- now, and the nearest expiry, when every leg expiring by then is
     worth its intrinsic value and the rest have that much less time.
+
+    The matrix is stated again at each of `horizons` days on (nothing done meanwhile: legs expiring
+    by then are worth their intrinsic value, the rest have that much less time), since with time held
+    still it shows only what the book risks and never the decay it is paid. Each horizon carries a
+    realistic row (`spotvol.curve`): IV moved with the market as VIX has moved over windows of that
+    length, so the corner the fixed rows ask the reader to find is stated.
 
     The IV shift is stated for a 30-day option and, with `term_weighted` (the default), scaled to
     each leg by sqrt(30 / DTE), so front months move more than long-dated legs. Real implied
@@ -488,10 +566,51 @@ def scenarios(
                 "pnl": [round(book_pnl(rows, bench_spot, rate, m, 0.0, ahead)[0], 2) for m in grid],
             }
         )
+
+    real_cfg = cfg["realistic"]
+    real_on = bool(real_cfg["enabled"])
+    error = None
+    if real_on and not (spot_vol or {}).get("rows"):
+        error = "no SPX/VIX history in the snapshot"
+    elif real_on and not vix:
+        error = "no VIX reading"
+    horizons = []
+    for h in [int(x) for x in cfg["horizons"]]:
+        ahead = h / 365.0
+        window = _spotvol.trading_days(h, int(real_cfg["min_window_days"]))
+        hm = (
+            matrix
+            if h == 0
+            else [
+                {"iv_shift": shift, "pnl": matrix_row(rows, bench_spot, rate, moves, [shift] * len(moves), ahead, weighted)}
+                for shift in shifts
+            ]
+        )
+        realistic = None
+        if real_on and error is None:
+            curve = _spotvol.curve(spot_vol, moves, window, real_cfg)
+            real = realistic_shifts(curve, vix)
+            if real is not None and curve is not None:
+                realistic = {
+                    "iv_shift": real,
+                    "vix_multiple": [c["vix_multiple"] for c in curve],
+                    "windows": [c["windows"] for c in curve],
+                    "pnl": matrix_row(rows, bench_spot, rate, moves, real, ahead, weighted),
+                }
+        horizons.append({"horizon_days": h, "window_days": window, "matrix": hm, "realistic": realistic})
     return {
         "moves": moves,
         "iv_shift_weighting": "term" if weighted else "flat",
         "matrix": matrix,
+        "horizons": horizons,
+        "realistic": {
+            "enabled": real_on,
+            "source": (spot_vol or {}).get("source"),
+            "since": real_cfg["since"],
+            "through": _spotvol.through(spot_vol),
+            "vix": vix,
+            "error": error if real_on else None,
+        },
         "graph": {"moves": grid, "curves": curves},
         "net_liq": net_liq,
         "left_out": left_out,

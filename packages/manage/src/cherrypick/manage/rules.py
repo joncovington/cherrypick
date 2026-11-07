@@ -411,6 +411,43 @@ DEFAULT_RULES: dict[str, Any] = {
             # "term": each leg's shift scaled by sqrt(30 / DTE), front months moving most; "flat": alike.
             "iv_shift_weighting": "term",
             "graph": [-0.15, 0.15, 0.01],
+            # The matrix again at each of these many days on, nothing done meanwhile: with time held
+            # still it shows what the book risks and never the decay it is paid.
+            "horizons": [0, 7, 21],
+            # A row with IV moved as VIX has moved when SPX moved this much (spotvol.py): over windows of
+            # the horizon's trading days (never under `min_window_days`) since `since`, VIX's median
+            # end/start ratio among the windows whose SPX return was within `band` of the move's size
+            # (never under `min_band`); fewer than `min_windows` such windows and the cell is blank.
+            "realistic": {
+                "enabled": True,
+                "since": "2006-01-01",
+                "min_window_days": 5,
+                "band": 0.25,
+                "min_band": 0.005,
+                "min_windows": 10,
+            },
+        },
+        # Ideas for reshaping the book, under the risk matrix (ideas.py): each states what a change
+        # would do to the matrix's row now and to theta. Thresholds are ours, with no published
+        # evidence; ideas inform and never size, place or close anything.
+        "ideas": {
+            "enabled": True,
+            "show": 6,
+            # Broad indexes that move together, and the share of net liq they may risk between them.
+            "index_bucket": {
+                "enabled": True,
+                "names": ["SPY", "QQQ", "IWM", "DIA", "XSP", "SPX", "NDX", "RUT", "VOO", "IVV", "RSP", "MDY"],
+                "max_pct_nlv": 0.05,
+            },
+            # One trade over the candidates' per-trade cap (`candidates.per_trade_risk_pct`).
+            "trade_size": {"enabled": True},
+            # One trade paying over `max_share` of the book's theta from a short `within_days` or less out.
+            "short_dated_theta": {"enabled": True, "max_share": 0.25, "within_days": 10},
+            # Credit trades whose short calls' IV is at most this share of their short puts'.
+            "call_side": {"enabled": True, "max_call_put_iv": 0.75},
+            # One expiry's trades together over this share of net liq: a planning target, tighter than
+            # the `expiry_concentration` review.
+            "expiry_cluster": {"enabled": True, "max_pct_nlv": 0.10},
         },
         # When `portfolio.delta` fires, size an XSP vertical (hedge.py) toward a target `inset` of the
         # band's width inside the breached edge: a credit spread with its short at

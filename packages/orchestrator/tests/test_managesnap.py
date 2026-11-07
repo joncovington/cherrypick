@@ -55,7 +55,9 @@ def test_the_snapshot_carries_each_underlyings_trade_history(monkeypatch):
         },
     )
     snap = managesnap.build({})
-    assert snap["snapshot_version"] == 17
+    assert snap["snapshot_version"] == 18
+    # v18: the Cboe SPX/VIX history, null with a reason where the files are missing
+    assert snap["spot_vol_history"] is not None or snap["spot_vol_history_error"]
     # v16: the loops' published order ids, read from the (isolated, empty) state folder
     assert snap["live_known_orders"] == {} and snap["live_known_orders_error"] is None
     assert snap["underlying_history"] == {} and snap["underlying_history_error"] is None  # no long call
@@ -239,6 +241,21 @@ def test_a_stale_or_missing_income_reading_is_said_not_used(tmp_path):
     stale = managesnap.income_reading(date(2026, 10, 19), tmp_path)
     assert "too old" in stale["error"] and "symbols" not in stale
     assert "no income reading" in managesnap.income_reading(date(2026, 10, 19), tmp_path / "none")["error"]
+
+
+def test_the_spot_vol_history_is_both_files_closes_up_to_the_session(tmp_path):
+    (tmp_path / "SPX.csv").write_text(
+        "DATE,SPX\n01/02/2026,6000.5\n01/05/2026,6010.0\n01/06/2026,6020.0\n11/09/2026,7000.0\n", encoding="utf-8"
+    )
+    (tmp_path / "VIX.csv").write_text(
+        "DATE,OPEN,HIGH,LOW,CLOSE\n01/02/2026,15,16,14,15.5\n01/06/2026,16,17,15,16.25\n11/09/2026,20,21,19,20\n",
+        encoding="utf-8",
+    )
+    got, error = managesnap.spot_vol_history(date(2026, 11, 6), tmp_path)
+    # 01-05 has no VIX row and 11-09 is after the session: both left out; the close is the last column.
+    assert error is None and got["rows"] == [["2026-01-02", 6000.5, 15.5], ["2026-01-06", 6020.0, 16.25]]
+    missing, error = managesnap.spot_vol_history(date(2026, 11, 6), tmp_path / "none")
+    assert missing is None and "unreadable" in error
 
 
 def _times_file(folder, day, dates):
