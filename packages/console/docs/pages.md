@@ -652,7 +652,7 @@ the theta comes from), which way am I leaning (a direction card, delta's dial wi
 while delta is outside its band, the sized hedge's headline, and where the delta comes from), what if
 it moves (the stress tiles with break-even and the small risk graph, then the risk matrix), do I have
 room (a buying-power dial with your limits stacked under it, and what expires when), and what could I
-add (one card, a tab each for the income trades and the time spreads). Cards in a row share its height
+add (one card, a tab each for the income trades and the time spreads; it opens on income, whose premium floor starts at $50 until one is set). Cards in a row share its height
 and fold from two a row to one by the width the tab has (container queries). **What explains or
 audits a card opens from it as a lightbox** (`pages/Live/PortfolioBox.tsx`, the Backtest page's
 `CardLightbox`, wide; `?pf=<id>` in the URL, ← → step through them): the premium pace by month, the
