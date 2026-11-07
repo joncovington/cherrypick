@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import type { FliesGateSessions, GateArm, GateBlock } from "@console/shared";
 import { Card, PnlCell, SortTh, sortRows, useSort } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
@@ -6,7 +5,8 @@ import { fmtMoney } from "../../lib/format";
 import { useBridged } from "../../lib/bridged";
 import { useOpenParam } from "../Backtest/CardLightbox";
 import { gateDescription } from "./gateGlossary";
-import { FliesBoxHost, FliesPage, FliesSection, type FliesBox } from "./FliesLayout";
+import { FliesLayout, FliesSection } from "./FliesFilter";
+import { FliesBoxHost, type FliesBox } from "./FliesBoxes";
 
 /**
  * Sessions where a gate arm's one variable acted, against control (`run.py gate-sessions`,
@@ -145,7 +145,7 @@ export function gatesHelp(d: FliesGateSessions): CardHelpContent {
   };
 }
 
-export function GatesBody({ d, updatedAt, filterSlot }: { d: FliesGateSessions; updatedAt?: number; filterSlot?: ReactNode }) {
+export function GatesBody({ d, updatedAt }: { d: FliesGateSessions; updatedAt?: number }) {
   const sort = useSort();
   const lb = useOpenParam("gate");
   const boxes: FliesBox[] = d.arms.map((a) => ({
@@ -156,8 +156,8 @@ export function GatesBody({ d, updatedAt, filterSlot }: { d: FliesGateSessions; 
     body: () => <ArmSessions a={a} />,
   }));
   return (
-    <FliesPage filterSlot={filterSlot}>
-      <FliesSection concept="edge" tag="gates" question="Does each gate beat control?">
+    <FliesLayout>
+      <FliesSection concept="edge" name="gates" question="Does each gate beat control?">
         <Card title="gates vs control" collapseKey="flies-gates" updatedAt={updatedAt} help={gatesHelp(d)} flag="quiet sessions counted apart">
           <p className="muted sm">
             as of <strong>{d.as_of ?? "—"}</strong>
@@ -197,46 +197,46 @@ export function GatesBody({ d, updatedAt, filterSlot }: { d: FliesGateSessions; 
         </Card>
       </FliesSection>
       <FliesBoxHost lb={lb} boxes={boxes} />
-    </FliesPage>
+    </FliesLayout>
   );
 }
 
-export function GatesSlide({ filterSlot }: { filterSlot?: ReactNode } = {}) {
+export function GatesSlide() {
   const { data, isLoading, dataUpdatedAt } = useBridged<FliesGateSessions>(["flies-gates"], "/api/flies/gates");
   const d = data?.data ?? null;
 
   if (isLoading) {
     return (
-      <FliesPage filterSlot={filterSlot}>
-        <FliesSection concept="edge" tag="gates" question="Does each gate beat control?">
+      <FliesLayout>
+        <FliesSection concept="edge" name="gates" question="Does each gate beat control?">
           <Card title="gates vs control">
             <span className="skeleton skeleton-text" style={{ width: "50%" }} />
           </Card>
         </FliesSection>
-      </FliesPage>
+      </FliesLayout>
     );
   }
   if (data === undefined || !data.ok || d === null) {
     return (
-      <FliesPage filterSlot={filterSlot}>
-        <FliesSection concept="edge" tag="gates" question="Does each gate beat control?">
+      <FliesLayout>
+        <FliesSection concept="edge" name="gates" question="Does each gate beat control?">
           <Card title="gates vs control" isError>
             <p className="muted">{data?.error ?? "the gate-sessions read is unavailable"}</p>
           </Card>
         </FliesSection>
-      </FliesPage>
+      </FliesLayout>
     );
   }
   if (d.ledger === "absent") {
     return (
-      <FliesPage filterSlot={filterSlot}>
-        <FliesSection concept="edge" tag="gates" question="Does each gate beat control?">
+      <FliesLayout>
+        <FliesSection concept="edge" name="gates" question="Does each gate beat control?">
           <Card title="gates vs control">
             <p className="muted">No flies paper ledger on this machine.</p>
           </Card>
         </FliesSection>
-      </FliesPage>
+      </FliesLayout>
     );
   }
-  return <GatesBody d={d} updatedAt={dataUpdatedAt} filterSlot={filterSlot} />;
+  return <GatesBody d={d} updatedAt={dataUpdatedAt} />;
 }

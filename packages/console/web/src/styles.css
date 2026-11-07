@@ -9785,8 +9785,6 @@ button.chip[aria-pressed][data-hue="special"],
 }
 
 /* redesign: flies-b */
-.pf-c-edge { --pf-c: var(--amber-line); }
-.pf-c-live { --pf-c: var(--live); }
 .pf-c-hist { --pf-c: var(--text-muted); }
 .pf-row > .card.fl-wide {
   grid-column: 1 / -1;

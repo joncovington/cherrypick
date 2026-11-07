@@ -23,7 +23,8 @@ import {
   type SortOption,
 } from "../../components/FilterSort";
 import { useOpenParam } from "../Backtest/CardLightbox";
-import { BoxOpen, FliesBoxHost, FliesPage, FliesSection, type FliesBox } from "./FliesLayout";
+import { FliesLayout, FliesSection } from "./FliesFilter";
+import { BoxOpen, FliesBoxHost, type FliesBox } from "./FliesBoxes";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { ARM_COLORS, AXIS_FONT_FAMILY, AXIS_MUTED_HEX, SPOT_COLOR } from "../../components/chart/tokens";
 import { CHART_GRID } from "../../components/Charts";
@@ -493,7 +494,7 @@ export function RecordBody({ data, tab }: { data: FliesAgentPayload; tab: Record
   }
 }
 
-export function AgentSlide({ mode, date, filterSlot }: { mode: TradingMode; date: string | null; filterSlot?: ReactNode }) {
+export function AgentSlide({ mode, date }: { mode: TradingMode; date: string | null }) {
   const { data, isLoading, isError, dataUpdatedAt } = useAgent(date);
   const [showSkips, setShowSkips] = useState(false);
   const [sort, setSort] = useSortChoice("fl-agent-checks", "time");
@@ -506,8 +507,8 @@ export function AgentSlide({ mode, date, filterSlot }: { mode: TradingMode; date
   // paper arm under a live badge.
   if (mode === "live") {
     return (
-      <FliesPage filterSlot={filterSlot}>
-        <FliesSection concept="stand" tag="the agent" question="What is the agent doing?">
+      <FliesLayout>
+        <FliesSection concept="stand" name="the agent" question="What is the agent doing?">
           <Card title="intraday agent">
             <p className="muted">
               This tab reads the paper arm and the module&apos;s qualification file, so it has no live view. The live shadow (chosen
@@ -515,19 +516,19 @@ export function AgentSlide({ mode, date, filterSlot }: { mode: TradingMode; date
             </p>
           </Card>
         </FliesSection>
-      </FliesPage>
+      </FliesLayout>
     );
   }
 
   if (data === undefined) {
     return (
-      <FliesPage filterSlot={filterSlot}>
-        <FliesSection concept="stand" tag="the agent" question="What is the agent doing?">
+      <FliesLayout>
+        <FliesSection concept="stand" name="the agent" question="What is the agent doing?">
           <Card title="intraday agent">
             <p className="muted">{isLoading ? "reading…" : isError ? "the agent payload could not be read" : "—"}</p>
           </Card>
         </FliesSection>
-      </FliesPage>
+      </FliesLayout>
     );
   }
 
@@ -540,7 +541,6 @@ export function AgentSlide({ mode, date, filterSlot }: { mode: TradingMode; date
   const option = CHECK_SORTS.find((s) => s.id === sort.id) ?? CHECK_SORTS[0];
   const rows = sortRows(showSkips ? paperChecks : calls, option, sort.reversed);
   const sessionCloses = q?.taggedCloses ?? [];
-  const perSession = [...(q?.perSession ?? [])].reverse();
   const spend = [...(q?.spend ?? [])].reverse();
   const decided = q?.sessions.decided ?? null;
   const minSessions = q?.criteria.find((c) => c.id === "decision_sessions")?.threshold ?? null;
@@ -582,8 +582,8 @@ export function AgentSlide({ mode, date, filterSlot }: { mode: TradingMode; date
   };
 
   return (
-    <FliesPage filterSlot={filterSlot}>
-      <FliesSection concept="stand" tag="the agent" question="What is the agent doing?">
+    <FliesLayout>
+      <FliesSection concept="stand" name="the agent" question="What is the agent doing?">
         <Card title="intraday agent" collapseKey="flies-agent" updatedAt={dataUpdatedAt} help={AGENT_HELP} className="fl-wide">
           <TileGrid count={6}>
             <Tile
@@ -628,7 +628,7 @@ export function AgentSlide({ mode, date, filterSlot }: { mode: TradingMode; date
         </Card>
       </FliesSection>
 
-      <FliesSection concept="hist" tag="record" question="What has it decided?">
+      <FliesSection concept="hist" name="record" question="What has it decided?">
         <Card
           title="decisions"
           collapseKey="flies-agent-decisions"
@@ -704,6 +704,6 @@ export function AgentSlide({ mode, date, filterSlot }: { mode: TradingMode; date
       </FliesSection>
       <FliesBoxHost lb={packs} boxes={packBoxes} />
       <FliesBoxHost lb={record} boxes={[recordBox]} />
-    </FliesPage>
+    </FliesLayout>
   );
 }

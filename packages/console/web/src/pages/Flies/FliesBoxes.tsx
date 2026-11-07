@@ -2,38 +2,10 @@ import type { ReactNode } from "react";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
 
 /**
- * The flies tabs' layout (2026-11-07): the portfolio tab's own, the cards grouped under the question
- * they answer in a 12-column row that folds to one column as the page narrows. It reuses the `.pf-*`
- * classes of Live > portfolio; the concepts the evidence tabs need beyond its six (`edge`, `live`,
- * `hist`) take their colours from the block at the end of styles.css.
- *
- * `filterSlot` is where the module-wide filter & sort and its summary line go (arm, symbol, era,
- * date). The tab draws nothing there itself: the lead wires it from the module's filter once that
- * lands, so the tabs need not change again.
+ * The flies evidence tabs' lightboxes (2026-11-07): each card's boxes named in the URL, so a link opens
+ * one, the back button closes it, and the arrows step through the card's boxes. The tabs' sections and
+ * layout are FliesFilter's.
  */
-
-export type FliesConcept = "stand" | "dir" | "risk" | "edge" | "live" | "hist";
-
-export function FliesPage({ filterSlot, children }: { filterSlot?: ReactNode; children: ReactNode }) {
-  return (
-    <div className="pf-layout fl-layout">
-      {filterSlot ?? null}
-      {children}
-    </div>
-  );
-}
-
-export function FliesSection({ concept, tag, question, children }: { concept: FliesConcept; tag: string; question: string; children: ReactNode }) {
-  return (
-    <section className={`pf-sec pf-c-${concept}`} aria-label={tag}>
-      <div className="pf-sec-head">
-        <span className="pf-tag">{tag}</span>
-        <h3>{question}</h3>
-      </div>
-      <div className="pf-row">{children}</div>
-    </section>
-  );
-}
 
 /** One lightbox a card opens: `kicker` names the card it came from, `tabs` are its views. */
 export interface FliesBox {
