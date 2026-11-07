@@ -5769,6 +5769,69 @@ select.text-input {
   border-radius: 12px;
 }
 
+/* The This week summary sits above the tiles, not inside a study, so it is not a warning. */
+.study-week {
+  border-color: var(--border);
+  margin-bottom: 12px;
+}
+
+/* A study's Report tab (StudyReport.tsx). */
+.study-report section {
+  margin-bottom: 18px;
+}
+.study-report h4 {
+  margin: 0 0 6px;
+}
+.study-reading {
+  margin: 0 0 6px;
+}
+.study-reading-decision {
+  font-size: 1.05em;
+}
+.study-advice {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.study-advice li {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.study-report-note {
+  font-size: 0.85em;
+}
+.study-gates {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.study-gates dt {
+  font-weight: 600;
+}
+.study-gates dd {
+  margin: 2px 0 0;
+}
+.study-report-legend {
+  font-size: 0.85em;
+  display: flex;
+  gap: 12px;
+  margin: 4px 0;
+}
+.study-report-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+.study-report-table {
+  overflow-x: auto;
+}
+
 .study-decision {
   margin: 0;
   font-size: 15px;
