@@ -15,6 +15,7 @@ import {
   type SortOption,
 } from "../../components/FilterSort";
 import { writePref } from "../../lib/prefs";
+import { ListViewContext, ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
 import { fmtMoney } from "../../lib/format";
 import { TimeSpreadsBody, timeSpreadsHelp } from "./TimeSpreadsCard";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
@@ -405,6 +406,7 @@ export function AddingTradesCard({ c, t, netLiq }: { c: ManageCandidates | null;
   const [spreadSort, setSpreadSort] = useSortChoice("adding-spreads", "ratio");
   const [panel, setPanel] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
+  const [view, setView] = useViewChoice("adding-trades");
   if (!c && !t) return null;
   const onIncome = tab === "income" && l !== null;
   const income = onIncome && l ? sortedIncome(l, incomeSort) : null;
@@ -439,10 +441,12 @@ export function AddingTradesCard({ c, t, netLiq }: { c: ManageCandidates | null;
             {c ? btn("income", "income", l ? l.c.fits.length + l.c.waiting.length : null) : null}
             {t ? btn("spreads", "time spreads", t.fits.length) : null}
           </span>
+          <ViewSwitch view={view} onChange={setView} />
           <FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />
         </>
       }
     >
+      <ListViewContext.Provider value={view}>
       {onIncome && l && income ? (
         <>
           <FilterSummary
@@ -460,6 +464,7 @@ export function AddingTradesCard({ c, t, netLiq }: { c: ManageCandidates | null;
           <TimeSpreadsBody t={spreads} capDollars={perTradeCap(c?.caps, netLiq)} captions={false} />
         </>
       ) : null}
+      </ListViewContext.Provider>
       <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
         {onIncome && l ? (
           <>
