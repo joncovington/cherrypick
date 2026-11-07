@@ -6287,6 +6287,70 @@ Declared here before any of the fetched paths are read. The fetch is item 59's
     with the robustness report.
   - **A fail or no verdict:** closes the 45-day index condor as specified, beside items 14 to 16.
 
+### 63. A 7-day time stop on item 59's condor, paired against its own exit
+
+*Source: a 2026-11-07 review of a public scoreboard of traders' posted options trades (kept local;
+none of its figures enter this repo). Across its closed trades, those held under a week made money
+and those held longer lost it, and the losers had mostly been left to expiry. Most of that is how
+exits sort trades: winners are taken early and losers stay open, so a short hold is partly an
+outcome, not a cause. This asks whether closing early, decided in advance, would have helped. The
+user approved the test on 2026-11-07. Declared before item 59's fetched paths are read; it reads
+item 59's fetch and runs through item 59's script.*
+
+- **Question:** on the same entries, does item 59's condor earn more per trade when a condor that has
+  not reached half its credit is closed at 7 days, rather than held to 21 days?
+- **Where the edge would live:** in **management**, not in a signal. Closing at 7 days gives up most
+  of the theta a 45-day condor collects in its third to sixth week, and cuts how long it is exposed
+  to a large move. Which effect is larger is the question.
+- **Look-alikes:** item 16 found closing at half the credit or at 21 days worse than holding to
+  expiry on every fund. The 2026-10-20 strangle management test compared exits on 45-day SPY
+  strangles (50% or 21 days stayed the base; stops at 1× and 2× the credit failed across the two
+  halves) and had no time stop. No row has tested an early fixed exit on a two-sided index condor.
+  The prior is a fail: the scoreboard's pattern is mostly selection, and the strangle test's stops
+  failed the same two-halves check this uses.
+- **Rival explanations, each with its check:**
+  - *Selection, not timing:* the scoreboard's short holds were chosen after the fact. **Check:** the
+    stop is fixed in advance and applied to every trade, paired against item 59 on the same entry.
+  - *A calm span:* **Check:** the paired difference must be positive in both time-halves; each arm's
+    exits by kind and its days held are reported.
+  - *A better loser:* the stop could beat item 59 while both lose. **Check:** the stop arm's own mean
+    must be positive at 1.5× costs.
+  - *The tail:* **Check:** each arm's worst trade reported beside the verdict.
+  - *Fills:* **Check:** the verdict at the working price; mid and natural reported beside it.
+- **The structure:** item 59's, unchanged: the same cycles, entry session, strikes, working-price
+  fill and fees, computed by item 59's script, so the two cannot drift apart.
+- **The two arms:**
+  - `base`: item 59's exit. The first close at half the credit or less, else the first session 21
+    days or fewer from the expiry.
+  - `stop7`: the same half-credit target, else the first priced session **7 or more calendar days**
+    after entry. With entry 42 to 48 days out, item 59's 21-day exit cannot come first.
+- **Costs:** the suite's tastytrade schedule, one four-leg open and one four-leg close in both arms,
+  so the comparison carries no difference in fees.
+- **Measured:** per cycle, the stop arm's net less the base arm's net, in dollars at one contract,
+  over the cycles both arms closed.
+- **Window and sample:** item 59's. **Design** 2016-01-01 to 2021-12-31, about 70 pairs; **holdout**
+  2022-01-01 to 2026-11-06, read only after a design pass. Fewer than 50 pairs, or more than 5% of
+  entries without an exit mark in either arm, is no verdict.
+- **Pass-or-fail rule**, all must hold:
+  - the paired difference has a mean above zero with a one-sided t above 2 (one cycle is one
+    observation);
+  - its mean is above zero in each time-half of the design window;
+  - the stop arm's own mean net is still positive at **1.5× costs**;
+  - then the holdout, with the same checks.
+- **Minimum detectable effect (B12):** computed from the design window's paired differences and
+  recorded in the local result before the holdout is read.
+- **Declared limits (B11):** end-of-day marks only, so the stop and the target are seen only at a
+  close; the stop day counts calendar days from the entry session; item 59's limits apply.
+- **Name split (B9):** does not apply; one symbol.
+- **Robustness report beside a pass (B13), never used to re-choose:** the stop at 5, 10 and 14 days.
+- **Data:** `scripts/iwm_condor_timestop_item63.py`, which loads `scripts/iwm_condor_item59.py` for
+  everything but the exit. Results go under the backtest data directory only.
+- **Decides:**
+  - **A pass:** a proposal to manage's credit rules for a time stop on index condors, with the
+    robustness report, for the user to review. manage gives advice only; nothing is placed.
+  - **A fail or no verdict:** records that an early fixed exit does not improve the 45-day index
+    condor. manage's 50%-or-21-days rule stands.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
