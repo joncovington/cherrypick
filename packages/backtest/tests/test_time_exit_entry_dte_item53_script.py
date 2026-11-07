@@ -151,3 +151,11 @@ def test_the_windows_split_at_2022():
     assert s53.window_of(date(2021, 12, 31)) == "design"
     assert s53.window_of(date(2022, 1, 3)) == "holdout"
     assert s53.window_of(date(2016, 12, 30)) is None
+
+
+def test_a_study_that_judged_nothing_is_no_verdict_not_failed():
+    nothing = {"a": {"decision": "no verdict"}, "b": {"decision": "no verdict"}}
+    assert s53.overall_verdict(nothing, []) == "no verdict"
+    judged = {"a": {"decision": "no verdict"}, "b": {"decision": "fail"}}
+    assert s53.overall_verdict(judged, []) == "failed"
+    assert s53.overall_verdict(judged, ["b"]) == "passed"

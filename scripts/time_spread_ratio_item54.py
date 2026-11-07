@@ -524,6 +524,17 @@ def cmd_design(args) -> int:
     return 0
 
 
+def overall_verdict(design_tests: dict, confirmed: list) -> str:
+    """The study's one word: passed when a test is confirmed; no verdict when every design test was
+    no verdict (too few trades, nothing judged); failed otherwise. Before 2026-11-07 a study that
+    judged nothing wrote failed, which read as a rejected rule."""
+    if confirmed:
+        return "passed"
+    if design_tests and all(t.get("decision") == "no verdict" for t in design_tests.values()):
+        return "no verdict"
+    return "failed"
+
+
 def cmd_holdout(args) -> int:
     d = _dir(args.out_dir)
     design = json.loads((d / "design.json").read_text(encoding="utf-8"))
@@ -535,7 +546,7 @@ def cmd_holdout(args) -> int:
             hold = reading(cells[s], t)
             result["tests"][k] = {**hold, **judge_holdout(design["tests"][k], hold)}
     confirmed = sorted(k for k, v in result["tests"].items() if v["decision"] == "pass")
-    result["verdict"] = "passed" if confirmed else "failed"
+    result["verdict"] = overall_verdict(design["tests"], confirmed)
     result["confirmed"] = confirmed
     (d / "holdout.json").write_text(json.dumps(result, indent=1, default=str), encoding="utf-8")
     print(json.dumps({"verdict": result["verdict"], "confirmed": confirmed, "file": str(d / "holdout.json")}))
