@@ -8623,3 +8623,27 @@ button.chip[aria-pressed][data-hue="special"],
   align-items: center;
   gap: 8px;
 }
+
+/* The premium slider (components/PremiumSlider.tsx): its floor's label and its hidden count each hold
+   one width whatever they say, so dragging changes no width around the thumb and it stays under the
+   pointer. The widths fit "Premium ≥ $1,000" and "9,999 hidden". */
+.premium-slider {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.premium-slider-value {
+  display: inline-block;
+  min-width: 8.6em;
+  text-align: left;
+}
+.premium-slider-hidden {
+  display: inline-block;
+  min-width: 6.6em;
+  text-align: right;
+  color: var(--text-muted);
+  border-left: 1px solid var(--border);
+  padding-left: 8px;
+  white-space: nowrap;
+}

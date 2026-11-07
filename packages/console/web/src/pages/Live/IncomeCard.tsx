@@ -293,8 +293,8 @@ function IncomeControls({ l }: { l: IncomeList }) {
         list="live-income"
         value={l.minPremium}
         title="Hide a trade whose credit for one contract is under this. An unpriced one stays shown. Remembered for next time."
+        hidden={l.hidden}
       />
-      {l.hidden > 0 && <span className="chip">{l.hidden} under ${l.minPremium.toLocaleString()} hidden</span>}
       <ExEarningsToggle c={l.whole} on={l.exOn} set={l.setExOn} />
     </>
   );
