@@ -8,6 +8,7 @@ import { fmtCash } from "../../lib/format";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
 import { controlScaleOf } from "../Backtest/StudyCards";
 import { MeicForestCard, useMeicForest, type ForestArm } from "./MeicForestCard";
+import { Section } from "../../components/Section";
 import { MeicPositionsTable, type MeicScope } from "./MeicTables";
 
 /**
@@ -203,9 +204,13 @@ function ArmDialog({
           onClose={onClose}
         >
           {tab === "forest" ? (
-            <div className="cards cards-wide">
-              <MeicForestCard mode={mode} scope={armScope} />
-              <AttemptTimeline module="meic" mode={mode} date={scope.day} scope={armAttempts} />
+            <div className="pf-layout">
+              <Section concept="dir" tag="forest" question="What does this arm's book pay at expiry?">
+                <MeicForestCard mode={mode} scope={armScope} />
+              </Section>
+              <Section concept="risk" tag="refusals" question="When was each entry tried, and what stopped it?">
+                <AttemptTimeline module="meic" mode={mode} date={scope.day} scope={armAttempts} />
+              </Section>
             </div>
           ) : tab === "attempts" ? (
             <AttemptsTab module="meic" mode={mode} date={scope.day} scope={armAttempts} />

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { MeicDivergence, TradingMode } from "@console/shared";
 import { DataCard, fmtPct, sortRows, useSort } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { sessionQuery } from "../../components/Attempts";
 
 /**
@@ -16,15 +17,36 @@ import { sessionQuery } from "../../components/Attempts";
  * matter most here are the ones that go dark on a low-IV day, and a table of fills alone cannot
  * see them.
  */
+function DIVERGENCE_HELP(data: MeicDivergence | undefined): CardHelpContent {
+  return {
+    title: "Arm divergence",
+    body: (
+      <HelpSection title="What agreement means">
+        <p>
+          Agreement here is on the decision (filled, gate-blocked, window-blocked), not on the trade. Two arms can both fill a tick and
+          still hold different strikes or widths, so a pair at 100% is telling you their gates never separated, which is a different claim
+          from &ldquo;these two arms are the same&rdquo;. Arms that differ only in wing width are expected to agree here by construction;
+          reading that as a finding is the mistake worth avoiding.
+          {data !== undefined && data.outcomes.length > 0 && (
+            <> Outcomes seen: {data.outcomes.map((o) => `${o.outcome} ${o.count.toLocaleString()}`).join(" · ")}.</>
+          )}
+        </p>
+      </HelpSection>
+    ),
+  };
+}
+
 export function MeicDivergenceCard({
   mode,
   date,
   era = null,
+  className,
 }: {
   mode: TradingMode;
   date: string | null;
   /** The page's era: with no `date`, the server resolves the latest session within it. */
   era?: string | null;
+  className?: string;
 }) {
   const { data, isLoading, dataUpdatedAt } = useQuery<MeicDivergence>({
     queryKey: ["meic-divergence", mode, date, era],
@@ -45,7 +67,9 @@ export function MeicDivergenceCard({
   });
   return (
     <DataCard
-      title={`Profile divergence${data?.date != null ? ` (${data.date})` : ""}`}
+      className={className}
+      help={DIVERGENCE_HELP(data)}
+      title={`Arm divergence${data?.date != null ? ` (${data.date})` : ""}`}
       headers={[{ label: "pair", k: "pair" }, { label: "ticks", k: "ticks" }, { label: "agreed %", k: "agreed" }, ""]}
       sort={sort}
       numFrom={1}
@@ -59,19 +83,6 @@ export function MeicDivergenceCard({
             all agree {fmtPct(allAgree, 1)} of {data.ticks.toLocaleString()} ticks
           </span>
         ) : undefined
-      }
-      footer={
-        <p className="integrity-note">
-          Agreement here is on the <em>decision</em> — filled, gate-blocked, window-blocked — not on
-          the trade. Two arms can both fill a tick and still hold different strikes or widths, so
-          a pair at 100% is telling you their GATES never separated, which is a different claim from
-          &ldquo;these two books are the same&rdquo;. Arms that differ only in wing width are
-          expected to agree here by construction; reading that as a finding is the mistake worth
-          avoiding.{" "}
-          {data !== undefined && data.outcomes.length > 0 && (
-            <>Outcomes seen: {data.outcomes.map((o) => `${o.outcome} ${o.count.toLocaleString()}`).join(" · ")}.</>
-          )}
-        </p>
       }
     >
       {pairs.map((p) => {
