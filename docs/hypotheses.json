@@ -2231,6 +2231,57 @@
       "retest": null,
       "retests": [],
       "outcome": "provisional: f15 and f20 both pass the design window, beating live-1400 on the same sessions and per dollar of buying power, but neither clears the holdout's t bar though both stay ahead there, so both fail; nothing changes live, and the fallback is the 0DTE rule most worth a reread on the sessions after 2026-10-12 once MEIC validation unlocks"
+    },
+    {
+      "id": 57,
+      "study": "item57",
+      "title": "Item 46's lone pass out of sample: the index 10-delta put at 7 days on the weekly expiries item 46 never read, hedged and unhedged",
+      "status": "declared",
+      "legacy": false,
+      "setup": "variance-premium",
+      "side": "neutral",
+      "structure": "delta-hedged-short-option",
+      "window": "weekly",
+      "measure": "net P&L per trade in bp of the forward notional at entry, the equity-index 10-delta put (SPX, SPY, QQQ, IWM) sold 7 days before a weekly expiry and held to it, per cycle the equal-weight mean over the names present; two arms: hedged (item 46's daily forward hedge, 0.5 bp of hedge notional a rebalance) and unhedged (same entry, option costs and settlement, no hedge); core.fees option costs (0.125 of spread)",
+      "expected": "the hedged put positive after costs as it was on the monthly expiries; the unhedged arm shows whether the hedge does the work",
+      "sample": "every weekly Friday expiry (the Thursday when Friday is a holiday) 2016-03..2026-10-16 that is not a standard monthly and whose 7-day trade shares no session with a monthly's, from daily end-of-day chain paths; cycles are the unit; fewer than 80 cycles = no verdict; cycles expiring after 2026-10-30 are a forward read, reported and never judged",
+      "rule": "per arm: mean > 0 with the one-sided Newey-West p (lag 1) passing Holm at 0.025 across the two arms, > 0 in both time-halves (split 2021-06-01), > 0 at 1.5x costs, > 0 on 3 of 4 names; the study passes if either arm passes, fails if every arm with a verdict fails",
+      "mechanism": "option buyers pay above expected variance for protection against the index falling; item 46's one passing cell, read on the weekly expiries it never saw, is either the premium again or one corner of a forty-cell grid",
+      "rivals": [
+        {
+          "explanation": "a lone corner of a 40-cell grid",
+          "check": "a fresh sample of weekly expiries never read, judged on its own two-arm Holm, declared before any weekly path is fetched"
+        },
+        {
+          "explanation": "the same weeks as the monthly read",
+          "check": "non-monthly weeks only, any week whose trade shares a session with a monthly's left out, disjointness checked on the calendar"
+        },
+        {
+          "explanation": "the hedge does the work",
+          "check": "the unhedged arm is judged beside the hedged one by the same rule"
+        },
+        {
+          "explanation": "a crash the sample lacks",
+          "check": "worst cycle and drawdown range reported; 2018, 2020 and 2022 inside the halves; the peso case is said as a limit"
+        },
+        {
+          "explanation": "the premium is real but costs take it",
+          "check": "net of core.fees and the hedge cost; still above zero at 1.5x costs"
+        },
+        {
+          "explanation": "one name carries the group",
+          "check": "above zero on 3 of 4 names on their own cycles"
+        },
+        {
+          "explanation": "early assignment on the ETF puts",
+          "check": "not modelled, so the ETF names are an upper bound as in item 46; SPX settles in cash"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#57-item-46s-lone-pass-out-of-sample-the-index-10-delta-put-at-7-days-on-the-weekly-expiries-item-46-never-read-hedged-and-unhedged",
+      "results": [],
+      "retest": null,
+      "retest_note": "No yearly re-test: the forward read of cycles after 2026-10-30 is this study's own re-test, reported beside the verdict.",
+      "retests": []
     }
   ],
   "rule_changes": []

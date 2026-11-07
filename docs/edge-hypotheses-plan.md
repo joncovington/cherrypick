@@ -5986,6 +5986,107 @@ is declared here knowing neither window is clean; the clean check is named below
   width rules this is the one most worth the clean check: the sessions after 2026-10-12, read once
   MEIC validation unlocks and 100 are stored.
 
+### 57. Item 46's lone pass out of sample: the index 10-delta put at 7 days on the weekly expiries item 46 never read, hedged and unhedged
+
+*Source: the user, 2026-11-07 ("go ahead"), after item 46's result. Item 46 passed exactly one of its
+forty cells, the equity-index 10-delta put at 7 days on the standard monthly expiries, and its own
+robustness read called it a lone peak among its tenor neighbours. Its pass branch makes that cell a
+proposal for a paper arm, declared as its own item, with the sessions after 2026-10-30 read first. One
+7-day trade a month cannot reach item 46's bar of 80 cycles in any useful time, so waiting for new
+monthly cycles answers nothing. Item 46 never read the weekly expiries, and a 7-day trade into a
+non-monthly expiry occupies a different week from every monthly 7-day trade, so those weeks are an
+untouched sample of the same trade. Declared before any weekly path is fetched.*
+
+- **Question:** does the cell that passed item 46, the equity-index 10-delta put sold 7 days before
+  expiry and held to it, also earn money after costs on the weekly expiries item 46 never read, with
+  the daily forward hedge and without it?
+- **Where the edge would live:** a **risk premium**, item 46's: buyers pay above expected variance
+  for protection against the index falling. The unhedged arm adds a second reading: whether the premium
+  survives with the forward's drift left in, which is what a paper arm without a hedge would face.
+- **Look-alikes:** item 46 (the same cell, on the monthly expiries; this is its out-of-sample read, said
+  out loud); item 16 (put credit spreads on metals funds, failed) and item 14 (credit-spread selection,
+  failed), both defined-risk spreads rather than a naked hedged put; item 22 (an overnight SPX condor,
+  premium about fair at mid). `cherrypick hypotheses --similar` on this item's tags names no rejected
+  row; the register's nearest row is item 46's, passed.
+- **Names:** the equity-index group only: SPX (the SPXW weekly expiry, PM-settled, cash), SPY, QQQ and
+  IWM, item 46's. The names are today's choice (hindsight, B11).
+- **Cycles:** every weekly expiry from 2016-03 through 2026-10-16: the Friday, or the Thursday when
+  the Friday is a holiday, that is **not** a standard monthly (item 46's third Friday, or the session
+  before it). The unit is the cycle. A holiday Friday moves its expiry, and so its 7-day entry, to the
+  Thursday, which in a handful of weeks shares a session with a monthly's trade; those weeks are left
+  out, listed in the result file, and the calendar check that no remaining trade overlaps a monthly
+  7-day trade is part of the study. About 420 cycles are planned.
+- **Entry:** the first session on or after expiry minus 7 calendar days, at its end-of-day quotes, as
+  item 46.
+- **Leg:** `put10` exactly as item 46 picks it: the put whose Black delta, on the parity forward at
+  zero rate, is nearest 0.10. The strikes at 8 and 12 delta are **reported, never judged**.
+- **Two judged arms**, one trade each, sold at entry and held to expiry:
+  - `hedged`: item 46's trade, the position hedged to zero delta at every session's close in that
+    expiry's forward, with item 46's 0.5 bp of hedge notional at each rebalance.
+  - `unhedged`: the same entry and the same option costs and settlement fees, with no hedge and no
+    hedge cost. The two arms differ by the hedge alone.
+- **Exit and costs:** item 46's: settled at intrinsic against the expiry session's forward; an
+  in-the-money SPX leg pays `core.fees`' cash settlement charge, an in-the-money ETF put its share-side
+  delivery costs; slippage at 0.125 of the quoted spread on entry. Early assignment of the ETF puts is
+  not modelled, so the ETF names are an upper bound.
+- **Measured:** net P&L per trade in basis points of the forward notional at entry (100 x F a
+  contract). Per cycle, the equal-weight mean over the names present, so SPX and SPY count once between
+  them, as in item 46.
+- **Pass-or-fail rule, per arm, all must hold:**
+  - the mean net per cycle is above zero, with the one-sided p of item 46's Newey-West t (lag
+    `ceil(7 / 30)` = 1) passing Holm at 0.025 **across the two arms**;
+  - above zero in both time-halves (cycles expiring before 2021-06-01, and from it);
+  - still above zero at 1.5x costs;
+  - above zero on at least 3 of the 4 names, each on its own cycles;
+  - fewer than 80 cycles is no verdict for the arm.
+  - The study **passes** if either arm passes, **fails** if every arm with a verdict fails, and with no
+    verdict on either it is no verdict.
+- **Reported beside, never judged:**
+  - the worst cycle, `drawdown_range` on the per-cycle nets, and `max_size` at 10% of the account, per
+    arm;
+  - the strike neighbours at 8 and 12 delta, read as a plateau or a lone peak;
+  - **the forward read:** the monthly and the weekly cycles expiring after 2026-10-30, as they become
+    available, per arm and per kind. The forward cycles are not in the judged sample.
+- **Rival explanations, each with its check:**
+  - *A lone corner of a 40-cell grid:* item 46's pass may be the one cell a forty-way search was
+    bound to throw up. **Check:** this is a fresh sample, weekly expiries never read, judged on its own
+    two-arm Holm; the cell was chosen before any weekly path was fetched.
+  - *The same weeks as the monthly read:* a repeat of the same weeks would pass or fail for the same
+    reasons. **Check:** only non-monthly weeks, with every week whose trade shares a session with a
+    monthly's left out, and the disjointness checked on the calendar.
+  - *The hedge doing the work:* a hedged result that vanishes without the hedge is the hedge's
+    premium, not the put's. **Check:** the unhedged arm is judged beside it by the same rule.
+  - *A crash the sample lacks:* a premium that pays until the index falls. **Check:** the worst cycle
+    and `drawdown_range` are shown; 2018, 2020 and 2022 fall inside the time-halves; the peso
+    explanation cannot be ruled out from history and is said as a limit.
+  - *Costs:* **Check:** net of `core.fees` and, for the hedged arm, the hedge cost; still above zero at
+    1.5x costs.
+  - *One name carries it:* **Check:** above zero on at least 3 of the 4 names on their own cycles.
+  - *Early assignment on the ETF puts:* **Check:** not modelled, so the ETF names are an upper bound,
+    as item 46 said; the breadth rule includes SPX, which settles in cash.
+- **Minimum detectable effect (B12):** computed in the coverage step, before any P&L is read, as item
+  46 does: the per-cycle spread of the realised-variance term (half the entry dollar gamma times the
+  squared daily forward moves to expiry) of this leg, `planned_mde` at the pass bar, both ends of the
+  two-arm Holm ladder. It reads only the underlying's path and the entry quotes. The unhedged arm's
+  own spread is wider by the forward's drift, so its MDE is larger than the one recorded.
+- **Declared limits (B11):** only finished cycles count, so no position is open at the window's end.
+  A trade whose entry or expiry session is missing from the path is dropped and counted. A crash the
+  sample does not hold is not priced. The names are today's choice. The 7-day entry is a calendar rule
+  fixed by item 46's pass, not tuned here.
+- **Name split (B9):** does not apply: four index names that are one market. The 3-of-4 breadth rule
+  stands in for it, as in item 46.
+- **Data:** `scripts/index_put_weekly_item57.py plan|coverage|study`, which loads item 46's script for
+  every piece of arithmetic (forward, leg pick, hedge, trade, fees, Newey-West, cell statistics, judge,
+  store access) and adds only the weekly calendar, a 10-day path request, the unhedged trade and the
+  two-arm judge. `plan` writes the chain-path requests for the weekly expiries and `--through` extends
+  them for the forward read; the fetch is a research-queue row; results stay under the backtest data
+  directory (`results/research/item57/`).
+- **Decides:**
+  - **A pass:** a proposal for a paper arm, declared as its own item at a boundary. It first needs a
+    home, a module that sells it, chosen by the user. Nothing changes until then.
+  - **A fail:** item 46's pass is read as a lone corner, and the variance-premium question closes for
+    these tenors.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
