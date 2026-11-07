@@ -1,14 +1,17 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { EarningsCalendarPayload, EarningsCalendarRow, EarningsTrade } from "@console/shared";
+import { TradeCard } from "../src/pages/Live/TradeCard";
+import { writePref } from "../src/lib/prefs";
 
 /**
- * The earnings tab: what its defaults keep (the vendor's view: strong reads, very liquid, optionable,
- * US, a week), how rows group by day, and that the no-edge note is always there. It decides nothing,
- * so the tests are about the cuts and the cells. Dates are pinned to an older calendar, whose windows
- * count from its own session rather than today.
+ * The earnings tab (redesign 2026-11-06): what its defaults keep (the vendor's view: strong reads,
+ * very liquid, optionable, US, a week), how rows group by day, that it opens in ROWS with what used to
+ * be hover-only inside each row's card, and that the no-edge note is an amber flag with its text behind
+ * the ?. It decides nothing, so the tests are about the cuts and the cells. Dates are pinned to an older
+ * calendar, whose windows count from its own session rather than today.
  */
 
 function row(over: Partial<EarningsCalendarRow>): EarningsCalendarRow {
@@ -73,7 +76,7 @@ vi.mock("../src/lib/api", async (importOriginal) => ({
   useEarningsCalendar: () => ({ data: payload, isLoading: false, isError: false }),
 }));
 
-const { EarningsCalendarTab } = await import("../src/pages/Screeners/EarningsCalendarTab");
+const { EarningsCalendarTab, earningsModel, CALENDAR_SORTS, calendarHelp } = await import("../src/pages/Screeners/EarningsCalendarTab");
 
 function render(url: string): string {
   return renderToString(
@@ -87,7 +90,35 @@ function render(url: string): string {
     .replace(/&#x27;/g, "'");
 }
 
-const symbols = (html: string) => [...html.matchAll(/symbol=([A-Z]+)"/g)].map((m) => m[1]);
+/** The symbols drawn, in order: a row's, or a card's. */
+const symbols = (html: string) => [...html.matchAll(/class="(?:tr-sym|pos-card-sym)">([A-Z]+)</g)].map((m) => m[1]);
+const card = (r: EarningsCalendarRow) =>
+  renderToString(<TradeCard m={earningsModel(r)} />)
+    .replace(/<!-- -->/g, "")
+    .replace(/&#x27;/g, "'");
+
+const leg = (role: "long" | "short", strike: number, passes = true) => ({ role, strike, bid: 1, ask: 1.1, openInterest: 500, volume: 50, passes });
+const trade = (over: Partial<EarningsTrade> = {}): EarningsTrade => ({
+  readingAt: "2026-10-19T15:30:00Z",
+  takenOn: "2026-10-19",
+  afterReport: false,
+  kind: "credit",
+  right: "P",
+  expiry: "2026-11-20",
+  width: 5,
+  legs: [leg("long", 95), leg("short", 100)],
+  mid: 1.75,
+  natural: 1.6,
+  shareOfWidth: 0.35,
+  maxLoss: 325,
+  passes: true,
+  ...over,
+});
+
+afterEach(() => {
+  void writePref("view.earnings-calendar", undefined);
+  void writePref("sort.earnings-calendar", undefined);
+});
 
 describe("the earnings tab", () => {
   it("keeps the vendor's default view: strong reads, very liquid, optionable, US, the next week", () => {
@@ -103,178 +134,160 @@ describe("the earnings tab", () => {
     expect(symbols(render("/screeners/earnings?day=2026-10-15&time=bmo"))).toEqual(["BBB", "EST"]);
   });
 
+  it("opens in rows, one a name and closed, and the switch to cards draws each in full", () => {
+    const rows = render("/screeners/earnings?day=2026-10-15");
+    expect(rows.match(/class="tr-row"/g)?.length).toBe(4);
+    expect(rows).not.toContain("tc-card");
+    expect(rows).toContain('aria-label="Rows"');
+    void writePref("view.earnings-calendar", "cards");
+    const cards = render("/screeners/earnings?day=2026-10-15");
+    expect(cards.match(/tc-card/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(cards).not.toContain('class="tr-row"');
+  });
+
   it("groups by day under a heading with its count", () => {
     const html = render("/screeners/earnings?day=2026-10-15");
-    expect(html).toMatch(/Tuesday, Oct 20<\/strong> <span class="chip">2</);
-    expect(html).toMatch(/Wednesday, Oct 21<\/strong> <span class="chip">2</);
+    expect(html).toContain("Tuesday, Oct 20 · 2");
+    expect(html).toContain("Wednesday, Oct 21 · 2");
   });
 
-  it("an unknown time is a dash, an estimated time and date say so, the move is the broker's", () => {
-    const html = render("/screeners/earnings?day=2026-10-15");
-    expect(html).toContain("No source gives the time of day");
-    expect(html).toMatch(/title="Not confirmed: no source gives this date's time[^"]*">BMO est\.</);
-    expect(html).toContain(">est.<");
-    expect(html).toContain("4.8% <span class=\"muted\">(±$4.75)</span>");
-  });
-
-  it("a spread read as thin is hidden by default, one read as liquid shows its listed strikes and price", () => {
-    const leg = (role: "long" | "short", strike: number, passes: boolean) => ({
-      role,
-      strike,
-      bid: 1,
-      ask: 1.1,
-      openInterest: 500,
-      volume: 50,
-      passes,
-    });
-    const trade = (passes: boolean) => ({
-      readingAt: "2026-10-19T15:30:00Z",
-      kind: "credit" as const,
-      right: "P" as const,
-      expiry: "2026-11-20",
-      width: 5,
-      legs: [leg("long", 95, passes), leg("short", 100, true)],
-      mid: 1.75,
-      natural: 1.6,
-      shareOfWidth: 0.35,
-      maxLoss: 325,
-      passes,
-    });
-    const saved = payload.rows;
-    payload.rows = [row({ symbol: "GOOD", trade: trade(true) }), row({ symbol: "THIN", trade: trade(false) }), row({ symbol: "UNREAD" })];
-    const html = render("/screeners/earnings?day=2026-10-15");
-    expect(symbols(html)).toEqual(["GOOD", "UNREAD"]);
-    expect(html).toContain("100/95");
-    expect(html).toContain("1.75 cr");
-    expect(symbols(render("/screeners/earnings?day=2026-10-15&trade=all"))).toEqual(["GOOD", "THIN", "UNREAD"]);
-    expect(render("/screeners/earnings?day=2026-10-15&trade=all")).toMatch(/>thin</);
-    payload.rows = saved;
-  });
-
-  it("a target price never reads as a strike: targets are marked, listed strikes say they are not priced", () => {
-    const saved = payload.rows;
-    payload.rows = [row({ symbol: "TGT" }), row({ symbol: "LST", listed: { expiry: "2026-11-20", strikes: [95, 100] } })];
-    const html = render("/screeners/earnings?day=2026-10-15");
-    // TGT: credit put, target short 100, long 95.25 -- shown approximate, with a "target" label.
-    expect(html).toMatch(/≈100\.00 \/ ≈95\.25<\/span>/);
-    expect(html).toMatch(/<span class="chip" title="Target prices, not listed strikes">target</);
-    // LST: listed strikes lead the cell, short first for a credit; no price until one is read.
-    expect(html).toContain("100/95 P");
-    expect(html).not.toContain("not priced");
-    payload.rows = saved;
-  });
-
-  it("shows one read, ours, one IV rank, the broker's, and says when we hold no bars", () => {
-    const saved = payload.rows;
-    payload.rows = [row({ symbol: "READ" }), row({ symbol: "NONE", edge: null, edgeLabel: null, strength: null, readSession: null })];
-    const html = render("/screeners/earnings?day=2026-10-15&dir=all");
+  it("puts what was hover-only inside the row's card: company, sector, IV rank, close, the move and its expiry", () => {
+    const html = card(row({ trade: trade() }));
+    expect(html).toContain("Alpha Inc.");
+    expect(html).toContain("strength 9/10 · Financials");
+    expect(html).toContain("IV rank 67% · close $100.00");
+    expect(html).toContain("move ±4.8% (±$4.75) to the 23 Oct expiry +2d");
+    expect(html).toContain("enter by the Oct 20 close · reacts Oct 21");
+    // The read is ours and says so where it is read.
     expect(html).toContain("Ours (Bearing), from our bars as of the Oct 15 close.");
-    expect(html).toContain("We hold no bars for this name, so no read.");
-    expect(html).toContain("The broker's IV rank");
-    expect(html).not.toMatch(/ours differs|broker \d+%|ours: /);
-    payload.rows = saved;
   });
 
-  it("gives the spread's kind its own column, ahead of the strikes", () => {
+  it("shows each leg as the order chain with its bid and ask, open interest and volume, and whether the spread passes", () => {
+    const html = card(row({ trade: trade() }));
+    // A credit spread reads short first: STO the 100, BTO the 95.
+    expect(html.indexOf("100P")).toBeLessThan(html.indexOf("95P"));
+    expect(html).toContain(">STO<");
+    expect(html).toContain(">BTO<");
+    expect(html).toContain("1.00 / 1.10 · OI 500 · vol 50");
+    expect(html).toContain("1.75 cr");
+    expect(html).toContain("+$175.00");
+    expect(html).toContain("liquid: every leg passes");
+    expect(html).toContain("35% of width · max loss $325.00");
+    expect(html).toContain("the spread has no edge in history");
+  });
+
+  it("a debit is signed as cash paid", () => {
+    const html = card(row({ suggestion: { kind: "debit", right: "C", long: 100, short: 105, expiry: "2026-11-20" }, trade: trade({ kind: "debit", right: "C", legs: [leg("long", 100), leg("short", 105)], mid: 2 }) }));
+    expect(html).toContain("-$200.00");
+    expect(html).toContain("2.00 db");
+  });
+
+  it("a spread read as thin is hidden by default, one read as liquid shows its price", () => {
     const saved = payload.rows;
-    payload.rows = [
-      row({ symbol: "CR", listed: { expiry: "2026-11-20", strikes: [95, 100] } }),
-      row({ symbol: "DB", suggestion: { kind: "debit", right: "C", long: 100, short: 105, expiry: "2026-11-20" } }),
-      row({ symbol: "NOS", suggestion: null }),
-    ];
-    const html = render("/screeners/earnings?day=2026-10-15&dir=all");
-    expect(html).toContain(">Kind</th><th>Spread</th>");
-    expect(html).toMatch(/<td style="white-space:nowrap"><span class="chip chip-credit">credit put<\/span><\/td><td[^>]*>/);
-    expect(html).toMatch(/<td style="white-space:nowrap"><span class="chip chip-debit">debit call<\/span><\/td>/);
-    // The chip is no longer inside the spread cell.
-    expect(html).not.toMatch(/100\/95 P[^<]*<\/span>[^]*?<br\/><span class="chip chip-credit">/);
-    payload.rows = saved;
-  });
-
-  it("puts the symbol and its company in one cell", () => {
-    const html = render("/screeners/earnings?day=2026-10-15");
-    expect(html).toMatch(/symbol=AAA"[^>]*>AAA<\/a>(<span[^]*?<\/span>)?<br\/><span class="muted">Alpha Inc\.<\/span>/);
-    expect(html).not.toContain(">Company<");
-  });
-
-  it("says which expiry the move is priced on, and flags one weeks past the reaction", () => {
-    const saved = payload.rows;
-    payload.rows = [row({ symbol: "WEEK" }), row({ symbol: "FIX", eventExpiry: "2026-11-20", eventExpiryDays: 30 })];
-    const html = render("/screeners/earnings?day=2026-10-15");
-    expect(html).toContain("Exp. move to expiry");
-    expect(html).toContain('<span class="muted">to Oct 23 +2d</span>');
-    expect(html).toContain('<span class="muted">to Nov 20 +30d</span>');
-    expect(html.match(/>month's move</g)?.length).toBe(1); // FIX only
-    payload.rows = saved;
-  });
-
-  it("labels the price with its close, and warns when the close is older than the build", () => {
-    expect(render("/screeners/earnings?day=2026-10-15")).toContain(">Close Oct 15</th>");
-    expect(render("/screeners/earnings?day=2026-10-15")).not.toContain("prices from 2026-10-14");
-    const saved = payload.inputs;
-    payload.inputs = { ...saved, closeDate: "2026-10-14" };
-    const html = render("/screeners/earnings?day=2026-10-15");
-    expect(html).toContain(">Close Oct 14</th>");
-    expect(html).toContain("prices from 2026-10-14, not 2026-10-15");
-    payload.inputs = saved;
-  });
-
-  it("marks a spread read after the announcement", () => {
-    const leg = (role: "long" | "short", strike: number) => ({ role, strike, bid: 1, ask: 1.05, openInterest: 500, volume: 50, passes: true });
-    const trade = (afterReport: boolean | null) => ({
-      readingAt: "2026-10-16T18:30:00Z",
-      takenOn: "2026-10-16",
-      afterReport,
-      kind: "credit" as const,
-      right: "P" as const,
-      expiry: "2026-11-20",
-      width: 5,
-      legs: [leg("long", 95), leg("short", 100)],
-      mid: 2.17,
-      natural: 2.1,
-      shareOfWidth: 0.43,
-      maxLoss: 283,
-      passes: true,
-    });
-    const saved = payload.rows;
-    payload.rows = [row({ symbol: "LATE", trade: trade(true) }), row({ symbol: "OK", trade: trade(false) })];
-    const html = render("/screeners/earnings?day=2026-10-15");
-    expect(html.match(/>after the report</g)?.length).toBe(1);
-    expect(html).toContain("AFTER the announcement");
-    payload.rows = saved;
-  });
-
-  it("hides a spread priced under the premium floor, keeps an unpriced one, and is off by default", () => {
-    const trade = (mid: number | null): EarningsTrade => ({
-      readingAt: "14:30",
-      takenOn: "2026-10-15",
-      afterReport: false,
-      kind: "credit",
-      right: "P",
-      expiry: "2026-11-20",
-      width: 5,
-      legs: [],
-      mid,
-      natural: mid,
-      shareOfWidth: null,
-      maxLoss: null,
-      passes: true,
-    });
-    const saved = payload.rows;
-    payload.rows = [row({ symbol: "BIGP", trade: trade(1.2) }), row({ symbol: "SMLP", trade: trade(0.15) }), row({ symbol: "NOPX", trade: trade(null) })];
+    payload.rows = [row({ symbol: "GOOD", trade: trade() }), row({ symbol: "THIN", trade: trade({ passes: false, legs: [leg("long", 95, false), leg("short", 100)] }) }), row({ symbol: "UNREAD" })];
     try {
-      const off = render("/screeners/earnings?day=2026-10-15");
-      expect(symbols(off)).toEqual(["BIGP", "SMLP", "NOPX"]);
-      expect(off).toContain("Premium ≥ any");
-      const html = render("/screeners/earnings?day=2026-10-15&premium=25");
-      expect(symbols(html)).toEqual(["BIGP", "NOPX"]);
-      expect(html).toContain("Premium ≥ $25");
+      expect(symbols(render("/screeners/earnings?day=2026-10-15"))).toEqual(["GOOD", "UNREAD"]);
+      expect(symbols(render("/screeners/earnings?day=2026-10-15&trade=all"))).toEqual(["GOOD", "THIN", "UNREAD"]);
+      expect(card(payload.rows[1]!)).toContain("thin: the spread fails the liquidity bars");
+      expect(card(payload.rows[1]!)).toContain("fails");
     } finally {
       payload.rows = saved;
     }
   });
 
-  it("always says the suggested spread has no edge", () => {
-    expect(render("/screeners/earnings?day=2026-10-15")).toContain("The suggested spread has no edge in history.");
+  it("a target price never reads as a strike: targets are marked, listed strikes say they are not priced", () => {
+    const target = card(row({ symbol: "TGT" }));
+    expect(target).toContain("≈ 100.00P (target)");
+    expect(target).toContain("target prices, not strikes");
+    const listed = card(row({ symbol: "LST", listed: { expiry: "2026-11-20", strikes: [95, 100] } }));
+    expect(listed).toContain("1 2026-11-20 100P");
+    expect(listed).toContain("listed, not priced yet");
+    expect(listed).not.toContain("target");
+  });
+
+  it("says when we hold no bars, and shows a no-spread name without a leg", () => {
+    const html = card(row({ symbol: "NONE", edge: null, edgeLabel: null, strength: null, readSession: null, suggestion: null }));
+    expect(html).toContain("We hold no bars for this name, so no read.");
+    expect(html).toContain("no spread suggested");
+    expect(html).not.toContain(">STO<");
+  });
+
+  it("an unknown time and an estimated time and date say so", () => {
+    const html = render("/screeners/earnings?day=2026-10-15");
+    expect(html).toContain("time unknown");
+    expect(html).toContain("BMO est.");
+    expect(html).toContain(">est.<");
+    expect(html).toContain("No source gives the time of day");
+  });
+
+  it("flags an expected move priced weeks past the reaction", () => {
+    expect(card(row({ symbol: "WEEK" }))).not.toContain("a longer move");
+    expect(card(row({ symbol: "FIX", eventExpiry: "2026-11-20", eventExpiryDays: 30 }))).toContain("a longer move than the announcement's");
+  });
+
+  it("warns when the close is older than the build", () => {
+    expect(render("/screeners/earnings?day=2026-10-15")).not.toContain("prices from 2026-10-14");
+    const saved = payload.inputs;
+    payload.inputs = { ...saved, closeDate: "2026-10-14" };
+    try {
+      const html = render("/screeners/earnings?day=2026-10-15");
+      expect(html).toContain("prices from the 2026-10-14 close");
+      expect(html).toContain("prices from 2026-10-14, not 2026-10-15");
+    } finally {
+      payload.inputs = saved;
+    }
+  });
+
+  it("marks a spread read after the announcement", () => {
+    expect(card(row({ trade: trade({ afterReport: true }) }))).toContain("read after the report: not an entry price");
+    expect(card(row({ trade: trade({ afterReport: false }) }))).not.toContain("read after the report");
+  });
+
+  it("hides a spread priced under the premium floor, keeps an unpriced one, and says so in the summary", () => {
+    const saved = payload.rows;
+    payload.rows = [row({ symbol: "BIGP", trade: trade({ mid: 1.2 }) }), row({ symbol: "SMLP", trade: trade({ mid: 0.15 }) }), row({ symbol: "NOPX", trade: trade({ mid: null }) })];
+    try {
+      const off = render("/screeners/earnings?day=2026-10-15");
+      expect(symbols(off)).toEqual(["BIGP", "NOPX", "SMLP"]);
+      const html = render("/screeners/earnings?day=2026-10-15&premium=25");
+      expect(symbols(html)).toEqual(["BIGP", "NOPX"]);
+      expect(html).toContain("≥ $25");
+    } finally {
+      payload.rows = saved;
+    }
+  });
+
+  it("the summary line says what is on, and the button counts what is not at its default", () => {
+    const html = render("/screeners/earnings?day=2026-10-15");
+    for (const part of [">next 7 days<", ">strong reads<", ">very liquid<", ">liquid trade<"]) expect(html).toContain(part);
+    expect(html).toContain("4 of 8 announcements");
+    expect(html).toContain('aria-label="Filter and sort"');
+    expect(render("/screeners/earnings?day=2026-10-15&dir=all&time=amc")).toContain('aria-label="Filter and sort, 2 changed"');
+  });
+
+  it("sorts in the day's group by timing, size and fit, never by credit", () => {
+    expect(CALENDAR_SORTS.map((s) => s.id)).toEqual(["symbol", "time", "strength", "move"]);
+    const saved = payload.rows;
+    payload.rows = [row({ symbol: "AAA", strength: 5 }), row({ symbol: "ZZZ", strength: 10 })];
+    try {
+      expect(symbols(render("/screeners/earnings?day=2026-10-15"))).toEqual(["AAA", "ZZZ"]);
+      void writePref("sort.earnings-calendar", { id: "strength", reversed: false });
+      expect(symbols(render("/screeners/earnings?day=2026-10-15"))).toEqual(["ZZZ", "AAA"]);
+      void writePref("sort.earnings-calendar", { id: "strength", reversed: true });
+      expect(symbols(render("/screeners/earnings?day=2026-10-15"))).toEqual(["AAA", "ZZZ"]);
+    } finally {
+      payload.rows = saved;
+    }
+  });
+
+  it("says the suggested spread has no edge as an amber flag, its text behind the ?", () => {
+    const html = render("/screeners/earnings?day=2026-10-15");
+    expect(html).toMatch(/class="help-flag"[^>]*>no edge in history</);
+    expect(html).toContain('aria-label="About earnings calendar"');
+    // The long note is no longer in the card body.
+    expect(html).not.toContain("The suggested spread has no edge in history.");
+    const help = renderToString(<>{calendarHelp(50).body}</>).replace(/<!-- -->/g, "");
+    expect(help).toContain("The suggested spread has no edge in history.");
+    expect(help).toContain("lost 4.3% on");
   });
 });

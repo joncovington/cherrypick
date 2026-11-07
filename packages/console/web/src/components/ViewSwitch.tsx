@@ -16,10 +16,11 @@ export function useListView(): ListView {
   return useContext(ListViewContext);
 }
 
-/** A card's remembered view; cards until one is chosen. */
-export function useViewChoice(card: string): [ListView, (v: ListView) => void] {
+/** A card's remembered view; `fallback` (cards unless the card says rows) until one is chosen. */
+export function useViewChoice(card: string, fallback: ListView = "cards"): [ListView, (v: ListView) => void] {
   usePrefsVersion();
-  const v = getPref(`view.${card}`) === "rows" ? "rows" : "cards";
+  const raw = getPref(`view.${card}`);
+  const v: ListView = raw === "rows" || raw === "cards" ? raw : fallback;
   return [v, (next) => void writePref(`view.${card}`, next)];
 }
 
