@@ -13,22 +13,6 @@ import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../
  * filters and its own figures; this only places them, as the Live portfolio tab places its cards.
  */
 
-/** The marks the sections wear: the portfolio tab's own classes, so the two read alike. */
-export type Concept = "income" | "dir" | "add" | "hist";
-
-/** A section under its question, in the portfolio tab's markup. */
-export function ScreenerSection({ concept, tag, question, children }: { concept: Concept; tag: string; question: string; children: ReactNode }) {
-  return (
-    <section className={`pf-sec pf-c-${concept}`} aria-label={tag}>
-      <div className="pf-sec-head">
-        <span className="pf-tag">{tag}</span>
-        <h3>{question}</h3>
-      </div>
-      <div className="pf-row">{children}</div>
-    </section>
-  );
-}
-
 /** The page's sections in the portfolio tab's container, so the cards fold with the width. */
 export function ScreenerLayout({ children }: { children: ReactNode }) {
   return <div className="pf-layout sc-layout">{children}</div>;

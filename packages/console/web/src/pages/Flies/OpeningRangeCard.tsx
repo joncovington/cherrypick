@@ -1,7 +1,8 @@
 import { useOpeningRange } from "../../lib/api";
 import { Card, SkeletonRows } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
-import { FliesLayout, FliesSection } from "./FliesFilter";
+import { FliesLayout } from "./FliesFilter";
+import { Section } from "../../components/Section";
 import { Spark } from "../../components/chart/Spark";
 import { hhmm } from "../../components/chart/time";
 
@@ -59,9 +60,9 @@ export const OPENING_RANGE_HELP: CardHelpContent = {
 function Wrapped({ children }: { children: React.ReactNode }) {
   return (
     <FliesLayout>
-      <FliesSection concept="hist" name="09:30–10:00" question="What did the opening half hour do?">
+      <Section concept="hist" tag="09:30–10:00" question="What did the opening half hour do?">
         {children}
-      </FliesSection>
+      </Section>
     </FliesLayout>
   );
 }

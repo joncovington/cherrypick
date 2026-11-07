@@ -5,7 +5,8 @@ import { fliesQuery, type FliesFilter } from "../../lib/api";
 import { Card, fmtMoney } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { useOpenParam } from "../Backtest/CardLightbox";
-import { FliesLayout, FliesSection } from "./FliesFilter";
+import { FliesLayout } from "./FliesFilter";
+import { Section } from "../../components/Section";
 import { BoxOpen, FliesBoxHost, type FliesBox } from "./FliesBoxes";
 import { EquityUnderwater } from "../../components/EquityUnderwater";
 import { VoidedNote } from "./VoidedNote";
@@ -550,7 +551,7 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
 
   return (
     <FliesLayout>
-      <FliesSection concept="stand" name="the record" question="How has it done?">
+      <Section concept="stand" tag="the record" question="How has it done?">
         <Card title="performance" collapseKey="flies-performance" help={PERFORMANCE_HELP}>
           <TileGrid count={6}>
             <Tile label="net P&L" value={t !== undefined ? fmtMoney(t.netPnl) : "—"} tone={t !== undefined && t.netPnl >= 0 ? "pos" : "neg"} />
@@ -562,9 +563,9 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
           </TileGrid>
           <VoidedNote mode={mode} filter={filter} />
         </Card>
-      </FliesSection>
+      </Section>
 
-      <FliesSection concept="hist" name="over time" question="How did it get here?">
+      <Section concept="hist" tag="over time" question="How did it get here?">
         <Card
           title="P&L over time"
           collapseKey="flies-pnl-over-time"
@@ -606,9 +607,9 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
             </>
           )}
         </Card>
-      </FliesSection>
+      </Section>
 
-      <FliesSection concept="edge" name="completion" question="Is completion good enough to be real?">
+      <Section concept="edge" tag="completion" question="Is completion good enough to be real?">
         <Card title="completion" collapseKey="flies-completion" help={completionHelp(lvp)} flag={lvp !== null ? "halt rule" : undefined}>
           <TileGrid count={4}>
             <Tile label="legged" value={c !== undefined ? String(c.leggedEntries) : "—"} />
@@ -631,7 +632,7 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
             ))}
           </div>
         </Card>
-      </FliesSection>
+      </Section>
       <FliesBoxHost lb={lb} boxes={[box]} />
     </FliesLayout>
   );

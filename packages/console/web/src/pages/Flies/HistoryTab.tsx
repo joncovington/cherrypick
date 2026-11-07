@@ -12,7 +12,8 @@ import { ListViewContext, ViewSwitch, useViewChoice, type ListView } from "../..
 import { FilterGroup, FilterSortButton, FilterSortPanel, FilterSummary, SortSection, type SortChoice, type SortOption } from "../../components/FilterSort";
 import { CardLightbox, LightboxFrame, useOpenParam } from "../Backtest/CardLightbox";
 import { TradeCard, TradeCards, type TradeCardModel } from "../Live/TradeCard";
-import { ChoiceGroup, FliesLayout, FliesSection } from "./FliesFilter";
+import { ChoiceGroup, FliesLayout } from "./FliesFilter";
+import { Section } from "../../components/Section";
 import { clockTime, structureLabel, wingWidth } from "./structure";
 import { fmtCash, fmtPrice } from "../../lib/format";
 
@@ -758,7 +759,7 @@ export function HistoryTab({
       <div className="history-controls" style={{ margin: 0 }}>
         <DateRangeBar basis="trade date" allTitle="every session in the era picked in the header" />
       </div>
-      <FliesSection concept="hist" name="calendar" question="How did each day go?">
+      <Section concept="hist" tag="calendar" question="How did each day go?">
         <Card title="daily P&L calendar" className="fl-w6" help={CALENDAR_HELP}>
           {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <FliesCalendar days={data?.dailyPnl ?? []} onPick={onReplayDay} />}
         </Card>
@@ -787,9 +788,9 @@ export function HistoryTab({
             </button>
           </div>
         </Card>
-      </FliesSection>
+      </Section>
 
-      <FliesSection concept="hist" name="trade log" question="Every trade">
+      <Section concept="hist" tag="trade log" question="Every trade">
         <TradeLogCard
           view={view}
           setView={setView}
@@ -808,7 +809,7 @@ export function HistoryTab({
           toggleSort={toggleSort}
           setSort={setSort}
         />
-      </FliesSection>
+      </Section>
 
       {box.open === "across" ? (
         <CardLightbox count={1} index={0} onStep={() => undefined} onClose={box.close} wide>

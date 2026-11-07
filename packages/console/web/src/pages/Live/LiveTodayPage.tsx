@@ -13,7 +13,7 @@ import { tone } from "./manageParts";
 import { WhatToDoList, todoList } from "./WhatToDo";
 import { HandCard, handHasTrades } from "./HandToday";
 import { LoopOrders } from "./LiveTodayOrders";
-import { Section } from "./PortfolioLayout";
+import { Section } from "../../components/Section";
 import { Meter, StateLine } from "./liveParts";
 
 /**

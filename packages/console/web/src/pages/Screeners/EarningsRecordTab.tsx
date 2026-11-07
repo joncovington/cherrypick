@@ -18,7 +18,8 @@ import {
   type SortOption,
 } from "../../components/FilterSort";
 import { ExpiryNote } from "./ExpiryNote";
-import { QuestionSection, ScreenerLayout } from "./QuestionSection";
+import { ScreenerLayout } from "./ScreenerParts";
+import { Section } from "../../components/Section";
 
 /**
  * The earnings calendar's forward record (2026-10-17; docs/earnings-screener-plan.md, step 5): every
@@ -180,7 +181,7 @@ export function EarningsRecordTab() {
         <p className="muted">No record yet: `technicals earnings-record` writes it each morning at 06:50 ET, once announcements on the calendar have reacted.</p>
       )}
       {s && (
-        <QuestionSection concept="hist" name="record" question="How did past suggestions do?">
+        <Section concept="hist" tag="record" question="How did past suggestions do?">
           <Card title="forward check" help={recordHelp} flag="no edge in history" controls={data?.asOf ? <span className="card-asof">as of {data.asOf}</span> : null}>
             <TileGrid count={6}>
               <Tile label="measured" value={`${s.measuredMoves ?? "—"}`} foot={`of ${s.announcements} announcements`} />
@@ -200,10 +201,10 @@ export function EarningsRecordTab() {
               </div>
             )}
           </Card>
-        </QuestionSection>
+        </Section>
       )}
       {rows.length > 0 && (
-        <QuestionSection concept="hist" name="every announcement" question="What happened each time?">
+        <Section concept="hist" tag="every announcement" question="What happened each time?">
           <Card
             title="journal"
             help={{
@@ -294,7 +295,7 @@ export function EarningsRecordTab() {
                           <td className={r.directionRight === null ? "muted" : r.directionRight ? "pnl-pos" : "pnl-neg"}>
                             {r.directionRight === null ? "—" : r.directionRight ? "yes" : "no"}
                           </td>
-                          <td className={`num ${net ? tone(net.net) : "muted"}`} title={net ? `gross ${money(net.gross)} − fees ${money(net.fees)} − slippage ${money(net.slippage)}` : undefined}>
+                          <td className={`num ${net ? tone(net.net) : "muted"}`} title={net ? `gross ${money(net.gross)} · fees ${money(-net.fees)} · slippage ${money(-net.slippage)} = net ${money(net.net)}` : undefined}>
                             {net ? money(net.net) : "—"}
                           </td>
                         </tr>
@@ -325,7 +326,7 @@ export function EarningsRecordTab() {
               <FilterSwitch label="Strong bear reads" description="Only announcements read strong bear" on={show.has("bear")} onChange={(v) => toggleShow("bear", v)} />
             </FilterGroup>
           </FilterSortPanel>
-        </QuestionSection>
+        </Section>
       )}
     </ScreenerLayout>
   );

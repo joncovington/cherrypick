@@ -3,7 +3,8 @@ import type { SkateBand, SkateRecordBand, SkateRecordGroup, SkateRecordPayload, 
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { useSkateRecord } from "../../lib/api";
-import { ScreenerCard, ScreenerSection } from "./ScreenerParts";
+import { ScreenerCard } from "./ScreenerParts";
+import { Section } from "../../components/Section";
 
 /**
  * The skate screen's forward record on the Skate tab (docs/skate-plan.md step 4). `technicals.skate_record`
@@ -166,7 +167,7 @@ export function SkateRecordView({ data, isLoading, isError }: { data: SkateRecor
   const added = data ? Object.values(data.added).reduce((a, b) => a + b, 0) : 0;
   const ok = data?.status === "ok";
   return (
-    <ScreenerSection concept="hist" tag="forward record" question="Is it holding up?">
+    <Section concept="hist" tag="forward record" question="Is it holding up?">
       <ScreenerCard
         title="forward record"
         help={recordHelp(t, ok)}
@@ -239,7 +240,7 @@ export function SkateRecordView({ data, isLoading, isError }: { data: SkateRecor
           </>
         )}
       </ScreenerCard>
-    </ScreenerSection>
+    </Section>
   );
 }
 

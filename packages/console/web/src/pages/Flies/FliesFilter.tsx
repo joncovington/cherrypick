@@ -49,20 +49,6 @@ export function scopeParts(s: FliesScope, meta: Pick<FliesMeta, "eras" | "curren
 
 /** A tab's question: a tag, the question, then a row of cards that folds to one column on a phone.
  *  The concept sets the tag's colour (`pf-c-*`); `name` is the tag's word. */
-export type FliesConcept = "stand" | "dir" | "risk" | "hist" | "edge" | "live";
-
-export function FliesSection({ concept, name, question, children }: { concept: FliesConcept; name: string; question: string; children: ReactNode }) {
-  return (
-    <section className={`pf-sec pf-c-${concept}`} aria-label={name}>
-      <div className="pf-sec-head">
-        <span className="pf-tag">{name}</span>
-        <h3>{question}</h3>
-      </div>
-      <div className="pf-row">{children}</div>
-    </section>
-  );
-}
-
 /** The sections of one tab, in the portfolio tab's layout. */
 export function FliesLayout({ children }: { children: ReactNode }) {
   return <div className="pf-layout fl-layout">{children}</div>;

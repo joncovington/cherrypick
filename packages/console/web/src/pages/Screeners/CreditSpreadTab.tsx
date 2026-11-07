@@ -7,7 +7,8 @@ import { useViewChoice } from "../../components/ViewSwitch";
 import { useCreditSpreadList } from "../../lib/api";
 import { TradeCards, dayMonth, type TradeCardModel } from "../Live/TradeCard";
 import { FAIR_TITLE, earningsText, fairText } from "./OwnListTab";
-import { BoxOpenButton, PanelChoice, ScreenerCard, ScreenerLayout, ScreenerSection, SessionSelect, SymbolSearch, useParamState, useScreenerBoxes, type ScreenerBox } from "./ScreenerParts";
+import { BoxOpenButton, PanelChoice, ScreenerCard, ScreenerLayout, SessionSelect, SymbolSearch, useParamState, useScreenerBoxes, type ScreenerBox } from "./ScreenerParts";
+import { Section } from "../../components/Section";
 
 /**
  * Our own credit-spread list (2026-10-24): the chart setups' fresh entries as spreads on the 30-45 day
@@ -389,7 +390,7 @@ export function CreditSpreadTab() {
 
   return (
     <ScreenerLayout>
-      <ScreenerSection concept="dir" tag="setups" question="Which setups make a spread worth sizing?">
+      <Section concept="dir" tag="setups" question="Which setups make a spread worth sizing?">
         <ScreenerCard
           title="credit spreads"
           help={creditHelp(data?.rule.tested ?? null, current, shareLabel, dropped, data?.rule.recentSessions ?? 5, unpickedAll, all.length)}
@@ -484,7 +485,7 @@ export function CreditSpreadTab() {
           {data && data.built && all.length > 0 && shown.length === 0 && <p className="muted">Nothing matches these filters.</p>}
           {data && data.built && all.length === 0 && <p className="muted">No setup entered on a recent close for any name this session.</p>}
         </ScreenerCard>
-      </ScreenerSection>
+      </Section>
       {box.node}
     </ScreenerLayout>
   );

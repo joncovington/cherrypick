@@ -10,7 +10,8 @@ import { fmtMoney } from "../../lib/format";
 import { fliesQuery, useOpeningRange, type FliesFilter } from "../../lib/api";
 import { ForestCard } from "./ForestCard";
 import { SpotPathCard } from "./SpotPathCard";
-import { FliesLayout, FliesSection, TabLink } from "./FliesFilter";
+import { FliesLayout, TabLink } from "./FliesFilter";
+import { Section } from "../../components/Section";
 import type { ReactNode } from "react";
 
 /**
@@ -253,7 +254,7 @@ export function FliesSession({
 
   return (
     <FliesLayout>
-      <FliesSection concept="stand" name="the day" question="How did today go?">
+      <Section concept="stand" tag="the day" question="How did today go?">
         <NetTodayTile today={today} />
 
         <CompletionTile today={today} />
@@ -355,9 +356,9 @@ export function FliesSession({
                 } · ${String(liveTrades)} live trade${liveTrades === 1 ? "" : "s"}`
           }
         />
-      </FliesSection>
+      </Section>
 
-      <FliesSection concept="dir" name="the book" question="What does the book look like?">
+      <Section concept="dir" tag="the book" question="What does the book look like?">
         {/* The hero. A butterfly only pays if spot walks away from its centre, so the shape of the
             payoff is the session's actual subject and everything above is a number about it. */}
         <ForestCard mode={mode} filter={filter} variant="hero" height={248} to="/flies/forest" />
@@ -388,11 +389,11 @@ export function FliesSession({
             <TabLink to="/flies/positions">positions</TabLink>
           </div>
         </Card>
-      </FliesSection>
+      </Section>
 
       {/* Why the quiet arms were quiet: the gates, or the market. Counts are evaluations refused,
           summed across arms, so one arm refusing every tick for an hour reads as a long bar. */}
-      <FliesSection concept="risk" name="why" question="Why were entries refused?">
+      <Section concept="risk" tag="why" question="Why were entries refused?">
         <Card
           title="refusals"
           className="fl-w6"
@@ -425,7 +426,7 @@ export function FliesSession({
         </Card>
 
         <SpotPathCard mode={mode} filter={filter} arm={arm} />
-      </FliesSection>
+      </Section>
     </FliesLayout>
   );
 }

@@ -19,7 +19,8 @@ import {
   useSortChoice,
   type SortOption,
 } from "../../components/FilterSort";
-import { FliesLayout, FliesSection } from "./FliesFilter";
+import { FliesLayout } from "./FliesFilter";
+import { Section } from "../../components/Section";
 
 export interface JournalRow {
   arm: string;
@@ -252,7 +253,7 @@ export function JournalBody({ rows, date, loading }: { rows: JournalRow[]; date:
 
   return (
     <FliesLayout>
-      <FliesSection concept="risk" name="journal" question="What did each arm decide?">
+      <Section concept="risk" tag="journal" question="What did each arm decide?">
         <Card
           title={title}
           collapseKey="flies-journal"
@@ -307,7 +308,7 @@ export function JournalBody({ rows, date, loading }: { rows: JournalRow[]; date:
             </>
           )}
         </Card>
-      </FliesSection>
+      </Section>
     </FliesLayout>
   );
 }

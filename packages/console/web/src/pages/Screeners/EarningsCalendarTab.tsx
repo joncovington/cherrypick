@@ -19,7 +19,8 @@ import {
 import { ListViewContext, ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
 import { writePref } from "../../lib/prefs";
 import { TradeCards, dayMonth, type TradeCardLeg, type TradeCardModel } from "../Live/TradeCard";
-import { QuestionSection, ScreenerLayout } from "./QuestionSection";
+import { ScreenerLayout } from "./ScreenerParts";
+import { Section } from "../../components/Section";
 
 /**
  * The earnings calendar (2026-10-17; docs/earnings-screener-plan.md): every announcement in the
@@ -389,7 +390,7 @@ export function EarningsCalendarTab() {
 
   return (
     <ScreenerLayout>
-      <QuestionSection concept="stand" name="the calendar" question="What reports soon?">
+      <Section concept="stand" tag="the calendar" question="What reports soon?">
         <Card
           title="earnings calendar"
           help={calendarHelp(data?.ivRankCut ?? 50)}
@@ -548,7 +549,7 @@ export function EarningsCalendarTab() {
             />
           </FilterGroup>
         </FilterSortPanel>
-      </QuestionSection>
+      </Section>
     </ScreenerLayout>
   );
 }

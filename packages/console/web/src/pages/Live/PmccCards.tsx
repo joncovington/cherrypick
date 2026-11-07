@@ -7,7 +7,7 @@ import { CardLightbox, LightboxFrame, useOpenParam } from "../Backtest/CardLight
 import { Tile } from "../Flies/PerformanceTab";
 import { BandDial } from "./PortfolioCards";
 import { chainLegs } from "./PositionCards";
-import { Section } from "./PortfolioLayout";
+import { Section } from "../../components/Section";
 import { BoxButton, BoxButtons, PortfolioBoxContext } from "./portfolioBoxContext";
 import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
