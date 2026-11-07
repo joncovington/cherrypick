@@ -130,13 +130,27 @@ def test_a_session_fetch_writes_only_a_declared_store_variant_and_is_bounded():
         ({**args, "from": "2026-11-01"}, "after"),
         ({**args, "workers": 5}, "workers"),  # past Standard's four concurrent requests
         ({**args, "cadence": "60"}, "cadence"),
+        ({**args, "dataset": "TSLA"}, "dataset"),  # only a declared 0DTE dataset
+        ({**args, "dataset": "qqq"}, "dataset"),
     ]:
         with pytest.raises(rq.Refused, match=why):
             rq.build_argv("fetch-sessions", bad, PY)
     row = {"kind": "fetch-sessions", "args": json.dumps(args)}
     out = rq.result_of(row, {"fetched": 3, "skipped": 1, "stopped": True}, Path("q.log"))
-    assert out["input"] == "2022-05-16..2026-10-30" and out["store"] == "backtest wide 0DTE store"
+    assert out["input"] == "2022-05-16..2026-10-30" and out["store"] == "backtest SPX wide 0DTE store"
     assert out["report"] == {"fetched": 3, "skipped": 1, "stopped": True}
+
+
+def test_a_session_fetch_of_another_dataset_names_it_and_spx_keeps_its_argv():
+    args = {"store_tag": "wide", "from": "2022-05-16", "to": "2026-10-30"}
+    assert "--dataset" not in rq.build_argv("fetch-sessions", {**args, "dataset": "SPX"}, PY)
+    assert rq.build_argv("fetch-sessions", args, PY) == rq.build_argv(
+        "fetch-sessions", {**args, "dataset": "SPX"}, PY
+    )
+    argv = rq.build_argv("fetch-sessions", {**args, "dataset": "NDX"}, PY)
+    assert argv[argv.index("--dataset") + 1] == "NDX"
+    row = {"kind": "fetch-sessions", "args": json.dumps({**args, "dataset": "QQQ"})}
+    assert rq.result_of(row, {}, Path("q.log"))["store"] == "backtest QQQ wide 0DTE store"
 
 
 def test_anything_off_the_allow_list_is_refused(files):

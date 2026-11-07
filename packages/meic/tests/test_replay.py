@@ -42,8 +42,9 @@ def _quote(right: str, k: float, s: float) -> tuple[float, float, float]:
     return round(mid - 0.05, 2), round(mid + 0.05, 2), round(delta, 4)
 
 
-def _history(path, *, every_seconds=60, until="11:00", vix=()):
-    """`vix`: (hh:mm, value) intraday readings, written as the recorder writes them."""
+def _history(path, *, every_seconds=60, until="11:00", vix=(), symbol="SPX"):
+    """`vix`: (hh:mm, value) intraday readings, written as the recorder writes them. `symbol`: the
+    dataset the rows are written under (a vendor store of another 0DTE symbol, item 68)."""
     conn = sqlite3.connect(path)
     conn.execute(
         "CREATE TABLE market_regime_history (trade_date TEXT NOT NULL, ts REAL NOT NULL, reading TEXT NOT NULL, "
@@ -70,8 +71,8 @@ def _history(path, *, every_seconds=60, until="11:00", vix=()):
     t, end, sid = _ts("09:30"), _ts(until), 0
     while t <= end:
         sid += 1
-        conn.execute("INSERT INTO gex_quote_samples VALUES (?, 'SPX', ?, ?, ?)", (sid, DAY, t, DAY))
-        conn.execute("INSERT INTO gex_spot_history VALUES ('SPX', ?, ?, ?)", (DAY, t, SPOT))
+        conn.execute("INSERT INTO gex_quote_samples VALUES (?, ?, ?, ?, ?)", (sid, symbol, DAY, t, DAY))
+        conn.execute("INSERT INTO gex_spot_history VALUES (?, ?, ?, ?)", (symbol, DAY, t, SPOT))
         for k in range(int(SPOT) - 100, int(SPOT) + 105, 5):
             for side, right in ((0, "P"), (1, "C")):
                 bid, ask, delta = _quote(right, k, SPOT)
@@ -81,9 +82,11 @@ def _history(path, *, every_seconds=60, until="11:00", vix=()):
                 )
         t += every_seconds
     for i, d in enumerate(("2026-10-09", "2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15")):
-        conn.execute("INSERT INTO gex_spot_history VALUES ('SPX', ?, ?, 5990)", (d, _ts("10:00", d)))
-        conn.execute("INSERT INTO gex_spot_history VALUES ('SPX', ?, ?, ?)", (d, _ts("11:00", d), 6010 + i))
-        conn.execute("INSERT INTO daily_closes VALUES ('SPX', ?, 6000)", (d,))
+        conn.execute("INSERT INTO gex_spot_history VALUES (?, ?, ?, 5990)", (symbol, d, _ts("10:00", d)))
+        conn.execute(
+            "INSERT INTO gex_spot_history VALUES (?, ?, ?, ?)", (symbol, d, _ts("11:00", d), 6010 + i)
+        )
+        conn.execute("INSERT INTO daily_closes VALUES (?, ?, 6000)", (symbol, d))
     conn.commit()
     conn.close()
     return path
@@ -209,6 +212,36 @@ def test_what_the_replay_refuses(tmp_path):
     _cboe({"VIX": VIX_ROWS[:-1]})
     no_vix = replay.replay_session(DAY, tmp_path / "y.db", history_db=history)
     assert no_vix["ok"] is False and "VIX" in no_vix["error"]
+
+
+def test_another_symbol_replays_its_own_rows_under_its_own_root(tmp_path):
+    """Item 68: a vendor store of QQQ or NDX replays through the same snapshot, its legs spelt as the
+    streamer spells them, and an SPX replay of that store finds nothing of its own."""
+    _cboe({"VIX": VIX_ROWS})
+    history = _history(tmp_path / "q.db", symbol="QQQ")
+    cfg, profiles = replay.replay_profiles(["control"])
+    rday = replay.ReplayDay(DAY, cfg, profiles, history_db=history, symbol="QQQ")
+    sample = rday.recorded.samples[30]
+    snap = rday.snapshot(sample, datetime.fromtimestamp(sample["ts"], ET))
+    assert snap["ok"] and snap["symbol"] == "QQQ" and snap["atr_5day"] == pytest.approx(22.0)
+    assert snap["candidates"][0]["short_put"]["streamer_symbol"].startswith(".QQQ261016P")
+    assert not replay.ReplayDay(DAY, cfg, profiles, history_db=history).recorded.samples
+    ndx = replay.ReplayDay(
+        DAY, cfg, profiles, history_db=_history(tmp_path / "n.db", symbol="NDX"), symbol="NDX"
+    )
+    first = ndx.snapshot(ndx.recorded.samples[30], datetime.fromtimestamp(ndx.recorded.samples[30]["ts"], ET))
+    assert first["candidates"][0]["short_call"]["streamer_symbol"].startswith(".NDXP261016C")
+
+
+def test_another_symbol_is_refused_where_it_cannot_be_replayed(tmp_path):
+    with pytest.raises(ValueError, match="no replay for 'TSLA'"):
+        replay.ReplayDay(DAY, {}, {}, history_db=tmp_path / "h.db", symbol="TSLA")
+    # control trades the config's symbols (SPX): it is never replayed as QQQ by accident
+    with pytest.raises(ValueError, match="does not trade QQQ"):
+        replay.replay_profiles(["control"], "QQQ")
+    # the recorder keeps SPX only, so another symbol needs a vendor store
+    out = replay.replay_session(DAY, tmp_path / "x.db", symbol="QQQ")
+    assert out["ok"] is False and "QQQ" in out["error"]
 
 
 def test_the_check_rewinds_paper_rows_to_the_instant():

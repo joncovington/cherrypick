@@ -69,6 +69,20 @@ written are not re-judged. The arithmetic is `cherrypick.core.robustness`
     thresholds if it goes live;
   - the largest size whose 99th-percentile drawdown stays inside a declared share of the account
     (`max_size`).
+- **The verdict fill for SPX and XSP studies** (from 2026-11-07, for declarations written after it).
+  - The verdict fill is the suite's slippage model: `fees.slippage_dollars`, an eighth of each leg's
+    bid-ask from mid, capped at its share of the mid.
+  - Halfway from mid to the natural fill (the "working" price items 22 and 58-61 used) is reported
+    beside it as the stress, and mid as context.
+  - Why: MEIC's live fills land closer to mid than either. As of 2026-11-07, 9 priced live entries
+    filled about 0.3% of the wing width from the mid credit at submit (`python -m cherrypick.cli
+    execution`), about $2 to $3 a condor. An eighth of each leg's spread is several times that on SPX
+    at midday.
+  - Declarations already written keep their declared fill; re-scoring them at another fill would be
+    choosing a fill after seeing results.
+  - The modules' own default (`DEFAULT_COSTS["slippage_frac_of_spread"]`) is not changed here. That is
+    measurement-affecting for every paper module, so it is proposed at a declared boundary once MEIC
+    live has 30 priced fills, with the per-structure fill measured from those fills.
 
 ## Data we already hold
 
@@ -6659,6 +6673,176 @@ before any of it is run. No new fetch: item 47's stored chains price it.*
   - The first run crashed at scoring on a field name. The fix is in the script, and it now saves the
     trades before scoring. Nothing was read before the full run.
   - Local result: `~/.cherrypick/data/backtest/results/research/item66/results.json`.
+
+### 67. The earnings module's rule with paper's spread screen: does what paper actually trades earn after costs?
+
+*Source: the user, 2026-11-07 ("yes"), after a local look at the paper ledger against item 31's
+screen. Item 31 replayed the earnings module's paper rule on end-of-day chains and failed every arm.
+Its screen, though, would not have admitted most of what paper trades, almost all for spreads: the
+study's own point-in-time cap on the at-the-money spread, and the module's own ceiling on it, applied
+to end-of-day quotes that run wider than the intraday quotes paper's live screen reads. So item 31's
+verdict covers the tight-spread subset, and the wider-spread trades paper actually takes were never
+judged historically. Declared here before the study is run; no chain is fetched for it.*
+
+- **Question:** does the earnings module's rule, with paper's spread screen in place of item 31's, earn
+  more than zero after the suite's costs, and more than the same structure on an ordinary session, on
+  the trades paper actually takes?
+- **Where the edge would live:** the same **risk premium** as item 31, the options' implied move into
+  a report exceeding the move that follows. The added claim is that it is there on the wider-spread
+  names too. What would falsify it: the mean net on capital at risk is zero or negative after costs, or
+  the control earns as much.
+- **Look-alikes, said out loud:** item 31 above all (the same replay, the same events, the same
+  control, the same rule; `cherrypick hypotheses --similar` on setup `earnings-premium` and structure
+  `iron-fly` names it, failed, and no row for `iron-condor`); item 47 (a monthly strangle across a
+  report, failed) and item 52 (diagonals across a report, failed) are other structures on the same
+  events. This item changes one thing about item 31, the screen, so it is a retest of item 31's rule on
+  the events item 31 did not admit, and the admitted half is expected to reproduce item 31.
+- **The replay is item 31's `Study`, unchanged except two spread checks:**
+  - `pit_spread`, the study's cap on the at-the-money spread, is dropped;
+  - the module's `bid_ask_spread_too_wide` criterion is not applied (each strategy's
+    `max_bid_ask_spread_pct` is set to infinity in a copy of item 31's config, the key being read in one
+    place, the module's liquidity gate; a name with no measurable spread at all stays out);
+  - every other criterion is item 31's: the point-in-time dollar-volume check, the price, term
+    structure, expected move, delta, expiry and volume criteria, the sizing and the management.
+- **Costs are item 31's:** 12.5% of the end-of-day spread from mid on each side, with fees on both.
+  That if anything overcharges the wider names, since closing spreads are wider than the intraday ones
+  paper pays.
+- **Arms:** the same three strategies, `iron_fly`, `iron_condor` and `directional_credit_spread`,
+  **ungated only**: G1 and G2 are item 31's, and they failed. Holm across three arms. The paired
+  control is item 31's exactly (the same structure on the same name, four weeks away, no report).
+- **Pass-or-fail rule, item 31's per arm, all must hold:**
+  - at least 150 paired design trades;
+  - the mean net share of capital at risk above zero with a one-sided date-clustered t above 2, under
+    Holm;
+  - the mean paired difference above zero with t above 2, under Holm;
+  - positive in each time-half and each name-half;
+  - positive at item 31's stress (1.5x fees, 25% of the spread) and with the best five trades removed;
+  - then the holdout's mean net and paired difference both above zero, with at least 100 trades.
+- **Reported, never judged:** each arm split by item 31's admission, the events item 31 admitted (the
+  half that reproduces item 31) against the events only this screen admits; and by terciles of the
+  at-the-money spread. Item 31's reported readings ride beside, as it reports them.
+- **Rival explanations, each with its check:**
+  - *Ordinary overnight theta:* the paired control; net positive with the pair not positive is "pays,
+    not for the report", not a pass.
+  - *Hindsight:* item 31 read the windows' admitted subset and a local diagnostic read the paper
+    period; the newly admitted wider-spread events were never read. **Check:** said as a limit. The
+    clean check is reports after 2026-11-06, read once 100 trades per arm are stored, and a proposal
+    waits for it.
+  - *Costs on the wide names:* the end-of-day spread haircut overstates the intraday spread. **Check:**
+    positive at item 31's stress; the tercile split shows whether the widest third carries or sinks an
+    arm.
+  - *The screen difference is a data artefact:* end-of-day quotes run wider than intraday ones, so the
+    newly admitted events may not be the events paper takes. **Check:** the reported admission split;
+    the admitted half must reproduce item 31.
+  - *A few names:* **Check:** both name-halves; no name over item 31's share cap; the top five names
+    removed and reported.
+  - *One era:* **Check:** both time-halves, then the holdout.
+- **Minimum detectable effect (B12):** computed before any of this study's P&L, by the script's `mde`
+  step, from item 31's per-trade spread of the same arm (read only) at the declared minimum of 150
+  design trades; the larger real sample makes it an upper bound. A no-verdict result then reads "no
+  edge larger than X". Unpaired, as item 31's.
+- **Declared limits (B11):** item 31's, all of them: the end-of-day basis, today's liquid list
+  (hindsight, reported apart), the open interest and option volume floors not reproduced, the weekly
+  Friday front expiry, no early assignment, a position open at a name's last bar settled at the last
+  close, stale marks counted. The number of trades empty chains removed is counted in the result file.
+  The newly admitted events were never read before this run.
+- **Name split (B9):** applies, as item 31's.
+- **Data:** `scripts/earnings_paper_screen_item67.py mde|study|report`, which loads item 31's script for
+  every piece of arithmetic and adds only the two removed checks, the admission split, the three-arm
+  Holm and the report. It reads item 31's event list, calendar and trades from
+  `results/research/item31/` (read only). **No chain fetch is needed:** item 31's request plan covered
+  every event whether or not it was admitted. Results stay under the backtest data directory
+  (`results/research/item67/`).
+- **Decides:**
+  - **A pass:** the module's live spread screen stands as it is, the passing strategy's paper arm is
+    read on the next season, and a proposal follows at a declared boundary.
+  - **A fail:** the module's paper arm for that strategy is the same losing rule item 31 found, now with
+    the trades paper takes, and the redesign or retirement question returns to the user.
+
+### 68. MEIC's live rule on QQQ and NDX: a second symbol for the live loop
+
+*Source: the user, 2026-11-07, planning a live MEIC loop that trades more than one symbol: "lets
+backtest qqq and ndx", choosing each symbol's SPX-equivalent wing and the width its config gives it
+today, in the queue's normal order. MEIC paper ran QQQ and NDX for a few July 2026 sessions under other
+arms and retired them without a reading; no backtest has run either. Declared here before any of it is
+run.*
+
+- **Question:** does the rule live trades on SPX, `pm-200` entering once a day 14:00–14:30, earn after
+  costs on QQQ or NDX, so that a second symbol would add to the live loop rather than dilute it?
+- **Where the edge would live:** **premium**, the same claim as SPX's: a 16-delta 0DTE condor is paid
+  more than the moves that reach its shorts. The question is whether the payment survives a different
+  chain's spreads, strike spacing and, for QQQ, physical settlement.
+- **Look-alikes:** item 23 (the same rule on SPX, whose `live-1400` runs are this item's SPX reference);
+  items 43 and 50 (width on SPX); item 59 (an IWM condor at 45 days, a different rule).
+- **Rival explanations, each with its check:**
+  - *The width, not the symbol:* a 10-point NDX wing is a far narrower structure, relative to price,
+    than SPX's 10. **Check:** each symbol runs at its SPX-equivalent width (10 points scaled by price:
+    QQQ 1, NDX 40) and at today's config width (QQQ 5, NDX 10); each is judged on its own.
+  - *Costs on a wider market:* NDX's 0DTE spreads are wider than SPX's in points and as a share of
+    credit. **Check:** the verdict fill is the module's own (an eighth of each leg's spread from mid);
+    the convention's stress, halfway from mid to the natural fill, is reported beside it in the design
+    window; the arm's net must stay positive at 1.5× fees.
+  - *Physical settlement:* QQQ is American-style and physically settled, so a side held into the close
+    risks assignment. **Check:** the replay runs paper's own rule (QQQ force-closed from 15:30 with its
+    modelled exit friction and pin penalty); entries still open at the session's end are counted and
+    reported per arm, and any such entry is a fault, not a settlement.
+  - *Paying more by risking more:* **Check:** net over buying power reported beside SPX `live-1400`'s
+    over the same sessions.
+  - *The store's strike window:* **Check:** a coverage step first reports each symbol's sessions, its
+    strike spacing near spot and the share of hourly 16-delta shorts whose wing is quoted.
+  - *A calm span:* **Check:** positive in both time-halves.
+  - *Searching a grid:* **Check:** Holm across the four arms; the arms are fixed here.
+- **The structure:**
+  - Each arm is item 23's `live-1400`: the registry's `pm-200` (16 delta, per-side stop at 2× the whole
+    credit, 30-minute spacing, its credit floor and call-delta ceilings) with entries 14:00–14:30, so one
+    condor a session. `symbols` is set to the one symbol and `wing_width_points` to the arm's width.
+  - **Judged:** `q1` and `q5` on QQQ, `n40` and `n10` on NDX.
+  - **Reported, never judged:** each arm's stress-fill twin (design window only); `control`, which the
+    runner requires, pointed at the symbol; SPX `live-1400` from item 23's recorded runs.
+  - The VIX inputs stay VIX's: the delta band and the IV-rank proxy read the market's volatility, not
+    VXN or the ETF's own. A declared limit, not a tuning.
+- **Costs:** MEIC paper's own model: fees from `core.fees` per symbol, the module's slippage share,
+  stops filled under the replay's fill model; NDX cash-settled at the store's close; QQQ closed before
+  the bell as paper closes it.
+- **Measured:** each session's summed net per arm, in dollars at one condor; each session's buying power
+  per arm from the run's ledgers; the correlation of each arm's session nets with SPX `live-1400`'s.
+- **Window and sample:** the backtest's own windows over each symbol's wide 60 s vendor store
+  (`QQQ-60s-wide.db`, `NDX-60s-wide.db`, 40 strikes each side).
+  - **Design:** 2022-05-16 to 2025-06-30. **Holdout:** 2025-07-01 to 2026-10-12, run straight after the
+    design whatever it shows. It counts toward a pass only after a design pass.
+  - Only sessions with a same-day expiry exist for a symbol, so the early part of each window holds
+    fewer sessions than SPX's.
+  - Neither symbol has run on either window under this rule, so both are out of sample.
+  - **Both runs are provisional, and stay so:** MEIC validation has not unlocked, and these symbols
+    cannot unlock at all, since there is no paper record of them to validate against. The holdout
+    spends once per arm through `unvalidated_holdout`.
+  - Fewer than 100 sessions in a window is no verdict.
+- **Pass-or-fail rule**, per arm, all must hold:
+  - the arm's own mean session net above zero with a one-sided t above 2 (a session with no entry counts
+    at zero);
+  - Holm across the four arms;
+  - positive in each time-half of the window;
+  - still positive at **1.5× fees**;
+  - then the holdout: mean above zero with a one-sided t above 2.
+- **Declared limits (B11):** 60 s ticks; VIX stands in for each symbol's own volatility; strikes beyond
+  the stored 40 do not exist here; a stop fills under the fill model, not a recorded fill; QQQ's
+  exit friction is paper's model, never a measured assignment; the settlement print for NDX is the
+  store's close.
+- **Name split (B9):** does not apply; each symbol is judged on its own.
+- **Data:** two new stores, declared in `stores.STORES` and fetched by the research queue's
+  `fetch-sessions` with `dataset` QQQ and NDX (`store_tag` wide). `scripts/meic_symbols_item68.py --step
+  coverage`, then `--step study --window design|holdout`, builds a scratch MEIC arm registry per symbol
+  from the machine's and runs `cherrypick.backtest.runner`. Results go under the backtest data directory
+  only; this plan records the verdict.
+- **Decides:**
+  - **A pass:** a proposal to add that symbol to a multi-symbol live loop at a declared boundary, once
+    the loop exists and MEIC validation has unlocked on SPX, with the symbol's own Gate 0 attestation
+    and kill criteria derived from its run. For QQQ, only after the physical-settlement work (escalated
+    closes before the bell, a held-into-expiry state, an assignment reconcile).
+  - **A fail:** the symbol is not added; MEIC live stays on SPX alone.
+  - Either way the correlation and the net over buying power beside SPX are read with the verdict:
+    they say whether a passing symbol adds to SPX or repeats it.
+- **Result:** not yet run.
 
 ## Not worth revisiting
 
