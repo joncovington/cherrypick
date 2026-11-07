@@ -33,7 +33,6 @@ describe("CrossTabGrid", () => {
     const html = text(
       <CrossTabGrid
         tab={tab([cell(["diffuse", "with"]), cell(["diffuse", "against"], { completionRate: 0.2 })])}
-        thinBelowSessions={3}
       />,
     );
     expect(html).toContain("color-mix(in srgb, var(--pos) 83%"); // 0.15 + 0.85 * 0.8
@@ -44,7 +43,7 @@ describe("CrossTabGrid", () => {
 
   it("greys a thin cell instead of colouring it, however high its rate", () => {
     const html = text(
-      <CrossTabGrid tab={tab([cell(["diffuse", "with"], { thin: true, completionRate: 0.9 })])} thinBelowSessions={3} />,
+      <CrossTabGrid tab={tab([cell(["diffuse", "with"], { thin: true, completionRate: 0.9 })])} />,
     );
     expect(html).toContain("var(--track)");
     expect(html).toContain(">thin<");
@@ -53,25 +52,23 @@ describe("CrossTabGrid", () => {
 
   it("lays the first dimension down the rows and the second across the columns", () => {
     const html = text(
-      <CrossTabGrid tab={tab([cell(["a", "x"]), cell(["b", "y"], { trades: 5 })])} thinBelowSessions={3} />,
+      <CrossTabGrid tab={tab([cell(["a", "x"]), cell(["b", "y"], { trades: 5 })])} />,
     );
     for (const bucket of ["a", "b", "x", "y"]) expect(html).toContain(`>${bucket}<`);
     expect(html).toContain("repeat(2,");
     expect(html).toContain("20 trades");
   });
 
-  it("falls back to win rate for a module with no completion concept, and says so", () => {
+  it("falls back to win rate for a module with no completion concept", () => {
     const html = text(
       <CrossTabGrid
         tab={tab([cell(["diffuse", "up_from_open"], { completed: null, completionRate: null, winRate: 0.5 })], [
           "gex",
           "trend",
         ])}
-        thinBelowSessions={3}
       />,
     );
     expect(html).toContain("color-mix(in srgb, var(--pos) 57%"); // 0.15 + 0.85 * 0.5
-    expect(html).toContain("Colour is win rate");
   });
   it("prints the writer's fragile and sign-change stamps, with their numbers in the title", () => {
     const html = text(
@@ -91,7 +88,6 @@ describe("CrossTabGrid", () => {
             history: { snapshots: 6, firstNet: 300, signChanges: 2 },
           }),
         ])}
-        thinBelowSessions={3}
       />,
     );
     expect(html).toContain(">fragile<");
@@ -105,7 +101,6 @@ describe("CrossTabGrid", () => {
     const html = text(
       <CrossTabGrid
         tab={tab([cell(["diffuse", "with"]), cell(["diffuse", "against"], { fragile: false, history: { snapshots: 4, firstNet: 10, signChanges: 0 } })])}
-        thinBelowSessions={3}
       />,
     );
     expect(html).not.toContain("var(--warn)");

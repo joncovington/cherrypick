@@ -35,19 +35,17 @@ export function ModuleCosts({
   const picked = <T extends { arm: string }>(rows: T[] | undefined): T[] =>
     (rows ?? []).filter((r) => matchesArm(r.arm, arm));
   return (
-    <div className="cards cards-wide">
-      <CostsView
-        arms={picked(costs.data?.arms)}
-        slippageInGross={costs.data?.slippageInGross ?? true}
-        since={costs.data?.since ?? null}
-        sinceLabel="the era's start"
-        sinceRows={picked(costs.data?.entryOutcomes)}
-        allRows={picked(costs.data?.entryOutcomesAll)}
-        loading={costs.isLoading}
-        premiumNote={NOTES[module].premium}
-        gateNote={NOTES[module].gates}
-        updatedAt={costs.dataUpdatedAt}
-      />
-    </div>
+    <CostsView
+      arms={picked(costs.data?.arms)}
+      slippageInGross={costs.data?.slippageInGross ?? true}
+      since={costs.data?.since ?? null}
+      sinceLabel="the era's start"
+      sinceRows={picked(costs.data?.entryOutcomes)}
+      allRows={picked(costs.data?.entryOutcomesAll)}
+      loading={costs.isLoading}
+      premiumNote={NOTES[module].premium}
+      gateNote={NOTES[module].gates}
+      updatedAt={costs.dataUpdatedAt}
+    />
   );
 }

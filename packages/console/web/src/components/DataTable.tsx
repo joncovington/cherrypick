@@ -232,6 +232,9 @@ interface DataCardProps {
   controls?: ReactNode;
   /** Extra class on the outer card — e.g. "view-fade" for a tab body that should fade in. */
   className?: string;
+  /** The card's explanation and its amber flag, as on `Card`. */
+  help?: CardHelpContent;
+  flag?: ReactNode;
   children: ReactNode;
 }
 
@@ -255,10 +258,12 @@ export function DataCard({
   controls,
   className,
   sort,
+  help,
+  flag,
   children,
 }: DataCardProps) {
   return (
-    <Card title={title} updatedAt={updatedAt} isError={isError} controls={controls} className={className}>
+    <Card title={title} updatedAt={updatedAt} isError={isError} controls={controls} className={className} help={help} flag={flag}>
       <div className={`table-scroll ${busy ? "table-busy" : ""}`}>
         <table
           className={`data-table ${numFrom !== undefined ? `num-from-${Math.min(numFrom, 6)}` : ""} ${tableClass}`}

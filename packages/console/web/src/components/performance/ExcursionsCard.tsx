@@ -1,11 +1,25 @@
 import { fmtMoney } from "../../lib/format";
 import type { ExcursionsResult } from "../../lib/api";
 import { Card } from "../DataTable";
+import { HelpSection, type CardHelpContent } from "../CardHelp";
 import { Tile } from "./Tile";
 import { ARM_COLORS } from "../chart/tokens";
 import { niceTicks } from "../chart/scales";
 import { AXIS_MUTED } from "../Charts";
 import { CHART_GRID, CHART_GRID_STRONG } from "../Charts";
+
+const EXCURSIONS_HELP: CardHelpContent = {
+  title: "Excursions (MAE / MFE)",
+  body: (
+    <HelpSection title="Reading the scatter">
+      <p>
+        MAE is the deepest a position went against its entry and MFE the best it got before close. Each point is one position: MAE across
+        (always at or below zero), MFE up (at or above zero), coloured by arm. A cluster near the origin closed near entry; one in the
+        far lower right swung wide both ways, without reading a table of rows.
+      </p>
+    </HelpSection>
+  ),
+};
 
 /**
  * MAE/MFE (docs/metrics-plan.md Phase 2) -- the deepest a position went against its entry and the
@@ -86,7 +100,7 @@ export function ExcursionsCard({ excursions }: { excursions: ExcursionsResult })
   }
 
   return (
-    <Card title="excursions (MAE / MFE)" collapseKey="performance-excursions">
+    <Card title="excursions (MAE / MFE)" collapseKey="performance-excursions" help={EXCURSIONS_HELP}>
       <div className="stats-grid">
         <Tile label="MAE median" value={fmtMoney(maeDistribution.median)} tone={maeDistribution.median === null ? "dim" : "neg"} n={maeDistribution.n} />
         <Tile label="MFE median" value={fmtMoney(mfeDistribution.median)} tone={mfeDistribution.median === null ? "dim" : "pos"} n={mfeDistribution.n} />
