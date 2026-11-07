@@ -18,7 +18,7 @@ import { PortfolioBoxContext, expiryBoxId } from "./portfolioBoxContext";
  * reach `open` through the context, whose default does nothing, so a card renders alone in a test.
  */
 
-interface Box {
+export interface Box {
   id: string;
   kicker: string;
   title: string;
@@ -100,7 +100,7 @@ function boxesFor(a: ManageAccount, rules: Record<string, unknown> | null | unde
   return out;
 }
 
-function BoxDialog({ boxes, index, onStep, onClose }: { boxes: Box[]; index: number; onStep: (to: number) => void; onClose: () => void }) {
+export function BoxDialog({ boxes, index, onStep, onClose }: { boxes: Box[]; index: number; onStep: (to: number) => void; onClose: () => void }) {
   const box = boxes[index]!;
   const [tabState, setTab] = useState<{ id: string; tab: string }>({ id: box.id, tab: box.tabs[0]?.id ?? "" });
   // A step to another lightbox opens on its first tab.

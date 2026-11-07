@@ -14,6 +14,8 @@ import { tone } from "./manageParts";
 
 export interface TradeCardLeg {
   buy: boolean;
+  /** The tag in place of BTO / STO: BTC / STC on a closing order. */
+  tag?: string;
   text: string;
   quote: string | null;
 }
@@ -33,10 +35,12 @@ export interface TradeCardModel {
   bar: number | null;
   barTitle: string;
   label: string;
-  open: { date: string; price: string };
+  open: { date: string; price: string; /** The step's word; "open" unless the order closed something. */ role?: string };
   legs: TradeCardLeg[];
   after: string[];
   foot: [string, string];
+  /** No measure to draw the bar against (a hand trade has no worst case): the track is left out. */
+  hideBar?: boolean;
   /** Shown for the reason in its foot, not offered: drawn faded. */
   faded?: boolean;
 }
@@ -71,9 +75,11 @@ export function TradeCard({ m }: { m: TradeCardModel }) {
           ))}
         </span>
       </span>
-      <span className="pos-bar" title={m.barTitle}>
-        <span className="pos-bar-fill tc-bar-cap" style={{ width: `${Math.max(0, Math.min(100, m.bar ?? 0))}%` }} />
-      </span>
+      {m.hideBar ? null : (
+        <span className="pos-bar" title={m.barTitle}>
+          <span className="pos-bar-fill tc-bar-cap" style={{ width: `${Math.max(0, Math.min(100, m.bar ?? 0))}%` }} />
+        </span>
+      )}
       <span className="pos-chain-label">{m.label}</span>
       <ol className="pos-chain" aria-label="the order that would open it">
         <li className="pos-step pos-step-open">
@@ -81,13 +87,13 @@ export function TradeCard({ m }: { m: TradeCardModel }) {
           <div className="pos-step-body">
             <div className="pos-step-head">
               <span className="pos-step-date">{m.open.date}</span>
-              <span className="pos-role">open</span>
+              <span className="pos-role">{m.open.role ?? "open"}</span>
               <span className="pos-step-price">{m.open.price}</span>
             </div>
             <ul className="pos-legs">
               {m.legs.map((l, j) => (
                 <li key={j} className="pos-leg">
-                  <span className={`pos-leg-act ${l.buy ? "is-buy" : "is-sell"}`}>{l.buy ? "BTO" : "STO"}</span>
+                  <span className={`pos-leg-act ${l.buy ? "is-buy" : "is-sell"}`}>{l.tag ?? (l.buy ? "BTO" : "STO")}</span>
                   <span>{l.text}</span>
                   {l.quote ? <span className="tc-leg-quote">{l.quote}</span> : null}
                 </li>
@@ -158,9 +164,11 @@ function TradeRows({ models }: { models: TradeCardModel[] }) {
             </span>
             <span className={`tr-cash ${tone(m.cash)}`}>{fmtCash(m.cash)}</span>
             <span className="tr-cap" title={m.barTitle}>
-              <span className="pos-bar">
-                <span className="pos-bar-fill tc-bar-cap" style={{ width: `${Math.max(0, Math.min(100, m.bar ?? 0))}%` }} />
-              </span>
+              {m.hideBar ? null : (
+                <span className="pos-bar">
+                  <span className="pos-bar-fill tc-bar-cap" style={{ width: `${Math.max(0, Math.min(100, m.bar ?? 0))}%` }} />
+                </span>
+              )}
               <span className="tr-cap-label">{m.label}</span>
             </span>
             <span className="tr-after">{m.after.join(" · ")}</span>

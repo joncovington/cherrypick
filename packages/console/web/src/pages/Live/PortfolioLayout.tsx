@@ -12,7 +12,7 @@ import { LadderCard, RiskMatrixCard } from "./ScenarioCards";
  * explains or audits a card opens from it as a lightbox (PortfolioBox.tsx) instead of taking a row.
  */
 
-export type Concept = "stand" | "income" | "dir" | "risk" | "room" | "add";
+export type Concept = "stand" | "income" | "dir" | "risk" | "room" | "add" | "live" | "hist";
 
 const NAME: Record<Concept, string> = {
   stand: "where the book stands",
@@ -21,6 +21,8 @@ const NAME: Record<Concept, string> = {
   risk: "movement risk",
   room: "room to act",
   add: "adding trades",
+  live: "live",
+  hist: "record",
 };
 
 /** `tag` names the section in the colour of `concept`, where another tab's own words fit better. */
