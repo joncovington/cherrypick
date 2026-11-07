@@ -2,9 +2,43 @@ import { useEffect, useRef } from "react";
 import { createChart, LineSeries, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import type { AdvisedPair, ModulePerformanceGroup } from "../../lib/api";
 import { Card } from "../DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../CardHelp";
 import { canvasPalette as _pal } from "../chart/cssvars";
 
 const PAL = _pal();
+
+/** The pair card's ?: what was paired and how, with the underpowered and legacy-row warnings leading. */
+function pairedHelp(pair: AdvisedPair): CardHelpContent {
+  return {
+    title: "An advised arm against its base",
+    body: (
+      <>
+        {pair.underpowered === true && (
+          <HelpWarn title="Underpowered">
+            <p>Below the promotion gate&apos;s sample and day thresholds.</p>
+          </HelpWarn>
+        )}
+        {pair.unstamped && (
+          <HelpWarn title="Legacy rows">
+            <p>
+              These are legacy advised:&lt;base&gt; rows no experiment claims, and may span several experiments; the Advisor page&apos;s
+              verdicts are the per-experiment read for this history.
+            </p>
+          </HelpWarn>
+        )}
+        <HelpSection title="What is paired">
+          <p>
+            {pair.sessionsPaired} session{pair.sessionsPaired === 1 ? "" : "s"} paired
+            {pair.experimentName !== null && <> · {pair.experimentName}</>}
+            {pair.experimentId !== null && <> · {pair.experimentId}</>}
+            {pair.attribution === "stamp" && <> (from the stamp on its rows)</>}. The dashed line is advised minus base, on the sessions
+            both books traded; above zero the overlay is ahead.
+          </p>
+        </HelpSection>
+      </>
+    ),
+  };
+}
 
 /**
  * One experiment's advised book against the base it shadows: both cumulative curves, plus their
@@ -110,27 +144,9 @@ export function PairedABCard({
     <Card
       title={`${pair.advised} vs ${pair.base}`}
       collapseKey={`performance-ab-${pair.advised}`}
-      controls={
-        pair.underpowered === true ? (
-          <span className="chip chip-warn" title="Below the promotion gate's sample and day thresholds">
-            underpowered
-          </span>
-        ) : undefined
-      }
+      help={pairedHelp(pair)}
+      flag={pair.underpowered === true ? "underpowered" : undefined}
     >
-      <p className="muted" style={{ fontSize: 11, marginBottom: "0.4rem" }}>
-        {pair.sessionsPaired} session{pair.sessionsPaired === 1 ? "" : "s"} paired
-        {pair.experimentName !== null && <> · {pair.experimentName}</>}
-        {pair.experimentId !== null && <> · {pair.experimentId}</>}
-        {pair.attribution === "stamp" && <> (from the stamp on its rows)</>}
-        {pair.unstamped && (
-          <>
-            {" "}
-            · legacy advised:&lt;base&gt; rows no experiment claims — may span several experiments; the
-            Advisor page's verdicts are the per-experiment read for this history
-          </>
-        )}
-      </p>
       {/* Always mounted, even at sessionsPaired=0 -- the chart mount effect runs once on mount
           (deps: []), so a host div that only appears once sessionsPaired later goes positive
           would leave the chart never created. The empty state is the message below the chart, not
