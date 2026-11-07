@@ -6128,6 +6128,17 @@ untouched sample of the same trade. Declared before any weekly path is fetched.*
   - **A fail:** item 46's pass is read as a lone corner, and the variance-premium question closes for
     these tenors.
 
+- **Result (2026-11-07): pass, the unhedged arm; the hedged arm fails.**
+  The unhedged arm clears every check: its mean is above zero with the Newey-West p passing Holm
+  at 0.025, above zero in both time-halves and at 1.5x costs, and on at least three of the four
+  names, as the rule needs. The hedged arm is below zero before the cost stress. No cycle expires
+  after 2026-10-30 yet, so the forward read is still empty. The declared limits stand: early
+  assignment on the ETF puts is not modelled, a crash the sample lacks is not priced, and the names
+  are today's choice. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item57/`).
+- **What this decides:** the pass branch. A paper arm needs a home, a module that sells it, and
+  that is the user's choice; nothing changes until then. The forward cycles are read as they finish.
+
 ### 58. The closing fly: a 0DTE SPX iron fly sold at 15:55 and held to the settlement
 
 *Source: a review of third-party community backtests on 2026-11-07 (kept local, per the source's
@@ -6318,6 +6329,16 @@ Declared here before any of the fetched paths are read. The fetch is item 59's
     with the robustness report.
   - **A fail or no verdict:** closes the 45-day index condor as specified, beside items 14 to 16.
 
+- **Result (2026-11-07, provisional): fail.**
+  Strictly no verdict: more than 5% of the design entries have no exit mark (no session before
+  expiry with all four legs quoted). The fail holds however those trades ended: even with each one
+  kept whole at the sample's average credit, the one-sided t misses 2, and on the trades read it
+  misses by far more. The holdout was not read. Every figure is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item59/`).
+- **What this decides:** the fail branch: the 45-day index condor is closed as specified, beside
+  items 14 to 16. Re-fetching the cycles without an exit mark could make the verdict clean; it
+  would not make it a pass.
+
 ### 60. FOMC expected-move flies: two short iron flies at the expected move, sold before the 14:00 statement
 
 *Source: the 2026-11-07 review of a third-party community board of live-traded bot rules (kept local;
@@ -6487,6 +6508,15 @@ item 59's fetch and runs through item 59's script.*
     robustness report, for the user to review. manage gives advice only; nothing is placed.
   - **A fail or no verdict:** records that an early fixed exit does not improve the 45-day index
     condor. manage's 50%-or-21-days rule stands.
+
+- **Result (2026-11-07, provisional): fail.**
+  Strictly no verdict, through item 59's missing exit marks in the base arm. The stop arm's own
+  mean net is below zero at 1.5x costs on the cycles read, and the missing cycles could not lift it
+  above zero: each would have to keep about its whole credit within seven days. The paired
+  difference also runs against the stop, in both time-halves. The holdout was not read. Every
+  figure is in the local result (`~/.cherrypick/data/backtest/results/research/item63/`).
+- **What this decides:** the fail branch: an early fixed exit does not improve the 45-day index
+  condor, and manage's 50%-or-21-days rule stands.
 
 ### 64. Defined-risk bullish structures on slow large caps, against holding the same delta in shares
 
@@ -6758,6 +6788,16 @@ judged historically. Declared here before the study is run; no chain is fetched 
     read on the next season, and a proposal follows at a declared boundary.
   - **A fail:** the module's paper arm for that strategy is the same losing rule item 31 found, now with
     the trades paper takes, and the redesign or retirement question returns to the user.
+
+- **Result (2026-11-07): fail, all three arms.**
+  In the design window each arm beats its own control on the paired difference, so the report
+  carries information, but no arm's own net clears its bar: the iron fly and the iron condor are
+  below zero, and the directional credit spread is above zero without reaching a t of 2. Every
+  figure, the holdout and the admission split included, is in the local result
+  (`~/.cherrypick/data/backtest/results/research/item67/`).
+- **What this decides:** the fail branch: the module's paper arms are the same losing rule item 31
+  found, now with the trades paper takes, and the redesign or retirement question returns to the
+  user.
 
 ### 68. MEIC's live rule on QQQ and NDX: a second symbol for the live loop
 

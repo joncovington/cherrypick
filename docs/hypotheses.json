@@ -2246,7 +2246,7 @@
       "id": 57,
       "study": "item57",
       "title": "Item 46's lone pass out of sample: the index 10-delta put at 7 days on the weekly expiries item 46 never read, hedged and unhedged",
-      "status": "declared",
+      "status": "passed",
       "legacy": false,
       "setup": "variance-premium",
       "side": "neutral",
@@ -2288,10 +2288,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#57-item-46s-lone-pass-out-of-sample-the-index-10-delta-put-at-7-days-on-the-weekly-expiries-item-46-never-read-hedged-and-unhedged",
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item57/results.json"
+      ],
       "retest": null,
       "retest_note": "No yearly re-test: the forward read of cycles after 2026-10-30 is this study's own re-test, reported beside the verdict.",
-      "retests": []
+      "retests": [],
+      "outcome": "the unhedged arm passes every check over the weekly expiries item 46 never read; the hedged arm fails before the cost stress; a paper arm needs a module to sell it, the user's choice, and the forward cycles are read as they finish"
     },
     {
       "id": 58,
@@ -2347,7 +2350,7 @@
       "id": 59,
       "study": "item59",
       "title": "The 45-day IWM condor: 16-delta shorts, 5-delta wings, closed at half its credit or at 21 days",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "short-dated-management",
       "side": "neutral",
@@ -2381,10 +2384,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#59-the-45-day-iwm-condor-16-delta-shorts-5-delta-wings-closed-at-half-its-credit-or-at-21-days",
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item59/study-2016-01-01-2021-12-31.json",
+        "{home}/data/backtest/results/research/item59/trades-2016-01-01-2021-12-31.json"
+      ],
       "retest": null,
       "retests": [],
-      "outcome": null
+      "outcome": "provisional: strictly no verdict, more than 5% of design entries lacking an exit mark, but even the best case for those trades misses the t bar, so it fails; the 45-day index condor is closed as specified, beside items 14 to 16"
     },
     {
       "id": 60,
@@ -2494,7 +2500,7 @@
       "id": 63,
       "study": "item63",
       "title": "A 7-day time stop on item 59's condor, paired against its own exit",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "short-dated-management",
       "side": "neutral",
@@ -2528,10 +2534,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#63-a-7-day-time-stop-on-item-59s-condor-paired-against-its-own-exit",
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item63/study-2016-01-01-2021-12-31.json",
+        "{home}/data/backtest/results/research/item63/pairs-2016-01-01-2021-12-31.json"
+      ],
       "retest": null,
       "retests": [],
-      "outcome": null
+      "outcome": "provisional: strictly no verdict through item 59's missing exit marks, but the stop arm loses at 1.5x costs whatever those cycles did, and the paired difference runs against it in both halves; manage's 50%-or-21-days rule stands"
     },
     {
       "id": 64,
@@ -2650,7 +2659,7 @@
       "id": 67,
       "study": "item67",
       "title": "The earnings module's rule with paper's spread screen: does what paper actually trades earn after costs?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "earnings-premium",
       "side": "neutral",
@@ -2688,10 +2697,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#67-the-earnings-modules-rule-with-papers-spread-screen-does-what-paper-actually-trades-earn-after-costs",
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item67/results.json"
+      ],
       "retest": null,
       "retests": [],
-      "outcome": null
+      "outcome": "every arm beats its control on the paired difference but none earns after costs in the design window: the fly and condor lose, the credit spread misses the t bar; the module's paper arms repeat item 31's losing rule, and redesign or retirement returns to the user"
     },
     {
       "id": 68,
