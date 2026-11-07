@@ -5,7 +5,7 @@ import math
 
 import pytest
 
-from cherrypick.manage import portfolio, pricing, spotvol
+from cherrypick.manage import portfolio, spotvol
 from cherrypick.manage import rules as _rules
 
 RULES = _rules.DEFAULT_RULES
@@ -30,7 +30,17 @@ def _leg(qty, right, strike, dte=30, iv=0.20):
     }
 
 
-def _trade(underlying, spot, legs, tid, kind="credit", downside=None, shape="iron condor", short_dte=None, short_exp=None):
+def _trade(
+    underlying,
+    spot,
+    legs,
+    tid,
+    kind="credit",
+    downside=None,
+    shape="iron condor",
+    short_dte=None,
+    short_exp=None,
+):
     return {
         "trade_id": tid,
         "underlying": underlying,
@@ -45,7 +55,10 @@ def _trade(underlying, spot, legs, tid, kind="credit", downside=None, shape="iro
 
 
 def _metrics(**betas):
-    out = {"SPY": {"last": "500", "beta": "1.0", "corr_spy_3month": "1.0", "iv_index": "0.20"}, "VIX": {"last": "20"}}
+    out = {
+        "SPY": {"last": "500", "beta": "1.0", "corr_spy_3month": "1.0", "iv_index": "0.20"},
+        "VIX": {"last": "20"},
+    }
     for sym, beta in betas.items():
         out[sym] = {"beta": str(beta), "corr_spy_3month": "0.9"}
     return out
@@ -98,7 +111,12 @@ def _condor():
     return _trade(
         "SPY",
         500.0,
-        [_leg(-1, "P", 470.0, iv=0.26), _leg(1, "P", 465.0, iv=0.27), _leg(-1, "C", 530.0, iv=0.15), _leg(1, "C", 535.0, iv=0.14)],
+        [
+            _leg(-1, "P", 470.0, iv=0.26),
+            _leg(1, "P", 465.0, iv=0.27),
+            _leg(-1, "C", 530.0, iv=0.15),
+            _leg(1, "C", 535.0, iv=0.14),
+        ],
         "SPY-1",
         downside=-420.0,
     )
@@ -159,7 +177,12 @@ def _book():
     dia = _trade(
         "DIA",
         400.0,
-        [_leg(-1, "P", 365.0, iv=0.30), _leg(1, "P", 355.0, iv=0.31), _leg(-1, "C", 420.0, iv=0.18), _leg(1, "C", 430.0, iv=0.17)],
+        [
+            _leg(-1, "P", 365.0, iv=0.30),
+            _leg(1, "P", 355.0, iv=0.31),
+            _leg(-1, "C", 420.0, iv=0.18),
+            _leg(1, "C", 430.0, iv=0.17),
+        ],
         "DIA-1",
         downside=-700.0,
     )
@@ -200,7 +223,7 @@ def test_a_trade_over_the_cap_is_modelled_at_the_cap():
     assert idea["header"] == "The SPY iron condor is bigger than one trade should be"
     full = idea["effect"]["before"]
     half = idea["effect"]["after"]
-    for b, a in zip(full, half):
+    for b, a in zip(full, half, strict=True):
         assert a == pytest.approx(b / 2, abs=0.02)
     assert idea["effect"]["theta_after"] == pytest.approx(idea["effect"]["theta_before"] / 2, abs=0.01)
 
@@ -209,12 +232,15 @@ def test_the_cheap_call_side_is_named_and_dropping_it_is_modelled():
     spy, dia = _book()
     idea = _ideas([spy, dia])["call_side"]
     assert idea["subheader"] == "SPY and DIA: calls sold at 15-18% implied vol, puts at 26-30%"
-    puts_only = [_trade("SPY", 500.0, [l for l in spy["legs"] if l["right"] == "P"], "x"), _trade("DIA", 400.0, [l for l in dia["legs"] if l["right"] == "P"], "y")]
+    puts_only = [
+        _trade("SPY", 500.0, [leg for leg in spy["legs"] if leg["right"] == "P"], "x"),
+        _trade("DIA", 400.0, [leg for leg in dia["legs"] if leg["right"] == "P"], "y"),
+    ]
     expect = _read(puts_only, metrics=_metrics(DIA=1.2))["scenarios"]["matrix"][1]["pnl"]
     assert idea["effect"]["after"] == expect
     # Calls priced near the puts: no idea.
-    for l in spy["legs"] + dia["legs"]:
-        l["iv"] = 0.25
+    for leg in spy["legs"] + dia["legs"]:
+        leg["iv"] = 0.25
     assert "call_side" not in _ideas([spy, dia])
 
 

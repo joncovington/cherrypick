@@ -487,7 +487,8 @@ def realistic_shifts(curve: list[dict[str, Any]] | None, vix: float | None) -> l
     if curve is None or not vix:
         return None
     return [
-        None if c["vix_multiple"] is None else round(vix / 100.0 * (c["vix_multiple"] - 1.0), 5) for c in curve
+        None if c["vix_multiple"] is None else round(vix / 100.0 * (c["vix_multiple"] - 1.0), 5)
+        for c in curve
     ]
 
 
@@ -505,7 +506,7 @@ def matrix_row(
         None
         if shift is None
         else round(book_pnl(rows, bench_spot, rate, move, shift, years_ahead, weighted)[0], 2)
-        for move, shift in zip(moves, shifts)
+        for move, shift in zip(moves, shifts, strict=True)
     ]
 
 
@@ -582,7 +583,10 @@ def scenarios(
             matrix
             if h == 0
             else [
-                {"iv_shift": shift, "pnl": matrix_row(rows, bench_spot, rate, moves, [shift] * len(moves), ahead, weighted)}
+                {
+                    "iv_shift": shift,
+                    "pnl": matrix_row(rows, bench_spot, rate, moves, [shift] * len(moves), ahead, weighted),
+                }
                 for shift in shifts
             ]
         )

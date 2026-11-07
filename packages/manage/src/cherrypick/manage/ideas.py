@@ -32,8 +32,9 @@ published evidence behind them.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
-from typing import Any, Callable
+from typing import Any
 
 ORDER = ("index_bucket", "short_dated_theta", "trade_size", "call_side", "expiry_cluster")
 WORDS = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
@@ -139,17 +140,27 @@ def suggest(
         total = -sum(_down(t) for t in held)
         if len(unds) >= 2 and total > float(c["max_pct_nlv"]) * nlv:
             big = held[0]
-            also = f" The {_what(big)} is over the per-trade cap on its own as well." if -_down(big) > cap else ""
+            also = (
+                f" The {_what(big)} is over the per-trade cap on its own as well."
+                if -_down(big) > cap
+                else ""
+            )
+            n = _count(len(held))
+            budget = _pct(float(c["max_pct_nlv"]))
             found["index_bucket"] = {
                 "key": "index_bucket",
                 "header": f"{_names(unds)} are one bet",
-                "subheader": f"{_count(len(held))} trades can lose {_money(total)} together: {_pct(total / nlv)} of "
-                f"net liq, against a {_pct(float(c['max_pct_nlv']))} budget for broad-index risk",
-                "explanation": "These indexes rise and fall together, so a sharp move reaches every one of these "
-                f"trades on the same day: they behave like one position {_count(len(held))} times the size. "
-                "Holding fewer of them, and putting the risk that frees up into names that move differently "
-                "(Treasuries, gold, energy, markets abroad), shrinks both edges of the matrix without giving up "
-                f"selling premium.{also}",
+                "subheader": (
+                    f"{n} trades can lose {_money(total)} together: {_pct(total / nlv)} of net liq, "
+                    f"against a {budget} budget for broad-index risk"
+                ),
+                "explanation": (
+                    "These indexes rise and fall together, so a sharp move reaches every one of "
+                    f"these trades on the same day: they behave like one position {n} times the "
+                    "size. Holding fewer of them, and putting the risk that frees up into names "
+                    "that move differently (Treasuries, gold, energy, markets abroad), shrinks both "
+                    f"edges of the matrix without giving up selling premium.{also}"
+                ),
                 "trades": [_tid(t) for t in held],
                 "effect": _effect(base, price, _close(big), f"closing the {_what(big)}", moves, basis),
             }
@@ -169,19 +180,28 @@ def suggest(
         if heavy:
             t = max(heavy, key=lambda t: trade_theta.get(id(t), 0.0))
             th, dte, exp = trade_theta[id(t)], t["nearest_short_dte"], t.get("nearest_short_expiry")
-            shorts = [l for l in t.get("legs") or [] if (l.get("quantity") or 0) < 0 and l.get("expiration") == exp]
-            strike = f"{shorts[0]['strike']:g}" if shorts and shorts[0].get("strike") is not None else "its strike"
+            shorts = [
+                leg
+                for leg in t.get("legs") or []
+                if (leg.get("quantity") or 0) < 0 and leg.get("expiration") == exp
+            ]
+            strike = (
+                f"{shorts[0]['strike']:g}" if shorts and shorts[0].get("strike") is not None else "its strike"
+            )
             days = "day" if dte == 1 else f"{_count(dte)} days" if dte <= 10 else f"{dte} days"
             found["short_dated_theta"] = {
                 "key": "short_dated_theta",
                 "header": f"Much of the income is {t['underlying']}'s last {days}",
                 "subheader": f"the {_what(t)} pays {_money(th)} of the book's {_money(theta)} a day"
                 + (f", from a short leg that expires {_day(exp)}" if exp else ""),
-                "explanation": "An option loses value fastest in its final days, so this one short leg makes the "
-                "whole book's income look bigger than it is: once it expires the book earns about "
-                f"{_money(theta - th)} a day. That fast decay is paid for in risk, since the trade loses if "
-                f"{t['underlying']} moves well away from {strike} before then. Judge the book's income without it, "
-                "and give this trade its own exit plan for its last days.",
+                "explanation": (
+                    "An option loses value fastest in its final days, so this one short leg makes "
+                    "the whole book's income look bigger than it is: once it expires the book earns "
+                    f"about {_money(theta - th)} a day. That fast decay is paid for in risk, since "
+                    f"the trade loses if {t['underlying']} moves well away from {strike} before "
+                    "then. Judge the book's income without it, and give this trade its own exit "
+                    "plan for its last days."
+                ),
                 "trades": [_tid(t)],
                 "effect": _effect(base, price, _close(t), f"closing the {_what(t)}", moves, basis),
             }
@@ -199,7 +219,7 @@ def suggest(
             sizes = [f"{_money(-_down(t))} ({_pct(-_down(t) / nlv)})" for t in over]
             each = f"the {_what(over[0])} can lose {sizes[0]}" + "".join(
                 f"{' and' if i == len(over) - 1 else ','} the {_what(t)} {s}"
-                for i, (t, s) in enumerate(zip(over[1:], sizes[1:]), start=1)
+                for i, (t, s) in enumerate(zip(over[1:], sizes[1:], strict=True), start=1)
             )
             one = len(over) == 1
             found["trade_size"] = {
@@ -208,11 +228,13 @@ def suggest(
                 if one
                 else f"{_count(len(over), True)} trades are bigger than one trade should be",
                 "subheader": f"{each}: over the cap of {_pct(cap_pct)} of net liq a trade ({_money(cap)})",
-                "explanation": f"If {'this trade goes' if one else 'one of these goes'} fully wrong it costs more "
-                "than the plan allows any single idea to cost. Trading smaller (fewer contracts, or narrower "
-                "wings) keeps one bad call from setting the account back weeks, and leaves room to act on the "
-                "next one. The figures below show the book with "
-                f"{'it' if one else 'each'} sized down to the cap.",
+                "explanation": (
+                    f"If {'this trade goes' if one else 'one of these goes'} fully wrong it costs "
+                    "more than the plan allows any single idea to cost. Trading smaller (fewer "
+                    "contracts, or narrower wings) keeps one bad call from setting the account back "
+                    "weeks, and leaves room to act on the next one. The figures below show the book "
+                    f"with {'it' if one else 'each'} sized down to the cap."
+                ),
                 "trades": [_tid(t) for t in over],
                 "effect": _effect(
                     base, price, scale, f"{'it' if one else 'each'} sized down to {_money(cap)}", moves, basis
@@ -227,8 +249,16 @@ def suggest(
             if t.get("kind") != "credit":
                 continue
             legs = t.get("legs") or []
-            sc = [l["iv"] for l in legs if l.get("right") == "C" and (l.get("quantity") or 0) < 0 and l.get("iv")]
-            sp = [l["iv"] for l in legs if l.get("right") == "P" and (l.get("quantity") or 0) < 0 and l.get("iv")]
+            sc = [
+                leg["iv"]
+                for leg in legs
+                if leg.get("right") == "C" and (leg.get("quantity") or 0) < 0 and leg.get("iv")
+            ]
+            sp = [
+                leg["iv"]
+                for leg in legs
+                if leg.get("right") == "P" and (leg.get("quantity") or 0) < 0 and leg.get("iv")
+            ]
             if not sc or not sp:
                 continue
             ci, pi = sum(sc) / len(sc), sum(sp) / len(sp)
@@ -236,8 +266,9 @@ def suggest(
                 picked.append(t)
                 call_ivs.append(ci)
                 put_ivs.append(pi)
-                scale.update({id(l): 0.0 for l in legs if l.get("right") == "C"})
+                scale.update({id(leg): 0.0 for leg in legs if leg.get("right") == "C"})
         if picked:
+
             def span(xs: list[float]) -> str:
                 lo, hi = round(min(xs) * 100), round(max(xs) * 100)
                 return f"{lo}%" if lo == hi else f"{lo}-{hi}%"
@@ -245,14 +276,19 @@ def suggest(
             found["call_side"] = {
                 "key": "call_side",
                 "header": "The call side is the cheap side",
-                "subheader": f"{_names([t['underlying'] for t in picked])}: calls sold at {span(call_ivs)} implied "
-                f"vol, puts at {span(put_ivs)}",
-                "explanation": "Puts cost more than calls because investors pay up for crash protection, and that "
-                "extra is the premium worth selling. The call spreads here collect far less for a loss of a "
-                "similar size, and in the suite's own credit-spread studies call spreads lost at every delta "
-                "tested, since markets tend to drift up. Selling the put side alone (or a smaller call side) on "
-                "new trades removes most of the risk to a rally, but moves some of it to a fall: pair it with less "
-                "broad-index risk in total, and accept a book that leans slightly bullish.",
+                "subheader": (
+                    f"{_names([t['underlying'] for t in picked])}: calls sold at {span(call_ivs)} "
+                    f"implied vol, puts at {span(put_ivs)}"
+                ),
+                "explanation": (
+                    "Puts cost more than calls because investors pay up for crash protection, and "
+                    "that extra is the premium worth selling. The call spreads here collect far less "
+                    "for a loss of a similar size, and in the suite's own credit-spread studies call "
+                    "spreads lost at every delta tested, since markets tend to drift up. Selling the "
+                    "put side alone (or a smaller call side) on new trades removes most of the risk "
+                    "to a rally, but moves some of it to a fall: pair it with less broad-index risk "
+                    "in total, and accept a book that leans slightly bullish."
+                ),
                 "trades": [_tid(t) for t in picked],
                 "effect": _effect(base, price, scale, "the same trades without their calls", moves, basis),
             }
@@ -264,26 +300,31 @@ def suggest(
             (
                 x
                 for x in (reading.get("ladder") or {}).get("expiries") or []
-                if len(x.get("trades") or []) >= 2 and -float(x.get("downside") or 0.0) > float(c["max_pct_nlv"]) * nlv
+                if len(x.get("trades") or []) >= 2
+                and -float(x.get("downside") or 0.0) > float(c["max_pct_nlv"]) * nlv
             ),
             key=lambda x: x["expiration"],
         )
         if heavy:
             parts = "; ".join(
-                f"{_day(x['expiration'])}: {_count(len(x['trades']))} trades, {_money(-float(x['downside']))} "
-                f"({_pct(-float(x['downside']) / nlv)})"
+                f"{_day(x['expiration'])}: {_count(len(x['trades']))} trades, "
+                f"{_money(-float(x['downside']))} ({_pct(-float(x['downside']) / nlv)})"
                 for x in heavy
             )
+            first = heavy[0]
+            target = _pct(float(c["max_pct_nlv"]))
             found["expiry_cluster"] = {
                 "key": "expiry_cluster",
-                "header": f"{_count(len(heavy[0]['trades']), True)} trades expire on {_day(heavy[0]['expiration'])}"
+                "header": f"{_count(len(first['trades']), True)} trades expire on {_day(first['expiration'])}"
                 if len(heavy) == 1
                 else f"{_count(len(heavy), True)} expiry dates each carry too much of the book",
-                "subheader": f"{parts}: over the {_pct(float(c['max_pct_nlv']))} planning target for one expiry",
-                "explanation": "Everything that expires on the same day meets the same gap and the same closing "
-                "price. Placing new trades in the next monthly cycles instead (one batch a month, still 45 to 60 "
-                "days out) means one bad day reaches one batch rather than the whole book, and spreads the work "
-                "of managing them across the month.",
+                "subheader": f"{parts}: over the {target} planning target for one expiry",
+                "explanation": (
+                    "Everything that expires on the same day meets the same gap and the same closing "
+                    "price. Placing new trades in the next monthly cycles instead (one batch a month, "
+                    "still 45 to 60 days out) means one bad day reaches one batch rather than the "
+                    "whole book, and spreads the work of managing them across the month."
+                ),
                 "trades": [tid for x in heavy for tid in x["trades"]],
                 "effect": None,
             }

@@ -245,7 +245,8 @@ def test_a_stale_or_missing_income_reading_is_said_not_used(tmp_path):
 
 def test_the_spot_vol_history_is_both_files_closes_up_to_the_session(tmp_path):
     (tmp_path / "SPX.csv").write_text(
-        "DATE,SPX\n01/02/2026,6000.5\n01/05/2026,6010.0\n01/06/2026,6020.0\n11/09/2026,7000.0\n", encoding="utf-8"
+        "DATE,SPX\n01/02/2026,6000.5\n01/05/2026,6010.0\n01/06/2026,6020.0\n11/09/2026,7000.0\n",
+        encoding="utf-8",
     )
     (tmp_path / "VIX.csv").write_text(
         "DATE,OPEN,HIGH,LOW,CLOSE\n01/02/2026,15,16,14,15.5\n01/06/2026,16,17,15,16.25\n11/09/2026,20,21,19,20\n",
