@@ -29,6 +29,24 @@ import {
   verdictText,
 } from "../src/pages/Backtest/StudyCards";
 import { indexStudies, studyHref } from "../src/pages/Backtest/studyIndex";
+import { ListViewContext } from "../src/components/ViewSwitch";
+
+describe("the studies tab: rows", () => {
+  it("draws one row a study inside a card that chose rows, the running one first, from the tile's own words", () => {
+    const out = html(
+      <ListViewContext.Provider value="rows">
+        <StudyTiles rows={[row({}), BOARD.rows[0]!]} nowMs={NOW} onOpen={() => undefined} />
+      </ListViewContext.Provider>,
+    );
+    expect(out.match(/class="bt-row"/g)?.length).toBe(2);
+    expect(out).not.toMatch(/class="study-tile[ "]/);
+    expect(out.indexOf('data-study="item26"')).toBeLessThan(out.indexOf('data-study="item23"'));
+    // The verdict word keeps its tone; the running study names its step.
+    expect(out).toMatch(/study-tile-word tone-neg">[^<]*<\/span>/);
+    expect(out).toContain("fetch running · 0 of 1 steps done");
+    expect(out).toContain("The short delta of MEIC&#x27;s live rule");
+  });
+});
 
 /**
  * The Backtest page's studies tab (2026-10-29; as cards 2026-11-03): one tile per register item, in

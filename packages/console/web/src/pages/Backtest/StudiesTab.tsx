@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import type { BacktestOverview, StudiesBoard, StudyGroup, StudyRow } from "@console/shared";
 import { HelpSection, HelpWarn } from "../../components/CardHelp";
 import { Card } from "../../components/DataTable";
+import { ListViewContext, ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
 import { useBridged } from "../../lib/bridged";
 import { MiniMarkdown } from "../../lib/miniMarkdown";
 import { StudyCards, notesHref, notesName, planUrl } from "./StudyCards";
@@ -95,6 +96,7 @@ export function BacktestStudiesTab() {
   const ov = overview.data?.ok ? overview.data.data : null;
   const context = windowsLine(ov);
   const provisional = historyLocked(ov);
+  const [view, setView] = useViewChoice("backtest-studies");
   let body: ReactNode;
   if (isLoading) {
     body = (
@@ -134,6 +136,7 @@ export function BacktestStudiesTab() {
       updatedAt={dataUpdatedAt}
       isError={isError}
       flag={provisional ? "provisional history" : undefined}
+      controls={<ViewSwitch view={view} onChange={setView} />}
       help={{
         title: "Reading the studies",
         body: (
@@ -154,12 +157,13 @@ export function BacktestStudiesTab() {
             </HelpSection>
             <HelpSection title="Opening a card">
               <p>A card opens to its run&apos;s figures, pass test, rivals, per-arm verdicts, queue rows and links.</p>
+              <p>The switch in the card head lists the studies as rows, one line a study; a row opens the same card.</p>
             </HelpSection>
           </>
         ),
       }}
     >
-      {body}
+      <ListViewContext.Provider value={view}>{body}</ListViewContext.Provider>
     </Card>
   );
 }

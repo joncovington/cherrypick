@@ -22,6 +22,8 @@ import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./C
 import { GridBars } from "./GridBars";
 import { ReportTab } from "./StudyReport";
 import { WeekSummary, mondayOf, useStudyDigest } from "./StudyWeek";
+import { BtRows, type BtRow } from "./BtRows";
+import { useListView } from "../../components/ViewSwitch";
 import { TaskDetail, ago, etMs, etNowMs, queuePollMs, resultLine, stamp } from "./QueueTab";
 import { VERDICT_STATUSES, resultLabel, statusWord, studyHref, verdictChip } from "./studyIndex";
 
@@ -413,6 +415,44 @@ export function StudyTile({
       </span>
     </button>
   );
+}
+
+/** A study's tile on one line: its word, its title, the tile's small print and its age. */
+export function studyRow(row: StudyRow, nowMs: number, onOpen: () => void): BtRow {
+  const m = tileModel(row);
+  const when = ago(etMs(row.lastActivity), nowMs);
+  const lead =
+    m.kind === "verdict" ? (
+      <span className={`study-tile-word${m.tone ? ` tone-${m.tone}` : ""}`}>{m.word}</span>
+    ) : m.kind === "running" ? (
+      <span className="study-tile-status">
+        <span className={m.running ? "study-dot is-running" : "study-dot"} />
+        {m.running ? "Running" : "In progress"}
+      </span>
+    ) : (
+      <span className="study-tile-status muted">{m.kind === "declared" ? "Declared" : "Observation"}</span>
+    );
+  const meta = [
+    row.study,
+    m.kind === "verdict" ? m.arms : null,
+    m.kind === "running" ? `${m.step ?? "between steps"} · ${String(m.done)} of ${String(m.total)} steps done` : null,
+    m.meta,
+  ].filter((x): x is string => x !== null && x !== "");
+  return {
+    key: row.study,
+    label: `Open ${row.study}: ${row.title}`,
+    lead,
+    title: row.title,
+    meta: meta.join(" · "),
+    end: (
+      <>
+        {m.stale ? <StaleMark /> : null}
+        {when === "—" ? null : <span>{when}</span>}
+      </>
+    ),
+    data: { "data-study": row.study },
+    onOpen,
+  };
 }
 
 // --------------------------------------------------------------------------- the lightbox: run figures
@@ -909,8 +949,10 @@ export function StudyTiles({
   onOpen: (study: string) => void;
   summaries?: StudyRunSummaries | null;
 }) {
+  const view = useListView();
   if (rows.length === 0) return <p className="muted">No studies in this group.</p>;
   const hero = heroStudy(rows);
+  if (view === "rows") return <BtRows rows={laidOut(rows).map((r) => studyRow(r, nowMs, () => onOpen(r.study)))} />;
   const figuresOf = (r: StudyRow): TileFigures | null => {
     const id = figuresRun(r)?.runId;
     const run = id ? summaries?.runs[id] : undefined;
