@@ -439,7 +439,6 @@ function PortfolioAccount({ a, oversize }: { a: ManageAccount; oversize: number 
   return (
     <>
       <AccountTiles a={a} oversize={oversize} />
-      {a.limits ? <LimitsCard limits={a.limits} /> : null}
       {a.portfolio ? (
         <PortfolioCards
           p={a.portfolio}
@@ -452,6 +451,7 @@ function PortfolioAccount({ a, oversize }: { a: ManageAccount; oversize: number 
           no portfolio reading for this account in this evaluation
         </p>
       )}
+      {a.limits ? <LimitsCard limits={a.limits} /> : null}
     </>
   );
 }
