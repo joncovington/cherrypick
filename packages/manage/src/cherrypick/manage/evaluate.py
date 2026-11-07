@@ -273,6 +273,7 @@ def evaluate_trade(
     broker_greeks: dict[str, dict] | None = None,
     trade_id: str | None = None,
     roll_out: dict[str, Any] | None = None,
+    div_yield: float | None = None,
 ) -> dict[str, Any]:
     """`trade_id` is the trade's stable ID (tradeids.py): its own overrides (`trades.<ID>`: intent, note,
     disable) are read over the name's (`positions.<SYM>`).
@@ -284,7 +285,8 @@ def evaluate_trade(
     cycles holding this trade's legs (`_wheel_context`), which the wheel rules read; `pmcc_ctx` the PMCC
     view entries whose short this trade holds (`_pmcc_context`), which the PMCC rules read.
     `broker_greeks` is the snapshot's per-leg broker greeks, whose IV a leg with a wide quote takes.
-    `roll_out` is the snapshot's roll-out chains (v14), which a weekly short's roll is priced on."""
+    `roll_out` is the snapshot's roll-out chains (v14), which a weekly short's roll is priced on.
+    `div_yield` is the name's dividend yield (`_pmcc._yield`), which only the diagonal check carries."""
     metrics = metrics or {}
     spot = _f(metrics.get("last"))
     pr = rules["pricing"]
@@ -762,25 +764,18 @@ def evaluate_trade(
                 )
             )
 
-    # ---- a diagonal held for most of the distance between its strikes has little left to make
+    # ---- a diagonal with little left to make at the short's expiry
     dw = rules["debit"]["diagonal_width"]
     width = _diagonal_width(options) if trade["shape"] == "diagonal" else None
     if width and cost > 0 and not off("debit.diagonal_width"):
         share = float(dw["max_share_of_width"])
-        if cost > share * width:
+        check = _diagonal_check(
+            options, cost, width, share, float(dw["run_past_short_moves"]), spot, pr, div_yield
+        )
+        trade["diagonal_check"] = check
+        if check["flag"]:
             fired.append(
-                _fire(
-                    "debit.diagonal_width",
-                    REVIEW,
-                    dw["confidence"],
-                    f"${cost:,.0f} net debit is {cost / width:.0%} of the ${width:,.0f} between the strikes "
-                    f"(at most {share:.0%}): "
-                    + (
-                        "a deep move through the short loses money once the long's time value runs off"
-                        if cost >= width
-                        else "a deep move through the short leaves little to make"
-                    ),
-                )
+                _fire("debit.diagonal_width", REVIEW, dw["confidence"], _diagonal_reason(check, cost, share))
             )
 
     # ---- short legs that have given up most of their premium
@@ -1420,6 +1415,111 @@ def _diagonal_width(options: list[dict[str, Any]]) -> float | None:
         return None
     gap = short["strike"] - long["strike"] if long["right"] == "C" else long["strike"] - short["strike"]
     return gap * long["quantity"] * pricing.MULTIPLIER if gap > 0 else None
+
+
+def _diagonal_check(
+    options: list[dict[str, Any]],
+    cost: float,
+    width: float,
+    share: float,
+    moves: float,
+    spot: float | None,
+    pr: dict[str, Any],
+    div_yield: float | None = None,
+) -> dict[str, Any]:
+    """Whether a two-leg diagonal bought for `cost` has enough left to make, judged at the short's expiry.
+
+    Modelled (both legs at their own IV, the long with its time left): the best case must beat the net
+    by the margin `share` of the width allows, 1/share - 1 (a third at 75%), and the spread one expected
+    move (`moves` of them, the short's own IV) past the short strike must still be worth the net. With
+    the long at intrinsic its best case is the width and the first test is the width test itself, so a
+    long expiring soon after the short is judged as before; a long with years left keeps time value the
+    width ignores.
+
+    The rest of the evaluation ignores dividends; this check carries the name's yield (`div_yield`, the
+    year's dividends over today's price, as the PMCC view and the payoff chart read it), each leg's IV
+    re-solved from its mid with it and its value floored at intrinsic (early exercise). On a high-yield
+    name that matters most for the long: a long-dated call priced with no dividend has a floor of the
+    spot less the discounted strike, which its mid can sit under, and then no vol prices it at all.
+    Without a spot, or a leg no vol prices, it falls back to the width."""
+    long = next(leg for leg in options if leg["quantity"] > 0)
+    short = next(leg for leg in options if leg["quantity"] < 0)
+    rate, q = float(pr["rate"]), float(div_yield or 0.0)
+    ivs = {}
+    for leg in (long, short):
+        if q and spot and leg["mid"] is not None and leg["years"] > 0:
+            ivs[id(leg)] = pricing.implied_vol(
+                spot, leg["strike"], leg["years"], leg["mid"], leg["right"], rate, q
+            )
+        else:
+            ivs[id(leg)] = leg.get("iv")
+    if not spot or not ivs[id(long)] or not ivs[id(short)] or short["years"] <= 0:
+        return {"basis": "width", "width": width, "flag": cost > share * width, "loses": cost >= width}
+    horizon = short["years"]
+
+    def value(s: float) -> float:
+        total = 0.0
+        for leg in (long, short):
+            left = leg["years"] - horizon
+            unit = pricing.intrinsic(s, leg["strike"], leg["right"])
+            if left > 0:
+                unit = max(unit, pricing.price(s, leg["strike"], left, ivs[id(leg)], leg["right"], rate, q))
+            total += leg["quantity"] * pricing.MULTIPLIER * unit
+        return total
+
+    steps = 2000  # half to one and a half times the spot, 0.05% apart, as the price stop's band
+    best = max(value(spot * (0.5 + i / steps)) for i in range(steps + 1))
+    best = max(best, value(short["strike"]))  # the peak sits at the short strike; never miss it on the grid
+    move = spot * float(ivs[id(short)]) * math.sqrt(horizon) * moves
+    run_at = short["strike"] + move if short["right"] == "C" else short["strike"] - move
+    run_value = value(run_at)
+    thin = best < cost / share
+    run_loses = run_value < cost
+    return {
+        "basis": "modelled",
+        "width": width,
+        "horizon": short["expiration"],
+        "div_yield": div_yield,
+        "best": round(best, 2),
+        "run_at": round(run_at, 2),
+        "run_value": round(run_value, 2),
+        "thin": thin,
+        "run_loses": run_loses,
+        "loses": best < cost,
+        "flag": thin or run_loses,
+    }
+
+
+def _diagonal_reason(check: dict[str, Any], cost: float, share: float) -> str:
+    width = check["width"]
+    if check["basis"] == "width":
+        return (
+            f"${cost:,.0f} net debit is {cost / width:.0%} of the ${width:,.0f} between the strikes "
+            f"(at most {share:.0%}; no IV to model the long): "
+            + (
+                "a deep move through the short loses money once the long's time value runs off"
+                if check["loses"]
+                else "a deep move through the short leaves little to make"
+            )
+        )
+    parts = []
+    if check["loses"]:
+        parts.append(
+            f"modelled at the short's expiry ({check['horizon']}) its best case is ${check['best']:,.0f}, "
+            f"under the ${cost:,.0f} net debit: it loses money wherever the stock ends up"
+        )
+    elif check["thin"]:
+        parts.append(
+            f"modelled at the short's expiry ({check['horizon']}) its best case is ${check['best']:,.0f}, "
+            f"{check['best'] / cost - 1:.0%} over the ${cost:,.0f} net debit "
+            f"(at least {1 / share - 1:.0%}): little left to make"
+        )
+    if check["run_loses"]:
+        parts.append(
+            f"one expected move past the short, at {check['run_at']:,.2f}, it is worth "
+            f"${check['run_value']:,.0f}, under the net: a run through the short loses money"
+        )
+    return "; ".join(parts)
 
 
 def long_breakeven(longs: list[dict[str, Any]], basis: float) -> dict[str, float]:
@@ -2626,6 +2726,11 @@ def evaluate(
                     snapshot.get("broker_greeks"),
                     trade_id=ident["trade_id"],
                     roll_out=snapshot.get("roll_out_chains"),
+                    div_yield=_pmcc._yield(
+                        (snapshot.get("underlying_history") or {}).get(u["underlying"]),
+                        session.isoformat(),
+                        _f((metrics.get(u["underlying"]) or {}).get("last")),
+                    ),
                 )
                 trade["trade_id"] = ident["trade_id"]
                 trade["trade_id_provisional"] = ident["provisional"]
