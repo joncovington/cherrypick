@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type {
   AdvisorActiveExperiment,
@@ -185,12 +186,32 @@ function ArtifactEntries({ t }: { t: AdvisorApplyStatus }) {
             <ul className="muted">
               {e.proposals.map((p) => (
                 <li key={p.param}>
-                  {p.param} = {String(p.value)}
+                  <ParamName name={p.param} /> = {String(p.value)}
                 </li>
               ))}
             </ul>
           )}
         </div>
+      ))}
+    </>
+  );
+}
+
+/** A dotted param path that may break after each dot: "directional_credit_spread.close_losers_first_morning"
+ *  is one unbreakable word otherwise, and ran a phone-width card 80px past its edge. */
+export function ParamName({ name }: { name: string }) {
+  const parts = name.split(".");
+  return (
+    <>
+      {parts.map((part, i) => (
+        <Fragment key={i}>
+          {i > 0 && (
+            <>
+              .<wbr />
+            </>
+          )}
+          {part}
+        </Fragment>
       ))}
     </>
   );

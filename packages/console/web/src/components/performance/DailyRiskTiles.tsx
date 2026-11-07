@@ -1,4 +1,5 @@
 import { fmtMoney } from "../../lib/format";
+import { HelpSection, HelpWarn } from "../CardHelp";
 import { Tile } from "./Tile";
 import { TileGrid } from "./TileGrid";
 
@@ -53,11 +54,35 @@ export function DailyRiskTiles({ risk, maxDrawdown }: { risk: DailyRisk | undefi
         />
         <Tile label="sessions" value={risk === undefined ? "—" : String(n)} tone="dim" />
       </TileGrid>
-      <p className="muted lbl" style={{ marginTop: "0.5rem", marginBottom: 0 }}>
-        Annualised on 252 sessions from {n} of them, against a $100k drawing base the books do not trade.
-        {risk?.undersampledFlag === true && " Too few sessions for these ratios to mean anything yet; they describe this stretch, not the strategy."}
-        {risk?.sharpeOverfitFlag === true && " Sharpe above 3 on a sample this small is a warning about the sample, not a stronger pass."}
-      </p>
+    </>
+  );
+}
+
+/** The flag a card holding these tiles wears: a thin sample leads, then an implausible Sharpe. */
+export function dailyRiskFlag(risk: DailyRisk | undefined): string | undefined {
+  if (risk?.undersampledFlag === true) return "too few sessions";
+  if (risk?.sharpeOverfitFlag === true) return "sharpe on a small sample";
+  return undefined;
+}
+
+/** What the tiles are, for the card's ?: the warnings first when they apply, then how they are read. */
+export function dailyRiskNote(risk: DailyRisk | undefined) {
+  const n = risk?.sampleSize ?? 0;
+  return (
+    <>
+      {risk?.undersampledFlag === true && (
+        <HelpWarn title="Too few sessions">
+          <p>Too few sessions for these ratios to mean anything yet; they describe this stretch, not the strategy.</p>
+        </HelpWarn>
+      )}
+      {risk?.sharpeOverfitFlag === true && (
+        <HelpWarn title="Sharpe on a small sample">
+          <p>Sharpe above 3 on a sample this small is a warning about the sample, not a stronger pass.</p>
+        </HelpWarn>
+      )}
+      <HelpSection title="The ratios">
+        <p>Annualised on 252 sessions from {n} of them, against a $100k drawing base the books do not trade. Recovery factor is net P&amp;L over the largest daily drawdown.</p>
+      </HelpSection>
     </>
   );
 }

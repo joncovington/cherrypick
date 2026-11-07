@@ -539,7 +539,7 @@ function ProposalCard({
 export function PairTable({ pairs }: { pairs: AdvisorPair[] }) {
   return (
     <div className="table-scroll">
-      <table className="data-table data-table-labelled">
+      <table className="data-table">
         <thead>
           <tr>
             <th>Arm</th>
