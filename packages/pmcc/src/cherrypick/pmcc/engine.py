@@ -708,7 +708,10 @@ def leg_costs(
     )
     slips = allocate(
         ticket["slippage"],
-        [_fees.slippage_dollars([{"bid": leg["bid"], "ask": leg["ask"]}], quantity, config) for leg in legs],
+        [
+            _fees.slippage_dollars([{"bid": leg["bid"], "ask": leg["ask"]}], quantity, config, symbol=symbol)
+            for leg in legs
+        ],
     )
     return [{"fee": f, "slippage": s} for f, s in zip(fees, slips, strict=True)]
 

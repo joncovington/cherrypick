@@ -1103,6 +1103,7 @@ def cmd_run_closes(args) -> dict:
                 [leg_quotes[s] for s in leg_symbols],
                 quantity,
                 config,
+                symbol=trade.get("symbol"),
             )
             # Same legs list (action labels preserved from entry) -> this is the
             # same specific short contract(s)' IV, now, for a clean entry-vs-exit

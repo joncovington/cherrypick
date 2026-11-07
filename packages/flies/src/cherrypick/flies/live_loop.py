@@ -1162,7 +1162,9 @@ def run_once(
             if live:
                 symbols = [leg["symbol"] for leg in spec["legs"]]
                 fresh = broker.fresh_quotes(symbols)
-                new_price, info = live_orders.entry_fresh_reprice(spec, fresh, params.get("slippage_frac"))
+                new_price, info = live_orders.entry_fresh_reprice(
+                    spec, fresh, fly.slippage_frac(params, snapshot.get("symbol"))
+                )
                 tolerance = live_cfg.get("fresh_quote_tolerance_dollars", 0.05)
                 if new_price is None:
                     summary["skips"].append(

@@ -534,10 +534,11 @@ def settle_intrinsic(strike: float, spot: float, option_type: str = "put") -> fl
 
 
 # --------------------------------------------------------------------------- the fee stack
-def _slippage_dollars(leg_quotes: list[dict], config: dict) -> float:
-    """The suite's slippage model (12.5% of each leg's spread, capped at 15% of its mid)."""
+def _slippage_dollars(leg_quotes: list[dict], config: dict, symbol: str | None = None) -> float:
+    """The suite's slippage model (12.5% of each leg's spread, capped at 15% of its mid), at the
+    fraction core's lookup gives `symbol` (`fees.slippage_frac`)."""
     costs = {**_fees.DEFAULT_COSTS, **(config.get("tastytrade_costs") or {})}
-    frac = costs["slippage_frac_of_spread"]
+    frac = _fees.slippage_frac(symbol, config.get("tastytrade_costs"))
     cap = costs.get("slippage_cap_frac_of_mid")
     total = 0.0
     for q in leg_quotes:
@@ -552,14 +553,14 @@ def _slippage_dollars(leg_quotes: list[dict], config: dict) -> float:
 def entry_cost(symbol: str, leg_quotes: list[dict], quantity: int, config: dict) -> dict:
     """Cost of opening the base BWB (4 legs, 2 sold)."""
     fee = _fees.ic_open_fee(symbol, quantity, legs=4, sell_legs=2, ndigits=4)
-    slippage = _slippage_dollars(leg_quotes, config) * quantity
+    slippage = _slippage_dollars(leg_quotes, config, symbol) * quantity
     return {"fee": round(fee, 2), "slippage": slippage, "total": round(fee + slippage, 2)}
 
 
 def addon_entry_cost(symbol: str, leg_quotes: list[dict], quantity: int, config: dict) -> dict:
     """Cost of opening the add-on vertical (2 legs, 1 sold)."""
     fee = _fees.ic_open_fee(symbol, quantity, legs=2, sell_legs=1, ndigits=4)
-    slippage = _slippage_dollars(leg_quotes, config) * quantity
+    slippage = _slippage_dollars(leg_quotes, config, symbol) * quantity
     return {"fee": round(fee, 2), "slippage": slippage, "total": round(fee + slippage, 2)}
 
 

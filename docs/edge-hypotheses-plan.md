@@ -83,6 +83,13 @@ written are not re-judged. The arithmetic is `cherrypick.core.robustness`
   - The modules' own default (`DEFAULT_COSTS["slippage_frac_of_spread"]`) is not changed here. That is
     measurement-affecting for every paper module, so it is proposed at a declared boundary once MEIC
     live has 30 priced fills, with the per-structure fill measured from those fills.
+  - The boundary sets one symbol, not the suite: core looks a fraction up per symbol
+    (`fees.slippage_frac`), most specific first. The order is the caller's per-symbol entry, the
+    caller's flat fraction, then the suite's per-symbol entry
+    (`DEFAULT_COSTS["slippage_frac_of_spread_by_symbol"]`, empty today), then the suite's flat 0.125.
+    A caller's flat fraction outranks the suite's per-symbol entry, so a study's stress keeps its
+    value. It also means a module config that pins the flat 0.125 (MEIC's and earnings' examples do)
+    has to drop that pin at the same boundary, or it will never see the SPX entry.
 
 ## Data we already hold
 

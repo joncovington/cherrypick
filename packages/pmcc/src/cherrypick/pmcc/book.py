@@ -216,7 +216,8 @@ def _ticket(symbol: str, legs: list[dict], quantity: int, config: dict) -> tuple
         engine.leg_fee(symbol, quantity, opening=leg["opening"], selling=leg["selling"]) for leg in legs
     ]
     raw_slips = [
-        engine._slippage_dollars([{"bid": leg["bid"], "ask": leg["ask"]}], quantity, config) for leg in legs
+        engine._slippage_dollars([{"bid": leg["bid"], "ask": leg["ask"]}], quantity, config, symbol=symbol)
+        for leg in legs
     ]
     fee, slip = round(sum(raw_fees), 2), round(sum(raw_slips), 2)
     shares = [

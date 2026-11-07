@@ -50,7 +50,7 @@ def stamp(snapshot: dict, params: dict, anchor: dict) -> list[dict]:
     increment = params.get("strike_increment", 5)
     width = anchor["wing_width"]
     qty = anchor.get("quantity", 1)
-    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    slip = fly.slippage_frac(params, snapshot.get("symbol"))
     symbol = snapshot["symbol"]
     rows = []
     for direction in DIRECTIONS:
