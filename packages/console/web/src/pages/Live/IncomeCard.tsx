@@ -373,8 +373,8 @@ export function IncomeCard({ c: whole, netLiq = null }: { c: ManageCandidates | 
  */
 export function AddingTradesCard({ c, t, netLiq }: { c: ManageCandidates | null; t: ManageTimeSpreads | null; netLiq: number | null }) {
   const l = useIncomeList(c);
-  // It opens on income, unless no income trade fits and some time spread does.
-  const [tab, setTab] = useState<"income" | "spreads">(c && (c.fits.length > 0 || !t || t.fits.length === 0) ? "income" : "spreads");
+  // It opens on income whenever there is an income list (2026-11-06: the user's choice).
+  const [tab, setTab] = useState<"income" | "spreads">(c ? "income" : "spreads");
   if (!c && !t) return null;
   const btn = (id: "income" | "spreads", label: string, n: number | null) => (
     <button type="button" className={tab === id ? "mode-btn active" : "mode-btn"} aria-pressed={tab === id} onClick={() => setTab(id)}>

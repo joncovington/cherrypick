@@ -8553,3 +8553,73 @@ select.text-input {
 .pf-box-body .pos-cards {
   grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
 }
+/* ---------------------------------------------------------------------------------------------------
+   Selection toggles (2026-11-06, the "C + D" look the user chose): a group is one dark track; the
+   choice is a raised pill with a coloured underline. The underline is blue unless the choice means
+   something (`data-hue`: warn for needs action, special for rolled). It covers every .mode-toggle of
+   .mode-btn buttons and every group of pressable chips, so all pages change together. The paper/live
+   switch keeps its own sliding pill. */
+.mode-toggle:not(:has(> .mode-pill)),
+[role="group"]:has(> button.chip[aria-pressed]),
+.history-controls:has(> button.chip[aria-pressed]) {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--canvas);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  overflow: visible;
+}
+.mode-toggle:not(:has(> .mode-pill)) > .mode-btn,
+button.chip[aria-pressed] {
+  --hue: var(--accent);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.22rem 0.7rem;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.mode-toggle:not(:has(> .mode-pill)) > .mode-btn:hover,
+button.chip[aria-pressed]:hover {
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--hue) 45%, transparent);
+}
+.mode-toggle:not(:has(> .mode-pill)) > .mode-btn.active,
+button.chip[aria-pressed="true"] {
+  color: var(--text);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--hue) 10%, var(--surface-hover));
+  border-color: var(--border-strong);
+  box-shadow: inset 0 -3px 0 var(--hue);
+}
+button.chip[aria-pressed][data-hue="warn"],
+.mode-btn[data-hue="warn"] {
+  --hue: var(--warn);
+}
+button.chip[aria-pressed][data-hue="special"],
+.mode-btn[data-hue="special"] {
+  --hue: var(--chart-special);
+}
+.mode-toggle:not(:has(> .mode-pill)) > .mode-btn.mode-btn-live {
+  --hue: var(--accent-live);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mode-toggle > .mode-btn,
+  button.chip[aria-pressed] {
+    transition: none;
+  }
+}
+/* The positions tab's sort: its label beside the track, not inside it. */
+.pos-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

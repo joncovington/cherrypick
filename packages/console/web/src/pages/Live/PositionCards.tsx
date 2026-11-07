@@ -487,21 +487,23 @@ export function PositionCards({
           <button type="button" className={chip(filter === "all")} aria-pressed={filter === "all"} onClick={() => setParam("show", null)}>
             all {trades.length}
           </button>
-          <button type="button" className={chip(filter === "act")} aria-pressed={filter === "act"} onClick={() => setParam("show", "act")}>
+          <button type="button" className={chip(filter === "act")} data-hue="warn" aria-pressed={filter === "act"} onClick={() => setParam("show", "act")}>
             needs action {acting.length}
           </button>
-          <button type="button" className={chip(filter === "rolled")} aria-pressed={filter === "rolled"} onClick={() => setParam("show", "rolled")}>
+          <button type="button" className={chip(filter === "rolled")} data-hue="special" aria-pressed={filter === "rolled"} onClick={() => setParam("show", "rolled")}>
             rolled {rolled.length}
           </button>
         </div>
-        <div className="history-controls" role="group" aria-label="Sort by P&L">
+        <div className="pos-sort">
           <span className="muted">sort by P&amp;L</span>
+          <div className="history-controls" role="group" aria-label="Sort by P&L">
           <button type="button" className={chip(order === "desc")} aria-pressed={order === "desc"} onClick={() => setParam("pnl", null)}>
             high → low
           </button>
           <button type="button" className={chip(order === "asc")} aria-pressed={order === "asc"} onClick={() => setParam("pnl", "asc")}>
             low → high
           </button>
+          </div>
         </div>
       </div>
       {shown.length === 0 ? (

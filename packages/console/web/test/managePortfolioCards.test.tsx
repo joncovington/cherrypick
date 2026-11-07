@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ReactElement } from "react";
 import type { ManageAccount, ManageCandidate, ManageCandidateRoom, ManageCandidates, ManagePortfolio } from "@console/shared";
@@ -8,6 +8,12 @@ import { PortfolioLayout } from "../src/pages/Live/PortfolioLayout";
 import { BuyingPowerCard, LadderCard, RiskGraphCard, RiskMatrixCard, ScenarioCards } from "../src/pages/Live/ScenarioCards";
 import { inView, tables } from "./viewTables";
 import { writePref } from "../src/lib/prefs";
+
+// The income list starts at a $50 floor when none is remembered; these tests read every row, so
+// they remember 0 (off). The default has its own test below.
+beforeEach(() => {
+  void writePref("minPremium.live-income", 0);
+});
 
 /**
  * The portfolio cards draw packages/manage's reading and decide nothing. The guards: in-band or
@@ -853,19 +859,32 @@ describe("the portfolio tab, simple and detail", () => {
     }
   });
 
+  it("starts the income list at a $50 floor until one is remembered, and a remembered 0 stays off", () => {
+    const small = candidate({ underlying: "SMLP", perUnit: { ...candidate().perUnit, cash: 18 } });
+    const c = income({ fits: [candidate({ underlying: "BIGP" }), small] });
+    void writePref("minPremium.live-income", undefined);
+    const fresh = render(<IncomeCard c={c} />);
+    expect(fresh).toContain("Premium ≥ $50");
+    expect(fresh).toContain("BIGP");
+    expect(fresh).not.toContain("SMLP");
+    void writePref("minPremium.live-income", 0);
+    expect(render(<IncomeCard c={c} />)).toContain("SMLP");
+  });
+
   it("puts the per-share price and the size on each fit's card, in the simple view too", () => {
     const html = inView("simple", () => render(<IncomeCard c={income()} />));
     expect(html).toContain("2.47 cr at mid × 2");
   });
 
-  it("opens adding trades on income, or on time spreads when no income trade fits and one does", () => {
+  it("opens adding trades on income whenever there is an income list, on time spreads only without one", () => {
     const none = income({ fits: [], fitsTotal: 0 });
     const spreads = { sourceSession: "2026-11-06", takenAt: null, order: null, edge: null, deltaFilter: null, bpCapPct: 0.6, fits: [], fitsTotal: 0, tooBig: [], tooBigTotal: 0, dropped: {}, error: null };
     const one = { ...spreads, fits: [{ underlying: "BBB", kind: "calendar", direction: "neutral" as const, label: "put calendar", front: "2026-11-20", back: "2026-12-18", spot: 50, ratio: 1.3, ivRank: null, sector: null, earningsDate: null, longLeg: { strike: 50, right: "P" as const, option: null }, shortLeg: { strike: 50, right: "P" as const, option: null }, entryQuotes: null, debitMid: 1.2, debitNatural: 1.3, gap: null, debitShareOfGap: null, frontIv: 0.4, backIv: 0.3, netDelta: 0, thetaDay: 3, pnlFlat: 40, pnlUp5: 0, pnlDown10: -50, losesUnchanged: false, breakeven: null, priceStop: null, takeProfit: null, valueStop: null, rollBy: null, maxLoss: 120, units: 1, binding: null, heldName: false, heldSector: false, bpAfterPct: 0.3 }], fitsTotal: 1 };
     const pressed = (html: string) => html.match(/aria-pressed="true"[^>]*>([^<·]+)/)?.[1]?.trim();
     expect(pressed(render(<AddingTradesCard c={income()} t={one} netLiq={10000} />))).toBe("income");
-    expect(pressed(render(<AddingTradesCard c={none} t={one} netLiq={10000} />))).toBe("time spreads");
-    const html = render(<AddingTradesCard c={none} t={one} netLiq={10000} />);
+    expect(pressed(render(<AddingTradesCard c={none} t={one} netLiq={10000} />))).toBe("income");
+    expect(pressed(render(<AddingTradesCard c={null} t={one} netLiq={10000} />))).toBe("time spreads");
+    const html = render(<AddingTradesCard c={null} t={one} netLiq={10000} />);
     // A time spread's theta and profits are one unit's dollars (TimeSpreadTable), not per share.
     expect(html).toContain("theta +$3.00 per day");
     expect(html).toMatch(/pos-card-pnl pnl-neg">[-−]\$120\.00</); // the debit for one unit: 1.20 a share
