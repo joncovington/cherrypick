@@ -2575,6 +2575,76 @@
       "retest": null,
       "retests": [],
       "outcome": null
+    },
+    {
+      "id": 65,
+      "study": "item65",
+      "title": "The intraday premium map: implied against realised odds of SPX closing near its price, by time of day",
+      "status": "observation",
+      "setup": "entry-time",
+      "side": "neutral",
+      "structure": "none",
+      "window": "0dte",
+      "measure": "realised minus implied probability (points) that SPX closes within +/-0.1-0.5% of its price at each time of day",
+      "expected": "a measurement: no pass test; a consistent gap aims a later structure test",
+      "sample": "every session 2022-05-16..2026-11-06, reported by window and year",
+      "rule": "none (measurement); only a gap with one sign in both windows and most years may be built on",
+      "mechanism": "the 0DTE chain may price the move to the close above or below what happens, by time of day",
+      "rivals": [
+        {
+          "explanation": "a calm span",
+          "check": "both windows and every year reported"
+        },
+        {
+          "explanation": "strike granularity",
+          "check": "four band widths reported; linear interpolation declared"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#65-the-intraday-premium-map-implied-against-realised-odds-of-spx-closing-near-its-price-by-time-of-day",
+      "legacy": false,
+      "results": [
+        "{home}/data/backtest/results/research/item65/map-2022-05-16-2026-11-06.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": "the chain overprices the move to the close; 13:30-14:00 is the one window with one sign in every year (MEIC's entry); costs, not timing, are the lever"
+    },
+    {
+      "id": 66,
+      "study": "item66",
+      "title": "Item 47's mirror: a long straddle across an earnings report when its implied move is below past moves",
+      "status": "failed",
+      "setup": "earnings-premium",
+      "side": "long",
+      "structure": "options",
+      "window": "earnings",
+      "measure": "net in bp of notional of a long at-the-money monthly straddle bought at the entry close and sold at the reaction close, on reports whose expected move is below both past-move means, paired against the control session",
+      "expected": "a positive net and paired difference after costs",
+      "sample": "item 31's events: design >= 150 trades, holdout >= 100",
+      "rule": "item 47's rule for its selected arm, applied to the cheap arm",
+      "mechanism": "the market under-prices a report's move relative to the stock's own history",
+      "rivals": [
+        {
+          "explanation": "history is stale; the market knows better",
+          "check": "paired against the control session and above the other events"
+        },
+        {
+          "explanation": "a few huge moves",
+          "check": "net without the best five"
+        },
+        {
+          "explanation": "costs",
+          "check": "positive at the stress"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#66-item-47s-mirror-a-long-straddle-across-an-earnings-report-when-its-implied-move-is-below-past-moves",
+      "legacy": false,
+      "results": [
+        "{home}/data/backtest/results/research/item66/results.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": "implied-against-past moves is closed as a selector both ways; cheap reports lose less but no arm earns after costs"
     }
   ],
   "rule_changes": []
