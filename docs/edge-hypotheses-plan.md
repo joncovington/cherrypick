@@ -6660,6 +6660,91 @@ before any of it is run. No new fetch: item 47's stored chains price it.*
     trades before scoring. Nothing was read before the full run.
   - Local result: `~/.cherrypick/data/backtest/results/research/item66/results.json`.
 
+### 67. The earnings module's rule with paper's spread screen: does what paper actually trades earn after costs?
+
+*Source: the user, 2026-11-07 ("yes"), after a local look at the paper ledger against item 31's
+screen. Item 31 replayed the earnings module's paper rule on end-of-day chains and failed every arm.
+Its screen, though, would not have admitted most of what paper trades, almost all for spreads: the
+study's own point-in-time cap on the at-the-money spread, and the module's own ceiling on it, applied
+to end-of-day quotes that run wider than the intraday quotes paper's live screen reads. So item 31's
+verdict covers the tight-spread subset, and the wider-spread trades paper actually takes were never
+judged historically. Declared here before the study is run; no chain is fetched for it.*
+
+- **Question:** does the earnings module's rule, with paper's spread screen in place of item 31's, earn
+  more than zero after the suite's costs, and more than the same structure on an ordinary session, on
+  the trades paper actually takes?
+- **Where the edge would live:** the same **risk premium** as item 31, the options' implied move into
+  a report exceeding the move that follows. The added claim is that it is there on the wider-spread
+  names too. What would falsify it: the mean net on capital at risk is zero or negative after costs, or
+  the control earns as much.
+- **Look-alikes, said out loud:** item 31 above all (the same replay, the same events, the same
+  control, the same rule; `cherrypick hypotheses --similar` on setup `earnings-premium` and structure
+  `iron-fly` names it, failed, and no row for `iron-condor`); item 47 (a monthly strangle across a
+  report, failed) and item 52 (diagonals across a report, failed) are other structures on the same
+  events. This item changes one thing about item 31, the screen, so it is a retest of item 31's rule on
+  the events item 31 did not admit, and the admitted half is expected to reproduce item 31.
+- **The replay is item 31's `Study`, unchanged except two spread checks:**
+  - `pit_spread`, the study's cap on the at-the-money spread, is dropped;
+  - the module's `bid_ask_spread_too_wide` criterion is not applied (each strategy's
+    `max_bid_ask_spread_pct` is set to infinity in a copy of item 31's config, the key being read in one
+    place, the module's liquidity gate; a name with no measurable spread at all stays out);
+  - every other criterion is item 31's: the point-in-time dollar-volume check, the price, term
+    structure, expected move, delta, expiry and volume criteria, the sizing and the management.
+- **Costs are item 31's:** 12.5% of the end-of-day spread from mid on each side, with fees on both.
+  That if anything overcharges the wider names, since closing spreads are wider than the intraday ones
+  paper pays.
+- **Arms:** the same three strategies, `iron_fly`, `iron_condor` and `directional_credit_spread`,
+  **ungated only**: G1 and G2 are item 31's, and they failed. Holm across three arms. The paired
+  control is item 31's exactly (the same structure on the same name, four weeks away, no report).
+- **Pass-or-fail rule, item 31's per arm, all must hold:**
+  - at least 150 paired design trades;
+  - the mean net share of capital at risk above zero with a one-sided date-clustered t above 2, under
+    Holm;
+  - the mean paired difference above zero with t above 2, under Holm;
+  - positive in each time-half and each name-half;
+  - positive at item 31's stress (1.5x fees, 25% of the spread) and with the best five trades removed;
+  - then the holdout's mean net and paired difference both above zero, with at least 100 trades.
+- **Reported, never judged:** each arm split by item 31's admission, the events item 31 admitted (the
+  half that reproduces item 31) against the events only this screen admits; and by terciles of the
+  at-the-money spread. Item 31's reported readings ride beside, as it reports them.
+- **Rival explanations, each with its check:**
+  - *Ordinary overnight theta:* the paired control; net positive with the pair not positive is "pays,
+    not for the report", not a pass.
+  - *Hindsight:* item 31 read the windows' admitted subset and a local diagnostic read the paper
+    period; the newly admitted wider-spread events were never read. **Check:** said as a limit. The
+    clean check is reports after 2026-11-06, read once 100 trades per arm are stored, and a proposal
+    waits for it.
+  - *Costs on the wide names:* the end-of-day spread haircut overstates the intraday spread. **Check:**
+    positive at item 31's stress; the tercile split shows whether the widest third carries or sinks an
+    arm.
+  - *The screen difference is a data artefact:* end-of-day quotes run wider than intraday ones, so the
+    newly admitted events may not be the events paper takes. **Check:** the reported admission split;
+    the admitted half must reproduce item 31.
+  - *A few names:* **Check:** both name-halves; no name over item 31's share cap; the top five names
+    removed and reported.
+  - *One era:* **Check:** both time-halves, then the holdout.
+- **Minimum detectable effect (B12):** computed before any of this study's P&L, by the script's `mde`
+  step, from item 31's per-trade spread of the same arm (read only) at the declared minimum of 150
+  design trades; the larger real sample makes it an upper bound. A no-verdict result then reads "no
+  edge larger than X". Unpaired, as item 31's.
+- **Declared limits (B11):** item 31's, all of them: the end-of-day basis, today's liquid list
+  (hindsight, reported apart), the open interest and option volume floors not reproduced, the weekly
+  Friday front expiry, no early assignment, a position open at a name's last bar settled at the last
+  close, stale marks counted. The number of trades empty chains removed is counted in the result file.
+  The newly admitted events were never read before this run.
+- **Name split (B9):** applies, as item 31's.
+- **Data:** `scripts/earnings_paper_screen_item67.py mde|study|report`, which loads item 31's script for
+  every piece of arithmetic and adds only the two removed checks, the admission split, the three-arm
+  Holm and the report. It reads item 31's event list, calendar and trades from
+  `results/research/item31/` (read only). **No chain fetch is needed:** item 31's request plan covered
+  every event whether or not it was admitted. Results stay under the backtest data directory
+  (`results/research/item67/`).
+- **Decides:**
+  - **A pass:** the module's live spread screen stands as it is, the passing strategy's paper arm is
+    read on the next season, and a proposal follows at a declared boundary.
+  - **A fail:** the module's paper arm for that strategy is the same losing rule item 31 found, now with
+    the trades paper takes, and the redesign or retirement question returns to the user.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
