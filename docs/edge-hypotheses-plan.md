@@ -2829,6 +2829,15 @@ paper ledger has been running since 2026-07-15, and it is the thing asked about.
     - **The exact agreement is reported beside it** (`exact`: the same strikes, the credit within a
       tick), with the close's build, not gated.
 
+- **Result (2026-11-07): fail, no arm passes; the holdout is reported only.**
+  No arm passes the design window: the iron fly, the iron condor and their gated forms lose on their own net, and
+  the directional credit spread beats the no-report control but does not clear its own net bar. Three arms have too
+  few paired trades for a verdict. The holdout ran after the design, as declared, and is reported only. The
+  directional spread is the one the report is worth something to, and costs eat it.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item31/`).
+- **What this decides:** the fail branch. The earnings module's paper rule is unchanged; any retirement stays the user's decision,
+  and the paper entries from 2026-10-28 remain the untouched later check.
+
 ### 32. Large options orders as a signal: the flow plan's declared test, registered
 
 *Source: [flow-signal-plan.md](flow-signal-plan.md), declared 2026-10-24 with its fetch, and never run.
@@ -3297,6 +3306,14 @@ computed.*
   - **A variant passes where `delta` fails:** recorded as the variant only, a new arm at a declared
     boundary, never `delta` itself brought back.
 
+- **Result (2026-11-07): fail, all twelve tests; the holdout is reported only.**
+  None of the twelve tests passes the design window, gated on VIX9D below VIX or not. The `flip` arms have no
+  verdict on their inputs (the replayed flip does not match paper's ticks) and `delta-dte3` has too few fires.
+  The holdout is reported only.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item35/`).
+- **What this decides:** the fail branch. bwb stays in paper and the retirement decision stays the user's; this is the
+  real-quote record of the whole rule, arm by arm.
+
 ### 36. pmcc's own rule on real quotes: the shield, three variants and two baselines
 
 *Source: the user, 2026-10-30. The rule: no module is retired without a backtest of its own rule. The
@@ -3629,6 +3646,15 @@ live-fill check; an unlisted arm (other deltas, other expiries) is outside the s
 - **A fail or no verdict:** the evidence the retirement rule needs, with the minimum-detectable-effect
   note beside it. Any retirement of the module or removal of a symbol stays the user's decision; paper
   keeps running unchanged until then.
+
+#### Result
+
+- **Result (2026-11-07): no verdict, every arm; the holdout is not read.**
+  No arm is judged. Too few of the six funds have enough priced weeks in the design window, so every arm falls under
+  the declared four judged funds. The holdout is not read.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item36/`).
+- **What this decides:** no verdict. pmcc paper runs unchanged. A verdict needs fuller chain coverage of the funds that fell
+  short and would be a retest, declared as such.
 
 ### 37. A real-quote test of curve's own rule: the contango-gated VXX call spread, with two variants
 
@@ -4686,6 +4712,13 @@ store is fetched or any of it is run.*
   - **`be` fails:** the strategy as described does not earn after costs here, whatever the gate
     does. That is the evidence for closing it as a MEIC arm; closing it stays the user's decision.
 
+- **Result (2026-11-07, provisional): `be` passes the design window and fails the holdout; both gated arms fail.**
+  `be` passes the design window. Its holdout mean is positive but misses the t bar, so `be` fails there.
+  Both gated arms fail against `be` in the design window.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item42/`).
+- **What this decides:** the fail branch for the gate, and `be` is not confirmed. Nothing changes. `be` is the zero-day rule
+  most worth a reread once more sessions are stored.
+
 ### 43. The wing width of MEIC's live rule: 15, 20, 25 and 30 against 10
 
 *Source: the user, 2026-10-31: "did we ever test wider wings?", then "I'd like to complete a test of
@@ -4870,6 +4903,14 @@ it is run.*
   - **A (b) pass:** joins item 43's pass branch; the width proposal names the widest passing arm
     only if it also beats item 43's best on net over buying power.
   - **Fails:** the gate stays off the live rule at every width, and 35–40 wings are closed for it.
+
+- **Result (2026-11-07, provisional): fail, both parts.**
+  (a) Every gated arm fails against its own width in the design window and against the placebo, and the
+  holdout agrees. (b) `w35` and `w40` beat `w10` per session in the design window but fail on net over buying power,
+  and miss the t bar in the holdout.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item44/`).
+- **What this decides:** the fail branch. The gate stays off the live rule at every width, and wings of 35 to 40 are closed for
+  it.
 
 ### 45. A published GEX share strategy, out of sample: buy the calm after an implied-vol spike
 
@@ -5086,6 +5127,13 @@ Declared before any of its inputs are fetched.*
     survive costs. The question is closed for the suite, and the income lists keep their
     near-zero note.
 
+- **Result (2026-11-07): pass, one cell.**
+  One of the forty cells passes every check: the equity-index 10-delta put at 7 days. Every index cell at 30 to 60
+  days fails, and no non-equity cell passes.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item46/`).
+- **What this decides:** the pass branch, narrowly. The passing cell becomes a proposal for a paper arm, declared as its own
+  item, with sessions after 2026-10-30 read first. Nothing changes until then.
+
 ### 47. Selling a report when its implied move is above its past moves: a monthly strangle closed the next day
 
 *Source: the user, 2026-11-01, after reviewing a Theta Live video. A trader sells a short strangle
@@ -5226,6 +5274,13 @@ loop. Declared here before any of it is run.*
   - **A fail:** live keeps 2.0x. The resting stop can still be switched on as outage protection,
     argued as insurance, not as edge, with this run's `rest-200` against `live-1400` as its cost.
 
+- **Result (2026-11-07, provisional): fail, every arm.**
+  Every arm fails the design window against `live-1400`: the loop ratios, the resting stops and the stop
+  off. No holdout is read.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item48/`).
+- **What this decides:** the fail branch. Live keeps its 2.0x stop. The resting stop can still be switched on as outage
+  protection, argued as insurance and not as edge.
+
 ### 49. The "Crazy Ivan" on TQQQ: a cash-secured 16-delta put sold by a resting order 20% over the ask
 
 *Source: Maria Helmick's written rules (the Math Makes Money newsletter, Issue 32, 2026-07-07),
@@ -5355,6 +5410,11 @@ backtest comes before any paper module. Declared here before any of it is run.*
   - **Only `qqq` passes:** the QQQ version is proposed instead.
   - **Every arm fails:** the question is closed and the plan stays shelved.
 
+- **Result (2026-11-07): fail, all seven arms; the holdout reads none.**
+  All seven arms fail the design window, so the holdout reads none. The Crazy Ivan claim holds for no arm.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item49/`).
+- **What this decides:** the fail branch. The question is closed and the plan stays shelved.
+
 ### 50. Item 43's wider wings with live's gates on: 15 and 20 against the live rule
 
 *Source: the user, 2026-11-04, after item 43's result: "yes, declare it and queue it". Item 43 passed
@@ -5429,6 +5489,13 @@ is run.*
     No live change; whether a width-aware floor is worth declaring is read from the reported pairs.
   - **A fail or no verdict otherwise:** live stays at 10 wide with its gates, and item 43's pass is
     read as a result about the ungated rule only.
+
+- **Result (2026-11-07, provisional): fail, both arms.**
+  `g15` and `g20` both miss the paired t bar in the design window, so the holdout does not count. It is reported:
+  neither arm is confirmed there.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item50/`).
+- **What this decides:** the fail branch. Live stays at 10 wide with its gates, and item 43's pass is read as a result about the
+  ungated rule only.
 
 ### 51. Dropping the call side when the VIX curve is stressed
 
@@ -5523,6 +5590,12 @@ hourly break-even condor's entries made while inverted lost, nearly all of it on
     strike selection (default off, so no running arm's measurement moves), declared as its own item.
   - **A fail or no verdict:** the call side stays, and the curve stays a reported column on the
     trades, re-read when part 2 has its sessions.
+
+- **Result (2026-11-07, provisional): fail, every cell in both parts.**
+  Every cell fails in both parts, for `be`, `live-1400` and `w15` on inverted and hump days alike, and the holdouts
+  agree. Part 2's hourly bars passed their validation against the broker's recorded bars.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item51/`).
+- **What this decides:** the fail branch. The call side stays, and the curve stays a reported column on the trades.
 
 ### 52. Diagonals across an earnings report: the short weekly takes the crush, the monthly long keeps its value
 
@@ -5693,6 +5766,11 @@ run; the plan step has only counted the cells.*
   - **Nothing confirmed:** manage's default stands (`skip_if_entered_inside` on, arm A) and the question
     is closed. Whether short-dated premium earns at all is reported, not decided here.
 
+- **Result (2026-11-07): fail, no challenger confirmed.**
+  No challenger beats A under Holm in the design window, at any entry DTE, so the holdout confirms none.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item53/`).
+- **What this decides:** nothing confirmed. Manage's default A stands and the question is closed.
+
 ### 54. Does the front/back IV ratio predict a time spread's profit?
 
 *Source: the user, 2026-11-06, with the time-spread scanner (docs/time-spread-scanner-plan.md). The
@@ -5819,6 +5897,11 @@ has only counted the cycles.*
     for it is revisited at a declared boundary.
   - **Nothing confirmed:** the collar stays offered, labelled untested, and a book that needs a hedge
     is no better off for it than the single verticals show.
+
+- **Result (2026-11-07): fail, no test confirmed.**
+  None of the five tests is confirmed in the design window, so the holdout is reported only.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item55/`).
+- **What this decides:** nothing confirmed. The collar stays offered, labelled untested.
 
 ## Not worth revisiting
 
