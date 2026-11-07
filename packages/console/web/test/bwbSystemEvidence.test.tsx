@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ReactElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import type { BwbLiveGap, BwbVolEvidence, ImpliedVarEvidence, QuoteHistoryCoverage } from "@console/shared";
 import { BwbLiveGapSlide } from "../src/pages/Bwb/LiveGapSlide";
-import { BwbVolSlide } from "../src/pages/Bwb/VolSlide";
+import { BwbVolSlide, EntryContextTable } from "../src/pages/Bwb/VolSlide";
 import { DataEvidenceCards } from "../src/pages/System/DataEvidenceCards";
 
 /**
@@ -17,7 +18,11 @@ import { DataEvidenceCards } from "../src/pages/System/DataEvidenceCards";
 function render(entries: Array<[unknown[], unknown]>, el: ReactElement): string {
   const client = new QueryClient();
   for (const [key, value] of entries) client.setQueryData(key, value);
-  return renderToString(<QueryClientProvider client={client}>{el}</QueryClientProvider>);
+  return renderToString(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{el}</MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 describe("the bwb live vs paper slide", () => {
@@ -33,6 +38,27 @@ describe("the bwb live vs paper slide", () => {
     expect(html).toContain("has taken no position yet");
     expect(html).toContain("regime_inverted");
     expect(html).toContain("live.vix9d_vix_max");
+    // The two questions the page asks, in order; the card's explanation is behind its ?.
+    expect(html.indexOf("Does live match paper?")).toBeGreaterThan(-1);
+    expect(html.indexOf("Does live match paper?")).toBeLessThan(html.indexOf("What did live refuse?"));
+    expect(html).not.toContain("cards-wide");
+    expect(html).not.toContain("Gaps read");
+  });
+
+  it("keeps the per-session table out of the card: it is a lightbox from it", () => {
+    const gap: BwbLiveGap = {
+      ok: true,
+      ledger: "ok",
+      arm: "bounce",
+      sessions: [
+        { session: "2026-10-13", cancelled: 0, same_structure: true, live_position: "a", paper_position: "b", live_status: "closed", live_credit: 1, live_limit: 1, live_mid_at_submit: 1, paper_credit: 1, credit_gap: 0, addon: null, addon_match: null, live_fees: 1, fees_source: "modeled", fee_variance: null, live_net: 10, paper_net: 8, net_gap: 2 },
+      ],
+      totals: { sessions: 1, closed_pairs: 1, net_gap: 2, credit_gap: 0, addon_matched: 0, addon_judged: 0, reconciled: 0 },
+      refusals: {},
+    } as unknown as BwbLiveGap;
+    const html = render([[["bridged", "bwb-live-gap"], { ok: true, data: gap, error: null }]], <BwbLiveGapSlide />);
+    expect(html).toContain("session by session");
+    expect(html).not.toContain("<th>session</th>");
   });
 });
 
@@ -72,12 +98,16 @@ describe("the bwb entry vol slide", () => {
       },
       ivPremium: { ok: false, data: null, error: "bwb evidence unavailable — exit 1" },
     };
-    const html = render([[["bridged", "bwb-vol"], vol]], <BwbVolSlide />);
+    const page = render([[["bridged", "bwb-vol"], vol]], <BwbVolSlide />).replace(/<!-- -->/g, "");
+    expect(page).toContain("unmeasured");
+    expect(page).toContain("$12.50");
+    expect(page).toContain("bwb evidence unavailable");
+    // The per-position table is a lightbox from its card: the card says how many, the table is not on the page.
+    expect(page).toContain("2 positions");
+    expect(page).not.toContain("VIX9D:stale");
+    const html = render([], <EntryContextTable positions={vol.entryContext.data?.positions ?? []} />);
     expect(html).toContain("≥ 11.43");
-    expect(html).toContain("unmeasured");
     expect(html).toContain("VIX9D:stale");
-    expect(html).toContain("$12.50");
-    expect(html).toContain("bwb evidence unavailable");
     // The entry-context table sorts by every reading; the reason is prose and stays a fixed header.
     const sortButtons = [...html.replace(/<!-- -->/g, "").matchAll(/<button type="button" class="th-sort">([^<]*)/g)].map((m) => m[1]);
     expect(sortButtons).toEqual(["session", "arm", "status", "VIX9D", "VIX", "VIX3M", "9D / VIX", "VIX / 3M", "gate", "implied vol", "net"]);

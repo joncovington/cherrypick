@@ -1,5 +1,19 @@
 import type { CalendarsPayload } from "@console/shared";
 import { Card, fmtNum, fmtPct } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
+
+const PARAMS_HELP: CardHelpContent = {
+  title: "The settings",
+  body: (
+    <HelpSection title="Read only">
+      <p>
+        Read from the module&rsquo;s own config in the module&rsquo;s own resolution order. This page cannot change any of it: the console
+        is read-only over every module&rsquo;s data, and these fields are not on the Config page&rsquo;s allow-list.
+      </p>
+    </HelpSection>
+  ),
+};
 
 /**
  * What this module is, in the terms it judges itself by.
@@ -13,8 +27,9 @@ import { Card, fmtNum, fmtPct } from "../../components/DataTable";
 export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
   const p = data?.params;
   return (
-    <div className="cards cards-wide">
-      <Card title="what this module is" collapseKey="cal-help-what" defaultCollapsed className="view-fade">
+    <div className="pf-layout">
+      <Section concept="stand" tag="the module" question="What is this module?">
+      <Card title="what this module is" collapseKey="cal-help-what" className="view-fade">
         <div className="cal-prose">
           <p>
             Every Monday — Tuesday after a Monday holiday — at the entry window: one put calendar at the
@@ -39,8 +54,10 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
           </p>
         </div>
       </Card>
+      </Section>
 
-      <Card title="reading the numbers" collapseKey="cal-help-reading" defaultCollapsed className="view-fade">
+      <Section concept="risk" tag="reading" question="How should the numbers be read?">
+      <Card title="reading the numbers" collapseKey="cal-help-reading" className="view-fade lv-12">
         <ul className="cal-rules">
           <li>
             <strong>Every figure is net of the modeled cost stack.</strong> Exchange fees, the per-ITM-symbol
@@ -73,8 +90,10 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
           </li>
         </ul>
       </Card>
+      </Section>
 
-      <Card title="the settings it runs on" collapseKey="cal-help-params" defaultCollapsed className="view-fade">
+      <Section concept="room" tag="settings" question="What does it run on?">
+      <Card title="the settings it runs on" collapseKey="cal-help-params" className="view-fade lv-12" help={PARAMS_HELP}>
         {p === undefined ? (
           <p className="muted">config not readable</p>
         ) : (
@@ -114,14 +133,11 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
             <dd>{p.adviceEnabled ? "enabled" : "off"}</dd>
           </dl>
         )}
-        <p className="integrity-note">
-          Read from the module&rsquo;s own config in the module&rsquo;s own resolution order. This page cannot
-          change any of it — the console is read-only over every module&rsquo;s data, and these fields are not
-          on the Config page&rsquo;s allow-list.
-        </p>
       </Card>
+      </Section>
 
-      <Card title="where the data comes from" collapseKey="cal-help-data" defaultCollapsed className="view-fade">
+      <Section concept="income" tag="data" question="Where does the data come from?">
+      <Card title="where the data comes from" collapseKey="cal-help-data" className="view-fade lv-12">
         <div className="cal-prose">
           <p>
             The module holds <strong>no broker credentials at all</strong> and runs no streamer. It is a pure
@@ -136,6 +152,7 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
           </p>
         </div>
       </Card>
+      </Section>
     </div>
   );
 }

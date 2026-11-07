@@ -1,5 +1,6 @@
 import type { CalendarsPayload } from "@console/shared";
 import { Card } from "../../components/DataTable";
+import { Section } from "../../components/Section";
 import { DivergingBars } from "../../components/grid/DivergingBars";
 import { GridCard, StatTile } from "../../components/grid/GridCard";
 import { fmtMoney } from "../../lib/format";
@@ -12,7 +13,8 @@ import { fmtMoney } from "../../lib/format";
 export function CalendarsSession({ data, loading }: { data: CalendarsPayload | undefined; loading: boolean }) {
   if (data !== undefined && !data.dbPresent) {
     return (
-      <div className="cards cards-wide">
+      <div className="pf-layout">
+        <Section concept="stand" question="Has this module run here?">
         <Card title="Calendars" collapseKey="cal-absent">
           <p className="muted">
             This module has not run on this machine — there is no paper store at{" "}
@@ -20,6 +22,7 @@ export function CalendarsSession({ data, loading }: { data: CalendarsPayload | u
             fills in after its first session.
           </p>
         </Card>
+        </Section>
       </div>
     );
   }

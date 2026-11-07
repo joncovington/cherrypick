@@ -1,7 +1,76 @@
 import type { CalendarsPayload, CalendarsPosition } from "@console/shared";
 import { Card, DataCard, fmtMoney, fmtNum, fmtPct, PnlCell, sortRows, useSort } from "../../components/DataTable";
-import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import type { SortOption } from "../../components/FilterSort";
 import { fmtCash, fmtPrice } from "../../lib/format";
+import { dayMonth, type TradeCardLeg, type TradeCardModel } from "../Live/TradeCard";
+import { TradeListCard } from "../Live/TradeListCard";
+
+const PLAN_HELP: CardHelpContent = {
+  title: "This week",
+  body: (
+    <HelpSection title="The structure tag">
+      <p>
+        The tag is calendar days from entry to each expiration. A Tuesday entry after a Monday holiday makes <span className="mono">dc_3_6</span>,
+        and a dark following Monday makes <span className="mono">dc_4_8</span>: different trades, never pooled with{" "}
+        <span className="mono">dc_4_7</span>. The anchors are the module&rsquo;s own holiday arithmetic and are never re-derived here.
+      </p>
+    </HelpSection>
+  ),
+};
+
+const ENTRY_HELP: CardHelpContent = {
+  title: "Entry window",
+  body: (
+    <>
+      <HelpSection title="One row per outcome">
+        <p>
+          One uncollapsed row per evaluated tick, grouped here by outcome. Entry is retried every tick until it fills or the window closes;
+          an exhausted window is a journaled skipped week, and the week does not come back.
+        </p>
+      </HelpSection>
+      <HelpSection title="A refusal, not a missing setup">
+        <p>
+          Entry is unconditional, so a week with no position is a refusal, and each refusal is a different thing to do about it. Hover a
+          ? beside an outcome for its meaning.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
+
+const POSITIONS_HELP: CardHelpContent = {
+  title: "Structures",
+  body: (
+    <>
+      <HelpSection title="A structure">
+        <p>
+          One side (put or call) of one arm&rsquo;s double calendar: the order that opened it is the front short and the back long. Cash is
+          the opening debit for the whole position (negative: paid). The net is realised once the week settles and the mark to market,
+          after costs to date, before then.
+        </p>
+      </HelpSection>
+      <HelpSection title="Same plan">
+        <p>
+          Every arm&rsquo;s positions for a week come from the <strong>same</strong> entry plan: identical strikes, identical mids, identical
+          modeled costs. Any divergence between arms is exit policy and nothing else.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
+
+const RESULTS_HELP: CardHelpContent = {
+  title: "Results by arm",
+  body: (
+    <HelpSection title="Each row adds up">
+      <p>
+        <span className="mono">gross − fees − settle − slip = net</span>. Fills are modelled at mid, so slippage is a charged cost here. Rows
+        are per structure tag and are never summed across tags.
+      </p>
+    </HelpSection>
+  ),
+};
 
 /**
  * The module's own refusal vocabulary, each in one plain sentence.
@@ -48,7 +117,7 @@ function explain(outcome: string): string | null {
 export function PlanCard({ data, updatedAt }: { data: CalendarsPayload | undefined; updatedAt?: number }) {
   const plan = data?.plan;
   return (
-    <Card title="this week" collapseKey="cal-plan" updatedAt={updatedAt} className="view-fade">
+    <Card title="this week" collapseKey="cal-plan" updatedAt={updatedAt} className="view-fade" help={PLAN_HELP}>
       {plan === null || plan === undefined ? (
         <p className="muted">
           {data?.planError ?? "the week plan is not available"}
@@ -87,12 +156,6 @@ export function PlanCard({ data, updatedAt }: { data: CalendarsPayload | undefin
               <span className="cal-plan-value mono">{plan.structure}</span>
             </div>
           </div>
-          <p className="integrity-note">
-            The tag is calendar days from entry to each expiration. A Tuesday entry after a Monday holiday
-            makes <span className="mono">dc_3_6</span>, and a dark following Monday makes{" "}
-            <span className="mono">dc_4_8</span> — different trades, never pooled with{" "}
-            <span className="mono">dc_4_7</span>.
-          </p>
         </div>
       )}
     </Card>
@@ -112,7 +175,7 @@ export function EntryWindowCard({ data, updatedAt }: { data: CalendarsPayload | 
   const skipText = w?.skipReason === null || w?.skipReason === undefined ? null : explain(w.skipReason);
 
   return (
-    <Card title="entry window" collapseKey="cal-entry" updatedAt={updatedAt} className="view-fade">
+    <Card title="entry window" collapseKey="cal-entry" updatedAt={updatedAt} className="view-fade" help={ENTRY_HELP}>
       {w === undefined || w.session === null ? (
         <p className="muted">no entry session on file yet</p>
       ) : (
@@ -207,23 +270,63 @@ export function EntryWindowCard({ data, updatedAt }: { data: CalendarsPayload | 
             </tbody>
           </table>
           </div>
-          <p className="integrity-note">
-            One uncollapsed row per evaluated tick, grouped here by outcome. Entry is retried every tick until
-            it fills or the window closes; an exhausted window is a journaled skipped week, and the week does
-            not come back.
-          </p>
         </>
       )}
     </Card>
   );
 }
 
-function sideLabel(p: CalendarsPosition): string {
-  return `${p.side} @ ${fmtNum(p.strike, 0)}`;
+export const CALENDAR_SORTS: SortOption<CalendarsPosition>[] = [
+  { id: "time", label: "entry session", hint: "newest first", key: (p) => (p.entrySession === "" ? null : -Date.parse(p.entrySession)) },
+  { id: "expiry", label: "expiry", hint: "soonest first", key: (p) => p.frontExpiration },
+  { id: "size", label: "size", hint: "largest debit first", key: (p) => (p.entryCash) },
+  { id: "arm", label: "arm", hint: "A to Z", key: (p) => p.arm },
+];
+
+/** One side of a double calendar as a trade card: the front short and the back long, as the order that opened it. */
+export function calendarPositionModel(p: CalendarsPosition): TradeCardModel {
+  const q = p.quantity ?? 1;
+  const right = p.side.toLowerCase().startsWith("c") ? "C" : "P";
+  const net = p.netPnl !== null ? p.netPnl : p.unrealisedNet;
+  const legs: TradeCardLeg[] =
+    p.legs.length > 0
+      ? [...p.legs].sort((a, b) => a.expiration.localeCompare(b.expiration)).map((l) => ({
+          buy: l.action.toLowerCase().startsWith("buy"),
+          text: `${String(q)} ${fmtNum(l.strike ?? p.strike, 0)}${right} ${dayMonth(l.expiration)}`,
+          quote: l.entryMid === null ? null : `mid ${fmtNum(l.entryMid, 2)}`,
+        }))
+      : [];
+  return {
+    key: p.positionId,
+    symbol: p.symbol,
+    spot: p.entrySpot === null ? null : `entry spot ${fmtNum(p.entrySpot, 2)}`,
+    shape: `${p.side} calendar @ ${fmtNum(p.strike, 0)} · ${p.structure}`,
+    chips: (
+      <>
+        <span className="chip">{p.arm}</span>
+        <span className="chip">{p.status}</span>
+      </>
+    ),
+    cash: p.entryCash,
+    side: [`${fmtPrice(p.entryDebit === null ? null : -p.entryDebit)} debit`, `qty ${p.quantity === null ? "—" : String(p.quantity)}`],
+    bar: null,
+    barTitle: "",
+    hideBar: true,
+    label: net === null ? "no usable mark yet" : p.netPnl !== null ? `net ${fmtMoney(p.netPnl)} · realised` : `marked net ${fmtMoney(net)} · after costs to date`,
+    open: { date: p.entrySession === "" ? "—" : p.entrySession.slice(5), price: fmtPrice(p.entryDebit === null ? null : -p.entryDebit) },
+    legs,
+    after: [
+      `front ${p.frontExpiration} / back ${p.backExpiration}`,
+      `EM ${fmtNum(p.entryEm, 2)}${p.entryEmPct !== null ? ` (${fmtPct(p.entryEmPct * 100, 2)})` : ""}`,
+      `IV front ${fmtPct(p.entryFrontIv === null ? null : p.entryFrontIv * 100, 1)} · back ${fmtPct(p.entryBackIv === null ? null : p.entryBackIv * 100, 1)} · term ${fmtNum(p.entryTermStructure, 3)}`,
+      ...(p.exitReason !== null ? [`exit: ${p.exitReason}`] : []),
+    ],
+    foot: [p.entrySession === "" ? "—" : `opened ${p.entrySession}`, p.status],
+  };
 }
 
 /**
- * The structures the ledger currently holds, grouped by arm.
+ * The structures the ledger currently holds, as trade cards (or rows).
  *
  * Arms, not a fixed grid: every arm enters from the same plan, so a arm missing from this list
  * is a arm that did not enter, and a row of em-dashes would have invited that to read as a broken
@@ -242,117 +345,19 @@ export function PositionsCard({
   updatedAt?: number;
   loading?: boolean;
 }) {
-  const arms = [...new Set(positions.map((p) => p.arm))];
-  const sort = useSort();
-  // The net column shows the realised figure once a week settles and the mark before then, so it
-  // sorts by whichever of the two the cell is showing.
-  const rows = sortRows(positions, sort, {
-    symbol: (p) => p.symbol,
-    arm: (p) => p.arm,
-    opened: (p) => (p.entrySession === "" ? null : p.entrySession),
-    expiry: (p) => p.frontExpiration,
-    qty: (p) => p.quantity,
-    price: (p) => (p.entryDebit === null ? null : -p.entryDebit),
-    entry: (p) => p.entryCash,
-    spot: (p) => p.entrySpot,
-    em: (p) => p.entryEm,
-    frontIv: (p) => p.entryFrontIv,
-    backIv: (p) => p.entryBackIv,
-    term: (p) => p.entryTermStructure,
-    status: (p) => p.status,
-    net: (p) => p.netPnl ?? p.unrealisedNet,
-  });
   return (
-    <DataCard
+    <TradeListCard
+      card={`cal-${title.replace(/\s+/g, "-")}`}
       title={title}
-      sort={sort}
-      headers={[
-        { label: "symbol", k: "symbol" },
-        { label: "arm", k: "arm" },
-        { label: "opened", k: "opened" },
-        { label: "expiry (front/back)", k: "expiry", title: "sorts by the front expiry" },
-        "side",
-        { label: "qty", k: "qty" },
-        { label: "price", k: "price" },
-        { label: "entry", k: "entry" },
-        { label: "spot at entry", k: "spot" },
-        { label: "EM", k: "em" },
-        { label: "front IV", k: "frontIv" },
-        { label: "back IV", k: "backIv" },
-        { label: "term", k: "term" },
-        { label: "status", k: "status" },
-        { label: "net", k: "net" },
-      ]}
-      loading={loading}
-      rowCount={positions.length}
-      numFrom={5}
+      help={POSITIONS_HELP}
+      rows={positions}
+      model={calendarPositionModel}
+      sorts={CALENDAR_SORTS}
+      fallback="time"
       empty={emptyText}
       updatedAt={updatedAt}
-      footer={
-        arms.length > 0 && (
-          <p className="integrity-note">
-            Every arm&rsquo;s positions for a week come from the <strong>same</strong> entry plan — identical
-            strikes, identical mids, identical modeled costs — so any divergence between{" "}
-            {arms.map((b) => (
-              <span className="mono" key={b}>
-                {b}{" "}
-              </span>
-            ))}
-            is exit policy and nothing else.
-          </p>
-        )
-      }
-    >
-      {rows.map((p) => (
-        <tr key={p.positionId}>
-          <td>{p.symbol}</td>
-          <td>
-            <span className="mono">{p.arm}</span>
-          </td>
-          <td>{p.entrySession === "" ? "—" : p.entrySession}</td>
-          {/* Both legs: a double calendar's front and back expire on DIFFERENT dates by
-              construction, and naming one would hide the other. */}
-          <td title={`front ${p.frontExpiration} / back ${p.backExpiration}`}>
-            {p.frontExpiration}
-            <span className="muted"> / </span>
-            {p.backExpiration}
-          </td>
-          <td>
-            {sideLabel(p)}
-            <span className="muted"> · {p.structure}</span>
-          </td>
-          <td>{p.quantity ?? "—"}</td>
-          <td title="the calendar's net debit, per share">{fmtPrice(p.entryDebit === null ? null : -p.entryDebit)}</td>
-          <td>{fmtCash(p.entryCash)}</td>
-          <td>{fmtNum(p.entrySpot, 2)}</td>
-          <td>
-            {fmtNum(p.entryEm, 2)}
-            {p.entryEmPct !== null && <span className="muted"> ({fmtPct(p.entryEmPct * 100, 2)})</span>}
-          </td>
-          <td>{fmtPct(p.entryFrontIv === null ? null : p.entryFrontIv * 100, 1)}</td>
-          <td>{fmtPct(p.entryBackIv === null ? null : p.entryBackIv * 100, 1)}</td>
-          <td>{fmtNum(p.entryTermStructure, 3)}</td>
-          <td>
-            <span className="mono">{p.status}</span>
-            {p.exitReason !== null && <span className="muted"> · {p.exitReason}</span>}
-          </td>
-          {/* Realised once the week settles; mark-to-market while it is still open. The two never
-              describe the same moment, so whichever exists is the honest one to show. */}
-          <td>
-            {p.netPnl !== null ? (
-              <PnlCell v={p.netPnl} />
-            ) : (
-              <UnrealisedPnlCell
-                gross={p.unrealisedGross}
-                net={p.unrealisedNet}
-                fees={p.feesToDate}
-                detail="open — mark to market"
-              />
-            )}
-          </td>
-        </tr>
-      ))}
-    </DataCard>
+      loading={loading}
+    />
   );
 }
 
@@ -393,12 +398,7 @@ export function BookComparison({ data, updatedAt }: { data: CalendarsPayload | u
       numFrom={2}
       empty="no week has closed yet — the arms have nothing to report"
       updatedAt={updatedAt}
-      footer={
-        <p className="integrity-note">
-          Each row adds up: <span className="mono">gross − fees − settle − slip = net</span>. Fills are modelled at
-          mid, so slippage is a charged cost here. Rows are per structure tag and are never summed across tags.
-        </p>
-      }
+      help={RESULTS_HELP}
     >
       {arms.map((b) => (
         <tr key={`${b.arm}-${b.structure}`}>
