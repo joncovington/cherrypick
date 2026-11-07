@@ -1,24 +1,30 @@
-import { useState, type MouseEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import type { LiveTodayHand, LiveTodayLoop, LiveTodayPayload, ManagePayload } from "@console/shared";
-import { PnlCell, fmtNum } from "../../components/DataTable";
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import type { LiveTodayLoop, LiveTodayPayload, ManagePayload } from "@console/shared";
+import { Card, PnlCell, fmtNum } from "../../components/DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { type Column } from "../../components/columns";
 import { fmtMoney } from "../../lib/format";
 import { useLiveToday } from "../../lib/useLiveToday";
+import { Tile } from "../Flies/PerformanceTab";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
 import { useManage } from "./ManagePage";
 import { tone } from "./manageParts";
 import { WhatToDoList, todoList } from "./WhatToDo";
-import { HandCard, handCell } from "./HandToday";
+import { HandCard, handHasTrades } from "./HandToday";
 import { LoopOrders } from "./LiveTodayOrders";
+import { Section } from "./PortfolioLayout";
+import { Meter, StateLine } from "./liveParts";
 
 /**
  * The Live page's `today` tab (2026-10-15): every live loop's day on one page -- what is armed,
  * what is open, what settled, and anything that needs a person -- over `GET /api/live/today`
- * (`readers/liveToday.ts`, composed from the per-loop readers). Since 2026-11-04 it is a mosaic: a
- * large card (the suite's net, what to do today; it opens Live → positions) and a card per live loop,
- * which opens a lightbox with the loop's orders today as chains (`LiveTodayOrders.tsx`) and every
- * field the old table's detail view carried. There is no button here that touches an order.
+ * (`readers/liveToday.ts`, composed from the per-loop readers). Since 2026-11-06 it follows the
+ * portfolio tab's layout, in three sections by question: what needs a person (the suite's net, what to
+ * do today), how each loop is doing (a parent card per loop with its breaker as a meter, which opens a
+ * lightbox with the loop's orders today as chains, `LiveTodayOrders.tsx`, and every field the old table's
+ * detail view carried), and what was traded by hand (trade cards). The net's method sits behind the
+ * card's ?. There is no button here that touches an order.
  *
  * Money follows the one layout: "net" is net, costs sit in their own columns, settlement never
  * recorded apart reads n/r. The suite total sums only today's realised net, which every loop states
@@ -302,87 +308,105 @@ function LoopDialog({
   );
 }
 
-/** The hand-placed 0DTE trades (2026-11-03) as a card beside the loops, from the same cells the
- *  table's hand row used; never in the loops' total. Its orders are the card below the board. */
-const HAND_FIELDS = new Set(["loop", "state", "open", "mark", "net"]);
+const NET_HELP: CardHelpContent = {
+  title: "How net today is made",
+  body: (
+    <>
+      <HelpWarn title="Realised, not marked">
+        <p>
+          Gross less fees less settlement, over the positions resolved today, at the broker&apos;s fills. Worst case and mark are each
+          loop&apos;s own measure (hover for which) and are not added across loops. A trade by hand is stated beside the total and never in it.
+        </p>
+      </HelpWarn>
+      <HelpSection title="Armed and halt">
+        <p>A loop is armed when its arm record is dated today and the disarm time has not passed. The halt flag is suite-wide and blocks new entries on every loop; clearing it arms nothing.</p>
+      </HelpSection>
+    </>
+  ),
+};
 
-function HandTile({ hand, cols }: { hand: LiveTodayHand; cols: Column<LiveTodayLoop>[] }) {
-  return (
-    <div className="study-tile lt-loop lt-hand">
-      <table className="lt-fields">
-        <tbody>
-          {cols
-            .filter((c) => HAND_FIELDS.has(c.key))
-            .map((c) => (
-              <tr key={c.key}>
-                <th scope="row">{c.key === "loop" ? "trades" : c.label}</th>
-                {handCell(c.key, hand)}
-              </tr>
-            ))}
-        </tbody>
-      </table>
-    </div>
-  );
+const LOOP_HELP: CardHelpContent = {
+  title: "Reading a loop",
+  body: (
+    <>
+      <HelpSection title="Worst case and mark">
+        <p>Each loop&apos;s own measure, said in the figure&apos;s hover: the worst case at expiry for flies, the stop distance for MEIC, the box for bwb. They are never added across loops.</p>
+      </HelpSection>
+      <HelpSection title="Loss breaker">
+        <p>The day&apos;s loss against the loop&apos;s own limit. A tripped breaker stops new entries. No limit configured reads as &quot;no limit&quot;, never as clear. MEIC&apos;s figure is gross, and says so.</p>
+      </HelpSection>
+      <HelpSection title="Orders and detail">
+        <p>Opens the loop&apos;s orders today, one chain per position, and every field the card leaves out: the gate, the counts and the net&apos;s parts.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
+/** The breaker's share used: the day's loss over the limit, nothing while there is no limit or no figure. */
+export function breakerShare(b: LiveTodayLoop["breaker"]): number | null {
+  if (b.limit === null || b.figure === null || b.limit === 0) return null;
+  return (Math.max(0, -b.figure) / Math.abs(b.limit)) * 100;
 }
 
-/** A loop's card: its name, armed and state, today's net, and the simple view's fields. */
-function LoopCard({ l, cols, onOpen }: { l: LiveTodayLoop; cols: Column<LiveTodayLoop>[]; onOpen: () => void }) {
+/** A loop's parent card: its net today, what is open and what it can lose, the breaker as a meter, and
+ *  a button to its orders and detail. */
+function LoopParentCard({ l, showWorking, onOpen }: { l: LiveTodayLoop; showWorking: boolean; onOpen: () => void }) {
   const arm = armWords(l);
   const t = l.today;
   const net = t?.net ?? null;
   const losing = net !== null && net < 0;
   const flagged = l.breaker.tripped === true || l.ledger === "failed";
+  const share = breakerShare(l.breaker);
+  const tiles = [
+    { label: "open", value: l.ledger === "ok" ? fmtNum(l.open, 0) : "—", title: undefined },
+    ...(showWorking ? [{ label: "working", value: l.ledger === "ok" ? fmtNum(l.working, 0) : "—", title: l.workingBasis }] : []),
+    { label: "worst case", value: fmtMoney(l.worstCase), title: l.worstCaseBasis },
+    { label: "mark", value: l.mark === null ? "—" : fmtMoney(l.mark.value), title: l.mark?.basis },
+  ];
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      className={["study-tile", "lt-loop", losing ? "is-neg" : "", flagged ? "is-flagged" : ""].filter(Boolean).join(" ")}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      aria-label={`${l.loop}: open its orders and detail`}
+    <Card
+      title={<Link to={l.to}>{l.loop}</Link>}
+      collapseKey={`${l.loop} loop`}
+      className={["lv-4", "pf-cq", "lt-loop", losing ? "is-neg" : "", flagged ? "is-flagged" : ""].filter(Boolean).join(" ")}
+      help={LOOP_HELP}
+      controls={<span className={`chip ${l.arm.armed && !l.arm.pastDisarm ? "chip-ok" : ""}`}>{arm.text}</span>}
     >
-      <span className="lt-loop-top">
-        <span className="lt-loop-name">
-          <Link to={l.to} onClick={(e) => e.stopPropagation()}>
-            {l.loop}
-          </Link>
-          {l.ledger !== "ok" && (
-            <span className={l.ledger === "failed" ? "pnl-neg" : "muted"} title={l.ledgerError ?? undefined}>
-              {" "}
-              · {l.ledger === "absent" ? "no ledger" : "read failed"}
-            </span>
-          )}
-        </span>
-        <span className={`chip ${l.arm.armed && !l.arm.pastDisarm ? "chip-ok" : ""}`}>{arm.text}</span>
-      </span>
-      <span className="lt-loop-net" title={netTitleOf(l)}>
-        {t !== null && net === null ? <span className="muted">n/r</span> : <span className={tone(net)}>{fmtMoney(net)}</span>}
-        <span className="muted lt-loop-net-label">net today</span>
-      </span>
-      <LoopFields l={l} cols={cols.filter((c) => c.key !== "arm" && c.key !== "net")} />
-    </div>
+      <div className={`pf-hero ${t !== null && net === null ? "muted" : tone(net)}`} title={netTitleOf(l)}>
+        {t !== null && net === null ? "n/r" : fmtMoney(net)}
+        <span className="pf-unit"> net today</span>
+      </div>
+      {l.ledger !== "ok" ? (
+        <StateLine tone={l.ledger === "failed" ? "bad" : "note"} title={l.ledgerError ?? undefined}>
+          {l.ledger === "absent" ? "no ledger" : "read failed"}
+        </StateLine>
+      ) : null}
+      <div className={`pf-tiles pf-tiles-${tiles.length > 3 ? 4 : 3}`}>
+        {tiles.map((x) => (
+          <Tile key={x.label} label={x.label} value={x.value} title={x.title} />
+        ))}
+      </div>
+      <span className="lv-lab">loss breaker</span>
+      {share !== null ? <Meter pct={share} title={l.breaker.basis} /> : null}
+      <p className={`pf-caption ${l.breaker.tripped === true ? "pnl-neg" : "muted"}`} title={l.breaker.basis}>
+        {breakerWords(l)}
+      </p>
+      <p className="muted pf-caption">{loopStateWords(l)}</p>
+      <div className="pf-mores pf-push">
+        <button type="button" className="pf-more" onClick={onOpen} aria-label={`${l.loop}: open its orders and detail`}>
+          orders and detail <span aria-hidden="true">›</span>
+        </button>
+      </div>
+    </Card>
   );
 }
 
 export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; manage?: ManagePayload }) {
   const s = d.suite;
-  // A card keeps the simple view's fields in either view: everything else is its lightbox's detail.
-  const cols = loopColumns(anyWorking(d.loops)).filter((c) => c.detailOnly !== true);
-  const navigate = useNavigate();
   const lightbox = useOpenParam("loop");
   const active = d.loops.filter((l) => !l.retired);
   const retired = d.loops.filter((l) => l.retired);
   const index = active.findIndex((l) => l.loop === lightbox.open);
-  // The big card goes to Live → positions; a link or button inside it keeps its own job.
-  const toPositions = (e: MouseEvent<HTMLElement>) => {
-    if ((e.target as HTMLElement).closest("a, button") !== null) return;
-    navigate("/live/positions");
-  };
+  const showWorking = anyWorking(d.loops);
   const netTitle =
     `${handNote(d)} ` +
     (s.net === null
@@ -392,24 +416,30 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
       : `Realised net today over ${s.summed.join(", ") || "no loop"}: gross − fees − settlement, positions resolved today.` +
         (s.excluded.length > 0 ? ` Left out: ${s.excluded.map((e) => `${e.loop} (${e.reason})`).join(", ")}.` : ""));
   return (
-    <div className="lt-board">
-      <div className="lt-tiles">
-        <section className="study-tile study-hero lt-hero" onClick={toPositions}>
-          <div className="lt-hero-top">
-            <span className="lt-label">net today · all loops</span>
+    <div className="pf-layout">
+      <Section concept="stand" question="What needs a person?">
+        <Card
+          title="net today · all loops"
+          collapseKey="today-net"
+          className="lv-8"
+          help={NET_HELP}
+          flag="realised, not marked"
+          controls={
             <Link to="/live/positions" className="lt-hero-link">
               Live positions →
             </Link>
-          </div>
-          <span className={`lt-hero-net ${s.net === null ? "muted" : tone(s.net)}`} title={netTitle}>
+          }
+        >
+          <div className={`pf-hero ${s.net === null ? "muted" : tone(s.net)}`} title={netTitle}>
             {s.net === null ? "n/r" : fmtMoney(s.net)}
-          </span>
-          <span className="lt-hero-parts">
-            {s.gross === null
-              ? "n/r"
-              : `gross ${fmtMoney(s.gross)} · fees ${s.fees === null ? "n/r" : fmtMoney(s.fees)} · settlement ${s.settlementFees === null ? "n/r" : fmtMoney(s.settlementFees)}`}{" "}
-            · {s.trades === null ? "n/r" : String(s.trades)} resolved
-          </span>
+            <span className="pf-unit">
+              {" "}
+              {s.gross === null
+                ? "n/r"
+                : `gross ${fmtMoney(s.gross)} · fees ${s.fees === null ? "n/r" : fmtMoney(s.fees)} · settlement ${s.settlementFees === null ? "n/r" : fmtMoney(s.settlementFees)}`}{" "}
+              · {s.trades === null ? "n/r" : String(s.trades)} resolved
+            </span>
+          </div>
           <span className="lt-hero-chips">
             <span className={`chip ${s.armed.length > 0 ? "chip-ok" : ""}`} title="A loop is armed when its arm record is dated today and the disarm time has not passed.">
               armed · {d.session}: {s.armed.length === 0 ? `none of ${s.loops}` : `${s.armed.length} of ${s.loops} · ${s.armed.join(", ")}`}
@@ -419,14 +449,15 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
             </span>
             <span className={`chip ${d.attention.length > 0 ? "chip-bad" : ""}`}>needs a person · {d.attention.length}</span>
           </span>
-          {/* "needs a person" became the first part of what to do today (2026-10-30). */}
-          <WhatToDoList items={todoList(d, manage)} evaluated={manage?.session ?? null} />
-        </section>
+        </Card>
+        {/* "needs a person" is the first part of what to do today (2026-10-30). */}
+        <WhatToDoList className="lv-4" items={todoList(d, manage)} evaluated={manage?.session ?? null} />
+      </Section>
+      <Section concept="income" question="How is each loop doing?">
         {active.map((l) => (
-          <LoopCard key={l.loop} l={l} cols={cols} onOpen={() => lightbox.show(l.loop)} />
+          <LoopParentCard key={l.loop} l={l} showWorking={showWorking} onOpen={() => lightbox.show(l.loop)} />
         ))}
-        {d.hand !== undefined && <HandTile hand={d.hand} cols={cols} />}
-      </div>
+      </Section>
       {retired.map((l) => (
         // A disabled module holding nothing folds to one line; anything open, working, held,
         // orphaned or overdue (or an arm record for today) brings its card back.
@@ -434,11 +465,11 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
           <Link to={l.to}>{l.loop}</Link> off — module disabled, nothing open or working
         </p>
       ))}
-      {d.hand !== undefined && <HandCard hand={d.hand} session={d.session} />}
-      <p className="muted" style={{ fontSize: 11, margin: 0 }}>
-        Net is realised today: gross − fees − settlement over positions resolved today, at the broker's fills. Worst case and mark are
-        each loop's own measure (hover for which) and are not added across loops. {handNote(d)}
-      </p>
+      {d.hand !== undefined && (
+        <Section concept="add" question="What was traded by hand?">
+          <HandCard hand={d.hand} session={d.session} note={handHasTrades(d.hand) ? undefined : handNote(d)} />
+        </Section>
+      )}
       {index >= 0 ? (
         <LoopDialog loops={active} index={index} data={d} onStep={(to) => lightbox.step(active[to]?.loop ?? "")} onClose={lightbox.close} />
       ) : null}

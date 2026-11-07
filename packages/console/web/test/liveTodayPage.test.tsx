@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import type { LiveMeicPayload, LiveTodayHand, LiveTodayLoop, LiveTodayPayload } from "@console/shared";
 import { LiveTodayView, LoopDetail, suiteBadgeText } from "../src/pages/Live/LiveTodayPage";
 import { DayChains, bwbChains, meicChains } from "../src/pages/Live/LiveTodayOrders";
-import { expiredWords } from "../src/pages/Live/HandToday";
+import { expiredWords, handModel } from "../src/pages/Live/HandToday";
 import { inView } from "./viewTables";
 
 /**
@@ -213,17 +213,22 @@ describe("the suite badge", () => {
 describe("the loop cards and their detail", () => {
   const labels = (html: string) => [...html.matchAll(/<th scope="row">([^<]*)<\/th>/g)].map((m) => m[1]!.replace(/&amp;/g, "&"));
 
-  it("a card shows the state, open, worst case, mark and breaker; the gate, counts and the net's parts wait for the detail", () => {
-    const card = labels(inView("simple", () => render(payload({ loops: [loop("meic")], hand: undefined }))));
-    expect(card).toEqual(expect.arrayContaining(["state", "open", "worst case", "mark", "loss breaker"]));
-    for (const h of ["gate · symbol", "entries", "resolved", "gross", "fees", "settlement", "working"]) expect(card).not.toContain(h);
+  const tileLabels = (html: string) => [...html.matchAll(/<span class="stat-label">([^<]*)<\/span>/g)].map((m) => m[1]!);
+
+  it("a card shows the open count, worst case, mark and breaker; the gate, counts and the net's parts wait for the detail", () => {
+    const html = render(payload({ loops: [loop("meic")], hand: undefined }));
+    const card = tileLabels(html);
+    expect(card).toEqual(["open", "worst case", "mark"]);
+    expect(html).toContain("loss breaker");
+    expect(html).toContain("no meic-live job");
+    for (const h of ["gate · symbol", "entries", "resolved", "settlement", "working"]) expect(html).not.toContain(`>${h}<`);
     const detail = labels(renderToString(<MemoryRouter><LoopDetail l={loop("meic")} attention={[]} /></MemoryRouter>));
     for (const h of ["gate · symbol", "entries", "resolved", "gross", "fees", "settlement", "working", "net", "arm"]) expect(detail).toContain(h);
   });
 
   it("shows `working` on the cards whenever a loop has an order working", () => {
     const d = payload({ loops: [loop("flies"), loop("meic", { working: 1 }), loop("bwb")], hand: undefined });
-    expect(labels(inView("simple", () => render(d)))).toContain("working");
+    expect(tileLabels(render(d))).toContain("working");
   });
 
   it("the big card links to Live → positions, and a loop card to its own page", () => {
@@ -292,18 +297,22 @@ describe("the hand row", () => {
     expect(html).toContain("by hand");
     expect(html).toContain("By hand: $168.00 at mark, not in the loops&#x27; total.");
     // the loops' total is still the loops' alone
-    expect(html).toContain("$0.00");
-    expect(html).not.toContain("$168.00</span></div>");
+    expect(html).toMatch(/net today · all loops[\s\S]*?class="pf-hero pnl-pos"[^>]*>\$0\.00</);
   });
 
   it("lists each hand order with its legs, net price, cash and fees", () => {
     const html = render(payload({ hand: hand(HAND_IC) }));
-    expect(html).toContain("By hand — SPX 0DTE, 2026-10-15");
-    expect(html).toContain("−1 4980P  +1 4970P  −1 5080C  +1 5090C");
+    expect(html).toContain("by hand · SPX 0DTE");
+    // one trade card, its legs in the order-chain look
+    expect(html.match(/tc-card/g)?.length).toBe(1);
+    for (const leg of ["1 4980P @ 2.50", "1 4970P @ 1.20", "1 5080C @ 1.30", "1 5090C @ 0.40"]) expect(html).toContain(leg);
+    expect(html.match(/>STO</g)?.length).toBe(2);
+    expect(html.match(/>BTO</g)?.length).toBe(2);
     expect(html).toContain("2.20 cr");
     expect(html).toContain("+$220.00");
-    expect(html).toContain("$2.00");
+    expect(html).toContain("fees $2.00");
     expect(html).toContain("11:35"); // 15:35Z in ET
+    expect(html).toContain("no loop manages these"); // the amber flag stays on the card
   });
 
   it("names a leg the fills cannot explain, and draws no net for it", () => {
@@ -321,7 +330,7 @@ describe("the hand row", () => {
     expect(html).toContain("does not reconcile");
     expect(html).toContain("SPXW  261015C05100000: -1 held, but today&#x27;s fills explain 0");
     expect(html).toContain("By hand: n/r");
-    expect(html).toMatch(/class="pnl-neg"[^>]*>SPXW  261015C05100000: -1 held/);
+    expect(html).toMatch(/class="lv-state is-bad"[^>]*>SPXW  261015C05100000: -1 held/);
   });
 
   it("lists yesterday's expired legs muted, never red, on a morning with no hand trade", () => {
@@ -336,10 +345,10 @@ describe("the hand row", () => {
         }),
       }),
     );
-    expect(html).toContain("By hand —");
-    expect(html).toMatch(/class="muted"[^>]*>2 expired legs still listed by the broker until it processes the expiry, not counted here \(2026-10-14: −1 4950P \+1 4940P\)/);
-    expect(html).toMatch(/class="muted"[^>]*>the account history holds nothing older than today/);
-    expect(html).not.toContain('class="pnl-neg"');
+    expect(html).toContain("by hand ·");
+    expect(html).toMatch(/class="lv-state"[^>]*>2 expired legs still listed by the broker until it processes the expiry, not counted here \(2026-10-14: −1 4950P \+1 4940P\)/);
+    expect(html).toMatch(/class="lv-state"[^>]*>the account history holds nothing older than today/);
+    expect(html).not.toContain("is-bad");
   });
 
   it("names one expired leg in the singular", () => {
@@ -353,6 +362,6 @@ describe("the hand row", () => {
     const html = render(payload());
     expect(html).toContain("no position evaluation today yet (newest 2026-10-14)");
     expect(html).toContain("No 0DTE trade by hand today.");
-    expect(html).not.toContain("By hand —");
+    expect(html).not.toContain("tc-card");
   });
 });

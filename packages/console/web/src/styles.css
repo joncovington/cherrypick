@@ -9562,3 +9562,53 @@ button.chip[aria-pressed][data-hue="special"],
 .study-dialog-body p {
   overflow-wrap: anywhere;
 }
+
+/* redesign: live-a (Live: today, positions, meic, flies) -- the portfolio tab's layout reused. Two
+   more concept marks, the column spans a row's cards take (a row is 12 columns), the state line, the
+   breaker's meter in amber, and a few small spacings. Nothing above this line was edited. */
+.pf-c-live { --pf-c: var(--live); }
+.pf-c-hist { --pf-c: var(--chart-special-2); }
+.pf-row > .card.lv-12 { grid-column: 1 / -1; }
+.pf-row > .card.lv-8 { grid-column: span 8; }
+.pf-row > .card.lv-4 { grid-column: span 4; }
+@container pf (max-width: 1000px) {
+  .pf-row > .card.lv-8 { grid-column: 1 / -1; }
+  .pf-row > .card.lv-4 { grid-column: span 6; }
+  .pf-row > .card.lv-4:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+@container pf (max-width: 760px) {
+  .pf-row > .card.lv-8,
+  .pf-row > .card.lv-4 { grid-column: 1 / -1; }
+}
+.lv-state {
+  margin: 0.5rem 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.lv-state.is-warn { color: var(--warn); }
+.lv-state.is-bad { color: var(--neg); }
+.lv-meter-warn > span { background: var(--warn); }
+.lv-line {
+  margin: 0 0 0.5rem;
+  font-size: 12px;
+}
+.lv-lab {
+  display: block;
+  margin: 0.6rem 0 0.25rem;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.lv-sub {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.9rem;
+}
+.lv-rules td:first-child {
+  font-family: var(--num-face);
+}
+.pf-row > .card .pf-tiles + .pf-tiles,
+.pf-row > .card .pf-tiles + .tc-grid,
+.pf-row > .card .pf-tiles + .tr-list {
+  margin-top: 0.6rem;
+}
+.lt-loop .pf-tiles-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }

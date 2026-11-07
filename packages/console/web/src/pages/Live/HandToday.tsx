@@ -1,8 +1,12 @@
-import type { ReactElement } from "react";
 import type { LiveTodayHand, LiveTodayHandOrder } from "@console/shared";
-import { DataCard, PnlCell } from "../../components/DataTable";
+import { Card } from "../../components/DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+import { ListViewContext, ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
 import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
 import { etClock } from "../../lib/etTime";
+import { Tile } from "../Flies/PerformanceTab";
+import { StateLine } from "./liveParts";
+import { TradeCards, type TradeCardModel } from "./TradeCard";
 
 /**
  * Live → today's hand row and card (2026-11-03): the 0DTE trades placed by hand, which no loop
@@ -60,174 +64,137 @@ export function handStateWords(h: LiveTodayHand): string {
   return h.markedAt !== null ? `fills ${snap} · marked ${etClock(h.markedAt, "?")}` : `as of ${snap}`;
 }
 
-/** One `<td>` per loops-table column, so the hand row lines up with the loops above it. */
-export function handCell(key: string, h: LiveTodayHand): ReactElement {
-  const ok = h.status === "ok";
-  const open = h.orders.filter((o) => o.kind === "open" || o.kind === "mixed").length;
-  const closes = h.orders.filter((o) => o.kind === "close").length;
-  switch (key) {
-    case "loop":
-      return (
-        <td key={key} title="0DTE trades placed by hand on the names manage leaves to the loops; no loop manages, stops or settles them">
-          by hand
-          {h.status !== "ok" && <span className="muted"> · {h.status === "none" ? "no evaluation" : "not read"}</span>}
-          {ok && h.unreconciled.length > 0 && <span className="pnl-neg"> · does not reconcile</span>}
-        </td>
-      );
-    case "arm":
-      return (
-        <td key={key} className="muted">
-          no loop
-        </td>
-      );
-    case "gate":
-      return (
-        <td key={key} className="muted">
-          — · {h.underlyings.join(", ") || "?"}
-        </td>
-      );
-    case "state":
-      return (
-        <td key={key} className="muted" title="the position evaluation's broker snapshot (every 30 minutes) and its last re-mark from the stream cache">
-          {handStateWords(h)}
-        </td>
-      );
-    case "open":
-      return (
-        <td key={key} title="legs still held by hand">
-          {ok ? `${h.openLegs.length} leg${h.openLegs.length === 1 ? "" : "s"}` : "—"}
-        </td>
-      );
-    case "working":
-      return (
-        <td key={key} className="muted" title="not read for hand orders">
-          —
-        </td>
-      );
-    case "worst":
-      return (
-        <td key={key} className="muted" title="no worst case is computed for hand trades">
-          —
-        </td>
-      );
-    case "mark":
-      return (
-        <td key={key} title="the legs still held by hand, at mid">
-          <PnlCell v={ok && h.openLegs.length > 0 ? h.mark : null} />
-        </td>
-      );
-    case "entries":
-      return <td key={key}>{ok ? String(open) : "—"}</td>;
-    case "resolved":
-      return (
-        <td key={key} title="closing orders filled today">
-          {ok ? String(closes) : "—"}
-        </td>
-      );
-    case "gross":
-      return (
-        <td key={key} title="signed cash from today's hand fills, plus the held legs at mid">
-          {ok ? fmtMoney(h.gross) : "—"}
-        </td>
-      );
-    case "fees":
-      return <td key={key}>{ok ? fmtMoney(h.fees) : "—"}</td>;
-    case "settlement":
-      return (
-        <td key={key} title="n/r while a held leg has still to settle (booked the next morning)">
-          {!ok ? "—" : h.settlement === null ? "n/r" : fmtMoney(h.settlement)}
-        </td>
-      );
-    case "net":
-      return (
-        <td key={key} title={h.netBasis ?? undefined}>
-          {ok && h.net === null && h.orders.length > 0 ? <span className="muted">n/r</span> : <PnlCell v={ok ? h.net : null} />}
-          {ok && h.net !== null && h.openLegs.length > 0 && <span className="muted"> at mark</span>}
-        </td>
-      );
-    case "breaker":
-      return (
-        <td key={key} className="muted" title="no daily-loss breaker covers hand trades">
-          none
-        </td>
-      );
-    default:
-      return <td key={key} />;
-  }
+/** True when the hand has something to show as trades: an order today, or a held leg. */
+export function handHasTrades(h: LiveTodayHand): boolean {
+  return h.status === "ok" && (h.orders.length > 0 || h.openLegs.length > 0);
 }
 
-/** The hand trades' detail: each order today and each leg still held. Drawn only when there is something to show. */
-export function HandCard({ hand: h, session }: { hand: LiveTodayHand; session: string }) {
-  if (
-    h.status !== "ok" ||
-    (h.orders.length === 0 && h.unreconciled.length === 0 && h.caveats.length === 0 && h.expiredHeld.length === 0)
-  )
-    return null;
-  // Red is kept for what puts today's figures in doubt; caveats and the expired legs are muted, or
-  // a note every morning after a 0DTE session would train the eye to pass over red here.
+/** `STO` / `BTC` ... from the fill's action ("Sell to Open"); null when the action names no side or no open/close. */
+function legTag(action: string): string | null {
+  const side = action.startsWith("Sell") ? "ST" : action.startsWith("Buy") ? "BT" : null;
+  const end = /to Open/i.test(action) ? "O" : /to Close/i.test(action) ? "C" : null;
+  return side !== null && end !== null ? `${side}${end}` : null;
+}
+
+/** `1 4980P @ 2.50` from an OCC symbol, the fill's size and its price. */
+function legText(symbol: string, quantity: number | null, price: number | null): string {
+  const m = /([CP])(\d{8})$/.exec(symbol.replace(/\s+/g, ""));
+  const q = Math.abs(quantity ?? 1);
+  const what = m === null ? symbol.trim() : `${Number(m[2]) / 1000}${m[1]}`;
+  return `${q} ${what}${price === null ? "" : ` @ ${fmtMid(price)}`}`;
+}
+
+const KIND_ROLE: Record<LiveTodayHandOrder["kind"], string> = { open: "open", close: "close", mixed: "open and close", unknown: "order" };
+
+/** One hand order as a trade card: what filled, at what price, what it took in and what it cost. A
+ *  hand trade has no worst case here, so the card has no bar. */
+export function handModel(o: LiveTodayHandOrder, underlying: string): TradeCardModel {
+  const price = orderPrice(o);
+  const priceWords = price === null ? "—" : fmtPrice(price);
+  const clock = etClock(o.at);
+  return {
+    key: o.orderId ?? o.at ?? "",
+    symbol: underlying,
+    spot: null,
+    shape: `${o.legs.length}-leg order · 0DTE · ${clock}`,
+    chips: <span className="chip">{KIND_ROLE[o.kind]}</span>,
+    cash: o.cash,
+    side: [priceWords === "—" ? "mixed sizes" : priceWords, clock],
+    bar: null,
+    hideBar: true,
+    barTitle: "",
+    label: "no worst case is computed for hand trades",
+    open: { date: clock, price: priceWords, role: KIND_ROLE[o.kind] },
+    legs: o.legs.map((l) => {
+      const tag = legTag(l.action);
+      return { buy: !l.action.startsWith("Sell"), ...(tag === null ? {} : { tag }), text: legText(l.symbol, l.quantity, l.price), quote: null };
+    }),
+    after: [o.orderId === null ? "no order id" : `order ${o.orderId}`],
+    foot: [`fees ${fmtMoney(o.fees)}`, "not in the loops' total"],
+  };
+}
+
+export const HAND_HELP: CardHelpContent = {
+  title: "Trades placed by hand",
+  body: (
+    <>
+      <HelpWarn title="No loop manages these">
+        <p>
+          No stop, no force-close, no settlement row, and no breaker counts them. A fill is a loop&apos;s when its order id is one a loop
+          has published; every other 0DTE fill on the names manage leaves to the loops is the hand&apos;s.
+        </p>
+      </HelpWarn>
+      <HelpSection title="The money">
+        <p>
+          Net is gross less fees less settlement, the held legs at mid until they settle. It sits beside the loops&apos; total and is never added to it. Expired legs the broker
+          still lists are not counted.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
+
+/** The hand trades: a parent card with the money, each order as a trade card (or a row), and the lines
+ *  that put a figure in doubt. Drawn alone with a reason when there is nothing to show. */
+export function HandCard({ hand: h, session, note }: { hand: LiveTodayHand; session: string; note?: string }) {
+  const [view, setView] = useViewChoice("today-hand");
   const warnings = [
     ...h.unreconciled.map(
       (u) => `${u.symbol.trim()}: ${u.held} held, but today's fills explain ${u.loopFills + u.handFills} (loops ${u.loopFills}, hand ${u.handFills}); mark and net are not stated`,
     ),
-    ...(h.afterPublish.length > 0
-      ? [`filled after the loops last listed their orders, so possibly a loop's: ${h.afterPublish.join(", ")}`]
-      : []),
+    ...(h.afterPublish.length > 0 ? [`filled after the loops last listed their orders, so possibly a loop's: ${h.afterPublish.join(", ")}`] : []),
   ];
   const expired = expiredWords(h.expiredHeld);
+  const ok = h.status === "ok";
+  const title = h.underlyings.length > 0 ? `by hand · ${h.underlyings.join(", ")} 0DTE` : "by hand · 0DTE";
+  const underlying = h.underlyings[0] ?? "?";
   return (
-    <DataCard
-      title={`By hand — ${h.underlyings.join(", ")} 0DTE, ${session}`}
-      headers={["time", "order", "kind", "legs", "price", "cash", "fees"]}
-      numFrom={4}
-      loading={false}
-      rowCount={h.orders.length}
-      empty="no hand orders filled today"
-      footer={
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-          {h.openLegs.length > 0 && (
-            <p style={{ margin: 0 }}>
-              Held:{" "}
-              {h.openLegs.map((l) => (
-                <span key={l.symbol} title={`${l.markSource ?? "?"} mark${l.markAgeSeconds !== null ? `, ${Math.round(l.markAgeSeconds)}s old` : ""}`}>
-                  {legLabel(l.symbol, l.quantity < 0 ? "Sell" : "Buy", Math.abs(l.quantity))} @ {fmtMid(l.mid)}{" "}
-                </span>
-              ))}
-              · mark {fmtCash(h.mark)}
-            </p>
-          )}
-          {warnings.map((n) => (
-            <p key={n} className="pnl-neg" style={{ margin: 0 }}>
-              {n}
-            </p>
-          ))}
-          {h.caveats.map((n) => (
-            <p key={n} className="muted" style={{ margin: 0 }}>
-              {n}
-            </p>
-          ))}
-          {expired !== null && (
-            <p className="muted" style={{ margin: 0 }} title="the broker lists an expired leg until it processes the expiry overnight">
-              {expired}
-            </p>
-          )}
-          <p className="muted" style={{ margin: 0, fontSize: 11 }}>
-            No loop manages these: no stop, no force-close, no settlement row, and no breaker counts them. A fill is a loop's when its
-            order id is one a loop has published ({Object.keys(h.knownModules).join(", ") || "none read"}); {h.loopFills} of today's fills were.
-          </p>
-        </div>
-      }
+    <Card
+      title={title}
+      collapseKey="today-hand"
+      className="lv-12 pf-cq"
+      help={HAND_HELP}
+      flag="no loop manages these"
+      controls={handHasTrades(h) && h.orders.length > 0 ? <ViewSwitch view={view} onChange={setView} /> : undefined}
     >
-      {h.orders.map((o) => (
-        <tr key={o.orderId ?? o.at ?? ""}>
-          <td>{etClock(o.at)}</td>
-          <td className="muted">{o.orderId ?? "—"}</td>
-          <td>{o.kind}</td>
-          <td>{o.legs.map((l) => legLabel(l.symbol, l.action, l.quantity)).join("  ")}</td>
-          <td>{fmtPrice(orderPrice(o))}</td>
-          <td>{fmtCash(o.cash)}</td>
-          <td>{fmtMoney(o.fees)}</td>
-        </tr>
+      <p className="muted lv-line">
+        {session} · {handStateWords(h)}
+        {ok && h.unreconciled.length > 0 ? <span className="pnl-neg"> · does not reconcile</span> : null}
+      </p>
+      {note ? <StateLine>{note}</StateLine> : null}
+      {handHasTrades(h) ? (
+        <div className="pf-tiles pf-tiles-4">
+          <Tile label="net" value={h.net === null ? "n/r" : fmtMoney(h.net)} tone={h.net === null ? "dim" : h.net >= 0 ? "pos" : "neg"} title={h.netBasis ?? undefined} />
+          <Tile label="gross" value={h.gross === null ? "—" : fmtMoney(h.gross)} title="signed cash from today's hand fills, plus the held legs at mid" />
+          <Tile label="fees" value={h.fees === null ? "—" : fmtMoney(h.fees)} />
+          <Tile label="settlement" value={h.settlement === null ? "n/r" : fmtMoney(h.settlement)} title="n/r while a held leg has still to settle (booked the next morning)" />
+        </div>
+      ) : null}
+      {h.openLegs.length > 0 ? (
+        <StateLine>
+          Held:{" "}
+          {h.openLegs.map((l) => (
+            <span key={l.symbol} title={`${l.markSource ?? "?"} mark${l.markAgeSeconds !== null ? `, ${Math.round(l.markAgeSeconds)}s old` : ""}`}>
+              {legLabel(l.symbol, l.quantity < 0 ? "Sell" : "Buy", Math.abs(l.quantity))} @ {fmtMid(l.mid)}{" "}
+            </span>
+          ))}
+          · mark {fmtCash(h.mark)}
+        </StateLine>
+      ) : null}
+      <ListViewContext.Provider value={view}>
+        <TradeCards models={h.orders.map((o) => handModel(o, underlying))} />
+      </ListViewContext.Provider>
+      {warnings.map((n) => (
+        <StateLine key={n} tone="bad">
+          {n}
+        </StateLine>
       ))}
-    </DataCard>
+      {h.caveats.map((n) => (
+        <StateLine key={n}>{n}</StateLine>
+      ))}
+      {expired !== null ? (
+        <StateLine title="the broker lists an expired leg until it processes the expiry overnight">{expired}</StateLine>
+      ) : null}
+    </Card>
   );
 }

@@ -1,32 +1,59 @@
+import type { ReactNode } from "react";
 import type { LiveMeicReadiness } from "@console/shared";
+import { Card } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 
 /**
  * Whether MEIC's live loop may be armed, as the module answers it (`arm_verdict`, bridged by the
  * server). The card draws the verdict, the held ICs and the loop's CRITICAL lines as given; it
- * computes nothing, and it has no button: arming is the human's `/live-meic-start`.
+ * computes nothing, and it has no button: arming is the human's `/live-meic-start`. Since 2026-11-06 it
+ * leads the page and carries the arm, halt and gate tiles the page used to keep in a card of their own.
  *
  * Three states: ready, not ready (each blocker listed), and a bridge that failed -- which says so
  * and is never drawn as ready.
  */
-export function MeicReadinessCard({ readiness }: { readiness: LiveMeicReadiness | undefined }) {
+
+export const READINESS_HELP: CardHelpContent = {
+  title: "Readiness",
+  body: (
+    <>
+      <HelpSection title="Ready to arm">
+        <p>Every check the arm needs: the gate, the broker session, the stream and the ledger. Blockers are red, warnings amber. The verdict is the module&apos;s own.</p>
+      </HelpSection>
+      <HelpSection title="Halt flag">
+        <p>It blocks new condors only: fills are still confirmed and open condors still stopped and closed. Clearing it arms nothing.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
+export function MeicReadinessCard({
+  readiness,
+  tiles,
+  shown = () => false,
+}: {
+  readiness: LiveMeicReadiness | undefined;
+  /** The arm, disarm, halt, gate, orphan and held tiles, drawn under the verdict. */
+  tiles?: ReactNode;
+  /** True for a held condor the open board already shows, so its line (and its stop) is said once. */
+  shown?: (ic: string) => boolean;
+}) {
   if (readiness === undefined || !readiness.ok) {
     return (
-      <section className="card">
-        <h3>Live readiness</h3>
+      <Card title="live readiness" collapseKey="live-meic-readiness" className="pf-cq" help={READINESS_HELP}>
         <p className="pnl-neg">
           <strong>Readiness unknown</strong> — the status read failed, so nothing here says live is ready
         </p>
         <p className="muted">{readiness === undefined ? "the server sent no readiness block" : readiness.error}</p>
-      </section>
+        {tiles}
+      </Card>
     );
   }
   const newestFirst = [...readiness.criticals].reverse();
+  const held = readiness.openIcs.filter((ic) => !shown(ic));
   return (
-    <section className="card">
-      <h3>Live readiness</h3>
-      <p className={readiness.ready ? "pnl-pos" : "pnl-neg"}>
-        <strong>{readiness.ready ? "Ready to arm" : "Not ready"}</strong>
-      </p>
+    <Card title="live readiness" collapseKey="live-meic-readiness" className="pf-cq" help={READINESS_HELP}>
+      <div className={`pf-hero ${readiness.ready ? "pnl-pos" : "pnl-neg"}`}>{readiness.ready ? "Ready to arm" : "Not ready"}</div>
       {readiness.blockers.length > 0 && (
         <ul aria-label="blockers">
           {readiness.blockers.map((b) => (
@@ -45,16 +72,22 @@ export function MeicReadinessCard({ readiness }: { readiness: LiveMeicReadiness 
           ))}
         </ul>
       )}
-      <h4>Held now</h4>
+      {tiles}
       {readiness.openIcs.length === 0 ? (
-        <p className="muted">no iron condor held</p>
-      ) : (
-        <ul aria-label="held iron condors">
-          {readiness.openIcs.map((ic) => (
-            <li key={ic}>{ic}</li>
-          ))}
-        </ul>
-      )}
+        <>
+          <h4>Held now</h4>
+          <p className="muted">no iron condor held</p>
+        </>
+      ) : held.length > 0 ? (
+        <>
+          <h4>Held now</h4>
+          <ul aria-label="held iron condors">
+            {held.map((ic) => (
+              <li key={ic}>{ic}</li>
+            ))}
+          </ul>
+        </>
+      ) : null}
       <h4>CRITICAL today</h4>
       {newestFirst.length === 0 ? (
         <p className="muted">none today</p>
@@ -67,6 +100,6 @@ export function MeicReadinessCard({ readiness }: { readiness: LiveMeicReadiness 
           ))}
         </ul>
       )}
-    </section>
+    </Card>
   );
 }

@@ -4,7 +4,7 @@ import type { LiveMeicOpenRow, ManageAccount } from "@console/shared";
 import { Cells, HeadRow, columnsFor, type Column } from "../src/components/columns";
 import { NAV_DECL, viewSlides } from "../src/lightbox/navGroups";
 import { AccountTiles } from "../src/pages/Live/ManagePage";
-import { OPEN_COLUMNS, ORDER_COLUMNS, type AttentionRow } from "../src/pages/Live/MeicLivePage";
+import { ORDER_COLUMNS, openModel, type AttentionRow } from "../src/pages/Live/MeicLivePage";
 import { aligned, inView, tables } from "./viewTables";
 
 /**
@@ -84,20 +84,17 @@ const openRow: LiveMeicOpenRow = {
 const orphan: AttentionRow = { key: "o", kind: "orphan", order: "123", status: "Live", quietStatus: false, symbol: "SPX", ext: "meic-abc" };
 
 describe("Live → meic, simple and detail", () => {
-  it("keeps date, sym and arm on the open condors to detail", () => {
-    const simple = tables(table(columnsFor(OPEN_COLUMNS, "simple"), [openRow]))[0]!;
-    const detail = tables(table(columnsFor(OPEN_COLUMNS, "detail"), [openRow]))[0]!;
-    for (const h of ["date", "sym", "arm"]) {
-      expect(simple.headers).not.toContain(h);
-      expect(detail.headers).toContain(h);
-    }
-    expect(simple.headers).toEqual(["time", "put", "call", "wing", "qty", "price", "entry", "state", "sides held"]);
-    expect(aligned(simple)).toBe(true);
-    expect(aligned(detail)).toBe(true);
+  it("an open condor is a trade card: its four legs, the credit taken in, no bar the live read cannot fill", () => {
+    const m = openModel(openRow);
+    expect(m.legs.map((l) => `${l.buy ? "BTO" : "STO"} ${l.text}`)).toEqual(["STO 1 6600P", "BTO 1 6590P", "STO 1 6800C", "BTO 1 6810C"]);
+    expect(m.cash).toBe(120);
+    expect(m.hideBar).toBe(true);
+    expect(m.label).toBe("sides held: put + call");
   });
 
-  it("an overdue condor still says so in simple, where its date is hidden", () => {
-    const html = table(columnsFor(OPEN_COLUMNS, "simple"), [{ ...openRow, overdue: true }]);
+  it("an overdue condor still says so, on its chip", () => {
+    const html = renderToString(<>{openModel({ ...openRow, overdue: true }).chips}</>);
+    expect(html).toContain("chip-bad");
     expect(html).toContain("open · overdue");
   });
 
