@@ -6457,6 +6457,85 @@ item 59's fetch and runs through item 59's script.*
   - **A fail or no verdict:** records that an early fixed exit does not improve the 45-day index
     condor. manage's 50%-or-21-days rule stands.
 
+### 64. The intraday premium map: implied against realised odds of SPX closing near its price, by time of day
+
+*Source: the 2026-11-07 review of third-party research (kept local). It publishes how often SPX
+closes within ±0.1-0.5% of its price at each half hour, realised only. The user approved this test
+on 2026-11-07. Declared here before any of it is run. No new fetch.*
+
+- **Question:** at each time of day, does the 0DTE chain price the move to the close at the rate it
+  happens? Where is the gap largest?
+- **What it is:** a **measurement**, not a strategy, so there is no pass test. It maps where any
+  intraday premium sits, so that a later declared structure test can be aimed at a time and width
+  chosen from it. Items 9, 24, 58, 60 and 61 each tested one afternoon structure; this measures the
+  premium under all of them at once.
+- **The reading:**
+  - Times 10:00 to 15:30 on the half hour, and 15:55. Bands ±0.1%, ±0.2%, ±0.3% and ±0.5% of the
+    spot at that minute.
+  - The chain's probability of closing above each listed strike comes from out-of-the-money mids
+    (the call or put spread over neighbouring strikes, divided by their gap). It is interpolated to
+    the band's edges, and the implied probability of closing inside is the difference.
+  - Realised is 1 when the close lands inside.
+  - The gap is realised minus implied, in percentage points, with its t (one session, one
+    observation).
+- **Reported:** the full table for 2022-05-16 to 2024-12-31, for 2025-01-01 to 2026-11-06, for the
+  whole span, and by year. A gap that keeps its sign in both windows and in most years is the only
+  kind a later item may build on.
+- **Declared limits:**
+  - mids, not fills: a gap is the most a structure could harvest before costs;
+  - settlement at `daily_closes` (the official close from 2024-05-13, the vendor's last print before);
+  - strike steps of five points make the narrowest band coarse at high index levels; the
+    interpolation is linear.
+- **Data:** `scripts/intraday_premium_map_item64.py`, `SPX-60s.db`. Results stay local.
+- **Decides:** nothing by itself. A consistent positive gap at one time and width is the input to a
+  declared structure test (a fly or condor at that time, at working fills, with a holdout). No
+  consistent gap closes the "time of day" lever for 0DTE premium.
+
+### 65. Item 47's mirror: a long straddle across an earnings report when its implied move is below past moves
+
+*Source: the same 2026-11-07 review. A third-party earnings tool ranks long options highest where a
+stock's implied move sits below its average past move. Item 47 tested the other side (selling when
+implied is above past moves) and failed. The user approved the test on 2026-11-07. Declared here
+before any of it is run. No new fetch: item 47's stored chains price it.*
+
+- **Question:** when the front weekly's expected move is below both the mean of the last eight
+  reports' moves and the mean of every earlier report's, does buying an at-the-money straddle across
+  the report earn after costs?
+- **Where the edge would live:** a **selection signal**, the market under-pricing a report's move
+  relative to the stock's own history. The rival is that the history is stale: the market knows
+  something about this report that past moves do not.
+- **Look-alikes:** item 47 (its mirror, failed today); item 31 (the module's paper rule); the
+  EM-fly and navigator studies (long flies and spreads around reports, both lost). None bought
+  volatility on a cheap-to-history selector.
+- **The structure, item 47's in every part but the side:**
+  - item 31's events, windows, time-halves, name-halves and paired control sessions; item 47's
+    past-move table and expected move (0.85 × the front weekly's at-the-money straddle mid over the
+    close);
+  - **cheap**: with at least four earlier reports, the expected move below both past means;
+  - **the straddle:** the first standard monthly at least 14 days out, the strike nearest the entry
+    close with both sides two-sided. It is **bought** at the entry session's close at mid plus the
+    suite's slippage and **sold** at the reaction session's close at mid less it. Fees are a two-leg
+    open and a two-leg close.
+  - **This is a monthly straddle**, not the front weekly. Only the monthly's exit chains are stored
+    (item 47's fetch), and a monthly carries more time value through the report than a weekly. That
+    is declared as a departure from the source, which used several expiries.
+  - A leg without a two-sided exit quote is sold at intrinsic less its entry spread, and counted.
+- **Measured:** net in basis points of the stock's notional (100 × the entry close); the control is
+  the same straddle on the control session.
+- **Pass-or-fail rule:** item 47's rule for its selected arm, applied to `cheap`:
+  - at least 150 design trades;
+  - net t above 2 and paired-difference t above 2 (clustered by entry session);
+  - net positive in each time-half and each name-half;
+  - positive at the stress (1.5× fees, a quarter of the spread);
+  - positive without the best five;
+  - above the other events' mean;
+  - then the holdout's net and pair both positive (at least 100 trades).
+- **Declared limits:** item 47's, plus the monthly expiry above.
+- **Data:** `scripts/earnings_straddle_item65.py` (imports item 47's script), `eod_chains.db`, Dolt
+  bars. Results stay local.
+- **Decides:** a pass leads to a proposal for the earnings module (a long-vol arm, paper first); a
+  fail closes implied-against-past moves as a selector in both directions.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
