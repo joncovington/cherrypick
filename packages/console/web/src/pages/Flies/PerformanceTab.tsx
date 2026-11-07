@@ -2,7 +2,11 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { LiveVsPaper, TradingMode } from "@console/shared";
 import { fliesQuery, type FliesFilter } from "../../lib/api";
-import { fmtMoney } from "../../components/DataTable";
+import { Card, fmtMoney } from "../../components/DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+import { useOpenParam } from "../Backtest/CardLightbox";
+import { FliesLayout, FliesSection } from "./FliesFilter";
+import { BoxOpen, FliesBoxHost, type FliesBox } from "./FliesBoxes";
 import { EquityUnderwater } from "../../components/EquityUnderwater";
 import { VoidedNote } from "./VoidedNote";
 import { DailyRiskTiles } from "../../components/performance/DailyRiskTiles";
@@ -196,106 +200,131 @@ export function CompletionTrend({ trend }: { trend: Performance["completionTrend
 }
 
 // The cards below are shared with the Live page, which carries this tab's live-mode figures for
-// the pilot's arm: one rendering, so the two pages cannot word the same number differently.
-export function CompletionCard({ c }: { c: Performance["completion"] | undefined }) {
+// the pilot's arm: one rendering, so the two pages cannot word the same number differently. The
+// tab itself (2026-11-07) shows the same tables as the tabs of one lightbox, built from the same
+// bodies.
+type Completion = Performance["completion"];
+type Roll = NonNullable<Performance["roll"]>;
+type LeftOnTable = NonNullable<Performance["leftOnTable"]>;
+type Lvp = NonNullable<Performance["liveVsPaper"]>;
+
+function CompletionStats({ c }: { c: Completion }) {
+  return (
+    <div className="table-scroll">
+      <table className="data-table">
+        <tbody>
+          <tr><td className="muted">legged entries</td><td>{c.leggedEntries}</td></tr>
+          <tr><td className="muted">completed into flies</td><td>{c.completed}</td></tr>
+          <tr><td className="muted">completion rate</td><td>{c.completionRatePct !== null ? `${c.completionRatePct.toFixed(1)}%` : "—"}</td></tr>
+          <tr><td className="muted">median latency</td><td>{c.medianLatencyMin !== null ? `${c.medianLatencyMin.toFixed(0)}m` : "—"}</td></tr>
+          <tr>
+            <td className="muted">latency range</td>
+            <td>{c.minLatencyMin !== null ? `${c.minLatencyMin.toFixed(0)}–${c.maxLatencyMin?.toFixed(0)}m` : "—"}</td>
+          </tr>
+          <tr><td className="muted">median spot move to complete</td><td>{c.medianSpotMove !== null ? c.medianSpotMove.toFixed(2) : "—"}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Why the legged entries that did not complete did not: opposite remedies, so never lumped. */
+function MissesTable({ c }: { c: Completion }) {
+  return (
+    <div className="table-scroll">
+      <table className="data-table">
+        <tbody>
+          <tr>
+            <td className="muted" title="the best debit ever seen was still above the credit — no buffer would have helped">market never offered it</td>
+            <td>{c.neverOffered}</td>
+          </tr>
+          <tr>
+            <td className="muted" title="the debit beat the credit but not fee_buffer — our price gate cost us the fly">blocked by fee_buffer</td>
+            <td>{c.bufferBlocked}</td>
+          </tr>
+          <tr>
+            <td className="muted" title="cleared the buffer but the post-fee floor missed min_floor_dollars — read from the decisions journal">blocked by min_floor_dollars</td>
+            <td>{c.floorBlocked}</td>
+          </tr>
+          <tr><td className="muted">never priced</td><td>{c.unknown}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function CompletionCard({ c }: { c: Completion | undefined }) {
   return (
     <section className="card">
       <h2>Completion (legged — the number that decides if this is real)</h2>
       {c !== undefined && (
         <>
-          <div className="table-scroll">
-          <table className="data-table">
-            <tbody>
-              <tr><td className="muted">legged entries</td><td>{c.leggedEntries}</td></tr>
-              <tr><td className="muted">completed into flies</td><td>{c.completed}</td></tr>
-              <tr><td className="muted">completion rate</td><td>{c.completionRatePct !== null ? `${c.completionRatePct.toFixed(1)}%` : "—"}</td></tr>
-              <tr><td className="muted">median latency</td><td>{c.medianLatencyMin !== null ? `${c.medianLatencyMin.toFixed(0)}m` : "—"}</td></tr>
-              <tr>
-                <td className="muted">latency range</td>
-                <td>{c.minLatencyMin !== null ? `${c.minLatencyMin.toFixed(0)}–${c.maxLatencyMin?.toFixed(0)}m` : "—"}</td>
-              </tr>
-              <tr><td className="muted">median spot move to complete</td><td>{c.medianSpotMove !== null ? c.medianSpotMove.toFixed(2) : "—"}</td></tr>
-            </tbody>
-          </table>
-          </div>
+          <CompletionStats c={c} />
           {/* The misses are the shortfall above (legged − completed), so they sit in this card rather
               than a short one beside it that left half a row blank. */}
           <h3 className="card-subhead">Why misses missed (opposite remedies — do not lump)</h3>
-          <div className="table-scroll">
-          <table className="data-table">
-            <tbody>
-              <tr>
-                <td className="muted" title="the best debit ever seen was still above the credit — no buffer would have helped">market never offered it</td>
-                <td>{c.neverOffered}</td>
-              </tr>
-              <tr>
-                <td className="muted" title="the debit beat the credit but not fee_buffer — our price gate cost us the fly">blocked by fee_buffer</td>
-                <td>{c.bufferBlocked}</td>
-              </tr>
-              <tr>
-                <td className="muted" title="cleared the buffer but the post-fee floor missed min_floor_dollars — read from the decisions journal">blocked by min_floor_dollars</td>
-                <td>{c.floorBlocked}</td>
-              </tr>
-              <tr><td className="muted">never priced</td><td>{c.unknown}</td></tr>
-            </tbody>
-          </table>
-          </div>
+          <MissesTable c={c} />
         </>
       )}
     </section>
   );
 }
 
-export function LiveVsPaperCard({ lvp }: { lvp: NonNullable<Performance["liveVsPaper"]> }) {
+function AbortBadge({ lvp }: { lvp: Lvp }) {
+  return lvp.paper === null ? (
+    <span className="chain-badge">abort rule unavailable</span>
+  ) : lvp.abort.triggered ? (
+    <span className="chain-badge chain-badge-short">ABORT RULE TRIGGERED</span>
+  ) : lvp.abort.armed ? (
+    <span className="chain-badge">abort rule armed</span>
+  ) : (
+    <span className="chain-badge">{lvp.live.entries}/{lvp.abort.minLiveEntries} entries to arm abort rule</span>
+  );
+}
+
+/** The halt rule's own words, as the pilot reads them. */
+export function haltRule(lvp: Lvp): string {
+  return `Halts the pilot if the completion gap exceeds ${lvp.abort.gapLimitPct.toFixed(0)}pp with at least ${String(lvp.abort.minLiveEntries)} live entries.`;
+}
+
+function LiveVsPaperBody({ lvp, rule = true }: { lvp: Lvp; rule?: boolean }) {
   // No paper side means no gap and no verdict: the rule is unavailable, never "not triggered".
   const paper = lvp.paper;
   const pct = (v: number | null | undefined) => (v !== null && v !== undefined ? `${v.toFixed(0)}%` : "—");
   const mins = (v: number | null | undefined) => (v !== null && v !== undefined ? `${v.toFixed(0)}m` : "—");
   return (
-    <section className="card">
-      <h2>
-        Live vs paper — {lvp.arm} arm (contemporaneous){" "}
-        {paper === null ? (
-          <span className="chain-badge">abort rule unavailable</span>
-        ) : lvp.abort.triggered ? (
-          <span className="chain-badge chain-badge-short">ABORT RULE TRIGGERED</span>
-        ) : lvp.abort.armed ? (
-          <span className="chain-badge">abort rule armed</span>
-        ) : (
-          <span className="chain-badge">{lvp.live.entries}/{lvp.abort.minLiveEntries} entries to arm abort rule</span>
-        )}
-      </h2>
+    <>
       <div className="table-scroll">
-      <table className="data-table">
-        <thead>
-          <tr><th></th><th>live</th><th>paper (same sessions)</th></tr>
-        </thead>
-        <tbody>
-          <tr><td className="muted">entries</td><td>{lvp.live.entries}</td><td>{paper?.entries ?? "—"}</td></tr>
-          <tr><td className="muted">completed</td><td>{lvp.live.completed}</td><td>{paper?.completed ?? "—"}</td></tr>
-          <tr>
-            <td className="muted">completion rate</td>
-            <td>{pct(lvp.live.completionRatePct)}</td>
-            <td>{pct(paper?.completionRatePct)}</td>
-          </tr>
-          <tr>
-            <td className="muted">median latency</td>
-            <td>{mins(lvp.live.medianLatencyMin)}</td>
-            <td>{mins(paper?.medianLatencyMin)}</td>
-          </tr>
-          <tr>
-            <td className="muted">avg credit</td>
-            <td>{lvp.live.avgCredit !== null ? lvp.live.avgCredit.toFixed(2) : "—"}</td>
-            <td>{paper !== null && paper.avgCredit !== null ? paper.avgCredit.toFixed(2) : "—"}</td>
-          </tr>
-          <tr>
-            <td className="muted">completion gap</td>
-            <td colSpan={2} className={lvp.completionGapPct !== null && lvp.completionGapPct > lvp.abort.gapLimitPct ? "pnl-neg" : ""}>
-              {lvp.completionGapPct !== null ? `${lvp.completionGapPct.toFixed(1)}pp` : paper === null ? "unavailable" : "—"}
-            </td>
-          </tr>
-        </tbody>
-      </table>
+        <table className="data-table">
+          <thead>
+            <tr><th></th><th>live</th><th>paper (same sessions)</th></tr>
+          </thead>
+          <tbody>
+            <tr><td className="muted">entries</td><td>{lvp.live.entries}</td><td>{paper?.entries ?? "—"}</td></tr>
+            <tr><td className="muted">completed</td><td>{lvp.live.completed}</td><td>{paper?.completed ?? "—"}</td></tr>
+            <tr>
+              <td className="muted">completion rate</td>
+              <td>{pct(lvp.live.completionRatePct)}</td>
+              <td>{pct(paper?.completionRatePct)}</td>
+            </tr>
+            <tr>
+              <td className="muted">median latency</td>
+              <td>{mins(lvp.live.medianLatencyMin)}</td>
+              <td>{mins(paper?.medianLatencyMin)}</td>
+            </tr>
+            <tr>
+              <td className="muted">avg credit</td>
+              <td>{lvp.live.avgCredit !== null ? lvp.live.avgCredit.toFixed(2) : "—"}</td>
+              <td>{paper !== null && paper.avgCredit !== null ? paper.avgCredit.toFixed(2) : "—"}</td>
+            </tr>
+            <tr>
+              <td className="muted">completion gap</td>
+              <td colSpan={2} className={lvp.completionGapPct !== null && lvp.completionGapPct > lvp.abort.gapLimitPct ? "pnl-neg" : ""}>
+                {lvp.completionGapPct !== null ? `${lvp.completionGapPct.toFixed(1)}pp` : paper === null ? "unavailable" : "—"}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
       {paper === null && (
         <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
@@ -305,17 +334,171 @@ export function LiveVsPaperCard({ lvp }: { lvp: NonNullable<Performance["liveVsP
       )}
       {/* The rule is prose and `.data-table td` is nowrap by house rule: inside the cell it pushed
           the table past the card's right edge. */}
-      <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
-        Halts the pilot if the completion gap exceeds {lvp.abort.gapLimitPct.toFixed(0)}pp with at least{" "}
-        {lvp.abort.minLiveEntries} live entries.
-      </p>
+      {rule && (
+        <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
+          {haltRule(lvp)}
+        </p>
+      )}
+    </>
+  );
+}
+
+export function LiveVsPaperCard({ lvp }: { lvp: Lvp }) {
+  return (
+    <section className="card">
+      <h2>
+        Live vs paper — {lvp.arm} arm (contemporaneous) <AbortBadge lvp={lvp} />
+      </h2>
+      <LiveVsPaperBody lvp={lvp} />
     </section>
   );
 }
 
+function RollBody({ roll }: { roll: Roll }) {
+  return (
+    <>
+      <div className="table-scroll">
+        <table className="data-table">
+          <tbody>
+            <tr><td className="muted">bwb entries</td><td>{roll.leggedEntries}</td></tr>
+            <tr><td className="muted">rolled into flies</td><td>{roll.completed}</td></tr>
+            <tr><td className="muted">roll rate</td><td>{roll.completionRatePct !== null ? `${roll.completionRatePct.toFixed(1)}%` : "—"}</td></tr>
+            <tr><td className="muted">median latency</td><td>{roll.medianLatencyMin !== null ? `${roll.medianLatencyMin.toFixed(0)}m` : "—"}</td></tr>
+            <tr>
+              <td className="muted">latency range</td>
+              <td>{roll.minLatencyMin !== null ? `${roll.minLatencyMin.toFixed(0)}–${roll.maxLatencyMin?.toFixed(0)}m` : "—"}</td>
+            </tr>
+            <tr><td className="muted">median spot move to roll</td><td>{roll.medianSpotMove !== null ? roll.medianSpotMove.toFixed(2) : "—"}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
+        Until it rolls, a bwb carries real negative tail risk of <strong>wing − far wing</strong> — unlike an uncompleted legged entry,
+        whose worst case is its own defined width. An unrolled bwb is not a neutral outcome.
+      </p>
+      {roll.leggedEntries > 0 && roll.leggedEntries < 5 && (
+        <p className="muted" style={{ fontSize: 12, margin: "0.3rem 0 0" }}>
+          <strong>{roll.leggedEntries} entries</strong> — too few to read as a rate.
+        </p>
+      )}
+      <h3 className="card-subhead">Why rolls missed</h3>
+      <div className="table-scroll">
+        <table className="data-table">
+          <tbody>
+            <tr><td className="muted">never cheap enough</td><td>{roll.neverOffered}</td></tr>
+            <tr><td className="muted">our buffer refused it</td><td>{roll.bufferBlocked}</td></tr>
+            <tr><td className="muted">our floor refused it</td><td>{roll.floorBlocked}</td></tr>
+            <tr><td className="muted">unknown</td><td>{roll.unknown}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
+        Read against <code>best_roll_debit</code>: &quot;the market never made the roll cheap enough&quot; and &quot;our own gate refused a
+        roll that was offered&quot; are identical in the P&amp;L and call for opposite fixes.
+      </p>
+    </>
+  );
+}
+
+function LeftOnTableBody({ lot }: { lot: LeftOnTable }) {
+  return (
+    <>
+      <div className="table-scroll">
+        <table className="data-table">
+          <tbody>
+            <tr><td className="muted">completions tracked</td><td>{lot.overall.n}</td></tr>
+            <tr><td className="muted">improved by waiting</td><td>{lot.overall.improved}</td></tr>
+            <tr><td className="muted">median improvement</td><td>{lot.overall.medianImprovementDollars !== null ? fmtMoney(lot.overall.medianImprovementDollars) : "—"}</td></tr>
+            <tr><td className="muted">total left on table</td><td>{lot.overall.totalImprovementDollars !== null ? fmtMoney(lot.overall.totalImprovementDollars) : "—"}</td></tr>
+            <tr><td className="muted">untracked (pre-2026-08-03, or iron/bwb)</td><td className="muted">{lot.untracked}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      {Object.keys(lot.byGexBucket).length > 0 && (
+        <div className="table-scroll">
+          <table className="data-table data-table-labelled" style={{ marginTop: "0.6rem" }}>
+            <thead><tr><th>gex bucket at completion</th><th>n</th><th>improved</th><th>median</th><th>total</th></tr></thead>
+            <tbody>
+              {Object.entries(lot.byGexBucket).map(([bucket, s]) => (
+                <tr key={bucket}>
+                  <td>{bucket}</td>
+                  <td>{s.n}</td>
+                  <td>{s.improved}</td>
+                  <td>{s.medianImprovementDollars !== null ? fmtMoney(s.medianImprovementDollars) : "—"}</td>
+                  <td>{s.totalImprovementDollars !== null ? fmtMoney(s.totalImprovementDollars) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
+        Improvement is floored at 0 per position — the completion tick itself seeds the tracker, so a price that never got better records as
+        no improvement, not a loss. If pinning (positive gamma) shows the largest improvement here, that is the evidence waiting pays for
+        debit-first; if the split shows no conditional difference, first-tick completion already captures it.
+      </p>
+    </>
+  );
+}
+
+const PERFORMANCE_HELP: CardHelpContent = {
+  title: "Performance",
+  body: (
+    <HelpSection title="The tiles">
+      <p>Net P&amp;L is net of fees. Win rate and profit factor are over settled trades; completion is the legged entries that became flies.</p>
+    </HelpSection>
+  ),
+};
+
+const OVER_TIME_HELP: CardHelpContent = {
+  title: "P&L over time",
+  body: (
+    <HelpSection title="Bars and line">
+      <p>Each period&apos;s net as a bar, daily, weekly or monthly; the line is the cumulative.</p>
+    </HelpSection>
+  ),
+};
+
+const EQUITY_HELP: CardHelpContent = {
+  title: "Equity and drawdown",
+  body: (
+    <HelpWarn title="1-lot samples">
+      <p>
+        Not a sized book: the base under the curve is a drawing constant, these arms take one-lot entries and do not compound, and this is
+        the most authoritative-looking chart on the page. The drawdown is real. Always daily, whatever granularity is picked.
+      </p>
+    </HelpWarn>
+  ),
+};
+
+/** The completion card's ?: the halt rule leads, as a warning, when the pilot has one to read. */
+export function completionHelp(lvp: Lvp | null): CardHelpContent {
+  return {
+    title: "Completion",
+    body: (
+      <>
+        {lvp !== null && (
+          <HelpWarn title="The halt rule">
+            <p>{haltRule(lvp)}</p>
+          </HelpWarn>
+        )}
+        <HelpSection title="The number that decides">
+          <p>
+            Completion is the legged entries that became flies, the number that decides whether this is real. The misses are the shortfall
+            between legged and completed; open the detail for why each missed.
+          </p>
+        </HelpSection>
+      </>
+    ),
+  };
+}
+
+type CompTab = "missed" | "lvp" | "roll" | "left" | "sessions";
+
 export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: FliesFilter }) {
   const [granularity, setGranularity] = useState<(typeof GRANULARITIES)[number]>("daily");
   const [cumulative, setCumulative] = useState(true);
+  const lb = useOpenParam("comp");
   // `date` dropped: an equity curve pinned to one day is a point.
   const { data, isLoading } = usePerformance(mode, granularity, filter);
   const t = data?.tiles;
@@ -324,175 +507,132 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
   const lvp = data?.liveVsPaper ?? null;
   const lot = data?.leftOnTable ?? null;
 
-  return (
-    <div className="cards cards-wide">
-      <section className="card">
-        <TileGrid count={6}>
-          <Tile label="net P&L" value={t !== undefined ? fmtMoney(t.netPnl) : "—"} tone={t !== undefined && t.netPnl >= 0 ? "pos" : "neg"} />
-          <Tile label="trades" value={String(t?.trades ?? "—")} />
-          <Tile label="win rate" value={t?.winRatePct != null ? `${t.winRatePct.toFixed(0)}%` : "—"} />
-          <Tile label="profit factor" value={t?.profitFactor != null ? t.profitFactor.toFixed(2) : "—"} />
-          <Tile label="fee drag" value={t?.feeDragPct != null ? `${t.feeDragPct.toFixed(1)}%` : "—"} tone="dim" />
-          <Tile label="completion" value={t?.completionRatePct != null ? `${t.completionRatePct.toFixed(0)}%` : "—"} />
-        </TileGrid>
-      </section>
+  // The bwb arm has no completion rate: it is entered WHOLE for a credit and converted by a ROLL, not
+  // legged in and completed, so its roll is a tab of its own, hidden when no bwb entries are in scope.
+  // Left on table is debit_first's wait-for-better hypothesis, hidden when the scope holds no
+  // debit_first completions.
+  const tabs: Array<{ id: CompTab; label: string }> = [{ id: "missed", label: "why misses missed" }];
+  if (lvp !== null) tabs.push({ id: "lvp", label: "live vs paper" });
+  if (roll !== null) tabs.push({ id: "roll", label: "roll" });
+  if (lot !== null) tabs.push({ id: "left", label: "left on table" });
+  tabs.push({ id: "sessions", label: "by session" });
+  const box: FliesBox = {
+    id: "detail",
+    kicker: "completion ›",
+    title: "Completion detail",
+    chips: lvp !== null ? <AbortBadge lvp={lvp} /> : undefined,
+    tabs,
+    body: (tab) => {
+      switch (tab as CompTab) {
+        case "lvp":
+          return lvp !== null ? (
+            <>
+              <p className="muted pf-caption" style={{ marginTop: 0 }}>{lvp.arm} arm, contemporaneous</p>
+              <LiveVsPaperBody lvp={lvp} />
+            </>
+          ) : null;
+        case "roll":
+          return roll !== null ? <RollBody roll={roll} /> : null;
+        case "left":
+          return lot !== null ? <LeftOnTableBody lot={lot} /> : null;
+        case "sessions":
+          return <CompletionTrend trend={data?.completionTrend ?? []} />;
+        default:
+          return c !== undefined ? (
+            <>
+              <p className="muted pf-caption" style={{ marginTop: 0 }}>Opposite remedies: do not lump them.</p>
+              <MissesTable c={c} />
+            </>
+          ) : null;
+      }
+    },
+  };
 
-      <section className="card">
-        <div className="panel-head-row">
-          <h2>P&L over time</h2>
-          <div className="mode-toggle">
-            {GRANULARITIES.map((g) => (
-              <button key={g} type="button" className={granularity === g ? "mode-btn active" : "mode-btn"} onClick={() => setGranularity(g)}>
-                {g}
-              </button>
+  return (
+    <FliesLayout>
+      <FliesSection concept="stand" name="the record" question="How has it done?">
+        <Card title="performance" collapseKey="flies-performance" help={PERFORMANCE_HELP}>
+          <TileGrid count={6}>
+            <Tile label="net P&L" value={t !== undefined ? fmtMoney(t.netPnl) : "—"} tone={t !== undefined && t.netPnl >= 0 ? "pos" : "neg"} />
+            <Tile label="trades" value={String(t?.trades ?? "—")} />
+            <Tile label="win rate" value={t?.winRatePct != null ? `${t.winRatePct.toFixed(0)}%` : "—"} />
+            <Tile label="profit factor" value={t?.profitFactor != null ? t.profitFactor.toFixed(2) : "—"} />
+            <Tile label="fee drag" value={t?.feeDragPct != null ? `${t.feeDragPct.toFixed(1)}%` : "—"} tone="dim" />
+            <Tile label="completion" value={t?.completionRatePct != null ? `${t.completionRatePct.toFixed(0)}%` : "—"} />
+          </TileGrid>
+          <VoidedNote mode={mode} filter={filter} />
+        </Card>
+      </FliesSection>
+
+      <FliesSection concept="hist" name="over time" question="How did it get here?">
+        <Card
+          title="P&L over time"
+          collapseKey="flies-pnl-over-time"
+          help={OVER_TIME_HELP}
+          controls={
+            <>
+              <div className="mode-toggle">
+                {GRANULARITIES.map((g) => (
+                  <button key={g} type="button" className={granularity === g ? "mode-btn active" : "mode-btn"} onClick={() => setGranularity(g)}>
+                    {g}
+                  </button>
+                ))}
+              </div>
+              <label className="muted lbl">
+                <input type="checkbox" checked={cumulative} onChange={(e) => setCumulative(e.target.checked)} /> cumulative
+              </label>
+            </>
+          }
+        >
+          {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <PnlBars series={data?.series ?? []} cumulative={cumulative} />}
+        </Card>
+
+        {/* The same pair MEIC's performance tab carries, from the same shared module so the two
+            cannot disagree about what a Sharpe is. Flagged "1-lot samples, not a sized book" for the
+            reason MEIC's is: the base under the curve is a drawing constant, these arms take one-lot
+            entries and do not compound, and this is the most authoritative-looking chart on the page.
+            The drawdown is real. */}
+        <Card title="equity and drawdown" collapseKey="flies-equity" help={EQUITY_HELP} flag="1-lot samples">
+          {isLoading ? (
+            <span className="skeleton skeleton-text" style={{ width: "40%" }} />
+          ) : (data?.equity.length ?? 0) === 0 ? (
+            <p className="muted">not enough history yet</p>
+          ) : (
+            <>
+              <EquityUnderwater equity={data?.equity ?? []} />
+              <div style={{ marginTop: "0.75rem" }}>
+                <DailyRiskTiles risk={data?.risk} maxDrawdown={Math.max(...(data?.equity ?? []).map((e) => e.drawdown), 0)} />
+              </div>
+            </>
+          )}
+        </Card>
+      </FliesSection>
+
+      <FliesSection concept="edge" name="completion" question="Is completion good enough to be real?">
+        <Card title="completion" collapseKey="flies-completion" help={completionHelp(lvp)} flag={lvp !== null ? "halt rule" : undefined}>
+          <TileGrid count={4}>
+            <Tile label="legged" value={c !== undefined ? String(c.leggedEntries) : "—"} />
+            <Tile label="completed" value={c !== undefined ? String(c.completed) : "—"} />
+            <Tile label="rate" value={c?.completionRatePct != null ? `${c.completionRatePct.toFixed(0)}%` : "—"} />
+            <Tile label="median minutes" value={c?.medianLatencyMin != null ? c.medianLatencyMin.toFixed(0) : "—"} />
+          </TileGrid>
+          {/* The abort verdict changes what a person would do, so it stays on the card. */}
+          {lvp !== null && (
+            <p className="sm">
+              <AbortBadge lvp={lvp} />
+              {lvp.completionGapPct !== null && <span className="muted"> completion gap to paper {lvp.completionGapPct.toFixed(1)}pp</span>}
+            </p>
+          )}
+          <div className="pf-mores pf-push">
+            {tabs.map((x) => (
+              <BoxOpen key={x.id} lb={lb} id="detail" tab={x.id === "missed" ? undefined : x.id} hot={x.id === "lvp" && lvp !== null && lvp.abort.triggered}>
+                {x.label}
+              </BoxOpen>
             ))}
           </div>
-          <label className="muted lbl">
-            <input type="checkbox" checked={cumulative} onChange={(e) => setCumulative(e.target.checked)} /> cumulative
-          </label>
-        </div>
-        {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <PnlBars series={data?.series ?? []} cumulative={cumulative} />}
-      </section>
-
-      <VoidedNote mode={mode} filter={filter} />
-
-      {/* The same pair MEIC's performance tab carries, from the same shared module so the two
-          cannot disagree about what a Sharpe is. Titled "1-lot samples, not a sized book" for the
-          reason MEIC's is: the base under the curve is a drawing constant, these arms take one-lot
-          entries and do not compound, and this is the most authoritative-looking chart on the page.
-          The drawdown is real. */}
-      <section className="card">
-        <div className="panel-head-row">
-          <h2>Cumulative net P&amp;L and drawdown (1-lot samples, not a sized book)</h2>
-          <span className="muted lbl">daily, whatever granularity is selected above</span>
-        </div>
-        {isLoading ? (
-          <span className="skeleton skeleton-text" style={{ width: "40%" }} />
-        ) : (data?.equity.length ?? 0) === 0 ? (
-          <p className="muted">not enough history yet</p>
-        ) : (
-          <>
-            <EquityUnderwater equity={data?.equity ?? []} />
-            <div style={{ marginTop: "0.75rem" }}>
-              <DailyRiskTiles
-                risk={data?.risk}
-                maxDrawdown={Math.max(...(data?.equity ?? []).map((e) => e.drawdown), 0)}
-              />
-            </div>
-          </>
-        )}
-      </section>
-
-      {/* Pairs of similar height: completion beside the live-vs-paper read of the same number, then
-          the bwb roll beside left-on-table. A card left over spans the row (.cards-pairs). */}
-      <div className="cards cards-pairs">
-        <CompletionCard c={c} />
-
-        {lvp !== null && <LiveVsPaperCard lvp={lvp} />}
-
-        {/* The bwb arm has no completion rate: it is entered WHOLE for a credit and converted by a
-            ROLL, not legged in and completed. Its own panel rather than a row in the one above, so
-            neither number is read as the other. Hidden entirely when no bwb entries are in scope --
-            an empty panel reading "0%" is a claim, and there is nothing to claim. */}
-        {roll !== null && (
-          <section className="card">
-            <h2>Roll (bwb — the same question, a different trade)</h2>
-            <div className="table-scroll">
-            <table className="data-table">
-              <tbody>
-                <tr><td className="muted">bwb entries</td><td>{roll.leggedEntries}</td></tr>
-                <tr><td className="muted">rolled into flies</td><td>{roll.completed}</td></tr>
-                <tr><td className="muted">roll rate</td><td>{roll.completionRatePct !== null ? `${roll.completionRatePct.toFixed(1)}%` : "—"}</td></tr>
-                <tr><td className="muted">median latency</td><td>{roll.medianLatencyMin !== null ? `${roll.medianLatencyMin.toFixed(0)}m` : "—"}</td></tr>
-                <tr>
-                  <td className="muted">latency range</td>
-                  <td>{roll.minLatencyMin !== null ? `${roll.minLatencyMin.toFixed(0)}–${roll.maxLatencyMin?.toFixed(0)}m` : "—"}</td>
-                </tr>
-                <tr><td className="muted">median spot move to roll</td><td>{roll.medianSpotMove !== null ? roll.medianSpotMove.toFixed(2) : "—"}</td></tr>
-              </tbody>
-            </table>
-            </div>
-            <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
-              Until it rolls, a bwb carries real negative tail risk of{" "}
-              <strong>wing − far wing</strong> — unlike an uncompleted legged entry, whose worst case
-              is its own defined width. An unrolled bwb is not a neutral outcome.
-            </p>
-            {roll.leggedEntries > 0 && roll.leggedEntries < 5 && (
-              <p className="muted" style={{ fontSize: 12, margin: "0.3rem 0 0" }}>
-                <strong>{roll.leggedEntries} entries</strong> — too few to read as a rate.
-              </p>
-            )}
-            <h3 className="card-subhead">Why rolls missed</h3>
-            <div className="table-scroll">
-            <table className="data-table">
-              <tbody>
-                <tr><td className="muted">never cheap enough</td><td>{roll.neverOffered}</td></tr>
-                <tr><td className="muted">our buffer refused it</td><td>{roll.bufferBlocked}</td></tr>
-                <tr><td className="muted">our floor refused it</td><td>{roll.floorBlocked}</td></tr>
-                <tr><td className="muted">unknown</td><td>{roll.unknown}</td></tr>
-              </tbody>
-            </table>
-            </div>
-            <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
-              Read against <code>best_roll_debit</code>: "the market never made the roll cheap enough"
-              and "our own gate refused a roll that was offered" are identical in the P&amp;L and call
-              for opposite fixes.
-            </p>
-          </section>
-        )}
-
-        {/* debit_first's wait-for-better hypothesis: how much better the completing price got AFTER
-            the first qualifying tick, split by the dealer-gamma regime at completion -- pinning
-            (positive gamma) is the regime where waiting should have paid. Hidden when the scope
-            holds no debit_first completions, same convention as the roll cards above. */}
-        {lot !== null && (
-          <section className="card">
-            <h2>Left on table (debit-first — waiting past the first qualifying tick)</h2>
-            <div className="table-scroll">
-            <table className="data-table">
-              <tbody>
-                <tr><td className="muted">completions tracked</td><td>{lot.overall.n}</td></tr>
-                <tr><td className="muted">improved by waiting</td><td>{lot.overall.improved}</td></tr>
-                <tr><td className="muted">median improvement</td><td>{lot.overall.medianImprovementDollars !== null ? fmtMoney(lot.overall.medianImprovementDollars) : "—"}</td></tr>
-                <tr><td className="muted">total left on table</td><td>{lot.overall.totalImprovementDollars !== null ? fmtMoney(lot.overall.totalImprovementDollars) : "—"}</td></tr>
-                <tr><td className="muted">untracked (pre-2026-08-03, or iron/bwb)</td><td className="muted">{lot.untracked}</td></tr>
-              </tbody>
-            </table>
-            </div>
-            {Object.keys(lot.byGexBucket).length > 0 && (
-              <div className="table-scroll">
-              <table className="data-table data-table-labelled" style={{ marginTop: "0.6rem" }}>
-                <thead><tr><th>gex bucket at completion</th><th>n</th><th>improved</th><th>median</th><th>total</th></tr></thead>
-                <tbody>
-                  {Object.entries(lot.byGexBucket).map(([bucket, s]) => (
-                    <tr key={bucket}>
-                      <td>{bucket}</td>
-                      <td>{s.n}</td>
-                      <td>{s.improved}</td>
-                      <td>{s.medianImprovementDollars !== null ? fmtMoney(s.medianImprovementDollars) : "—"}</td>
-                      <td>{s.totalImprovementDollars !== null ? fmtMoney(s.totalImprovementDollars) : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
-            )}
-            <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
-              Improvement is floored at 0 per position — the completion tick itself seeds the tracker,
-              so a price that never got better records as no improvement, not a loss. If pinning
-              (positive gamma) shows the largest improvement here, that is the evidence waiting pays
-              for debit-first; if the split shows no conditional difference, first-tick completion
-              already captures it.
-            </p>
-          </section>
-        )}
-
-      </div>
-
-      <section className="card">
-        <h2>Completion rate by session</h2>
-        {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <CompletionTrend trend={data?.completionTrend ?? []} />}
-      </section>
-    </div>
+        </Card>
+      </FliesSection>
+      <FliesBoxHost lb={lb} boxes={[box]} />
+    </FliesLayout>
   );
 }

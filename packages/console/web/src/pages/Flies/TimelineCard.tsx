@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { fmtMoney } from "../../components/DataTable";
+import { Card, fmtMoney } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { FliesLayout, FliesSection } from "./FliesFilter";
 import { fliesQuery, type FliesFilter } from "../../lib/api";
 import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
@@ -48,6 +50,23 @@ export function useTimeline(mode: TradingMode, filter: FliesFilter) {
  * X axis runs from the first recorded activity (the entry window) to the
  * 16:00 close.
  */
+export const TIMELINE_HELP: CardHelpContent = {
+  title: "Reading the timeline",
+  body: (
+    <>
+      <HelpSection title="Top panel">
+        <p>
+          Spot and each arm's wanted centre, with the leg-in to completion bars (solid is the time to complete, dashed is still waiting) and
+          the markers: ○ a credit spread sold, ◆ completed into a fly.
+        </p>
+      </HelpSection>
+      <HelpSection title="Bottom panel">
+        <p>The book as it would settle if the day ended here, at each tick. Gaps in the record are shaded with their reason, never joined up.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
 export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter: FliesFilter; arm: string | null }) {
   const { data, isLoading } = useTimeline(mode, filter);
 
@@ -378,32 +397,34 @@ export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter:
       : "";
 
   return (
-    <section className="card">
-      <h2>Session timeline — how the day actually went{data?.date !== null && data !== undefined ? ` (${data.date})` : ""}</h2>
-      {isLoading ? (
-        <span className="skeleton skeleton-text" style={{ width: "50%" }} />
-      ) : ticks.length === 0 ? (
-        <p className="muted">no iterations recorded for this day</p>
-      ) : (
-        <>
-          {body}
-          <div className="forest-legend">
-            <span><i style={{ background: SPOT_COLOR }} /> spot</span>
-            {shown.map((a) => (
-              <span key={a}>
-                <i style={{ background: ARM_COLORS[arms.indexOf(a) % ARM_COLORS.length] }} /> {a} — wanted centre
-              </span>
-            ))}
-            <span className="muted">○ credit spread sold · ◆ completed into a fly · ▬ solid bar = time to complete, dashed = still waiting</span>
-          </div>
-          {data !== undefined && data.feedSummary.total > 0 && (
-            <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
-              Feed: {data.feedSummary.ok}/{data.feedSummary.total} ticks built a snapshot (
-              {Math.round((data.feedSummary.ok / data.feedSummary.total) * 100)}%){refusalNote}
-            </p>
+    <FliesLayout>
+      <FliesSection concept="stand" name="the day" question="How did the day actually go?">
+        <Card title={`session timeline${data?.date !== null && data !== undefined ? ` — ${data.date}` : ""}`} help={TIMELINE_HELP}>
+          {isLoading ? (
+            <span className="skeleton skeleton-text" style={{ width: "50%" }} />
+          ) : ticks.length === 0 ? (
+            <p className="muted">no iterations recorded for this day</p>
+          ) : (
+            <>
+              {body}
+              <div className="forest-legend">
+                <span><i style={{ background: SPOT_COLOR }} /> spot</span>
+                {shown.map((a) => (
+                  <span key={a}>
+                    <i style={{ background: ARM_COLORS[arms.indexOf(a) % ARM_COLORS.length] }} /> {a} — wanted centre
+                  </span>
+                ))}
+              </div>
+              {data !== undefined && data.feedSummary.total > 0 && (
+                <p className="muted fl-state">
+                  Feed: {data.feedSummary.ok}/{data.feedSummary.total} ticks built a snapshot (
+                  {Math.round((data.feedSummary.ok / data.feedSummary.total) * 100)}%){refusalNote}
+                </p>
+              )}
+            </>
           )}
-        </>
-      )}
-    </section>
+        </Card>
+      </FliesSection>
+    </FliesLayout>
   );
 }
