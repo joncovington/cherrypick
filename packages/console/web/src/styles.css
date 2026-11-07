@@ -9853,3 +9853,8 @@ button.chip[aria-pressed][data-hue="special"],
 .lt-open-item {
   font-family: var(--num-face);
 }
+.lt-open-total {
+  font-family: var(--num-face);
+  font-size: 15px;
+  font-weight: 700;
+}
