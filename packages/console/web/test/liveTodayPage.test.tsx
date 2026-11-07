@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { LiveMeicPayload, LiveTodayHand, LiveTodayLoop, LiveTodayPayload } from "@console/shared";
-import { LiveTodayView, LoopDetail, openAtMark, suiteBadgeText } from "../src/pages/Live/LiveTodayPage";
+import { LiveTodayView, LoopDetail, openAtMark, suiteBadgeText, unrealisedTitle } from "../src/pages/Live/LiveTodayPage";
 import { DayChains, bwbChains, meicChains } from "../src/pages/Live/LiveTodayOrders";
 import { expiredWords, handModel } from "../src/pages/Live/HandToday";
 import { inView } from "./viewTables";
@@ -48,7 +48,7 @@ function payload(over: Partial<LiveTodayPayload> = {}): LiveTodayPayload {
     halted: false,
     loops: [loop("flies"), loop("meic"), loop("bwb")],
     attention: [],
-    suite: { loops: 3, armed: [], net: 0, gross: 0, fees: 0, settlementFees: 0, trades: 0, summed: ["flies", "meic", "bwb"], excluded: [], feesUnrecorded: [] },
+    suite: { loops: 3, armed: [], net: 0, gross: 0, fees: 0, settlementFees: 0, trades: 0, summed: ["flies", "meic", "bwb"], excluded: [], feesUnrecorded: [], unrealised: { value: 0, at: null, summed: [], unmarked: [] } },
     hand: hand({ status: "none", reason: "no position evaluation today yet (newest 2026-10-14)" }),
     ...over,
   };
@@ -365,25 +365,32 @@ describe("the hand row", () => {
     expect(html).not.toContain("tc-card");
   });
 
-  it("lists what is open at each loop's own mark under the realised net, never summed, n/r where a loop cannot mark", () => {
+  it("leads the open line with the loops' unrealised total, then each loop's part; the hand trades beside it, never in it", () => {
     const d = payload({
       loops: [
-        loop("flies", { open: 0, mark: null }),
-        loop("meic", { open: 2, mark: { value: 50, at: "2030-01-02T17:44:10.000Z", basis: "before fees" } }),
-        loop("bwb", { open: 1, mark: { value: null, at: null, basis: "n/r when any is unmarked" } }),
+        loop("flies", { open: 1, mark: { value: -20, at: "2030-01-02T17:44:30.000Z", basis: "mid mark, net of fees" } }),
+        loop("meic", { open: 2, mark: { value: 50, at: "2030-01-02T17:44:10.000Z", basis: "net of fees to date" } }),
+        loop("bwb", { open: 0, mark: null }),
       ],
       hand: hand(HAND_IC),
     });
+    d.suite.unrealised = { value: 30, at: "2030-01-02T17:44:10.000Z", summed: ["flies", "meic"], unmarked: [] };
     const items = openAtMark(d);
-    expect(items.map((i) => [i.label, i.value])).toEqual([["meic", 50], ["bwb", null], ["by hand", 168]]);
-    expect(items[0]!.title).toContain("before fees");
+    expect(items.map((i) => [i.label, i.value])).toEqual([["flies", -20], ["meic", 50], ["by hand", 168]]);
     const html = render(d).replace(/<!-- -->/g, "");
-    expect(html).toContain('aria-label="open at mark"');
+    expect(html).toMatch(/aria-label="open at mark"><span class="lt-open-lab">open at mark<\/span><span class="lt-open-total"[^>]*><span class="pnl-pos">\$30\.00/);
     expect(html).toMatch(/meic <span class="pnl-pos">\$50\.00/);
-    expect(html).toMatch(/bwb <span class="muted">n\/r/);
-    // listed, never added into one figure or into the loops' total
-    expect(html).not.toContain("$218.00");
+    // the hand trades' 168 is beside the total, never in it, and the realised total is untouched
+    expect(html).not.toContain("$198.00");
     expect(html).toMatch(/net today · all loops[\s\S]*?class="pf-hero pnl-pos"[^>]*>\$0\.00</);
+    expect(unrealisedTitle(d.suite.unrealised)).toContain("over flies, meic");
+  });
+
+  it("reads the total n/r and names the loop that could not be marked", () => {
+    const d = payload({ loops: [loop("bwb", { open: 1, mark: { value: null, at: null, basis: "n/r when any is unmarked" } })] });
+    d.suite.unrealised = { value: null, at: null, summed: [], unmarked: [{ loop: "bwb", reason: "1 open, not all marked" }] };
+    const html = render(d).replace(/<!-- -->/g, "");
+    expect(html).toMatch(/class="lt-open-total" title="Not totalled: bwb — 1 open, not all marked"><span class="muted">n\/r/);
   });
 
   it("says nothing is open when no loop holds anything and no hand leg is held", () => {

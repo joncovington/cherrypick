@@ -245,6 +245,8 @@ function readLedger(db: Database.Database, session: string): Ledger {
         fillConfirmedAt: str(r["fill_confirmed_at"]),
         overdue: tradeDate < session,
         mark: null,
+        // The entry's fee, plus a stop's where one fired; unrecorded is null, never a zero.
+        feesToDate: working ? null : num(r["fees"]),
       };
     });
 
