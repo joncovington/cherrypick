@@ -182,6 +182,12 @@ best, worst), over any value known at entry:
 - direction before entry and the underlying's move during the trade, the latter sized against the
   entry's expected move so a bucket means the same across symbols.
 
+*Added 2026-11-07:* days held (same day, 1-6, 7-20, 21+, in ET calendar days) uses the same engine
+and column set, but sits apart from the breakdowns as `held` on the arm reading, because it is not
+known at entry: the exit decides it, and a loser left to run lands in the long rows for that reason
+alone. It reads as a check on the exit rules, never as an entry filter. It is null for a book that
+never holds overnight.
+
 **Every cell shows n, and cells below a declared minimum are greyed out.** A few weeks of paper per
 arm makes every bucket noise, so the engine runs over replay and backtest output as well (the flies
 replay, the bwb two-year backtest), which is where the hundreds of trades are. Event buckets over

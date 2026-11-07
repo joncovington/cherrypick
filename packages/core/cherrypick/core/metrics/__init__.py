@@ -154,6 +154,34 @@ def profit_factor(values: Sequence[float]) -> float | None:
     return round(gains / losses, 3)
 
 
+def payoff(values: Sequence[float]) -> dict:
+    """The average winning and losing trade, and the win rate that would break even with them.
+
+    {"avg_win", "avg_loss", "breakeven_win_rate"}. `avg_loss` keeps its sign (negative). The break-even
+    rate is the share of ALL trades that would have to win, with these two averages and the same
+    share of scratch (exactly zero) trades, for the mean net to be zero:
+    |avg_loss| x (1 - scratch share) / (avg_win + |avg_loss|). It is on the same base as `win_rate`
+    (wins over every trade), so the two compare directly: a 77% win rate whose losses average ten
+    times its wins needs about 91%.
+
+    Each average is None when its side is empty, and the break-even rate is None unless both are
+    known: with no losses yet there is nothing to break even against, and with no wins the rate is
+    not a number any win rate could meet."""
+    wins = [v for v in values if v > 0]
+    losses = [v for v in values if v < 0]
+    avg_win = sum(wins) / len(wins) if wins else None
+    avg_loss = sum(losses) / len(losses) if losses else None
+    breakeven = None
+    if avg_win is not None and avg_loss is not None:
+        scratch = (len(values) - len(wins) - len(losses)) / len(values)
+        breakeven = round(-avg_loss * (1 - scratch) / (avg_win - avg_loss), 4)
+    return {
+        "avg_win": None if avg_win is None else round(avg_win, 2),
+        "avg_loss": None if avg_loss is None else round(avg_loss, 2),
+        "breakeven_win_rate": breakeven,
+    }
+
+
 def sortino(values: Sequence[float]) -> float | None:
     """Per-trade Sortino: mean over the downside deviation (target 0, deviation over the whole
     sample, standard form), un-annualized for the same comparability reason as `sharpe`.
@@ -391,6 +419,9 @@ def calibration_reading(records: Sequence[Mapping]) -> dict:
         # promotion-gate question is deliberately deferred (see the plan's open questions).
         "expectancy": expectancy(nets),
         "profit_factor": profit_factor(nets),
+        # 2026-11-07: the payoff beside the win rate, so a high win rate with a larger average loss
+        # shows the rate it needs. Report-only, like the block it joins.
+        **payoff(nets),
         "sortino": sortino(nets),
         "sqn": sqn(nets),
         "worst_session": worst_session(ordered),

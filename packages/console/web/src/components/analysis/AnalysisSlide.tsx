@@ -268,6 +268,47 @@ function BucketRows({ t, head, minSessions }: { t: BucketTable; head: string; mi
 }
 
 /**
+ * Days held, in a half-width card: the five figures that answer "where do the exits leave the
+ * money", not the breakdowns' full column set, which would scroll sideways there. A thin row keeps
+ * its chip and loses its tone, as in the breakdowns.
+ */
+function HeldRows({ t }: { t: BucketTable & { min_sessions: number } }) {
+  return (
+    <div className="table-scroll">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>held</th>
+            <th title={`a row with fewer than ${String(t.min_sessions)} sessions is thin: shown, never a finding`}>trades</th>
+            <th>win rate</th>
+            <th>avg net</th>
+            <th>net</th>
+          </tr>
+        </thead>
+        <tbody>
+          {t.rows.map((r) => (
+            <tr key={r.bucket} className={r.thin ? "muted" : undefined}>
+              <td>
+                {r.bucket}
+                {r.thin && (
+                  <span className="chip" style={{ marginLeft: 6, fontSize: 9 }} title={`${String(r.sessions)} sessions: too few to read`}>
+                    thin
+                  </span>
+                )}
+              </td>
+              <td>{String(r.trades)}</td>
+              <td>{pct(r.win_rate)}</td>
+              <td>{fmtMoney(r.avg_net)}</td>
+              <td className={r.thin ? undefined : `pnl-${r.net >= 0 ? "pos" : "neg"}`}>{fmtMoney(r.net)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
  * P&L by something known at entry (core.analysis.buckets), one column set for every dimension.
  * A thin row is dimmed and carries no tone: a colour would read as a finding it cannot support.
  * `only` draws a single dimension (a lightbox tab); the caveat that these are associations, not
@@ -500,6 +541,28 @@ const BREAKDOWN_HELP: CardHelpContent = {
   ),
 };
 
+const HELD_HELP: CardHelpContent = {
+  title: "By days held",
+  body: (
+    <>
+      <HelpWarn title="Set by the exits">
+        <p>
+          How long a trade is held is decided by how it was closed, so this is not something to choose an entry by. Winners
+          closed early sit in the short rows; a loser left to run, or held to expiry, lands in the long ones for that reason
+          alone. Read it as a check on the exit rules: a long row that loses most of what the short rows make says the losers
+          are being held.
+        </p>
+      </HelpWarn>
+      <HelpSection title="The rows">
+        <p>
+          Calendar days in ET from entry to exit: same day, 1-6, 7-20 and 21 or more. A trade with no recorded entry or exit
+          time is counted as not bucketed. A row with too few sessions is thin: shown, dimmed, and never a finding.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
+
 type BreakdownKey = (typeof DIMENSION_LABELS)[number][0];
 
 export function ArmCard({
@@ -594,6 +657,16 @@ export function ArmCard({
             </p>
           )}
         </Card>
+        {a.held !== undefined && a.held !== null && (
+          <Card title="by days held" collapseKey={key("held")} updatedAt={updatedAt} help={HELD_HELP} flag="set by the exits">
+            <HeldRows t={a.held} />
+            {a.held.skipped > 0 && (
+              <p className="muted" style={{ fontSize: 11 }}>
+                {String(a.held.skipped)} trades not bucketed: no recorded entry or exit time
+              </p>
+            )}
+          </Card>
+        )}
       </Section>
 
       <Section concept="risk" tag="how bad" question="How deep did it fall, and how much did it risk?">

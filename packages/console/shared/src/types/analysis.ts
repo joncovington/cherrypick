@@ -180,6 +180,10 @@ export interface ArmAnalysis {
   execution?: ExecutionReading;
   /** Optional for the same reason: replies from before the breakdowns. */
   buckets?: Breakdowns;
+  /** P&L by days held (`core.analysis.buckets.held_table`): same day, 1-6, 7-20 and 21+ days. Kept
+   *  apart from `buckets`, which hold only what was known at entry: the exit sets how long a trade
+   *  is held. null for a book that never holds overnight; absent in replies from before it. */
+  held?: (BucketTable & { min_sessions: number }) | null;
   /** The window this arm was read over (version 2). */
   window?: ArmWindow;
   coverage: { trades: number; entry_time: number; exit_time: number; entry_spot: number; exit_spot: number };

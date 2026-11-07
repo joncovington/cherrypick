@@ -249,7 +249,7 @@ describe("readModulePerformance", () => {
     const out = await readModulePerformance(config, "curve", "ALL");
     expect(out.ok).toBe(false); // the metrics half still failed
     expect(out.exitReasons).toEqual([
-      { tag: "control", reason: "profit_take", n: 1, net: 38.0, avgNet: 38.0 },
+      { tag: "control", reason: "profit_take", n: 1, wins: 1, net: 38.0, avgNet: 38.0 },
     ]);
     expect(out.heldBack).toEqual([]);
     // breaks also comes through even though the metrics half failed -- same independence as

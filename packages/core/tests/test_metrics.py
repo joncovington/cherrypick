@@ -105,6 +105,33 @@ def test_expectancy_is_mean_per_trade_and_refuses_empty():
     assert metrics.expectancy([]) is None
 
 
+def test_payoff_states_the_win_rate_the_averages_need():
+    # 77 wins of +141 and 23 losses of -1,421: a 77% win rate that needs about 91%.
+    p = metrics.payoff([141.0] * 77 + [-1421.0] * 23)
+    assert p == {"avg_win": 141.0, "avg_loss": -1421.0, "breakeven_win_rate": 0.9097}
+    # At exactly the break-even rate the mean net is zero.
+    assert 0.9097 * 141.0 - (1 - 0.9097) * 1421.0 == pytest.approx(0.0, abs=0.1)
+
+
+def test_payoff_counts_scratch_trades_on_the_win_rate_base():
+    # Win rate is wins over every trade, so a scratch is neither side but stays in the base:
+    # 2 wins of +10, 1 loss of -10, 1 scratch. Break even at equal averages is half of the
+    # three-quarters that are not scratches.
+    p = metrics.payoff([10.0, 10.0, -10.0, 0.0])
+    assert p["breakeven_win_rate"] == 0.375
+
+
+def test_payoff_refuses_a_break_even_rate_without_both_sides():
+    assert metrics.payoff([5.0, 7.0]) == {"avg_win": 6.0, "avg_loss": None, "breakeven_win_rate": None}
+    assert metrics.payoff([-5.0]) == {"avg_win": None, "avg_loss": -5.0, "breakeven_win_rate": None}
+    assert metrics.payoff([]) == {"avg_win": None, "avg_loss": None, "breakeven_win_rate": None}
+
+
+def test_calibration_reading_carries_the_payoff():
+    r = metrics.calibration_reading([_rec(30.0), _rec(-10.0), _rec(10.0)])
+    assert (r["avg_win"], r["avg_loss"], r["breakeven_win_rate"]) == (20.0, -10.0, 0.3333)
+
+
 def test_profit_factor_refuses_one_sided_books():
     assert metrics.profit_factor([30.0, -10.0, 10.0]) == 4.0
     # No losses yet -> UNDEFINED, not infinite; no wins -> unmeasurable, not zero-quality.

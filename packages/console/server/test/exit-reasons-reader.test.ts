@@ -74,6 +74,27 @@ describe("readExitReasons", () => {
     expect(closeDte).toMatchObject({ tag: "control", n: 1, net: 8.0 });
   });
 
+  it("counts a reason's wins on the net after fees, so its win rate is wins over n", () => {
+    const { config, tmp } = tmpConfig();
+    fs.mkdirSync(path.join(tmp, "curve"), { recursive: true });
+    const db = new Database(path.join(tmp, "curve", "paper_trades.db"));
+    db.exec(
+      "CREATE TABLE curve_positions (position_id TEXT, arm TEXT, status TEXT, exit_reason TEXT, gross_pnl REAL, fees REAL)",
+    );
+    const ins = db.prepare(
+      "INSERT INTO curve_positions (position_id, arm, status, exit_reason, gross_pnl, fees) VALUES (?,?,?,?,?,?)",
+    );
+    ins.run("p1", "control", "closed", "expired", 30.0, 2.0); // a win
+    ins.run("p2", "control", "closed", "expired", 1.0, 2.0); // gross up, net down: a loss
+    ins.run("p3", "control", "closed", "expired", 2.0, 2.0); // net zero: a scratch, not a win
+    ins.run("p4", "control", "closed", "expired", -50.0, 2.0);
+    db.close();
+
+    const out = readExitReasons(config, "curve");
+    closePooledDbs();
+    expect(out.exitReasons).toEqual([{ tag: "control", reason: "expired", n: 4, wins: 1, net: -25.0, avgNet: -6.25 }]);
+  });
+
   it("attributes held-back verdicts to the position's own tag via the join, not just the event", () => {
     const { config, tmp } = tmpConfig();
     fs.mkdirSync(path.join(tmp, "curve"), { recursive: true });
@@ -128,7 +149,7 @@ describe("readExitReasons", () => {
     const shield = readExitReasons(config, "pmcc", "paper_trades.db", "shield");
     const all = readExitReasons(config, "pmcc");
     closePooledDbs();
-    expect(shield.exitReasons).toEqual([{ tag: "shield", reason: "short_rolled", n: 1, net: 29, avgNet: 29 }]);
+    expect(shield.exitReasons).toEqual([{ tag: "shield", reason: "short_rolled", n: 1, wins: 1, net: 29, avgNet: 29 }]);
     expect(shield.heldBack.map((r) => r.tag)).toEqual(["shield"]);
     expect(Array.isArray(all.exitReasons) && all.exitReasons.length).toBe(3);
     expect(all.heldBack).toHaveLength(2);
@@ -176,7 +197,7 @@ describe("readExitReasons", () => {
     const out = readExitReasons(config, "meic");
     closePooledDbs();
     const rows = out.exitReasons as Array<{ tag: string; reason: string; n: number }>;
-    expect(rows).toEqual([{ tag: "control", reason: "both_stopped", n: 1, net: 45.0, avgNet: 45.0 }]);
+    expect(rows).toEqual([{ tag: "control", reason: "both_stopped", n: 1, wins: 1, net: 45.0, avgNet: 45.0 }]);
     expect(out.heldBack).toEqual([]);
   });
 });

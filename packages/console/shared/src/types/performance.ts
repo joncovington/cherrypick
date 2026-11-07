@@ -52,6 +52,8 @@ export interface ExitReasonRow {
   tag: string;
   reason: string;
   n: number;
+  /** Trades in the row whose net was above zero, so the row's win rate is `wins / n`. */
+  wins: number;
   net: number | null;
   avgNet: number | null;
 }
