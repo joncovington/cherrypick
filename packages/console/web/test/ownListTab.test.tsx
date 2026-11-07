@@ -304,7 +304,7 @@ describe("the put or call card", () => {
     expect(html).toContain(">short puts<");
     expect(html).toContain(">covered calls<");
     expect(html).toMatch(/class="mode-btn active"[^>]*>covered calls</);
-    expect(html).toContain("covered call 88C · 59 d");
+    expect(html).toContain("covered call 88C · Δ 0.16 · 59 d");
     expect(html).toContain("1 2026-12-18 88C @ 1.23");
   });
 
@@ -316,6 +316,9 @@ describe("the put or call card", () => {
       expect(html).toContain("tr-list");
       expect(html).not.toContain("tc-grid");
       expect(html.match(/class="tr-row"/g)).toHaveLength(2);
+      // The row names the strike, its delta, the days and the expiry, and never "proposed".
+      expect(html).toContain("short put 88P · Δ 0.16 · 59 d · 18 Dec<");
+      expect(html).not.toMatch(/class="tr-shape">[^<]*proposed/);
     } finally {
       void writePref("view.income-short-puts", undefined);
     }

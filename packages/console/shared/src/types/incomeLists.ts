@@ -143,7 +143,7 @@ export interface CreditSpreadRow {
   /** One standard deviation to expiry, in dollars; null without a vol. */
   move: number | null;
   short: { strike: number; delta: number; iv: number; bid: number | null; ask: number | null };
-  /** The user's rule: the widest long giving 35-40% of the width; null when none does. */
+  /** The user's rule: the widest long giving the rule's credit share of the width (30-40% since 2026-11-07); null when none does. */
   pick: CreditSpreadPrice | null;
   /** "45-60" when the list fell back past the studied 30-45 day window (2026-10-25). */
   window: "30-45" | "45-60";

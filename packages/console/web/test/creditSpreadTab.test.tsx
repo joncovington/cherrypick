@@ -197,6 +197,10 @@ describe("our credit-spread list", () => {
     expect(html).toContain("no width to size");
     expect(html).toContain("1 2026-11-20 106C");
     expect(html).toContain("nearest width, short of the 35–40% rule");
+    // The nearest width's credit is the headline, muted: a reference, not a pick.
+    expect(html).toContain('class="pos-card-pnl muted">+$74.00');
+    expect(html).toContain("nearest width, not a pick");
+    expect(html).toContain('class="pos-card-pnl pnl-pos">+$74.00');
     // Nothing priced: the short alone, as before.
     expect(html).toContain("bull put 96P · 31 d");
   });
@@ -221,7 +225,9 @@ describe("our credit-spread list", () => {
       row({ symbol: "ONLY" }),
     ]);
     const html = render();
-    expect(html).toContain("both sides");
+    // In the setup text, not a chip: two chips stacked made the row two lines tall.
+    expect(html).toContain("bull put 96/94P · 31 d · 20 Nov · both sides");
+    expect(html).not.toMatch(/class="chip[^"]*"[^>]*>both sides</);
     expect(html).toContain("bear call");
     expect(html).toContain("ex-div in trade · Nov 2");
     expect(html).toContain("setup: mean reversion (short) · last close");

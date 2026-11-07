@@ -14,12 +14,12 @@ import { Section } from "../../components/Section";
  * Our own credit-spread list (2026-10-24): the chart setups' fresh entries as spreads on the 30-45 day
  * monthly, from `packages/technicals` `income-lists` (version 2, `creditspreads.py`). A long setup is a
  * put spread, its short mirror a call spread; the short nearest 0.40 delta, the pick the widest long
- * giving 35-40% of the width at the working price. Every figure is the builder's; this formats and
+ * giving the credit share of the width (30-40% since 2026-11-07) at the working price. Every figure is the builder's; this formats and
  * filters, and ranks nothing -- rows are by symbol.
  *
  * NO TESTED EDGE: item 17 of docs/edge-hypotheses-plan.md (run 2026-10-25) found no setup, side, short
  * or width that passed after costs. The tab reads the rows by a SELECTION (the user's choice the same
- * day): the 35-40% credit rule (every row, the default) or one of the study's least-bad mean-reversion
+ * day): the credit-share rule (every row, the default) or one of the study's least-bad mean-reversion
  * put cells (0.20 or 0.40 delta, 5 strikes), which keep only their rows and show their own short and
  * spread (`rowsFor`).
  *
@@ -146,7 +146,7 @@ export function WidthsBody({ r }: { r: CreditSpreadRow }) {
                   {picked ? (
                     <>
                       {" "}
-                      <span className="chip" title="The same long as the 35-40% pick">
+                      <span className="chip" title="The same long as the credit-rule pick">
                         pick
                       </span>
                     </>
@@ -277,7 +277,10 @@ export function creditModel(
     symbol: r.symbol,
     symbolHref: `/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`,
     spot: money(r.spot),
-    shape: `${r.spread === "put" ? "bull put" : "bear call"} ${r.short.strike}${long === null ? "" : `/${long}`}${right} · ${r.dte} d · ${dayMonth(r.expiry)}`,
+    shape: `${r.spread === "put" ? "bull put" : "bear call"} ${r.short.strike}${long === null ? "" : `/${long}`}${right} · ${r.dte} d · ${dayMonth(r.expiry)}${
+      // A name signalling both sides says so here, not as a chip: two chips stacked made the row two lines.
+      r.conflict ? " · both sides" : ""
+    }`,
     chips: (
       <>
         {p === null ? (
@@ -293,11 +296,6 @@ export function creditModel(
             45-60
           </span>
         ) : null}
-        {r.conflict ? (
-          <span className="chip chip-warn" title="The name signals both sides at once: a put spread and a call spread">
-            both sides
-          </span>
-        ) : null}
         {r.leveraged ? (
           <span className="chip" title="A daily-reset fund: it decays and gaps in ways its delta does not price">
             {r.leveraged}
@@ -305,8 +303,15 @@ export function creditModel(
         ) : null}
       </>
     ),
-    cash: p === null ? null : p.credit * 100,
-    side: p === null ? ["no pick", `${r.dte} d`] : [credit(p.credit), `Cr/ML ${p.creditMaxLoss === null ? "—" : p.creditMaxLoss.toFixed(2)}`],
+    // An unpicked row's figure is the nearest width's, drawn muted: short of the rule, never a pick.
+    cash: p !== null ? p.credit * 100 : near !== null ? near.price.credit * 100 : null,
+    cashMuted: p === null,
+    side:
+      p !== null
+        ? [credit(p.credit), `Cr/ML ${p.creditMaxLoss === null ? "—" : p.creditMaxLoss.toFixed(2)}`]
+        : near !== null
+          ? [`nearest width, not a pick`, `max loss ${contract(near.price.maxLoss)}`]
+          : ["no pick", `${r.dte} d`],
     bar: p === null || largest <= 0 ? null : (p.maxLoss * 100 * 100) / largest,
     barTitle: "the max loss, against the largest on this list: the list carries no per-trade cap",
     label:
@@ -342,7 +347,7 @@ export function creditHelp(tested: string | null, selection: { label: string; ru
         <HelpWarn title="No tested edge">
           <p>
             Item 17 of the edge-hypotheses plan tested every setup, side, short and width on 2020-2025 and none passed after costs
-            {tested ? ` (${tested})` : ""}. The selections are rules to read the cards by, not recommendations: the 35-40% credit rule you
+            {tested ? ` (${tested})` : ""}. The selections are rules to read the cards by, not recommendations: the {shareLabel} credit rule you
             trade, and the two mean-reversion put cells the study found least bad.
             {selection && selection.label ? ` Showing: ${selection.rule}.` : ""}
           </p>
@@ -393,7 +398,7 @@ export function CreditSpreadTab() {
   const rows = sorted.slice(page.offset, page.offset + page.limit);
   const latest = data?.days[0] ?? null;
   const dropped = Object.entries(data?.dropped ?? {});
-  const share = data?.rule.creditShare ?? [0.35, 0.4];
+  const share = data?.rule.creditShare ?? [0.3, 0.4];
   const shareLabel = `${Math.round(share[0] * 100)}–${Math.round(share[1] * 100)}%`;
   const unpickedAll = all.filter((r) => r.pick === null).length;
   const largest = Math.max(0, ...shown.map((r) => (r.pick === null ? 0 : r.pick.maxLoss * 100)));
