@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
 import { FilterSortButton, FilterSortPanel, FilterSummary, SortSection, sortRows, type SortChoice, type SortOption } from "../../components/FilterSort";
 import { useSearchParams } from "react-router-dom";
 import type { CandleBar, ManageChainOrder, ManageTrade } from "@console/shared";
@@ -448,6 +449,52 @@ function TradeDialog({
   );
 }
 
+/** One line a trade (2026-11-06): ID, shape, net P&L, capture as its bar, days to the nearest short,
+ *  manage's action. A row opens the trade's card in place; the card opens the lightbox as it always has. */
+function PositionRows({ trades, inSession, onOpen }: { trades: ManageTrade[]; inSession: boolean; onOpen: (id: string) => void }) {
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (k: string) => {
+    const next = new Set(open);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
+    setOpen(next);
+  };
+  return (
+    <div className="tr-list pos-rows" role="list">
+      {trades.map((t) => {
+        const bar = t.capture === null ? 0 : Math.min(100, Math.abs(t.capture) * 100);
+        return (
+          <div key={t.tradeId} role="listitem" className="tr-item">
+            <button type="button" className="tr-row" aria-expanded={open.has(t.tradeId)} onClick={() => toggle(t.tradeId)}>
+              <span className="tr-caret" aria-hidden="true">
+                ▸
+              </span>
+              <span className="tr-sym">{t.tradeId}</span>
+              <span className="tr-shape">{[t.shape, t.intent].filter(Boolean).join(" · ") || "—"}</span>
+              <span className={`tr-cash ${tone(t.pnlNet)}`}>{fmtMoney(t.pnlNet)}</span>
+              <span className="tr-cap" title="capture, before fees">
+                <span className="pos-bar">
+                  <span className={t.capture !== null && t.capture < 0 ? "pos-bar-fill is-neg" : "pos-bar-fill"} style={{ width: `${bar}%` }} />
+                </span>
+                <span className="tr-cap-label">{captureText(t) ?? "—"}</span>
+              </span>
+              <span className="tr-after">{dteText(t) ?? "—"}</span>
+              <span className="tr-chips">
+                <ActionChip action={t.action} />
+              </span>
+            </button>
+            {open.has(t.tradeId) ? (
+              <div className="tr-open">
+                <PositionCard t={t} inSession={inSession} onOpen={() => onOpen(t.tradeId)} />
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** The positions board's sorts (2026-11-06): P&L by default, then timing, capture, action, risk. */
 export const POSITION_SORTS: SortOption<ManageTrade>[] = [
   { id: "pnl", label: "P&L", hint: "high to low", key: (t) => (t.pnlNet === null ? null : -t.pnlNet) },
@@ -484,6 +531,7 @@ export function PositionCards({
   const option = POSITION_SORTS.find((s) => s.id === choice.id);
   const [panel, setPanel] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
+  const [view, setView] = useViewChoice("positions");
   const raw = params.get("show");
   const filter: Filter = raw === "act" || raw === "rolled" ? raw : "all";
   const setParam = (k: string, v: string | null) => {
@@ -526,7 +574,10 @@ export function PositionCards({
             rolled {rolled.length}
           </button>
         </div>
-        <FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />
+        <span className="pos-tools">
+          <ViewSwitch view={view} onChange={setView} />
+          <FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />
+        </span>
       </div>
       <FilterSummary
         parts={[`by ${option?.label ?? "P&L"}${choice.reversed ? ", reversed" : `, ${option?.hint ?? ""}`}`]}
@@ -539,6 +590,8 @@ export function PositionCards({
       </FilterSortPanel>
       {shown.length === 0 ? (
         <p className="muted">{filter === "act" ? "Nothing to do today." : "No rolled trades."}</p>
+      ) : view === "rows" ? (
+        <PositionRows trades={shown} inSession={inSession} onOpen={(id) => lightbox.show(id)} />
       ) : (
         <div className="pos-cards">
           {shown.map((t) => (

@@ -9133,3 +9133,157 @@ button.chip[aria-pressed][data-hue="special"],
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
+/* ---------------------------------------------------------------------------------------------------
+   Cards or rows (components/ViewSwitch.tsx, 2026-11-06): one line a trade, opening its card in place;
+   two lines a trade on a phone. */
+.view-switch .mode-btn {
+  padding: 0.28rem 0.5rem;
+}
+.view-switch svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+.pos-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.tr-list {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  container: trlist / inline-size;
+}
+.tr-item + .tr-item {
+  border-top: 1px solid var(--border);
+}
+.tr-item.is-faded .tr-row {
+  opacity: 0.7;
+}
+.tr-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 0.9fr) minmax(0, 1.5fr) 96px minmax(0, 1.4fr) minmax(0, 1.2fr) 150px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.tr-row:hover {
+  background: var(--surface-hover);
+}
+.tr-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.tr-caret {
+  color: var(--text-muted);
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+.tr-row[aria-expanded="true"] .tr-caret {
+  transform: rotate(90deg);
+}
+.tr-sym {
+  font-family: var(--num-face, ui-monospace, monospace);
+  font-weight: 600;
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tr-spot {
+  font-weight: 400;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.tr-shape,
+.tr-after,
+.tr-cap-label {
+  color: var(--text-muted);
+  min-width: 0;
+}
+.tr-cash {
+  font-family: var(--num-face, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  font-weight: 600;
+}
+.tr-cap {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.tr-cap .pos-bar {
+  height: 4px;
+}
+.tr-cap-label {
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tr-after {
+  font-size: 11.5px;
+}
+.tr-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.tr-open {
+  padding: 10px 12px 12px 36px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-sunken) 55%, var(--surface));
+}
+.tr-open > .pos-card {
+  max-width: 560px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tr-caret {
+    transition: none;
+  }
+}
+@container trlist (max-width: 640px) {
+  .tr-row {
+    grid-template-columns: 14px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "c s m"
+      "c d d"
+      "c h h";
+    row-gap: 3px;
+  }
+  .tr-caret {
+    grid-area: c;
+  }
+  .tr-sym {
+    grid-area: s;
+  }
+  .tr-cash {
+    grid-area: m;
+  }
+  .tr-shape {
+    grid-area: d;
+    font-size: 11.5px;
+  }
+  .tr-chips {
+    grid-area: h;
+    justify-content: flex-start;
+  }
+  .tr-cap,
+  .tr-after {
+    display: none;
+  }
+  .tr-open {
+    padding-left: 12px;
+  }
+}

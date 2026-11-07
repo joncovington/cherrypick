@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { useListView } from "../../components/ViewSwitch";
 import type { ManageCandidate, ManageHedgeSuggestion, ManageHedges, TimeSpreadStructure } from "@console/shared";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { tone } from "./manageParts";
@@ -106,12 +107,64 @@ export function TradeCard({ m }: { m: TradeCardModel }) {
   );
 }
 
+/** The trades as cards, or as rows when the card around them has chosen rows (ListViewContext). */
 export function TradeCards({ models, empty }: { models: TradeCardModel[]; empty?: string }) {
+  const view = useListView();
   if (models.length === 0) return empty ? <p className="muted">{empty}</p> : null;
+  if (view === "rows") return <TradeRows models={models} />;
   return (
     <div className="tc-grid">
       {models.map((m) => (
         <TradeCard key={m.key} m={m} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * One line a trade, drawn from the same model as its card so the two cannot disagree: name, shape and
+ * date, the cash, the bar against the cap with its words, what it does to the book, the chips. A row
+ * opens its card in place; on a phone each row folds to two lines.
+ */
+function TradeRows({ models }: { models: TradeCardModel[] }) {
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (k: string) => {
+    const next = new Set(open);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
+    setOpen(next);
+  };
+  return (
+    <div className="tr-list" role="list">
+      {models.map((m) => (
+        <div key={m.key} role="listitem" className={m.faded ? "tr-item is-faded" : "tr-item"}>
+          <button type="button" className="tr-row" aria-expanded={open.has(m.key)} onClick={() => toggle(m.key)}>
+            <span className="tr-caret" aria-hidden="true">
+              ▸
+            </span>
+            <span className="tr-sym">
+              {m.symbol}
+              {m.spot ? <span className="tr-spot">{m.spot}</span> : null}
+            </span>
+            <span className="tr-shape">
+              {m.shape} · {m.open.date}
+            </span>
+            <span className={`tr-cash ${tone(m.cash)}`}>{fmtCash(m.cash)}</span>
+            <span className="tr-cap" title={m.barTitle}>
+              <span className="pos-bar">
+                <span className="pos-bar-fill tc-bar-cap" style={{ width: `${Math.max(0, Math.min(100, m.bar ?? 0))}%` }} />
+              </span>
+              <span className="tr-cap-label">{m.label}</span>
+            </span>
+            <span className="tr-after">{m.after.join(" · ")}</span>
+            <span className="tr-chips">{m.chips}</span>
+          </button>
+          {open.has(m.key) ? (
+            <div className="tr-open">
+              <TradeCard m={m} />
+            </div>
+          ) : null}
+        </div>
       ))}
     </div>
   );
