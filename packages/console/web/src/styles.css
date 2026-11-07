@@ -226,7 +226,7 @@ body {
   padding: 0.1rem 0.6rem;
   font-size: 12px;
   color: var(--text-muted);
-  white-space: nowrap;
+
 }
 
 /* A chip rendered as a link (e.g. LivenessChips' per-module rows) keeps its chip look rather than
@@ -587,7 +587,7 @@ h2 {
   font-size: 11.5px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+
 }
 
 /* .signed-bar (components/Charts.tsx SignedBar) is the track itself; .netbar-row wraps it with a
@@ -775,7 +775,7 @@ h2 {
   text-transform: uppercase;
   border-bottom: 1px solid var(--border);
   background: var(--surface-sunken);
-  white-space: nowrap;
+
 }
 /* A sortable header (2026-10-16): a button, so the sort is reachable from the keyboard, dressed as
    the header text it replaces. */
@@ -804,7 +804,7 @@ h2 {
   transition: background-color 0.15s ease;
   /* Bucket labels and figures read on one line; a cell that genuinely needs
      to wrap sets white-space itself. */
-  white-space: nowrap;
+
 }
 
 /* Breakdown tables. The bucket label is prose, not a figure: it takes whatever
@@ -1233,7 +1233,7 @@ select.text-input {
   font-family: var(--num-face);
   font-variant-numeric: tabular-nums;
   padding: 0.1rem 0;
-  white-space: nowrap;
+
 }
 
 .gex-metric-value {
@@ -1299,7 +1299,7 @@ select.text-input {
   justify-content: space-between;
   gap: 0.6rem;
   padding: 0.1rem 0;
-  white-space: nowrap;
+
 }
 .gexp-row > :last-child {
   font-weight: 600;
@@ -1320,7 +1320,7 @@ select.text-input {
 }
 .gexp-walls td {
   padding: 0.12rem 0.3rem;
-  white-space: nowrap;
+
 }
 .gexp-tag {
   font-size: 10.5px;
@@ -1763,7 +1763,7 @@ select.text-input {
 .advisor-apply th:not(:last-child),
 .advisor-apply td:not(:last-child) {
   width: 1%;
-  white-space: nowrap;
+
 }
 
 .advisor-params th:last-child,
@@ -2400,7 +2400,7 @@ select.text-input {
 
 .arm-diff-was {
   font-size: 11px;
-  white-space: nowrap;
+
 }
 
 .arm-diff-none {
@@ -3247,7 +3247,7 @@ select.text-input {
 .diverge-label {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+
 }
 .diverge-value {
   font-family: var(--num-face);
@@ -3720,7 +3720,7 @@ select.text-input {
   display: inline-block;
 }
 .dp-button {
-  white-space: nowrap;
+
 }
 .dp-panel {
   position: absolute;
@@ -4034,7 +4034,7 @@ select.text-input {
 }
 .band-key > span {
   margin-right: 0.7em;
-  white-space: nowrap;
+
 }
 /* The flags' key under a derived-flow table: one flag a line, the flag set like the table's own. */
 .flag-key {
@@ -4398,7 +4398,7 @@ select.text-input {
   max-width: 900px;
 }
 .gap-table th {
-  white-space: nowrap;
+
 }
 .pp-months tfoot td {
   font-weight: 600;
@@ -4523,7 +4523,7 @@ select.text-input {
   color: var(--text-muted);
   padding: 0.3rem 0.5rem;
   text-align: right;
-  white-space: nowrap;
+
 }
 .pf-matrix tbody th {
   text-align: left;
@@ -4533,7 +4533,7 @@ select.text-input {
   padding: 0.45rem 0.5rem;
   border-radius: 3px;
   color: var(--text);
-  white-space: nowrap;
+
 }
 .pf-matrix-origin {
   outline: 1px solid var(--chart-grid-strong);
@@ -4699,7 +4699,7 @@ select.text-input {
   font-family: var(--num-face);
   font-weight: 600;
   font-size: 12.5px;
-  white-space: nowrap;
+
 }
 .md-sub {
   display: block;
@@ -5420,7 +5420,7 @@ select.text-input {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+
 }
 
 .study-dot {
@@ -5491,7 +5491,7 @@ select.text-input {
 
 /* The figure breaks only between the amount and "/ session", never inside either. */
 .study-tile-fig-amt > span {
-  white-space: nowrap;
+
 }
 
 @media (max-width: 560px) {
@@ -5676,7 +5676,7 @@ select.text-input {
   font: inherit;
   font-weight: 500;
   cursor: pointer;
-  white-space: nowrap;
+
 }
 
 .study-tab.is-on {
@@ -6764,7 +6764,7 @@ select.text-input {
   font-family: var(--num-face);
   font-variant-numeric: tabular-nums;
   font-size: 13px;
-  white-space: nowrap;
+
 }
 
 .pos-card-shape {
@@ -6788,7 +6788,7 @@ select.text-input {
   font-variant-numeric: tabular-nums;
   font-size: 24px;
   font-weight: 600;
-  white-space: nowrap;
+
 }
 
 .pos-card-side {
@@ -6926,7 +6926,7 @@ select.text-input {
   margin-left: auto;
   font-family: var(--num-face);
   font-size: 13px;
-  white-space: nowrap;
+
 }
 
 .pos-step-cash {
@@ -6934,7 +6934,7 @@ select.text-input {
   font-size: 13px;
   min-width: 6.5em;
   text-align: right;
-  white-space: nowrap;
+
 }
 
 .pos-step-legs,
@@ -7010,7 +7010,7 @@ select.text-input {
 }
 
 .pos-card-foot > span:first-child {
-  white-space: nowrap;
+
 }
 
 .pos-card-reason {
@@ -7101,7 +7101,7 @@ select.text-input {
   font-variant-numeric: tabular-nums;
   font-size: 17px;
   font-weight: 600;
-  white-space: nowrap;
+
 }
 
 .meic-arm-hero .meic-arm-net {
@@ -7754,7 +7754,7 @@ select.text-input {
   padding: 7px 10px;
   border-top: 1px solid var(--border);
   text-align: left;
-  white-space: nowrap;
+
 }
 
 .ldg-table th {
@@ -7894,7 +7894,7 @@ select.text-input {
   padding: 3px 9px;
   border-radius: 999px;
   border: 1px dashed currentColor;
-  white-space: nowrap;
+
 }
 
 .att-chip.is-warn {
@@ -8109,7 +8109,7 @@ select.text-input {
   font: inherit;
   font-size: 13px;
   min-height: 34px;
-  padding: 4px 8px;
+  padding: 4px 6px;
   color: var(--text);
   background: var(--surface-sunken);
   border: 1px solid var(--border);
@@ -8171,7 +8171,7 @@ select.text-input {
 .mdl-num {
   font-family: var(--num-face);
   font-size: 12px;
-  white-space: nowrap;
+
 }
 
 @media (max-width: 560px) {
@@ -8228,7 +8228,7 @@ select.text-input {
 .lim-num {
   font-family: var(--num-face);
   font-size: 12px;
-  white-space: nowrap;
+
 }
 
 @media (max-width: 640px) {
@@ -8290,7 +8290,7 @@ select.text-input {
   color: var(--pf-c);
   border: 1px solid color-mix(in srgb, var(--pf-c) 45%, transparent);
   background: color-mix(in srgb, var(--pf-c) 10%, transparent);
-  white-space: nowrap;
+
 }
 .pf-tag::before {
   content: "";
@@ -8621,7 +8621,7 @@ button.chip[aria-pressed][data-hue="special"],
   color: var(--text-muted);
   border-left: 1px solid var(--border);
   padding-left: 8px;
-  white-space: nowrap;
+
 }
 /* ---------------------------------------------------------------------------------------------------
    Card help (components/CardHelp.tsx, 2026-11-06): a ? beside a card's title opens a small lightbox
@@ -8813,7 +8813,7 @@ button.chip[aria-pressed][data-hue="special"],
   font: inherit;
   font-size: 12px;
   cursor: pointer;
-  white-space: nowrap;
+
 }
 .fs-btn svg {
   width: 15px;
@@ -9073,7 +9073,7 @@ button.chip[aria-pressed][data-hue="special"],
 .fs-group-t span {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+
 }
 .fs-foot {
   display: flex;
@@ -9275,14 +9275,14 @@ button.chip[aria-pressed][data-hue="special"],
   padding-left: 8px;
   color: var(--text-muted);
   font-size: 11px;
-  white-space: nowrap;
+
 }
 /* A leg stays on one line; its quote drops under it, right-aligned, when the card is too narrow for both. */
 .pos-card.tc-card .pos-leg {
   flex-wrap: wrap;
 }
 .pos-card.tc-card .pos-leg > span:nth-child(2) {
-  white-space: nowrap;
+
 }
 
 /* What a trade needs (components/ActionBlock.tsx): an amber rule down its side, the rule and its
@@ -9369,7 +9369,7 @@ button.chip[aria-pressed][data-hue="special"],
   font-size: 11.5px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+
 }
 .sb-count {
   font-family: var(--num-face, ui-monospace, monospace);
@@ -9525,7 +9525,7 @@ button.chip[aria-pressed][data-hue="special"],
   flex-wrap: wrap;
 }
 .action-block .pos-leg > span:nth-child(2) {
-  white-space: nowrap;
+
 }
 
 /* redesign: backtest */
@@ -9798,7 +9798,7 @@ button.chip[aria-pressed][data-hue="special"],
   font-size: 0.85rem;
 }
 .fl-layout td .pf-more {
-  white-space: nowrap;
+
 }
 
 /* redesign: gaps (one Section suite-wide; MEIC history totals that wrap) */
@@ -9857,4 +9857,17 @@ button.chip[aria-pressed][data-hue="special"],
   font-family: var(--num-face);
   font-size: 15px;
   font-weight: 700;
+}
+
+/* help-tables (2026-11-07): a table inside a card's ? scrolls in its own box instead of widening the
+   help body's grid column, which clipped every paragraph beside it; help tables sit a size smaller. */
+.help-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+.help-body .data-table {
+  font-size: 12px;
+}
+.help-body .data-table th,
+.help-body .data-table td {
+  padding: 4px 6px;
 }
