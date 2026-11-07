@@ -112,6 +112,29 @@ def test_a_failed_step_counts_until_a_later_run_of_it_is_done():
     assert sr.failed_steps(tasks) == ["study"]
 
 
+def test_a_retry_named_with_a_number_clears_its_steps_failures():
+    tasks = [
+        {"step": "study", "status": "failed", "finished_at": "2026-01-02T10:00:00"},
+        {"step": "study-2", "status": "failed", "finished_at": "2026-01-02T11:00:00"},
+        {"step": "study-3", "status": "done", "finished_at": "2026-01-02T12:00:00"},
+        {"step": "fetch-oi", "status": "failed", "finished_at": "2026-01-02T13:00:00"},
+    ]
+    assert sr.failed_steps(tasks) == ["fetch-oi"]
+    assert sr.step_base("fetch-chains-12") == "fetch-chains" and sr.step_base("study") == "study"
+
+
+def test_a_tests_estimate_is_read_as_its_figure():
+    data = {"tests": {"call|rank": {"n": 40, "estimate": 0.06, "p": 0.001, "decision": "pass"}}}
+    row = sr.arms(data, "design.json")[0]
+    assert (row["arm"], row["window"], row["mean"], row["n"], row["verdict"]) == (
+        "call|rank",
+        "design",
+        0.06,
+        40,
+        "pass",
+    )
+
+
 def test_digest_lists_recent_studies_with_counts_and_skips_data_checks():
     rows = [
         {

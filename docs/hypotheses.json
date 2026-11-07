@@ -2021,7 +2021,7 @@
       "id": 52,
       "study": "item52",
       "title": "Diagonals across an earnings report: the short weekly takes the crush, the monthly long keeps its value",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "earnings-premium",
       "side": "neutral",
@@ -2055,9 +2055,12 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#52-diagonals-across-an-earnings-report-the-short-weekly-takes-the-crush-the-monthly-long-keeps-its-value",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item52/results.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "every arm judged fails the design window (A-call, A-put, B1, B2, C and A's cheap cuts); the cheap cuts of B1, B2 and C are no verdict on too few design trades, so B2's cheap cut's holdout is reported only; diagonals across a report are closed with the calendars, and the back-month wing does not rescue a short report strangle, beside item 47's fail"
     },
     {
       "id": 53,
@@ -2105,7 +2108,7 @@
       "id": 54,
       "study": "item54",
       "title": "Does the front/back IV ratio predict a time spread's profit?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "term-structure",
       "side": "neutral",
@@ -2135,9 +2138,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#54-does-the-frontback-iv-ratio-predict-a-time-spreads-profit",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item54/design.json",
+        "{home}/data/backtest/results/research/item54/holdout.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "one of the twelve tests passes the design window, the call calendar's ratio rank, and the holdout does not confirm it; nothing is confirmed, so the ratio stays an untested ordering, labelled so, and the scanner stays a convenience, never presented as a source of trades"
     },
     {
       "id": 55,

@@ -5719,6 +5719,15 @@ a cheap back month. Declared before any of its inputs are fetched.*
   - The control gets the leg checks (two-sided, spread at most 15% of mid) and not the event-level
     filters (close, expected move, open interest).
 
+- **Result (2026-11-07): fail.** Two earlier runs refused for missing inputs (vendor refusals, then
+  permanent 'no data' open-interest days; `REPLAY_CORRECTIONS`, before any read). On the run that
+  went through, every arm judged fails the design window, and the `cheap` cuts of B1, B2 and C are no
+  verdict on too few design trades. B2's `cheap` cut is reported above zero in the holdout; with no
+  design verdict it decides nothing.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item52/`).
+- **What this decides:** the fail branch. Diagonals across a report are closed with the calendars,
+  and the back-month wing does not rescue a short report strangle: item 47 failed too.
+
 ### 53. The time exit for short premium opened inside 30 DTE
 
 *Source: the user, 2026-11-06. The manage package's 21-day time exit fired on the first day for any
@@ -5836,6 +5845,14 @@ chain is fetched; the plan step only counts the requests.*
   - **The verdict test confirmed:** the scanner drops "loses unchanged" rows of that structure.
   - **Nothing confirmed:** the ratio stays an untested ordering, labelled so, and the scanner stays a
     convenience, never presented as a source of trades.
+
+- **Result (2026-11-07): fail, nothing confirmed.** The first run read no trades: the store's CALL and
+  PUT never reached the builder (corrected before any trade was read; `REPLAY_CORRECTIONS`). On the
+  corrected run, one of the twelve tests passes the design window, the call calendar's ratio rank, and
+  the holdout does not confirm it.
+  Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item54/`).
+- **What this decides:** nothing confirmed. The ratio stays an untested ordering, labelled so, and
+  the scanner stays a convenience, never presented as a source of trades.
 
 ### 55. Does a defined-risk index collar improve a long-delta book after costs?
 
