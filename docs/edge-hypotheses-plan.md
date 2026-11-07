@@ -6202,6 +6202,91 @@ No new fetch.*
     `~/.cherrypick/data/backtest/results/research/item58/study-2022-05-16-2024-12-31.json` and
     `.../item58/study-2025-01-01-2026-11-06.json`.
 
+### 59. The 45-day IWM condor: 16-delta shorts, 5-delta wings, closed at half its credit or at 21 days
+
+*Source: the same 2026-11-07 review of third-party community backtests as item 58 (kept local; none
+of its figures enter this repo). Among tests held 30 to 45 days, a neutral IWM condor recurred with
+these strikes and this management. Its versions used five entry filters chosen on the same data,
+up to ten overlapping entries, and exits filled at mid. The user approved the test on 2026-11-07.
+Declared here before any of the fetched paths are read. The fetch is item 59's
+`fetch-chain-paths` row: each IWM standard monthly expiry's daily path from 60 days out.*
+
+- **Question:** does a neutral IWM iron condor sold once a monthly cycle at about 45 days, managed by
+  the common half-credit-or-21-days rule, earn after costs, unfiltered?
+- **Where the edge would live:** the **premium**: index-ETF implied vol above what the next three to
+  four weeks deliver. Not a signal. The source's filters are not used; they were chosen on its data.
+- **Look-alikes:** items 14 to 16 and the short-put delta study sold credit spreads on single names
+  and funds, one side at a time, and found no strike with an edge after costs. Item 16 also found
+  closing at half the credit, else at 21 days, worse than holding on every fund. No row sold a
+  two-sided condor on a broad index ETF at this tenor, so this is not a retest of a rejected row. The
+  2026-10-20 strangle management test chose this exit among others for 45-day strangles; it compared
+  exits on the same trades and did not ask whether the premium earns. Item 53 asks the same of trades
+  opened inside 30 days.
+  Those results are the prior: the declaration expects a fail and says so.
+- **Rival explanations, each with its check:**
+  - *Drift:* one side carries it. **Check:** the put and call verticals' gross reported apart.
+  - *A calm span:* **Check:** both time-halves positive; results by VIX band (the prior close) and by
+    year. The design window holds 2018's February and 2020's March.
+  - *The tail:* **Check:** the five worst trades reported with the verdict; the bootstrapped drawdown
+    beside a pass.
+  - *Fills:* **Check:** the verdict at the working price on both the sale and the buy-back; mid and
+    natural reported beside it.
+  - *Fees:* **Check:** still positive at 1.5× costs.
+  - *End-of-day marks:* the half-credit exit is seen only at a close, never intraday. **Check:** a
+    declared limit; it can only delay a target, never invent one.
+- **The structure (declared by us, nothing tuned):**
+  - Each IWM standard monthly expiry E: the third Friday, or the Thursday before it when that Friday
+    is a holiday.
+  - Entry at the close of the session nearest **45 calendar days** before E, 42 to 48 days out;
+    none, and the cycle is skipped and counted.
+  - Forward: put-call parity at r = 0, the median of K + C − P over the three strikes nearest the
+    strike where the call's and put's mids are closest. Delta: Black-76 at r = 0 from each strike's
+    own mid, as items 14 to 17.
+  - Short the out-of-the-money put and call whose |delta| is nearest **0.16**; long the put and call
+    further out whose |delta| is nearest **0.05**. One contract. One condor per cycle, so trades do
+    not overlap.
+  - Sold at the working price (halfway from mid to natural); a non-positive credit is no trade.
+- **Exit:** each later session's close marks the buy-back at the same fill. Close on the first
+  session whose buy-back costs **half the credit or less**, else on the first session **21 days or
+  fewer** from E. A session whose legs do not all price is passed over. A condor that reaches E
+  without a priced exit is skipped and counted.
+- **Costs:** the suite's tastytrade schedule (`cherrypick.core.fees`), the four-leg open fee and the
+  four-leg close fee. The condor is never held to expiry, so there is no settlement or assignment.
+- **Measured:** net per trade in dollars at one contract.
+- **Window and sample:**
+  - **Design:** cycles whose planned entry falls 2016-01-01 to 2021-12-31, about 70 trades. Read for
+    the verdict.
+  - **Holdout:** 2022-01-01 to 2026-11-06, about 57 trades, the same rules unchanged. Read **only
+    after a design pass**.
+  - Fewer than 50 trades in a window, or more than 5% of its entries without an exit mark, is no
+    verdict.
+- **Pass-or-fail rule**, all must hold:
+  - mean net per trade above zero, with a one-sided t above 2 (one trade is one observation);
+  - each time-half of the design window positive;
+  - still positive at **1.5× costs**;
+  - then the holdout, with the same checks.
+- **Minimum detectable effect (B12):** about 70 trades is a small sample. The planned MDE is computed
+  from the design window's own spread and recorded in the local result before the holdout is read. A
+  no-verdict or a fail reads as "no edge larger than" that figure.
+- **Declared limits (B11):**
+  - end-of-day marks only;
+  - deltas are modelled from mids, not the vendor's;
+  - cycles skipped for a missing entry chain, a missing strike or no exit mark are counted, by
+    reason;
+  - the VIX band uses the prior session's close; nothing reflects only today's state.
+- **Name split (B9):** does not apply; one symbol.
+- **Robustness report beside a pass (B13), never used to re-choose:**
+  - neighbours: shorts at 0.12 and 0.20 delta; entry at 40 and 50 days; the target at 40% and 60%;
+  - costs at 1.5× and 2×; the bootstrapped drawdown and losing streak; the largest size inside a
+    declared 10% of the account, passed at run time.
+- **Data:** `scripts/iwm_condor_item59.py` reads `eod_chains.db` (IWM's chains and the fetched daily
+  paths) and Cboe's VIX history. Results go under the backtest data directory only; this plan records
+  the verdict.
+- **Decides:**
+  - **A pass:** a proposal for manage's income list, a neutral index condor beside the put spreads,
+    with the robustness report.
+  - **A fail or no verdict:** closes the 45-day index condor as specified, beside items 14 to 16.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
