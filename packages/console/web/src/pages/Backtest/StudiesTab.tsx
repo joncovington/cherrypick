@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { BacktestOverview, StudiesBoard, StudyGroup, StudyRow } from "@console/shared";
+import { HelpSection, HelpWarn } from "../../components/CardHelp";
 import { Card } from "../../components/DataTable";
 import { useBridged } from "../../lib/bridged";
 import { MiniMarkdown } from "../../lib/miniMarkdown";
@@ -44,13 +45,22 @@ export function headline(board: StudiesBoard): string {
   return `${board.rows.length} studies: ${parts.join(", ")}.`;
 }
 
+/** The design and holdout windows, as one line. */
+export function windowsLine(o: BacktestOverview | null): string | null {
+  const w = o?.windows;
+  return w?.design && w.holdout ? `Design window ${w.design[0]} to ${w.design[1]}; holdout ${w.holdout[0]} to ${w.holdout[1]}.` : null;
+}
+
+/** True while no validation has unlocked history: every MEIC and flies replay is provisional. */
+export function historyLocked(o: BacktestOverview | null): boolean {
+  return o !== null && o.validation.length > 0 && o.validation.every((v) => !v.unlocks_history);
+}
+
 /** The study context the overview holds: the windows, and why replays are provisional. */
 export function contextLine(o: BacktestOverview | null): string | null {
   if (o === null) return null;
-  const w = o.windows;
-  const windows =
-    w.design && w.holdout ? `Design window ${w.design[0]} to ${w.design[1]}; holdout ${w.holdout[0]} to ${w.holdout[1]}.` : "";
-  const locked = o.validation.length > 0 && o.validation.every((v) => !v.unlocks_history);
+  const windows = windowsLine(o) ?? "";
+  const locked = historyLocked(o);
   const why = locked ? " MEIC and flies replays are provisional: validation has not unlocked their history (see “is history trusted?” on the data tab)." : "";
   return windows + why || null;
 }
@@ -82,7 +92,9 @@ export function BacktestStudiesTab() {
   const { data, isLoading, isError, error, dataUpdatedAt } = useStudies();
   const [params] = useSearchParams();
   const overview = useBridged<BacktestOverview>(["backtest", "overview"], "/api/backtest/overview", 60_000);
-  const context = contextLine(overview.data?.ok ? overview.data.data : null);
+  const ov = overview.data?.ok ? overview.data.data : null;
+  const context = windowsLine(ov);
+  const provisional = historyLocked(ov);
   let body: ReactNode;
   if (isLoading) {
     body = (
@@ -116,13 +128,38 @@ export function BacktestStudiesTab() {
     );
   }
   return (
-    <Card title="Studies" collapseKey="backtest-studies" updatedAt={dataUpdatedAt} isError={isError}>
+    <Card
+      title="Studies"
+      collapseKey="backtest-studies"
+      updatedAt={dataUpdatedAt}
+      isError={isError}
+      flag={provisional ? "provisional history" : undefined}
+      help={{
+        title: "Reading the studies",
+        body: (
+          <>
+            {provisional ? (
+              <HelpWarn title="Provisional">
+                <p>
+                  MEIC and flies replays are provisional: validation has not unlocked their history, so a verdict over it is not yet
+                  evidence (see &ldquo;is history trusted?&rdquo; on the data tab).
+                </p>
+              </HelpWarn>
+            ) : null}
+            <HelpSection title="One card per register item">
+              <p>
+                One card per item in the hypothesis register (<code>docs/hypotheses.json</code>). A verdict is the word the study wrote in
+                its result file; the files stay on this machine.
+              </p>
+            </HelpSection>
+            <HelpSection title="Opening a card">
+              <p>A card opens to its run&apos;s figures, pass test, rivals, per-arm verdicts, queue rows and links.</p>
+            </HelpSection>
+          </>
+        ),
+      }}
+    >
       {body}
-      <p className="muted" style={{ marginTop: 8 }}>
-        One card per item in the hypothesis register (<code>docs/hypotheses.json</code>). A verdict is the word the study wrote in its
-        result file; the files stay on this machine. Open a card for its run&apos;s figures, pass test, rivals, per-arm verdicts, queue
-        rows and links.
-      </p>
     </Card>
   );
 }

@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BacktestArmCards, BacktestOverview, BacktestRunCards, BacktestRunReport, BridgedResult } from "@console/shared";
 import { trialsLine } from "../src/pages/Backtest/BacktestPage";
 import { BacktestDataTab, DataDialogBody, blocker, keepStore, storeModels, trustAnswer, yearDomain, type DataItem, type DataTab } from "../src/pages/Backtest/DataCards";
-import { BacktestRunsTab } from "../src/pages/Backtest/RunsCards";
+import { BacktestRunsTab, RunDialogBody, initialRunTab, type RunTab } from "../src/pages/Backtest/RunsCards";
 
 /**
  * The Backtest page's data and runs tabs (validation folded into data 2026-10-30), rendered with the bridge's documents already in the query cache
@@ -136,12 +136,34 @@ const dialog = (item: DataItem, tab: DataTab) =>
 const seedOverview = (c: QueryClient, v: BridgedResult<BacktestOverview> = { ok: true, data: OVERVIEW, error: null }) =>
   c.setQueryData(["bridged", "backtest", "overview"], v);
 
+const runDialog = (tab: RunTab, report: BacktestRunReport | null = REPORT, url = `/backtest/runs?run=${RUN_ID}`) =>
+  renderToString(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={[url]}>
+        <RunDialogBody
+          listing={{ run_id: RUN_ID, created_at: 1_793_000_000, module: "flies", window: "validation", provisional: false, arms: ["control", "range-high"], span: ["2024-01-02", "2024-02-01"], cadence: 60, sessions: 2 }}
+          report={report}
+          tab={tab}
+          onTab={() => undefined}
+          arm={null}
+          onArm={() => undefined}
+          position="1 of 1"
+          onPrev={() => undefined}
+          onNext={() => undefined}
+          onClose={() => undefined}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  ).replace(/<!-- -->/g, "");
+
 describe("every tab", () => {
-  it("opens with the licensed-data note", () => {
+  it("heads the data and runs tabs with the amber licensed-data flag, its text behind it", () => {
     for (const tab of [<BacktestDataTab />, <BacktestRunsTab />]) {
       const html = render(tab, "/backtest", (c) => seedOverview(c));
-      expect(html).toContain("Licensed vendor data.");
-      expect(html).toContain("do not screenshot, export, copy or share it");
+      expect(html).toContain('class="help-flag"');
+      expect(html).toContain("licensed vendor data");
+      // The long note is in the box the flag opens, not on the page.
+      expect(html).not.toContain("do not screenshot, export, copy or share it");
     }
   });
 
@@ -252,22 +274,29 @@ describe("runs", () => {
     expect(html).not.toContain("abc1234");
   });
 
-  it("reads the selected run's full report at full=1, with the way back", () => {
-    const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}&full=1`, (c) => {
-      seedOverview(c);
-      c.setQueryData(["bridged", "backtest", "run", RUN_ID], { ok: true, data: REPORT, error: null });
-    });
-    expect(html).toContain("All runs");
-    expect(html).toContain("flies-paper-legged");
-    expect(html).toContain("abc1234");
-    expect(html).toContain("fp-9f8e");
-    expect(html).toContain("no_settle_price");
-    expect(html).toContain("no exposure");
+  it("folds the full report into the run lightbox: arms, pairing and refused sessions each their own tab", () => {
+    const arms = runDialog("arms");
+    expect(arms).toContain("no exposure");
     // Net is signed and toned by its sign; fees are a cost, signed, and never toned.
-    expect(html).toContain('<td class="pnl-neg">-$120.50</td>');
-    expect(html).toContain("<td>-$33.60</td>");
+    expect(arms).toContain('<td class="pnl-neg">-$120.50</td>');
+    expect(arms).toContain("<td>-$33.60</td>");
     // Interval ends are never toned.
-    expect(html).toContain("<td>-$80.00 to +$40.00</td>");
+    expect(arms).toContain("<td>-$80.00 to +$40.00</td>");
+    expect(runDialog("paired")).toContain("arm − control");
+    expect(runDialog("refused")).toContain("no_settle_price");
+    const settings = runDialog("settings");
+    expect(settings).toContain("abc1234");
+    expect(settings).toContain("fp-9f8e");
+    // The lightbox carries a tab for each section of the old report page, and no link to a page of its own.
+    const html = runDialog("summary");
+    for (const t of ["Arms", "Paired with control", "Run cards", "Refused"]) expect(html).toContain(t);
+    expect(html).not.toContain("full=1");
+    expect(html).not.toContain("Full report");
+  });
+
+  it("an old full-report link opens the lightbox on the run cards", () => {
+    expect(initialRunTab(new URLSearchParams("run=x&full=1"))).toBe("cards");
+    expect(initialRunTab(new URLSearchParams("run=x"))).toBe("summary");
   });
 
   it("reads the run's cards: the account, the drawdowns, the calendar and how trades ended", () => {
@@ -318,10 +347,7 @@ describe("runs", () => {
       account: { capital: null, basis: "peak_risk" },
       arms: { control: arm, "range-high": { ...arm, account: null, exits: null, premium: null, peak_risk: null } },
     };
-    const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}&full=1`, (c) => {
-      seedOverview(c);
-      c.setQueryData(["bridged", "backtest", "run", RUN_ID], { ok: true, data: { ...REPORT, cards }, error: null });
-    });
+    const html = runDialog("cards", { ...REPORT, cards });
     expect(html).toContain("peak risk ($400)");
     expect(html).toContain("this arm&#x27;s own peak session risk");
     expect(html).toContain("1.0%"); // fee drag
@@ -336,33 +362,15 @@ describe("runs", () => {
     expect(html).toContain("+$20"); // a month cell, whole dollars
 
     const ruined = { ...cards, arms: { control: { ...arm, account: { ...arm.account!, ruined_on: "2024-02-01" } } } };
-    const html2 = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}&full=1`, (c) => {
-      seedOverview(c);
-      c.setQueryData(["bridged", "backtest", "run", RUN_ID], { ok: true, data: { ...REPORT, cards: ruined }, error: null });
-    });
+    const html2 = runDialog("cards", { ...REPORT, cards: ruined });
     expect(html2).toContain("ruined 2024-02-01");
     expect(html2).toContain("an account this size would have stopped there");
   });
 
-  it("a chosen account is read from the URL and keys its own query", () => {
-    const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}&full=1&capital=50000`, (c) => {
-      seedOverview(c);
-      c.setQueryData(["bridged", "backtest", "run", RUN_ID, 50000], {
-        ok: true,
-        data: { ...REPORT, cards: { ok: false, error: "no session results" } },
-        error: null,
-      });
-    });
+  it("a chosen account is read from the URL by the run cards", () => {
+    const html = runDialog("cards", { ...REPORT, cards: { ok: false, error: "no session results" } }, `/backtest/runs?run=${RUN_ID}&capital=50000`);
     expect(html).toContain('aria-pressed="true">$50,000');
     expect(html).toContain("Cards unavailable: no session results");
-  });
-
-  it("a run the module does not know is its error, not an empty report", () => {
-    const html = render(<BacktestRunsTab />, `/backtest/runs?run=${RUN_ID}&full=1`, (c) => {
-      seedOverview(c);
-      c.setQueryData(["bridged", "backtest", "run", RUN_ID], { ok: false, data: null, error: `no run '${RUN_ID}'` });
-    });
-    expect(html).toContain(`no run &#x27;${RUN_ID}&#x27;`);
   });
 });
 

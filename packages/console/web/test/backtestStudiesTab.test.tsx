@@ -6,7 +6,7 @@ import type { BacktestOverview, BacktestRunReport, StudiesBoard, StudyGrid, Stud
 import { RunPlainEnglish } from "../src/pages/Backtest/BacktestPage";
 import { neighbourhoodLine } from "../src/pages/Backtest/GridBars";
 import { StudyChip, etMs } from "../src/pages/Backtest/QueueTab";
-import { StudyNotes, contextLine, headline, notesHref, planUrl, resultLabel, resultsLine } from "../src/pages/Backtest/StudiesTab";
+import { BacktestStudiesTab, StudyNotes, contextLine, headline, historyLocked, windowsLine, notesHref, planUrl, resultLabel, resultsLine } from "../src/pages/Backtest/StudiesTab";
 import {
   type DialogTab,
   ArmFigures,
@@ -427,6 +427,38 @@ describe("studies tab", () => {
     expect(out).not.toContain("<script>");
     expect(out).toContain(`href="${studyHref("item23")}"`);
     expect(html(<StudyNotes board={board} study="item23" resultName="gone.json" />).replace(/<!-- -->/g, "")).toContain("No gone.md for item23");
+  });
+
+  it("the studies card keeps the provisional line behind an amber flag and its footer behind the ?", () => {
+    const o = {
+      windows: { design: ["2022-05-16", "2025-06-30"], holdout: ["2025-07-01", "2026-10-12"] },
+      validation: [{ unlocks_history: false }],
+    } as unknown as BacktestOverview;
+    const page = (ov: BacktestOverview) =>
+      renderToString(
+        (() => {
+          const c = new QueryClient();
+          c.setQueryData(["bridged", "backtest", "studies"], { ok: true, data: BOARD, error: null });
+          c.setQueryData(["bridged", "backtest", "overview"], { ok: true, data: ov, error: null });
+          return (
+            <QueryClientProvider client={c}>
+              <MemoryRouter>
+                <BacktestStudiesTab />
+              </MemoryRouter>
+            </QueryClientProvider>
+          );
+        })(),
+      ).replace(/<!-- -->/g, "");
+    const locked = page(o);
+    expect(locked).toContain('class="help-flag"');
+    expect(locked).toContain("provisional history");
+    expect(locked).toContain("Design window 2022-05-16 to 2025-06-30");
+    // Neither the provisional sentence nor the register footer is on the page itself.
+    expect(locked).not.toContain("replays are provisional");
+    expect(locked).not.toContain("One card per item in the hypothesis register");
+    expect(page({ ...o, validation: [{ unlocks_history: true }] } as unknown as BacktestOverview)).not.toContain("provisional history");
+    expect(historyLocked(o)).toBe(true);
+    expect(windowsLine(null)).toBeNull();
   });
 
   it("says why replays are provisional only while validation has not unlocked", () => {

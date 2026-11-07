@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { BridgedResult, ResearchProgress, ResearchQueue, ResearchTask } from "@console/shared";
 import { VERDICT_STATUSES, indexStudies, splitTitle, statusWord, studyHref, useStudies, verdictChip, type StudyIndex } from "./studyIndex";
+import { HelpSection } from "../../components/CardHelp";
 import { Card } from "../../components/DataTable";
 import { useBridged } from "../../lib/bridged";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
@@ -737,17 +738,46 @@ export function BacktestQueueTab() {
     );
   }
   return (
-    <Card title="Research queue" collapseKey="backtest-queue" updatedAt={dataUpdatedAt} isError={isError}>
+    <Card
+      title="Research queue"
+      collapseKey="backtest-queue"
+      updatedAt={dataUpdatedAt}
+      isError={isError}
+      help={{
+        title: "How the queue runs",
+        body: (
+          <>
+            <HelpSection title="One task at a time">
+              <p>
+                The supervisor runs one task at a time: on each pass it takes the oldest queued row that is ready, by the order rows were
+                added. A row waits while its <code>--after</code> step is not done, before its <code>--not-before</code>, or, for a
+                ThetaData fetch, while the session is held or inside the nightly window (it resumes after).
+              </p>
+            </HelpSection>
+            <HelpSection title="Kinds of task">
+              <p>
+                Kinds are allow-listed: a fetch (fetch-chains, fetch-flow, fetch-oi), a validation, or a script checked into{" "}
+                <code>scripts/</code>.
+              </p>
+            </HelpSection>
+            <HelpSection title="Adding and cancelling work">
+              <p>
+                Add one with{" "}
+                <code>run.py queue-add --study &lt;study&gt; [--step &lt;step&gt;] --task &lt;kind&gt; --task-args &apos;&#123;…&#125;&apos;</code>;
+                cancel a queued one with <code>run.py queue-cancel --task-id N</code>. Read-only here.
+              </p>
+            </HelpSection>
+            <HelpSection title="Where results are">
+              <p>
+                A study&apos;s finished rows, with their results and logs, are on its card on the studies tab. A run started by hand shows
+                here through its progress file.
+              </p>
+            </HelpSection>
+          </>
+        ),
+      }}
+    >
       {body}
-      <p className="muted" style={{ marginTop: 8 }}>
-        The supervisor runs one task at a time: on each pass it takes the oldest queued row that is ready, by the order rows were
-        added. A row waits while its <code>--after</code> step is not done, before its <code>--not-before</code>, or, for a ThetaData
-        fetch, while the session is held or inside the nightly window (it resumes after). Kinds are allow-listed: a fetch
-        (fetch-chains, fetch-flow, fetch-oi), a validation, or a script checked into <code>scripts/</code>. Add one with{" "}
-        <code>run.py queue-add --study &lt;study&gt; [--step &lt;step&gt;] --task &lt;kind&gt; --task-args &apos;&#123;…&#125;&apos;</code>;
-        cancel a queued one with <code>run.py queue-cancel --task-id N</code>. A study&apos;s finished rows, with their results and logs,
-        are on its card on the studies tab. A run started by hand shows here through its progress file. Read-only here.
-      </p>
     </Card>
   );
 }
