@@ -658,7 +658,7 @@ audits a card opens from it as a lightbox** (`pages/Live/PortfolioBox.tsx`, the 
 `CardLightbox`, wide; `?pf=<id>` in the URL, ← → step through them): the premium pace by month, the
 bands over time (all three strips or one), every name's delta or theta, the check against the
 broker's model (its button carries the delta gap), the sized hedges, the full risk graph, your limits
-and the ruleset, and each expiry's trades as position cards that open on the positions tab. A trade not
+and the ruleset, and each expiry's trades as position cards that open on the positions tab. Each card's explanation (where its figures come from, how they are made, what was left out, the caps) sits behind a ? beside its title (`components/CardHelp.tsx`, the card's `help`): a small lightbox, a sheet on a phone. A caveat that must not be missed keeps an amber flag beside the ? (no published evidence on the guidance and the matrix's ideas, no tested edge on adding trades); what changes what you would do (an error, a missing history row, the partial-reading line) stays on the card. The rest of the suite follows the same pattern as each page is next worked on. A trade not
 held yet (a hedge, an income trade or a time spread that fits) is a position-style card
 (`pages/Live/TradeCard.tsx`): legs as the order that would open it, the cash, the loss the per-trade
 cap is applied to as its bar, and what it does to the book. The check against the

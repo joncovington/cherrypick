@@ -4,6 +4,7 @@ import { AXIS_FONT, CHART_GRID, CHART_GRID_STRONG, niceTicks } from "../../compo
 import { Card } from "../../components/DataTable";
 import { DivergingBars } from "../../components/grid/DivergingBars";
 import { fmtCash } from "../../lib/format";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { BandChip, BandDial, asPercent } from "./PortfolioCards";
 import { dayMonth } from "./TradeCard";
 import { BoxButton, BoxButtons, expiryBoxId } from "./portfolioBoxContext";
@@ -49,6 +50,26 @@ export function BuyingPowerCard({ p }: { p: ManagePortfolio }) {
 
 /* ---------------------------------------------------------------- expiry ladder */
 
+export const LADDER_HELP: CardHelpContent = {
+  title: "Reading the expiry ladder",
+  body: (
+    <>
+      <HelpSection title="Each bar">
+        <p>What the trades whose nearest short expires that day can still lose, modelled from today's marks.</p>
+      </HelpSection>
+      <HelpSection title="θ beside each date">
+        <p>
+          The theta of the legs expiring that day, so a long leg that outlasts its trade's short shows on its own date. A date with only
+          such legs says "long legs only"; its downside is counted under the trade's short.
+        </p>
+      </HelpSection>
+      <HelpSection title="Earnings">
+        <p>Trades whose name reports before their short expires are named under the bars, with their share of theta and downside.</p>
+      </HelpSection>
+    </>
+  ),
+};
+
 export function LadderCard({ ladder }: { ladder: ManageLadder | null }) {
   if (!ladder) return null;
   const e = ladder.earnings;
@@ -69,12 +90,8 @@ export function LadderCard({ ladder }: { ladder: ManageLadder | null }) {
           : `no trade's nearest short expires then: these are the later legs of trades listed under their short, whose downside is counted there · their theta ${fmtCash(x.theta)}/day`,
     }));
   return (
-    <Card title="what expires when">
+    <Card title="what expires when" help={LADDER_HELP}>
       <DivergingBars rows={rows} format={wholeCash} emptyText="no expiries" />
-      <p className="muted pf-caption">
-        each bar: what the trades whose nearest short expires then can still lose (modelled) · θ is the legs expiring that
-        day, so a long leg outlasting its trade's short shows on its own date
-      </p>
       {e.trades.length > 0 && (
         <p className="pf-earnings">
           <span className="chip pf-out">earnings</span> {e.trades.length} trade{e.trades.length === 1 ? "" : "s"} report before
@@ -273,6 +290,8 @@ export function RiskMatrixCard({ p }: { p: ManagePortfolio }) {
   return (
     <Card
       title="risk matrix"
+      help={matrixHelp(s, h, since, p.ideas.length > 0)}
+      flag={p.ideas.length > 0 ? "ideas: no published evidence" : undefined}
       controls={
         horizons.length > 1 && (
           <span className="mode-toggle pf-horizons" role="group" aria-label="horizon">
@@ -331,15 +350,11 @@ export function RiskMatrixCard({ p }: { p: ManagePortfolio }) {
           </tbody>
         </table>
       </div>
+      {/* What the grid is now (its horizon, and why a history row is missing) stays on the card; how it
+          is made is behind the ?. */}
       <p className="muted pf-caption">
-        modelled P&L{h.horizonDays === 0 ? ", time held still" : `, ${h.horizonDays} days on with nothing done: legs expiring by then are worth their intrinsic value`} · each
-        name moves by its beta · the IV shift is for a 30-day option
-        {s.ivShiftWeighting === "term" ? ", scaled to each leg by √(30 / days left), so front months move most" : ", applied to every leg alike"}
-        {real
-          ? ` · the last row moves IV as VIX has moved over ${h.windowDays}-day stretches${since ? ` since ${since}` : ""} with a move that size (hover a cell)`
-          : s.realistic?.error
-            ? ` · no history row: ${s.realistic.error}`
-            : " · in a selloff IV usually rises, so read the top left"}
+        modelled P&L{h.horizonDays === 0 ? ", time held still" : `, ${h.horizonDays} days on with nothing done`}
+        {real ? " · hover a history cell for its windows" : s.realistic?.error ? ` · no history row: ${s.realistic.error}` : ""}
       </p>
       <MatrixIdeas ideas={p.ideas} benchmark={benchmark} />
     </Card>
@@ -408,10 +423,50 @@ export function MatrixIdeas({ ideas, benchmark }: { ideas: ManageIdea[]; benchma
           <IdeaCard key={i.key} idea={i} benchmark={benchmark} />
         ))}
       </div>
-      <p className="muted pf-caption">
-        read off the book by fixed thresholds of ours, with no published evidence behind them · each figure reprices today's
-        legs under the change; nothing here sizes or places a trade · green is better than now, red worse
-      </p>
+      <p className="muted pf-caption">green is better than now, red worse</p>
     </div>
   );
+}
+
+/** The matrix's help: how the grid, its history row and the ideas are made. */
+export function matrixHelp(s: ManageScenarios, h: ManageMatrixHorizon, since: string | null, ideas: boolean): CardHelpContent {
+  return {
+    title: "How the matrix is made",
+    body: (
+      <>
+        {ideas ? (
+          <HelpWarn title="The ideas have no published evidence">
+            <p>
+              They are read off the book by fixed thresholds of ours. Each figure reprices today's legs under the change; nothing here
+              sizes or places a trade.
+            </p>
+          </HelpWarn>
+        ) : null}
+        <HelpSection title="Each cell">
+          <p>
+            The whole book's modelled P&L at that move of the benchmark and that shift in implied volatility, each name moving by its
+            beta.{" "}
+            {h.horizonDays === 0
+              ? "Time is held still: what the book risks, without the decay it is paid."
+              : `${h.horizonDays} days on with nothing done: the decay is in, and legs expiring by then are worth their intrinsic value.`}
+          </p>
+        </HelpSection>
+        <HelpSection title="The IV rows">
+          <p>
+            The shift is for a 30-day option
+            {s.ivShiftWeighting === "term"
+              ? ", scaled to each leg by √(30 / days left), so front months move most."
+              : ", applied to every leg alike."}{" "}
+            In a selloff IV usually rises, so the top left is the corner to read.
+          </p>
+        </HelpSection>
+        <HelpSection title="IV as history moves it">
+          <p>
+            The last row moves IV as VIX has moved over past {h.windowDays ?? "—"}-day stretches{since ? ` since ${since}` : ""} with a move
+            that size: today's VIX times the median ratio. Too few such stretches leaves a cell blank. Hover a cell for its count.
+          </p>
+        </HelpSection>
+      </>
+    ),
+  };
 }

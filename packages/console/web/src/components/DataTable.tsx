@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 // number. Re-exported here so the 35 existing call sites keep working unchanged.
 export { fmtMoney, fmtNum, fmtPct, fmtPctSigned } from "../lib/format";
 import { fmtMoney } from "../lib/format";
+import { CardHelpButton, type CardHelpContent } from "./CardHelp";
 
 export function PnlCell({ v }: { v: number | null }) {
   if (v === null) return <span className="muted">—</span>;
@@ -166,11 +167,15 @@ interface CardProps {
   defaultCollapsed?: boolean;
   /** Pointer over the card, e.g. to hold a rotating card still while it is being read. */
   onHoverChange?: (hovered: boolean) => void;
+  /** The card's explanation, behind a ? beside its title (components/CardHelp.tsx). */
+  help?: CardHelpContent;
+  /** A caveat that must not be missed, as a small amber flag beside the ?; needs help. */
+  flag?: ReactNode;
   children: ReactNode;
 }
 
-/** Card shell with the house header: collapse caret, title, controls, freshness stamp. */
-export function Card({ title, collapseKey, updatedAt, isError = false, controls, className, defaultCollapsed, onHoverChange, children }: CardProps) {
+/** Card shell with the house header: collapse caret, title, its help, controls, freshness stamp. */
+export function Card({ title, collapseKey, updatedAt, isError = false, controls, className, defaultCollapsed, onHoverChange, help, flag, children }: CardProps) {
   const key = collapseKey ?? (typeof title === "string" ? title : "card");
   const [collapsed, toggle] = useCollapsed(key, defaultCollapsed);
   const asOf = asOfLabel(updatedAt);
@@ -191,6 +196,7 @@ export function Card({ title, collapseKey, updatedAt, isError = false, controls,
           ▸
         </button>
         <h2>{title}</h2>
+        {help ? <CardHelpButton cardTitle={typeof title === "string" ? title : key} help={help} flag={flag} /> : null}
         {controls}
         {asOf !== null && (
           <span className="card-asof" title="last refreshed (ET)">
