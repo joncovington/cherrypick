@@ -108,6 +108,8 @@ def trade(conn, symbol: str, need: tuple, bars: dict) -> tuple[dict | None, str 
     p = price_long(symbol, k, at_entry, at_exit, exit_spot, spot)
     return {
         "debit": p["debit"],
+        # item 47's arm statistics average a "credit"; a bought straddle's is the premium paid, negative
+        "credit": -p["debit"],
         "net": p["working"]["net"],
         "bp": p["working"]["bp"],
         "stress_bp": p["stress"]["bp"],
@@ -127,6 +129,18 @@ def verdict(design: dict, holdout: dict, other_mean: float | None) -> dict:
 
 
 def cmd_study(args) -> int:
+    out = e47._dir(args.out_dir, "item65")
+    if args.rescore:
+        trades = json.loads((out / "trades.json").read_text(encoding="utf-8"))
+        drops = json.loads((out / "drops.json").read_text(encoding="utf-8"))
+    else:
+        trades, drops = collect(args)
+        (out / "trades.json").write_text(json.dumps(trades), encoding="utf-8")
+        (out / "drops.json").write_text(json.dumps(drops), encoding="utf-8")
+    return score(trades, drops, out)
+
+
+def collect(args) -> tuple[list[dict], dict]:
     from cherrypick.backtest import chainfetch, settings
 
     events, doc, reports, span = e47._inputs(e47._dir(None, "item31"))
@@ -185,6 +199,10 @@ def cmd_study(args) -> int:
             }
         )
     conn.close()
+    return trades, dict(drops)
+
+
+def score(trades: list[dict], drops: dict, out: Path) -> int:
     result: dict = {"item": 65, "drops": dict(drops), "arms": {}}
     for window in ("design", "holdout"):
         w = [t for t in trades if t["window"] == window]
@@ -200,8 +218,6 @@ def cmd_study(args) -> int:
     result["verdict"] = verdict(ch["design"], ch["holdout"], result["arms"]["other"]["design"]["net"]["mean"])
     result["exit_unquoted_legs"] = sum(t["exit_unquoted_legs"] for t in trades)
     result["licence"] = "derived from licensed vendor history: stays under ~/.cherrypick, never in the repo"
-    out = e47._dir(args.out_dir, "item65")
-    (out / "trades.json").write_text(json.dumps(trades), encoding="utf-8")
     (out / "results.json").write_text(json.dumps(result, indent=1, default=str), encoding="utf-8")
     print(
         json.dumps(
@@ -220,6 +236,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=3306)
     p.add_argument("--out-dir")
+    p.add_argument(
+        "--rescore", action="store_true", help="score the saved trades.json without re-reading the store"
+    )
     return cmd_study(p.parse_args(argv))
 
 

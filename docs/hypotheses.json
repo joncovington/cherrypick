@@ -2552,16 +2552,18 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#64-the-intraday-premium-map-implied-against-realised-odds-of-spx-closing-near-its-price-by-time-of-day",
       "legacy": false,
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item64/map-2022-05-16-2026-11-06.json"
+      ],
       "retest": null,
       "retests": [],
-      "outcome": null
+      "outcome": "the chain overprices the move to the close; 13:30-14:00 is the one window with one sign in every year (MEIC's entry); costs, not timing, are the lever"
     },
     {
       "id": 65,
       "study": "item65",
       "title": "Item 47's mirror: a long straddle across an earnings report when its implied move is below past moves",
-      "status": "declared",
+      "status": "failed",
       "setup": "earnings-premium",
       "side": "long",
       "structure": "options",
@@ -2587,10 +2589,12 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#65-item-47s-mirror-a-long-straddle-across-an-earnings-report-when-its-implied-move-is-below-past-moves",
       "legacy": false,
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item65/results.json"
+      ],
       "retest": null,
       "retests": [],
-      "outcome": null
+      "outcome": "implied-against-past moves is closed as a selector both ways; cheap reports lose less but no arm earns after costs"
     }
   ],
   "rule_changes": []

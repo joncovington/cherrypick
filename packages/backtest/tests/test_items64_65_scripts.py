@@ -93,6 +93,28 @@ def test_a_long_straddle_earns_on_a_big_move_and_loses_on_none():
     assert math.isclose(up["working"]["bp"], 1e4 * up["working"]["net"] / 10000.0)
 
 
+def test_a_traded_straddle_row_scores_through_item_47s_arm_statistics():
+    entry = {(100.0, "C"): (3.0, 3.2), (100.0, "P"): (3.0, 3.2)}
+    moved = {(100.0, "C"): (11.8, 12.2), (100.0, "P"): (0.05, 0.1)}
+    bars = {"e": (100, 100, 100, 100.0), "r": (112, 112, 112, 112.0)}
+
+    class Conn:  # e47.chain reads (strike, right, bid, ask) rows for (symbol, session, expiry)
+        def execute(self, _sql, params):
+            rows = entry if params[1] == "e" else moved
+            return [(k, "CALL" if r == "C" else "PUT", b, a) for (k, r), (b, a) in rows.items()]
+
+    class D(str):
+        def isoformat(self):
+            return str(self)
+
+    t, why = es.trade(Conn(), "XYZ", (D("e"), D("r"), D("x")), bars)
+    assert why is None and t["credit"] == -t["debit"]
+    rows = [{**t, "entry_session": f"s{i}", "control_bp": None, "time_half": i % 2, "name_half": i % 2}
+            for i in range(4)]  # fmt: skip
+    stats = es.e47.arm_stats(rows, bootstrap=False)
+    assert stats["trades"] == 4 and stats["mean_credit"] < 0
+
+
 def test_an_unquoted_exit_leg_is_sold_at_intrinsic_less_its_entry_spread():
     entry = {(100.0, "C"): (3.0, 3.4), (100.0, "P"): (3.0, 3.4)}
     exit_ = {(100.0, "C"): (None, 15.0), (100.0, "P"): (0.05, 0.10)}

@@ -6490,6 +6490,18 @@ on 2026-11-07. Declared here before any of it is run. No new fetch.*
 - **Decides:** nothing by itself. A consistent positive gap at one time and width is the input to a
   declared structure test (a fly or condor at that time, at working fills, with a holdout). No
   consistent gap closes the "time of day" lever for 0DTE premium.
+- **Read (2026-11-07):**
+  - **Everywhere:** the gap is positive at nearly every time and band. The chain overprices the move
+    to the close.
+  - **13:30 to 14:00:** the only region with one sign in both windows and in every year, 2022 to 2026
+    (2023 weakest). That is MEIC's live entry window.
+  - **14:30 to 15:30:** strong in 2022-24, mostly faded in 2025-26.
+  - **15:55:** the largest gap in both windows, the move item 58 sold; it did not survive real fills.
+  - **What it means:** the gaps are at mids. Items 9, 24, 58 and 61 priced structures in these windows
+    at working fills and found the premium consumed by costs. So the map adds no new structure test.
+    It confirms MEIC's entry time and points at fill quality, not timing, as the lever.
+  - The full table (by window and year) is in the local result:
+    `~/.cherrypick/data/backtest/results/research/item64/map-2022-05-16-2026-11-06.json`.
 
 ### 65. Item 47's mirror: a long straddle across an earnings report when its implied move is below past moves
 
@@ -6535,6 +6547,17 @@ before any of it is run. No new fetch: item 47's stored chains price it.*
   bars. Results stay local.
 - **Decides:** a pass leads to a proposal for the earnings module (a long-vol arm, paper first); a
   fail closes implied-against-past moves as a selector in both directions.
+- **Result (2026-11-07): fail; implied-against-past moves is closed as a selector both ways.**
+  - In the design window the cheap arm's mean net is negative, its t and its paired t are under the
+    bar, its second time-half and one name-half are negative, and it is negative at the stress and
+    without the best five.
+  - It does beat the other events in both windows. The selector orders reports the right way: long
+    straddles lose much less where implied sits below history. But no arm earns after costs.
+  - With item 47 (selling where implied sits above history, failed), the earnings premium around a
+    report is about fair to history after costs on both sides.
+  - The first run crashed at scoring on a field name. The fix is in the script, and it now saves the
+    trades before scoring. Nothing was read before the full run.
+  - Local result: `~/.cherrypick/data/backtest/results/research/item65/results.json`.
 
 ## Not worth revisiting
 
