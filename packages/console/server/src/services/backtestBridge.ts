@@ -40,6 +40,10 @@ import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 const UNAVAILABLE = "backtest read unavailable — cherrypick-backtest must be installed";
 
+/** A run's report reads every arm's sessions and builds its cards: ~25 s for a large run on a busy
+ *  host, so the spawner's usual 30 s cut it off under load (2026-11-07). */
+export const RUN_READ_TIMEOUT_MS = 120_000;
+
 export type BacktestRequest =
   | { kind: "overview" }
   | { kind: "run"; id: string; capital?: number; riskPct?: number; riskUnit?: string; ddPct?: number }
@@ -69,7 +73,7 @@ function spawnRequest(req: BacktestRequest): Promise<SpawnedJson> {
   if (req.riskUnit !== undefined) args.push("--risk-unit", req.riskUnit);
   if (req.ddPct !== undefined) args.push("--dd-pct", String(req.ddPct));
   // Exit 1 carries the module's own refusal on stdout ("no run ..."): read it as an answer.
-  return spawnModuleCliAsync(args, UNAVAILABLE, [0, 1]);
+  return spawnModuleCliAsync(args, UNAVAILABLE, [0, 1], RUN_READ_TIMEOUT_MS);
 }
 
 let caller: (req: BacktestRequest) => Promise<SpawnedJson> = spawnRequest;

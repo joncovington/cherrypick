@@ -75,6 +75,12 @@ export function spawnModuleCli(argv: string[], unavailableMessage: string, okSta
   return parseOutcome(out.status, out.stdout, out.stderr, unavailableMessage, okStatuses);
 }
 
+/** "x read unavailable — timed out after 120 s": the message's own subject, without its install hint. */
+export function timedOut(unavailableMessage: string, timeoutMs: number): string {
+  const subject = unavailableMessage.split(" — ")[0]!;
+  return `${subject} — timed out after ${timeoutMs / 1000} s`;
+}
+
 /** The shared reading of a finished CLI run: exit status, stdout and stderr into `SpawnedJson`. One
  *  implementation, so the sync and async spawners can never disagree about what failed. */
 function parseOutcome(
@@ -104,19 +110,28 @@ function parseOutcome(
  * long as the subprocess runs, which is fine for a one-off read and not for a page that reads every
  * module (Compare's risk tab, eight analyses: ~6 s cold, serial). Never rejects: every failure is a
  * `{ok: false}` answer, as the sync spawner's are.
+ *
+ * `timeoutMs` is 30 s unless a read is known to take longer (a backtest run's report, ~25 s on a busy
+ * host). A read killed at its limit says it timed out, not that the package is missing: the
+ * subprocess started, so the install is not what failed.
  */
 export function spawnModuleCliAsync(
   argv: string[],
   unavailableMessage: string,
   okStatuses: readonly number[] = [0],
+  timeoutMs = 30_000,
 ): Promise<SpawnedJson> {
   return new Promise((resolve) => {
     try {
       execFile(
         suitePython(),
         pythonArgv(argv),
-        { encoding: "utf-8", timeout: 30_000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 },
+        { encoding: "utf-8", timeout: timeoutMs, windowsHide: true, maxBuffer: 64 * 1024 * 1024 },
         (err, stdout, stderr) => {
+          if (err !== null && (err as { killed?: boolean }).killed === true) {
+            resolve({ ok: false, json: null, error: timedOut(unavailableMessage, timeoutMs) });
+            return;
+          }
           // execFile reports a nonzero exit as `err` with `code`; a spawn failure has no numeric code.
           const code = err === null ? 0 : typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : null;
           if (err !== null && code === null) {
