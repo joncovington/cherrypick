@@ -2692,6 +2692,57 @@
       "retest": null,
       "retests": [],
       "outcome": null
+    },
+    {
+      "id": 68,
+      "study": "item68",
+      "title": "MEIC's live rule on QQQ and NDX: a second symbol for the live loop",
+      "status": "declared",
+      "legacy": false,
+      "setup": "symbol-choice",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "summed net per session in $ at one condor, and buying power per session, per arm: pm-200 entering 14:00-14:30 with all its gates on QQQ at 1 and 5 wide (q1, q5) and on NDX at 40 and 10 wide (n40, n10); SPX live-1400 from item 23's runs as the reference",
+      "expected": "a positive mean session net after costs on at least one arm, in both windows",
+      "sample": "design 2022-05-16..2025-06-30, holdout 2025-07-01..2026-10-12 run straight after, counting only after a design pass; each symbol's wide 60 s vendor store (40 strikes each side); sessions with a same-day expiry only; both provisional for good, MEIC history being unvalidated and these symbols having no paper record to validate against; < 100 sessions = no verdict",
+      "rule": "per arm: own mean session net > 0 with one-sided t > 2, Holm across the four arms, positive in both time-halves, still positive at 1.5x fees; then holdout mean > 0 with t > 2. Reported, never judged: net over buying power and session-net correlation beside SPX live-1400, the two together, the halfway-to-natural fill stress (design), entries left open at the session's end",
+      "mechanism": "SPX's premium claim on another 0DTE chain: a 16-delta condor is paid more than the moves that reach its shorts, if that survives the chain's spreads, strike spacing and, for QQQ, physical settlement",
+      "rivals": [
+        {
+          "explanation": "the width, not the symbol",
+          "check": "each symbol at its SPX-equivalent width (QQQ 1, NDX 40) and at today's config width (QQQ 5, NDX 10), each judged on its own"
+        },
+        {
+          "explanation": "costs on a wider market",
+          "check": "the module's own fill as the verdict, halfway-to-natural reported beside it, positive at 1.5x fees"
+        },
+        {
+          "explanation": "physical settlement (QQQ)",
+          "check": "paper's own 15:30 force-close, exit friction and pin penalty; entries left open at the session's end counted and reported as faults"
+        },
+        {
+          "explanation": "paying more by risking more",
+          "check": "net over buying power reported beside SPX live-1400's over the same sessions"
+        },
+        {
+          "explanation": "the store's strike window",
+          "check": "a coverage step first: sessions, strike spacing and the share of 16-delta shorts whose wing is quoted, per symbol and window"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "positive in both time-halves"
+        },
+        {
+          "explanation": "searching a grid",
+          "check": "Holm across the four arms; arms fixed before any look"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#68-meics-live-rule-on-qqq-and-ndx-a-second-symbol-for-the-live-loop",
+      "results": [],
+      "retest": null,
+      "retests": [],
+      "outcome": null
     }
   ],
   "rule_changes": []

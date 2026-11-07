@@ -23,9 +23,10 @@ above zero with t above 2.
 
 **Reported, never judged:** each arm's net over buying power beside SPX `live-1400`'s over the same
 sessions (item 23's recorded runs); the correlation of its session nets with SPX's; the two together;
-in the design window a natural-fill stress (each arm again at half of every leg's spread, not the
-model's share); per arm the entries left open at the session's end, which for QQQ, physically settled,
-is a close the 15:30 force-close missed.
+in the design window the fill stress of docs/edge-hypotheses-plan.md's verdict-fill convention
+(each arm again halfway from mid to the natural fill, a quarter of every leg's spread); per arm the
+entries left open at the session's end, which for QQQ, physically settled, is a close the 15:30
+force-close missed.
 
 **The coverage step** reads quotes only, no P&L, and must come first: each symbol's sessions per window,
 its strike spacing near spot, and the share of hourly 16-delta shorts whose wing is quoted.
@@ -60,9 +61,10 @@ LIVE = "live-1400"
 WINDOW = ("14:00", "14:30")
 #: The judged arms per symbol: (arm, wing width). The first is SPX's 10 points scaled by price.
 ARMS = {"QQQ": {"q1": 1, "q5": 5}, "NDX": {"n40": 40, "n10": 10}}
-#: Natural fills: every leg at its far side, half its spread from mid (the model takes a share).
-NATURAL = {"slippage_frac_of_spread": 0.5}
-NATURAL_SUFFIX = "-natural"
+#: The stress fill: halfway from mid to the natural fill on every leg, a quarter of its spread (the
+#: verdict fill is the model's own eighth).
+HALFWAY = {"slippage_frac_of_spread": 0.25}
+HALFWAY_SUFFIX = "-halfway"
 SHORT_DELTA = 0.16
 HOURS = (10, 11, 12, 13, 14, 15)
 MIN_SESSIONS = 100
@@ -82,8 +84,8 @@ def wide(settings: dict) -> dict:
     return store.tagged(settings, TAG)
 
 
-def study_registry(registry: dict, symbol: str, *, natural: bool) -> dict:
-    """The machine's MEIC registry with this symbol's arms added (and their natural-fill twins in the
+def study_registry(registry: dict, symbol: str, *, stress: bool) -> dict:
+    """The machine's MEIC registry with this symbol's arms added (and their stress-fill twins in the
     design window), `control` pointed at the symbol so the runner's paired arm can trade it."""
     profiles = dict(registry.get("profiles") or {})
     if not isinstance(profiles.get(BASE_ARM), dict):
@@ -94,8 +96,8 @@ def study_registry(registry: dict, symbol: str, *, natural: bool) -> dict:
     )
     for name, width in ARMS[symbol].items():
         profiles[name] = {**live, "wing_width_points": width}
-        if natural:
-            profiles[name + NATURAL_SUFFIX] = {**profiles[name], **NATURAL}
+        if stress:
+            profiles[name + HALFWAY_SUFFIX] = {**profiles[name], **HALFWAY}
     control = profiles.get("control")
     if isinstance(control, dict):
         profiles["control"] = {**control, "symbols": [symbol]}
@@ -347,10 +349,10 @@ def run_symbol(settings: dict, symbol: str, window: str, workers: int) -> dict:
     registry = json.loads((home.config_dir() / "meic.risk.json").read_text(encoding="utf-8"))
     reg_path = out_dir() / f"meic.risk.{symbol}.json"
     reg_path.write_text(
-        json.dumps(study_registry(registry, symbol, natural=not holdout), indent=1), encoding="utf-8"
+        json.dumps(study_registry(registry, symbol, stress=not holdout), indent=1), encoding="utf-8"
     )
     os.environ["MEIC_RISK_CONFIG"] = str(reg_path)
-    arms = list(ARMS[symbol]) + ([] if holdout else [a + NATURAL_SUFFIX for a in ARMS[symbol]])
+    arms = list(ARMS[symbol]) + ([] if holdout else [a + HALFWAY_SUFFIX for a in ARMS[symbol]])
     report = runner.run(
         wide(settings),
         arms,
@@ -413,10 +415,10 @@ def study(settings: dict, window: str, workers: int) -> dict:
                 },
             }
             if not holdout:
-                nat = got["sessions"].get(arm + NATURAL_SUFFIX, {})
-                reported[arm + NATURAL_SUFFIX] = {
-                    "own": own(nat, start, end),
-                    "net_over_bp": per_risk(nat, got["risk"].get(arm + NATURAL_SUFFIX, {}), sorted(nat)),
+                half = got["sessions"].get(arm + HALFWAY_SUFFIX, {})
+                reported[arm + HALFWAY_SUFFIX] = {
+                    "own": own(half, start, end),
+                    "net_over_bp": per_risk(half, got["risk"].get(arm + HALFWAY_SUFFIX, {}), sorted(half)),
                 }
     judge(tests, holdout)
     doc = {

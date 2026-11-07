@@ -48,28 +48,28 @@ def sessions(nets, fees=1.0, trades=1):
 
 def test_each_arm_is_live_1400_on_its_symbol_at_its_width_with_every_gate():
     for symbol, arms in st.ARMS.items():
-        p = st.study_registry(REGISTRY, symbol, natural=False)["profiles"]
+        p = st.study_registry(REGISTRY, symbol, stress=False)["profiles"]
         want = {k: v for k, v in PM200.items() if not k.startswith("_")}
         want.update(
             enabled=True, paper_entry_window_start="14:00", entry_window_end="14:30", symbols=[symbol]
         )
         for name, width in arms.items():
             assert p[name] == {**want, "wing_width_points": width}
-            assert name + st.NATURAL_SUFFIX not in p
+            assert name + st.HALFWAY_SUFFIX not in p
         assert p["pm-200"] == PM200  # the machine's arm is never changed
         assert p["control"] == {"enabled": True, "symbols": [symbol]}  # the runner's pair trades the symbol
     assert st.ARMS == {"QQQ": {"q1": 1, "q5": 5}, "NDX": {"n40": 40, "n10": 10}}
 
 
-def test_the_natural_fill_twins_differ_only_by_their_fill_and_only_in_the_design_window():
-    p = st.study_registry(REGISTRY, "NDX", natural=True)["profiles"]
+def test_the_halfway_fill_twins_differ_only_by_their_fill_and_only_in_the_design_window():
+    p = st.study_registry(REGISTRY, "NDX", stress=True)["profiles"]
     for name in st.ARMS["NDX"]:
-        assert p[name + st.NATURAL_SUFFIX] == {**p[name], "slippage_frac_of_spread": 0.5}
+        assert p[name + st.HALFWAY_SUFFIX] == {**p[name], "slippage_frac_of_spread": 0.25}
 
 
 def test_a_missing_base_arm_refuses():
     with pytest.raises(SystemExit):
-        st.study_registry({"profiles": {"control": {}}}, "QQQ", natural=False)
+        st.study_registry({"profiles": {"control": {}}}, "QQQ", stress=False)
 
 
 def test_a_wing_is_inside_only_when_its_strike_is_quoted():
