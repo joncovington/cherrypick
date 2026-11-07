@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ManageAccount, ManageLevel, ManagePayload, ManageTrade } from "@console/shared";
 import { Card } from "../../components/DataTable";
+import { HelpSection } from "../../components/CardHelp";
 import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { TileGrid, tileCount } from "../../components/performance/TileGrid";
 import { useOverview } from "../../lib/api";
@@ -558,12 +559,32 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
     <div className="view-fade" style={{ display: "grid", gap: "1rem" }}>
       {/* The card's "as of" is the snapshot's time, not the browser's last poll: the poll re-reads
           the same file every minute, and its clock said nothing about how old the marks were. */}
-      <Card title={title} updatedAt={snapMs ?? undefined} isError={isError} controls={picker}>
+      <Card
+        title={title}
+        updatedAt={snapMs ?? undefined}
+        isError={isError}
+        controls={picker}
+        help={{
+          title: "Reading the evaluation",
+          body: (
+            <>
+              <HelpSection title="What this is">
+                <p>
+                  Manage's evaluation of every trade in the account against the ruleset, every 30 minutes from 10:00 to 16:35 ET. Advice
+                  only: marks are mids, and nothing here places an order.
+                </p>
+              </HelpSection>
+              <HelpSection title="The money">
+                <p>{VIEW_MONEY[view]}.</p>
+              </HelpSection>
+            </>
+          ),
+        }}
+      >
         <p className="muted" style={{ margin: 0 }}>
           {data?.session ?? "…"} · snapshot {etStamp(data?.snapshotGeneratedAt ?? null) ?? data?.snapshotGeneratedAt ?? "—"}
           {snapMs !== null && newest ? `, ${ageText(nowMs - snapMs)} old` : ""} · ruleset {data?.ruleset ?? "—"} (
-          {data?.rulesSource ?? "shipped default"}) · advice only: marks are mids, {VIEW_MONEY[view]}, and nothing here places
-          an order
+          {data?.rulesSource ?? "shipped default"})
         </p>
         {late !== null && (
           <p
@@ -621,7 +642,7 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
           ) : view === "wheel" ? (
             <WheelCards key={a.account ?? "?"} a={a} />
           ) : (
-            <PmccCards key={a.account ?? "?"} a={a} />
+            <PmccCards key={a.account ?? "?"} a={a} rules={data?.rules} />
           ),
         )}
       </VerdictsHeld.Provider>

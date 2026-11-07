@@ -67,7 +67,6 @@ describe("the payoff strip", () => {
   it("on the wheel tab keeps only the wheel's names, and draws nothing when none is held", () => {
     const p = { names: [name(), name({ underlying: "BBB", pnlNow: -117 })] };
     const out = strip(p, ["AAA"]);
-    expect(out).toContain("each wheel name held");
     expect(out).toContain("AAA +$30.00");
     expect(out).not.toContain("BBB");
     expect(strip(p, [])).toBe("");

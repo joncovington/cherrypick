@@ -1,14 +1,25 @@
-import type { ManageAccount, ManagePmccPosition, ManagePmccRecognize, ManagePmccRoll, ManageTrade } from "@console/shared";
+import { useContext, useState, type ReactNode } from "react";
+import type { ManageAccount, ManageBand, ManageFired, ManagePmccPosition, ManagePmccRecognize, ManagePmccRoll, ManageTrade } from "@console/shared";
 import { Card } from "../../components/DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+import { ActionBlock } from "../../components/ActionBlock";
+import { CardLightbox, LightboxFrame, useOpenParam } from "../Backtest/CardLightbox";
+import { Tile } from "../Flies/PerformanceTab";
+import { BandDial } from "./PortfolioCards";
+import { chainLegs } from "./PositionCards";
+import { Section } from "./PortfolioLayout";
+import { BoxButton, BoxButtons, PortfolioBoxContext } from "./portfolioBoxContext";
 import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
 import {
+  ACTION_LABEL,
   ActionChip,
   DetailCard,
   Kv,
   Money,
   StatusChip,
   TestedChip,
+  VerdictsHeld,
   VERDICT_CHIP,
   bandText,
   beyondText,
@@ -335,23 +346,6 @@ function PmccRules({ p, trades }: { p: ManagePmccPosition; trades: ManageTrade[]
           {e}
         </p>
       ))}
-      {p.rolls && (
-        <>
-          <p className="md-subhead">
-            rolls for the {p.short.leg}
-            <span className="muted"> · priced on {pmccRollQuotes(p.rolls)}</span>
-          </p>
-          {p.rolls.candidates.length === 0 ? (
-            <p className="md-note">no roll priced: {p.rolls.why ?? "nothing quoted"}</p>
-          ) : (
-            <ul className="md-rules">
-              {p.rolls.candidates.map((r, i) => (
-                <RollLine key={i} r={r} />
-              ))}
-            </ul>
-          )}
-        </>
-      )}
     </DetailCard>
   );
 }
@@ -463,17 +457,263 @@ function ShortsSold({ p }: { p: ManagePmccPosition }) {
   );
 }
 
-export function PmccCard({ p, trades }: { p: ManagePmccPosition; trades: ManageTrade[] }) {
+/* ------------------------------------------------------------------ the roll candidates */
+
+/** The candidates as manage priced them: where each rolls to, its net, the new short's delta and
+ *  check-roll's verdict, then each order with what check-roll says of it. */
+export function PmccRolls({ p }: { p: ManagePmccPosition }) {
+  const r = p.rolls;
+  if (!r) return <p className="muted">no roll priced: it is priced only for a recognised, reconciled PMCC whose width fails or whose short is exposed</p>;
+  return (
+    <>
+      <p className="md-subhead">
+        rolls for the {p.short.leg}
+        <span className="muted"> · priced on {pmccRollQuotes(r)}</span>
+      </p>
+      {r.candidates.length === 0 ? (
+        <p className="md-note">no roll priced: {r.why ?? "nothing quoted"}</p>
+      ) : (
+        <>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>roll to</th>
+                  <th>net (a share)</th>
+                  <th>new short Δ</th>
+                  <th>check-roll</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.candidates.map((c, i) => (
+                  <tr key={i}>
+                    <td>
+                      {c.expiration ?? "?"} {c.open?.strike ?? "?"}C
+                    </td>
+                    <td className={c.net === null ? "" : c.net >= 0 ? "pnl-pos" : "pnl-neg"}>
+                      {fmtPrice(c.net)}
+                    </td>
+                    <td>{delta(c.delta)}</td>
+                    <td>
+                      {c.check?.verdict ? (
+                        <span className={VERDICT_CHIP[c.check.verdict] ?? "chip"}>{c.check.verdict}</span>
+                      ) : (
+                        <span className="chip muted">unchecked{c.checkError ? `: ${c.checkError}` : ""}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <ul className="md-rules">
+            {r.candidates.map((c, i) => (
+              <RollLine key={i} r={c} />
+            ))}
+          </ul>
+        </>
+      )}
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ what needs action */
+
+const QUIET = new Set(["HOLD", "SETTLES"]);
+
+/** The PMCC rules that fired on the trades holding this PMCC's legs and ask for something, the most
+ *  confident first. Manage's own: nothing here decides that a PMCC needs action. */
+export function pmccActions(p: ManagePmccPosition, trades: ManageTrade[]): Array<{ t: ManageTrade; f: ManageFired }> {
+  if (p.recognized === false || p.reconciled === false) return [];
+  const mine = trades.filter((t) => p.tradeIds.includes(t.tradeId));
+  return mine
+    .flatMap((t) => t.fired.filter((f) => f.rule.startsWith("pmcc.") && !QUIET.has(f.action)).map((f) => ({ t, f })))
+    .sort((a, b) => (b.f.confidence ?? -1) - (a.f.confidence ?? -1));
+}
+
+/** The roll to draw as the proposal: the first candidate check-roll passes, else the first priced. */
+export function proposedRoll(p: ManagePmccPosition): ManagePmccRoll | null {
+  const cs = p.rolls?.candidates ?? [];
+  return cs.find((c) => c.check?.verdict === "ok" && c.legs.length > 0) ?? cs.find((c) => c.legs.length > 0) ?? null;
+}
+
+/** A leg line's quote, split off its text: "STO 1 2026-12-18 48C @ 0.80 (quoted 0.75/0.85)". */
+function splitQuote(text: string): { text: string; quote: string | null } {
+  const m = /^(.*?)\s*\(quoted ([^)]*)\)\s*$/.exec(text);
+  return m ? { text: m[1] ?? text, quote: (m[2] ?? "").replace("/", " / ") } : { text, quote: null };
+}
+
+/** The proposed roll as an order chain, the way the positions tab draws a roll: its legs under a
+ *  "proposed · roll" step and its price, then what manage's check-roll says it leaves. */
+export function RollChain({ roll }: { roll: ManagePmccRoll }) {
+  const legs = chainLegs(roll.legs, null);
+  const price = fmtPrice(roll.net);
+  return (
+    <ol className="pos-chain" aria-label="the proposed roll">
+      <li className="pos-step pos-step-roll">
+        <span className="pos-dot" aria-hidden="true" />
+        <div className="pos-step-body">
+          <div className="pos-step-head">
+            <span className="pos-step-date">proposed</span>
+            <span className="pos-role">roll</span>
+            <span className="pos-step-price">{price}</span>
+          </div>
+          <ul className="pos-legs">
+            {legs.map((l, j) => {
+              const q = splitQuote(l.text);
+              const opens = l.action === "STO" || l.action === "BTO";
+              return (
+                <li key={j} className="pos-leg">
+                  {l.action ? <span className={`pos-leg-act ${l.buy ? "is-buy" : "is-sell"}`}>{l.action}</span> : null}
+                  <span>{q.text}</span>
+                  {q.quote || (opens && roll.delta !== null) ? (
+                    <span className="tc-leg-quote">{[q.quote, opens && roll.delta !== null ? `Δ ${delta(roll.delta)}` : null].filter(Boolean).join(" · ")}</span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </li>
+      <li className="pos-step pos-step-now">
+        <span className="pos-dot" aria-hidden="true" />
+        <div className="pos-step-body">
+          <div className="pos-step-now-line">
+            <span>
+              after: short {roll.open?.strike ?? "?"}C, {roll.expiration ?? "?"}
+            </span>
+            {roll.check ? (
+              <span>
+                max loss {fmtMoney(roll.check.maxLossBefore)} → {fmtMoney(roll.check.maxLossAfter)}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </li>
+    </ol>
+  );
+}
+
+/* ------------------------------------------------------------------ the parent card */
+
+/** The tabs of a PMCC's lightbox. */
+export type PmccTab = "shorts" | "rolls" | "long" | "rules" | "recognised";
+
+export function pmccTabs(p: ManagePmccPosition): Array<{ id: PmccTab; label: string }> {
+  return [
+    { id: "shorts", label: "shorts sold" },
+    ...(p.rolls ? [{ id: "rolls" as const, label: "roll candidates" }] : []),
+    { id: "long", label: "long & width" },
+    { id: "rules", label: "rules" },
+    { id: "recognised", label: "recognised as" },
+  ];
+}
+
+/** What a PMCC's lightbox shows under a tab. Every figure is manage's. */
+export function PmccBody({ p, trades, tab }: { p: ManagePmccPosition; trades: ManageTrade[]; tab: PmccTab }) {
+  if (tab === "rolls") return <PmccRolls p={p} />;
+  if (tab === "long") {
+    return (
+      <div className="md-cards">
+        <LongCard p={p} />
+        <WidthCard p={p} />
+        <MoneyCard p={p} />
+        <YieldCard p={p} />
+      </div>
+    );
+  }
+  if (tab === "rules") {
+    return (
+      <div className="md-cards">
+        <PmccRules p={p} trades={trades} />
+      </div>
+    );
+  }
+  if (tab === "recognised") {
+    return (
+      <div className="md-cards">
+        <PositionFacts p={p} />
+      </div>
+    );
+  }
+  return (
+    <>
+      <ShortCheck p={p} />
+      <ShortsSold p={p} />
+    </>
+  );
+}
+
+/** A PMCC's id in the URL (`?pm=`), with `:rolls` where a link opens it on the roll candidates. */
+export function pmccKey(p: ManagePmccPosition): string {
+  return `${p.underlying}-${p.long.symbol}`;
+}
+
+function pmccHelp(p: ManagePmccPosition): CardHelpContent {
+  const twoOrder = twoOrderRollWords(p);
+  return {
+    title: "Reading a PMCC",
+    body: (
+      <>
+        {twoOrder ? (
+          <HelpWarn title="Possibly a two-order roll">
+            <p>{twoOrder}</p>
+          </HelpWarn>
+        ) : null}
+        <HelpSection title="The long">
+          <p>Delta today against delta at entry; a deep long keeps its delta, a fading one needs a roll. The dial's band starts at the ruleset's roll floor.</p>
+        </HelpSection>
+        <HelpSection title="Width check">
+          <p>The net cost against the width between the strikes. Past the ruleset's thin line a deep move through the short leaves little to make.</p>
+        </HelpSection>
+        <HelpSection title="A roll">
+          <p>Proposed from today's quotes and sent only for a net credit; check-roll prices it again before you send. Nothing here places an order.</p>
+        </HelpSection>
+      </>
+    ),
+  };
+}
+
+/** The reading of today's short in one line. */
+function shortLine(p: ManagePmccPosition): string {
+  const s = p.short;
+  return `short ${s.leg} · ${s.dte ?? "—"} dte · extrinsic ${px(s.extrinsic)} a share`;
+}
+
+/**
+ * A PMCC as a parent card: the long's delta as a dial, the width check as a meter, today's short as
+ * one line. Shorts sold, the roll candidates, the long and width, the rules and the recognition open
+ * from it. A PMCC that needs action carries the action as an amber chip in its head and an action
+ * block above its figures.
+ */
+export function PmccCard({ p, trades, floor = null }: { p: ManagePmccPosition; trades: ManageTrade[]; floor?: number | null }) {
   const k = kindOf(p);
+  const acts = useContext(VerdictsHeld) === null ? pmccActions(p, trades) : [];
+  const top = acts[0] ?? null;
+  const roll = top ? proposedRoll(p) : null;
+  const mine = trades.filter((t) => p.tradeIds.includes(t.tradeId));
+  const held = mine.find((t) => !QUIET.has(t.action)) ?? mine[0] ?? null;
+  const w = p.width;
+  const share = w.costShare;
+  const dial: ManageBand | null =
+    floor !== null && p.long.delta !== null ? { low: floor, high: 1, value: p.long.delta, inside: null } : null;
+  const flag = twoOrderRollWords(p) ? "two-order roll" : undefined;
   return (
     <Card
-      title={
-        <>
-          {`${p.underlying} · ${p.long.leg} / ${p.short.leg} `}
+      title={p.recognition === "pmcc" || p.recognition === null ? `${p.underlying} · PMCC` : `${p.underlying} · ${k.kind}`}
+      collapseKey={`pmcc-${pmccKey(p)}`}
+      className={`pf-cq${top ? " wh-wide" : ""}`}
+      help={pmccHelp(p)}
+      flag={flag}
+      controls={
+        top ? (
+          <span className="chip chip-warn">{ACTION_LABEL[top.f.action] ?? top.f.action}</span>
+        ) : p.recognized === true && held ? (
+          <ActionChip action={held.action} />
+        ) : (
           <span className={k.chipClass}>{k.kind}</span>
-        </>
+        )
       }
-      collapseKey={`pmcc-${p.underlying}-${p.long.symbol}`}
     >
       {p.reconciled === false && (
         <div className="pnl-neg">
@@ -485,22 +725,122 @@ export function PmccCard({ p, trades }: { p: ManagePmccPosition; trades: ManageT
           </ul>
         </div>
       )}
-      <div className="md-cards">
-        <PositionFacts p={p} />
-        <LongCard p={p} />
-        <WidthCard p={p} />
-        <MoneyCard p={p} />
-        <YieldCard p={p} />
-        <PmccRules p={p} trades={trades} />
+      {top ? (
+        <ActionBlock rule={top.f.rule} confidence={top.f.confidence} reason={top.f.reason}>
+          {roll ? <RollChain roll={roll} /> : null}
+          {p.rolls && p.rolls.candidates.length > 0 ? (
+            <BoxButtons>
+              <BoxButton id={`${pmccKey(p)}:rolls`} hot>
+                roll candidates
+              </BoxButton>
+            </BoxButtons>
+          ) : null}
+          {acts.length > 1 ? (
+            <p className="muted sm">
+              also: {acts.slice(1).map((x) => x.f.rule).join(", ")}
+            </p>
+          ) : null}
+        </ActionBlock>
+      ) : null}
+      <div className="pf-dwrap">
+        <div className="pf-dv">
+          {dial ? (
+            <BandDial band={dial} unit="long delta today" label="long delta" signedScale={false} reach={1} fmt={(v) => v.toFixed(2)} tick={(v) => v.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")} />
+          ) : (
+            <div className="pf-hero">
+              {p.long.delta === null ? "—" : delta(p.long.delta)}
+              <span className="pf-unit"> long delta today</span>
+            </div>
+          )}
+        </div>
+        <div className="pf-dside">
+          <span className="pf-lab">
+            width check · {share === null ? "no cost to judge" : `cost ${pct(share)} of the width`} <WidthChip passes={w.passes} thin={w.thin} />
+          </span>
+          <div className="pf-meter" title="the long's net cost as a share of the strike width">
+            <span className={w.passes === false || w.thin ? "is-warn" : ""} style={{ width: `${Math.min(100, Math.max(0, (share ?? 0) * 100))}%` }} />
+          </div>
+          <div className="pf-tiles pf-tiles-3">
+            <Tile label="if assigned, net" value={w.pnlIfAssignedNet === null ? "—" : fmtMoney(w.pnlIfAssignedNet)} tone={w.pnlIfAssignedNet === null ? "dim" : w.pnlIfAssignedNet >= 0 ? "pos" : "neg"} />
+            <Tile label="long days left" value={p.long.dte === null ? "—" : String(p.long.dte)} />
+            <Tile label="delta at entry" value={p.long.deltaAtEntry === null ? "—" : delta(p.long.deltaAtEntry)} />
+          </div>
+        </div>
       </div>
-      <ShortCheck p={p} />
-      <ShortsSold p={p} />
+      <ul className="lk-list">
+        <li className="lk-li lk-li-flat">
+          <span className="lk-leg">{shortLine(p)}</span>
+          <TestedChip tested={p.short.tested} />
+        </li>
+      </ul>
+      <BoxButtons>
+        <BoxButton id={pmccKey(p)}>shorts sold</BoxButton>
+      </BoxButtons>
     </Card>
   );
 }
 
-/** One account's PMCCs: a card per name, or a plain statement of why there is none. */
-export function PmccCards({ a }: { a: ManageAccount }) {
+/* ------------------------------------------------------------------ the lightbox */
+
+function PmccDialog({ ps, trades, index, open, onStep, onClose }: { ps: ManagePmccPosition[]; trades: ManageTrade[]; index: number; open: string; onStep: (to: number) => void; onClose: () => void }) {
+  const p = ps[index]!;
+  const tabs = pmccTabs(p);
+  const wanted = open.endsWith(":rolls") && tabs.some((t) => t.id === "rolls") ? "rolls" : "shorts";
+  const [state, setTab] = useState<{ id: string; tab: PmccTab }>({ id: open, tab: wanted });
+  // A step to another PMCC, or a new link, opens on its own first tab.
+  const tab = state.id === open ? state.tab : wanted;
+  const k = kindOf(p);
+  return (
+    <CardLightbox count={ps.length} index={index} onStep={onStep} onClose={onClose} wide>
+      {(nav) => (
+        <LightboxFrame
+          kicker="pmcc ›"
+          title={`${p.underlying} · ${p.long.leg} / ${p.short.leg}`}
+          chips={<span className={k.chipClass}>{k.kind}</span>}
+          tabs={tabs}
+          tab={tab}
+          onTab={(t) => setTab({ id: open, tab: t })}
+          position={nav.position}
+          onPrev={nav.prev}
+          onNext={nav.next}
+          onClose={onClose}
+        >
+          <div className="pf-box-body">
+            <PmccBody p={p} trades={trades} tab={tab} />
+          </div>
+        </LightboxFrame>
+      )}
+    </CardLightbox>
+  );
+}
+
+/** The provider and the open lightbox around one account's PMCC cards (the portfolio tab's context,
+ *  so the buttons are the same buttons). */
+function PmccBoxes({ a, children }: { a: ManageAccount; children: ReactNode }) {
+  const lb = useOpenParam("pm");
+  const ps = a.pmcc?.positions ?? [];
+  const ids = new Set(ps.map(pmccKey));
+  const base = (id: string) => id.replace(/:rolls$/, "");
+  const index = lb.open === null ? -1 : ps.findIndex((p) => pmccKey(p) === base(lb.open!));
+  return (
+    <PortfolioBoxContext.Provider value={{ open: lb.show, has: (id) => ids.has(base(id)) }}>
+      {children}
+      {index >= 0 ? <PmccDialog ps={ps} trades={a.trades} index={index} open={lb.open!} onStep={(to) => lb.step(ps[to] ? pmccKey(ps[to]!) : "")} onClose={lb.close} /> : null}
+    </PortfolioBoxContext.Provider>
+  );
+}
+
+/** The ruleset's delta floor for a PMCC's long (`pmcc.roll_long.min_delta`), where the evaluation embeds one. */
+export function longDeltaFloor(rules: Record<string, unknown> | null | undefined): number | null {
+  const pmcc = rules?.["pmcc"];
+  const roll = pmcc && typeof pmcc === "object" ? (pmcc as Record<string, unknown>)["roll_long"] : null;
+  const v = roll && typeof roll === "object" ? (roll as Record<string, unknown>)["min_delta"] : null;
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/** One account's PMCCs: the ones that need action first, then each PMCC as a parent card, or a plain
+ *  statement of why there is none. */
+export function PmccCards({ a, rules = null }: { a: ManageAccount; rules?: Record<string, unknown> | null }) {
   const v = a.pmcc;
   if (v === null) {
     return (
@@ -530,15 +870,36 @@ export function PmccCards({ a }: { a: ManageAccount }) {
       </Card>
     );
   }
+  return <PmccLayout a={a} floor={longDeltaFloor(rules)} notes={notes} />;
+}
+
+function PmccLayout({ a, floor, notes }: { a: ManageAccount; floor: number | null; notes: string[] }) {
+  const held = useContext(VerdictsHeld);
+  const positions = a.pmcc!.positions;
+  const needs = held === null ? positions.filter((p) => pmccActions(p, a.trades).length > 0) : [];
+  const rest = positions.filter((p) => !needs.includes(p));
   return (
-    <>
-      <p className="muted" style={{ margin: 0 }}>
-        {a.account ?? "?"} · {v.positions.length} {v.positions.length === 1 ? "name" : "names"} with a PMCC's shape
-        {notes.length ? ` · ${notes.join(" · ")}` : ""}
-      </p>
-      {v.positions.map((p) => (
-        <PmccCard key={`${p.underlying}-${p.long.symbol}`} p={p} trades={a.trades} />
-      ))}
-    </>
+    <PmccBoxes a={a}>
+      <div className="pf-layout">
+        {needs.length > 0 ? (
+          <Section concept="risk" tag="needs action" question="Which PMCC needs action?">
+            {needs.map((p) => (
+              <PmccCard key={pmccKey(p)} p={p} trades={a.trades} floor={floor} />
+            ))}
+          </Section>
+        ) : null}
+        {rest.length > 0 ? (
+          <Section concept="dir" tag="each pmcc" question="Is each PMCC healthy?">
+            <p className="muted">
+              {a.account ?? "?"} · {positions.length} {positions.length === 1 ? "name" : "names"} with a PMCC's shape
+              {notes.length ? ` · ${notes.join(" · ")}` : ""}
+            </p>
+            {rest.map((p) => (
+              <PmccCard key={pmccKey(p)} p={p} trades={a.trades} floor={floor} />
+            ))}
+          </Section>
+        ) : null}
+      </div>
+    </PmccBoxes>
   );
 }

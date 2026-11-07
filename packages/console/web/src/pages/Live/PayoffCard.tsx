@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type { ManageModelResult, ManagePayoff, ManagePayoffName } from "@console/shared";
+import { Card } from "../../components/DataTable";
+import { HelpSection } from "../../components/CardHelp";
 import { fmtCash } from "../../lib/format";
 import { CardLightbox, LightboxFrame, useOpenParam } from "../Backtest/CardLightbox";
 import { useLiveMarks } from "./LiveMarks";
@@ -363,21 +365,40 @@ export function PayoffStrip({ payoff, scope = null }: { payoff: ManagePayoff; sc
   const order = names.map((n) => n.underlying);
   const index = lightbox.open === null ? -1 : order.indexOf(lightbox.open);
   return (
-    <section className="pay-board" aria-label="Payoff">
-      <div className="att-head">
-        <span className="att-title">Payoff</span>
-        <span className="muted">each {scope === null ? "name" : "wheel name"} held: P&amp;L across its price, at expiry and before</span>
-      </div>
-      <div className="pay-names">
+    <Card
+      title="payoff"
+      collapseKey="wheel-payoff"
+      help={{
+        title: "Payoff",
+        body: (
+          <>
+            <HelpSection title="What it shows">
+              <p>
+                Each {scope === null ? "name" : "wheel name"} held: its P&amp;L across its price, at expiry and on dates before it. A name
+                opens its chart.
+              </p>
+            </HelpSection>
+            <HelpSection title="A model">
+              <p>
+                From the evaluation's marks: each vol solved from its leg's mid. At expiry it is arithmetic; before it, an estimate. Model
+                a trade adds up to six legs and shows the before and after. Nothing is sent to the broker.
+              </p>
+            </HelpSection>
+          </>
+        ),
+      }}
+    >
+      <div className="pf-mores pf-push">
         {names.map((n) => (
-          <button key={n.underlying} type="button" className="pay-name" onClick={() => lightbox.show(n.underlying)} aria-label={`Open ${n.underlying}'s payoff`}>
-            <span className="att-name">{n.underlying}</span>
+          <button key={n.underlying} type="button" className="pf-more pay-name-btn" onClick={() => lightbox.show(n.underlying)} aria-label={`Open ${n.underlying}'s payoff`}>
+            <span>{n.underlying}</span>
             <span className={tone(n.pnlNow)}>{n.pnlNow === null ? "—" : fmtCash(n.pnlNow)}</span>
-            {n.breakevens.length ? <span className="muted">BE {n.breakevens.map((b) => b.toFixed(2)).join(" / ")}</span> : null}
+            {n.breakevens.length ? <span className="pf-more-k">BE {n.breakevens.map((b) => b.toFixed(2)).join(" / ")}</span> : null}
+            <span aria-hidden="true">›</span>
           </button>
         ))}
       </div>
       {index >= 0 ? <PayoffDialog names={names} index={index} onStep={(to) => lightbox.step(order[to] ?? "")} onClose={lightbox.close} /> : null}
-    </section>
+    </Card>
   );
 }

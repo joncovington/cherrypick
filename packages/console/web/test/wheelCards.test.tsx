@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
+import { MemoryRouter } from "react-router-dom";
 import type { ManageAccount, ManageTrade, ManageWheel, ManageWheelCheck, ManageWheelCycle } from "@console/shared";
-import { NO_WHEEL, WheelCards } from "../src/pages/Live/WheelCards";
+import { CYCLE_TABS, CycleBody, cycleKey, NO_WHEEL, WheelCards } from "../src/pages/Live/WheelCards";
 import { aligned, inView, tables } from "./viewTables";
 
 /**
@@ -189,8 +190,19 @@ function account(w: ManageWheel | null, trades: ManageTrade[] = [trade()]): Mana
   };
 }
 
+/** The page and every lightbox tab of every cycle: what the cards hold now sits in the boxes they open. */
+function everything(a: ManageAccount): string {
+  const page = renderToString(
+    <MemoryRouter>
+      <WheelCards a={a} />
+    </MemoryRouter>,
+  );
+  const boxes = (a.wheel?.cycles ?? []).flatMap((c) => CYCLE_TABS.map((t) => renderToString(<CycleBody c={c} trades={a.trades} tab={t.id} />)));
+  return [page, ...boxes].join("\n");
+}
+
 function render(a: ManageAccount): string {
-  return text(renderToString(<WheelCards a={a} />));
+  return text(everything(a));
 }
 
 describe("the wheel tab", () => {
@@ -211,7 +223,7 @@ describe("the wheel tab", () => {
 
   it("an open cycle shows manage's money in the suite's layout, its check and its wheel rules", () => {
     const out = render(account(wheel()));
-    expect(out).toContain("XYZ · wheel from 2026-10-01");
+    expect(out).toContain("XYZ · wheel");
     expect(out).toContain("net cash +$100.00");
     expect(out).toContain("fees paid $1.10");
     expect(out).toContain("breakeven 49.01 a share (put strike less net cash)");
@@ -310,7 +322,7 @@ describe("the wheel tab", () => {
   });
 
   it("labels the check's underlying column as the PMCC card does", () => {
-    const html = renderToString(<WheelCards a={account(wheel())} />);
+    const html = everything(account(wheel()));
     expect(html).toContain("<th>underlying</th>");
     expect(html).not.toContain("<th>price</th>");
   });
@@ -340,7 +352,7 @@ describe("the wheel tab", () => {
 /** Live → wheel in the simple and detail views (2026-10-21). */
 describe("the wheel check, simple and detail", () => {
   const shape = (view: "simple" | "detail") =>
-    tables(inView(view, () => renderToString(<WheelCards a={account(wheel())} />))).find((t) => t.headers.includes("tested"))!;
+    tables(inView(view, () => everything(account(wheel())))).find((t) => t.headers.includes("tested"))!;
 
   it("has no intrinsic column in either view, and keeps the band columns to detail", () => {
     const simple = shape("simple");
@@ -354,5 +366,49 @@ describe("the wheel check, simple and detail", () => {
     expect(simple.headers).toContain("underlying");
     expect(aligned(simple)).toBe(true);
     expect(aligned(detail)).toBe(true);
+  });
+});
+
+/** Live → wheel, the redesign (2026-11-06): needs a look first, each cycle a parent card with a lightbox. */
+describe("the wheel tab, laid out by question", () => {
+  const page = (a: ManageAccount): string =>
+    renderToString(
+      <MemoryRouter>
+        <WheelCards a={a} />
+      </MemoryRouter>,
+    );
+
+  it("puts needs a look first, then each cycle, with the payoff last", () => {
+    const a = account(wheel({ names: ["XYZ"] }));
+    a.attention = { nearPct: 0.03, expiringDays: 7, items: [], expiring: [] };
+    a.payoff = { names: [{ underlying: "XYZ", pnlNow: 5, breakevens: [49], grid: [], curves: [], legs: [], spot: 50, iv: null, model: null } as never] };
+    const out = text(page(a));
+    expect(out.indexOf("needs a look")).toBeLessThan(out.indexOf("each cycle"));
+    expect(out.indexOf("each cycle")).toBeLessThan(out.indexOf("what if"));
+    expect(out).toContain("shorts near their strike");
+  });
+
+  it("a cycle is a parent card: net, breakeven, days and today's short, with its history behind a button", () => {
+    const html = page(account(wheel()));
+    const out = text(html);
+    expect(out).toContain("XYZ · wheel");
+    expect(out).toContain("-$21.10 net · breakeven 49.01 a share");
+    expect(out).toContain("short 2026-11-20 50P · 38 dte");
+    // What moved into the lightbox: the history table, the money and the rules are not on the page.
+    expect(html).not.toContain("<table");
+    expect(out).not.toContain("wheel.tested");
+    expect(out).not.toContain("tax basis");
+  });
+
+  it("an unreconciled cycle keeps its red line on the card", () => {
+    const c = cycle({ status: "unreconciled", reconciled: false, problems: ["an unmatched delivery"] });
+    const out = text(page(account(wheel({ cycles: [c] }))));
+    expect(out).toContain("does not reconcile");
+    expect(out).toContain("an unmatched delivery");
+  });
+
+  it("a cycle's lightbox has history, money and P&L, and rules", () => {
+    expect(CYCLE_TABS.map((t) => t.label)).toEqual(["history", "money & P&L", "wheel rules"]);
+    expect(cycleKey(cycle())).toBe("XYZ-2026-10-01");
   });
 });

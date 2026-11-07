@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ManageAttention, ManageAttentionItem } from "@console/shared";
-import { AttentionCard, meterFill } from "../src/pages/Live/AttentionCard";
+import { ExpiringCard, NearStrikeCard, distanceWords, levelLabel, meterFill } from "../src/pages/Live/AttentionCard";
 
 /**
  * Live → wheel's "needs a look" draws manage's `attention` and decides nothing: the level and the why
@@ -44,17 +44,30 @@ function attention(over: Partial<ManageAttention> = {}): ManageAttention {
   return { nearPct: 0.03, expiringDays: 7, items: [item()], expiring: [], ...over };
 }
 
+function both(a: ManageAttention, scope: string[] | null = null): string {
+  return text(
+    renderToString(
+      <>
+        <NearStrikeCard a={a} scope={scope} />
+        <ExpiringCard a={a} scope={scope} />
+      </>,
+    ),
+  );
+}
+
 describe("needs a look", () => {
-  it("lists manage's items with their level and why, worst first as manage ordered them", () => {
-    const out = text(
-      renderToString(
-        <AttentionCard a={attention({ items: [item({ underlying: "BBB", level: "in the money", why: "3.0% through the strike", distance: -0.03 }), item()] })} />,
-      ),
-    );
-    expect(out).toContain("BBB 2026-12-18 49P 3.0% through the strike");
+  it("lists manage's items, worst first as manage ordered them; a breach reads breached, its line ITM", () => {
+    const out = both(attention({ items: [item({ underlying: "BBB", level: "in the money", why: "3.0% through the strike", distance: -0.03 }), item()] }));
+    expect(out).toContain("BBB 2026-12-18 49P · ITM breached");
+    expect(out).toContain("AAA 2026-12-18 49P · 2.0% away near");
     expect(out.indexOf("BBB")).toBeLessThan(out.indexOf("AAA"));
     expect(out).toContain("spot 50.00 · time value 0.90");
-    expect(out).toContain("a short within 3% of its strike");
+    // The chip never says "through": that word was the old label.
+    expect(out).not.toContain("through");
+    expect(levelLabel("in the money")).toBe("breached");
+    expect(levelLabel("near")).toBe("near");
+    expect(distanceWords(0)).toBe("ITM");
+    expect(distanceWords(0.012)).toBe("1.2% away");
   });
 
   it("on the wheel tab keeps only the wheel's names, and says so", () => {
@@ -62,19 +75,18 @@ describe("needs a look", () => {
       items: [item({ underlying: "BBB" }), item()],
       expiring: [item({ underlying: "CCC", leg: "2026-11-06 30P", dte: 1 }), item({ underlying: "AAA", leg: "2026-11-06 47P", dte: 1 })],
     });
-    const out = text(renderToString(<AttentionCard a={a} scope={["AAA"]} />));
+    const out = both(a, ["AAA"]);
     expect(out).not.toContain("BBB");
     expect(out).not.toContain("CCC");
     expect(out).toContain("AAA 2026-12-18 49P");
     expect(out).toContain("AAA −1 2026-11-06 47P");
-    expect(out).toContain("a short on a wheel name within 3%");
-    const none = text(renderToString(<AttentionCard a={a} scope={[]} />));
-    expect(none).toContain("nothing: every short option on a wheel name is further than 3%");
+    const none = both(a, []);
+    expect(none).toContain("nothing: every short option on a wheel name is further than 3% from its strike");
     expect(none).toContain("nothing on a wheel name expires in 7 days");
   });
 
-  it("shows manage's level even where its distance would say otherwise", () => {
-    const out = text(renderToString(<AttentionCard a={attention({ items: [item({ distance: 0.2, level: "early exercise", why: "manage says so" })] })} />));
+  it("shows manage's level even where its distance would say otherwise, with its why", () => {
+    const out = both(attention({ items: [item({ distance: 0.2, level: "early exercise", why: "manage says so" })] }));
     expect(out).toContain("early exercise");
     expect(out).toContain("manage says so");
   });
@@ -88,18 +100,14 @@ describe("needs a look", () => {
   });
 
   it("says plainly when nothing needs a look, and lists what expires", () => {
-    const out = text(
-      renderToString(
-        <AttentionCard
-          a={attention({
-            items: [],
-            expiring: [{ ...item(), leg: "2026-11-06 45P", expiration: "2026-11-06", dte: 2, quantity: -1, distance: 0.08 }],
-          })}
-        />,
-      ),
+    const out = both(
+      attention({
+        items: [],
+        expiring: [{ ...item(), leg: "2026-11-06 45P", expiration: "2026-11-06", dte: 2, quantity: -1, distance: 0.08 }],
+      }),
     );
     expect(out).toContain("nothing: every short option is further than 3% from its strike");
-    expect(out).toContain("Expiring in 7 days");
-    expect(out).toContain("AAA −1 2026-11-06 45P · 2 d · 8.0% from the strike");
+    expect(out).toContain("expiring in 7 days");
+    expect(out).toContain("AAA −1 2026-11-06 45P · 2d 8.0%");
   });
 });

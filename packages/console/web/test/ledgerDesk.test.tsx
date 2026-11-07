@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { ManageLedger, ManageLedgerBucket } from "@console/shared";
-import { LedgerDesk, ledgerCsv, ledgerWindow, lotLeg } from "../src/pages/Live/LedgerDesk";
+import { sortRows } from "../src/components/FilterSort";
+import { LEDGER_SORTS, LedgerDesk, ledgerCsv, ledgerHeadWords, ledgerWindow, lotLeg } from "../src/pages/Live/LedgerDesk";
 
 /**
  * Live → wheel's ledger draws packages/manage's `ledger` and decides nothing: every figure is manage's
@@ -85,9 +86,15 @@ describe("the ledger", () => {
   });
 
   it("names the wheel's names it counts, or says it has none", () => {
-    expect(render(ledger({ scope: ["AAA", "BBB"] }))).toContain("AAA, BBB · read from the account's 1200 history rows since 2026-05-13");
-    expect(render(ledger({ scope: [] }))).toContain("no wheel names · read from the account's");
-    expect(render(ledger())).toMatch(/ledger read from the account's 1200 history rows since 2026-05-13/);
+    // The words sit behind the card's ? now, so they are read from the function that writes them.
+    expect(ledgerHeadWords(ledger({ scope: ["AAA", "BBB"] }))).toContain("AAA, BBB · read from the account's 1200 history rows since 2026-05-13");
+    expect(ledgerHeadWords(ledger({ scope: [] }))).toContain("no wheel names · read from the account's");
+    expect(ledgerHeadWords(ledger())).toMatch(/^read from the account's 1200 history rows since 2026-05-13/);
+    // On the card the window and the order are in the summary line, the window and the CSV in the panel.
+    const card = render(ledger());
+    expect(card).toContain("filter & sort");
+    expect(card).toContain("since the history starts");
+    expect(card).not.toContain("Download CSV");
   });
 
   it("says what it left out with its count and net", () => {
@@ -116,7 +123,13 @@ describe("the ledger", () => {
       </MemoryRouter>,
     );
     expect(html).toContain('aria-label="Open AAA&#x27;s ledger"');
-    expect(text(html)).toContain("AAA +$320.00 puts +$200.00 · calls +$120.00 9 closed · fees -$10.00");
-    expect(html).toMatch(/class="ldg-card is-neg"[^>]*aria-label="Open BBB/);
+    expect(text(html)).toContain("AAA +$320.00 ›");
+    expect(text(html)).toContain("BBB -$70.00 ›");
+    // Best net first by default, and the sorts are on size and the alphabet, never a rate.
+    expect(html.indexOf("Open AAA")).toBeLessThan(html.indexOf("Open BBB"));
+    const rows = [{ name: "AAA", b: bucket({ net: 5, legs: 9 }) }, { name: "BBB", b: bucket({ net: 50, legs: 2 }) }];
+    expect(sortRows(rows, LEDGER_SORTS.find((s) => s.id === "net"), false).map((r) => r.name)).toEqual(["BBB", "AAA"]);
+    expect(sortRows(rows, LEDGER_SORTS.find((s) => s.id === "legs"), false).map((r) => r.name)).toEqual(["AAA", "BBB"]);
+    expect(LEDGER_SORTS.map((s) => s.id)).toEqual(["net", "legs", "name"]);
   });
 });

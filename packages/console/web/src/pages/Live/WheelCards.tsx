@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type {
   ManageAccount,
+  ManageAttention,
   ManageTrade,
   ManageWheelCheck,
   ManageWheelCycle,
@@ -9,11 +10,16 @@ import type {
   ManageWheelRolls,
 } from "@console/shared";
 import { Card } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
+import { Tile } from "../Flies/PerformanceTab";
 import { Cells, HeadRow, useColumns, type Column } from "../../components/columns";
 import { fmtCash, fmtMoney, fmtPrice } from "../../lib/format";
-import { AttentionCard } from "./AttentionCard";
+import { ExpiringCard, NearStrikeCard, distanceWords } from "./AttentionCard";
 import { PayoffStrip } from "./PayoffCard";
 import { LedgerDesk } from "./LedgerDesk";
+import { Section } from "./PortfolioLayout";
+import { BoxButton, BoxButtons, PortfolioBoxContext } from "./portfolioBoxContext";
 import {
   ActionChip,
   DetailCard,
@@ -29,6 +35,7 @@ import {
   px,
   share,
   strike,
+  tone,
   yesNo,
 } from "./manageParts";
 
@@ -380,9 +387,127 @@ function Events({ c }: { c: ManageWheelCycle }) {
   );
 }
 
-export function CycleCard({ c, trades }: { c: ManageWheelCycle; trades: ManageTrade[] }) {
+/** The tabs of a cycle's lightbox: what happened, the money, and the rules and checks. */
+export type CycleTab = "history" | "money" | "rules";
+
+export const CYCLE_TABS: Array<{ id: CycleTab; label: string }> = [
+  { id: "history", label: "history" },
+  { id: "money", label: "money & P&L" },
+  { id: "rules", label: "wheel rules" },
+];
+
+/** A cycle's id in the URL (`?wb=`). */
+export function cycleKey(c: ManageWheelCycle): string {
+  return `${c.underlying}-${c.start ?? ""}`;
+}
+
+/** What a cycle's lightbox shows under a tab. Every figure is manage's. */
+export function CycleBody({ c, trades, tab }: { c: ManageWheelCycle; trades: ManageTrade[]; tab: CycleTab }) {
+  if (tab === "money") {
+    return (
+      <div className="md-cards">
+        <CycleMoney c={c} />
+        <CyclePnl c={c} />
+        <CycleYield c={c} />
+      </div>
+    );
+  }
+  if (tab === "rules") {
+    return (
+      <>
+        {c.today.length > 0 && <TodayCheck rows={c.today} />}
+        <div className="md-cards">
+          <WheelRules c={c} trades={trades} />
+        </div>
+      </>
+    );
+  }
   return (
-    <Card title={`${c.underlying} · wheel from ${c.start ?? "?"}`} collapseKey={`wheel-${c.underlying}-${c.start ?? ""}`}>
+    <>
+      <div className="md-cards">
+        <CycleFacts c={c} />
+      </div>
+      <Events c={c} />
+    </>
+  );
+}
+
+function cycleHelp(): CardHelpContent {
+  return {
+    title: "Reading a cycle",
+    body: (
+      <>
+        <HelpSection title="Net">
+          <p>After fees. Option and stock P&amp;L are gross of fees; the breakeven is a price per share.</p>
+        </HelpSection>
+        <HelpSection title="Today's check">
+          <p>Each short the cycle holds, with manage's tested flag. How far it is from its strike is shown where the needs-a-look list has it.</p>
+        </HelpSection>
+        <HelpSection title="Skate yield">
+          <p>A comparison figure, a year time-weighted; never a forecast, none under seven days. It is under money &amp; P&amp;L.</p>
+        </HelpSection>
+      </>
+    ),
+  };
+}
+
+/** Each short's distance from its strike where manage's attention lists have the leg, by option symbol. */
+export function distancesBySymbol(a: ManageAttention | null): Map<string, number | null> {
+  const m = new Map<string, number | null>();
+  for (const x of [...(a?.items ?? []), ...(a?.expiring ?? [])]) if (x.symbol) m.set(x.symbol, x.distance);
+  return m;
+}
+
+function daysText(c: ManageWheelCycle): string {
+  return c.days === null ? "—" : c.startKnown === false ? `${c.days}+` : String(c.days);
+}
+
+/** The line under a cycle's figures: what it holds against today's strike, or why it holds nothing. */
+function CheckLines({ c, near }: { c: ManageWheelCycle; near: Map<string, number | null> }) {
+  if (c.today.length === 0) {
+    const said =
+      c.status === "waiting"
+        ? "flat · waiting for a put"
+        : c.status === "complete"
+          ? c.calledAway ? `called away ${c.end ?? "?"}` : `ended ${c.end ?? "?"}`
+          : "no short option held";
+    return (
+      <ul className="lk-list">
+        <li className="lk-li lk-li-flat">
+          <span className="lk-leg">{said}</span>
+        </li>
+      </ul>
+    );
+  }
+  return (
+    <ul className="lk-list">
+      {c.today.map((r) => {
+        const d = near.get(r.symbol);
+        return (
+          <li key={r.symbol} className="lk-li lk-li-flat">
+            <span className="lk-leg">
+              short {r.leg} · {r.dte ?? "—"} dte{d === undefined ? "" : ` · ${distanceWords(d)}`}
+            </span>
+            <TestedChip tested={r.tested} />
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** A cycle as a parent card: net, breakeven, days, today's short; its history, money and rules open
+ *  from it. */
+export function CycleCard({ c, near = new Map() }: { c: ManageWheelCycle; near?: Map<string, number | null> }) {
+  const breakeven = c.breakeven && c.breakeven.price !== null ? `breakeven ${px(c.breakeven.price)} a share` : "breakeven —";
+  return (
+    <Card
+      title={`${c.underlying} · wheel`}
+      collapseKey={`wheel-${c.underlying}-${c.start ?? ""}`}
+      className="pf-cq wh-cycle"
+      help={cycleHelp()}
+      controls={<StatusChip status={c.status} />}
+    >
       {c.status === "unreconciled" && (
         <div className="pnl-neg">
           <p style={{ margin: 0 }}>does not reconcile: its money is shown as far as the rows go, not a basis to trade on</p>
@@ -393,15 +518,19 @@ export function CycleCard({ c, trades }: { c: ManageWheelCycle; trades: ManageTr
           </ul>
         </div>
       )}
-      <div className="md-cards">
-        <CycleFacts c={c} />
-        <CycleMoney c={c} />
-        <CyclePnl c={c} />
-        <CycleYield c={c} />
-        <WheelRules c={c} trades={trades} />
+      <div className="pf-hero">
+        {c.pnlNet === null ? <span className="muted">net unknown</span> : <span className={tone(c.pnlNet)}>{fmtCash(c.pnlNet)}</span>}
+        <span className="pf-unit"> net · {breakeven}</span>
       </div>
-      {c.today.length > 0 && <TodayCheck rows={c.today} />}
-      <Events c={c} />
+      <div className="pf-tiles pf-tiles-3">
+        <Tile label="days" value={daysText(c)} title={c.startKnown === false ? "shares predate the history: at least this many" : undefined} />
+        <Tile label="shares" value={c.shares === null ? "—" : String(c.shares)} />
+        <Tile label="assigned" value={c.assignments === null ? "—" : String(c.assignments)} />
+      </div>
+      <CheckLines c={c} near={near} />
+      <BoxButtons>
+        <BoxButton id={cycleKey(c)}>history</BoxButton>
+      </BoxButtons>
     </Card>
   );
 }
@@ -424,15 +553,88 @@ export function leftOutText(names: string[]): string | null {
   return names.length ? `left out, cash-settled (no shares are ever delivered): ${names.join(", ")}` : null;
 }
 
-/** One account's wheel: a card per cycle, or a plain statement of why there is none. */
-export function WheelCards({ a }: { a: ManageAccount }) {
+/* ------------------------------------------------------------------ the cycles' lightbox */
+
+function CycleDialog({ cycles, trades, index, onStep, onClose }: { cycles: ManageWheelCycle[]; trades: ManageTrade[]; index: number; onStep: (to: number) => void; onClose: () => void }) {
+  const c = cycles[index]!;
+  const id = cycleKey(c);
+  const [state, setTab] = useState<{ id: string; tab: CycleTab }>({ id, tab: "history" });
+  // A step to another cycle opens on its first tab.
+  const tab = state.id === id ? state.tab : "history";
+  const fired = trades.filter((t) => c.tradeIds.includes(t.tradeId)).flatMap((t) => t.fired.filter((f) => f.rule.startsWith("wheel.")));
+  const tabs: LightboxTab<CycleTab>[] = CYCLE_TABS.map((t) => ({ ...t, badge: t.id === "rules" && fired.length ? `${fired.length} fired` : null }));
   return (
-    <>
-      {a.attention ? <AttentionCard a={a.attention} scope={a.wheel?.names ?? null} /> : null}
-      {a.payoff ? <PayoffStrip payoff={a.payoff} scope={a.wheel?.names ?? null} /> : null}
-      {a.ledger ? <LedgerDesk ledger={a.ledger} /> : null}
-      <WheelCycles a={a} />
-    </>
+    <CardLightbox count={cycles.length} index={index} onStep={onStep} onClose={onClose} wide>
+      {(nav) => (
+        <LightboxFrame
+          kicker="wheel ›"
+          title={`${c.underlying} · cycle from ${c.start ?? "?"}`}
+          chips={<StatusChip status={c.status} />}
+          tabs={tabs}
+          tab={tab}
+          onTab={(t) => setTab({ id, tab: t })}
+          position={nav.position}
+          onPrev={nav.prev}
+          onNext={nav.next}
+          onClose={onClose}
+        >
+          <div className="pf-box-body">
+            <CycleBody c={c} trades={trades} tab={tab} />
+          </div>
+        </LightboxFrame>
+      )}
+    </CardLightbox>
+  );
+}
+
+/** The provider and the open lightbox around one account's wheel cards; the cycle buttons reach it
+ *  through the portfolio tab's context, so they are the same buttons. */
+function WheelBoxes({ a, children }: { a: ManageAccount; children: ReactNode }) {
+  const lb = useOpenParam("wb");
+  const cycles = a.wheel?.cycles ?? [];
+  const ids = new Set(cycles.map(cycleKey));
+  const index = cycles.findIndex((c) => cycleKey(c) === lb.open);
+  return (
+    <PortfolioBoxContext.Provider value={{ open: lb.show, has: (id) => ids.has(id) }}>
+      {children}
+      {index >= 0 ? <CycleDialog cycles={cycles} trades={a.trades} index={index} onStep={(to) => lb.step(cycles[to] ? cycleKey(cycles[to]!) : "")} onClose={lb.close} /> : null}
+    </PortfolioBoxContext.Provider>
+  );
+}
+
+/* ------------------------------------------------------------------ the tab */
+
+/**
+ * One account's wheel, laid out by question: what needs a look, how much it has made, how each cycle
+ * stands, what a trade would do.
+ */
+export function WheelCards({ a }: { a: ManageAccount }) {
+  const scope = a.wheel?.names ?? null;
+  const held = a.payoff ? (scope === null ? a.payoff.names : a.payoff.names.filter((n) => scope.includes(n.underlying))).length : 0;
+  return (
+    <WheelBoxes a={a}>
+      <div className="pf-layout">
+        {a.attention ? (
+          <Section concept="risk" tag="needs a look" question="What needs a look?">
+            <NearStrikeCard a={a.attention} scope={scope} />
+            <ExpiringCard a={a.attention} scope={scope} />
+          </Section>
+        ) : null}
+        {a.ledger ? (
+          <Section concept="income" tag="the ledger" question="How much has it made?">
+            <LedgerDesk ledger={a.ledger} />
+          </Section>
+        ) : null}
+        <Section concept="dir" tag="each cycle" question="How does each cycle stand?">
+          <WheelCycles a={a} />
+        </Section>
+        {a.payoff && held > 0 ? (
+          <Section concept="add" tag="what if" question="What would a trade do?">
+            <PayoffStrip payoff={a.payoff} scope={scope} />
+          </Section>
+        ) : null}
+      </div>
+    </WheelBoxes>
   );
 }
 
@@ -450,6 +652,7 @@ function WheelCycles({ a }: { a: ManageAccount }) {
   }
   const flagged = w.flagged;
   const outside = Object.entries(w.outside).filter(([, rows]) => rows.length > 0);
+  const near = distancesBySymbol(a.attention);
   return (
     <>
       {w.cycles.length === 0 ? (
@@ -461,22 +664,18 @@ function WheelCycles({ a }: { a: ManageAccount }) {
         </Card>
       ) : (
         <>
-          <p className="muted" style={{ margin: 0 }}>
+          <p className="muted">
             {a.account ?? "?"} · {cycleCount(w.cycles)}
             {w.bandsMissing ? ` · skate bands: ${w.bandsMissing}` : w.bandsDay ? ` · skate bands from ${w.bandsDay}` : ""}
           </p>
           {w.cycles.map((c) => (
-            <CycleCard key={`${c.underlying}-${c.start ?? ""}`} c={c} trades={a.trades} />
+            <CycleCard key={cycleKey(c)} c={c} near={near} />
           ))}
         </>
       )}
-      {leftOutText(w.leftOut) && (
-        <p className="muted" style={{ margin: 0 }}>
-          {leftOutText(w.leftOut)}
-        </p>
-      )}
+      {leftOutText(w.leftOut) && <p className="muted">{leftOutText(w.leftOut)}</p>}
       {flagged.length > 0 && (
-        <Card title="deliveries nothing explains">
+        <Card title="deliveries nothing explains" className="wh-wide">
           <ul style={{ margin: 0 }}>
             {flagged.map((f, i) => (
               <li key={i}>
@@ -488,7 +687,7 @@ function WheelCycles({ a }: { a: ManageAccount }) {
         </Card>
       )}
       {outside.length > 0 && (
-        <Card title="history outside any cycle">
+        <Card title="history outside any cycle" className="wh-wide">
           <p className="muted" style={{ marginTop: 0 }}>
             rows manage read for a name that belong to no wheel cycle (a call sold with no shares behind it, say), listed as
             it wrote them
