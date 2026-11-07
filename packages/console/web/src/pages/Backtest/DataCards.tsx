@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { BacktestGapStats, BacktestInventoryStore, BacktestOverview, BacktestSideReading, BacktestStore, BacktestValidation } from "@console/shared";
+import { HelpSection } from "../../components/CardHelp";
 import { Card } from "../../components/DataTable";
 import { fmtGap } from "../../lib/bridged";
 import { fmtCount } from "../../lib/format";
@@ -585,7 +586,6 @@ export function DataCards({ d }: { d: BacktestOverview }) {
               <span>
                 <span className="d-dot is-out" /> outside tolerance
               </span>
-              <span>A validation unlocks once every check is within tolerance over enough sessions.</span>
             </span>
           ) : null}
         </section>
@@ -649,13 +649,32 @@ export function BacktestDataTab() {
     <WithOverview>
       {(d, updatedAt) => (
         <div className="cards cards-wide">
-          <Card title="Data" collapseKey="backtest-data" updatedAt={updatedAt}>
+          <Card
+            title="Data"
+            collapseKey="backtest-data"
+            updatedAt={updatedAt}
+            help={{
+              title: "Reading the data tab",
+              body: (
+                <>
+                  <HelpSection title="Rebuilding">
+                    <p>
+                      The vendor data is licensed: the backup skips it and <code>purge</code> removes it when the licence ends. What keeps a
+                      store usable is that it can be rebuilt, so each one names its fetch code (<code>packages/backtest/stores.py</code>).
+                    </p>
+                  </HelpSection>
+                  <HelpSection title="Validations">
+                    <p>
+                      A validation compares the vendor store against the recorder&apos;s own sessions; open one for its tables. It unlocks
+                      once every check is within tolerance over enough sessions. Until then every replay over that history is provisional,
+                      not evidence.
+                    </p>
+                  </HelpSection>
+                </>
+              ),
+            }}
+          >
             <DataCards d={d} />
-            <p className="muted" style={{ marginTop: 8 }}>
-              The vendor data is licensed: the backup skips it and <code>purge</code> removes it when the licence ends. What keeps a store usable
-              is that it can be rebuilt, so each one names its fetch code (<code>packages/backtest/stores.py</code>). A validation compares the
-              vendor store against the recorder&apos;s own sessions; open one for its tables.
-            </p>
           </Card>
         </div>
       )}

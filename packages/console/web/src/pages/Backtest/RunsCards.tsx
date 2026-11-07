@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { BacktestOverview, BacktestRunListing, BacktestRunReport, StudyResult, StudyRow } from "@console/shared";
+import { HelpSection } from "../../components/CardHelp";
 import { Card } from "../../components/DataTable";
 import { fmtCash, fmtCount } from "../../lib/format";
-import { ProvisionalChip, RunPlainEnglish, RunReport, WithOverview, etStamp, measure, span, trialsLine, useRun } from "./BacktestPage";
+import { ArmsTable, LicenceFlag, PairingTable, ProvisionalChip, RefusedSessions, RunCardsSection, RunPlainEnglish, WithOverview, etStamp, measure, span, trialsLine, useRun, useRunChoices } from "./BacktestPage";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
 import { ago, etMs, etNowMs } from "./QueueTab";
 import { HealthChecks, MonthGrid, settingsLine } from "./RunCards";
@@ -15,8 +16,10 @@ import { indexStudies, splitTitle, studyHref, useStudies, verdictChip, type Stud
  * newest large, each naming the study whose result file names it and that study's verdict. A tile
  * opens a lightbox on `?run=` (the link the other tabs already use): the run in plain words with
  * each arm's interval against control, each arm's running net, its health checks, its month grid,
- * and its settings. The full report (the account picker, sizing check, compounded lens, drawdowns,
- * trades, refused sessions) is one press away at `?run=&full=1`.
+ * and its settings. The full report (2026-11-06) is folded into the same lightbox as more tabs: arms,
+ * paired with control, run cards (the account picker, sizing check, compounded lens, drawdowns and the
+ * trade log) and refused sessions, so a run never leaves the board. An old `?run=&full=1` link opens the
+ * lightbox on the run cards.
  *
  * Every figure is the report's and every verdict the study's: the page draws them. An interval is
  * drawn untoned (interval ends are never toned); a net figure is toned by its sign.
@@ -85,7 +88,7 @@ export function RunTile({ r, hit, hero, nowMs, onOpen }: { r: BacktestRunListing
 
 // ------------------------------------------------------------------ the lightbox
 
-export type RunTab = "summary" | "equity" | "health" | "calendar" | "settings";
+export type RunTab = "summary" | "equity" | "health" | "calendar" | "settings" | "arms" | "paired" | "cards" | "refused";
 
 /** Where a value sits on a symmetric scale around zero, as a percentage of the bar's width. */
 function at(v: number, scale: number): number {
@@ -236,6 +239,10 @@ export function RunDialogBody({
     { id: "health", label: "Health", badge: flags > 0 ? `${String(flags)} flagged` : null },
     { id: "calendar", label: "Calendar" },
     { id: "settings", label: "Settings" },
+    { id: "arms", label: "Arms" },
+    { id: "paired", label: "Paired with control" },
+    { id: "cards", label: "Run cards" },
+    { id: "refused", label: "Refused", badge: report !== null && Object.keys(report.refused).length > 0 ? String(Object.keys(report.refused).length) : null },
   ];
   return (
     <LightboxFrame
@@ -257,9 +264,7 @@ export function RunDialogBody({
               {hit.row.study}
             </Link>
           ) : null}
-          <Link to={`/backtest/runs?run=${encodeURIComponent(listing.run_id)}&full=1`} className="chip r-full">
-            Full report
-          </Link>
+          <LicenceFlag inline />
         </>
       }
       tabs={tabs}
@@ -296,17 +301,28 @@ export function RunDialogBody({
             )
           ) : null}
           {tab === "settings" ? <RunSettings r={report} /> : null}
+          {tab === "arms" ? <ArmsTable arms={Object.entries(report.arms)} /> : null}
+          {tab === "paired" ? <PairingTable arms={Object.entries(report.arms)} /> : null}
+          {tab === "cards" ? <RunCardsSection id={listing.run_id} r={report} /> : null}
+          {tab === "refused" ? <RefusedSessions r={report} /> : null}
         </>
       )}
     </LightboxFrame>
   );
 }
 
+/** The tab a run opens on: the old full-report link (`full=1`) lands on the run cards. */
+export function initialRunTab(params: URLSearchParams): RunTab {
+  return params.get("full") === "1" ? "cards" : "summary";
+}
+
 function RunDialog({ runs, index, studies, onStep, onClose }: { runs: BacktestRunListing[]; index: number; studies: StudyIndex; onStep: (to: number) => void; onClose: () => void }) {
-  const [tab, setTab] = useState<RunTab>("summary");
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<RunTab>(initialRunTab(params));
   const [arm, setArm] = useState<string | null>(null);
   const listing = runs[index];
-  const { data, isLoading, isError, error } = useRun(listing?.run_id ?? null, { capital: null });
+  const choices = useRunChoices();
+  const { data, isLoading, isError, error } = useRun(listing?.run_id ?? null, { capital: choices.capital, risk: choices.risk, unit: choices.unit, dd: choices.dd });
   if (listing === undefined) return null;
   const report = data?.ok && data.data && data.data.run_id === listing.run_id ? data.data : null;
   const status = isLoading ? (
@@ -317,7 +333,7 @@ function RunDialog({ runs, index, studies, onStep, onClose }: { runs: BacktestRu
     <p className="muted">{data?.error ?? "Loading the report…"}</p>
   ) : null;
   return (
-    <CardLightbox count={runs.length} index={index} onStep={onStep} onClose={onClose}>
+    <CardLightbox wide count={runs.length} index={index} onStep={onStep} onClose={onClose}>
       {(nav) => (
         <RunDialogBody
           listing={listing}
@@ -379,44 +395,38 @@ export function RunsMosaic({ d, studies, nowMs = etNowMs() }: { d: BacktestOverv
 }
 
 export function BacktestRunsTab() {
-  const [params, setParams] = useSearchParams();
-  const selected = params.get("run");
-  const full = params.get("full") === "1";
   const studies = useStudies();
   const index = indexStudies(studies.data?.ok ? studies.data.data : null);
-  const back = () => {
-    const next = new URLSearchParams(params);
-    next.delete("full");
-    next.delete("run");
-    setParams(next, { replace: true });
-  };
   return (
     <WithOverview>
-      {(d, updatedAt) =>
-        full && selected !== null ? (
-          <div className="cards cards-wide">
-            <p style={{ margin: 0 }}>
-              <button type="button" className="btn btn-quiet" onClick={back}>
-                ← All runs
-              </button>
+      {(d, updatedAt) => (
+        <div className="cards cards-wide">
+          <Card
+            title="Runs"
+            collapseKey="backtest-runs"
+            updatedAt={updatedAt}
+            help={{
+              title: "Reading the runs",
+              body: (
+                <>
+                  <HelpSection title="One card per replay">
+                    <p>
+                      Newest first, linked to the study whose result file names it. A card opens the run in plain words, each arm against
+                      control, its running net, health, months and settings, and then the full report as more tabs: every arm, the pairing
+                      with control, the run cards (account, sizing, compounded lens, drawdowns, trades) and the refused sessions.
+                    </p>
+                  </HelpSection>
+                </>
+              ),
+            }}
+          >
+            <p className="state-line state-warn bt-trials" style={{ fontSize: 12, margin: "0 0 4px" }}>
+              {trialsLine(d)}
             </p>
-            <RunReport id={selected} study={index.byRun.get(selected)} />
-          </div>
-        ) : (
-          <div className="cards cards-wide">
-            <Card title="Runs" collapseKey="backtest-runs" updatedAt={updatedAt}>
-              <p className="muted" style={{ fontSize: 12, margin: "0 0 4px" }}>
-                {trialsLine(d)}
-              </p>
-              <RunsMosaic d={d} studies={index} />
-              <p className="muted" style={{ marginTop: 8 }}>
-                One card per replay, newest first. A card opens the run in plain words, each arm against control, its running net, health,
-                months and settings; the full report has the account, sizing and every card.
-              </p>
-            </Card>
-          </div>
-        )
-      }
+            <RunsMosaic d={d} studies={index} />
+          </Card>
+        </div>
+      )}
     </WithOverview>
   );
 }

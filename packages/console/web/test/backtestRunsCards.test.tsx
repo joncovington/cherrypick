@@ -117,7 +117,10 @@ describe("runs as cards", () => {
     const summary = body("summary");
     expect(summary).toContain("in plain English");
     expect(summary).toContain("Each arm against control");
-    expect(summary).toContain('href="/backtest/runs?run=20261028-065012-0174bd&amp;full=1"');
+    // The full report is folded in as tabs, with the amber licensed-data flag; no page of its own.
+    expect(summary).not.toContain("full=1");
+    expect(summary).toContain("licensed vendor data");
+    for (const t of ["Arms", "Paired with control", "Run cards", "Refused"]) expect(summary).toContain(t);
     // Health reads the first non-control arm by default; its flags count on the tab.
     const health = body("health", REPORT, "d12");
     expect(health).toContain("2 flagged");

@@ -16,8 +16,7 @@ import { isBacktestCapital, isBacktestRiskPct, isBacktestRiskUnit, type Backtest
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import type { ReactNode } from "react";
-import { Card } from "../../components/DataTable";
-import { TileGrid } from "../../components/performance/TileGrid";
+import { CardHelpButton, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { signTone, useBridged } from "../../lib/bridged";
 import { fmtCash, fmtCount, fmtNum } from "../../lib/format";
 import { RunCards } from "./RunCards";
@@ -37,14 +36,23 @@ import { studyHref } from "./studyIndex";
  * shown beside, never subtracted again.
  */
 
-function LicenceNote() {
-  return (
-    <div className="integrity-banner" role="note">
-      <strong>Licensed vendor data.</strong> Everything on this page is computed from historical data
-      licensed to this machine&apos;s owner. It stays on this console: do not screenshot, export, copy or
-      share it.
-    </div>
-  );
+/** The licence text, behind the page's amber flag. It is read before anything is copied off the page. */
+export const LICENCE_HELP: CardHelpContent = {
+  title: "Licensed vendor data",
+  body: (
+    <HelpWarn title="Never shared">
+      <p>
+        Everything on this page is computed from historical data licensed to this machine&apos;s owner. It stays on this console: do not
+        screenshot, export, copy or share it. Never in the repo, a PR, an issue or a published page.
+      </p>
+    </HelpWarn>
+  ),
+};
+
+/** The amber "licensed vendor data" flag at the head of a tab; it opens the licence text. */
+export function LicenceFlag({ inline = false }: { inline?: boolean }) {
+  const flag = <CardHelpButton cardTitle="Backtest" help={LICENCE_HELP} flag="licensed vendor data" />;
+  return inline ? <span className="lic-flag">{flag}</span> : <div className="bt-pagehead lic-flag">{flag}</div>;
 }
 
 function useOverview() {
@@ -61,7 +69,7 @@ export function WithOverview({ children }: { children: (d: BacktestOverview, upd
   else body = children(data.data, dataUpdatedAt);
   return (
     <>
-      <LicenceNote />
+      <LicenceFlag />
       {body}
     </>
   );
@@ -95,15 +103,6 @@ export function etStamp(sec: number): string {
   }).formatToParts(new Date(sec * 1000));
   const p = (t: string) => parts.find((x) => x.type === t)?.value ?? "";
   return `${p("year")}-${p("month")}-${p("day")} ${p("hour")}:${p("minute")}`;
-}
-
-function Tile({ label, value, title, cls }: { label: string; value: ReactNode; title?: string; cls?: string }) {
-  return (
-    <div className="stat-tile" title={title}>
-      <span className="stat-label">{label}</span>
-      <span className={`stat-value ${cls ?? ""}`}>{value}</span>
-    </div>
-  );
 }
 
 // ------------------------------------------------------------------ data
@@ -166,7 +165,7 @@ function ci(v: [number, number] | null | undefined): string {
   return v === null || v === undefined ? "—" : `${fmtCash(v[0])} to ${fmtCash(v[1])}`;
 }
 
-function ArmsTable({ arms }: { arms: Array<[string, BacktestArmReport]> }) {
+export function ArmsTable({ arms }: { arms: Array<[string, BacktestArmReport]> }) {
   return (
     <div className="table-scroll">
       <table className="data-table num-from-1">
@@ -225,7 +224,7 @@ function ArmsTable({ arms }: { arms: Array<[string, BacktestArmReport]> }) {
   );
 }
 
-function PairingTable({ arms }: { arms: Array<[string, BacktestArmReport]> }) {
+export function PairingTable({ arms }: { arms: Array<[string, BacktestArmReport]> }) {
   const paired = arms.filter(([arm]) => arm !== "control");
   if (paired.length === 0) return <p className="muted">Only control ran: nothing to pair.</p>;
   return (
@@ -300,7 +299,8 @@ function riskParam(raw: string | null): number | null {
   return raw !== null && isBacktestRiskPct(raw) ? Number(raw) : null;
 }
 
-export function RunReport({ id, study }: { id: string; study?: { row: StudyRow; result: StudyResult } }) {
+/** The run cards' choices, read from and written to the URL (`?capital=&risk=&unit=&dd=`). */
+export function useRunChoices() {
   const [params, setParams] = useSearchParams();
   const capital = capitalParam(params.get("capital"));
   const risk = riskParam(params.get("risk"));
@@ -315,93 +315,60 @@ export function RunReport({ id, study }: { id: string; study?: { row: StudyRow; 
     else next.set(key, String(v));
     setParams(next, { replace: true });
   };
-  const pickCapital = (c: number | null) => pick("capital", c);
-  const { data, isLoading, isError, error, dataUpdatedAt } = useRun(id, { capital, risk, unit, dd });
-  const r = data?.data ?? null;
+  return { params, setParams, capital, risk, unit, dd, pick };
+}
+
+/** The run cards: the account, sizing check, lens, drawdowns, health, months, exits and the trade log. */
+export function RunCardsSection({ id, r }: { id: string; r: BacktestRunReport }) {
+  const { params, setParams, capital, risk, unit, dd, pick } = useRunChoices();
   return (
-    <Card title={`run ${id}`} updatedAt={dataUpdatedAt} isError={isError || (data !== undefined && !data.ok)}>
-      {isLoading ? (
-        <span className="skeleton skeleton-text" style={{ width: "40%" }} />
-      ) : isError ? (
-        <p className="muted">{(error as Error).message}</p>
-      ) : data === undefined || !data.ok || r === null ? (
-        <p className="muted">{data?.error ?? "run unavailable"}</p>
-      ) : (
-        <>
-          <RunPlainEnglish r={r} study={study} />
-          {r.provisional === true && (
-            <p className="muted">
-              <ProvisionalChip /> {r.provisional_note ?? "Provisional: not a trial and not evidence."}
-            </p>
-          )}
-          <TileGrid count={6}>
-            <Tile label="window" value={r.window} />
-            <Tile label="span" value={span(r.span)} />
-            <Tile label="cadence" value={`${String(r.cadence)} s`} />
-            <Tile label="fill model" value={measure(r.fill_model)} />
-            <Tile
-              label="trials (module)"
-              value={r.trials_for_module === null ? "—" : String(r.trials_for_module)}
-              title="design-window trials recorded for this module; the DSR deflates by it"
-            />
-            <Tile label="refused sessions" value={String(Object.keys(r.refused).length)} />
-          </TileGrid>
-          <p className="muted" style={{ fontSize: 12 }}>
-            code <code>{r.code_commit ?? "—"}</code> · data fingerprint <code>{r.data_fingerprint ?? "—"}</code>
-          </p>
-          <div className="card-subhead">arms</div>
-          <ArmsTable arms={Object.entries(r.arms)} />
-          <div className="card-subhead">paired with control, by session</div>
-          <PairingTable arms={Object.entries(r.arms)} />
-          <div className="card-subhead">run cards</div>
-          <RunCards
-            runId={id}
-            module={typeof r["module"] === "string" ? r["module"] : undefined}
-            cards={r.cards}
-            capital={capital}
-            onCapital={pickCapital}
-            risk={risk}
-            onRisk={(v) => pick("risk", v)}
-            unit={unit ?? "max_loss"}
-            onUnit={(u) => pick("unit", u === "max_loss" ? null : u)}
-            dd={dd}
-            onDd={(v) => pick("dd", v)}
-            onLensAt={(riskPct, u) => {
-              const next = new URLSearchParams(params);
-              next.set("risk", String(riskPct));
-              if (u === "max_loss") next.delete("unit");
-              else next.set("unit", u);
-              setParams(next, { replace: true });
-            }}
-          />
-          <div className="card-subhead">refused sessions</div>
-          {Object.keys(r.refused).length === 0 ? (
-            <p className="muted">None.</p>
-          ) : (
-            <div className="table-scroll">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>session</th>
-                    <th>why</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(r.refused)
-                    .sort(([a], [b]) => a.localeCompare(b))
-                    .map(([day, why]) => (
-                      <tr key={day}>
-                        <td>{day}</td>
-                        <td className="muted">{why}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
-    </Card>
+    <RunCards
+      runId={id}
+      module={typeof r["module"] === "string" ? r["module"] : undefined}
+      cards={r.cards}
+      capital={capital}
+      onCapital={(c) => pick("capital", c)}
+      risk={risk}
+      onRisk={(v) => pick("risk", v)}
+      unit={unit ?? "max_loss"}
+      onUnit={(u) => pick("unit", u === "max_loss" ? null : u)}
+      dd={dd}
+      onDd={(v) => pick("dd", v)}
+      onLensAt={(riskPct, u) => {
+        const next = new URLSearchParams(params);
+        next.set("risk", String(riskPct));
+        if (u === "max_loss") next.delete("unit");
+        else next.set("unit", u);
+        setParams(next, { replace: true });
+      }}
+    />
+  );
+}
+
+/** Sessions the replay refused, and why. */
+export function RefusedSessions({ r }: { r: BacktestRunReport }) {
+  if (Object.keys(r.refused).length === 0) return <p className="muted">None.</p>;
+  return (
+    <div className="table-scroll">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>session</th>
+            <th>why</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(r.refused)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([day, why]) => (
+              <tr key={day}>
+                <td>{day}</td>
+                <td className="muted">{why}</td>
+              </tr>
+            ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

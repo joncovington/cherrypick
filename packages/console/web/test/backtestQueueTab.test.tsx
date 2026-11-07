@@ -12,6 +12,7 @@ import {
   argsLine,
   etMs,
   etaText,
+  BacktestQueueTab,
   headline,
   paceText,
   rateText,
@@ -91,6 +92,15 @@ const wrap = (node: React.ReactNode) =>
 function render(q: ResearchQueue, studies?: StudyIndex): string {
   return wrap(<QueueCards q={q} nowMs={NOW} studies={studies} />);
 }
+
+describe("the research queue tab: the footer", () => {
+  it("keeps the wait rules and queue-add syntax behind the card's ?, not on the page", () => {
+    const out = wrap(<BacktestQueueTab />).replace(/<!-- -->/g, "");
+    expect(out).toContain("About Research queue");
+    expect(out).not.toContain("queue-add");
+    expect(out).not.toContain("--not-before");
+  });
+});
 
 describe("the research queue tab: sections", () => {
   it("puts running first, then queued in the runner's order: ready first, oldest first", () => {

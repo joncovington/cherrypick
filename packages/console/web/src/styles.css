@@ -9545,3 +9545,20 @@ button.chip[aria-pressed][data-hue="special"],
 .action-block .pos-leg > span:nth-child(2) {
   white-space: nowrap;
 }
+
+/* redesign: backtest */
+.bt-pagehead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.lic-flag .help-q {
+  display: none;
+}
+.bt-trials {
+  color: var(--warn);
+}
+.study-dialog-body p {
+  overflow-wrap: anywhere;
+}
