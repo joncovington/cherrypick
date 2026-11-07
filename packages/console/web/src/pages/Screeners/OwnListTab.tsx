@@ -1,22 +1,31 @@
-import { Fragment, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import type { FairValueFields, IncomeList, IncomeListRow } from "@console/shared";
-import { SortTh, sortRows, useSort } from "../../components/DataTable";
-import { Cells, SecondaryCells, secondaryOf, useColumns, type Column } from "../../components/columns";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+import { FilterGroup, FilterSwitch, SortSection, sortRows, useSortChoice, type SortOption } from "../../components/FilterSort";
+import { PremiumSlider, defaultFloor, useMinPremium } from "../../components/PremiumSlider";
 import { Pager, usePage } from "../../components/ScopeBar";
+import { useViewChoice } from "../../components/ViewSwitch";
 import { useIncomeList } from "../../lib/api";
-import { PremiumSlider, useMinPremium } from "../../components/PremiumSlider";
+import { writePref } from "../../lib/prefs";
+import { TradeCards, dayMonth, type TradeCardModel } from "../Live/TradeCard";
+import { ScreenerCard, ScreenerLayout, ScreenerSection, SessionSelect, SymbolSearch, Tabs, useParamState } from "./ScreenerParts";
 
 /**
  * Our own short-put and covered-call lists (2026-10-19): one row a name from the suite's universe,
  * the strike nearest 16 delta, priced at the working price. Every figure is `packages/technicals`
  * `income-lists`'; this formats and filters, and ranks nothing -- rows are by symbol, because the
- * rule has no tested edge and a yield order would read as one. The standing note says so and is
- * never removed while the list shows.
+ * rule has no tested edge and a yield order would read as one. The amber flag says so and stays while
+ * the list shows; its text is behind the ?.
+ *
+ * Redesign (2026-11-06): each name is a trade card (rows on request) like the portfolio tab's adding
+ * trades; the quote and the fair-value gap sit in the card's foot. The two lists are tabs in the card
+ * head, and the liquid, earnings and fit filters, the premium floor, the sort and the symbol search
+ * sit behind filter & sort.
  */
 
 const TITLE: Record<IncomeList, string> = { "short-puts": "Short puts", "covered-calls": "Covered calls" };
-const PAGE_SIZES = [50, 100, 200, 500] as const;
+const PAGE_SIZES = [24, 48, 96, 192] as const;
 
 const NOTE: Record<IncomeList, string> = {
   "short-puts":
@@ -33,7 +42,8 @@ const NOTE: Record<IncomeList, string> = {
     "flip: the overlay pays in falling years by giving up the upside. Read it as not refuted, not as an edge.",
 };
 
-const HEAD: Record<IncomeList, string> = { "short-puts": "No tested edge.", "covered-calls": "Not refuted, not an edge." };
+const HEAD: Record<IncomeList, string> = { "short-puts": "No tested edge", "covered-calls": "Not refuted, not an edge" };
+const FLAG: Record<IncomeList, string> = { "short-puts": "no tested edge", "covered-calls": "not refuted, not an edge" };
 
 function money(v: number | null): string {
   return v === null ? "—" : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -52,119 +62,111 @@ function shortDate(iso: string | null): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-function Flag({ on, onChange, children, title }: { on: boolean; onChange: (on: boolean) => void; children: ReactNode; title: string }) {
-  return (
-    <div className="mode-toggle" style={{ marginLeft: 0 }}>
-      <button type="button" title={title} className={on ? "mode-btn active" : "mode-btn"} onClick={() => onChange(!on)}>
-        {children}
-      </button>
-    </div>
-  );
-}
-
-/** The next announcement against the trade's own expiry; shared with the credit-spread tab. */
-export function EarningsCell({ r }: { r: Pick<IncomeListRow, "earnings" | "earningsDate" | "earningsEstimated"> }) {
-  if (r.earnings === "none") return <td className="muted">fund</td>;
+/** The next announcement against the trade's own expiry, in words; shared with the credit-spread tab. */
+export function earningsText(r: Pick<IncomeListRow, "earnings" | "earningsDate" | "earningsEstimated">): string {
+  if (r.earnings === "none") return "a fund: no earnings";
   const when = r.earningsDate ? `${shortDate(r.earningsDate)}${r.earningsEstimated ? " (est.)" : ""}` : "";
-  if (r.earnings === "in-trade") return <td title="The next announcement falls before this trade's expiry">{`in trade · ${when}`}</td>;
-  if (r.earnings === "clear") return <td className="muted" title="The next announcement falls after this trade's expiry">{`after · ${when}`}</td>;
+  if (r.earnings === "in-trade") return `earnings in the trade · ${when}`;
+  if (r.earnings === "clear") return `earnings after expiry · ${when}`;
   // A date before the session is the report just made: the broker has not posted the next one yet.
-  if (r.earningsDate) {
-    return (
-      <td className="muted" title="The broker's date is a report already made; the next is not posted yet, so the trade is never called clear">
-        {`past · ${shortDate(r.earningsDate)}`}
-      </td>
-    );
-  }
-  return <td className="muted" title="No announcement date is known, so the trade is never called clear">unknown</td>;
+  if (r.earningsDate) return `earnings past · ${shortDate(r.earningsDate)}, next not posted`;
+  return "earnings date unknown";
 }
 
 export const FAIR_TITLE =
   "The session's DCF estimate of the share's value (cherrypick.core.valuation on Dolt's annual statements): the price " +
   "against it, with the model's low-high range. A model estimate, tested 2018–26: no edge, never a ranking.";
 
-const FAIR_FLAG: Record<string, string> = {
-  terminal_heavy: "the terminal value is over 75% of the enterprise value: the answer is the perpetuity, not the forecast",
-  negative_base_fcf: "the first forecast year's cash flow is negative",
-  beta_bounded: "the regression beta was outside 0.5-2.0 and was bounded",
-  beta_disagrees: "the broker's beta differs from ours by more than 0.5",
-  shares_stale: "spot times the last fiscal year's shares is more than 10% off the broker's market cap",
-};
-
 const FAIR_STATE: Record<string, string> = {
-  "not-applicable": "A fund, a bank or a REIT: an operating-cash-flow DCF does not describe it",
-  "no-statements": "No annual statements published by the session",
-  refused: "The model refused this name (too little history, no operating profit, a rate too near the growth, or a cash flow that never turns positive)",
-  unbuilt: "No fair-value file had been built for the session",
-  unlisted: "The fair-value file has no row for this name",
+  "not-applicable": "a fund, a bank or a REIT: no fair value",
+  "no-statements": "no annual statements by the session",
+  refused: "the model refused this name",
+  unbuilt: "no fair-value file for the session",
+  unlisted: "not in the fair-value file",
 };
 
-/** The fair-value gap: the price against the model's value; shared with the credit-spread tab. */
-export function FairCell({ fair }: { fair: FairValueFields | null | undefined }) {
-  if (fair === null || fair === undefined) return <td className="muted" title="A list built before the fair-value fields existed">—</td>;
-  if (fair.fairState !== "valued" || fair.fairGap === null || fair.fairValue === null) {
-    const state = fair.fairState ?? "unbuilt";
-    return (
-      <td className="muted" title={FAIR_STATE[state] ?? state}>
-        {state === "not-applicable" ? "n/a" : "—"}
-      </td>
-    );
-  }
-  const flags = fair.fairFlags.map((f) => FAIR_FLAG[f] ?? f);
-  const title =
-    `Fair value ${money(fair.fairValue)} (range ${money(fair.fairLow)}–${money(fair.fairHigh)}); the price is ` +
-    `${signedPct(fair.fairGap)} against it. ${FAIR_TITLE}${flags.length > 0 ? ` Flags: ${flags.join("; ")}.` : ""}`;
-  return (
-    <td className="num" title={title}>
-      {signedPct(fair.fairGap)}
-      {fair.fairFlags.length > 0 ? <span className="muted"> †</span> : null}
-    </td>
-  );
+/** The fair-value gap in words: the price against the model's value, `†` where the builder flagged it;
+ *  shared with the credit-spread tab. */
+export function fairText(fair: FairValueFields | null | undefined): string {
+  if (fair === null || fair === undefined) return "no fair value";
+  if (fair.fairState !== "valued" || fair.fairGap === null || fair.fairValue === null) return FAIR_STATE[fair.fairState ?? "unbuilt"] ?? "no fair value";
+  return `vs fair ${signedPct(fair.fairGap)}${fair.fairFlags.length > 0 ? " †" : ""}`;
 }
 
-function LiquidCell({ r }: { r: IncomeListRow }) {
-  if (r.passes === null) return <td className="muted">unquoted</td>;
-  const title = `OI ${r.openInterest ?? "—"}, volume ${r.volume ?? "—"}${r.quiet ? " (quiet)" : ""}`;
-  return (
-    <td title={title} className={r.passes ? undefined : "muted"}>
-      {r.passes ? "liquid" : "thin"}
-    </td>
-  );
-}
-
-/** The covered call's ex-dividend date and its state, the way the Earnings cell reads its date. A list
- *  built before the state was recorded carries only the in-trade flag: a flagged row reads in trade,
- *  anything else unknown -- a false there never meant clear. */
-function ExDividendCell({ r }: { r: IncomeListRow }) {
+/** The covered call's ex-dividend date and its state, in words. A list built before the state was
+ *  recorded carries only the in-trade flag: a flagged row reads in trade, anything else unknown -- a
+ *  false there never meant clear. */
+function exDividendText(r: IncomeListRow): string {
   const when = r.exDividendDate ? shortDate(r.exDividendDate) : "";
   const state = r.exDividend ?? (r.exDividendInTrade ? "in-trade" : "unknown");
-  if (state === "in-trade") {
-    return (
-      <td title="An ex-dividend date before this call's expiry: a call in the money then can be assigned early for the dividend">
-        {when ? `in trade · ${when}` : "in trade"}
-      </td>
-    );
-  }
-  if (state === "after") {
-    return (
-      <td className="muted" title="The next ex-dividend date falls after this call's expiry">
-        {`after · ${when}`}
-      </td>
-    );
-  }
-  if (state === "past") {
-    return (
-      <td className="muted" title="The broker's date is the last ex-dividend date; the next is not posted yet, so the call is never called clear">
-        {`past · ${when}`}
-      </td>
-    );
-  }
-  return (
-    <td className="muted" title="No ex-dividend date is known, so the call is never called clear">
-      unknown
-    </td>
-  );
+  if (state === "in-trade") return `ex-dividend in the trade${when ? ` · ${when}` : ""}`;
+  if (state === "after") return `ex-dividend after expiry · ${when}`;
+  if (state === "past") return `ex-dividend past · ${when}`;
+  return "ex-dividend unknown";
 }
+
+/**
+ * One name as a trade card: the credit for one contract at the working price as the headline, the
+ * strike's distance from the share as the bar (against the farthest on the list), the order that would
+ * open it, and the quote, earnings and fair-value gap in the foot. Money follows the suite layout.
+ */
+export function incomeModel(r: IncomeListRow, calls: boolean, farthest: number): TradeCardModel {
+  const right = calls ? "C" : "P";
+  const dist = Math.abs(r.distanceFraction);
+  const price = r.working === null ? "—" : `${money(r.working)} cr`;
+  const q = [r.bid === null && r.ask === null ? "" : `${r.bid === null ? "—" : money(r.bid)} / ${r.ask === null ? "—" : money(r.ask)}`, `Δ ${Math.abs(r.delta).toFixed(2)}`, r.openInterest === null ? "" : `OI ${r.openInterest.toLocaleString("en-US")}`].filter(Boolean).join(" · ");
+  const fund = r.type !== null && r.type !== "Stock";
+  return {
+    key: r.symbol,
+    symbol: r.symbol,
+    spot: money(r.spot),
+    shape: `${calls ? "covered call" : "short put"} · ${r.dte} d${fund ? ` · ${r.type === "Exchange Traded Fund" ? "fund" : r.type}` : ""}`,
+    chips: (
+      <>
+        {r.fit === true ? <span className="chip chip-ok">fits</span> : null}
+        {r.fit === false ? (
+          <span className="chip chip-warn" title={calls ? "No uncovered 100-share lot held" : "More buying power than the account has"}>
+            does not fit
+          </span>
+        ) : null}
+        {r.passes === false ? (
+          <span className="chip chip-warn" title={`OI ${r.openInterest ?? "—"}, volume ${r.volume ?? "—"}${r.quiet ? " (quiet)" : ""}`}>
+            thin
+          </span>
+        ) : null}
+        {r.passes === null ? <span className="chip">unquoted</span> : null}
+        {r.leveraged ? (
+          <span className="chip" title="A daily-reset fund (the declared leveraged, inverse and volatility list): it decays and gaps in ways its delta does not price">
+            {r.leveraged}
+          </span>
+        ) : null}
+        {calls && r.window === "cycle" ? (
+          <span className="chip" title="No monthly was listed 30-45 days out">
+            cycle monthly
+          </span>
+        ) : null}
+      </>
+    ),
+    cash: r.premium,
+    side: [`${price} at the working price`, `${r.dte} d · ${dayMonth(r.expiry)}`],
+    bar: farthest > 0 ? (dist / farthest) * 100 : null,
+    barTitle: "how far the strike sits from the share price, against the farthest on this list",
+    label: `distance ${signedPct(r.distanceFraction)} to the strike`,
+    open: { date: "proposed", price },
+    legs: [{ buy: false, text: `1 ${r.expiry} ${r.strike}${right}${r.working === null ? "" : ` @ ${money(r.working)}`}`, quote: q || null }],
+    after: [`annual ${pct(r.annualFraction)}`, `IV ${pct(r.iv, 0)}`, `return ${pct(r.returnFraction, 2)}`],
+    foot: [calls ? `${earningsText(r)} · ${exDividendText(r)}` : earningsText(r), fairText(r.fair)],
+  };
+}
+
+/** The income sorts: symbol (the default; no tested edge, so never by credit or yield), timing, how
+ *  far out the strike sits, delta. */
+export const INCOME_LIST_SORTS: SortOption<IncomeListRow>[] = [
+  { id: "symbol", label: "symbol", hint: "A to Z", key: (r) => r.symbol },
+  { id: "expiry", label: "expiry", hint: "soonest first", key: (r) => r.dte },
+  { id: "distance", label: "distance", hint: "farthest first", key: (r) => -Math.abs(r.distanceFraction) },
+  { id: "delta", label: "Δ", hint: "lowest first", key: (r) => Math.abs(r.delta) },
+];
 
 export interface OwnListFilters {
   allTrades: boolean;
@@ -202,110 +204,6 @@ export function applyFilters(all: IncomeListRow[], f: OwnListFilters) {
   return { shown, hidden };
 }
 
-/**
- * The list's columns (2026-10-30, docs/console-review-plan.md batch 3): the row holds what picks a
- * trade -- the name, the contract, its delta, the premium, its yield, how far out, the announcement --
- * and the quote's working and the model's opinions sit in the row's expanded line, in every view.
- */
-export function incomeColumns(calls: boolean, open: string | null, setOpen: (s: string | null) => void): Column<IncomeListRow>[] {
-  return [
-    {
-      key: "symbol",
-      label: "Symbol",
-      sort: "symbol",
-      td: (r) => (
-        <td>
-          <button type="button" className="btn btn-quiet" aria-expanded={open === r.symbol} onClick={() => setOpen(open === r.symbol ? null : r.symbol)}>
-            {open === r.symbol ? "▾" : "▸"} {r.symbol}
-          </button>
-          {r.type && r.type !== "Stock" ? <span className="muted"> · {r.type === "Exchange Traded Fund" ? "fund" : r.type}</span> : null}
-          {r.leveraged ? (
-            <span className="chip" title="A daily-reset fund (the declared leveraged, inverse and volatility list): it decays and gaps in ways its delta does not price">
-              {r.leveraged}
-            </span>
-          ) : null}
-          {r.fit === false ? (
-            <span className="chip muted" title={calls ? "No uncovered 100-share lot held" : "More buying power than the account has"}>
-              does not fit
-            </span>
-          ) : null}
-        </td>
-      ),
-    },
-    {
-      key: "expiry",
-      label: "Expiry",
-      title: calls ? "The covered call's expiry: the monthly 30-45 days out, else the cycle monthly" : "The cycle monthly: 45-60 days out, else 30-60",
-      td: (r) => (
-        <td>
-          {shortDate(r.expiry)} <span className="muted">{r.dte}d</span>
-          {calls && r.window === "cycle" ? <span className="chip" title="No monthly was listed 30-45 days out">cycle</span> : null}
-        </td>
-      ),
-    },
-    { key: "strike", label: "Strike", sort: "strike", className: "num", td: (r) => <td className="num">{r.strike}{calls ? "C" : "P"}</td> },
-    { key: "delta", label: "Δ", sort: "delta", className: "num", title: "Black-Scholes on the option's own IV, solved from its mid", td: (r) => <td className="num">{r.delta.toFixed(2)}</td> },
-    { key: "premium", label: "Premium", sort: "premium", className: "num", title: "Whole contract: working × 100", td: (r) => <td className="num">{r.premium === null ? "—" : `$${money(r.premium)}`}</td> },
-    { key: "annual", label: "Annual", sort: "annual", className: "num", title: "Return × 365 ÷ days, simple. Yield, not edge.", td: (r) => <td className="num">{pct(r.annualFraction)}</td> },
-    { key: "distance", label: "Distance", sort: "distance", className: "num", title: "Strike against the share price", td: (r) => <td className="num">{signedPct(r.distanceFraction)}</td> },
-    { key: "earnings", label: "Earnings", sort: "earnings", title: "The next announcement, against this trade's own expiry", td: (r) => <EarningsCell r={r} /> },
-    ...(calls
-      ? [
-          {
-            key: "exdiv",
-            label: "Ex-div",
-            title:
-              "The broker's ex-dividend date against this call's expiry: in trade (a call in the money then can be assigned early for the dividend), after, past (the next is not posted) or unknown",
-            td: (r: IncomeListRow) => <ExDividendCell r={r} />,
-          },
-        ]
-      : []),
-    { key: "price", label: "Price", secondary: true, className: "num", td: (r) => <td className="num">{money(r.spot)}</td> },
-    { key: "iv", label: "IV", secondary: true, className: "num", td: (r) => <td className="num">{pct(r.iv, 0)}</td> },
-    {
-      key: "quote",
-      label: "Bid × ask",
-      secondary: true,
-      className: "num",
-      title: "The afternoon quote, per share",
-      td: (r) => <td className="num">{money(r.bid)} × {money(r.ask)}</td>,
-    },
-    {
-      key: "working",
-      label: "Working",
-      secondary: true,
-      className: "num",
-      title: "Per share: the mid less a quarter of the width, what a limit at the mid stepped down fills at",
-      td: (r) => <td className="num">{money(r.working)}</td>,
-    },
-    {
-      key: "ret",
-      label: "Return",
-      secondary: true,
-      className: "num",
-      title: calls ? "Working premium ÷ share price" : "Working premium ÷ strike (the cash it secures)",
-      td: (r) => <td className="num">{pct(r.returnFraction, 2)}</td>,
-    },
-    { key: "fair", label: "Vs fair", secondary: true, className: "num", title: FAIR_TITLE, td: (r) => <FairCell fair={r.fair} /> },
-    { key: "liquid", label: "Liquid", secondary: true, title: "The reading's own verdict against the leg bars", td: (r) => <LiquidCell r={r} /> },
-  ];
-}
-
-const SORTS: Record<string, (r: IncomeListRow) => number | string | null> = {
-  symbol: (r) => r.symbol,
-  price: (r) => r.spot,
-  strike: (r) => r.strike,
-  delta: (r) => Math.abs(r.delta),
-  iv: (r) => r.iv,
-  working: (r) => r.working,
-  premium: (r) => r.premium,
-  ret: (r) => r.returnFraction,
-  annual: (r) => r.annualFraction,
-  distance: (r) => r.distanceFraction,
-  oi: (r) => r.openInterest,
-  earnings: (r) => r.earningsDate,
-};
-
 /** `?list=calls` or `?list=puts`, else the list an old tab's address names (`/screeners/covered-calls`). */
 export function incomeListFrom(param: string | null, path: string): IncomeList {
   if (param === "calls") return "covered-calls";
@@ -315,8 +213,8 @@ export function incomeListFrom(param: string | null, path: string): IncomeList {
 
 /**
  * Both income lists on one tab (2026-10-30, docs/console-review-plan.md batch 3): the same component,
- * the same columns, one switch. The list rides `?list=`, and the two old tabs' addresses still open
- * their own list.
+ * the same cards, one switch -- now two tabs in the card's head. The list rides `?list=`, and the two
+ * old tabs' addresses still open their own list.
  */
 export function IncomeListsTab() {
   const [params, setParams] = useSearchParams();
@@ -328,34 +226,66 @@ export function IncomeListsTab() {
     setParams(p, { replace: true });
   };
   return (
-    <>
-      <div className="mode-toggle" role="group" aria-label="income list" style={{ marginBottom: 12 }}>
-        {(["short-puts", "covered-calls"] as const).map((l) => (
-          <button key={l} type="button" className={`mode-btn ${l === list ? "active" : ""}`} aria-pressed={l === list} onClick={() => choose(l)}>
-            {TITLE[l].toLowerCase()}
-          </button>
-        ))}
-      </div>
-      <OwnListTab key={list} list={list} />
-    </>
+    <OwnListTab
+      key={list}
+      list={list}
+      tabs={
+        <Tabs
+          label="income list"
+          value={list}
+          options={(["short-puts", "covered-calls"] as const).map((l) => ({ id: l, label: TITLE[l].toLowerCase() }))}
+          onChange={choose}
+        />
+      }
+    />
   );
 }
 
-export function OwnListTab({ list }: { list: IncomeList }) {
-  const [params, setParams] = useSearchParams();
+/** The ? behind the list: the study that found no edge, where the names come from, and what was left out. */
+export function incomeHelp(list: IncomeList, calls: boolean, dropped: [string, number][]): CardHelpContent {
+  return {
+    title: "Where these come from",
+    body: (
+      <>
+        <HelpWarn title={HEAD[list]}>
+          <p>{NOTE[list]}</p>
+        </HelpWarn>
+        <HelpSection title="Where they come from">
+          <p>
+            Our options-tradable universe (weekly options and $100M a day in the stock) and the funds that pass the same test.{" "}
+            {calls
+              ? "The call nearest 16 delta above the price, on the monthly 30-45 days out (else the cycle monthly), for shares you hold."
+              : "The put nearest 16 delta below the price, on the cycle monthly (45-60 days out, else 30-60)."}{" "}
+            Priced from the afternoon reading at the working price: re-quote before sending. The return is yield, not edge, and the cards are
+            in symbol order on purpose.
+          </p>
+        </HelpSection>
+        <HelpSection title="Counting what is hidden">
+          <p>Each hidden name is counted once, under the first filter it fails, in the order the filters sit: liquid trade, earnings, fit, premium floor.</p>
+        </HelpSection>
+        <HelpSection title="Fair value">
+          <p>{FAIR_TITLE} A dagger marks a flag from the builder.</p>
+        </HelpSection>
+        {dropped.length > 0 ? (
+          <HelpSection title="Left out">
+            <p>No row for: {dropped.map(([k, v]) => `${v} (${k})`).join(", ")}.</p>
+          </HelpSection>
+        ) : null}
+      </>
+    ),
+  };
+}
+
+export function OwnListTab({ list, tabs }: { list: IncomeList; tabs?: ReactNode }) {
+  const { params, set, clear } = useParamState();
   const dayParam = params.get("day");
   const { data, isLoading, isError } = useIncomeList(list, dayParam);
-  const sort = useSort();
+  const [sort, setSort] = useSortChoice(`income-${list}`, "symbol");
+  const [view, setView] = useViewChoice(`income-${list}`);
   const allTrades = params.get("trade") === "all";
   const allEarnings = params.get("earnings") === "all";
   const allFit = params.get("fit") === "all";
   const q = (params.get("q") ?? "").trim().toUpperCase();
-  const set = (key: string, value: string | null) => {
-    const next = new URLSearchParams(params);
-    if (value === null) next.delete(key);
-    else next.set(key, value);
-    setParams(next, { replace: true });
-  };
 
   const all = data?.rows ?? [];
   const minPremium = useMinPremium(list, params.get("premium"));
@@ -364,175 +294,138 @@ export function OwnListTab({ list }: { list: IncomeList }) {
   // Covered calls: manage judges a call unfit only for want of an uncovered 100-share lot, so when
   // every row is unfit the account holds none, and the empty list should say that plainly.
   const noLotHeld = list === "covered-calls" && all.length > 0 && all.every((r) => r.fit === false);
-  const sorted = sortRows(shown, sort, SORTS);
-  const { page, setOffset, setLimit } = usePage(
-    [list, data?.day, allTrades, allEarnings, allFit, minPremium, q, sort.key, sort.dir],
-    100,
-  );
+  const sorted = sortRows(shown, INCOME_LIST_SORTS.find((s) => s.id === sort.id), sort.reversed);
+  const { page, setOffset, setLimit } = usePage([list, data?.day, allTrades, allEarnings, allFit, minPremium, q, sort.id, sort.reversed], 48);
   const rows = sorted.slice(page.offset, page.offset + page.limit);
   const calls = list === "covered-calls";
-  const [open, setOpen] = useState<string | null>(null);
-  const allCols = incomeColumns(calls, open, setOpen);
-  const cols = useColumns(allCols);
-  const secondary = secondaryOf(allCols);
+  const farthest = Math.max(0, ...shown.map((r) => Math.abs(r.distanceFraction)));
   const latest = data?.days[0] ?? null;
   const dropped = Object.entries(data?.dropped ?? {});
 
+  const sortChanged = sort.id !== "symbol" || sort.reversed;
+  const changed =
+    (sortChanged ? 1 : 0) + (allTrades ? 1 : 0) + (allEarnings ? 1 : 0) + (data?.fitBasis && allFit ? 1 : 0) + (minPremium !== defaultFloor(list) ? 1 : 0) + (q !== "" ? 1 : 0);
+  const reset = () => {
+    void setSort({ id: "symbol", reversed: false });
+    void writePref(`minPremium.${list}`, undefined);
+    clear(["trade", "earnings", "fit", "premium", "q"]);
+  };
+  const sortLabel = INCOME_LIST_SORTS.find((s) => s.id === sort.id)?.label ?? sort.id;
+  const hiddenTotal = thin + inTrade + unfit + small + unmatched;
+
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>{TITLE[list]}</h2>
-        <span className="chip">ours</span>
-        {data?.day && (
-          <span className="card-asof">
-            session {data.day}
-            {data.chainTakenAt ? ` · quoted ${new Date(data.chainTakenAt).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })} ET` : ""}
-          </span>
-        )}
-      </div>
-
-      <p className="muted" style={{ margin: "0 0 10px" }}>
-        <strong>{HEAD[list]}</strong> {NOTE[list]}
-      </p>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
-        {data && data.days.length > 0 && (
-          <select
-            className="chip review-session-select"
-            aria-label="Session"
-            value={data.day ?? ""}
-            onChange={(e) => set("day", e.target.value === latest ? null : e.target.value)}
-          >
-            {data.days.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        )}
-        <Flag
-          on={!allTrades}
-          onChange={(on) => set("trade", on ? null : "all")}
-          title="Hide an option that fails the leg bars in the afternoon reading (10% of mid or a nickel, 100 open). An unquoted one stays shown, marked."
+    <ScreenerLayout>
+      <ScreenerSection concept="income" tag="candidates" question={`Which ${calls ? "covered calls" : "short puts"} fit?`}>
+        <ScreenerCard
+          title={TITLE[list].toLowerCase()}
+          help={incomeHelp(list, calls, dropped)}
+          flag={FLAG[list]}
+          extra={data ? <SessionSelect days={data.days} day={data.day} latest={latest} label="Session" onChange={(d) => set("day", d)} /> : null}
+          tabs={tabs}
+          view={{ value: view, onChange: setView }}
+          filter={{
+            changed,
+            parts: [
+              `by ${sortLabel}${sort.reversed ? ", reversed" : ""}`,
+              ...(allTrades ? [] : ["liquid"]),
+              ...(allEarnings ? [] : ["no earnings"]),
+              ...(data?.fitBasis && !allFit ? ["fits"] : []),
+              minPremium === 0 ? "any premium" : `≥ $${minPremium.toLocaleString()}`,
+            ],
+            note: data?.day
+              ? `${shown.length} of ${all.length} names${
+                  hiddenTotal > 0
+                    ? ` · ${[
+                        thin > 0 ? `${thin} thin` : "",
+                        inTrade > 0 ? `${inTrade} with earnings in the trade` : "",
+                        unfit > 0 ? `${unfit} that do not fit the account` : "",
+                        small > 0 ? `${small} under $${minPremium.toLocaleString()}` : "",
+                        unmatched > 0 ? `${unmatched} not matching “${q}”` : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")} hidden`
+                    : ""
+                }`
+              : null,
+            onReset: reset,
+            panel: (
+              <>
+                <SortSection sorts={INCOME_LIST_SORTS} choice={sort} fallback="symbol" onChange={setSort} />
+                <FilterGroup title="filters">
+                  <FilterSwitch
+                    label="Liquid trade"
+                    description="Hide an option that fails the leg bars in the afternoon reading (10% of mid or a nickel, 100 open). An unquoted one stays shown, marked."
+                    on={!allTrades}
+                    onChange={(on) => set("trade", on ? null : "all")}
+                  />
+                  <FilterSwitch
+                    label="No earnings in the trade"
+                    description="Hide names with an announcement between today and this trade's expiry. An unknown date stays shown, marked unknown."
+                    on={!allEarnings}
+                    onChange={(on) => set("earnings", on ? null : "all")}
+                  />
+                  {data?.fitBasis ? (
+                    <FilterSwitch
+                      label="Fits the account"
+                      description={
+                        calls
+                          ? "Hide a call the account holds no uncovered 100-share lot for (shares already written against are spoken for)."
+                          : `Hide a put whose buying power is more than the ${money(data.fitBasis.availableBp)} the account has (manage's ${data.fitBasis.session} evaluation, ${data.fitBasis.basis === "cash" ? "cash-secured" : "Reg T"}).`
+                      }
+                      on={!allFit}
+                      onChange={(on) => set("fit", on ? null : "all")}
+                    />
+                  ) : null}
+                </FilterGroup>
+                <FilterGroup title="premium floor" note="one contract's credit">
+                  <PremiumSlider
+                    list={list}
+                    value={minPremium}
+                    onChange={(v) => set("premium", v === 0 ? null : String(v))}
+                    hidden={small}
+                    title="Hide a trade whose working premium, for the whole contract, is under this. Steps rather than a straight scale, so the small premiums where most rows sit get room. An unquoted option stays shown. Remembered for next time."
+                  />
+                </FilterGroup>
+                <FilterGroup title="symbol">
+                  <SymbolSearch value={params.get("q") ?? ""} onChange={(v) => set("q", v === "" ? null : v)} />
+                </FilterGroup>
+              </>
+            ),
+          }}
         >
-          Liquid trade
-        </Flag>
-        <Flag
-          on={!allEarnings}
-          onChange={(on) => set("earnings", on ? null : "all")}
-          title="Hide names with an announcement between today and this trade's expiry. An unknown date stays shown, marked unknown."
-        >
-          No earnings in the trade
-        </Flag>
-        {data?.fitBasis && (
-          <Flag
-            on={!allFit}
-            onChange={(on) => set("fit", on ? null : "all")}
-            title={
-              calls
-                ? "Hide a call the account holds no uncovered 100-share lot for (shares already written against are spoken for)"
-                : `Hide a put whose buying power is more than the ${money(data.fitBasis.availableBp)} the account has (manage's ${data.fitBasis.session} evaluation, ${data.fitBasis.basis === "cash" ? "cash-secured" : "Reg T"})`
-            }
-          >
-            Fits the account
-          </Flag>
-        )}
-        <PremiumSlider
-          list={list}
-          value={minPremium}
-          onChange={(v) => set("premium", v === 0 ? null : String(v))}
-          title="Hide a trade whose working premium, for the whole contract, is under this. Steps rather than a straight scale, so the small premiums where most rows sit get room. An unquoted option stays shown. Remembered for next time."
-        />
-        <input
-          className="chip review-session-select"
-          value={params.get("q") ?? ""}
-          placeholder="symbol"
-          aria-label="Filter by symbol"
-          onChange={(e) => set("q", e.target.value === "" ? null : e.target.value)}
-        />
-        <span className="chip" style={{ whiteSpace: "normal" }}>
-          {shown.length} of {all.length} names
-          {thin > 0 ? ` · ${thin} thin hidden` : ""}
-          {inTrade > 0 ? ` · ${inTrade} ${thin > 0 ? "more " : ""}with earnings in the trade hidden` : ""}
-          {unfit > 0 ? ` · ${unfit} ${thin + inTrade > 0 ? "more " : ""}that do not fit the account hidden` : ""}
-          {small > 0 ? ` · ${small} ${thin + inTrade + unfit > 0 ? "more " : ""}under $${minPremium.toLocaleString()} hidden` : ""}
-          {unmatched > 0 ? ` · ${unmatched} not matching “${q}”` : ""}
-        </span>
-      </div>
-      {thin + inTrade + unfit + small > 1 && [thin, inTrade, unfit, small].filter((n) => n > 0).length > 1 && (
-        <p className="muted" style={{ margin: "0 0 8px" }}>
-          Each hidden name is counted once, under the first filter it fails, in the order the filters sit.
-        </p>
-      )}
-      {noLotHeld && !allFit && (
-        <p className="muted" style={{ margin: "0 0 8px" }}>
-          The account holds no uncovered 100-share lot, so no call fits — turn off <em>Fits the account</em> to see the list.
-        </p>
-      )}
-
-      {data?.chainComplete === false && (
-        <p className="muted" style={{ margin: "0 0 8px" }}>
-          The afternoon reading did not finish{data.chainProblem ? ` (${data.chainProblem})` : ""}, so some names are missing.
-        </p>
-      )}
-      {isError && <p className="muted">Could not read the list.</p>}
-      {isLoading && <p className="muted">Reading the list…</p>}
-      {data && data.day === null && (
-        <p className="muted">
-          No list built yet: the afternoon chains are read at 14:45 ET on a trading day (market_report.income) and the list is
-          built from them at 15:10.
-        </p>
-      )}
-
-      {rows.length > 0 && (
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                {cols.map((c) =>
-                  c.sort !== undefined ? (
-                    <SortTh key={c.key} label={c.label} k={c.sort} sort={sort} className={c.className} title={c.title} />
-                  ) : (
-                    <th key={c.key} className={c.className} title={c.title}>
-                      {c.label}
-                    </th>
-                  ),
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <Fragment key={r.symbol}>
-                  <tr>
-                    <Cells cols={cols} row={r} />
-                  </tr>
-                  {open === r.symbol && (
-                    <tr>
-                      <td colSpan={cols.length}>
-                        <SecondaryCells cols={secondary} row={r} />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {shown.length > PAGE_SIZES[0] && (
-        <Pager offset={page.offset} limit={page.limit} total={shown.length} pageSizes={PAGE_SIZES} onOffset={setOffset} onLimit={setLimit} />
-      )}
-      {data && data.day !== null && all.length > 0 && shown.length === 0 && !(noLotHeld && !allFit) && (
-        <p className="muted">Nothing matches these filters.</p>
-      )}
-
-      <p className="muted" style={{ marginTop: 8 }}>
-        The names are our options-tradable universe (weekly options and $100M a day in the stock) and the funds that pass
-        the same test. {calls ? "The call nearest 16 delta above the price, on the monthly 30-45 days out (else the cycle monthly), for shares you hold." : "The put nearest 16 delta below the price, on the cycle monthly (45-60 days out, else 30-60)."}{" "}
-        Priced from the afternoon reading at the working price. The return is yield, not edge, and the rows are in symbol
-        order on purpose.
-        {dropped.length > 0 ? ` No row for: ${dropped.map(([k, v]) => `${v} (${k})`).join(", ")}.` : ""}
-      </p>
-    </section>
+          {data?.day && (
+            <p className="muted pf-caption" style={{ marginTop: 0 }}>
+              session {data.day}
+              {data.chainTakenAt ? ` · quoted ${new Date(data.chainTakenAt).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })} ET` : ""}
+            </p>
+          )}
+          {noLotHeld && !allFit && (
+            <p className="muted" style={{ margin: "0 0 8px" }}>
+              The account holds no uncovered 100-share lot, so no call fits — turn off <em>Fits the account</em> to see the list.
+            </p>
+          )}
+          {data?.chainComplete === false && (
+            <p className="muted" style={{ margin: "0 0 8px" }}>
+              The afternoon reading did not finish{data.chainProblem ? ` (${data.chainProblem})` : ""}, so some names are missing.
+            </p>
+          )}
+          {isError && <p className="muted">Could not read the list.</p>}
+          {isLoading && <p className="muted">Reading the list…</p>}
+          {data && data.day === null && (
+            <p className="muted">
+              No list built yet: the afternoon chains are read at 14:45 ET on a trading day (market_report.income) and the list is
+              built from them at 15:10.
+            </p>
+          )}
+          <TradeCards models={rows.map((r) => incomeModel(r, calls, farthest))} />
+          {shown.length > PAGE_SIZES[0] && (
+            <Pager offset={page.offset} limit={page.limit} total={shown.length} pageSizes={PAGE_SIZES} onOffset={setOffset} onLimit={setLimit} />
+          )}
+          {data && data.day !== null && all.length > 0 && shown.length === 0 && !(noLotHeld && !allFit) && (
+            <p className="muted">Nothing matches these filters.</p>
+          )}
+        </ScreenerCard>
+      </ScreenerSection>
+    </ScreenerLayout>
   );
 }

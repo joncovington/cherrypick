@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { IncomeListPayload, IncomeListRow } from "@console/shared";
+import { sortRows } from "../src/components/FilterSort";
+import { writePref } from "../src/lib/prefs";
 
 /**
  * Our own income lists on the page: what the defaults hide, the order, and the standing note. The
@@ -50,8 +52,7 @@ vi.mock("../src/lib/api", async (importOriginal) => ({
   useIncomeList: () => ({ data: payload, isLoading: false, isError: false }),
 }));
 
-const { OwnListTab, applyFilters, incomeColumns } = await import("../src/pages/Screeners/OwnListTab");
-const { SecondaryCells, secondaryOf } = await import("../src/components/columns");
+const { OwnListTab, IncomeListsTab, INCOME_LIST_SORTS, applyFilters, incomeHelp } = await import("../src/pages/Screeners/OwnListTab");
 
 function render(url = "/screeners/short-puts", list: "short-puts" | "covered-calls" = "short-puts"): string {
   return renderToString(
@@ -59,6 +60,14 @@ function render(url = "/screeners/short-puts", list: "short-puts" | "covered-cal
       <OwnListTab list={list} />
     </MemoryRouter>,
   ).replace(/<!-- -->/g, "");
+}
+
+/** The ? box's text for a list (it is drawn only while open, so the tests render its body). */
+function helpText(list: "short-puts" | "covered-calls"): string {
+  return renderToString(<>{incomeHelp(list, list === "covered-calls", []).body}</>)
+    .replace(/<!-- -->/g, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ");
 }
 
 function base(rows: IncomeListRow[]): IncomeListPayload {
@@ -78,6 +87,9 @@ function base(rows: IncomeListRow[]): IncomeListPayload {
   };
 }
 
+/** The names on the page, in order: each card's aria-label starts with its symbol. */
+const symbols = (html: string) => [...html.matchAll(/aria-label="([A-Z0-9]+): (?:short put|covered call)/g)].map((m) => m[1]);
+
 describe("our short-put list", () => {
   it("hides what does not fit the account once manage has judged it, with an escape", () => {
     payload = {
@@ -85,14 +97,12 @@ describe("our short-put list", () => {
       fitBasis: { session: "2026-10-20", availableBp: 8051.34, basis: "cash" },
     };
     const html = render();
-    expect(html).toContain("Fits the account");
-    expect(html).toContain("FITS");
-    expect(html).toContain("UNJD"); // unjudged stays shown
-    expect(html).not.toContain("BIGG");
+    expect(html).toContain(">fits<"); // the summary says the filter is on
+    expect(symbols(html)).toEqual(["FITS", "UNJD"]); // unjudged stays shown
     expect(html).toContain("1 that do not fit the account hidden");
     const everything = render("/screeners/short-puts?fit=all");
-    expect(everything).toContain("BIGG");
-    expect(everything).toContain("does not fit");
+    expect(symbols(everything)).toContain("BIGG");
+    expect(everything).toContain(">does not fit<");
   });
 
   it("hides a premium under the slider's floor, keeps an unquoted one, and is off by default", () => {
@@ -102,16 +112,14 @@ describe("our short-put list", () => {
       row({ symbol: "NOQT", premium: null, passes: null }),
     ]);
     const off = render();
-    for (const s of ["BIGP", "SMLP", "NOQT"]) expect(off).toContain(s);
-    expect(off).toContain("Premium ≥ any");
+    expect(symbols(off)).toEqual(["BIGP", "NOQT", "SMLP"]);
+    expect(off).toContain(">any premium<");
     const html = render("/screeners/short-puts?premium=25");
-    expect(html).toContain("BIGP");
-    expect(html).toContain("NOQT"); // no premium to compare: shown, as under the other filters
-    expect(html).not.toContain("SMLP");
+    expect(symbols(html)).toEqual(["BIGP", "NOQT"]); // no premium to compare: shown, as under the other filters
     expect(html).toContain("1 under $25 hidden");
     // A value between stops reads as the stop below it, so the slider and the URL always agree.
-    expect(render("/screeners/short-puts?premium=60")).toContain("Premium ≥ $50");
-    expect(render("/screeners/short-puts?premium=junk")).toContain("Premium ≥ any");
+    expect(render("/screeners/short-puts?premium=60")).toContain(">≥ $50<");
+    expect(render("/screeners/short-puts?premium=junk")).toContain(">any premium<");
   });
 
   it("counts every hidden row once, so the parts add up to all less shown", () => {
@@ -142,8 +150,10 @@ describe("our short-put list", () => {
     expect(hidden).toEqual({ thin: 8, inTrade: 4, unfit: 2, small: 1, unmatched: 0 });
     payload = { ...base(rows), fitBasis: { session: "2026-10-20", availableBp: 1000, basis: "cash" } };
     const html = render("/screeners/short-puts?premium=25");
-    expect(html).toContain("1 of 16 names · 8 thin hidden · 4 more with earnings in the trade hidden · 2 more that do not fit the account hidden · 1 more under $25 hidden");
-    expect(html).toContain("counted once");
+    expect(html).toContain("1 of 16 names · 8 thin · 4 with earnings in the trade · 2 that do not fit the account · 1 under $25 hidden");
+    // The "counted once" line is explanation: behind the ?.
+    expect(html).not.toContain("counted once");
+    expect(helpText("short-puts")).toContain("counted once");
   });
 
   it("says plainly when no call fits because the account holds no uncovered lot", () => {
@@ -157,7 +167,7 @@ describe("our short-put list", () => {
     expect(html).not.toContain("Nothing matches these filters");
     const all = render("/screeners/covered-calls?fit=all", "covered-calls");
     expect(all).not.toContain("so no call fits");
-    expect(all).toContain("AAA");
+    expect(symbols(all)).toContain("AAA");
   });
 
   it("reads a call's ex-dividend date with its state, never a bare dash", () => {
@@ -173,17 +183,21 @@ describe("our short-put list", () => {
       list: "covered-calls",
     };
     const html = render("/screeners/covered-calls", "covered-calls");
-    expect(html).toContain("in trade · Nov 10");
-    expect(html).toContain("after · Dec 30");
-    expect(html).toContain("past · Aug 17");
-    expect(html.match(/>unknown</g)?.length).toBe(2);
-    expect(html).toMatch(/>in trade</);
-    expect(html).not.toMatch(/<td><span class="muted">—<\/span><\/td>/);
+    expect(html).toContain("ex-dividend in the trade · Nov 10");
+    expect(html).toContain("ex-dividend after expiry · Dec 30");
+    expect(html).toContain("ex-dividend past · Aug 17");
+    expect(html.match(/ex-dividend unknown/g)?.length).toBe(2);
+    expect(html.match(/ex-dividend in the trade/g)?.length).toBe(2); // INTR and OLDT
+    // A put says nothing of dividends.
+    payload = base([row({ symbol: "PUTT" })]);
+    expect(render()).not.toContain("ex-dividend");
   });
 
   it("offers no fit filter when no evaluation judged the session", () => {
     payload = base([row({ symbol: "AAA" })]);
-    expect(render()).not.toContain("Fits the account");
+    const html = render();
+    expect(html).not.toContain(">fits<");
+    expect(html).not.toContain(">does not fit<");
   });
 
   it("hides a thin option and a trade with earnings inside it, each with an escape", () => {
@@ -194,37 +208,48 @@ describe("our short-put list", () => {
       row({ symbol: "UNKN", earnings: "unknown", earningsDate: null }),
     ]);
     const html = render();
-    expect(html).toContain("KEEP");
-    expect(html).toContain("UNKN"); // an unknown date stays shown, marked
-    expect(html).not.toContain("THIN");
-    expect(html).not.toContain("ERNS");
+    expect(symbols(html)).toEqual(["KEEP", "UNKN"]); // an unknown date stays shown, marked
+    expect(html).toContain("earnings date unknown");
     expect(html).toContain("2 of 4 names");
     const everything = render("/screeners/short-puts?trade=all&earnings=all");
-    for (const s of ["KEEP", "THIN", "ERNS", "UNKN"]) expect(everything).toContain(s);
+    expect(symbols(everything)).toEqual(["ERNS", "KEEP", "THIN", "UNKN"]);
+    expect(everything).toContain(">thin<");
+    expect(everything).toContain("earnings in the trade · Nov 5");
   });
 
   it("badges a declared daily-reset fund and keeps it listed", () => {
     payload = base([row({ symbol: "TQQQ", type: "Exchange Traded Fund", leveraged: "leveraged" }), row({ symbol: "AAA" })]);
     const html = render();
-    expect(html).toContain("TQQQ");
+    expect(symbols(html)).toEqual(["AAA", "TQQQ"]);
     expect(html).toMatch(/class="chip"[^>]*>leveraged</);
     expect(html.match(/>leveraged</g)?.length).toBe(1); // AAA carries no badge
   });
 
   it("keeps the builder's symbol order, never a yield order", () => {
     payload = base([row({ symbol: "AAA", annualFraction: 0.01 }), row({ symbol: "ZZZ", annualFraction: 0.5 })]);
-    const html = render();
-    expect(html.indexOf("AAA")).toBeLessThan(html.indexOf("ZZZ"));
+    expect(symbols(render())).toEqual(["AAA", "ZZZ"]);
+    // The sorts on offer are name, timing, distance and delta: none on credit or yield.
+    expect(INCOME_LIST_SORTS.map((s) => s.id)).toEqual(["symbol", "expiry", "distance", "delta"]);
+    const rows = [row({ symbol: "NEAR", distanceFraction: -0.05 }), row({ symbol: "FAR", distanceFraction: -0.2 })];
+    expect(sortRows(rows, INCOME_LIST_SORTS.find((s) => s.id === "distance"), false).map((r) => r.symbol)).toEqual(["FAR", "NEAR"]);
   });
 
-  it("always says the rule has no tested edge", () => {
+  it("flags the rule as untested in amber, rows or none, with its text behind the ?", () => {
     payload = base([row({})]);
-    expect(render()).toContain("No tested edge.");
+    const html = render();
+    expect(html).toContain('<button type="button" class="help-flag" title="Open the ? for the full text">no tested edge</button>');
+    expect(html).toContain('aria-label="About short puts"');
+    expect(html).not.toContain("In the history study");
     payload = base([]);
-    expect(render()).toContain("No tested edge.");
+    expect(render()).toContain(">no tested edge<");
+    expect(helpText("short-puts")).toContain("In the history study (52 names");
+    expect(helpText("short-puts")).toContain("No tested edge");
+    expect(helpText("covered-calls")).toContain("Not refuted, not an edge");
+    payload = { ...base([row({})]), list: "covered-calls" };
+    expect(render("/screeners/covered-calls", "covered-calls")).toContain(">not refuted, not an edge<");
   });
 
-  it("shows the fair-value gap in the row's expanded line, states a non-valued name, and never orders by it", () => {
+  it("shows the fair-value gap in the card's foot, states a non-valued name, and never orders by it", () => {
     // The builder's order (by symbol): the cheap name after the rich one, whatever the gap says.
     const rows = [
       row({ symbol: "AAA", fair: { fairValue: 80, fairLow: 60, fairHigh: 95, fairGap: 0.25, fairState: "valued", fairFlags: ["terminal_heavy"] } }),
@@ -234,15 +259,12 @@ describe("our short-put list", () => {
     ];
     payload = base(rows);
     const html = render();
-    // Out of the row since 2026-10-30 (docs/console-review-plan.md batch 3): a model opinion, not a pick.
-    expect(html).not.toContain("Vs fair");
-    expect(html.indexOf("AAA<")).toBeLessThan(html.indexOf("ZZZ<"));
-    const line = (r: IncomeListRow) => renderToString(<SecondaryCells cols={secondaryOf(incomeColumns(false, null, () => {}))} row={r} />);
-    expect(line(rows[0]!)).toContain("Vs fair");
-    expect(line(rows[0]!)).toContain("+25.0%");
-    expect(line(rows[3]!)).toContain("−33.3%");
-    expect(line(rows[1]!)).toContain(">n/a<");
-    expect(line(rows[0]!)).toContain("tested 2018–26: no edge");
+    expect(symbols(html)).toEqual(["AAA", "FUND", "OLD", "ZZZ"]);
+    expect(html).toContain("vs fair +25.0% †");
+    expect(html).toContain("vs fair −33.3%");
+    expect(html).toContain("a fund, a bank or a REIT: no fair value");
+    expect(html).toContain("no fair value");
+    expect(helpText("short-puts")).toContain("tested 2018–26: no edge");
   });
 
   it("says when nothing has been built, and when the reading was cut short", () => {
@@ -250,5 +272,52 @@ describe("our short-put list", () => {
     expect(render()).toContain("No list built yet");
     payload = { ...base([row({})]), chainComplete: false, chainProblem: "chain listings stopped" };
     expect(render()).toContain("did not finish (chain listings stopped)");
+  });
+});
+
+describe("the put or call card", () => {
+  it("is a trade card by default: the credit for the contract, the order that opens it, the quote and the foot", () => {
+    payload = base([row({ symbol: "AAA" })]);
+    const html = render();
+    expect(html).toContain('class="pos-card tc-card"');
+    expect(html).toContain("tc-grid");
+    expect(html).not.toContain("tr-list");
+    expect(html).not.toContain("<table");
+    expect(html).toContain("+$122.50"); // whole contract, a credit +
+    expect(html).toContain("1.23 cr at the working price"); // the one per-share figure says so
+    expect(html).toContain("1 2026-12-18 88P @ 1.23");
+    expect(html).toContain("is-sell");
+    expect(html).toContain("1.20 / 1.30 · Δ 0.16 · OI 900");
+    expect(html).toContain("distance −12.0% to the strike");
+    expect(html).toContain("annual 8.6%");
+    expect(html).toContain("earnings after expiry · Jan 28");
+  });
+
+  it("puts the two lists in the card head as tabs, and a call's card says covered call", () => {
+    payload = base([row({ symbol: "AAA" })]);
+    const html = renderToString(
+      <MemoryRouter initialEntries={["/screeners/income?list=calls"]}>
+        <IncomeListsTab />
+      </MemoryRouter>,
+    ).replace(/<!-- -->/g, "");
+    expect(html).toContain('aria-label="income list"');
+    expect(html).toContain(">short puts<");
+    expect(html).toContain(">covered calls<");
+    expect(html).toMatch(/class="mode-btn active"[^>]*>covered calls</);
+    expect(html).toContain("covered call · 59 d");
+    expect(html).toContain("1 2026-12-18 88C @ 1.23");
+  });
+
+  it("draws rows once rows are chosen", () => {
+    payload = base([row({ symbol: "AAA" }), row({ symbol: "BBB" })]);
+    void writePref("view.income-short-puts", "rows");
+    try {
+      const html = render();
+      expect(html).toContain("tr-list");
+      expect(html).not.toContain("tc-grid");
+      expect(html.match(/class="tr-row"/g)).toHaveLength(2);
+    } finally {
+      void writePref("view.income-short-puts", undefined);
+    }
   });
 });

@@ -350,7 +350,11 @@ export function headline(r: ValuationRow): string {
 
 // -------------------------------------------------------------------------------------------- whole
 
-export function ValuationDetail({ r, rule }: { r: ValuationRow; rule?: ValuationPayload["rule"] }) {
+/** The detail's parts, for the lightbox's tabs: with none given, every part is drawn, as before. */
+export type DetailSection = "overview" | "forecast" | "value" | "inputs";
+
+export function ValuationDetail({ r, rule, section }: { r: ValuationRow; rule?: ValuationPayload["rule"]; section?: DetailSection }) {
+  const show = (s: DetailSection) => section === undefined || section === s;
   if (r.state !== "valued") {
     return (
       <p style={{ margin: 0 }}>
@@ -364,6 +368,8 @@ export function ValuationDetail({ r, rule }: { r: ValuationRow; rule?: Valuation
   const beyond = r.reach === "beyond history";
   return (
     <div style={{ display: "grid", gap: 10 }}>
+      {show("overview") && (
+        <>
       <div style={{ ...CARD, borderLeft: `4px solid ${beyond ? "var(--warn)" : "var(--border)"}` }}>
         {beyond ? <strong>Beyond the company's record. </strong> : null}
         {headline(r)}
@@ -433,14 +439,19 @@ export function ValuationDetail({ r, rule }: { r: ValuationRow; rule?: Valuation
           </div>
         </Card>
       )}
+        </>
+      )}
 
+      {show("forecast") && (
       <Card title="Free cash flow forecast">
         <ForecastBars r={r} />
         <div className="muted" style={{ fontSize: 12 }}>
           Cash the business is expected to generate for all investors each year (free cash flow to the firm). Hover a bar for its revenue and margin.
         </div>
       </Card>
+      )}
 
+      {show("value") && (
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 10 }}>
         <Card title="From business value to value per share">
           {b === null ? (
@@ -478,8 +489,9 @@ export function ValuationDetail({ r, rule }: { r: ValuationRow; rule?: Valuation
           </table>
         </Card>
       </div>
+      )}
 
-      {r.flags.length > 0 && (
+      {show("overview") && r.flags.length > 0 && (
         <Card title="Notes">
           <ul style={{ margin: 0, paddingLeft: 18 }}>
             {r.flags.map((f) => (
@@ -489,7 +501,8 @@ export function ValuationDetail({ r, rule }: { r: ValuationRow; rule?: Valuation
         </Card>
       )}
 
-      {r.model !== null && <Advanced r={r} m={r.model} />}
+      {show("inputs") && r.model !== null && <Advanced r={r} m={r.model} />}
+      {section === "inputs" && r.model === null && <p className="muted">The model's working is not in this file (built before 2026-10-29).</p>}
     </div>
   );
 }

@@ -1,10 +1,13 @@
-import { Fragment, useState, type ReactNode } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useMemo } from "react";
 import type { CreditSpreadPrice, CreditSpreadRow } from "@console/shared";
-import { SortTh, sortRows, useSort } from "../../components/DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+import { FilterGroup, FilterSwitch, SortSection, sortRows, useSortChoice, type SortOption } from "../../components/FilterSort";
 import { Pager, usePage } from "../../components/ScopeBar";
+import { useViewChoice } from "../../components/ViewSwitch";
 import { useCreditSpreadList } from "../../lib/api";
-import { EarningsCell, FAIR_TITLE, FairCell } from "./OwnListTab";
+import { TradeCards, dayMonth, type TradeCardModel } from "../Live/TradeCard";
+import { FAIR_TITLE, earningsText, fairText } from "./OwnListTab";
+import { BoxOpenButton, PanelChoice, ScreenerCard, ScreenerLayout, ScreenerSection, SessionSelect, SymbolSearch, useParamState, useScreenerBoxes, type ScreenerBox } from "./ScreenerParts";
 
 /**
  * Our own credit-spread list (2026-10-24): the chart setups' fresh entries as spreads on the 30-45 day
@@ -17,10 +20,15 @@ import { EarningsCell, FAIR_TITLE, FairCell } from "./OwnListTab";
  * or width that passed after costs. The tab reads the rows by a SELECTION (the user's choice the same
  * day): the 35-40% credit rule (every row, the default) or one of the study's least-bad mean-reversion
  * put cells (0.20 or 0.40 delta, 5 strikes), which keep only their rows and show their own short and
- * spread (`rowsFor`). Each row still opens its width table.
+ * spread (`rowsFor`).
+ *
+ * Redesign (2026-11-06): each setup is a trade card (rows on request) -- the chosen width, the credit,
+ * the max loss as the bar, Cr/ML -- and its other widths and the setup's context open in a lightbox
+ * from the card. The rule, side, earnings, liquid and width filters, the sort and the symbol search
+ * sit behind filter & sort; the item-17 verdict is the amber flag, its text behind the ?.
  */
 
-const PAGE_SIZES = [50, 100, 200, 500] as const;
+const PAGE_SIZES = [24, 48, 96, 192] as const;
 
 const SETUP_LABEL: Record<string, string> = {
   trend: "trend",
@@ -56,39 +64,18 @@ function contract(v: number | null): string {
   return v === null ? "—" : `$${(v * 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
-function Flag({ on, onChange, children, title }: { on: boolean; onChange: (on: boolean) => void; children: ReactNode; title: string }) {
-  return (
-    <div className="mode-toggle" style={{ marginLeft: 0 }}>
-      <button type="button" title={title} className={on ? "mode-btn active" : "mode-btn"} onClick={() => onChange(!on)}>
-        {children}
-      </button>
-    </div>
-  );
+/** The call spread's ex-dividend date against expiry, in words; a put spread has none. */
+function exDividendText(r: CreditSpreadRow): string | null {
+  if (r.spread === "put") return null;
+  const when = r.exDividendDate ? shortDate(r.exDividendDate) : "";
+  if (r.exDividend === "in-trade") return when ? `in trade · ${when}` : "in trade";
+  if (r.exDividend === "after") return `after · ${when}`;
+  if (r.exDividend === "past") return `past · ${when}`;
+  return "unknown";
 }
 
-function ExDividendCell({ r }: { r: CreditSpreadRow }) {
-  if (r.spread === "put") return <td className="muted">—</td>;
-  const when = r.exDividendDate ? shortDate(r.exDividendDate) : "";
-  if (r.exDividend === "in-trade") {
-    return (
-      <td title="An ex-dividend date before expiry: a short call in the money then can be assigned early for the dividend">
-        {when ? `in trade · ${when}` : "in trade"}
-      </td>
-    );
-  }
-  if (r.exDividend === "after") return <td className="muted">{`after · ${when}`}</td>;
-  if (r.exDividend === "past") {
-    return (
-      <td className="muted" title="The broker's date is the last one; the next is not posted, so the spread is never called clear">
-        {`past · ${when}`}
-      </td>
-    );
-  }
-  return (
-    <td className="muted" title="No ex-dividend date is known, so the spread is never called clear">
-      unknown
-    </td>
-  );
+function setupsText(r: CreditSpreadRow): string {
+  return r.signals.map((s) => `${SETUP_LABEL[s.setup] ?? s.setup} · ${s.ago === 0 ? "last close" : `${s.ago}d ago`}`).join(", ");
 }
 
 function LiquidCell({ p }: { p: CreditSpreadPrice | null }) {
@@ -100,103 +87,96 @@ function LiquidCell({ p }: { p: CreditSpreadPrice | null }) {
   );
 }
 
-function SetupsCell({ r }: { r: CreditSpreadRow }) {
-  const title = r.signals.map((s) => `${SETUP_LABEL[s.setup] ?? s.setup}: entered on the ${s.date} close`).join("\n");
+/** The setup's context: the setups behind the row and the close each entered on, the price, the fair
+ *  value gap and the ex-dividend date. */
+export function SetupBody({ r }: { r: CreditSpreadRow }) {
+  const ex = exDividendText(r);
   return (
-    <td title={title}>
-      {r.signals.map((s) => `${SETUP_LABEL[s.setup] ?? s.setup} · ${s.ago === 0 ? "last close" : `${s.ago}d ago`}`).join(", ")}
-    </td>
+    <table className="data-table secondary-cells" aria-label={`${r.symbol} setups and context`}>
+      <thead>
+        <tr>
+          <th title="The setups behind the row, and the close each entered on">Setups</th>
+          <th className="num">Price</th>
+          <th title={FAIR_TITLE}>Vs fair</th>
+          <th title="Call spreads: the broker's ex-dividend date against expiry">Ex-div</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td title={r.signals.map((s) => `${SETUP_LABEL[s.setup] ?? s.setup}: entered on the ${s.date} close`).join("\n")}>{setupsText(r)}</td>
+          <td className="num">{money(r.spot)}</td>
+          <td className="muted">{fairText(r.fair).replace(/^vs fair /, "")}</td>
+          <td className={ex === null ? "muted" : undefined}>{ex ?? "—"}</td>
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
 /** The width table: every declared width, both units, as the builder priced it. */
-export function WidthTable({ r, colSpan }: { r: CreditSpreadRow; colSpan: number }) {
+export function WidthsBody({ r }: { r: CreditSpreadRow }) {
   const right = r.spread === "put" ? "P" : "C";
   return (
-    <tr className="row-detail">
-      <td colSpan={colSpan}>
-        {/* Out of the row since 2026-10-30 (docs/console-review-plan.md batch 3); the widths below
-            carry each width's credit % and liquidity, the pick's included. */}
-        <table className="data-table secondary-cells" aria-label={`${r.symbol} setups and context`}>
-          <thead>
-            <tr>
-              <th title="The setups behind the row, and the close each entered on">Setups</th>
-              <th className="num">Price</th>
-              <th className="num" title={FAIR_TITLE}>
-                Vs fair
-              </th>
-              <th title="Call spreads: the broker's ex-dividend date against expiry">Ex-div</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <SetupsCell r={r} />
-              <td className="num">{money(r.spot)}</td>
-              <FairCell fair={r.fair} />
-              <ExDividendCell r={r} />
-            </tr>
-          </tbody>
-        </table>
-        <table className="data-table" aria-label={`${r.symbol} ${r.spread} spread widths`}>
-          <thead>
-            <tr>
-              <th>Width</th>
-              <th className="num">Long</th>
-              <th className="num">Δ</th>
-              <th className="num">Width $</th>
-              <th className="num" title="Per share at the working price">Credit</th>
-              <th className="num" title="Per share at the mid">Mid</th>
-              <th className="num" title="Credit ÷ width">Credit %</th>
-              <th className="num" title="Whole contract: (width − credit) × 100">Max loss</th>
-              <th className="num" title="Credit ÷ max loss">Cr / ML</th>
-              <th>Liquid</th>
-            </tr>
-          </thead>
-          <tbody>
-            {r.widths.map((w) => {
-              const p = w.price;
-              const label = w.unit === "strikes" ? `${w.size} strike${w.size === 1 ? "" : "s"}` : `${w.size} × move`;
-              const picked = p !== null && r.pick !== null && p.long === r.pick.long;
-              return (
-                <tr key={`${w.unit}-${w.size}`}>
-                  <td title={w.unit === "move" && r.move !== null ? `The listed long nearest ${w.size} × the 1-SD move (${money(r.move)}) beyond the short` : undefined}>
-                    {label}
-                    {picked ? (
-                      <>
-                        {" "}
-                        <span className="chip" title="The same long as the 35-40% pick">
-                          pick
-                        </span>
-                      </>
-                    ) : null}
-                  </td>
-                  {p === null ? (
-                    <td colSpan={9} className="muted">
-                      the chain does not reach this width
-                    </td>
-                  ) : (
+    <div className="table-scroll">
+      <table className="data-table" aria-label={`${r.symbol} ${r.spread} spread widths`}>
+        <thead>
+          <tr>
+            <th>Width</th>
+            <th className="num">Long</th>
+            <th className="num">Δ</th>
+            <th className="num">Width $</th>
+            <th className="num" title="Per share at the working price">Credit</th>
+            <th className="num" title="Per share at the mid">Mid</th>
+            <th className="num" title="Credit ÷ width">Credit %</th>
+            <th className="num" title="Whole contract: (width − credit) × 100">Max loss</th>
+            <th className="num" title="Credit ÷ max loss">Cr / ML</th>
+            <th>Liquid</th>
+          </tr>
+        </thead>
+        <tbody>
+          {r.widths.map((w) => {
+            const p = w.price;
+            const label = w.unit === "strikes" ? `${w.size} strike${w.size === 1 ? "" : "s"}` : `${w.size} × move`;
+            const picked = p !== null && r.pick !== null && p.long === r.pick.long;
+            return (
+              <tr key={`${w.unit}-${w.size}`}>
+                <td title={w.unit === "move" && r.move !== null ? `The listed long nearest ${w.size} × the 1-SD move (${money(r.move)}) beyond the short` : undefined}>
+                  {label}
+                  {picked ? (
                     <>
-                      <td className="num">
-                        {p.long}
-                        {right}
-                      </td>
-                      <td className="num">{p.longDelta.toFixed(2)}</td>
-                      <td className="num">{money(p.width)}</td>
-                      <td className="num">{credit(p.credit)}</td>
-                      <td className="num">{credit(p.creditMid)}</td>
-                      <td className="num">{pct(p.creditWidth)}</td>
-                      <td className="num">{contract(p.maxLoss)}</td>
-                      <td className="num">{pct(p.creditMaxLoss)}</td>
-                      <LiquidCell p={p} />
+                      {" "}
+                      <span className="chip" title="The same long as the 35-40% pick">
+                        pick
+                      </span>
                     </>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </td>
-    </tr>
+                  ) : null}
+                </td>
+                {p === null ? (
+                  <td colSpan={9} className="muted">
+                    the chain does not reach this width
+                  </td>
+                ) : (
+                  <>
+                    <td className="num">
+                      {p.long}
+                      {right}
+                    </td>
+                    <td className="num">{p.longDelta.toFixed(2)}</td>
+                    <td className="num">{money(p.width)}</td>
+                    <td className="num">{credit(p.credit)}</td>
+                    <td className="num">{credit(p.creditMid)}</td>
+                    <td className="num">{pct(p.creditWidth)}</td>
+                    <td className="num">{contract(p.maxLoss)}</td>
+                    <td className="num">{pct(p.creditMaxLoss)}</td>
+                    <LiquidCell p={p} />
+                  </>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -227,19 +207,13 @@ export function applyFilters(all: CreditSpreadRow[], f: CreditSpreadFilters) {
   return { shown, hidden };
 }
 
-const SORTS: Record<string, (r: CreditSpreadRow) => number | string | null> = {
-  symbol: (r) => r.symbol,
-  spread: (r) => r.spread,
-  price: (r) => r.spot,
-  short: (r) => r.short.strike,
-  width: (r) => r.pick?.width ?? null,
-  credit: (r) => r.pick?.credit ?? null,
-  creditPct: (r) => r.pick?.creditWidth ?? null,
-  maxLoss: (r) => r.pick?.maxLoss ?? null,
-  earnings: (r) => r.earningsDate,
-};
-
-const COLUMNS = 10;
+/** The sorts: symbol (the default), then size and width; never credit or Cr/ML (no tested edge). */
+export const CREDIT_SORTS: SortOption<CreditSpreadRow>[] = [
+  { id: "symbol", label: "symbol", hint: "A to Z", key: (r) => r.symbol },
+  { id: "maxloss", label: "max loss", hint: "largest first", key: (r) => (r.pick === null ? null : -r.pick.maxLoss) },
+  { id: "width", label: "width", hint: "narrowest first", key: (r) => r.pick?.width ?? null },
+  { id: "expiry", label: "expiry", hint: "soonest first", key: (r) => r.dte },
+];
 
 /** The default selection: the user's original rule, which reads every row. */
 export const DEFAULT_SELECTION = "credit-share";
@@ -255,274 +229,262 @@ export function rowsFor(rows: CreditSpreadRow[], selection: string): CreditSprea
   });
 }
 
+export const boxId = (r: CreditSpreadRow) => `${r.symbol}-${r.spread}`;
+
+/**
+ * One setup as a trade card: the chosen width's credit as the headline, the max loss as the bar
+ * (against the largest on the list: no per-trade cap comes with the list), the order that would open
+ * it, the setup and the earnings in the foot. `open` is the card's button for the lightbox.
+ */
+export function creditModel(r: CreditSpreadRow, shareLabel: string, largest: number, open: ((id: string) => void) | null): TradeCardModel {
+  const right = r.spread === "put" ? "P" : "C";
+  const p = r.pick;
+  const mid = r.short.bid !== null && r.short.ask !== null ? ` @ ${((r.short.bid + r.short.ask) / 2).toFixed(2)}` : "";
+  const ex = exDividendText(r);
+  return {
+    key: boxId(r),
+    symbol: r.symbol,
+    spot: money(r.spot),
+    shape: `${r.spread === "put" ? "bull put" : "bear call"} · ${r.dte} d · ${dayMonth(r.expiry)}`,
+    chips: (
+      <>
+        {p === null ? (
+          <span className="chip chip-warn" title="No listed width gives that share of the width at the working price; open the widths for each one's credit">
+            no {shareLabel} width
+          </span>
+        ) : (
+          <span className="chip chip-ok">{shareLabel} width</span>
+        )}
+        {p !== null && p.passes === false ? <span className="chip chip-warn">thin</span> : null}
+        {r.window === "45-60" ? (
+          <span className="chip chip-warn" title="No standard monthly fell 30-45 days out, so this is the 45-60 day monthly: outside the window item 17 studied">
+            45-60
+          </span>
+        ) : null}
+        {r.conflict ? (
+          <span className="chip chip-warn" title="The name signals both sides at once: a put spread and a call spread">
+            both sides
+          </span>
+        ) : null}
+        {r.leveraged ? (
+          <span className="chip" title="A daily-reset fund: it decays and gaps in ways its delta does not price">
+            {r.leveraged}
+          </span>
+        ) : null}
+      </>
+    ),
+    cash: p === null ? null : p.credit * 100,
+    side: p === null ? ["no pick", `${r.dte} d`] : [credit(p.credit), `Cr/ML ${p.creditMaxLoss === null ? "—" : p.creditMaxLoss.toFixed(2)}`],
+    bar: p === null || largest <= 0 ? null : (p.maxLoss * 100 * 100) / largest,
+    barTitle: "the max loss, against the largest on this list: the list carries no per-trade cap",
+    label: p === null ? "no width to size" : `max loss ${contract(p.maxLoss)}${p.creditWidth === null ? "" : ` · credit ${pct(p.creditWidth, 0)} of the width`}`,
+    open: { date: "proposed", price: p === null ? "—" : credit(p.credit) },
+    legs: [
+      {
+        buy: false,
+        text: `1 ${r.expiry} ${r.short.strike}${right}${mid}`,
+        quote: `${r.short.bid === null ? "—" : r.short.bid.toFixed(2)} / ${r.short.ask === null ? "—" : r.short.ask.toFixed(2)} · Δ ${Math.abs(r.short.delta).toFixed(2)}`,
+      },
+      ...(p === null ? [] : [{ buy: true, text: `1 ${r.expiry} ${p.long}${right}`, quote: `Δ ${Math.abs(p.longDelta).toFixed(2)}` }]),
+    ],
+    after: [`setup: ${setupsText(r)}`],
+    foot: [`${earningsText(r)}${ex === null ? "" : ` · ex-div ${ex}`}`, fairText(r.fair)],
+    extra: open ? <BoxOpenButton onOpen={() => open(boxId(r))}>{r.symbol} · other widths</BoxOpenButton> : undefined,
+  };
+}
+
+export function creditHelp(tested: string | null, selection: { label: string; rule: string } | undefined, shareLabel: string, dropped: [string, number][], recent: number, unpicked: number, total: number): CardHelpContent {
+  return {
+    title: "Where these come from",
+    body: (
+      <>
+        <HelpWarn title="No tested edge">
+          <p>
+            Item 17 of the edge-hypotheses plan tested every setup, side, short and width on 2020-2025 and none passed after costs
+            {tested ? ` (${tested})` : ""}. The selections are rules to read the cards by, not recommendations: the 35-40% credit rule you
+            trade, and the two mean-reversion put cells the study found least bad.
+            {selection && selection.label ? ` Showing: ${selection.rule}.` : ""}
+          </p>
+        </HelpWarn>
+        <HelpSection title="Where they come from">
+          <p>
+            The names are our options-tradable universe. A card is a chart setup that entered on one of the last {recent} closes and is
+            still open: trend, pullback, mean reversion or breakout as a put spread, and each one's short mirror as a call spread. The
+            spread is on the standard monthly 30–45 days out, the short nearest 0.40 delta and the long the widest giving {shareLabel} of
+            the width at the working price{unpicked > 0 ? ` (${unpicked} of ${total} have no such width)` : ""}.
+          </p>
+        </HelpSection>
+        <HelpSection title="Widths and money">
+          <p>
+            Open a card's other widths for 1, 2, 3 and 5 strikes, and a quarter, a half and three quarters of the expected move. Credits
+            are per share at the working price; max loss is per contract.
+          </p>
+        </HelpSection>
+        {dropped.length > 0 ? (
+          <HelpSection title="Left out">
+            <p>No row for: {dropped.map(([k, v]) => `${v} (${k})`).join(", ")}.</p>
+          </HelpSection>
+        ) : null}
+      </>
+    ),
+  };
+}
+
 export function CreditSpreadTab() {
-  const [params, setParams] = useSearchParams();
+  const { params, set, clear } = useParamState();
   const { data, isLoading, isError } = useCreditSpreadList(params.get("day"));
-  const sort = useSort();
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [sort, setSort] = useSortChoice("credit-spreads", "symbol");
+  const [view, setView] = useViewChoice("credit-spreads");
   const sideParam = params.get("side");
   const side: CreditSpreadFilters["side"] = sideParam === "put" || sideParam === "call" ? sideParam : "both";
   const allEarnings = params.get("earnings") === "all";
   const allTrades = params.get("trade") === "all";
   const pickedOnly = params.get("picked") === "only";
   const q = (params.get("q") ?? "").trim().toUpperCase();
-  const set = (key: string, value: string | null) => {
-    const next = new URLSearchParams(params);
-    if (value === null) next.delete(key);
-    else next.set(key, value);
-    setParams(next, { replace: true });
-  };
 
   const selections = data?.rule.selections ?? [];
   const selection = selections.some((s) => s.id === params.get("selection")) ? (params.get("selection") as string) : DEFAULT_SELECTION;
   const current = selections.find((s) => s.id === selection);
-  const all = rowsFor(data?.rows ?? [], selection);
+  const all = useMemo(() => rowsFor(data?.rows ?? [], selection), [data, selection]);
   const { shown, hidden } = applyFilters(all, { side, allEarnings, allTrades, pickedOnly, q });
-  const sorted = sortRows(shown, sort, SORTS);
-  const { page, setOffset, setLimit } = usePage([data?.day, selection, side, allEarnings, allTrades, pickedOnly, q, sort.key, sort.dir], 100);
+  const sorted = sortRows(shown, CREDIT_SORTS.find((s) => s.id === sort.id), sort.reversed);
+  const { page, setOffset, setLimit } = usePage([data?.day, selection, side, allEarnings, allTrades, pickedOnly, q, sort.id, sort.reversed], 48);
   const rows = sorted.slice(page.offset, page.offset + page.limit);
   const latest = data?.days[0] ?? null;
   const dropped = Object.entries(data?.dropped ?? {});
   const share = data?.rule.creditShare ?? [0.35, 0.4];
   const shareLabel = `${Math.round(share[0] * 100)}–${Math.round(share[1] * 100)}%`;
   const unpickedAll = all.filter((r) => r.pick === null).length;
-  const key = (r: CreditSpreadRow) => `${r.symbol}-${r.spread}`;
-  const toggle = (k: string) =>
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(k)) next.delete(k);
-      else next.add(k);
-      return next;
-    });
+  const largest = Math.max(0, ...shown.map((r) => (r.pick === null ? 0 : r.pick.maxLoss * 100)));
+
+  // The lightbox: every shown setup's widths and context, in the card's order, so ← → walk the list.
+  const boxes: ScreenerBox[] = sorted.map((r) => ({
+    id: boxId(r),
+    kicker: "credit spreads ›",
+    title: `${r.symbol} · ${r.spread === "put" ? "bull put" : "bear call"} widths`,
+    tabs: [
+      { id: "widths", label: "widths" },
+      { id: "setup", label: "the setup" },
+    ],
+    body: (tab) => (tab === "setup" ? <SetupBody r={r} /> : <WidthsBody r={r} />),
+  }));
+  const box = useScreenerBoxes(boxes);
+
+  const sortChanged = sort.id !== "symbol" || sort.reversed;
+  const changed =
+    (sortChanged ? 1 : 0) + (selection !== DEFAULT_SELECTION ? 1 : 0) + (side !== "both" ? 1 : 0) + (allEarnings ? 1 : 0) + (allTrades ? 1 : 0) + (pickedOnly ? 1 : 0) + (q !== "" ? 1 : 0);
+  const reset = () => {
+    void setSort({ id: "symbol", reversed: false });
+    clear(["selection", "side", "earnings", "trade", "picked", "q"]);
+  };
+  const sortLabel = CREDIT_SORTS.find((s) => s.id === sort.id)?.label ?? sort.id;
+  const hiddenParts = [
+    hidden.side > 0 ? `${hidden.side} on the other side` : "",
+    hidden.inTrade > 0 ? `${hidden.inTrade} with earnings in the trade` : "",
+    hidden.thin > 0 ? `${hidden.thin} thin` : "",
+    hidden.unpicked > 0 ? `${hidden.unpicked} with no ${shareLabel} width` : "",
+    hidden.unmatched > 0 ? `${hidden.unmatched} not matching “${q}”` : "",
+  ].filter(Boolean);
 
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>Credit spreads</h2>
-        <span className="chip">ours</span>
-        <span className="chip chip-warn" title={data?.rule.tested ?? "item 17 of docs/edge-hypotheses-plan.md"}>
-          no tested edge
-        </span>
-        {data?.day && (
-          <span className="card-asof">
-            session {data.day}
-            {data.chainTakenAt ? ` · quoted ${new Date(data.chainTakenAt).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })} ET` : ""}
-          </span>
-        )}
-      </div>
-
-      <p className="muted" style={{ margin: "0 0 10px" }}>
-        <strong>No tested edge.</strong> Item 17 of the edge-hypotheses plan tested every setup, side, short and width on
-        2020-2025 and none passed after costs. The selections below are rules to read the rows by, not recommendations: the
-        35-40% credit rule you trade, and the two mean-reversion put cells the study found least bad.
-        {current && current.id !== DEFAULT_SELECTION ? ` Showing: ${current.rule}.` : ""}
-      </p>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
-        {selections.length > 0 && (
-          <div className="mode-toggle" role="group" aria-label="Selection" style={{ marginLeft: 0 }}>
-            {selections.map((sel) => (
-              <button
-                key={sel.id}
-                type="button"
-                title={sel.rule}
-                className={sel.id === selection ? "mode-btn active" : "mode-btn"}
-                onClick={() => set("selection", sel.id === DEFAULT_SELECTION ? null : sel.id)}
-              >
-                {sel.label}
-              </button>
-            ))}
-          </div>
-        )}
-        {data && data.days.length > 0 && (
-          <select
-            className="chip review-session-select"
-            aria-label="Session"
-            value={data.day ?? ""}
-            onChange={(e) => set("day", e.target.value === latest ? null : e.target.value)}
-          >
-            {data.days.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        )}
-        <div className="mode-toggle" style={{ marginLeft: 0 }} role="group" aria-label="Side">
-          {(["both", "put", "call"] as const).map((s) => (
-            <button key={s} type="button" className={side === s ? "mode-btn active" : "mode-btn"} onClick={() => set("side", s === "both" ? null : s)}>
-              {s === "both" ? "both" : s === "put" ? "put spreads" : "call spreads"}
-            </button>
-          ))}
-        </div>
-        <Flag
-          on={!allEarnings}
-          onChange={(on) => set("earnings", on ? null : "all")}
-          title="Hide names with an announcement between today and this spread's expiry. An unknown date stays shown, marked unknown."
+    <ScreenerLayout>
+      <ScreenerSection concept="dir" tag="setups" question="Which setups make a spread worth sizing?">
+        <ScreenerCard
+          title="credit spreads"
+          help={creditHelp(data?.rule.tested ?? null, current, shareLabel, dropped, data?.rule.recentSessions ?? 5, unpickedAll, all.length)}
+          flag="no tested edge"
+          extra={data ? <SessionSelect days={data.days} day={data.day} latest={latest} label="Session" onChange={(d) => set("day", d)} /> : null}
+          view={{ value: view, onChange: setView }}
+          filter={{
+            changed,
+            parts: [current ? current.label : `${shareLabel} credit`, side === "both" ? "both sides" : side === "put" ? "put spreads" : "call spreads", `by ${sortLabel}${sort.reversed ? ", reversed" : ""}`],
+            note: `${shown.length} setups of ${all.length}${hiddenParts.length > 0 ? ` · ${hiddenParts.join(" · ")} hidden` : ""}`,
+            onReset: reset,
+            panel: (
+              <>
+                {selections.length > 0 ? (
+                  <FilterGroup title="rule" note="the rule the cards are read by">
+                    <PanelChoice
+                      label="Selection"
+                      value={selection}
+                      options={selections.map((s) => ({ id: s.id, label: s.label, title: s.rule }))}
+                      onChange={(id) => set("selection", id === DEFAULT_SELECTION ? null : id)}
+                    />
+                  </FilterGroup>
+                ) : null}
+                <FilterGroup title="side">
+                  <PanelChoice
+                    label="Side"
+                    value={side}
+                    options={[
+                      { id: "both", label: "both" },
+                      { id: "put", label: "put spreads" },
+                      { id: "call", label: "call spreads" },
+                    ]}
+                    onChange={(s) => set("side", s === "both" ? null : s)}
+                  />
+                </FilterGroup>
+                <FilterGroup title="filters">
+                  <FilterSwitch
+                    label="No earnings in the trade"
+                    description="Hide names with an announcement between today and this spread's expiry. An unknown date stays shown, marked unknown."
+                    on={!allEarnings}
+                    onChange={(on) => set("earnings", on ? null : "all")}
+                  />
+                  <FilterSwitch
+                    label="Liquid trade"
+                    description="Hide a picked spread that fails the leg bars as one order. A setup with no pick stays shown: it has no spread to judge."
+                    on={!allTrades}
+                    onChange={(on) => set("trade", on ? null : "all")}
+                  />
+                  <FilterSwitch
+                    label={`With a ${shareLabel} width`}
+                    description={`Show only names where some listed width gives ${shareLabel} of the width at the working price. Off by default: most names have none, and their widths say how near each comes.`}
+                    on={pickedOnly}
+                    onChange={(on) => set("picked", on ? "only" : null)}
+                  />
+                </FilterGroup>
+                <SortSection sorts={CREDIT_SORTS} choice={sort} fallback="symbol" onChange={setSort} />
+                <FilterGroup title="symbol">
+                  <SymbolSearch value={params.get("q") ?? ""} onChange={(v) => set("q", v === "" ? null : v)} />
+                </FilterGroup>
+              </>
+            ),
+          }}
         >
-          No earnings in the trade
-        </Flag>
-        <Flag
-          on={!allTrades}
-          onChange={(on) => set("trade", on ? null : "all")}
-          title="Hide a picked spread that fails the leg bars as one order. A row with no pick stays shown: it has no spread to judge."
-        >
-          Liquid trade
-        </Flag>
-        <Flag
-          on={pickedOnly}
-          onChange={(on) => set("picked", on ? "only" : null)}
-          title={`Show only names where some listed width gives ${shareLabel} of the width at the working price. Off by default: most names have none, and their width tables say how near each width comes.`}
-        >
-          {`With a ${shareLabel} width`}
-        </Flag>
-        <input
-          className="chip review-session-select"
-          value={params.get("q") ?? ""}
-          placeholder="symbol"
-          aria-label="Filter by symbol"
-          onChange={(e) => set("q", e.target.value === "" ? null : e.target.value)}
-        />
-        <span className="chip" style={{ whiteSpace: "normal" }}>
-          {shown.length} of {all.length} spreads
-          {hidden.side > 0 ? ` · ${hidden.side} on the other side` : ""}
-          {hidden.inTrade > 0 ? ` · ${hidden.inTrade} with earnings in the trade hidden` : ""}
-          {hidden.thin > 0 ? ` · ${hidden.thin} thin hidden` : ""}
-          {hidden.unpicked > 0 ? ` · ${hidden.unpicked} with no ${shareLabel} width hidden` : ""}
-          {hidden.unmatched > 0 ? ` · ${hidden.unmatched} not matching “${q}”` : ""}
-        </span>
-      </div>
-
-      {data?.chainComplete === false && (
-        <p className="muted" style={{ margin: "0 0 8px" }}>
-          The afternoon reading did not finish{data.chainProblem ? ` (${data.chainProblem})` : ""}, so some names are missing.
-        </p>
-      )}
-      {isError && <p className="muted">Could not read the list.</p>}
-      {isLoading && <p className="muted">Reading the list…</p>}
-      {data && data.day === null && (
-        <p className="muted">
-          No list built yet: the afternoon chains are read at 14:45 ET on a trading day and the list is built from them at 15:10.
-        </p>
-      )}
-      {data && data.day !== null && !data.built && (
-        <p className="muted">
-          No credit-spread list for this session: it was built before the list existed (2026-10-24), or without the history
-          store the setups are read from.
-        </p>
-      )}
-
-      {rows.length > 0 && (
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th aria-label="Widths" />
-                <SortTh label="Symbol" k="symbol" sort={sort} />
-                <SortTh label="Spread" k="spread" sort={sort} title="A long setup is a put spread; its short mirror a call spread" />
-                <th title="The standard monthly 30-45 days out">Expiry</th>
-                <SortTh label="Short" k="short" sort={sort} className="num" title="The option nearest 0.40 delta, within 0.05" />
-                <th className="num" title={`The pick: the widest listed long giving ${shareLabel} of the width at the working price`}>
-                  Long
-                </th>
-                <SortTh label="Width" k="width" sort={sort} className="num" />
-                <SortTh label="Credit" k="credit" sort={sort} className="num" title="Per share at the working price: halfway from the mid to the natural fill" />
-                <SortTh label="Max loss" k="maxLoss" sort={sort} className="num" title="Whole contract: (width − credit) × 100" />
-                <SortTh label="Earnings" k="earnings" sort={sort} title="The next announcement, against this spread's expiry" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const k = key(r);
-                const isOpen = open.has(k);
-                const right = r.spread === "put" ? "P" : "C";
-                return (
-                  <Fragment key={k}>
-                    <tr>
-                      <td>
-                        <button
-                          type="button"
-                          className="mode-btn"
-                          aria-expanded={isOpen}
-                          aria-label={`${isOpen ? "Hide" : "Show"} ${r.symbol}'s widths`}
-                          onClick={() => toggle(k)}
-                        >
-                          {isOpen ? "▾" : "▸"}
-                        </button>
-                      </td>
-                      <td>
-                        <Link className="module-link" to={`/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`} title={`Open ${r.symbol}'s chart`}>
-                          {r.symbol}
-                        </Link>
-                        {r.type && r.type !== "Stock" ? <span className="muted"> · {r.type === "Exchange Traded Fund" ? "fund" : r.type}</span> : null}
-                        {r.leveraged ? (
-                          <span className="chip" title="A daily-reset fund: it decays and gaps in ways its delta does not price">
-                            {r.leveraged}
-                          </span>
-                        ) : null}
-                        {r.conflict ? (
-                          <span className="chip chip-warn" title="The name signals both sides at once: a put spread and a call spread">
-                            both sides
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className={r.spread === "put" ? "pnl-pos" : "pnl-neg"}>{r.spread === "put" ? "bull put" : "bear call"}</td>
-                      <td>
-                        {shortDate(r.expiry)} <span className="muted">{r.dte}d</span>
-                        {r.window === "45-60" ? (
-                          <span
-                            className="chip chip-warn"
-                            title="No standard monthly fell 30-45 days out, so this is the 45-60 day monthly: outside the window item 17 studied"
-                          >
-                            45-60
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="num" title={`Δ ${r.short.delta.toFixed(2)}, IV ${pct(r.short.iv, 0)}, ${money(r.short.bid)} × ${money(r.short.ask)}`}>
-                        {r.short.strike}
-                        {right} <span className="muted">{Math.abs(r.short.delta).toFixed(2)}</span>
-                      </td>
-                      {r.pick === null ? (
-                        <td colSpan={4} className="muted" title="No listed width gives that share of the width at the working price; open the row for each width's credit">
-                          no {shareLabel} width
-                        </td>
-                      ) : (
-                        <>
-                          <td className="num">
-                            {r.pick.long}
-                            {right}
-                          </td>
-                          <td className="num">{money(r.pick.width)}</td>
-                          <td className="num">{credit(r.pick.credit)}</td>
-                          <td className="num">{contract(r.pick.maxLoss)}</td>
-                        </>
-                      )}
-                      <EarningsCell r={r} />
-                    </tr>
-                    {isOpen && <WidthTable r={r} colSpan={COLUMNS} />}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {shown.length > PAGE_SIZES[0] && (
-        <Pager offset={page.offset} limit={page.limit} total={shown.length} pageSizes={PAGE_SIZES} onOffset={setOffset} onLimit={setLimit} />
-      )}
-      {data && data.built && all.length > 0 && shown.length === 0 && <p className="muted">Nothing matches these filters.</p>}
-      {data && data.built && all.length === 0 && <p className="muted">No setup entered on a recent close for any name this session.</p>}
-
-      <p className="muted" style={{ marginTop: 8 }}>
-        The names are our options-tradable universe. A row is a chart setup that entered on one of the last{" "}
-        {data?.rule.recentSessions ?? 5} closes and is still open: trend, pullback, mean reversion or breakout as a put spread,
-        and each one's short mirror as a call spread. The spread is on the standard monthly 30–45 days out, the short nearest
-        0.40 delta and the long the widest giving {shareLabel} of the width at the working price
-        {unpickedAll > 0 ? ` (${unpickedAll} of ${all.length} have no such width)` : ""}. Open a row for its widths: 1, 2, 3 and 5
-        strikes, and a quarter, a half and three quarters of the expected move. Credits are per share; max loss is per
-        contract.
-        {dropped.length > 0 ? ` No row for: ${dropped.map(([k, v]) => `${v} (${k})`).join(", ")}.` : ""}
-      </p>
-    </section>
+          {data?.day && (
+            <p className="muted pf-caption" style={{ marginTop: 0 }}>
+              session {data.day}
+              {data.chainTakenAt ? ` · quoted ${new Date(data.chainTakenAt).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit" })} ET` : ""}
+            </p>
+          )}
+          {data?.chainComplete === false && (
+            <p className="muted" style={{ margin: "0 0 8px" }}>
+              The afternoon reading did not finish{data.chainProblem ? ` (${data.chainProblem})` : ""}, so some names are missing.
+            </p>
+          )}
+          {isError && <p className="muted">Could not read the list.</p>}
+          {isLoading && <p className="muted">Reading the list…</p>}
+          {data && data.day === null && (
+            <p className="muted">
+              No list built yet: the afternoon chains are read at 14:45 ET on a trading day and the list is built from them at 15:10.
+            </p>
+          )}
+          {data && data.day !== null && !data.built && (
+            <p className="muted">
+              No credit-spread list for this session: it was built before the list existed (2026-10-24), or without the history
+              store the setups are read from.
+            </p>
+          )}
+          <TradeCards models={rows.map((r) => creditModel(r, shareLabel, largest, box.open))} />
+          {shown.length > PAGE_SIZES[0] && (
+            <Pager offset={page.offset} limit={page.limit} total={shown.length} pageSizes={PAGE_SIZES} onOffset={setOffset} onLimit={setLimit} />
+          )}
+          {data && data.built && all.length > 0 && shown.length === 0 && <p className="muted">Nothing matches these filters.</p>}
+          {data && data.built && all.length === 0 && <p className="muted">No setup entered on a recent close for any name this session.</p>}
+        </ScreenerCard>
+      </ScreenerSection>
+      {box.node}
+    </ScreenerLayout>
   );
 }
