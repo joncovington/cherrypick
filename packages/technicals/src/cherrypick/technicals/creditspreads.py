@@ -3,7 +3,7 @@
 The vendor's credit-spread tab froze with its subscription (2026-10-23 lists). This is its replacement,
 built to the user's stated trade (2026-10-24) and judged by item 17 of `docs/edge-hypotheses-plan.md`
 (run 2026-10-25): nothing passed, and the file says so (`TESTED`). Each row carries every `SELECTIONS`
-pick, the rules the tab offers (the 35-40% credit rule and the two least-bad mean-reversion put cells).
+pick, the rules the tab offers (the 30-40% credit rule and the two least-bad mean-reversion put cells).
 
 - **Names:** the short-put list's universe, every name the afternoon income chains read.
 - **Signal:** a position one of the four chart setups holds (`setups.py`), entered on one of the last
@@ -46,7 +46,7 @@ SPREAD_SIDE = {
 }
 RECENT = 5
 SHORT_DELTA = 0.40
-CREDIT_SHARE = (0.35, 0.40)
+CREDIT_SHARE = (0.30, 0.40)  # 35-40% until 2026-11-07, when the user widened it; item 17 tested 35-40%
 STEP_WIDTHS = (1, 2, 3, 5)
 MOVE_WIDTHS = (0.25, 0.5, 0.75)
 TESTED = "item 17 (2026-10-25): no setup, side, short or width passed; every selection is untested edge"
@@ -57,10 +57,10 @@ TESTED = "item 17 (2026-10-25): no setup, side, short or width passed; every sel
 #: mean-reversion put at 0.20 delta with an expected-move long is item 18's declared test, not this.
 SELECTIONS: dict[str, dict[str, Any]] = {
     "credit-share": {
-        "label": "35-40% credit rule",
+        "label": "30-40% credit rule",
         "setups": None,  # every setup, both sides
         "short_delta": SHORT_DELTA,
-        "rule": "the widest long giving 35-40% of the width",
+        "rule": "the widest long giving 30-40% of the width",
     },
     "reversion-d20-s5": {
         "label": "mean-reversion puts, 0.20 delta, 5 strikes",

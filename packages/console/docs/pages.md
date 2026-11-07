@@ -193,9 +193,9 @@ tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/
 - **Credit spreads** (2026-10-24; `CreditSpreadTab.tsx`, `readCreditSpreadList`): the chart setups'
   fresh entries as spreads, built by `technicals creditspreads.py`. A long setup is a put spread, its
   mirror a call spread, on the 30-45 day monthly. The short is nearest 0.40 delta and the pick is the
-  widest long giving 35-40% of the width. **"Not yet tested"** heads the table for as long as the
-  builder's rule says so (item 17). A row with no 35-40% width stays, marked, and is hidden only by
-  the "With a 35-40% width" filter, never by "Liquid trade". Each row opens its width table (1/2/3/5
+  widest long giving 30-40% of the width (35-40% until 2026-11-07). **"Not yet tested"** heads the table for as long as the
+  builder's rule says so (item 17). A row with no width in the band stays, marked, and is hidden only by
+  the "With a 30-40% width" filter, never by "Liquid trade". Each row opens its width table (1/2/3/5
   strikes, 0.25/0.5/0.75 of the move). Credits are per share (`cr`) and max loss is per contract. Rows
   are by symbol. A session built before the list, or without the history store, says so (`built`
   false) rather than showing an empty table. Behind `NeedsDolt` (`SCREENERS_NEED_DOLT`): the setups

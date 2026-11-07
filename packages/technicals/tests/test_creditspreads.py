@@ -126,13 +126,23 @@ def test_a_row_no_width_of_which_can_be_traded_is_no_row_and_is_counted():
     assert len(old["lists"]["credit-spreads"]) == 1
 
 
-def test_the_pick_is_the_widest_long_giving_35_to_40_percent_of_the_width():
+LO, HI = creditspreads.CREDIT_SHARE
+
+
+def test_the_band_is_30_to_40_percent():
+    """The user widened it from 35-40% on 2026-11-07; item 17's record stays at the 35-40% it tested."""
+    assert creditspreads.CREDIT_SHARE == (0.30, 0.40)
+    assert creditspreads.rule()["credit_share"] == (0.30, 0.40)
+    assert creditspreads.SELECTIONS["credit-share"]["label"] == "30-40% credit rule"
+
+
+def test_the_pick_is_the_widest_long_giving_the_credit_share_of_the_width():
     (row,) = _spreads({"AAA": _entry()}, {"AAA": PUT_SIGNAL})["lists"]["credit-spreads"]
     pick = row["pick"]
-    assert pick is not None and 0.35 <= pick["credit_width"] <= 0.40
+    assert pick is not None and LO <= pick["credit_width"] <= HI
     assert pick["long"] < row["short"]["strike"]
     assert pick["max_loss"] == pytest.approx(pick["width"] - pick["credit"])
-    # Nothing wider lands in the range: every wider listed long gives less or more than 35-40%.
+    # Nothing wider lands in the range: every wider listed long gives less or more than the band.
     short = next(
         o for o in incomelists.priced(_chain(), 100.0, CS_DTE) if o["option"] == row["short"]["option"]
     )
@@ -140,7 +150,7 @@ def test_the_pick_is_the_widest_long_giving_35_to_40_percent_of_the_width():
     for o in creditspreads.beyond(pool, short):
         if o["strike"] < pick["long"]:
             s = creditspreads.spread(short, o, BARS)
-            assert s is None or not (0.35 <= s["credit_width"] <= 0.40)
+            assert s is None or not (LO <= s["credit_width"] <= HI)
 
 
 def _q(strike, bid, ask, delta, right="P"):
@@ -156,13 +166,17 @@ def _q(strike, bid, ask, delta, right="P"):
 
 def test_no_width_in_the_range_is_no_pick_and_the_widest_in_it_wins():
     short = _q(95.0, 1.98, 2.02, -0.40)  # mid 2.00
-    # Working credit per width: 94 -> 0.50, 93 -> ~0.45, 90 -> ~0.30: none inside 35-40%.
-    pool = [short, _q(94.0, 1.48, 1.52, -0.36), _q(93.0, 1.08, 1.12, -0.32), _q(90.0, 0.48, 0.52, -0.2)]
+    # Working credit per width: 94 -> 0.50, 93 -> ~0.45, 90 -> ~0.26: none inside 30-40%.
+    pool = [short, _q(94.0, 1.48, 1.52, -0.36), _q(93.0, 1.08, 1.12, -0.32), _q(90.0, 0.68, 0.72, -0.2)]
     assert creditspreads.pick_width(short, pool, None) is None
     # Add strikes landing at ~38% (92) and ~36% (91): the wider of the two is the pick.
     pool += [_q(92.0, 0.84, 0.88, -0.29), _q(91.0, 0.54, 0.58, -0.24)]
     pick = creditspreads.pick_width(short, pool, None)
-    assert pick["long"] == 91.0 and 0.35 <= pick["credit_width"] <= 0.40
+    assert pick["long"] == 91.0 and LO <= pick["credit_width"] <= HI
+    # A wider long at ~32% was outside the old 35-40% band and is the pick under 30-40%.
+    pool += [_q(89.0, 0.06, 0.10, -0.05)]
+    pick = creditspreads.pick_width(short, pool, None)
+    assert pick["long"] == 89.0 and 0.30 <= pick["credit_width"] < 0.35
 
 
 def test_the_width_table_has_every_declared_width_in_both_units():
