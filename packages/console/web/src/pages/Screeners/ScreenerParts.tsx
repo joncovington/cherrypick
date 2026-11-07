@@ -4,7 +4,6 @@ import { Card } from "../../components/DataTable";
 import { type CardHelpContent } from "../../components/CardHelp";
 import { FilterSortButton, FilterSortPanel, FilterSummary } from "../../components/FilterSort";
 import { ListViewContext, ViewSwitch, type ListView } from "../../components/ViewSwitch";
-import { getPref, usePrefsVersion, writePref } from "../../lib/prefs";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
 
 /**
@@ -111,12 +110,6 @@ export function ScreenerCard({
 /** A card's remembered cards-or-rows view, with the default a page asks for (rows for a long list
  *  scanned by name); the stored choice wins once one is made. The shared `useViewChoice` starts every
  *  list on cards. */
-export function useViewChoiceOr(card: string, fallback: ListView): [ListView, (v: ListView) => void] {
-  usePrefsVersion();
-  const raw = getPref(`view.${card}`);
-  const v: ListView = raw === "rows" || raw === "cards" ? raw : fallback;
-  return [v, (next) => void writePref(`view.${card}`, next)];
-}
 
 /** A group of visible tabs: one active, the others a click. */
 export function Tabs<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: { id: T; label: string; title?: string }[]; onChange: (id: T) => void }) {

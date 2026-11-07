@@ -124,6 +124,11 @@ describe("our credit-spread list", () => {
     expect(render()).toContain(">45-60<");
   });
 
+  it("links a card's symbol to its chart", () => {
+    payload = base([row({ symbol: "AAA" })]);
+    expect(render()).toContain('href="/charts/technicals?symbol=AAA"');
+  });
+
   it("draws a setup as a trade card: the credit for the contract, the max loss as the bar, the order that opens it", () => {
     payload = base([row({})]);
     const html = render();

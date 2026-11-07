@@ -1,10 +1,11 @@
+import { Link } from "react-router-dom";
 import type { ValuationRow } from "@console/shared";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { FilterGroup, SortSection, sortRows, useSortChoice, type SortOption } from "../../components/FilterSort";
 import { Pager, usePage } from "../../components/ScopeBar";
-import { useListView } from "../../components/ViewSwitch";
+import { useListView, useViewChoice } from "../../components/ViewSwitch";
 import { useValuation } from "../../lib/api";
-import { BoxOpenButton, ScreenerCard, ScreenerLayout, ScreenerSection, SessionSelect, SymbolSearch, Tabs, useParamState, useScreenerBoxes, useViewChoiceOr, type ScreenerBox } from "./ScreenerParts";
+import { BoxOpenButton, ScreenerCard, ScreenerLayout, ScreenerSection, SessionSelect, SymbolSearch, Tabs, useParamState, useScreenerBoxes, type ScreenerBox } from "./ScreenerParts";
 import { Dial, ValuationDetail, flagText, money, needsGrowth, pct, stateLabel, stretch, stretchText, type DetailSection } from "./ValuationDetail";
 
 export { ValuationDetail, stretch } from "./ValuationDetail";
@@ -150,7 +151,9 @@ function ValueCard({ r, onOpen }: { r: ValuationRow; onOpen: () => void }) {
       <span className="pos-card-head">
         <span className="pos-card-titles">
           <span className="pos-card-sym-line">
-            <span className="pos-card-sym">{r.symbol}</span>
+            <Link className="pos-card-sym module-link" to={`/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`} title={`Open ${r.symbol}'s chart`}>
+              {r.symbol}
+            </Link>
             {r.spot === null ? null : <span className="pos-card-spot">{money(r.spot)}</span>}
           </span>
           <span className="pos-card-shape">fair value {r.fairValue === null ? DASH : `$${money(r.fairValue)}`}</span>
@@ -254,7 +257,7 @@ export function ValuationTab() {
   const { data, isLoading, isError } = useValuation(day);
   const [sort, setSort] = useSortChoice("valuation", "risk");
   // Rows by default: a long list scanned by name (2026-11-06, the redesign's call).
-  const [view, setView] = useViewChoiceOr("valuation", "rows");
+  const [view, setView] = useViewChoice("valuation", "rows");
   const q = (params.get("q") ?? "").trim().toUpperCase();
   const viewParam = params.get("view");
   const list: ValuationView = viewParam === "all" || viewParam === "pmcc" ? viewParam : "valued";
