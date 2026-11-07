@@ -6287,6 +6287,90 @@ Declared here before any of the fetched paths are read. The fetch is item 59's
     with the robustness report.
   - **A fail or no verdict:** closes the 45-day index condor as specified, beside items 14 to 16.
 
+### 60. FOMC expected-move flies: two short iron flies at the expected move, sold before the 14:00 statement
+
+*Source: the 2026-11-07 review of a third-party community board of live-traded bot rules (kept local;
+none of its figures enter this repo). The user approved the test on 2026-11-07. Declared here before
+any of it is run. No new fetch; the decision days are item 33's cached copy of the Fed's calendar.*
+
+- **Question:** on scheduled FOMC decision days, do two short iron flies placed at spot ± the expected
+  move just before the statement earn after costs?
+- **Where the edge would live:** the **event premium**: implied vol bid into the 14:00 release and
+  falling after it. The flies sit where the market prices the move to land. Not a signal.
+- **Look-alikes:** item 33 (MEIC entering at the statement; it asked about a cost, not a premium),
+  the 10-27 review's idea A (a post-release condor, never fetched), item 9 and item 58 (other
+  afternoon 0DTE premium). None sold the release itself.
+- **The structure (declared by us):**
+  - from the **13:50** quote of the same-day SPXW chain; the expected move is the at-the-money
+    straddle's mid;
+  - two iron flies, centred on the listed strike nearest spot + move and nearest spot − move, each
+    with **20-point** wings, one contract each, sold at the working price;
+  - each fly is bought back on the first later minute whose working buy-back is **90% of its credit
+    or less** (10% decayed); otherwise it settles at the close;
+  - costs: the suite's tastytrade schedule, an open fee per fly, a close fee when bought back, $5 per
+    in-the-money symbol at settlement.
+- **Rivals, each with its check:**
+  - *Any afternoon fly earns this:* the same rule on every non-FOMC session is reported as a
+    **placebo**, with FOMC's excess over it.
+  - *Fills:* the verdict at the working price; mid and natural reported.
+  - *One meeting decides it:* the five worst sessions and results by year are reported.
+- **Sample:** every decision day from 2022-05-16 to 2026-11-06, about 36. That is too few to split
+  into design and holdout, so this is **one whole-sample read**, declared as such. A pass would need a
+  forward read on the next meetings before any arm. Fewer than 25 entered sessions is no verdict.
+- **Pass-or-fail:** mean net per session above zero with a one-sided t above 2, both time-halves
+  positive, positive at 1.5× costs. **Minimum detectable effect:** from the sample's own spread,
+  recorded in the result; with about 36 sessions only a large effect can pass.
+- **Declared limits:** settlement at `daily_closes` (the official close from 2024-05-13, the vendor's
+  last print before); one-minute marks only; nothing reflects today's state.
+- **Robustness beside a pass:** wings 10 and 30.
+- **Data:** `scripts/afternoon_0dte_items60_62.py fomc`, `SPX-60s.db`. Results stay local.
+- **Decides:** a pass leads to a forward paper read on the next meetings; a fail or no verdict closes
+  the FOMC expected-move fly as specified.
+
+### 61. The 13:45 sandwich read on 2025-26 (exploratory, item 9's rule)
+
+*Source: the same 2026-11-07 review. Its live board showed item 9's rule earning over the last twelve
+months, against item 9's fail on 2022-24 history. Item 58 showed a late-day 0DTE edge changing between
+windows, the other way. The user approved the read on 2026-11-07. Declared here before it is run.*
+
+- **What it is:** item 9's rule, unchanged, read on the window item 9 never scored, **2025-01-01 to
+  2026-11-06**. Item 9 failed its design, so this read is **exploratory**: it cannot overturn item 9,
+  and it can only motivate a new declared item with a forward read.
+- **The rule (item 9's):** from the **13:45** quote, a condor with its shorts at the listed strikes
+  nearest spot − 5 and spot + 5 and **5-point** wings, one contract, held to the close. Two arms,
+  reported apart: unfiltered, and item 9's filters (prior VIX close below 24, credit at least half
+  the width).
+- **Reported:** net per session at the working, quarter-of-the-way and mid fills, by year, for both
+  arms. The same script's read of 2022-05-16 to 2024-12-31 is reported beside it, so the two windows
+  are priced the same way.
+- **No verdict is recorded.** The register row stays an observation.
+
+### 62. Fade to the day's midpoint at 13:45: does SPX close toward it?
+
+*Source: the same 2026-11-07 review. A community rule picks the side of an afternoon broken-wing fly
+by whether price at 13:45 is below or above the day's midpoint, betting on reversion. The user
+approved the test on 2026-11-07. Declared here before any of it is run.*
+
+- **Question:** at 13:45, does SPX close on the far side of its 13:45 price from the day's
+  midpoint, that is, toward the midpoint?
+- **Where the edge would live:** a **timing signal**. Only if the signal exists does any structure
+  built on it matter, so the signal is tested alone, in index points, with no structure and no costs.
+- **Look-alikes:** item 8 (box-edge fades) found intraday continuation, not reversion, on ThetaData
+  1-minute SPX. This is a different reference level and a fixed time. Item 8's result is the prior,
+  and the declaration expects a fail.
+- **The rule:** the midpoint is the mean of the spot trail's high and low from 09:30 to 13:45. The
+  signal is +1 when the 13:45 spot is below it and −1 above; on it, no observation. The outcome is
+  the signal times (the close − the 13:45 spot), in index points.
+- **Windows:** design 2022-05-16 to 2024-12-31 (about 650 sessions); holdout 2025-01-01 to 2026-11-06,
+  read only after a design pass. Fewer than 100 observations is no verdict.
+- **Pass-or-fail:** mean points above zero with a one-sided t above 2 and both design time-halves
+  positive; then the holdout with the same checks.
+- **Reported, never filters:** by side of the midpoint, by distance from it (0-5, 5-15, 15+ points),
+  by year, by settlement source.
+- **Data:** `scripts/afternoon_0dte_items60_62.py fade`, `SPX-60s.db`. Results stay local.
+- **Decides:** a pass leads to a declared structure test (the one-sided fly) and a forward read; a
+  fail closes the midpoint fade at 13:45.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

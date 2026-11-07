@@ -2378,6 +2378,103 @@
       "retest": null,
       "retests": [],
       "outcome": null
+    },
+    {
+      "id": 60,
+      "study": "item60",
+      "title": "FOMC expected-move flies: two short iron flies at the expected move, sold before the 14:00 statement",
+      "status": "declared",
+      "setup": "event-gate",
+      "side": "neutral",
+      "structure": "iron-fly",
+      "window": "0dte",
+      "measure": "net per FOMC decision day in $ (two flies, one contract each), against the same rule on other days",
+      "expected": "a positive mean net per decision day after the suite's tastytrade costs",
+      "sample": "every scheduled decision day 2022-05-16..2026-11-06 (~36), one whole-sample read, too few to split; < 25 = no verdict",
+      "rule": "one-sided t > 2, both time-halves positive, positive at 1.5x costs",
+      "mechanism": "implied vol bid into the 14:00 statement falls after it; the flies sit at the priced move",
+      "rivals": [
+        {
+          "explanation": "any afternoon fly earns this",
+          "check": "the same rule on non-FOMC days as a placebo; excess reported"
+        },
+        {
+          "explanation": "optimistic fills",
+          "check": "verdict at working; mid and natural reported"
+        },
+        {
+          "explanation": "one meeting decides it",
+          "check": "worst five sessions and by-year results reported"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#60-fomc-expected-move-flies-two-short-iron-flies-at-the-expected-move-sold-before-the-1400-statement",
+      "legacy": false,
+      "results": [],
+      "retest": null,
+      "retests": [],
+      "outcome": null
+    },
+    {
+      "id": 61,
+      "study": "item61",
+      "title": "The 13:45 sandwich read on 2025-26 (exploratory, item 9's rule)",
+      "status": "observation",
+      "setup": "afternoon-sandwich",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "0dte",
+      "measure": "net per session in $ at one contract, unfiltered and with item 9's filters, 2025-01-01..2026-11-06 beside 2022-05-16..2024-12-31",
+      "expected": "exploratory: no verdict; item 9's design fail stands",
+      "sample": "about 460 sessions 2025-26; the 2022-24 read reported beside it",
+      "rule": "none (exploratory read)",
+      "mechanism": "the 0DTE variance premium over the last two and a quarter hours, as item 9",
+      "rivals": [
+        {
+          "explanation": "fills",
+          "check": "working, quarter-of-the-way and mid fills reported"
+        },
+        {
+          "explanation": "a regime, not an edge",
+          "check": "by-year results in both windows"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#61-the-1345-sandwich-read-on-2025-26-exploratory-item-9s-rule",
+      "legacy": false,
+      "results": [],
+      "retest": null,
+      "retests": [],
+      "outcome": null
+    },
+    {
+      "id": 62,
+      "study": "item62",
+      "title": "Fade to the day's midpoint at 13:45: does SPX close toward it?",
+      "status": "declared",
+      "setup": "mean-reversion",
+      "side": "directional",
+      "structure": "none",
+      "window": "0dte",
+      "measure": "signal x (close - 13:45 spot) in SPX points, signal +1 below the day's high-low midpoint, -1 above",
+      "expected": "a positive mean in points (the declaration expects a fail, after item 8)",
+      "sample": "design 2022-05-16..2024-12-31 (~650 sessions); holdout 2025-01-01..2026-11-06 after a design pass; < 100 = no verdict",
+      "rule": "one-sided t > 2 and both design time-halves positive; then the holdout with the same checks",
+      "mechanism": "afternoon reversion toward the day's midpoint",
+      "rivals": [
+        {
+          "explanation": "drift",
+          "check": "results by side of the midpoint"
+        },
+        {
+          "explanation": "a few large days",
+          "check": "results by distance from the midpoint and by year"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#62-fade-to-the-days-midpoint-at-1345-does-spx-close-toward-it",
+      "legacy": false,
+      "results": [],
+      "retest": null,
+      "retests": [],
+      "outcome": null
     }
   ],
   "rule_changes": []
