@@ -704,7 +704,7 @@ the worst cell, the two end columns and theta, green where better than now and r
 manage's sized income trades in the package's own ranking (never re-sorted here), money in the suite's
 layout. Risk is the figure the per-trade cap was applied to: a short put's stress loss, never its
 strike. The card always says the prices are a day old and to re-quote before sending. Its "waiting
-for room" table is manage's `waiting` list: each row at its `if_room` size, with a chip coloured by
+for room" list is manage's `waiting` list, drawn as trade cards like the fits (2026-11-06): each at its `if_room` size, with a chip coloured by
 manage's own `bp_level` (ok / over / far over, never graded here) and a theta-over chip; the too-big
 list leaves out a row already shown as waiting. An "ex earnings buying power" checkbox swaps in
 manage's `ex_earnings` list, the same candidates sized with the earnings trades' buying power freed;

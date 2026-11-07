@@ -162,9 +162,11 @@ export function candidateModel(
   capDollars: number | null,
   chips: ReactNode,
   /** The per-share net price as the income card states it (`netPrice`), and what a narrowed row is. */
-  said: { price: string; narrowed: string | null },
+  said: { price: string; narrowed: string | null; units?: number; binding?: string | null; waiting?: boolean },
 ): TradeCardModel {
-  const n = c.units;
+  // A waiting trade is drawn at the size it takes once the book has room (`ifRoom`).
+  const n = said.units ?? c.units;
+  const binding = said.units === undefined ? c.binding : (said.binding ?? null);
   const cash = c.perUnit.cash === null ? null : c.perUnit.cash * n;
   // The loss the cap was applied to: a spread's max loss, a short put's 1st-percentile stress loss.
   const risk = c.kind === "covered_call" ? null : c.perUnit.stressLoss === null ? null : Math.abs(c.perUnit.stressLoss) * n;
@@ -174,7 +176,7 @@ export function candidateModel(
     key: `${c.underlying}-${c.kind}-${c.expiry ?? ""}-${c.legs.map((l) => l.strike).join("/")}`,
     symbol: c.underlying,
     spot: null,
-    shape: `${KIND[c.kind] ?? c.kind.replace(/_/g, " ")} · income${said.narrowed ? ` · ${said.narrowed}` : ""}`,
+    shape: `${KIND[c.kind] ?? c.kind.replace(/_/g, " ")} · income${said.narrowed ? ` · ${said.narrowed}` : ""}${said.waiting ? " · waiting for room" : ""}`,
     chips,
     cash,
     side: [`${price} at mid${n > 1 ? ` × ${n}` : ""}`, `${c.dte ?? "—"} days · ${dayMonth(c.expiry)}`],
@@ -195,7 +197,7 @@ export function candidateModel(
       `theta ${fmtCash(c.perUnit.theta === null ? null : c.perUnit.theta * n)} per day`,
     ],
     foot: [
-      `next stops at: ${c.binding ?? "max contracts"}`,
+      `next stops at: ${binding ?? "max contracts"}`,
       // A spread's odds: the chance of any loss / of the max loss, its break-even, and what getting in
       // costs as a share of the credit. A known earnings date is after expiry (or the trade was dropped),
       // so only an unknown one is said.

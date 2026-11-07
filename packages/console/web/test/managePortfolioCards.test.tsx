@@ -6,7 +6,7 @@ import { AddingTradesCard, IncomeCard, netPrice } from "../src/pages/Live/Income
 import { BandDial, BrokerCheckBody, ContributionBars, HedgeBody, placesApart } from "../src/pages/Live/PortfolioCards";
 import { PortfolioLayout } from "../src/pages/Live/PortfolioLayout";
 import { BuyingPowerCard, LadderCard, RiskGraphCard, RiskMatrixCard, ScenarioCards } from "../src/pages/Live/ScenarioCards";
-import { aligned, inView, tables } from "./viewTables";
+import { inView, tables } from "./viewTables";
 import { writePref } from "../src/lib/prefs";
 
 /**
@@ -576,8 +576,11 @@ describe("IncomeCard", () => {
     expect(html).toContain("nothing fits today: 2 are waiting for room below");
     expect(html).toContain("waiting for room: 2 stopped only by buying power, the theta ceiling or the expiry&#x27;s concentration");
     expect(html).toContain("buying power used 43% · cap 30% at today&#x27;s VIX (amber within 10% of it, red past that)");
-    expect(html).toContain('class="chip chip-warn" title="over the cap">35%');
-    expect(html).toContain('class="chip chip-bad" title="far over the cap">45%');
+    // Each waiting trade is a card at its if-room size, its chip graded by where taking it today leaves buying power.
+    expect(html).toContain('class="chip chip-warn" title="buying power after taking it today: over the cap">BP after 35%');
+    expect(html).toContain('class="chip chip-bad" title="buying power after taking it today: far over the cap">BP after 45%');
+    expect(html).toContain("income · waiting for room");
+    expect(html).toContain("next stops at: per-trade risk"); // the if-room binding, not today's
     expect(html).toContain("θ over");
     expect(html).toContain("+$494.00"); // cash for the 2 contracts it would take, not the 0 it takes today
     // The too-big list keeps only what a cap on the trade itself stops: a waiting row is not listed twice.
@@ -825,17 +828,13 @@ describe("the portfolio tab, simple and detail", () => {
     expect(detail).toContain("pf-tiles-6");
   });
 
-  it("draws the fits as cards and keeps the waiting table without a buying-power column, in both views", () => {
+  it("draws the fits and the waiting trades as cards, no table, in both views", () => {
     const c = income({ fits: [candidate()], waiting: [candidate({ ifRoom: room() })], waitingTotal: 1 });
     const simple = tables(inView("simple", () => render(<IncomeCard c={c} />)));
     const detail = tables(inView("detail", () => render(<IncomeCard c={c} />)));
-    expect(simple).toHaveLength(1);
-    for (const t of [...simple, ...detail]) {
-      expect(t.headers).not.toContain("buying power");
-      expect(aligned(t)).toBe(true);
-    }
-    expect(simple[0]!.headers).toContain("BP after");
-    expect(inView("simple", () => render(<IncomeCard c={c} />))).toContain("tc-card");
+    expect(simple).toHaveLength(0);
+    expect(detail).toHaveLength(0);
+    expect(inView("simple", () => render(<IncomeCard c={c} />)).match(/tc-card/g)?.length).toBe(2);
   });
 
   it("hides a candidate under the remembered premium floor and says how many", () => {
