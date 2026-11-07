@@ -74,6 +74,15 @@ T_BAR = 2.0
 STRESS_FEES = 1.5
 STRESS_COSTS = {"tastytrade_costs": {"slippage_frac_of_spread": 0.25}}
 ARMS = ("rich", "unselected", "all")
+#: The replay's corrections, oldest first (`orchestrator.studyversion`). A result written before the
+#: last of them is stale on the studies board.
+REPLAY_CORRECTIONS = (
+    {"on": "2026-11-07", "what": "the chain reader keys each quote by the first letter of the store's "
+     "right (C, P), as item 31's reader does; it had keyed by the stored word (CALL, PUT)",
+     "why": "the first run found no at-the-money straddle for any session and dropped every one as "
+     "no_expected_move, so no trade was written; the chains were stored, the keys never matched",
+     "decided": "user, 2026-11-07: fix the data gaps behind items 47 and 54", "before_read": True},
+)  # fmt: skip
 
 
 # ------------------------------------------------------------------------------------------------
@@ -350,8 +359,10 @@ def load_bars(names: list[str], host: str, port: int) -> dict[str, dict[date, tu
 
 
 def chain(conn, symbol: str, session: date, expiration: date) -> dict[tuple[float, str], tuple]:
+    """One chain as {(strike, "C" or "P"): (bid, ask)}. The store spells the right out ("CALL",
+    "PUT"); the study's keys are the first letter, as item 31's chain reader makes them."""
     return {
-        (k, r): (b, a)
+        (k, r[0].upper()): (b, a)
         for k, r, b, a in conn.execute(
             "SELECT strike, right, bid, ask FROM eod_chain_quotes "
             "WHERE symbol = ? AND session = ? AND expiration = ?",
