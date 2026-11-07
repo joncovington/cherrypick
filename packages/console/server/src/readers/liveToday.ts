@@ -40,6 +40,7 @@ import type {
   LiveAttentionItem,
   LiveLoopId,
   LiveMeicBrokerHealth,
+  LiveMeicOpenRow,
   LiveTodayArm,
   LiveTodayLoop,
   LiveTodayMoney,
@@ -339,7 +340,7 @@ function readMeicToday(config: ConsoleConfig, now: Date): LoopRead {
     entriesToday:
       p.open.filter((r) => r.tradeDate === session && !r.working).length + todays.length,
     today,
-    mark: { value: null, at: null, basis: "MEIC's live loop writes no marks" },
+    mark: meicOpenMark(p.open),
     breaker: breakerOf(
       limit,
       limit ? meicBreakerFigure(dbPath, session) : null,
@@ -525,6 +526,27 @@ export function isRetired(l: Omit<LiveTodayLoop, "retired">): boolean {
   );
 }
 
+
+
+export const MEIC_MARK_BASIS =
+  "kept if bought back now at the stream cache's mid: each held condor's entry credit less its cost to close, before fees; " +
+  "n/r when any held condor is unmarked (a side already closed, or a leg without a fresh two-sided quote)";
+
+/**
+ * MEIC's loop mark (2026-11-07): the open condors' stream-cache marks (`meicLive.markOpen`), summed as
+ * whole-position cash, entry credit plus the close at the mark. Nothing held is no mark; one held
+ * condor without a mark makes the sum n/r rather than a part-sum that reads as the whole book. Entries
+ * still working hold nothing and are left out. `at` is the oldest quote behind the sum.
+ */
+export function meicOpenMark(open: LiveMeicOpenRow[]): LiveTodayLoop["mark"] {
+  const held = open.filter((r) => !r.working);
+  if (held.length === 0) return { value: null, at: null, basis: MEIC_MARK_BASIS };
+  const marked = held.flatMap((r) => (r.mark !== null && r.entryCash !== null ? [{ cash: r.entryCash + r.mark.exitCash, at: r.mark.at }] : []));
+  if (marked.length < held.length) return { value: null, at: null, basis: MEIC_MARK_BASIS };
+  const value = Math.round(marked.reduce((t, m) => t + m.cash, 0) * 100) / 100;
+  const at = marked.map((m) => m.at).sort()[0] ?? null;
+  return { value, at, basis: MEIC_MARK_BASIS };
+}
 export function readLiveToday(config: ConsoleConfig, now: Date = new Date()): LiveTodayPayload {
   const { session, minute } = etParts(now);
   const enabled = new Map(moduleIds(config).map((m) => [m.id, m.enabled]));

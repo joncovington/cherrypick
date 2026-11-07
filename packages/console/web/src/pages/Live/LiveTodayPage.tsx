@@ -5,6 +5,7 @@ import { Card, PnlCell, fmtNum } from "../../components/DataTable";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { type Column } from "../../components/columns";
 import { fmtMoney } from "../../lib/format";
+import { etClock } from "../../lib/etTime";
 import { useLiveToday } from "../../lib/useLiveToday";
 import { Tile } from "../Flies/PerformanceTab";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
@@ -79,6 +80,41 @@ export function handNote(d: LiveTodayPayload): string {
   if (h === undefined || h.status !== "ok" || h.orders.length === 0) return "No 0DTE trade by hand today.";
   const net = h.net === null ? "n/r" : `${fmtMoney(h.net)}${h.openLegs.length > 0 ? " at mark" : ""}`;
   return `By hand: ${net}, not in the loops' total.`;
+}
+
+/** One loop's open book at its own mark, or the hand trades' net with their held legs at mark. */
+export interface OpenAtMark {
+  key: string;
+  label: string;
+  value: number | null;
+  title: string;
+}
+
+/**
+ * What is open now, at each loop's own mark (2026-11-07): a loop holding something, or with a mark,
+ * is listed with its figure and the mark's basis; the hand trades are listed while a leg is held.
+ * Never summed: flies marks at mid, bwb after costs to date, MEIC before fees, so a total would add
+ * unlike things. Empty when nothing is open anywhere.
+ */
+export function openAtMark(d: LiveTodayPayload): OpenAtMark[] {
+  const out: OpenAtMark[] = d.loops
+    .filter((l) => !l.retired && l.ledger === "ok" && (l.open > 0 || (l.mark?.value ?? null) !== null))
+    .map((l) => ({
+      key: l.loop,
+      label: l.loop,
+      value: l.mark?.value ?? null,
+      title: `${l.loop}: ${l.open} open · ${l.mark?.basis ?? "no mark"}${l.mark?.at ? ` · as of ${etClock(l.mark.at, "?")} ET` : ""}`,
+    }));
+  const h = d.hand;
+  if (h !== undefined && h.status === "ok" && h.openLegs.length > 0) {
+    out.push({
+      key: "hand",
+      label: "by hand",
+      value: h.net,
+      title: `by hand: the day's net with ${h.openLegs.length} held leg${h.openLegs.length === 1 ? "" : "s"} at mark (realised and open together); never in the loops' total`,
+    });
+  }
+  return out;
 }
 
 /** True when any loop has a working order: the simple view then shows the `working` column too. */
@@ -318,6 +354,14 @@ const NET_HELP: CardHelpContent = {
           loop&apos;s own measure (hover for which) and are not added across loops. A trade by hand is stated beside the total and never in it.
         </p>
       </HelpWarn>
+      <HelpSection title="Open at mark">
+        <p>
+          What each loop still holds, at its own mark: flies at the loop&apos;s mid mark, bwb as unrealised net after costs to date, MEIC as
+          the entry credit less the cost to close at the stream cache&apos;s mid, before fees. They are listed, not summed, because each is
+          measured differently. A loop with any position it cannot mark reads n/r rather than a part. By hand is the day&apos;s net with the
+          held legs at mark.
+        </p>
+      </HelpSection>
       <HelpSection title="Armed and halt">
         <p>A loop is armed when its arm record is dated today and the disarm time has not passed. The halt flag is suite-wide and blocks new entries on every loop; clearing it arms nothing.</p>
       </HelpSection>
@@ -400,6 +444,24 @@ function LoopParentCard({ l, showWorking, onOpen }: { l: LiveTodayLoop; showWork
   );
 }
 
+/** The open-at-mark line under the realised net: each loop's figure in its own tone, its basis on hover. */
+function OpenLine({ items }: { items: OpenAtMark[] }) {
+  return (
+    <p className="lt-open" aria-label="open at mark">
+      <span className="lt-open-lab">open at mark</span>
+      {items.length === 0 ? (
+        <span className="muted">nothing open</span>
+      ) : (
+        items.map((i) => (
+          <span key={i.key} className="lt-open-item" title={i.title}>
+            {i.label} <span className={i.value === null ? "muted" : tone(i.value)}>{i.value === null ? "n/r" : fmtMoney(i.value)}</span>
+          </span>
+        ))
+      )}
+    </p>
+  );
+}
+
 export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; manage?: ManagePayload }) {
   const s = d.suite;
   const lightbox = useOpenParam("loop");
@@ -440,6 +502,7 @@ export function LiveTodayView({ data: d, manage }: { data: LiveTodayPayload; man
               · {s.trades === null ? "n/r" : String(s.trades)} resolved
             </span>
           </div>
+          <OpenLine items={openAtMark(d)} />
           <span className="lt-hero-chips">
             <span className={`chip ${s.armed.length > 0 ? "chip-ok" : ""}`} title="A loop is armed when its arm record is dated today and the disarm time has not passed.">
               armed · {d.session}: {s.armed.length === 0 ? `none of ${s.loops}` : `${s.armed.length} of ${s.loops} · ${s.armed.join(", ")}`}

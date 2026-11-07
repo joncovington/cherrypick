@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { LiveMeicPayload, LiveTodayHand, LiveTodayLoop, LiveTodayPayload } from "@console/shared";
-import { LiveTodayView, LoopDetail, suiteBadgeText } from "../src/pages/Live/LiveTodayPage";
+import { LiveTodayView, LoopDetail, openAtMark, suiteBadgeText } from "../src/pages/Live/LiveTodayPage";
 import { DayChains, bwbChains, meicChains } from "../src/pages/Live/LiveTodayOrders";
 import { expiredWords, handModel } from "../src/pages/Live/HandToday";
 import { inView } from "./viewTables";
@@ -363,5 +363,32 @@ describe("the hand row", () => {
     expect(html).toContain("no position evaluation today yet (newest 2026-10-14)");
     expect(html).toContain("No 0DTE trade by hand today.");
     expect(html).not.toContain("tc-card");
+  });
+
+  it("lists what is open at each loop's own mark under the realised net, never summed, n/r where a loop cannot mark", () => {
+    const d = payload({
+      loops: [
+        loop("flies", { open: 0, mark: null }),
+        loop("meic", { open: 2, mark: { value: 50, at: "2030-01-02T17:44:10.000Z", basis: "before fees" } }),
+        loop("bwb", { open: 1, mark: { value: null, at: null, basis: "n/r when any is unmarked" } }),
+      ],
+      hand: hand(HAND_IC),
+    });
+    const items = openAtMark(d);
+    expect(items.map((i) => [i.label, i.value])).toEqual([["meic", 50], ["bwb", null], ["by hand", 168]]);
+    expect(items[0]!.title).toContain("before fees");
+    const html = render(d).replace(/<!-- -->/g, "");
+    expect(html).toContain('aria-label="open at mark"');
+    expect(html).toMatch(/meic <span class="pnl-pos">\$50\.00/);
+    expect(html).toMatch(/bwb <span class="muted">n\/r/);
+    // listed, never added into one figure or into the loops' total
+    expect(html).not.toContain("$218.00");
+    expect(html).toMatch(/net today · all loops[\s\S]*?class="pf-hero pnl-pos"[^>]*>\$0\.00</);
+  });
+
+  it("says nothing is open when no loop holds anything and no hand leg is held", () => {
+    const d = payload({ loops: [loop("flies", { open: 0, mark: null }), loop("meic", { open: 0, mark: { value: null, at: null, basis: "x" } })] });
+    expect(openAtMark(d)).toEqual([]);
+    expect(render(d)).toContain(">nothing open<");
   });
 });
