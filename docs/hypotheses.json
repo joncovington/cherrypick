@@ -1017,7 +1017,7 @@
       "id": 31,
       "study": "item31",
       "title": "The earnings module's paper rule: does any strategy it opens earn after costs?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "earnings-premium",
       "side": "neutral",
@@ -1060,10 +1060,12 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#31-the-earnings-modules-paper-rule-does-any-strategy-it-opens-earn-after-costs",
       "results": [
-        "{home}/data/backtest/results/research/item31/results.json"
+        "{home}/data/backtest/results/research/item31/results.json",
+        "{home}/data/backtest/results/research/item31/results.md"
       ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "no arm passes the design window, and three arms have too few paired trades for a verdict; the directional credit spread's gain over the no-report control holds but its own net does not clear the bar, so costs eat what the report is worth; the holdout is reported only; the earnings paper rule is unchanged and retirement is the user's call"
     },
     {
       "id": 32,
@@ -1195,7 +1197,7 @@
       "id": 35,
       "study": "item35",
       "title": "The bwb module's whole rule at real quotes: does the put broken-wing butterfly or any add-on arm earn after costs?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "bwb-whole-rule",
       "side": "neutral",
@@ -1238,16 +1240,18 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#35-the-bwb-modules-whole-rule-at-real-quotes-does-the-put-broken-wing-butterfly-or-any-add-on-arm-earn-after-costs",
       "results": [
-        "{home}/data/backtest/results/research/item35/results.json"
+        "{home}/data/backtest/results/research/item35/results.json",
+        "{home}/data/backtest/results/research/item35/results.md"
       ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "none of the twelve tests passes the design window, gated or ungated, and the flip and delta-dte3 arms have no verdict on their inputs; the holdout is reported only; bwb stays in paper, retirement the user's call"
     },
     {
       "id": 36,
       "study": "item36",
       "title": "pmcc's own rule on real quotes: the shield, three variants and two baselines",
-      "status": "declared",
+      "status": "no_verdict",
       "legacy": false,
       "setup": "pmcc-own-rule",
       "side": "bullish",
@@ -1282,10 +1286,12 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#36-pmccs-own-rule-on-real-quotes-the-shield-three-variants-and-two-baselines",
       "results": [
-        "{home}/data/backtest/results/research/item36/results.json"
+        "{home}/data/backtest/results/research/item36/results.json",
+        "{home}/data/backtest/results/research/item36/results.md"
       ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "every arm falls short of the declared four judged funds in the design window, because too few funds have enough priced weeks, so nothing is judged and the holdout is not read; pmcc paper runs unchanged, and a fuller read needs better chain coverage of the funds and would be a retest"
     },
     {
       "id": 37,
@@ -1525,7 +1531,7 @@
       "id": 42,
       "study": "item42",
       "title": "The break-even condor at its own wing widths, with and without the stabilization gate",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "break-even-condor",
       "side": "neutral",
@@ -1617,7 +1623,7 @@
       "id": 44,
       "study": "item44",
       "title": "The stabilization gate across wing widths 10 to 40 on MEIC's live rule",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "entry-filter",
       "side": "neutral",
@@ -1655,9 +1661,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#44-the-stabilization-gate-across-wing-widths-10-to-40-on-meics-live-rule",
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item44/study-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item44/study-holdout-2025-07-01-2026-10-12.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "provisional: the gate fails at every width in the design window, beating neither its own width ungated nor the placebo, and w35 and w40 beat w10 on dollars but fail on net over buying power; the holdout agrees; the gate stays off live's rule at every width and wings of 35 to 40 are closed for it"
     },
     {
       "id": 45,
@@ -1709,7 +1719,7 @@
       "id": 46,
       "study": "item46",
       "title": "Where implied runs above realised: the variance premium by underlying, tenor and strike",
-      "status": "declared",
+      "status": "passed",
       "legacy": false,
       "setup": "variance-premium",
       "side": "neutral",
@@ -1747,9 +1757,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#46-where-implied-runs-above-realised-the-variance-premium-by-underlying-tenor-and-strike",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item46/results.json",
+        "{home}/data/backtest/results/research/item46/results.md"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "one of the forty cells passes, the equity-index 10-delta put at 7 days; every index cell at 30 to 60 days fails, and no non-equity cell passes; the passing cell becomes a proposal for a paper arm, declared as its own item, with sessions after 2026-10-30 read first"
     },
     {
       "id": 47,
@@ -1801,7 +1815,7 @@
       "id": 48,
       "study": "item48",
       "title": "The stop of MEIC's live rule: 1.8, 1.9, 2.0 and 2.2 times the credit, filled by the loop or resting at the broker",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "stop-mechanics",
       "side": "neutral",
@@ -1831,15 +1845,18 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#48-the-stop-of-meics-live-rule-18-19-20-and-22-times-the-credit-filled-by-the-loop-or-resting-at-the-broker",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item48/study-design-2022-05-16-2025-06-30.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "provisional: every arm fails the design window against live-1400, the loop ratios, the resting stops and the stop off alike, so live keeps its 2.0x stop; the resting stop can still be switched on as outage insurance, argued as insurance and not as edge"
     },
     {
       "id": 49,
       "study": "item49",
       "title": "The \"Crazy Ivan\" on TQQQ: a cash-secured 16-delta put sold by a resting order 20% over the ask",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "down-day",
       "side": "bullish",
@@ -1881,15 +1898,20 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#49-the-crazy-ivan-on-tqqq-a-cash-secured-16-delta-put-sold-by-a-resting-order-20-over-the-ask",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item49/results-design.json",
+        "{home}/data/backtest/results/research/item49/results-holdout.json",
+        "{home}/data/backtest/results/research/item49/results.md"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "all seven arms fail the design window, so the holdout reads none and the Crazy Ivan claim holds for no arm; the question is closed and the TQQQ plan stays shelved"
     },
     {
       "id": 50,
       "study": "item50",
       "title": "Item 43's wider wings with live's gates on: 15 and 20 against the live rule",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "wing-width",
       "side": "neutral",
@@ -1927,15 +1949,19 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#50-item-43s-wider-wings-with-lives-gates-on-15-and-20-against-the-live-rule",
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item50/study-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item50/study-holdout-2025-07-01-2026-10-12.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "provisional: g15 and g20 both miss the paired t bar in the design window, so the holdout does not count; live stays at 10 wide with its gates, and item 43's pass reads as a result about the ungated rule only"
     },
     {
       "id": 51,
       "study": "item51",
       "title": "Dropping the call side when the VIX curve is stressed",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "curve-gate",
       "side": "neutral",
@@ -1977,9 +2003,16 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#51-dropping-the-call-side-when-the-vix-curve-is-stressed",
-      "results": [],
+      "results": [
+        "{home}/data/backtest/results/research/item51/study-part1-design-2022-05-16-2025-06-30.json",
+        "{home}/data/backtest/results/research/item51/study-part1-holdout-2025-07-01-2026-10-12.json",
+        "{home}/data/backtest/results/research/item51/study-part2-design-2024-01-19-2025-06-30.json",
+        "{home}/data/backtest/results/research/item51/study-part2-holdout-2025-07-01-2026-10-12.json",
+        "{home}/data/backtest/results/research/item51/validation.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "provisional: every cell fails in both parts, be, live-1400 and w15 on inverted and hump days alike, and the holdouts agree; part 2's hourly bars passed their validation against the broker's; the call side stays and the curve stays a reported column on the trades"
     },
     {
       "id": 52,
@@ -2027,7 +2060,7 @@
       "id": 53,
       "study": "item53",
       "title": "The time exit for short premium opened inside 30 DTE",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "short-dated-management",
       "side": "neutral",
@@ -2057,9 +2090,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#53-the-time-exit-for-short-premium-opened-inside-30-dte",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item53/design.json",
+        "{home}/data/backtest/results/research/item53/holdout.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "no challenger beats A in the design window under Holm, so the holdout confirms none; manage's default A stands and the question is closed"
     },
     {
       "id": 54,
@@ -2103,7 +2140,7 @@
       "id": 55,
       "study": "item55",
       "title": "Does a defined-risk index collar improve a long-delta book after costs?",
-      "status": "declared",
+      "status": "failed",
       "legacy": false,
       "setup": "portfolio-hedge",
       "side": "long",
@@ -2137,9 +2174,13 @@
         }
       ],
       "pointer": "docs/edge-hypotheses-plan.md#55-does-a-defined-risk-index-collar-improve-a-long-delta-book-after-costs",
-      "results": null,
+      "results": [
+        "{home}/data/backtest/results/research/item55/design.json",
+        "{home}/data/backtest/results/research/item55/holdout.json"
+      ],
       "retest": null,
-      "retests": []
+      "retests": [],
+      "outcome": "none of the five tests is confirmed, so the collar keeps its \"no tested edge\" label and stays offered as an untested hedge"
     }
   ],
   "rule_changes": []
