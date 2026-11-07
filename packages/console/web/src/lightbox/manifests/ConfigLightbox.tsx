@@ -1,4 +1,6 @@
 import { Card } from "../../components/DataTable";
+import { HelpSection } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
 import { LockHero } from "../../pages/Config/LockHero";
 import { ConfigSection } from "../../pages/Config/ConfigSection";
 import { SECTIONS } from "../../pages/Config/fieldMeta";
@@ -88,8 +90,10 @@ export function ConfigLightbox({ slide }: { slide: string }) {
       id: s.id,
       label: s.title.toLowerCase(),
       render: () => (
-        <div className="cards cards-wide">
-          <ConfigSection section={s} model={model.data} updatedAt={model.dataUpdatedAt} />
+        <div className="pf-layout">
+          <Section concept="room" tag={s.title.toLowerCase()} question={`What is configured under ${s.title.toLowerCase()}?`}>
+            <ConfigSection section={s} model={model.data} updatedAt={model.dataUpdatedAt} />
+          </Section>
         </div>
       ),
     })),
@@ -97,19 +101,33 @@ export function ConfigLightbox({ slide }: { slide: string }) {
       id: "prefs",
       label: "prefs",
       render: () => (
-        <div className="cards cards-wide">
-          <Card title="Console preferences" collapseKey="config-prefs" updatedAt={model.dataUpdatedAt}>
-            <p className="cfg-section-blurb muted">
-              This browser's own display choices, kept in the console's store. They save as you change them —
-              nothing here reaches another package.
-            </p>
-            <div className="cfg-fields">
-              <ThemePref />
-              {PREFS.map((p) => (
-                <PrefToggle key={p.key} pref={p} />
-              ))}
-            </div>
-          </Card>
+        <div className="pf-layout">
+          <Section concept="room" tag="preferences" question="How should this browser show the console?">
+            <Card
+              title="Console preferences"
+              className="lv-12"
+              collapseKey="config-prefs"
+              updatedAt={model.dataUpdatedAt}
+              help={{
+                title: "Console preferences",
+                body: (
+                  <HelpSection title="Where they are kept">
+                    <p>
+                      This browser's own display choices, kept in the console's store. They save as you change them — nothing here reaches
+                      another package.
+                    </p>
+                  </HelpSection>
+                ),
+              }}
+            >
+              <div className="cfg-fields">
+                <ThemePref />
+                {PREFS.map((p) => (
+                  <PrefToggle key={p.key} pref={p} />
+                ))}
+              </div>
+            </Card>
+          </Section>
         </div>
       ),
     },

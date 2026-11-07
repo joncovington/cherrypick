@@ -17,7 +17,11 @@ import { AXIS_FONT, SERIES_COLORS, LevelStrip } from "../../components/Charts";
 import { TechnicalsCards } from "./TechnicalsCards";
 import { useFeatures } from "../../lib/useFeatures";
 import { isFeatureOn } from "../../lib/visibility";
-import { SortTh, sortRows, useSort } from "../../components/DataTable";
+import { Card, SortTh, sortRows, useSort } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { FilterGroup } from "../../components/FilterSort";
+import { Section } from "../../components/Section";
+import { useFilterPanel } from "../useFilterPanel";
 
 /**
  * The morning report. Renders the fact pack and computes nothing.
@@ -132,22 +136,26 @@ function phaseChip(phase: string): string {
 function PhaseBanner({ pack }: { pack: MorningPack }) {
   const phase = pack.phase;
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>Session phase</h2>
-        {phase ? (
-          <span className={`chip ${phaseChip(phase.phase)}`}>{phase.phase.toUpperCase()}</span>
-        ) : (
-          <span className="chip chip-missing">unknown</span>
-        )}
-        {phase && phase.gatesMet !== null && phase.gatesMeasured !== null && (
-          <span className="card-asof">
-            {phase.gatesMet} met of {phase.gatesMeasured} measured
-          </span>
-        )}
-      </div>
+    <Card
+      title="Session phase"
+      className="lv-12"
+      controls={
+        <>
+          {phase ? (
+            <span className={`chip ${phaseChip(phase.phase)}`}>{phase.phase.toUpperCase()}</span>
+          ) : (
+            <span className="chip chip-missing">unknown</span>
+          )}
+          {phase && phase.gatesMet !== null && phase.gatesMeasured !== null && (
+            <span className="card-asof">
+              {phase.gatesMet} met of {phase.gatesMeasured} measured
+            </span>
+          )}
+        </>
+      }
+    >
       <p className={phase ? "" : "muted"}>{phase?.reason ?? "The pack carries no phase verdict."}</p>
-    </section>
+    </Card>
   );
 }
 
@@ -168,6 +176,21 @@ const ZONE_LABEL: Record<string, string> = {
  * verdict that actually decides anything. The two are free to disagree; that disagreement is the
  * point of recording this at all.
  */
+function deploymentHelp(d: NonNullable<MorningPack["deployment"]>): CardHelpContent {
+  return {
+    title: "The deployment score",
+    body: (
+      <HelpSection title="Record-only">
+        <p>
+          {d.note ?? "A recorded measurement — it feeds no gate, no phase and no sizing."}
+          {d.weightsRenormalized === true && " Weights were renormalized over the measured signals."}
+          {d.deferred.length > 0 && ` Deferred: ${d.deferred.join(", ")}.`}
+        </p>
+      </HelpSection>
+    ),
+  };
+}
+
 function DeploymentCard({ pack }: { pack: MorningPack }) {
   // Absent, not just null. The type says `MorningDeployment | null`, but the payload crosses a wire
   // from a server process that may be older than this bundle — a long-running console outlives its
@@ -178,17 +201,20 @@ function DeploymentCard({ pack }: { pack: MorningPack }) {
   if (!d) return null;
   const measured = (s: { status: string }) => s.status === "measured";
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>Deployment score</h2>
-        <span className="chip">record-only</span>
-        {d.zone !== null && <span className="chip">{ZONE_LABEL[d.zone] ?? d.zone}</span>}
-        {d.signalsMeasured !== null && d.signalsTotal !== null && (
-          <span className="card-asof">
-            {d.signalsMeasured} of {d.signalsTotal} signals measured
-          </span>
-        )}
-      </div>
+    <Card
+      className="lv-12"
+      title="Deployment score" flag="record-only" help={deploymentHelp(d)}
+      controls={
+        <>
+          {d.zone !== null && <span className="chip">{ZONE_LABEL[d.zone] ?? d.zone}</span>}
+          {d.signalsMeasured !== null && d.signalsTotal !== null && (
+            <span className="card-asof">
+              {d.signalsMeasured} of {d.signalsTotal} signals measured
+            </span>
+          )}
+        </>
+      }
+    >
 
       {d.score === null ? (
         <p className="muted">No score — {d.reason ?? "too few signals measured to blend one."}</p>
@@ -236,12 +262,7 @@ function DeploymentCard({ pack }: { pack: MorningPack }) {
         </div>
       )}
 
-      <p className="muted">
-        {d.note ?? "A recorded measurement — it feeds no gate, no phase and no sizing."}
-        {d.weightsRenormalized === true && " Weights were renormalized over the measured signals."}
-        {d.deferred.length > 0 && ` Deferred: ${d.deferred.join(", ")}.`}
-      </p>
-    </section>
+    </Card>
   );
 }
 
@@ -338,6 +359,18 @@ function PercentileRow({ id, p }: { id: string; p: MorningVolPercentile }) {
   );
 }
 
+const VOL_HELP: CardHelpContent = {
+  title: "The vol term structure",
+  body: (
+    <HelpSection title="Record-only">
+      <p>
+        The shape is a fact about the curve, not an instruction about the session, and feeds no gate. A percentile the history cannot support
+        is shown as a refusal with its sample count, never as a blank or a zero.
+      </p>
+    </HelpSection>
+  ),
+};
+
 function VolRegimeCard({ pack }: { pack: MorningPack }) {
   // Absent, not just null — same reason as DeploymentCard: a server process older than this bundle
   // omits the field entirely, and `=== null` sails straight past undefined.
@@ -345,17 +378,19 @@ function VolRegimeCard({ pack }: { pack: MorningPack }) {
   if (!v) return null;
   const season = v.seasonality;
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>Vol term structure</h2>
-        <span className="chip">record-only</span>
-        {v.shape !== null && <span className="chip">{v.shape}</span>}
-        {v.measuredPoints !== null && v.totalPoints !== null && (
-          <span className="card-asof">
-            {v.measuredPoints} of {v.totalPoints} points measured
-          </span>
-        )}
-      </div>
+    <Card
+      title="Vol term structure" flag="record-only" help={VOL_HELP}
+      controls={
+        <>
+          {v.shape !== null && <span className="chip">{v.shape}</span>}
+          {v.measuredPoints !== null && v.totalPoints !== null && (
+            <span className="card-asof">
+              {v.measuredPoints} of {v.totalPoints} points measured
+            </span>
+          )}
+        </>
+      }
+    >
 
       <VolCurve points={v.curve} />
 
@@ -421,8 +456,23 @@ function VolRegimeCard({ pack }: { pack: MorningPack }) {
             : `VIX is ${signedPct(season.vixVsNormPct)} against its ${MONTHS[(season.month ?? 1) - 1] ?? "monthly"} norm of ${fmt(season.norm, 2)}, across ${season.years ?? 0} years.`}
         </p>
       )}
-    </section>
+    </Card>
   );
+}
+
+function calendarHelp(c: MorningPack["calendar"]): CardHelpContent {
+  const asOf = c?.earnings?.asOf ?? null;
+  return {
+    title: "The calendar",
+    body: (
+      <HelpSection title="Implied move">
+        <p>
+          Implied move = 0.85 × the at-the-money straddle on the first expiration after the print, priced at the close
+          {asOf !== null ? ` (${asOf.slice(0, 16).replace("T", " ")} UTC)` : ""}.
+        </p>
+      </HelpSection>
+    ),
+  };
 }
 
 function CalendarCard({ pack }: { pack: MorningPack }) {
@@ -438,10 +488,7 @@ function CalendarCard({ pack }: { pack: MorningPack }) {
     spot: (r) => r.spot,
   });
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>Calendar</h2>
-      </div>
+    <Card title="Calendar" help={calendarHelp(c)}>
       {c === null ? (
         <p className="muted">No calendar facts in this pack.</p>
       ) : (
@@ -549,13 +596,9 @@ function CalendarCard({ pack }: { pack: MorningPack }) {
             </table>
             </div>
           )}
-          <p className="muted">
-            Implied move = 0.85 × the at-the-money straddle on the first expiration after the print, priced at the
-            close{c.earnings.asOf !== null ? ` (${c.earnings.asOf.slice(0, 16).replace("T", " ")} UTC)` : ""}.
-          </p>
         </>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -581,16 +624,18 @@ function PremarketCard({ pack }: { pack: MorningPack }) {
     ...Object.keys(p.futures).filter((k) => !FUTURES_ORDER.includes(k)),
   ];
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>Pre-market</h2>
-        <span className="chip">record-only</span>
-        {p.measuredFutures !== null && (
-          <span className="card-asof">
-            {p.measuredFutures} of {futures.length} futures live
-          </span>
-        )}
-      </div>
+    <Card
+      title="Pre-market"
+      controls={
+        <>
+          {p.measuredFutures !== null && (
+            <span className="card-asof">
+              {p.measuredFutures} of {futures.length} futures live
+            </span>
+          )}
+        </>
+      }
+    >
       <div className="table-scroll">
       <table className="data-table">
         <thead>
@@ -637,7 +682,7 @@ function PremarketCard({ pack }: { pack: MorningPack }) {
         </tbody>
       </table>
       </div>
-    </section>
+    </Card>
   );
 }
 
@@ -654,12 +699,14 @@ function MovesYieldsCard({ pack }: { pack: MorningPack }) {
   if (!m && !y) return null;
   const tenors = y ? [...TENORS.filter((t) => t in y.yields), ...Object.keys(y.yields).filter((t) => !TENORS.includes(t))] : [];
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>Expected move and yields</h2>
-        <span className="chip">record-only</span>
-        {y?.session && <span className="card-asof">Treasury curve, {y.session}</span>}
-      </div>
+    <Card
+      title="Expected move and yields"
+      controls={
+        <>
+          {y?.session && <span className="card-asof">Treasury curve, {y.session}</span>}
+        </>
+      }
+    >
       {m && (
         <div className="stats-grid">
           <div className="stat-tile">
@@ -729,7 +776,7 @@ function MovesYieldsCard({ pack }: { pack: MorningPack }) {
             </p>
           </>
         ))}
-    </section>
+    </Card>
   );
 }
 
@@ -819,16 +866,30 @@ function HotRows({
 
 /** OCC's prior-session option volume, ranked the Hot Options Report's way. The ranking is the
  *  pack's; this only lays it out. */
+const HOT_HELP: CardHelpContent = {
+  title: "Hot options",
+  body: (
+    <HelpSection title="Record-only">
+      <p>
+        OCC cleared volume ranked by contracts. “vs avg” is against the prior sessions the pack names. It feeds no gate and no sizing. A name
+        marked flow is also in QuikOptions&apos; Hot Options Report for the session the pack names.
+      </p>
+    </HelpSection>
+  ),
+};
+
 function HotOptionsCard({ pack }: { pack: MorningPack }) {
   const h = pack.hotOptions;
   if (!h) return null;
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>Hot options</h2>
-        <span className="chip">record-only</span>
-        {h.session && <span className="card-asof">OCC cleared volume, {h.session}</span>}
-      </div>
+    <Card
+      title="Hot options" flag="record-only" help={HOT_HELP}
+      controls={
+        <>
+          {h.session && <span className="card-asof">OCC cleared volume, {h.session}</span>}
+        </>
+      }
+    >
       {h.reason !== null ? (
         <p className="muted">
           Not measured ({h.reason}
@@ -861,9 +922,55 @@ function HotOptionsCard({ pack }: { pack: MorningPack }) {
           )}
         </>
       )}
-    </section>
+    </Card>
   );
 }
+
+function GatesCard({ current }: { current: MorningPack }) {
+  return (
+    <Card
+      title="Gates"
+      className="lv-12"
+      controls={
+        <>
+          {current.phase !== null && current.phase.gatesTotal !== null && (
+            <span className="card-asof">{current.phase.gatesTotal} declared</span>
+          )}
+        </>
+      }
+    >
+      {current.gates.length === 0 ? (
+        <p className="muted">No gates in this pack.</p>
+      ) : (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Gate</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {current.gates.map((g) => (
+                <GateRow key={g.id} g={g} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+const NARRATIVE_HELP: CardHelpContent = {
+  title: "About the narrative",
+  body: (
+    <HelpSection title="Interpretation, not fact">
+      <p>The narrative is written from the fact pack on this page; the figures are the pack's, the reading of them is the narrative's.</p>
+    </HelpSection>
+  ),
+};
 
 /** `tabs` is the Reports page's tab strip, rendered inside this page's own title row. Optional so
  *  the page still stands alone if it is ever routed to directly. */
@@ -879,29 +986,34 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
   const current = data?.current ?? null;
   const levels = current?.levels ?? null;
   const sectors = current?.sectors ?? null;
+  const latest = data?.sessions[data.sessions.length - 1];
+  const sessionFilter = useFilterPanel({
+    parts: [session === undefined || session === latest ? "latest session" : `session ${session}`],
+    changed: session !== undefined && session !== latest ? 1 : 0,
+    reset: () => setSession(undefined),
+    children: (
+      <FilterGroup title="session" note="the fact pack written before that open">
+        <select className="chip review-session-select" value={current?.session ?? ""} onChange={(e) => setSession(e.target.value)} aria-label="Session">
+          {(data?.sessions ?? [])
+            .slice()
+            .reverse()
+            .map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+        </select>
+      </FilterGroup>
+    ),
+  });
+  const pickSession = data !== undefined && data.sessions.length > 1;
 
   return (
     <div className="page">
       <div className="page-title-row">
         <h1>Morning report</h1>
         {tabs}
-        {data && data.sessions.length > 0 && (
-          <select
-            className="chip review-session-select"
-            value={current?.session ?? ""}
-            onChange={(e) => setSession(e.target.value)}
-            aria-label="Session"
-          >
-            {data.sessions
-              .slice()
-              .reverse()
-              .map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-          </select>
-        )}
+        {current && <span className="chip">{current.session}</span>}
         {current && <span className="card-asof">fact pack v{current.factVersion ?? "?"}</span>}
       </div>
 
@@ -912,29 +1024,38 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
       )}
 
       {current && (
-        <>
+        <div className="pf-layout">
+          <Section concept="stand" tag="the verdict" question="What kind of session is it?">
           <PhaseBanner pack={current} />
 
-          <section className="card">
-            <div className="card-head">
-              <h2>Scorecard</h2>
-              {current.generatedAt !== null && <span className="card-asof">generated {current.generatedAt}</span>}
-            </div>
+          <GatesCard current={current} />
+
+          <Card
+            title="Scorecard"
+            className="lv-12"
+            controls={
+              <>
+                {current.generatedAt !== null && <span className="card-asof">generated {current.generatedAt}</span>}
+                {pickSession ? sessionFilter.button : null}
+              </>
+            }
+          >
+            {pickSession ? sessionFilter.body : null}
             <div className="stats-grid">
               {SCORECARD.map(({ reading, future }) => scorecardTile(current, reading, future))}
             </div>
-          </section>
+          </Card>
 
-          <PremarketCard pack={current} />
+          <DeploymentCard pack={current} />
+          </Section>
 
-          <div className="cards cards-wide">
-            <section className="card">
-              <div className="card-head">
-                <h2>Gamma levels {levels?.symbol !== null && levels?.symbol !== undefined ? `· ${levels.symbol}` : ""}</h2>
-                {levels?.session !== null && levels?.session !== undefined && (
-                  <span className="card-asof">as of {levels.session}</span>
-                )}
-              </div>
+          <Section concept="risk" tag="vol and gamma" question="Where is the risk?">
+            <Card
+              title={`Gamma levels ${levels?.symbol !== null && levels?.symbol !== undefined ? `· ${levels.symbol}` : ""}`}
+              controls={
+                levels?.session !== null && levels?.session !== undefined ? <span className="card-asof">as of {levels.session}</span> : null
+              }
+            >
               {levels === null ? (
                 <p className="muted">No levels in this pack.</p>
               ) : (
@@ -979,51 +1100,30 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
                   </div>
                 </>
               )}
-            </section>
+            </Card>
 
-            <section className="card">
-              <div className="card-head">
-                <h2>Gates</h2>
-                {current.phase !== null && current.phase.gatesTotal !== null && (
-                  <span className="card-asof">{current.phase.gatesTotal} declared</span>
+            <VolRegimeCard pack={current} />
+          </Section>
+
+          <Section concept="dir" tag="before the open" question="What is moving before the open?">
+          <PremarketCard pack={current} />
+
+          <Card
+            title="Sector board"
+            controls={
+              <>
+                {sectors !== null && sectors.measured !== null && (
+                  <span className="card-asof">{sectors.measured} of {sectors.board.length} measured</span>
                 )}
-              </div>
-              {current.gates.length === 0 ? (
-                <p className="muted">No gates in this pack.</p>
-              ) : (
-                <div className="table-scroll">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Status</th>
-                      <th>Gate</th>
-                      <th>Detail</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {current.gates.map((g) => (
-                      <GateRow key={g.id} g={g} />
-                    ))}
-                  </tbody>
-                </table>
-                </div>
-              )}
-            </section>
-          </div>
-
-          <section className="card">
-            <div className="card-head">
-              <h2>Sector board</h2>
-              {sectors !== null && sectors.measured !== null && (
-                <span className="card-asof">{sectors.measured} of {sectors.board.length} measured</span>
-              )}
-              {sectors?.strongest && (
-                <span className="chip chip-ok">strongest {sectors.strongest.symbol}</span>
-              )}
-              {sectors?.weakest && (
-                <span className="chip chip-warn">weakest {sectors.weakest.symbol}</span>
-              )}
-            </div>
+                {sectors?.strongest && (
+                  <span className="chip chip-ok">strongest {sectors.strongest.symbol}</span>
+                )}
+                {sectors?.weakest && (
+                  <span className="chip chip-warn">weakest {sectors.weakest.symbol}</span>
+                )}
+              </>
+            }
+          >
             {sectors === null || sectors.board.length === 0 ? (
               <p className="muted">No sector board in this pack.</p>
             ) : (
@@ -1050,30 +1150,35 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
               </table>
               </div>
             )}
-          </section>
+          </Card>
+
+          <MovesYieldsCard pack={current} />
+          </Section>
 
           {showTechnicals && <TechnicalsCards t={data?.technicals} />}
 
-          <VolRegimeCard pack={current} />
-          <MovesYieldsCard pack={current} />
-          <HotOptionsCard pack={current} />
-          <DeploymentCard pack={current} />
+          <Section concept="add" tag="activity" question="Where is the options activity?">
+            <HotOptionsCard pack={current} />
+          </Section>
 
-          <CalendarCard pack={current} />
+          <Section concept="room" tag="calendar" question="What is on the calendar?">
+            <CalendarCard pack={current} />
+          </Section>
 
           {!showNarrative ? null : data?.note ? (
-            <section className="card review-note">
-              <div className="card-head">
-                <h2>Narrative</h2>
-                <span className="chip">interpretation</span>
-                <span className="card-asof">written from the fact pack above</span>
-              </div>
-              <NoteMarkdown text={data.note} />
-            </section>
+            <Section concept="edge" tag="interpretation" question="What does the note say?">
+              <Card
+                title="Narrative"
+                className="review-note"
+                help={NARRATIVE_HELP}
+              >
+                <NoteMarkdown text={data.note} />
+              </Card>
+            </Section>
           ) : (
             <p className="muted">No narrative for this session.</p>
           )}
-        </>
+        </div>
       )}
     </div>
   );

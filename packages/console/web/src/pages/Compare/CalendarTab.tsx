@@ -2,6 +2,10 @@ import { Fragment, useState } from "react";
 import type { PnlCalendarResult, PnlDay, PnlExcursion, PnlTrade, TradingMode } from "@console/shared";
 import { Link } from "react-router-dom";
 import { Card } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { FilterGroup } from "../../components/FilterSort";
+import { Section } from "../../components/Section";
+import { useFilterPanel } from "../useFilterPanel";
 import { fmtMoney } from "../../lib/format";
 import { usePnlCalendar, usePnlExcursion, usePnlTrades } from "../../lib/api";
 import { Spark } from "../../components/chart/Spark";
@@ -90,6 +94,7 @@ export function MonthGrid({
       <div className="card-subhead">
         {month} <span className={tone(monthNet)}>{fmtMoney(monthNet)}</span>
       </div>
+      <div className="table-scroll">
       <table className="data-table">
         <thead>
           <tr>
@@ -137,6 +142,7 @@ export function MonthGrid({
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -400,19 +406,79 @@ export function DayDetail({ session, total, mode }: { session: string; total: Da
   );
 }
 
+/** What the calendar shows and over which window, said on the filter's summary line. */
+export function windowNote(data: PnlCalendarResult): string {
+  return `${data.mode} · settled net per session, from ${data.from ?? "the first session"} — the suite window, not each arm's era`;
+}
+
+/** The module and arm the calendar is narrowed to, behind filter & sort; `button` is for the card head, `body` for its top. */
+function useCalendarFilter(data: PnlCalendarResult | undefined, visible: (module: string) => boolean) {
+  const [module, setModule] = useState<string | null>(null);
+  const [arm, setArm] = useState<string | null>(null);
+  const shown = data === undefined ? [] : data.days.filter((d) => visible(d.module));
+  const modules = [...new Set(shown.map((d) => d.module))].sort();
+  const arms = module === null ? [] : [...new Set(shown.filter((d) => d.module === module).map((d) => armOfTag(d.tag)))].sort();
+  const changed = (module !== null ? 1 : 0) + (arm !== null ? 1 : 0);
+  const panel = useFilterPanel({
+    parts: [module ?? "every module", ...(module !== null ? [arm ?? "every arm"] : [])],
+    note: data === undefined ? null : windowNote(data),
+    changed,
+    reset: () => {
+      setModule(null);
+      setArm(null);
+    },
+    children: (
+      <>
+        <FilterGroup title="module">
+          <select
+            className="chip review-session-select"
+            aria-label="module"
+            value={module ?? ""}
+            onChange={(e) => {
+              setModule(e.target.value === "" ? null : e.target.value);
+              setArm(null);
+            }}
+          >
+            <option value="">every module</option>
+            {modules.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </FilterGroup>
+        {module !== null && (
+          <FilterGroup title="arm">
+            <select className="chip review-session-select" aria-label="arm" value={arm ?? ""} onChange={(e) => setArm(e.target.value === "" ? null : e.target.value)}>
+              <option value="">every arm</option>
+              {arms.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+          </FilterGroup>
+        )}
+      </>
+    ),
+  });
+  return { module, arm, ...panel };
+}
+
 export function CalendarView({
   data,
   visible,
+  module = null,
+  arm = null,
 }: {
   data: PnlCalendarResult;
   visible: (module: string) => boolean;
+  /** Narrowed to one module, and to one of its arms, by the card's filter. */
+  module?: string | null;
+  arm?: string | null;
 }) {
-  const [module, setModule] = useState<string | null>(null);
-  const [arm, setArm] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const shown = data.days.filter((d) => visible(d.module));
-  const modules = [...new Set(shown.map((d) => d.module))].sort();
-  const arms = module === null ? [] : [...new Set(shown.filter((d) => d.module === module).map((d) => armOfTag(d.tag)))].sort();
   const rows = shown.filter((d) => (module === null || d.module === module) && (arm === null || armOfTag(d.tag) === arm));
   const totals = totalsBySession(rows);
   const months = [...new Set(rows.map((d) => d.session.slice(0, 7)))].sort().reverse();
@@ -420,37 +486,6 @@ export function CalendarView({
   const pickedTotal = picked === null ? undefined : totals.get(picked);
   return (
     <>
-      <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", marginBottom: "0.6rem", flexWrap: "wrap" }}>
-        <select
-          className="chip review-session-select"
-          value={module ?? ""}
-          onChange={(e) => {
-            setModule(e.target.value === "" ? null : e.target.value);
-            setArm(null);
-          }}
-        >
-          <option value="">every module</option>
-          {modules.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-        {module !== null && (
-          <select className="chip review-session-select" value={arm ?? ""} onChange={(e) => setArm(e.target.value === "" ? null : e.target.value)}>
-            <option value="">every arm</option>
-            {arms.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
-        )}
-        <span className="muted" style={{ fontSize: 11 }}>
-          {data.mode} · settled net per session, from {data.from ?? "the first session"} — the suite window, not
-          each arm's era
-        </span>
-      </div>
       {failures.map((f) => (
         <p key={f.module} className="muted" style={{ fontSize: 12 }}>
           <span className="chip chip-warn" style={{ marginRight: 6 }}>
@@ -471,20 +506,39 @@ export function CalendarView({
   );
 }
 
+const CALENDAR_HELP: CardHelpContent = {
+  title: "Reading the calendar",
+  body: (
+    <HelpSection title="Where the figures come from">
+      <p>
+        Every arm's settled net per session, as a month grid with a weekly total, from the per-session series each performance tab reads
+        (core.metrics). Click a day for the arms that traded it, and an arm for its trades. A day nothing traded is blank, never $0.00.
+        Paper or live follows the page's mode.
+      </p>
+    </HelpSection>
+  ),
+};
+
 export function CalendarTab() {
   const [mode] = useMode();
   const { data, isLoading, isError, dataUpdatedAt } = usePnlCalendar(mode);
   const features = useFeatures();
   const visible = (module: string) => (features === undefined ? true : isModuleVisible(module, features));
+  const filter = useCalendarFilter(data, visible);
   return (
-    <div className="cards cards-wide">
-      <Card title="P&L calendar" updatedAt={dataUpdatedAt} isError={isError}>
-        {isLoading || data === undefined ? (
-          <span className="skeleton skeleton-text" style={{ width: "50%" }} />
-        ) : (
-          <CalendarView data={data} visible={visible} />
-        )}
-      </Card>
+    <div className="pf-layout">
+      <Section concept="hist" question="What did each day net?">
+        <Card title="P&L calendar" updatedAt={dataUpdatedAt} isError={isError} controls={data === undefined ? null : filter.button} help={CALENDAR_HELP}>
+          {isLoading || data === undefined ? (
+            <span className="skeleton skeleton-text" style={{ width: "50%" }} />
+          ) : (
+            <>
+              {filter.body}
+              <CalendarView data={data} visible={visible} module={filter.module} arm={filter.arm} />
+            </>
+          )}
+        </Card>
+      </Section>
     </div>
   );
 }

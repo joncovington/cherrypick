@@ -1,5 +1,7 @@
 import type { ArmRiskRow, ArmsRiskResult } from "@console/shared";
 import { Link } from "react-router-dom";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
 import { Card, SortTh, sortRows, useSort } from "../../components/DataTable";
 import { fmtMoney, fmtNum, fmtPct } from "../../lib/format";
 import { useArmsRisk } from "../../lib/api";
@@ -117,15 +119,23 @@ export function RiskTable({ data, visible }: { data: ArmsRiskResult; visible: (m
           </tbody>
         </table>
       </div>
-      <p className="muted" style={{ fontSize: 11 }}>
-        each arm over its own window ("era" where its module's breaks name it, else the suite window); peak risk is
-        the most it had at risk at once; blocks 95th is the drawdown with its sessions reordered in blocks of five,
-        a dash under 20 sessions; slippage breakeven is the multiple of the modelled slippage at which the net
-        reaches zero, a dash where it is not positive. A module's analysis tab has the detail.
-      </p>
     </>
   );
 }
+
+const RISK_HELP: CardHelpContent = {
+  title: "Reading the risk table",
+  body: (
+    <HelpSection title="Where the figures come from">
+      <p>
+        Each arm is read over its own window ("era" where its module's breaks name it, else the suite window). Peak risk is the most it had
+        at risk at once. Blocks 95th is the drawdown with its sessions reordered in blocks of five, a dash under 20 sessions. Slippage
+        breakeven is the multiple of the modelled slippage at which the net reaches zero, a dash where it is not positive. A module's
+        analysis tab has the detail.
+      </p>
+    </HelpSection>
+  ),
+};
 
 export function RiskTab() {
   const [mode] = useMode();
@@ -133,14 +143,16 @@ export function RiskTab() {
   const features = useFeatures();
   const visible = (module: string) => (features === undefined ? true : isModuleVisible(module, features));
   return (
-    <div className="cards cards-wide">
-      <Card title="every arm's risk" updatedAt={dataUpdatedAt} isError={isError}>
-        {isLoading || data === undefined ? (
-          <span className="skeleton skeleton-text" style={{ width: "50%" }} />
-        ) : (
-          <RiskTable data={data} visible={visible} />
-        )}
-      </Card>
+    <div className="pf-layout">
+      <Section concept="risk" question="How much risk did each arm carry?">
+        <Card title="every arm's risk" updatedAt={dataUpdatedAt} isError={isError} help={RISK_HELP}>
+          {isLoading || data === undefined ? (
+            <span className="skeleton skeleton-text" style={{ width: "50%" }} />
+          ) : (
+            <RiskTable data={data} visible={visible} />
+          )}
+        </Card>
+      </Section>
     </div>
   );
 }

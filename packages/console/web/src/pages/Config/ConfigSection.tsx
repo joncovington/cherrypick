@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ConfigModelPayload, ConfigTargetId } from "@console/shared";
 import { Card } from "../../components/DataTable";
+import { HelpSection } from "../../components/CardHelp";
 import { FieldRow } from "./FieldRow";
 import { resolveSection, TARGET_TITLES, type SectionMeta } from "./fieldMeta";
 import { clearStaged, getStaged, sameValue, useStagedVersion } from "./stagedStore";
@@ -111,8 +112,20 @@ export function ConfigSection({
   if (groups.length === 0) return null;
 
   return (
-    <Card title={section.title} collapseKey={`config-${section.id}`} updatedAt={updatedAt}>
-      <p className="cfg-section-blurb muted">{section.blurb}</p>
+    <Card
+      title={section.title}
+      className="lv-12"
+      collapseKey={`config-${section.id}`}
+      updatedAt={updatedAt}
+      help={{
+        title: section.title,
+        body: (
+          <HelpSection title="What these settings are">
+            <p>{section.blurb}</p>
+          </HelpSection>
+        ),
+      }}
+    >
       {groups.map((group) => {
         const targetModel = model?.targets[group.target];
         const changes = group.fields

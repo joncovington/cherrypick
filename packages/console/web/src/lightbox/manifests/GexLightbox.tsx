@@ -2,7 +2,11 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { GexPayload } from "@console/shared";
 import { useGex, useGexIntegrity } from "../../lib/api";
-import { fmtNum } from "../../components/DataTable";
+import { Card, fmtNum } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { FilterGroup } from "../../components/FilterSort";
+import { Section } from "../../components/Section";
+import { useFilterPanel } from "../../pages/useFilterPanel";
 import { Spark } from "../../components/chart/Spark";
 import { IntegrityStrip, gexHasAttention } from "../../pages/Gex/IntegrityStrip";
 import { useFlashOnChange } from "../../lib/useFlashOnChange";
@@ -184,16 +188,17 @@ export function RecordedToday({ symbol, data }: { symbol: string; data: GexPaylo
   const last = rows[rows.length - 1];
   const capped = data.recent.total > data.recent.rows.length;
   return (
-    <section className="card view-fade">
-      <div className="card-head">
-        <h2>Net GEX recorded today — {symbol}</h2>
-        {first !== undefined && last !== undefined && (
+    <Card
+      title={`Net GEX recorded today — ${symbol}`}
+      controls={
+        first !== undefined && last !== undefined ? (
           <span className="card-asof">
             {rows.length} snapshots, {fmtEt(first.ts)} to {fmtEt(last.ts)}
             {capped ? ` (the day's first ${String(data.recent.rows.length)} of ${String(data.recent.total)} rows)` : ""}
           </span>
-        )}
-      </div>
+        ) : null
+      }
+    >
       {rows.length >= 2 ? (
         <>
           <Spark values={rows.map((r) => r.netGex!)} height={48} tone="sign" title="net GEX through the day" />
@@ -214,9 +219,31 @@ export function RecordedToday({ symbol, data }: { symbol: string; data: GexPaylo
           </span>
         ))}
       </p>
-    </section>
+    </Card>
   );
 }
+
+const GEX_HELP: CardHelpContent = {
+  title: "GEX by strike",
+  body: (
+    <HelpSection title="Reading the chart">
+      <p>
+        Net GEX by strike, with the spot, the zero-gamma flip and the call and put walls marked. OI vs volume sets positioning (open
+        interest) against the day's flow (volume); Net colours call-heavy strikes green and put-heavy red; Abs drops the sign. The walls on
+        the right come from the same chain, by open interest and by volume.
+      </p>
+    </HelpSection>
+  ),
+};
+
+const OI_HELP: CardHelpContent = {
+  title: "Open interest by strike",
+  body: (
+    <HelpSection title="Reading the bars">
+      <p>Calls draw to the right and puts to the left; volume is the lighter bar beside the open interest.</p>
+    </HelpSection>
+  ),
+};
 
 function isGexSlideId(v: string): v is GexSlideId {
   return GEX_SLIDES.some((s) => s.id === v);
@@ -240,17 +267,37 @@ export function GexLightbox({ slide }: { slide: string }) {
   const symbols = useGexSymbols();
   const profile = useGexProfile(symbol, true);
   const p = profile.data;
+  const viewFilter = useFilterPanel({
+    parts: [view === "oivol" ? "OI vs volume" : view === "net" ? "net" : "absolute"],
+    changed: view !== "oivol" ? 1 : 0,
+    reset: () => setView("oivol"),
+    children: (
+      <FilterGroup title="chart view">
+        <div className="mode-toggle" role="group" aria-label="chart view">
+          {(["oivol", "net", "abs"] as GexView[]).map((v) => (
+            <button key={v} type="button" className={view === v ? "mode-btn active" : "mode-btn"} onClick={() => setView(v)}>
+              {v === "oivol" ? "OI vs Vol" : v === "net" ? "Net" : "Abs"}
+            </button>
+          ))}
+        </div>
+      </FilterGroup>
+    ),
+  });
 
   const slides: SlideDef[] = [
     {
       id: "gex",
       label: "gex",
       render: () => (
-        <div className="cards cards-wide">
-          <section className="card view-fade">
-            <h2>
-              GEX by strike — {view === "net" ? "net (green = call heavy, red = put heavy)" : view === "oivol" ? "net GEX, OI vs volume" : "absolute"}
-            </h2>
+        <div className="pf-layout">
+          <Section concept="risk" tag="gamma" question="Where does the dealer gamma sit?">
+          <Card
+            title={`GEX by strike — ${view === "net" ? "net (green = call heavy, red = put heavy)" : view === "oivol" ? "net GEX, OI vs volume" : "absolute"}`}
+            className="lv-12"
+            help={GEX_HELP}
+            controls={viewFilter.button}
+          >
+            {viewFilter.body}
             {p?.ok && p.series && p.spot !== undefined && p.totals ? (
               <div className="gex-layout">
                 <div className="gex-chart-area">
@@ -292,8 +339,11 @@ export function GexLightbox({ slide }: { slide: string }) {
             ) : (
               <p className="muted">{p?.error ?? "no profile"}</p>
             )}
-          </section>
-          <RecordedToday symbol={symbol} data={data} />
+          </Card>
+          </Section>
+          <Section concept="hist" tag="recorded" question="How has it moved today?">
+            <RecordedToday symbol={symbol} data={data} />
+          </Section>
         </div>
       ),
     },
@@ -301,18 +351,19 @@ export function GexLightbox({ slide }: { slide: string }) {
       id: "skew",
       label: "iv skew",
       render: () => (
-        <div className="cards cards-wide">
-          <section className="card view-fade">
-            <h2>IV skew — call vs put by strike</h2>
+        <div className="pf-layout">
+          <Section concept="dir" tag="skew" question="How is volatility priced across strikes?">
+          <Card title="IV skew — call vs put by strike">
             {p?.ok && p.series && p.spot !== undefined ? (
               <IvSkewChart series={p.series} spot={p.spot} />
             ) : (
               <span className="skeleton skeleton-text" style={{ width: "40%" }} />
             )}
-          </section>
+          </Card>
+          </Section>
 
-          <section className="card view-fade">
-            <h2>Open interest by strike (calls right, puts left; volume lighter)</h2>
+          <Section concept="stand" tag="positioning" question="Where are the contracts?">
+          <Card title="Open interest by strike" help={OI_HELP}>
             {p?.ok && p.series && p.spot !== undefined ? (
               <StrikeBarsChart
                 series={p.series}
@@ -327,10 +378,9 @@ export function GexLightbox({ slide }: { slide: string }) {
             ) : (
               <span className="skeleton skeleton-text" style={{ width: "40%" }} />
             )}
-          </section>
+          </Card>
 
-          <section className="card view-fade">
-            <h2>Volume by strike (calls vs puts)</h2>
+          <Card title="Volume by strike (calls vs puts)">
             {p?.ok && p.series && p.spot !== undefined ? (
               <StrikeBarsChart
                 series={p.series}
@@ -343,7 +393,8 @@ export function GexLightbox({ slide }: { slide: string }) {
             ) : (
               <span className="skeleton skeleton-text" style={{ width: "40%" }} />
             )}
-          </section>
+          </Card>
+          </Section>
         </div>
       ),
     },
@@ -384,15 +435,6 @@ export function GexLightbox({ slide }: { slide: string }) {
             >
               as of {formatAsOf(p.spotUpdatedAt)} ET
             </span>
-          )}
-          {activeSlide === "gex" && (
-            <div className="mode-toggle" style={{ marginLeft: 0 }} role="group" aria-label="chart view">
-              {(["oivol", "net", "abs"] as GexView[]).map((v) => (
-                <button key={v} type="button" className={view === v ? "mode-btn active" : "mode-btn"} onClick={() => setView(v)}>
-                  {v === "oivol" ? "OI vs Vol" : v === "net" ? "Net" : "Abs"}
-                </button>
-              ))}
-            </div>
           )}
         </>
       }

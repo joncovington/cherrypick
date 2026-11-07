@@ -5,6 +5,11 @@ import { NoteMarkdown } from "./NoteMarkdown";
 import { useFeatures } from "../../lib/useFeatures";
 import { isFeatureOn } from "../../lib/visibility";
 import { SignedBar, Sparkline } from "../../components/Charts";
+import { Card } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { FilterGroup } from "../../components/FilterSort";
+import { Section } from "../../components/Section";
+import { useFilterPanel } from "../useFilterPanel";
 
 /**
  * The suite review. Renders the fact set and computes nothing.
@@ -110,31 +115,32 @@ function ArmBar({ net, peak }: { net: number; peak: number }) {
 function ModuleCard({ m }: { m: ReviewModule }) {
   if (!m.ok) {
     return (
-      <section className="card review-module">
-        <div className="card-head">
-          <h2>{m.module}</h2>
-          <span className="chip chip-missing">unreadable</span>
-        </div>
+      <Card title={m.module} className="review-module" controls={<span className="chip chip-missing">unreadable</span>}>
         <p className="muted">{m.reason}</p>
-      </section>
+      </Card>
     );
   }
   const peak = m.arms.reduce((max, a) => Math.max(max, Math.abs(a.net)), 0);
 
   return (
-    <section className="card review-module">
-      <div className="card-head">
-        <h2>{m.module}</h2>
-        {m.closed === 0 && <span className="chip">no trades</span>}
-        {m.singleEvent && m.closed > 0 && (
-          <span className="chip chip-warn" title="Trades sharing a symbol and session share one market event">
-            {count(m.events)} event
+    <Card
+      title={m.module}
+      className="review-module"
+      help={MODULE_HELP}
+      controls={
+        <>
+          {m.closed === 0 && <span className="chip">no trades</span>}
+          {m.singleEvent && m.closed > 0 && (
+            <span className="chip chip-warn" title="Trades sharing a symbol and session share one market event">
+              {count(m.events)} event
+            </span>
+          )}
+          <span className="card-asof">
+            {count(m.n)} row{m.n === 1 ? "" : "s"}
           </span>
-        )}
-        <span className="card-asof">
-          {count(m.n)} row{m.n === 1 ? "" : "s"}
-        </span>
-      </div>
+        </>
+      }
+    >
 
       <div className="stats-grid">
         <div className="stat-tile">
@@ -163,10 +169,7 @@ function ModuleCard({ m }: { m: ReviewModule }) {
 
       {m.arms.length > 1 && (
         <>
-          <div className="review-subhead">
-            By arm
-            <span className="muted"> · same underlying, same session — a paired comparison</span>
-          </div>
+          <div className="review-subhead">By arm</div>
           <div className="table-scroll">
           <table className="data-table data-table-labelled">
             <thead>
@@ -230,9 +233,64 @@ function ModuleCard({ m }: { m: ReviewModule }) {
           {m.carriedCapitalUnknown > 0 ? ` (+${m.carriedCapitalUnknown} of unknown capital)` : ""} — no realised P&amp;L until they settle.
         </p>
       )}
-    </section>
+    </Card>
   );
 }
+
+const MODULE_HELP: CardHelpContent = {
+  title: "Reading a module's session",
+  body: (
+    <HelpSection title="By arm">
+      <p>
+        The arms traded the same underlying in the same session, so the table is a paired comparison. An arm's bar is scaled to the
+        largest absolute net in the group, so a loss and a win of the same size read as the same weight in opposite colours. Return is on
+        the maximum risk.
+      </p>
+    </HelpSection>
+  ),
+};
+
+const ATTENTION_HELP: CardHelpContent = {
+  title: "What this review is",
+  body: (
+    <>
+      <HelpSection title="Where the figures come from">
+        <p>
+          Every figure is read from the fact set the review package writes after the close; the page computes nothing. An unmeasured value
+          is a dash, never 0.00.
+        </p>
+      </HelpSection>
+      <HelpSection title="No suite total">
+        <p>
+          Deliberately: these books differ in scale by more than an order of magnitude, so a combined figure would describe the largest one
+          and imply it described all three.
+        </p>
+      </HelpSection>
+    </>
+  ),
+};
+
+const NOTE_HELP: CardHelpContent = {
+  title: "About the note",
+  body: (
+    <HelpSection title="Interpretation, not fact">
+      <p>The note is written from the fact set above it; the figures are the fact set's, the reading of them is the note's.</p>
+    </HelpSection>
+  ),
+};
+
+const ERA_HELP: CardHelpContent = {
+  title: "The era's totals",
+  body: (
+    <HelpSection title="Where they come from">
+      <p>
+        Summed from the built fact sets, not a fresh pass over the ledgers, so it cannot disagree with the sessions above and its depth is
+        exactly what has been built. Each line is that module's cumulative net across the era's sessions; a module with one session gets no
+        line, because one point is not a trend.
+      </p>
+    </HelpSection>
+  ),
+};
 
 /** `tabs` is the Reports page's tab strip, rendered inside this page's own title row. Optional so
  *  the page still stands alone if it is ever routed to directly. */
@@ -246,6 +304,26 @@ export function ReviewPage({ tabs }: { tabs?: ReactNode } = {}) {
   const current = data?.current ?? null;
   const modules = current?.modules ?? [];
   const flags = attention(modules);
+  const latest = data?.sessions[data.sessions.length - 1];
+  const sessionFilter = useFilterPanel({
+    parts: [session === undefined || session === latest ? "latest session" : `session ${session}`],
+    changed: session !== undefined && session !== latest ? 1 : 0,
+    reset: () => setSession(undefined),
+    children: (
+      <FilterGroup title="session" note="the fact set the review wrote that night">
+        <select className="chip review-session-select" value={current?.session ?? ""} onChange={(e) => setSession(e.target.value)} aria-label="Session">
+          {(data?.sessions ?? [])
+            .slice()
+            .reverse()
+            .map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+        </select>
+      </FilterGroup>
+    ),
+  });
 
   return (
     <div className="page">
@@ -256,23 +334,7 @@ export function ReviewPage({ tabs }: { tabs?: ReactNode } = {}) {
           <span className={`chip ${current.status === "final" ? "chip-ok" : "chip-warn"}`}>{current.status}</span>
         )}
         {current && <span className="chip">paper</span>}
-        {data && data.sessions.length > 0 && (
-          <select
-            className="chip review-session-select"
-            value={current?.session ?? ""}
-            onChange={(e) => setSession(e.target.value)}
-            aria-label="Session"
-          >
-            {data.sessions
-              .slice()
-              .reverse()
-              .map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-          </select>
-        )}
+        {current && <span className="chip">{current.session}</span>}
         {current && <span className="card-asof">fact set v{current.factVersion}</span>}
       </div>
 
@@ -283,13 +345,21 @@ export function ReviewPage({ tabs }: { tabs?: ReactNode } = {}) {
       )}
 
       {current && (
-        <>
-          <section className={`card review-attention ${flags.length > 0 ? "review-attention-flagged" : ""}`}>
-            <div className="card-head">
-              <h2>Needs attention</h2>
-              {flags.length === 0 && <span className="chip chip-ok">clear</span>}
-              {flags.length > 0 && <span className="chip chip-warn">{flags.length}</span>}
-            </div>
+        <div className="pf-layout">
+          <Section concept="stand" tag="the session" question="What needs my attention?">
+          <Card
+            title="Needs attention"
+            className={`review-attention ${flags.length > 0 ? "review-attention-flagged" : ""}`}
+            help={ATTENTION_HELP}
+            controls={
+              <>
+                {flags.length === 0 && <span className="chip chip-ok">clear</span>}
+                {flags.length > 0 && <span className="chip chip-warn">{flags.length}</span>}
+                {data && data.sessions.length > 1 ? sessionFilter.button : null}
+              </>
+            }
+          >
+            {data && data.sessions.length > 1 ? sessionFilter.body : null}
             {flags.length === 0 ? (
               <p className="muted">
                 Every module ticked, none errored, and no unjournaled regime change.
@@ -310,44 +380,38 @@ export function ReviewPage({ tabs }: { tabs?: ReactNode } = {}) {
                 its realised P&amp;L lands in the next session.
               </p>
             )}
-          </section>
+          </Card>
+          </Section>
 
-          <p className="muted review-note-line">
-            No suite total, deliberately: these books differ in scale by more than an order of magnitude, so a
-            combined figure would describe the largest one and imply it described all three.
-          </p>
-
-          <div className="cards cards-wide">
+          <Section concept="hist" tag="by module" question="How did each module do?">
             {modules.map((m) => (
               <ModuleCard key={m.module} m={m} />
             ))}
-          </div>
+          </Section>
 
           {showNarrative && current.note && (
-            <section className="card review-note">
-              <div className="card-head">
-                <h2>Note</h2>
-                <span className="chip">interpretation</span>
-                <span className="card-asof">written from the fact set above</span>
-              </div>
-              <NoteMarkdown text={current.note} />
-            </section>
+            <Section concept="edge" tag="interpretation" question="What does the note say?">
+              <Card title="Note" className="review-note" help={NOTE_HELP}>
+                <NoteMarkdown text={current.note} />
+              </Card>
+            </Section>
           )}
-        </>
+        </div>
       )}
 
       {data && data.era.sessions > 0 && (
-        <section className="card">
-          <div className="card-head">
-            <h2>{data.era.eraFrom !== null ? "This era" : "All time"}</h2>
-            <span
-              className="card-asof"
-              title={data.era.eraNote ?? undefined}
-            >
+        <div className="pf-layout">
+        <Section concept="hist" tag="the era" question="What has the era done?">
+        <Card
+          title={data.era.eraFrom !== null ? "This era" : "All time"}
+          help={ERA_HELP}
+          controls={
+            <span className="card-asof" title={data.era.eraNote ?? undefined}>
               {data.era.eraFrom !== null && <>era from {data.era.eraFrom} · </>}
               {data.era.sessions} sessions{data.era.from !== null && <> · {data.era.from} → {data.era.to}</>}
             </span>
-          </div>
+          }
+        >
           <div className="stats-grid">
             {Object.keys(data.era.netByModule).map((name) => {
               // Small multiples: the same shape per module, read side by side. The line is the
@@ -371,13 +435,9 @@ export function ReviewPage({ tabs }: { tabs?: ReactNode } = {}) {
               );
             })}
           </div>
-          <p className="muted review-note-line">
-            Summed from the built fact sets, not a fresh pass over the ledgers — so it cannot disagree with the
-            sessions above, and its depth is exactly what has been built. Each line is that module's cumulative
-            net across the era's sessions; a module with one session gets no line, because one point is not a
-            trend.
-          </p>
-        </section>
+        </Card>
+        </Section>
+        </div>
       )}
     </div>
   );
