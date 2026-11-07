@@ -13,6 +13,11 @@
  * - the suite halt flag `state/halt-live.flag`, and `live.disarm_time` / `live.symbol` /
  *   `enable_live_trading` from `config/meic.json`.
  *
+ * The one figure not off the ledger is an open condor's mark (2026-11-07): its four leg symbols, as the
+ * ledger records them, read from the stream cache the streamer fills for MEIC's own live request, with
+ * Live > positions' two-minute rule (`manageLive.readFresh`). Nothing is marked from a stale or
+ * one-sided quote, and a condor with a side already closed is not marked at all.
+ *
  * Mirrors, not derivations: the open set is `live_loop.overdue_settlement`'s status list
  * (`pending`, `open`, `partial`, `partial_entry`), a side with a recorded close cost is closed,
  * resolved rows are the three terminal statuses paper.py writes (`stopped`, `expired`,
@@ -40,12 +45,15 @@ import type {
 import type { ConsoleConfig } from "../config.js";
 import { hasColumn, hasTable, num, readJson, readOnlyDb, str } from "./db.js";
 import { meicTradeCash } from "./meic.js";
+import { occToStreamer, readFresh } from "./manageLive.js";
 import { readModuleGate } from "../services/liveLock.js";
 
 /** `live_loop.DEFAULT_DISARM`: the loop's own default when `live.disarm_time` is unset. */
 export const DEFAULT_DISARM = "17:00";
 
 const OPEN_STATUSES = ["pending", "open", "partial", "partial_entry"] as const;
+/** Live > positions' rule: a quote older than this is no mark. */
+export const MARK_MAX_AGE_S = 120;
 const RESOLVED_STATUSES = ["stopped", "expired", "force_closed"] as const;
 
 const EMPTY_TOTALS: LiveMeicTotals = {
@@ -170,8 +178,23 @@ function inList(values: readonly string[]): string {
   return values.map((v) => `'${v}'`).join(", ");
 }
 
-function readLedger(db: Database.Database, session: string): { open: LiveMeicOpenRow[]; history: MeicTradeRow[]; totals: LiveMeicTotals } {
-  if (!hasTable(db, "ic_trades")) return { open: [], history: [], totals: EMPTY_TOTALS };
+/** An open condor's legs as the cache keys them (short put, long put, short call, long call), and the
+ *  dollars one point of the condor is worth. */
+interface MarkLegs {
+  symbols: [string, string, string, string];
+  scale: number;
+}
+
+interface Ledger {
+  open: LiveMeicOpenRow[];
+  history: MeicTradeRow[];
+  totals: LiveMeicTotals;
+  legs: Map<number, MarkLegs>;
+}
+
+function readLedger(db: Database.Database, session: string): Ledger {
+  if (!hasTable(db, "ic_trades")) return { open: [], history: [], totals: EMPTY_TOTALS, legs: new Map() };
+  const legs = new Map<number, MarkLegs>();
   const money = `${col(db, "dollar_multiplier")} AS dollar_multiplier,
                  ${col(db, "settlement_fees")} AS settlement_fees,
                  ${col(db, "slippage_dollars")} AS slippage_dollars,
@@ -185,7 +208,9 @@ function readLedger(db: Database.Database, session: string): { open: LiveMeicOpe
               pnl, fees, exit_reason, put_stop_cost, call_stop_cost,
               ${col(db, "put_stop_fill_status")} AS put_stop_fill_status,
               ${col(db, "call_stop_fill_status")} AS call_stop_fill_status,
-              ${col(db, "fill_confirmed_at")} AS fill_confirmed_at, ${money}
+              ${col(db, "fill_confirmed_at")} AS fill_confirmed_at, ${money},
+              ${col(db, "put_symbol")} AS put_symbol, ${col(db, "long_put_symbol")} AS long_put_symbol,
+              ${col(db, "call_symbol")} AS call_symbol, ${col(db, "long_call_symbol")} AS long_call_symbol
          FROM ic_trades WHERE status IN (${inList(OPEN_STATUSES)}) ORDER BY trade_date DESC, id DESC`,
     )
     .all()
@@ -193,8 +218,13 @@ function readLedger(db: Database.Database, session: string): { open: LiveMeicOpe
       const status = str(r["status"]) ?? "";
       const working = status === "pending";
       const tradeDate = str(r["trade_date"]) ?? "";
+      const id = num(r["id"]) ?? 0;
+      const symbols = ["put_symbol", "long_put_symbol", "call_symbol", "long_call_symbol"].map((k) => occToStreamer(str(r[k]) ?? ""));
+      if (symbols.every((s) => s !== "")) {
+        legs.set(id, { symbols: symbols as MarkLegs["symbols"], scale: (num(r["dollar_multiplier"]) ?? 100) * (num(r["quantity"]) ?? 1) });
+      }
       return {
-        id: num(r["id"]) ?? 0,
+        id,
         tradeDate,
         entryTime: str(r["entry_time"]),
         symbol: str(r["symbol"]) ?? "",
@@ -214,6 +244,7 @@ function readLedger(db: Database.Database, session: string): { open: LiveMeicOpe
         callClosing: str(r["call_stop_fill_status"]) === "pending",
         fillConfirmedAt: str(r["fill_confirmed_at"]),
         overdue: tradeDate < session,
+        mark: null,
       };
     });
 
@@ -244,7 +275,7 @@ function readLedger(db: Database.Database, session: string): { open: LiveMeicOpe
       }),
     );
 
-  return { open, history, totals: totalsOf(history) };
+  return { open, history, totals: totalsOf(history), legs };
 }
 
 /**
@@ -290,6 +321,24 @@ export function totalsOf(rows: MeicTradeRow[]): LiveMeicTotals {
   };
 }
 
+/** Each held, filled condor whose four legs all have a fresh mid, marked; every other row unchanged. */
+export function markOpen(config: ConsoleConfig, open: LiveMeicOpenRow[], legs: Map<number, MarkLegs>, now: number): LiveMeicOpenRow[] {
+  const markable = open.filter((r) => !r.working && !r.overdue && r.putHeld && r.callHeld && legs.has(r.id));
+  if (markable.length === 0) return open;
+  const fresh = readFresh(config, markable.flatMap((r) => legs.get(r.id)!.symbols), now, MARK_MAX_AGE_S);
+  if (fresh.oldest === null) return open;
+  const at = new Date(fresh.oldest).toISOString();
+  return open.map((r) => {
+    if (!markable.includes(r)) return r;
+    const { symbols, scale } = legs.get(r.id)!;
+    const [shortPut, longPut, shortCall, longCall] = symbols.map((s) => fresh.mids.get(s) ?? null);
+    if (shortPut == null || longPut == null || shortCall == null || longCall == null) return r;
+    const closeCost = Math.round((shortPut + shortCall - longPut - longCall) * 10_000) / 10_000;
+    const exitCash = Math.round(-closeCost * scale * 100) / 100;
+    return { ...r, mark: { at, mids: { shortPut, longPut, shortCall, longCall }, closeCost, exitCash } };
+  });
+}
+
 export function readMeicLive(config: ConsoleConfig, now: Date = new Date()): LiveMeicPayload {
   const { session, minute } = etParts(now);
   const dbPath = meicLiveDbPath(config);
@@ -305,7 +354,7 @@ export function readMeicLive(config: ConsoleConfig, now: Date = new Date()): Liv
     orphans: readOrphans(dir),
     held: readHeld(dir),
     brokerHealth: readBrokerHealth(dir),
-    open: value?.open ?? [],
+    open: value === null ? [] : markOpen(config, value.open, value.legs, now.getTime()),
     history: value?.history ?? [],
     totals: value?.totals ?? EMPTY_TOTALS,
   };

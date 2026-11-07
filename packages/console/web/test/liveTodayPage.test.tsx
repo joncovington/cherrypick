@@ -254,7 +254,7 @@ describe("the loop order chains", () => {
   const meicOpen = {
     id: 7, tradeDate: "2026-10-15", entryTime: "2026-10-15T10:05:00", symbol: "SPX", arm: "live", status: "open", working: false,
     putStrike: 5800, callStrike: 5900, wingWidth: 25, quantity: 1, netCredit: 2.6, entryCash: 260,
-    putHeld: false, callHeld: true, putClosing: false, callClosing: false, fillConfirmedAt: null, overdue: false,
+    putHeld: false, callHeld: true, putClosing: false, callClosing: false, fillConfirmedAt: null, overdue: false, mark: null,
   };
   const meicDone = {
     mode: "live" as const, id: 6, tradeDate: "2026-10-15", entryTime: "2026-10-15T09:45:00", symbol: "SPX", putStrike: 5795, callStrike: 5905,

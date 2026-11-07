@@ -79,6 +79,7 @@ const openRow: LiveMeicOpenRow = {
   callClosing: false,
   fillConfirmedAt: null,
   overdue: false,
+  mark: null,
 };
 
 const orphan: AttentionRow = { key: "o", kind: "orphan", order: "123", status: "Live", quietStatus: false, symbol: "SPX", ext: "meic-abc" };
