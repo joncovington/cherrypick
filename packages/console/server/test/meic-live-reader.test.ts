@@ -56,6 +56,10 @@ const COLUMNS = [
   "slippage_dollars REAL",
   "put_settle_value REAL",
   "call_settle_value REAL",
+  "put_symbol TEXT",
+  "long_put_symbol TEXT",
+  "call_symbol TEXT",
+  "long_call_symbol TEXT",
 ];
 
 type Row = Partial<Record<string, string | number | null>>;
@@ -180,6 +184,57 @@ describe("readMeicLive", () => {
     fs.writeFileSync(path.join(meic, "live_held.json"), "{not json");
     p = readMeicLive(cfg, NOON);
     expect(p.held.unresolved).toHaveLength(1);
+  });
+
+  it("marks a held condor from fresh two-sided quotes, and nothing part-marked, stale or with a side closed", () => {
+    const { cfg, root, meic } = home();
+    const legs = (exp: string) => ({
+      put_symbol: `XSP   ${exp}P00660000`,
+      long_put_symbol: `XSP   ${exp}P00658000`,
+      call_symbol: `XSP   ${exp}C00672000`,
+      long_call_symbol: `XSP   ${exp}C00674000`,
+    });
+    ledger(meic, [
+      // Both sides held, every leg quoted: marked.
+      { ...IC, ...legs("261015"), id: 1, trade_date: "2026-10-15", status: "open", net_credit: 0.29, quantity: 2 },
+      // Put side already stopped: never marked, whatever the cache holds.
+      { ...IC, ...legs("261015"), id: 2, trade_date: "2026-10-15", status: "partial", net_credit: 0.29, put_stop_cost: 0.3 },
+      // One leg's quote is older than two minutes: no mark.
+      { ...IC, ...legs("261015"), long_call_symbol: "XSP   261015C00676000", id: 3, trade_date: "2026-10-15", status: "open", net_credit: 0.3 },
+      // One leg quotes one side only: no mark.
+      { ...IC, ...legs("261015"), long_put_symbol: "XSP   261015P00656000", id: 4, trade_date: "2026-10-15", status: "open", net_credit: 0.3 },
+    ]);
+    const cache = path.join(root, "stream_cache.db");
+    const db = new Database(cache);
+    db.exec("CREATE TABLE stream_quotes (symbol TEXT, bid REAL, ask REAL, mid REAL, updated_at REAL)");
+    const at = NOON.getTime() / 1000;
+    const q = db.prepare("INSERT INTO stream_quotes VALUES (?, ?, ?, NULL, ?)");
+    q.run(".XSP261015P660", 0.18, 0.22, at - 30);
+    q.run(".XSP261015P658", 0.04, 0.06, at - 10);
+    q.run(".XSP261015C672", 0.1, 0.12, at - 5);
+    q.run(".XSP261015C674", 0.01, 0.03, at - 5);
+    q.run(".XSP261015C676", 0.01, 0.02, at - 600);
+    q.run(".XSP261015P656", null, 0.02, at - 5);
+    db.close();
+    const p = readMeicLive({ ...cfg, paths: { ...cfg.paths, streamCacheDb: cache } } as ConsoleConfig, NOON);
+    const byId = (id: number) => p.open.find((r) => r.id === id)!;
+    // short 0.20 + 0.11, long 0.05 + 0.02: 0.24 to close, ×100 ×2 = −$48 cash.
+    expect(byId(1).mark).toEqual({
+      at: new Date((at - 30) * 1000).toISOString(),
+      mids: { shortPut: 0.2, longPut: 0.05, shortCall: 0.11, longCall: 0.02 },
+      closeCost: 0.24,
+      exitCash: -48,
+    });
+    expect(byId(1).entryCash! + byId(1).mark!.exitCash).toBe(10);
+    expect(byId(2).mark).toBeNull();
+    expect(byId(3).mark).toBeNull();
+    expect(byId(4).mark).toBeNull();
+  });
+
+  it("has no mark without a stream cache", () => {
+    const { cfg, meic } = home();
+    ledger(meic, [{ ...IC, put_symbol: "XSP   261015P00660000", long_put_symbol: "XSP   261015P00658000", call_symbol: "XSP   261015C00672000", long_call_symbol: "XSP   261015C00674000", id: 1, trade_date: "2026-10-15", status: "open", net_credit: 0.29 }]);
+    expect(readMeicLive(cfg, NOON).open[0]!.mark).toBeNull();
   });
 
   it("tells an absent ledger from a failed read", () => {

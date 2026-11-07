@@ -105,17 +105,29 @@ export function stopWords(line: string | null): string | null {
  * state and the sides still held. The stop is said once, in the card's foot, from the module's own line
  * (`ics`). The live read carries no mark, so the card has no bar for the credit kept.
  */
+/** The credit a marked condor would keep if bought back at the mark, in dollars and as a share of its
+ *  entry credit (0-100, clipped for the bar). Null without a mark or a credit to measure against. */
+export function keptShare(r: LiveMeicOpenRow): { dollars: number; share: number } | null {
+  if (r.mark === null || r.entryCash === null || r.entryCash <= 0) return null;
+  const dollars = Math.round((r.entryCash + r.mark.exitCash) * 100) / 100;
+  return { dollars, share: Math.max(0, Math.min(100, (dollars / r.entryCash) * 100)) };
+}
+
 export function openModel(r: LiveMeicOpenRow, ics: readonly string[] = []): TradeCardModel {
   const clock = hhmmOf(r.entryTime);
   const wing = r.wingWidth;
   const q = r.quantity ?? 1;
-  const leg = (buy: boolean, strike: number | null, right: "P" | "C") => ({ buy, text: `${q} ${strike ?? "?"}${right}`, quote: null });
+  const mk = r.mark;
+  // The order chain prints a marked leg at its mid, as it prints a fill.
+  const at = (mid: number | undefined) => (mid === undefined ? "" : ` @ ${mid.toFixed(2)}`);
+  const leg = (buy: boolean, strike: number | null, right: "P" | "C", mid?: number) => ({ buy, text: `${q} ${strike ?? "?"}${right}${at(mid)}`, quote: null });
   const legs = [
-    leg(false, r.putStrike, "P"),
-    ...(wing !== null && r.putStrike !== null ? [leg(true, r.putStrike - wing, "P")] : []),
-    leg(false, r.callStrike, "C"),
-    ...(wing !== null && r.callStrike !== null ? [leg(true, r.callStrike + wing, "C")] : []),
+    leg(false, r.putStrike, "P", mk?.mids.shortPut),
+    ...(wing !== null && r.putStrike !== null ? [leg(true, r.putStrike - wing, "P", mk?.mids.longPut)] : []),
+    leg(false, r.callStrike, "C", mk?.mids.shortCall),
+    ...(wing !== null && r.callStrike !== null ? [leg(true, r.callStrike + wing, "C", mk?.mids.longCall)] : []),
   ];
+  const kept = keptShare(r);
   const credit = r.netCredit === null ? "—" : `${r.netCredit.toFixed(2)} ${r.working ? "limit" : "cr"}`;
   const stop = stopWords(icLineFor(r, ics));
   return {
@@ -126,10 +138,14 @@ export function openModel(r: LiveMeicOpenRow, ics: readonly string[] = []): Trad
     chips: <span className={`chip ${r.overdue ? "chip-bad" : r.working ? "" : "chip-ok"}`}>{state(r)}</span>,
     cash: r.entryCash,
     side: [credit, r.tradeDate],
-    bar: null,
-    hideBar: true,
-    barTitle: "",
-    label: r.working ? "entry working at the broker" : `sides held: ${sides(r)}`,
+    bar: kept === null ? null : kept.share,
+    hideBar: kept === null,
+    barTitle: kept === null ? "" : `credit kept if closed at the mark: ${fmtMoney(kept.dollars)} of ${fmtMoney(r.entryCash)} (mark ${hhmmOf(mk!.at)} ET)`,
+    label: r.working
+      ? "entry working at the broker"
+      : kept === null
+        ? `sides held: ${sides(r)}`
+        : `${Math.round(kept.share)}% of the credit kept · close ${mk!.closeCost.toFixed(2)}`,
     open: { date: clock, price: credit },
     legs,
     after: [r.working ? "no fill yet" : r.fillConfirmedAt !== null ? `fill confirmed ${hhmmOf(r.fillConfirmedAt)}` : "fill not confirmed"],
@@ -144,8 +160,12 @@ const OPEN_HELP: CardHelpContent = {
       <HelpSection title="A condor">
         <p>Each live condor: its short strikes, wing, quantity, entry, state and which sides are still held. The card&apos;s foot says the stop, as the module states it.</p>
       </HelpSection>
-      <HelpSection title="What the card does not have">
-        <p>The live loop keeps no per-tick marks, so there is no mark and no credit-kept bar here; a side closed by its stop is said in the state.</p>
+      <HelpSection title="The mark">
+        <p>
+          A condor holding both sides is marked from the stream cache: each leg at its mid, from a two-sided quote under two minutes old. The bar is the
+          share of the entry credit it would keep if bought back at that mark. With a side closed, a working entry, or any leg without a fresh quote,
+          there is no mark and no bar; the live loop keeps no marks of its own.
+        </p>
       </HelpSection>
     </>
   ),

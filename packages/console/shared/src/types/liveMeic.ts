@@ -49,6 +49,19 @@ export interface LiveMeicBrokerHealth {
   lastError: string | null;
 }
 
+/** A held condor marked from the stream cache: each leg's mid, and what buying it back would cost. */
+export interface LiveMeicMark {
+  /** The oldest quote among the marks read, ISO: the mark is no newer than this. */
+  at: string;
+  /** Each leg's mid per share. */
+  mids: { shortPut: number; longPut: number; shortCall: number; longCall: number };
+  /** Buying the condor back now, per share: the short mids less the long mids. */
+  closeCost: number;
+  /** That close as whole-position signed cash (a debit, so negative): entry cash plus this is the gross
+   *  the condor would keep if closed at the mark. */
+  exitCash: number;
+}
+
 /** One live iron condor not yet resolved: `pending` is a working entry order, not a position. */
 export interface LiveMeicOpenRow {
   id: number;
@@ -76,6 +89,9 @@ export interface LiveMeicOpenRow {
   fillConfirmedAt: string | null;
   /** Dated before today's session: a 0DTE IC nothing finished (the loop's `overdue_settlement`). */
   overdue: boolean;
+  /** Null unless the entry filled, both sides are held, and all four legs have a two-sided quote in
+   *  the stream cache under two minutes old. A part-marked condor is no mark. */
+  mark: LiveMeicMark | null;
 }
 
 /** Totals over every resolved live row, in the standard's identities. */
