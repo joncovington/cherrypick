@@ -9,11 +9,8 @@ import { parseSuiteTs } from "../../lib/etTime";
 import { fmtCash, fmtMoney } from "../../lib/format";
 import { Tile } from "../Flies/PerformanceTab";
 import { ActionChip, DetailCard, Kv, Money, Upside, VerdictsHeld, ageText, etStamp, tone } from "./manageParts";
-import { BandsHistoryCard } from "./BandsHistory";
-import { LimitsCard } from "./LimitsCard";
-import { PortfolioCards } from "./PortfolioCards";
-import { PremiumPaceCard } from "./PremiumPace";
-import { ScenarioCards } from "./ScenarioCards";
+import { PortfolioBoxes } from "./PortfolioBox";
+import { PortfolioLayout } from "./PortfolioLayout";
 import { PmccCards } from "./PmccCards";
 import { WheelCards } from "./WheelCards";
 import { PositionCards } from "./PositionCards";
@@ -435,24 +432,18 @@ function PositionsAccount({ a, loading, oversize }: { a: ManageAccount; loading:
 
 /** Portfolio: the account read as one book -- its size, its greeks against their bands, how it
  *  behaves if the market moves, and the trades sized to fit it. */
-function PortfolioAccount({ a, oversize }: { a: ManageAccount; oversize: number | null }) {
+function PortfolioAccount({ a, oversize, rules }: { a: ManageAccount; oversize: number | null; rules: Record<string, unknown> | null | undefined }) {
   return (
-    <>
+    <PortfolioBoxes a={a} rules={rules}>
       <AccountTiles a={a} oversize={oversize} />
       {a.portfolio ? (
-        <PortfolioCards
-          p={a.portfolio}
-          scenarios={<ScenarioCards p={a.portfolio} />}
-          history={<BandsHistoryCard account={a.account} />}
-          pace={<PremiumPaceCard premium={a.premium} thetaBand={a.portfolio.bands?.theta ?? null} />}
-        />
+        <PortfolioLayout a={a} />
       ) : (
         <p className="muted" style={{ margin: 0 }}>
           no portfolio reading for this account in this evaluation
         </p>
       )}
-      {a.limits ? <LimitsCard limits={a.limits} /> : null}
-    </>
+    </PortfolioBoxes>
   );
 }
 
@@ -626,7 +617,7 @@ function EvaluationPage({ view }: { view: keyof typeof VIEW_TITLE }) {
           view === "positions" ? (
             <PositionsAccount key={a.account ?? "?"} a={a} loading={isLoading} oversize={oversizeMultiple(data?.rules)} />
           ) : view === "portfolio" ? (
-            <PortfolioAccount key={a.account ?? "?"} a={a} oversize={oversizeMultiple(data?.rules)} />
+            <PortfolioAccount key={a.account ?? "?"} a={a} oversize={oversizeMultiple(data?.rules)} rules={data?.rules} />
           ) : view === "wheel" ? (
             <WheelCards key={a.account ?? "?"} a={a} />
           ) : (

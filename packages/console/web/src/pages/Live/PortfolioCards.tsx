@@ -1,16 +1,15 @@
 import type { ReactNode } from "react";
-import type { ManageBand, ManageGuidance, ManageGuidanceFigure, ManageHedgeSuggestion, ManagePortfolio } from "@console/shared";
+import type { ManageBand, ManageGuidance, ManageGuidanceFigure, ManageLimits, ManagePortfolio, ManagePremium } from "@console/shared";
 import { Card } from "../../components/DataTable";
-import { Bullet } from "../../components/grid/Bullet";
 import { DivergingBars } from "../../components/grid/DivergingBars";
 import { useColumns } from "../../components/columns";
-import { TileGrid, tileCount } from "../../components/performance/TileGrid";
+import { TileGrid } from "../../components/performance/TileGrid";
 import { fmtCash, fmtMoney } from "../../lib/format";
-import { useViewMode } from "../../lib/viewMode";
 import { Tile } from "../Flies/PerformanceTab";
-import { IncomeCard } from "./IncomeCard";
-import { TimeSpreadsCard } from "./TimeSpreadsCard";
-
+import { limitChip, limitText, limitValue } from "./LimitsCard";
+import { RiskGraph } from "./ScenarioCards";
+import { TradeCards, hedgeModel } from "./TradeCard";
+import { BoxButton, BoxButtons } from "./portfolioBoxContext";
 /**
  * The account read as one book (packages/manage `portfolio.py`), as cards: a dial for beta-weighted
  * delta against its band, meters for theta and the break-even move, the stress line, where the delta
@@ -127,25 +126,8 @@ export function BandDial({
   );
 }
 
-/* ---------------------------------------------------------------- the cards */
 
-function DeltaCard({ p }: { p: ManagePortfolio }) {
-  const band = p.bands?.delta ?? null;
-  const places = band ? placesApart(band.value, [band.low, band.high], 1) : 1;
-  return (
-    <Card title="beta-weighted delta" controls={band && <BandChip inside={band.inside} />}>
-      {band ? (
-        <BandDial band={band} unit={`${p.benchmark ?? "SPY"} sh`} label="beta-weighted delta" fmt={(v) => signed(v, places)} />
-      ) : (
-        <p className="muted">no band recorded</p>
-      )}
-      <p className="muted pf-caption">
-        {fmtCash(p.bwdDollarsPer1pct)} per 1% {p.benchmark ?? "SPY"} move · band{" "}
-        {band?.basis === "theta" ? "scaled by theta" : "scaled by net liq (its floor: too little theta to scale by)"} · the broker's beta
-      </p>
-    </Card>
-  );
-}
+/* ---------------------------------------------------------------- the cards */
 
 /** A band's fractions as percentages, for a dial whose ticks read "0.3" rather than "0.003". */
 export function asPercent(b: ManageBand): ManageBand {
@@ -166,76 +148,138 @@ export function placesApart(value: number | null, bounds: Array<number | null>, 
   return base + 4;
 }
 
-function ThetaCard({ p }: { p: ManagePortfolio }) {
+/** A dial beside its figures once the card is wide enough; stacked above them on a phone. */
+function DialBeside({ dial, children }: { dial: ReactNode; children: ReactNode }) {
+  return (
+    <div className="pf-dwrap">
+      <div className="pf-dv">{dial}</div>
+      <div className="pf-dside">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Income: theta against its band, beside the premium pace (theta against its target). The months
+ * collected and kept, and theta over time, open from it.
+ */
+export function IncomeParentCard({ p, premium }: { p: ManagePortfolio; premium: ManagePremium | null }) {
   const band = p.bands?.theta ?? null;
   const short = (v: number) => (v === 0 ? "0" : v.toFixed(v < 1 ? 2 : 1).replace(/0+$/, "").replace(/\.$/, ""));
   const pctBand = band ? asPercent(band) : null;
   const places = pctBand ? placesApart(pctBand.value, [pctBand.low, pctBand.high]) : 2;
+  const target = premium?.target ?? null;
+  const ratio = target?.ratio ?? null;
   return (
-    <Card title="theta" controls={band && <BandChip inside={band.inside} />}>
-      {pctBand ? (
-        <BandDial
-          band={pctBand}
-          unit="% of net liq a day"
-          label="theta"
-          signedScale={false}
-          fmt={(v) => v.toFixed(places)}
-          tick={short}
-        />
-      ) : (
-        <p className="muted">no band recorded</p>
-      )}
-      <p className="muted pf-caption">
-        {p.thetaExFront !== null && p.frontDte !== null
-          ? `${fmtMoney(p.thetaExFront)} a day without legs ${p.frontDte} days or less from expiry, ${fmtMoney(p.theta)} with them`
-          : `${fmtMoney(p.theta)} a day`}{" "}
-        · band {pctOf(band?.low ?? null, places)}–{pctOf(band?.high ?? null, places)} · theta is paid for by gamma, so more is
-        not more edge
-      </p>
+    <Card title="income" className="pf-cq" controls={band && <BandChip inside={band.inside} />}>
+      <DialBeside
+        dial={
+          pctBand ? (
+            <BandDial band={pctBand} unit="% of net liq per day" label="theta" signedScale={false} fmt={(v) => v.toFixed(places)} tick={short} />
+          ) : (
+            <p className="muted">no band recorded</p>
+          )
+        }
+      >
+        <div className="pf-hero">
+          {fmtMoney(p.theta)}
+          <span className="pf-unit"> theta per day</span>
+        </div>
+        {target && target.dollars !== null ? (
+          <>
+            <div className="pf-meter" title={`theta against the premium target of ${fmtMoney(target.dollars)} per day`}>
+              <span style={{ width: `${Math.min(100, Math.max(0, (ratio ?? 0) * 100))}%` }} />
+            </div>
+            <p className="muted pf-caption">
+              {ratio === null ? "—" : `${(ratio * 100).toFixed(0)}%`} of the {fmtMoney(target.dollars)} per day target (
+              {pctOf(target.pctNlv)} of net liq)
+            </p>
+          </>
+        ) : null}
+        <p className="muted pf-caption">
+          {p.thetaExFront !== null && p.frontDte !== null
+            ? `${fmtMoney(p.thetaExFront)} per day without legs ${p.frontDte} days or less from expiry`
+            : `${fmtMoney(p.theta)} per day`}{" "}
+          · band {pctOf(band?.low ?? null, places)}–{pctOf(band?.high ?? null, places)} · theta is paid for by gamma, so more is not
+          more edge
+        </p>
+      </DialBeside>
+      <BoxButtons>
+        <BoxButton id="overTime">over time</BoxButton>
+        <BoxButton id="pace">premium by month</BoxButton>
+      </BoxButtons>
     </Card>
   );
 }
 
-function BreakevenCard({ p }: { p: ManagePortfolio }) {
+/**
+ * Direction: beta-weighted delta against its band, what a 1% move is worth, and the sized hedge's
+ * headline while delta is outside the band (manage sizes one only then).
+ */
+export function DirectionCard({ p }: { p: ManagePortfolio }) {
+  const band = p.bands?.delta ?? null;
+  const places = band ? placesApart(band.value, [band.low, band.high], 1) : 1;
+  const first = p.hedges?.suggestions.find((s) => !s.error) ?? null;
+  return (
+    <Card title="direction" className="pf-cq" controls={band && <BandChip inside={band.inside} />}>
+      <DialBeside
+        dial={
+          band ? (
+            <BandDial band={band} unit={`${p.benchmark ?? "SPY"} sh`} label="beta-weighted delta" fmt={(v) => signed(v, places)} />
+          ) : (
+            <p className="muted">no band recorded</p>
+          )
+        }
+      >
+        <div className="pf-tiles">
+          <Tile label={`per 1% ${p.benchmark ?? "SPY"} move`} value={fmtCash(p.bwdDollarsPer1pct)} />
+          <Tile label="band" value={band ? `${signed(band.low, places)} to ${signed(band.high, places)}` : "—"} />
+        </div>
+        {first && p.hedges ? (
+          <p className="pf-hint">
+            <span className="chip pf-out">hedge</span>
+            <span>
+              <strong>
+                {p.hedges.root ?? ""} {first.structure} × {first.units}
+              </strong>{" "}
+              brings it to {signed(first.after?.bwd ?? null)} sh for {fmtMoney(first.maxLoss)} max loss
+            </span>
+          </p>
+        ) : null}
+        <p className="muted pf-caption">
+          beta-weighted, in {p.benchmark ?? "SPY"} shares · band{" "}
+          {band?.basis === "theta" ? "scaled by theta" : "scaled by net liq (its floor: too little theta to scale by)"} · the broker's beta
+        </p>
+      </DialBeside>
+      <BoxButtons>
+        <BoxButton id="overTime">over time</BoxButton>
+        <BoxButton id="hedge">a hedge, sized</BoxButton>
+      </BoxButtons>
+    </Card>
+  );
+}
+
+/**
+ * If the market moves: the stress shocks, the break-even move (a tile, with the implied and realised
+ * moves on its hover), the implied move, and the risk graph drawn small; the full graph opens from it.
+ */
+export function StressCard({ p }: { p: ManagePortfolio }) {
   const be = p.breakeven;
   const realised = p.realisedMove !== null && p.benchmarkSpot ? p.realisedMove / p.benchmarkSpot : null;
-  const expected = p.expectedMovePct;
-  if (!be || be.pct === null) {
-    return (
-      <Card title="break-even move">
-        <p className="muted">theta and gamma do not oppose each other, so there is no break-even move</p>
-      </Card>
-    );
-  }
-  const max = Math.max(be.pct, expected ?? 0, realised ?? 0) * 1.3;
-  const short = be.kind === "short_gamma";
-  return (
-    <Card title="break-even move">
-      <div className="pf-hero">
-        {pctOf(be.pct)}
-        <span className="pf-unit"> of {p.benchmark ?? "SPY"}</span>
-      </div>
-      <Bullet min={0} max={max} value={be.pct} marker={expected} label={`break-even ${pctOf(be.pct)}, implied move ${pctOf(expected)}`} />
-      <p className="muted pf-caption">
-        {short
-          ? `a ${pctOf(be.pct)} move in a day wipes out a day's theta`
-          : `the book needs a ${pctOf(be.pct)} move in a day to earn back its theta`}{" "}
-        · tick: {p.benchmark ?? "SPY"}'s implied one-day move {pctOf(expected)}
-        {realised !== null ? ` · realised (30-day) ${pctOf(realised)}` : ""}
-      </p>
-    </Card>
-  );
-}
-
-function StressCard({ p }: { p: ManagePortfolio }) {
-  // The vega tile is the detail view's. No account-type tile (2026-10-21): the income card's caption
-  // already says what kind of account the sizing is for.
   const framing = useColumns([
-    { key: "bp", node: <Tile key="bp" label="buying power used" value={pctOf(p.buyingPowerUsedPct, 0)} title={fmtMoney(p.buyingPowerUsed)} /> },
     {
-      key: "vega",
-      detailOnly: true,
-      node: <Tile key="vega" label="vega (30-day weighted)" value={fmtCash(p.vega30)} title="dollars per volatility point, front months weighted up" />,
+      key: "be",
+      node: (
+        <Tile
+          key="be"
+          label="break-even move"
+          value={be && be.pct !== null ? pctOf(be.pct) : "—"}
+          title={
+            be && be.pct !== null
+              ? `${be.kind === "short_gamma" ? `a ${pctOf(be.pct)} move in a day wipes out a day's theta` : `the book needs a ${pctOf(be.pct)} move in a day to earn back its theta`} · implied one-day move ${pctOf(p.expectedMovePct)}${realised !== null ? ` · realised (30-day) ${pctOf(realised)}` : ""}`
+              : "theta and gamma do not oppose each other, so there is no break-even move"
+          }
+        />
+      ),
     },
     {
       key: "em",
@@ -247,6 +291,17 @@ function StressCard({ p }: { p: ManagePortfolio }) {
           title="points, from its implied volatility index, per calendar day"
         />
       ),
+    },
+    // The detail view's pair, so the tiles stay even: four in simple, six in detail.
+    {
+      key: "realised",
+      detailOnly: true,
+      node: <Tile key="realised" label="realised move (30-day)" value={pctOf(realised)} title={`${p.benchmark ?? "SPY"}'s realised daily move over 30 days, beside the implied`} />,
+    },
+    {
+      key: "vega",
+      detailOnly: true,
+      node: <Tile key="vega" label="vega (30-day weighted)" value={fmtCash(p.vega30)} title="dollars per volatility point, front months weighted up" />,
     },
   ]);
   const tiles = [
@@ -262,33 +317,38 @@ function StressCard({ p }: { p: ManagePortfolio }) {
       />
     )),
     ...framing.map((f) => f.node),
-  ];
+  ].slice(0, 6);
   return (
-    <Card title="if the market moves">
-      {/* The two shocks manage writes by default, then the tiles that frame them: five in detail,
-          four in simple. A ruleset with more shocks would lengthen the row, so it is cut to six
-          rather than left ragged. */}
-      <TileGrid count={tileCount(Math.min(tiles.length, 6))}>{tiles.slice(0, 6)}</TileGrid>
+    <Card title="if the market moves" className="pf-cq">
+      <div className="pf-stress">
+        <div className={`pf-tiles pf-tiles-${tiles.length}`}>{tiles}</div>
+        {p.scenarios ? <RiskGraph s={p.scenarios} benchmark={p.benchmark ?? "SPY"} spot={p.benchmarkSpot} small /> : null}
+      </div>
       <p className="muted pf-caption">modelled repricing at each name's beta, not a forecast</p>
+      <BoxButtons>
+        <BoxButton id="graph">risk graph</BoxButton>
+      </BoxButtons>
     </Card>
   );
 }
 
-const CONTRIBUTION_ROWS = 12;
+const CONTRIBUTION_ROWS = 5;
 
-function ContributionCard({ p, figure }: { p: ManagePortfolio; figure: "bwd" | "theta" }) {
+/** A figure's contribution by name, biggest first; past `limit` the rest are summed into one row, so
+ *  the rows add up to the book's figure. `limit` null lists every name. */
+export function ContributionBars({ p, figure, limit = CONTRIBUTION_ROWS }: { p: ManagePortfolio; figure: "bwd" | "theta"; limit?: number | null }) {
   const sorted = [...p.underlyings]
     .filter((u) => u[figure] !== null)
     .sort((a, b) => Math.abs(b[figure] ?? 0) - Math.abs(a[figure] ?? 0));
-  const rows = sorted.slice(0, CONTRIBUTION_ROWS).map((u) => ({
+  const cut = limit === null ? sorted.length : limit;
+  const rows = sorted.slice(0, cut).map((u) => ({
     label: u.betaDoubt && figure === "bwd" ? `${u.underlying} ⚠` : u.underlying,
     value: u[figure],
     title: `${u.underlying}: beta ${u.beta === null ? "—" : u.beta.toFixed(2)} · ${pctOf(figure === "bwd" ? u.bwdShare : u.thetaShare, 0)} of the book's gross ${
       figure === "bwd" ? "delta" : "theta without the legs about to expire"
     }${u.betaDoubt ? ` · ${u.betaDoubt}` : ""}`,
   }));
-  // The names past the cut, summed, so the rows add up to the book's figure.
-  const rest = sorted.slice(CONTRIBUTION_ROWS);
+  const rest = sorted.slice(cut);
   if (rest.length > 0) {
     rows.push({
       label: `${rest.length} other${rest.length === 1 ? "" : "s"}`,
@@ -297,16 +357,29 @@ function ContributionCard({ p, figure }: { p: ManagePortfolio; figure: "bwd" | "
     });
   }
   return (
-    <Card title={figure === "bwd" ? "where the delta comes from" : "where the theta comes from"}>
-      <DivergingBars
-        rows={rows}
-        tone="none"
-        format={(v) => (figure === "bwd" ? `${signed(v)} sh` : `${fmtCash(v)}/day`)}
-        emptyText="no modelled positions"
-      />
+    <>
+      <DivergingBars rows={rows} tone="none" format={(v) => (figure === "bwd" ? `${signed(v)} sh` : `${fmtCash(v)}/day`)} emptyText="no modelled positions" />
       {figure === "bwd" && p.underlyings.some((u) => u.betaDoubt) && (
         <p className="muted pf-caption">⚠ the broker's beta disagrees with its own correlation for this name, so its delta may be misstated</p>
       )}
+    </>
+  );
+}
+
+/** Where the delta (or theta) comes from: the biggest names, with every name and the broker's model
+ *  one click away. The broker button carries the gap, so a large one shows without opening it. */
+export function ContributionCard({ p, figure }: { p: ManagePortfolio; figure: "bwd" | "theta" }) {
+  const c = p.brokerCheck;
+  const gap = c ? (figure === "bwd" ? (c.bwdGap === null ? null : `${signed(c.bwdGap)} sh`) : c.thetaGap === null ? null : `${fmtCash(c.thetaGap)}/day`) : null;
+  return (
+    <Card title={figure === "bwd" ? "where the delta comes from" : "where the theta comes from"}>
+      <ContributionBars p={p} figure={figure} />
+      <BoxButtons>
+        <BoxButton id={figure === "bwd" ? "deltaAll" : "thetaAll"}>every name</BoxButton>
+        <BoxButton id="broker" hot={figure === "bwd"}>
+          against the broker's model{gap ? <span className="pf-more-k"> gap {gap}</span> : null}
+        </BoxButton>
+      </BoxButtons>
     </Card>
   );
 }
@@ -316,19 +389,19 @@ function ContributionCard({ p, figure }: { p: ManagePortfolio; figure: "bwd" | "
  * (`broker_check`). It decides nothing: it is the record of how far our model sits from the broker's,
  * kept before the bands are trusted. Gaps carry no tone, since neither side is the right answer.
  */
-export function BrokerCheckCard({ p }: { p: ManagePortfolio }) {
+export function BrokerCheckBody({ p }: { p: ManagePortfolio }) {
   const c = p.brokerCheck;
   if (!c) return null;
   const sh = (v: number | null) => (v === null ? "—" : `${signed(v)} sh`);
   return (
-    <Card title="against the broker's model">
+    <>
       <TileGrid count={6}>
         <Tile label="delta, ours" value={sh(c.bwdOurs)} />
         <Tile label="delta, broker's greeks" value={sh(c.bwdBroker)} />
         <Tile label="delta gap" value={sh(c.bwdGap)} title="ours less the broker's" />
         <Tile label="theta, ours" value={fmtCash(c.thetaOurs)} />
         <Tile label="theta, broker's greeks" value={fmtCash(c.thetaBroker)} />
-        <Tile label="theta gap" value={fmtCash(c.thetaGap)} title="ours less the broker's, a day" />
+        <Tile label="theta gap" value={fmtCash(c.thetaGap)} title="ours less the broker's, per day" />
       </TileGrid>
       <DivergingBars
         rows={c.underlyings.slice(0, 8).map((u) => ({
@@ -355,7 +428,7 @@ export function BrokerCheckCard({ p }: { p: ManagePortfolio }) {
             <Tile label="delta gap" value={sh(c.expiring.bwdGap)} title="ours less the broker's" />
             <Tile label="theta, ours" value={fmtCash(c.expiring.thetaOurs)} />
             <Tile label="theta, broker's greeks" value={fmtCash(c.expiring.thetaBroker)} />
-            <Tile label="theta gap" value={fmtCash(c.expiring.thetaGap)} title="ours less the broker's, a day" />
+            <Tile label="theta gap" value={fmtCash(c.expiring.thetaGap)} title="ours less the broker's, per day" />
           </TileGrid>
           <p className="muted pf-caption">
             {c.expiring.legs.join(", ")} · ours takes a leg expiring today at its moneyness, its remaining extrinsic as
@@ -363,6 +436,16 @@ export function BrokerCheckCard({ p }: { p: ManagePortfolio }) {
           </p>
         </>
       )}
+    </>
+  );
+}
+
+/** The broker check as a card, for a page that shows it on its own. */
+export function BrokerCheckCard({ p }: { p: ManagePortfolio }) {
+  if (!p.brokerCheck) return null;
+  return (
+    <Card title="against the broker's model">
+      <BrokerCheckBody p={p} />
     </Card>
   );
 }
@@ -432,7 +515,7 @@ function confidenceText(c: ManagePortfolio["ruleConfidence"]): string {
   return c.low === c.high ? ` at confidence ${c.low}` : ` at confidence ${c.low}–${c.high}`;
 }
 
-function GuidanceCard({ p }: { p: ManagePortfolio }) {
+export function GuidanceCard({ p }: { p: ManagePortfolio }) {
   return (
     <Card title="portfolio guidance">
       {p.guidance.length === 0 ? (
@@ -452,111 +535,83 @@ function GuidanceCard({ p }: { p: ManagePortfolio }) {
       <p className="muted pf-caption">
         retail heuristics{confidenceText(p.ruleConfidence)}: no published evidence stands behind these bands
       </p>
+      <BoxButtons>
+        <BoxButton id="hedge">a hedge, sized</BoxButton>
+      </BoxButtons>
     </Card>
   );
 }
 
-function HedgeSuggestion({ s }: { s: ManageHedgeSuggestion }) {
-  if (s.error) {
-    return (
-      <div className="pf-hedge">
-        <strong>{s.structure ?? s.kind}</strong> <span className="muted">· {s.error}</span>
-      </div>
-    );
-  }
-  const a = s.after;
-  return (
-    <div className="pf-hedge">
-      <div>
-        <strong>
-          {s.structure} × {s.units}
-        </strong>{" "}
-        · {s.priceLabel} at mid (natural {s.natural === null ? "—" : `${Math.abs(s.natural).toFixed(2)} ${s.natural >= 0 ? "cr" : "db"}`}) ·
-        cash {fmtCash(s.cash)} · max loss {fmtMoney(s.maxLoss)}
-      </div>
-      <ul>
-        {s.legs.map((l) => (
-          <li key={l.label}>
-            {l.quantity > 0 ? "buy" : "sell"} {Math.abs(l.quantity)} × {l.label}{" "}
-            <span className="muted">
-              ({l.bid ?? "—"} / {l.ask ?? "—"}, Δ {l.delta === null ? "—" : l.delta.toFixed(2)})
-            </span>
-          </li>
-        ))}
-      </ul>
-      {a && (
-        <div className="muted">
-          after: delta {signed(s.bwdChange)} → {signed(a.bwd)} sh {a.inBand ? "(in band)" : "(still outside)"} · theta{" "}
-          {fmtCash(s.thetaChange)} → {fmtMoney(a.theta)}/day · break-even {pctOf(a.breakevenPct)} · buying power{" "}
-          {pctOf(a.buyingPowerUsedPct, 0)}
-        </div>
-      )}
-      {s.pastCap && (
-        <div className="pf-out-text">
-          past the buying-power cap: offered anyway, because a debit spread only lowers the book's worst case
-        </div>
-      )}
-    </div>
-  );
-}
-
-function HedgeCard({ p }: { p: ManagePortfolio }) {
+/** The sized hedges as trade cards, under the line saying what they are for. */
+export function HedgeBody({ p }: { p: ManagePortfolio }) {
   const h = p.hedges;
   if (!h) return null;
   return (
-    <Card title="a hedge, sized">
+    <>
       <p className="muted pf-caption" style={{ marginTop: 0 }}>
         delta {signed(p.bwd)} sh, needs {signed(h.need)} to reach {signed(h.target)} · {h.root ?? "—"} {h.expiration ?? ""}
         {h.dte !== null ? ` (${h.dte} days)` : ""} · priced at mid, which is not a fill · nothing is placed
       </p>
-      {h.error ? <p className="muted">{h.error}</p> : h.suggestions.map((s) => <HedgeSuggestion key={s.kind} s={s} />)}
-    </Card>
+      {h.error ? (
+        <p className="muted">{h.error}</p>
+      ) : (
+        <>
+          {h.suggestions
+            .filter((s) => s.error)
+            .map((s) => (
+              <p key={s.kind} className="muted">
+                <strong>{s.structure ?? s.kind}</strong> · {s.error}
+              </p>
+            ))}
+          <TradeCards models={h.suggestions.filter((s) => !s.error).map((s) => hedgeModel(s, h))} />
+        </>
+      )}
+    </>
   );
 }
 
 /**
- * Every portfolio card, in pairs of matching height. Nothing when the evaluation predates them.
- * The guidance follows the four headline readings it is judged from (delta, theta, break-even and
- * the stress row) -- 2026-10-19: moved up from below the scenarios, where it was read last -- and the
- * breakdowns, `scenarios` (ScenarioCards.tsx) and the hedge come after it.
+ * Room to act: buying power used against its VIX-scaled cap, with your limits stacked under it, each
+ * at its value, its limit and manage's state. The full list and the ruleset open from it.
  */
-export function PortfolioCards({
-  p,
-  scenarios,
-  history,
-  pace,
-}: {
-  p: ManagePortfolio | null;
-  scenarios?: ReactNode;
-  /** The bands over time (BandsHistory.tsx), under the guidance it explains. */
-  history?: ReactNode;
-  /** The premium pace (PremiumPace.tsx): the goal the bands serve, so it comes before them. */
-  pace?: ReactNode;
-}) {
-  // The broker check (a record of our model against the broker's) and the scenarios (the risk matrix
-  // and graph) are the detail view's (2026-10-21).
-  const detail = useViewMode() === "detail";
-  if (!p) return null;
+export function RoomCard({ p, limits }: { p: ManagePortfolio; limits: ManageLimits | null }) {
+  const band = p.bands?.buyingPower ?? null;
+  const short = (v: number) => `${Math.round(v)}`;
+  const rows = (limits?.rows ?? []).filter((r) => r.id !== "buying_power");
   return (
-    <>
-      <div className="cards cards-pairs">
-        <DeltaCard p={p} />
-        <ThetaCard p={p} />
-        <BreakevenCard p={p} />
-        <StressCard p={p} />
-      </div>
-      <GuidanceCard p={p} />
-      {pace}
-      {history}
-      <div className="cards cards-pairs">
-        <ContributionCard p={p} figure="bwd" />
-        <ContributionCard p={p} figure="theta" />
-      </div>
-      {detail && <BrokerCheckCard p={p} />}
-      {detail && scenarios}
-      <HedgeCard p={p} />
-      <IncomeCard c={p.candidates} />
-      <TimeSpreadsCard t={p.timeSpreads} />
-    </>
+    <Card title="room to act" className="pf-cq" controls={band && <BandChip inside={band.inside} />}>
+      <DialBeside
+        dial={
+          band && band.high !== null ? (
+            <BandDial band={asPercent(band)} unit="% of net liq used" label="buying power" signedScale={false} fmt={(v) => v.toFixed(0)} tick={short} />
+          ) : (
+            <p className="muted">no VIX reading, so no cap to set it against</p>
+          )
+        }
+      >
+        <ul className="pf-targets">
+          <li>
+            <span>buying power cap</span>
+            <span className="num">
+              {band?.high == null ? "—" : `${Math.round(band.high * 100)}%`}
+              {band?.vix != null ? ` · VIX ${band.vix.toFixed(1)}` : ""}
+            </span>
+          </li>
+          {rows.map((r) => (
+            <li key={r.id}>
+              <span>{r.label}</span>
+              <span className="num">
+                {limitValue(r.value, r.unit)} / {limitText(r)} <span className={limitChip(r.state)}>{r.state}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="muted pf-caption">the cap rises with VIX, since premium is richer · less room means less to adjust with when the market moves</p>
+      </DialBeside>
+      <BoxButtons>
+        <BoxButton id="overTime">over time</BoxButton>
+        <BoxButton id="limits">your limits and ruleset</BoxButton>
+      </BoxButtons>
+    </Card>
   );
 }

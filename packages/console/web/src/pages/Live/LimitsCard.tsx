@@ -39,9 +39,25 @@ export function barFill(r: ManageLimitRow): number {
   return Math.max(0, Math.min(100, (r.value / edge) * 100));
 }
 
+/** The state chip's class, for the room card's stacked rows. */
+export function limitChip(state: string): string {
+  return STATE_CHIP[state] ?? "chip";
+}
+
+export { fmt as limitValue, limitText };
+
 export function LimitsCard({ limits }: { limits: ManageLimits }) {
   return (
     <Card title="your limits" collapseKey="manage-limits">
+      <LimitsBody limits={limits} />
+    </Card>
+  );
+}
+
+/** The limits list and its notes; the portfolio tab shows it in the room card's lightbox. */
+export function LimitsBody({ limits }: { limits: ManageLimits }) {
+  return (
+    <>
       <p className="muted pf-caption" style={{ marginTop: 0 }}>
         each measure beside the limit it is judged against; a blank limit in Config › Position rules › limits uses the guidance band or
         the candidate cap
@@ -67,6 +83,6 @@ export function LimitsCard({ limits }: { limits: ManageLimits }) {
       {limits.unknownNames.length ? (
         <p className="muted">no worst case modelled for {limits.unknownNames.join(", ")}: left out of the one-name measure</p>
       ) : null}
-    </Card>
+    </>
   );
 }

@@ -31,9 +31,12 @@ interface Strip {
 
 const STRIPS: Strip[] = [
   { label: "beta-weighted delta", pick: (s) => s.delta, fmt: (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}` },
-  { label: "theta, % of net liq a day", pick: (s) => s.thetaPct, fmt: (v) => `${(v * 100).toFixed(2)}%` },
+  { label: "theta, % of net liq per day", pick: (s) => s.thetaPct, fmt: (v) => `${(v * 100).toFixed(2)}%` },
   { label: "buying power used", pick: (s) => s.buyingPower, fmt: (v) => `${(v * 100).toFixed(0)}%` },
 ];
+
+/** The lightbox tabs' names for the strips, in STRIPS order. */
+const STRIP_KEYS = ["delta", "theta", "bp"];
 
 const W = 320;
 const H = 64;
@@ -107,35 +110,42 @@ function BandStrip({ sessions, strip }: { sessions: ManageBandsSession[]; strip:
   );
 }
 
-/** The card itself, a pure render of one account's sessions. */
-export function BandsHistoryView({ sessions }: { sessions: ManageBandsSession[] }) {
+/** The strips and their caption, a pure render of one account's sessions; `only` picks one strip
+ *  ("delta", "theta" or "bp") drawn at full width. */
+export function BandsHistoryBody({ sessions, only = null }: { sessions: ManageBandsSession[]; only?: string | null }) {
   const first = sessions[0];
   const last = sessions[sessions.length - 1];
+  if (!first || !last || sessions.length < 2) return <p className="muted">needs two evaluations with bands; {sessions.length} so far</p>;
+  const strips = STRIPS.filter((_, i) => only === null || STRIP_KEYS[i] === only);
+  return (
+    <>
+      <div className={only === null ? "bh-grid" : "bh-grid bh-one"}>
+        {strips.map((s) => (
+          <BandStrip key={s.label} sessions={sessions} strip={s} />
+        ))}
+      </div>
+      <p className="muted pf-caption">
+        {day(first.session)} to {day(last.session)}, one point per session (its last
+        evaluation) · the shaded band is that day's own, as manage judged it · amber: outside it
+      </p>
+    </>
+  );
+}
+
+/** The card, as the tab drew it before the lightbox (kept for the tests and any other page). */
+export function BandsHistoryView({ sessions }: { sessions: ManageBandsSession[] }) {
   return (
     <Card title="bands over time">
-      {!first || !last || sessions.length < 2 ? (
-        <p className="muted">needs two evaluations with bands; {sessions.length} so far</p>
-      ) : (
-        <>
-          <div className="bh-grid">
-            {STRIPS.map((s) => (
-              <BandStrip key={s.label} sessions={sessions} strip={s} />
-            ))}
-          </div>
-          <p className="muted pf-caption">
-            {day(first.session)} to {day(last.session)}, one point per session (its last
-            evaluation) · the shaded band is that day's own, as manage judged it
-          </p>
-        </>
-      )}
+      <BandsHistoryBody sessions={sessions} />
     </Card>
   );
 }
 
-export function BandsHistoryCard({ account }: { account: string | null }) {
+/** The portfolio tab's "over time" lightbox: one account's strips, fetched when it opens. */
+export function BandsOverTime({ account, only = null }: { account: string | null; only?: string | null }) {
   const q = useManageBands();
   const found = q.data?.accounts.find((a) => a.account === account) ?? null;
-  if (q.isLoading) return null;
+  if (q.isLoading) return <p className="muted">Loading the bands…</p>;
   if (q.error) return <p className="muted">bands over time: {(q.error as Error).message}</p>;
-  return <BandsHistoryView sessions={found?.sessions ?? []} />;
+  return <BandsHistoryBody sessions={found?.sessions ?? []} only={only} />;
 }

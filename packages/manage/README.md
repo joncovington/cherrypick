@@ -581,7 +581,7 @@ not a rule.
 `model.py` (2026-11-04, `python -m cherrypick.manage model`) draws proposed legs on a held name's
 payoff with what it holds, against the stored snapshot. A leg given a price is taken at it and its vol
 solved from it; one with none is priced at the name's IV index, and says so. For the proposed legs
-alone: the net credit or debit, the model's delta and theta a day, and the worst case at their
+alone: the net credit or debit, the model's delta and theta per day, and the worst case at their
 nearest expiry from zero to three times today's price (the buying power a defined-risk trade holds
 in a cash account; a worst case still falling at three times is unbounded, stated, never a number).
 Against the candidate caps (`portfolio.candidates`, by the account's kind): the worst case over net
@@ -602,7 +602,7 @@ A reading, not a rule: it fires nothing. The orchestrator posts each listed name
 ## Your limits
 
 `limits.py` (2026-11-04) sets each of the book's measures beside a limit from the ruleset's `limits`
-block: beta-weighted delta (benchmark shares, +/-), dollar delta (+/-), theta a day (a ceiling, on the
+block: beta-weighted delta (benchmark shares, +/-), dollar delta (+/-), theta per day (a ceiling, on the
 theta band's figure without the front legs), vega (+/-), buying power used over net liq, and one
 name's worst case from open over net liq. A blank (null) limit falls back to the guidance band where
 there is one (delta, theta, buying power) or the candidate cap (one name, by the account's kind), and

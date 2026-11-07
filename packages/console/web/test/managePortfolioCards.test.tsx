@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { ReactElement } from "react";
-import type { ManageCandidate, ManageCandidateRoom, ManageCandidates, ManagePortfolio } from "@console/shared";
-import { FIT_COLUMNS, IncomeCard, netPrice } from "../src/pages/Live/IncomeCard";
-import { SecondaryCells, secondaryOf } from "../src/components/columns";
-import { BandDial, PortfolioCards, placesApart } from "../src/pages/Live/PortfolioCards";
+import type { ManageAccount, ManageCandidate, ManageCandidateRoom, ManageCandidates, ManagePortfolio } from "@console/shared";
+import { AddingTradesCard, IncomeCard, netPrice } from "../src/pages/Live/IncomeCard";
+import { BandDial, BrokerCheckBody, ContributionBars, HedgeBody, placesApart } from "../src/pages/Live/PortfolioCards";
+import { PortfolioLayout } from "../src/pages/Live/PortfolioLayout";
 import { BuyingPowerCard, LadderCard, RiskGraphCard, RiskMatrixCard, ScenarioCards } from "../src/pages/Live/ScenarioCards";
 import { aligned, inView, tables } from "./viewTables";
 import { writePref } from "../src/lib/prefs";
@@ -18,6 +18,13 @@ import { writePref } from "../src/lib/prefs";
 /** Rendered HTML without the text separators React writes between adjacent strings. */
 function render(el: ReactElement): string {
   return renderToString(el).replace(/<!-- -->/g, "");
+}
+
+/** The portfolio tab's cards for one account holding `p` (PortfolioLayout), outside any lightbox
+ *  provider, so no lightbox button is drawn. */
+function cards(p: ManagePortfolio | null): string {
+  const a = { account: "****0000", netLiq: p?.netLiq ?? null, trades: [], portfolio: p, premium: null, limits: null } as unknown as ManageAccount;
+  return render(<PortfolioLayout a={a} />);
 }
 
 function reading(over: Partial<ManagePortfolio> = {}): ManagePortfolio {
@@ -130,15 +137,15 @@ describe("BandDial", () => {
   });
 });
 
-describe("PortfolioCards", () => {
+describe("the portfolio layout", () => {
   it("draws nothing for an evaluation written before the reading existed", () => {
-    expect(render(<PortfolioCards p={null} />)).toBe("");
+    expect(cards(null)).toBe("");
   });
 
-  it("shows the check against the broker's model only when the reading carries one, untoned", () => {
-    expect(render(<PortfolioCards p={reading()} />)).not.toContain("against the broker");
+  it("draws the check against the broker's model untoned, in its lightbox and not on the page", () => {
+    expect(cards(reading())).not.toContain("against the broker");
     const html = render(
-      <PortfolioCards
+      <BrokerCheckBody
         p={reading({
           brokerCheck: {
             legsCompared: 30,
@@ -156,7 +163,6 @@ describe("PortfolioCards", () => {
         })}
       />,
     );
-    expect(html).toContain("against the broker");
     expect(html).toContain("−1.2 sh"); // the delta gap
     expect(html).toContain("30 legs on both models");
     expect(html).toContain("the broker&#x27;s IV on 7 with a wide quote");
@@ -166,7 +172,7 @@ describe("PortfolioCards", () => {
 
   it("shows the legs expiring today as their own line under the check", () => {
     const html = render(
-      <PortfolioCards
+      <BrokerCheckBody
         p={reading({
           brokerCheck: {
             legsCompared: 38,
@@ -199,7 +205,7 @@ describe("PortfolioCards", () => {
   });
 
   it("shows each band's chip from the reading and the guidance it fired", () => {
-    const html = render(<PortfolioCards p={reading()} />);
+    const html = cards(reading());
     expect(html).toContain("in band"); // delta
     expect(html).toContain("outside band"); // theta
     expect(html).toContain("portfolio.theta");
@@ -208,17 +214,17 @@ describe("PortfolioCards", () => {
   });
 
   it("states the theta the band reads beside the whole book's, and only the whole on an older reading", () => {
-    const split = render(<PortfolioCards p={reading({ theta: 213.02, thetaExFront: 1.63, frontDte: 2 })} />);
-    expect(split).toContain("$1.63 a day without legs 2 days or less from expiry, $213.02 with them");
-    const old = render(<PortfolioCards p={reading({ thetaExFront: null, frontDte: null })} />);
-    expect(old).toContain("$43.68 a day");
-    expect(old).not.toContain("with them");
+    const split = cards(reading({ theta: 213.02, thetaExFront: 1.63, frontDte: 2 }));
+    expect(split).toContain("$1.63 per day without legs 2 days or less from expiry");
+    expect(split).toContain("$213.02");
+    const old = cards(reading({ thetaExFront: null, frontDte: null }));
+    expect(old).toContain("$43.68 per day");
+    expect(old).not.toContain("without legs");
   });
 
   it("states each guidance driver in its own unit, and a concentration driver as both shares", () => {
-    const html = render(
-      <PortfolioCards
-        p={reading({
+    const html = cards(
+      reading({
           guidance: [
             { rule: "portfolio.theta", confidence: 40, reason: "above", drivers: [{ underlying: "GOOGL", figures: [{ kind: "theta", value: 9.06 }] }] },
             { rule: "portfolio.delta", confidence: 40, reason: "outside", drivers: [{ underlying: "META", figures: [{ kind: "bwd", value: 6.22 }] }] },
@@ -229,8 +235,7 @@ describe("PortfolioCards", () => {
               drivers: [{ underlying: "SPY", figures: [{ kind: "bwd_share", value: 0.31 }, { kind: "theta_share", value: 0.128 }] }],
             },
           ],
-        })}
-      />,
+        }),
     );
     expect(html).toContain("+$9.06/day");
     expect(html).toContain("+6.2 SPY sh");
@@ -239,16 +244,16 @@ describe("PortfolioCards", () => {
   });
 
   it("states the ruleset's own confidence in the caption", () => {
-    const at55 = render(<PortfolioCards p={reading({ ruleConfidence: { low: 55, high: 55 } })} />);
+    const at55 = cards(reading({ ruleConfidence: { low: 55, high: 55 } }));
     expect(at55).toContain("retail heuristics at confidence 55");
     expect(at55).not.toContain("confidence 40:");
-    expect(render(<PortfolioCards p={reading({ ruleConfidence: { low: 35, high: 40 } })} />)).toContain("at confidence 35–40");
-    expect(render(<PortfolioCards p={reading({ ruleConfidence: null })} />)).toContain("retail heuristics: no published evidence");
+    expect(cards(reading({ ruleConfidence: { low: 35, high: 40 } }))).toContain("at confidence 35–40");
+    expect(cards(reading({ ruleConfidence: null }))).toContain("retail heuristics: no published evidence");
   });
 
   it("draws long and short delta without a sign tone", () => {
-    const html = render(<PortfolioCards p={reading()} />);
-    const delta = html.slice(html.indexOf("where the delta comes from"), html.indexOf("where the theta comes from"));
+    const html = cards(reading());
+    const delta = html.slice(html.indexOf("where the delta comes from"), html.indexOf("What happens if it moves?"));
     expect(delta).toContain("diverge-neutral");
     expect(delta).not.toContain("pnl-neg");
     expect(delta).toContain("FXI ⚠");
@@ -257,16 +262,21 @@ describe("PortfolioCards", () => {
   it("sums the names past the cut into one row, so the rows add up to the book", () => {
     const base = reading();
     const extra = Array.from({ length: 14 }, (_, i) => ({ ...base.underlyings[0]!, underlying: `N${i}`, bwd: 14 - i, betaDoubt: null }));
-    const html = render(<PortfolioCards p={reading({ underlyings: extra })} />);
-    const delta = html.slice(html.indexOf("where the delta comes from"), html.indexOf("where the theta comes from"));
-    // Twelve names shown (14 down to 3), the last two (2 and 1) as one row of +3.
-    expect(delta).toContain("2 others");
-    expect(delta).toContain("+3.0 sh");
+    const html = cards(reading({ underlyings: extra }));
+    const delta = html.slice(html.indexOf("where the delta comes from"), html.indexOf("What happens if it moves?"));
+    // Five names on the card (14 down to 10), the other nine (9 down to 1) as one row of +45.
+    expect(delta).toContain("9 others");
+    expect(delta).toContain("+45.0 sh");
     expect(delta).not.toContain(">N13<");
+    // The lightbox lists every name, and no others row.
+    const every = render(<ContributionBars p={reading({ underlyings: extra })} figure="bwd" limit={null} />);
+    expect(every).toContain("N13");
+    expect(every).not.toContain("others");
   });
 
-  it("shows a hedge only when the reading carries one, with its natural price beside the mid", () => {
-    expect(render(<PortfolioCards p={reading()} />)).not.toContain("a hedge, sized");
+  it("shows a hedge only when the reading carries one, each as a trade card with its natural price beside the mid", () => {
+    expect(cards(reading())).not.toContain("brings it to");
+    expect(render(<HedgeBody p={reading()} />)).toBe("");
     const hedged = reading({
       hedges: {
         target: 27.3,
@@ -298,12 +308,17 @@ describe("PortfolioCards", () => {
         ],
       },
     });
-    const html = render(<PortfolioCards p={hedged} />);
-    expect(html).toContain("a hedge, sized");
+    const html = render(<HedgeBody p={hedged} />);
+    expect(html).toContain("tc-card");
     expect(html).toContain("1.58 cr");
     expect(html).toContain("natural 0.29 cr");
-    expect(html).toContain("sell 1 × XSP 2026-12-18 785C");
+    expect(html).toContain('is-sell">sell</span><span>1 × XSP 2026-12-18 785C');
+    expect(html).toContain("in band after");
+    // The one manage could not size is said, not drawn as a card.
     expect(html).toContain("buying-power cap");
+    expect(html.match(/tc-card/g)?.length).toBe(1);
+    // While delta is outside its band, the direction card carries the hedge's headline.
+    expect(cards(hedged)).toContain("brings it to −0.6 sh");
   });
 
   it("says when a debit hedge is offered past the cap", () => {
@@ -318,8 +333,8 @@ describe("PortfolioCards", () => {
         ],
       },
     });
-    expect(render(<PortfolioCards p={base} />)).not.toContain("past the buying-power cap");
-    expect(render(<PortfolioCards p={pastCap} />)).toContain("past the buying-power cap: offered anyway");
+    expect(render(<HedgeBody p={base} />)).not.toContain("past the buying-power cap");
+    expect(render(<HedgeBody p={pastCap} />)).toContain("past the buying-power cap: offered anyway");
   });
 });
 
@@ -443,7 +458,7 @@ function income(over: Partial<ManageCandidates> = {}): ManageCandidates {
 describe("IncomeCard", () => {
   it("badges a candidate on a declared daily-reset fund", () => {
     const html = render(<IncomeCard c={income({ fits: [candidate({ underlying: "TSLL", leveraged: "leveraged" }), candidate()] })} />);
-    expect(html).toMatch(/TSLL<span class="chip"[^>]*>leveraged</);
+    expect(html).toMatch(/>TSLL<.*?class="pos-card-chips">.*?<span class="chip"[^>]*>leveraged</);
     expect(html.match(/>leveraged</g)?.length).toBe(1);
   });
 
@@ -452,7 +467,7 @@ describe("IncomeCard", () => {
     const html = render(
       <IncomeCard c={income({ fits: [candidate({ kind: "put_spread", odds }), candidate({ kind: "short_put" })], fitsTotal: 60 })} />,
     );
-    expect(html).toContain("20% / 11% · b/e 23.66 · cost 13%");
+    expect(html).toContain("odds 20% / 11% · b/e 23.66 · cost 13%");
     expect(html).toContain("No tested edge.");
     expect(html).toContain("the first 2 of 60 that fit, by symbol");
     expect(html).not.toContain("theta per dollar");
@@ -460,7 +475,7 @@ describe("IncomeCard", () => {
 
   it("badges a candidate on a name already held on the same expiry", () => {
     const html = render(<IncomeCard c={income({ fits: [candidate({ underlying: "NKE", heldSameExpiry: true }), candidate()] })} />);
-    expect(html).toMatch(/NKE<span class="chip"[^>]*>held · same expiry</);
+    expect(html).toMatch(/>NKE<.*?class="pos-card-chips">.*?<span class="chip"[^>]*>held · same expiry</);
     expect(html.match(/held · same expiry</g)?.length).toBe(1);
   });
 
@@ -471,13 +486,16 @@ describe("IncomeCard", () => {
     expect(html).toContain("2.47 cr"); // the per-share net price, marked
     expect(html).toContain("+$494.00"); // cash: 2 contracts x $247 received
     expect(html).toContain("$506.00"); // risk: 2 x $253
-    // The next cap is in the row's expanded line since 2026-10-30.
-    expect(renderToString(<SecondaryCells cols={secondaryOf(FIT_COLUMNS)} row={candidate()} />)).toContain("per-trade risk");
+    // Each fit is a position-style card: its legs at the fitted size, what it does to the book, the next cap.
+    expect(html).toContain('is-sell">sell</span><span>2 × AAPL 11/20 345C');
+    expect(html).toContain("delta +3.0 SPY sh");
+    expect(html).toContain("theta +$1.86 per day");
+    expect(html).toContain("next stops at: per-trade risk");
     expect(html).toContain("re-quote before sending");
     expect(html).toContain("120 earnings inside the trade");
     // An earnings date nobody knows is a chip on the name; a known one (after expiry, or the trade
     // would have been dropped) is not shown at all.
-    expect(html).toMatch(/AAL<span class="chip chip-warn"[^>]*>earnings unknown</);
+    expect(html).toMatch(/>AAL<.*?class="pos-card-chips">.*?<span class="chip chip-warn"[^>]*>earnings unknown</);
     expect(html.match(/earnings unknown</g)?.length).toBe(1);
     const known = render(<IncomeCard c={income({ fits: [candidate()] })} />);
     expect(known).not.toContain("earnings unknown");
@@ -529,7 +547,7 @@ describe("IncomeCard", () => {
     // An evaluation with no ruleset embedded names no number rather than a default.
     const bare = render(<IncomeCard c={income({ caps: null })} />);
     expect(bare).toContain("a short put&#x27;s strike of net liq (cash)");
-    expect(bare).not.toMatch(/\d+%/);
+    expect(bare.replace(/style="[^"]*"/g, "")).not.toMatch(/\d+%/);
   });
 
   it("lists trades waiting for room, sized as if there were room, with a chip graded by the buying power left", () => {
@@ -710,12 +728,12 @@ describe("risk matrix horizons, history row and ideas", () => {
 describe("a reading and its bounds never print alike", () => {
   it("shows a theta just outside its ceiling to the places that tell them apart (2026-10-21: 0.304% read 0.30%)", () => {
     const p = reading({ thetaPctNetLiq: 0.00304, bands: { ...reading().bands!, theta: { low: 0.001, high: 0.003, value: 0.00304, inside: false } } });
-    const html = render(<PortfolioCards p={p} />);
+    const html = cards(p);
     expect(html).toContain("0.304");
     expect(html).toContain("band 0.100%–0.300%");
     expect(html).toContain("outside band");
     // Two places where two already differ.
-    expect(render(<PortfolioCards p={reading()} />)).toContain("band 0.10%–0.30%");
+    expect(cards(reading())).toContain("band 0.10%–0.30%");
   });
 
   it("adds places only until the value and a bound it does not equal differ", () => {
@@ -787,37 +805,37 @@ describe("the portfolio tab, simple and detail", () => {
     legsOnBrokerIv: 0,
     expiring: null,
   };
-  const cards = () => render(<PortfolioCards p={reading({ brokerCheck: check })} scenarios={<p>the scenario cards</p>} />);
+  const both = () => cards(reading({ brokerCheck: check }));
 
-  it("keeps the vega tile, the broker check and the scenarios to detail, and drops the account tile in both", () => {
-    const simple = inView("simple", cards);
-    const detail = inView("detail", cards);
-    for (const hidden of ["vega (30-day weighted)", "against the broker", "the scenario cards"]) {
+  it("keeps the vega and realised tiles to detail, shows the matrix in both, and the broker check in neither", () => {
+    const simple = inView("simple", both);
+    const detail = inView("detail", both);
+    for (const hidden of ["vega (30-day weighted)", "realised move (30-day)"]) {
       expect(simple).not.toContain(hidden);
       expect(detail).toContain(hidden);
     }
-    expect(simple).not.toContain("Traditional IRA");
-    expect(detail).not.toContain("Traditional IRA");
-    expect(simple).toContain("tile-grid-4");
-    expect(detail).toContain("tile-grid-5");
+    for (const html of [simple, detail]) {
+      expect(html).toContain("risk matrix");
+      // A lightbox's, opened from where the delta comes from.
+      expect(html).not.toContain("delta, broker&#x27;s greeks");
+      expect(html).not.toContain("Traditional IRA");
+    }
+    // The tiles stay even: four in simple, six in detail.
+    expect(simple).toContain("pf-tiles-4");
+    expect(detail).toContain("pf-tiles-6");
   });
 
-  it("the income tables drop buying power, and keep qty, price, theta, delta and the next cap to the expanded line, in both views", () => {
+  it("draws the fits as cards and keeps the waiting table without a buying-power column, in both views", () => {
     const c = income({ fits: [candidate()], waiting: [candidate({ ifRoom: room() })], waitingTotal: 1 });
     const simple = tables(inView("simple", () => render(<IncomeCard c={c} />)));
     const detail = tables(inView("detail", () => render(<IncomeCard c={c} />)));
-    expect(simple).toHaveLength(2);
+    expect(simple).toHaveLength(1);
     for (const t of [...simple, ...detail]) {
       expect(t.headers).not.toContain("buying power");
       expect(aligned(t)).toBe(true);
     }
-    expect(simple[1]!.headers).toContain("BP after");
-    // Out of the row in BOTH views since 2026-10-30: the console opens in detail.
-    for (const h of ["qty", "price", "θ / day", "Δ SPY sh", "next stops at"]) {
-      for (const t of [...simple, ...detail]) expect(t.headers).not.toContain(h);
-    }
-    const line = renderToString(<SecondaryCells cols={secondaryOf(FIT_COLUMNS)} row={candidate()} />);
-    for (const h of ["qty", "price", "θ / day", "Δ SPY sh", "next stops at"]) expect(line).toContain(h);
+    expect(simple[0]!.headers).toContain("BP after");
+    expect(inView("simple", () => render(<IncomeCard c={c} />))).toContain("tc-card");
   });
 
   it("hides a candidate under the remembered premium floor and says how many", () => {
@@ -836,8 +854,21 @@ describe("the portfolio tab, simple and detail", () => {
     }
   });
 
-  it("puts the per-share price on the cash cell's hover, so the simple view still has it", () => {
+  it("puts the per-share price and the size on each fit's card, in the simple view too", () => {
     const html = inView("simple", () => render(<IncomeCard c={income()} />));
-    expect(html).toContain('title="2.47 cr a share at mid · 2 contracts"');
+    expect(html).toContain("2.47 cr at mid × 2");
+  });
+
+  it("opens adding trades on income, or on time spreads when no income trade fits and one does", () => {
+    const none = income({ fits: [], fitsTotal: 0 });
+    const spreads = { sourceSession: "2026-11-06", takenAt: null, order: null, edge: null, deltaFilter: null, bpCapPct: 0.6, fits: [], fitsTotal: 0, tooBig: [], tooBigTotal: 0, dropped: {}, error: null };
+    const one = { ...spreads, fits: [{ underlying: "BBB", kind: "calendar", direction: "neutral" as const, label: "put calendar", front: "2026-11-20", back: "2026-12-18", spot: 50, ratio: 1.3, ivRank: null, sector: null, earningsDate: null, longLeg: { strike: 50, right: "P" as const, option: null }, shortLeg: { strike: 50, right: "P" as const, option: null }, entryQuotes: null, debitMid: 1.2, debitNatural: 1.3, gap: null, debitShareOfGap: null, frontIv: 0.4, backIv: 0.3, netDelta: 0, thetaDay: 3, pnlFlat: 40, pnlUp5: 0, pnlDown10: -50, losesUnchanged: false, breakeven: null, priceStop: null, takeProfit: null, valueStop: null, rollBy: null, maxLoss: 120, units: 1, binding: null, heldName: false, heldSector: false, bpAfterPct: 0.3 }], fitsTotal: 1 };
+    const pressed = (html: string) => html.match(/aria-pressed="true"[^>]*>([^<·]+)/)?.[1]?.trim();
+    expect(pressed(render(<AddingTradesCard c={income()} t={one} netLiq={10000} />))).toBe("income");
+    expect(pressed(render(<AddingTradesCard c={none} t={one} netLiq={10000} />))).toBe("time spreads");
+    const html = render(<AddingTradesCard c={none} t={one} netLiq={10000} />);
+    // A time spread's theta and profits are one unit's dollars (TimeSpreadTable), not per share.
+    expect(html).toContain("theta +$3.00 per day");
+    expect(html).toMatch(/pos-card-pnl pnl-neg">[-−]\$120\.00</); // the debit for one unit: 1.20 a share
   });
 });

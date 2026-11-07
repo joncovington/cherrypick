@@ -216,7 +216,7 @@ function ModelResult({ r }: { r: ManageModelResult }) {
           <span className="ldg-tile-sub">{r.unbounded ? "a short call with nothing covering it" : r.worstCaseAt === null ? "" : `at ${r.worstCaseAt.toFixed(2)}`}</span>
         </div>
         <div className="ldg-tile">
-          <span className="ldg-tile-label">delta · theta a day</span>
+          <span className="ldg-tile-label">delta · theta per day</span>
           <span className="ldg-tile-value">
             {r.delta === null ? "—" : r.delta.toFixed(1)} · {r.thetaDay === null ? "—" : fmtCash(r.thetaDay)}
           </span>
@@ -238,7 +238,7 @@ function ModelResult({ r }: { r: ManageModelResult }) {
               <th>from</th>
               <th className="num">vol</th>
               <th className="num">delta</th>
-              <th className="num">theta a day</th>
+              <th className="num">theta per day</th>
             </tr>
           </thead>
           <tbody>

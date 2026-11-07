@@ -35,6 +35,9 @@
   --text-dim: #6b7280; /* category headers; 3.5:1 on the card — headings only, never body */
   --num-face: "Cascadia Code", "Consolas", ui-monospace, monospace;
 
+  --pf-income: #2dd4bf; /* the portfolio tab's concept marks: income, room to act, adding trades */
+  --pf-room: #e879f9;
+  --pf-add: #f472b6;
   color-scheme: dark;
 }
 
@@ -76,6 +79,9 @@
   --text-muted: #6b7280;
   --text-dim: #9aa1ab;
 
+  --pf-income: #0f8f80;
+  --pf-room: #b42fc4;
+  --pf-add: #c42a74;
   color-scheme: light;
 }
 
@@ -8252,4 +8258,298 @@ select.text-input {
   .lim-num {
     grid-column: 1 / -1;
   }
+}
+
+/* ---------------------------------------------------------------------------------------------------
+   The portfolio tab's layout (2026-11-06, pages/Live/PortfolioLayout.tsx): the cards under the
+   questions a manager asks, each row a 12-column grid that folds to two cards a row, then one, by the
+   width the page actually has (a container query, so the side rail's width counts). Cards in a row
+   share its height; a card's lightbox buttons sit on its floor. */
+.pf-layout {
+  container: pf / inline-size;
+  display: grid;
+  gap: 1.1rem;
+}
+.pf-sec {
+  display: grid;
+  gap: 0.45rem;
+  --pf-c: var(--text-muted);
+}
+.pf-c-stand { --pf-c: var(--accent); }
+.pf-c-income { --pf-c: var(--pf-income); }
+.pf-c-dir { --pf-c: var(--chart-special); }
+.pf-c-risk { --pf-c: var(--chart-orange); }
+.pf-c-room { --pf-c: var(--pf-room); }
+.pf-c-add { --pf-c: var(--pf-add); }
+.pf-sec-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.65rem;
+  padding: 0 0.15rem;
+}
+.pf-sec-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.pf-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--num-face, ui-monospace, monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  color: var(--pf-c);
+  border: 1px solid color-mix(in srgb, var(--pf-c) 45%, transparent);
+  background: color-mix(in srgb, var(--pf-c) 10%, transparent);
+  white-space: nowrap;
+}
+.pf-tag::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pf-c);
+}
+.pf-row {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: stretch;
+}
+/* Two cards share a row as halves; a row's one card spans it. The risk section's two each take a row:
+   the matrix carries its ideas, far taller than the stress card beside it would be. */
+.pf-row > .card {
+  grid-column: span 6;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.pf-row > .card:only-child {
+  grid-column: 1 / -1;
+}
+.pf-c-risk .pf-row > .card {
+  grid-column: 1 / -1;
+}
+.pf-row > .card > .view-fade {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.pf-row > .card .card-head h2::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 0.8em;
+  margin-right: 0.45rem;
+  border-radius: 2px;
+  background: var(--pf-c);
+  vertical-align: -0.05em;
+}
+@container pf (max-width: 760px) {
+  .pf-row > .card {
+    grid-column: 1 / -1;
+  }
+}
+.pf-push {
+  margin-top: auto;
+}
+.pf-mores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-top: 0.6rem;
+}
+.pf-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.pf-more:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+}
+.pf-more.is-hot {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.pf-more-k {
+  color: var(--text-muted);
+  font-family: var(--num-face, ui-monospace, monospace);
+  font-size: 0.75rem;
+}
+/* A dial beside its figures once its card is wide enough, stacked above them below that. */
+.pf-row > .card.pf-cq {
+  container: pfcard / inline-size;
+}
+.pf-dwrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem 1rem;
+}
+.pf-dv {
+  width: 100%;
+  max-width: 260px;
+  justify-self: center;
+}
+.pf-dside {
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+  min-width: 0;
+}
+.pf-dside .pf-caption {
+  margin: 0;
+}
+@container pfcard (min-width: 470px) {
+  .pf-dwrap {
+    grid-template-columns: minmax(170px, 230px) minmax(0, 1fr);
+    align-items: center;
+  }
+}
+.pf-meter {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--track);
+  overflow: hidden;
+}
+.pf-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--pf-income);
+  border-radius: 4px;
+}
+.pf-hint {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  margin: 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warn) 8%, var(--surface-sunken));
+  font-size: 0.82rem;
+}
+.pf-targets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+.pf-targets li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.75rem;
+  padding: 0.35rem 0.1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+.pf-targets li > span:first-child {
+  color: var(--text-muted);
+}
+.pf-targets .num {
+  font-family: var(--num-face, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+/* The stress tiles: four across where there is room, two by two where there is not, so none sits
+   alone on a row. */
+.pf-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+@container pfcard (min-width: 440px) {
+  .pf-tiles-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pf-tiles-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .pf-tiles-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.pf-graph-small {
+  width: 100%;
+  max-height: 240px;
+}
+/* The stress card: its tiles beside the small graph where the card is wide, above it where not. */
+.pf-stress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+}
+@container pfcard (min-width: 820px) {
+  .pf-stress {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  }
+}
+.pf-ruleset {
+  margin: 0;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+}
+.bh-grid.bh-one {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* A trade not held yet, drawn as a position card (pages/Live/TradeCard.tsx). */
+.tc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 0.75rem;
+  align-items: start;
+}
+.pos-card.tc-card {
+  cursor: default;
+  background: var(--surface-sunken);
+}
+.pos-card.tc-card:hover {
+  border-color: var(--border);
+}
+.pos-card.tc-card.is-faded {
+  opacity: 0.7;
+}
+.pos-card.tc-card .pos-card-foot > span:first-child {
+  white-space: normal;
+}
+.pos-card.tc-card .pos-card-foot {
+  flex-wrap: wrap;
+}
+.pos-bar-fill.tc-bar-cap {
+  background: var(--pf-room);
+}
+
+/* The portfolio tab's lightboxes are wider than a study's: three trade cards sit side by side. */
+.study-dialog.study-dialog-wide {
+  max-width: 1200px;
+  height: auto;
+  max-height: min(880px, calc(100vh - 48px));
+}
+@media (max-width: 560px) {
+  .study-dialog.study-dialog-wide {
+    max-width: none;
+    height: 100vh;
+    max-height: none;
+  }
+}
+.pf-box-body {
+  display: grid;
+  gap: 0.75rem;
+}
+.pf-box-body .pos-cards {
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
 }

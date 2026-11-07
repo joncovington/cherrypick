@@ -5,7 +5,7 @@ block, each beside what the book holds now.
 |---|---|---|
 | delta, benchmark shares | the reading's `bwd` | its delta band |
 | dollar delta | `bwd` x the benchmark's price | none |
-| theta a day | theta without the front legs (the band's) | the theta band x net liq |
+| theta per day | theta without the front legs (the band's) | the theta band x net liq |
 | vega | the reading's `vega` | none |
 | buying power used / net liq | `buying_power_used_pct` | the VIX-scaled band |
 | one name's worst case / net liq | trades' worst case from open, by name | the candidate cap |
@@ -152,13 +152,13 @@ def reading(
     mine = _f(cfg.get("theta_day"))
     tb = bands.get("theta") or {}
     if mine is not None:
-        rows.append(_row("theta", "theta a day", "$", theta, None, mine, "yours", near))
+        rows.append(_row("theta", "theta per day", "$", theta, None, mine, "yours", near))
     elif tb and net_liq:
         lo, hi = _f(tb.get("low")), _f(tb.get("high"))
         rows.append(
             _row(
                 "theta",
-                "theta a day",
+                "theta per day",
                 "$",
                 theta,
                 None if lo is None else lo * net_liq,
@@ -168,7 +168,7 @@ def reading(
             )
         )
     else:
-        rows.append(_row("theta", "theta a day", "$", theta, None, None, "none", near))
+        rows.append(_row("theta", "theta per day", "$", theta, None, None, "none", near))
 
     # Vega.
     vega = _f(book.get("vega"))
