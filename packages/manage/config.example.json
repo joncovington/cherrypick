@@ -70,9 +70,10 @@
       }
     },
     "diagonal_width": {
-      "_comment": "Review a two-leg diagonal (a PMCC or its put mirror) whose net debit, rolls counted, is over max_share_of_width of the distance between its strikes: a fast move through the short leaves little to make, and past the width it loses.",
+      "_comment": "Review a two-leg diagonal (a PMCC or its put mirror) with little left to make at the short's expiry, on its net debit with rolls counted. Modelled with the long at its own IV: its best case under net / max_share_of_width (a third over the net at 75%), or the spread worth under the net run_past_short_moves expected moves past the short strike. A long expiring soon after the short peaks near the width, so that is the width rule; a long with years left keeps time value. No IV: the width rule itself.",
       "enabled": true,
       "max_share_of_width": 0.75,
+      "run_past_short_moves": 1.0,
       "confidence": 60
     },
     "price_stop": {

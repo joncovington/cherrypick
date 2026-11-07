@@ -107,12 +107,21 @@ DEFAULT_RULES: dict[str, Any] = {
                 "put zebra": {"gain_fraction": 0.25, "confidence": 55},
             },
         },
-        # A diagonal (a PMCC or its put mirror) whose net debit is over this share of the distance
-        # between its strikes: a fast move through the short takes both legs to intrinsic, where the
-        # trade is worth about that distance, so a debit near it has little left to make and one past
-        # it loses. The strategy guide's entry rule, applied while the trade is held (the chain's net
-        # debit, so the short calls rolled for credit count).
-        "diagonal_width": {"enabled": True, "max_share_of_width": 0.75, "confidence": 60},
+        # A diagonal (a PMCC or its put mirror) with little left to make, judged at the short's expiry
+        # on the chain's net debit (the short calls rolled for credit count). Modelled, the long at its
+        # own IV with its time left and the name's dividend yield: review when the best case is under
+        # net / max_share_of_width (a third over the net at 75%), or when the spread
+        # `run_past_short_moves` expected moves (the short's IV) past the short strike is worth under
+        # the net. A long expiring soon after the short is worth about the width at best, which makes
+        # the first test the strategy guide's entry rule (net over 75% of the width); a long with years
+        # left keeps time value the width ignores. With no IV to model, the width rule itself. The
+        # levels are modelled; no outside test.
+        "diagonal_width": {
+            "enabled": True,
+            "max_share_of_width": 0.75,
+            "run_past_short_moves": 1.0,
+            "confidence": 60,
+        },
         # A calendar's stop is the underlying's price, not the spread's: its quote is wide, and a move
         # either way is what loses it. The band is where the modelled value at the short's expiry (the
         # long at its own IV) falls to `loss_share` below the debit; outside it the trade is reviewed,

@@ -288,14 +288,26 @@ def _explain(t: dict[str, Any]) -> str:
             "the short to the strike nearest the stock re-centres it instead, if you still want the trade."
         )
     elif rule == "debit.diagonal_width":
-        why = (
-            "The net you have in this diagonal is most of the distance between its strikes, or more. If the "
-            "stock runs well through the short, both legs head toward their intrinsic value and the trade "
-            "toward that distance, so there is little left to make, and a net past it loses once the long's "
-            "time value runs off. A long with years left keeps some of that time value, which softens this. "
-            "Review it: rolling the short out for a credit lowers the net, and a trade like this is opened "
-            "for under three quarters of the width."
-        )
+        dc = t.get("diagonal_check") or {}
+        if dc.get("basis") == "modelled":
+            why = (
+                "Modelled at the short's expiry, with the long valued at its own volatility and the time it "
+                "has left, this diagonal has little left to make on what you have in it"
+                + (", and a run well past the short strike loses money" if dc.get("run_loses") else "")
+                + ". The best case is the stock at the short strike that day; past it the short gains on "
+                "the long. Review it: rolling the short out for a credit lowers the net. A long expiring "
+                "soon after the short is worth about the distance between the strikes at best, which is why "
+                "a trade like this is opened for under three quarters of that distance."
+            )
+        else:
+            why = (
+                "The net you have in this diagonal is most of the distance between its strikes, or more. If "
+                "the stock runs well through the short, both legs head toward their intrinsic value and the "
+                "trade toward that distance, so there is little left to make, and a net past it loses once "
+                "the long's time value runs off. The long could not be priced, so its time value is left "
+                "out. Review it: rolling the short out for a credit lowers the net, and a trade like this is "
+                "opened for under three quarters of the width."
+            )
     elif rule in ("credit.time_exit", "debit.time_exit"):
         dte = t.get("nearest_short_dte")
         when = f"The nearest short leg expires in {dte} days. " if dte is not None else ""
