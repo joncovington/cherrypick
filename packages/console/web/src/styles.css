@@ -9612,3 +9612,112 @@ button.chip[aria-pressed][data-hue="special"],
   margin-top: 0.6rem;
 }
 .lt-loop .pf-tiles-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* redesign: screeners-b
+   The Screeners pages' shared parts (pages/Screeners/ScreenerParts.tsx): the lightbox button on a trade
+   card's floor, the forward record's bands and z meters, and the fair-value list (rows and cards). */
+.tc-extra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: auto;
+}
+.sc-band {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border);
+}
+.sc-band:first-of-type {
+  border-top: 0;
+}
+.sc-band-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.sc-zbar {
+  margin-top: 6px;
+  height: 4px;
+}
+.vr-list {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  container: vrlist / inline-size;
+}
+.vr-list > [role="listitem"] + [role="listitem"] {
+  border-top: 1px solid var(--border);
+}
+.vr-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.vr-row:hover {
+  background: var(--surface-hover);
+}
+.vr-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.vr-sym {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 6px;
+  min-width: 0;
+  font-family: var(--num-face, ui-monospace, monospace);
+  font-weight: 600;
+}
+.vr-px {
+  font-family: var(--num-face, ui-monospace, monospace);
+}
+.vr-stretch {
+  display: grid;
+  gap: 3px;
+}
+.vr-xs {
+  font-size: 11px;
+}
+.vr-meter {
+  height: 5px;
+}
+.pos-bar-fill.vr-warn {
+  background: var(--warn);
+}
+@container vrlist (max-width: 620px) {
+  .vr-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "s s"
+      "p p"
+      "r t";
+  }
+  .vr-sym {
+    grid-area: s;
+  }
+  .vr-px {
+    grid-area: p;
+  }
+  .vr-reach {
+    grid-area: r;
+  }
+  .vr-stretch {
+    grid-area: t;
+  }
+}
+.vr-card .pos-card-foot > span:first-child {
+  white-space: normal;
+}

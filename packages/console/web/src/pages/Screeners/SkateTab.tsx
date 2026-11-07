@@ -1,9 +1,13 @@
-import type { ReactNode } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { PremiumSlider, useMinPremium } from "../../components/PremiumSlider";
-import type { SkateBand, SkateConfig, SkatePayload, SkateSide } from "@console/shared";
-import { SortTh, sortRows, useSort } from "../../components/DataTable";
+import type { SkateBand, SkateConfig, SkateSide } from "@console/shared";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+import { FilterGroup, FilterSwitch, SortSection, sortRows, useSortChoice, type SortChoice, type SortOption } from "../../components/FilterSort";
+import { Pager, usePage } from "../../components/ScopeBar";
+import { PremiumSlider, defaultFloor, useMinPremium } from "../../components/PremiumSlider";
+import { useViewChoice } from "../../components/ViewSwitch";
+import { writePref } from "../../lib/prefs";
 import { useSkate } from "../../lib/api";
+import { TradeCards, type TradeCardModel } from "../Live/TradeCard";
+import { PanelChoice, ScreenerCard, ScreenerLayout, ScreenerSection, SessionSelect, SymbolSearch, Tabs, useParamState } from "./ScreenerParts";
 import { SkateRecordSection } from "./SkateRecord";
 import { beatsMonthly, otherBand, skateCounts, skateViews, type SkateView } from "./skateRows";
 
@@ -18,13 +22,18 @@ import { beatsMonthly, otherBand, skateCounts, skateViews, type SkateView } from
  * spread; earnings are dropped upstream, by the band file), the soft thresholds are a marker with a
  * "passing only" toggle, and the default sort is history minus implied. A band selector picks which
  * band's strikes drive the rows; the other band's strike and premium a day sit beside them, quieter.
+ *
+ * Redesign (2026-11-06): each name-side is a trade card (rows on request); side stays as tabs, and the
+ * band, passing only, the premium floor, the sort and the symbol search sit behind filter & sort. The
+ * two footers that said "not a tested edge" are one amber flag, the method behind the ?.
  */
 
 const SIDES: { id: "calls" | "puts"; side: SkateSide; label: string }[] = [
-  { id: "calls", side: "C", label: "Calls" },
-  { id: "puts", side: "P", label: "Puts" },
+  { id: "calls", side: "C", label: "calls" },
+  { id: "puts", side: "P", label: "puts" },
 ];
 const BAND_LABEL: Record<SkateBand, string> = { fixed: "fixed", byExpiry: "by expiry" };
+const PAGE_SIZES = [24, 48, 96, 192] as const;
 
 const DASH = "—";
 
@@ -37,12 +46,6 @@ function points(v: number | null): string {
   if (v === null) return DASH;
   const p = v * 100;
   return `${p > 0 ? "+" : p < 0 ? "−" : ""}${Math.abs(p).toFixed(1)} pts`;
-}
-
-function signedPct(v: number | null): string {
-  if (v === null) return DASH;
-  const p = v * 100;
-  return `${p > 0 ? "+" : p < 0 ? "−" : ""}${Math.abs(p).toFixed(1)}%`;
 }
 
 /** The strike against the spot at the quote, as a fraction: a display figure, judged by nothing here. */
@@ -78,16 +81,6 @@ function etStamp(iso: string | null): string | null {
   return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")} ET`;
 }
 
-function Flag({ on, onChange, children, title }: { on: boolean; onChange: (on: boolean) => void; children: ReactNode; title: string }) {
-  return (
-    <div className="mode-toggle" style={{ marginLeft: 0 }}>
-      <button type="button" title={title} className={on ? "mode-btn active" : "mode-btn"} onClick={() => onChange(!on)}>
-        {children}
-      </button>
-    </div>
-  );
-}
-
 /** The haircut schedule in words, from the run's own config. */
 function bandsLine(c: SkateConfig | null): string {
   if (c === null || c.haircut === null) return "";
@@ -118,238 +111,205 @@ function years(windows: number | null): string | null {
   return windows === null ? null : `${(windows / 252).toFixed(1)}y`;
 }
 
-function SoftCell({ v, c }: { v: SkateView; c: SkateConfig | null }) {
+/** What a soft miss missed, in words (the chip's hover). */
+function softMisses(v: SkateView, c: SkateConfig | null): string {
   const s = v.pick.soft;
-  const missed = [
+  return [
     s.skate ? null : `full-history skate rate under ${pct(c?.soft.skate ?? null, 0)}`,
     s.skateRecent ? null : `3-year skate rate under ${pct(c?.soft.skateRecent ?? null, 0)}`,
     s.yield ? null : `gross skate yield under ${pct(c?.soft.yield ?? null, 0)}`,
-  ].filter((x): x is string => x !== null);
-  return s.all ? (
-    <td title="Passes every soft threshold">
-      <span className="chip chip-ok">pass</span>
-    </td>
-  ) : (
-    <td title={`A marker, not a filter. Misses: ${missed.join("; ")}`}>
-      <span className="chip">miss</span>
-    </td>
-  );
+  ]
+    .filter((x): x is string => x !== null)
+    .join("; ");
 }
 
-/** The premium less the fee to open one contract, with the fee beside it; flagged where the premium
- *  does not cover it. A dash on a run older than the fee fields. */
-function NetPremiumCell({ v }: { v: SkateView }) {
+/** The other band's best, in a line: "by expiry band: 105 · Nov 20 · $5.50/d", or "same". */
+function otherLine(v: SkateView): string {
+  const o = v.other;
+  const name = BAND_LABEL[otherBand(v.band)];
+  if (o.best === null) return `${name} band: no pick passes`;
+  const same = o.best.expiry === v.best.expiry && o.best.strike === v.best.strike;
+  return same ? `${name} band: same` : `${name} band: ${o.best.strike}${o.best.expiry !== v.best.expiry ? ` · ${shortDate(o.best.expiry)}` : ""} · ${dollars(o.best.perDayBid)}/d`;
+}
+
+/**
+ * One name-side as a trade card: the strike's premium net of the fee as the headline (the gross where
+ * the run predates the fee figures), the skate rate against its implied odds as the bar, the yield and
+ * the soft verdict as chips. Money follows the suite layout: whole contract, a credit +.
+ */
+export function skateModel(v: SkateView, c: SkateConfig | null): TradeCardModel {
   const p = v.pick;
-  if (p.netPremiumBid === null || p.feeOpen === null) {
-    return (
-      <td className="muted num" title="This run predates the fee figures">
-        {DASH}
-      </td>
-    );
-  }
-  const net = p.netPremiumBid;
-  return (
-    <td
-      className={`num ${net > 0 ? "" : "pnl-neg"}`}
-      title={`The bid premium less ${dollars(p.feeOpen)} to open one short contract (commission and pass-through fees, the suite's schedule). Net yield on the bid: ${pct(p.netYieldBid)}.`}
-    >
-      {`${net > 0 ? "+" : net < 0 ? "−" : ""}${dollars(Math.abs(net))}`}
-      <span className="muted"> fee {dollars(p.feeOpen)}</span>
-      {net <= 0 && (
-        <>
-          {" "}
+  const bid = p.quote.bid;
+  const net = p.netPremiumBid !== null && p.feeOpen !== null;
+  const cash = net ? p.netPremiumBid : bid === null ? null : bid * 100;
+  const under = net && (p.netPremiumBid ?? 0) <= 0;
+  const right = v.row.side;
+  const word = right === "C" ? "covered call" : "cash-secured put";
+  const q = [bid === null && p.quote.ask === null ? "" : `${bid === null ? DASH : bid.toFixed(2)} / ${p.quote.ask === null ? DASH : p.quote.ask.toFixed(2)}`, p.delta === null ? "" : `Δ ${Math.abs(p.delta).toFixed(2)}`]
+    .filter(Boolean)
+    .join(" · ");
+  const d = distance(v);
+  return {
+    key: `${v.row.symbol}-${v.row.side}`,
+    symbol: v.row.symbol,
+    symbolHref: `/charts/technicals?symbol=${encodeURIComponent(v.row.symbol)}`,
+    spot: v.row.spot === null ? null : v.row.spot.toFixed(2),
+    shape: `${word} · ${shortDate(v.best.expiry)} · ${p.days} d`,
+    chips: (
+      <>
+        {p.soft.all ? (
+          <span className="chip chip-ok" title="Passes every soft threshold">
+            soft pass
+          </span>
+        ) : (
+          <span className="chip chip-warn" title={`A marker, not a filter. Misses: ${softMisses(v, c)}`}>
+            soft miss
+          </span>
+        )}
+        {under ? (
           <span className="chip chip-warn" title="The premium does not cover the fee to open: a loss even if it skates">
             under cost
           </span>
-        </>
-      )}
-    </td>
-  );
+        ) : null}
+        {v.row.fund ? (
+          <span className="chip" title="A fund: no earnings">
+            fund
+          </span>
+        ) : null}
+      </>
+    ),
+    cash,
+    side: [
+      net ? `net of the ${dollars(p.feeOpen)} fee` : "gross: this run predates the fee figures",
+      `${net ? "net " : ""}yield ${pct(net ? p.netYieldBid : p.yieldBid)}`,
+    ],
+    bar: p.skate === null ? null : p.skate * 100,
+    barTitle: `the share of past days the band held at this strike's offset, over ${years(p.historyWindows) ?? "the name's history"}; the model's odds are ${pct(p.impliedSkate)}`,
+    label: `skated ${pct(p.skate, 0)} of past days · ${pct(p.impliedSkate, 0)} implied · ${points(p.gap)}${p.historyWindows === null ? "" : ` · ${years(p.historyWindows)} of history`}`,
+    open: { date: "proposed", price: bid === null ? DASH : `${bid.toFixed(2)} bid` },
+    legs: [{ buy: false, text: `1 ${v.best.expiry} ${p.strike}${right}${bid === null ? "" : ` @ ${bid.toFixed(2)}`}`, quote: q || null }],
+    after: [
+      `${p.delta === null ? "Δ —" : `Δ ${Math.abs(p.delta).toFixed(2)}`} · OI ${p.quote.openInterest === null ? DASH : p.quote.openInterest.toLocaleString("en-US")}`,
+      `${d === null ? DASH : `${d > 0 ? "+" : d < 0 ? "−" : ""}${Math.abs(d * 100).toFixed(1)}%`} to the strike`,
+      `through ${pct(p.testedPerMonth, 0)} a month`,
+    ],
+    foot: [
+      `${BAND_LABEL[v.band]} band${v.best.vsMonthly === null ? "" : ` · ${v.best.vsMonthly.toFixed(2)}× the monthly${beatsMonthly(v.best) ? ", more a day" : ""}`} · ${otherLine(v)}`,
+      v.row.fund ? "a fund: no earnings" : `earnings ${shortDate(v.row.earnings)}`,
+    ],
+  };
 }
 
-function ExpiryCell({ v }: { v: SkateView }) {
-  const beats = beatsMonthly(v.best);
-  const title =
-    `${v.best.expiry}, ${v.pick.days} days. The band's best expiry by premium a day on the bid among picks passing the hard filters. ` +
-    (v.row.stage === 2
-      ? "Every weekly to 63 days was quoted for this name-side."
-      : "Only one expiry was quoted for this name-side (the cycle monthly, or the last before a report), so it is the best by default.") +
-    (v.best.monthly ? ` Monthly: ${v.best.monthly}.` : " No cycle monthly before the next report.");
-  return (
-    <td title={title} style={beats ? { fontWeight: 700 } : undefined}>
-      {shortDate(v.best.expiry)} <span className="muted">{v.pick.days}d</span>
-    </td>
-  );
+/** The skate sorts: history minus implied (the scan's order), name, timing and delta. */
+export const SKATE_SORTS: SortOption<SkateView>[] = [
+  { id: "gap", label: "history − implied", hint: "most first (the scan's order)", key: (v) => (v.pick.gap === null ? null : -v.pick.gap) },
+  { id: "symbol", label: "symbol", hint: "A to Z", key: (v) => v.row.symbol },
+  { id: "expiry", label: "expiry", hint: "soonest first", key: (v) => v.pick.days },
+  { id: "delta", label: "Δ", hint: "lowest first", key: (v) => (v.pick.delta === null ? null : Math.abs(v.pick.delta)) },
+];
+
+/** The ? behind the skate card: the two footers (not a tested edge), the card, the money. */
+export function skateHelp(c: SkateConfig | null): CardHelpContent {
+  return {
+    title: "Reading skate",
+    body: (
+      <>
+        <HelpWarn title="Not a tested edge">
+          <p>
+            The best expiry ranks premium a day; it is not a tested edge. A 14-day put against the monthly, held, halved or rolled,
+            reached no verdict over history (edge-hypotheses item 25), so the monthly stays the default.
+          </p>
+          <p>
+            History minus implied is a history estimate: the share of past days the band held, against the model's odds today. It is not
+            yet a tested edge; the forward record will say whether rows with a wide gap skate more than priced, once it is decision-grade.
+            Closer strikes tend to top that sort, so skate yield and the skate rate stay beside it.
+          </p>
+        </HelpWarn>
+        <HelpSection title="A card">
+          <p>
+            One name-side: the band's own strike on its best expiry, the one paying the most a day on the bid among strikes that pass the
+            hard filters ({hardLine(c)}); expiries spanning an earnings report are dropped before quoting. A row whose pick fails them is
+            hidden. The soft thresholds ({softLine(c)}) are a marker, never a filter, unless passing only is on.
+          </p>
+        </HelpSection>
+        <HelpSection title="The bands">
+          <p>{bandsLine(c) || "Fixed and by expiry are two haircuts on the recent range."}</p>
+        </HelpSection>
+        <HelpSection title="The money">
+          <p>
+            Premium is per contract (100 shares) at the bid; the bid and ask are the one per-share figure. Net of fee takes off what opening
+            one short contract costs (commission and pass-through fees; the bid already concedes the spread), and a premium that does not
+            cover it is marked. The best expiry, the ranking and the forward record all stay on the gross.
+          </p>
+        </HelpSection>
+      </>
+    ),
+  };
 }
 
-function OtherCell({ v }: { v: SkateView }) {
-  const o = v.other;
-  const name = BAND_LABEL[otherBand(v.band)];
-  if (o.best === null) {
-    return (
-      <td className="muted" title={`No pick on the ${name} band passes the hard filters`}>
-        {DASH}
-      </td>
-    );
-  }
-  const same = o.best.expiry === v.best.expiry && o.best.strike === v.best.strike;
+/** What the filter & sort panel holds: the sort, the band, passing only, the premium floor (the slider
+ *  lives here, not on the card) and the symbol search. */
+export function SkatePanel({
+  sort,
+  onSort,
+  band,
+  passingOnly,
+  minPremium,
+  hidden,
+  q,
+  config,
+  set,
+}: {
+  sort: SortChoice;
+  onSort: (c: SortChoice) => void;
+  band: SkateBand;
+  passingOnly: boolean;
+  minPremium: number;
+  hidden: number;
+  q: string;
+  config: SkateConfig | null;
+  set: (key: string, value: string | null) => void;
+}) {
   return (
-    <td className="muted num" title={`The ${name} band's best: ${o.best.strike} on ${o.best.expiry}, ${dollars(o.best.perDayBid)} a day per contract on the bid`}>
-      {same ? "same" : `${o.best.strike}${o.best.expiry !== v.best.expiry ? ` · ${shortDate(o.best.expiry)}` : ""} · ${dollars(o.best.perDayBid)}/d`}
-    </td>
-  );
-}
-
-const SORTS: Record<string, (v: SkateView) => number | string | null> = {
-  symbol: (v) => v.row.symbol,
-  spot: (v) => v.row.spot,
-  expiry: (v) => v.pick.days,
-  vsMonthly: (v) => v.best.vsMonthly,
-  strike: (v) => v.pick.strike,
-  distance: (v) => distance(v),
-  bid: (v) => v.pick.quote.bid,
-  perDay: (v) => v.pick.perDayBid,
-  gap: (v) => v.pick.gap,
-  skate: (v) => v.pick.skate,
-  skateRecent: (v) => v.pick.skateRecent,
-  implied: (v) => v.pick.impliedSkate,
-  yield: (v) => v.pick.yieldBid,
-  netPremium: (v) => v.pick.netPremiumBid,
-  netYield: (v) => v.pick.netYieldBid,
-  delta: (v) => (v.pick.delta === null ? null : Math.abs(v.pick.delta)),
-  oi: (v) => v.pick.quote.openInterest,
-  tested: (v) => v.pick.testedPerMonth,
-  earnings: (v) => v.row.earnings,
-};
-
-function SkateTable({ views, data }: { views: SkateView[]; data: SkatePayload }) {
-  const sort = useSort();
-  const rows = sortRows(views, sort, SORTS);
-  const other = views[0] ? BAND_LABEL[otherBand(views[0].band)] : "other";
-  return (
-    <div className="table-scroll">
-      <table className="data-table">
-        <thead>
-          <tr>
-            <SortTh label="Symbol" k="symbol" sort={sort} />
-            <SortTh label="Spot" k="spot" sort={sort} className="num" title="Per share, when quoted" />
-            <SortTh label="Expiry" k="expiry" sort={sort} title="The band's best expiry; bold when it pays more a day than the monthly" />
-            <SortTh label="vs monthly" k="vsMonthly" sort={sort} className="num" title="Premium a day on the bid over the monthly pick's; a dash when the monthly pick does not pass the hard filters, or there is no monthly" />
-            <SortTh label="Strike" k="strike" sort={sort} className="num" title="The band's pick: the listed strike at or past the band" />
-            <SortTh
-              label="vs spot"
-              k="distance"
-              sort={sort}
-              className="num"
-              title="The strike against the spot at the quote, not against the band: the band is set on the band day's close, so a name that has moved since can have its pick at or through the money"
-            />
-            <SortTh label="Bid / share" k="bid" sort={sort} className="num" title="The one per-share figure: the bid, and the ask beside it" />
-            <th className="num" title="Premium received per contract at the bid (bid × 100), a credit, before costs">
-              Premium, gross
-            </th>
-            <SortTh
-              label="Net of fee"
-              k="netPremium"
-              sort={sort}
-              className="num"
-              title="The bid premium less the fee to open one short contract (commission and pass-through fees). The ranking and the best expiry stay on the gross."
-            />
-            <SortTh label="$ / day, gross" k="perDay" sort={sort} className="num" title="Premium per contract per calendar day, on the bid, before costs: what picks the best expiry" />
-            <SortTh label="Hist − implied" k="gap" sort={sort} className="num" title="The full-history skate rate minus the model's (1 − N(d2)): the default sort, widest first. A history estimate until the forward record exists." />
-            <SortTh
-              label="Skate, full history"
-              k="skate"
-              sort={sort}
-              className="num"
-              title="Share of past days on which the band, at this strike's offset, held to expiry, over the name's whole history since 2015: about 11 years for an old name, as little as one for a young one. The years it stands on are beside it."
-            />
-            <SortTh label="3y" k="skateRecent" sort={sort} className="num" title="The same over the last 3 years" />
-            <SortTh label="Implied" k="implied" sort={sort} className="num" title="The model's chance of finishing out of the money" />
-            <SortTh label="Yield, gross" k="yield" sort={sort} className="num" title="Skate yield on the bid before costs: premium ÷ capital × 365 ÷ days, simple (capital: the shares for a call, the strike for a put)" />
-            <SortTh label="Net yield" k="netYield" sort={sort} className="num" title="The same on the premium net of the fee to open" />
-            <SortTh label="Δ" k="delta" sort={sort} className="num" title="Delta from the IV solved at the mid" />
-            <SortTh label="OI" k="oi" sort={sort} className="num" title="Open interest at the strike" />
-            <SortTh
-              label="Through / mo"
-              k="tested"
-              sort={sort}
-              className="num"
-              title="Chance that at least one cycle finishes past the strike over a month of cycles at this expiry, from the full-history rate. Not the record's “tested” below, which is a strike touched that still skated."
-            />
-            <th title="The soft thresholds: a marker, never a filter">Soft</th>
-            <th className="num" title={`The ${other} band's best strike (its expiry when different) and premium a day per contract`}>
-              {other} band
-            </th>
-            <SortTh label="Earnings" k="earnings" sort={sort} title="The next announcement; expiries spanning it are dropped before quoting" />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((v) => (
-            <tr key={`${v.row.symbol}-${v.row.side}`}>
-              <td>
-                <Link className="module-link" to={`/charts/technicals?symbol=${encodeURIComponent(v.row.symbol)}`} title={`Open ${v.row.symbol}'s chart`}>
-                  {v.row.symbol}
-                </Link>
-                {v.row.fund && (
-                  <span className="chip" style={{ marginLeft: 4 }} title="A fund: no earnings">
-                    fund
-                  </span>
-                )}
-              </td>
-              <td className="num">{v.row.spot === null ? DASH : v.row.spot.toFixed(2)}</td>
-              <ExpiryCell v={v} />
-              <td className="num">{v.best.vsMonthly === null ? DASH : `${v.best.vsMonthly.toFixed(2)}×`}</td>
-              <td className="num" title={`${v.pick.option}; ${v.pick.offset === null ? "" : `${(v.pick.offset * 100).toFixed(2)}% past the band`}${v.pick.outsideGrid ? ", past the history grid's end" : ""}`}>
-                {v.pick.strike}
-                {v.row.side}
-              </td>
-              <td className="num">{signedPct(distance(v))}</td>
-              <td className="num">
-                {v.pick.quote.bid === null ? DASH : `${v.pick.quote.bid.toFixed(2)} bid`}
-                <span className="muted"> / {v.pick.quote.ask === null ? DASH : v.pick.quote.ask.toFixed(2)}</span>
-              </td>
-              <td className="num">{v.pick.quote.bid === null ? DASH : `+${dollars(v.pick.quote.bid * 100, 0)}`}</td>
-              <NetPremiumCell v={v} />
-              <td className="num">{dollars(v.pick.perDayBid)}</td>
-              <td className={`num ${v.pick.gap === null ? "" : v.pick.gap > 0 ? "pnl-pos" : v.pick.gap < 0 ? "pnl-neg" : ""}`}>{points(v.pick.gap)}</td>
-              <td
-                className="num"
-                title={
-                  v.pick.historyWindows === null
-                    ? "This run predates the history-span figure"
-                    : `${v.pick.historyWindows.toLocaleString("en-US")} past windows (about ${years(v.pick.historyWindows)} of history)`
-                }
-              >
-                {pct(v.pick.skate)}
-                {v.pick.historyWindows !== null && <span className="muted"> {years(v.pick.historyWindows)}</span>}
-              </td>
-              <td className="num">{pct(v.pick.skateRecent)}</td>
-              <td className="num">{pct(v.pick.impliedSkate)}</td>
-              <td className="num">{pct(v.pick.yieldBid)}</td>
-              <td className={`num ${v.pick.netYieldBid !== null && v.pick.netYieldBid <= 0 ? "pnl-neg" : ""}`}>{pct(v.pick.netYieldBid)}</td>
-              <td className="num">{v.pick.delta === null ? DASH : v.pick.delta.toFixed(2)}</td>
-              <td className="num">{v.pick.quote.openInterest === null ? DASH : v.pick.quote.openInterest.toLocaleString("en-US")}</td>
-              <td className="num">{pct(v.pick.testedPerMonth, 0)}</td>
-              <SoftCell v={v} c={data.config} />
-              <OtherCell v={v} />
-              <td>{v.row.fund ? <span className="muted">{DASH}</span> : shortDate(v.row.earnings)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <SortSection sorts={SKATE_SORTS} choice={sort} fallback="gap" onChange={onSort} />
+      <FilterGroup title="band" note="which band's strikes drive the cards">
+        <PanelChoice
+          label="Band"
+          value={band}
+          options={(["fixed", "byExpiry"] as const).map((b) => ({ id: b, label: BAND_LABEL[b], title: `Cards and ranking from the ${BAND_LABEL[b]} band's strikes. ${bandsLine(config)}` }))}
+          onChange={(b) => set("band", b === "fixed" ? null : "by-expiry")}
+        />
+      </FilterGroup>
+      <FilterGroup title="filters">
+        <FilterSwitch
+          label="Passing only"
+          description={`Only picks passing every soft threshold: ${softLine(config)}. Off, they are marked, not hidden.`}
+          on={passingOnly}
+          onChange={(on) => set("passing", on ? "1" : null)}
+        />
+      </FilterGroup>
+      <FilterGroup title="premium floor" note="one contract at the bid, before costs">
+        <PremiumSlider
+          list="skate"
+          value={minPremium}
+          onChange={(v) => set("premium", v === 0 ? null : String(v))}
+          hidden={hidden}
+          title="Hide a pick whose premium for one contract at the bid, before costs, is under this. A pick with no bid stays shown. Remembered for next time."
+        />
+      </FilterGroup>
+      <FilterGroup title="symbol">
+        <SymbolSearch value={q} onChange={(v) => set("q", v === "" ? null : v)} />
+      </FilterGroup>
+    </>
   );
 }
 
 export function SkateTab() {
-  const [params, setParams] = useSearchParams();
+  const { params, set, clear } = useParamState();
   const { data, isLoading, isError } = useSkate(params.get("day"));
-  const set = (key: string, value: string | null) => {
-    const next = new URLSearchParams(params);
-    if (value === null) next.delete(key);
-    else next.set(key, value);
-    setParams(next, { replace: true });
-  };
+  const [sort, setSort] = useSortChoice("skate", "gap");
+  const [view, setView] = useViewChoice("skate");
   const sideId = params.get("side") === "puts" ? "puts" : "calls";
   const side = SIDES.find((s) => s.id === sideId)!;
   const band: SkateBand = params.get("band") === "by-expiry" ? "byExpiry" : "fixed";
@@ -360,148 +320,114 @@ export function SkateTab() {
   const all = data?.rows ?? [];
   const minPremium = useMinPremium("skate", params.get("premium"));
   const matched = skateViews(all, side.side, band, passingOnly).filter((v) => q === "" || v.row.symbol.includes(q));
-  // The Premium column's figure: one contract at the bid, gross. A pick with no bid stays shown.
-  const views = matched.filter((v) => minPremium === 0 || v.pick.quote.bid === null || v.pick.quote.bid * 100 >= minPremium);
-  const small = matched.length - views.length;
+  // The premium floor's figure: one contract at the bid, gross. A pick with no bid stays shown.
+  const floored = matched.filter((v) => minPremium === 0 || v.pick.quote.bid === null || v.pick.quote.bid * 100 >= minPremium);
+  const small = matched.length - floored.length;
+  const views = sortRows(floored, SKATE_SORTS.find((s) => s.id === sort.id), sort.reversed);
   const counts = skateCounts(all, side.side, band);
   const measured = etStamp(data?.measuredAt ?? null);
+  const { page, setOffset, setLimit } = usePage([data?.day, sideId, band, passingOnly, q, minPremium, sort.id, sort.reversed], 48);
+  const shown = views.slice(page.offset, page.offset + page.limit);
+
+  const sortChanged = sort.id !== "gap" || sort.reversed;
+  const floorChanged = minPremium !== defaultFloor("skate");
+  const changed = (sortChanged ? 1 : 0) + (band !== "fixed" ? 1 : 0) + (passingOnly ? 1 : 0) + (floorChanged ? 1 : 0) + (q !== "" ? 1 : 0);
+  const reset = () => {
+    void setSort({ id: "gap", reversed: false });
+    void writePref("minPremium.skate", undefined);
+    clear(["band", "passing", "premium", "q"]);
+  };
+  const sortLabel = SKATE_SORTS.find((s) => s.id === sort.id)?.label ?? sort.id;
 
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>Skate</h2>
-        <span className="chip">read-only</span>
-        {data?.day && (
-          <span className="card-asof">
-            session {data.day}
-            {measured ? ` · measured ${measured}` : ""}
-            {data.bandDay ? ` · bands on the ${data.bandDay} close` : ""}
-            {data.runs.length > 1 ? ` · newest of ${data.runs.length} runs` : ""}
-          </span>
-        )}
-      </div>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
-        {data && data.days.length > 0 && (
-          <select
-            className="chip review-session-select"
-            aria-label="Skate session"
-            value={data.day ?? ""}
-            onChange={(e) => set("day", e.target.value === latest ? null : e.target.value)}
-          >
-            {data.days.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        )}
-        <div className="mode-toggle" style={{ marginLeft: 0 }} role="group" aria-label="Side">
-          {SIDES.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className={s.id === sideId ? "mode-btn active" : "mode-btn"}
-              title={s.side === "C" ? "Covered calls above the range band" : "Cash-secured puts below the range band"}
-              onClick={() => set("side", s.id === "calls" ? null : s.id)}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-        <div className="mode-toggle" style={{ marginLeft: 0 }} role="group" aria-label="Band">
-          {(["fixed", "byExpiry"] as const).map((b) => (
-            <button
-              key={b}
-              type="button"
-              className={b === band ? "mode-btn active" : "mode-btn"}
-              title={`Rows and ranking from the ${BAND_LABEL[b]} band's strikes. ${bandsLine(data?.config ?? null)}`}
-              onClick={() => set("band", b === "fixed" ? null : "by-expiry")}
-            >
-              {BAND_LABEL[b]}
-            </button>
-          ))}
-        </div>
-        <Flag
-          on={passingOnly}
-          onChange={(on) => set("passing", on ? "1" : null)}
-          title={`Only rows passing every soft threshold: ${softLine(data?.config ?? null)}. Off, they are marked, not hidden.`}
+    <ScreenerLayout>
+      <ScreenerSection concept="income" tag="candidates" question="Which strikes pay most to sit through?">
+        <ScreenerCard
+          title="skate"
+          help={skateHelp(data?.config ?? null)}
+          flag="not a tested edge"
+          extra={data ? <SessionSelect days={data.days} day={data.day} latest={latest} label="Skate session" onChange={(d) => set("day", d)} /> : null}
+          tabs={
+            <Tabs
+              label="Side"
+              value={sideId}
+              options={SIDES.map((s) => ({
+                id: s.id,
+                label: s.label,
+                title: s.side === "C" ? "Covered calls above the range band" : "Cash-secured puts below the range band",
+              }))}
+              onChange={(id) => set("side", id === "calls" ? null : id)}
+            />
+          }
+          view={{ value: view, onChange: setView }}
+          filter={{
+            changed,
+            parts: [side.label, `${BAND_LABEL[band]} band`, ...(passingOnly ? ["passing only"] : []), minPremium === 0 ? "any premium" : `≥ $${minPremium.toLocaleString()}`, `by ${sortLabel}${sort.reversed ? ", reversed" : ""}`],
+            note:
+              data?.status === "ok"
+                ? `${matched.length - small} shown${small > 0 ? ` · ${small} under $${minPremium.toLocaleString()} hidden` : ""} · ${counts.read - counts.tradable} with no pick passing the hard filters hidden`
+                : null,
+            onReset: reset,
+            panel: (
+              <SkatePanel
+                sort={sort}
+                onSort={setSort}
+                band={band}
+                passingOnly={passingOnly}
+                minPremium={minPremium}
+                hidden={small}
+                q={params.get("q") ?? ""}
+                config={data?.config ?? null}
+                set={set}
+              />
+            ),
+          }}
         >
-          Passing only
-        </Flag>
-        <PremiumSlider
-          list="skate"
-          value={minPremium}
-          onChange={(v) => set("premium", v === 0 ? null : String(v))}
-          title="Hide a pick whose premium for one contract at the bid, before costs, is under this. A pick with no bid stays shown. Remembered for next time."
-        />
-        <input
-          className="chip review-session-select"
-          value={params.get("q") ?? ""}
-          placeholder="symbol"
-          aria-label="Filter by symbol"
-          onChange={(e) => set("q", e.target.value === "" ? null : e.target.value)}
-        />
-        {data?.status === "ok" && (
-          <span className="chip" style={{ whiteSpace: "normal" }}>
-            {views.length} shown{small > 0 ? ` · ${small} under $${minPremium.toLocaleString()} hidden` : ""} · {counts.read} {side.label.toLowerCase()} read · {counts.read - counts.tradable} with no pick passing the hard
-            filters hidden · {counts.passing} of {counts.tradable} pass the soft thresholds
-          </span>
-        )}
-      </div>
+          {data?.day && (
+            <p className="muted pf-caption" style={{ marginTop: 0 }}>
+              session {data.day}
+              {measured ? ` · measured ${measured}` : ""}
+              {data.bandDay ? ` · bands on the ${data.bandDay} close` : ""}
+              {data.runs.length > 1 ? ` · newest of ${data.runs.length} runs` : ""}
+              {data.status === "ok" ? ` · ${counts.read} ${side.label} read · ${counts.passing} of ${counts.tradable} pass the soft thresholds` : ""}
+            </p>
+          )}
+          {isError && <p className="muted">Could not read the skate screen.</p>}
+          {isLoading && <p className="muted">Reading the skate run…</p>}
+          {data && data.status === "none" && (
+            <p className="muted">No skate run written{data.day ? ` for ${data.day}` : " yet"}: the quotes are taken at 12:00 and 15:05 ET on a session day.</p>
+          )}
+          {data && data.status === "unreadable" && (
+            <p className="chip chip-warn" style={{ whiteSpace: "normal" }}>
+              The {data.run} run for {data.day} could not be read, so nothing is shown. This is a failed read, not an empty screen.
+            </p>
+          )}
+          {data && data.status === "ok" && !data.complete && (
+            <p className="chip chip-warn" style={{ whiteSpace: "normal" }}>
+              This run did not complete: the rows are what it scored before it stopped, not the whole screen.
+            </p>
+          )}
+          {data && data.status === "ok" && data.problem !== null && (
+            <p className="chip chip-warn" style={{ whiteSpace: "normal" }}>
+              The run reports a problem: {data.problem}
+            </p>
+          )}
+          {data && data.status === "ok" && all.length === 0 && <p className="muted">The run scored no name-sides.</p>}
+          {data && data.status === "ok" && all.length > 0 && views.length === 0 && (
+            <p className="muted">
+              {passingOnly
+                ? `No ${side.label} on the ${BAND_LABEL[band]} band pass the soft thresholds${q ? ` matching ${q}` : ""}.`
+                : `No ${side.label} on the ${BAND_LABEL[band]} band pass the hard filters${q ? ` matching ${q}` : ""}.`}
+            </p>
+          )}
 
-      {isError && <p className="muted">Could not read the skate screen.</p>}
-      {isLoading && <p className="muted">Reading the skate run…</p>}
-      {data && data.status === "none" && (
-        <p className="muted">No skate run written{data.day ? ` for ${data.day}` : " yet"}: the quotes are taken at 12:00 and 15:05 ET on a session day.</p>
-      )}
-      {data && data.status === "unreadable" && (
-        <p className="chip chip-warn" style={{ whiteSpace: "normal" }}>
-          The {data.run} run for {data.day} could not be read, so nothing is shown. This is a failed read, not an empty screen.
-        </p>
-      )}
-      {data && data.status === "ok" && !data.complete && (
-        <p className="chip chip-warn" style={{ whiteSpace: "normal" }}>
-          This run did not complete: the rows are what it scored before it stopped, not the whole screen.
-        </p>
-      )}
-      {data && data.status === "ok" && data.problem !== null && (
-        <p className="chip chip-warn" style={{ whiteSpace: "normal" }}>
-          The run reports a problem: {data.problem}
-        </p>
-      )}
-      {data && data.status === "ok" && all.length === 0 && <p className="muted">The run scored no name-sides.</p>}
-      {data && data.status === "ok" && all.length > 0 && views.length === 0 && (
-        <p className="muted">
-          {passingOnly
-            ? `No ${side.label.toLowerCase()} on the ${BAND_LABEL[band]} band pass the soft thresholds${q ? ` matching ${q}` : ""}.`
-            : `No ${side.label.toLowerCase()} on the ${BAND_LABEL[band]} band pass the hard filters${q ? ` matching ${q}` : ""}.`}
-        </p>
-      )}
-
-      {data && views.length > 0 && <SkateTable views={views} data={data} />}
-
-      <p className="muted" style={{ marginTop: 8 }}>
-        Each row is one name-side: the band's own strike on its best expiry, the one paying the most a day on the bid among
-        strikes that pass the hard filters ({hardLine(data?.config ?? null)}); expiries spanning an earnings report are dropped
-        before quoting. A row whose pick fails them is hidden. The soft thresholds ({softLine(data?.config ?? null)}) are a
-        marker, never a filter, unless “passing only” is on. The expiry is bold where it pays more a day than the monthly.{" "}
-        {bandsLine(data?.config ?? null)} Premium and premium a day are per contract (100 shares) at the bid, gross; the bid and
-        ask are the one per-share figure. Net of fee takes off what opening one short contract costs (commission and
-        pass-through fees; the bid already concedes the spread), and a premium that does not cover it is marked. The best
-        expiry, the ranking and the forward record all stay on the gross.
-      </p>
-      <p className="muted">
-        The best expiry ranks premium a day; it is not a tested edge. A 14-day put against the monthly, held, halved or
-        rolled, reached no verdict over history (edge-hypotheses item 25), so the monthly stays the default.
-      </p>
-      <p className="muted">
-        History minus implied is a history estimate: the share of past days the band held, against the model's odds today. It is
-        not yet a tested edge; the forward record below will say whether rows with a wide gap skate more than priced, once
-        it is decision-grade. Closer strikes tend to top that sort, so skate yield and the skate rate stay beside it.
-      </p>
-
+          {data && views.length > 0 && <TradeCards models={shown.map((v) => skateModel(v, data.config))} />}
+          {views.length > PAGE_SIZES[0] && (
+            <Pager offset={page.offset} limit={page.limit} total={views.length} pageSizes={PAGE_SIZES} onOffset={setOffset} onLimit={setLimit} />
+          )}
+        </ScreenerCard>
+      </ScreenerSection>
       <SkateRecordSection />
-    </section>
+    </ScreenerLayout>
   );
 }

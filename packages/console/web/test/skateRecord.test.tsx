@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { SkateRecordBand, SkateRecordPayload } from "@console/shared";
-import { SkateRecordView, testWords } from "../src/pages/Screeners/SkateRecord";
+import { SkateRecordView, recordHelp, testWords } from "../src/pages/Screeners/SkateRecord";
 
 /**
  * The forward record's section on the Skate tab passes the record through: counts, rates and z
@@ -45,10 +45,12 @@ function render(data: SkateRecordPayload | undefined, state: { isLoading?: boole
     .replace(/&#x27;/g, "'");
 }
 
+/** One band's block: from its `data-band` marker to the next band's, or the card's end. */
 function bandRow(html: string, id: string): string {
-  const m = new RegExp(`<tr data-band="${id}">(.*?)</tr>`).exec(html);
-  if (m === null) throw new Error(`no row for ${id}`);
-  return m[1]!;
+  const start = html.indexOf(`data-band="${id}"`);
+  if (start < 0) throw new Error(`no block for ${id}`);
+  const next = html.indexOf('class="sc-band"', start + 1);
+  return html.slice(start, next < 0 ? undefined : next);
 }
 
 describe("the forward record section", () => {
@@ -100,9 +102,9 @@ describe("the forward record section", () => {
     });
     expect(html).toContain("21 of 20 distinct expiries settled");
     expect(html).toContain("decision-grade");
-    expect(bandRow(html, "fixed")).toContain('<span class="chip chip-warn">fail</span>');
+    expect(bandRow(html, "fixed")).toContain(">fail</span>");
     expect(bandRow(html, "fixed")).not.toContain("pass<");
-    expect(bandRow(html, "byExpiry")).toContain('<span class="chip chip-ok">pass</span>');
+    expect(bandRow(html, "byExpiry")).toContain('chip chip-ok" title="The record&#x27;s verdict: the declared test passes on this band">pass</span>'.replace("&#x27;", "'"));
   });
 
   it("does not treat the record's flag as something to work out from the expiry count", () => {
@@ -128,6 +130,26 @@ describe("the forward record section", () => {
     expect(moved).toContain("above 8 points");
     expect(moved).toContain("below -2 points");
     expect(moved).toContain("z above 1.96");
-    expect(render(EARLY)).toContain("once 20 distinct expiries have settled");
+    // The declared test is behind the card's ?, not in its body.
+    expect(render(EARLY)).not.toContain("once 20 distinct expiries have settled");
+    expect(render(EARLY)).toContain('aria-label="About forward record"');
+    const help = renderToString(<>{recordHelp(TEST, true).body}</>).replace(/<!-- -->/g, "");
+    expect(help).toContain("once 20 distinct expiries have settled");
+    expect(renderToString(<>{recordHelp(null, false).body}</>)).toContain("stated here once the record is read");
+  });
+
+  it("draws each z as a neutral meter against the z the test needs, empty where the z is unknown", () => {
+    const html = render({ ...EARLY, settled: 70, expiries: 7, bands: { fixed: band({ highGap: { n: 40, skated: 40, rate: 1, implied: 0.8, z: 3.2 }, belowZero: { n: 0, skated: 0, rate: null, implied: null, z: null }, zHighOverLow: 0.8225 }), byExpiry: band() } });
+    const fixed = bandRow(html, "fixed");
+    expect(fixed).toContain('style="width:100%"'); // 3.2 is past the 1.645 the test needs: the meter is full
+    expect(fixed).toContain('style="width:0%"'); // no z: empty, not a guess
+    expect(fixed).toContain('style="width:50%"'); // half-way to the needed z
+    expect(fixed).not.toContain("chip-ok");
+    expect(fixed).toContain("sc-zbar");
+  });
+
+  it("puts the early verdict in the card head as a chip, not in each band", () => {
+    const html = render(EARLY);
+    expect(html).toContain('<span class="chip chip-warn">not yet decision-grade · 0 of 20</span>');
   });
 });
