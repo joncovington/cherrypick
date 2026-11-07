@@ -2282,6 +2282,56 @@
       "retest": null,
       "retest_note": "No yearly re-test: the forward read of cycles after 2026-10-30 is this study's own re-test, reported beside the verdict.",
       "retests": []
+    },
+    {
+      "id": 58,
+      "study": "item58",
+      "title": "The closing fly: a 0DTE SPX iron fly sold at 15:55 and held to the settlement",
+      "status": "failed",
+      "legacy": false,
+      "setup": "entry-time",
+      "side": "neutral",
+      "structure": "iron-fly",
+      "window": "0dte",
+      "measure": "net per session in $ at one contract, for two arms: an iron fly at the strike nearest spot and a condor one strike wide, both 10-point wings, sold from the 15:55 quote and settled at the close",
+      "expected": "a positive mean net per session after the suite's tastytrade costs",
+      "sample": "design 2022-05-16..2024-12-31 (~650 sessions); holdout 2025-01-01..2026-11-06 read only after a design pass; < 100 entered sessions or < 50 official-close sessions = no verdict",
+      "rule": "per arm: one-sided t > 2 on session nets, Holm across the two arms, both design time-halves positive, positive at 1.5x costs, positive on the official-close sessions; then the holdout with the same checks",
+      "mechanism": "the 15:55 at-the-money 0DTE price carries more variance than the last five minutes and the closing auction deliver",
+      "rivals": [
+        {
+          "explanation": "optimistic fills in wide closing quotes",
+          "check": "verdict at the working price; mid, mid - $0.05 and natural reported"
+        },
+        {
+          "explanation": "fees and settlement events on a five-minute premium",
+          "check": "positive at 1.5x costs"
+        },
+        {
+          "explanation": "the store's close is the last print, not the official close, before 2024-05-13",
+          "check": "positive on the official-close sessions (a pass check)"
+        },
+        {
+          "explanation": "market drift",
+          "check": "nets by the close's direction from the entry spot"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "both design time-halves must pass; results by VIX band and year"
+        },
+        {
+          "explanation": "a few sessions decide it",
+          "check": "five worst sessions reported; bootstrapped drawdown beside a pass"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#58-the-closing-fly-a-0dte-spx-iron-fly-sold-at-1555-and-held-to-the-settlement",
+      "results": [
+        "{home}/data/backtest/results/research/item58/study-2022-05-16-2024-12-31.json",
+        "{home}/data/backtest/results/research/item58/study-2025-01-01-2026-11-06.json"
+      ],
+      "retest": null,
+      "retests": [],
+      "outcome": "design pass, holdout fail on both arms; the closing fly is closed as specified"
     }
   ],
   "rule_changes": []
