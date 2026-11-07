@@ -9328,3 +9328,97 @@ button.chip[aria-pressed][data-hue="special"],
     max-height: 86vh !important;
   }
 }
+/* redesign: screeners-a */
+/* The earnings calendar's day groups: a day's heading over its rows (or cards). */
+.ec-day + .ec-day {
+  margin-top: 12px;
+}
+.ec-dayhead {
+  margin: 4px 0 6px;
+  font-family: var(--num-face, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+/* A calendar row is the symbol, then the read: the company name stays on the card it opens. */
+.ec-day .tr-row .tr-spot {
+  display: none;
+}
+/* A journal row opened in place: the spread's money on a sunken strip. */
+.ec-open > td {
+  padding: 10px 12px 12px 36px;
+  background: color-mix(in srgb, var(--surface-sunken) 55%, var(--surface));
+  white-space: normal;
+}
+/* The signal board: a toolbar over two cards, each name a row with its count meter and signal chips. */
+.sb-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.sb-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.sb-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  font-size: 12.5px;
+}
+.sb-name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.sb-sector {
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb-count {
+  font-family: var(--num-face, ui-monospace, monospace);
+  font-weight: 600;
+  text-align: right;
+}
+.sb-meter {
+  grid-column: 1 / -1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--chart-grid-mid);
+  overflow: hidden;
+}
+.sb-meter-fill {
+  display: block;
+  height: 100%;
+}
+.sb-meter-fill.is-bull {
+  background: var(--pos);
+}
+.sb-meter-fill.is-bear {
+  background: var(--neg);
+}
+.sb-chips {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* a trade card's spot slot can hold a company name, which wraps rather than running under the chips */
+.pos-card.tc-card .pos-card-spot {
+  white-space: normal;
+}

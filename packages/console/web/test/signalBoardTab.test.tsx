@@ -45,7 +45,7 @@ vi.mock("../src/lib/api", async (importOriginal) => ({
   useSignalBoard: () => ({ data: payload, isLoading: false, isError: false }),
 }));
 
-const { SignalBoardTab } = await import("../src/pages/Screeners/SignalBoardTab");
+const { SignalBoardTab, boardHelp } = await import("../src/pages/Screeners/SignalBoardTab");
 
 function render(url: string): string {
   return renderToString(
@@ -69,12 +69,44 @@ describe("the signal board tab", () => {
     expect(symbols(render("/screeners/board?min=1&sector=Industrials"))).toEqual(["AAL"]);
   });
 
-  it("marks an approximate method and names what it does not count", () => {
+  it("draws bullish and bearish as two cards, each name a row with a count meter and its signal chips", () => {
+    const html = render("/screeners/board");
+    expect(html.match(/class="card /g)?.length).toBe(2);
+    expect(html).toContain("bullish");
+    expect(html).toContain("bearish");
+    expect(html.match(/class="sb-row"/g)?.length).toBe(2);
+    expect(html).toMatch(/sb-meter-fill is-bull" style="width:100%"/);
+    expect(html).toMatch(/sb-meter-fill is-bear"/);
+    expect(html).not.toContain("<table");
+  });
+
+  it("marks an approximate method in its chip, and flags the board as not a tested signal", () => {
     const html = render("/screeners/board");
     expect(html).toContain(">≈ Money rotating into the sector</span>");
     expect(html).toContain(">Confirmed outperformer</span>");
     expect(html).toContain("Approximate: our engine differs");
-    expect(html).toContain("Not counted yet: fundamentals, put buying");
-    expect(html).toContain("not a tested signal");
+    expect(html.match(/class="help-flag"[^>]*>not a tested signal</g)?.length).toBe(2);
+  });
+
+  it("keeps the method note behind the ?, naming what is not counted", () => {
+    const html = render("/screeners/board");
+    expect(html).not.toContain("Not counted yet");
+    expect(html).toContain('aria-label="About bullish"');
+    const help = renderToString(<>{boardHelp(payload).body}</>).replace(/<!-- -->/g, "");
+    expect(help).toContain("Not counted yet: fundamentals, put buying");
+    expect(help).toContain("Sector rotation (approximate)");
+    expect(help).toContain("not a tested signal");
+  });
+
+  it("puts min count, sector and search behind filter and sort, and the summary says what is on", () => {
+    const html = render("/screeners/board");
+    expect(html).toContain('aria-label="Filter and sort"');
+    expect(html).toContain(">2+ agreeing<");
+    expect(html).toContain(">all sectors<");
+    expect(html).toContain("1 bullish · 1 bearish");
+    const on = render("/screeners/board?min=1&sector=Industrials");
+    expect(on).toContain('aria-label="Filter and sort, 2 changed"');
+    expect(on).toContain(">1+ agreeing<");
+    expect(on).toContain(">Industrials<");
   });
 });

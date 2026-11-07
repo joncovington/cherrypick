@@ -1,24 +1,41 @@
-import type { ReactNode } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { EARNINGS_WEEK_DAYS, type EarningsCalendarRow, type EarningsSuggestion, type EarningsTrade, type EarningsTradeLeg } from "@console/shared";
+import { useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
+import { EARNINGS_WEEK_DAYS, type EarningsCalendarRow, type EarningsTradeLeg } from "@console/shared";
 import { useEarningsCalendar } from "../../lib/api";
-import { PremiumSlider, useMinPremium } from "../../components/PremiumSlider";
-import { ExpiryNote } from "./ExpiryNote";
+import { Card } from "../../components/DataTable";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+import { PremiumSlider, defaultFloor, useMinPremium } from "../../components/PremiumSlider";
+import {
+  FilterGroup,
+  FilterSortButton,
+  FilterSortPanel,
+  FilterSummary,
+  FilterSwitch,
+  SortSection,
+  sortRows,
+  useSortChoice,
+  type SortOption,
+} from "../../components/FilterSort";
+import { ListViewContext, ViewSwitch, useViewChoice } from "../../components/ViewSwitch";
+import { writePref } from "../../lib/prefs";
+import { TradeCards, dayMonth, type TradeCardLeg, type TradeCardModel } from "../Live/TradeCard";
+import { QuestionSection, ScreenerLayout } from "./QuestionSection";
 
 /**
  * The earnings calendar (2026-10-17; docs/earnings-screener-plan.md): every announcement in the
- * next 30 days, laid out like the vendor's own calendar, grouped by day. Read-only, and it decides
- * nothing: `python -m cherrypick.technicals earnings-calendar` joins every figure each evening.
+ * next 30 days, grouped by day. Read-only, and it decides nothing: `python -m cherrypick.technicals
+ * earnings-calendar` joins every figure each evening.
+ *
+ * 2026-11-06: one row an announcement (rows by default, cards by the switch), each row opening its
+ * card in place with what used to be hover-only: company, sector, IV rank, the close, the expected
+ * move and its expiry, and the spread's legs with bid and ask, open interest, volume and whether they
+ * pass. Nine filters and the sort sit behind filter & sort; the window stays as tabs. The no-edge note
+ * is an amber flag, its text behind the ?.
  *
  * The direction read and strength are OURS (Bearing, from our bars, the PREVIOUS session's close);
  * the vendor's are kept in the file and never shown or filtered on. IV rank is the broker's, and it
  * picks the spread's side. The expected move is the broker's earnings rule, 0.85 x the ATM straddle
- * on the first expiry after the reaction. Strong reads also carry the
- * earnings-navigator spread as target strikes -- and the page says, every time, that the 2020-26
- * replay of that spread lost money and found the direction read no better than a coin on the
- * reaction.
- *
- * Grouped rows keep their order (the console's sorting rule): by day, then symbol.
+ * on the first expiry after the reaction.
  */
 
 type Win = "today" | "7" | "30";
@@ -30,6 +47,7 @@ const WINDOWS: { key: Win; label: string }[] = [
 const STRONG_BULL = "sb";
 const STRONG_BEAR = "sbe";
 const DEFAULT_DIRS = [STRONG_BULL, STRONG_BEAR];
+const LIST = "earnings-calendar";
 
 function money(v: number | null | undefined): string {
   return v === null || v === undefined ? "—" : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -55,47 +73,37 @@ function todayNy(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
 }
 
-function Flag({ on, onChange, children, title }: { on: boolean; onChange: (on: boolean) => void; children: ReactNode; title: string }) {
-  return (
-    <div className="mode-toggle" style={{ marginLeft: 0 }}>
-      <button type="button" title={title} className={on ? "mode-btn active" : "mode-btn"} onClick={() => onChange(!on)}>
-        {children}
-      </button>
-    </div>
-  );
-}
+const readNote = (r: EarningsCalendarRow) =>
+  r.readSession ? `Ours (Bearing), from our bars as of the ${shortDate(r.readSession)} close.` : "We hold no bars for this name, so no read.";
 
-function TimeCell({ r }: { r: EarningsCalendarRow }) {
+/** The report's time of day as a chip: confirmed, estimated from last quarter's, or unknown. */
+function timingChip(r: EarningsCalendarRow): ReactNode {
   if (r.timing === null && r.usualTiming !== null) {
     return (
-      <td
-        className="muted"
+      <span
+        key="t"
+        className="chip"
         title={`Not confirmed: no source gives this date's time. ${r.usualTiming === "bmo" ? "Before the open" : "After the close"} is when the company reported last quarter, which held 97% of the time historically. No entry session is worked out from it.`}
       >
         {r.usualTiming.toUpperCase()} est.
-      </td>
+      </span>
     );
   }
   if (r.timing === null) {
     return (
-      <td className="muted" title="No source gives the time of day for this date, and no earlier report to estimate it from; never assumed">
-        —
-      </td>
+      <span key="t" className="chip" title="No source gives the time of day for this date, and no earlier report to estimate it from; never assumed">
+        time unknown
+      </span>
     );
   }
-  const entry = r.entrySession ? `enter by the ${shortDate(r.entrySession)} close` : "";
-  const source =
-    r.timingSource === "broker" ? "the broker's" : r.timingSource === "nasdaq" ? "Nasdaq's" : r.timingSource === "dolt" ? "Dolt's" : "unknown";
   return (
-    <td
-      title={`${r.timing === "bmo" ? "Before the open" : "After the close"} (${source} time of day); ${entry}; the market reacts ${shortDate(r.reactionDay)}`}
-    >
-      <span className="chip">{r.timing.toUpperCase()}</span>
-    </td>
+    <span key="t" className="chip" title={r.timing === "bmo" ? "Before the open" : "After the close"}>
+      {r.timing.toUpperCase()}
+    </span>
   );
 }
 
-function DateFlags({ r }: { r: EarningsCalendarRow }) {
+function dateFlags(r: EarningsCalendarRow): ReactNode[] {
   const flags: ReactNode[] = [];
   if (r.dateConfirmed === false) {
     flags.push(
@@ -111,212 +119,168 @@ function DateFlags({ r }: { r: EarningsCalendarRow }) {
       </span>,
     );
   }
-  return flags.length ? <> {flags}</> : null;
+  return flags;
 }
 
-const readNote = (r: EarningsCalendarRow) =>
-  r.readSession ? `Ours (Bearing), from our bars as of the ${shortDate(r.readSession)} close.` : "We hold no bars for this name, so no read.";
+function legQuote(l: EarningsTradeLeg): string {
+  const q = l.bid === null && l.ask === null ? "unquoted" : `${money(l.bid)} / ${money(l.ask)}`;
+  return `${q} · OI ${l.openInterest === null ? "—" : l.openInterest.toLocaleString()} · vol ${l.volume === null ? "—" : l.volume.toLocaleString()}${l.passes === false ? " · fails" : ""}`;
+}
 
-function EdgeCell({ r }: { r: EarningsCalendarRow }) {
-  if (r.edgeLabel === null) {
-    return (
-      <td className="muted" title={readNote(r)}>
-        —
-      </td>
-    );
+/**
+ * One announcement as a trade card, from the same row the calendar was built from: the read and the
+ * spread's shape on the head, IV rank, close and the expected move on the side, strength as the bar,
+ * and the spread's legs as the order chain (a trade read in regular hours has quotes; listed strikes
+ * and target prices say which they are). Every figure is the calendar's; nothing is computed here but
+ * the signs and the words.
+ */
+export function earningsModel(r: EarningsCalendarRow): TradeCardModel {
+  const s = r.suggestion;
+  const t = r.trade;
+  const right = s?.right === "C" ? "C" : "P";
+  const word = s ? `${s.kind} ${right === "C" ? "call" : "put"}` : null;
+  const credit = s?.kind === "credit";
+  let legs: TradeCardLeg[] = [];
+  let strikes = "";
+  let expiry: string | null = s?.expiry ?? null;
+  let price = "no spread suggested";
+  let cash: number | null = null;
+  if (t !== null && s !== null) {
+    expiry = t.expiry;
+    const [first, second] = t.kind === "credit" ? [t.legs[1], t.legs[0]] : [t.legs[0], t.legs[1]];
+    strikes = `${first?.strike}/${second?.strike}`;
+    legs = (first && second ? [first, second] : t.legs).map((l) => ({
+      buy: l.role === "long",
+      text: `1 ${t.expiry} ${l.strike}${t.right}${l.bid !== null && l.ask !== null ? ` @ ${((l.bid + l.ask) / 2).toFixed(2)}` : ""}`,
+      quote: legQuote(l),
+    }));
+    price = t.mid === null ? "unpriced" : `${t.mid.toFixed(2)} ${t.kind === "credit" ? "cr" : "db"}`;
+    cash = t.mid === null ? null : (t.kind === "credit" ? 1 : -1) * t.mid * 100;
+  } else if (s !== null && r.listed !== null) {
+    const [long, short] = r.listed.strikes;
+    const order = credit ? [short, long] : [long, short];
+    const buys = credit ? [false, true] : [true, false];
+    expiry = r.listed.expiry;
+    strikes = `${order[0]}/${order[1]}`;
+    legs = order.map((k, i) => ({ buy: buys[i] ?? false, text: `1 ${r.listed?.expiry} ${k}${right}`, quote: null }));
+    price = "listed, not priced yet";
+  } else if (s !== null) {
+    const order = credit ? [s.short, s.long] : [s.long, s.short];
+    const buys = credit ? [false, true] : [true, false];
+    strikes = `≈${money(order[0])}/≈${money(order[1])}`;
+    legs = order.map((k, i) => ({ buy: buys[i] ?? false, text: `1 ≈ ${money(k)}${right} (target)`, quote: null }));
+    price = "target prices, not strikes";
   }
-  const cls = r.edge === STRONG_BULL ? "chip chip-ok" : r.edge === STRONG_BEAR ? "chip chip-bad" : "chip";
-  return (
-    <td title={`${r.edgeLabel}. ${readNote(r)}`}>
-      <span className={cls}>{r.edgeLabel}</span>
-    </td>
-  );
-}
-
-function StrengthCell({ r }: { r: EarningsCalendarRow }) {
-  const v = r.strength;
-  if (v === null) {
-    return (
-      <td className="muted" title={readNote(r)}>
-        —
-      </td>
-    );
-  }
-  const colour = v >= 7 ? "var(--pos)" : v <= 4 ? "var(--neg)" : "var(--amber-line)";
-  return (
-    <td title={`Strength ${v}/10. ${readNote(r)}`} style={{ whiteSpace: "nowrap" }}>
-      <span aria-hidden style={{ display: "inline-flex", gap: 1, verticalAlign: "middle" }}>
-        {Array.from({ length: 10 }, (_, i) => (
-          <span key={i} style={{ width: 5, height: 10, background: i < v ? colour : "var(--chart-grid-mid)" }} />
-        ))}
-      </span>{" "}
-      <span className="muted">{v}/10</span>
-    </td>
-  );
-}
-
-function IvRankCell({ r }: { r: EarningsCalendarRow }) {
-  return (
-    <td className="num" title="The broker's IV rank: it picks the spread's side, debit under the cut and credit at or over it.">
-      {r.ivRank === null ? "—" : `${Math.round(r.ivRank)}%`}
-    </td>
-  );
-}
-
-/** The broker's own rule for an earnings move: 0.85 × the at-the-money straddle on the first listed
- *  expiry on or after the reaction, shown as "6.5% (±$23.40) to Oct 23 +2d". One standard deviation
- *  is in the tooltip. */
-function MoveCell({ r }: { r: EarningsCalendarRow }) {
-  if (r.emMovePct === null || r.emMove === null) {
-    return (
-      <td className="muted num" title="No implied vol held for this name's event expiry">
-        —
-      </td>
-    );
-  }
-  const title =
-    `Expected move to ${r.eventExpiry}${r.eventExpiryDays === null ? "" : `, ${r.eventExpiryDays} days past the reaction day`}: ` +
-    `0.85 × the at-the-money straddle (the broker's rule for an earnings move), ` +
-    `the straddle read off that expiry's IV of ${r.eventIv === null ? "—" : (100 * r.eventIv).toFixed(1)}%. ` +
-    `One standard deviation is ±$${money(r.sdMove)} (${r.sdMovePct === null ? "—" : r.sdMovePct.toFixed(1)}%), about 1.5 times this. ` +
-    `Days are counted from the close the price is.`;
-  return (
-    <td className="num" title={title}>
-      {r.emMovePct.toFixed(1)}% <span className="muted">(±${money(r.emMove)})</span>
-      <ExpiryNote expiry={r.eventExpiry} days={r.eventExpiryDays} />
-    </td>
-  );
-}
-
-function legLine(l: EarningsTradeLeg, right: string): string {
-  return (
-    `${l.role} ${l.strike} ${right}: ${money(l.bid)} × ${money(l.ask)}, OI ${l.openInterest ?? "—"}, volume ${l.volume ?? "—"}` +
-    (l.passes === null ? " — unquoted" : l.passes ? " — passes" : " — fails")
-  );
-}
-
-/** The spread as read in regular hours: listed strikes, price, share of the width, max loss, and
- *  whether every leg passes the bars. */
-function TradeCell({ t }: { t: EarningsTrade }) {
-  const right = t.right === "C" ? "call" : "put";
-  const [first, second] = t.kind === "credit" ? [t.legs[1], t.legs[0]] : [t.legs[0], t.legs[1]];
-  const price = t.mid === null ? "unpriced" : `${t.mid.toFixed(2)} ${t.kind === "credit" ? "cr" : "db"}`;
-  const title =
-    `${t.kind === "credit" ? "Sell" : "Buy"} the ${first?.strike} ${right}, ${t.kind === "credit" ? "buy" : "sell"} the ` +
-    `${second?.strike} ${right}, ${t.expiry}; read ${t.readingAt ?? "—"}` +
-    (t.afterReport === true
-      ? " -- AFTER the announcement: no reading was taken before it, so this is not an entry price.\n"
-      : t.afterReport === null
-        ? " (the time of day is unknown, so whether this came before the announcement is too).\n"
-        : ", before the announcement.\n") +
-    `At mid ${money(t.mid)}, at the natural fill ${money(t.natural)}; ${t.shareOfWidth === null ? "—" : `${(100 * t.shareOfWidth).toFixed(0)}%`} ` +
-    `of the ${t.width} width; max loss $${money(t.maxLoss)} a spread.\n` +
-    t.legs.map((l) => legLine(l, right)).join("\n") +
-    "\nHistory: no edge (the note below the table).";
-  // The strikes lead: the column is the table's last, and whatever comes first is what shows.
-  return (
-    <td title={title} style={{ whiteSpace: "nowrap" }}>
-      <span className="num">
-        {first?.strike}/{second?.strike} {t.right}
-      </span>{" "}
-      <span className="muted">{shortDate(t.expiry)}</span> <span className="num">{price}</span>
-      <br />
-      {t.shareOfWidth !== null && <span className="muted">{(100 * t.shareOfWidth).toFixed(0)}% of width</span>}
-      {t.maxLoss !== null && <span className="muted"> · max loss ${money(t.maxLoss)}</span>}
-      {t.passes === false && (
-        <>
-          {" "}
-          <span className="chip chip-warn" title="The spread fails the liquidity bars: judged as one order, its cost to trade within 10% of its price (or a nickel), 100 open a leg">
-            thin
+  const moveWord =
+    r.emMovePct === null || r.emMove === null
+      ? null
+      : `±${r.emMovePct.toFixed(1)}%`;
+  const strong = r.edgeLabel ?? "no read";
+  const longMove = r.eventExpiryDays !== null && r.eventExpiryDays > EARNINGS_WEEK_DAYS;
+  const sideMove =
+    moveWord === null
+      ? "no implied vol held for the event expiry"
+      : `move ${moveWord} (±$${money(r.emMove)})${r.eventExpiry ? ` to the ${dayMonth(r.eventExpiry)} expiry${r.eventExpiryDays === null ? "" : ` +${r.eventExpiryDays}d`}` : ""} · 0.85 × straddle${longMove ? " · a longer move than the announcement's" : ""}`;
+  const entry = r.entrySession ? `enter by the ${shortDate(r.entrySession)} close · reacts ${shortDate(r.reactionDay)}` : null;
+  const liquid =
+    t === null
+      ? s === null
+        ? "no spread suggested"
+        : "liquidity read once the spread is priced"
+      : t.passes === true
+        ? "liquid: every leg passes"
+        : t.passes === false
+          ? "thin: the spread fails the liquidity bars"
+          : "liquidity not read";
+  const after = [liquid];
+  if (t !== null && t.afterReport === true) after.push("read after the report: not an entry price");
+  else if (expiry !== null && r.reactionDay) after.push(`expires ${dayMonth(expiry)}`);
+  const width = t !== null && t.shareOfWidth !== null ? `${(100 * t.shareOfWidth).toFixed(0)}% of width` : null;
+  const maxLoss = t !== null && t.maxLoss !== null ? `max loss $${money(t.maxLoss)}` : null;
+  return {
+    key: `${r.date}-${r.symbol}`,
+    symbol: r.symbol,
+    symbolHref: `/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`,
+    spot: r.company,
+    shape: [strong, word && `${word} ${strikes}`, moveWord && `exp. move ${moveWord}`].filter(Boolean).join(" · "),
+    chips: (
+      <>
+        {timingChip(r)}
+        {dateFlags(r)}
+        {r.edgeLabel !== null ? (
+          <span
+            className={r.edge === STRONG_BULL ? "chip chip-ok" : r.edge === STRONG_BEAR ? "chip chip-bad" : "chip"}
+            title={`${r.edgeLabel}. ${readNote(r)}`}
+          >
+            {r.edgeLabel}
           </span>
-        </>
-      )}
-      {t.passes === true && (
-        <>
-          {" "}
-          <span className="chip chip-ok" title="The spread passes the liquidity bars, judged as one order">
-            liquid
-          </span>
-        </>
-      )}
-      {t.afterReport === true && (
-        <>
-          {" "}
-          <span className="chip chip-warn" title={`Read on ${t.takenOn}, after the announcement: a price no one could have entered on`}>
-            after the report
-          </span>
-        </>
-      )}
-    </td>
-  );
+        ) : null}
+      </>
+    ),
+    cash,
+    side: [
+      `IV rank ${r.ivRank === null ? "—" : `${Math.round(r.ivRank)}%`} · close ${r.price === null ? "—" : `$${money(r.price)}`}`,
+      sideMove,
+      ...(entry ? [entry] : []),
+    ],
+    bar: r.strength === null ? null : r.strength * 10,
+    barTitle: r.strength === null ? readNote(r) : `Strength ${r.strength}/10. ${readNote(r)}`,
+    label: `${r.strength === null ? "no read" : `strength ${r.strength}/10`} · ${r.sector ?? "no sector"}`,
+    open: { date: "proposed", price },
+    legs,
+    after,
+    foot: [
+      [word, width, maxLoss].filter(Boolean).join(" · ") || "no spread",
+      s === null ? "not a strong read" : "the spread has no edge in history",
+    ],
+  };
 }
 
-/** The spread's kind, in its own column: credit and debit each a neutral chip of their own. The
- *  reading's kind where one was taken, the suggestion's otherwise (they are the same spread). */
-function KindCell({ s, t }: { s: EarningsSuggestion | null; t: EarningsTrade | null }) {
-  const k = t ?? s;
-  if (k === null) return <td className="muted">—</td>;
-  return (
-    <td style={{ whiteSpace: "nowrap" }}>
-      <span className={k.kind === "credit" ? "chip chip-credit" : "chip chip-debit"}>
-        {k.kind} {k.right === "C" ? "call" : "put"}
-      </span>
-    </td>
-  );
-}
+/** The sorts: timing, size and fit, in the calendar's own day groups; never the spread's credit. */
+export const CALENDAR_SORTS: SortOption<EarningsCalendarRow>[] = [
+  { id: "symbol", label: "symbol", hint: "A to Z", key: (r) => r.symbol },
+  { id: "time", label: "report time", hint: "before the open first", key: (r) => ((r.timing ?? r.usualTiming) === "bmo" ? 0 : (r.timing ?? r.usualTiming) === "amc" ? 1 : null) },
+  { id: "strength", label: "strength of the read", hint: "strongest first", key: (r) => (r.strength === null ? null : -r.strength) },
+  { id: "move", label: "expected move", hint: "largest first", key: (r) => (r.emMovePct === null ? null : -r.emMovePct) },
+];
 
-/** Three states, each labelled so a target price is never read as a strike: read in regular hours
- *  (listed strikes and a price), listed (strikes from the evening's chain listing, not priced yet),
- *  or targets (prices the rule aims at, not strikes). */
-function SpreadCell({
-  s,
-  t,
-  listed,
-}: {
-  s: EarningsSuggestion | null;
-  t: EarningsTrade | null;
-  listed: { expiry: string; strikes: number[] } | null;
-}) {
-  if (s === null) return <td className="muted">—</td>;
-  if (t !== null) return <TradeCell t={t} />;
-  const right = s.right === "C" ? "call" : "put";
-  if (listed !== null) {
-    // [long, short]; a credit spread reads short first, a debit long first.
-    const [long, short] = listed.strikes;
-    const shown = s.kind === "credit" ? `${short}/${long}` : `${long}/${short}`;
-    const legs =
-      s.kind === "credit" ? `sell the ${short} ${right}, buy the ${long} ${right}` : `buy the ${long} ${right}, sell the ${short} ${right}`;
-    return (
-      <td
-        style={{ whiteSpace: "nowrap" }}
-        title={`Listed strikes on ${listed.expiry}, from the evening's chain listing: ${legs}. The price and liquidity show once read, at 11:30 and 14:30 ET. History: no edge (the note below the table).`}
-      >
-        <span className="num">
-          {shown} {s.right}
-        </span>{" "}
-        <span className="muted">{shortDate(listed.expiry)}</span>
-      </td>
-    );
-  }
-  const legs =
-    s.kind === "credit"
-      ? `sell near ${money(s.short)}, buy at or beyond ${money(s.long)}`
-      : `buy near ${money(s.long)}, sell near ${money(s.short)}`;
-  const title =
-    `TARGET PRICES, not strikes: the rule's ${s.kind} ${right} spread would ${legs}, ${s.expiry ?? "no expiry in range"}. ` +
-    "They are matched to listed strikes the evening the calendar is built, for strong reads reporting within the week. " +
-    "History: no edge (the note below the table).";
-  return (
-    <td title={title} style={{ whiteSpace: "nowrap" }}>
-      <span className="muted num">
-        ≈{money(s.kind === "credit" ? s.short : s.long)} / ≈{money(s.kind === "credit" ? s.long : s.short)}
-      </span>{" "}
-      <span className="chip" title="Target prices, not listed strikes">
-        target
-      </span>
-    </td>
-  );
-}
+export const calendarHelp = (ivRankCut: number): CardHelpContent => ({
+  title: "Reading the calendar",
+  body: (
+    <>
+      <HelpWarn title="No edge in history">
+        <p>
+          The suggested spread has no edge in history. Replayed over 2020-26 (3,587 priced announcements), it lost 4.3% on risk on the
+          defaults and in every variant tried, and the direction read called the reaction 48-49% of the time: a coin. It is shown
+          because the screen shows it, not as advice (docs/earnings-screener-plan.md).
+        </p>
+      </HelpWarn>
+      <HelpSection title="Direction and strength">
+        <p>
+          Ours (Bearing), from our bars as of the previous session's close; a name we hold no bars for has none. The vendor's reads are
+          kept in the file and never shown or filtered on.
+        </p>
+      </HelpSection>
+      <HelpSection title="IV rank">
+        <p>The broker's. It picks the spread's side: a debit under the cut, a credit at or over it. The cut is {ivRankCut}.</p>
+      </HelpSection>
+      <HelpSection title="The expected move">
+        <p>
+          0.85 × the at-the-money straddle on the first LISTED expiry on or after the reaction (the broker's rule for an earnings move),
+          with that expiry and its days past the reaction. Where only monthlies are listed it can be weeks out: past {EARNINGS_WEEK_DAYS}{" "}
+          days it prices a fortnight's or a month's move, not the announcement's alone. One standard deviation is about 1.5 times it.
+        </p>
+      </HelpSection>
+      <HelpSection title="The spread">
+        <p>
+          Listed strikes once the evening's chain listing has matched them, and its price once a regular-hours reading has (11:30 and 14:30
+          ET); until then the target prices, marked as targets. A spread read as thin is hidden by default: judged as one order, its cost
+          to trade within 10% of its price (or a nickel), 100 open a leg.
+        </p>
+      </HelpSection>
+    </>
+  ),
+});
 
 export function EarningsCalendarTab() {
   const [params, setParams] = useSearchParams();
@@ -327,6 +291,11 @@ export function EarningsCalendarTab() {
     else next.set(key, value);
     setParams(next, { replace: true });
   };
+
+  const [view, setView] = useViewChoice(LIST, "rows");
+  const [sortChoice, setSortChoice] = useSortChoice(LIST, "symbol");
+  const [panel, setPanel] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
 
   const win = (params.get("win") as Win | null) ?? "7";
   const time = params.get("time"); // null | "bmo" | "amc"
@@ -339,7 +308,7 @@ export function EarningsCalendarTab() {
   const allTrades = params.get("trade") === "all";
   const sector = params.get("sector");
   const q = (params.get("q") ?? "").trim().toUpperCase();
-  const minPremium = useMinPremium("earnings-calendar", params.get("premium"));
+  const minPremium = useMinPremium(LIST, params.get("premium"));
   // One spread's price at mid, whole contract, credit or debit. A spread with no price yet stays shown.
   const premiumOk = (r: EarningsCalendarRow) => minPremium === 0 || r.trade?.mid == null || r.trade.mid * 100 >= minPremium;
 
@@ -361,8 +330,10 @@ export function EarningsCalendarTab() {
     (q === "" || r.symbol.includes(q));
   const filtered = all.filter(passes);
   const shown = filtered.filter((r) => inWindow(r, win) && (time === null || (r.timing ?? r.usualTiming) === time));
+  const hiddenByFloor = minPremium === 0 ? 0 : all.filter((r) => inWindow(r, win) && !premiumOk(r)).length;
   const groups = new Map<string, EarningsCalendarRow[]>();
   for (const r of shown) groups.set(r.date, [...(groups.get(r.date) ?? []), r]);
+  const sortOption = CALENDAR_SORTS.find((s) => s.id === sortChoice.id);
   const sectors = [...new Set(all.map((r) => r.sector).filter((s): s is string => s !== null))].sort();
   const toggleDir = (code: string) => {
     const cur = new Set(dirs ?? []);
@@ -372,201 +343,212 @@ export function EarningsCalendarTab() {
     set("dir", list.length === 0 ? "all" : list.join(",") === [...DEFAULT_DIRS].sort().join(",") ? null : list.join(","));
   };
   const othersOn = dirs === null;
+  const timeCount = (t: "bmo" | "amc") => filtered.filter((r) => inWindow(r, win) && (r.timing ?? r.usualTiming) === t).length;
+
+  const dirsDefault = dirs !== null && dirs.length === DEFAULT_DIRS.length && DEFAULT_DIRS.every((d) => dirs.includes(d));
+  const changed =
+    (time !== null ? 1 : 0) +
+    (dirsDefault ? 0 : 1) +
+    (allLiquidity || somewhat ? 1 : 0) +
+    (allOptions ? 1 : 0) +
+    (allRegions ? 1 : 0) +
+    (allTrades ? 1 : 0) +
+    (minPremium !== defaultFloor(LIST) ? 1 : 0) +
+    (sector !== null ? 1 : 0) +
+    (q !== "" ? 1 : 0) +
+    (sortChoice.id !== "symbol" || sortChoice.reversed ? 1 : 0);
+  const reset = () => {
+    const next = new URLSearchParams(params);
+    for (const k of ["time", "dir", "liq", "opt", "region", "trade", "sector", "q", "premium"]) next.delete(k);
+    setParams(next, { replace: true });
+    void writePref(`minPremium.${LIST}`, undefined);
+    setSortChoice({ id: "symbol", reversed: false });
+  };
+  const dirWords = othersOn
+    ? "all directions"
+    : (dirs ?? []).includes(STRONG_BULL) && (dirs ?? []).includes(STRONG_BEAR)
+      ? "strong reads"
+      : (dirs ?? []).includes(STRONG_BULL)
+        ? "strong bull"
+        : "strong bear";
+  const parts = [
+    WINDOWS.find((w) => w.key === win)?.label.toLowerCase() ?? win,
+    dirWords,
+    ...(time ? [time === "bmo" ? "before market" : "after market"] : []),
+    ...(!allLiquidity ? [somewhat ? "very + somewhat liquid" : "very liquid"] : []),
+    ...(!allOptions ? [] : ["not only optionable"]),
+    ...(!allRegions ? [] : ["non-US too"]),
+    ...(!allTrades ? ["liquid trade"] : []),
+    ...(minPremium > 0 ? [`≥ $${minPremium.toLocaleString()}`] : []),
+    ...(sector ? [sector] : []),
+    ...(q ? [`"${q}"`] : []),
+    ...(sortChoice.id !== "symbol" || sortChoice.reversed ? [`by ${sortOption?.label ?? sortChoice.id}${sortChoice.reversed ? ", reversed" : ""}`] : []),
+  ];
+
+  const stale = data?.day && data.inputs.closeDate !== null && data.inputs.closeDate < data.day;
 
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>Earnings calendar</h2>
-        <span className="chip">read-only</span>
-        {data?.day && (
-          <span className="card-asof">
-            built {data.day} · prices from the {data.inputs.closeDate ?? "—"} close · moves from the {data.inputs.expiryIv ?? "—"} IVs
-          </span>
-        )}
-        {data?.day && data.inputs.closeDate !== null && data.inputs.closeDate < data.day && (
-          <span
-            className="chip chip-warn"
-            title={`Dolt did not yet hold the ${data.day} close when this calendar was built, so the price, the expected move as a percentage and the spread targets use the ${data.inputs.closeDate} close`}
-          >
-            prices from {data.inputs.closeDate}, not {data.day}
-          </span>
-        )}
-      </div>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 8 }}>
-        {data && data.days.length > 0 && (
-          <select
-            className="chip review-session-select"
-            aria-label="Calendar day"
-            value={data.day ?? ""}
-            onChange={(e) => set("day", e.target.value === latest ? null : e.target.value)}
-          >
-            {data.days.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        )}
-        <div className="mode-toggle" style={{ marginLeft: 0 }}>
-          {WINDOWS.map((w) => (
-            <button
-              key={w.key}
-              type="button"
-              className={win === w.key ? "mode-btn active" : "mode-btn"}
-              onClick={() => set("win", w.key === "7" ? null : w.key)}
-            >
-              {w.label} ({all.filter((r) => inWindow(r, w.key)).length})
-            </button>
-          ))}
-        </div>
-        <div className="mode-toggle" style={{ marginLeft: 0 }}>
-          {(["bmo", "amc"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              className={time === t ? "mode-btn active" : "mode-btn"}
-              onClick={() => set("time", time === t ? null : t)}
-              title={t === "bmo" ? "Before the open" : "After the close"}
-            >
-              {t === "bmo" ? "Before market" : "After market"} ({filtered.filter((r) => inWindow(r, win) && (r.timing ?? r.usualTiming) === t).length})
-            </button>
-          ))}
-        </div>
-        <Flag on={othersOn ? false : (dirs ?? []).includes(STRONG_BULL)} onChange={() => toggleDir(STRONG_BULL)} title="Strong bull direction reads">
-          Strong bull
-        </Flag>
-        <Flag on={othersOn ? false : (dirs ?? []).includes(STRONG_BEAR)} onChange={() => toggleDir(STRONG_BEAR)} title="Strong bear direction reads">
-          Strong bear
-        </Flag>
-        <Flag on={othersOn} onChange={(on) => set("dir", on ? "all" : null)} title="Every direction read, the mixed ones included">
-          All directions
-        </Flag>
-        <Flag
-          on={!allLiquidity}
-          onChange={(on) => set("liq", on ? null : "all")}
-          title="Very liquid options only (the security list's liquidity rank 1); off shows every rating"
-        >
-          Very liquid
-        </Flag>
-        {!allLiquidity && (
-          <Flag on={somewhat} onChange={(on) => set("liq", on ? "1,2" : null)} title="Also the names rated somewhat liquid (rank 2)">
-            + somewhat
-          </Flag>
-        )}
-        <Flag on={!allOptions} onChange={(on) => set("opt", on ? null : "all")} title="Optionable names only">
-          Optionable
-        </Flag>
-        <Flag on={!allRegions} onChange={(on) => set("region", on ? null : "all")} title="US listings only: depository receipts left out, as the vendor's US region filter does">
-          US
-        </Flag>
-        <Flag
-          on={!allTrades}
-          onChange={(on) => set("trade", on ? null : "all")}
-          title="Hide names whose suggested spread was read in regular hours and the spread failed the liquidity bars (judged as one order: its cost to trade within 10% of its price or a nickel, 100 open a leg). A spread not read yet stays shown, with its target strikes."
-        >
-          Liquid trade
-        </Flag>
-        <PremiumSlider
-          list="earnings-calendar"
-          value={minPremium}
-          onChange={(v) => set("premium", v === 0 ? null : String(v))}
-          title="Hide a name whose spread, read in regular hours, prices under this at mid for one whole spread (credit or debit). A spread with no price yet stays shown. Remembered for next time."
-        />
-        <select className="chip review-session-select" aria-label="Sector" value={sector ?? ""} onChange={(e) => set("sector", e.target.value || null)}>
-          <option value="">all sectors</option>
-          {sectors.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <input
-          className="chip review-session-select"
-          value={params.get("q") ?? ""}
-          placeholder="symbol"
-          aria-label="Filter by symbol"
-          onChange={(e) => set("q", e.target.value === "" ? null : e.target.value)}
-        />
-        <span className="chip">
-          {shown.length} of {all.length} announcements
-        </span>
-      </div>
-
-      {isError && <p className="muted">Could not read the earnings calendar.</p>}
-      {isLoading && <p className="muted">Reading the calendar…</p>}
-      {data && data.day === null && <p className="muted">No calendar written yet: the earnings-calendar job runs at 19:10 ET on trading days.</p>}
-
-      {shown.length > 0 && (
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th title="Before the open or after the close; a dash when no source says">Time</th>
-                <th>Direction</th>
-                <th>Strength</th>
-                <th className="num">IV rank</th>
-                <th className="num" title={`Dolt's daily close on ${data?.inputs.closeDate ?? "—"}: what the expected move's percentage and the spread targets are figured on`}>
-                  Close {data?.inputs.closeDate ? shortDate(data.inputs.closeDate) : ""}
-                </th>
-                <th
-                  className="num"
-                  title={`0.85 × the at-the-money straddle on the first LISTED expiry on or after the reaction (the broker's rule for an earnings move), with that expiry and its days past the reaction. Where only monthlies are listed it can be weeks out: past ${EARNINGS_WEEK_DAYS} days it is flagged, because it prices a fortnight's or a month's move, not the announcement's alone.`}
+    <ScreenerLayout>
+      <QuestionSection concept="stand" name="the calendar" question="What reports soon?">
+        <Card
+          title="earnings calendar"
+          help={calendarHelp(data?.ivRankCut ?? 50)}
+          flag="no edge in history"
+          controls={
+            <>
+              {data && data.days.length > 0 && (
+                <select
+                  className="chip review-session-select"
+                  aria-label="Calendar day"
+                  value={data.day ?? ""}
+                  onChange={(e) => set("day", e.target.value === latest ? null : e.target.value)}
                 >
-                  Exp. move to expiry
-                </th>
-                <th>Sector</th>
-                <th title="The earnings-navigator spread for strong reads: debit under the IV-rank cut, credit over it">Kind</th>
-                <th>Spread</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...groups.entries()].map(([day, rows]) => [
-                <tr key={`h-${day}`} className="group-row">
-                  <td colSpan={10}>
-                    <strong>{dayHeading(day)}</strong> <span className="chip">{rows.length}</span>
-                  </td>
-                </tr>,
-                ...rows.map((r) => (
-                  <tr key={`${day}-${r.symbol}`}>
-                    {/* The symbol and its company in one cell: the name beneath, muted, cut to fit. */}
-                    <td title={r.company ?? undefined} style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>
-                      <Link className="module-link" to={`/charts/technicals?symbol=${encodeURIComponent(r.symbol)}`} title={`Open ${r.symbol}'s chart`}>
-                        {r.symbol}
-                      </Link>
-                      <DateFlags r={r} />
-                      <br />
-                      <span className="muted">{r.company ?? "—"}</span>
-                    </td>
-                    <TimeCell r={r} />
-                    <EdgeCell r={r} />
-                    <StrengthCell r={r} />
-                    <IvRankCell r={r} />
-                    <td className="num">{r.price === null ? "—" : `$${money(r.price)}`}</td>
-                    <MoveCell r={r} />
-                    {/* `.data-table td` is nowrap by house rule; a long sector wraps so the spread is not pushed off. */}
-                    <td style={{ whiteSpace: "normal", maxWidth: 120 }}>{r.sector ?? "—"}</td>
-                    <KindCell s={r.suggestion} t={r.trade} />
-                    <SpreadCell s={r.suggestion} t={r.trade} listed={r.listed} />
-                  </tr>
-                )),
-              ])}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {data && data.day !== null && all.length > 0 && shown.length === 0 && <p className="muted">Nothing matches these filters.</p>}
+                  {data.days.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <div className="mode-toggle" role="group" aria-label="window">
+                {WINDOWS.map((w) => (
+                  <button
+                    key={w.key}
+                    type="button"
+                    className={win === w.key ? "mode-btn active" : "mode-btn"}
+                    aria-pressed={win === w.key}
+                    onClick={() => set("win", w.key === "7" ? null : w.key)}
+                  >
+                    {w.label} ({all.filter((r) => inWindow(r, w.key)).length})
+                  </button>
+                ))}
+              </div>
+              <ViewSwitch view={view} onChange={setView} />
+              <FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />
+            </>
+          }
+        >
+          <FilterSummary parts={parts} note={`${shown.length} of ${all.length} announcements`} changed={changed} onOpen={() => setPanel(true)} onReset={reset} />
+          {data?.day && (
+            <p className="muted pf-caption" style={{ margin: "0 0 8px" }}>
+              built {data.day} · prices from the {data.inputs.closeDate ?? "—"} close · moves from the {data.inputs.expiryIv ?? "—"} IVs
+              {stale ? (
+                <>
+                  {" "}
+                  <span
+                    className="chip chip-warn"
+                    title={`Dolt did not yet hold the ${data.day} close when this calendar was built, so the price, the expected move as a percentage and the spread targets use the ${data.inputs.closeDate} close`}
+                  >
+                    prices from {data.inputs.closeDate}, not {data.day}
+                  </span>
+                </>
+              ) : null}
+            </p>
+          )}
 
-      <p className="muted" style={{ marginTop: 8 }}>
-        <strong>The suggested spread has no edge in history.</strong> Replayed over 2020-26 (3,587 priced announcements), it lost 4.3% on
-        risk on the defaults and in every variant tried, and the direction read called the reaction 48-49% of the time — a coin. It is
-        shown because the screen shows it, not as advice (docs/earnings-screener-plan.md). Direction and strength are ours (Bearing,
-        from our bars as of the previous session's close; a name we hold no bars for has none); IV rank is the broker's, and the
-        IV-rank cut is {data?.ivRankCut ?? 50}. A spread shows
-        listed strikes once the evening's chain listing has matched them and its price once a regular-hours reading has; until
-        then it shows the target prices, marked "target".
-      </p>
-    </section>
+          {isError && <p className="muted">Could not read the earnings calendar.</p>}
+          {isLoading && <p className="muted">Reading the calendar…</p>}
+          {data && data.day === null && <p className="muted">No calendar written yet: the earnings-calendar job runs at 19:10 ET on trading days.</p>}
+
+          <ListViewContext.Provider value={view}>
+            {[...groups.entries()].map(([day, rows]) => (
+              <div key={day} className="ec-day">
+                <div className="ec-dayhead">
+                  {dayHeading(day)} · {rows.length}
+                </div>
+                <TradeCards models={sortRows(rows, sortOption, sortChoice.reversed).map(earningsModel)} />
+              </div>
+            ))}
+          </ListViewContext.Provider>
+          {data && data.day !== null && all.length > 0 && shown.length === 0 && <p className="muted">Nothing matches these filters.</p>}
+        </Card>
+        <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
+          <SortSection sorts={CALENDAR_SORTS} choice={sortChoice} fallback="symbol" onChange={setSortChoice} />
+          <FilterGroup title="timing" note="the report's time of day; an estimate counts">
+            <FilterSwitch
+              label="Before market"
+              description={`${timeCount("bmo")} reporting before the open`}
+              on={time === "bmo"}
+              onChange={(on) => set("time", on ? "bmo" : null)}
+            />
+            <FilterSwitch
+              label="After market"
+              description={`${timeCount("amc")} reporting after the close`}
+              on={time === "amc"}
+              onChange={(on) => set("time", on ? "amc" : null)}
+            />
+          </FilterGroup>
+          <FilterGroup title="direction" note="our read, from our bars">
+            <FilterSwitch
+              label="Strong bull"
+              description="Strong bull direction reads"
+              on={!othersOn && (dirs ?? []).includes(STRONG_BULL)}
+              onChange={() => toggleDir(STRONG_BULL)}
+            />
+            <FilterSwitch
+              label="Strong bear"
+              description="Strong bear direction reads"
+              on={!othersOn && (dirs ?? []).includes(STRONG_BEAR)}
+              onChange={() => toggleDir(STRONG_BEAR)}
+            />
+            <FilterSwitch label="All directions" description="Every read, the mixed ones included" on={othersOn} onChange={(on) => set("dir", on ? "all" : null)} />
+          </FilterGroup>
+          <FilterGroup title="liquidity">
+            <FilterSwitch
+              label="Very liquid"
+              description="Options rated very liquid (rank 1) only; off shows every rating"
+              on={!allLiquidity}
+              onChange={(on) => set("liq", on ? null : "all")}
+            />
+            <FilterSwitch
+              label="Also somewhat liquid"
+              description="Add the names rated rank 2"
+              on={somewhat}
+              disabled={allLiquidity}
+              onChange={(on) => set("liq", on ? "1,2" : null)}
+            />
+            <FilterSwitch label="Optionable" description="Names with listed options" on={!allOptions} onChange={(on) => set("opt", on ? null : "all")} />
+            <FilterSwitch
+              label="US listings"
+              description="Depository receipts left out, as the vendor's US region filter does"
+              on={!allRegions}
+              onChange={(on) => set("region", on ? null : "all")}
+            />
+            <FilterSwitch
+              label="Liquid trade"
+              description="Hide a spread read in regular hours that fails the bars; one not read yet stays"
+              on={!allTrades}
+              onChange={(on) => set("trade", on ? null : "all")}
+            />
+          </FilterGroup>
+          <FilterGroup title="premium floor" note="one whole spread at mid">
+            <PremiumSlider
+              list={LIST}
+              value={minPremium}
+              onChange={(v) => set("premium", v === 0 ? null : String(v))}
+              title="Hide a name whose spread, read in regular hours, prices under this at mid for one whole spread (credit or debit). A spread with no price yet stays shown. Remembered for next time."
+              hidden={hiddenByFloor}
+            />
+          </FilterGroup>
+          <FilterGroup title="sector and symbol">
+            <select className="chip review-session-select" aria-label="Sector" value={sector ?? ""} onChange={(e) => set("sector", e.target.value || null)}>
+              <option value="">all sectors</option>
+              {sectors.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+            <input
+              className="chip review-session-select"
+              value={params.get("q") ?? ""}
+              placeholder="symbol"
+              aria-label="Filter by symbol"
+              onChange={(e) => set("q", e.target.value === "" ? null : e.target.value)}
+            />
+          </FilterGroup>
+        </FilterSortPanel>
+      </QuestionSection>
+    </ScreenerLayout>
   );
 }
