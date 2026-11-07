@@ -14,8 +14,7 @@ import { ModuleIntegrityStrip } from "../../components/ModuleIntegrityStrip";
 import { MeicDeepCards } from "../../pages/Meic/MeicDeepCards";
 import { MeicDivergenceCard } from "../../pages/Meic/MeicDivergenceCard";
 import { ExperimentGuideView } from "../../components/ExperimentGuide";
-import { ArmRail, AttemptTimeline } from "../../components/Attempts";
-import { OccupancyMap } from "../../components/OccupancyMap";
+import { AttemptsTab } from "../../components/AttemptsTab";
 import { MeicForestCard } from "../../pages/Meic/MeicForestCard";
 import { MeicArmCards } from "../../pages/Meic/MeicArmCards";
 import { MeicPerformanceTab } from "../../pages/Meic/MeicPerformanceTab";
@@ -199,11 +198,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
       id: "attempts",
       label: MEIC_LABEL.attempts,
       render: () => (
-        <div className="cards cards-wide">
-          <ArmRail module="meic" mode={mode} date={day} scope={attemptsScope} />
-          <AttemptTimeline module="meic" mode={mode} date={day} scope={attemptsScope} />
-          <OccupancyMap module="meic" mode={mode} date={day} scope={attemptsScope} />
-        </div>
+        <AttemptsTab module="meic" mode={mode} date={day} scope={attemptsScope} />
       ),
     },
     {

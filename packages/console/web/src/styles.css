@@ -3570,8 +3570,7 @@ select.text-input {
    (`.table-scroll`, around every table), card headers wrap, and the chrome gives way first. */
 .status-header,
 .mf-sub,
-.card,
-.ts-card {
+.card {
   min-width: 0;
 }
 .table-scroll {
@@ -4139,29 +4138,6 @@ select.text-input {
   .ts-row-4 {
     grid-template-columns: repeat(2, 1fr);
   }
-}
-
-.ts-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px 16px;
-  min-width: 0; /* lets the grid cell, not the content, set the width (charts measure it) */
-}
-.ts-card-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-.ts-card-head h3 {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
 }
 
 .ts-pos {
