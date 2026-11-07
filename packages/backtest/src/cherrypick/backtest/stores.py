@@ -36,6 +36,22 @@ STORES: list[dict[str, str]] = [
         "used_by": "items 42 and 44, wide-wing MEIC condors (docs/edge-hypotheses-plan.md)",
     },
     {
+        "file": "QQQ-60s-wide.db",
+        "holds": "QQQ intraday: 0DTE quote samples, spot, GEX profiles, closes, 40 strikes each side, "
+        "at 60 s",
+        "built_by": "python -m cherrypick.backtest fetch --cadence 60 --store-tag wide --dataset QQQ "
+        "(research queue)",
+        "used_by": "item 68, MEIC's live rule on QQQ (scripts/meic_symbols_item68.py)",
+    },
+    {
+        "file": "NDX-60s-wide.db",
+        "holds": "NDX intraday (NDXP 0DTE): quote samples, spot, GEX profiles, closes, 40 strikes each side, "
+        "at 60 s",
+        "built_by": "python -m cherrypick.backtest fetch --cadence 60 --store-tag wide --dataset NDX "
+        "(research queue)",
+        "used_by": "item 68, MEIC's live rule on NDX (scripts/meic_symbols_item68.py)",
+    },
+    {
         "file": "SPX-15s.db",
         "holds": "SPX intraday at 15 s, a short span: the cadence comparison beside the 60 s store",
         "built_by": "python -m cherrypick.backtest fetch --cadence 15",

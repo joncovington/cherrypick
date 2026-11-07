@@ -92,6 +92,8 @@ def test_gex_uses_the_profile_at_or_before_and_refuses_stale_or_thin(tmp_path):
 def test_leg_symbols_read_as_the_streamer_writes_them():
     assert quotehistory.leg_symbol("SPX", "2026-10-16", "P", 5800.0) == ".SPXW261016P5800"
     assert quotehistory.leg_symbol("SPX", "2026-10-16", "C", 5802.5) == ".SPXW261016C5802.5"
+    assert quotehistory.leg_symbol("NDX", "2026-10-16", "P", 25000.0, root="NDXP") == ".NDXP261016P25000"
+    assert quotehistory.leg_symbol("QQQ", "2026-10-16", "C", 600.0, root="QQQ") == ".QQQ261016C600"
 
 
 def test_an_absent_file_is_an_empty_day(tmp_path):

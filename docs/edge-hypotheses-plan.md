@@ -6759,6 +6759,91 @@ judged historically. Declared here before the study is run; no chain is fetched 
   - **A fail:** the module's paper arm for that strategy is the same losing rule item 31 found, now with
     the trades paper takes, and the redesign or retirement question returns to the user.
 
+### 68. MEIC's live rule on QQQ and NDX: a second symbol for the live loop
+
+*Source: the user, 2026-11-07, planning a live MEIC loop that trades more than one symbol: "lets
+backtest qqq and ndx", choosing each symbol's SPX-equivalent wing and the width its config gives it
+today, in the queue's normal order. MEIC paper ran QQQ and NDX for a few July 2026 sessions under other
+arms and retired them without a reading; no backtest has run either. Declared here before any of it is
+run.*
+
+- **Question:** does the rule live trades on SPX, `pm-200` entering once a day 14:00–14:30, earn after
+  costs on QQQ or NDX, so that a second symbol would add to the live loop rather than dilute it?
+- **Where the edge would live:** **premium**, the same claim as SPX's: a 16-delta 0DTE condor is paid
+  more than the moves that reach its shorts. The question is whether the payment survives a different
+  chain's spreads, strike spacing and, for QQQ, physical settlement.
+- **Look-alikes:** item 23 (the same rule on SPX, whose `live-1400` runs are this item's SPX reference);
+  items 43 and 50 (width on SPX); item 59 (an IWM condor at 45 days, a different rule).
+- **Rival explanations, each with its check:**
+  - *The width, not the symbol:* a 10-point NDX wing is a far narrower structure, relative to price,
+    than SPX's 10. **Check:** each symbol runs at its SPX-equivalent width (10 points scaled by price:
+    QQQ 1, NDX 40) and at today's config width (QQQ 5, NDX 10); each is judged on its own.
+  - *Costs on a wider market:* NDX's 0DTE spreads are wider than SPX's in points and as a share of
+    credit. **Check:** the verdict fill is the module's own (an eighth of each leg's spread from mid);
+    the convention's stress, halfway from mid to the natural fill, is reported beside it in the design
+    window; the arm's net must stay positive at 1.5× fees.
+  - *Physical settlement:* QQQ is American-style and physically settled, so a side held into the close
+    risks assignment. **Check:** the replay runs paper's own rule (QQQ force-closed from 15:30 with its
+    modelled exit friction and pin penalty); entries still open at the session's end are counted and
+    reported per arm, and any such entry is a fault, not a settlement.
+  - *Paying more by risking more:* **Check:** net over buying power reported beside SPX `live-1400`'s
+    over the same sessions.
+  - *The store's strike window:* **Check:** a coverage step first reports each symbol's sessions, its
+    strike spacing near spot and the share of hourly 16-delta shorts whose wing is quoted.
+  - *A calm span:* **Check:** positive in both time-halves.
+  - *Searching a grid:* **Check:** Holm across the four arms; the arms are fixed here.
+- **The structure:**
+  - Each arm is item 23's `live-1400`: the registry's `pm-200` (16 delta, per-side stop at 2× the whole
+    credit, 30-minute spacing, its credit floor and call-delta ceilings) with entries 14:00–14:30, so one
+    condor a session. `symbols` is set to the one symbol and `wing_width_points` to the arm's width.
+  - **Judged:** `q1` and `q5` on QQQ, `n40` and `n10` on NDX.
+  - **Reported, never judged:** each arm's stress-fill twin (design window only); `control`, which the
+    runner requires, pointed at the symbol; SPX `live-1400` from item 23's recorded runs.
+  - The VIX inputs stay VIX's: the delta band and the IV-rank proxy read the market's volatility, not
+    VXN or the ETF's own. A declared limit, not a tuning.
+- **Costs:** MEIC paper's own model: fees from `core.fees` per symbol, the module's slippage share,
+  stops filled under the replay's fill model; NDX cash-settled at the store's close; QQQ closed before
+  the bell as paper closes it.
+- **Measured:** each session's summed net per arm, in dollars at one condor; each session's buying power
+  per arm from the run's ledgers; the correlation of each arm's session nets with SPX `live-1400`'s.
+- **Window and sample:** the backtest's own windows over each symbol's wide 60 s vendor store
+  (`QQQ-60s-wide.db`, `NDX-60s-wide.db`, 40 strikes each side).
+  - **Design:** 2022-05-16 to 2025-06-30. **Holdout:** 2025-07-01 to 2026-10-12, run straight after the
+    design whatever it shows. It counts toward a pass only after a design pass.
+  - Only sessions with a same-day expiry exist for a symbol, so the early part of each window holds
+    fewer sessions than SPX's.
+  - Neither symbol has run on either window under this rule, so both are out of sample.
+  - **Both runs are provisional, and stay so:** MEIC validation has not unlocked, and these symbols
+    cannot unlock at all, since there is no paper record of them to validate against. The holdout
+    spends once per arm through `unvalidated_holdout`.
+  - Fewer than 100 sessions in a window is no verdict.
+- **Pass-or-fail rule**, per arm, all must hold:
+  - the arm's own mean session net above zero with a one-sided t above 2 (a session with no entry counts
+    at zero);
+  - Holm across the four arms;
+  - positive in each time-half of the window;
+  - still positive at **1.5× fees**;
+  - then the holdout: mean above zero with a one-sided t above 2.
+- **Declared limits (B11):** 60 s ticks; VIX stands in for each symbol's own volatility; strikes beyond
+  the stored 40 do not exist here; a stop fills under the fill model, not a recorded fill; QQQ's
+  exit friction is paper's model, never a measured assignment; the settlement print for NDX is the
+  store's close.
+- **Name split (B9):** does not apply; each symbol is judged on its own.
+- **Data:** two new stores, declared in `stores.STORES` and fetched by the research queue's
+  `fetch-sessions` with `dataset` QQQ and NDX (`store_tag` wide). `scripts/meic_symbols_item68.py --step
+  coverage`, then `--step study --window design|holdout`, builds a scratch MEIC arm registry per symbol
+  from the machine's and runs `cherrypick.backtest.runner`. Results go under the backtest data directory
+  only; this plan records the verdict.
+- **Decides:**
+  - **A pass:** a proposal to add that symbol to a multi-symbol live loop at a declared boundary, once
+    the loop exists and MEIC validation has unlocked on SPX, with the symbol's own Gate 0 attestation
+    and kill criteria derived from its run. For QQQ, only after the physical-settlement work (escalated
+    closes before the bell, a held-into-expiry state, an assignment reconcile).
+  - **A fail:** the symbol is not added; MEIC live stays on SPX alone.
+  - Either way the correlation and the net over buying power beside SPX are read with the verdict:
+    they say whether a passing symbol adds to SPX or repeats it.
+- **Result:** not yet run.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

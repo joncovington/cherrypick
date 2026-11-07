@@ -41,7 +41,11 @@ refused, never approximated silently):
   refused whole (live falls back to a different delta band without VIX; a replay must not).
 
 Refused: `advised:*` arms (a day's advice artifact decides them, and the replay has none), an arm
-that never trades SPX, an existing `--out`.
+that never trades the replayed symbol, an existing `--out`.
+
+`--symbol` (2026-11-07, item 68) replays another 0DTE dataset from a vendor store (QQQ, NDX); SPX is
+the default and the only symbol the recorder keeps. The VIX inputs stay VIX's: the arm's delta band
+and the IV-rank proxy read the market's volatility, not the symbol's own.
 
 `check` (`replay_check`) validates it against MEIC paper on the recorder era.
 """
@@ -65,6 +69,8 @@ from cherrypick.meic import db as meic_db
 from cherrypick.meic import paper, paper_loop, stabilization_gate
 
 SYMBOL = "SPX"
+#: Each replayable symbol's 0DTE root as the streamer spells a leg (`quotehistory.leg_symbol`).
+LEG_ROOTS = {"SPX": "SPXW", "NDX": "NDXP", "QQQ": "QQQ"}
 #: The first session the gex recorder kept quotes for.
 FIRST_SESSION = "2026-10-13"
 IV_RANK_LOOKBACK = 252
@@ -200,7 +206,11 @@ class ReplayDay:
         *,
         history_db: Path | str | None = None,
         delta_source: str | None = None,
+        symbol: str = SYMBOL,
     ):
+        if symbol not in LEG_ROOTS:
+            raise ValueError(f"no replay for {symbol!r}: one of {', '.join(LEG_ROOTS)}")
+        self.symbol = symbol
         self.day = day
         self.cfg = cfg
         # Which delta picks the strikes. A history run evaluates the rule as configured NOW, so its
@@ -208,22 +218,22 @@ class ReplayDay:
         # source that session actually ran with (`paper_loop.delta_source_for`), so it can match paper.
         self.delta_source = delta_source or cfg.get("delta_source", "stream")
         self.profiles = profiles
-        self.recorded = quotehistory.RecordedDay(SYMBOL, day, history_db=history_db)
+        self.recorded = quotehistory.RecordedDay(symbol, day, history_db=history_db)
         self.vol = vol_inputs(day, load_cboe("VIX"), load_cboe("VIX1D"))
         self.vix_at = intraday_vix(self.recorded.history_db, [s["ts"] for s in self.recorded.samples])
         lookback = int(cfg.get("regime_atr_lookback_days", 5))
-        trs = prior_true_ranges(self.recorded.history_db, SYMBOL, day, lookback)
+        trs = prior_true_ranges(self.recorded.history_db, symbol, day, lookback)
         self.atr = round(sum(trs) / len(trs), 4) if len(trs) >= lookback else None
         # The stabilization gate reads the same store the replay prices from, at each tick's time,
         # so a `stabilization_entry` arm replays its rule instead of waiting on a verdict nobody wrote.
         self.stabilization = stabilization_gate.wanted(
             {name: paper._merged_params(cfg, p) for name, p in profiles.items()}
         )
-        self.widths = paper.union_widths_for_symbol(SYMBOL, cfg, profiles)
-        self.extra_deltas = paper.union_short_deltas_for_symbol(SYMBOL, cfg, profiles)
+        self.widths = paper.union_widths_for_symbol(symbol, cfg, profiles)
+        self.extra_deltas = paper.union_short_deltas_for_symbol(symbol, cfg, profiles)
 
     def snapshot(self, sample: dict, when: datetime) -> dict:
-        """`paper_loop.run_iteration`'s snapshot for SPX at `when`, or `{"ok": False, "reason": ...}`."""
+        """`paper_loop.run_iteration`'s snapshot for the symbol at `when`, or `{"ok": False, "reason": ...}`."""
         spot = sample.get("underlying_price")
         if not spot:
             return {"ok": False, "reason": "no_spot_price"}
@@ -235,7 +245,9 @@ class ReplayDay:
                     {
                         "strike_price": float(strike),
                         "option_type": right,
-                        "streamer_symbol": quotehistory.leg_symbol(SYMBOL, expiration, right, float(strike)),
+                        "streamer_symbol": quotehistory.leg_symbol(
+                            self.symbol, expiration, right, float(strike), root=LEG_ROOTS[self.symbol]
+                        ),
                         "bid": q.get("bid"),
                         "ask": q.get("ask"),
                         "mid": q.get("mid"),
@@ -279,12 +291,12 @@ class ReplayDay:
         extra = {}
         if self.stabilization:
             extra["stabilization_verdicts"] = stabilization_gate.all_verdicts(
-                SYMBOL, self.day, when, trail_path=self.recorded.history_db
+                self.symbol, self.day, when, trail_path=self.recorded.history_db
             )
         return {
             **extra,
             "ok": True,
-            "symbol": SYMBOL,
+            "symbol": self.symbol,
             "date": self.day,
             "now_et": when.strftime("%H:%M"),
             "expiration": expiration,
@@ -307,7 +319,7 @@ class ReplayDay:
         }
 
 
-def replay_profiles(arms: list[str]) -> tuple[dict, dict]:
+def replay_profiles(arms: list[str], symbol: str = SYMBOL) -> tuple[dict, dict]:
     """(base config, {arm: profile}) for `arms`, from `$MEIC_CONFIG` / `$MEIC_RISK_CONFIG` or the
     home's files. Refuses what the replay cannot run honestly."""
     cfg = paper.load_base_config()
@@ -320,9 +332,9 @@ def replay_profiles(arms: list[str]) -> tuple[dict, dict]:
             raise ValueError(f"unknown arm {arm!r}")
         params = paper._merged_params(cfg, registry[arm])
         syms = [s.upper() for s in params.get("symbols") or cfg.get("symbols") or [SYMBOL]]
-        if SYMBOL not in syms:
+        if symbol not in syms:
             raise ValueError(
-                f"arm {arm!r} does not trade {SYMBOL} (symbols {syms}); nothing is recorded for it"
+                f"arm {arm!r} does not trade {symbol} (symbols {syms}); nothing is recorded for it"
             )
         out[arm] = registry[arm]
     return cfg, out
@@ -337,16 +349,18 @@ def replay_session(
     settle_price: float | None = None,
     tick_seconds: float = DEFAULT_TICK_SECONDS,
     delta_source: str | None = None,
+    symbol: str = SYMBOL,
 ) -> dict:
     """Replay `day` for `arms` (default control) into a fresh scratch ledger, ticking every
-    `tick_seconds`, then settle at `settle_price`. `delta_source` as `ReplayDay` takes it."""
-    if history_db is None and day < FIRST_SESSION:
-        return {"ok": False, "error": f"no quote history before {FIRST_SESSION}"}
+    `tick_seconds`, then settle at `settle_price`. `delta_source` and `symbol` as `ReplayDay` takes
+    them; a symbol other than SPX needs a `history_db`, since the recorder keeps SPX only."""
+    if history_db is None and (day < FIRST_SESSION or symbol != SYMBOL):
+        return {"ok": False, "error": f"no quote history for {symbol} on {day} without a history db"}
     arms = arms or ["control"]
-    cfg, profiles = replay_profiles(arms)
-    replay = ReplayDay(day, cfg, profiles, history_db=history_db, delta_source=delta_source)
+    cfg, profiles = replay_profiles(arms, symbol)
+    replay = ReplayDay(day, cfg, profiles, history_db=history_db, delta_source=delta_source, symbol=symbol)
     if not replay.recorded.samples:
-        return {"ok": False, "error": f"no recorded samples for {SYMBOL} on {day}"}
+        return {"ok": False, "error": f"no recorded samples for {symbol} on {day}"}
     if not replay.vol:
         return {"ok": False, "error": f"no VIX open for {day} in {cboe_path('VIX')}"}
     path = Path(ledger_path)
@@ -375,7 +389,7 @@ def replay_session(
         if settle_price is not None:
             when = datetime.fromisoformat(f"{day}T{SETTLEMENT_TIME}").replace(tzinfo=ET)
             snap = {
-                "symbol": SYMBOL,
+                "symbol": symbol,
                 "date": day,
                 "now_et": SETTLEMENT_TIME,
                 "expiration": day,
@@ -390,7 +404,7 @@ def replay_session(
     return {
         "ok": True,
         "day": day,
-        "symbol": SYMBOL,
+        "symbol": symbol,
         "arms": arms,
         "ticks": n_ticks,
         "samples": len(replay.recorded.samples),
@@ -415,6 +429,7 @@ def _run(args) -> dict:
             history_db=args.history_db,
             settle_price=args.settle_price,
             tick_seconds=args.tick_seconds,
+            symbol=args.symbol,
         )
     except (ValueError, FileExistsError) as exc:
         out = {"ok": False, "error": str(exc)}
@@ -467,6 +482,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--history-db", default=None, help="a history in the recorder's schema (default: the recorder's)"
     )
     run.add_argument("--settle-price", type=float, default=None)
+    run.add_argument(
+        "--symbol",
+        default=SYMBOL,
+        choices=sorted(LEG_ROOTS),
+        help="the 0DTE dataset replayed (default SPX; another needs --history-db)",
+    )
     run.add_argument(
         "--tick-seconds",
         type=float,
