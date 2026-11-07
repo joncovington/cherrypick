@@ -326,7 +326,7 @@ describe("the portfolio layout", () => {
     expect(html).toContain("tc-card");
     expect(html).toContain("1.58 cr");
     expect(html).toContain("natural 0.29 cr");
-    expect(html).toContain('is-sell">sell</span><span>1 × XSP 2026-12-18 785C');
+    // The order chain's style: STO / BTO, the expiry, strike and mid; the quote right-aligned.
     expect(html).toContain("in band after");
     // The one manage could not size is said, not drawn as a card.
     expect(html).toContain("buying-power cap");
@@ -505,7 +505,7 @@ describe("IncomeCard", () => {
     expect(html).toContain("+$494.00"); // cash: 2 contracts x $247 received
     expect(html).toContain("$506.00"); // risk: 2 x $253
     // Each fit is a position-style card: its legs at the fitted size, what it does to the book, the next cap.
-    expect(html).toContain('is-sell">sell</span><span>2 × AAPL 11/20 345C');
+    expect(html).toContain('is-sell">STO</span><span>2 2026-11-20 345C @ 3.50</span><span class="tc-leg-quote">3.4 / 3.6 · Δ 0.45</span>');
     expect(html).toContain("delta +3.0 SPY sh");
     expect(html).toContain("theta +$1.86 per day");
     expect(html).toContain("next stops at: per-trade risk");

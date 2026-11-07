@@ -9287,3 +9287,44 @@ button.chip[aria-pressed][data-hue="special"],
     padding-left: 12px;
   }
 }
+/* A trade card's leg: its quote and delta right-aligned and muted, so the legs read in the order chain's columns. */
+.tc-leg-quote {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+/* A leg stays on one line; its quote drops under it, right-aligned, when the card is too narrow for both. */
+.pos-card.tc-card .pos-leg {
+  flex-wrap: wrap;
+}
+.pos-card.tc-card .pos-leg > span:nth-child(2) {
+  white-space: nowrap;
+}
+
+/* What a trade needs (components/ActionBlock.tsx): an amber rule down its side, the rule and its
+   confidence, why, and the proposed order under it. */
+.action-block {
+  display: grid;
+  gap: 8px;
+  padding: 9px 12px;
+  border-left: 3px solid var(--warn);
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--warn) 6%, var(--surface-sunken));
+}
+.action-block-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.action-block-why {
+  margin: 0;
+  font-size: 12.5px;
+}
+@media (max-width: 560px) {
+  .fs-panel {
+    max-height: 86vh !important;
+  }
+}
