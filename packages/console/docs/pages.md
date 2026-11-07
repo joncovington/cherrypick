@@ -379,8 +379,19 @@ from one `GET /api/backtest/summaries?ids=` read for the board (`read summaries`
 running net as a thin line, the arm with the highest mean drawn over the rest, and that arm's
 "$xx.xx / session" with "best of N" (control left out of both while it trades on another scale,
 and never the arm named while another arm has a mean). The board's words never wait on it. Group
-chips filter (`?group=`). A tile opens a lightbox (`?study=`, so back closes it; Esc,
-← → and a swipe step through the tiles in layout order) with four tabs: overview (the decision, a
+chips filter (`?group=`); **This week** (`?group=week`, 2026-11-07, `pages/Backtest/StudyWeek.tsx`,
+`GET /api/backtest/studies/digest?since=` → `services/studyReportBridge.ts` → `cherrypick.cli
+study-report --since`) shows the studies with a result or a finished step since Monday, newest
+first, under their verdict counts and the ones that gave no reading; the counts are the
+orchestrator's. A tile opens a lightbox (`?study=`, so back closes it; Esc,
+← → and a swipe step through the tiles in layout order) with five tabs. **report** (2026-11-07,
+`pages/Backtest/StudyReport.tsx`, `GET /api/backtest/studies/:study/report` → `study-report
+--study`, fetched on open): what the figures say, what to do next (each suggestion with the figure
+that prompted it), the gates the study uses in plain words, every arm charted by window on the
+measure picked (gain over baseline first, then gain where both entered, net per session, net per
+trade, return on buying power, entries a session) with its t-statistic, and the arm table. Every
+sentence and suggestion is the orchestrator's (`studyreport.py`, fixed rules, never a model); the
+tab draws and prints. The slug and date are checked before anything spawns. The others: overview (the decision, a
 stale note, and the run's figures, fetched on open from the newest result file that names a run:
 each arm's net a session, sessions, trades a session and verdict, and each arm's running net, legend
 entries hiding a line so one wide arm cannot flatten the rest; control starts hidden, with a note, when

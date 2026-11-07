@@ -20,6 +20,8 @@ import { fmtCash, fmtCount } from "../../lib/format";
 import { useRun } from "./BacktestPage";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
 import { GridBars } from "./GridBars";
+import { ReportTab } from "./StudyReport";
+import { WeekSummary, mondayOf, useStudyDigest } from "./StudyWeek";
 import { TaskDetail, ago, etMs, etNowMs, queuePollMs, resultLine, stamp } from "./QueueTab";
 import { VERDICT_STATUSES, resultLabel, statusWord, studyHref, verdictChip } from "./studyIndex";
 
@@ -633,10 +635,11 @@ function StudyQueue({ row, nowMs }: { row: StudyRow; nowMs: number }) {
 
 // --------------------------------------------------------------------------- the lightbox
 
-export type DialogTab = "overview" | "declaration" | "grid" | "queue";
+export type DialogTab = "overview" | "report" | "declaration" | "grid" | "queue";
 
 export const DIALOG_TABS: LightboxTab<DialogTab>[] = [
   { id: "overview", label: "Overview" },
+  { id: "report", label: "Report" },
   { id: "declaration", label: "Declaration" },
   { id: "grid", label: "Grid" },
   { id: "queue", label: "Queue" },
@@ -765,7 +768,7 @@ function QueueTab({ row, nowMs }: { row: StudyRow; nowMs: number }) {
   );
 }
 
-/** One study in the lightbox: a header, four tabs, and the way to the next study. */
+/** One study in the lightbox: a header, five tabs, and the way to the next study. */
 export function StudyDialogBody({
   row,
   tab,
@@ -811,6 +814,7 @@ export function StudyDialogBody({
       onClose={onClose}
     >
       {tab === "overview" ? <OverviewTab row={row} /> : null}
+      {tab === "report" ? <ReportTab row={row} /> : null}
       {tab === "declaration" ? <DeclarationTab row={row} /> : null}
       {tab === "grid" ? <GridTab row={row} /> : null}
       {tab === "queue" ? <QueueTab row={row} nowMs={nowMs} /> : null}
@@ -837,12 +841,29 @@ function isGroup(v: string | null): v is StudyGroup {
   return v !== null && (GROUP_ORDER as string[]).includes(v);
 }
 
-export function GroupChips({ board, group, onPick }: { board: StudiesBoard; group: StudyGroup | null; onPick: (g: StudyGroup | null) => void }) {
+/** `?group=week`: the studies active since Monday, beside the board's own groups. */
+export const WEEK = "week";
+export type BoardView = StudyGroup | typeof WEEK;
+
+export function GroupChips({
+  board,
+  group,
+  onPick,
+  week = false,
+}: {
+  board: StudiesBoard;
+  group: StudyGroup | null;
+  onPick: (g: BoardView | null) => void;
+  week?: boolean;
+}) {
   const count = (g: StudyGroup) => board.rows.filter((r) => r.group === g).length;
   return (
     <div className="history-controls study-chips" role="group" aria-label="Show studies">
-      <button type="button" className={group === null ? "chip chip-ok" : "chip"} aria-pressed={group === null} onClick={() => onPick(null)}>
+      <button type="button" className={group === null && !week ? "chip chip-ok" : "chip"} aria-pressed={group === null && !week} onClick={() => onPick(null)}>
         All {board.rows.length}
+      </button>
+      <button type="button" className={week ? "chip chip-ok" : "chip"} aria-pressed={week} onClick={() => onPick(WEEK)}>
+        This week
       </button>
       {GROUP_ORDER.filter((g) => count(g) > 0).map((g) => (
         <button key={g} type="button" className={group === g ? "chip chip-ok" : "chip"} aria-pressed={group === g} onClick={() => onPick(g)}>
@@ -861,6 +882,13 @@ export function openIndex(board: StudiesBoard, group: StudyGroup | null, study: 
   const shown = laidOut(orderedRows(board, group));
   const rows = shown.some((r) => r.study === study) ? shown : laidOut(orderedRows(board, null));
   return { rows, index: rows.findIndex((r) => r.study === study) };
+}
+
+/** This week's stepping order: the week's tiles as laid out, or every study when the open one is not among them. */
+export function weekIndex(rows: StudyRow[], board: StudiesBoard, study: string | null): { rows: StudyRow[]; index: number } {
+  const shown = laidOut(rows);
+  const all = shown.some((r) => r.study === study) ? shown : laidOut(orderedRows(board, null));
+  return { rows: all, index: all.findIndex((r) => r.study === study) };
 }
 
 /** The tiles in the order the mosaic lays them out: the large tile first, then the rest. */
@@ -904,17 +932,24 @@ export function StudyCards({ board }: { board: StudiesBoard }) {
   const [params, setParams] = useSearchParams();
   const lightbox = useOpenParam("study");
   const groupParam = params.get("group");
+  const week = groupParam === WEEK;
   const group = isGroup(groupParam) ? groupParam : null;
-  const rows = orderedRows(board, group);
+  const digest = useStudyDigest(week ? mondayOf(new Date(etNowMs())) : null);
+  const digestRows = digest.data?.ok ? digest.data.data : null;
+  // This week: the digest's studies, in its order (newest first); the board's groups otherwise.
+  const rows = week
+    ? (digestRows?.studies ?? []).map((d) => board.rows.find((r) => r.study === d.study)).filter((r): r is StudyRow => r !== undefined)
+    : orderedRows(board, group);
   // One read for the whole board, so picking a group never asks again.
   const summaries = useRunSummaries(figuresRunIds(board.rows));
   // The lightbox steps in the order the tiles are laid out: the large tile first.
-  const { rows: stepRows, index } = openIndex(board, group, lightbox.open);
+  const { rows: stepRows, index } = week ? weekIndex(rows, board, lightbox.open) : openIndex(board, group, lightbox.open);
   return (
     <>
       <GroupChips
         board={board}
         group={group}
+        week={week}
         onPick={(g) => {
           const next = new URLSearchParams(params);
           if (g === null) next.delete("group");
@@ -922,6 +957,7 @@ export function StudyCards({ board }: { board: StudiesBoard }) {
           setParams(next, { replace: true });
         }}
       />
+      {week ? <WeekSummary digest={digest.data} loading={digest.isLoading} onOpen={lightbox.show} /> : null}
       <StudyTiles rows={rows} nowMs={etNowMs()} onOpen={lightbox.show} summaries={summaries.data?.ok ? summaries.data.data : null} />
       {index >= 0 ? (
         <StudyDialog rows={stepRows} index={index} onStep={(to) => lightbox.step(stepRows[to]?.study ?? "")} onClose={lightbox.close} />
