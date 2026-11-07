@@ -2378,6 +2378,49 @@
       "retest": null,
       "retests": [],
       "outcome": null
+    },
+    {
+      "id": 63,
+      "study": "item63",
+      "title": "A 7-day time stop on item 59's condor, paired against its own exit",
+      "status": "declared",
+      "legacy": false,
+      "setup": "short-dated-management",
+      "side": "neutral",
+      "structure": "iron-condor",
+      "window": "monthly",
+      "measure": "per cycle, the net of item 59's condor closed at half its credit or else at 7 days, less its net under item 59's own exit (half its credit or 21 days), on the same entry; $ at one contract",
+      "expected": "a positive paired difference, with the stop arm itself positive after costs; the declaration expects a fail",
+      "sample": "item 59's: design cycles entered 2016-01-01..2021-12-31 (~70 pairs); holdout 2022-01-01..2026-11-06 read only after a design pass; < 50 pairs or > 5% of entries without an exit mark in either arm = no verdict",
+      "rule": "paired difference: one-sided t > 2 and positive in both design time-halves; the stop arm's own mean positive at 1.5x costs; then the holdout with the same checks",
+      "mechanism": "an early fixed exit gives up the theta of weeks three to six and cuts the time exposed to a large move; which is larger decides it",
+      "rivals": [
+        {
+          "explanation": "selection, not timing",
+          "check": "the stop is fixed in advance and paired against item 59 on the same entry"
+        },
+        {
+          "explanation": "a calm span",
+          "check": "the paired difference positive in both design time-halves; exits by kind and days held reported"
+        },
+        {
+          "explanation": "a better loser",
+          "check": "the stop arm's own mean positive at 1.5x costs"
+        },
+        {
+          "explanation": "the tail",
+          "check": "each arm's worst trade reported"
+        },
+        {
+          "explanation": "optimistic fills",
+          "check": "verdict at the working price; mid and natural reported"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#63-a-7-day-time-stop-on-item-59s-condor-paired-against-its-own-exit",
+      "results": [],
+      "retest": null,
+      "retests": [],
+      "outcome": null
     }
   ],
   "rule_changes": []
