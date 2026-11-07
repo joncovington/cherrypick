@@ -6097,6 +6097,111 @@ untouched sample of the same trade. Declared before any weekly path is fetched.*
   - **A fail:** item 46's pass is read as a lone corner, and the variance-premium question closes for
     these tenors.
 
+### 58. The closing fly: a 0DTE SPX iron fly sold at 15:55 and held to the settlement
+
+*Source: a review of third-party community backtests on 2026-11-07 (kept local, per the source's
+terms; none of its figures enter this repo). One family of tests recurred across symbols, wing
+widths, authors and years once its pricing artifacts were removed: a short at-the-money 0DTE fly or
+narrow condor entered in the last five minutes and held to the close. Nothing in this plan enters
+later than 15:50. The user approved the test on 2026-11-07. Declared here before any of it is run.
+No new fetch.*
+
+- **Question:** does selling a 0DTE SPX iron fly (or a condor one strike wide) from the 15:55 quote,
+  held to that day's settlement, earn after costs?
+- **Where the edge would live:** the **premium**, in one place: the last five minutes of the
+  session, including the closing auction. The hypothesis is that the 15:55 at-the-money price carries
+  more variance than the five minutes deliver. Not a signal.
+- **Look-alikes:** `cherrypick hypotheses --similar` on setup `entry-time`, neutral, `iron-condor`,
+  0DTE names item 24 (MEIC's entry slot, 12:00 to 13:30 against 14:00, failed). That item, item 9
+  (a 13:45 fly held to settlement, failed) and item 10 (a prior-close pin fly, failed) all read the
+  same day's premium hours earlier. Items 19 and 22 entered at 15:50 but held across the night. None
+  sold the last five minutes alone, so this is not a retest of a rejected row.
+- **Rival explanations, each with its check:**
+  - *Fills:* at-the-money 0DTE quotes at 15:55 were several dollars wide in 2022 and are a few
+    ticks wide now. **Check:** the verdict is at the working price (halfway from mid to natural);
+    mid, mid − $0.05 and natural are reported beside it.
+  - *Fees:* four legs and up to two $5 settlement events against a five-minute premium. **Check:**
+    still positive at 1.5× costs.
+  - *The settlement print:* before 2024-05-13 the store's SPX close is the vendor's last underlying
+    print, not the official close. A five-minute trade can be decided by that gap. **Check:** the
+    mean on the sessions settled at the official close (`thetadata:index_eod`) must be positive; it
+    is a pass check, not a description.
+  - *Drift:* **Check:** nets split by the close's direction from the entry spot.
+  - *A calm span:* **Check:** both time-halves positive; results by VIX band (the prior session's
+    close) and by year.
+  - *The tail:* **Check:** the five worst sessions reported with the verdict; the bootstrapped
+    drawdown beside a pass.
+- **The structure (declared by us, nothing tuned):**
+  - SPXW expiring the same day, priced from the **15:55 ET** one-minute quote, spot from the same
+    minute's trail.
+  - **Arm `fly`:** short the call and the put at the listed strike nearest spot; long the call 10
+    points above and the put 10 points below.
+  - **Arm `condor`:** short the highest put at or below spot − 1 and the lowest call at or above
+    spot + 1; each long 10 points further out.
+  - One contract a structure. All four legs must be quoted two-sided; a session missing a leg, the
+    entry minute (early closes) or a short strike is skipped and counted, by reason.
+  - No stop, no adjustment, nothing closed: the structure settles at that day's SPX close.
+  - The two arms are Holm-adjusted together.
+- **Costs:** the suite's tastytrade schedule (`cherrypick.core.fees`), as items 19 and 22: the
+  four-leg open fee and $5 per in-the-money settlement symbol.
+- **Measured:** each arm's net per session in dollars at one contract.
+- **Window and sample:**
+  - **Design:** 2022-05-16 to 2024-12-31, about 650 sessions. Read for the verdict.
+  - **Holdout:** 2025-01-01 to 2026-11-06, about 460 sessions, the same rules unchanged. It is read
+    **only after a design pass**.
+  - Fewer than 100 entered sessions, or fewer than 50 settled at the official close, is no verdict.
+- **Pass-or-fail rule**, per arm, all must hold:
+  - mean net per session above zero, with a one-sided t above 2 (one session is one observation);
+  - Holm across the two arms;
+  - each time-half of the design window positive;
+  - still positive at **1.5× costs**;
+  - positive on the sessions settled at the official close;
+  - then the holdout, with the same checks.
+- **Minimum detectable effect (B12):** from the design window's own spread of session nets, recorded
+  in the local result before the holdout is read. No comparable past result prices a five-minute
+  hold, so none is used to plan this one.
+- **Declared limits (B11):**
+  - settlement uses `SPX-60s.db`'s `daily_closes`: the official close from 2024-05-13 and the
+    vendor's last underlying print before; the two are reported apart and the official set is a
+    check;
+  - the monthly-expiry label is the calendar's third Friday, so an expiry moved to Thursday by a
+    holiday is labelled a plain day;
+  - the VIX band uses the prior session's close, known at entry; nothing reflects only today's state.
+- **Declared descriptions, never filters:** net by weekday, Friday against the rest, the
+  monthly-expiry Friday, the month's last session, VIX band, settlement source, the close's
+  direction, year, and how many legs finish in the money. They are hypotheses for a later item,
+  not reasons to re-choose this one.
+- **Name split (B9):** does not apply; one symbol.
+- **Robustness report beside a pass (B13), never used to re-choose:**
+  - neighbours: entry at 15:50, 15:53 and 15:57; wings 5, 15 and 20;
+  - costs at 1.5× and 2×; the bootstrapped drawdown and losing streak; the largest size inside a
+    declared 10% of the account, passed at run time.
+- **Data:** no new store. `scripts/close_fly_item58.py` reads `SPX-60s.db` (the 0DTE chain at one
+  minute, its spot trail and the daily closes) and Cboe's VIX history. Results go under the backtest
+  data directory only; this plan records the verdict.
+- **Decides:**
+  - **A pass:** a proposal for a paper arm, with the robustness report and a fill study on the live
+    quote recorder before any size. The structure is cash-settled and defined-risk.
+  - **A fail or no verdict:** closes the closing fly as specified. The same structure on QQQ or SPY
+    is not pursued: those settle in shares, and the overnight assignment the backtests left out is
+    a risk this item cannot price.
+- **Result (2026-11-07): design pass, holdout fail, both arms; the closing fly is closed as
+  specified.**
+  - **Design window:** both arms pass every check, the condor by a wide margin. A leak check run
+    before the holdout found the 15:55 spot and quotes synchronous (put-call parity at the centre
+    strike matches that minute's spot, not a later one). The store records no quote age, so staleness
+    can't be checked directly. The condor's design result still holds at the full natural fill.
+  - **Holdout, read as declared after the design pass:** the fly's mean is negative. The condor's mean
+    stays positive in both halves and at 1.5× costs, but its t is far below the bar, and at the
+    natural fill it is about zero. The edge the design measured is much smaller in 2025-26.
+  - **Descriptions, never filters,** and the same sign in both windows: Fridays beat the other days,
+    the monthly-expiry Friday most, and the month's last session is weakest. In the holdout the condor
+    paid only with the prior VIX at 20 or above. The holdout is spent, so any of these needs a new
+    declaration with a forward read, not a re-cut of this history.
+  - Every figure is in the local result:
+    `~/.cherrypick/data/backtest/results/research/item58/study-2022-05-16-2024-12-31.json` and
+    `.../item58/study-2025-01-01-2026-11-06.json`.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:
