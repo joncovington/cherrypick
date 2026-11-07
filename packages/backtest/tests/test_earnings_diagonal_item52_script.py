@@ -611,3 +611,14 @@ def test_an_open_interest_day_the_vendor_has_no_data_for_counts_as_answered():
     # A server error is not an answer: the study still waits for that day.
     planned = {"chains": [], "oi": {"2024-01-10": ["AAA", "CCC", "DDD"]}}
     assert s52.missing(planned, {}, done) == {"chains": [], "oi": {"2024-01-10": ["DDD"]}}
+
+
+def test_the_result_file_carries_each_arms_word_for_the_board():
+    arms = {
+        "A-call": {"verdict": "fail", "net": {}},
+        "B2|cheap": {"verdict": "no verdict", "why": "few trades"},
+    }
+    assert s52.verdict_words(arms) == {
+        "A-call": {"verdict": "fail"},
+        "B2|cheap": {"verdict": "no verdict", "why": "few trades"},
+    }

@@ -981,6 +981,16 @@ def back_month_change(recs: list[dict], conn, bars: dict) -> dict:
     return {w: {k: {"n": len(v), "mean_change": _mean(v)} for k, v in d.items()} for w, d in out.items()}
 
 
+def verdict_words(arms: dict) -> dict:
+    """Each arm's word as `evaluate` wrote it, with the reason where it gave one: the result file's
+    top-level `verdict`, which the studies board and the register read."""
+    out = {}
+    for name, arm in arms.items():
+        why = arm.get("why")
+        out[name] = {"verdict": arm.get("verdict"), **({"why": why} if why else {})}
+    return out
+
+
 def cmd_study(args) -> int:
     events, _doc, reports, span = _inputs()
     chains, oi = _stores()
@@ -1006,9 +1016,12 @@ def cmd_study(args) -> int:
     divs = {n: next((raw[s] for s in sorted(e31._spellings(n)) if s in raw), None) for n in names}
     iv_hist = load_iv_history(names, bars, args.host, args.port)
     trades, recs, info = study(chains, oi, events, reports, span, status, bars, divs, iv_hist)
+    arms = evaluate(trades)
     result = {
         **info,
-        "arms": evaluate(trades),
+        "arms": arms,
+        # The studies board reads a top-level word per arm (the declaration template, 2026-10-29).
+        "verdict": verdict_words(arms),
         "back_month_iv_change": back_month_change(recs, chains, bars),
         "names_per_year": {
             str(y): len({r["e"]["symbol"] for r in recs if r["e"]["report_date"].startswith(str(y))})

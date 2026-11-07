@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import re
 
-MEAN_KEYS = ("mean_net", "mean_bp", "mean", "net_per_trade", "mean_pct", "mean_return")
+#: Where a study writes an arm's or a test's figure: a mean, or a test's `estimate` (item 54's tests).
+MEAN_KEYS = ("mean_net", "mean_bp", "mean", "net_per_trade", "mean_pct", "mean_return", "estimate")
 STAT_PATHS = ("own", "net", "paired", "diff", "boot", "")
 #: Top-level blocks that are never a table of arms.
 NOT_ARMS = frozenset({
@@ -542,14 +543,20 @@ def _rate(r: dict) -> str:
     return f"{r['entry_rate'] * 100:.0f}% of sessions"
 
 
+def step_base(step: str | None) -> str:
+    """A step's name less a retry's number: `study-3` and `fetch-chains-2` are retries of `study` and
+    `fetch-chains`, the way a re-queued row is named when its first run is kept."""
+    return re.sub(r"-\d+$", "", step or "")
+
+
 def failed_steps(tasks: list[dict]) -> list[str]:
-    """Queue steps whose latest run failed with no later done run of the same step."""
+    """Queue steps whose latest run failed with no later done run of the same step or a retry of it."""
     out = []
     for t in tasks:
         if t.get("status") != "failed":
             continue
         later = any(
-            u.get("step") == t.get("step")
+            step_base(u.get("step")) == step_base(t.get("step"))
             and u.get("status") == "done"
             and (u.get("finished_at") or "") > (t.get("finished_at") or "")
             for u in tasks
