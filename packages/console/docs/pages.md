@@ -644,28 +644,42 @@ P&L net either way (`?show=`, `?pnl=asc`), a trade with no net last; a card open
 lightbox (`?trade=`) with the whole chain, every leg, each order's fees and the chain's running total
 (the sum of its own signed cash, nothing re-priced), and the evaluation's detail. The ruleset follows;
 `portfolio` is
-the account as one book (`pages/Live/PortfolioCards.tsx`). Both open with the same evaluation
-header (its caveats qualify both) and the same six-tile account strip. The portfolio includes
-dials for beta-weighted delta and theta against their bands, the break-even move, the stress line,
-per-name delta and theta, the guidance, a sized XSP hedge, and (from 2026-10-19) the check against the
-broker's model: manage's `broker_check`, our delta and theta beside the same sums on the broker's own
+the account as one book. Both open with the same evaluation
+header (its caveats qualify both) and the same six-tile account strip. **Since 2026-11-06 the portfolio
+tab is laid out by question** (`pages/Live/PortfolioLayout.tsx`): what needs my attention (the
+guidance), am I paid enough (an income card, theta's dial beside the premium pace's target, and where
+the theta comes from), which way am I leaning (a direction card, delta's dial with what 1% is worth and,
+while delta is outside its band, the sized hedge's headline, and where the delta comes from), what if
+it moves (the stress tiles with break-even and the small risk graph, then the risk matrix), do I have
+room (a buying-power dial with your limits stacked under it, and what expires when), and what could I
+add (one card, a tab each for the income trades and the time spreads). Cards in a row share its height
+and fold from two a row to one by the width the tab has (container queries). **What explains or
+audits a card opens from it as a lightbox** (`pages/Live/PortfolioBox.tsx`, the Backtest page's
+`CardLightbox`, wide; `?pf=<id>` in the URL, ← → step through them): the premium pace by month, the
+bands over time (all three strips or one), every name's delta or theta, the check against the
+broker's model (its button carries the delta gap), the sized hedges, the full risk graph, your limits
+and the ruleset, and each expiry's trades as position cards that open on the positions tab. A trade not
+held yet (a hedge, an income trade or a time spread that fits) is a position-style card
+(`pages/Live/TradeCard.tsx`): legs as the order that would open it, the cash, the loss the per-trade
+cap is applied to as its bar, and what it does to the book. The check against the
+broker's model is manage's `broker_check`, our delta and theta beside the same sums on the broker's own
 greeks with the gap, untoned because neither side is the right answer; legs expiring today are
 manage's own `expiring` line beneath it, never in its totals. **Every band and every in/out flag is
 the reading's `bands`**: the dial draws manage's band and takes amber only from its `inside` flag,
 never from where the needle sits (`web/test/managePortfolioCards.test.tsx` shows a needle inside its
 band drawn as outside when the flag says so). Long and short delta carry no tone. An evaluation
 written before the reading has `portfolio: null` and draws no cards. **Premium pace** (2026-10-30,
-`pages/Live/PremiumPace.tsx`) follows the guidance: manage's `premium` (theta against its target on the
+`pages/Live/PremiumPace.tsx`, the income card's lightbox since 2026-11-06): manage's `premium` (theta against its target on the
 theta band's scale, this week, six months of collected beside kept with a foot row that adds them up,
 and what manage left out). It draws nothing for an evaluation written before it existed or for an
 account that is not the broker tool's designated one. **Bands over time** (2026-10-30,
-`pages/Live/BandsHistory.tsx`, `GET /api/manage/bands` → `readManageBandsHistory`) sits under the
-guidance: every stored evaluation's delta, theta and buying-power reading against that session's
+`pages/Live/BandsHistory.tsx`, `GET /api/manage/bands` → `readManageBandsHistory`) is the "over time"
+lightbox on the income, direction and room cards: every stored evaluation's delta, theta and buying-power reading against that session's
 own band (the delta band moves with theta, the buying-power cap with the VIX), amber from manage's
 flag only; one point per session, its last run. Both tabs' header shows manage's
 `pre_open` as a red line (a snapshot taken before 09:30 ET reads yesterday's close and leaves today's
-expiring legs unpriced). The contribution cards sum the names past their twelve into one "others"
-row, so the rows add up to the book. **Live marks** (2026-10-22, `readers/manageLive.ts`,
+expiring legs unpriced). The contribution cards sum the names past their five into one "others"
+row, so the rows add up to the book; the lightbox lists every name. **Live marks** (2026-10-22, `readers/manageLive.ts`,
 `/api/manage/live`, `pages/Live/LiveMarks.tsx`) re-price the NEWEST evaluation's legs from the stream
 cache every five seconds: per-trade live P&L and capture on the evaluation's own basis, fees and
 capture denominator, and an "at TP" / "at stop" chip against the evaluation's own levels (the

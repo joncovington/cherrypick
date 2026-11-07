@@ -118,12 +118,15 @@ export function CardLightbox({
   onStep,
   onClose,
   children,
+  wide = false,
 }: {
   count: number;
   index: number;
   onStep: (to: number) => void;
   onClose: () => void;
   children: (nav: { prev: () => void; next: () => void; position: string }) => ReactNode;
+  /** The portfolio tab's wider panel, for trade cards side by side. */
+  wide?: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const touch = useRef<{ x: number; y: number } | null>(null);
@@ -173,7 +176,7 @@ export function CardLightbox({
       <button type="button" className="study-dialog-backdrop" aria-label="Close" tabIndex={-1} onClick={onClose} />
       <div
         ref={panel}
-        className="study-dialog"
+        className={wide ? "study-dialog study-dialog-wide" : "study-dialog"}
         role="dialog"
         aria-modal="true"
         aria-labelledby="study-dialog-title"

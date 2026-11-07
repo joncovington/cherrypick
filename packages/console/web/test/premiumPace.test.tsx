@@ -34,7 +34,7 @@ function render(p: ManagePremium | null): string {
 describe("PremiumPaceCard", () => {
   it("states theta against manage's target", () => {
     const html = render(premium());
-    expect(html).toContain("theta $19.00 a day against a target of $20.00 (0.20% of net liq)");
+    expect(html).toContain("theta $19.00 per day against a target of $20.00 (0.20% of net liq)");
     expect(html).toContain("95% of target");
   });
 

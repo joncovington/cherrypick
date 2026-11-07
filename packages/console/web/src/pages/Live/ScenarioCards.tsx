@@ -5,6 +5,8 @@ import { Card } from "../../components/DataTable";
 import { DivergingBars } from "../../components/grid/DivergingBars";
 import { fmtCash } from "../../lib/format";
 import { BandChip, BandDial, asPercent } from "./PortfolioCards";
+import { dayMonth } from "./TradeCard";
+import { BoxButton, BoxButtons, expiryBoxId } from "./portfolioBoxContext";
 
 /**
  * The book's scenarios, drawn: buying power against its VIX-scaled cap, the expiry ladder with the
@@ -86,16 +88,29 @@ export function LadderCard({ ladder }: { ladder: ManageLadder | null }) {
           {e.byDate.map((d) => `${d.date} ${wholeCash(d.downside)} (${d.trades.join(", ")})`).join(" · ")}
         </p>
       )}
+      {/* Each expiry's trades as position cards, in a lightbox (the portfolio tab's; none elsewhere). */}
+      <BoxButtons>
+        {ladder.expiries
+          .filter((x) => x.trades.length > 0)
+          .map((x) => (
+            <BoxButton key={x.expiration} id={expiryBoxId(x.expiration)}>
+              {dayMonth(x.expiration)}
+            </BoxButton>
+          ))}
+      </BoxButtons>
     </Card>
   );
 }
 
 /* ---------------------------------------------------------------- risk graph */
 
-const RG = { w: 1150, h: 260, l: 64, r: 96, t: 14, b: 26 };
+const RG_FULL = { w: 1150, h: 260, l: 64, r: 96, t: 14, b: 26 };
+// The card's small copy: a narrower box, so its labels stay legible at a third of the width.
+const RG_SMALL = { w: 560, h: 190, l: 58, r: 44, t: 10, b: 24 };
 const CURVE_COLOR = ["var(--accent)", "var(--chart-special)"];
 
-export function RiskGraph({ s, benchmark, spot }: { s: ManageScenarios; benchmark: string; spot: number | null }) {
+export function RiskGraph({ s, benchmark, spot, small = false }: { s: ManageScenarios; benchmark: string; spot: number | null; small?: boolean }) {
+  const RG = small ? RG_SMALL : RG_FULL;
   const { moves, curves } = s.graph;
   const ys = curves.flatMap((c) => c.pnl.filter((v): v is number => v !== null));
   if (moves.length < 2 || ys.length === 0) return <p className="muted">no curve to draw</p>;
@@ -112,7 +127,7 @@ export function RiskGraph({ s, benchmark, spot }: { s: ManageScenarios; benchmar
   const xTicks = moves.filter((m) => Math.abs(Math.round(m * 100) % 5) === 0);
   const step = moves.length > 1 ? moves[1]! - moves[0]! : 0.01;
   return (
-    <svg viewBox={`0 0 ${RG.w} ${RG.h}`} role="img" aria-label={`${benchmark} risk graph`} className="pf-graph">
+    <svg viewBox={`0 0 ${RG.w} ${RG.h}`} role="img" aria-label={`${benchmark} risk graph`} className={small ? "pf-graph pf-graph-small" : "pf-graph"}>
       {niceTicks(lo, hi, 5).map((v) => (
         <g key={v}>
           <line x1={RG.l} y1={Y(v)} x2={RG.w - RG.r} y2={Y(v)} stroke={Math.abs(v) < 1e-9 ? CHART_GRID_STRONG : CHART_GRID} />
@@ -159,11 +174,21 @@ export function RiskGraph({ s, benchmark, spot }: { s: ManageScenarios; benchmar
 }
 
 export function RiskGraphCard({ p }: { p: ManagePortfolio }) {
+  if (!p.scenarios) return null;
+  return (
+    <Card title="risk graph">
+      <RiskGraphBody p={p} />
+    </Card>
+  );
+}
+
+/** The full risk graph with its legend and caption: the card's, and the portfolio tab's lightbox. */
+export function RiskGraphBody({ p }: { p: ManagePortfolio }) {
   const s = p.scenarios;
   if (!s) return null;
   const benchmark = p.benchmark ?? "SPY";
   return (
-    <Card title="risk graph">
+    <>
       <div className="pf-legend">
         {s.graph.curves.map((c, i) => (
           <span key={c.horizonDays}>
@@ -177,7 +202,7 @@ export function RiskGraphCard({ p }: { p: ManagePortfolio }) {
         the whole book's modelled P&L as {benchmark} moves, each name by its beta · legs expiring by the later curve are worth
         their intrinsic value · hover for figures{s.leftOut.length ? ` · left out (no beta): ${s.leftOut.join(", ")}` : ""}
       </p>
-    </Card>
+    </>
   );
 }
 
@@ -363,7 +388,7 @@ function IdeaCard({ idea, benchmark }: { idea: ManageIdea; benchmark: string }) 
               </li>
             ))}
             <li>
-              <span>theta a day</span>
+              <span>theta per day</span>
               <Change before={e.thetaBefore} after={e.thetaAfter} money={theta} />
             </li>
           </ul>

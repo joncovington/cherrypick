@@ -323,7 +323,7 @@ export const FIELDS: FieldMeta[] = [
   {
     target: "manage",
     pointer: "/limits/theta_day",
-    label: "Limit: theta a day (most, $)",
+    label: "Limit: theta per day (most, $)",
     help: "On the theta band's figure, without the legs about to expire. Blank: the theta band.",
     type: "optionalNumber",
     min: 0,

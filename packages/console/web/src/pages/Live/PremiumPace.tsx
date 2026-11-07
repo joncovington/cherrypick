@@ -29,12 +29,21 @@ function pct(v: number | null, digits = 2): string {
 
 export function PremiumPaceCard({ premium, thetaBand }: { premium: ManagePremium | null; thetaBand: ManageBand | null }) {
   if (!premium) return null;
+  return (
+    <Card title="premium pace">
+      <PremiumPaceBody premium={premium} thetaBand={thetaBand} />
+    </Card>
+  );
+}
+
+/** The pace, the week and the months; the portfolio tab shows it in the income card's lightbox. */
+export function PremiumPaceBody({ premium, thetaBand }: { premium: ManagePremium; thetaBand: ManageBand | null }) {
   const { target, months, week } = premium;
   const sum = (pick: (m: (typeof months)[number]) => number | null) =>
     months.reduce((s, m) => s + (pick(m) ?? 0), 0);
   const scaleTop = Math.max(thetaBand?.high ?? 0, thetaBand?.value ?? 0, target.pctNlv ?? 0) * 1.25 || 0.004;
   return (
-    <Card title="premium pace">
+    <>
       <div className="pp-target">
         <Bullet
           min={0}
@@ -42,10 +51,10 @@ export function PremiumPaceCard({ premium, thetaBand }: { premium: ManagePremium
           value={thetaBand?.value ?? null}
           band={thetaBand && thetaBand.low !== null && thetaBand.high !== null ? [thetaBand.low, thetaBand.high] : null}
           marker={target.pctNlv}
-          label={`theta ${pct(thetaBand?.value ?? null)} of net liq a day against a target of ${pct(target.pctNlv)}`}
+          label={`theta ${pct(thetaBand?.value ?? null)} of net liq per day against a target of ${pct(target.pctNlv)}`}
         />
         <p className="pp-line">
-          theta {fmtMoney(target.theta)} a day against a target of {fmtMoney(target.dollars)} ({pct(target.pctNlv)} of net
+          theta {fmtMoney(target.theta)} per day against a target of {fmtMoney(target.dollars)} ({pct(target.pctNlv)} of net
           liq)
           {target.ratio !== null && <span className="muted"> · {(target.ratio * 100).toFixed(0)}% of target</span>}
         </p>
@@ -113,6 +122,6 @@ export function PremiumPaceCard({ premium, thetaBand }: { premium: ManagePremium
         )}{" "}
         · theta is paid for by gamma, so a month far above the pace most likely came from the market
       </p>
-    </Card>
+    </>
   );
 }

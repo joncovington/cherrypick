@@ -1,9 +1,11 @@
 import { Fragment, useState } from "react";
-import type { ManageBpLevel, ManageCandidate, ManageCandidates } from "@console/shared";
+import type { ManageBpLevel, ManageCandidate, ManageCandidates, ManageTimeSpreads } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { Cells, SecondaryCells, secondaryOf, useColumns, type Column } from "../../components/columns";
 import { PremiumSlider, useMinPremium } from "../../components/PremiumSlider";
 import { fmtCash, fmtMoney } from "../../lib/format";
+import { TimeSpreadsBody } from "./TimeSpreadsCard";
+import { TradeCards, candidateModel } from "./TradeCard";
 
 /**
  * Income trades from our own universe, sized to the account (packages/manage `candidates.py`): the
@@ -38,10 +40,10 @@ function capPct(v: number | null | undefined): string {
 }
 
 /** The underlying, badged when it is a declared daily-reset fund (the Screeners tabs' own badge). */
-function Name({ c }: { c: ManageCandidate }) {
+function Name({ c, chipsOnly = false }: { c: ManageCandidate; chipsOnly?: boolean }) {
   return (
     <>
-      {c.underlying}
+      {chipsOnly ? null : c.underlying}
       {c.leveraged ? (
         <span className="chip" title="A daily-reset fund: it decays and gaps in ways its delta does not price">
           {c.leveraged}
@@ -217,27 +219,6 @@ const THETA_COLUMN = (n: (c: ManageCandidate) => number): Column<ManageCandidate
   td: (c) => <td className="num">{fmtCash(times(n(c), c.perUnit.theta))}</td>,
 });
 
-const fitUnits = (c: ManageCandidate) => c.units;
-
-export const FIT_COLUMNS: Column<ManageCandidate>[] = [
-  ...sharedColumns(fitUnits, "contracts (spreads: one of each leg)"),
-  THETA_COLUMN(fitUnits),
-  {
-    key: "bwd",
-    label: "Δ SPY sh",
-    title: "beta-weighted delta the position adds, in SPY shares",
-    secondary: true,
-    td: (c) => <td className="num">{c.perUnit.bwd === null ? "—" : (c.units * c.perUnit.bwd).toFixed(1)}</td>,
-  },
-  {
-    key: "binding",
-    label: "next stops at",
-    title: "the cap the next contract would break",
-    secondary: true,
-    td: (c) => <td className="muted">{c.binding ?? "max contracts"}</td>,
-  },
-];
-
 const roomUnits = (c: ManageCandidate) => c.ifRoom?.units ?? 0;
 
 const WAITING_COLUMNS: Column<ManageCandidate>[] = [
@@ -317,8 +298,25 @@ function CandidateRows({ rows, all }: { rows: ManageCandidate[]; all: Column<Man
   );
 }
 
-function FitsTable({ rows }: { rows: ManageCandidate[] }) {
-  return <CandidateRows rows={rows} all={FIT_COLUMNS} />;
+/** The trades that fit, each as a position-style card (2026-11-06: they were a table's rows). */
+function FitCards({ rows, capDollars }: { rows: ManageCandidate[]; capDollars: number | null }) {
+  return (
+    <TradeCards
+      models={rows.map((c) =>
+        candidateModel(
+          c,
+          capDollars,
+          <>
+            <span className="chip chip-ok" title={`contracts that fit; the next stops at ${c.binding ?? "max contracts"}`}>
+              fits ×{c.units}
+            </span>
+            <Name c={c} chipsOnly />
+          </>,
+          { price: netPrice(c), narrowed: narrowed(c) },
+        ),
+      )}
+    />
+  );
 }
 
 function pct(v: number | null, digits = 0): string {
@@ -411,14 +409,13 @@ function ExEarningsToggle({ c, on, set }: { c: ManageCandidates; on: boolean; se
  *  An unpriced one has nothing to compare, so it stays, as on the Screeners lists. */
 const premiumOk = (floor: number) => (r: ManageCandidate) => floor === 0 || r.perUnit.cash === null || r.perUnit.cash >= floor;
 
-export function IncomeCard({ c: whole }: { c: ManageCandidates | null }) {
+/** The income list as shown: the whole book's or manage's ex-earnings one, cut to the premium floor.
+ *  The totals are manage's and count past the rows it wrote, so a cut list states only what it shows. */
+function useIncomeList(whole: ManageCandidates | null) {
   const [exOn, setExOn] = useState(false);
   const minPremium = useMinPremium("live-income");
   if (!whole) return null;
-  const ex = whole.exEarnings;
-  // Every figure below is one list's: the whole book's, or manage's ex-earnings one, cut to the floor.
-  // The totals are manage's and count past the rows it wrote, so a cut list states only what it shows.
-  const listed = exOn && ex?.list ? ex.list : whole;
+  const listed = exOn && whole.exEarnings?.list ? whole.exEarnings.list : whole;
   const ok = premiumOk(minPremium);
   const cut = (rows: ManageCandidate[]) => rows.filter(ok);
   const c: ManageCandidates =
@@ -434,24 +431,39 @@ export function IncomeCard({ c: whole }: { c: ManageCandidates | null }) {
           tooBigTotal: cut(listed.tooBig).length,
         };
   const hidden = listed.fits.length + listed.waiting.length + listed.tooBig.length - c.fits.length - c.waiting.length - c.tooBig.length;
+  return { whole, listed, c, hidden, exOn, setExOn, minPremium };
+}
+
+type IncomeList = NonNullable<ReturnType<typeof useIncomeList>>;
+
+function IncomeControls({ l }: { l: IncomeList }) {
+  return (
+    <>
+      <PremiumSlider
+        list="live-income"
+        value={l.minPremium}
+        title="Hide a trade whose credit for one contract is under this. An unpriced one stays shown. Remembered for next time."
+      />
+      {l.hidden > 0 && <span className="chip">{l.hidden} under ${l.minPremium.toLocaleString()} hidden</span>}
+      <ExEarningsToggle c={l.whole} on={l.exOn} set={l.setExOn} />
+    </>
+  );
+}
+
+/** The per-trade cap in dollars: the ruleset's share of net liq, where both are known. */
+export function perTradeCap(caps: ManageCandidates["caps"] | undefined, netLiq: number | null): number | null {
+  const share = caps?.perTradeRiskPct ?? null;
+  return share === null || netLiq === null ? null : share * netLiq;
+}
+
+function IncomeBody({ l, netLiq }: { l: IncomeList; netLiq: number | null }) {
+  const { c, listed, whole } = l;
+  const ex = whole.exEarnings;
   const excluded = Object.entries(c.excluded)
     .map(([why, n]) => `${n} ${why}`)
     .join(", ");
   return (
-    <Card
-      title="income trades, sized to the account"
-      controls={
-        <>
-          <PremiumSlider
-            list="live-income"
-            value={minPremium}
-            title="Hide a trade whose credit for one contract is under this. An unpriced one stays shown. Remembered for next time."
-          />
-          {hidden > 0 && <span className="chip">{hidden} under ${minPremium.toLocaleString()} hidden</span>}
-          <ExEarningsToggle c={whole} on={exOn} set={setExOn} />
-        </>
-      }
-    >
+    <>
       {c.error ? (
         <p className="muted">{c.error}</p>
       ) : (
@@ -469,7 +481,7 @@ export function IncomeCard({ c: whole }: { c: ManageCandidates | null }) {
             delta comes from the hedge when the book needs it.
           </p>
           {c.fits.length > 0 ? (
-            <FitsTable rows={c.fits} />
+            <FitCards rows={c.fits} capDollars={perTradeCap(c.caps, netLiq)} />
           ) : (
             <p className="muted">
               {c.waitingTotal > 0
@@ -490,6 +502,50 @@ export function IncomeCard({ c: whole }: { c: ManageCandidates | null }) {
         the VIX cap · delta in band · theta under its ceiling · no name over{capPct(c.caps?.maxNameThetaShare) || " its share"} of
         the theta the account may carry. Retail heuristics, modelled at mid: nothing here is placed.
       </p>
+    </>
+  );
+}
+
+export function IncomeCard({ c: whole, netLiq = null }: { c: ManageCandidates | null; netLiq?: number | null }) {
+  const l = useIncomeList(whole);
+  if (!l) return null;
+  return (
+    <Card title="income trades, sized to the account" controls={<IncomeControls l={l} />}>
+      <IncomeBody l={l} netLiq={netLiq} />
+    </Card>
+  );
+}
+
+/**
+ * Adding trades (2026-11-06): the income candidates and the time spreads in one card, a tab each,
+ * every trade that fits drawn as a position card on the page. The income tab keeps its premium floor
+ * and ex-earnings toggle.
+ */
+export function AddingTradesCard({ c, t, netLiq }: { c: ManageCandidates | null; t: ManageTimeSpreads | null; netLiq: number | null }) {
+  const l = useIncomeList(c);
+  // It opens on income, unless no income trade fits and some time spread does.
+  const [tab, setTab] = useState<"income" | "spreads">(c && (c.fits.length > 0 || !t || t.fits.length === 0) ? "income" : "spreads");
+  if (!c && !t) return null;
+  const btn = (id: "income" | "spreads", label: string, n: number | null) => (
+    <button type="button" className={tab === id ? "mode-btn active" : "mode-btn"} aria-pressed={tab === id} onClick={() => setTab(id)}>
+      {label}
+      {n !== null ? ` · ${n}` : ""}
+    </button>
+  );
+  return (
+    <Card
+      title="adding trades"
+      controls={
+        <>
+          <span className="mode-toggle" role="group" aria-label="list">
+            {c ? btn("income", "income", l ? l.c.fits.length : null) : null}
+            {t ? btn("spreads", "time spreads", t.fits.length) : null}
+          </span>
+          {tab === "income" && l ? <IncomeControls l={l} /> : null}
+        </>
+      }
+    >
+      {tab === "income" && l ? <IncomeBody l={l} netLiq={netLiq} /> : t ? <TimeSpreadsBody t={t} capDollars={perTradeCap(c?.caps, netLiq)} /> : null}
     </Card>
   );
 }
