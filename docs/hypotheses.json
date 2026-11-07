@@ -2525,6 +2525,49 @@
       "retest": null,
       "retests": [],
       "outcome": null
+    },
+    {
+      "id": 64,
+      "study": "item64",
+      "title": "Defined-risk bullish structures on slow large caps, against holding the same delta in shares",
+      "status": "declared",
+      "legacy": false,
+      "setup": "structure-choice",
+      "side": "bullish",
+      "structure": "ratio-and-broken-wing",
+      "window": "monthly",
+      "measure": "per trade, net and excess (net less the entry delta held in shares from entry to exit) as a share of capital held, for four structures on ten slow large caps: a call backspread, two front call credit spreads with a back-month long call, a 1-3-2 put BWB, and the 1-3-2 calendarized; one observation is one cycle month, equal weight across names",
+      "expected": "a positive excess after costs for at least one structure, and the calendarized 1-3-2 ahead of the same-month one on return on capital; the declaration expects a fail beyond drift",
+      "sample": "design cycles entered 2016-01-01..2021-12-31 (~70 cycles of up to ten names); holdout 2022-01-01..2026-11-06 read only after a design pass; < 50 cycles or > 5% of a structure's entries without an exit mark = no verdict",
+      "rule": "per test (four structures and D less C): mean excess return on capital > 0, one-sided t > 2, Holm at 5% across the five; both design time-halves positive; for A to D the raw return on capital positive at 1.5x costs; then the holdout with the same checks",
+      "mechanism": "the backspread and the spreads-plus-long are long-delta bets with a cheapened call; the 1-3-2 sells put premium below the market; calendarizing changes the capital held and the exposure to the term structure",
+      "rivals": [
+        {
+          "explanation": "market drift",
+          "check": "the verdict is on the excess over the entry delta held in shares"
+        },
+        {
+          "explanation": "one name or one year",
+          "check": "equal weight across names per cycle; by name and by year; both halves"
+        },
+        {
+          "explanation": "one lucky structure of five",
+          "check": "Holm at 5% across the five tests"
+        },
+        {
+          "explanation": "fees on many legs",
+          "check": "raw return on capital positive at 1.5x costs"
+        },
+        {
+          "explanation": "optimistic fills",
+          "check": "the working price on every leg, open and close"
+        }
+      ],
+      "pointer": "docs/edge-hypotheses-plan.md#64-defined-risk-bullish-structures-on-slow-large-caps-against-holding-the-same-delta-in-shares",
+      "results": [],
+      "retest": null,
+      "retests": [],
+      "outcome": null
     }
   ],
   "rule_changes": []
