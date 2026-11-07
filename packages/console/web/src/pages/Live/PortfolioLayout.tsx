@@ -12,7 +12,7 @@ import { LadderCard, RiskMatrixCard } from "./ScenarioCards";
  * explains or audits a card opens from it as a lightbox (PortfolioBox.tsx) instead of taking a row.
  */
 
-type Concept = "stand" | "income" | "dir" | "risk" | "room" | "add";
+export type Concept = "stand" | "income" | "dir" | "risk" | "room" | "add";
 
 const NAME: Record<Concept, string> = {
   stand: "where the book stands",
@@ -23,11 +23,12 @@ const NAME: Record<Concept, string> = {
   add: "adding trades",
 };
 
-function Section({ concept, question, children }: { concept: Concept; question: string; children: ReactNode }) {
+/** `tag` names the section in the colour of `concept`, where another tab's own words fit better. */
+export function Section({ concept, question, tag, children }: { concept: Concept; question: string; tag?: string; children: ReactNode }) {
   return (
-    <section className={`pf-sec pf-c-${concept}`} aria-label={NAME[concept]}>
+    <section className={`pf-sec pf-c-${concept}`} aria-label={tag ?? NAME[concept]}>
       <div className="pf-sec-head">
-        <span className="pf-tag">{NAME[concept]}</span>
+        <span className="pf-tag">{tag ?? NAME[concept]}</span>
         <h3>{question}</h3>
       </div>
       <div className="pf-row">{children}</div>

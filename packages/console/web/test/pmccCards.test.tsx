@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
+import { MemoryRouter } from "react-router-dom";
 import type { ManageAccount, ManagePmcc, ManagePmccPosition, ManageTrade } from "@console/shared";
 import {
   NO_PMCC,
+  PmccBody,
   PmccCards,
   chainWords,
   entryWords,
   intentWords,
   kindOf,
+  longDeltaFloor,
+  pmccActions,
+  proposedRoll,
+  pmccTabs,
   rollWords,
   twoOrderRollWords,
 } from "../src/pages/Live/PmccCards";
@@ -212,8 +218,19 @@ function account(v: ManagePmcc | null, trades: ManageTrade[] = [trade()]): Manag
   };
 }
 
+/** The page and every lightbox tab of every PMCC: what the cards hold now sits in the boxes they open. */
+function everything(a: ManageAccount): string {
+  const page = renderToString(
+    <MemoryRouter>
+      <PmccCards a={a} />
+    </MemoryRouter>,
+  );
+  const boxes = (a.pmcc?.positions ?? []).flatMap((p) => pmccTabs(p).map((t) => renderToString(<PmccBody p={p} trades={a.trades} tab={t.id} />)));
+  return [page, ...boxes].join("\n");
+}
+
 function render(a: ManageAccount): string {
-  return text(renderToString(<PmccCards a={a} />));
+  return text(everything(a));
 }
 
 describe("the pmcc tab", () => {
@@ -235,7 +252,7 @@ describe("the pmcc tab", () => {
 
   it("a recognised PMCC shows the long, the width check, the shorts sold, the yield and its rules", () => {
     const out = render(account(view()));
-    expect(out).toContain("XYZ · 2028-01-21 40C / 2026-11-20 45C PMCC");
+    expect(out).toContain("XYZ · PMCC");
     expect(out).toContain("delta at entry 0.82");
     expect(out).toContain("delta today 0.71");
     expect(out).toContain("extrinsic 5.00 a share (63% of its price)");
@@ -303,9 +320,9 @@ describe("the pmcc tab", () => {
     });
     const diagonal = position({ recognized: false, recognition: "diagonal", recognizedBy: "entered at 0.40 delta (under 0.70): a diagonal" });
     const out = render(account(view({ positions: [position(), diagonal, unknown] })));
-    expect(out).toContain("XYZ · 2028-01-21 40C / 2026-11-20 45C PMCC position");
-    expect(out).toContain("XYZ · 2028-01-21 40C / 2026-11-20 45C diagonal position");
-    expect(out).toContain("XYZ · 2028-01-21 40C / 2026-11-20 45C PMCC? not yet decided position");
+    expect(out).toContain("XYZ · PMCC");
+    expect(out).toContain("XYZ · diagonal");
+    expect(out).toContain("XYZ · PMCC? not yet decided");
     // An undecided candidate is never called a diagonal, on the row or in the card.
     expect(kindOf(unknown)).toEqual({
       kind: "PMCC? not yet decided",
@@ -473,7 +490,7 @@ describe("the pmcc tab", () => {
   });
 
   it("labels the check's underlying column as the facts card does", () => {
-    const html = renderToString(<PmccCards a={account(view())} />);
+    const html = everything(account(view()));
     expect(html).toContain("<th>underlying</th>");
     expect(html).not.toContain("<th>price</th>");
   });
@@ -482,7 +499,7 @@ describe("the pmcc tab", () => {
 /** Live → pmcc in the simple and detail views (2026-10-21). */
 describe("the pmcc check, simple and detail", () => {
   const shape = (mode: "simple" | "detail") =>
-    tables(inView(mode, () => renderToString(<PmccCards a={account(view())} />))).find((t) => t.headers.includes("assignment"))!;
+    tables(inView(mode, () => everything(account(view())))).find((t) => t.headers.includes("assignment"))!;
 
   it("has no intrinsic column in either view, and keeps the band and N(d2) to detail", () => {
     const simple = shape("simple");
@@ -496,5 +513,75 @@ describe("the pmcc check, simple and detail", () => {
     expect(simple.headers).toContain("underlying");
     expect(aligned(simple)).toBe(true);
     expect(aligned(detail)).toBe(true);
+  });
+});
+
+/** Live → pmcc, the redesign (2026-11-06): a PMCC that needs action is listed first, with its action. */
+describe("the pmcc tab, what needs action", () => {
+  const page = (a: ManageAccount): string =>
+    renderToString(
+      <MemoryRouter>
+        <PmccCards a={a} />
+      </MemoryRouter>,
+    );
+
+  it("lists a PMCC with a fired PMCC rule under its own heading first, with an amber chip, the rule, why and the proposed roll", () => {
+    const html = page(account(view()));
+    const out = text(html);
+    expect(out.indexOf("needs action")).toBeGreaterThanOrEqual(0);
+    expect(html).toContain('class="action-block"');
+    expect(html).toContain("chip chip-warn");
+    expect(out).toContain("pmcc.width confidence 65");
+    expect(out).toContain("an assignment there loses $262");
+    // The roll is drawn as an order chain: BTC the old short, STO the new, at manage's prices.
+    expect(out).toContain("proposed roll");
+    expect(html).toContain('aria-label="the proposed roll"');
+    expect(out).toContain("BTC 1 2026-11-20 45C @ 0.80");
+    expect(out).toContain("STO 1 2026-12-18 48C @ 0.80");
+    // Roll candidates open from the block, and the rules a PMCC fired do not sit on the page.
+    expect(html).not.toContain("pmcc.roll_long");
+    // The one PMCC is under "needs action" and not again under the healthy heading.
+    expect(out).not.toContain("each pmcc");
+  });
+
+  it("with nothing fired the PMCC goes under the healthy heading, with no action block and no account tiles", () => {
+    const quiet = trade({ fired: [], action: "HOLD", confidence: null, rule: "none" });
+    const html = page(account(view(), [quiet]));
+    const out = text(html);
+    expect(html).not.toContain("action-block");
+    expect(out).not.toContain("needs action");
+    expect(out).toContain("each pmcc");
+    expect(out).not.toContain("net liq");
+  });
+
+  it("only a PMCC rule counts: another rule's action on the trade does not put the PMCC in the first section", () => {
+    const other = trade({ fired: [{ rule: "credit.take_profit", action: "TAKE_PROFIT", confidence: 70, reason: "not a PMCC rule", legs: null }] });
+    expect(pmccActions(position(), [other])).toEqual([]);
+    expect(pmccActions(position({ recognized: false }), [trade()])).toEqual([]);
+    expect(pmccActions(position(), [trade()]).map((x) => x.f.rule)).toEqual(["pmcc.width"]);
+  });
+
+  it("draws the proposal from the candidate check-roll passes, and nothing when none is priced", () => {
+    const p = position();
+    expect(proposedRoll(p)?.expiration).toBe("2026-12-18");
+    expect(proposedRoll(position({ rolls: null }))).toBeNull();
+    // The block still shows the rule and why with no roll to draw.
+    const html = page(account(view({ positions: [position({ rolls: null })] })));
+    expect(html).toContain("action-block");
+    expect(html).not.toContain("the proposed roll");
+  });
+
+  it("the roll candidates and the rest are in the lightbox, not on the page", () => {
+    const html = page(account(view()));
+    expect(html).not.toContain("<table");
+    expect(text(renderToString(<PmccBody p={position()} trades={[trade()]} tab="rolls" />))).toContain("roll to");
+    expect(pmccTabs(position()).map((t) => t.id)).toEqual(["shorts", "rolls", "long", "rules", "recognised"]);
+    expect(pmccTabs(position({ rolls: null })).map((t) => t.id)).not.toContain("rolls");
+  });
+
+  it("reads the long's delta floor from the ruleset, and none when the evaluation embeds none", () => {
+    expect(longDeltaFloor({ pmcc: { roll_long: { min_delta: 0.7 } } })).toBe(0.7);
+    expect(longDeltaFloor({ pmcc: {} })).toBeNull();
+    expect(longDeltaFloor(null)).toBeNull();
   });
 });

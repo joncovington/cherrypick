@@ -1,8 +1,20 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { ManageLedger, ManageLedgerBucket, ManageLedgerLot, ManageLedgerWindow } from "@console/shared";
 import { LEDGER_WINDOWS } from "@console/shared";
 import { fmtCash } from "../../lib/format";
+import { Card } from "../../components/DataTable";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import {
+  FilterGroup,
+  FilterSortButton,
+  FilterSortPanel,
+  FilterSummary,
+  SortSection,
+  sortRows,
+  useSortChoice,
+  type SortOption,
+} from "../../components/FilterSort";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
 
 /**
@@ -228,7 +240,47 @@ function NameDialog({
   );
 }
 
-/** The ledger above the wheel's cycles: tiles for the window, the months, a card per name. */
+/** What the ledger's names can be ordered by: size, count, then the alphabet. Never a rate or a yield. */
+export interface LedgerRow {
+  name: string;
+  b: ManageLedgerBucket;
+}
+
+export const LEDGER_SORTS: SortOption<LedgerRow>[] = [
+  { id: "net", label: "net", hint: "best first", key: (r) => -r.b.net },
+  { id: "legs", label: "legs closed", hint: "most first", key: (r) => -r.b.legs },
+  { id: "name", label: "name", hint: "A to Z", key: (r) => r.name },
+];
+
+const WINDOW_WORDS: Record<ManageLedgerWindow, string> = {
+  "1M": "1 month",
+  "3M": "3 months",
+  "6M": "6 months",
+  "1Y": "1 year",
+  YTD: "year to date",
+  ALL: "since the history starts",
+};
+
+/** The ledger's explanation, behind its ?: where the figures come from and what was left out. */
+export function ledgerHelp(ledger: Pick<ManageLedger, "scope" | "historyFrom" | "rows">): CardHelpContent {
+  return {
+    title: "Reading the ledger",
+    body: (
+      <>
+        <HelpSection title="By closing day">
+          <p>
+            Read from the account's history rows: puts, calls, shares and dividends, after fees, counted when each leg went flat.
+          </p>
+          <p>{ledgerHeadWords(ledger)}</p>
+        </HelpSection>
+        <HelpSection title="Left out">
+          <p>0DTE legs (the live loops' and the hand's own books, on their pages), and spans the history entered mid-position.</p>
+        </HelpSection>
+      </>
+    ),
+  };
+}
+
 /** The ledger's head line. The row count and its start date are the account's whole history (manage's
  *  `ledger.rows` and `history_from` are read before the scope is applied), so they are said as the
  *  account's, never placed after the names as if they were theirs. */
@@ -237,11 +289,16 @@ export function ledgerHeadWords(ledger: Pick<ManageLedger, "scope" | "historyFro
   return `${names}read from the account's ${ledger.rows ?? "?"} history rows since ${ledger.historyFrom ?? "?"} · by closing day`;
 }
 
+/** The ledger: tiles for the window, the months, a button a name. The window, the order of the names
+ *  and the CSV sit behind filter and sort; a name's button opens its spans in a lightbox. */
 export function LedgerDesk({ ledger }: { ledger: ManageLedger | null }) {
   const [params, setParams] = useSearchParams();
   const lightbox = useOpenParam("ledger");
+  const [sort, setSort] = useSortChoice("ledger", "net");
+  const [panel, setPanel] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
   if (ledger === null) return null;
-  if (ledger.error) return <p className="muted">ledger: {ledger.error}</p>;
+  if (ledger.error) return <Card title="ledger"><p className="muted">ledger: {ledger.error}</p></Card>;
   const win = ledgerWindow(params.get(WINDOW_PARAM));
   const pick = (w: ManageLedgerWindow) => {
     const next = new URLSearchParams(params);
@@ -250,30 +307,34 @@ export function LedgerDesk({ ledger }: { ledger: ManageLedger | null }) {
     setParams(next, { replace: true });
   };
   const all = ledger.windows[win];
-  const names = ledger.names.filter((n) => (n.windows[win]?.legs ?? 0) > 0 || (n.windows[win]?.dividends ?? 0) !== 0);
-  const order = names.map((n) => n.underlying);
+  const active = ledger.names.filter((n) => (n.windows[win]?.legs ?? 0) > 0 || (n.windows[win]?.dividends ?? 0) !== 0);
+  const rows: LedgerRow[] = active.map((n) => ({ name: n.underlying, b: n.windows[win]! }));
+  const option = LEDGER_SORTS.find((s) => s.id === sort.id) ?? LEDGER_SORTS[0];
+  const shown = sortRows(rows, option, sort.reversed);
+  const order = shown.map((r) => r.name);
   const first = ledger.historyFrom?.slice(0, 7) ?? "";
   const months = ledger.months.filter((m) => m.month >= first);
   const z = ledger.excluded.zeroDte;
   const index = lightbox.open === null ? -1 : order.indexOf(lightbox.open);
+  const changed = (win !== DEFAULT_WINDOW ? 1 : 0) + (sort.id !== "net" || sort.reversed ? 1 : 0);
+  const reset = () => {
+    pick(DEFAULT_WINDOW);
+    setSort({ id: "net", reversed: false });
+  };
   return (
-    <section className="ldg-board" aria-label="Ledger">
-      <div className="ldg-head">
-        <span className="ldg-title">ledger</span>
-        <span className="muted">
-          {ledgerHeadWords(ledger)}
-        </span>
-        <div className="ldg-windows" role="group" aria-label="Window">
-          {LEDGER_WINDOWS.map((w) => (
-            <button key={w} type="button" className={w === win ? "ldg-win is-on" : "ldg-win"} aria-pressed={w === win} onClick={() => pick(w)}>
-              {w}
-            </button>
-          ))}
-        </div>
-        <button type="button" className="ldg-win" onClick={() => download("ledger.csv", ledgerCsv(ledger.lots))}>
-          CSV
-        </button>
-      </div>
+    <Card
+      title="ledger"
+      collapseKey="wheel-ledger"
+      help={ledgerHelp(ledger)}
+      controls={<FilterSortButton changed={changed} open={panel} onOpen={() => setPanel(!panel)} anchor={anchor} />}
+    >
+      <FilterSummary
+        parts={[WINDOW_WORDS[win], `by ${option?.label ?? sort.id}${sort.reversed ? ", reversed" : ""}`]}
+        note={`counted by closing day · history from ${ledger.historyFrom ?? "?"}`}
+        changed={changed}
+        onOpen={() => setPanel(true)}
+        onReset={reset}
+      />
       {all ? (
         <div className="ldg-tiles">
           <Tile big label={`net · ${win}`} v={all.net} sub={`${all.legs} closed · after ${fmtCash(all.fees)} in fees`} />
@@ -294,18 +355,38 @@ export function LedgerDesk({ ledger }: { ledger: ManageLedger | null }) {
             : ""}
         </p>
       ) : null}
-      {names.length === 0 ? (
+      {shown.length === 0 ? (
         <p className="muted">nothing closed in {win}</p>
       ) : (
-        <div className="ldg-cards">
-          {names.map((n) => (
-            <NameCard key={n.underlying} name={n.underlying} b={n.windows[win]!} onOpen={() => lightbox.show(n.underlying)} />
+        <div className="pf-mores pf-push">
+          {shown.map((r) => (
+            <button key={r.name} type="button" className="pf-more" onClick={() => lightbox.show(r.name)} aria-label={`Open ${r.name}'s ledger`}>
+              {r.name} <span className={`pf-more-k ${tone(r.b.net)}`}>{fmtCash(r.b.net)}</span> <span aria-hidden="true">›</span>
+            </button>
           ))}
         </div>
       )}
+      <FilterSortPanel open={panel} onClose={() => setPanel(false)} onReset={reset} anchor={anchor}>
+        <FilterGroup title="window" note="by the day each leg went flat">
+          <div className="ldg-windows" role="group" aria-label="Window">
+            {LEDGER_WINDOWS.map((w) => (
+              <button key={w} type="button" className={w === win ? "ldg-win is-on" : "ldg-win"} aria-pressed={w === win} onClick={() => pick(w)}>
+                {w}
+              </button>
+            ))}
+          </div>
+        </FilterGroup>
+        <SortSection sorts={LEDGER_SORTS} choice={sort} fallback="net" onChange={setSort} />
+        <FilterGroup title="export">
+          <button type="button" className="study-step-btn" onClick={() => download("ledger.csv", ledgerCsv(ledger.lots))}>
+            Download CSV
+          </button>
+          <span className="muted sm"> every closed leg</span>
+        </FilterGroup>
+      </FilterSortPanel>
       {index >= 0 ? (
         <NameDialog ledger={ledger} names={order} index={index} win={win} onStep={(to) => lightbox.step(order[to] ?? "")} onClose={lightbox.close} />
       ) : null}
-    </section>
+    </Card>
   );
 }

@@ -9422,3 +9422,126 @@ button.chip[aria-pressed][data-hue="special"],
 .pos-card.tc-card .pos-card-spot {
   white-space: normal;
 }
+
+/* redesign: live-b */
+/* Live › wheel and pmcc, laid out in the portfolio tab's sections (pf-layout / pf-sec / pf-row). */
+
+/* A short list inside a card: one line a leg on a sunken tile, the chip to the right. */
+.lk-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.lk-li {
+  display: grid;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-sunken);
+  min-width: 0;
+}
+.lk-li-top,
+.lk-li-flat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.lk-li-flat {
+  flex-wrap: wrap;
+}
+.lk-leg {
+  font-family: var(--num-face);
+  font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.lk-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.lk-li .att-chip {
+  border-style: solid;
+  flex: none;
+}
+
+/* Cards that take a whole row (an action, a note), a cycle three to a row where there is room. */
+.pf-row > .card.wh-wide {
+  grid-column: 1 / -1;
+}
+/* The risk section gives each card a row (the portfolio's matrix is tall); the two lists here share one. */
+.pf-row > .card.wh-half {
+  grid-column: span 6;
+}
+@container pf (max-width: 760px) {
+  .pf-row > .card.wh-half {
+    grid-column: 1 / -1;
+  }
+}
+.pf-row > p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.pf-row > .card.wh-cycle {
+  grid-column: span 4;
+}
+.pf-row > .card.wh-cycle:only-child {
+  grid-column: 1 / -1;
+}
+@container pf (max-width: 1100px) {
+  .pf-row > .card.wh-cycle {
+    grid-column: span 6;
+  }
+}
+@container pf (max-width: 760px) {
+  .pf-row > .card.wh-cycle {
+    grid-column: 1 / -1;
+  }
+}
+
+/* A cycle or a PMCC card's figures sit in a column; the tiles stay three across where they fit. */
+.wh-cycle .pf-hero {
+  margin-bottom: 0.5rem;
+}
+.wh-cycle .pf-tiles,
+.pf-dside .pf-tiles {
+  margin-bottom: 0.5rem;
+}
+.pf-lab {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.pf-meter > span.is-warn {
+  background: var(--warn);
+}
+
+/* The roll an action block proposes, drawn as the positions tab draws one. */
+.action-block .pos-chain {
+  padding: 2px 0;
+}
+.action-block .pf-mores {
+  padding-top: 0;
+}
+.action-block .tc-leg-quote {
+  margin-left: auto;
+}
+
+/* The payoff names: a name, its P&L now and its breakevens, as lightbox buttons. */
+.pay-name-btn {
+  gap: 0.5rem;
+}
+.action-block .pos-leg {
+  flex-wrap: wrap;
+}
+.action-block .pos-leg > span:nth-child(2) {
+  white-space: nowrap;
+}

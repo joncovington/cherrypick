@@ -71,6 +71,7 @@ export function BandDial({
   unit,
   label,
   signedScale = true,
+  reach: fixedReach,
   fmt = (v: number) => signed(v),
   tick = (v: number) => signed(v, 0),
 }: {
@@ -78,12 +79,14 @@ export function BandDial({
   unit: string;
   label: string;
   signedScale?: boolean;
+  /** The scale's top, where the figure has a natural one (a delta stops at 1); else a round number above the data. */
+  reach?: number;
   fmt?: (v: number) => string;
   tick?: (v: number) => string;
 }) {
   const { low, high, value } = band;
   if (value === null || low === null || high === null) return <p className="muted">no {label} to place</p>;
-  const reach = niceCeil(Math.max(Math.abs(low), Math.abs(high), Math.abs(value)) * (signedScale ? 1.15 : 1.4));
+  const reach = fixedReach ?? niceCeil(Math.max(Math.abs(low), Math.abs(high), Math.abs(value)) * (signedScale ? 1.15 : 1.4));
   const lo = signedScale ? -reach : 0;
   const theta = (v: number) => ((Math.min(Math.max(v, lo), reach) - lo) / (reach - lo)) * 180;
   const [nx, ny] = polar(D.r - 20, theta(value));
