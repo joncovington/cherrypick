@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { PmccTracker, PmccWeeklyRow } from "@console/shared";
-import { TrackerIndex, TrackerView } from "../src/pages/Pmcc/TrackerTab";
+import { TrackerIndex, TrackerView, integrityHelp } from "../src/pages/Pmcc/TrackerTab";
 import { WeeklyByArm } from "../src/pages/Pmcc/WeeklyByArmCard";
 
 const text = (node: React.ReactElement) =>
@@ -140,8 +140,12 @@ describe("the PMCC position tracker", () => {
   });
 
   it("says so when a week had no short open, rather than showing a quiet week", () => {
-    const html = text(<TrackerView t={{ ...T, integrity: { ...T.integrity, weeksWithoutAShort: ["2026-W37"] } }} />);
-    expect(html).toContain("weeks with no short open at the close: 2026-W37");
+    // The note sits behind the card's ? now; the amber flag on the card says there is something in it.
+    const gappy: PmccTracker = { ...T, integrity: { ...T.integrity, weeksWithoutAShort: ["2026-W37"] } };
+    expect(text(<TrackerView t={gappy} />)).toContain("check the weeks");
+    expect(text(<TrackerView t={T} />)).not.toContain("check the weeks");
+    const body = renderToString(<>{integrityHelp(gappy).body}</>).replace(/<!--\s*-->/g, "");
+    expect(body).toContain("Weeks with no short open at the close: 2026-W37");
   });
 
   it("renders an unpriceable position as dashes, never as zeros", () => {

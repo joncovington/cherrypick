@@ -15,6 +15,8 @@ import { TimeLineChart } from "../../components/chart/TimeLineChart";
 import { fmtCash, fmtMoney, fmtNum, fmtPct, fmtPctSigned, fmtPrice } from "../../lib/format";
 import { dteOf, fmtStrike } from "../../lib/optionFormat";
 import { tokenAlpha } from "../../components/chart/cssvars";
+import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
 
 /**
  * One PMCC position, week by week -- the spreadsheet a covered-call trader keeps (Tom King's layout,
@@ -36,19 +38,25 @@ export function TrackerTab({ symbol }: { symbol: string | null }) {
   const tracker = usePmccTracker(position);
   const rows = (index.data?.data ?? []).filter((r) => symbol === null || r.symbol === symbol);
   return (
-    <div className="cards cards-wide">
+    <div className="pf-layout">
       {position === null ? (
-        <TrackerIndex rows={rows} loading={index.isLoading} error={index.data?.ok === false ? index.data.error : null} />
+        <Section concept="stand" tag="positions" question="Which position do you want to read week by week?">
+          <TrackerIndex rows={rows} loading={index.isLoading} error={index.data?.ok === false ? index.data.error : null} />
+        </Section>
       ) : tracker.isLoading ? (
-        <Card title={position}>
-          <p className="muted">loading…</p>
-        </Card>
+        <Section concept="stand" tag="position" question="What is this position worth now?">
+          <Card title={position}>
+            <p className="muted">loading…</p>
+          </Card>
+        </Section>
       ) : tracker.data?.ok !== true || tracker.data.data === null ? (
-        <Card title={position} isError>
-          <p className="muted">
-            {tracker.data?.error ?? "this position could not be read"} · <Link to="?">every position</Link>
-          </p>
-        </Card>
+        <Section concept="stand" tag="position" question="What is this position worth now?">
+          <Card title={position} isError>
+            <p className="muted">
+              {tracker.data?.error ?? "this position could not be read"} · <Link to="?">every position</Link>
+            </p>
+          </Card>
+        </Section>
       ) : (
         <TrackerView t={tracker.data.data} updatedAt={tracker.dataUpdatedAt} />
       )}
@@ -128,9 +136,16 @@ export function TrackerView({ t, updatedAt }: { t: PmccTracker; updatedAt?: numb
   const costs = h.costs;
   const shortTotal =
     h.shortRealised === null || h.shortOpen === null ? null : Math.round((h.shortRealised + h.shortOpen) * 100) / 100;
+  const integrityNotes = t.integrity.weeksWithoutAShort.length > 0 || t.integrity.unpricedWeeks > 0 || (t.integrity.exposureTicks ?? 0) > 0;
   return (
     <>
-      <Card title={`${p.symbol} · ${p.arm} · ${p.status === "closed" ? `closed ${p.closedSession ?? ""}` : "open"}`} updatedAt={updatedAt}>
+      <Section concept="stand" tag="the position" question="What is this position worth now?">
+      <Card
+        title={`${p.symbol} · ${p.arm} · ${p.status === "closed" ? `closed ${p.closedSession ?? ""}` : "open"}`}
+        updatedAt={updatedAt}
+        help={integrityNotes ? integrityHelp(t) : undefined}
+        flag={integrityNotes ? "check the weeks" : undefined}
+      >
         <p className="muted" style={{ marginTop: 0 }}>
           {p.lifecycle === "held_long" ? "held long" : "weekly"} · opened {p.entrySession} at {fmtNum(p.entrySpot, 2)} ·{" "}
           {h.shortsSold} short{h.shortsSold === 1 ? "" : "s"} sold · era {p.era ?? "—"} · <Link to="?">every position</Link>
@@ -178,27 +193,20 @@ export function TrackerView({ t, updatedAt }: { t: PmccTracker; updatedAt?: numb
             title={`extrinsic captured on the shorts ${fmtCash(h.extrinsicCaptured)} less the long's own extrinsic decay ${fmtMoney(h.longExtrinsicDecay)} — what the structure actually harvested`}
           />
         </TileGrid>
-        {(t.integrity.weeksWithoutAShort.length > 0 || t.integrity.unpricedWeeks > 0 || (t.integrity.exposureTicks ?? 0) > 0) && (
-          <p className="integrity-note">
-            {t.integrity.weeksWithoutAShort.length > 0 && (
-              <>weeks with no short open at the close: {t.integrity.weeksWithoutAShort.join(", ")}. </>
-            )}
-            {t.integrity.unpricedWeeks > 0 && <>{t.integrity.unpricedWeeks} week(s) could not be priced and show a dash. </>}
-            {(t.integrity.exposureTicks ?? 0) > 0 && (
-              <>The short sat in the early-assignment region on {t.integrity.exposureTicks} marked tick(s) — unmodelled, so this is an upper bound. </>
-            )}
-          </p>
-        )}
       </Card>
+      </Section>
 
-      <div className="cards cards-pairs">
+      <Section concept="room" tag="what is open" question="Which short is out now, and what does the long hold?">
         <CurrentShortCard t={t} />
         <LongLotsCard t={t} />
-      </div>
+      </Section>
 
+      <Section concept="hist" tag="the record" question="How has it done, one short at a time and across the weeks?">
       <HistoryTable<PmccTrackerShort>
         table="pmcc-tracker-shorts"
         title="short-call log"
+        className="lv-12"
+        help={SHORT_LOG_HELP}
         defs={SHORT_COLUMNS}
         clientSort
         rows={t.shorts}
@@ -206,22 +214,44 @@ export function TrackerView({ t, updatedAt }: { t: PmccTracker; updatedAt?: numb
         loading={false}
         empty="no short sold yet"
         dateRange={false}
-        footer={
-          <span className="muted">
-            Each row is one short: entry + exit = gross; gross − fees − slip = net. An open short's exit is its mark.
-          </span>
-        }
       />
 
       <WeeksCard weeks={t.weeks} />
+      </Section>
     </>
   );
+}
+
+const SHORT_LOG_HELP: CardHelpContent = {
+  title: "The short-call log",
+  body: (
+    <HelpSection title="Reading a row">
+      <p>Each row is one short: entry + exit = gross; gross − fees − slip = net. An open short&apos;s exit is its mark.</p>
+    </HelpSection>
+  ),
+};
+
+export function integrityHelp(t: PmccTracker): CardHelpContent {
+  return {
+    title: "Reading this position's weeks",
+    body: (
+      <HelpWarn title="Check the weeks">
+        {t.integrity.weeksWithoutAShort.length > 0 && (
+          <p>Weeks with no short open at the close: {t.integrity.weeksWithoutAShort.join(", ")}.</p>
+        )}
+        {t.integrity.unpricedWeeks > 0 && <p>{t.integrity.unpricedWeeks} week(s) could not be priced and show a dash.</p>}
+        {(t.integrity.exposureTicks ?? 0) > 0 && (
+          <p>The short sat in the early-assignment region on {t.integrity.exposureTicks} marked tick(s) — unmodelled, so this is an upper bound.</p>
+        )}
+      </HelpWarn>
+    ),
+  };
 }
 
 function CurrentShortCard({ t }: { t: PmccTracker }) {
   const s = t.currentShort;
   return (
-    <Card title="current short">
+    <Card title="current short" className="fl-w4">
       {s === null ? (
         <p className="muted">no short open{t.position.status === "closed" ? " — the position is closed" : " — the next tick sells one"}</p>
       ) : (
@@ -251,6 +281,7 @@ function LongLotsCard({ t }: { t: PmccTracker }) {
   return (
     <DataCard
       title="core position"
+      className="fl-w8"
       headers={["opened", "expiry", "DTE", "stock", "strike", "qty", "cost", "value", "gain / loss", "extrinsic paid", "extrinsic now", "delta"]}
       loading={false}
       rowCount={t.longLots.length}
@@ -282,6 +313,7 @@ function WeeksCard({ weeks }: { weeks: PmccTrackerWeek[] }) {
   return (
     <DataCard
       title="week by week"
+      className="lv-12"
       headers={["week", "week end", "spot", "long", "short open", "shorts realised", "costs", "net to date", "change", "on long cost", "on notional", "net delta"]}
       loading={false}
       rowCount={weeks.length}

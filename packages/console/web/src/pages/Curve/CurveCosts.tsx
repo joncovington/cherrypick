@@ -2,6 +2,7 @@ import type { CurvePayload } from "@console/shared";
 import { DataCard, PnlCell } from "../../components/DataTable";
 import { CostsView } from "../../components/costs/CostsView";
 import { fmtMoney } from "../../lib/format";
+import { Section } from "../../components/Section";
 
 /**
  * curve's costs page: the question that decides this module. Its edge is real before costs, and on
@@ -11,7 +12,7 @@ import { fmtMoney } from "../../lib/format";
  */
 export function CurveCosts({ data, updatedAt }: { data: CurvePayload | undefined; updatedAt?: number }) {
   return (
-    <div className="cards cards-wide">
+    <div className="pf-layout">
       <CostsView
         arms={data?.arms ?? []}
         since={data?.outcomesSince ?? null}
@@ -23,7 +24,9 @@ export function CurveCosts({ data, updatedAt }: { data: CurvePayload | undefined
         gateNote="hook's no_hook_signal is its design, not a cost: it waits for a rare spike."
         updatedAt={updatedAt}
       />
+      <Section concept="risk" tag="delivery" question="Did any leg finish in the money and deliver shares?">
       <DataCard
+        className="lv-12"
         title="delivered shares (assignment and exercise)"
         headers={["assigned", "position", "leg", "direction", "shares", "basis", "strike", "status", "disposed", "share P&L", "fees"]}
         loading={data === undefined}
@@ -49,6 +52,7 @@ export function CurveCosts({ data, updatedAt }: { data: CurvePayload | undefined
           </tr>
         ))}
       </DataCard>
+      </Section>
     </div>
   );
 }

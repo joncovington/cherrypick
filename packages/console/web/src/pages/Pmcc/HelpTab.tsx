@@ -1,5 +1,6 @@
 import type { PmccPayload } from "@console/shared";
 import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
+import { Section } from "../../components/Section";
 
 /**
  * What this experiment is, in the module's own terms.
@@ -17,7 +18,8 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
   const physicalSymbols = symbols.filter((s) => settlementStyle[s] === "physical");
   const cashSymbols = symbols.filter((s) => settlementStyle[s] === "cash");
   return (
-    <div className="cards cards-wide">
+    <div className="pf-layout">
+      <Section concept="stand" tag="the idea" question="What is PMCC?">
       <Card title="what PMCC is" collapseKey="pmcc-help-what" defaultCollapsed className="view-fade">
         <div className="pmcc-prose">
           <p>
@@ -39,7 +41,9 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
           </p>
         </div>
       </Card>
+      </Section>
 
+      <Section concept="dir" tag="the arms" question="How does each arm differ?">
       <Card title="the arms" collapseKey="pmcc-help-arms" defaultCollapsed>
         <div className="pmcc-prose">
           <dl className="pmcc-defs">
@@ -94,7 +98,9 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
           </p>
         </div>
       </Card>
+      </Section>
 
+      <Section concept="edge" tag="the rules" question="What keeps the results honest?">
       <Card title="the honesty rules" collapseKey="pmcc-help-honesty" defaultCollapsed>
         <div className="pmcc-prose">
           <ol className="pmcc-rules">
@@ -138,7 +144,9 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
           </ol>
         </div>
       </Card>
+      </Section>
 
+      <Section concept="risk" tag="settlement" question="What happens when a short finishes in the money?">
       <Card title="settlement, by symbol" collapseKey="pmcc-help-settlement" defaultCollapsed>
         <div className="pmcc-prose">
           <p>
@@ -163,6 +171,7 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
           )}
         </div>
       </Card>
+      </Section>
     </div>
   );
 }

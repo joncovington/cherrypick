@@ -1,8 +1,20 @@
 import type { PmccPayload } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { DivergingBars } from "../../components/grid/DivergingBars";
-import { GridCard, StatTile } from "../../components/grid/GridCard";
+import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { Section } from "../../components/Section";
 import { fmtMoney } from "../../lib/format";
+import { FliesTile } from "../Flies/FliesSession";
+import { TabLink } from "../Flies/FliesFilter";
+
+const VERDICTS_HELP: CardHelpContent = {
+  title: "Verdicts this session",
+  body: (
+    <HelpSection title="What is counted">
+      <p>Management verdicts by action, executed or held by a gate.</p>
+    </HelpSection>
+  ),
+};
 
 /**
  * PMCC's session tab: the resolved session (`data.session`) and the book, as tiles and shapes
@@ -20,14 +32,16 @@ export function PmccSession({
 }) {
   if (data !== undefined && !data.dbPresent) {
     return (
-      <div className="cards cards-wide">
-        <Card title="PMCC" collapseKey="pmcc-absent">
-          <p className="muted">
-            This module has not run on this machine — there is no paper store at{" "}
-            <span className="mono">~/.cherrypick/data/pmcc/paper_trades.db</span> yet. Nothing is wrong; the page
-            fills in after its first session.
-          </p>
-        </Card>
+      <div className="pf-layout">
+        <Section concept="stand" tag="not started" question="Has this module run on this machine?">
+          <Card title="PMCC" collapseKey="pmcc-absent">
+            <p className="muted">
+              This module has not run on this machine — there is no paper store at{" "}
+              <span className="mono">~/.cherrypick/data/pmcc/paper_trades.db</span> yet. Nothing is wrong; the page
+              fills in after its first session.
+            </p>
+          </Card>
+        </Section>
       </div>
     );
   }
@@ -56,61 +70,61 @@ export function PmccSession({
   const held = events.filter((e) => !e.executed).reduce((n, e) => n + e.n, 0);
 
   return (
-    <div className="grid-12">
-      <StatTile
-        label="open positions"
-        value={data === undefined ? null : String(open.length)}
-        to="/pmcc/positions"
-        toLabel="every open position, marked"
-        foot={
-          data === undefined
-            ? "—"
-            : open.length === 0
-              ? "nothing open"
-              : marked.length === 0
-                ? "no usable mark yet"
-                : `marked net ${fmtMoney(openNet)} · costs to date`
-        }
-      />
-      <StatTile
-        label="closed net"
-        value={data === undefined || closedPositions === 0 ? null : fmtMoney(closedNet)}
-        tone={closedNet >= 0 ? "pos" : "neg"}
-        to="/pmcc/history"
-        toLabel="every completed cycle"
-        foot={closedPositions === 0 ? "no cycle has completed yet" : `${String(closedPositions)} completed cycles · after every cost`}
-      />
-      <StatTile
-        label="entries this session"
-        value={data === undefined ? null : String(filled)}
-        to="/pmcc/decisions"
-        toLabel="this session's attempts and verdicts"
-        foot={data?.session == null ? "—" : `${data.session} · ${String(attempts.reduce((n, a) => n + a.n, 0))} evaluations`}
-      />
-      <StatTile
-        label="management verdicts"
-        value={data === undefined ? null : String(events.reduce((n, e) => n + e.n, 0))}
-        tone="dim"
-        to="/pmcc/decisions"
-        toLabel="this session's management log"
-        foot={held > 0 ? `${String(held)} seen and held by a gate` : "every verdict reached was acted on"}
-      />
-
-      <GridCard
-        label="verdicts this session"
-        span={12}
-        h={304}
-        to="/pmcc/decisions"
-        toLabel="the management log"
-        foot="management verdicts by action, executed or held"
-      >
-        <DivergingBars
-          rows={[...byAction.entries()].sort((a, b) => b[1] - a[1]).map(([action, n]) => ({ label: action, value: n }))}
-          format={(v) => v.toLocaleString()}
-          tone="none"
-          emptyText={loading ? "reading…" : "no management verdicts recorded on this session"}
+    <div className="pf-layout">
+      <Section concept="stand" tag="the day" question="Where does the book stand today?">
+        <FliesTile
+          title="open positions"
+          value={data === undefined ? null : String(open.length)}
+          to="/pmcc/positions"
+          toLabel="positions"
+          foot={
+            data === undefined
+              ? "—"
+              : open.length === 0
+                ? "nothing open"
+                : marked.length === 0
+                  ? "no usable mark yet"
+                  : `marked net ${fmtMoney(openNet)} · costs to date`
+          }
         />
-      </GridCard>
+        <FliesTile
+          title="closed net"
+          value={data === undefined || closedPositions === 0 ? null : fmtMoney(closedNet)}
+          tone={closedNet >= 0 ? "pos" : "neg"}
+          to="/pmcc/history"
+          toLabel="history"
+          foot={closedPositions === 0 ? "no cycle has completed yet" : `${String(closedPositions)} completed cycles · after every cost`}
+        />
+        <FliesTile
+          title="entries this session"
+          value={data === undefined ? null : String(filled)}
+          to="/pmcc/decisions"
+          toLabel="decisions"
+          foot={data?.session == null ? "—" : `${data.session} · ${String(attempts.reduce((n, a) => n + a.n, 0))} evaluations`}
+        />
+        <FliesTile
+          title="management verdicts"
+          value={data === undefined ? null : String(events.reduce((n, e) => n + e.n, 0))}
+          tone="dim"
+          to="/pmcc/decisions"
+          toLabel="decisions"
+          foot={held > 0 ? `${String(held)} seen and held by a gate` : "every verdict reached was acted on"}
+        />
+      </Section>
+
+      <Section concept="room" tag="management" question="What did management decide this session?">
+        <Card title="verdicts this session" help={VERDICTS_HELP}>
+          <DivergingBars
+            rows={[...byAction.entries()].sort((a, b) => b[1] - a[1]).map(([action, n]) => ({ label: action, value: n }))}
+            format={(v) => v.toLocaleString()}
+            tone="none"
+            emptyText={loading ? "reading…" : "no management verdicts recorded on this session"}
+          />
+          <div className="pf-mores pf-push">
+            <TabLink to="/pmcc/decisions">decisions</TabLink>
+          </div>
+        </Card>
+      </Section>
     </div>
   );
 }
