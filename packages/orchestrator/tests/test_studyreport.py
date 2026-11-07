@@ -143,3 +143,53 @@ def test_window_files_are_told_from_working_files():
     assert not sr.is_window_file("design.version.json")
     assert not sr.is_window_file("chain_requests_SPY.json")
     assert not sr.is_window_file("coverage.json")
+
+
+def _kinds(advice: list[dict]) -> list[str]:
+    assert all(a["kind"] in sr.ADVICE_KINDS and a["text"] and a["why"] for a in advice)
+    return [a["kind"] for a in advice]
+
+
+def test_advice_proposes_a_tick_by_tick_fallback_for_an_arm_that_trades_better_but_less():
+    own = sr.arms(_meic_file("design"), "study-design.json")
+    adv = sr.advice({}, own, [], [])
+    fallback = [a for a in adv if a["kind"] == "new_study"]
+    assert len(fallback) == 1 and "**wide**" in fallback[0]["text"] and "tick by tick" in fallback[0]["text"]
+    # More dollars, less per dollar of buying power: never adopted on dollars alone.
+    assert any(a["kind"] == "ruleset" and "equal buying power" in a["text"] for a in adv)
+    weak = sr.arms(_meic_file("design", gated_both_t=0.4), "study-design.json")
+    assert "new_study" not in _kinds(sr.advice({}, weak, [], []))
+
+
+def test_advice_rereads_a_design_pass_that_missed_and_defers_to_the_register():
+    verdicts = [
+        {"arm": "a", "verdict": "pass", "file": "study-design.json"},
+        {"arm": "a", "verdict": "fail", "file": "study-holdout.json"},
+    ]
+    adv = sr.advice({"outcome": "a passes"}, [], verdicts, [])
+    reread = next(a for a in adv if a["kind"] == "reread")
+    assert "**a**" in reread["text"] and "the register's outcome decides" in reread["why"]
+    assert "ruleset" not in _kinds(adv)  # a holdout miss is no candidate
+
+
+def test_advice_on_a_module_rule_that_fails_everywhere_names_the_retirement_call():
+    verdicts = [{"arm": a, "verdict": "fail", "file": "results.json"} for a in ("x", "y")]
+    adv = sr.advice({"title": "The calendars module's own rule at real quotes"}, [], verdicts, [])
+    assert any("retiring or redesigning" in a["text"] for a in adv)
+    other = sr.advice({"title": "A new entry filter"}, [], verdicts, [])
+    assert not any("retiring" in a["text"] for a in other)
+
+
+def test_advice_treats_one_pass_in_a_big_grid_as_a_lead_and_asks_to_record_a_written_verdict():
+    verdicts = [{"arm": f"c{i}", "verdict": "fail", "file": "results.json"} for i in range(11)]
+    verdicts.append({"arm": "c99", "verdict": "pass", "file": "results.json"})
+    adv = sr.advice({"status": "declared"}, [], verdicts, [])
+    assert _kinds(adv) == ["new_study", "register"]
+    assert "**c99**" in adv[0]["text"]
+
+
+def test_advice_for_a_study_with_nothing_to_read_or_a_failed_step():
+    assert _kinds(sr.advice({}, [], [], [])) == ["data"]
+    assert _kinds(sr.advice({}, [], [], ["study"])) == ["rerun"]
+    nothing = [{"arm": None, "verdict": "no verdict", "file": "results.json", "why": "0 trades"}]
+    assert _kinds(sr.advice({}, [], nothing, [])) == ["data"]

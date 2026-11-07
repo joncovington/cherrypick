@@ -586,8 +586,136 @@ def report(row: dict, files: list[dict]) -> dict:
         ],
         "gates": gates_for(text),
         "reading": reading({**row, "provisional": provisional}, rows, verdicts, steps),
+        "advice": advice({**row, "provisional": provisional}, own, verdicts, steps),
         "failed_steps": steps,
     }
+
+
+#: What a piece of advice asks for. Each is a suggestion for a person: nothing here queues, declares
+#: or changes anything.
+ADVICE_KINDS = ("rerun", "data", "new_study", "ruleset", "reread", "register")
+#: A study whose title says it tests a module's own rule: when every arm fails, the module is in question.
+_MODULE_RULE = re.compile(r"module's (?:own |whole |paper )?rule|module's own|'s own rule", re.I)
+
+
+def advice(study: dict, own: list[dict], verdicts: list[dict], steps: list[str]) -> list[dict]:
+    """What to do next, as `[{kind, text, why}]`, worked out by fixed rules from the same figures as
+    the reading. Suggestions only: a new study is declared by a person, a ruleset change waits for a
+    declared boundary, and the register's outcome decides. No model writes any of it."""
+    out: list[dict] = []
+    # Advice read from a script's own words defers to the register wherever it has an outcome.
+    defer = " (the files' words; the register's outcome decides)" if study.get("outcome") else ""
+
+    def add(kind: str, text: str, why: str) -> None:
+        if not any(a["text"] == text for a in out):
+            out.append({"kind": kind, "text": text, "why": why})
+
+    for s in steps:
+        add(
+            "rerun",
+            f"Read the log of the failed `{s}` step, fix what it names, and re-queue it.",
+            "a queue step failed and no later run of it finished",
+        )
+    stale = [r.get("name") for r in study.get("results") or [] if (r.get("version") or {}).get("stale")]
+    if stale:
+        add(
+            "rerun",
+            f"Re-run {', '.join(stale)}: its replay was corrected after it was written.",
+            "the script's correction log has grown past this result's stamp",
+        )
+
+    entries = [(v["arm"], _file_window(v.get("file") or "", None), v["verdict"]) for v in verdicts]
+    entries = entries or [(r["arm"], r["window"], r["verdict"]) for r in own if r.get("verdict")]
+    words = final_words(entries)
+    if not own and not words and not steps:
+        add(
+            "data",
+            "Find why the study wrote nothing readable (its log, its data coverage), fix it, and re-run.",
+            "no per-arm figures and no verdict",
+        )
+    if words and all(_cls(w) == "no_verdict" for w in words.values()):
+        add(
+            "data",
+            "Too little to judge: check what the study says it lacked (trades, sessions, names, data"
+            " coverage) and fix that before re-running, or widen the sample in a new declaration.",
+            "every rule came back no verdict",
+        )
+
+    by_arm: dict = {}
+    for arm, window, word in entries:
+        by_arm.setdefault(arm, {})[window or "whole"] = word
+    for arm, w in by_arm.items():
+        if _cls(w.get("design")) == "pass" and _cls(w.get("holdout")) == "fail":
+            add(
+                "reread",
+                f"Re-read **{arm or 'the rule'}** once more sessions are stored; change nothing now.",
+                "it passed the design window and missed in the holdout" + defer,
+            )
+
+    passes = [a for a, x in words.items() if _cls(x) == "pass"]
+    judged = [a for a, x in words.items() if _cls(x) in ("pass", "fail")]
+    if passes and len(judged) >= 10 and len(passes) == 1:
+        add(
+            "new_study",
+            f"Treat **{passes[0] or 'the passing cell'}** as a lead: declare a study on it alone, with its"
+            " neighbours named and a window this one did not read.",
+            f"one pass among {len(judged)} judged rules can be a lucky corner",
+        )
+    elif passes:
+        when = " after the replay is validated" if study.get("provisional") else ""
+        for a in passes:
+            add(
+                "ruleset",
+                f"Candidate for a paper arm{when}: **{a or 'the rule'}**, at the next declared boundary.",
+                "it passed the declared rule" + defer,
+            )
+
+    for r in own:
+        pb, p = r.get("paired_both"), r.get("paired")
+        if pb and p and (pb["t"] or 0) > T_BAR and not (p["t"] or 0) > T_BAR:
+            add(
+                "new_study",
+                f"Declare a fallback study: take **{r['arm']}** at the first tick it qualifies and the"
+                " baseline otherwise, replayed tick by tick, never chosen per session with hindsight.",
+                f"{r['arm']} beats the baseline when both trade ({r['window']}) but trades too rarely to"
+                " win overall",
+            )
+        base_risk = r.get("per_risk_base")
+        if p and p["mean"] > 0 and r.get("per_risk") is not None and base_risk is not None:
+            if r["per_risk"] < base_risk:
+                add(
+                    "ruleset",
+                    f"Don't adopt **{r['arm']}** on its dollars alone: compare it at equal buying power.",
+                    "it makes more per session than the baseline but less per dollar of buying power"
+                    f" ({r['window']})",
+                )
+
+    gated = [r for r in own if r.get("paired") and re.search(r"multi|perday|/gated|\+g\d", r["arm"])]
+    design_gated = [r for r in gated if r["window"] == "design"]
+    if design_gated and all(r["paired"]["mean"] < 0 for r in design_gated):
+        add(
+            "ruleset",
+            "Keep the gate off: every gated arm trailed its ungated base in the design window.",
+            "the gate costs money on these rules",
+        )
+
+    every_fail = words and judged and not passes and all(_cls(x) == "fail" for x in words.values())
+    if every_fail and _MODULE_RULE.search(study.get("title") or ""):
+        add(
+            "ruleset",
+            "The module's rule loses at real quotes in every version: retiring or redesigning it is your"
+            " call, and this backtest is the evidence the retirement rule asks for.",
+            "every arm failed after costs",
+        )
+
+    if words and not study.get("outcome") and study.get("status") in ("declared", "running"):
+        add(
+            "register",
+            "Record the outcome in docs/hypotheses.json: the result files have verdicts and the register"
+            " row still says declared.",
+            "a verdict is written but not recorded",
+        )
+    return out
 
 
 def _measure(r: dict, key: str):
