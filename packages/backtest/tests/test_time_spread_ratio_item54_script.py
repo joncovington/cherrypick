@@ -12,6 +12,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "time_spread_ratio_item54", SCRIPTS / "time_spread_ratio_item54.py"
@@ -150,3 +152,41 @@ def test_a_study_that_judged_nothing_is_no_verdict_not_failed():
     judged = {"a": {"decision": "no verdict"}, "b": {"decision": "fail"}}
     assert s54.overall_verdict(judged, []) == "failed"
     assert s54.overall_verdict(judged, ["b"]) == "passed"
+
+
+def stored_chain(dte, iv, spot=100.0):
+    """A chain as the vendor store holds it: (strike, right, bid, ask) with CALL and PUT. Priced by
+    manage's own model, so it needs manage installed (the calendar test below skips without it)."""
+    from cherrypick.manage import pricing
+
+    out = []
+    for i in range(17):
+        k = 80 + 2.5 * i
+        for right, stored in (("C", "CALL"), ("P", "PUT")):
+            px = pricing.price(spot, k, dte / 365, iv, right, 0.04)
+            if px >= 0.1:
+                out.append((k, stored, round(px - 0.02, 2), round(px + 0.02, 2)))
+    return out
+
+
+def test_the_stores_call_and_put_are_read_as_the_builders_c_and_p():
+    assert s54.right_of("CALL") == "C" and s54.right_of("PUT") == "P"
+    # Invented quotes in the store's spelling; no pricing model needed to read them.
+    rows = [(100.0, "CALL", 2.0, 2.2), (100.0, "PUT", 1.9, 2.1), (105.0, "CALL", 0.5, 0.6)]
+    seen = {o["right"] for o in s54.view(rows, 7)["options"]}
+    assert seen == {"C", "P"}
+
+
+def test_a_stored_chain_builds_the_calendar_the_ratio_is_read_from():
+    pytest.importorskip("cherrypick.manage")  # CI's backtest lane does not install manage
+    from cherrypick.manage import rules as _rules
+    from cherrypick.manage import timespreads as ts
+
+    entry = {
+        "spot": 100.0,
+        "front": {"expiration": "2026-11-13", **s54.view(stored_chain(7, 0.6), 7)},
+        "back": {"expiration": "2026-12-18", **s54.view(stored_chain(42, 0.45), 42)},
+    }
+    built, _ = ts.structures(entry, date(2026, 11, 6), _rules.effective(None)[0])
+    ratio = s54.atm_ratio(built, 100.0)
+    assert ratio is not None and 1.2 < ratio < 1.5  # 0.60 over 0.45
