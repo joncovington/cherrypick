@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ExperimentGuide, ExperimentGuideEntry, GuideNote, TradingMode } from "@console/shared";
 import { Card } from "./DataTable";
+import { HelpSection, type CardHelpContent } from "./CardHelp";
+import { Section } from "./Section";
 
 /**
  * What each experiment arm (flies) or risk profile (MEIC) is, and why it isn't one of the others.
@@ -179,16 +181,25 @@ function EntryCard({ entry, unit }: { entry: ExperimentGuideEntry; unit: string 
  *  `/api/arms/guide/<module>`. Shown under the module's arms comparison. */
 export function BookArmGuide({ module }: { module: "calendars" | "pmcc" | "curve" | "contango" | "bwb" }) {
   return (
-    <>
-      <h2 className="arm-section-head">What each arm is</h2>
-      <ExperimentGuideView
+    <ExperimentGuideView
         url={`/api/arms/guide/${module}`}
         mode="paper"
         intro="Each arm is its own paper portfolio over the same market. The one line beside each name, its dates and its notes are the module's own config; what makes it different is derived from its settings against the shared defaults and its siblings."
-      />
-    </>
+    />
   );
 }
+
+const BREAKS_HELP: CardHelpContent = {
+  title: "Measurement breaks",
+  body: (
+    <HelpSection title="Why they matter">
+      <p>
+        Sessions either side of these dates are not comparable. The module records them itself, so a comparison spanning one is a known-bad
+        reading rather than a surprise.
+      </p>
+    </HelpSection>
+  ),
+};
 
 export function ExperimentGuideView({ url, mode, intro }: { url: string; mode: TradingMode; intro: string }) {
   const { data, isLoading, isError } = useGuide(url, mode);
@@ -210,16 +221,13 @@ export function ExperimentGuideView({ url, mode, intro }: { url: string; mode: T
   const gone = entries.filter((e) => e.removed);
 
   return (
-    <div className="arm-help">
+    <div className="arm-help pf-layout">
+      {/* A guide is reading matter, so its text stays where it is; the questions only say what each part answers. */}
       <p className="arm-intro muted">{intro}</p>
 
       {(data?.breaks ?? []).length > 0 && (
-        <div className="cards cards-wide">
-          <Card title="Measurement breaks" collapseKey={`guide-breaks-${unit}`} defaultCollapsed>
-            <p className="muted arm-diff-none">
-              Sessions either side of these dates are not comparable. The module records them itself, so
-              a comparison spanning one is a known-bad reading rather than a surprise.
-            </p>
+        <Section concept="risk" tag="breaks" question={`Which sessions can I not compare across?`}>
+          <Card title="Measurement breaks" collapseKey={`guide-breaks-${unit}`} defaultCollapsed help={BREAKS_HELP} flag="not comparable">
             {(data?.breaks ?? []).map((b) => (
               <div className="arm-note" key={`${b.date}-${b.kind}`}>
                 <span className="arm-note-label">
@@ -230,43 +238,39 @@ export function ExperimentGuideView({ url, mode, intro }: { url: string; mode: T
               </div>
             ))}
           </Card>
-        </div>
+        </Section>
       )}
 
       {(data?.groupNotes ?? []).length > 0 && (
-        <div className="cards cards-wide">
+        <Section concept="stand" tag="the group" question={`What do all these ${unit}s have in common?`}>
           <Card title={`About these ${unit}s`} collapseKey={`guide-about-${unit}`} defaultCollapsed>
             <Notes notes={data?.groupNotes ?? []} />
           </Card>
-        </div>
+        </Section>
       )}
 
-      <div className="cards cards-wide">
-        {running.map((e) => (
-          <EntryCard key={e.name} entry={e} unit={unit} />
-        ))}
-      </div>
+      {running.length > 0 && (
+        <Section concept="live" tag="running" question={`What is each ${unit} that is running, and what makes it different?`}>
+          {running.map((e) => (
+            <EntryCard key={e.name} entry={e} unit={unit} />
+          ))}
+        </Section>
+      )}
 
       {finished.length > 0 && (
-        <>
-          <h2 className="arm-section-head">Not currently running</h2>
-          <div className="cards cards-wide">
-            {finished.map((e) => (
-              <EntryCard key={e.name} entry={e} unit={unit} />
-            ))}
-          </div>
-        </>
+        <Section concept="hist" tag="not running" question={`Which ${unit}s have stopped, and why?`}>
+          {finished.map((e) => (
+            <EntryCard key={e.name} entry={e} unit={unit} />
+          ))}
+        </Section>
       )}
 
       {gone.length > 0 && (
-        <>
-          <h2 className="arm-section-head">In the book, gone from the config</h2>
-          <div className="cards cards-wide">
-            {gone.map((e) => (
-              <EntryCard key={e.name} entry={e} unit={unit} />
-            ))}
-          </div>
-        </>
+        <Section concept="edge" tag="gone" question={`Which ${unit}s are in the book but gone from the config?`}>
+          {gone.map((e) => (
+            <EntryCard key={e.name} entry={e} unit={unit} />
+          ))}
+        </Section>
       )}
     </div>
   );

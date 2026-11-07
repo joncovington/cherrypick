@@ -10,8 +10,7 @@ import { LoopPill, usePage } from "../../components/ScopeBar";
 import { ModuleIntegrityStrip } from "../../components/ModuleIntegrityStrip";
 import type { TradingMode } from "@console/shared";
 import { ForestCard } from "../../pages/Flies/ForestCard";
-import { ArmRail, AttemptTimeline } from "../../components/Attempts";
-import { OccupancyMap } from "../../components/OccupancyMap";
+import { AttemptsTab } from "../../components/AttemptsTab";
 import { TimelineCard } from "../../pages/Flies/TimelineCard";
 import { HistoryTab } from "../../pages/Flies/HistoryTab";
 import { JournalCard } from "../../pages/Flies/JournalCard";
@@ -182,11 +181,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
       id: "attempts",
       label: FLIES_LABEL.attempts,
       render: () => (
-        <div className="cards cards-wide">
-          <ArmRail module="flies" mode={mode} date={filter.date} scope={{ arm, symbol, era }} />
-          <AttemptTimeline module="flies" mode={mode} date={filter.date} scope={{ arm, symbol, era }} />
-          <OccupancyMap module="flies" mode={mode} date={filter.date} scope={{ arm, symbol, era }} />
-        </div>
+        <AttemptsTab module="flies" mode={mode} date={filter.date} scope={{ arm, symbol, era }} />
       ),
     },
     { id: "timeline", label: FLIES_LABEL.timeline, render: () => <TimelineCard mode={mode} filter={filter} arm={arm} /> },

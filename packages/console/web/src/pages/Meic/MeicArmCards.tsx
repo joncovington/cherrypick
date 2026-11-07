@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { TradingMode } from "@console/shared";
-import { ArmRail, AttemptTimeline, useAttempts, type ArmRailEntry, type AttemptsScope } from "../../components/Attempts";
-import { OccupancyMap } from "../../components/OccupancyMap";
+import { AttemptTimeline, useAttempts, type ArmRailEntry, type AttemptsScope } from "../../components/Attempts";
+import { AttemptsTab } from "../../components/AttemptsTab";
 import { ARM_COLORS, OUTCOME_LABEL_OF } from "../../components/chart/tokens";
 import { fmtCash } from "../../lib/format";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "../Backtest/CardLightbox";
@@ -208,11 +208,7 @@ function ArmDialog({
               <AttemptTimeline module="meic" mode={mode} date={scope.day} scope={armAttempts} />
             </div>
           ) : tab === "attempts" ? (
-            <div className="cards cards-wide">
-              <ArmRail module="meic" mode={mode} date={scope.day} scope={armAttempts} />
-              <AttemptTimeline module="meic" mode={mode} date={scope.day} scope={armAttempts} />
-              <OccupancyMap module="meic" mode={mode} date={scope.day} scope={armAttempts} />
-            </div>
+            <AttemptsTab module="meic" mode={mode} date={scope.day} scope={armAttempts} />
           ) : (
             <MeicPositionsTable mode={mode} scope={armScope} />
           )}

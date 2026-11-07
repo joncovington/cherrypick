@@ -5,7 +5,7 @@ import { usePmcc } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, fmtPct } from "../../components/DataTable";
 import { EraSelect, LoopPill, ScopeSelect } from "../../components/ScopeBar";
-import { ArmRail, AttemptTimeline } from "../../components/Attempts";
+import { AttemptsTab } from "../../components/AttemptsTab";
 import { IntegrityStrip } from "../../pages/Pmcc/IntegrityStrip";
 import { BookComparison, OpenTradesCard } from "../../pages/Pmcc/CurrentStateCards";
 import { DecisionsCard } from "../../components/DecisionsCard";
@@ -41,9 +41,9 @@ export function PmccLightbox({ slide }: { slide: string }) {
       id: "decisions",
       label: PMCC_LABEL.decisions,
       render: () => (
+        <>
+        <AttemptsTab module="pmcc" mode="paper" date={null} />
         <div className="cards cards-wide">
-          <ArmRail module="pmcc" mode="paper" date={null} />
-          <AttemptTimeline module="pmcc" mode="paper" date={null} />
           <div className="pmcc-activity">
             {(() => {
               const attempts = data?.today.attempts.filter((a) => symbol === null || a.symbol === symbol) ?? [];
@@ -112,6 +112,7 @@ export function PmccLightbox({ slide }: { slide: string }) {
           </div>
           <DecisionsCard module="pmcc" />
         </div>
+        </>
       ),
     },
     {
