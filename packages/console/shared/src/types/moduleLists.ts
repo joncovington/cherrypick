@@ -9,4 +9,4 @@
 export type AttemptsModule = "meic" | "flies" | "pmcc" | "curve";
 
 /** Modules whose `*_decisions` journal the shared decisions reader (`readers/decisions.ts`) reads. */
-export type DecisionsModule = "curve" | "pmcc" | "bwb" | "contango";
+export type DecisionsModule = "curve" | "pmcc" | "bwb" | "contango" | "weeklyput";

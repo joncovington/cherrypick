@@ -225,6 +225,26 @@ export const CONTANGO_SLIDES = [
 export type ContangoSlideId = (typeof CONTANGO_SLIDES)[number]["id"];
 
 /**
+ * weeklyput's tabs (2026-11-08): item 57's unhedged weekly index put, paper. `summary` (today) is the
+ * entry session and each name's row for the cycle; `cycles` is the judged unit (one expiry, the
+ * equal-weight mean of its names in bp) and `performance` the forward read of those cycles; `costs`
+ * keeps fees, settlement and slippage apart. Open and settled puts are separate tables. No advisor,
+ * regime or analysis tab: the module declares no advice bounds and keeps no daily series.
+ */
+export const WEEKLYPUT_SLIDES = [
+  { id: "summary", label: "today" },
+  { id: "cycles", label: "cycles" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
+  { id: "decisions", label: "decisions" },
+  { id: "performance", label: "performance" },
+  { id: "costs", label: "costs" },
+  { id: "guide", label: "help" },
+] as const satisfies readonly NavSlide[];
+
+export type WeeklyputSlideId = (typeof WEEKLYPUT_SLIDES)[number]["id"];
+
+/**
  * PMCC's tabs, on the frame since 2026-09-25. `now` → `session`; its cards became pages:
  * `decisions` (the arm rail, the attempt timeline, today's attempts and management verdicts, the
  * decision log), `arms` (the arm comparison) and `positions`. `history` is the completed cycles in
@@ -505,6 +525,18 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
       { label: "tables", ids: ["positions", "history"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "analysis", "costs"] },
+      { label: "help", ids: ["guide"] },
+    ],
+    legacy: { session: "summary" },
+  },
+  weeklyput: {
+    slides: WEEKLYPUT_SLIDES,
+    simple: ["summary", "cycles", "performance", "positions", "guide"],
+    groups: [
+      { label: "today", ids: ["summary"] },
+      { label: "tables", ids: ["cycles", "positions", "history"] },
+      { label: "evidence", ids: ["decisions"] },
+      { label: "study", ids: ["performance", "costs"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: { session: "summary" },
