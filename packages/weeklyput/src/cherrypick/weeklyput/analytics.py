@@ -107,7 +107,7 @@ def summary(conn, arm: str | None = None) -> dict:
                 **{k: round(v, 2) for k, v in dollars.items()},
                 "gross_pnl": round(gross, 2),
                 "net_pnl": round(net, 2),
-                "fee_drag": round((dollars["fees"] + dollars["settlement"]) / dollars["entry_value"], 4)
+                "fee_drag": round(dollars["fees"] / dollars["entry_value"], 4)
                 if dollars["entry_value"]
                 else None,
             },
