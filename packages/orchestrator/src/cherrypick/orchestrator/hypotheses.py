@@ -55,6 +55,15 @@ PLAN_HEADING = re.compile(r"^### (\d+)\.", re.M)
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
+def notes_paths(result: Path) -> list[Path]:
+    """Where a result file's Markdown notes may be, first match wins: `<stem>.md` beside it, then,
+    for a per-window file (`results-design.json`), the study's one `results.md` that covers both."""
+    paths = [result.with_suffix(".md")]
+    if re.fullmatch(r"results-[a-z0-9]+", result.stem):
+        paths.append(result.with_name("results.md"))
+    return paths
+
+
 def register_path(root: Path | None = None) -> Path:
     return (root or repo_root()) / "docs" / "hypotheses.json"
 
@@ -110,6 +119,10 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
             problems.append(f"{tag}: results must be a list of {RESULT_PREFIX}... paths")
         elif results:
             for p in results:
+                # A result is the study's JSON; its Markdown notes are found beside it (`notes()`), so
+                # a listed .md would be read as a result that fails to parse and shows as missing.
+                if not p.endswith(".json"):
+                    problems.append(f"{tag}: result {p} is not a .json file; notes beside a result are found on their own")
                 if p in owners and owners[p] != rid:
                     problems.append(f"{tag}: result {p} is already row {owners[p]}'s")
                 owners.setdefault(p, rid)

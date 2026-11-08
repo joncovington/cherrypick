@@ -55,9 +55,19 @@ def test_a_verdict_names_its_results_under_the_home():
     # Broken on purpose: a verdict with no result, and a result outside the home.
     assert any("names its result files" in p for p in hy.check({"hypotheses": [{**done, "results": None}]}))
     assert any("{home}/" in p for p in hy.check({"hypotheses": [{**done, "results": ["docs/x.json"]}]}))
+    # A result's notes are not a result: listed, the board read results.md as a missing result.
+    notes = [*done["results"], "{home}/data/backtest/results/research/item18/study.md"]
+    assert any("is not a .json file" in p for p in hy.check({"hypotheses": [{**done, "results": notes}]}))
     # A declared row has no result yet, and a legacy verdict may have none.
     assert hy.check({"hypotheses": [NEW]}) == []
     assert hy.check({"hypotheses": [{**NEW, "legacy": True, "status": "failed", "rule": None}]}) == []
+
+
+def test_notes_are_found_beside_a_result_or_shared_by_its_windows(tmp_path):
+    assert hy.notes_paths(tmp_path / "results.json") == [tmp_path / "results.md"]
+    # A per-window file falls back to the study's one results.md (item 49's layout).
+    assert hy.notes_paths(tmp_path / "results-design.json") == [tmp_path / "results-design.md", tmp_path / "results.md"]
+    assert hy.notes_paths(tmp_path / "trades.json") == [tmp_path / "trades.md"]
 
 
 def test_every_queue_item_study_has_a_row():
