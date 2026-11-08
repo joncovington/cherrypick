@@ -122,7 +122,9 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
                 # A result is the study's JSON; its Markdown notes are found beside it (`notes()`), so
                 # a listed .md would be read as a result that fails to parse and shows as missing.
                 if not p.endswith(".json"):
-                    problems.append(f"{tag}: result {p} is not a .json file; notes beside a result are found on their own")
+                    problems.append(
+                        f"{tag}: result {p} is not a .json file; notes beside a result are found on their own"
+                    )
                 if p in owners and owners[p] != rid:
                     problems.append(f"{tag}: result {p} is already row {owners[p]}'s")
                 owners.setdefault(p, rid)

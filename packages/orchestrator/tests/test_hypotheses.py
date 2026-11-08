@@ -66,7 +66,8 @@ def test_a_verdict_names_its_results_under_the_home():
 def test_notes_are_found_beside_a_result_or_shared_by_its_windows(tmp_path):
     assert hy.notes_paths(tmp_path / "results.json") == [tmp_path / "results.md"]
     # A per-window file falls back to the study's one results.md (item 49's layout).
-    assert hy.notes_paths(tmp_path / "results-design.json") == [tmp_path / "results-design.md", tmp_path / "results.md"]
+    window = hy.notes_paths(tmp_path / "results-design.json")
+    assert window == [tmp_path / "results-design.md", tmp_path / "results.md"]
     assert hy.notes_paths(tmp_path / "trades.json") == [tmp_path / "trades.md"]
 
 
