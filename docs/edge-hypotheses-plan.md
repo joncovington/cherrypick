@@ -90,6 +90,13 @@ written are not re-judged. The arithmetic is `cherrypick.core.robustness`
     A caller's flat fraction outranks the suite's per-symbol entry, so a study's stress keeps its
     value. It also means a module config that pins the flat 0.125 (MEIC's and earnings' examples do)
     has to drop that pin at the same boundary, or it will never see the SPX entry.
+- **Every arm writes a scorecard** (from 2026-11-07). Each arm's block in the result file carries
+  `scorecard`: `cherrypick.backtest.scorecard.scorecard(series, trades)` over the arm's own sessions
+  (`[{session, net, trades}]`, a session with no entry at zero) and, where the script keeps them, its
+  trades. That is the stats table (total P/L, max drawdown, return on drawdown, high and low P/L,
+  profit factor, Sharpe and Sortino) and the insights (costs, wide spreads, drawdown lengths). Run
+  cards build the same block, and the study's Report tab prints it. It is for reading: the declared
+  test still decides the verdict.
 
 ## Data we already hold
 

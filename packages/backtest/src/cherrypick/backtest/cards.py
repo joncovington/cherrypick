@@ -36,7 +36,7 @@ from cherrypick.core import ledgers as core_ledgers
 from cherrypick.core import metrics as core_metrics
 from cherrypick.core import robustness
 
-from . import paths, stats
+from . import paths, scorecard, stats
 
 TOP_DRAWDOWNS = 5
 #: Fewer sessions than this and the edge trend gives no verdict: two halves of a handful say nothing.
@@ -505,6 +505,7 @@ def arm_cards(
         else compounded(series, by_session or {}, capital, risk_pct, risk_unit),
     }
     out["health"] = health(series, out)
+    out["scorecard"] = scorecard.scorecard(series, trades)
     return out
 
 

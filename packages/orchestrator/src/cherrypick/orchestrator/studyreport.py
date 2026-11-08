@@ -15,6 +15,9 @@ The reading states what the figures say and nothing more. The register's outcome
 a script's per-arm `verdict` can apply a check the declaration does not (item 43's holdout script
 fails w20 on net over buying power, which the declared holdout rule does not test), so where the
 register has an outcome the reading leads with it and labels the file words as the files'.
+
+An arm that wrote a `scorecard` block (`cherrypick.backtest.scorecard`, the stats table and insights
+run cards show) carries it through on its row, as written, for the Report tab to print.
 """
 
 from __future__ import annotations
@@ -42,6 +45,7 @@ SKIP_DEEP = (
     "checks",
     "stress",
     "rows",
+    "scorecard",
 )
 #: The baseline comparison an arm is judged on, most specific first.
 PAIRED_PREFER = ("vs_base", "vs_live", "vs_control", "vs_w10", "vs_live-1400", "pair", "paired", "diff")
@@ -196,7 +200,24 @@ def per_risk_of(d) -> dict:
     return {}
 
 
+def scorecard_of(d: dict) -> dict | None:
+    """The arm's `scorecard` block (`cherrypick.backtest.scorecard`: `{stats, insights}`), carried
+    through as written; None when the script wrote none or wrote another shape."""
+    for src in (d, d.get("own")):
+        sc = src.get("scorecard") if isinstance(src, dict) else None
+        if (
+            isinstance(sc, dict)
+            and isinstance(sc.get("stats"), dict)
+            and isinstance(sc.get("insights"), list)
+        ):
+            return sc
+    return None
+
+
 def _enrich(row: dict, d: dict) -> dict:
+    sc = scorecard_of(d)
+    if sc is not None:
+        row["scorecard"] = sc
     for src in (d, d.get("own")):
         if isinstance(src, dict):
             for k, v in {**paired_of(src), **per_risk_of(src)}.items():

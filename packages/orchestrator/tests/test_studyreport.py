@@ -216,3 +216,22 @@ def test_advice_for_a_study_with_nothing_to_read_or_a_failed_step():
     assert _kinds(sr.advice({}, [], [], ["study"])) == ["rerun"]
     nothing = [{"arm": None, "verdict": "no verdict", "file": "results.json", "why": "0 trades"}]
     assert _kinds(sr.advice({}, [], nothing, [])) == ["data"]
+
+
+def test_an_arms_scorecard_rides_through_on_its_row():
+    card = {
+        "stats": {"total_pl": 120.0, "max_drawdown": 40.0, "return_on_dd": 3.0},
+        "insights": [{"key": "longest_drawdown", "text": "Longest drawdown lasted 9 days.", "flag": False}],
+    }
+    data = {
+        "arms": {
+            "a": {"design": {"mean": 2.0, "n": 60, "scorecard": card}},
+            "b": {"mean": 1.0, "n": 30, "scorecard": card},
+            "c": {"mean": 1.0, "n": 30, "scorecard": {"stats": "not a table"}},
+        }
+    }
+    rows = {r["arm"]: r for r in sr.arms(data, "results.json")}
+    assert rows["a"]["scorecard"] == card and rows["b"]["scorecard"] == card
+    assert "scorecard" not in rows["c"], "another shape is left out, never guessed at"
+    # The scorecard's own numbers are never read as the arm's figures.
+    assert rows["a"]["mean"] == 2.0 and rows["b"]["n"] == 30
