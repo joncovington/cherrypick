@@ -44,7 +44,11 @@ written are not re-judged. The arithmetic is `cherrypick.core.robustness`
   parts, the mechanism, the rival explanations each with the check that rules it out, and a pointer
   here. Run `cherrypick hypotheses --similar '{"setup": ..., "structure": ...}'` first; a rejected
   look-alike is named in the declaration, so a retest is said out loud. `cherrypick hypotheses`
-  fails on a malformed row. A `retest` recipe (the research queue's kind and args) lets B14 re-run it.
+  fails on a malformed row. Take the item number from its `next_id` (this checkout's register,
+  `origin/main`'s as last fetched, and this plan's headings), after a `git fetch`, and put `id` and
+  `study` in the `--similar` proposal: it fails when either is taken. The row names its `scripts` and
+  `tests` (repo paths that exist), which with the pointer, the queue rows keyed by `study` and
+  `results` make the study chain the console shows step by step (2026-11-07). A `retest` recipe (the research queue's kind and args) lets B14 re-run it.
   When the result lands, the row's status changes, `results` names the files as `{home}/...` paths
   and `outcome` says the decision in words (2026-10-29, for the Backtest page's studies board).
 - **A result file the board can read:** a top-level `verdict` (one word, or one per arm, or per arm

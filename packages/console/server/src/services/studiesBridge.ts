@@ -152,7 +152,15 @@ function toTask(v: unknown): StudyTask | null {
   const step = s(r["step"]);
   const status = s(r["status"]);
   if (id === null || step === null || status === null) return null;
-  return { id, step, status, createdAt: s(r["created_at"]), startedAt: s(r["started_at"]), finishedAt: s(r["finished_at"]) };
+  return {
+    id,
+    kind: s(r["kind"]),
+    step,
+    status,
+    createdAt: s(r["created_at"]),
+    startedAt: s(r["started_at"]),
+    finishedAt: s(r["finished_at"]),
+  };
 }
 
 function toRival(v: unknown): StudyRival | null {
@@ -185,6 +193,8 @@ function toRow(v: unknown): StudyRow | null {
     rule: s(r["rule"]),
     mechanism: s(r["mechanism"]),
     rivals: list(r["rivals"]).map(toRival).filter((x): x is StudyRival => x !== null),
+    scripts: list(r["scripts"]).filter((x): x is string => typeof x === "string"),
+    tests: list(r["tests"]).filter((x): x is string => typeof x === "string"),
     group,
     results: list(r["results"]).map(toResult).filter((x): x is StudyResult => x !== null),
     queueActive: queue["active"] === true,

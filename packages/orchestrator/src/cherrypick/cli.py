@@ -2068,6 +2068,41 @@ def _study_folders() -> set[str]:
     return out
 
 
+def _read_text(path) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _git_show(rel: str) -> str:
+    """`origin/main:<rel>` as last fetched, or "" (no remote ref, no git)."""
+    try:
+        res = subprocess.run(
+            ["git", "show", f"origin/main:{rel}"],
+            cwd=hypotheses.repo_root(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=20,
+            creationflags=CREATE_NO_WINDOW,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return res.stdout if res.returncode == 0 else ""
+
+
+def _register_on_main() -> dict:
+    try:
+        return json.loads(_git_show("docs/hypotheses.json") or "{}")
+    except ValueError:
+        return {}
+
+
+def _plan_on_main() -> str:
+    return _git_show("docs/edge-hypotheses-plan.md")
+
+
 def cmd_hypotheses(cfg, args) -> None:
     """B7: check the register, list rule changes due a re-read, and (--similar) rejected look-alikes."""
     reg = hypotheses.load()
@@ -2076,13 +2111,27 @@ def cmd_hypotheses(cfg, args) -> None:
     problems += [
         f"study {s} (queue or result folder): no register row" for s in hypotheses.unregistered(reg, studies)
     ]
-    out = {"ok": not problems, "problems": problems, "rereads": hypotheses.rereads(reg, _trades_since(cfg))}
+    main_reg = _register_on_main()
+    plan = _plan_on_main() + "\n" + _read_text(hypotheses.repo_root() / "docs" / "edge-hypotheses-plan.md")
+    out = {
+        "ok": not problems,
+        "problems": problems,
+        "rereads": hypotheses.rereads(reg, _trades_since(cfg)),
+        # The next free item number here and on origin/main as last fetched: fetch before declaring.
+        "next_id": hypotheses.next_id(reg, main_reg, plan_md=plan),
+    }
     if args.similar:
+        proposal = json.loads(args.similar)
         out["similar_rejected"] = [
             {k: r.get(k) for k in ("id", "study", "title", "pointer")}
-            for r in hypotheses.similar(reg, json.loads(args.similar))
+            for r in hypotheses.similar(reg, proposal)
         ]
+        out["taken"] = hypotheses.taken(proposal, reg, main_reg)
+        if out["taken"]:
+            out["ok"] = False
     _emit(out)
+    if out.get("taken"):
+        sys.exit(1)
     if problems:
         sys.exit(1)
 
