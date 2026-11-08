@@ -172,3 +172,11 @@ def test_a_row_stamped_with_its_base_wins_over_the_configured_fallback(config):
         {**POSITION, "arm": "advised:tv-exit", "advice_params": "{}", "advice_base": None}, config
     )
     assert bare["base_book"] == "control", "no stamp: the config fallback, as before"
+
+
+def test_wind_down_closes_a_weekly_position_before_expiry_and_waits_for_a_mark():
+    # The retirement switch closes at once, through the caller's execution gate; with no mark it holds.
+    d = management.evaluate(POSITION, _params(wind_down=True), now=NOW, short_tv=0.40, spot=70.0)
+    assert (d.action, d.reason) == ("close_all", "wind_down")
+    held = management.evaluate(POSITION, _params(wind_down=True), now=NOW, short_tv=None, spot=70.0)
+    assert held.reason == "unpriced_mark"

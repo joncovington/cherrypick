@@ -606,3 +606,10 @@ def test_the_deep_window_is_sized_on_the_year_long_expiry_at_the_arms_own_depth(
     shield["stream_window"] = {"base_width": 1, "margin": 0, "round_to": 1}
     hints = _request(cache, shield, conn, tmp_path)["window_hints"]
     assert hints["TQQQ"][0] == 3  # [down, up]: 30, 35, 40 on the LEAP; spot 70.60 x 0.40 = 28.24 floor
+
+
+def test_wind_down_closes_a_held_long_ahead_of_every_other_rule():
+    # A long a year out with a healthy short would hold; retiring, it closes all.
+    v = _verdict(datetime(2026, 9, 2, 11, 0), params=_params(wind_down=True))
+    assert (v.action, v.reason) == ("close_all", "wind_down")
+    assert _verdict(datetime(2026, 9, 2, 11, 0)).action == "hold"
