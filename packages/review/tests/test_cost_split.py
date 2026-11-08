@@ -64,6 +64,7 @@ def test_every_module_states_its_slippage_basis():
         "bwb": "cost",
         "curve": "cost",
         "contango": "cost",
+        "weeklyput": "cost",
     }
 
 

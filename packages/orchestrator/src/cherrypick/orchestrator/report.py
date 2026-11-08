@@ -5,8 +5,9 @@ unified P&L summary across every trading module, broken down by module and, with
 arm. A read-mostly reporting surface for the walk-away user.
 
 The readers are not here. Every schema `schemas.SCHEMAS` names (meic_ic, earnings, fly_book, dc_week,
-pmcc, curve_vx, bwb_132, contango_etf) is read through `cherrypick.core.ledgers.READERS`, dispatched
-by `paper.trade_schema`, which is the one home for each module's net, cost, capital and session rules
+pmcc, curve_vx, bwb_132, contango_etf, weeklyput_put) is read through
+`cherrypick.core.ledgers.READERS`, dispatched by `paper.trade_schema`, which is the one home for
+each module's net, cost, capital and session rules
 and documents them per schema. Each closed record is `{arm, symbol, strategy, gross_pnl, cost,
 net_pnl, slippage, capital, max_profit, session, experiment_id, ...}`; "net" is always net of costs.
 flies' book-level floor and the price band it holds over live in `fly_books` and are not a per-trade

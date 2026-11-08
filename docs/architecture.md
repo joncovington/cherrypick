@@ -133,6 +133,7 @@ Each module's paper DB has a different schema, selected by `paper.trade_schema` 
 | `pmcc` (alias `pmcc_99`) | PMCC | `pmcc_positions` | status `closed`; net = `gross_pnl − fees`; tag = book. |
 | `curve_vx` | Curve | `curve_positions` | status `closed`; net = `gross_pnl − fees`; tag = book. |
 | `contango_etf` | Contango | `contango_positions` (one row per holding stint) | status `closed`; net = `net_pnl` as stored (`gross_pnl − fees − slippage`; fills at mid, slippage its own column); capital = shares × entry mid; tag = arm. |
+| `weeklyput_put` | Weeklyput | `weeklyput_positions` (one row per short put) | status `closed`; net = `net_pnl` as stored (`gross_pnl − fees − settlement − slippage`, each its own column; fills at mid); capital = strike × 100 × quantity (cash-secured); session = the expiry; tag = arm; exit = `exit_reason` (expired / settled / assigned). |
 | `bwb_132` | BWB | `bwb_positions` | status `closed`; net = `gross_pnl − fees`; tag = book. |
 
 The per-schema net and risk rules for every row live in one place, `cherrypick.core.ledgers`.

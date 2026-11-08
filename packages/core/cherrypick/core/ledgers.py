@@ -14,7 +14,7 @@ Every closed reader yields the same record shape, keyed by `paper.trade_schema`:
     {arm, symbol, strategy, gross_pnl, cost, net_pnl, slippage, capital, max_profit, session,
      experiment_id}
 
-plus, for the multi-day schemas (earnings, dc_week, pmcc, curve_vx, bwb_132, contango_etf),
+plus, for the multi-day schemas (earnings, dc_week, pmcc, curve_vx, bwb_132, contango_etf, weeklyput_put),
 `entry_session` -- the session the position was entered, where `session` is the one it closed
 (added 2026-10-12 for `core.compare`, which pairs those arms on the entry they share).
 
@@ -69,6 +69,12 @@ formula from `capital` alone.
                  net_pnl as stored (gross - fees - slippage: fills are at mid and slippage is its
                  own column there, so `cost` here is fees + slippage); tag = arm; capital = the
                  stint's purchase (shares x entry mid), all of it at risk in a fund.
+  - "weeklyput_put": weeklyput's `weeklyput_positions`, one short index put held to the expiry's
+                 posted close; closed = status 'closed'; net = net_pnl as stored (gross - fees -
+                 settlement - slippage, each its own column; fills at mid); tag = arm; capital =
+                 strike x 100 x quantity, the put's cash-secured maximum loss; the session is the
+                 expiry (the print may post, and the row close, on the next morning); `outcome`
+                 is `exit_reason` (expired / settled / assigned).
 
 The cost split (added 2026-10-12, for the suite's money layout in the root `CLAUDE.md`): beside
 `cost` -- each module's TOTAL cost, unchanged, so `net_pnl = gross_pnl - cost` still holds -- every
@@ -173,6 +179,7 @@ SLIPPAGE_BASIS = {
     "curve_vx": SLIPPAGE_COST,
     "bwb_132": SLIPPAGE_COST,
     "contango_etf": SLIPPAGE_COST,
+    "weeklyput_put": SLIPPAGE_COST,
 }
 
 
@@ -226,6 +233,14 @@ _TRADE_COLUMNS = {
         "entry_spot": "entry_mid",
         "exit_spot": "exit_mid",
     },
+    # The underlying at entry, and the expiry's posted close (the settlement print).
+    "weeklyput_put": {
+        "position_id": "position_id",
+        "entry_time": "entry_time",
+        "exit_time": "settle_time",
+        "entry_spot": "entry_spot",
+        "exit_spot": "settle_price",
+    },
 }
 
 
@@ -276,6 +291,7 @@ ROW_NET = {
     "bwb_132": lambda r: _net(r["gross_pnl"], r["fees"]),
     # contango stores the whole layout on the row (gross - fees - slippage = net); read, not derived.
     "contango_etf": lambda r: r["net_pnl"],
+    "weeklyput_put": lambda r: r["net_pnl"],
 }
 
 
@@ -879,6 +895,73 @@ def _contango_open(conn) -> list[dict]:
     ]
 
 
+def _weeklyput_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
+    """weeklyput's closed short puts. The module stores the whole money layout on the row (credit +
+    settlement value = gross; gross - fees - settlement - slippage = net), so this reads it rather
+    than re-deriving it. The session is the expiry, which is when the trade ended economically; the
+    close may be written the next morning, when the posted print arrives. `max_profit` is the
+    credit, the put's ceiling at expiry."""
+    where, params = _session_where("settle_session", start, end)
+    ent_col, has_ent = _entry_select(conn, "weeklyput_positions")
+    rows = conn.execute(
+        "SELECT arm, symbol, strike, quantity, entry_value, gross_pnl, fees, settlement, slippage, "
+        f"net_pnl, exit_reason, settle_session{ent_col}"
+        f"{_trade_select(conn, 'weeklyput_positions', 'weeklyput_put')} "
+        f"FROM weeklyput_positions WHERE status = 'closed'{where}",
+        params,
+    ).fetchall()
+    out = []
+    for r in rows:
+        # Fees and the cash-settlement or assignment charge are separate columns there, and
+        # slippage a third: the total is all three, and a hole in any one leaves it unrecorded.
+        cost = _round2(_plus(_plus(r["fees"], r["settlement"]), r["slippage"]))
+        out.append(
+            {
+                "arm": r["arm"],
+                "experiment_id": None,
+                "symbol": r["symbol"],
+                "strategy": "weeklyput_put",
+                "gross_pnl": r["gross_pnl"],
+                "cost": cost,
+                "net_pnl": r["net_pnl"],
+                "slippage": r["slippage"],
+                **_cost_split("weeklyput_put", cost, r["settlement"], r["slippage"]),
+                "entry_credit": r["entry_value"],
+                "capital": _weeklyput_capital(r),
+                "max_profit": r["entry_value"],
+                "session": r["settle_session"] or "",
+                "entry_session": r["entry_session"] if has_ent else None,
+                "outcome": r["exit_reason"],
+                **_trade_fields(r, "weeklyput_put"),
+            }
+        )
+    return out
+
+
+def _weeklyput_capital(r) -> float | None:
+    """Cash securing the short put: strike x 100 x quantity, its defined maximum loss."""
+    if r["strike"] is None:
+        return None
+    return round(float(r["strike"]) * 100 * int(r["quantity"] or 1), 2)
+
+
+def _weeklyput_open(conn) -> list[dict]:
+    """weeklyput's open short puts: sold seven days before the expiry, so each is held overnight."""
+    rows = conn.execute(
+        "SELECT arm, symbol, strike, quantity, entry_session FROM weeklyput_positions WHERE status = 'open'"
+    ).fetchall()
+    return [
+        {
+            "arm": r["arm"],
+            "symbol": r["symbol"],
+            "strategy": "weeklyput_put",
+            "capital": _weeklyput_capital(r),
+            "session": r["entry_session"] or "",
+        }
+        for r in rows
+    ]
+
+
 BWB_UNTAGGED = "unassigned"
 
 
@@ -1009,7 +1092,7 @@ ERA_SCHEMAS = frozenset({"pmcc"})
 # read, from what every ledger already records -- so every row already written has it too, with no
 # backfill. A schema whose `capital` is not a defined max loss has no R: contango holds a fund (its
 # capital is the purchase, not a structure's worst case) and flies' per-trade rows carry no capital.
-R_SCHEMAS = frozenset({"meic_ic", "earnings", "dc_week", "pmcc", "curve_vx", "bwb_132"})
+R_SCHEMAS = frozenset({"meic_ic", "earnings", "dc_week", "pmcc", "curve_vx", "bwb_132", "weeklyput_put"})
 
 
 def r_multiple(record: dict, schema: str) -> float | None:
@@ -1045,6 +1128,7 @@ READERS = {
         "curve_vx": _curve_closed,
         "bwb_132": _bwb_closed,
         "contango_etf": _contango_closed,
+        "weeklyput_put": _weeklyput_closed,
     }.items()
 }
 
@@ -1150,6 +1234,7 @@ OPEN_READERS = {
     "curve_vx": _curve_open,
     "bwb_132": _bwb_open,
     "contango_etf": _contango_open,
+    "weeklyput_put": _weeklyput_open,
 }
 
 

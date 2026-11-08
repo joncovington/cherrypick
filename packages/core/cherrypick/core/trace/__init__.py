@@ -49,6 +49,7 @@ POSITIONS = {
     "meic_ic": ("ic_trades", "ic_order_id"),
     "earnings": ("trades", "order_id"),
     "contango_etf": ("contango_positions", "position_id"),
+    "weeklyput_put": ("weeklyput_positions", "position_id"),
 }
 
 #: Entry attempts: (table, arm column or None, column linking a filled attempt to its position or None).

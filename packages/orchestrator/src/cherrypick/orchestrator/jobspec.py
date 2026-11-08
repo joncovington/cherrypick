@@ -2486,7 +2486,7 @@ def _add_self_healing_jobs(add, name, mcfg, paper, tick, pythonw, root) -> None:
 
     if interval >= 60:
         # Trading days only, unless the module says otherwise (2026-10-12). Every spawn-per-tick paper
-        # module (meic, pmcc, curve, contango, bwb, earnings) ticked every minute through weekends
+        # module (meic, pmcc, curve, contango, weeklyput, bwb, earnings) ticked every minute through weekends
         # and holidays, and none of them has ever written a ledger row on a non-trading day: their
         # timestamped rows from 2026-09 on show none, and their logs for the weekend of 10-10/10-11
         # show nothing but meic's "outside trading window - skipping". Gating them is therefore not

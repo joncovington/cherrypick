@@ -301,6 +301,33 @@
         "freshness_minutes": 10
       }
     },
+    "weeklyput": {
+      "_comment": "EXPERIMENTAL, off by default: switch on with modules.weeklyput.enabled once you have read its package README. weeklyput: research item 57's unhedged arm in paper (packages/weeklyput) -- the index put nearest 10 delta on SPX, SPY, QQQ and IWM, sold in the last minutes of the session seven days before each non-monthly weekly expiry and held to the expiry's posted close. Paper-only and credential-free: no keyring_service, no broker_tool, no live block. Its puts ride as quote-only stream legs, which the producer picks up on its next poll without a restart. It acts only on entry sessions and when a close posts, so it has no eval-activity reader (eval_activity.NOT_APPLICABLE); a cycle it missed is a row in weeklyput_entries and in the review.",
+      "enabled": false,
+      "path": "../weeklyput",
+      "paper": {
+        "kind": "self_healing",
+        "tick_interval_seconds": 60,
+        "silence_seconds": 240,
+        "resident_start": "09:30",
+        "resident_end": "16:00",
+        "status_argv": [
+          "-m",
+          "cherrypick.weeklyput.paper_loop",
+          "--status"
+        ],
+        "once_argv": [
+          "-m",
+          "cherrypick.weeklyput.paper_loop",
+          "--once"
+        ],
+        "paper_db": "~/.cherrypick/data/weeklyput/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "weeklyput_put",
+        "log": "weeklyput_paper.log",
+        "freshness_minutes": 10
+      }
+    },
     "bwb": {
       "_comment": "SPX daily-laddered put broken-wing-butterfly module (packages/bwb): enters one BWB per enabled book every session at the expected move, ~7DTE, PM-settled; the books differ only in whether/when a reversal-triggered put credit spread add-on turns the fly into a 1-3-2. Paper by default and the paper loop is credential-free; market data comes entirely from the shared stream cache via the streamer's `expirations`/`window_hints` request fields. Since 2026-09-18 it also has a narrow LIVE path (one arm, per-day armed via /live-bwb-start, the full daily ladder under a worst-case cap, no closing orders) -- the keyring_service/broker_tool/live_db/live keys below are that path's, and the paper loop touches none of them.",
       "enabled": true,
