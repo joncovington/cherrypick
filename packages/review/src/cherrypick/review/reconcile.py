@@ -57,6 +57,11 @@ _INDEPENDENT = {
         "COALESCE(SUM(COALESCE(fees, 0) + COALESCE(slippage, 0)), 0) cost "
         "FROM contango_positions WHERE status = 'closed' AND exit_session = ?"
     ),
+    "weeklyput": (
+        "SELECT COUNT(*) n, COALESCE(SUM(gross_pnl), 0) gross, "
+        "COALESCE(SUM(COALESCE(fees, 0) + COALESCE(settlement, 0) + COALESCE(slippage, 0)), 0) cost "
+        "FROM weeklyput_positions WHERE status = 'closed' AND settle_session = ?"
+    ),
 }
 
 # Rows a module has voided: still `settled` with their P&L, but not evidence, so the fact set leaves
