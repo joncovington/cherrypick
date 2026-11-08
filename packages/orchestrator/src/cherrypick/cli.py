@@ -2207,11 +2207,12 @@ def _board():
 
     def notes(path: str):
         # The study's own Markdown beside its result file, capped: it rides in every board read.
-        p = Path(path.replace("{home}", home.as_posix())).expanduser().with_suffix(".md")
-        try:
-            return p.read_text(encoding="utf-8")[:65536]
-        except OSError:
-            return None
+        for p in hypotheses.notes_paths(Path(path.replace("{home}", home.as_posix())).expanduser()):
+            try:
+                return p.read_text(encoding="utf-8")[:65536]
+            except OSError:
+                continue
+        return None
 
     from cherrypick.orchestrator import studyversion
 
