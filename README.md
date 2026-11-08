@@ -37,8 +37,8 @@ or *book*; those spellings keep working.)
 
 Because each arm changes one lever against a shared control, you can measure the isolated effect of a
 single idea rather than confounding several at once. **A base install runs only the `control` arm in
-MEIC, earnings, flies, bwb, calendars and curve**; PMCC's example runs its two shield arms and
-contango's its two arms. Any further arms are your own machine's configuration under
+MEIC, earnings, flies, bwb, calendars and curve**; PMCC's example runs its two shield arms,
+contango's its two arms and weeklyput its one, `unhedged`. Any further arms are your own machine's configuration under
 `~/.cherrypick/config/` (MEIC's in `meic.risk.json`). BWB, calendars and curve also build comparison
 books into the module (bwb's add-on triggers, calendars' `path`, curve's `noflip` and `near`); their shipped examples switch
 each one off with `enabled: false`, and you switch one on in your own config. With Claude Code
@@ -125,6 +125,11 @@ suite once collected $4.00 of credit against $4.96 of fees.
   differ only in where they get out (0.97 or 1.0). Replayed from 2018, the switch earns less than
   holding SVXY outright for about 20 points less drawdown, and the paper run measures whether that
   holds. Paper-only and credential-free. See [packages/contango](packages/contango).
+- **Weeklyput** — ⚠️ **EXPERIMENTAL, off by default.** The one cell research item 57 passed: the
+  index put nearest 10 delta (SPX, SPY, QQQ, IWM), sold seven days before each weekly expiry that is
+  not a standard monthly and held to expiry, unhedged. The paper run measures whether a
+  close-of-session fill tracks the study's replay (item 69). Paper-only and credential-free. See
+  [packages/weeklyput](packages/weeklyput).
 - **BWB** — a daily-laddered SPX put broken-wing butterfly entered at the expected move for a net
   credit, ~7 DTE, held to expiry. Four books trade the identical base structure and differ only in
   whether a reversal-triggered add-on fires (never / delta touch / confirmed bounce / gamma-flip
@@ -226,7 +231,7 @@ read them.
 |---|---|
 | [packages/orchestrator](packages/orchestrator) | The supervisor, watchdog, notifications, and the read side (report / calibrate / EOD). Drives the engines by subprocess. |
 | [packages/core](packages/core) | The shared `cherrypick.core` library — calendar, fees, profiles, GEX math, broker, auth. Install it first. |
-| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/bwb](packages/bwb) | The eight strategy engines. Calendars, pmcc and curve are EXPERIMENTAL, paper-only and off by default, as is contango; bwb is paper by default with a narrow live path; earnings needs the optional Dolt data. |
+| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/weeklyput](packages/weeklyput) · [packages/bwb](packages/bwb) | The nine strategy engines. Calendars, pmcc and curve are EXPERIMENTAL, paper-only and off by default, as are contango and weeklyput; bwb is paper by default with a narrow live path; earnings needs the optional Dolt data. |
 | [packages/streamer](packages/streamer) | The single market-data producer. Everything else reads the cache it writes; nothing else writes it. |
 | [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
 | [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Read-only. |
@@ -412,7 +417,7 @@ ones. Paper and live ledgers are separate files, never queryable through one con
 - **Paper by default.** Every engine ships with live trading off, and the orchestrator that schedules
   them never places, cancels, or closes an order itself. Opening a module's live gate is on you — and
   once open, that module's loop trades within its own limits without asking again.
-- **Experimental modules are off.** Calendars, PMCC, curve and contango ship switched off, and the desk is not
+- **Experimental modules are off.** Calendars, PMCC, curve, contango and weeklyput ship switched off, and the desk is not
   installed at all unless you ask for it.
 - **Your data stays yours.** Trades and credentials live on your machine (credentials in your operating
   system's secure keyring — never in a plain file).

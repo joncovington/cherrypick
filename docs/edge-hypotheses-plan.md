@@ -6902,6 +6902,67 @@ run.*
     they say whether a passing symbol adds to SPX or repeats it.
 - **Result:** not yet run.
 
+### 69. Item 57's unhedged arm in paper: does a close-of-session fill track the replay?
+
+*Source: the user, 2026-11-08 ("let's make an experimental paper module and console page for the
+unhedged arm"), after item 57's pass. Item 57's pass branch is a paper arm in a home the user
+chooses; the user chose a new module, `packages/weeklyput`, on all four names and the weekly
+expiries only, as judged. Declared here before the module's first entry.*
+
+- **Question:** does the paper arm, selling item 57's put in the last minutes of the entry session
+  off the stream cache, reproduce what item 57's replay books for the same trades from end-of-day
+  quotes, closely enough that the replay's verdict describes what the arm actually does?
+- **Where the edge would live:** item 57's, a **risk premium** (buyers pay above expected variance
+  for protection against the index falling). This item does not test it again. It tests
+  **execution**: the fill, the stream window, the settlement print.
+- **Look-alikes:** item 57 (the rule and its verdict, unchanged here); item 39 (contango's declared
+  test of a paper rule against its replay, the same shape).
+- **The arm:** `packages/weeklyput`, arm `unhedged`, item 57's rule exactly: the calendar, the
+  entry session, the leg, one contract a name, fills at mid with `core.fees`' slippage and fees,
+  held to expiry. Two things paper must add, each declared now: the entry window (15:45 to 15:55,
+  nothing after it) and the settlement print (the posted close in `stream_summary`, not the expiry
+  forward). A 10-delta put the quoted puts do not bracket is refused.
+- **Measured:** per paper trade, against item 57's `trade_pair` on the same name and expiry from the
+  chain-path store (`scripts/weeklyput_item69.py track`): whether both picked the same strike, the
+  credit gap in dollars and the net gap in bp of notional; per cycle, both equal-weight means. The
+  forward per-cycle net is reported beside.
+- **Sample:** every finished paper cycle from the module's first entry. Read at **40 finished
+  cycles** (about a year of non-monthly weeklies). Fewer than 30 replayed trades is no verdict.
+- **Pass-or-fail rule**, all must hold:
+  - the mean net gap (paper minus replay, bp) is no worse than minus the replay's own mean cost in
+    bp: paper does not lose a second set of costs to execution;
+  - paper and the replay pick the same strike on at least 80% of the replayed trades;
+  - names missed (the window closed unentered) are under 10% of the name-cycles.
+- **Reported beside, never judged:** the forward mean, worst cycle and drawdown range per cycle;
+  the share of ETF trades flagged assignment-exposed; refusals by reason; the forward read below
+  item 57's 80-cycle bar is not a verdict on the premium.
+- **Rival explanations, each with its check:**
+  - *A close-of-session quote is not an end-of-day quote:* the last fifteen minutes can move.
+    **Check:** the credit and net gaps per trade, and the same-strike share.
+  - *The stream window misses the 10-delta strike:* **Check:** `delta_not_bracketed` refusals and
+    missed names reported; the band is 1.5% to 12% under spot, which holds a 10-delta 7-day put up
+    to an implied vol of about 65% (March 2020 went past it, so such a week is refused, never
+    filled with the wrong strike).
+  - *The settlement print:* the posted close against the expiry forward. **Check:** the per-trade
+    net gap includes it; the cash name (SPX) is read beside the ETFs.
+  - *Early assignment:* **Check:** assignment-exposed flags counted; the ETF names stay an upper
+    bound, as item 57 said.
+  - *A calm forward year:* **Check:** this item judges tracking, not the mean; the forward mean is
+    reported only.
+- **Declared limits (B11):** one contract a name; no share carried past the expiry session (an
+  assigned ETF put is booked as sold at the same close, the study's convention); a real assignment
+  over a weekend is not in the number.
+- **Data:** the module's ledger, read-only; the chain-path store extended by
+  `scripts/index_put_weekly_item57.py plan --through DATE` and a research-queue fetch; results under
+  the backtest data directory (`results/research/item69/`).
+- **Decides:**
+  - **A pass:** the replay describes the arm. Nothing goes live from this item: a live proposal
+    needs item 57's forward read past 80 cycles and the assignment work calendars' prerequisites
+    name (detecting and disposing of an early assignment, an ex-dividend decision).
+  - **A fail:** the fill or the print costs more than the replay assumed; item 57 is re-read at the
+    measured gap as a replay correction, and the module stays paper.
+- **Result:** not yet run.
+
 ## Not worth revisiting
 
 Each of these came up again in the review and is already answered:

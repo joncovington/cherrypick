@@ -18,9 +18,10 @@ internals.
 | PMCC | deep-ITM calls with a weekly short call (the shield arms) | **off** (experimental) | none |
 | Curve | VXX call credit spreads, regime-gated | **off** (experimental) | none |
 | Contango | SVXY/SHV switch on VIX/VIX3M | **off** (experimental) | none |
+| Weeklyput | index 10-delta put, 7 days, weekly expiries | **off** (experimental) | none |
 
 Every shipped example config runs `control` alone except PMCC's (`shield` and `shield_hold`; `control`
-off) and contango's (`control` and `flipexit`). Any other arm named below is added in a machine's own
+off), contango's (`control` and `flipexit`) and weeklyput's (`unhedged`). Any other arm named below is added in a machine's own
 config. BWB, calendars and curve build their comparison books into the module and run them unless the
 config sets that book's `enabled` to `false`, as their examples do.
 
@@ -165,6 +166,17 @@ thresholds. It exists because curve's option costs take about half of each credi
 measures whether that trade holds after real switching costs. Paper-only and credential-free.
 
 → Depth: [`contango/README.md`](../packages/contango/README.md), [`contango/CLAUDE.md`](../packages/contango/CLAUDE.md).
+
+## Weeklyput — item 57's put, in paper (EXPERIMENTAL, off by default)
+
+Sells the put nearest 10 delta on SPX, SPY, QQQ and IWM, seven calendar days before each weekly
+expiry that is not a standard monthly, in the last minutes of the session, and holds it to the
+expiry's posted close: no hedge, no stop. It is the one arm research item 57 passed, on weekly
+expiries item 46 never read. One arm, `unhedged`; item 69 reads paper against item 57's replay of
+the same trades, so the paper run measures execution, not the premium again. Early assignment of
+the ETF puts is measured, never modelled. Paper-only and credential-free.
+
+→ Depth: [`weeklyput/README.md`](../packages/weeklyput/README.md), [`weeklyput/CLAUDE.md`](../packages/weeklyput/CLAUDE.md).
 
 ## Variance testing with arms (the distinguishing capability)
 
