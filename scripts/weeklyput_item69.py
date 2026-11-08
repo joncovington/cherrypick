@@ -114,13 +114,24 @@ def _paper_trades(ledger: str) -> list[dict]:
         conn.close()
 
 
+def _open_store():
+    """Item 57's chain-path store, or None on a machine without it (or without the backtest package,
+    which locates it): every trade is then listed `no_chain_store`, never dropped."""
+    try:
+        if not i57.i46._chain_store_path().exists():
+            return None
+    except ImportError:
+        return None
+    return i57.i46._chain_store()
+
+
 def track(ledger: str | None = None) -> dict:
     from cherrypick.weeklyput import db
 
     ledger = db.resolve_path(ledger)
     trades = _paper_trades(ledger)
     rows = []
-    store = i57.i46._chain_store() if i57.i46._chain_store_path().exists() else None
+    store = _open_store()
     try:
         for p in trades:
             name = STORE_NAME.get(p["symbol"])
