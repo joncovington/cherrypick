@@ -215,6 +215,13 @@ def stop_fees():
 DEFAULT_SLIPPAGE_FRAC = _fees.DEFAULT_COSTS["slippage_frac_of_spread"]
 
 
+def fill_frac(params: dict, symbol: str | None) -> float:
+    """The paper fill fraction for `symbol`: the arm's `slippage_frac_of_spread_by_symbol[symbol]`,
+    then its flat `slippage_frac_of_spread`, then core's per-symbol entry, then core's flat
+    fraction (`fees.slippage_frac`)."""
+    return _fees.slippage_frac(symbol, params)
+
+
 def _quote_usable(q: dict | None) -> bool:
     """A leg quote the exit math can actually price: both sides present and not crossed.
     A crossed quote (bid > ask) is a feed artifact — averaging it would price a stop
@@ -1188,7 +1195,7 @@ def evaluate_entry(
         # Credit floor (with low-IV relief) + fee-adjusted floor. Priced at mid minus the
         # slippage haircut (see _open_credit) so the gate screens on the credit we model
         # actually receiving -- consistent with the recorded fill and with the earnings model.
-        slippage_frac = params.get("slippage_frac_of_spread", DEFAULT_SLIPPAGE_FRAC)
+        slippage_frac = fill_frac(params, symbol)
         put_credit = _open_credit(sp, lp, slippage_frac)
         call_credit = _open_credit(sc, lc, slippage_frac)
         net_credit = put_credit + call_credit
@@ -1317,7 +1324,7 @@ def synthetic_entry_fill(
         # Modeled slippage dollars conceded opening the four legs (frac x spread sum x100).
         # Exits accumulate onto this; net at a stressed 2x slippage = net - slippage_dollars.
         "slippage_dollars": round(
-            params.get("slippage_frac_of_spread", DEFAULT_SLIPPAGE_FRAC)
+            fill_frac(params, snapshot["symbol"])
             * (_leg_spread(sp) + _leg_spread(lp) + _leg_spread(sc) + _leg_spread(lc))
             * 100
             * quantity,
@@ -1671,7 +1678,7 @@ def evaluate_open_trade(
         return {"action": "hold", "reason": "quotes_unavailable", **touch_updates}
 
     net_credit = trade["net_credit"]
-    slippage_frac = params.get("slippage_frac_of_spread", DEFAULT_SLIPPAGE_FRAC)
+    slippage_frac = fill_frac(params, trade.get("symbol"))
     # MEIC has no profit target: an iron condor is only ever closed by a per-side stop, a
     # (non-cash-settled) time-based force-close, or an event force-close. See docs/strategy.md.
     # Modeled slippage DOLLARS per side-close (frac x that side's two leg spreads x100),

@@ -45,7 +45,38 @@ DEFAULT_COSTS = {
     # only ~10-22% of a spread *widening* passes through to the effective spread -- so a flat fraction of
     # a wide junk-wing spread would overstate the fill cost, which is exactly what the cap prevents.
     "slippage_cap_frac_of_mid": 0.15,
+    # Per-symbol fractions, keyed by underlying (upper case). Empty: every symbol takes the flat
+    # fraction above. An entry here moves every paper module's net on that symbol, so it is set
+    # only at a declared boundary, from measured fills (see `slippage_frac` for the lookup order).
+    "slippage_frac_of_spread_by_symbol": {},
 }
+
+BY_SYMBOL_KEY = "slippage_frac_of_spread_by_symbol"
+
+
+def slippage_frac(symbol: str | None, overrides: dict | None = None) -> float:
+    """The slippage fraction for `symbol`, most specific first:
+
+    1. `overrides[BY_SYMBOL_KEY][symbol]` -- the caller's own per-symbol entry;
+    2. `overrides["slippage_frac_of_spread"]` -- the caller's own flat fraction;
+    3. `DEFAULT_COSTS[BY_SYMBOL_KEY][symbol]` -- the suite's per-symbol entry;
+    4. `DEFAULT_COSTS["slippage_frac_of_spread"]` -- the suite's flat fraction.
+
+    `overrides` is whatever dict holds the caller's knobs: a config's `tastytrade_costs`, or a
+    module's own params. A caller's flat fraction outranks the suite's per-symbol entry on purpose:
+    a study or module that pins a fraction (a stress run, a declared fill) keeps it whatever the
+    suite later learns about one symbol. Without a symbol both per-symbol steps are skipped."""
+    o = overrides or {}
+    sym = (symbol or "").upper()
+    own = {str(k).upper(): v for k, v in (o.get(BY_SYMBOL_KEY) or {}).items()}
+    if sym and own.get(sym) is not None:
+        return float(own[sym])
+    if o.get("slippage_frac_of_spread") is not None:
+        return float(o["slippage_frac_of_spread"])
+    suite = {str(k).upper(): v for k, v in (DEFAULT_COSTS[BY_SYMBOL_KEY] or {}).items()}
+    if sym and suite.get(sym) is not None:
+        return float(suite[sym])
+    return float(DEFAULT_COSTS["slippage_frac_of_spread"])
 
 
 def _costs_config(config: dict) -> dict:
@@ -98,17 +129,21 @@ def _slippage(
 
 
 def _apply_costs(
-    order: dict, leg_quotes: list[dict], quantity: int, config: dict, commission_key: str
+    order: dict,
+    leg_quotes: list[dict],
+    quantity: int,
+    config: dict,
+    commission_key: str,
+    symbol: str | None = None,
 ) -> dict:
     costs_cfg = _costs_config(config)
+    frac = slippage_frac(symbol or order.get("symbol"), config.get("tastytrade_costs"))
     leg_qtys = _leg_quantities(order, quantity)
     commission = _commission(leg_qtys, costs_cfg[commission_key], costs_cfg["commission_cap_per_leg"])
     pass_through = _pass_through(
         leg_qtys, costs_cfg["clearing_fee_per_contract"], costs_cfg["regulatory_fee_per_contract"]
     )
-    slippage = _slippage(
-        leg_quotes, leg_qtys, costs_cfg["slippage_frac_of_spread"], costs_cfg.get("slippage_cap_frac_of_mid")
-    )
+    slippage = _slippage(leg_quotes, leg_qtys, frac, costs_cfg.get("slippage_cap_frac_of_mid"))
     total = commission + pass_through + slippage
     return {
         "commission": round(commission, 2),
@@ -118,17 +153,22 @@ def _apply_costs(
     }
 
 
-def apply_entry_costs(order: dict, leg_quotes: list[dict], quantity: int, config: dict) -> dict:
+def apply_entry_costs(
+    order: dict, leg_quotes: list[dict], quantity: int, config: dict, *, symbol: str | None = None
+) -> dict:
     """Cost of opening `order` at `quantity` contracts, given `leg_quotes` (one {"bid","ask"} per leg,
-    in order["order"]["legs"] order). Returns commission / pass_through_fees / slippage / total_cost."""
-    return _apply_costs(order, leg_quotes, quantity, config, "commission_open_per_contract")
+    in order["order"]["legs"] order). Returns commission / pass_through_fees / slippage / total_cost.
+    `symbol` (else the order's own top-level `symbol`) picks the slippage fraction (`slippage_frac`)."""
+    return _apply_costs(order, leg_quotes, quantity, config, "commission_open_per_contract", symbol)
 
 
-def apply_exit_costs(order: dict, leg_quotes: list[dict], quantity: int, config: dict) -> dict:
+def apply_exit_costs(
+    order: dict, leg_quotes: list[dict], quantity: int, config: dict, *, symbol: str | None = None
+) -> dict:
     """Cost of closing `order`. Same shape; commission uses commission_close_per_contract (0.00 by
     tastytrade's open-only default, but computed rather than hardcoded so a charge-to-close schedule
-    would work)."""
-    return _apply_costs(order, leg_quotes, quantity, config, "commission_close_per_contract")
+    would work). `symbol` as in `apply_entry_costs`."""
+    return _apply_costs(order, leg_quotes, quantity, config, "commission_close_per_contract", symbol)
 
 
 # --------------------------------------------------------------------------- 2. IC open-fee schedule
@@ -264,18 +304,21 @@ def assignment_round_trip_fee(
 # two sells, an add-on -- and keep their own.
 
 
-def slippage_dollars(leg_quotes: list[dict], quantity: int, config: dict) -> float:
+def slippage_dollars(
+    leg_quotes: list[dict], quantity: int, config: dict, *, symbol: str | None = None
+) -> float:
     """The suite's slippage model in dollars for `quantity` of each quoted leg, rounded to the cent:
     `_slippage` with every leg at `quantity` contracts, reading the knobs from the config's
     `tastytrade_costs` over `DEFAULT_COSTS`. A missing bid or ask counts as 0, and a
-    `tastytrade_costs: null` as no override -- the spread books' historical behaviour."""
+    `tastytrade_costs: null` as no override -- the spread books' historical behaviour. `symbol` picks
+    the fraction (`slippage_frac`); without one the flat fraction applies."""
     costs = {**DEFAULT_COSTS, **(config.get("tastytrade_costs") or {})}
     quotes = [{"bid": q.get("bid", 0.0) or 0.0, "ask": q.get("ask", 0.0) or 0.0} for q in leg_quotes]
     return round(
         _slippage(
             quotes,
             [quantity] * len(quotes),
-            costs["slippage_frac_of_spread"],
+            slippage_frac(symbol, config.get("tastytrade_costs")),
             costs.get("slippage_cap_frac_of_mid"),
         ),
         2,
@@ -286,7 +329,7 @@ def spread_entry_cost(symbol: str, leg_quotes: list[dict], quantity: int, config
     """Cost of opening ONE two-leg side (1 sell) -- the index fee schedule (commission, clearing, ORF,
     the per-symbol index exchange fee, TAF on the sell) plus modelled slippage."""
     fee = ic_open_fee(symbol, quantity, legs=2, sell_legs=1, ndigits=4)
-    slippage = slippage_dollars(leg_quotes, quantity, config)
+    slippage = slippage_dollars(leg_quotes, quantity, config, symbol=symbol)
     return {"fee": round(fee, 2), "slippage": slippage, "total": round(fee + slippage, 2)}
 
 
@@ -295,7 +338,7 @@ def spread_close_cost(
 ) -> dict:
     """Cost of actively closing `len(leg_quotes)` legs, `sell_legs` of them sold to close."""
     fee = ic_close_fee(symbol, quantity, legs=len(leg_quotes), sell_legs=sell_legs, ndigits=4)
-    slippage = slippage_dollars(leg_quotes, quantity, config)
+    slippage = slippage_dollars(leg_quotes, quantity, config, symbol=symbol)
     return {"fee": round(fee, 2), "slippage": slippage, "total": round(fee + slippage, 2)}
 
 

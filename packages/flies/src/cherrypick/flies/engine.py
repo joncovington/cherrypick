@@ -485,7 +485,7 @@ def hedge_candidate(snapshot: dict, side: str, center: float, width: float, para
     strike, delta, leg, error = found
     if error > tolerance:
         return None
-    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    slip = fly.slippage_frac(params, snapshot.get("symbol"))
     return {
         "strike": strike,
         "delta": delta,
@@ -1572,7 +1572,7 @@ def evaluate_credit_spread_entry(
             gate_detail.update(_detail)
         return False, refusal, None
 
-    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    slip = fly.slippage_frac(params, snapshot.get("symbol"))
     credit = fly.vertical_credit(quote(snapshot, side, center), quote(snapshot, side, long_strike), slip)
     conceded_pts = fly.conceded(
         fly.vertical_credit,
@@ -1755,7 +1755,7 @@ def evaluate_whole_fly(snapshot: dict, plan: dict, params: dict) -> tuple:
     lower, upper = center - width, center + width
     if not _have(snapshot, side, [lower, center, upper]):
         return False, "whole_fly_unpriced", None
-    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    slip = fly.slippage_frac(params, snapshot.get("symbol"))
     legs = (quote(snapshot, side, lower), quote(snapshot, side, center), quote(snapshot, side, upper))
     debit = fly.fly_debit(*legs, slip)
     if debit <= 0:
@@ -1789,7 +1789,7 @@ def evaluate_completion(snapshot: dict, position: dict, params: dict) -> tuple:
     if not _have(snapshot, side, [center, long_strike]):
         return False, _miss_reason(snapshot, [center, long_strike]), None
 
-    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    slip = fly.slippage_frac(params, snapshot.get("symbol"))
     # Buying the completing spread: long the far strike, short the centre (which offsets nothing —
     # it doubles the existing short into the fly's -2 centre).
     debit = fly.vertical_debit(quote(snapshot, side, long_strike), quote(snapshot, side, center), slip)
@@ -2005,7 +2005,7 @@ def evaluate_debit_vertical_entry(
             gate_detail.update(_detail)
         return False, refusal, None
 
-    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    slip = fly.slippage_frac(params, snapshot.get("symbol"))
     debit = fly.vertical_debit(quote(snapshot, side, long_strike), quote(snapshot, side, center), slip)
     conceded_pts = fly.conceded(
         fly.vertical_debit,
@@ -2081,7 +2081,7 @@ def evaluate_debit_completion(snapshot: dict, position: dict, params: dict) -> t
     if not _have(snapshot, side, [center, wing_strike]):
         return False, _miss_reason(snapshot, [center, wing_strike]), None
 
-    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    slip = fly.slippage_frac(params, snapshot.get("symbol"))
     credit = fly.vertical_credit(quote(snapshot, side, center), quote(snapshot, side, wing_strike), slip)
     conceded_pts = fly.conceded(
         fly.vertical_credit,
@@ -2164,7 +2164,7 @@ def evaluate_iron_completion(snapshot: dict, position: dict, params: dict) -> tu
     if not _have(snapshot, opposite_side, [center, opposite_wing]):
         return False, _miss_reason(snapshot, [center, opposite_wing]), None
 
-    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    slip = fly.slippage_frac(params, snapshot.get("symbol"))
     credit2 = fly.vertical_credit(
         quote(snapshot, opposite_side, center), quote(snapshot, opposite_side, opposite_wing), slip
     )
@@ -2334,7 +2334,7 @@ def evaluate_bwb_entry(
             gate_detail.update(_detail)
         return False, refusal, None
 
-    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    slip = fly.slippage_frac(params, snapshot.get("symbol"))
     lower_wing, upper_wing = _bwb_lower_upper(side, near_wing, far_wing)
     # fly_debit prices the +1 lower / -2 centre / +1 upper combo as a debit (positive = cost);
     # a broken-wing entered for a net credit comes out NEGATIVE there, so credit is its negation.
@@ -2437,7 +2437,7 @@ def evaluate_roll(snapshot: dict, position: dict, params: dict) -> tuple:
     if not _have(snapshot, side, [roll_strike, far_wing]):
         return False, _miss_reason(snapshot, [roll_strike, far_wing]), None
 
-    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    slip = fly.slippage_frac(params, snapshot.get("symbol"))
     # Long the strike the fly needs, short the wide wing currently held -- a debit vertical spanning
     # exactly (far_width - wing_width), which is the tail being bought back.
     roll_debit = fly.vertical_debit(quote(snapshot, side, roll_strike), quote(snapshot, side, far_wing), slip)
@@ -2536,7 +2536,7 @@ def evaluate_outright_entry(
     if not _have(snapshot, side, [lower, center, upper]):
         return False, _miss_reason(snapshot, [lower, center, upper]), None
 
-    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    slip = fly.slippage_frac(params, snapshot.get("symbol"))
     debit = fly.fly_debit(
         quote(snapshot, side, lower), quote(snapshot, side, center), quote(snapshot, side, upper), slip
     )

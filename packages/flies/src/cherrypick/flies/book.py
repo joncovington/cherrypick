@@ -782,7 +782,7 @@ def _process_snapshot(
             },
         )
         _record_hedge_at_completion(
-            conn, pos, snapshot, params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC), now
+            conn, pos, snapshot, fly.slippage_frac(params, snapshot.get("symbol")), now
         )
         journal(
             "completion",
@@ -1000,7 +1000,7 @@ def _process_snapshot(
     # reconstruct offline. Records, never gates: rule 5 is untouched, and positions completed
     # earlier THIS tick get their completion-tick price as the baseline. Skips iron/bwb completions
     # (different geometry) and skips silently on a missing leg quote, like the trackers it extends.
-    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    slip = fly.slippage_frac(params, snapshot.get("symbol"))
     for pos in [p for p in positions if p["kind"] == "fly" and p["status"] == "open"]:
         side, center, width = pos["side"], pos["center"], pos["wing_width"]
         if pos["entry_mode"] == "legged":
@@ -1076,7 +1076,7 @@ def _process_snapshot(
                 "hedge_leg_symbol": hedge.get("leg_symbol"),
                 # Seeded at the entry-tick sale value so "never improved" reads as that level.
                 "hedge_best_mid": round(
-                    fly.leg_credit(hedge_q, params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)), 4
+                    fly.leg_credit(hedge_q, fly.slippage_frac(params, snapshot.get("symbol"))), 4
                 ),
                 "hedge_best_mid_at": now,
             }

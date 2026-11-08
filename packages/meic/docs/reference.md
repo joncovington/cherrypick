@@ -269,4 +269,5 @@ preserve: [docs/risk-profiles.md](risk-profiles.md#design-rationale).
 | `late_entry_bias_iv_rank_max` | `0.45` | Bias applies at IV rank ≤ this |
 | `late_entry_bias_start_time` | `12:00` | No IC entries before this when the bias applies |
 | `slippage_frac_of_spread` | `0.125` | Paper fills are priced at mid less this fraction of the leg spreads, on entry and every priced exit (a live row's entry slippage is measured instead; see above) |
+| `slippage_frac_of_spread_by_symbol` | unset | Per-symbol fractions, e.g. `{"NDX": 0.08}`; outranks the flat key for that symbol. Unset, a symbol takes the flat key; without that, core's per-symbol entry, then core's 0.125 (`fees.slippage_frac`) |
 | `live` | see the example | Live-only: the pinned `symbol`, the `gate0_confirmed` attestation, `arm`, the narrowing overrides, `max_structures_per_day`, `daily_loss_halt_dollars`, `disarm_time`, `use_order_alert_daemon` — see the live block above |

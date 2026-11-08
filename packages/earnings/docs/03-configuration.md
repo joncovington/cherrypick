@@ -79,7 +79,9 @@ fill price by a fraction of its bid-ask width conceded from mid, rather than ass
 mid-price fill (0.125 = a quarter of the way from mid to the far touch; this was 0.25 before a
 2026 revision toward a more realistic worked-combo-limit assumption). `slippage_cap_frac_of_mid`
 caps a single leg's slippage at that fraction of its own mid price, so a deep-OTM, wide-spread
-wing leg can't dominate the modelled cost. These rates come from tastytrade's published pricing
+wing leg can't dominate the modelled cost. An optional `slippage_frac_of_spread_by_symbol` map
+(e.g. `{"AAPL": 0.10}`) overrides the flat fraction per underlying; core's `fees.slippage_frac`
+gives the full lookup order. These rates come from tastytrade's published pricing
 page and are checked periodically — re-verify against the current schedule if it's been a
 while, since exchange/regulatory pass-through fees do change.
 
