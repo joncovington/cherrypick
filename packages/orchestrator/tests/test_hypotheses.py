@@ -22,6 +22,8 @@ NEW = {
     "mechanism": "fear premium after a down day",
     "rivals": [{"explanation": "market drift", "check": "same entries on up days"}],
     "pointer": "docs/edge-hypotheses-plan.md#the-rule-this-plan-follows",
+    "scripts": ["scripts/credit_spread_item17.py"],
+    "tests": ["packages/backtest/tests/test_credit_spread_item18_script.py"],
 }
 
 

@@ -13,6 +13,14 @@ Never figures: licensed results stay under `~/.cherrypick`, so the register can 
   structure and window, so a retest is a choice the declaration says out loud.
 - `rereads`: every logged rule change, and whether it has had its first `REREAD_AFTER` trades and is
   due a re-read (the counts come from the module's ledger).
+- **The study chain** (2026-11-07): a row from item 18 on names its `scripts` (under `scripts/`) and
+  `tests` (under `packages/*/tests/`), each a repo file that exists. With its `pointer` (the
+  declaration), its research-queue rows (fetch, design, holdout, keyed by `study`) and its `results`,
+  that is the whole study in one place. Scripts may be shared (items 60-62 run one); a result file
+  may not: two rows listing one file is a problem.
+- `next_id`: the next free item number across every register given (this checkout's and
+  `origin/main`'s) and the plan's own `### N.` headings, so two sessions do not declare one number.
+  `taken` names the ids and studies a proposal would reuse.
 - `retests --year Y`: B14. Every declared, passed or failed row re-run unchanged on year Y, as
   research-queue rows `<study>/retest-<Y>`. A row with no recipe is listed as needing one. A
   re-test only confirms, weakens or prompts a new declaration: it never changes a past verdict.
@@ -40,6 +48,10 @@ VERDICTS = ("passed", "failed", "no_verdict")
 RESULT_PREFIX = "{home}/"
 ITEM_STUDY = re.compile(r"^item\d+$")
 REREAD_AFTER = 100
+#: From this item on a row names its scripts and tests (the study chain), as it must every other field.
+CHAIN_FROM = 18
+CHAIN_PATHS = {"scripts": "scripts/", "tests": "packages/"}
+PLAN_HEADING = re.compile(r"^### (\d+)\.", re.M)
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
@@ -64,6 +76,7 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
     """Problems with the register; empty means it is sound."""
     root = root or repo_root()
     problems, seen_ids, seen_studies = [], set(), set()
+    owners: dict[str, int] = {}
     docs: dict[str, set[str]] = {}
     for row in reg.get("hypotheses", []):
         rid = row.get("id")
@@ -95,6 +108,12 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
         ):
             # Results are licensed or derived from licensed data: they live under the home, never the repo.
             problems.append(f"{tag}: results must be a list of {RESULT_PREFIX}... paths")
+        elif results:
+            for p in results:
+                if p in owners and owners[p] != rid:
+                    problems.append(f"{tag}: result {p} is already row {owners[p]}'s")
+                owners.setdefault(p, rid)
+        problems += _chain_problems(row, tag, root)
         if row.get("outcome") is not None and not isinstance(row.get("outcome"), str):
             problems.append(f"{tag}: outcome is the decision in words")
         pointer = str(row.get("pointer") or "")
@@ -121,6 +140,57 @@ def check(reg: dict, *, root: Path | None = None) -> list[str]:
     return problems
 
 
+def _chain_problems(row: dict, tag: str, root: Path) -> list[str]:
+    """A chain row's `scripts` and `tests`: non-empty lists of repo files that exist, each under its
+    own folder. A legacy or retired row (closed without a run) may leave them out."""
+    out = []
+    rid = row.get("id")
+    needed = (
+        isinstance(rid, int)
+        and rid >= CHAIN_FROM
+        and not row.get("legacy")
+        and row.get("status") != "retired"
+    )
+    for key, prefix in CHAIN_PATHS.items():
+        paths = row.get(key)
+        if paths is None:
+            if needed:
+                out.append(f"{tag}: a study names its {key} (the study chain)")
+            continue
+        if (
+            not isinstance(paths, list)
+            or (needed and not paths)
+            or not all(isinstance(p, str) for p in paths)
+        ):
+            out.append(f"{tag}: {key} must be a list of repo paths")
+            continue
+        for p in paths:
+            if not p.startswith(prefix) or ".." in p:
+                out.append(f"{tag}: {key} path {p} must sit under {prefix}")
+            elif not (root / p).is_file():
+                out.append(f"{tag}: {key} path {p} does not exist")
+    return out
+
+
+def next_id(*registers: dict, plan_md: str = "") -> int:
+    """One past the highest item number in any register given and the plan's `### N.` headings."""
+    ids = [r.get("id") for reg in registers for r in (reg or {}).get("hypotheses", [])]
+    ids += [int(m) for m in PLAN_HEADING.findall(plan_md or "")]
+    return max([i for i in ids if isinstance(i, int)], default=0) + 1
+
+
+def taken(proposal: dict, *registers: dict) -> list[str]:
+    """What a proposal's `id` or `study` would reuse, in any register given (empty when neither is set)."""
+    out = []
+    for reg in registers:
+        for r in (reg or {}).get("hypotheses", []):
+            if proposal.get("id") is not None and r.get("id") == proposal["id"]:
+                out.append(f"id {proposal['id']} is row {r.get('study')}")
+            if proposal.get("study") and r.get("study") == proposal["study"]:
+                out.append(f"study {proposal['study']} is row {r.get('id')}")
+    return sorted(set(out))
+
+
 def unregistered(reg: dict, queue_studies) -> list[str]:
     """Research-queue studies named `itemN` with no register row: a study ran before it was declared here."""
     known = {r.get("study") for r in reg.get("hypotheses", [])}
@@ -129,9 +199,10 @@ def unregistered(reg: dict, queue_studies) -> list[str]:
 
 GROUPS = ("in_progress", "declared", "finished", "observation")
 ACTIVE = ("queued", "running")
+TASK_FIELDS = ("id", "kind", "step", "status", "created_at", "started_at", "finished_at")
 BOARD_FIELDS = (
     "id", "study", "title", "status", "legacy", "pointer", "outcome",
-    "measure", "expected", "sample", "rule", "mechanism", "rivals",
+    "measure", "expected", "sample", "rule", "mechanism", "rivals", "scripts", "tests",
 )  # fmt: skip
 
 
@@ -259,7 +330,7 @@ def board(
             "queue": {
                 "active": active,
                 "tasks": [
-                    {k: q.get(k) for k in ("id", "step", "status", "created_at", "started_at", "finished_at")}
+                    {k: q.get(k) for k in TASK_FIELDS}
                     for q in tasks[:10]
                 ],
             },

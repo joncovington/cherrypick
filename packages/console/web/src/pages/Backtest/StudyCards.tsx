@@ -12,6 +12,7 @@ import type {
   StudyRow,
   StudyRunFigures,
   StudyRunSummaries,
+  StudyTask,
   StudyVersion,
 } from "@console/shared";
 import { isBacktestRunId } from "@console/shared";
@@ -673,6 +674,121 @@ function StudyQueue({ row, nowMs }: { row: StudyRow; nowMs: number }) {
   );
 }
 
+// --------------------------------------------------------------------------- the study chain
+
+export type ChainState = "done" | "running" | "queued" | "failed" | "missing" | "pending" | "none";
+
+export interface ChainStep {
+  key: string;
+  label: string;
+  detail: string;
+  state: ChainState;
+  links: { text: string; href: string }[];
+}
+
+const TASK_STATE: Record<string, ChainState> = { done: "done", running: "running", queued: "queued", failed: "failed", stopped: "failed" };
+const FINISHED_STATUSES = ["passed", "failed", "no_verdict", "retired", "observation"];
+
+function isFetch(t: StudyTask): boolean {
+  return (t.kind ?? "").startsWith("fetch") || /fetch/i.test(t.step);
+}
+
+function fileName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
+/** A study in order: its declaration, the data it fetched, its scripts and tests, each queue step it
+ *  ran, its result files and the register's verdict. Built from the board row alone. */
+export function studyChain(row: StudyRow): ChainStep[] {
+  const tasks = row.tasks.filter((t) => t.status !== "cancelled").sort((a, b) => a.id - b.id);
+  const fetches = tasks.filter(isFetch);
+  const runs = tasks.filter((t) => !isFetch(t));
+  const url = planUrl(row.pointer);
+  const files = [...row.scripts, ...row.tests];
+  const present = row.results.filter((r) => r.present);
+  const steps: ChainStep[] = [
+    {
+      key: "declaration",
+      label: "Declaration",
+      detail: row.legacy ? "before the register: in the plan section" : "the plan section, written before the run",
+      state: url ? "done" : "missing",
+      links: url ? [{ text: "plan", href: url }] : [],
+    },
+    {
+      key: "fetch",
+      label: "Data",
+      detail: fetches.length ? fetches.map((t) => `${t.step} ${t.status}`).join(" · ") : "no fetch step: reads data already held",
+      state: fetches.length === 0 ? "none" : worst(fetches.map((t) => TASK_STATE[t.status] ?? "pending")),
+      links: [],
+    },
+    {
+      key: "code",
+      label: "Script and tests",
+      detail: files.length ? files.map(fileName).join(" · ") : row.legacy ? "before the register: not recorded" : "not named in the register",
+      state: row.scripts.length ? "done" : row.legacy ? "none" : "missing",
+      links: files.map((p) => ({ text: fileName(p), href: `${REPO_BLOB}${p}` })),
+    },
+    ...runs.map((t) => ({
+      key: `step-${String(t.id)}`,
+      label: t.step,
+      detail: `queue row ${String(t.id)}, ${t.status}`,
+      state: TASK_STATE[t.status] ?? "pending",
+      links: [],
+    })),
+    {
+      key: "results",
+      label: "Results",
+      detail: present.length ? present.map((r) => `${resultLabel(r)}${r.verdicts?.length ? ` ${r.verdicts.map((v) => v.verdict).join("/")}` : ""}`).join(" · ") : "none yet",
+      state: present.length ? "done" : "pending",
+      links: [],
+    },
+    {
+      key: "verdict",
+      label: "Verdict",
+      detail: row.outcome ?? statusWord(row.status),
+      state: FINISHED_STATUSES.includes(row.status) ? "done" : "pending",
+      links: [],
+    },
+  ];
+  if (runs.length === 0) steps.splice(3, 0, { key: "runs", label: "Run", detail: "nothing queued yet", state: "pending", links: [] });
+  return steps;
+}
+
+function worst(states: ChainState[]): ChainState {
+  for (const s of ["failed", "running", "queued", "pending"] as ChainState[]) if (states.includes(s)) return s;
+  return "done";
+}
+
+const CHAIN_CHIP: Record<ChainState, string> = {
+  done: "chip chip-ok",
+  running: "chip chip-warn",
+  queued: "chip",
+  failed: "chip chip-warn",
+  missing: "chip chip-warn",
+  pending: "chip",
+  none: "chip",
+};
+
+export function StudyChain({ row }: { row: StudyRow }) {
+  return (
+    <ol className="study-list">
+      {studyChain(row).map((s) => (
+        <li key={s.key} className={s.state === "none" || s.state === "pending" ? "muted" : undefined}>
+          <span className={CHAIN_CHIP[s.state]} style={{ marginRight: 6 }}>
+            {s.state}
+          </span>
+          <strong>{s.label}</strong> <span className="muted">{s.detail}</span>
+          {s.links.map((l) => (
+            <a key={l.href} href={l.href} target="_blank" rel="noreferrer" style={{ marginLeft: 6 }}>
+              {l.text}
+            </a>
+          ))}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 // --------------------------------------------------------------------------- the lightbox
 
 export type DialogTab = "overview" | "report" | "declaration" | "grid" | "queue";
@@ -711,6 +827,10 @@ function OverviewTab({ row }: { row: StudyRow }) {
         </section>
       ) : null}
       {row.outcome ? <p className="study-decision">{row.outcome}</p> : null}
+      <section>
+        <h3>The study, step by step</h3>
+        <StudyChain row={row} />
+      </section>
       <section>
         <h3>Figures</h3>
         <RunFigures row={row} />

@@ -71,6 +71,8 @@ function row(over: Partial<StudyRow>): StudyRow {
     rule: "t > 2, Holm, both halves",
     mechanism: "a nearer short collects more credit",
     rivals: [{ explanation: "a calm span", check: "both halves positive" }],
+    scripts: [],
+    tests: [],
     group: "finished",
     results: [
       {

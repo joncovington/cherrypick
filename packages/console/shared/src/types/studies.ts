@@ -93,6 +93,8 @@ export interface StudyVersion {
 
 export interface StudyTask {
   id: number;
+  /** The queue row's kind: `script`, `fetch-chain-paths`, ...; null from an older orchestrator. */
+  kind: string | null;
   step: string;
   status: string;
   createdAt: string | null;
@@ -124,6 +126,9 @@ export interface StudyRow {
   rule: string | null;
   mechanism: string | null;
   rivals: StudyRival[];
+  /** The study chain (2026-11-07): repo paths of its scripts and tests; empty on a legacy row. */
+  scripts: string[];
+  tests: string[];
   group: StudyGroup;
   results: StudyResult[];
   queueActive: boolean;
