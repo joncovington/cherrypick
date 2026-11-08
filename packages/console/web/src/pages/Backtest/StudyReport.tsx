@@ -4,6 +4,7 @@ import { useBridged } from "../../lib/bridged";
 import { fmtNum } from "../../lib/format";
 import { inline } from "../../lib/miniMarkdown";
 import { useMeasure } from "../../lib/useMeasure";
+import { Insights, ScorecardTable } from "./Scorecard";
 
 /**
  * A study's Report tab (orchestrator `study-report`): what the figures say, what to do next, the
@@ -291,8 +292,36 @@ export function ReportBody({ report }: { report: StudyReport }) {
           <p className="muted">≈ net per trade worked out as net per session × sessions ÷ entries. Return on BP in brackets: the baseline's.</p>
         </section>
       ) : null}
+      <StudyScorecards arms={report.arms} />
       {report.provisional ? <p className="muted">Provisional: the replay this study runs on isn't validated yet.</p> : null}
     </div>
+  );
+}
+
+/** Each window's stats table (arms as columns) and every arm's insights, for arms whose script wrote
+ *  a scorecard; nothing for a study written before 2026-11-07. */
+export function StudyScorecards({ arms }: { arms: StudyReportArm[] }) {
+  const withCard = arms.filter((a) => a.scorecard !== null);
+  if (withCard.length === 0) return null;
+  const windows = [...new Set(withCard.map((a) => a.window))];
+  return (
+    <section className="study-report-table">
+      {windows.map((w) => {
+        const rows = withCard.filter((a) => a.window === w);
+        return (
+          <div key={w}>
+            <h4>Stats{windows.length > 1 ? `: ${w}` : ""}</h4>
+            <ScorecardTable cards={Object.fromEntries(rows.map((a) => [a.arm, a.scorecard!]))} />
+            {rows.map((a) => (
+              <div key={`${a.arm}|${a.file}`}>
+                <div className="card-subhead">insights: {a.arm}</div>
+                <Insights card={a.scorecard!} />
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </section>
   );
 }
 

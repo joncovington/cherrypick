@@ -1,3 +1,4 @@
+import type { BacktestScorecard } from "./backtest.js";
 /**
  * The studies board (`run.py hypotheses-board`; packages/orchestrator `hypotheses.board`, 2026-10-29,
  * docs/studies-board-plan.md): each row of the hypothesis register joined with its result files'
@@ -200,6 +201,8 @@ export interface StudyReportArm {
   paired: StudyStat | null;
   pairedVs: string | null;
   pairedBoth: StudyStat | null;
+  /** The arm's stats table and insights, when its script wrote a `scorecard` block (2026-11-07). */
+  scorecard: BacktestScorecard | null;
 }
 
 export type StudyMeasureKey = "paired" | "paired_both" | "mean" | "net_per_trade" | "per_risk" | "entry_rate";

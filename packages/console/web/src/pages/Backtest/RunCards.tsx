@@ -7,6 +7,7 @@ import { Tile } from "../../components/performance/Tile";
 import { TileGrid } from "../../components/performance/TileGrid";
 import { signTone } from "../../lib/bridged";
 import { fmtCash, fmtCount, fmtNum } from "../../lib/format";
+import { Insights, ScorecardTable } from "./Scorecard";
 import { TradeLog } from "./TradeLog";
 
 /**
@@ -777,6 +778,17 @@ export function RunCards({
             <p className="mono" style={{ fontSize: 12, margin: "4px 0" }} title={c.settings?.recorded ? JSON.stringify(c.settings.differs) : undefined}>
               {settingsLine(arm!, c.settings)}
             </p>
+          )}
+          {c.scorecard !== undefined && (
+            <>
+              <div className="card-subhead">stats, every arm</div>
+              <ScorecardTable
+                cards={Object.fromEntries(names.map((n) => [n, cards.arms?.[n]?.scorecard]))}
+                highlight={arm}
+              />
+              <div className="card-subhead">insights: {arm}</div>
+              <Insights card={c.scorecard} />
+            </>
           )}
           <HealthChecks c={c} />
           <AccountTiles c={c} />

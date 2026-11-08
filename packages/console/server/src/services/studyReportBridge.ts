@@ -1,4 +1,5 @@
 import type {
+  BacktestScorecard,
   BridgedResult,
   StudyAdvice,
   StudyAdviceKind,
@@ -87,6 +88,20 @@ function toStat(v: unknown): StudyStat | null {
   return mean === null ? null : { mean, t: n(r["t"]), n: n(r["n"]), p: n(r["p"]) };
 }
 
+/** An arm's `scorecard` block, shape-checked: stats a record, insights a list of {key, text, flag}. */
+function toScorecard(v: unknown): BacktestScorecard | null {
+  const r = rec(v);
+  const stats = rec(r["stats"]);
+  if (!Array.isArray(r["insights"]) || Object.keys(stats).length === 0) return null;
+  const insights = (r["insights"] as unknown[]).flatMap((x) => {
+    const i = rec(x);
+    const key = s(i["key"]);
+    const text = s(i["text"]);
+    return key === null || text === null ? [] : [{ key, text, flag: i["flag"] === true }];
+  });
+  return { stats: stats as unknown as BacktestScorecard["stats"], insights };
+}
+
 function toArm(v: unknown): StudyReportArm | null {
   const r = rec(v);
   const arm = s(r["arm"]);
@@ -112,6 +127,7 @@ function toArm(v: unknown): StudyReportArm | null {
     paired: toStat(r["paired"]),
     pairedVs: s(r["paired_vs"]),
     pairedBoth: toStat(r["paired_both"]),
+    scorecard: toScorecard(r["scorecard"]),
   };
 }
 

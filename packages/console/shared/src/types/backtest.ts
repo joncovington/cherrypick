@@ -292,6 +292,39 @@ export interface BacktestArmCards {
   health?: BacktestHealth;
   /** The arm's settings strip (2026-11-01); absent from an older backtest package. */
   settings?: BacktestArmSettings;
+  /** The stats table and insights (2026-11-07); absent from an older backtest package. */
+  scorecard?: BacktestScorecard;
+}
+
+/**
+ * `scorecard.scorecard`: the arm's stats table and plain-English insights. Run cards and study result
+ * files carry the same shape. Sharpe and Sortino are annualised from sessions, for reading only.
+ */
+export interface BacktestScorecardStats {
+  total_pl: number | null;
+  max_drawdown: number | null;
+  /** Total P/L over max drawdown, a ratio (not annualised); null without a drawdown. */
+  return_on_dd: number | null;
+  high_pl: number | null;
+  low_pl: number | null;
+  profit_factor: number | null;
+  profit_factor_basis: "trades" | "sessions";
+  sharpe: number | null;
+  sortino: number | null;
+  sessions: number;
+  traded_sessions: number;
+  trades: number;
+}
+
+export interface BacktestInsight {
+  key: string;
+  text: string;
+  flag: boolean;
+}
+
+export interface BacktestScorecard {
+  stats: BacktestScorecardStats;
+  insights: BacktestInsight[];
 }
 
 /**
