@@ -128,3 +128,10 @@ def test_a_machine_running_control_alone_journals_no_boundary(config):
     conn = db.connect(":memory:")
     paper_loop._note_shield_boundary(conn, config)
     assert _breaks(conn) == {}
+
+
+def test_wind_down_opens_nothing_whatever_the_arms_say(config):
+    cfg = copy.deepcopy(config)
+    cfg["arms"]["shield"] = {"enabled": True}
+    cfg["defaults"] = {**(cfg.get("defaults") or {}), "wind_down": True}
+    assert paper_loop.session_books(cfg, "2026-10-05") == ([], {})

@@ -3,7 +3,24 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ModuleSummarySlice } from "@console/shared";
-import { ExperimentsPage, lastTradedOf } from "../src/pages/Experiments/ExperimentsPage";
+import { ExperimentsPage, lastTradedOf, shownExperiments } from "../src/pages/Experiments/ExperimentsPage";
+
+describe("an experiment switched off", () => {
+  const on = (pmcc: boolean) =>
+    ({
+      ok: true,
+      capabilities: {},
+      modules: Object.fromEntries(["pmcc", "calendars", "curve", "contango"].map((m) => [m, { configured: true, enabled: m === "pmcc" ? pmcc : true, missing: [] }])),
+      services: {},
+      features: {},
+    }) as unknown as Parameters<typeof shownExperiments>[0];
+
+  it("loses its card with its pages, and an unread answer shows every card", () => {
+    expect(shownExperiments(on(false)).map((e) => e.id)).toEqual(["calendars", "curve", "contango"]);
+    expect(shownExperiments(on(true)).map((e) => e.id)).toEqual(["pmcc", "calendars", "curve", "contango"]);
+    expect(shownExperiments(undefined)).toHaveLength(4);
+  });
+});
 
 /**
  * Batch 4 of docs/console-review-plan.md: the four paper-only experiments and the retired flies on
