@@ -82,6 +82,12 @@ jobs:
       - name: Warn about guide screenshots that may be stale
         if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'screenshots-ok')
         run: git diff --name-only HEAD^1 HEAD | python tools/check_screenshots_fresh.py
+      # A PR that changes shipped code (packages/*/src, scripts/, install.*) without a line in
+      # CHANGELOG.md gets a warning (never a failure). The label no-changelog says none is needed.
+      # tools/check_changelog_touched.py.
+      - name: Warn about shipped code changed without a changelog line
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'no-changelog')
+        run: git diff --name-only HEAD^1 HEAD | python tools/check_changelog_touched.py
       # The repo-root scripts/ belong to no package, so no package job linted them, and 17 findings
       # and 8 unformatted files built up unseen (cleared 2026-10-05). The ruff version is read from
       # core's own pin, so this can never lint scripts/ under a different ruff than the packages.

@@ -11,518 +11,296 @@ beyond the latest release.
 
 ## [Unreleased]
 
-- **Added (2026-10-30): the premium pace on Live → portfolio.** Manage reads theta against a target
-  of 0.2% of net liq a day (`portfolio.theta.target_pct_nlv`, set in `manage.json`), and premium
-  collected beside premium kept per month from the whole account's trade history, which the snapshot
-  now reads (v15, `get_transactions --account_wide`, GET only). The live loops' 0DTE legs and legs
-  opened before the history are left out and stated. **Bands over time** (2026-10-30) sits under it:
-  each stored evaluation's delta, theta and buying power against that day's own band.
+## v0.12.0 — YYYY-MM-DD — <name>
+Three weeks and about 560 pull requests since v0.11.2. This is the release that is written to be
+upgraded to. Earnings and the manual desk stopped placing orders for good, so live orders now exist
+only in MEIC, flies and bwb. The four retired modules (flies, curve, pmcc, bwb) ship switched off.
+The QuikOptions integration is gone, replaced by a generic way to put any report of your own in the
+console. The console grew a Help page, a version chip and a new layout, and manage learned to read
+the whole account: wheels, PMCCs, income lists that fit the account, premium pace and a ledger of
+what each name has earned. A research queue now runs the long studies, and a weekly put module
+arrived. The release also brings the tooling for moving between releases (`run.py upgrade`), which
+pays off from v0.12.0 on; getting here from v0.11.x is a manual job, spelled out below.
 
-- **Changed (2026-10-28, a declared measurement boundary): earnings opens only on names the
-  liquidity verdict calls tradable.** Every entry path (the ranked scan, the `strat_test` harness
-  and the advised twins beside it) refuses any other name from the 2026-10-28 session as an
-  execution-stage `not_tradable` drop that names the verdict and its reasons. An unjudged name is
-  refused, and a missing or stale verdict refuses everything as `liquidity_verdict_unavailable`. The
-  forward preview moves off tastytrade's watchlists onto the same verdict the same session. About
-  half the recent entries were on names now refused. Never pool an arm's results across this date.
+### Upgrading
 
-- **Changed (2026-10-27): no screener lists a name whose options the user would not trade.** The
-  liquidity verdict gains `thin`: a name with weeklies and $100M a day whose cycle-monthly options
-  are not confirmed liquid -- ATM spread over 7.5% of mid, chain open interest under $250M or chain
-  volume under $5M in notional, on the median of its last five income readings, or fewer than three
-  readings. Stage lists, skate, the short-put, covered-call and credit-spread lists, the earnings
-  calendar (and so its forward record and the spreads read for it), the setups table's default view
-  and manage's candidates read only `tradable`. A list row whose own option
-  (or, for a spread, every width) fails the leg bars is now dropped and counted instead of flagged.
-  Thin names are still measured nightly, so one is admitted the night it clears. About 166 names
-  pass on the 10-27 readings, against 484 before. The earnings entry scan follows at the
-  2026-10-28 boundary (the entry above), since it changes which names every earnings arm trades.
+**From v0.11.x this is manual** (`run.py upgrade` is in this release, so it cannot upgrade you to
+it). Pick a quiet evening after the close, with no live loop armed.
 
-- **Fixed (2026-10-27): four names `check-adjust` found adjusted wrongly.** AZN's 2026-02-02 ADR ratio
-  change (1-for-2) and a 2015 2-for-1 are now in the split history. HON, CME and ITUB were dividend
-  disagreements our two sources could not settle: `dividends.reconcile` now lets Yahoo's amount
-  decide a pair more than 1.2x apart, so CME's annual variable dividend and ITUB's extraordinary one
-  are kept and HON's doubled tastytrade amounts are not. One payout tastytrade lists in parts (GFI)
-  is now one event. PBR is excluded from the tiebreak, since Yahoo's own amounts for it are mixed.
-  The vendor bar check is unchanged on every capture.
+1. **Stop the suite** (`uninstall.cmd` or `./uninstall.sh`; your data, settings and broker login are
+   kept). If you run the supervisor as the Windows service, stop the service as well.
+2. **Get v0.12.0.** With the ZIP, unzip it over the old folder. With git:
+   `git fetch --tags origin`, then check out the tag.
+3. **Run the installer again** (`install.cmd`/`install.ps1`/`install.sh`, or `scripts/dev-install.*`).
+   It rebuilds the console and, new in this release, removes `cherrypick-desk` from an older `.venv`.
+   It also now sets up Dolt unless you pass `-SkipDolt`, and runs `run.py bootstrap` at the end so
+   the income lists have a universe on day one (`-SkipBootstrap` skips that). If Dolt is already
+   there, nothing is downloaded. `-WithDesk` is accepted and ignored.
+4. **Run `python run.py doctor` and act on its warnings.** After an upgrade you can expect these,
+   each for something that is now ignored and can be deleted:
+   - `earnings.live_config`: the `enable_live_trading` or `live` key in your earnings config;
+   - `config.quikoptions`: the `quikoptions` block in `config.json`;
+   - `config.desk_notify`: the `desk_notify` block in `config.json`;
+   - `config.desk`: `~/.cherrypick/config/desk.json`.
+5. **Decide about the retired modules.** Your config is never rewritten. The example configs now ship
+   flies, curve, pmcc and bwb off, but an install that has them on keeps them on. If you want them
+   off, set `modules.<name>.enabled` to false (pmcc and bwb had entries switched off on 2026-11-08;
+   pmcc's `defaults.wind_down` stops entries and closes what is open, and the module switches off once
+   flat). Each package's README opens with the exact switches that reinstate it.
+6. **Restart the supervisor** with `python run.py supervise --restart`, and restart any resident job
+   (`meic-live` and the like) after it. The job table changed (below), and a job reads its config
+   only when it starts.
+7. **Check the console** at the usual address. The version chip at the right end of the status bar
+   should read `v0.12.0`.
 
-- **Added (2026-10-27): `check-adjust`, the corporate-action tripwire.** With the vendor's chart
-  captures gone (last 2026-10-23), nothing checked our split and dividend adjustment. Each evening
-  `scripts/fetch_yahoo_adjusted.py` (job `technicals-yahoo-adjusted`, 19:45 ET) keeps a year of
-  Yahoo's adjusted closes for every stored name. Each morning `technicals-adjust-check` (06:55 ET)
-  reads the ratio of ours to Yahoo's, which must be flat, and exits 1 on a step no declared reason
-  covers -- a split, spin-off or dividend one side lacks -- or on a stale Yahoo file. `check-vendor`
-  stays, frozen at the last captures.
+**Things to know before you act:**
 
-- **Added (2026-10-27): arm cards for every paper module.** calendars, pmcc, curve, contango and bwb now
-  have the arm guide flies and MEIC had, under each module's arms tab. Each card shows:
-  - the arm's one-line `_summary`, beside its name;
-  - its `_since` and `_retired` dates;
-  - what makes it different from the defaults and its siblings;
-  - its ledger span and the module's measurement breaks.
+- **Earnings cannot place orders.** The module is paper-only. `tt.py execute_trade`, `/earnings-start`
+  and `/live-earnings-start` are gone, and a leftover `enable_live_trading` does nothing. `cherrypick
+  account --module earnings --set` refuses, since earnings needs no trading account (its broker login
+  stays, for quotes). Past live earnings trades stay visible, read-only, in the console's live views.
+- **The manual desk is gone** (`packages/desk`, the `desk-notify` job, the `notify-desk` command). The
+  console's own operator "desk" view on System is not that desk and stays.
+- **QuikOptions is gone.** Its seven jobs, its config and the Options flow page are removed. Reports of
+  your own go through external reports (see What's new).
+- **`/live-flies-start` and `/live-bwb-start` refuse while their module is off.** Every live loop can
+  now be armed from the command line: `python -m cherrypick.<meic|flies|bwb>.live_loop --arm --confirm
+  YES` prints the disclaimer and arms only on that exact word; `--disarm` disarms. The slash commands
+  go through the same code.
+- **The arm gates new MEIC condors only.** An unarmed `meic-live` now runs from 09:30 to the disarm
+  cutoff to manage what it holds (stops, fills, settlement). A held condor with a live gate unmet
+  raises the new CRITICAL `live_unmanaged`. MEIC live entries are one contract; a larger configured
+  quantity refuses entries and blocks arming.
+- **The scheduler changed.** Eighteen job rows are gone: a daily job that runs at several times is one
+  job with several times (`manage-eval`, `report-screener-measure`, `report-skate-quotes`,
+  `universe-measure`, `market-files`, `technicals-earnings-calendar`). `status` and the System page list
+  every time in the schedule column, and `jobs.missed` and `jobs.failed` name the one id. After a long
+  sleep only the latest slot runs. Jobs of switched-off retired features (flies and its agents, the
+  vendor-edition collector) leave the table while off, and the `symbol-watch` job is removed. New
+  supervisor jobs: `research-queue`, `account-alerts`, `technicals-dollar-volume`,
+  `technicals-income-lists`, `technicals-yahoo-adjusted`, `technicals-adjust-check`, and the weekly put
+  paper loop (off).
+- **Order notices no longer depend on arming.** `account-alerts` runs trading days 09:00 to 18:00 and
+  reports every order placed, filled or ended, by the suite or by hand.
+- **The console asks GitHub once** (its first outbound request) for the latest release, at most every
+  six hours. Set `"update_check": false` in `~/.cherrypick/config/console.json` to turn it off.
+- **`research/` and the `archive/docs-2026-11` tag.** The hypothesis register and declared studies moved
+  from `docs/` to a top-level `research/`; `cherrypick hypotheses` reads it there. The docs now
+  describe only the current version. Everything removed is at the tag.
+- **Backtest scripts moved** to `packages/backtest/scripts`.
+- **A curve arm the config does not declare stays off** (control excepted), from 2026-10-30. A config
+  that predates an arm never gains its block.
 
-  Every arm in the example configs carries a summary, and an orchestrator test fails when a declared arm
-  has none (`docs/progress-queue-arms-plan.md`, phase 3). Underscore keys are documentation; no loop
-  reads them.
+**Measurement boundaries.** A row on either side of one of these was produced under a different rule:
+never pool across them. Each module's own list (MEIC `docs/reference.md#declared-boundaries`, earnings
+`docs/measurement-boundaries.md`, and a section in the other packages' CLAUDE.md) is the full record.
 
-- **Changed (2026-10-27): the Backtest → queue tab, laid out again.** It is now three sections:
-  - **Now:** running tasks first, then queued ones in the order the runner takes them, with the
-    orchestrator's reasons for waiting, and runs started by hand.
-  - **Recent:** the last 30 days.
-  - **History:** older tasks, collapsed and grouped by study.
+| Module | Date | What it splits |
+|---|---|---|
+| All modules | 2026-11-03 | The supervisor and every job it starts are opted out of Windows power throttling (EcoQoS, where a CPU-bound loop ran 6.8 times slower). Ticks take less wall time, so tick timing, quote age at decision and stop latency either side are not poolable. One break journalled per ledger. A process takes it when it next starts. |
+| MEIC | 2026-10-24 | Live kill criteria (`live.kill`) gate new condors. |
+| MEIC | 2026-10-25 | A closed live condor with no net (`pnl` or `fees` NULL) refuses new ones. |
+| MEIC | 2026-10-27 | A hand-placed opening order obeys the loop's entry rules and needs the day's arm. |
+| MEIC | 2026-11-02 | The arm gates new condors only; settlement asks the broker first; an entry is written ahead of its order; removed orders are dead; live entries are one contract. |
+| MEIC | when set | `live.resting_stop` (off by default) puts a stop-limit at the broker on each side. The broker triggers off the spread's ask, a little earlier than the loop's own stop, so switching it on is a boundary against `live-shadow`. |
+| MEIC | when set | `delta_source: "computed"` picks short strikes by a delta computed from the chain's own quotes instead of the feed's, which lags by about a minute. The default is unchanged. |
+| MEIC | per arm | The stabilization entry gate and the equalize imbalance cap are options an arm opts into; the arm that sets one is a different arm from its control. |
+| Earnings | 2026-10-26 | Exits price at mid (clamped to the structure's payoff) for positions entered from here; `broken_wing_butterfly` retired from `strat_test`. |
+| Earnings | 2026-10-28 | Entries only on names the liquidity verdict calls `tradable`: about half the entries and a universe of larger names. |
+| Earnings | 2026-10-30 | A failed entry scan is retried; entries open as the scan goes; a held close is taken after 30 minutes of the spread gate. |
+| Earnings | 2026-11-05 | Early-close days run no entry scan; leg quotes and term-structure inputs recorded; the winrate backtest scores the expected move. |
+| Earnings | 2026-11-06 | The PEAD gate fires on the first morning's first executable check; the expected move is the report's own, from two expiries; `assignment_risk` closes; the expiry close is at 15:20. A paired twin without the gate opens beside each overnight control. |
+| Earnings | v0.12.0 | Paper-only. |
+| pmcc | 2026-10-26 | The `shield_guard` arm joins (additive). |
+| pmcc | 2026-11-08 | Entries off (`wind_down`). |
+| bwb | 2026-10-24 | Live kill criteria. Entries off 2026-11-08. |
+| curve | 2026-10-30 | An undeclared arm stays off. Retired 2026-11-01. |
+| flies | 2026-10-19 | Retired. |
+| manage | 2026-10-22 | The spread candidates are the least-bad put spread with its odds, listed by symbol; call spreads off; income candidates at 16 delta. A ruleset without the new keys keeps the old construction. |
+| manage | 2026-11-08 | Every leg is solved and priced at the name's dividend yield (#926). A high-yield fund's long-dated call that was unpriceable is priced again, IVs move by under a point on low-yield names, and one calendar's price-stop band moved by about 1%. A name that pays nothing is unchanged. Evaluations stored before this carry no yield and keep their numbers; compare manage's greeks, payoff bands and stops across it with care. |
+| manage | 2026-10-20 | The theta band, the concentration rule's theta share and the candidates' theta ceiling read theta without legs two days or less from expiry. |
+| Screeners | 2026-10-27 | No list shows a name whose monthly options are not confirmed liquid (`thin`): about 166 names, against 484. |
+| core | pending | Per-symbol paper slippage is built but ships empty; filling the SPX entry is a boundary that waits for 30 priced live fills. |
 
-  Each row has five columns and opens to show its arguments, timings, exit code, result fields and the
-  last 40 lines of its log (a new read-only route behind the Backtest gate). Status and study filters
-  are remembered per viewer (`docs/progress-queue-arms-plan.md`, phase 2).
+### What's new
 
-- **Added (2026-10-27): job progress, written by the job.** `core.progress` gives every long job a small
-  file under `state/progress/` (phases, counts, what it is on), and a child process reports beside its
-  parent's.
-  - **Who reports:** validation, the meic and flies replay checks, `backtest run`, and the chain and flow
-    fetches.
-  - **Reading it:** `queue-list` reads the files instead of spawning a counter per row. It adds the
-    overall share, the ETA and `stalled`/`orphaned`, and lists runs started by hand.
-  - **Console:** the queue tab's meter shows any job's nested progress (`docs/progress-queue-arms-plan.md`,
-    phase 1).
+- **Live trading, narrower and safer.**
+  - Live orders exist only in MEIC, flies and bwb. Earnings and the desk are removed.
+  - Every live loop arms from the command line with the disclaimer and a literal YES (#984).
+  - MEIC: a stop-limit that can rest at the broker (#796), a verdict that says whether live may arm
+    (#815), entries journalled every tick (#516), a quote outage no longer stops management of what is
+    held (#795), alerts that name the held condor (#820), and kill criteria on live entries (#541).
+  - Hardening across the live path: the manual order door obeys the halt, orders carry an identifier, a
+    timed-out submit is recovered from the broker, every broker call has a deadline, unreadable
+    ledgers are reported, and the streamer spends subscriptions from a per-minute budget.
+- **Retired modules ship off.** flies, curve, pmcc and bwb are off in the example configs, with their
+  retirement dates and a status line at the top of each README. Live → today folds a retired, empty loop
+  to one line.
+- **External reports** replace QuikOptions (#983, #985). A script writes
+  `~/.cherrypick/data/external/<id>.json`; the console shows it as its own tab and can post it to Discord.
+  `run.py external-check` says what the console will draw. Columns, cells and rows take presentation hints
+  (formats, tones, stacked bars). A `.claude/skills/external-report` skill writes one for you.
+- **The console.**
+  - Help page with the user guide and FAQ, searchable (#990, #992); a version chip that announces a new
+    release (#989); a page layout built around questions, with cards and lightboxes on Live, the
+    strategy pages, Screeners and Backtest.
+  - Live → positions as cards with each trade's order chain; Live → portfolio laid out by question, with
+    a risk matrix at three horizons, limits, bands over time and a premium pace; wheel, pmcc and
+    time-spreads tabs; live marks on the account's positions.
+  - Backtest: studies board with a Report tab per study, run cards with health checks and a scorecard,
+    the research queue as cards, slices under Compare.
+  - A `/weeklyput` page, a fair-value tab, a credit-spread tab, and a minimum-premium slider on the
+    income lists.
+  - Release fixes (#993): the Config lock banner prints the halt flag's path from `~`, the weekly put card
+    on Experiments, and GEX leading with volume (a display default only).
+- **manage reads the whole account.** Wheel cycles and PMCCs by the standard definition, with rules; a
+  ledger of what each name has earned; trades given a stable ID for life; income trades that fit the
+  account's buying power; earnings and expiry exposure added up; a collar as a third hedge; a
+  time-spread scanner (no tested edge); a minute re-mark between half-hourly snapshots; a snapshot after
+  each fill; and an evaluation that notes when it is older than the code. Advice only, still no order
+  path.
+- **Weekly put (experimental, off).** Research item 57's unhedged index put in paper (SPX, SPY, QQQ, IWM;
+  item 69), with its own schema, review reader and console page.
+- **Screeners without the vendor.** The suite's own short-put, covered-call and credit-spread lists, a
+  liquidity verdict with a `thin` class, a fair-value model, a corporate-action tripwire against Yahoo's
+  adjusted closes, and dollar volume from the broker's candles.
+- **A research queue.** Long studies are rows, added with `run.py queue-add` and run by the supervisor's
+  `research-queue` job, with priorities, dependencies, progress, ETA and a studies board. The backtest
+  package gained end-of-day and intraday chain fetches, resumable runs and a STAGE client.
+- **Docs.** Current version only: open work is an issue, research is in `research/`, the rest is at the tag
+  `archive/docs-2026-11`. A guide page for each part of the console, with screenshots from a demo home
+  (not shipped) and a CI check that keeps them true.
+- **Upgrading between releases.** `run.py upgrade` (with `upgrade.cmd`, `upgrade.ps1` and `upgrade.sh`
+  at the root, and `/cherrypick-upgrade` in Claude Code) moves an install to a newer release, and
+  `--rollback` moves it back. It checks first, shows the target's notes from `release-manifest.json`,
+  backs up, fetches, stops, runs the target's installer in a new upgrade mode, runs `run.py migrations`
+  and checks the result. It refuses while a live loop is armed or a live position is open, outside the
+  quiet window, on low disk, on a dirty or development checkout, and while the opt-in Windows service is
+  on (stop the service first). `docs/guide/upgrading.md` has the detail. The release workflow now refuses
+  a tag unless `release/manifest.json` has a well-formed entry for it.
+- **Operations.** Eighteen job rows merged into multi-time jobs; an always-on `account-alerts` service;
+  throttling opt-out for the supervisor and its jobs; dated reminders that close when their condition
+  holds; CI installs uv from PyPI with retries.
 
-- **Changed (2026-10-27): live-path hardening, no measurement change.** Each change only adds a
-  refusal or a report:
-  - **The manual live door obeys the halt.** A hand-placed opening order through meic's or earnings'
-    `tt execute_trade --live` is refused while the suite is halted. meic's also needs today's arm
-    record (`/live-meic-start`) and passes its kill criteria, so **the interactive `/meic-start` live
-    path now needs arming**. bwb and flies apply the halt the same way. Closes always go through.
-  - **No double-placed manual orders:** bwb and flies manual orders carry an identifier. A submit
-    that times out is recovered from the broker rather than placed again.
-  - **bwb settles under the live tick's lock.**
-  - **desk's daily caps refuse** when the journal cannot be read cleanly.
-  - **meic reports an unreadable live ledger** instead of a clean day, and the watchdog raises it as
-    CRITICAL.
-  - **`tt.py` masks account numbers**, except in the three verbs the designation and reconcile flows
-    match on.
-  - **Narrative fence:** the narrative agents get an allow-list of tools (EOD none, morning
-    WebSearch).
-  - **EOD issue filter:** the EOD narrative withholds any recommendation carrying a figure, an
-    account or a licensed-data reference, instead of filing it in this public repo.
+**Still to land before the tag** (slots for pull requests that are open; replace with a line each, or
+delete):
 
-- **Changed (2026-10-26): audit hardening, no measurement change.** From a read-only review of the
-  suite:
-  - **Console:** refuses a cross-site WebSocket, validates the advisor experiment id before it
-    reaches a subprocess, and bounds console prefs.
-  - **CI:** runs with a read-only token.
-  - **Silent failures now reported:**
-    - Telemetry writes that fail are counted and logged once rather than vanishing.
-    - gex never commits a regime row without its profile rows.
-    - The four stream-cache paper loops warn when their `defaults` block is missing.
-  - **Safer writes:** the orchestrator's job heartbeats are written atomically, and review's
-    `--session`/`--since` must be dates.
-  - **Dedup:** a few measured copies are folded into one: the table-columns reader, contango's
-    upsert, and the narratives' loaders.
+- <!-- TODO(#1007): manage evaluates when the account changes (fills settle for 60 s, no run within 2
+  minutes of the last, a positions check every 5 minutes) and posts only when the list changes.
+  `manage.on_change` turns it off. -->
+- <!-- TODO(morning-evening): the morning and evening pipelines. -->
+- <!-- TODO(topic-guides): the topic guides in docs/guide/. -->
 
-- **Added (2026-10-24): the research queue.** Long research tasks are rows, added with `run.py
-  queue-add` and run one at a time by the supervisor's new `research-queue` job, so a many-hour
-  fetch no longer dies with the session that started it. Only allow-listed kinds run: the
-  resumable ThetaData fetches (`fetch-chains`, which gains `--stop-by`, and `fetch-flow`) and
-  scripts checked into `scripts/`. A ThetaData task waits for a free vendor session and keeps clear
-  of the nightly `backtest-fetch` window, stopping before it and resuming after. Each row is named
-  `study/step` (slugs; the study is its category, one live row per name), and a finished row points
-  to what it produced: a fetch's counts and input, a script's declared conclusion (which must
-  exist), and its log. One notification per finished or failed task. The Backtest page has a
-  read-only `queue` tab, grouped by study.
+### In detail
 
-- **Added (2026-10-24): our own credit-spread list**, replacing the vendor's tab, which froze with its
-  subscription. The four chart setups' fresh entries become spreads on the 30-45 day monthly: a long
-  setup is a put spread, its mirror a call spread. The short is nearest 0.40 delta and the long is the
-  widest giving 35-40% of the width, with a per-row width table. It is **untested**: item 17 of
-  `research/edge-hypotheses-plan.md` will judge it. The income fetch quotes the new expiry both sides
-  (`cs`).
-- **Changed (boundary, 2026-10-22): manage's spread candidates are the least-bad put spread, with its
-  odds, listed by symbol.** Four declared studies over licensed end-of-day chains (edge-hypotheses
-  items 14-16: a selection signal, the short delta, `mr-300m` on single names, and the funds the user
-  trades) found no short strike, direction signal or exit with an edge after costs. So the candidates
-  stop presenting one spread as better than another:
-  - **Put spreads:** short near 0.20 delta, long near 0.10 (`spread_short_delta`, `spread_long_delta`),
-    held to expiry, with no credit floor (`spread_min_credit` 0; a third, before). The first strike out
-    of the money they replace tested worst.
-  - **Call spreads off** (`call_spreads`): they sell against drift and lost at every delta; short
-    delta comes from the hedge when the book needs it.
-  - **Odds on every spread** (`odds`): the chance of any loss and of the max loss from the legs'
-    deltas, the break-even, and what getting in costs over the mid, shown on Live → portfolio.
-  - **By symbol, never ranked** (the lists grow to 50 and 25 so an alphabetical cut is rare): theta per
-    dollar of buying power, the order before, favoured the spreads most likely to lose.
-  - The income card says it plainly: no tested edge, and holding tested better than closing at half
-    the credit. A ruleset without `spread_short_delta` keeps the old construction, so past sessions
-    re-evaluate as they were.
-  This changes which spreads manage suggests, so it is a boundary for anyone comparing candidates
-  across it; nothing trades the list. Also fixed: `portfolio.earnings_exposure` and
-  `portfolio.expiry_concentration` were missing from the rule ids an override may disable.
-- **Added: an income candidate on a name already held on its expiry is badged.** The two settle
-  together, and with an opposite side they make one structure no rule judged (a put spread under a
-  held call spread is a short strangle). Each candidate carries `held_same_expiry` (any held option
-  leg on that name and date), shown as "held · same expiry" on Live → portfolio's income card; its
-  sizing is unchanged. On 10-20 it marks the SPY and IWM call spreads on 2026-12-18.
-- **Added: manage adds up earnings and expiry exposure.** Each trade passed its own rules while,
-  between them, the ones spanning an earnings report and the ones expiring on one date each held
-  about a quarter of net liq. `portfolio.earnings_exposure` is a REVIEW when what the trades with a
-  report before their short expires can still lose passes `max_pct_nlv` of net liq (10%), naming each
-  report date and its trades; the expiry ladder's earnings line gains that breakdown (`by_date`,
-  shown on Live → portfolio). `portfolio.expiry_concentration` is a REVIEW when one expiry's trades can
-  (20%), and a new income candidate on that expiry waits (a room cap). Re-evaluated over every stored
-  snapshot (10-13 to 10-20): both fire every session (10-20: $3,400, 24%, over five report dates;
-  2026-11-20 $3,886, 27%); no candidate changes, every one being on a later expiry.
-- **Added: the income lists say whether each trade fits the account.** manage judges every Screeners
-  short put and covered call against the account it evaluates (`candidates.screen_fit`): a put's
-  buying power -- cash-secured, or Reg T on margin -- at each strike within the lists' delta
-  tolerance, against the buying power available, and the covered calls the uncovered shares allow.
-  The short-put and covered-call tabs look their rows up and gain a "Fits the account" filter, on by
-  default, with a "does not fit" chip when it is off. The lists stay account-blind; a row manage did
-  not judge (no evaluation that session, or a strike it did not price) stays shown. On 10-20: 216 of
-  464 puts fit the $8,051 available, and no covered call does (no 100-share lot is held).
-- **Added: daily-reset funds are badged on the income lists and manage's candidates.** Each short-put
-  and covered-call row carries `leveraged` (`leveraged`, `inverse` or `volatility`) from the declared
-  fund list skate already leaves out (`technicals/leveraged_funds.json`, 492 funds), and the
-  Screeners tabs and the Live → portfolio income card show it beside the symbol. Badged, never
-  dropped: TQQQ, TSLL, KORU and TMF were on the lists unmarked. A list built before it reads none.
-- **Added: a manage snapshot older than the code says so.** The watchdog's `manage.snapshot_version`
-  WARNs while the newest stored snapshot was taken by an older `SNAPSHOT_VERSION` than is installed,
-  and the console's manage tabs carry that finding as a banner. On 10-20 a v11 snapshot under v14
-  code left wheel and PMCC empty with only a field-level note. No broker read is made: manage already
-  snapshots every half hour from 10:00 to 16:35 ET, so this only covers a merge after the day's last
-  run, until the next morning's. Off while manage is.
-- **Changed: Live → today folds a retired loop to one line.** A loop whose module is switched off in
-  the orchestrator config (`modules.<name>.enabled`, missing read as off, as the orchestrator reads
-  it) and that holds nothing -- not armed, nothing open or working, no held, orphaned or overdue
-  item, a readable ledger -- shows as "off — module disabled, nothing open or working" with its link,
-  instead of a full row reading "idle since" its last session every day. Anything it holds brings the
-  full row back. The payload gains `moduleEnabled` and `retired` per loop.
-- **Changed: manage's theta band leaves out the legs about to expire** (`portfolio.theta.front_dte`,
-  default 2). The band, the concentration rule's theta share and the candidates' theta ceiling and
-  name cap read theta without the option legs two days or less from expiry; the whole book's is
-  stated beside it, in the band (`raw_value`), the rule's reason and the Live → portfolio theta card.
-  On 10-20 one leg expiring the next day carried 99% of the book's theta, so the band read five times
-  over its ceiling, the concentration rule named that name at 81%, and every waiting candidate was
-  marked over the ceiling; without it the book was under the floor. Re-evaluated over every stored
-  snapshot (10-13 to 10-20): 10-20's theta REVIEW turns from over the ceiling to under the floor and
-  its concentration share from 81% to 26%; 10-14's floor REVIEW (a long leg expiring that week
-  dragging theta down) gives way to a concentration REVIEW at 26%; nothing else changes. The delta
-  band, scaled by theta, reads the same figure (on 10-20 the expiring leg had stretched it to −106 to
-  +160 shares), and is now never narrower than the net-liq band it falls back to with no theta:
-  before, a book collecting $1.63 a day got a band eight times narrower than one collecting none.
-- **Fixed: manage's payoff figures are whole cents.** The modelled extremes and the P&L read from
-  them (max loss and gain from open, left to win and lose) carried float noise from summing
-  Black-Scholes legs (`-300.00000000000364`), which every reader had to round for itself. They are
-  rounded to the cent where manage computes them. Re-evaluated on this branch and on main, every
-  stored snapshot (10-13 to 10-20) gives the same action, confidence, rule, candidates and guidance;
-  seven oversize reasons now state an exact half-dollar downside rounded to even (`$728`, where the
-  noise made it `$729`).
-- **Fixed: one dropped connection no longer fails the nightly analyst-revisions fetch.** The
-  `technicals-revisions` job exited 1 if any single symbol failed, so one timeout among about 1,030
-  names raised a WARN (eight on 10-19, one on 10-20). Symbols that fail are now asked once more at the
-  end on a fresh session, and the run fails only for what still fails; after a 429 nothing is
-  retried, as before. The printed report gains `retried`.
-- **Added: manage's rolls are priced on the next expiries out in time** (snapshot v14,
-  `roll_out_chains`). A PMCC's roll candidates want up to five quoted expiries between the short and
-  the long, and the wheel's tested-short rolls want the next expiries out, but both were priced only
-  from what the snapshot happened to quote: the income reading's cycle monthly, usually one expiry.
-  The snapshot now reads, for each covered call, PMCC short and short put (on a name with no long
-  put) within 60 days of expiry, the next five listed expiries after it, before the long's expiry for
-  a PMCC and within 60 days of the short's otherwise, quoted that session with the broker's greeks, 40
-  strikes either side of the short's strike. One read per expiry per name, plus one listing per name
-  the stream cache does not list; capped at 30 reads and five minutes (`manage.roll_out` in the
-  orchestrator config), with what the cap cuts and any failed read recorded, never fatal. The PMCC
-  view prices its candidates there first; the wheel rolls to the nearest expiry that prices the
-  net-zero roll, else the nearest quoting anything beyond the strike. Every candidate still goes
-  through `check-roll`, and a snapshot without the field is read as before: re-evaluated on this
-  branch and on main, every stored snapshot (10-13 to 10-20, seven sessions, 110 trades) gives a
-  byte-identical evaluation. On the latest stored day no name carries a covered call,
-  PMCC-shaped short or bare short put, so the step makes no broker read; the most any stored day
-  would have cost is six (one short put on two days: a listing and five expiries).
-- **Fixed: a covered short call more than 60 days out was still judged as a naked call.** The PMCC
-  link's join reaches 60 days, so a longer-dated short sold in its own order stayed a trade of its own
-  beside a lone long call. Now, when a name's groups hold exactly one long call alone and one short
-  call alone, both reconciled order chains, the long expiring on or after the short at or below its
-  strike in at least its quantity, and no shares on the name, the two are one trade
-  (`grouped_by: "covered call"`), its basis the two chains. Ambiguous pairs, partial cover, an
-  unreconciled chain and shares (the wheel's case) keep the chains' grouping; a long or short call
-  with nothing to pair with stays as it was, and a join that fails is listed in the account's
-  `grouping_errors`. On every stored snapshot (10-13 to 10-20) no trade's grouping or recommendation
-  changes.
+Grouped by area. Dates are the session a change began to bind.
 
-- **Fixed: a PMCC whose short was sold in its own order was judged as a naked call.** A short call
-  sold after the last one expired is an order chain of its own, so manage made it a trade beside a
-  lone long call: the short got the credit rules and an unbounded-loss review, as an uncovered call
-  would on an IRA. When the PMCC view links that short to the long and the link reconciles, the two
-  are now one trade (`grouped_by: "pmcc link"`), recognised as a PMCC or not, its basis every linked
-  order, the expired shorts' premiums included. Only a group holding the long or the short alone moves;
-  a short more than 60 days out, an unreconciled link, or a group with other legs keeps the chains'
-  grouping, and a join that fails leaves them as they were. On every stored snapshot (10-13 to 10-20)
-  no trade's grouping or recommendation changes: no stored day holds such a split.
-- **Added: the console's PMCC tab.** Live → pmcc sits beside the wheel tab and reads the same
-  evaluation: one card per name whose calls have a PMCC's shape, with the long (delta at entry, or
-  "unknown" and why; today's delta, extrinsic share, days left, whether to roll it), the width check
-  and the P&L if assigned gross and net of fees, the long's net cost after premiums, the short's band,
-  assignment exposure, chance of finishing in the money and any earnings in its life, every short sold
-  against the long, the skate yield as a comparison figure, and the PMCC rules that fired with their
-  rolls and check-roll verdicts. An unreconciled PMCC lists why and gets no rule; an account with none
-  says how one is recognised. The width check and the exposure are manage's flags, never worked out on
-  the page. This is the real account's PMCCs, not the paper pmcc module, and the tab stays even though
-  that module's live switch reads off.
-- **Added: manage's PMCC view and its rules** (docs/skate-plan.md step 6). Each evaluation now
-  carries the account's `pmcc` view: every name whose calls are a PMCC's shape (one long bought with
-  180 days or more left, one short of the same size at or above its strike with 60 or fewer), and
-  whether it is one. It is a PMCC only when the long was entered at 0.80 delta or more, solved from
-  its opening fill and that day's close with the dividend yield carried, or when `manage.json` says
-  `positions.<SYMBOL>.intent: "pmcc"`; `"diagonal"` keeps it out. A delta at entry the snapshot
-  cannot solve is unknown and recognises nothing. The view links every short sold against the long,
-  rolls and separate orders alike, from the trade history, and shows the long's net cost after
-  every premium, the width check with the P&L if assigned in dollars, the long's delta at entry and
-  today, its extrinsic share and days left, the short against today's call band, its early-assignment
-  exposure and any earnings in its life, and the skate yield on the long's cost as a comparison
-  figure. Three rules fire on a recognised PMCC whose orders reconcile: `pmcc.width` and
-  `pmcc.assignment` (roll or close, 65, with roll candidates priced from the snapshot's quotes and
-  judged by check-roll) and `pmcc.roll_long` (review, 45). They rank with the diagonal rules by
-  action, so a stop still closes and the diagonal's credit roll is offered in their place; an
-  unreconciled PMCC gets a review and nothing else. On every stored snapshot (10-13 to 10-20) no
-  trade's recommendation changes: the account's only call diagonal, TLT, has its short 87+ days out
-  and was entered at 0.45 delta, so it stays a diagonal.
-- **Added: the manage snapshot carries the long calls' entry-day closes.** Snapshot v13's
-  `underlying_history`, for each name holding a long call: the close on each day the history shows
-  it bought, and the dividends and splits around those days, read-only from the technicals
-  history store (every tradable name, not only the market report's). A close not landed yet is absent and manage says the delta at entry is unknown;
-  a missing store is `null` with `underlying_history_error`.
-- **Added: the console's wheel tab.** Live → wheel sits beside positions and portfolio and reads the
-  same evaluation: one card per wheel cycle manage follows, with its status (an unreconciled cycle
-  lists why and gets no wheel rule), days in the cycle, net cash and net premium, tax and wheel basis
-  (shares older than the history read "unknown", never a number), breakeven, option and stock P&L
-  apart and realised and unrealised apart, net P&L, the skate yield as a comparison figure, today's
-  check on each open short, and the wheel rules fired on its trades with the roll candidates and
-  their check-roll verdicts. Tested, at-or-under-the-buy-to-close and beyond-the-band are manage's
-  flags, never worked out on the page. An account with no wheel running says so, and why when the
-  view could not be built.
-- **Fixed: `check-roll` skipped the per-trade budget for any trade whose shares are held.** #473
-  rightly stopped counting a covered call's shares against the roll, but dropped the budget for a
-  short put rolled on the same name too. With shares held it now judges the short puts alone,
-  measured from today's model value (as `risk.oversize` measures downside), and says so; a
-  covered-call-only roll still has nothing to judge.
-- **Added: the manage snapshot carries the held names' skate bands.** Snapshot v12's `skate_bands`
-  is the newest skate band file at most three trading sessions behind the session, cut to the names
-  the account holds and to what manage reads: the band day's close, each row's side, expiry and
-  bands with their skate curves, and the file's offsets, so the skate rate at any strike can be read
-  from the snapshot alone (about 11 KB a name against the file's 2 MB). The wheel view's "strike against
-  today's band" check now has data; manage moves the band to today's price, so `reevaluate` with a
-  different spot stays consistent. A missing, stale or unreadable file is `skate_bands: null` with
-  `skate_bands_error` saying why, and the evaluation runs on without it.
-- **Fixed: skate never banded the reference funds.** Its universe was the names' liquidity verdicts
-  alone, and SPY, QQQ, IWM, TLT and the sector funds are judged apart, under `reference`
-  (`liquidity.reference_tradable`), as the income run already reads them. The 32 that pass the same
-  test tonight are now banded, quoted and scored like any other fund.
-- **Added: manage's wheel rules.** On a wheel cycle that reconciles, `wheel.take_profit` (confidence
-  80) buys a short back once its mark is at or under its buy-to-close (the resting order's price, else
-  $0.03, $0.05 on a wide market); `wheel.tested` (50) says roll or close when the price reaches the
-  strike, with the net-zero and premium-gambit rolls priced on the snapshot's quoted monthly and each
-  judged by `check-roll`; `wheel.next_leg` (50) names the covered call at the skate call band once an
-  assignment has delivered shares (from snapshot v12's bands), and names no strike when they are missing. They rank
-  with every other rule by action, so a stop or close still outranks the wheel's roll. An unreconciled
-  cycle gets only a review saying so. `check-roll` now counts shares held behind a covered call.
-- **Changed: the stock universe and the report's sectors no longer depend on the vendor.** The
-  universe harvest adds every stock with a median of at least 10,000 option contracts a day at
-  OCC over the last 20 sessions (101 new candidates on 2026-10-19; membership is still decided by
-  the measured spreads and volume). The market report's sector measures take Yahoo's sector,
-  relabelled, for a name the vendor's map lacks, and the sector fetch asks for every candidate.
-  Without this the candidate list and the sector map would have frozen when the subscription ends
-  on 2026-10-24.
-- **Added: the skate forward record on the Skate tab.** Below the table, a section reads the record
-  `technicals.skate_record` writes each morning (`GET /api/screeners/skate/record`): rows recorded
-  and settled, distinct expiries settled out of the declared count, and per band the high-gap and
-  below-zero groups' size, skate rate against implied and z. The verdict is the record's own: "not
-  yet decision-grade" until it says otherwise, then each band's pass or fail as the file states it,
-  with no tone before that. The declared test is written out from the file's thresholds. A missing or
-  unreadable record says so, never zeros.
-- **Added: manage follows each wheel cycle.** The evaluation now carries the account's `wheel`: every
-  cash-secured put, the shares it delivered and the calls written against them, linked from the
-  broker's trade history through rolls and assignments until the shares are called away or sold. Each
-  cycle shows the broker's cash, net premium, a tax basis and a wheel basis, the breakeven, option and
-  stock P&L (realised and unrealised apart), days in the cycle, a skate yield labelled a comparison
-  figure, and for each short still open whether it is tested, its extrinsic value and any resting
-  buy-to-close. A cycle that does not replay to today's positions is unreconciled, an unexplained
-  delivery is flagged, and shares older than the history get no basis. View only: no rule reads it yet.
-- **Added: an end-of-day option chain fetch for backtests.** `python -m cherrypick.backtest
-  fetch-chains --requests FILE` fetches exactly the (name, session, expiry) chains a study asks for
-  into the licensed store, resumably, with a refusal recorded and retried and a lost session
-  stopping the run; `chains-status` shows what it holds. Event-driven because the subscription's
-  tier serves single-stock chains from 2016 at about a second a request, with no whole-market file.
-- **Added: skate's "both sides" marker** (plan step 3): each scored row's `both_sides`, per band, is
-  true when the name's call and put best picks both pass every soft threshold. A test now checks the
-  monthly test odds at a short expiry, where the exponent matters (at 35 days it is 1, so the old test
-  could not see a wrong one); and three stale comments name the right mode, the right listing range
-  and the right offset grid.
-- **Changed: manage's credit stop at lower confidence, and the untested-side roll off by default.**
-  After a declared local study of short-strangle management on licensed history (its plan and
-  results stay under `~/.cherrypick`, by the data licence), `credit.stop` reports at confidence 50
-  (was 70) and `roll.untested_side` is off unless the override file turns it on. 50% or 21 DTE stays
-  the base. The snapshot still quotes a strangle's chain, so turning the roll on needs nothing else.
+**Earnings**
 
-- **Changed: a new install gets its universe on day one, and Dolt is set up by default.** The
-  liquidity check (and the nightly IV-rank fetch) now also judge every rank 1-2 optionable name on
-  the security list; before, a machine without the universe builder or the vendor lists judged only
-  ~40 funds, so its income lists held no stocks. Until a first list is built, a shipped seed of
-  tickers stands in (`seed_universe.json`, ours, no figures). The installer now runs `run.py
-  bootstrap` after the broker login -- the five evening jobs that build that universe, once -- and
-  sets up Dolt unless told not to (`-SkipDolt`); `doctor` warns without it. Shallow Dolt clones
-  were measured (4.8 GB against 12) and rejected: Dolt 2.4 cannot pull into one.
-- **Added: our own short-put and covered-call lists.** The Screeners page's short puts and covered
-  calls tabs now show the suite's own list by default, with the vendor's saved days behind a toggle
-  (its subscription ends on 2026-10-24). Every options-tradable name, the strike nearest 16 delta (a
-  put on the 45-60 day monthly, a call on the monthly 30-45 days out), within 0.05 of it, priced at
-  the working fill, from the 14:45 income chains (new job `technicals-income-lists`, 15:10 ET, no
-  Dolt needed). Rows are by symbol, never ranked by yield, under a standing note that the rule has no
-  tested edge. manage's income candidates apply the same 0.05 tolerance, and the chain fetch always
-  quotes the strikes nearest 16 delta. The rule's numbers live once, in `cherrypick.core.incomerules`.
-- **Added: manage rolls a tested strangle's untested side, at quoted prices.** The manage snapshot
-  (v11, `roll_chains`) now quotes the chain of every expiry in which one underlying is short both a
-  put and a call: one read-only chain read per such expiry, none when there is none. From it,
-  `roll.untested_side` (confidence 50) proposes rolling the untested short of a tested strangle
-  toward the money, to the listed strike nearest 30 delta, for a credit at the quoted mids, never
-  past the tested strike: an inverted strangle always ranks below closing or rolling out in time. It
-  is a review, offered in place of the short-leg buy-back when that names the same leg, and never in
-  place of a stop or a close.
-- **Added: manage flies a credit broken-wing butterfly's risk off.** `roll.fly_off` (review,
-  confidence 55): when a broken-wing butterfly opened for a net credit can be made a plain butterfly
-  (buy the wing at the narrow side's width beyond the body, sell the wide wing) for no more than the
-  credit, the evaluation proposes it, with the order. What is left cannot lose, fees aside. The new
-  wing is modelled, so the debit is an estimate.
-- **Added: manage sells a butterfly's long spread near its full value.** `legs.long_vertical` (close
-  legs, confidence 50): when the long spread of a butterfly, broken-wing or broken-heart butterfly is
-  worth 90% of its width, the evaluation says to sell just that spread and keep the short spread,
-  naming what the short spread costs to buy back and how wide it is. The strategy guide's defence for
-  these shapes.
-- **Added: manage names the strategy guide's structures, and some take profit on their own target.**
-  The short straddle and strangle, big lizard, reverse jade and big lizards, zebras, front-ratios and
-  the broken-heart butterfly were all `custom`; they are now named as the tastylive Options Strategy
-  Guide (2023) draws them. A short straddle, iron butterfly or big lizard takes profit at 25% of the
-  credit, and a calendar or zebra at +25% on the debit (`by_shape` under each take-profit rule,
-  overridable per shape). A reverse lizard's in-the-money put is no longer a breached strike, and a
-  broken-heart butterfly is judged on its risk. A new review, `debit.diagonal_width`, flags a PMCC-style
-  diagonal held for more than 75% of its strike width. Over the six stored snapshots it fires on one
-  trade, TLT, and changes nothing else.
-- **Changed: a Screeners tab that needs Dolt says so.** On a machine without the Dolt data, the
-  earnings, earnings record, signal board and skate tabs showed empty tables, which read as a quiet
-  day (and once as "it needs a vendor"). They now show what they need and the steps to set it
-  up, or that technicals is switched off, in place of the table. Also fixed: `pnpm ui-check` failed
-  to start since the Node-only path helpers moved to `@console/shared/paths`.
-- **Changed: income candidates at 16 delta, and the afternoon chains on their own switch.**
-  manage's short put and covered call move from the vendor's 0.40 and 0.165 delta to 16, the
-  delta studies' least-bad rule; the covered call is written on the monthly 30-45 days out where
-  one is listed. The income chain fetch quotes that expiry's calls too, reaches further out of the
-  money on a volatile name (2.5 standard deviations at its IV, 20% to 60%), and runs on its own
-  switch, `market_report.income`, on by default (it waited on `screener_greeks`, off).
-- **Changed: technicals no longer needs the earnings module on.** The Dolt sql-server, the 05:30
-  pull and every Dolt-reading technicals job used to follow the earnings module, because only an
-  enabled module's `dolt_service` kept the server up. Technicals now keeps the same server by
-  earnings' declared service when earnings is off. The income lists' inputs (dollar volume,
-  security list, liquidity verdict, IV rank) read no Dolt and run on the technicals switch alone,
-  so a machine without Dolt still builds the lists' universe. A job switched off for want of Dolt
-  now says so, rather than "disabled in config".
-- **Added: dollar volume from the broker's candles, so the security list builds without Dolt.**
-  A new evening job (`technicals-dollar-volume`, 18:35 ET, `scripts/fetch_dollar_volume.py`)
-  records every optionable name's 50-session median dollar volume from tastytrade's daily
-  candles. The public security list's liquidity rank and the liquidity verdict now read it in
-  place of the local Dolt clone, on every machine. On 2026-10-19 the two sources agreed to a
-  median ratio of 1.0000 and gave the same rank-1-or-2 set on 889 of 890 names. The job runs
-  whether or not Dolt is installed, and so (entry above) do the security list and liquidity jobs.
-- **Removed: the Screeners fidelity tab.** It scored how often our rules picked the same expiry and
-  strike as the vendor's income lists, and with the subscription ending on 2026-10-24 there is
-  nothing left to score. The final rates over seven sessions are in `packages/technicals/CLAUDE.md`,
-  and the scored files stay on disk. `score-screeners` still runs, since the income tabs' "ours"
-  strike comes from it.
-- **Fixed: the console's concentration guidance showed the wrong figure.** The reader took the
-  first figure in each driver row, which for concentration is the theta share, and the card printed
-  it as a signed number: a name at 30% of the book's theta read "+0.3", and a name over the cap on
-  its delta share showed its smaller theta share instead. Each rule's drivers now carry their
-  figures with their kind, chosen per rule: theta in dollars a day, delta in benchmark shares, and
-  concentration as both shares, each as a percentage.
-- **Fixed: two manage captions stated numbers the ruleset can change.** The income card always said
-  a short put's strike is held to 25% of net liq, though a margin account is held to 50%, and the
-  guidance card always said confidence 40. Both now read the evaluation's own ruleset: the caps
-  for the account's basis (the per-trade risk and name theta share too), and the portfolio rules'
-  confidence. An evaluation without a ruleset names no number rather than a default.
-- **Fixed: the console's earnings open positions stated a position total as per share.** The live
-  card passed the ledger's `entry_credit` and the mark's `exit_debit` straight through under
-  "Price" and "Mark (per share)", but both are already multiplied by quantity, so a 2-lot showed
-  twice its price. They are now per share, beside the whole-position entry cash and cost to close,
-  signed, which add up to the unrealised figure (the same fix as #439 on the history table).
-- **Added: the manage snapshot reads the day's orders** (v10, `working_orders`, through the broker
-  tool's read-only `get_working_orders`), slimmed to id, status, underlying, type, price and legs,
-  with the account number and the user's name left out. manage now counts a call still being sold
-  to open against the shares, so a covered call already on its way is not offered again. It is the
-  open-orders read the wheel view (skate plan, step 5) also needs.
-- **Fixed: 52 tradable names had no stress move, so manage never offered them.** The income run
-  read each name's history from the end-of-day store, which holds the report's names and not every
-  tradable one (IVV, FXI, DOCU, CPB, BURL, BRK.B among those missed). It now reads the history store,
-  split-adjusted and not dividend-adjusted, as skate does: on 2026-10-19's names, 451 of 458 have a
-  stress move, up from 399, and none lost theirs.
-- **Fixed: a second process could write the shared stream cache.** gex's standalone streamer
-  (`run.py stream`) defaulted to the shared cache with no guard, and the single-writer checks only
-  read the orchestrator's config. The streaming engine now refuses the shared cache path unless the
-  caller says it is the producer (`producer=True`, passed only by `packages/streamer`'s daemon).
-- **Added: the skate screen's forward record** (skate plan, step 4). Each session's shown rows are
-  kept once, settled at expiry from the bars (skated, tested on the way, or through), and judged by
-  the test declared before any data came in: high-gap rows must beat both their implied odds and the
-  below-zero rows by more than binomial noise, once 20 distinct expiries have settled. Recording
-  starts 2026-10-20, the first session after the band fix.
-- **Fixed: a MEIC backtest could not tell which sessions ran on intraday VIX.** A session with no VIX
-  minutes in the store replays on the Cboe daily open all day, and the run counted it like any other
-  while its data fingerprint hashed only the vendor sessions; `run meic`, `fetch-vix`, `run meic`
-  again gave different P&L under the same stamp. MEIC's fingerprint now also covers each session's
-  `market_regime_history` rows and the Cboe VIX and VIX1D files' rows through the window's end (flies
-  reads neither, and its fingerprint is unchanged). Each report records the VIX source per session
-  (`intraday`, `mixed` or `cboe_fallback`) and states `vix_fallback_sessions` at the top. Stored
-  MEIC reports keep their old stamp, which no new run will repeat. `fetch-vix` now exits 1, and says
-  why, when a session was refused or came back empty, and a refused VIX expiry listing is reported
-  instead of raising past `fetch`'s report.
-- **Fixed: MEIC's session windows in the docs disagreed with the code.** The v0.11.1 documentation
-  review set `open_volatile` to 09:30–10:00 and `late` to 14:30–15:30 in `docs/strategy.md` and the
-  agent's `execute-entry` command; the loops classify by 10:15 and 14:45, so 10:00–10:15 entries meet
-  the open-volatile gates the docs said could not fire there. Both are back on the code's windows, and
-  a test now reads the doc's table and checks every row against `_session_quality`.
-- **Fixed: manage offered a covered call on shares already written against.** The income card sized
-  a covered call from the share count alone, so 100 SLV shares with a call already sold on them were
-  offered another, at no buying power and no stress loss; sold, that is a naked call, which an IRA
-  cannot carry. Every short call open on the name now ties up 100 shares, at any expiry and inside
-  any spread or diagonal (a long call is not taken as cover). A name with nothing left uncovered gets
-  no covered call and is counted as `shares already written against`. Working orders are still not
-  seen: the snapshot has no open-orders read.
-- **Fixed: the skate score set history against the wrong implied odds.** A skate is judged at
-  expiry, so its odds are the chance of finishing out of the money, 1 − N(d2), not 1 − |delta|. At a
-  0.15-delta band that read calls about two points too risky and puts about two points too safe,
-  the size of the effect the score ranks on. New: `core.bs.prob_itm`.
-- **Added: manage checks its BWD and theta against the broker's model every day.** Snapshot v9
-  carries the broker's own greeks for each option leg held (cache first, then the feed through the
-  new read-only `get_greeks`), and each evaluation's `portfolio.broker_check` sums both models over
-  the same legs and betas, with the gap overall and by underlying.
-- **Fixed: skate left out commodity trusts and names just over a year old.** IAU (an "Exchange
-  Traded Commodity") was taken for a stock with no report date; the fund types are now one declared
-  set, `securities.NO_EARNINGS`, checked against the console's. And one long expiry short of history
-  dropped the whole name; now only that expiry goes. `setup_read` also found no monthly when Good
-  Friday moved it to Thursday the 14th (next in 2033).
-- **Fixed: skate picked and scored strikes against the band day's close, not today's price.** A
-  band is close ± haircut × range, and the quote runs used the morning band file's close all day. On
-  2026-10-19 AMZN's call "skate" pick was the 260 with the stock at 262.62 (0.62 delta), at the top
-  of the gap sort. Each band now moves with the price (band + today's spot − the band day's close)
-  before a strike is picked and scored; rows carry `band_level` and `band_day_close`.
-- **Fixed: switching a live loop off mid-session hid the one page showing what it still held
-  (#422).** The console's flies and meic Live tabs followed the live switch alone, so with a condor
-  open, an order working, an orphan or a settlement overdue, Live Today's links to that tab bounced
-  back to Today. A switched-off loop's tab now goes only when Live Today reports nothing for it, read
-  from the payload the console already polls.
-- **Fixed: manage called a name excused from the earnings-trade rule an earnings trade.** A
-  `positions.<SYM>.disable: ["earnings_trade"]` restored the ordinary stop, take profit and time
-  exit, but the evaluation still wrote `earnings_trade`, so the console showed "waits for call"
-  against a stop that would fire. An excused name now has no `earnings_trade`.
-- **Fixed: the console counted an earnings trade's quantity twice.** `entry_credit` is stored
-  already multiplied by quantity (the mistake #426 fixed in `management.unrealized_pnl`), but the
-  history's entry cash and the open positions' credit multiplied by it again, so a 2-lot showed
-  double its entry and the per-share price was the position total. Both now read the ledger as
-  stored; no stored number changes.
+- **Paper-only (#980).** See Upgrading.
+- **Changed (2026-10-28, a declared measurement boundary): earnings opens only on names the liquidity
+  verdict calls tradable.** Every entry path refuses any other name as an execution-stage `not_tradable`
+  drop. An unjudged name is refused; a missing or stale verdict refuses everything as
+  `liquidity_verdict_unavailable`. About half the recent entries were on names now refused.
+- **2026-10-30:** entry retry, entries opening as the scan goes, a held close taken after 30 minutes
+  (#664). **2026-11-05:** early-close clock, malformed orders refused, leg quotes recorded, old exits
+  re-priced (#866-#869). **2026-11-06:** the PEAD gate fires, the expected move is the report's own move,
+  `assignment_risk`, the 15:20 expiry close and the twin that opens beside each control (#874-#879).
+- **Fixed:** exit slippage charged twice on natural-side fills (to 2026-10-23, #519); exits priced past the
+  structure's payoff (to 2026-10-26, #520); the console stated a position total as per share and counted
+  quantity twice (#439, #445). No stored number changes for one-contract trades.
+- Written kill criteria on live opening orders (#558, #579) and a per-day arm (#881) came and went with
+  live trading.
+
+**MEIC and the live path**
+
+- Live path: see What's new and the table above. Also: a computed delta (#601), the stabilization gate
+  (#728, with review fixes: stale bars, IV-mode arms, XSP thresholds), an equalize imbalance cap (#503),
+  the session windows in the docs matching the code (#436), and a MEIC backtest that records which
+  sessions ran on intraday VIX (#444).
+- **Hardening with no measurement change (2026-10-26/27):** the manual live door obeys the halt, bwb and
+  flies manual orders carry an identifier, bwb settles under the live tick's lock, an unreadable MEIC ledger raises CRITICAL, `tt.py` masks account numbers, the
+  narrative agents get an allow-list of tools, and the EOD narrative withholds a recommendation carrying
+  a figure or account. Console: refuses a cross-site WebSocket, validates ids, bounds prefs. CI runs
+  with a read-only token. Telemetry write failures are counted, gex never commits a regime row without
+  its profile rows, and job heartbeats are written atomically.
+- **Fixed:** a second process could write the shared stream cache; the streaming engine now refuses
+  the shared cache to anything but the producer.
+- Switching a live loop off mid-session no longer hides the tab showing what it still holds (#439).
+
+**manage**
+
+- **Wheel and PMCC.** Cycle linking and accounting, rules (`wheel.take_profit`, `wheel.tested`,
+  `wheel.next_leg`, `pmcc.width`, `pmcc.assignment`, `pmcc.roll_long`), a PMCC recognised by the long's
+  delta at entry (0.80 or more) or by `positions.<SYMBOL>.intent`, a short sold in its own order or past
+  60 days joined to its long rather than judged naked, rolls priced on the next five quoted expiries
+  (snapshot v14), the skate bands carried (v12), entry-day closes (v13), the day's orders (v10) and the
+  broker's greeks (v9). The snapshot is v15 now. On every stored session no recommendation changed
+  except where noted.
+- **Strategy guide shapes** (straddle, strangle, lizards, zebras, broken-heart butterfly) named, with
+  their own targets; `legs.long_vertical`, `roll.fly_off`, `roll.untested_side` (off by default after a
+  declared local study), and `credit.stop` at confidence 50.
+- **Income.** Short put and covered call at 16 delta, on the afternoon chains' own switch
+  (`market_report.income`); the stress move read from the history store (52 more tradable names);
+  candidates that fit the account, badged when the fund resets daily or the name is held on its expiry,
+  with exposure added up (`portfolio.earnings_exposure`, `portfolio.expiry_concentration`); spread
+  candidates as the least-bad put spread (see the table).
+- **Boundaries that change numbers:** the theta band without expiring legs (`portfolio.theta.front_dte`,
+  default 2) and the delta band scaled by it; dividend-yield pricing (#926, 2026-11-08); payoff figures to
+  the cent; a diagonal judged on its modelled best case (#923); a calendar's stop on the stock's price
+  (#899).
+- **Premium pace** against a target of 0.2% of net liq a day (`portfolio.theta.target_pct_nlv`) from the
+  account's whole trade history (`get_transactions --account_wide`, GET only); bands over time; a
+  vol-expansion band.
+- Manage notes it when its snapshot is older than the code (watchdog `manage.snapshot_version`).
+
+**Screeners and technicals**
+
+- Our own short-put, covered-call and credit-spread lists, replacing the vendor's, which froze with its
+  subscription on 2026-10-24. The credit-spread list is untested.
+- **Liquidity verdict gains `thin` (2026-10-27).** No screener lists a name whose options the user would
+  not trade. About 166 names pass, against 484.
+- **Fixed (2026-10-27):** AZN's ADR ratio change and a 2015 split, the HON, CME and ITUB dividend
+  disagreements (Yahoo's amount decides a pair more than 1.2x apart), and GFI's part payouts. **Added:**
+  `check-adjust`, with job `technicals-yahoo-adjusted` (19:45 ET) and `technicals-adjust-check` (06:55 ET).
+- Skate: judged against N(d2) rather than delta, a band that moves with the price, the reference funds
+  banded, a both-sides marker and a forward record judged by a test declared in advance.
+- Universe and sectors no longer depend on the vendor; technicals keeps the Dolt server without the
+  earnings module; analyst-revision symbols that fail are retried once. Screeners tabs that need Dolt
+  say so.
+- The fidelity tab was removed.
+- Fair value: an unlevered DCF (`core.valuation`), its column and tab, a reverse DCF, and a version 2 in
+  `packages/fundamentals` that failed both halves of its test.
+
+**Orchestrator and operations**
+
+- Research queue, job progress files (`core.progress`), arm cards for every paper module, dated
+  reminders, stable trade IDs, execution record, per-arm kill criteria, a studies board and a study
+  report.
+- Windows power-throttling opt-out (2026-11-03), the console's server and module CLIs included; the
+  Dolt server unthrottled.
+- `core.streamer` spends subscriptions from a per-minute token bucket (burst 500, 1,500 a minute) after
+  the broker cut connections for a rate it counts over about a minute.
+- Config backup skips every browser profile.
+
+**Backtest and research**
+
+- End-of-day chain fetch, event-driven and resumable; run cards with an account read, a compounded lens,
+  a sizing check and a scorecard; resumable interrupted runs; a MEIC gates-off oracle; slices by weekday
+  and event day with a random-day placebo.
+- Research items 14 to 69 were declared, run and recorded in `research/`; results stay under
+  `~/.cherrypick` by the data licence.
+
+**Docs and CI**
+
+- Docs describe the current version only (#1001, #1004). The root `CLAUDE.md` and each package's were
+  shortened, with detail moved to `docs/`.
+- `tools/check_personal.py` fails CI on owner-attribution phrases and unmasked account numbers;
+  `tools/check_guide.py` checks the guide; `tools/check_screenshots_fresh.py` warns on stale shots; and
+  `tools/check_changelog_touched.py` warns when a change to shipped code leaves this file alone (label
+  `no-changelog` skips it).
+- The demo home (a fake suite home for screenshots, `docs/demo-home.md`) is docs only and not shipped.
+- CI installs a pinned uv from PyPI with three tries (#1003).
 
 ## v0.11.2 — 2026-10-19 — review follow-ups
 The decisions the documentation review (v0.11.1) left open. One fixes how earnings marks and closes

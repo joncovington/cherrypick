@@ -4,11 +4,70 @@
     "v0.12.0": {
       "first_with_upgrade_tooling": true,
       "upgrading": [
-        "This is the first release with `run.py upgrade`. Moving from v0.11.x to v0.12.0 is manual (docs/guide/upgrading.md); from here on `upgrade` does it."
+        "This is the first release with `run.py upgrade`. Moving from v0.11.x to v0.12.0 is manual (docs/guide/upgrading.md); from here on `upgrade` does it.",
+        "Earnings is paper-only: it cannot place orders, and a leftover `enable_live_trading` or `live` key does nothing. The manual desk and the QuikOptions integration are removed. Live orders now exist only in MEIC, flies and bwb.",
+        "flies, curve, pmcc and bwb ship switched off in the example configs. Your config is never rewritten, so a module you have on stays on until you switch it off. `/live-flies-start` and `/live-bwb-start` refuse while their module is off.",
+        "The arm gates new MEIC condors only: an unarmed `meic-live` still manages what it holds. MEIC live entries are one contract.",
+        "The scheduler merged daily jobs that run at several times into one job each, so 18 job ids leave `status`. Restart the supervisor after the upgrade.",
+        "The installer now sets up Dolt unless told not to (`-SkipDolt`) and runs `run.py bootstrap` at the end (`-SkipBootstrap` skips it). `-WithDesk` is accepted and ignored.",
+        "The console checks GitHub for a newer release at most every six hours; `update_check: false` in console.json turns that off."
       ],
-      "manual_steps": [],
-      "config_changes": [],
-      "measurement_boundaries": [],
+      "manual_steps": [
+        "Stop the suite (uninstall.cmd or ./uninstall.sh), get v0.12.0 (unzip over the old folder, or fetch tags and check out the tag), and run the installer again.",
+        "Run `python run.py doctor` and delete what it says is ignored: the earnings `enable_live_trading` or `live` key, the `quikoptions` and `desk_notify` blocks in config.json, and ~/.cherrypick/config/desk.json.",
+        "Switch off any retired module you still have on (`modules.<name>.enabled` false for flies, curve, pmcc and bwb).",
+        "Run `python run.py supervise --restart`, then restart any resident job."
+      ],
+      "config_changes": [
+        {
+          "file": "earnings.json",
+          "key": "enable_live_trading, live",
+          "note": "Removed. Earnings is paper-only; both keys are ignored and doctor warns about them."
+        },
+        {
+          "file": "config.json",
+          "key": "quikoptions",
+          "note": "Removed with the integration; ignored. Reports of your own use the new `external_reports` list."
+        },
+        {
+          "file": "config.json",
+          "key": "desk_notify",
+          "note": "Removed with the manual desk; ignored. ~/.cherrypick/config/desk.json is ignored too."
+        },
+        {
+          "file": "config.json",
+          "key": "external_reports",
+          "note": "New. Each entry runs a script under the suite home as job external-<id>; see docs/guide/external-reports.md."
+        },
+        {
+          "file": "config.json",
+          "key": "modules.flies.enabled, modules.bwb.enabled",
+          "note": "The example now ships both false, as pmcc and curve already were. An existing config keeps its value."
+        },
+        {
+          "file": "console.json",
+          "key": "update_check",
+          "note": "New. Set false to stop the console asking GitHub for the latest release."
+        },
+        {
+          "file": "curve.json",
+          "key": "arms.<name>",
+          "note": "An arm the config does not declare stays off (control excepted) from 2026-10-30."
+        },
+        {
+          "file": "meic.json",
+          "key": "delta_source, live.resting_stop",
+          "note": "New, both off by default. Switching either on is a measurement boundary."
+        }
+      ],
+      "measurement_boundaries": [
+        "2026-11-03, all modules: the supervisor and its jobs are opted out of Windows power throttling, so tick timing, quote age and stop latency either side are not poolable.",
+        "MEIC: 2026-10-24 live kill criteria; 2026-10-25 a closed live condor with no net refuses new ones; 2026-10-27 a hand-placed opening order obeys the entry rules; 2026-11-02 the arm gates new condors only and live entries are one contract. `live.resting_stop` and `delta_source: computed` are boundaries when switched on.",
+        "Earnings: 2026-10-26 exits at mid; 2026-10-28 entries only on liquidity-verdict tradable names; 2026-10-30 entry retry and exit patience; 2026-11-05 early-close days run no entry scan; 2026-11-06 PEAD gate, expected-move definition and 15:20 expiry close; v0.12.0 paper-only.",
+        "manage: 2026-10-22 spread candidates are the least-bad put spread by symbol; 2026-11-08 every leg is priced at the name's dividend yield.",
+        "Screeners: 2026-10-27 only names whose monthly options are confirmed liquid are listed.",
+        "curve 2026-10-30 (undeclared arms off); pmcc and bwb entries off 2026-11-08; flies retired 2026-10-19."
+      ],
       "migrations": []
     }
   }

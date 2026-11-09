@@ -88,5 +88,12 @@ def test_every_released_version_in_the_real_changelog_has_notes():
     text = release_notes.CHANGELOG.read_text(encoding="utf-8")
     versions = [m.group(1) for line in text.splitlines() if (m := release_notes._HEADING.match(line))]
     assert "v0.10.0" in versions
-    for version in versions:
+    # A section drafted ahead of its release carries the date placeholder YYYY-MM-DD until the lead
+    # fills it in at tag time; the release workflow refuses it undated, so it is checked then.
+    dated = [
+        m.group(1)
+        for line in text.splitlines()
+        if (m := release_notes._HEADING.match(line)) and "YYYY-MM-DD" not in line
+    ]
+    for version in dated:
         assert release_notes.section(text, version)[1].strip()
