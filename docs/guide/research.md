@@ -32,7 +32,7 @@ Use Compare to decide whether an arm is worth keeping, and be patient. Prefer th
 
 Backtest shows replays of the strategies over licensed historical data. It has four tabs: `studies`, `queue`, `runs` and `data`. `studies` is what was tested and what was found, `queue` is the research tasks the supervisor runs one at a time, `runs` is the replays, and `data` is whether the history can be trusted, the licence and the data stores.
 
-**This page is hidden unless the licensed-data feature is on.** It is off by default because its results come from licensed vendor history, which may not be redistributed. When it is off the page is absent from the rail, and opening its address gives the not-found page, as if it did not exist. The same switch hides Compare's `slices` tab. Nothing about it is shown in this guide, and the data and anything derived from it stay on your machine. The data and anything derived from it never go in a public issue, a pull request or a shared page.
+**This page is hidden unless the licensed-data feature is on.** It is off by default because its results come from licensed vendor history, which may not be redistributed. When it is off the page is absent from the rail, and opening its address gives the not-found page, as if it did not exist. The same switch hides Compare's `slices` tab. Nothing about it is shown in this guide, and the data and anything derived from it stay on your machine. The data and anything derived from it never go in a public issue, a pull request or a shared page. How the research register, the queue and the backtest package work is in [research-and-backtests.md](research-and-backtests.md).
 
 ## Advisor (`/advisor`)
 
