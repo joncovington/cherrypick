@@ -188,7 +188,7 @@ def _path_look(observed_at: str, *, buy, sell, spot: float) -> dict:
 
 def _filled_completion(broker_filled_at: str) -> dict:
     return {
-        "order_id": "512454758",
+        "order_id": "900000018",
         "leg": fm.COMPLETION,
         "side": "put",
         "center": 7770.0,
@@ -200,7 +200,7 @@ def _filled_completion(broker_filled_at: str) -> dict:
 
 
 def test_a_price_gap_is_never_taken_from_a_look_long_before_the_fill():
-    """Shown to fail on the old bound (the price gap shared spot's 60s): order 512454758 on
+    """Shown to fail on the old bound (the price gap shared spot's 60s): order 900000018 on
     2026-10-07 filled at 1.90 at 11:13:49 ET, in one of the burst watcher's minute-long holes in
     the path. The last look before it was the 11:12:56 tick, 53s earlier, with the spread at mid
     2.45 -- recorded as the market sitting 0.55 above the limit it filled at. Spot moved 6.5 points

@@ -87,20 +87,20 @@ Today `connect` is per-module. With no `--module` it becomes the suite wizard:
           refresh_token:  ········
     [2/4] verifying connection…        connected (1 account)
     [3/4] live-trading account designation (suite-wide default)
-          1) ****9991  Traditional IRA
-          Designate ****9991 as the suite's live account? [y/N]: y
-          note: this is an IRA — confirm your options approval level covers defined-risk spreads.
+          1) ****0000  Individual
+          Designate ****0000 as the suite's live account? [y/N]: y
     [4/4] notifications (optional, Enter to skip)
           Slack webhook URL: <skipped>
 
     Done. Per-module status:
-      meic      credentials: own service        account: ****9991 (own)      connected
-      earnings  credentials: shared             account: ****9991 (shared)   connected
-      flies     credentials: own service        account: ****9991 (shared)   connected
+      meic      credentials: own service        account: ****0000 (own)      connected
+      earnings  credentials: shared             account: ****0000 (shared)   connected
+      flies     credentials: own service        account: ****0000 (shared)   connected
 
 `connect --module <m>` keeps its current behavior for per-module overrides. Step 3 keeps the
-existing selector semantics (`last4` / index) and the existing confirmation; the IRA-style
-account-type note is printed from data the account listing already returns.
+existing selector semantics (`last4` / index) and the existing confirmation; the account-type
+note (for an IRA: confirm the options approval level covers defined-risk spreads) is printed only
+when the account listing's type says so, from data it already returns.
 
 ## Piece 3 — one status surface
 
@@ -109,8 +109,8 @@ Today the answer to "am I set up?" is scattered across `secrets_status` ×3, `ac
 `cherrypick doctor` section, and on the hub's Live Ops card:
 
     module    credentials        account            connection
-    meic      own service        ****9991 (own)     ok
-    earnings  shared             ****9991 (shared)  ok
+    meic      own service        ****0000 (own)     ok
+    earnings  shared             ****0000 (shared)  ok
     flies     missing            —                  BLOCKED: run `cherrypick connect`
 
 Status only — present/absent and *source* (own/shared), never values. The "source" column is

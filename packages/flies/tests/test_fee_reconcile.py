@@ -42,10 +42,10 @@ def _settlement_txn(symbol, value, clearing_fee=None):
 
 # The 744-center fly's real order chain and settlement (order3=entry, order4=completion).
 _744_TRANSACTIONS = [
-    _trade_txn("489436397", 190.0),  # Sell to Open 744P @1.90
-    _trade_txn("489436397", -118.0),  # Buy to Open 743P @1.18
-    _trade_txn("489436686", -97.0),  # Buy to Open 745P @0.97
-    _trade_txn("489436686", 42.0),  # Sell to Open 744P @0.42
+    _trade_txn("900000001", 190.0),  # Sell to Open 744P @1.90
+    _trade_txn("900000001", -118.0),  # Buy to Open 743P @1.18
+    _trade_txn("900000002", -97.0),  # Buy to Open 745P @0.97
+    _trade_txn("900000002", 42.0),  # Sell to Open 744P @0.42
     _settlement_txn("XSP   260730P00743000", 0.0),  # expired worthless
     _settlement_txn("XSP   260730P00744000", 0.0),  # assignment removal (no fee row)
     _settlement_txn("XSP   260730P00744000", -48.0, clearing_fee=-5.0),  # cash-settled assignment
@@ -77,8 +77,8 @@ def _save_744_position(conn, **overrides):
         "pnl": 66.51,
         "expiry_payoff": 0.85,
         "status": "settled",
-        "entry_order_id": "489436397",
-        "completion_order_id": "489436686",
+        "entry_order_id": "900000001",
+        "completion_order_id": "900000002",
     }
     row.update(overrides)
     row.setdefault("book_id", f"{row['trade_date']}:{row['arm']}:{row['symbol']}")
@@ -166,8 +166,8 @@ def test_reconcile_date_leaves_unmatched_position_untouched(live_conn):
 # from that column produced "SPX   260921C07720000", matched nothing, and marked every SPX session
 # unmatched from 2026-08-03 onward while the XSP era (whose root IS "XSP") reconciled fine.
 _SPXW_TRANSACTIONS = [
-    {**_trade_txn("507935135", 235.0), "symbol": "SPXW  260921C07720000"},
-    {**_trade_txn("507935135", -0.0), "symbol": "SPXW  260921C07725000"},
+    {**_trade_txn("900000011", 235.0), "symbol": "SPXW  260921C07720000"},
+    {**_trade_txn("900000011", -0.0), "symbol": "SPXW  260921C07725000"},
     {
         **_settlement_txn("SPXW  260921C07720000", -4470.0, clearing_fee=-5.0),
         "transaction_date": "2026-09-21",
@@ -195,7 +195,7 @@ def _save_spxw_position(conn, **overrides):
         "gross_pnl": -265.0,
         "pnl": -278.44,
         "status": "settled",
-        "entry_order_id": "507935135",
+        "entry_order_id": "900000011",
         "center_leg_symbol": ".SPXW260921C7720",
         "wing_leg_symbol": ".SPXW260921C7725",
         "completing_leg_symbol": ".SPXW260921C7715",
@@ -340,20 +340,20 @@ def _s(strike_side, qty, value, fee=None):
 
 _0922_TRANSACTIONS = [
     # call fly 7765 (7760 / 7765x2 / 7770): +938 -693 entry, +463 -683 completion
-    _t("508339476", 938.0),
-    _t("508339476", -693.0),
-    _t("508339536", 463.0),
-    _t("508339536", -683.0),
+    _t("900000012", 938.0),
+    _t("900000012", -693.0),
+    _t("900000013", 463.0),
+    _t("900000013", -683.0),
     # put fly 7760 (7755 / 7760x2 / 7765)
-    _t("508395276", 832.0),
-    _t("508395276", -607.0),
-    _t("508395337", 357.0),
-    _t("508395337", -552.0),
+    _t("900000014", 832.0),
+    _t("900000014", -607.0),
+    _t("900000015", 357.0),
+    _t("900000015", -552.0),
     # put fly 7770 (7765 / 7770x2 / 7775)
-    _t("508472249", 483.0),
-    _t("508472249", -273.0),
-    _t("508472400", 178.0),
-    _t("508472400", -363.0),
+    _t("900000016", 483.0),
+    _t("900000016", -273.0),
+    _t("900000017", 178.0),
+    _t("900000017", -363.0),
     # settlement: each strike once, for the broker's NET holding
     _s("7760C", 1, 0.0),
     _s("7760C", 1, 464.0, -5.0),
@@ -396,9 +396,9 @@ def _save_0922(conn, pid, center, side, entry_id, completion_id, legs):
 
 
 def _seed_0922(conn):
-    _save_0922(conn, "c7765", 7765, "call", "508339476", "508339536", (7765, 7770, 7760))
-    _save_0922(conn, "p7760", 7760, "put", "508395276", "508395337", (7760, 7755, 7765))
-    _save_0922(conn, "p7770", 7770, "put", "508472249", "508472400", (7770, 7765, 7775))
+    _save_0922(conn, "c7765", 7765, "call", "900000012", "900000013", (7765, 7770, 7760))
+    _save_0922(conn, "p7760", 7760, "put", "900000014", "900000015", (7760, 7755, 7765))
+    _save_0922(conn, "p7770", 7770, "put", "900000016", "900000017", (7770, 7765, 7775))
     dbmod.save_book(
         conn,
         {

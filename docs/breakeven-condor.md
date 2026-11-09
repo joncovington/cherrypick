@@ -1,9 +1,9 @@
-# Theta Profits' 0DTE break-even iron condor: rules from one interview, and its fit as a MEIC arm
+# The 0DTE break-even iron condor: rules from one interview, and its fit as a MEIC arm
 
 *Drafted 2026-10-20 from the YouTube video "After 9,000 Trades, This Is Still My Most Profitable
-0DTE Strategy" (Theta Profits, self-interview, ~40 min;
+0DTE Strategy" (a self-interview, ~40 min, credited in [strategy-sources.md](strategy-sources.md);
 <https://www.youtube.com/watch?v=Fj41ojAdwJ8>). Quotes below are short excerpts for the points being
-made; the video is the source. The arm at the bottom is a **proposed** registry profile; it was
+made; the video is the source. The arm at the bottom is a **proposed** registry arm; it was
 installed into the machine-local registry (~/.cherrypick/config/meic.risk.json — not this repo) on
 2026-10-20 at 09:59 ET and took its first trade the same minute — see Installing the arm below for
 that dated record. Paper only, live untouched.*
@@ -26,10 +26,10 @@ mechanical version is (a) the break-even stop arithmetic, (b) an entry-stabiliza
 
 ## Source and lineage
 
-- **Theta Profits** — "John" (Yona Aina Sandan), ex-journalist near Oslo, trading the strategy since
-  **April 2021**, self-interview format, ~9,000 trades. He cites Tammy Chambliss' "MEIC" as the
+- **The presenter** trades the strategy since
+  **April 2021**, in a self-interview format, ~9,000 trades. He cites the "MEIC" convention as the
   sibling strategy ("she trades a bit more mechanical than me and typically also collects higher
-  premiums") and points at the Quantum Options group. Same root as our module; this is the closest
+  premiums") and points at a trading group. Same root as our module; this is the closest
   published relative we have found.
 - His own numbers: **39.3% on the account last year**, profitable every year since losing half the
   account in 2020 (over-sizing — the lesson the 1–2% rule encodes).
@@ -125,12 +125,12 @@ change the trade's shape, only its measurement fidelity.
 | Concurrent book ≤ 10 | `max_concurrent_ics` | `10` |
 | Same-zone discipline | `overlap_scope "none"` (matches control and `bt-1400-2x`; his hourly re-entries naturally land on new strikes as the market moves) | `none` |
 
-### The proposed arm — a registry profile named `be-hourly-1x`
+### The proposed arm — a registry arm named `be-hourly-1x`
 
 ```json
 "be-hourly-1x": {
   "enabled": true,
-  "_note": "Theta Profits' 0DTE break-even condor (docs/theta-profits-be-condor.md): ~1 IC/hour, 10-15 delta, 25-40-wide with per-side widths equalized to balance the premiums, per-side stop = total credit (the 'break-even' identity), neutralized gates like bt-1400-2x. Paper only.",
+  "_note": "The 0DTE break-even condor (docs/breakeven-condor.md): ~1 IC/hour, 10-15 delta, 25-40-wide with per-side widths equalized to balance the premiums, per-side stop = total credit (the 'break-even' identity), neutralized gates like bt-1400-2x. Paper only.",
   "symbols": ["SPX"],
   "min_iv_rank": 0.0,
   "min_credit_pct_of_width": 0.05,
@@ -179,7 +179,7 @@ gates, SPX-only, same engine): hourly-vs-14:00-only, 25–40-vs-10-wide, 1.0-vs-
 1. **Equal premium both sides — closed the same day, 2026-10-20 12:33 ET.** The gap as written at
    install time: each short was picked by delta with one per-symbol width, so his width-asymmetry
    (25–40 to balance the premiums) was unexpressable. The engine flag `equalize_credit` (branch
-   `paper/equalize-credit`, off by default, pairs hidden from every other profile) builds
+   `paper/equalize-credit`, off by default, pairs hidden from every other arm) builds
    width-pair candidates — each wing sized independently from a search list — and enters the most
    credit-balanced candidate that clears every gate instead of the widest-first one; this arm's
    menu became `[25, 30, 35, 40]`, his own adjustment range around the 30-wide start. Each side's
@@ -215,7 +215,7 @@ gates, SPX-only, same engine): hourly-vs-14:00-only, 25–40-vs-10-wide, 1.0-vs-
 5. **OCO stop-limit/stop-market bracket** — live execution mechanics against exchange order types
    the paper engine doesn't model (paper uses `slippage_frac_of_spread`); no port needed, live loop
    is software-stop anyway.
-6. **1–2% day risk / 50% buying power** — paper profiles have no account and model no buying power
+6. **1–2% day risk / 50% buying power** — paper arms have no account and model no buying power
    (sample-stream semantics; see the independent-sampling note in `config.example.json`). A 30-wide
    SPX condor risks ~$2.85k each, ~7/day: the worst-case double-stop day is a ~$20k string of
    single-wing losses, which is fine to *measure* and must be re-derived as % of account before
@@ -244,10 +244,10 @@ today. Paper only — `enable_live_trading` untouched, live arm untouched.
 
 ### Installing the arm
 
-The JSON above is a **proposed profile**, not a repo artifact. Arm configs live in the
+The JSON above is a **proposed arm**, not a repo artifact. Arm configs live in the
 machine-local registry (`~/.cherrypick/config/meic.risk.json`), which is outside this repo, so the
 branch and the running arm travel on different rails: this doc carries the reasoning, the operator
-carries the position. To stand the arm up, merge the block into that registry's profile map and let
+carries the position. To stand the arm up, merge the block into that registry's arm map and let
 the paper loop (every 60 s) pick it up on its next tick — no restart, and no stream-request change
 when SPX 0DTE is already subscribed. `equalize_credit` and the per-side wing search
 (`wing_widths_by_symbol`) must both be present, or the arm trades the scalar-width single it used to.
@@ -257,7 +257,7 @@ machine only. That record is kept here as a dated note rather than as a step of 
 
 **2026-10-20, 09:56–10:00 ET.** Same procedure as `bt-1400-2x`, while that Tuesday's session was
 open: registry backed up to `~/.cherrypick/state/config-backups/meic.risk.20261020-0659.json`, the
-profile added, the merge validated through `paper._merged_params` (SPX width menu came out
+arm added, the merge validated through `paper._merged_params` (SPX width menu came out
 `[5, 10, 30]`), and the `arm_added` break journaled in the paper ledger's `measurement_breaks`
 (id 8, break date 2026-10-20, beside `bt-1400-2x`'s). The first trade filled the same minute,
 **09:59:42 ET** — short 7655P / 7740C, 30-wide, spot 7703.61, deltas −0.138 / +0.124, $372.50
@@ -268,11 +268,11 @@ as specified (he times nothing), not a gate leak.
 
 **2026-10-20, 12:33 ET — gap #1 closed.** The one fidelity gap that could be closed without
 inventing a new gate was closed mid-session, on branch `paper/equalize-credit`: the engine gained
-`equalize_credit` (per profile, default off, documented in `config.example.json`), and the registry
+`equalize_credit` (per arm, default off, documented in `config.example.json`), and the registry
 was flipped to the `[25, 30, 35, 40]` width search with the flag on — backup
 `meic.risk.20261020-0933.json`, merge re-validated through `paper._merged_params`, `gate_changed`
 break journaled (id 9, break date 2026-10-20). The loop runs from the working tree as a fresh
-process per tick, so every tick from 12:33 onward had both the new code and the new profile; no
+process per tick, so every tick from 12:33 onward had both the new code and the new arm; no
 restart. The three 30-wide singles entered before the flip (09:59, 10:55, 11:50) keep reading their
 wings from the scalar via the column fallback, so that session is mixed either way — the first clean
 read of the equalized arm was the following day.

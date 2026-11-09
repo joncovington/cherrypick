@@ -57,7 +57,7 @@ Elsewhere:
   (SLV 1,071 exposed ticks, QQQ 675), the region where a live IRA short is assigned. It enters fresh,
   two symbols a session, so its longs are not the pair's; compare weekly marked change per symbol.
   Additive: no running arm's rules change.
-- **2026-10-06 long delta 0.88–0.92** (was 0.90–0.95, nearest 0.925): Tom King's own ~90-delta long,
+- **2026-10-06 long delta 0.88–0.92** (was 0.90–0.95, nearest 0.925): the source design's ~90-delta long,
   journaled as `long_delta`. Measured by the BROKER's delta, which the live loop will select by: on
   American-style ETFs its deep-call delta runs below parity, so 0.90 sits ~36–41% in the money (parity
   ~0.94–0.97); on XSP the two agree (~24%). The XSP pair entered 2026-10-05 at ~0.925 stays as entered.
@@ -82,8 +82,8 @@ Elsewhere:
   the roster; a held-long entry asks for its own short date (`stream_request.write`).
 
 **What the shield arms leave out**, declared rather than tuned later:
-- Tom King's discretionary entry setup;
-- his 50–100% profit target;
+- the source's discretionary entry setup;
+- its 50–100% profit target;
 - adding lots.
 
 A stop followed by mechanical re-entry is a costly re-strike of the long. The replay finds the stop

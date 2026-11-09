@@ -88,7 +88,7 @@ closing limit price:  (short_ask − long_bid) × stop_limit_ratio              
 ```
 
 **The trigger basis is the whole IC's `net_credit`, not that side's own credit** — this is the
-published Chambless MEIC convention (a per-side stop keyed to the *whole IC*), designed so that one
+published MEIC convention (a per-side stop keyed to the *whole IC*), designed so that one
 side stopping scratches the trade (the other side's remaining credit roughly offsets the loss); the
 `0.95` default is the documented "MEIC+" variant, which stops $0.10 below exact breakeven so a
 scratch trends slightly positive. This basis is fixed in `paper.py`/the live loop, not a config

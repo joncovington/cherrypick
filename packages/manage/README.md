@@ -24,9 +24,9 @@ Run it by hand any time with `python run.py manage`, and try a rule change on a 
 
 Each position is judged as the broker's **order chain**: the order that opened it and every roll or
 adjustment since, rebuilt from the account's trade history. The chain's net cash is the trade's basis,
-so a roll's credit counts. GLD on 2026-10-13 was opened for 8.33 db and rolled twice for 6.40 cr:
-1.93 db in all, where its open legs alone said 11.04 db. Two orders on one name that never touched
-each other are two trades (SOFI's short put and its call spread). The chain's recorded fees give a net
+so a roll's credit counts. A trade on AAA (invented figures) opened for 7.20 db and rolled twice for 5.10 cr:
+2.10 db in all, where its open legs alone said 9.80 db. Two orders on one name that never touched
+each other are two trades (BBB's short put and its call spread). The chain's recorded fees give a net
 P&L beside the gross one.
 
 **Every trade has a stable ID** (`tradeids.py`), `<NAME>-<YYMMDD>-<n>`: its name, the day its chain
@@ -87,7 +87,7 @@ Three shape families change how a trade is judged:
   the other. These earn from direction, and are usually opened near even money. When the net premium is
   under a quarter of the modelled max loss, the trade is `directional`: it takes profit at half its max
   gain (capped at 1x its risk), stops at half its max loss, and exits at 21 DTE. Percentages of a $23 credit
-  measure nothing; XLU on 2026-10-13 was being closed on a $30 loss against a $277 risk.
+  measure nothing; CCC on 2026-01-12 (invented) was being closed on a $24 loss against a $260 risk.
 - **Lizards.** A jade lizard (and the variant with a put wing) or a big lizard, taken in for at least
   the call spread's width, has no upside risk, so an in-the-money call is not a broken thesis: the
   breached-strike rule looks only at its puts. A reverse jade or reverse big lizard is the mirror: taken
@@ -100,10 +100,10 @@ Three shape families change how a trade is judged:
   a shape it never names is reported.
 
 A **broken-wing butterfly** bought for under a quarter of its max loss is judged the same way (`risk-judged`):
-its premium says little about the tail beyond its wider wing. GLD on 2026-10-13 was $193 in with $1,693
-at risk, and the percentage of the $193 said nothing useful. So is a **ratio butterfly**: long-short-long at
+its premium says little about the tail beyond its wider wing. AAA on 2026-01-12 (invented) was $180 in with $1,620
+at risk, and the percentage of the $180 said nothing useful. So is a **ratio butterfly**: long-short-long at
 three strikes, the wings together matching the body but not 1-2-1, named by its quantities from the top
-strike (`1-3-2`; SPY on 2026-10-18 was +1 745P / -3 740P / +2 730P, $200 in against $1,300 at risk), or a
+strike (`1-3-2`; BBB on 2026-01-15 (invented) was +1 95P / -3 90P / +2 80P, $150 in against $1,350 at risk), or a
 **ratio time spread** when its legs span expiries. So is a **broken-heart butterfly**, which gives up
 nearly all of its credit to open the gap between its two spreads. Ordinary butterflies, condors,
 verticals and diagonals are named but judged by their premium as before. A front-ratio is named but
@@ -115,9 +115,9 @@ put's runs to the strike.
 A credit roll is not automatically a good roll. `check-roll` judges a proposed order against the trade
 as the latest evaluation sees it:
 
-    python -m cherrypick.manage check-roll --trade GLD \
-        --close "-2 2026-10-23 425C @0.14" --close "+1 2026-10-23 445C @0.05" \
-        --open "-2 2026-11-20 415C @2.57" --open "+1 2026-11-20 435C @1.01"
+    python -m cherrypick.manage check-roll --trade AAA \
+        --close "-2 2026-01-30 150C @0.14" --close "+1 2026-01-30 170C @0.05" \
+        --open "-2 2026-02-27 140C @2.57" --open "+1 2026-02-27 160C @1.01"
 
 It checks:
 - that the roll takes in a net credit;
@@ -129,7 +129,7 @@ It checks:
 - earnings inside the new shorts' life.
 
 The verdict is `reject` for a debit roll, an unlimited loss, or a naked put rolled through earnings;
-`risky` with its reasons; or `ok`. GLD's own 10/09 roll comes back risky on three counts: the shape
+`risky` with its reasons; or `ok`. A roll like this one can come back risky on three counts: the shape
 changes from diagonal to broken-wing butterfly, the shorts move into the long's expiry, and what it can
 lose grows.
 
@@ -163,9 +163,9 @@ presenter who cuts losers rather than the one who repairs them, and checked agai
 | `wheel.take_profit` | a wheel cycle's short marked at or under its buy-to-close: the resting order's price, else $0.03 ($0.05 on a wide market). Buys back the short alone, never the shares | take profit | 80 | the skate method (an options educator's covered-call process): a GTC buy-to-close at $0.03, $0.05 if illiquid, placed right after the fill | None tested; mechanically there is nothing left to earn at a few cents, as with `legs.short_take_profit` |
 | `wheel.tested` | a wheel cycle's short at or through its strike: roll out in time or close. Priced: the **net-zero** roll (buy back at the mid, sell on the quoted monthly the strike furthest out whose mid pays for it; a put's strike capped at old strike + original premium − buy-back) and the **premium gambit** (the buy-back rests at the original sale price, the same strike sold on the monthly). Each judged by `check-roll`; neither moves toward the money | roll or close | 50 | the skate method: losers are rolled "99% of the time"; the strike cap is thetagang's | Mixed: rolling tested short puts beat holding them in tastylive's studies; repairing defined-risk spreads did not. Repair, which this ruleset otherwise avoids, so a close outranks it |
 | `wheel.next_leg` | shares delivered by an assignment and not yet written against: the covered call at the skate call band (`band`: fixed or by_expiry) moved to today's price, on the quoted monthly, the first quoted strike at or above it; flagged when under the wheel basis. Without bands in the snapshot it names no strike and says so | review | 50 | the skate method: calls at or above the upper band | The 2026-10-18 study: the band matches delta on average and does not beat it |
-| `pmcc.width` | a recognised PMCC whose short strike less its long strike does not exceed the long's net cost per share after every premium collected. Shows the P&L if assigned in dollars, and the short's roll candidates: one per quoted expiry after the short and before the long (the next five the snapshot quotes: snapshot v14's `roll_out_chains` reads them that session, below), the most premium at 0.40 delta or less, a roll costing no more than $0.10 a share, keeping the width; each judged by `check-roll` | roll or close | 65 | the PMCC method's own entry check, kept while held; candidates as trading_skills' `ib-pmcc-advisor` chooses them | Option arithmetic: assigned with the long exercised, the trade is worth the width, so a net cost past it loses. Selling the long instead keeps its time value, which softens it; the check assumes none is left. Our pmcc study found the short calls' edge rests on the IV assumption, so rolling is routine, not a rescue |
-| `pmcc.assignment` | a recognised PMCC's short in the money with less time value than the next dividend before an ex-date inside its life, or under $0.05 at any time (the pmcc package's near-zero flag); never on a cash-settled root. Rolls priced as above | roll or close | 65 | the pmcc package's assignment-exposed region; TheOptionPremium's PMCC dividend rule | Confirmed by option theory (a call holder exercises early when the dividend exceeds the time value given up); in practice often not exercised. An assignment against a long call leaves the account short the shares until the long is exercised or sold |
-| `pmcc.roll_long` | a recognised PMCC's long at 120 days left or fewer, or under 0.70 delta today (solved with the dividend yield) | review | 45 | coveredcallcalculator.net and TheOptionPremium: roll the long at 90-120 days, or when its delta falls toward 0.70 | None tested. Retail practitioner guides; the long's decay accelerates in its last months |
+| `pmcc.width` | a recognised PMCC whose short strike less its long strike does not exceed the long's net cost per share after every premium collected. Shows the P&L if assigned in dollars, and the short's roll candidates: one per quoted expiry after the short and before the long (the next five the snapshot quotes: snapshot v14's `roll_out_chains` reads them that session, below), the most premium at 0.40 delta or less, a roll costing no more than $0.10 a share, keeping the width; each judged by `check-roll` | roll or close | 65 | the PMCC method's own entry check, kept while held; candidates as an open-source PMCC advisor chooses them (docs/strategy-sources.md) | Option arithmetic: assigned with the long exercised, the trade is worth the width, so a net cost past it loses. Selling the long instead keeps its time value, which softens it; the check assumes none is left. Our pmcc study found the short calls' edge rests on the IV assumption, so rolling is routine, not a rescue |
+| `pmcc.assignment` | a recognised PMCC's short in the money with less time value than the next dividend before an ex-date inside its life, or under $0.05 at any time (the pmcc package's near-zero flag); never on a cash-settled root. Rolls priced as above | roll or close | 65 | the pmcc package's assignment-exposed region; a published PMCC guide's dividend rule (docs/strategy-sources.md) | Confirmed by option theory (a call holder exercises early when the dividend exceeds the time value given up); in practice often not exercised. An assignment against a long call leaves the account short the shares until the long is exercised or sold |
+| `pmcc.roll_long` | a recognised PMCC's long at 120 days left or fewer, or under 0.70 delta today (solved with the dividend yield) | review | 45 | two published PMCC guides (docs/strategy-sources.md): roll the long at 90-120 days, or when its delta falls toward 0.70 | None tested. Retail practitioner guides; the long's decay accelerates in its last months |
 | `ex_dividend` | ITM short call over a declared ex-date with time value < the dividend | review | 80 | vendor | Confirmed by option theory; in practice often not exercised |
 | `risk.oversize` | modelled downside > 3× (2% of net liq) | review | 60 | vendor's 2%-per-trade rule | Direction supported (fractional Kelly); the numbers are convention |
 | `directional.take_profit` | a `directional` trade (net premium under ¼ of its modelled max loss) at half its modelled max gain, capped at 1× its risk | take profit | 65 | our rule, 2026-10-13: a percentage of a small premium measures nothing | No outside test |
@@ -364,25 +364,25 @@ Beside the trades, each evaluation reads the whole account as one book (`portfol
 - **a stress line**: the book repriced at SPY −10% and +5%, each name moved by its beta;
 - **each underlying's share** of the book's theta and BWD;
 - **beta doubts**: names whose broker beta disagrees in sign with its own three-month correlation,
-  which happens (RTX, FXI, DELL on 2026-10-18), so their BWD may be misstated;
+  which happens on a few names, so their BWD may be misstated;
 - **the broker check** (`broker_check`, from snapshot v9): BWD and theta summed again on the
   broker's own per-leg greeks, over the same legs with the same betas, with the gap overall and by
   underlying. A leg only one model prices is named and left out of both. Legs expiring today are
   their own line (`expiring`), out of the totals: ours takes them at moneyness and the broker's
-  prices a whole day at the quote's IV, which before the open on 2026-10-21 was $374 of a $434 theta
+  prices a whole day at the quote's IV, which before the open can be most of the theta
   gap. `legs_on_broker_iv` counts the legs whose IV is the broker's (below). It decides nothing; it
   is the daily record of how far our model sits from the broker's before the bands are trusted.
 
 Everything is modelled (Black-Scholes at each leg's own IV). That IV is solved from the leg's mid,
 except where the snapshot flags its quote `wide` and the broker has an IV for it: then it is the
 broker's, and the leg's `iv_source` says so. Two wide mids in one spread gave IVs about twice as far
-apart as the broker's surface did (median 0.030 against 0.014 over the wide pairs of 2026-10-20/21;
-before the open NFLX's 70C, bid 0.01 ask 1.50, solved 55 points under its partner), while on tight
+apart as the broker's surface did (median 0.030 against 0.014 over the wide pairs of two sample days;
+before the open a far-out 70C on one name, bid 0.01 ask 1.50, solved 55 points under its partner), while on tight
 quotes our own agreed better (0.005 against 0.010). The broker's IV is taken only when, priced at the
 snapshot's spot, it lands inside the leg's own bid/ask: the broker figures its greeks on its own
-underlying price, which after the close on a report night is the after-hours print (META's 705C at
-16:35 ET on 2026-10-21 took an IV worth $10.40 against a 21.80/24.40 quote, and its bull call spread
-read a negative delta). A mid under the no-dividend model's floor (TLT's 2029 80C, a fund paying ~4%
+underlying price, which after the close on a report night is the after-hours print (a 705C on a
+report night at 16:35 ET took an IV worth $10.40 against a 21.80/24.40 quote, and its bull call spread
+read a negative delta). A mid under the no-dividend model's floor (a deep 2029 call on a fund paying ~4%
 a year) solves to no vol at all; it is `unpriceable`, not IV zero and delta 1. A leg the model cannot price, or an
 underlying with no beta, is named and left out, never counted as zero; the reading says it is
 partial. A leg expiring today is taken at its moneyness, with its remaining time value as that day's
@@ -398,7 +398,7 @@ what drives it:
 | `portfolio.delta` | BWD from −0.5× to +0.75× theta (SPY shares), leaning long; ±0.5% of net liq per 1% move when theta is not positive | retail options education ("BWD within about half the theta") | None |
 | `portfolio.breakeven` | short gamma, with a break-even move under SPY's implied one-day move | option theory: theta = −½ Γ S² σ² | The identity is exact; whether acting on it pays is untested |
 | `portfolio.concentration` | one name over 25% of gross theta or gross BWD | convention | None |
-| `portfolio.buying_power` | buying power used over a cap set by VIX: 25% under 15, 30% under 20, 35% under 30, 40% under 40, 50% above | retail options education (more room when premium is rich) | None. On 2026-10-18 the account used 53% against a 30% cap at VIX 20 |
+| `portfolio.buying_power` | buying power used over a cap set by VIX: 25% under 15, 30% under 20, 35% under 30, 40% under 40, 50% above | retail options education (more room when premium is rich) | None. A book using 53% against a 30% cap at VIX 20 is the case it flags |
 | `portfolio.vol_expansion` | SPY −5% with IVs up 10 points (term-weighted, time held still) losing over 10% of net liq; the drivers are the names shortest 30-day vega | ours (2026-10-31): a spike moves price and vol together, and the stress line holds IV still | None. Vol is easy to forecast and hard to profit from, but the expansion half cannot be timed, so this bounds it rather than predicting it |
 
 Each band is written into the reading with the figure's place in it (`bands`), so the console draws
@@ -458,7 +458,7 @@ mid is not a fill. Nothing is placed.
   at intrinsic);
 - an **expiry ladder**: per expiry, the trades whose nearest short expires then, what they can still
   lose and the theta of the legs expiring then; and the share of theta and downside in trades with
-  earnings before their nearest short expires (72% of theta on 2026-10-18), with that downside by
+  earnings before their nearest short expires (72% of theta, say), with that downside by
   report date.
 
 Every figure is modelled repricing, not a forecast.
@@ -671,8 +671,8 @@ are the comparison. A book that keeps far less than it collects is paying for it
 - **Fees are known only for a reconciled chain.** A trade priced from its open legs shows gross P&L only, and its basis misses any earlier roll.
 - **Ex-dividend dates are the last declared ones.** The rule fires once the next ex-date is announced.
 - **Earnings dates are the broker's expected dates**, which can move.
-- **SPX 0DTE is left out** (`exclude.zero_dte_underlyings`): it is the flies live loop's own book,
-  managed by that loop and cash-settled at the close.
+- **SPX 0DTE is left out** (`exclude.zero_dte_underlyings`): a same-day, cash-settled position is
+  managed by the loop that placed it and settles at the close.
 - **A covered call the PMCC link does not reach counts only its two chains.** Earlier shorts sold in orders of
   their own and expired are not in its basis, and an ambiguous pairing (two lone longs or shorts on
   one name) is left split.

@@ -19,8 +19,8 @@ import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/Ca
 import { Section } from "../../components/Section";
 
 /**
- * One PMCC position, week by week -- the spreadsheet a covered-call trader keeps (Tom King's layout,
- * the 2026-10-04 request), read from the module's own `analytics.tracker` through the bridge.
+ * One PMCC position, week by week -- the spreadsheet a covered-call trader keeps (the layout of a published
+ * tracker, the 2026-10-04 request), read from the module's own `analytics.tracker` through the bridge.
  *
  * A held-long position lives ~10 months and sells ~40 weekly shorts against one long, and the
  * closed-position tables say nothing about it until its long is sold. This page is that position

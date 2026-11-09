@@ -1,4 +1,4 @@
-"""Item 49, the "Crazy Ivan" on TQQQ (docs/edge-hypotheses-plan.md): a cash-secured 16-delta put sold by
+"""Item 49, the dip-sold put on TQQQ (docs/edge-hypotheses-plan.md): a cash-secured 16-delta put sold by
 a resting order 20% over the ask, against the same put sold at the close and against buying it back at
 the defence line instead of rolling.
 
@@ -40,7 +40,7 @@ backtest results directory (results/research/item49/), never into the repo: the 
 - **Collateral:** strike x 100 in cash per contract (a spread's: its width x 100). At most CAP open
   chains per arm.
 
-**Arms.** Judged: `maria` (the rule), `deep` (cushion 1.40), `atclose` (no order: sell at the
+**Arms.** Judged: `rest20` (the rule), `deep` (cushion 1.40), `atclose` (no order: sell at the
 close's mid on any session with room), `overnight`, `noroll` (at the defence line, buy back and end
 the chain), `trend` (an order only while the adjusted close is above its 200-session average), `qqq`
 (the rule on QQQ, defence at 1.7%). Reported: `cushion10`, `tp21` (half the credit or 21 days left),
@@ -61,7 +61,7 @@ against the 3-month bill yield on the same collateral-days.
 **The verdict,** per judged arm: in the design window the mean chain net above zero with a one-sided
 t above 2, clustered by the month the chain filled, Holm across the seven; positive in each half
 (split 2020-09-01); positive at the stress and at `limit`; then the holdout's mean above zero. Under
-30 closed chains in a window is no verdict. The Crazy Ivan claim also needs a passing `maria`,
+30 closed chains in a window is no verdict. The resting-order claim also needs a passing `rest20`,
 `deep`, `overnight` or `trend` to beat both `atclose` and `noroll` in the design window, by a paired
 monthly difference with a one-sided t above 2.
 """
@@ -125,28 +125,42 @@ class Arm:
     cap: int = CAP
 
 
-MARIA = Arm()
+REST20 = Arm()
 JUDGED: dict[str, Arm] = {
-    "maria": MARIA,
-    "deep": replace(MARIA, cushion=1.40),
-    "atclose": replace(MARIA, entry="close"),
-    "overnight": replace(MARIA, overnight=True),
-    "noroll": replace(MARIA, roll=False),
-    "trend": replace(MARIA, trend=True),
-    "qqq": replace(MARIA, sym="QQQ", defence=0.017),
+    "rest20": REST20,
+    "deep": replace(REST20, cushion=1.40),
+    "atclose": replace(REST20, entry="close"),
+    "overnight": replace(REST20, overnight=True),
+    "noroll": replace(REST20, roll=False),
+    "trend": replace(REST20, trend=True),
+    "qqq": replace(REST20, sym="QQQ", defence=0.017),
 }
 REPORTED: dict[str, Arm] = {
-    "cushion10": replace(MARIA, cushion=1.10),
-    "tp21": replace(MARIA, tp_dte=TP_DTE),
-    "tp75": replace(MARIA, tp=0.75),
-    "hold": replace(MARIA, tp=None),
-    "spread": replace(MARIA, long_below=0.10),
-    "dist15": replace(MARIA, strike="dist"),
-    "single": replace(MARIA, cap=1),
+    "cushion10": replace(REST20, cushion=1.10),
+    "tp21": replace(REST20, tp_dte=TP_DTE),
+    "tp75": replace(REST20, tp=0.75),
+    "hold": replace(REST20, tp=None),
+    "spread": replace(REST20, long_below=0.10),
+    "dist15": replace(REST20, strike="dist"),
+    "single": replace(REST20, cap=1),
 }
 ARMS = {**JUDGED, **REPORTED}
-RESTING = ("maria", "deep", "overnight", "trend")
+RESTING = ("rest20", "deep", "overnight", "trend")
 RIVALS = ("atclose", "noroll")
+
+# The one alias map. Results stored under ~/.cherrypick before the 2026-11 rename spell the base arm
+# `maria` and the claim key `crazy_ivan`; those names came from the source's author and were
+# retired from the code. `canon` rewrites them to the current names wherever a stored result is read.
+ARM_ALIASES = {"maria": "rest20", "crazy_ivan": "resting_claim"}
+
+
+def canon(obj):
+    """A stored result with the retired names mapped to the current ones (keys and arm lists)."""
+    if isinstance(obj, dict):
+        return {ARM_ALIASES.get(k, k) if isinstance(k, str) else k: canon(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [ARM_ALIASES.get(x, x) if isinstance(x, str) else canon(x) for x in obj]
+    return obj
 
 
 # ------------------------------------------------------------------------------------------------
@@ -996,7 +1010,7 @@ def cmd_study(args) -> int:
         done = d / "results-holdout.json"
         if done.exists():
             raise SystemExit(f"the holdout has been read ({done}); it is read once")
-        design = json.loads((d / "results-design.json").read_text(encoding="utf-8"))
+        design = canon(json.loads((d / "results-design.json").read_text(encoding="utf-8")))
         passed = [a for a, v in design["verdict"]["arms"].items() if v["verdict"] == "design pass"]
         chains, counts, reports = run_window("holdout", passed) if passed else ({}, {}, {})
         verdict = judge_holdout(design["verdict"], reports)
@@ -1006,7 +1020,7 @@ def cmd_study(args) -> int:
             "reports": reports,
             "counts": counts,
             "verdict": verdict,
-            "crazy_ivan": claim_holds(verdict, design["verdict"]["claim"]),
+            "resting_claim": claim_holds(verdict, design["verdict"]["claim"]),
             "chains": chains,
         }
         out = done
@@ -1032,13 +1046,13 @@ def _pct(x: float | None) -> str:
 def report(d: Path) -> str:
     """results.md from whatever results files exist. Derived from licensed chains, so it stays where
     the JSON is and never enters the repo."""
-    lines = ["# Item 49: the Crazy Ivan on TQQQ", ""]
+    lines = ["# Item 49: the dip-sold put on TQQQ", ""]
     for wname in ("design", "holdout"):
         p = d / f"results-{wname}.json"
         if not p.exists():
             lines += [f"## {wname.capitalize()}: not run", ""]
             continue
-        r = json.loads(p.read_text(encoding="utf-8"))
+        r = canon(json.loads(p.read_text(encoding="utf-8")))
         w = WINDOWS[wname]
         verdicts = r["verdict"]["arms"] if wname == "design" else r["verdict"]
         lines += [
@@ -1063,7 +1077,8 @@ def report(d: Path) -> str:
                 bits = [f"{x}: mean {_pct(s['mean'])}, t {s.get('t', 0):.2f}" for x, s in rv.items()]
                 lines.append(f"- {a}: " + "; ".join(bits))
         else:
-            lines += ["", f"**The Crazy Ivan claim holds for:** {', '.join(r['crazy_ivan']) or 'none'}."]
+            held = ", ".join(r["resting_claim"]) or "none"
+            lines += ["", f"**The resting-order claim holds for:** {held}."]
         lines.append("")
     return "\n".join(lines) + "\n"
 

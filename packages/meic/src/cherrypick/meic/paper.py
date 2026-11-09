@@ -1006,7 +1006,7 @@ def evaluate_entry(
     # total range within the threshold AND Wilder ATR(5) at or below its 20-bar average -- the
     # Thinkorswim "Universal Adaptive Market Stabilization Indicator" rule, the strategy's
     # "wait until I see two or three flat five-minute candles" made deterministic
-    # (docs/theta-profits-be-condor.md). The verdicts ride the snapshot under
+    # (docs/breakeven-condor.md). The verdicts ride the snapshot under
     # `stabilization_verdicts`, computed BEFORE entries by the paper loop, the live loop
     # (run_once) and the replay, so a live arm, its paper twin and its history read the same rule.
     # The refusal is a WAIT, not a rejection: the next tick re-reads. A missing or unverified

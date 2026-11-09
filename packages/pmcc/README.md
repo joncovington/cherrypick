@@ -9,7 +9,7 @@ PMCC: a paper-only module that holds a deep-ITM call and sells a shorter call ag
 QQQ, GLD, IWM, SLV and SMH and the stocks AMZN, TSLA, AMD, NVDA and PLTR. Since 2026-10-06 the
 trade is two arms, each its own portfolio:
 
-- **`shield`** and **`shield_hold`** follow Tom King's "Income Shield": hold a ~1-year call near
+- **`shield`** and **`shield_hold`** follow a published held-long design ([credited](../../docs/strategy-sources.md)): hold a ~1-year call near
   0.90 delta (the broker's, 0.88-0.92) and sell a 0.70-delta weekly call against it, rolled every
   week until the long reaches 45 DTE. `shield` also rolls early once the short has decayed or been
   breached; `shield_hold` holds each short to Friday. `shield_guard` (from 2026-10-26) holds like

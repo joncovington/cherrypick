@@ -1,6 +1,6 @@
 """The held-long lifecycle: a ~1-year long held while a weekly ~0.70-delta short rolls against it.
 
-`shield` (Tom King's rules, early roll included) and `shield_hold` (the same, holding each short to
+`shield` (the source design's rules, early roll included) and `shield_hold` (the same, holding each short to
 Friday) share one entry, so they are tested as a pair wherever the difference is the point. The
 clock-table cases are the ones the 2026-10-04 design review named: the minute before the roll, the
 roll, the deadline and the settle pass on a normal Friday and on the early closes of 2026-11-27 and

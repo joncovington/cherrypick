@@ -52,7 +52,7 @@ symbol opens the mean-reversion chart, whose arrows include these trades.
 
 ## Options-tradable (revised 2026-10-04)
 
-The user trades options, so the table is cut to options-tradable names by default, with "All
+This is an options tool, so the table is cut to options-tradable names by default, with "All
 names" one click away. A name is options-tradable when both hold (`tradable.py`):
 - **It lists weekly options:** at least 4 expiries in the next 35 days, from the nightly
   market-metrics fetch (`scripts/fetch_iv_rank.py`).

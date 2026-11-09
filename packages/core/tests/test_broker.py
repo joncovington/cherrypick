@@ -330,7 +330,7 @@ def test_place_order_default_serialize_is_the_shared_flattener():
 def test_serialize_flattens_sdk_objects_and_leaves_plain_values_alone():
     class FakeSdkOrder:
         def model_dump(self, mode="json"):
-            return {"id": 489184188, "status": "Received", "reject_reason": None}
+            return {"id": 900000003, "status": "Received", "reject_reason": None}
 
     class Plain:
         def __str__(self):
@@ -339,7 +339,7 @@ def test_serialize_flattens_sdk_objects_and_leaves_plain_values_alone():
     assert broker.serialize(None) is None and broker.serialize(5) == 5 and broker.serialize("x") == "x"
     assert broker.serialize(True) is True
     assert broker.serialize({"k": [1, FakeSdkOrder()]}) == {
-        "k": [1, {"id": 489184188, "status": "Received", "reject_reason": None}]
+        "k": [1, {"id": 900000003, "status": "Received", "reject_reason": None}]
     }
     assert broker.serialize(Plain()) == "plain-repr"
 

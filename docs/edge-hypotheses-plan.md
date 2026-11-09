@@ -1,8 +1,8 @@
 # Edge hypotheses: what the 2026-10 video review left worth testing
 
 *Drafted 2026-10-17. No module change is built from it; five of the eight tests have run (see
-Status). It follows a review of twenty Theta Profits interviews
-(YouTube, 2024-09 to 2026-06) and asks one question of each idea before anything else: **where does
+Status). It follows a review of twenty public options-trading interviews
+(YouTube, 2024-09 to 2026-06; credited in [strategy-sources.md](strategy-sources.md)) and asks one question of each idea before anything else: **where does
 the edge live?** Every item names its hypothesised edge, the claim that would falsify it, the data we
 already hold, the smallest test that answers it, and the result that would justify building
 anything.*
@@ -131,10 +131,10 @@ and 7 depend on an intraday fill model that is no longer being built for that ro
 has to justify that build on its own.
 
 **Added 2026-10-18:**
-- 9–11, Option Alpha's three automated bots (a separate source from the Theta Profits series).
+- 9–11, three automated bots from a second public source (separate from the interview series).
 - 12, GEX levels. They were in "not worth revisiting" until the backtest store made years of rebuilt
   dealer profiles available.
-- 13, Option Alpha's credit-structure screener.
+- 13, the second source's credit-structure screener.
 
 **Added 2026-10-19:**
 - 14, selecting credit spreads for the income lists (which names, which side), declared before
@@ -413,7 +413,7 @@ move).*
 
 ### 5. The dynamic PMCC short delta
 
-*Source: video 15, Tom King, the author of the Income Shield pmcc's `shield` arms already run.*
+*Source: video 15, the author of the held-long design behind pmcc's `shield` arms already run.*
 
 - **Rule as stated:** the weekly short's delta follows the daily 8/21 EMA. 20–30 delta in an
   uptrend, at the money when flat, 60–70 delta in the money in a downtrend.
@@ -471,7 +471,7 @@ all-time highs).*
 ### 8. A trader's daily SPX 0DTE routine
 
 *Source: video 14. Reconstructed from five daily sessions (10-12 to 10-16) in
-[daily-0dte-routine.md](daily-0dte-routine.md). The finding is that the condor is a
+[box-edge-0dte-routine.md](box-edge-0dte-routine.md). The finding is that the condor is a
 resting order far above the market, which fills only when price runs toward a box edge. So the edge
 claim is reversion at the expected-move box edge, not the open-to-close variance premium assumed
 below. The test plan there supersedes this section.*
@@ -493,9 +493,8 @@ below. The test plan there supersedes this section.*
 
 ### 9. The 1:45 PM sandwich
 
-*Sources: Option Alpha, "triple threat" (https://youtu.be/1BOZ0M3fSCs), a bot running live since
-2026-04-01; and the video where it was chosen and set up (https://youtu.be/4ngxNC6AWQI, about
-2026-03-31).*
+*Sources: the second source's "triple threat" bot, running live since 2026-04-01, and the video where it
+was chosen and set up (about 2026-03-31); both linked in [strategy-sources.md](strategy-sources.md).*
 
 - **Rule as stated:** at 13:45 ET, a 0DTE SPX iron condor with its shorts at spot ±5 and 5-wide
   wings, 10 wide overall. Held to settlement, with no target and no stop. Two filters:
@@ -589,7 +588,7 @@ below. The test plan there supersedes this section.*
 
 ### 12. GEX levels, revisited with history
 
-*Sources: Theta Profits videos 5, 7 and 14; Option Alpha's gamma scalper (11). Moved out of "not
+*Sources: videos 5, 7 and 14 of the review; the second source's gamma scalper (11). Moved out of "not
 worth revisiting" on 2026-10-18.*
 
 - **Why reopen it:** the evidence that closed it was short. It came from the 10-15 sign-gate replay
@@ -631,7 +630,7 @@ worth revisiting" on 2026-10-18.*
 
 ### 13. A screener for credit structures the model calls positive-expectancy
 
-*Source: Option Alpha (https://youtu.be/4ngxNC6AWQI), two discretionary trades placed live after a
+*Source: the second source's set-up video (see [strategy-sources.md](strategy-sources.md)), two discretionary trades placed live after a
 sell-off.*
 
 - **Rule as stated:** in the vendor's trade-ideas screener, look for iron condors and credit spreads
@@ -682,7 +681,7 @@ sell-off.*
 
 ### 14. Selecting credit spreads: which names, which side
 
-*Source: the user's own trade (2026-10-19). Credit spreads on the monthly 30-45 days out, sold for
+*Source: a hand-placed credit-spread habit (2026-10-19). Credit spreads on the monthly 30-45 days out, sold for
 premium, at a credit of 35-40% of the width, on both sides. The Screeners page's credit-spread tab
 still shows the vendor's lists, which stop on 2026-10-24, because which names make them was never
 reproduced (the best rule found picked 10-15% of its slots right).*
@@ -900,8 +899,8 @@ of the credit helps. Declared here before any of it is run.*
   - **Universe (amended 2026-10-21, before any of it was run):** **single-name stocks only** -- every
     signal on a name `history.db` does not list as a fund (`listings.is_etf`). That is 285 names and
     736 signal trades in the deciding window before the structure's own drops, against 1,101 with the
-    funds. Funds are left out because the user trades credit spreads on single names and on a few
-    funds of their own (item 16), and because a mean-reversion long on an inverse fund is a short.
+    funds. Funds are left out because single names and a few chosen funds are asked about separately
+    (item 16), and because a mean-reversion long on an inverse fund is a short.
     GLD, SLV, GDX and GDXJ, which do clear the signal's liquidity rule, are reported as one row of
     their own (12 signals in the window: never a verdict).
 - **Structure (one rule for every cell):**
@@ -961,7 +960,7 @@ of the credit helps. Declared here before any of it is run.*
     a few points more than allowed at 0.20 and 0.30, while getting the net close. So **0.40 fails**
     on the model, and **0.20 and 0.30 are not decidable from it**, as declared. The 200 trades priced
     on real marks lose at all three deltas, so a full real-mark fetch is not worth running for them.
-  - The metals row and the user's own traded names (a row added after declaration, reported only)
+  - The metals row and a row of further funds (added after declaration, reported only)
     show nothing that changes this.
   - **Departures from the text, written down before any option data was fetched:** the entries are
     item 14's planner re-run with the 45-60-day window and its first two seeded baselines (read
@@ -971,17 +970,17 @@ of the credit helps. Declared here before any of it is run.*
   - **Decided:** manage's put spreads use the least-bad unconditioned cell, as declared
     (`docs/income-review-plan.md`, item 2).
 
-### 16. Put credit spreads on the funds the user trades: precious metals and bitcoin
+### 16. Put credit spreads on liquid metals and bitcoin funds
 
-*Source: the income review (2026-10-21). The user's own credit spreads are, beyond single names,
-GLD, GDX, SLV, GDXJ, SIL and SILJ, and IBIT now and then. `mr-300m` fires on them 12 times in five
+*Source: the income review (2026-10-21). Beyond single names, a liquid metals-fund set
+(GLD, GDX, SLV, GDXJ, SIL and SILJ) and a bitcoin fund are the natural credit-spread candidates. `mr-300m` fires on them 12 times in five
 years and never on SIL or SILJ (about $15M a day, against its $300M rule), and precious metals trend
 rather than revert. So this asks the premium question directly, with no signal. Declared before any
 of it is run.*
 
 - **Question:** on each of these funds, is a put credit spread worth its risk after costs, and with
   which short strike and which exit? The expectation, from the short-put delta studies, is "least bad,
-  not edge"; this measures it on the funds actually traded.
+  not edge"; this measures it on these funds.
 - **Funds and what decides each:**
   - **Precious metals:** GLD, SLV, GDX, GDXJ, SIL, SILJ, each decided on its own.
   - **Bitcoin:** **BITO** (options from 2021-10) decides; its futures-roll drag makes it a
@@ -1203,7 +1202,7 @@ look has touched. The user approved the test on 2026-10-25. Declared here before
   sit well above the effect item 17 measured. So this test passes only an edge much stronger than
   item 17's. A fail rules out an edge that large, and says nothing about one of item 17's size. The
   low power is the accepted price of testing the trade as it would be placed.
-- **Account for B13's size line:** the live account's net liquidation value, chosen by the user
+- **Account for B13's size line:** an account net liquidation value, chosen
   before the run and passed at run time (`--account`, in the local queue row), so the account's
   size stays out of this repo.
 - **Structure, unchanged from item 17:**
@@ -1631,8 +1630,9 @@ whatever the design shows, on 2026-10-27. Declared here before any of it is run.
   five minutes), `SPX-60s.db`'s daily closes and Cboe's VIX history. Results go under the backtest
   data directory only; this plan records the verdict.
 - **Decides:**
-  - **A pass:** a proposal for a paper arm beside the suite's loops, with the robustness report. The
-    account is an IRA, so the defined-risk condor is the only version worth proposing.
+  - **A pass:** a proposal for a paper arm beside the suite's loops, with the robustness report. On
+    an IRA or cash account only defined risk is allowed, so the defined-risk condor is the only
+    version worth proposing.
   - **A fail or no verdict:** closes the overnight 1DTE short as specified; with item 19 that closes
     both sides of the 1DTE overnight premium.
 - **Result (2026-10-27): fail, both arms; the structure is closed.** In the design window neither
@@ -1947,7 +1947,7 @@ that test. Declared here before any of it is fetched or run.*
 ### 26. A dip-buying share ladder on leveraged funds: buy 7% under the previous close, sell each lot 4% up
 
 *Source: the user, 2026-10-29: members of a trading group buy SOXL shares after a 7% drop and sell
-after a 4% gain, sometimes holding several tranches; the user trades it by hand. Then: "I think it
+after a 4% gain, sometimes holding several tranches, by hand. Then: "I think it
 is from the previous day's close. I think they hold until the 4%", "let's not limit this to just
 one symbol", "could probably add TECL". **The user builds the module whatever this shows**
 (2026-10-29); the verdict sets how it is sized and armed, not whether it exists. Declared here
@@ -1977,9 +1977,9 @@ before any of it is fetched or run.*
   - *Searching a grid:* **Check:** Holm across the ten judged arms; the grid is fixed here.
 - **The structure:** one budget per name, `cap × tranche`; whole shares; no stop, no time limit.
   - **Entry trigger:** a price at or under 93% of the latest 4:00 pm close: the previous session's
-    before 4:00 pm, the same session's after it (the user's 10/29 buy at 16:06 was 12% under that
-    day's own close). The second-tranche rule is not settled (the user's 10/22 buys were 11%
-    apart), so it is an arm:
+    before 4:00 pm, the same session's after it (a 16:06 buy 12% under that
+    day's own close is possible). The second-tranche rule is not settled (buys 11%
+    apart occur), so it is an arm:
     - `once`: at most one new lot a session;
     - `chain`: a further lot at each 7% under the last lot bought, in the same session or later;
     - `steps`: lots at 7%, 14%, 21% … under the reference close, one per step reached.
@@ -2005,10 +2005,10 @@ before any of it is fetched or run.*
   `leveraged_funds.json` with daily bars from 2011-01-03 and a median daily dollar volume of $20M or
   more in the broker-sourced dollar-volume file of 2026-10-29 (`scripts/fetch_dollar_volume.py`,
   the 50-session median the liquidity verdict reads). **Judged:** all of them. SOXL, TECL and TQQQ, the
-  names the user trades or asked for, are reported first. Single-stock funds start after 2022, so
+  names the request named, are reported first. Single-stock funds start after 2022, so
   they fall out by rule. A fund closed before 2026 is not in the list, so the sample is survivors
   only, an upper bound.
-- **Window and sample:** daily bars, the broker's first (the user's rule), Yahoo's where the broker
+- **Window and sample:** daily bars, the broker's first (a standing rule), Yahoo's where the broker
   has none.
   - **Which bar a session takes:** the broker's regular-hours daily candle, unless it is missing or
     its close is more than 1% from Yahoo's, then Yahoo's. Both are split-adjusted, but the broker's
@@ -2034,8 +2034,8 @@ before any of it is fetched or run.*
   `overnight-trading-permitted` false on 2026-10-29), replayed with the same rules against the
   daily replay over the same span. Yahoo's extended-hours bars carry bad prints (SOXL's 10-29 16:00
   bar: a high of 123 and a low of 68.5 inside a 102-to-89 move), so outside 9:30-16:00 a Yahoo
-  bar's high and low are clipped to 3% beyond its open and close. Also: the user's five SOXL fills
-  of 10/22-10/29 must come out of a replay on the broker's 5-minute bars as trades, at or inside
+  bar's high and low are clipped to 3% beyond its open and close. Also: a handful of hand-placed fills
+  on a leveraged fund must come out of a replay on the broker's 5-minute bars as trades, at or inside
   each bar's range. Survivors only, as above.
 - **Name split (B9):** design and holdout cover the same names.
 - **Data:** fetched by a committed script (`scripts/fetch_ladder_bars.py`) into
@@ -2091,7 +2091,7 @@ before any of it is fetched or run.*
   - **The holdout, reported:** the mean edge stays small and positive on about three names in five.
   - **Intraday, reported:** on hourly bars the `once-3` replay makes a few points a year less than
     the daily replay over the same span on SOXL, TECL and TQQQ, so the daily fills read somewhat
-    high. The user's own six SOXL fills each sit inside the broker's 5-minute bar, every buy under
+    high. A handful of hand-placed fills each sit inside the broker's 5-minute bar, every buy under
     the trigger, every sell matching a lot at its target.
   - Every figure is in the local results (`~/.cherrypick/data/research/item26/results.json`,
     `intraday.json`).
@@ -2117,7 +2117,7 @@ cells motivated `confirm`; they are in-sample and one name.*
   less of a rebound to exit.
 - **Look-alikes:** the 10-20 strangle management test (stops failed both halves); the pmcc roll
   policy (lost to holding); the 10-19 covered-call study.
-- **Base, fixed now:** item 26's `once-3`, the arm nearest the user's own trading. It is the base
+- **Base, fixed now:** item 26's `once-3`, the arm nearest hand-placed practice. It is the base
   whatever item 26 finds, so its verdict cannot steer the comparison.
 - **The arms**, each `once-3` with one change, unless stated:
   - `avg-5`: averaging down. The first lot as `once`; while a position is open, a further lot at
@@ -2173,7 +2173,7 @@ cells motivated `confirm`; they are in-sample and one name.*
     planned correlated-group cap already covers part of it. Best tested as a portfolio item once
     the module's caps are set.
   - *Selling calls against stuck lots* to lower their break-even. Not yet: a contract needs 100
-    shares, beyond the user's lot size (about $1,000, 2026-10-29), and the 10-19 covered-call study
+    shares, beyond a small lot size (about $1,000), and the 10-19 covered-call study
     found the overlay lost against holding on most names.
 - **Decides:**
   - **A pass:** the passing arm with the shortest longest hold becomes the `ladder` module's
@@ -4602,7 +4602,7 @@ either rule below.*
 
 *Source: the user, 2026-10-31, after reviewing a contributor's gate (PRs #723, #728): "I would also
 like to create a backtest of this strategy/arm", then four variants and one control chosen from a
-list. The gate is `cherrypick.meic.stabilization_gate` (docs/theta-profits-be-condor.md, gap 2).
+list. The gate is `cherrypick.meic.stabilization_gate` (docs/breakeven-condor.md, gap 2).
 Declared here before any of it is run. Item 42 tests the strategy at its own wing widths, once the
 store holds them.*
 
@@ -4632,7 +4632,7 @@ store holds them.*
 - **The structure:** every arm is SPX, one condor per entry, 12 delta, per-side stop at 1.0× the
   whole credit, entries 09:45–15:30 at least 55 minutes apart, up to seven a session, 5% credit
   floor, the regime gates neutralised: the `be-hourly-1x` profile in
-  docs/theta-profits-be-condor.md, except that both wings are **10 points wide** (`equalize_credit`
+  docs/breakeven-condor.md, except that both wings are **10 points wide** (`equalize_credit`
   off). The store holds only about 100 points of strikes either side of spot, and a 12-delta short
   with a 25–40-point wing falls outside it on most mornings (item 42).
   - `be10` is that arm without the gate: the base for the first three judged arms.
@@ -4703,8 +4703,8 @@ store holds them.*
 strategy's 25–40-point wings need strikes the vendor store does not hold. Declared here before the
 store is fetched or any of it is run.*
 
-- **Question:** does the break-even condor as he describes it (docs/theta-profits-be-condor.md, the
-  `be-hourly-1x` profile) earn after costs, and does the stabilization gate improve it?
+- **Question:** does the break-even condor as he describes it (docs/breakeven-condor.md, the
+  `be-hourly-1x` arm) earn after costs, and does the stabilization gate improve it?
 - **Where the edge would live:** **premium**, for the condor: hourly 12-delta condors whose
   per-side stop at the whole credit turns one tested side into a near-flat trade, so the edge is
   surviving trades outweighing double stops (his ~8%). **Timing**, for the gate, as item 41.
@@ -5168,7 +5168,7 @@ Declared before any of its inputs are fetched.*
 
 ### 47. Selling a report when its implied move is above its past moves: a monthly strangle closed the next day
 
-*Source: the user, 2026-11-01, after reviewing a Theta Live video. A trader sells a short strangle
+*Source: the user, 2026-11-01, after reviewing a public trading-channel video. A trader sells a short strangle
 across an earnings report on names whose implied move is above both their long-run and recent average
 moves, on the monthly expiry, with strikes outside the worst move the name has made on a report, and
 buys it back the session after. Declared before any of its inputs are fetched.*
@@ -5323,9 +5323,9 @@ loop. Declared here before any of it is run.*
 - **What this decides:** the fail branch. Live keeps its 2.0x stop. The resting stop can still be switched on as outage
   protection, argued as insurance and not as edge.
 
-### 49. The "Crazy Ivan" on TQQQ: a cash-secured 16-delta put sold by a resting order 20% over the ask
+### 49. The dip-sold put on TQQQ: a cash-secured 16-delta put sold by a resting order 20% over the ask
 
-*Source: Maria Helmick's written rules (the Math Makes Money newsletter, Issue 32, 2026-07-07),
+*Source: a trader's written rules (a subscriber newsletter of 2026-07-07, not linked here; the public interview is credited in strategy-sources.md),
 moved to TQQQ in [`docs/history/ivan-plan.md`](history/ivan-plan.md) ("The TQQQ version"). The
 user decided on 2026-11-02: the cushion is the ask × 1.20, every put is cash secured, and this
 backtest comes before any paper module. Declared here before any of it is run.*
@@ -5341,16 +5341,16 @@ backtest comes before any paper module. Declared here before any of it is run.*
 - **This matches a "not worth revisiting" row, said out loud.** "Roll-for-a-credit, never close"
   (below) is answered. Every chain is scored from first sale to final close, so a roll can never
   turn a loss into a win, and `noroll` is a judged arm. The expectation is that `noroll` matches or
-  beats `maria`.
+  beats `rest20`.
 - **Look-alikes:** item 6 (a down-day entry filter for the put BWB, failed); item 21 (a resting entry
   limit on legged flies, failed); item 25 (the skate's cash-secured put, no verdict); item 46 (the
   variance premium on the equity index's 30–60-day puts, declared); the 2026-10-12 SPY 40-delta
   cash-secured put, which tracked Cboe's PUT index; the short-put delta and income-screen tests (edge
   about zero after costs at every delta); the pmcc roll policy (lost on 5 of 6 symbols).
 - **Rival explanations, each with its check:**
-  - *The plain short-put premium, not the fill:* **check:** `maria` must beat `atclose` (the same
+  - *The plain short-put premium, not the fill:* **check:** `rest20` must beat `atclose` (the same
     put, sold at the close on any session with room), paired by month.
-  - *The roll hides the loss:* **check:** chains are scored whole, and `maria` must beat `noroll`,
+  - *The roll hides the loss:* **check:** chains are scored whole, and `rest20` must beat `noroll`,
     paired by month.
   - *A Nasdaq bull market:* **check:** both time-halves must agree (2018's fourth quarter, 2020 and
     2022 are inside), `trend` shows how much rests on up-markets, and the holdout holds 2025's spring
@@ -5376,19 +5376,19 @@ backtest comes before any paper module. Declared here before any of it is run.*
   - **At expiry:** a put in the money is assigned 100 shares at the strike, sold at the next session's
     open.
 - **Judged arms (seven):**
-  - `maria`: as above.
+  - `rest20`: as above (results stored before 2026-11 name it `maria`; the script resolves the old name).
   - `deep`: the cushion at 1.40.
   - `atclose`: no resting order; sell at the close's mid on any session with room.
   - `overnight`: only a fill at the open counts. The order is gone by 09:45.
   - `noroll`: at the defence line, buy back at the close and end the chain.
   - `trend`: rest the order only while TQQQ's close is above its 200-session average.
-  - `qqq`: `maria` on QQQ, defence at 1.7% (unscaled).
+  - `qqq`: `rest20` on QQQ, defence at 1.7% (unscaled).
 - **Reported, never judged:**
   - `cushion10` (1.10);
   - `tp21` (half the credit or 21 DTE, whichever is first);
   - `tp75` (75%);
   - `hold` (no take profit);
-  - `spread` (`maria` with a long put 10% of spot below the short);
+  - `spread` (`rest20` with a long put 10% of spot below the short);
   - `dist15` (the strike nearest 15% below spot instead of 16 delta);
   - `single` (one open chain at a time).
 - **The fill, from end-of-day data.** Daily chains can't see an intraday bid, so the next session's
@@ -5419,7 +5419,7 @@ backtest comes before any paper module. Declared here before any of it is run.*
   - positive in each time-half;
   - still positive at 1.5x fees and the natural + $0.02 a leg, and with fills at the limit only;
   - then the holdout's mean above zero.
-  - **The Crazy Ivan claim** needs more: a passing `maria`, `deep`, `overnight` or `trend` must also
+  - **The resting-order claim** needs more: a passing `rest20`, `deep`, `overnight` or `trend` must also
     beat `atclose` and `noroll`, by a paired monthly difference with a one-sided t above 2.
 - **Minimum detectable effect (B12):** from the design window's own spread of chain nets, recorded
   in the local result before the holdout is read.
@@ -5444,16 +5444,16 @@ backtest comes before any paper module. Declared here before any of it is run.*
   - The results are derived from licensed data, so they stay under
     `~/.cherrypick/data/backtest/results/research/item49/`; this plan records the verdict only.
 - **Decides:**
-  - **The Crazy Ivan claim passes:** the TQQQ paper module of `docs/history/ivan-plan.md` is built on
+  - **The resting-order claim passes:** the TQQQ paper module of `docs/history/ivan-plan.md` is built on
     the passing arm, paper only, with `noroll`'s defence if `noroll` did as well.
   - **Only `atclose` passes,** or no resting arm beats it: no module. Waiting for the fill adds
     nothing, and it is a plain cash-secured put, already measured.
-  - **`noroll` beats `maria`:** the roll is dropped from every version of the plan.
+  - **`noroll` beats `rest20`:** the roll is dropped from every version of the plan.
   - **Only `qqq` passes:** the QQQ version is proposed instead.
   - **Every arm fails:** the question is closed and the plan stays shelved.
 
 - **Result (2026-11-07): fail, all seven arms; the holdout reads none.**
-  All seven arms fail the design window, so the holdout reads none. The Crazy Ivan claim holds for no arm.
+  All seven arms fail the design window, so the holdout reads none. The resting-order claim holds for no arm.
   Every figure is in the local result (`~/.cherrypick/data/backtest/results/research/item49/`).
 - **What this decides:** the fail branch. The question is closed and the plan stays shelved.
 
@@ -5941,7 +5941,7 @@ has only counted the cycles.*
   tail no worse. Each arm's own numbers are reported, not judged.
 - **Declared limits (B11):** a 45-day cycle a month, so about 60 cycles a window and the tests are
   coarse; once-a-session marks and no managing before the close; early assignment and dividends on SPY
-  are not modelled (the real hedge is cash-settled and European); the book is shares, not the user's
+  are not modelled (the real hedge is cash-settled and European); the book is shares, not an
   options book, so how a hedge interacts with theta and gamma already held is not tested; the call
   spread's strike is chosen at the entry mid, so the realised net is zero only before costs; fractional
   units for equal delta, where a real 1-lot hedge is lumpier.
@@ -6542,7 +6542,7 @@ item 59's fetch and runs through item 59's script.*
 repo). One trader's closed call backspreads (long two near-the-money calls, short one a strike up,
 60 to 150 days out, held days to weeks) on staples and other slow large caps mostly made money. The
 user asked for structures that are defined risk, so they can be held in an IRA, and named two
-calendarized versions of a broken-wing butterfly. Broker dry runs on 2026-11-07 (WMT and KMB, an IRA,
+calendarized versions of a broken-wing butterfly. Broker dry runs on 2026-11-07 (WMT and KMB,
 nothing submitted) accepted all four and showed what each holds: the debit for the backspread and for
 the spreads with a back-month long, the expiry's maximum loss for the 1-3-2, and for the calendarized
 1-3-2 both front credit spreads at full width, about twice the 1-3-2's. Declared before any of the

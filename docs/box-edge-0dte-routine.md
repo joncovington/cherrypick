@@ -1,7 +1,7 @@
 # A daily SPX 0DTE routine: rules reconstructed from five sessions
 
-*Drafted 2026-10-17 from his live streams for Monday 2026-10-12 to Friday 2026-10-16 (YouTube, "Daily
-Profit Plan"), read in full and checked against screenshots of his broker's order panel and charts.
+*Drafted 2026-10-17 from a public daily live-stream series (credited in
+[strategy-sources.md](strategy-sources.md)) for Monday 2026-10-12 to Friday 2026-10-16, read in full and checked against screenshots of his broker's order panel and charts.
 This is hypothesis 8 of [edge-hypotheses-plan.md](edge-hypotheses-plan.md). Nothing is built. Its
 box-edge test ran 2026-10-17 on licensed history
 ([history-studies-2026-10-c.md](history-studies-2026-10-c.md), section 2); the results are kept
@@ -9,7 +9,7 @@ locally, per the licence.*
 
 ## The short version
 
-The Daily Profit Play (DPP) is not an iron condor sold at the open. It is a **resting order to sell a
+The routine's signature trade (the "box order" here) is not an iron condor sold at the open. It is a **resting order to sell a
 condor at a credit well above the market**, placed before or at the open. It fills only if price runs
 toward one of the short strikes. In practice it is **a fade of a move toward the edge of the day's
 expected-move box**, packaged as a condor.
@@ -38,7 +38,7 @@ mechanical condor sells. That is a narrower claim, and one our recorded data can
 - **His indicator's own statistic** (seen on screen): 82% of the last ~73 sessions closed inside the
   "BEM" box and 90% inside a one-sigma box.
 
-## The DPP, as placed
+## The box order, as placed
 
 | Session | Main order | Backup order | What happened |
 |---|---|---|---|
@@ -70,7 +70,7 @@ price would settle back near 7725–7730.
    that at box-respecting strikes, he doesn't force it. The order sits until price comes to it.
 3. **Backup:** the same strikes at width minus ~$1 ($4 on 5 wide, $8.75 on 10 wide). It fills only on
    a breach, and makes the pair roughly 1:1.
-4. **Never two normal-credit DPPs at once:** one main risk at most.
+4. **Never two normal-credit box orders at once:** one main risk at most.
 5. **Defense:** once filled and threatened, buy a broken-wing butterfly near the short strike for
    about $1 or less. Its profit zone should cover the condor's max loss.
 6. **Exit:** take ~80–85% of the credit, or hold to the close. Manage the day's net, not each leg.

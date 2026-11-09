@@ -1,4 +1,4 @@
-# The "Crazy Ivan" dip-sold put — a paper-module proposal
+# The dip-sold put — a paper-module proposal
 
 ***SHELVED 2026-09-30, kept for reference.** One /NQ contract is about $600k of notional (about $80k
 lost per contract on a 25% gap), too large to live trade, and a paper module was not wanted on its
@@ -6,8 +6,8 @@ own. The micro contracts can't run the strategy (no roll target past ~8 weeks), 
 overnight session. The research, the example and the streaming design below stand as written; the
 broker's chain endpoints are recorded by `scripts/probe_futures_option_chain.py`.*
 
-***Updated 2026-11-02.** Maria Helmick's own published entry rules are now carried ("Maria's
-written rules"), and the Phase 2 arm follows them. A TQQQ version is proposed in "The TQQQ
+***Updated 2026-11-02.** The source's own published entry rules are now carried ("The written
+rules"), and the Phase 2 arm follows them. A TQQQ version is proposed in "The TQQQ
 version": one contract is about $5k of notional, and the overnight move reaches a resting order as
 the opening gap. The /NQ design stays shelved.*
 
@@ -31,10 +31,10 @@ in two weeks, and that a position small enough to survive the bad case can alway
 market recovers. The cost is the shape of the payoff: many small wins and, now and then, one loss
 many times their size — which rolling defers rather than removes.
 
-**Where it comes from.** Rob and Maria Helmick ("Math Makes Money" on YouTube), described in full on
-Theta Profits' *My Trade* segment recorded 2026-09-14. This is their market and their parameters:
+**Where it comes from.** Two public YouTube traders (credited in [strategy-sources.md](../strategy-sources.md)), described in full
+in an interview segment recorded 2026-09-14. This is their market and their parameters:
 
-| | Rob's way (`control`) | Maria's way (`near18`) |
+| | First way (`control`) | Second way (`near18`) |
 |---|---|---|
 | Expiry | 45–60 DTE | 21–45 DTE |
 | Strike | ~12 delta, round strikes only (the 250s, 500s, 750s, 1000s) | ~18 delta |
@@ -46,28 +46,27 @@ Theta Profits' *My Trade* segment recorded 2026-09-14. This is their market and 
 The thresholds are carried as **percentages**. A point threshold loosens as the index rises: 300
 points is about 1% at today's ~30,000, but it was about 1.5% when NQ was near 20,000.
 
-Their "Crazy Ivan" proper is the entry tactic. Before bed they leave resting sell orders priced well
+Their resting-order entry is the tactic proper. Before bed they leave resting sell orders priced well
 above the market. A fill at 03:39 means the market has just dived, so the order doubles as the
 alarm. NQ options trade nearly 23 hours a day, so it can be modelled here (Phase 2).
 
-### Maria's written rules
+### The written rules
 
-Maria set the trade out herself in the Math Makes Money newsletter, Issue 32, "Maria's Favorite
-Trade — Crazy Ivans on /NQ" (2026-07-07). Where it differs from the interview, the written version
+One of them set the trade out in writing as well (a subscriber newsletter, 2026-07-07, not linked here; the public interview is credited in strategy-sources.md). Where it differs from the interview, the written version
 wins:
 
-| | Maria, written (2026-07-07) | The interview's `near18` |
+| | Written (2026-07-07) | The interview's `near18` |
 |---|---|---|
 | Expiry | about 24–44 DTE | 21–45 DTE |
-| Strike | 14–18 delta; her example is a 16-delta 27,300 put with NQ near 29,420 | ~18 delta |
-| Entry | **one** resting sell limit "roughly 40 to 50 above the ask" (her example: 255.00) | a −1.7% trigger |
+| Strike | 14–18 delta; the example is a 16-delta 27,300 put with NQ near 29,420 | ~18 delta |
+| Entry | **one** resting sell limit "roughly 40 to 50 above the ask" (the example: 255.00) | a −1.7% trigger |
 | Trigger | none; the order fills only on "a sharp drop and volatility expansion" | −1.7% vs prior settlement |
 | Resting | can work overnight; never left over a weekend | — |
-| Take profit | at least 50%; her average close is ~75%, usually within ~14 days | ~50% |
+| Take profit | at least 50%; the average close is ~75%, usually within ~14 days | ~50% |
 | Defence | manage within ~500 pts of the strike; roll down and out, "always … for a credit", never a debit | within 250 pts |
 | Sizing | ≤25% of buying power while positions are open, 30% at most | ≤20–25% |
 
-- **The cushion is in index points.** Her "40 to 50" sits on a ~205-point ask, so it is about 20–25%
+- **The cushion is in index points.** The "40 to 50" sits on a ~205-point ask, so it is about 20–25%
   of the premium. The plan carries it as a share of the ask (`cushion`), for the same reason the
   triggers are percentages.
 - **A real fill** (Issue 33, 2026-07-08): the /NQ Jul 31 27,000 put, sold for 250.00, bought back
@@ -160,7 +159,7 @@ split-adjusted; the session low against the prior close):
   its counts will be at least this high. The first months of `ivan_daily` will give the real figure.
 - 47% of −1% days close back above the threshold. The trigger is an intraday low, not a close.
 - The frequency varies widely by year: 27 sessions in 2017, 145 in 2022.
-- Six triggers a month at 1% doesn't match Rob's "we sit on our hands for a month". His
+- Six triggers a month at 1% doesn't match the interview's "we sit on our hands for a month". The
   point-denominated rule was stricter in percentage terms for most of the last few years.
 
 With one entry per arm per trade date, `control` enters repeatedly through a clustered selloff until
@@ -195,7 +194,7 @@ The terminal rule is **ours, not the source's**. Their answer is "keep rolling",
 needs an end. Its frequency is reported, so if it never fires it costs nothing.
 
 `control` and `nodip` share one entry expiry; `near18` needs a second. Both are cheap here (below).
-A `maria` arm, her resting order, is Phase 2.
+A `rest20` arm, the resting order, is Phase 2.
 
 ## Why /NQ
 
@@ -210,7 +209,7 @@ A `maria` arm, her resting order, is Phase 2.
 - **QQQ and TQQQ are out of scope.** QQQ options trade only in regular hours, so the ladder and the
   overnight triggers don't exist there. TQQQ's −3% days are QQQ's −1% days (1,105 of ~1,120 since
   2011), with three times the volatility and leveraged decay on top. *(2026-11-02: reopened for
-  TQQQ. Maria's resting order needs no overnight session, because the night's move reaches it as
+  TQQQ. The resting order needs no overnight session, because the night's move reaches it as
   the opening gap. See "The TQQQ version".)*
 
 `ivan` and pmcc are both long Nasdaq delta and short volatility. Their drawdowns will arrive on the
@@ -449,15 +448,15 @@ Dev-install and ci-local discover the package on their own.
    6. **The correlation lint** learns futures legs.
 1. **The NQ paper module** with `control`, `nodip` and `near18`, running the CME session, with the
    daily record, the ledger including delivered futures, and the registrations above.
-2. **The `maria` arm** — the "Crazy Ivan" proper, on her written rules. At 16:00 ET it rests one
+2. **The `rest20` arm** — the resting-order entry proper, on the written rules. At 16:00 ET it rests one
    paper offer on the 16-delta put of the 24–44 DTE expiry, priced at its ask × 1.20 (`cushion`,
-   her 40–50 points), and cancels it before the weekend. It fills when the bid reaches it at any
-   tick through the night, at that bid. Take profit at 50%, defence within 1.7% of the strike (her
+   the written 40–50 points), and cancels it before the weekend. It fills when the bid reaches it at any
+   tick through the night, at that bid. Take profit at 50%, defence within 1.7% of the strike (the written
    500 points). This is the source's 03:39 fill, measured.
 
 ## The TQQQ version (proposed 2026-11-02)
 
-Maria's resting order, moved to TQQQ. Not built, and paper only like the rest of this plan.
+The resting order, moved to TQQQ. Not built, and paper only like the rest of this plan.
 
 ### Why it works on TQQQ when the /NQ design was shelved
 
@@ -475,7 +474,7 @@ Maria's resting order, moved to TQQQ. Not built, and paper only like the rest of
 
 ### The trade
 
-| | Maria on /NQ | On TQQQ |
+| | As written, on /NQ | On TQQQ |
 |---|---|---|
 | Expiry | 24–44 DTE | 24–44 DTE, the listed expiry nearest 31 |
 | Strike | 14–18 delta | the listed put nearest 16 delta (Black-Scholes, r = q = 0, from the leg's mid) |
@@ -498,11 +497,11 @@ Maria's resting order, moved to TQQQ. Not built, and paper only like the rest of
 ### Arms
 
 Declared as item 49 of [`docs/edge-hypotheses-plan.md`](../edge-hypotheses-plan.md); the
-declaration is the authority. Each arm changes one thing from `maria`:
+declaration is the authority. Each arm changes one thing from `rest20` (stored results of 2026-11 spell it `maria`; the script resolves the old name):
 
 | Arm | Change | The question |
 |---|---|---|
-| `maria` | — (rest at ask × 1.20, 50%, roll within 5%) | the source's rule |
+| `rest20` | — (rest at ask × 1.20, 50%, roll within 5%) | the source's rule |
 | `deep` | cushion 1.40 | do rarer, larger fills earn more? |
 | `atclose` | sell at the close's mid on any session with room | does waiting for the fill earn anything (`nodip`'s part)? |
 | `overnight` | only an opening fill counts | is it the gap? |

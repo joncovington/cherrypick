@@ -62,6 +62,10 @@ jobs:
           python -m pytest tools/tests -q
       - name: Check docs guardrails
         run: python tools/check_docs.py
+      # The repo is public: nothing may tie a ticker, fill, order id or account fact to the owner's
+      # real account. Allow a legitimate line with `personal-ok: <reason>` (tools/check_personal.py).
+      - name: Check no personal account data
+        run: python tools/check_personal.py
       # The repo-root scripts/ belong to no package, so no package job linted them, and 17 findings
       # and 8 unformatted files built up unseen (cleared 2026-10-05). The ruff version is read from
       # core's own pin, so this can never lint scripts/ under a different ruff than the packages.
