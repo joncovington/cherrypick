@@ -601,7 +601,7 @@ def cmd_get_ranked_symbols(args) -> dict:
             per_symbol.append(result)
 
     # From 2026-10-28 only a name the suite's liquidity verdict calls tradable is ranked for entry
-    # (universe.py; docs/operating-history.md). A refused name keeps its row and says why.
+    # (universe.py; docs/measurement-boundaries.md). A refused name keeps its row and says why.
     scan_session = str(scanner.et_today())
     verdict = universe.load()
     refused = {

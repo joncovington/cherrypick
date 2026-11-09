@@ -90,7 +90,7 @@ and data paths start with `~`, so nothing hardcodes an absolute path. With `$CHE
 relative module `path` resolves against that directory instead, so give absolute ones. `python run.py settings` opens a local editor for every config file in the suite plus
 the keyring secrets manager.
 
-One scheduling fact worth knowing up front: since the 2026-08-09 cutover the OS scheduler holds exactly
+One scheduling fact worth knowing up front: the OS scheduler holds exactly
 **one** cherrypick entry (`cherrypick-supervisor`). Everything else is a supervisor job re-derived from
 config on every pass, so changing a cadence is a config edit — there is no task to re-register.
 
@@ -104,13 +104,11 @@ ruff check . && ruff format .       # line-length 110
 ## Further reading
 
 - [CLAUDE.md](CLAUDE.md) — the architecture, and the invariants that constrain changes here. Read the
-  invariants before changing anything on the watchdog or notification path; each one records the
-  incident that produced it.
+  invariants before changing anything on the watchdog or notification path; each one carries its
+  reason.
 - [docs/orchestrator-cli.md](../../docs/orchestrator-cli.md) — every command and flag.
 - [docs/operations.md](../../docs/operations.md) — the runbook: job inventory, ports, the morning check.
 - [docs/README.md](../../docs/README.md) — the suite documentation index.
-- `docs/design.md` and `ROADMAP.md` in this package are **frozen records**, not current reference; each
-  says so in its own header.
 
 ## Commands
 
@@ -120,7 +118,7 @@ ruff check . && ruff format .       # line-length 110
 python run.py doctor             # green/red readiness (read-only)
 python run.py install            # register the ONE anchor task, start supervisor + streamer/services, delete legacy per-job tasks; refuses while any live module is armed today (--force overrides)
 python run.py uninstall          # remove cherrypick-managed tasks
-python run.py status             # supervisor job registry + heartbeats (legacy schtasks snapshot on a pre-cutover box)
+python run.py status             # supervisor job registry + heartbeats
 python run.py watchdog           # one watchdog pass (the supervisor's 10-minute job)
 python run.py supervise          # supervisor daemon loop, foreground (--stop asks a running one to exit)
 python run.py ensure-supervisor  # the anchor's probe: restart a dead/stale supervisor; one CRITICAL after 3 failed probes

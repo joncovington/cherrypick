@@ -1,7 +1,6 @@
 # cherrypick-overview — Operational Instructions
 
-> Operating contract for the suite's **pre-open morning market overview**. Incident narratives:
-> [docs/history.md](docs/history.md). Suite-wide context: the root
+> Operating contract for the suite's **pre-open morning market overview**. Suite-wide context: the root
 > [documentation index](../../docs/README.md).
 
 One question before each open: **what does the market look like this morning, measured by data this
@@ -39,11 +38,12 @@ once, here.
   config threshold is a knob turned mid-experiment; one in code has a commit explaining it. The
   "risk monitor" macro theme belongs to the narrative, labelled interpretation, and never feeds the phase.
 - **A declared gate that can never be measured is worse than four gates.** Verify each gate can
-  actually reach Met/Not-met pre-open (`calm_tape` sat "not measured" on every pack for weeks
-  because it looked up today's not-yet-existing row).
+  actually reach Met/Not-met pre-open (`calm_tape` would sit "not measured" on every pack if it looked up today's
+  not-yet-existing row; its base falls back to the newest completed session's row, and an overnight
+  print is dated to the session it belongs to).
 - **Proxies are labelled proxies.** Gold on GLD, the Russell 2000's cash read on IWM (no RUT index
   in the stream), crude's deployment-score read on USO (real /CL, /BZ futures ride the pre-market
-  tape since 2026-09-27), HYG/TLT for credit and the eleven sector ETFs for breadth. No surface
+  tape), HYG/TLT for credit and the eleven sector ETFs for breadth. No surface
   prints a proxy as the index or spot.
 
 ## The daily market files
@@ -57,7 +57,7 @@ Nasdaq Trader's symbol directory. `files.py` holds the parsers and the fetcher i
 them, so a file is validated on arrival by the code that reads it, and a download that parses to
 less than the file on disk is refused. **Every reader takes values strictly before the session.**
 
-- **SKEW's percentile comes from Cboe's file, not the stream.** Without the file it says
+- **SKEW's percentile comes from Cboe's file, not the stream** (the stream's backfill returns a few scattered rows). Without the file it says
   `no_cboe_file`, never "too few closes" (which promises a gap that fills itself). VXN is the file's
   latest close, labelled as such.
 - **`moves`**: weekly expected move (VIX / √52, and in SPX points) beside SPX's 10-session realised
@@ -73,9 +73,9 @@ less than the file on disk is refused. **Every reader takes values strictly befo
   ranked the way the Hot Options Report ranks it — the five index products (VIX, SPY, SPX, IWM, QQQ),
   then the top ten single-name equities and top five funds, each with call/put split, the customer
   share of sides and volume against up to 20 prior sessions. Record-only.
-  - **OCC states both sides of every trade**, so contracts are its quantities halved (VIX 2026-09-30:
-    1,070,156 in the file, 535,078 at Cboe). The store keeps the sides; halving is on read.
-  - **OCC publishes a session late that evening** (10-01's file appeared between 23:12 and 23:22
+  - **OCC states both sides of every trade**, so contracts are its quantities halved (VIX: 1,070,156 in the file,
+    535,078 at Cboe on one day). The store keeps the sides; halving is on read.
+  - **OCC publishes a session late that evening** (the file appears between 23:00 and 23:30
     ET), after the 18:45 fetch, so the 07:45 retry is what lands it before the pack. The block names
     its session and counts `lag_sessions` behind the pack's prior one; more than three behind is
     refused (`stale_occ_file`).
@@ -95,7 +95,7 @@ prior-session moves.
 - **The change is measured against a settle, never a trade.** No settle on file → unmeasured, never
   a confident 0.00% against the live print.
 - **The prior-close base is only the print's own session row or the one exactly before it** — never
-  "the newest row found".
+  "the newest row found" (a stale row once printed a +0.11% move as -1.83%).
 
 None of the files or tape readings feed a gate or the deployment score. They are fact-pack v4
 additions; a v3 pack still renders.
@@ -119,16 +119,16 @@ on one, and disagreement between the two is data.
 ## What this package may ask the producer for
 
 - **Quote-only breadth means `legs`, not `symbols`.** A `symbols` entry is an UNDERLYING (spot, ATM
-  window, GEX, a chain fetch every poll). Declaring breadth there once pushed the producer to ~20,000
-  subscriptions and crash-looped it, staling every module's quotes in market hours. Only SPX belongs
+  window, GEX, a chain fetch every poll). Declaring breadth there pushes the producer to ~20,000
+  subscriptions and crash-loops it, staling every module's quotes in market hours. Only SPX belongs
   in `symbols` here, because half the suite already streams it.
 - **A history request is a load decision.** `history_days` is 270 — enough for everything the live
-  score reads (a 252-session year, 200-day SMAs). 1000 never finished (each reconnect restarted the
+  score reads (a 252-session year, 200-day SMAs). 1000 never finishes (each reconnect restarts the
   backfill). Raise it only deliberately, outside market hours, watching the producer. The read-side
   backtest reads whatever rows the cache holds, independent of the request.
 - **Each event type a leg is denied removes a specific capability**, and the loss shows up far from
   the subscription that caused it: index readings need Trade (they never publish Quote); `day_close`
-  needs Summary. Both have silently starved this package before.
+  needs Summary. Losing either silently starves this package.
 - **The history trap** (`facts._close_history`): in `stream_summary`, `day_close` belongs to its own
   row's session and `prev_day_close` to the session *before*; today's row is read for its
   `prev_day_close` (the freshest settle) but never appears in the series.

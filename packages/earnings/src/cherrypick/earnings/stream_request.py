@@ -79,7 +79,7 @@ def write(symbols, db_path: Path | None = None) -> Path:
     This module was paying the first price for none of the benefit. Its structures' wings and back
     months sit outside the ATM window by construction (see the module docstring), so the 488-symbol
     chain it was buying per name held almost nothing it could use — it wanted the underlying's spot
-    quote, which is one subscription. With the control-book widening (docs/control-book-plan.md)
+    quote, which is one subscription. With the wide forced-sampling screen (docs/screening-criteria.md)
     taking a night's names from about one to potentially dozens, that overpayment stopped being
     merely wasteful: at ~488 each against roughly 4,000 subscriptions of suite headroom, some eight
     names would have exhausted the budget, and the failure mode on the other side of it is the

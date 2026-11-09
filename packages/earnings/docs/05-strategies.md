@@ -10,18 +10,16 @@ unmonitored overnight hold this system is built around.
 Two shared facts apply to every strategy below, so they aren't repeated seven times:
 
 - **Exit mechanics share one shape** — positions are **managed**, not force-closed
-  the morning after entry (changed 2026-08-12; a measurement break, never pool across it). Each
+  the morning after entry (see [measurement boundaries](./measurement-boundaries.md)). Each
   strategy owns its own profit target and stop, listed below; on top of those sit the rules that need
   more than one tick to see — the PEAD gate (a winner may carry, a loser closes the first morning),
   a three-session cap on the four overnight structures, a pin guard on expiration day, and the 15:20
   expiry close on any leg's expiration day. Nothing but those last two acts on the entry session
-  (`entry_session`, 2026-10-17). `expected_move_butterfly` is exempt from the PEAD gate and the
-  session cap. Marks are
-  taken every minute but never acted on before 09:40, since opening spreads can exceed the edge being
+  (`entry_session`). `expected_move_butterfly` is exempt from the PEAD gate and the
+  session cap. Marks are taken every minute but never acted on before 09:40, since opening spreads can exceed the edge being
   managed. See [Exit Strategy Guide](./10-exits.md) for the formulas, the execution gates, and which
   thresholds are research-backed rather than house rules.
-- **"Expected move" is the report's move** from 2026-11-06 (a measurement break, never pool across
-  it): event variance read from the front and back ATM IVs, in the units of the old 0.85 x front
+- **"Expected move" is the report's move** (from 2026-11-06, a measurement boundary): event variance read from the front and back ATM IVs, in the units of the old 0.85 x front
   straddle, falling back to that straddle when the inputs or the split are invalid. The floor gates,
   the iron condor's and credit spread's short strikes, and the expected-move butterfly's body and
   wings all use it, and each row records which method produced it. Definition, worked example and
@@ -64,7 +62,7 @@ stage. Iron condor builds under the same two checks.
 
 **Exit:** `evaluate_credit_spread_exit()` — **25%** of credit as the profit target, 1.5× credit as
 the stop. The 25% is research-backed and deliberately tighter than a condor's 50%: a fly's max-profit
-zone is a point, not a band. (It was 50% before 2026-08-12.)
+zone is a point, not a band.
 
 ```
 Sell 150 call / Buy 158 call
@@ -157,8 +155,8 @@ shared gates.
 
 **Exit:** a per-leg delta stop first (`leg_stop_delta_abs`, default **0.60**), then
 `evaluate_credit_spread_exit()` — the same function the credit strategies use, not the debit one.
-25% profit target, stop at **2.0× credit**. Both are **house rules**: tastylive has traded BWBs into
-earnings but published no management study for them. Layered on top, like every strategy: the PEAD
+25% profit target, stop at **2.0× credit**. Both are **house rules**: no management study for
+earnings BWBs was found. Layered on top, like every strategy: the PEAD
 gate, the three-session cap, and the pin guard — see [Exit Strategy Guide](./10-exits.md).
 
 ```
@@ -172,8 +170,8 @@ Far wing: buy 1x 145 put (wide, away from spot)
 
 ## 5. ATM Calendar
 
-**Retired from `strat_test` from 2026-10-15** (`STRAT_TEST_RETIRED`): still registered, but from 2026-11-06 no longer screened,
-it opens nothing in the forced-sampling books.
+**Retired from `strat_test`** (`STRAT_TEST_RETIRED`, from 2026-10-15): still registered, but no longer
+screened, it opens nothing in the forced-sampling books.
 
 **Structure:** Sell a front-month ATM call, buy the same strike in a later monthly expiration.
 Always the call side — literature treats call and put ATM calendars as performing virtually
@@ -185,8 +183,8 @@ back), `back_month_min_days_after` (back-month must land a documented distance p
 plus the shared gates. No expected-move-boundary filter — this is a pure ATM term-structure
 play, not targeting where the stock lands.
 
-**Exit:** `evaluate_debit_spread_exit()` at 15% of debit / 50% of debit target/stop (set at the
-2026-08-12 cutover, aligned with the double calendar's), plus a hard time-stop
+**Exit:** `evaluate_debit_spread_exit()` at 15% of debit / 50% of debit target/stop (aligned with the
+double calendar's), plus a hard time-stop
 (`exit_days_before_front_expiration`, default 5 days) — once the front leg is within 5 days of
 expiring, gamma risk on the short ATM option overwhelms any remaining theta benefit.
 
@@ -200,8 +198,8 @@ Profit target: 15% → close once the spread is worth ~$0.345 (a $0.045 gain)
 
 ## 6. Double Calendar
 
-**Retired from `strat_test` from 2026-10-15** (`STRAT_TEST_RETIRED`): still registered, but from 2026-11-06 no longer screened,
-it opens nothing in the forced-sampling books.
+**Retired from `strat_test`** (`STRAT_TEST_RETIRED`, from 2026-10-15): still registered, but no longer
+screened, it opens nothing in the forced-sampling books.
 
 **Structure:** An ATM calendar run on both the call and put side simultaneously — sell
 front-month calls and puts at the expected-move boundaries, buy the same two strikes in a later
@@ -233,7 +231,7 @@ with its body one expected move from spot: a **call** fly above on a bullish rea
 below on a bearish one.
 
 **Read the history first.** `scripts/emfly_history.py` priced it on 4,950 events 2020-2026
-([expected-move-fly-plan.md](./expected-move-fly-plan.md)): fairly priced at mid, entry costs
+([expected-move-fly.md](./expected-move-fly.md)): fairly priced at mid, entry costs
 16-18% of the debit, and a side call needs to be right 68-83% of the time to break even. The best
 signal found is right about 53%. This book measures real fills against that; history does not
 say it earns.
@@ -256,7 +254,7 @@ In the study, closing on the reaction day lost the most of the six exit rules co
 `compute_composite_score` is None and the agent's ranked path never offers it.
 
 ```
-SCHW 2026-10-13, spot 96.31, EM 3.51, puts rich (rr25 below -0.116) -> bullish
+AAA, spot 96.31, EM 3.51, puts rich (rr25 below -0.116) -> bullish
 Buy 1x 97 call / sell 2x 100 call / buy 1x 103 call, Oct 16, 0.51 debit
 Max profit 2.49 at 100; breakevens 97.51 / 102.49; max loss the debit
 ```

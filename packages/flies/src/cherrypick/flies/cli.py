@@ -922,7 +922,7 @@ def main(argv=None) -> int:
     p_coh.set_defaults(func=cmd_close_or_hold)
     p_ae = sub.add_parser(
         "agent-eval",
-        help="the intraday agent's qualification (docs/intraday-agent-plan.md); --write replaces the file",
+        help="the intraday agent's qualification (docs/intraday-agent.md); --write replaces the file",
     )
     p_ae.add_argument("--write", action="store_true")
     p_ae.set_defaults(func=cmd_agent_eval)

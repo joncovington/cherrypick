@@ -5,7 +5,7 @@ weekly options, $100M a day in the stock, and monthly options with a tight ATM s
 interest and volume -- "I don't want symbols in the screeners that I will never trade." Technicals
 writes that verdict nightly (`liquidity.py`, 18:57 ET) to `<home>/data/market-report/liquidity/
 verdicts.json`; this reads the file and imports no technicals. Declared as the 2026-10-28 boundary
-(docs/operating-history.md), dated in code so it merges ahead of the session it binds on.
+(docs/measurement-boundaries.md), dated in code so it merges ahead of the session it binds on.
 
 - **A refused name is a reason, never a silence:** `refusal` returns the execution-stage drop the
   caller records (`not_tradable: thin; <the verdict's reasons>`), naming the file's `updated_on`.

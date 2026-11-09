@@ -31,7 +31,7 @@ segment a genuine pre-registration. It rests on nobody running the analysis befo
 committed, so the forward holdout exists as the part that cannot have been seen.
 
 **Already examined, therefore excluded:** inside day and outside day. Both failed the
-daily-candle holdout recorded in [packages/flies/docs/openingrange.md](../packages/flies/docs/openingrange.md)
+daily-candle holdout recorded in [openingrange.md](openingrange.md)
 (inside day flipped sign, −0.011 in-sample, +0.225 out). They are not re-tested here.
 
 ## Data

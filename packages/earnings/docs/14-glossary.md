@@ -86,9 +86,9 @@ a one-line reminder of the shape of each:
 - **`double_calendar`** — an ATM calendar run on both the call and put side, the only strategy
   whose sides can close independently.
 - **`expected_move_butterfly`** — a 1-2-1 debit fly with its body one expected move from spot,
-  side by rr25 skew. Paper only, from 2026-10-14.
+  side by rr25 skew. Paper only (opening from 2026-10-14).
 
-The two calendars are retired from the forced-sampling books from 2026-10-15.
+The two calendars are retired from the forced-sampling books.
 
 Every strategy is **defined-risk** — max loss is known at entry. Undefined-risk/naked strategies
 (naked straddles, strangles, naked short verticals) were deliberately excluded from this system:
@@ -126,10 +126,8 @@ early-exit stop threshold, checked alongside the profit target.
 
 **Close-Window Backstop**
 The unconditional exit that closes whatever's still open
-once `close_window_start` arrives, regardless of P&L. Agent-driven loop only; the paper loop
-manages positions instead. There's no same-day, hours-after-the-
-announcement backstop in this system — every strategy is either a single overnight hold or a
-multi-day calendar hold, closed out by this mechanism if nothing else has closed it first. See
+once `close_window_start` arrives, regardless of P&L. A manual `/paper-start` cycle only; the paper loop
+manages positions instead. See
 [Exit Strategy Guide](./10-exits.md).
 
 **Expiry Close** (`management.expiry_close_time`)
@@ -161,7 +159,7 @@ The single binary screening decision from a strategy's own `apply_tiering()`, wh
 `{"accepted": bool, "reject_reasons": [...]}`. A candidate is **accepted** when it clears every
 hard filter and each soft criterion at whatever level `symbol_screen` sets for it; otherwise it's
 **rejected**, with one entry in `reject_reasons` per bar it failed. Only accepted candidates are
-eligible for entry. (There is no longer a Tier 1/Tier 2/Near-Miss ladder — screening is a plain
+eligible for entry. (There is no Tier 1/Tier 2/Near-Miss ladder — screening is a plain
 accept/reject bar.) See [Screening Criteria](./screening-criteria.md).
 
 **Position Sizing**
@@ -238,7 +236,7 @@ Build a concrete tradeable order from live chain data.
 
 **`python -m cherrypick.earnings.strategy_report`**
 Per-strategy expectancy/win-rate/IV-crush text report. The charts are on the console's Earnings page
-(the HTML `strategy_dashboard` was retired on 2026-08-12).
+
 
 See `docs/reference.md`'s Tool Reference for the complete command list.
 

@@ -1,5 +1,5 @@
-/* The adopted house theme (2026-10): the MEIC summary slide's visual language, hoisted to the
-   root and extended across the console — see docs/history.md (2026-10-15) for the decisions.
+/* The house theme: the MEIC summary slide's visual language, hoisted to the
+   root and extended across the console.
    Density as luxury: hairlines, mono numerals, rounded cards, one cherry accent reserved for
    brand, live-mode, and alert moments (the halt control most deliberately).
 
@@ -3985,8 +3985,8 @@ select.text-input {
 }
 
 /* ---------------------------------------------------------------------------
- * The MEIC summary slide — the surface that seeded the adopted theme (2026-10,
- * docs/history.md, 2026-10-15): rounded cards, blue selection, mint/salmon sign tones. Its
+ * The MEIC summary slide — the surface that seeded the house theme: rounded cards,
+ * blue selection, mint/salmon sign tones. Its
  * private scope and token aliases are gone; these rules read the shared vocabulary directly,
  * exactly as every other card in the suite does. The .ts- class names stay — they are wired in
  * SummarySlide.tsx and pinned by its tests.

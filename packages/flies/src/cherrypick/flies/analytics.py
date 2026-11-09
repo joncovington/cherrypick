@@ -309,7 +309,7 @@ def arm_comparison_exclusions(
 # `center_offset` (2026-08-04) is the odd one out and worth flagging when reading a table of these
 # side by side: the other four describe the MARKET we entered into, while this one describes OUR OWN
 # choice of centre relative to spot. A market regime is something to condition on; this is something
-# to change. See engine._classify_center_offset and docs/centre-lag.md.
+# to change. See engine._classify_center_offset and docs/reference.md (Centre lag).
 #
 # `drift_alignment` (2026-09-21) is derived at read time rather than stored: does the entry's
 # completing direction agree with the session's committed drift. `flat` is taken from the STORED
@@ -839,7 +839,7 @@ def by_drift_alignment(
     **Reported, not gated.** `choose_side` is what generates these — on a trending day spot moves
     away from the centre, so it selects the side needing a reversal — and a fix belongs there rather
     than in a bolt-on filter. But `band` and the opposition rule were both chosen on the same rows
-    that measure them, the down-day cell is n=3, and `docs/centre-lag.md` sets the bar for a gate at
+    that measure them, the down-day cell is n=3, and `docs/reference.md (Centre lag)` sets the bar for a gate at
     a second clearly down-trending session. This surface exists so the next one is read against a
     stated prior instead of rediscovered.
 
@@ -1672,7 +1672,7 @@ def _median(values):
 
 
 # --------------------------------------------------------------------------- live vs paper
-# The abort rule from docs/live-trading-plan.md, instrumented: paper completion is an UPPER
+# The abort rule from docs/live.md, instrumented: paper completion is an UPPER
 # BOUND on live completion (paper's gate is a clean inequality; live's step 2 is a working
 # limit that may sit unfilled), and the strategy's edge IS the completion rate — so once a
 # real sample exists, a live rate far enough below contemporaneous paper means the bound is

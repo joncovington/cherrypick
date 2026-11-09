@@ -95,7 +95,7 @@ position is open across a multi-day hold.
 
 ## After the Announcement: the Managed Lifecycle
 
-Positions used to be force-closed at 09:45 the next morning, full stop. They are managed now — the
+Positions are managed, not force-closed the next morning — the
 loop marks every open position once a minute and closes it when a rule says so, which means a
 position can live for one morning or for three sessions.
 
@@ -109,7 +109,7 @@ The full rule set, the thresholds, and the execution gates are in
 2. **09:40 onward** — decisions are acted on. Most positions resolve here: a winner at its target
    closes, and a **loser closes regardless**, because the gap that put it there tends to continue
    rather than revert.
-3. **A winner short of its target is held** — that is the change. It carries overnight and is
+3. **A winner short of its target is held.** It carries overnight and is
    re-marked from the next open, up to a three-session cap.
 4. **15:20 on any leg's expiration day** — the expiry close, whatever the P&L.
 5. **Every close is confirmed through the broker** before it is recorded, even when the cache decided
@@ -120,19 +120,18 @@ The full rule set, the thresholds, and the execution gates are in
 ```
 Mon 15:47  iron_fly on AAPL opened for $5.00 credit, carried into earnings
 Tue 09:31  first mark: exit_debit 4.60 → +$40 unrealized. Marked, not acted on (open_window)
-Tue 09:41  4.55 → +$45. A winner, short of the $1.25 target → hold  (used to close here)
+Tue 09:41  4.55 → +$45. A winner, short of the $1.25 target → hold
 Tue 15:39  4.10 → +$90. Still working → hold
 Wed 09:41  3.70 → +$130. Still short of target → hold
 Thu 09:41  3.40 → +$160, and the session cap is reached → closed, exit_reason=max_hold
 ```
 
-That position would have closed Tuesday at +$45 under the old sweep. Whether holding it was right is
-exactly what the `hold_days` and excursion columns now let the reports answer.
+A next-morning sweep would have closed that position Tuesday at +$45. Whether holding it was right is
+exactly what the `hold_days` and excursion columns let the reports answer.
 
 ## End of Day
 
-The module's own EOD reports were retired 2026-08-13. The loop's `eod` phase records an iteration
-and writes nothing. The suite review builds the session from one fact set across every module,
+The module writes no EOD report. The loop's `eod` phase records an iteration and writes nothing. The suite review builds the session from one fact set across every module,
 rendered to `~/.cherrypick/data/review/eod-<date>.md`:
 
 ```

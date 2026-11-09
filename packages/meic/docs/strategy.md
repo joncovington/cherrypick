@@ -92,13 +92,11 @@ published MEIC convention (a per-side stop keyed to the *whole IC*), designed so
 side stopping scratches the trade (the other side's remaining credit roughly offsets the loss); the
 `0.95` default is the documented "MEIC+" variant, which stops $0.10 below exact breakeven so a
 scratch trends slightly positive. This basis is fixed in `paper.py`/the live loop, not a config
-choice — a `per_side_stop_trigger` key once existed to describe it in words but was removed
-2026-08-07, since it was never read by any code path. The actual "stop on that side's own
+choice (there is no `per_side_stop_trigger` key; one that nothing read was removed). The actual "stop on that side's own
 credit" question — the rule people usually mean when they say a side "gave back its own premium" —
-is instead answered read-side, from the paper engine's `control` stream (named `open` until 2026-08-21), as the derived
-`stop-2.0-side` policy; see [paper-experiments.md](paper-experiments.md)'s "The forward test"
-section for the full derivation and why it's computed after the fact rather than run as a fifth
-live-configurable mode.
+is instead answered read-side, from the paper engine's `control` stream, as the derived
+`stop-2.0-side` policy; see [paper-experiments.md](paper-experiments.md) for the derivation and why
+it's computed after the fact rather than run as a fifth live-configurable mode.
 
 At these levels, closing the stopped spread costs approximately the full IC credit, leaving the other spread to continue toward expiration or its own stop. **MEIC has no profit target** — a spread is never closed simply for being profitable.
 

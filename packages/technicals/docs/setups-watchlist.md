@@ -50,7 +50,7 @@ edge" button swaps the list, fixes the setup and side, and switches "Trend agree
 oversold entry never has a positive 1-month trend score, so that filter would hide every row. A
 symbol opens the mean-reversion chart, whose arrows include these trades.
 
-## Options-tradable (revised 2026-10-04)
+## Options-tradable
 
 This is an options tool, so the table is cut to options-tradable names by default, with "All
 names" one click away. A name is options-tradable when both hold (`tradable.py`):
@@ -61,27 +61,25 @@ names" one click away. A name is options-tradable when both hold (`tradable.py`)
 
 A cash index (SPX) has no stock volume; its weeklies alone decide.
 
-**From 2026-10-27 the flag is the liquidity verdict's `tradable`** (`liquidity.py`): the two tests
+**The flag is the liquidity verdict's `tradable`** (`liquidity.py`): the two tests
 above, and the name's monthly options confirmed liquid (ATM spread at most 7.5% of mid, chain open
 interest worth $250M, chain volume worth $5M, over its last five income readings). A `thin` name
 still has its chart and rows, flagged not tradable, so the default view hides it and "All names"
 shows it. A machine with no verdict file yet falls back to the two tests alone.
 
-Since 2026-10-07 a name the nightly liquidity verdict holds illiquid (`liquidity.py`) has no chart
+A name the nightly liquidity verdict holds illiquid (`liquidity.py`) has no chart
 file, so no row at all, until the monthly sweep. The weeklies are read from each name's own latest
 IV-rank reading, at most 10 days old.
 
-**Tastytrade's liquidity rating was dropped the same day it was adopted.** It marks a name down for
+**Tastytrade's liquidity rating is not used.** It marks a name down for
 its share price. Among names with weeklies, the median close was $42 at rating 4, $88 at 3, $189 at
 2 and $544 at 1. HD, LOW, APP, GS, CAT, LLY and COST were all rated 2. The market report's universe
-had reached the same verdict on 2026-09-27 (`scripts/build_stock_universe.py`, "guides, never
-gates").
+reaches the same verdict (`scripts/build_stock_universe.py`, "guides, never gates").
 
 **Measured bid/ask comes next.** That script snapshots the at-the-money call and put twice a
 session.
-- **Since 2026-10-05 it reads the standard monthly expiry.** Until then it read the expiry nearest
-  30 days, which was a weekly (30 October) for 188 of 190 names on 2026-10-02. Weeklies quote wider
-  than the monthly.
+- **It reads the standard monthly expiry**, not the expiry nearest 30 days, which is usually a
+  weekly. Weeklies quote wider than the monthly.
 - **It quotes every listed candidate**, including names under the universe's own volume bar, such
   as LOW and ABT.
 - **The bar is not chosen yet.** Once three sessions of monthly readings exist, the spread
@@ -109,7 +107,7 @@ rows. Most of the rest list monthly options only (MCO, CB, BNY, LIN).
 Nothing ranks signals by quality. These setups aren't scored for outcomes, so the table shouldn't
 imply which signal is better.
 
-## The read behind a row (2026-10-18)
+## The read behind a row
 
 Each row carries `read` (`setup_read.py`), written with the watchlist and shown when the row opens
 out on the console. It is a pure function of data the suite already holds:

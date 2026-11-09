@@ -1,10 +1,10 @@
-# M0 spike findings (2026-08-08)
+# SDK, keyring and read-only SQLite notes
 
-Three risky integrations were spiked before scaffolding. All passed.
+What the console relies on from three outside pieces.
 
 ## tastytrade JS SDK
 
-- The official package is **`@tastytrade/api`** (v7.0.2, published 2026-05-17 from
+- The official package is **`@tastytrade/api`** (v7.0.2, from
   tastytrade/tastytrade-api-js). The similarly named `tastytrade-api` on npm is a stale 0.0.1
   placeholder from the same repo — do not use it.
 - `TastytradeClient` exposes the full REST service set (instruments, market metrics, symbol search,
@@ -18,8 +18,7 @@ Three risky integrations were spiked before scaffolding. All passed.
   and the HTTP client auto-generates/refreshes access tokens. A dedicated OAuth grant with read-only
   scope gives the console a credential that structurally cannot place orders. Legacy
   username/password `SessionService.login()` also exists as a fallback.
-- Still to verify live (needs a real credential): end-to-end OAuth login + `quoteStreamer.connect()`
-  + a Greeks subscription tick. Planned as the first step of M3.
+- The console connects `quoteStreamer` with the suite credential and subscribes Greeks and candles.
 
 ## Credential store (`@napi-rs/keyring` on Windows)
 

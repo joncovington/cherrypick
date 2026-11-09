@@ -2,8 +2,9 @@
 
 > Operating contract for the cherrypick **MEIC** engine. Human guides: [`docs/`](docs/README.md); the
 > entry-gate catalogue: [`GATES.md`](GATES.md); suite context: the root
-> [documentation index](../../docs/README.md). Dated history behind the rules here, and the
-> list of declared boundaries (never pool across one): [docs/history.md](docs/history.md#declared-boundaries).
+> [documentation index](../../docs/README.md). The declared boundaries (dates from which rows were
+> produced under a different rule; never pool across one) are in
+> [docs/reference.md](docs/reference.md#declared-boundaries).
 
 This module's old word `risk profile` is the root's `arm`; the column is `arm`, and `db.init_db` refuses a
 ledger that still says `risk_profile` (`scripts/arm_column_migrate.py --only risk_profile` renames one).
@@ -30,8 +31,7 @@ decisions per symbol, one shared account-wide risk budget.
 
 - **Unattended paper (automated).** `cherrypick/meic/paper_loop.py` codifies the loop's decisions. The
   orchestrator's supervisor fires `paper_loop --once` every 60 s as the `meic-paper` job
-  (`modules.meic.paper.tick_interval_seconds`; the module's own schtasks launcher was removed on
-  2026-10-08), starts the streamer, and watchdogs both. All writes go
+  (`modules.meic.paper.tick_interval_seconds`; the module has no launcher of its own), starts the streamer, and watchdogs both. All writes go
   to `~/.cherrypick/data/meic/paper_trades.db`; the live account and `meic_trades.db` are never
   touched. **It is not a full re-implementation of the Loop Steps**: GEX-wall strike anchoring, the ORB
   debit-spread path and judgement-based stop tightening are agent-loop-only. The engine runs the
@@ -46,7 +46,7 @@ decisions per symbol, one shared account-wide risk budget.
   beyond the stop rule.
 - **Interactive (agent-driven).** You execute the Loop Steps in [docs/agent-loop.md](docs/agent-loop.md) for manual `/meic-start` sessions,
   through `tt execute_trade --live`. That path needs `enable_live_trading: true` and the designated
-  account, but not `live.symbol` or `live.gate0_confirmed`. Since 2026-10-27 an **opening** order on
+  account, but not `live.symbol` or `live.gate0_confirmed`. An **opening** order on
   it also obeys the loop's entry rules (`tt._manual_open_refusal`): no halt flag, today's arm record
   (`/live-meic-start`), and the written kill criteria (BLOCKED refuses; otherwise each leg is capped
   at `kill.sized`). A closing order is never held back. The orchestrator never runs it.
@@ -89,14 +89,12 @@ decisions per symbol, one shared account-wide risk budget.
   overlay only. The session's decision is persisted (`advice_active.json`) so advice cannot start, stop
   or change mid-session across `--once` processes. Open advised positions keep a management-only twin
   (entries capped to zero) so their exits run even when today's advice is off; its base comes from
-  `_advised_base` (the decision's entry, else the legacy `advised:<profile>` reading, else
-  `advice.base_profile`), never split out of the tag. A decision file from before 2026-09-17 still
-  builds the legacy `advised:control` tag its rows carry. Never touches the live loop.
+  `_advised_base` (the decision's entry, else the legacy `advised:<arm>` reading, else
+  `advice.base_profile`), never split out of the tag. Never touches the live loop.
 - **`experiment_id` stamping follows `cherrypick.core.advice.stamp_for`** (`packages/core/CLAUDE.md`);
   the stamp is carried per book from its own entry.
-- **No section payload.** The suite-dashboard card emitter and this module's own dashboard were
-  retired with the suite dashboard on 2026-08-12; the console reads both ledgers directly, so there is
-  no second payload to keep in step. Shared read-side queries live in `cherrypick.meic.analytics`.
+- **No section payload.** The console reads both ledgers directly, so there is no second payload to
+  keep in step. Shared read-side queries live in `cherrypick.meic.analytics`.
 
 ## Tastytrade auth and tool reference
 
@@ -107,19 +105,18 @@ decisions per symbol, one shared account-wide risk budget.
   secrets_set` / `tt secrets_status`.
 - **`enable_live_trading: true` in `config.json` is the master switch.** There is no environment
   fallback: an env var is outside the orchestrator's guarded config table and carries no attestation.
-- **The live loop is armed one day at a time (2026-10-14, the flies/bwb posture).** `/live-meic-start`
+- **The live loop is armed one day at a time (the flies/bwb posture).** `/live-meic-start`
   writes the arm record (`--install-task`, the agent path that prompts for nothing because the
   slash command already asked; a person arms with `--arm --confirm YES`, which prints `DISCLAIMER.md`
   and refuses on any other word; `--disarm` is the old `--uninstall-task`; all in
   `cherrypick.core.live`), and each `--live` tick deletes
-  it once stale or past `live.disarm_time`, before any broker read. **The arm gates new ICs only
-  (2026-11-02).** Unarmed, a tick whose book holds nothing today ends there without a broker call;
+  it once stale or past `live.disarm_time`, before any broker read. **The arm gates new ICs only.** Unarmed, a tick whose book holds nothing today ends there without a broker call;
   one that holds an IC or a pending entry runs management only (fill confirmation, resting stops,
   stops, force-close, settlement), with entries blocked as `not_armed`. The supervisor therefore
   runs `meic-live` every trading day from the open to the disarm cutoff, armed or not. Unarmed
   with a live gate unmet (the master switch off), the tick touches nothing and says `unmanaged`;
   the watchdog's `live_unmanaged` is the CRITICAL. `--status` is the arming
-  command's and the watchdog's read (no broker). Its `arm_ready` (`arm_verdict`, 2026-11-02) is the
+  command's and the watchdog's read (no broker). Its `arm_ready` (`arm_verdict`) is the
   one answer to "may live arm": `blockers` are the arming command's stop-here states (an unmet
   gate, orphans, a held submission, an overdue session, an unreadable ledger, no supervisor, kill
   criteria blocked, read with `killcriteria.peek` so a readout never latches) and `warnings` what
@@ -129,12 +126,11 @@ decisions per symbol, one shared account-wide risk budget.
   slow tick from overlapping the next. `live.daily_loss_halt_dollars` and the halt flag block NEW ICs
   only: fills are still confirmed and open ICs still stopped and force-closed. The breaker sums
   today's `ic_trades.pnl`, which is gross (before fees), so it trips on gross, not net.
-  `live.kill` (B1, 2026-10-24) is the arm's frozen kill criteria, read over the live ledger's net
+  `live.kill` is the arm's frozen kill criteria, read over the live ledger's net
   through `core.killcriteria.gate`: reduced halves the order's quantity (at least one), blocked
   refuses new ICs and latches (`state/kill/meic.json`, a watchdog CRITICAL) until a person clears it;
   missing or malformed criteria refuse. A closed live IC since the criteria's `written` date with
-  **no net** (`pnl` or `fees` NULL, as the 2026-06-29 stop was recorded) also refuses new ICs, from
-  2026-10-25: the verdict skips a row with no net, so its loss would pass the drawdown and streak
+  **no net** (`pnl` or `fees` NULL) also refuses new ICs: the verdict skips a row with no net, so its loss would pass the drawdown and streak
   check. The refusal names the ICs, does not latch (recording their `pnl` and `fees` is the fix) and,
   like every kill verdict, never holds back a fill confirmation, stop or force-close; earnings
   refuses on the same rows. Derived from the arm's replay with
@@ -142,11 +138,12 @@ decisions per symbol, one shared account-wide risk budget.
   `live.use_order_alert_daemon` makes the supervisor keep `cherrypick.meic.alert_daemon` up until
   `disarm_time`; it records order alerts in `live_alerts.db` and starts a tick when an order the
   ledger knows stops working, so a fill is confirmed in seconds rather than at the next minute.
-- **Live settles on the official print only (2026-10-15).** A held side settles at
+- **Live settles on the official print only.** A held side settles at
   `core.settlement.official_index_close` (the posted close, else Yahoo/Barchart); until one is posted
   the IC stays open and the next tick asks again. A past session left open is settled at that day's
   close by `live_loop --settle-overdue` (the hourly `settle-overdue-live` job), or by hand with
-  `--settle --date --price`. **Either asks the broker first (2026-11-02)** when the session has an
+  `--settle --date --price`. **Either asks the broker first** (a close that filled unseen would
+  otherwise be read as cancelled and its side settled at expiry) when the session has an
   order in doubt (a pending entry or close, a resting stop last seen working): the tick's own
   `_poll_resting_stops` and `_confirm_fills`, through `_SettleBroker`, which reads statuses and
   refuses to place, replace or cancel. A fill is booked at the broker's legs and a dead order
@@ -163,7 +160,7 @@ decisions per symbol, one shared account-wide risk budget.
   included), `adjust_order` and `close_position` resolve through `_trading_account`: no designation
   (unset or unreadable) is `AccountNotDesignated`, never the login's first account, and an explicit
   `--account_number` must be the designated one. Read-only commands keep `resolve_account`'s fallback.
-- **An entry is written ahead of its order (2026-11-02).** The row it will need goes into
+- **An entry is written ahead of its order.** The row it will need goes into
   `entry_intents.json` beside the live ledger under a minted `meic-<uuid>`, sent as the order's
   `external_identifier`; an intent that cannot be written sends no order. The saved row clears it.
   A leftover intent (the process died between submit and save, or the submit was uncertain) is
@@ -173,10 +170,10 @@ decisions per symbol, one shared account-wide risk budget.
 - **The live loop records fills only on broker confirmation.** An entry is saved `status='pending'`;
   `_confirm_fills` at the top of each tick flips it to `open` at the ACTUAL net credit
   (`fill_confirmed_at`), or to `cancelled` with zero P&L if it dies unfilled (freeing its slot).
-  `put_credit`/`call_credit` follow the fill (`entry_fill_credits`, 2026-10-12): each side from the
+  `put_credit`/`call_credit` follow the fill (`entry_fill_credits`): each side from the
   broker's per-leg fills when all four legs are reported and sum to no less than the limit, else the
   booked fill split in the quote-time modelled ratio; `side_credit_source` says which. Stop and
-  expiry P&L are charged per side, so before this a live row's sides did not add to its net. A
+  expiry P&L are charged per side, so the sides add up to the row's net. A
   pending row holds its slot but is not managed for exits. A close stashes its decision on the row
   (`pending_exit_json`, `{side}_stop_fill_status='pending'`), and the shared exit accounting
   (`paper._apply_exit_decision`) runs only on confirmation, at the actual price: the side's two leg
@@ -187,21 +184,22 @@ decisions per symbol, one shared account-wide risk budget.
   cash-settled side is cancelled at settlement and falls through to expiry. Resubmit-not-escalate,
   re-price-every-tick and settle-not-chase keep live's rule byte-identical to paper's, so the paper↔live
   gap is the measurement.
-- **A failed entry snapshot never skips management (2026-11-02).** The full snapshot is the entry
-  menu. When it fails (no spot, no chain) and the live ledger holds an IC, `_tick` builds a
+- **A failed entry snapshot never skips management.** A feed outage must not leave a stop unmanaged:
+  a side left alone through an outage can be stopped late and far past its trigger. The full snapshot is
+  the entry menu. When it fails (no spot, no chain) and the live ledger holds an IC, `_tick` builds a
   manage-only snapshot from the held legs alone (`_manage_snapshot`): the stream cache within 10 s,
   else one broker REST read (`core.broker.rest_quotes`, no DXLink). Entries are blocked
   (`manage_only (...)`) and fill confirmation, stops and force-close run as usual. A held leg neither
   source prices fails the tick (exit 1, `held legs unpriced`) and is never priced off an older quote.
   Every failed tick writes its reason to `meic_live.log` and stderr (`_fail`), and a placed entry
   whose row will not save raises the suite halt flag.
-- **What the loop tells a person (2026-11-02).** `--status` names each of today's held ICs in words
+- **What the loop tells a person.** `--status` names each of today's held ICs in words
   (`open_ics`, `describe_ic`: id, strikes, sides still held, credit, stop), and the watchdog's live
   findings quote them. Every `CRITICAL` line a tick logs (and `_quiet`'s, and an unpriced-legs exit)
   is appended to `live_criticals.jsonl` beside the ledger; `--status` carries today's
   (`criticals_today`) and the watchdog's `meic.live_critical` announces each once. The module
   still never talks to a notification channel.
-- **Resting stops (`live.resting_stop`, off by default, 2026-11-02).** Once an entry's fill is
+- **Resting stops (`live.resting_stop`, off by default).** Once an entry's fill is
   confirmed, each held side gets a Day stop-limit at the broker (`live_orders.resting_stop_spec`):
   trigger = the row's stop ratio x the whole net credit, limit `limit_offset_frac` of it above,
   capped at the wing. Each tick polls them first (`_poll_resting_stops`): a fill becomes the side's
@@ -221,7 +219,7 @@ decisions per symbol, one shared account-wide risk budget.
   (`reason: leg_symbol_not_orderable` on a refusal). A live row records the quantity its order carried
   (`synthetic_entry_fill(quantity=)`), and the exit accounting scales P&L, close fees and slippage
   by the row's quantity -- a no-op on paper, where every row is quantity 1. **Live entries are one
-  contract (`MAX_LIVE_QUANTITY`, 2026-11-02)** until partial fills are modelled: no order path reads
+  contract (`MAX_LIVE_QUANTITY`)** until partial fills are modelled: no order path reads
   a filled quantity, so a close cancelled after a partial fill would be re-sent at full size. A
   larger configured quantity refuses entries (`quantity_over_1`) and blocks arming; what is held
   is still managed.
@@ -241,16 +239,15 @@ MEIC has no streamer of its own. The standalone producer (`packages/streamer`) w
 leg of the paper and live ledgers (re-read by the producer every poll). `Summary.open_interest` lands
 in `stream_oi` and feeds `get_gex --symbol <SYM>`, computed per symbol from that symbol's own window;
 the opening range comes from the producer's `orb.py`. `tt stream_status` reports the producer's health.
-MEIC's in-module rollback streamer was removed on 2026-10-18.
 
 ## The live block (arm registry)
 
-- **The live block (2026-10-14), flies' `live.arm` seam.** `live.arm` names the registry arm live
-  trades (unset: the top level, as before); `live.max_open_bp_dollars`, `wing_widths_by_symbol`,
+- **The live block, flies' `live.arm` seam.** `live.arm` names the registry arm live
+  trades (unset: the top level); `live.max_open_bp_dollars`, `wing_widths_by_symbol`,
   `entry_window_start` and `entry_window_end` apply to live alone and only narrow the arm (later start,
   earlier end, smaller cap; widths replace). **Live-only sizing belongs there, never at the top level**:
-  every paper arm that leaves a top-level key unset inherits it, `control` included -- which is how a
-  $500 live cap would have capped the sampling substrate. Both loops warn while a live-only key sits at
+  every paper arm that leaves a top-level key unset inherits it, `control` included, so a live cap at
+  the top level would cap the sampling substrate. Both loops warn while a live-only key sits at
   the top level off its shipped default, or while the block shapes live and no enabled arm follows it;
   `python -m cherrypick.meic.live_migrate` moves such keys (dry run by default, `--apply` backs up).
   `readiness` refuses a `live.arm` that is missing or itself follows live.
@@ -274,7 +271,8 @@ side, own status/exit/P&L), `daily_summary` (key `summary_date`), `loop_log` (ap
   rows are **re-derived at read time, never rewritten**: `analytics._bucket_expr` re-derives every row
   with a sign flag through `regime.gex_bucket_from_sign` over the stored flip distance (rows since
   2026-09-16 re-derive to their own tag, which checks the rule is the classifier's). A label
-  correction, not a measurement break.
+  correction, not a measurement break. Without the sign flag a window net negative end to end has no
+  flip crossing and would tag `unknown`.
 - **Paper must never be confidently wrong.** `paper.evaluate_open_trade` refuses to settle without a
   settlement price, holding with `settlement_price_unavailable` as an unquotable leg does. Because that
   refusal is silent (the position stays open), `paper_loop --status` reports `session_settled`,
@@ -288,7 +286,9 @@ side, own status/exit/P&L), `daily_summary` (key `summary_date`), `loop_log` (ap
   `core.settlement.OFFICIAL_SOURCES` (a past day by date, today's via `tt.py get_official_close`),
   clock pinned to the settlement instant, no entries evaluated, then the daily_summary roll-up.
   No official print, a physically settled symbol, an event force-close day, or a session already
-  partly settled at another print: left open and logged, never a guess.
+  partly settled at another print: left open and logged, never a guess. An open row is honest; a
+  settlement at a guessed price is a wrong number that looks final (an outage across the close once left
+  hundreds of paper positions open, and this is the rule that handles them).
 - **`analytics.settlement_audit` (`run.py settlement-audit`) is re-runnable** and reproduces each
   resolved fill from the written convention with its own `_side_settle_value`, **deliberately
   duplicated, not imported** — an audit that imports what it audits only confirms the function equals

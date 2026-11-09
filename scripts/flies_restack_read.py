@@ -5,7 +5,7 @@
 
 Read-only; runnable from anywhere; the ledger resolves off `$CHERRYPICK_HOME` (default `~/.cherrypick`).
 
-**The question** (declared 2026-10-11, docs/experiment-log.md). Control never enters a structure it
+**The question** (declared 2026-10-11). Control never enters a structure it
 already holds that day. Spot came back to 127 of its 196 completed flies' centres over 08-21..10-09,
 and the rule refused each return before pricing it, so what a second contract there earns was never
 recorded. `restack` is control with the rule ignoring a structure once it is completed risk-free.

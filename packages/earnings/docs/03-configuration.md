@@ -38,7 +38,7 @@ it's what the code actually reads.
 | `finnhub_api_key_env_var` | Name of the environment variable holding a Finnhub API key, if you're using it as a supplementary data source. Not required for the core scan/rank/order pipeline, which runs entirely on tastytrade + Dolt. |
 | `entry_window_start` / `entry_window_end` | The window before close where new positions get opened, e.g. `15:30`–`15:55` ET. These are ET times regardless of your local timezone. |
 | `entry_scan_at` | When the automated loop starts its forced-sampling entry scan (default `15:35`). Distinct from `entry_window_start`, and must leave room for the scan to finish before `entry_window_end`. |
-| `entry_scan_budget_seconds` / `entry_scan_workers` | Bounds on the entry scan (example: 1500 s, 4 workers). The morning snapshot orders the universe so a budget that binds still finishes the liquid names first, and from 2026-11-06 names the liquidity verdict refuses are screened after every tradable one, only with the budget left. |
+| `entry_scan_budget_seconds` / `entry_scan_workers` | Bounds on the entry scan (example: 1500 s, 4 workers). The morning snapshot orders the universe so a budget that binds still finishes the liquid names first, and names the liquidity verdict refuses are screened after every tradable one, only with the budget left. |
 | `symbol_watch` | The pre-market forward scan the loop runs itself (`enabled`, `at` `06:30`, `days` 10 trading days, `liquid_only`, `tier_thresholds` in the example). It pre-filters the entry scan on stable criteria only and never decides an entry. |
 | `dolt_calendar_timeout_seconds` / `dolt_symbol_timeout_seconds` | Per-query bounds on the Dolt calendar and per-symbol reads (example: 30 / 90), so a hung query cannot hold the loop's lock. |
 | `close_window_start` | Next-morning time where the unconditional close-window backstop kicks in, e.g. `09:45` ET — chosen to be after the open's initial volatility has settled a bit. |
@@ -107,9 +107,8 @@ Each of the first five is independently set to one of:
 
 - `"pass"` (the default for all five) — the candidate must clear the strict `min_*` threshold in
   `strategies.<name>` for that criterion.
-- `"near_miss"` — the candidate only needs to clear the looser `near_miss_min_*` threshold. This
-  is the configurable stand-in for what used to be a fixed near-miss band: it tolerates a
-  marginal name on that one dimension instead of rejecting it outright.
+- `"near_miss"` — the candidate only needs to clear the looser `near_miss_min_*` threshold. It
+  tolerates a marginal name on that one dimension instead of rejecting it outright.
 - `"off"` — the criterion isn't screened at all.
 
 The per-strategy `min_*` / `near_miss_min_*` thresholds still live under `strategies.<name>`
@@ -132,8 +131,8 @@ or rejected — via `db.py`/`db_paper.py`'s `entry_reviews` table and the consol
 ## `strat_test_portfolio`
 
 Controls how the forced-sampling strategy test (`strat_test_harness.py`, see
-`docs/strat-test-portfolios.md`) buckets its paper trades into books via the `arm` column (named
-`profile` until 2026-09-24; the report flags are still spelled `--profile`).
+`docs/strat-test-portfolios.md`) buckets its paper trades into books via the `arm` column (the report
+flags are still spelled `--profile`).
 
 ```json
 "strat_test_portfolio": "per_strategy"
@@ -142,8 +141,7 @@ Controls how the forced-sampling strategy test (`strat_test_harness.py`, see
 - `"per_strategy"` (default) — each strategy's forced-sampling trades are tagged
   `strat_test:<strategy>` (e.g. `strat_test:iron_fly`), giving every strategy its own book —
   its own P&L and equity curve. A newly added strategy automatically gets its own stream.
-- `"combined"` — all forced-sampling trades share a single `strat_test` book (the original
-  behaviour), one blended P&L across every strategy.
+- `"combined"` — all forced-sampling trades share a single `strat_test` book, one blended P&L across every strategy.
 
 Reporting (`strategy_report.py`, the console's Earnings page) and the orchestrator's
 `report`/`calibrate` group by that book tag; a `--profile strat_test` request matches the whole
@@ -362,11 +360,11 @@ Common keys apply to every strategy; `management.<strategy>` overrides them for 
 | `max_executions_per_tick` | `3` | Bounds one tick; the rest are deferred a minute, not dropped. |
 | `quote_max_age_seconds` | `300` | Older cached leg quotes are refused. |
 | `spot_max_age_seconds` | `600` | Spot tolerates more age — it gates checks that move on the scale of a strike. |
-| `open_capital_warn` | `15000` | Advisory watermark on total open risk. Multi-day holds accumulate what the old book never carried; this warns rather than capping, since truncating carried winners would bias exactly the sample the hold policy exists to measure. |
+| `open_capital_warn` | `15000` | Advisory watermark on total open risk. Multi-day holds accumulate risk across sessions; this warns rather than capping, since truncating carried winners would bias exactly the sample the hold policy exists to measure. |
 | `exit_after_announcement_minutes` | very large | The strategies' same-session backstop, deliberately set past any hold it could preempt. Lower it to re-enable a same-session forced close. |
 
 Not a key, but a rule every key above sits behind: nothing but the expiry close and the pin guard
-acts on a position's entry session (`entry_session`, 2026-10-17).
+acts on a position's entry session (`entry_session`).
 
 ```json
 "management": {
@@ -468,7 +466,7 @@ land. `exit_days_before_front_expiration` is a hard time-stop: once the front le
 days of expiring, the position exits regardless of P&L, since gamma risk on a short ATM option
 overwhelms any remaining theta benefit inside that window. `stop_loss_pct_of_debit: 0.5` closes
 the position once it has lost half its entry debit, and `profit_target_pct: 0.15` takes 15% of the
-debit (both set at the 2026-08-12 cutover; see [Exit Strategy Guide](./10-exits.md)).
+debit (see [Exit Strategy Guide](./10-exits.md)).
 
 ### `double_calendar`
 

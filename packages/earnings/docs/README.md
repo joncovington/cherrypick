@@ -20,15 +20,15 @@ The Earnings Agent is a rules-based options trading system that:
 - Scans daily earnings calendar for candidates
 - Analyses 7 defined-risk strategies using entry condition framework
 - Routes each candidate to optimal strategy based on market data
-- Executes pre-earnings positions and manages exits
+- Opens paper positions before the report and manages their exits
 
 ### 7 Strategies (all defined-risk)
 
 Structure, entry gates and exit rules for each are in the one strategy table,
 [Strategy Guide](./05-strategies.md); the shipped profit targets and stops are in
 [Exit Strategy Guide](./10-exits.md) and `config.example.json` (`strategies.<name>`). The two calendars
-(from 2026-10-15) and `broken_wing_butterfly` (from 2026-10-26) stay registered but open nothing in the
-forced-sampling books (`strat_test_harness.STRAT_TEST_RETIRED`).
+and `broken_wing_butterfly` stay registered but open nothing in the forced-sampling books
+(`strat_test_harness.STRAT_TEST_RETIRED`).
 
 ### Key Metrics
 
@@ -37,13 +37,12 @@ forced-sampling books (`strat_test_harness.STRAT_TEST_RETIRED`).
 - **IV-Crush Capture**: the whole edge is the IV collapse that happens once the earnings
   uncertainty resolves overnight.
 - **Profit Target / Stop**: per strategy (table above), checked from the first morning after entry.
-- **Holding Period**: in the original design, an unconditional close-window
-  backstop the next morning (default `09:45` ET) closes whatever is still open regardless of P&L.
-  The paper loop manages positions instead (since 2026-08-12): a loser closes on the
-  first morning, a winner short of target may be carried up to three trading sessions
-  (`management.hold_winners_max_days`), nothing acts on the entry session but the expiry close and
-  the pin guard, nothing is held through a leg's expiration (the 15:20 expiry close), and an expired
-  position is settled at intrinsic.
+- **Holding Period**: the paper loop manages positions: a loser closes on the first morning, a winner
+  short of target may be carried up to three trading sessions (`management.hold_winners_max_days`),
+  nothing acts on the entry session but the expiry close and the pin guard, nothing is held through a
+  leg's expiration (the 15:20 expiry close), and an expired position is settled at intrinsic. A manual
+  `/paper-start` cycle instead closes whatever is still open at the next morning's close window
+  (default `09:45` ET).
 - **Entry Gate**: IV/RV ratio, term structure, and liquidity — see
   [Screening Criteria](./screening-criteria.md) for the full hard-filter list.
 
@@ -51,8 +50,7 @@ forced-sampling books (`strat_test_harness.STRAT_TEST_RETIRED`).
 
 ## Documentation Index
 
-The numbers are stable identifiers, not a sequence — 07, 09, 12, and 13 are retired documents and the
-remaining files keep the numbers they were written with, so existing links stay good. Gaps are expected.
+The numbers are stable identifiers, not a sequence, so gaps are expected.
 
 ### Getting Started
 - [Installation & Setup](./01-setup.md) — Configure, run tests, connect to the broker and Dolt
@@ -69,26 +67,18 @@ remaining files keep the numbers they were written with, so existing links stay 
 - [Trading Workflow](./08-trading-workflow.md) — Day-to-day execution
 - [Exit Strategy Guide](./10-exits.md) — Profit targets, backstops, repairs
 - [Examples & Case Studies](./11-examples.md) — Real-world scenarios
-- [Paper Trading](./paper-trading.md) — How paper works, data separation from the old live ledger
+- [Paper Trading](./paper-trading.md) — How paper works, data separation from the pre-v0.12.0 ledger
 - [Strat-Test Portfolios](./strat-test-portfolios.md) — Per-strategy paper books for the forced-sampling test
-- [Strategy Testing Plan](./strategy-testing-plan.md) — Forced-sampling validation program
-- [Control Book Plan](./control-book-plan.md) — Widening the control so entry screening becomes
-  measurable by read-side replay, since the advisor's twin cannot express it. Phases 0–1 and the
-  entry replay (phase 3) are built; phases 2 and 4 are open
-- [Time Spread Screen Plan](./time-spread-screen-plan.md) — An endurable-gap screen and a combined
+- [Strategy Testing](./strategy-testing-plan.md) — The forced-sampling paper program
+- [Time Spread Screen](./time-spread-screen-plan.md) — An endurable-gap screen and a combined
   side read for every earnings time spread. The engine is built (`time_spread.py`) and nothing reads it
-  yet; step 0 ran 2026-10-17, and the rest waits for backtest data
-- [Expected-Move Fly Plan](./expected-move-fly-plan.md) — The history study (verdict: don't build)
+- [Expected-Move Fly](./expected-move-fly.md) — The history study (verdict: don't build)
   behind the paper-only `expected_move_butterfly` book
 
 ### Reference
 - [Glossary](./14-glossary.md) — Terms and definitions
-- [Strategy Optimization Research](./strategy-optimization.md) — Hypotheses queued for paper-test validation
-- [File Size Exceptions](./file-size-exceptions.md) — Documented exceptions to the 500-line guideline
-- [Operating History](./operating-history.md) — Dated incidents behind the rules in `CLAUDE.md`
-- [Earnings screener plan](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/history/earnings-screener-plan.md) — The navigator-rule history study
-  (no edge after costs) and the earnings calendar. Both live in `packages/technicals` and on the
-  console's Screeners page, not in this module
+- [Strategy Optimization](./strategy-optimization.md) — Hypotheses queued for paper-test validation
+- [Measurement Boundaries](./measurement-boundaries.md) — The dates from which results must not be pooled
 
 ---
 
@@ -112,12 +102,10 @@ Credit Strategies (Iron Fly, Iron Condor, Directional Spread,
 Broken Wing Butterfly):
   Profit Target: 25-50% of entry credit (per strategy)
   Stop Loss: 1.5-2.0x entry credit (per strategy)
-  Backstop: unconditional close-window exit next morning (agent loop)
 
 Calendar Strategies (ATM Calendar, Double Calendar):
   Profit Target: 15% of entry debit
   Stop Loss: 50% of entry debit
-  Backstop: unconditional close-window exit next morning (agent loop)
 
 Expected-Move Butterfly (paper only):
   Profit Target: fly worth 50% of its width
@@ -128,10 +116,9 @@ Every strategy (paper loop): held on its entry session; closed from
 15:20 on any leg's expiration day.
 ```
 
-In the agent-driven loop every strategy closes by the next morning's close window regardless of
-P&L. The unattended paper loop carries a winner up to three sessions instead (see Key Metrics
-above). See the [Exit Strategy Guide](./10-exits.md) for the exact
-mechanics.
+The paper loop carries a winner up to three sessions (see Key Metrics above); a manual `/paper-start`
+cycle closes everything at the next morning's close window. See the
+[Exit Strategy Guide](./10-exits.md) for the exact mechanics.
 
 ### Risk Framework
 
@@ -166,7 +153,7 @@ cherrypick/
     │   ├── sizing.py            # Code-enforced risk-cap sizing
     │   ├── costs.py             # Cost model over cherrypick.core.fees
     │   ├── tt.py                # tastytrade broker interface
-    │   ├── db.py                # Persistence, historic live ledger (db_paper.py is the paper twin)
+    │   ├── db.py                # Persistence, the pre-v0.12.0 ledger (db_paper.py is the paper one)
     │   ├── paths.py             # Resolves the data home (~/.cherrypick/data/earnings)
     │   ├── paper_loop.py        # The managed paper loop the supervisor ticks every 60 s
     │   ├── management.py        # Exit decisions for open paper positions (hold, carry, close)
@@ -202,13 +189,10 @@ python -m cherrypick.earnings.strategies.iron_fly get_order --symbol AAPL --earn
 ### Overnight
 Position holds through the earnings reaction — no same-day exit.
 
-### Next Morning (agent-driven loop)
-```
-Early exit (market open -> close_window_start): profit-target/stop-loss check against live quotes
-Close window (close_window_start, unconditional): whatever's still open closes regardless of P&L
-```
-
-The unattended paper loop instead acts from 09:40 ET on the management rules above.
+### Next Morning
+The paper loop acts from 09:40 ET on the management rules above. A manual `/paper-start` cycle instead
+checks profit-target/stop-loss until `close_window_start`, then closes whatever is still open
+regardless of P&L.
 
 See [Trading Workflow](./08-trading-workflow.md) for the full day-by-day walkthrough.
 

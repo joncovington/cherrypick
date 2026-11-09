@@ -637,7 +637,7 @@ def _process_snapshot(
     # possible on the same iteration, take whichever leaves the higher post-fee floor.
     #
     # The iron branch is RETIRED and unreachable in config (completion_modes is ["debit"]
-    # everywhere; the `iron` arm is disabled) -- see docs/iron-completion.md. Put-call parity makes
+    # everywhere; the `iron` arm is disabled) -- see docs/reference.md (the iron arm). Put-call parity makes
     # the two completions the same trade, so both gates fire on the same tick and the completed
     # positions have the same net at every price; the iron just pays more in assignment fees. The
     # code stays because it is correct and tested, but note the floor tiebreak below is NOT valid
@@ -675,7 +675,7 @@ def _process_snapshot(
         # NOT a valid comparison across kinds: each floor reserves its own kind's worst-case
         # assignment fee (fly 3 strikes, iron_fly 2) at its own worst-case settlement PRICE, so
         # iron's floor reads exactly $5.00 high at every spot. Retired-path only; see the note
-        # above and docs/iron-completion.md before reviving.
+        # above and docs/reference.md (the iron arm) before reviving.
         take_iron = iron_done and (not debit_done or iron_plan["floor"] > debit_plan["floor"])
 
         if not debit_done and not (iron_done and take_iron):

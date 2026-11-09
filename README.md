@@ -188,7 +188,7 @@ Every surface binds to loopback only.
   own `live` gates instead). They are loops that must
   be re-armed by hand every trading day (`/live-meic-start`, `/live-flies-start`, `/live-bwb-start`, or `python -m cherrypick.<module>.live_loop --arm --confirm YES` from a terminal; flies and bwb are retired and refuse while switched off),
   one arm at a time, under a buying-power cap; while armed, the supervisor runs their live loop as a job
-  ([the flies plan](packages/flies/docs/live-trading-plan.md)).
+  ([the flies live rules](packages/flies/docs/live.md)).
 
 Credentials live in your operating system's secure keyring — never in a file — and paper and live books are
 kept strictly separate.

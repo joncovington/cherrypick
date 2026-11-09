@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Flies LIVE loop — the paper loop's sibling, running the full autonomous trade cycle.
 
-Architecture (docs/live-trading-plan.md + the 2026-07-30 loop plan): a **1-minute self-healing
+Architecture (docs/live.md + the 2026-07-30 loop plan): a **1-minute self-healing
 scheduled main tick** (`--once --live`, task `cherrypick-flies-live-loop` — the same reliability
 model as the paper loop; a resident trading daemon already proved fragile on Windows in MEIC)
 plus **state-triggered burst watchers**: when a tick places an order or sees one unconfirmed, it
@@ -843,7 +843,7 @@ def run_once(
     entry_pricing = live_orders.entry_pricing_mode(live_cfg)
     day = snapshot["date"]
     symbol = snapshot["symbol"]
-    # The intraday agent, in the mode today's arm record names (docs/intraday-agent-plan.md): off,
+    # The intraday agent, in the mode today's arm record names (docs/intraday-agent.md): off,
     # shadow (read and stamped, never acted on) or gates (a fresh decision sets the trend gate).
     # Anything going wrong here is the agent being off for the tick, never a failed tick.
     try:

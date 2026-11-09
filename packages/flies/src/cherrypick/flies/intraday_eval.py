@@ -1,6 +1,6 @@
 """The intraday agent's qualification: what the evidence so far lets `/live-flies-start` offer.
 
-docs/intraday-agent-plan.md, "Unlocking gates and closures". A deterministic evaluation over the
+docs/intraday-agent.md, "Unlocking gates and closures". A deterministic evaluation over the
 paper arms (`trend-rule` against `intraday-agent`, paired by session) and the agent's own records,
 never written by the agent. It writes `data/flies/intraday_agent_qualification.json`, which the
 console's agent page reads and step 4's live selection will read, so the two can never disagree about

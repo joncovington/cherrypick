@@ -20,7 +20,7 @@ import type { ConsoleConfig } from "../config.js";
 import { hasColumn, hasTable, num, obj, readOnlyDb, str } from "./db.js";
 
 /**
- * The flies intraday agent's page (docs/intraday-agent-plan.md in packages/flies).
+ * The flies intraday agent's page (docs/intraday-agent.md in packages/flies).
  *
  * Four sources, all the module's, none re-derived:
  * - the qualification file (`data/flies/intraday_agent_qualification.json`): criteria, paired

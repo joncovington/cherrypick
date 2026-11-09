@@ -1,38 +1,37 @@
 # cherrypick-pmcc
 
-**Retired 2026-11-08; off by default.** The owner switched its entries off (`defaults.wind_down`, #974, stops
-entries and closes what is open; the module goes off once flat). The code, ledgers and docs are kept. To
-reinstate: set `modules.pmcc.enabled` to true in the suite config, `enabled` to true on the `shield`,
-`shield_hold` and `shield_guard` arms in `pmcc.json`, and `defaults.wind_down` to false or remove it.
+**Retired; off by default.** To reinstate: set `modules.pmcc.enabled` to true in the suite config,
+`enabled` to true on the `shield`, `shield_hold` and `shield_guard` arms in `pmcc.json`, and
+`defaults.wind_down` (which stops entries and closes what is open) to false or remove it.
 
 The arm column is `pmcc_positions.arm`; a `books` spelling in a config still resolves.
 
-PMCC — a deep-ITM call with a short call sold against it, on XSP, QQQ, GLD, IWM, SLV and SMH, and
-from 2026-10-12 to 10-19 (one a market day) the stocks AMZN, TSLA, AMD, NVDA and PLTR (posture: root
-file). The base trade since 2026-10-06 is the held-long pair: `shield` and `shield_hold` hold a
-~1-year long while a weekly short rolls against it; `shield_guard` (from 2026-10-26) is `shield_hold`
-that also rolls an in-the-money short once it is assignment-exposed. SLV was once the intended first live symbol; nothing live
-was built, and the module is retired (see the status line). `control`, which re-bought a ~21-DTE long every cycle, is retired.
+PMCC — a deep-ITM call with a short call sold against it, on XSP, QQQ, GLD, IWM, SLV and SMH and the
+stocks AMZN, TSLA, AMD, NVDA and PLTR (posture: root file). The base trade is the held-long set:
+`shield` and `shield_hold` hold a ~1-year long while a weekly short rolls against it; `shield_guard` is
+`shield_hold` that also rolls an in-the-money short once it is assignment-exposed. `control`, which
+re-bought a ~21-DTE long every cycle, is off. The evidence behind the held-long arms and the five ETF
+symbols is [research/pmcc-shield-study.md](../../research/pmcc-shield-study.md).
 
-Ledger schema: **`pmcc`** (`pmcc_99` until the 2026-10-04 rename; a config still naming it resolves
-through `core.ledgers.SCHEMA_ALIASES`).
-
-Elsewhere:
-- history and incidents: [docs/history.md](docs/history.md);
-- the evidence behind the held-long arms and the five ETF symbols (SMH and the stocks came later:
-  docs/history.md): [docs/shield-study.md](docs/shield-study.md);
-- window sizing: [docs/window-parameters.md](docs/window-parameters.md);
-- suite-wide context: the root [documentation index](../../docs/README.md).
+Ledger schema: **`pmcc`** (a config still naming `pmcc_99` resolves through
+`core.ledgers.SCHEMA_ALIASES`). Suite-wide context: the root [documentation index](../../docs/README.md).
 
 ## Measurement breaks
 
-Several rule changes began on a date, and the rows either side are not comparable. **Never pool
-across them; every date, with its journaled break, is in
-[docs/history.md](docs/history.md#declared-boundaries).** What to remember when reading the ledger:
+Several rule changes began on a date, and the rows either side are not comparable. **Never pool across
+them.** Each was journaled in `measurement_breaks`.
 
 - **Always read `pmcc` grouped by `symbol`, never pooled**: each symbol is its own population.
-- The era is `shield` from 2026-10-05 (`paper_loop.SHIELD_FROM`; if a deploy slips past the date,
-  move it with it). Rows before it are the `redesign` era and are history, not comparable measurement.
+- **2026-10-05, the shield era** (`paper_loop.SHIELD_FROM`; if a deploy slips past the date, move it
+  with it). The held-long arms join, the symbols become XSP/QQQ/GLD/IWM/SLV, `max_positions` rises and
+  first entries are paced (`entry_symbols_per_session`). Rows before it are the `redesign` era
+  (2026-08-23 to 10-04) and are history, not comparable measurement.
+- **2026-10-06:** the held-long delta band becomes 0.88-0.92, nearest 0.90 (it was 0.90-0.95, nearest
+  0.925; journaled as `long_delta`), because the broker's deep-call delta on American-style ETFs runs
+  below parity and the live loop selects by the broker's. The earnings refusal began the same day.
+- **2026-10-12 to 10-19:** SMH and the stocks join, one a market day (`symbol_from`). Additive.
+- **2026-10-26:** `shield_guard` joins (additive; it enters fresh, so its longs are not the pair's:
+  compare weekly marked change per symbol).
 - A new arm or symbol is additive: no running arm's rules change, and its first tick journals an
   `arms` or `symbols` row.
 
@@ -40,10 +39,10 @@ across them; every date, with its journaled break, is in
 
 | arm | long | short | management |
 |---|---|---|---|
-| `control` (retired 2026-10-06) | 17–25 DTE nearest 21, delta 0.85–0.90, re-bought every cycle | ATM, soonest Friday 5–11 DTE | held to the short's expiry; the long rides to the next session's disposal |
-| `shield_hold` | the standard monthly nearest 360 DTE in [240, 540], broker delta 0.88–0.92 nearest 0.90 (0.90–0.95 before 2026-10-06), no extrinsic fallback | 0.70 delta (band 0.65–0.78), soonest Friday 5–11 DTE, above the long's strike, never past its expiry | rolled on its expiry day; closed at 45 DTE on the long or on the 30% stop |
+| `control` (off) | 17–25 DTE nearest 21, delta 0.85–0.90, re-bought every cycle | ATM, soonest Friday 5–11 DTE | held to the short's expiry; the long rides to the next session's disposal |
+| `shield_hold` | the standard monthly nearest 360 DTE in [240, 540], broker delta 0.88–0.92 nearest 0.90, no extrinsic fallback | 0.70 delta (band 0.65–0.78), soonest Friday 5–11 DTE, above the long's strike, never past its expiry | rolled on its expiry day; closed at 45 DTE on the long or on the 30% stop |
 | `shield` | as `shield_hold` | as `shield_hold` | also rolls early at 85% of the short's extrinsic decayed, or spot at its strike |
-| `shield_guard` (from 2026-10-26) | as `shield_hold` | as `shield_hold` | also rolls an in-the-money short whose extrinsic is under `assignment_exposure_tv` (`assignment_roll`), at most once a session, never on a cash-settled leg |
+| `shield_guard` | as `shield_hold` | as `shield_hold` | also rolls an in-the-money short whose extrinsic is under `assignment_exposure_tv` (`assignment_roll`), at most once a session, never on a cash-settled leg |
 
 **How the arms are defined and enabled.**
 - What makes each arm itself is in code, `engine.ARM_RULES`, merged between `defaults` and the arm's
@@ -61,16 +60,15 @@ across them; every date, with its journaled break, is in
 - adding lots.
 
 A stop followed by mechanical re-entry is a costly re-strike of the long. The replay finds the stop
-mixed (docs/shield-study.md); it is kept because it is the design's own rule, and it is measured.
+mixed (research/pmcc-shield-study.md); it is kept because it is the design's own rule, and it is measured.
 
-**Advised twins — off since 2026-10-06.** `advised:<experiment name>` (paper) shadowed **control
-only**, so the advisor has nothing to shadow until it is redesigned for the held-long arms: a position
-lasts ~10 months, and the advisor's verdicts count closed positions inside a 30-session window. The
-mechanism is in `packages/core/CLAUDE.md`, with params frozen at entry and restated through
-`management.effective_params`. The experiment worth running is `tv_managed_exit`/`tv_close_threshold`
-against hold-to-expiry; `tv_managed_exit` is a no-op for a held-long position. The pre-2026-09-17
-`advised:control` tag and the retired `advised:keltner`/`advised:roll` still resolve for history.
-**Every twin is on the stream-request roster** (see Data source).
+**Advised twins are off.** `advised:<experiment name>` (paper) shadows **control only**, so the advisor has
+nothing to shadow until it is redesigned for the held-long arms: a position lasts ~10 months, and the
+advisor's verdicts count closed positions inside a 30-session window. The mechanism is in
+`packages/core/CLAUDE.md`, with params frozen at entry and restated through `management.effective_params`.
+`tv_managed_exit` is a no-op for a held-long position. The `advised:control` tag and the older
+`advised:keltner`/`advised:roll` tags still resolve for history. **Every twin is on the stream-request
+roster** (see Data source).
 
 ## The held-long lifecycle
 
@@ -94,16 +92,16 @@ close):
 **What can refuse:**
 - a new short spanning a declared ex-date (`ex_dividend_span`); the position runs without a short
   until a later day clears it, and the tracker counts those weeks;
-- a new short spanning a declared earnings announcement (`earnings_span`), the same way, from
-  2026-10-06. The `earnings` config block is declared like `dividends` (an ETF is `kind: etf`, no
+- a new short spanning a declared earnings announcement (`earnings_span`), the same way. The
+  `earnings` config block is declared like `dividends` (an ETF is `kind: etf`, no
   dates). A stock's dates are rewritten daily by `scripts/pmcc_earnings_refresh.py` (the
   `pmcc-earnings-refresh` job, 06:00 ET) from the local Dolt calendar, declared through a week short
   of its horizon. Once the key exists every symbol must be covered (`earnings_calendar_lapsed`); a
   config without the key runs no check. The evidence: refusing beat selling through in 7 of 8
-  single-stock replays on their own Cboe vol index (docs/history.md);
+  single-stock replays on their own Cboe vol index;
 - an entry's long: the pick comes from the producer's own listing (`streamcache.stream_expirations`,
-  via `provider.listed_expirations`), standard monthlies first, because on 2026-10-04 only they listed
-  deep strikes (`scripts/pmcc_leap_probe.py`). Refusals: `no_leap_listed` (nothing in the band),
+  via `provider.listed_expirations`), standard monthlies first, because only they list deep strikes
+  (`scripts/pmcc_leap_probe.py`). Refusals: `no_leap_listed` (nothing in the band),
   `no_listing` (no listing cached), `no_short_delta` (no greeks for the short), `entry_pacing`;
 - a symbol before its `symbol_from` date is neither entered nor subscribed for entry
   (`engine.entry_symbols`), so new symbols join one market day at a time.
@@ -195,11 +193,15 @@ Their identities: entry + exit = gross; gross − costs = net; the last weekly r
 - control's 21-DTE long sits 4–10% in the money;
 - the year-long long sits 20–40% in the money.
 
-`stream_window.needed_width` counts strikes in the target expiry only.
+`stream_window.needed_width` counts strikes in the target expiry only. `deep_window_pct_by_symbol` exists
+because one shared bound is necessarily sized for the deepest symbol (a 3x leveraged ETF sits several
+times deeper in the money than a broad index for the same delta) and wastes strikes on the rest. A bound
+cut below the deepest strike an arm needs makes its entries refuse for good, so re-derive each symbol's
+bound from the live chain rather than inheriting a number.
 
 **Rules for the widened window:**
 - **It is gated on whether ANY arm can still enter**, advised twins included, through
-  `paper_loop.session_books`. Asking only about control once starved a twin for two sessions.
+  `paper_loop.session_books`: asking only about control starves a twin of deep strikes.
 - **The hint is declared downward only.** Open legs stay subscribed, so window risk is confined to
   entry pricing.
 - **The producer persists every listed expiry** (`stream_expirations`). A request for a date the
@@ -207,7 +209,7 @@ Their identities: entry + exit = gross; gross − costs = net; the last weekly r
 - **The listing exists only once something asks.** The producer lists a symbol only from a
   full-chain fetch, and fetches one only for a symbol with a requested expiration. So a held-long
   arm asks for the weekly short even with no plan (no listing, or no LEAP in the band); without it,
-  a new symbol never gets a listing and refuses `no_listing` forever (SMH and AMZN, 2026-10-12/13).
+  a new symbol never gets a listing and refuses `no_listing` forever.
 - **The skew sampler** (`skew.py`, `skew_samples` in the config) records, once a session per symbol
   from an hour before the close (`pmcc_skew_samples`), what the market charged at the points the
   replay can only model:
@@ -238,15 +240,11 @@ XSP (`cash`) books intrinsic and finalizes: no shares, and no weekend carry.
 
 ## Live-trading prerequisites (none built)
 
-**No live path exists yet** — no order code, no keyring. The SLV live pilot is designed but not built.
-Its plan, kept in the session record:
-- a persistent arm;
-- standing position authority over open positions;
-- a configurable `live.symbols` map with per-symbol and account-wide caps;
-- the `account_policy` check against the broker's own account type;
-- gate 0 per symbol.
+**No live path exists** — no order code, no keyring.
 
-**Before any live rung**, these are prerequisites, not enhancements:
+**Before any live rung**, these are prerequisites, not enhancements (a live design would also need a
+persistent arm, standing position authority over open positions, per-symbol and account-wide caps, an
+`account_policy` check against the broker's own account type, and gate 0 per symbol):
 - **post-assignment management**, including reconciliation against the broker;
 - a **calculated ex-div decision**;
 - the exposure telemetry (rule 2), read as the paper-to-live gap.

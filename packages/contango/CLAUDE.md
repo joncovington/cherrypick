@@ -7,8 +7,8 @@ file). Ledger: `~/.cherrypick/data/contango/paper_trades.db`.
 
 ## Why this exists beside curve
 
-Curve sold VXX call spreads on the same signal and is retired (2026-11-01): costs took about half of
-each credit, the market is about ten contracts deep (2026-10-05 analysis), and research item 37 found
+Curve sold VXX call spreads on the same signal and is retired: costs took about half of
+each credit, the market is about ten contracts deep, and research item 37 found
 every curve arm failed after costs at real quotes. Holding the fund instead costs a few basis points a
 side at any size this suite could run, so this module is the surviving expression of the thesis,
 without the option costs.
@@ -41,7 +41,7 @@ until 2018-02-27, a different fund.
 `contango_replay.py --validate` checks the replay against the ledger session by session (read-only):
 the rule on the ledger's own ratio, the replay's decision on the Cboe close, and each fund's
 decision-tick mid against the store's close. The /VXM arm in `research/vxm-plan.md` was answered from
-CFE settlements by `scripts/contango_vx_replay.py` (2026-10-12) and is not built: ½× second month
+CFE settlements by `scripts/contango_vx_replay.py` and is not built: ½× second month
 earned 4–6 points a year less than SVXY for the same drawdown.
 
 ## Honesty rules
@@ -90,7 +90,7 @@ cache and technicals store), `db.py` (ledger), `paper_loop.py` (the tick), `stre
 metrics). `analytics.py` is the read side's one query layer: each arm's daily-NAV reading
 (`core.metrics.nav`), buy-and-hold of its risk fund, and the **expected path**, which is `replay.run`
 over this module's own recorded ratios and fund marks (`contango_marks`, each fund's quote at the
-decision tick, from 2026-10-06), with the cash fund's distributions added back. The gap between an
+decision tick; sessions before 2026-10-06 have none), with the cash fund's distributions added back. The gap between an
 arm's NAV and its expected path (`tracking`) is execution, not the rule: spread paid over 2 bps,
 whole shares, missed windows.
 
@@ -112,7 +112,7 @@ due against decisions taken). It is in `eval_activity.NOT_APPLICABLE`: it acts o
 window, so an idle tick is the design and not a stall. It ships `enabled: false` in the
 orchestrator's example, like curve.
 
-**Console** (2026-10-06): `/contango`. Session (today's read, each arm's holding and decision),
+**Console**: `/contango`. Session (today's read, each arm's holding and decision),
 summary, regime, decisions, arms (each arm's daily-NAV tear sheet against buy-and-hold and against
 its own rule), performance (NAV, underwater, monthly heat map, rolling 60-session return, stress
 windows), analysis, costs (every fill's slippage against the 2 bps the replay assumed, missed windows, distributions),

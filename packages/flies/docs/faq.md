@@ -19,72 +19,51 @@ doesn't trade — so the module manufactures the credit itself, two ways:
   gets cheap enough to buy, the position simply stays an ordinary credit spread with full
   defined risk instead — that's the expected common outcome, not an edge case, and it's tracked
   and reported separately (`completion_rate` is the number the whole thesis turns on).
-- **Outright** (currently disabled — see `README.md`'s "Status"): buy an already-cheap
+- **Outright** (disabled: the shipped `entry_modes` is `["legged"]`): buy an already-cheap
   butterfly directly, funded from premium the day's book has already collected. This doesn't
   manufacture a new floor of its own; it spends part of an existing one, so its safety only
   holds up at the book level, within the price range the funding trades cover.
 
-The module has also tested two other constructions, each now retired: **`debit_first`**, which is
+The module also has two other constructions, both paper-only and off: **`debit_first`**, which is
 `legged`'s two trades in the opposite order — buy the debit vertical first, complete by *selling*
 the credit spread once spot comes back — and **`bwb_roll`**, which enters a broken-wing butterfly
 whole for a credit and later rolls its wide wing in (see the bwb question below).
 
 Several parallel variants ("arms") run side by side every session, each changing exactly *one*
 variable against the same `control` baseline, so results are comparable rather than a mix of
-confounded changes. The current roster and what each arm tests are in `CLAUDE.md`'s "The arms".
+confounded changes. What each arm tests is in [reference.md](reference.md#the-arms).
 
 What the module is actually *for* isn't the trade idea itself — it's measuring whether either
 way of building the credit survives real trading costs once a position actually settles:
-commissions, fees, bid/ask slippage, and (as of 2026-07-30) the $5-per-ITM-strike exercise-assignment
+commissions, fees, bid/ask slippage, and the $5-per-ITM-strike exercise-assignment
 fee on any leg that finishes ITM. See the [module README](../README.md) for the full
-walkthrough and current results, and `CLAUDE.md`'s "honesty rules" for the specific claims this
+walkthrough, and `CLAUDE.md`'s "honesty rules" for the specific claims this
 module is built to refuse to make (a per-position floor is not a book-level floor, an
 uncompleted credit spread is not risk-free, and so on).
 
-## What is the trade-off in the `bwb_roll` arm — and is it survivable?
+## What is the trade-off in the `bwb_roll` arm, and is it survivable?
 
-**Unknown, and deliberately not yet claimed either way.** `CLAUDE.md` pointed here for this answer
-before the section existed, so this is that answer, written to say what is actually established.
+A broken-wing butterfly is entered *whole* for a net credit: a near wing at the usual `wing_width` on the
+protected side, a far wing at `wing_width x bwb_far_width_ratio` on the risk side. The extra room bought
+with the wider wing manufactures the credit, and it is also a **real negative tail**. Unlike a symmetric
+fly this position can lose: its payoff floor is `wing_width - far_width`, not zero, and
+`fly.position_floor`'s `bwb` branch reports that honestly rather than pretending it is bounded at zero.
 
-A broken-wing butterfly is entered *whole* for a net credit: a near wing at the usual `wing_width`
-on the protected side, a far wing at `wing_width × bwb_far_width_ratio` on the risk side. The extra
-room bought with the wider wing is what manufactures the credit — and it is also a **real negative
-tail**. Unlike a symmetric fly, this position genuinely can lose: its payoff floor is
-`wing_width − far_width`, not zero, and `fly.position_floor`'s `bwb` branch reports that honestly
-rather than pretending it is bounded at zero.
+The position is meant to become an ordinary symmetric fly by **rolling**: sell the held far wing, buy the
+strike the symmetric fly needs (`centre -/+ wing_width`), a debit vertical spanning exactly `far_width -
+wing_width`, the tail being bought back.
 
-The position is meant to become an ordinary symmetric fly by **rolling**: sell the held far wing,
-buy the strike the symmetric fly needs (`centre ∓ wing_width`), which is a debit vertical spanning
-exactly `far_width − wing_width` — the tail being bought back.
+**The trap** is that the roll cheapens under precisely the drift that makes the position profitable, and
+grows expensive precisely when the tail is threatened. Spot moving *away* from the structure carries the
+roll further out of the money and makes it cheap; spot running *toward* the far wing makes the roll dear
+at the exact moment you most want it. Where that holds, the arm's protection is unavailable whenever it
+matters. On the ATM bwb arm's recorded fills the roll cost money, consistent with the trap.
 
-**The researched trap** is that this roll should cheapen under precisely the drift that makes the
-position profitable, and grow expensive precisely when the tail is threatened. Spot moving *away*
-from the structure carries the roll further out of the money and makes it cheap; spot running
-*toward* the far wing makes the roll dear at the exact moment you most want it. If that is how it
-behaves in practice, the arm's protection is unavailable whenever it matters, and the construction
-does not work.
-
-**What we do not yet know is whether that is true**, because the first three sessions of this arm
-measured two bugs rather than the market (both fixed 2026-08-07):
-
-- The roll priced the wrong legs — it bought the *near* wing, which the position already holds,
-  giving a spread of width `far + wing` instead of `far − wing`, **3× too wide** at the default
-  ratio. Failing rolls came in at a median 3.58× the credit against a defect worth exactly 3×.
-- The side rule was `legged`'s, which put the roll spread **in the money**. An ITM vertical cannot
-  be bought below its intrinsic, so the roll could never clear its price gate at all.
-
-All 25 positions from 2026-08-04..08-06 are void as a result.
-
-**Measured 2026-10-12 (experiment log), on `bwb-atm` before it retired:** 42 real fills, 34 of them
-rolled, made −$544.21 as traded against +$211.39 had none been rolled. On that sample the roll cost
-money, consistent with the trap.
-
-**One thing the corrections did establish**, by arithmetic rather than by sampling: a bwb credit
-decomposes as `(C(K+w) − C(K+f)) − butterfly(K−w, K, K+w)`, so it is capped by the gap between the
-two candidate far wings — and that gap collapses as the structure is pushed further out of the
-money. **Safety and credit trade against each other directly here.** Moving the tail away from spot
-is exactly what shrinks the credit, which is why `min_bwb_credit_pct_of_tail`, rather than the price
-gate, is now expected to be the binding constraint on entry.
+A bwb credit decomposes as `(C(K+w) - C(K+f)) - butterfly(K-w, K, K+w)`, so it is capped by the gap
+between the two candidate far wings, and that gap collapses as the structure is pushed out of the money.
+**Safety and credit trade against each other directly**: moving the tail away from spot is what shrinks
+the credit, which is why `min_bwb_credit_pct_of_tail`, rather than the price gate, is expected to be the
+binding constraint on entry. The arm's rules are in [reference.md](reference.md#the-arms).
 
 ## Why not trade SPY, /ES, or /MES instead of SPX/XSP, to shrink the assignment fee's bite?
 

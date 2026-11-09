@@ -22,7 +22,7 @@ pairs matched on symbol, strategy and open session.
 
 Rows known to record a defect, not a decision, are FLAGGED by a dated rule list (`FLAG_RULES`)
 and excluded by default; `include_flagged` keeps them. Each rule names the break or incident
-that explains it (docs/operating-history.md).
+that explains it (docs/measurement-boundaries.md).
 """
 
 from __future__ import annotations

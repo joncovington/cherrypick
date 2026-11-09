@@ -9,7 +9,7 @@ what is unsolved, and scheduling.
   channel breakout on the price ratio** (adjusted close / dividend-adjusted SPY). A leader's ratio is
   above every ratio of the prior 20 sessions (early), of the prior 20 and 41 (building), of the
   prior 20, 41 and 62 (confirmed); a laggard's is below every one of the prior 14, 30 and 62. No
-  margins, no one-day condition. Refit 2026-10-14, landed 2026-10-27; scored on all 24 editions
+  margins, no one-day condition. Scored on all 24 editions
   (the answer key ends at session 2026-10-22, so these are final): fit half (10 sessions through
   10-02) 97.3% same side, 97.5% same stage, 5.9% extra; later half (14 unseen) **99.4% side, 97.3%
   stage, 3.9% extra**. The rule before (`EXCESS_RULE`: excess returns over 10/30/63 sessions,
@@ -17,7 +17,7 @@ what is unsolved, and scheduling.
   The "~30% structural extras" once put down to the vendor's universe varying by day were the
   rule's. Reading "each of the prior N" as the one ratio N back loses (94% side, 77% stage, extras
   2x listings, later half). `score-stages --rule excess` re-scores the old rule.
-- **Rotation** (`rotation.py`, `score-rotation`): the daily quadrant (refit 2026-10-17). Relative
+- **Rotation** (`rotation.py`, `score-rotation`): the daily quadrant. Relative
   strength against SPY, or AOR for the 13 funds the vendor types "Asset"; its level is relative
   strength over its own 63-session average, its momentum that level against itself 10 sessions back,
   each read against 1, and every fund is placed (the vendor's daily view has no neutral band). 411 of
@@ -42,8 +42,7 @@ what is unsolved, and scheduling.
   day. Sort by date first** (`chart.py` does).
 - **Level grid** (`levels.py`, `score-levels`): every vendor level is the high or low of the window
   as printed, or a point on a grid anchored at that low with step = the "nice" number nearest **by
-  ratio** to (high - low) / 100. **The window is a calendar year, not 250 sessions** (refitted
-  2026-10-27, `levels.year_window`): bars dated on or after the same date a year back, both ends
+  ratio** to (high - low) / 100. **The window is a calendar year, not 250 sessions** (`levels.year_window`): bars dated on or after the same date a year back, both ends
   inclusive, from the day the levels were computed -- for a capture the **UTC** date it was fetched
   (`levels.capture_as_of`; later than its session after midnight UTC and at weekends), for our chart
   the session. A name listed under a year gets all its bars. The 250 came from weekend-fetched 09-25
@@ -64,7 +63,7 @@ what is unsolved, and scheduling.
   only nine cut-offs per session (`rank_cutoffs`, last 15 sessions); report, chart files and
   `score-rank` all use them, and a session without cut-offs falls back to ranking within the store.
   Not dividend-adjusted across the market (a point or so on six months).
-- **Scan rules** (`signals.py`, `score-signals`; refit 2026-10-14, landed 2026-10-27). Trend
+- **Scan rules** (`signals.py`, `score-signals`). Trend
   following: CCI(50) > 0, close below the 26 EMA, RSI(14) <= 50.5 (bearish mirrored, >= 50.5).
   Counter-trend: the mean of RSI(10) and RSI(40) <= 35 / >= 70, **options-liquid names only** — our
   proxy for the vendor's liquidity rank (gone with it): >= 200 option contracts a day on our public
@@ -83,9 +82,9 @@ what is unsolved, and scheduling.
   fetched by `scripts/fetch_analyst_revisions.py` into `market-report/analysts/revisions.db`
   (append-only, `first_seen_at`/`last_seen_at`), nightly at 20:15 ET from 2026-10-17 (the
   orchestrator's `technicals-revisions`) for every stored name and every income screener name. An edition with no revision tag on any row
-  (2026-10-08) is reported as `method_absent`, never scored. Which firm the tag names is not
+  is reported as `method_absent`, never scored. Which firm the tag names is not
   reproduced.
-- **The signal board** (`board.py`, `board`, `score-board`, 2026-10-17): each listed stock's count of
+- **The signal board** (`board.py`, `board`, `score-board`): each listed stock's count of
   methods agreeing on one side, the board's rule read off the 15 saved boards (every row's tags are
   on its own side, 0 of ~430 against; every row has 3+). Counted: stage, sector rotation (into =
   leading, out = lagging or weakening, on the name's sector fund), fundamentals, fundamentals vs
@@ -94,7 +93,7 @@ what is unsolved, and scheduling.
     measures ranked against the name's industry peers, `peer_groups` -- Yahoo's industry, its sector
     where fewer than five -- margin twice) placed across every name with estimates and a price on
     the newest weekly snapshot; compelling is the top quarter, weak the bottom 35%. **Industry peers
-    are the user's choice (2026-10-17): a company against its competitors, not an exact match of
+    are the user's choice: a company against its competitors, not an exact match of
     the vendor** -- by sector, banks, insurers and brokers were one group. A bank-specific variant
     (price-to-book and ROE) reproduced no better and was left out.
   - **Fundamentals vs price**: that place against our 1-10 rank -- fundamentals ahead at the median
@@ -104,7 +103,7 @@ what is unsolved, and scheduling.
     half by sector) and scan 9/16 (the two trend-following rules over the session and the one
     before, read off the saved scan lists). Fundamentals, fundamentals vs price and the scan are
     marked approximate; 114 of 130 rows land on the board's side. Not counted: the three flow tags.
-    Re-scored on every saved board with the refit stage and scan rules (2026-10-27): stage 114/115
+    Re-scored on every saved board with the refit stage and scan rules: stage 114/115
     at 5 extra (109 at 14 before), scan 17/21 at 1 extra (12 at 6 before), 163 rows on the board's
     side (161 before).
   - A tie has no side. The history store is topped up each morning for it (`history land` 06:20,
@@ -128,13 +127,11 @@ what is unsolved, and scheduling.
   time against our 19:00 chain. Tried and worse: the broker's own delta, one IV per expiry, the IV
   index, a delta cap or floor, a one-SD move. Returns: mid ÷ share price, × 365 ÷ days (100% of
   short puts; ~98% of covered calls — the rest divide by price less mid, condition unknown).
-  **Which names make each list is not here**; the spread list's selection is open. The console's
-  fidelity tab that showed these rates was retired on 2026-10-19; the per-session files stay in
-  `screeners/`. Nothing reads them now: the income tabs' "ours" strike that read its `picks` went
-  with the vendor's lists (2026-10-24, the tabs read `income-lists`), so since 2026-10-27 the job
-  follows `market_report.collector`, the only source of a new list. The last session scored is
+  **Which names make each list is not here**; the spread list's selection is open. The
+  per-session files are in `screeners/`. Nothing reads them: the income tabs read `income-lists`, so the
+  job follows `market_report.collector`, the only source of a new list. The last session scored is
   2026-10-23.
-- **Our income lists** (`incomelists.py`, `income-lists`, 2026-10-19): the short-put and covered-call
+- **Our income lists** (`incomelists.py`, `income-lists`): the short-put and covered-call
   lists the Screeners page shows in place of the vendor's. From the afternoon income chains
   (`fetch_screener_greeks.py income`, the tradable names and the passing reference funds), each
   option priced from its mid (Black-Scholes IV and delta at 4%), the strike nearest 16 delta -- a put
@@ -152,14 +149,13 @@ what is unsolved, and scheduling.
   width at the working price, null when none does (often). Every row carries the width table item 17
   will score (1/2/3/5 strikes, 0.25/0.5/0.75 of the move). **Untested**: the rule says so until item 17
   runs. No history store, no list (never an empty one).
-- **The fair-value file** moved to `packages/fundamentals` on 2026-10-29 (its `CLAUDE.md` and
-  `docs/history/fair-value-model-plan.md (tag archive/docs-2026-11)`). The income lists read its file by path
+- **The fair-value file** is `packages/fundamentals`' (see its `CLAUDE.md`). The income lists read its file by path
   (`paths.fair_value_dir()`), never by import: fundamentals reads this package for prices.
-- **The security list** (`securities.py`, `securities`, 2026-10-17): every listed symbol's type
+- **The security list** (`securities.py`, `securities`): every listed symbol's type
   (Nasdaq Trader's directory), options (any OCC volume in 20 sessions) and a liquidity rank that is
   **ours**: 2 at 200 contracts and $100M of stock a day, 1 at 2,000 and $300M. The dollar volume
   is the broker's daily candles' (`dollarvolume.py`, written by `scripts/fetch_dollar_volume.py`),
-  not Dolt's, from 2026-10-19, so the list builds without Dolt; on that day's list the two agreed
+  not Dolt's, so the list builds without Dolt; the two agreed
   to a median ratio of 1.0000 and on 889 of 890 rank-1-or-2 names (CTVA the one apart). **The
   candle must be the extended-hours one**: the SDK's default is regular hours, a median 0.40 of
   the consolidated volume, and halved the rank-1-or-2 set; a test pins the flag. Against the
@@ -170,7 +166,7 @@ what is unsolved, and scheduling.
   for the console, and `securities.latest` is every Python reader's door. Never read a security
   list from its folder directly. The public list carries no direction read, so the screener greeks
   plan covers both sides of its names.
-- **The stage lists** (`stagelists.py`, `stage-lists`, 2026-10-17): the vendor's six stage
+- **The stage lists** (`stagelists.py`, `stage-lists`): the vendor's six stage
   watchlists (Early Breakout ... Early Breakdown) rebuilt from the stage rule on one close,
   **options-tradable names only** (the vendor's are mostly not: 34 of its 98 Early Breakouts on
   10-16). On the vendor's 10-16 lists (the only ones saved), 100% same side and 96% same stage
@@ -178,17 +174,16 @@ what is unsolved, and scheduling.
   confirmed a step sooner). The vendor's watchlists carry no date, so each session is scored against
   the vendor's filed under it and the one before, to learn which close its evening lists describe.
   Mirrored to tastytrade by hand (`scripts/sync_stage_watchlists.py --apply`), never on a schedule.
-- **The earnings calendar** (`earnings_calendar.py`, `earnings-calendar`, 2026-10-17;
-  docs/history/earnings-screener-plan.md (tag archive/docs-2026-11)): every announcement in the next 30 days, joined from local data
+- **The earnings calendar** (`earnings_calendar.py`, `earnings-calendar`): every announcement in the next 30 days, joined from local data
   and the local Dolt.
   - **Date and time:** a confirmed broker date wins, then Dolt's, then a broker estimate. The time of
     day comes from the broker (with its own date), then Nasdaq's public calendar
     (`scripts/fetch_earnings_times.py`), then Dolt; the latter two only for a date within a day. All
-    three agreed on every name two of them timed (2026-10-17).
+    three agreed on every name two of them timed.
   - **The usual time:** where none gives one, the company's last timed report is kept as a marked
     estimate (`usual_timing`; right 97% of the time on Dolt 2022-26). It never sets the entry
     session or the reaction day.
-  - **Direction and strength: OURS** (`our_reads`, the user's choice 2026-10-17): Bearing and our
+  - **Direction and strength: OURS** (`our_reads`, the user's choice): Bearing and our
     1-10 score from the store's bars, read on its last bar, which at 19:10 is the PREVIOUS close (the
     same one the vendor's list describes). A name with no bars has no read, so it drops out of the
     strong-read view. The vendor's values are kept as `vendor_edge`/`vendor_strength` and never shown
@@ -196,7 +191,7 @@ what is unsolved, and scheduling.
   - **IV rank: the BROKER's**, and it picks the spread's side against the cut. It can read above 100.
     The vendor's is kept as `vendor_iv_rank`, unused; a name with no broker rank gets no suggestion.
   - **Expected move:** the broker's earnings rule, 0.85 × the at-the-money straddle on the first
-    expiry after the reaction day (chosen 2026-10-17), the straddle read off that expiry's IV. One SD
+    expiry after the reaction day, the straddle read off that expiry's IV. One SD
     (price × IV × √(days/365), the vendor's figure; days from the close the price is) is kept beside
     it. The first LISTED expiry can be a monthly weeks out (286 of 649 moves on the 10-20 calendar),
     so each row carries `event_expiry_days` and the tabs flag one past `EARNINGS_WEEK_DAYS` (7) as a
@@ -205,9 +200,8 @@ what is unsolved, and scheduling.
   - **Spread:** the navigator spread, as target strikes.
   - **Sector:** Yahoo's (`scripts/fetch_sectors.py`, `paths.yahoo_sectors`), relabelled to the
     vendor's eleven sector names so the spelling never changed, else the vendor's frozen map
-    (`fundamentals.sector_sources`). `sector_source` says which. Yahoo has been first since
-    2026-10-27, because the vendor's map stopped at its last edition (2026-10-23) while Yahoo's file
-    is refreshed nightly. Measured at the switch: of the 521 names both held, they disagreed on one
+    (`fundamentals.sector_sources`). `sector_source` says which. Yahoo is first, because the vendor's map stopped at its last edition while Yahoo's file
+    is refreshed nightly. Of the 521 names both held, they disagreed on one
     (FISV: the vendor's Consumer Discretionary, Yahoo's Technology). One of the report's names (WBD)
     has no Yahoo sector and keeps the vendor's. The calendar, the signal board, the report's sector
     measures (`report._sectors`) and the B5 slices all read this one function. `fetch_sectors.py`
@@ -215,7 +209,7 @@ what is unsolved, and scheduling.
   - **Checked against the vendor's page** for Oct 20-21, while its reads still led: its 12 names,
     same date, direction and strength; moves within 0.42 points on average. History found no edge in
     the spread.
-- **Out of sample** (2026-09-28): bars 99%+ on 73 of 79 names; the grid places all 375 levels.
+- **Out of sample**: bars 99%+ on 73 of 79 names; the grid places all 375 levels.
 
 ## Outputs (Phase 7)
 
@@ -246,13 +240,13 @@ what is unsolved, and scheduling.
   at entry and `options_tradable`. **The study's confirmed rule** (`chart.TESTED`, `mr-300m`) is
   walked with the study's own code into each chart file's `tested` and gets its own rows, marked
   `tested`; they overlap the setup's rows, so a reader shows one kind or the other.
-  **Options-tradable** is the liquidity verdict's `tradable` (below) from 2026-10-27; before, it was
-  `tradable.py`'s label alone: weekly options plus $100M a day in the stock, read from each name's
-  own latest IV-rank reading (no older than 10 days). tastytrade's rating is not part of either,
-  because the rating marks a name down for its share price. A cash index is judged by its weeklies.
+  **Options-tradable** is the liquidity verdict's `tradable` (below). A chart file's earlier label (`tradable.py`: weekly
+  options plus $100M a day in the stock, from the name's latest IV-rank reading no older than 10
+  days) is superseded by it. tastytrade's rating is part of neither, because the rating marks a name
+  down for its share price. A cash index is judged by its weeklies.
 - **Liquidity verdicts** (`liquidity.py`, `liquidity` command, nightly 18:57 ET) hold a name that
   fails the options-tradable test **illiquid until the monthly sweep** (the first trading day of the
-  month). **From 2026-10-27 a name that passes it is `thin`, not `tradable`, until its cycle-monthly
+  month). **A name that passes it is `thin`, not `tradable`, until its cycle-monthly
   options are confirmed liquid** on the median of its last five income readings (at least three): an
   ATM spread at most 7.5% of mid, the chain's open interest worth at least $250M and its volume at
   least $5M (contracts x 100 x spot; a contract count repeats the share-price bias). A thin name is
@@ -260,9 +254,7 @@ what is unsolved, and scheduling.
   skate, short puts, covered calls, credit spreads, the earnings calendar and so its forward
   record and spread readings, the setups table's default, manage's
   candidates). Each income reading stamps the verdict it was measured under (`liquidity`), which
-  manage reads. The test's dollar volume is the candle file's for every name (2026-10-19; before, the
-  store's bars, else Dolt's). It judges the store's names, the screener names and, from
-  2026-10-19, every **liquid optionable** name (`securities.liquid_optionable`: the current security
+  manage reads. The test's dollar volume is the candle file's for every name (not the store's bars or Dolt's). It judges the store's names, the screener names and every **liquid optionable** name (`securities.liquid_optionable`: the current security
   list's rank 1-2 optionable names, else the shipped `seed_universe.json`) -- the income lists'
   universe, which a fresh install (no universe builder, no vendor lists) would otherwise lack; the
   IV-rank fetch reads the same names. Every broker-spending script skips those names (universe measurement, the IV-rank fetch,
@@ -458,7 +450,7 @@ keeps what the tab showed and reads what happened. A row is a session's newest s
 name-side and band: the band's pick on its best expiry, only when it passed the hard filters. A strike
 is kept once, the first session it was shown, since the same strike seen again is the same bet and
 counting it daily would shrink the noise the test is judged by. Recording starts at 2026-10-20, the
-first session whose picks were scored against the run's price. The outcome is read from split-adjusted
+first session whose picks were scored against the run's price (a boundary: earlier sessions are not in the record). The outcome is read from split-adjusted
 closes: `skated` (the close at expiry on the safe side), `tested` (skated, but a bar reached the strike
 on the way; counted as skated in the test, as the skate rate counts it) or `through` (finished past
 it). The declared test: rows with history minus implied above 5 points must skate more often than their
@@ -511,7 +503,7 @@ licensed option prices that stay local.
 | `python -m cherrypick.technicals study round7 [--workers N] [--count]` | Round 7: entering a bearing (frozen `bearing_table.py`) against random entry; `--count` gives frequencies only. |
 | `python -m cherrypick.technicals study round6 [--workers N] [--count]` | Round 6: a revision inside the strong bearing, against the same bearing without one; `--count` gives frequencies only. |
 | `python -m cherrypick.technicals history land` | Land Dolt's whole daily history (2011 on, every name) into `history.db`. Incremental. |
-| `python -m cherrypick.technicals history fundamentals` | Land Dolt's next-year EPS and sales estimates and quarterly income statements into `history.db` (round 5's inputs). The annual statements the fair-value build reads land in `packages/fundamentals` since 2026-10-29. |
+| `python -m cherrypick.technicals history fundamentals` | Land Dolt's next-year EPS and sales estimates and quarterly income statements into `history.db` (round 5's inputs). The annual statements the fair-value build reads land in `packages/fundamentals`. |
 | `python -m cherrypick.technicals history check` | `history.db` against `eod.db` on the overlap, to the cent, and price jumps no split explains. |
 | `python -m cherrypick.technicals study run [--workers N]` | The historical study under analysis plan v2; writes `study/history-results-<stamp>.json`. |
 | `python -m cherrypick.technicals study round2 --stage A\|B [--workers N]` | Round 2's declared improvements, discovery on half A, confirmation on half B. |
@@ -520,19 +512,19 @@ licensed option prices that stay local.
 | `python -m cherrypick.technicals study round5 [--workers N]` | Round 5: the 1-10 score inside the fundamentals label, against the same label and trigger at the other scores; writes `study/round5-<stamp>.json`. |
 | `python -m cherrypick.technicals report [--session D]` | Write one session's report readings and per-name chart files. |
 
-**Entry context (B4, 2026-10-24).** `entrycontext` tags a ledger's closed trades with SPX against
+**Entry context (B4).** `entrycontext` tags a ledger's closed trades with SPX against
 its 50/200-day, the name's ATR %, relative volume, sector, entry time and holding period, always
 as of the close BEFORE the entry session (a test breaks it to `<=` and fails). It reads; nothing
 trades on it. The `environment` column is `core.environment`'s label (B8), never a
-per-study regime. The CLI also tags `event_day` (2026-11-01): the entry day's scheduled events from
+per-study regime. The CLI also tags `event_day`: the entry day's scheduled events from
 `core.events`, reduced by `event_label` to one of `FOMC`, `CPI`, `NFP`, `other_major`, `opex` or
 `none`, in that order, and `unknown` where the local calendar files cannot speak for the day. A
 calendar fact known before the open, so it keeps the rule above.
 
-**Slice report (B5, 2026-10-24).** `slices` runs `core.slices` over an arm's trades with this
+**Slice report (B5).** `slices` runs `core.slices` over an arm's trades with this
 package's entry context: mean R per cell, n, interval, cells under 30 greyed. In-sample description
 only; a cell is never a gate, and a good one is declared in `research/hypotheses.json` and tested.
-Since 2026-11-01 it also cuts by weekday and event day. Those are whole-day cuts, so each ranked
+It also cuts by weekday and event day. Those are whole-day cuts, so each ranked
 cell carries a `placebo`: its per-session mean against random sets of as many sessions
 (`core.stats.day_placebo`), where `beaten_by` near 0.5 is what chance gives. A whole-day cell is
 also greyed under 10 sessions, since an arm that enters many times a day can fill one with hundreds

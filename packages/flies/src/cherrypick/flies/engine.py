@@ -135,7 +135,7 @@ ARMS = (
     # of one variable but a test of the choosing procedure itself, judged against control, each
     # source and the best fixed gate. Off until it lands at a declared boundary.
     "selector",
-    # The intraday agent plan's two arms (2026-10-06, docs/intraday-agent-plan.md): control plus the
+    # The intraday agent plan's two arms (2026-10-06, docs/intraday-agent.md): control plus the
     # trend gate and tagged closes (close_tags.py). trend-rule is the fixed rule; intraday-agent's gate
     # follows the agent's fresh decision (paper_loop.tick_config) and falls back to the rule.
     "trend-rule",
@@ -661,7 +661,7 @@ def _classify_trend(snapshot: dict, params: dict) -> tuple[str, float | None]:
 def _classify_center_offset(snapshot: dict, params: dict, center: float | None) -> tuple[str, float | None]:
     """Where the chosen centre sits relative to spot, signed: `center - spot` in points.
 
-    This is the dimension that turned out to matter on 2026-08-04 (docs/centre-lag.md), and it is
+    This is the dimension that turned out to matter on 2026-08-04 (docs/reference.md (Centre lag)), and it is
     here because centre-vs-spot silently decides something no other tag captures: `choose_side`
     sells PUTS when spot is at or below the centre and CALLS when it is above, and
     `fly.completing_side_direction` then makes the put side complete on an UP move and the call
@@ -2136,7 +2136,7 @@ def evaluate_iron_completion(snapshot: dict, position: dict, params: dict) -> tu
 
     RETIRED 2026-08-03 and unreachable in config — `completion_modes` is `["debit"]` everywhere and
     the `iron` arm is disabled. Kept because it is correct and tested, and because deleting it would
-    delete the ability to re-derive why. Read docs/iron-completion.md before re-enabling anything.
+    delete the ability to re-derive why. Read docs/reference.md (the iron arm) before re-enabling anything.
 
     Put held -> sell the call spread; call held -> sell the put spread -- the final geometry
     (long (center-w) put, short center put, short center call, long (center+w) call) is the same

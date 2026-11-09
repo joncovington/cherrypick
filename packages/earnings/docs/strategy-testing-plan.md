@@ -1,11 +1,10 @@
-# Strategy Testing Plan: Thoroughly Testing Each Strategy in Paper Mode
+# Strategy Testing: the forced-sampling paper program
 
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
-Multi-week forward-test of the implemented (defined-risk) strategies (`iron_fly`,
-`double_calendar`, `iron_condor`, `atm_calendar`, `directional_credit_spread`,
-`broken_wing_butterfly`, and from 2026-10-14 `expected_move_butterfly`; the two calendars are
-retired from 2026-10-15), until each has enough cost-adjusted evidence to
+A forward test of the defined-risk strategies (`iron_fly`, `iron_condor`, `directional_credit_spread`,
+`expected_move_butterfly`, and the retired `double_calendar`, `atm_calendar` and
+`broken_wing_butterfly`, which open nothing now), until each has enough cost-adjusted evidence to
 decide: keep or retire.
 
 This is a **separate program** from the ranked path (`rank_strategies.py`).
@@ -61,7 +60,7 @@ baked into `pnl` itself.
 ```
 python -m cherrypick.earnings.strat_test_harness run_entries --date MM/DD/YYYY
 ```
-Runs the shared live scan once (`rank_strategies.evaluate_symbol` per calendar entry),
+Runs the shared scan once (`rank_strategies.evaluate_symbol` per calendar entry),
 opens every (strategy, symbol) pair that clears the screen and builds/sizes successfully, logs
 every candidate (selected or not) to `scan_log` tagged with its per-strategy book.
 
@@ -82,9 +81,7 @@ python -m cherrypick.earnings.strategy_report --since YYYY-MM-DD
 ```
 `strategy_report.py` prints a per-strategy table (sample count vs targets, win rate, profit
 factor, expectancy, Sharpe, max drawdown, average IV crush, regime coverage) to stdout.
-The HTML `strategy_dashboard.py` and its suite-dashboard card (`strategy_section.py`) were retired
-on 2026-08-12, when the console became the suite's one read surface; the console's Earnings page
-carries the charts.
+The console's Earnings page carries the charts.
 
 `--json` prints the **verdict model** (`verdict.py`) instead, and the console's Earnings →
 strategies page draws it rather than computing its own figures. It answers "is there an edge after
@@ -93,17 +90,14 @@ fixed-seed bootstrap that resamples **earnings events**, not trades. Every strat
 name the same night, so ten trades on one report are one draw. The 30/100 sample targets above are
 milestones for collecting data, not significance: an arm with 66 trades can still sit at t = 0.2. Rows
 that record a defect rather than a decision are excluded by a dated rule list (`FLAG_RULES`: the
-entry-tick closes 2026-09-16..10-15 and the stranded-expiry cohort opened 2026-08-25..27);
-`--include-flagged` keeps them.
+entry-tick closes 2026-09-16..10-15 and the stranded-expiry cohort opened 2026-08-25..27, see
+[measurement boundaries](./measurement-boundaries.md)); `--include-flagged` keeps them.
 
-**Live vs paper (`--mode`)**: the report defaults to `--mode paper` (this whole program is a
-paper test). `--mode live` points it at
-`earnings_trades.db` instead of `paper_trades.db` (both in the cherrypick data home) — the history of the
-live orders placed before v0.12.0. In live mode the report header reads
-`MODE: LIVE`, and `--profile` defaults to `default` (live trades aren't tagged
-`strat_test`). In paper mode `--profile` defaults to the whole strat_test family — the combined
-`strat_test` book plus every `strat_test:<strategy>` sub-book. `--db PATH` overrides the DB path
-directly if needed.
+**`--mode`**: the report defaults to `--mode paper` (this whole program is a paper test). `--mode live`
+points it at `earnings_trades.db` instead, the history of the orders placed before v0.12.0, which
+nothing writes now; its header reads `MODE: LIVE` and `--profile` defaults to `default`. In paper mode
+`--profile` defaults to the whole strat_test family: the combined `strat_test` book plus every
+`strat_test:<strategy>` sub-book. `--db PATH` overrides the DB path directly.
 
 **IV crush**: `entry_iv`/`exit_iv` are the average live IV (from tastytrade's option-chain
 greeks) across each trade's Sell-to-Open leg(s) — the side that's actually sold and later
@@ -124,27 +118,18 @@ say, 12 trades after several weeks isn't a bug — check `regime_buckets` in the
 assuming a gate needs loosening; some strategies (e.g. `broken_wing_butterfly`) are inherently
 rare-regime and may only ever reach a directional read within a reasonable horizon.
 
-## Schedule (historical)
+## How the program runs
 
-The schedule below was the original rollout (August 2026). It is kept as the record of how the program
-was meant to start; the harness now runs every night with no week count.
-
-- **Week 0 — setup & dry run.** One night, confirm every strategy constructs, size, cost,
-  persist, and close with no error.
-- **Weeks 1-2 — calibration.** Nightly `run_entries`/`run_closes`. Goal is plumbing
-  shakeout, not statistics: confirm every strategy fires at least a few times and every exit
-  path (profit target, stop, close-window backstop) gets exercised at least once.
-- **Weeks 3-8+ — accumulation.** Continue nightly. Weekly `strategy_report.py`
-  review: progress toward 30 then 100 per strategy, provisional
-  expectancy, regime coverage. Flag starved strategies but don't loosen gates just to hit a
-  count — check whether the regime is genuinely rare first.
+Nightly `run_entries` (the loop's 15:35 scan) accumulates trades, and a weekly `strategy_report.py`
+review tracks progress toward 30 and then 100 per strategy, provisional expectancy and regime coverage.
+Flag starved strategies, but don't loosen gates just to hit a count; check whether the regime is
+genuinely rare first.
 
 ## Per-strategy regime expectations
 
-- **Common-regime** (`iron_fly`, `iron_condor`, `directional_credit_spread`, and the two
-  calendars until their retirement on 2026-10-15): expect to reach 30-100 within the horizon on a
-  typical earnings calendar.
-- **Rare-regime**: `broken_wing_butterfly` needs a steep enough IV skew, so it fires less often
+- **Common-regime** (`iron_fly`, `iron_condor`, `directional_credit_spread`): expect to reach 30-100
+  within the horizon on a typical earnings calendar.
+- **Rare-regime**: `broken_wing_butterfly` (retired from the harness) needed a steep enough IV skew, so it fires less often
   and may only reach a directional read (30) rather than full significance (100) in the tested
   window.
 
@@ -164,7 +149,7 @@ Per strategy, decide **keep / retire** based on:
 - **Correlated samples** — multiple strategies opened on the same symbol/night share one
   underlying earnings event. Per-strategy outcomes aren't fully independent draws.
 - **Paper is still optimistic even with costs** — no real queue position, no emotional
-  pressure. Expect live drawdown to run 1.5-2x the paper figure.
+  pressure. A real account would see larger drawdowns than the paper figure.
 - **<100 trades isn't statistically significant; <30 isn't even directional.**
 - Generate/read tearsheets for **end-of-window evaluation**, not to fine-tune gates
   mid-test — doing so overfits the strategy to this specific test window.
@@ -175,25 +160,3 @@ Per strategy, decide **keep / retire** based on:
 - `cherrypick/earnings/sizing.py` — code-enforced risk-cap sizing
 - `cherrypick/earnings/costs.py` — the tastytrade fee model
 - `cherrypick/earnings/strategy_metrics.py` — the single source of truth for every number in the report/dashboard
-
-
----
-
-## Measurement break — 2026-08-12, the managed lifecycle
-
-Positions stopped being force-closed the morning after entry and became **managed**: marked once a
-minute, exited on a rule, carried up to three trading sessions when they are winners. The
-per-strategy thresholds changed in the same commit (`iron_fly` 50% → 25%, `directional_credit_spread`
-stop 1.5× → 2.0×, both calendars to 15% of debit with a 50% stop).
-
-**Both halves of a comparison moved, so results either side are not comparable.** Exit timing decides
-win rate, expectancy and hold time together; pooling the two eras would produce a blended number that
-describes neither. Recorded as a `lifecycle_cutover` row:
-
-```bash
-python -m cherrypick.earnings.db_paper get_measurement_breaks
-```
-
-The 64 pre-cutover trades carry `exit_reason = 'legacy_next_morning'`, which is how they stay
-identifiable without relying on the date alone. Sample counting toward the 30/100 targets restarts
-from this date for any question about exits; entry screening is unaffected and its history stands.
