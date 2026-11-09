@@ -1,5 +1,7 @@
 # Replaying rules against recorded quotes — flies and MEIC
 
+> **Status (2026-11-08): done for the recording and both replays: the recorder has run since 2026-10-13, the flies replay (2026-10-17) and MEIC's (2026-10-18) are built. The flies replay covers a retired module (flies, retired 2026-10-19, off by default).**
+
 *Drafted 2026-10-12. **The recording landed the same day** (gex PRs #172–#174): the gex recorder keeps
 SPX's 0DTE chain every tick (~15 s), and `cherrypick.core.quotehistory` reads it back. **First
 recorded session: 2026-10-13.** Amended the same evening: the storage made compact and held strikes

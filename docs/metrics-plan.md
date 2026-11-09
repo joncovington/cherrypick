@@ -1,5 +1,7 @@
 # Trading-metrics expansion — a proposal
 
+> **Status (2026-11-08): mostly done. The metrics bundle is in `core.metrics`; still open is a trials-aware correction (the full Deflated Sharpe Ratio). Its examples name the retired modules flies, bwb, pmcc and curve.**
+
 *Drafted 2026-08-23, from a survey of standard algorithm-evaluation metrics mapped against what the
 suite already computes. The companion to
 [regime-recorder-plan.md](regime-recorder-plan.md), and its read-side complement: that plan records

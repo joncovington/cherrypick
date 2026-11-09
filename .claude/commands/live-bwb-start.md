@@ -142,12 +142,6 @@ means several live positions ride at once under `max_open_margin_dollars`.
 
 ## Escape hatch
 
-A single manual live tick is:
-```bash
-python -m cherrypick.bwb.live_loop --once --live
-```
+A single manual live tick is `python -m cherrypick.bwb.live_loop --once --live`.
 The rung-0 dry-run smoke (preflights against the real account, places nothing, records nothing
-but the journal line) remains:
-```bash
-python -m cherrypick.bwb.live_loop --once
-```
+but the journal line) remains `python -m cherrypick.bwb.live_loop --once`.

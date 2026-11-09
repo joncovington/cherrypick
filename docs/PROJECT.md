@@ -29,7 +29,7 @@ in parallel and compare which entry rules actually add edge — see
 | Module | What it trades | Out of the box |
 |---|---|---|
 | **MEIC** | 0DTE **multiple-entry iron condors** on index products (SPX in the shipped example). Strike selection scaled to volatility, credit floors and OTM buffers, regime gates (VIX, VIX1D, ATR, dealer gamma / GEX), per-side stops. | On |
-| **Earnings** | **Defined-risk earnings plays** (iron fly, double calendar, iron condor, ATM calendar, directional credit spread, broken-wing butterfly), held overnight around a company's report. Needs [Dolt](#optional-extras). | On if Dolt is set up |
+| **Earnings** | **Defined-risk earnings plays** (iron fly, double calendar, iron condor, ATM calendar, directional credit spread, broken-wing butterfly), held overnight around a company's report. Paper-only. Needs [Dolt](#optional-extras). | On if Dolt is set up |
 | **Flies** | 0DTE **net-credit butterflies** on SPX/XSP: whether the manufactured credit survives real costs, arm by arm. Built so a negative answer is a usable result. | Off (retired 2026-10-19) |
 | **BWB** | A daily-laddered SPX **put broken-wing butterfly**, ~7 DTE, held to expiry; its arms differ only in whether and when a reversal-triggered add-on fires. | Off (retired 2026-11-08) |
 | **Calendars** | Weekly **SPY double calendars**, an exit-parameter experiment. **EXPERIMENTAL.** | Off |
@@ -51,6 +51,8 @@ console's **Config** page, or `modules.<name>.enabled` in `~/.cherrypick/config.
 - **The advisor** — paper A/B experiments proposed by an AI model and judged against the same control.
   Needs Claude Code, and is off by default.
 - **The console** — the web page at <http://127.0.0.1:5070> where you look at all of it.
+- **The desk** — an EXPERIMENTAL manual trading desk, not installed by default and not a strategy. It is
+  the only discretionary path that can place a live order; read its README before going near it.
 
 By default everything runs in **paper mode**: simulated fills, none of your money. Live trading is off
 everywhere; see [Paper and live modes](#paper-and-live-modes).

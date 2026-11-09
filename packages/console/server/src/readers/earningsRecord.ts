@@ -1,5 +1,5 @@
 /**
- * The earnings calendar's forward record (2026-10-17; docs/earnings-screener-plan.md, step 5).
+ * The earnings calendar's forward record (2026-10-17; docs/history/earnings-screener-plan.md, step 5).
  *
  * `python -m cherrypick.technicals earnings-record` rebuilds `technicals/earnings-calendar/record.json`
  * each morning: every past announcement, what the calendar showed the session before, the move it

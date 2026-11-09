@@ -1,5 +1,7 @@
 # The studies board: what we tested, and what we found
 
+> **Status (2026-11-08): mostly done. Phases 1-5 landed 2026-10-30 (the board reader, the studies tab, cross-links, the tidy). Open: the trial count, in its own PR.**
+
 *Drafted 2026-10-29, after a review of the console's Backtest tabs. A read surface: nothing here
 changes a measurement, a gate or an arm, so each phase lands when it is ready.*
 

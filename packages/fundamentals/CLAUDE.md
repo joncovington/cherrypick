@@ -2,7 +2,7 @@
 
 > Company fundamentals and the fair-value model's inputs, and the fair-value file the Screeners tab and
 > the technicals income lists read. Moved out of `packages/technicals` on 2026-10-29. The method and its
-> gaps are in [`docs/fair-value-model-plan.md`](../../docs/fair-value-model-plan.md); the arithmetic is
+> gaps are in [`docs/fair-value-model-plan.md`](../../docs/history/fair-value-model-plan.md); the arithmetic is
 > `cherrypick.core.valuation` (version 2).
 
 ## Posture

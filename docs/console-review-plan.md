@@ -1,5 +1,7 @@
 # Console review: every page, from the user's seat
 
+> **Status (2026-11-08): mostly done. Batches 1-5 landed 2026-10-30 and are the console as it is now. Open: skate as a lens on the income list, and merging the risk tab into arms. Names the retired modules flies, bwb, pmcc and curve (all off by default).**
+
 *Drafted 2026-10-30, after the Backtest rebuild (docs/studies-board-plan.md). Read surfaces only:
 nothing here changes a measurement, a gate or an arm, so each batch lands when it is ready. Built
 from a tab-by-tab inventory of the source and the live API on 2026-10-30.*

@@ -1,7 +1,7 @@
 """An unlevered discounted-cash-flow value of one company: a model estimate of value, never a price.
 
 The arithmetic, written once so the income lists, the Screeners fair-value tab and the history study
-agree on it (docs/fair-value-model-plan.md, version 2 of 2026-10-28):
+agree on it (docs/history/fair-value-model-plan.md, version 2 of 2026-10-28):
 
     FCFF_t   = EBIT_t (1 - tax) + D&A_t - capex_t - (WC_t - WC_t-1)          years 1..10
     FCFF_11  = NOPAT_11 (1 - g / ROIC),  ROIC = WACC                          the stable year

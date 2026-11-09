@@ -2,10 +2,11 @@
 
 **What this covers:** a suite-level overview of what each trading strategy actually does, so you
 can decide which one(s) fit your goals before diving into an individual module's own docs. The suite
-ships eight strategy modules — MEIC and Earnings, which are on in a fresh install
-(Earnings only where Dolt is set up); Calendars and Contango, which are
+ships these strategy modules: MEIC, and Earnings (paper-only), which are on in a fresh install
+(Earnings only where Dolt is set up); Calendars, Contango and Weeklyput, which are
 **EXPERIMENTAL and off by default**; and Flies, BWB, PMCC and Curve, which are **retired and off by default** (kept so each can be reinstated) — plus the GEX engine the console renders. MEIC, Earnings and Flies get a full
-section below; the others a short one. Each module's own docs (linked) are the source of truth for its
+section below; the others a short one. (The experimental manual desk, `packages/desk`, is not a strategy
+engine and has no section here; see its README.) Each module's own docs (linked) are the source of truth for its
 internals.
 
 | Module | Structure | Default | Live path |
@@ -170,7 +171,7 @@ measures whether that trade holds after real switching costs. Paper-only and cre
 
 Sells the put nearest 10 delta on SPX, SPY, QQQ and IWM, seven calendar days before each weekly
 expiry that is not a standard monthly, in the last minutes of the session, and holds it to the
-expiry's posted close: no hedge, no stop. It is the one arm research item 57 passed, on weekly
+expiry's posted close: no hedge, no stop. It is the one arm that [research item](glossary.md) 57 passed, on weekly
 expiries item 46 never read. One arm, `unhedged`; item 69 reads paper against item 57's replay of
 the same trades, so the paper run measures execution, not the premium again. Early assignment of
 the ETF puts is measured, never modelled. Paper-only and credential-free.

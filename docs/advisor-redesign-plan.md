@@ -1,5 +1,7 @@
 # The advisor, re-read against the trading-book review (2026-10-25)
 
+> **Status (2026-11-08): partial. The advisor has been paused since 2026-10-25 (#560); the four-gap redesign has not been started.**
+
 The advisor (`packages/advisor`) has admitted 39 paper experiments since 2026-08-21. None reached a
 measured verdict: of the 14 with a verdict, 8 were `underpowered` and 6 `no_exposure` (the advised
 book never diverged from its control); the rest were killed or expired before one. Read against the

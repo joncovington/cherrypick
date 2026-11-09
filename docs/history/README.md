@@ -16,6 +16,11 @@ the file.
 | [root-claude-md-2026-09-29.md](root-claude-md-2026-09-29.md) | The suite-root `CLAUDE.md` in full, just before it was consolidated: the long package descriptions and the rationale behind the vocabulary, spelling and money-layout conventions. Every rule survives in the current file. | 2026-09-29 |
 | [advisor-bounds-draft.md](advisor-bounds-draft.md) | The sign-off record for the advisor's first `advice.bounds` manifests (MEIC, flies, earnings): the principles behind each range, re-derived against one machine's deployed values at the time. What a module accepts today is its own config's `advice` block. | 2026-08-14 |
 | [ivan-plan.md](ivan-plan.md) | A shelved proposal for a dip-sold put module on /NQ futures options: the research, a worked example and a streaming design. Never built; shelved on notional size. Updated with the source's written entry rules and a proposed TQQQ version (backtest first). | 2026-09-30, 2026-11-02 |
+| [operations-2026-07-29-cutover.md](operations-2026-07-29-cutover.md) | The runbook's cutover record, its supervisor-transition rollback note and the known gaps that were fixed, moved out of operations.md. | 2026-07-29 / 2026-11-08 |
+| [earnings-screener-plan.md](earnings-screener-plan.md) | The nightly earnings calendar: plan, history step and build. Fully landed. | 2026-10-17 |
+| [fair-value-model-plan.md](fair-value-model-plan.md) | Closing the fair-value model's gaps (version 2) and the re-run study that failed. Fully landed. | 2026-10-29 |
+| [portfolio-guidance-plan.md](portfolio-guidance-plan.md) | manage's portfolio delta and theta reading. Fully landed. | 2026-10-19 |
+| [progress-queue-arms-plan.md](progress-queue-arms-plan.md) | Job progress files, the queue tab and arm cards. Fully landed. | 2026-10-27 |
 
 For what is true today, start at the [documentation index](../README.md).
 

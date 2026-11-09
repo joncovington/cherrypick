@@ -1,5 +1,7 @@
 # Fair value: closing the model's gaps (plan, 2026-10-28; built 2026-10-29)
 
+> **Status (2026-11-08): done 2026-10-29. Version 2 of the model is built (`core.valuation`, `packages/fundamentals`); the re-run history study failed in both halves, so the fair value stays a description, never a selector. Moved to history/ once fully landed.**
+
 The fair-value tab (`core.valuation`, `technicals valuation`, the Screeners tab) was checked name by
 name against a reference DCF platform the user subscribes to. The comparison found two arithmetic
 errors, two data gaps and several places where our method is simpler than standard practice. The

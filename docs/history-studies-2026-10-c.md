@@ -1,5 +1,7 @@
 # History studies, 2026-10 (c): the first edge-hypotheses tests
 
+> **Status (2026-11-08): record, not a plan: results from history, 2026-10-17. The bwb and pmcc studies concern retired modules (both off by default).**
+
 *Run 2026-10-17. These are the first four tests from [edge-hypotheses-plan.md](edge-hypotheses-plan.md).
 Each pass test was declared in its script's docstring before the first full run. All four scripts are
 read-only.*

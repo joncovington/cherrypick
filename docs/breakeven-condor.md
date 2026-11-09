@@ -1,5 +1,7 @@
 # The 0DTE break-even iron condor: rules from one interview, and its fit as a MEIC arm
 
+> **Status (2026-11-08): partial: the proposed arm was installed in paper on 2026-10-20 in the machine-local MEIC registry (not shipped in this repo); no result is recorded here.**
+
 *Drafted 2026-10-20 from the YouTube video "After 9,000 Trades, This Is Still My Most Profitable
 0DTE Strategy" (a self-interview, ~40 min, credited in [strategy-sources.md](strategy-sources.md);
 <https://www.youtube.com/watch?v=Fj41ojAdwJ8>). Quotes below are short excerpts for the points being

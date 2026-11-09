@@ -66,7 +66,7 @@ and imports as `cherrypick.<pkg>.<mod>` — `cherrypick.meic.tt`, `cherrypick.fl
 `cherrypick.earnings.scanner`, and so on, alongside `cherrypick.core.*` and `cherrypick.orchestrator.*`.
 
 `src/cherrypick/` has **no `__init__.py`** in any package. That is what makes it a PEP 420 namespace, so
-all nineteen Python distributions (every package but the console) compose under one `cherrypick.*` root
+every Python distribution (every package but the console) compose under one `cherrypick.*` root
 instead of colliding. One level deeper,
 `src/cherrypick/<pkg>/__init__.py` **does** exist — that is an ordinary package.
 

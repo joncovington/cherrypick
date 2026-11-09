@@ -1,5 +1,7 @@
 # Portfolio delta and theta guidance — plan
 
+> **Status (2026-11-08): done 2026-10-19. Built in `packages/manage` and read on the console's Live -> portfolio tab. Moved to history/ once fully landed.**
+
 Agreed 2026-10-18. Adds a portfolio-level reading to `packages/manage`, beside its per-trade
 evaluation: where the real account stands on beta-weighted delta and theta each morning, whether that
 is inside the bands we set, what is driving it, what would bring it back, and which screener trades

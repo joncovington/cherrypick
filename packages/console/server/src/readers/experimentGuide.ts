@@ -27,7 +27,7 @@ import { registryFile, registryOf } from "./armStatus.js";
  *    whether it ever ran.
  */
 
-/** The arm's own one-line summary and dates (docs/progress-queue-arms-plan.md, phase 3): underscore
+/** The arm's own one-line summary and dates (docs/history/progress-queue-arms-plan.md, phase 3): underscore
  *  keys, so documentation and never a setting. pmcc's `from` (a real setting: the arm starts entering
  *  then) is read as the start where no `_since` is written. */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;

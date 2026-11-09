@@ -86,5 +86,5 @@ module normally holds. Look at a screenshot before it goes into a document.
 
 These pages render their empty state on the demo home: Screeners earnings calendar, earnings record,
 time spreads and fair value; Charts technicals and setups; Earnings decisions and strategies; MEIC regime
-cuts and analysis; System environment; Live flies. Advisor, Options flow, Backtest and the retired
+cuts and analysis; System environment; Live flies. Advisor, Backtest and the retired
 modules (flies, curve, PMCC, BWB) are off by design.

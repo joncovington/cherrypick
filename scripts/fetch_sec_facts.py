@@ -1,4 +1,5 @@
-"""Fetch SEC EDGAR's filing index and XBRL facts for the fair-value names (docs/fair-value-model-plan.md).
+"""Fetch SEC EDGAR's filing index and XBRL facts for the fair-value names
+(docs/history/fair-value-model-plan.md).
 
 **Why.** The fair-value model read Dolt's annual statements, which lag (no fiscal year ending after
 mid-2026 by 2026-10-28) and lump amortisation of content and leased vehicles into D&A (NFLX's $16.8B

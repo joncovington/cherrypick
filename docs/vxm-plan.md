@@ -1,6 +1,6 @@
 # /VXM plan: the contango switch in Mini VIX futures
 
-**Status: answered from settlement history, not built (2026-10-12).** The plan below deferred the
+**Status (2026-11-08): abandoned. Answered from settlement history on 2026-10-12, not built.** The plan below deferred the
 ½× second-month arm until SVXY had a quarter of paper data. `scripts/contango_vx_replay.py` answers
 it from CFE's settlement files instead, and the answer is no: see
 [the 2026-10-12 replay](#the-2026-10-12-replay-the-arm-does-not-earn-its-place). The rest of this file

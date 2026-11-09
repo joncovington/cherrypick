@@ -10,7 +10,7 @@ import { BtRows, type BtRow } from "./BtRows";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
 
 /**
- * The Backtest page's queue tab (2026-10-24; laid out again 2026-10-27, docs/progress-queue-arms-plan.md
+ * The Backtest page's queue tab (2026-10-24; laid out again 2026-10-27, docs/history/progress-queue-arms-plan.md
  * phase 2; by study 2026-11-02): the research tasks the supervisor's `research-queue` job runs one at a
  * time, and the runs started by hand beside them, read through `/api/backtest/queue` (the
  * orchestrator's `queue-list`).

@@ -1,6 +1,6 @@
 """The earnings calendar's forward record: what each announcement did, against what the calendar said.
 
-Step 5 of docs/earnings-screener-plan.md. History found no edge in the navigator's spread (step 1);
+Step 5 of docs/history/earnings-screener-plan.md. History found no edge in the navigator's spread (step 1);
 this is the record that would show if that changes, built from what the calendar showed at the time
 and what happened after -- local data only:
 

@@ -1,6 +1,6 @@
 """Size an XSP vertical that brings the book's beta-weighted delta back toward its band.
 
-Piece 3 of docs/portfolio-guidance-plan.md. Offered only when `portfolio.delta` fired, from the one
+Piece 3 of docs/history/portfolio-guidance-plan.md. Offered only when `portfolio.delta` fired, from the one
 quoted XSP expiry the snapshot carries (`hedge_chain`), so a past session re-evaluates to the same
 suggestion. Three kinds, each shown with what it does to the whole book:
 

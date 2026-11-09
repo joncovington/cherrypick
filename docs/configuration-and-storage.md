@@ -49,7 +49,14 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
                                   #   series (market_regime_history / daily_closes; read via
                                   #   cherrypick.core.regime — see docs/regime-recorder-plan.md)
   data/technicals/eod.db          # technicals' end-of-day store (bars, splits, dividends, IV)
-  data/technicals/valuation/      # <session>.json, one DCF fair-value estimate a liquid optionable name
+  data/fundamentals/              # packages/fundamentals' store; valuation/<session>.json is the fair-value file the Screeners tab reads
+  data/market-files/              # fetched public files: the event calendar, Treasury CSVs, OCC volume, VIX-curve bars
+  data/market-report/             # the market report's universe, liquidity verdicts, dollar volume and screener inputs
+  data/marketregime/              # the market-regime classification, one record a session
+  data/time-spreads/              # <day>.json, the time-spread scanner's daily reading (manage reads it)
+  data/research/                  # scratch stores the research-queue studies build (item<N>/ folders; purgeable)
+  data/live/                      # the live-account alerts' order-event inbox (account-alerts, live-fill-alerts)
+  data/outbound/                  # a record of every message posted to a push channel, kept as long as a post can be questioned
   data/overview/                  # morning-<day>.json fact packs + renders + notes
   data/external/                  # <id>.json reports your own scripts write (docs/guide/external-reports.md); the console reads them
   state/external_posts.json       # the last as_of each external report posted to Discord, so one is posted once

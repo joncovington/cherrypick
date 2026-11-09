@@ -125,7 +125,7 @@ suite once collected $4.00 of credit against $4.96 of fees.
   differ only in where they get out (0.97 or 1.0). Replayed from 2018, the switch earns less than
   holding SVXY outright for about 20 points less drawdown, and the paper run measures whether that
   holds. Paper-only and credential-free. See [packages/contango](packages/contango).
-- **Weeklyput** — ⚠️ **EXPERIMENTAL, off by default.** The one cell research item 57 passed: the
+- **Weeklyput** — ⚠️ **EXPERIMENTAL, off by default.** The one cell that [research item](docs/glossary.md) 57 passed: the
   index put nearest 10 delta (SPX, SPY, QQQ, IWM), sold seven days before each weekly expiry that is
   not a standard monthly and held to expiry, unhedged. The paper run measures whether a
   close-of-session fill tracks the study's replay (item 69). Paper-only and credential-free. See
@@ -209,7 +209,7 @@ kept strictly separate.
 > any of them: **MEIC**, **flies** and **bwb** (the last two retired and off by default) each have a live path behind gates of their
 > own, and **desk** is the manual one. The first three are *loops* — once the gate is open, they act on
 > their own schedule without asking again (as supervisor jobs while that day's
-> arm is valid). Earnings is paper-only since v0.12.0. The orchestrator itself
+> arm is valid). A person arms each loop for one day, with its slash command or with `--arm --confirm YES` on the module's live loop; flies and bwb refuse to arm while the module is off (both ship retired and off). Earnings is paper-only since v0.12.0. The orchestrator itself
 > never places an order, but "the automation won't trade for you" stops being true the moment you open
 > one of those gates.
 >
@@ -228,14 +228,14 @@ kept strictly separate.
 
 ## What's in the repo
 
-One workspace, twenty packages: the strategy engines above plus the pieces that feed, drive, and
+One workspace of packages: the strategy engines above plus the pieces that feed, drive, and
 read them.
 
 | Package | What it is |
 |---|---|
 | [packages/orchestrator](packages/orchestrator) | The supervisor, watchdog, notifications, and the read side (report / calibrate / EOD). Drives the engines by subprocess. |
 | [packages/core](packages/core) | The shared `cherrypick.core` library — calendar, fees, profiles, GEX math, broker, auth. Install it first. |
-| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/weeklyput](packages/weeklyput) · [packages/bwb](packages/bwb) | The nine strategy engines. Calendars, contango and weeklyput are EXPERIMENTAL, paper-only and off by default; flies, bwb, pmcc and curve are retired and off by default (kept so each can be reinstated; flies and bwb keep their narrow live paths behind the same gates); earnings is paper-only and needs the optional Dolt data. |
+| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/contango](packages/contango) · [packages/weeklyput](packages/weeklyput) · [packages/bwb](packages/bwb) | The strategy engines. MEIC runs by default; earnings is paper-only and needs the optional Dolt data; calendars, contango and weeklyput are EXPERIMENTAL, paper-only and off by default; flies, bwb, pmcc and curve are retired and ship off (kept so each can be reinstated; flies and bwb keep their narrow live paths behind the same gates, and refuse to arm while off). |
 | [packages/streamer](packages/streamer) | The single market-data producer. Everything else reads the cache it writes; nothing else writes it. |
 | [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
 | [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Read-only. |
