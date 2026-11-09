@@ -14,7 +14,7 @@
         "morning-data and evening-data are two pipelines that replace 28 jobs in `status`; a failed landing step now stops the steps that read it, and per-step results are in state/pipeline.<name>.json. manage waits 60 seconds after a fill, takes no snapshot within 2 minutes of the last, and posts only when its action list changes."
       ],
       "manual_steps": [
-        "Stop the suite (uninstall.cmd or ./uninstall.sh), get v0.12.0 (unzip over the old folder, or fetch tags and check out the tag), and run the installer again.",
+        "Stop the suite (uninstall.cmd or ./uninstall.sh), get v0.12.0 (unzip into a new folder, never over the old one, or fetch tags and check out the tag), and run the installer again.",
         "Run `python run.py doctor` and delete what it says is ignored: the earnings `enable_live_trading` or `live` key, the `quikoptions` and `desk_notify` blocks in config.json, and ~/.cherrypick/config/desk.json.",
         "Switch off any retired module you still have on (`modules.<name>.enabled` false for flies, curve, pmcc and bwb).",
         "Run `python run.py supervise --restart`, then restart any resident job, then `python run.py status` to see the two data pipelines."

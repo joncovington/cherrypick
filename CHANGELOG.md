@@ -11,7 +11,7 @@ beyond the latest release.
 
 ## [Unreleased]
 
-## v0.12.0 — YYYY-MM-DD — <name>
+## v0.12.0 — 2026-11-09 — the guided release
 Three weeks and about 560 pull requests since v0.11.2. This is the release that is written to be
 upgraded to. Earnings and the manual desk stopped placing orders for good, so live orders now exist
 only in MEIC, flies and bwb. The four retired modules (flies, curve, pmcc, bwb) ship switched off.
@@ -29,8 +29,9 @@ it). Pick a quiet evening after the close, with no live loop armed.
 
 1. **Stop the suite** (`uninstall.cmd` or `./uninstall.sh`; your data, settings and broker login are
    kept). If you run the supervisor as the Windows service, stop the service as well.
-2. **Get v0.12.0.** With the ZIP, unzip it over the old folder. With git:
-   `git fetch --tags origin`, then check out the tag.
+2. **Get v0.12.0.** With the ZIP, unzip it into a new folder and work from there. Don't unzip over
+   the old one: files this release removed (`packages/desk` among them) would stay behind. Delete the
+   old folder once v0.12.0 runs. With git: `git fetch --tags origin`, then check out the tag.
 3. **Run the installer again** (`install.cmd`/`install.ps1`/`install.sh`, or `scripts/dev-install.*`).
    It rebuilds the console and, new in this release, removes `cherrypick-desk` from an older `.venv`.
    It also now sets up Dolt unless you pass `-SkipDolt`, and runs `run.py bootstrap` at the end so
@@ -72,8 +73,8 @@ it). Pick a quiet evening after the close, with no live loop armed.
   raises the new CRITICAL `live_unmanaged`. MEIC live entries are one contract; a larger configured
   quantity refuses entries and blocks arming.
 - **The morning and evening data runs are two pipelines.** `morning-data` and `evening-data` replace
-  28 jobs in `status` and on the System page. A pipeline catches up for its longest step (720 minutes
-  morning, 600 evening), so after a long sleep a short-window step can run later than it would have
+  28 jobs in `status` and on the System page. A pipeline catches up for as long as its longest step
+  does, so after a long sleep a short-window step can run later than it would have
   as a job; those reruns rebuild the same files. A failed run is retried twice from the failed step.
   Per-step timings are in `status` and `state/pipeline.<name>.json`.
 - **manage runs and posts differently.** The fill wait is 60 seconds (was 30), no snapshot is taken
@@ -203,10 +204,14 @@ never pool across them. Each module's own list (MEIC `docs/reference.md#declared
   throttling opt-out for the supervisor and its jobs; dated reminders that close when their condition
   holds; CI installs uv from PyPI with retries.
 
-**Still to land before the tag** (a slot for a pull request that is open; replace with a line, or
-delete):
+- **A user guide, in the console.** The Help page (`/help`) serves `docs/guide/`:
+  - a page for each part of the console;
+  - topic guides: your first week, reading results honestly, income trades from start to finish,
+    going live safely, experimenting with arms, research and backtests, an always-on machine,
+    troubleshooting, privacy and upgrading;
+  - an FAQ.
 
-- <!-- TODO(topic-guides): the topic guides in docs/guide/. -->
+  Card help boxes and module Help tabs link to the section that explains them.
 
 ### In detail
 
