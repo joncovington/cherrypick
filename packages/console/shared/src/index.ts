@@ -33,6 +33,7 @@ export * from "./types/fliesEvidence.js";
 export * from "./types/openingRange.js";
 export * from "./types/futures.js";
 export * from "./types/system.js";
+export * from "./types/version.js";
 export * from "./types/features.js";
 export * from "./types/bwbEvidence.js";
 export * from "./types/dataEvidence.js";

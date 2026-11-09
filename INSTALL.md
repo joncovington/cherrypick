@@ -370,6 +370,11 @@ your keyring.
 
 ## Updating to a new release
 
+The console tells you when one is out: the version chip at the right end of its status bar, on every
+page, turns amber and reads "v0.11.2 · v0.12.0 available", linking to the new release's notes. It
+asks GitHub at most every six hours; to turn that off, set `"update_check": false` in
+`~/.cherrypick/config/console.json`.
+
 Stop the suite (`uninstall.cmd` / `./uninstall.sh`; history and settings are kept), get the new
 release, and run the installer again. With the ZIP, unzip the new release over the old folder. With
 git, from the checkout:

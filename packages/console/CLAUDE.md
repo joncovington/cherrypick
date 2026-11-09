@@ -66,6 +66,11 @@ alone):
 
 ## Data rules
 
+- **One request to the internet: the release check** (`readers/version.ts`). GitHub's
+  `releases/latest` for the suite's repo, at most every six hours, in the background (a page never
+  waits on it), with a generic User-Agent and nothing of the user's. `update_check: false` in
+  console.json turns it off. Every other reader stays local; a new outbound call needs the same
+  off switch and a line here.
 - **Read-only over every other package's data.** Module SQLite stores open with better-sqlite3
   `readonly: true`; JSON state is only read. The sole writable store is `~/.cherrypick/data/console/`.
   Handles are pooled per path and recycled on the file's stamp (`readers/db.ts`), so a module's write

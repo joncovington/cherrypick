@@ -46,7 +46,10 @@ The sections below are the working notes for each page. Read the section for a p
 
 **Shell.** A grid, not a stack (2026-10-12): the brand head and the top bar are row 1's two
 halves (ticker, session chip, the simple/detail view switch, clock), the rail and the content pane are row
-2's, the status bar (health chips, watchdog/session/morning phase, logs) is row 3. The brand
+2's, the status bar (health chips, watchdog/session/morning phase, logs, and the suite version
+last) is row 3. The version chip (`shell/VersionChip.tsx`, `/api/version`) is plain while this
+checkout is at or past GitHub's latest release, and an amber link to the release notes, "vX · vY
+available", once a newer one is out — the one place a release is announced. The brand
 head's underline is the same grid track as the top bar's — one rule across the window in both
 rail widths — and the rail's vertical is the brand head's right border continued by the nav's,
 unbroken from the top of the window to the status bar. **The rail is the one nav** (mounted in

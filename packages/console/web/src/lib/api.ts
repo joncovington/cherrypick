@@ -70,6 +70,7 @@ import type {
   SystemLogSource,
   SystemModulesPayload,
   SystemSupervisorPayload,
+  VersionPayload,
 } from "@console/shared";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -106,6 +107,16 @@ export function useStatus() {
     queryKey: ["status"],
     queryFn: () => getJson<StatusPayload>("/api/status"),
     refetchInterval: 5_000,
+  });
+}
+
+/** The installed version and the cached release check. Polling asks only the console: the server
+ *  asks GitHub at most every six hours, in the background, so the first answer lands a poll later. */
+export function useVersion() {
+  return useQuery<VersionPayload>({
+    queryKey: ["version"],
+    queryFn: () => getJson<VersionPayload>("/api/version"),
+    refetchInterval: 60_000,
   });
 }
 
