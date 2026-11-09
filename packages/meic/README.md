@@ -92,7 +92,7 @@ On a base install the paper loop runs one arm, `control`. Any other arm is this 
 /live-meic-start
 ```
 
-It shows a status readout and the disclaimer verbatim and needs a literal YES; the supervisor then runs the `meic-live` tick until `live.disarm_time`. Tomorrow needs a fresh `/live-meic-start`. `/meic-start` remains the manual, agent-driven session (it shows the same disclaimer when `enable_live_trading` is true). Read [DISCLAIMER.md](../../DISCLAIMER.md) first. To watch the session, open the console with `/console` — the supervisor already has it running.
+It shows a status readout and the disclaimer verbatim and needs a literal YES; the supervisor then runs the `meic-live` tick until `live.disarm_time`. Tomorrow needs a fresh `/live-meic-start`. Without Claude Code, arm from a terminal with `python -m cherrypick.meic.live_loop --arm --confirm YES`: it prints `DISCLAIMER.md`, arms nothing unless the confirmation is exactly `YES`, and refuses while a readiness blocker stands; `--status` shows the state and `--disarm` disarms. (`--install-task` is the same arm without the prompt, for the slash command, which has already asked.) `/meic-start` remains the manual, agent-driven session (it shows the same disclaimer when `enable_live_trading` is true). Read [DISCLAIMER.md](../../DISCLAIMER.md) first. To watch the session, open the console with `/console` — the supervisor already has it running.
 
 See [docs/setup.md](docs/setup.md) for the full walkthrough and [docs/paper-trading.md](docs/paper-trading.md) for the paper-trading design and graduation criteria.
 

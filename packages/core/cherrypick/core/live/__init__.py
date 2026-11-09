@@ -33,6 +33,10 @@ __all__ = [
     "supervisor_heartbeat_fresh",
     "arm",
     "disarm",
+    "arm_from_cli",
+    "suite_module_enabled",
+    "disclaimer_text",
+    "CONFIRM_WORD",
     "quarter_end_warning",
     "QUARTER_END_REASON",
 ]
@@ -205,3 +209,76 @@ def disarm(module: str, *, legacy_paths: Iterable[str | Path] = ()) -> dict:
         "arm_record_removed": removed,
         "detail": "disarmed (arm record removed)" if removed else "nothing was armed",
     }
+
+
+# --------------------------------------------------------------------------- the command-line arm
+# The human path to the same record the slash commands write (2026-11-08): `--arm --confirm YES`
+# on a live loop, for people without Claude Code. The agent path (`--install-task`) is the slash
+# command's, called only after its own confirmation, so it never prompts -- but both go through the
+# one function below, so a retired module's refusal cannot be skipped by choosing the other flag.
+
+CONFIRM_WORD = "YES"
+
+
+def suite_module_enabled(module: str) -> bool:
+    """Is ``modules.<module>.enabled`` true in the suite config (``home()/config.json``)?
+
+    Read as a file, never through the orchestrator (a module may not import it). A missing or
+    unreadable config answers False: with no suite config nothing supervises the loop, so there is
+    nothing a record could arm."""
+    try:
+        with open(_home.config_path(), encoding="utf-8") as f:
+            cfg = json.load(f)
+        return bool(cfg["modules"][module].get("enabled", False))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return False
+
+
+def disclaimer_text() -> str | None:
+    """DISCLAIMER.md verbatim, found by walking up from this file to the repo root; None if absent."""
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "DISCLAIMER.md"
+        if candidate.is_file():
+            return candidate.read_text(encoding="utf-8")
+    return None
+
+
+def arm_from_cli(
+    module: str,
+    install: Callable[[], dict],
+    *,
+    confirm: str | None,
+    prompted: bool,
+    require_enabled: bool,
+    show: Callable[[str], None] = print,
+) -> dict:
+    """The one path every CLI arm takes. ``prompted`` is the human path (``--arm``): it prints
+    DISCLAIMER.md and refuses unless ``confirm`` is exactly ``YES``. The agent path
+    (``--install-task``) passes ``prompted=False``: the slash command already obtained its YES.
+    ``require_enabled`` (flies, bwb) refuses while ``modules.<module>.enabled`` is false, on both
+    paths. A refusal writes nothing."""
+    if require_enabled and not suite_module_enabled(module):
+        return {
+            "ok": False,
+            "error": (
+                f"{module} is retired and switched off (modules.{module}.enabled is false); "
+                f"reinstate it first (see packages/{module}/README.md). Nothing was armed."
+            ),
+        }
+    if prompted:
+        text = disclaimer_text()
+        if text is None:
+            return {
+                "ok": False,
+                "error": "DISCLAIMER.md was not found, so it cannot be shown. Nothing was armed.",
+            }
+        show(text)
+        if confirm != CONFIRM_WORD:
+            return {
+                "ok": False,
+                "error": (
+                    f"arming places real orders: re-run with --confirm {CONFIRM_WORD} (exactly) "
+                    "after reading the disclaimer above. Nothing was armed."
+                ),
+            }
+    return install()

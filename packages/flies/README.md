@@ -1,5 +1,12 @@
 # cherrypick-flies
 
+**Retired 2026-10-19; off by default.** The owner retired the module; the code, ledgers and docs are kept so
+it can be reinstated. To reinstate: set `modules.flies.enabled` to true in the suite config and `enabled`
+to true on the `control` arm in `flies.json`; the supervisor derives the flies jobs from the module switch.
+The extras `flies_payoff_post.enabled`, `flies_payoff_post.intraday.enabled` and `intraday_agent.enabled`
+are separate and stay off until chosen, and live trading stays behind its own gate and per-day arm
+(`/live-flies-start` and `--arm` refuse while the module is off).
+
 > **⚠️ Experimental, educational software — not financial advice.** cherrypick is a prototype for
 > learning about and researching options strategies. Its live-trading paths place **real,
 > irreversible orders** at your own risk; options trading involves substantial risk of loss and is
@@ -74,7 +81,7 @@ the `FLIES_DB_PATH` environment variable if you need a different location).
 
 **Live (real-money) trading** is a separate, much more guarded path — experimental, off by default
 and at your own risk. See "[Live trading](#live-trading)" below. It is armed with the
-`/live-flies-start` command in Claude rather than by hand.
+`/live-flies-start` command in Claude, or from a terminal with `--arm --confirm YES`.
 
 ## Where its prices come from
 
@@ -112,7 +119,7 @@ funding trades cover. *(Switched off since the 2026-07-27 configuration update: 
 
 The module can run several parallel copies of the strategy side by side, each changing exactly one
 variable from the `control` baseline, so results from one variant can be compared cleanly rather
-than a mix of confounded changes. A base install runs only `control`; every other arm is switched on
+than a mix of confounded changes. The example ships every arm off since the retirement; once reinstated it runs only `control`; every other arm is switched on
 in this machine's own config (`~/.cherrypick/config/flies.json`).
 
 `gex` picks its centre by dealer gamma positioning, `time_window` by trading only inside specific
@@ -185,12 +192,19 @@ default); starting it again the next trading day requires running the command ag
 live session early, run `/live-flies-start --stop`, or ask Claude to set the suite-wide halt
 flag, which stops new trades within about a minute without touching anything already open.
 
+**Without Claude Code**, arm from a terminal with `python -m cherrypick.flies.live_loop --arm --confirm YES`.
+It prints `DISCLAIMER.md` first and arms nothing unless the confirmation is exactly `YES`; it also refuses
+while `modules.flies.enabled` is false. `--readiness` lists any unmet gate, `--status` shows the state, and
+`--disarm` disarms. `--install-task` is the same arm without the prompt, for the slash command, which has
+already asked; the module-off refusal applies to it too.
+
 Full detail on the live pilot's rules, safety gates, and rollout plan lives in
 [docs/live-trading-plan.md](docs/live-trading-plan.md).
 
 ## Status
 
-Paper trading is complete, tested, and has run every session since 2026-07-20. The dated results
+Paper trading is complete, tested, and ran every session from 2026-07-20 until the module was retired on
+2026-10-19. The dated results
 — what each session and each arm measured, the negative ones included — are in
 [docs/experiment-log.md](docs/experiment-log.md). Completion rate against its break-even is still
 the number that decides the strategy.

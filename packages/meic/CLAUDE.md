@@ -118,7 +118,10 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 - **`enable_live_trading: true` in `config.json` is the master switch.** There is no environment
   fallback: an env var is outside the orchestrator's guarded config table and carries no attestation.
 - **The live loop is armed one day at a time (2026-10-14, the flies/bwb posture).** `/live-meic-start`
-  writes the arm record (`--install-task`, `cherrypick.core.live`), and each `--live` tick deletes
+  writes the arm record (`--install-task`, the agent path that prompts for nothing because the
+  slash command already asked; a person arms with `--arm --confirm YES`, which prints `DISCLAIMER.md`
+  and refuses on any other word; `--disarm` is the old `--uninstall-task`; all in
+  `cherrypick.core.live`), and each `--live` tick deletes
   it once stale or past `live.disarm_time`, before any broker read. **The arm gates new ICs only
   (2026-11-02).** Unarmed, a tick whose book holds nothing today ends there without a broker call;
   one that holds an IC or a pending entry runs management only (fill confirmation, resting stops,
@@ -131,8 +134,8 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
   one answer to "may live arm": `blockers` are the arming command's stop-here states (an unmet
   gate, orphans, a held submission, an overdue session, an unreadable ledger, no supervisor, kill
   criteria blocked, read with `killcriteria.peek` so a readout never latches) and `warnings` what
-  a YES may pass (the halt flag, a tripped or unset breaker, positions held). `--install-task`
-  refuses while a blocker stands. `live.max_structures_per_day` (default 1) caps new
+  a YES may pass (the halt flag, a tripped or unset breaker, positions held). `--install-task` and
+  `--arm` refuse while a blocker stands. `live.max_structures_per_day` (default 1) caps new
   ICs a session (`null` lifts the count cap, so buying power alone sizes); a one-tick lock keeps a
   slow tick from overlapping the next. `live.daily_loss_halt_dollars` and the halt flag block NEW ICs
   only: fills are still confirmed and open ICs still stopped and force-closed. The breaker sums

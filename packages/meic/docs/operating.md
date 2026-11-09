@@ -74,7 +74,10 @@ For a multi-day, profile-by-profile performance write-up (equity curves, risk-ad
 Live trading is the deterministic live loop (`cherrypick.meic.live_loop`), not the agent loop above.
 Run `/live-meic-start` from the repo root on a trading day: it shows a status readout and the
 disclaimer, needs a literal YES, and arms the supervisor's `meic-live` job for today only; the loop
-self-disarms at `live.disarm_time`. `/live-meic-start --stop` disarms early.
+self-disarms at `live.disarm_time`. `/live-meic-start --stop` disarms early. Without Claude Code,
+`python -m cherrypick.meic.live_loop --arm --confirm YES` arms the same day (it prints `DISCLAIMER.md` and
+arms nothing on any other word) and `--disarm` disarms; `--install-task` is the slash command's
+prompt-free path.
 
 ```bash
 python -m cherrypick.meic.live_loop --status    # gates, caps, orphans, holds — no broker read

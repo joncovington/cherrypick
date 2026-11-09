@@ -7,7 +7,7 @@ safety controls that apply regardless, and exactly what has been built so far. I
 reference to check before changing anything about how live trading runs, and the record of why
 each decision was made the way it was.
 
-**Where things stand today (2026-07-30):** live trading is running as a **small, deliberately
+**Where things stood on 2026-07-30 (history; the module has since been retired, see the status line in [README.md](../README.md)):** live trading ran as a **small, deliberately
 under-sized pilot** — one strategy variant, one contract at a time, one open position at a
 time — authorized specifically to shake out real trading-mechanics bugs (order fills, timing,
 cancellations) before any larger commitment is considered. It is **not** a claim that the
@@ -250,7 +250,9 @@ for the exact option contract identifiers the broker needs on every quote.
    new positions can open per day, independent of the one-open-position-at-a-time rule. Done.
 
 **How arming works day to day:** live trading is armed **one day at a time**. Running the
-`/live-flies-start` command with a fresh confirmation writes the day's arm record, and while it is
+`/live-flies-start` command with a fresh confirmation (or, without Claude Code,
+`python -m cherrypick.flies.live_loop --arm --confirm YES`, which prints `DISCLAIMER.md` first) writes the
+day's arm record; both refuse while `modules.flies.enabled` is false (the module is retired). While it is
 valid the supervisor runs the `flies-live` job once a minute; it turns itself off automatically at a set time each evening (17:00 ET by default), and the automated
 monitor backstops that shutoff with the suite halt flag if it somehow doesn't happen on its own.
 The rule that governs every piece of this: market data comes from the shared cache first, and

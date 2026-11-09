@@ -29,6 +29,12 @@ means several live positions ride at once under `max_open_margin_dollars`.
 
 ## Arm (default)
 
+0. **Is bwb switched on?** Run the status readout (step 2) first and read `module_enabled`
+   (the suite's `modules.bwb.enabled`). If it is false, stop here and say: "bwb is retired and
+   switched off; reinstate it first (see packages/bwb/README.md)". Arm nothing and ask nothing.
+   (`--install-task` repeats the check and refuses while the module is off, so this is the early
+   warning, not the only guard.)
+
 1. **Never reuse an old confirmation.** Ask fresh every time this command runs — a prior
    session's "YES" (in this conversation or any past one) covers nothing.
 
@@ -38,15 +44,10 @@ means several live positions ride at once under `max_open_margin_dollars`.
    python -m cherrypick.bwb.live_loop --status
    ```
    and present, in plain language:
-   - **Unmet readiness gates** — additionally run the readiness check:
+   - **Unmet readiness gates** — additionally run the readiness check, which prints
+     `unmet_gates` and exits non-zero if any gate is unmet:
      ```bash
-     python -c "
-   from cherrypick.bwb.cli import load_config
-   from cherrypick.bwb import live_loop, credentials as creds
-   cfg = load_config()
-   unmet = live_loop.readiness(cfg, designated=creds.designated_account())
-   print('unmet gates:', unmet or 'NONE -- readiness passes')
-   "
+     python -m cherrypick.bwb.live_loop --readiness
      ```
      If any gate is unmet, **stop here** and report — there is nothing to arm if every tick would
      refuse. (The halt flag is not a readiness gate; it stops new entries and add-ons only.)
@@ -95,7 +96,11 @@ means several live positions ride at once under `max_open_margin_dollars`.
    - ```bash
      python -m cherrypick.bwb.live_loop --install-task
      ```
-     This writes today's arm record (the supervisor enables its `bwb-live` job within one pass)
+     This is the agent path: it prompts for nothing, because the YES above is the confirmation.
+     (A person without Claude Code arms with `--arm --confirm YES`, which prints the disclaimer
+     itself; never pass that flag on a YES you did not get this run.) Both refuse, writing
+     nothing, while `modules.bwb.enabled` is false.
+     It writes today's arm record (the supervisor enables its `bwb-live` job within one pass)
      and fires the first tick immediately. A refusal (`ok: false`, no supervisor) is final: report
      it, do not work around it.
 
@@ -111,7 +116,7 @@ means several live positions ride at once under `max_open_margin_dollars`.
    (`~/.cherrypick/data/bwb/live_trades.db`, read by `python packages/orchestrator/run.py report
    --live`), and how to stop early: `/live-bwb-start --stop`, or create the halt flag
    (`~/.cherrypick/state/halt-live.flag` — stops new entries and add-ons within one tick; open
-   positions still ride to settlement), or `python -m cherrypick.bwb.live_loop --uninstall-task`
+   positions still ride to settlement), or `python -m cherrypick.bwb.live_loop --disarm`
    directly. Also mention settlement: on an expiration Friday the loop settles after 16:20 ONLY
    on an official print it fetches itself (tastytrade's posted close, else Yahoo/Barchart); if
    none arrives before self-disarm, settle by hand that evening or the next morning with
@@ -124,7 +129,7 @@ means several live positions ride at once under `max_open_margin_dollars`.
 2. Confirm the disarm (a plain question is fine — disarming only stops NEW ticks; it places
    no order and touches no open position).
 3. ```bash
-   python -m cherrypick.bwb.live_loop --uninstall-task
+   python -m cherrypick.bwb.live_loop --disarm
    ```
    This deletes the arm record; the supervisor's `bwb-live` job disables within one pass.
 4. Report what was disarmed and remind: open live positions are unaffected — they ride to

@@ -1,10 +1,13 @@
 # cherrypick-curve
 
-**Retired on 2026-11-01.** Research item 37 (docs/edge-hypotheses-plan.md) tested this module's own
-rule at real quotes, and every arm failed after costs. Every arm and `advice` are off in
-`curve.json`, so nothing new opens; the open spreads are managed from the ledger to their 2026-11-20
-expiry, and then `modules.curve.enabled` goes off. The code, ledgers and docs remain, and backtest
-research still reads them. Reinstating it means turning those keys back on.
+**Retired 2026-11-01; off by default.** Research item 37 (docs/edge-hypotheses-plan.md) tested the module's
+own rule at real quotes, and every arm failed after costs. To reinstate: set `modules.curve.enabled` to true
+in the suite config and `enabled` to true on the arm or arms you want (`control`, `noflip`, `near`) in
+`curve.json`; `advice.enabled` is separate and stays off.
+
+Every arm and `advice` are off in the example config, so nothing opens. The open spreads were managed from
+the ledger to their 2026-11-20 expiry, and then the module went off. The code, ledgers and docs remain, and
+backtest research still reads them.
 
 > **Vocabulary.** This module's **book** is the suite's **arm** (root `CLAUDE.md`). The column
 > (`curve_positions.book`) moves with the rest of the schema; prose and the console already say `arm`.
@@ -125,13 +128,13 @@ quote-only `legs`, **never `symbols`** (which would make the producer maintain c
 the overview 2026-08-17 incident). No `window_hints` needed. The provider refuses rather than guesses,
 including on an unmeasured regime.
 
-**The signal backtests; the trade does not.** `regime-history` replays the classification over
-stored `stream_summary` closes with no look-ahead (a session's regime from the PRIOR session's
-closes), benchmarked against VXX's next-session move — a **separation benchmark, never suite P&L**;
-it schedules and decides nothing. The spread P&L cannot be backtested (no historical VXX chains, and
-the advisor contract rules out a replay engine); instead every position's per-tick mark path is
-recorded so a read-side exit-policy replay is possible later — forward-recorded, never
-vendor-imagined.
+**The signal backtests inside this package; the trade was tested outside it.** `regime-history` replays the
+classification over stored `stream_summary` closes with no look-ahead (a session's regime from the PRIOR
+session's closes), benchmarked against VXX's next-session move — a **separation benchmark, never suite
+P&L**; it schedules and decides nothing. The module itself holds no historical VXX chains and the advisor
+contract rules out a replay engine here, but research item 37 priced the spreads at real quotes (see the
+status line above): every arm failed after costs. Every position's per-tick mark path is still recorded,
+forward-recorded and never vendor-imagined.
 
 ## Live-trading prerequisites (none built)
 

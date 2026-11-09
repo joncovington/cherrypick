@@ -147,6 +147,15 @@ the one credible ETF the candidate screen found. Built for them:
 - **`symbol_from`, starting one symbol a market day after the ETF rollout:** six at once would have
   added about 6,000 subscriptions to a ~10,000 load against a 12,000 budget.
 
+## Entries switched off (2026-11-08)
+
+The owner switched the module's entries off on 2026-11-08, with `defaults.wind_down` (#974): no arm
+enters and every open position closes at the next tick its execution gate allows, recorded with the
+reason `wind_down`. No arm was edited, so the rows to that day are one population. The module is
+switched off once flat, ships off in the example config (`modules.pmcc.enabled` and the `shield`,
+`shield_hold` and `shield_guard` arms `enabled` false, each with a `_retired` note), and may be
+reinstated by turning those on and `defaults.wind_down` off.
+
 ## Milestones
 
 Built 2026-08-16. `live.enabled` placeholder added 2026-08-16. The console's `/pmcc` page landed

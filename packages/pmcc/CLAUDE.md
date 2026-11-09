@@ -1,5 +1,10 @@
 # cherrypick-pmcc
 
+**Retired 2026-11-08; off by default.** The owner switched its entries off (`defaults.wind_down`, #974, stops
+entries and closes what is open; the module goes off once flat). The code, ledgers and docs are kept. To
+reinstate: set `modules.pmcc.enabled` to true in the suite config, `enabled` to true on the `shield`,
+`shield_hold` and `shield_guard` arms in `pmcc.json`, and `defaults.wind_down` to false or remove it.
+
 > **Vocabulary.** The arm column is `pmcc_positions.arm`. Configs still spelling the registry `books`
 > resolve through `cherrypick.core.config`, as every existing spelling does.
 
@@ -7,8 +12,8 @@ PMCC — a deep-ITM call with a short call sold against it, on XSP, QQQ, GLD, IW
 from 2026-10-12 to 10-19 (one a market day) the stocks AMZN, TSLA, AMD, NVDA and PLTR (posture: root
 file). The base trade since 2026-10-06 is the held-long pair: `shield` and `shield_hold` hold a
 ~1-year long while a weekly short rolls against it; `shield_guard` (from 2026-10-26) is `shield_hold`
-that also rolls an in-the-money short once it is assignment-exposed. SLV is the intended first live symbol (nothing live
-is built; see below). `control`, which re-bought a ~21-DTE long every cycle, is retired.
+that also rolls an in-the-money short once it is assignment-exposed. SLV was once the intended first live symbol; nothing live
+was built, and the module is retired (see the status line). `control`, which re-bought a ~21-DTE long every cycle, is retired.
 
 Ledger schema: **`pmcc`** (`pmcc_99` until the 2026-10-04 rename; a config still naming it resolves
 through `core.ledgers.SCHEMA_ALIASES`).

@@ -1,11 +1,16 @@
 # cherrypick-flies
 
-**Retired by the developer in the live config on 2026-10-19; may be reinstated at a later date.**
-`modules.flies.enabled` is `false`: no paper or live session runs, and the supervisor schedules none
-of flies' jobs. The code, ledgers and docs remain, backtest research still reads them, and
-reinstating it is that one key (plus `flies_payoff_post`'s own `enabled`/`intraday.enabled`). Treat
-flies data and open questions as historical unless the module is reinstated. The honesty rules and
-guardrails below still govern any read of its numbers and any change to its live path.
+**Retired 2026-10-19; off by default.** The owner retired the module; the code, ledgers and docs are kept so
+it can be reinstated. To reinstate: set `modules.flies.enabled` to true in the suite config and `enabled`
+to true on the `control` arm in `flies.json`; the supervisor derives the flies jobs from the module switch.
+The extras `flies_payoff_post.enabled`, `flies_payoff_post.intraday.enabled` and `intraday_agent.enabled`
+are separate and stay off until chosen, and live trading stays behind its own gate and per-day arm
+(`/live-flies-start` refuses while the module is off).
+
+With the module off no paper or live session runs and the supervisor schedules none of flies' jobs.
+Backtest research still reads the ledgers. Treat flies data and open questions as historical unless the
+module is reinstated. The honesty rules and guardrails below still govern any read of its numbers and any
+change to its live path.
 
 The file layout, read side, data source, arms, gates, advised arm, live-pilot plan and band
 placement are in [docs/reference.md](docs/reference.md).

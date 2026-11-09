@@ -1,5 +1,11 @@
 # cherrypick-bwb
 
+**Retired 2026-11-08; off by default.** The owner switched its entries off; the code, ledgers and docs are
+kept so it can be reinstated. To reinstate: set `modules.bwb.enabled` to true in the suite config and
+`enabled` to true on the `control` arm (and on `bounce` or `flip` if wanted) in `bwb.json`; the supervisor
+derives the bwb jobs from the module switch. Live trading stays behind its own gate and per-day arm
+(`/live-bwb-start` and `--arm` refuse while the module is off).
+
 > **⚠️ Experimental, educational software — not financial advice.** cherrypick is a prototype for
 > learning about and researching options strategies. Its live-trading paths place **real,
 > irreversible orders** at your own risk; options trading involves substantial risk of loss and is
@@ -13,9 +19,9 @@ positions ride concurrently per book at steady state. Four books trade the IDENT
 structure; the only variable is whether/when a reversal-triggered put credit spread add-on fires,
 turning the fly into a 1-3-2: `control` (never), `delta` (raw |delta| touch), `bounce` (confirmed
 pullback off a peak), `flip` (a gamma-flip reclaim). `delta` and a fifth, call-side `wall` book
-were retired at the 2026-10-15 boundary; their rows stay readable. A base install runs only
-`control`: the example config switches `delta`, `bounce` and `flip` off with `enabled: false`. Turn
-`bounce` or `flip` on in `~/.cherrypick/config/bwb.json`. SPX is cash-settled and European-style — no
+were retired at the 2026-10-15 boundary; their rows stay readable. Since the module's retirement the
+example config ships every arm off (`enabled: false`, each with a `_retired` note). Once reinstated, turn
+`control`, and `bounce` or `flip` if wanted, on in `~/.cherrypick/config/bwb.json`. SPX is cash-settled and European-style — no
 assignment machinery, no dividend calendar, the cleanest settlement model in the suite.
 
 See [CLAUDE.md](CLAUDE.md) for the experiment design, the honesty rules, the trigger-tick
@@ -24,8 +30,11 @@ substrate that makes a read-side threshold replay possible later, and the layout
 Paper by default. Since 2026-09-18 one arm (`live.arm`, `control` in the example) can trade
 **live**. Live trading is experimental, off by default and at your own risk. Nothing trades until your
 own config sets `live.enabled` and fills in `live.gate0_confirmed`, and then only on a day armed by
-`/live-bwb-start`, which shows the disclaimer verbatim and requires an explicit YES; while armed, the
-orchestrator's supervisor runs the `bwb-live` job. It enters the same structure as its paper twin,
+`/live-bwb-start`, which shows the disclaimer verbatim and requires an explicit YES (without Claude Code:
+`python -m cherrypick.bwb.live_loop --arm --confirm YES`, which prints `DISCLAIMER.md` and arms nothing
+unless the word is exactly `YES`; `--readiness` and `--status` first, `--disarm` to stop; `--install-task`
+is the same arm without the prompt, for the slash command, and both refuse while `modules.bwb.enabled` is
+false); while armed, the orchestrator's supervisor runs the `bwb-live` job. It enters the same structure as its paper twin,
 at most one a day, as a limit order walked down to a cost-derived floor, under a worst-case margin
 cap, with an optional mark-drawdown breaker that blocks new entries only, and with no closing orders (SPX
 cash-settles, and the ledger settles on an official print or not at all). The live ledger is `data/bwb/live_trades.db`, a separate file; the paper books
