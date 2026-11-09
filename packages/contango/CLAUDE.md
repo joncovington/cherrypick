@@ -96,16 +96,7 @@ whole shares, missed windows.
 
 ## Commands
 
-```bash
-python -m cherrypick.contango.paper_loop --once        # one gated tick
-python -m cherrypick.contango.paper_loop --interval 60 # the in-session resident loop
-python -m cherrypick.contango.paper_loop --status      # one JSON health object (watchdog contract)
-python run.py status | nav [--arm A] [--limit N] | stints [--arm A] | metrics
-python ../../scripts/contango_replay.py [--start 2018-03-01] [--cost-bps 2]
-python ../../scripts/contango_replay.py --validate [--ledger PATH]   # the replay against the ledger, read-only
-python ../../scripts/contango_item39.py refresh | plan | study   # item 39, the declared test of this rule
-python -m pytest
-```
+Commands to run the package, its tests and its lint are in [README.md](README.md#commands).
 
 `paper_loop --force` acts outside the window, for testing only. The replay reads SVXY/SHV from the
 technicals store and VIX/VIX3M from Cboe's files (`scripts/fetch_market_files.py`). The loop credits

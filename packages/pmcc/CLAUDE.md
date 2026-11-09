@@ -5,8 +5,7 @@ entries and closes what is open; the module goes off once flat). The code, ledge
 reinstate: set `modules.pmcc.enabled` to true in the suite config, `enabled` to true on the `shield`,
 `shield_hold` and `shield_guard` arms in `pmcc.json`, and `defaults.wind_down` to false or remove it.
 
-> **Vocabulary.** The arm column is `pmcc_positions.arm`. Configs still spelling the registry `books`
-> resolve through `cherrypick.core.config`, as every existing spelling does.
+The arm column is `pmcc_positions.arm`; a `books` spelling in a config still resolves.
 
 PMCC — a deep-ITM call with a short call sold against it, on XSP, QQQ, GLD, IWM, SLV and SMH, and
 from 2026-10-12 to 10-19 (one a market day) the stocks AMZN, TSLA, AMD, NVDA and PLTR (posture: root
@@ -25,47 +24,17 @@ Elsewhere:
 - window sizing: [docs/window-parameters.md](docs/window-parameters.md);
 - suite-wide context: the root [documentation index](../../docs/README.md).
 
-## Measurement breaks — never pool across these
+## Measurement breaks
 
-- **2026-08-23 redesign**: from 3 symbols/3 books (TNA/TQQQ/UPRO; `control`/`keltner`/`roll`) to one
-  `control` arm with a delta-band long, nearest-spot short and hold-to-expiry exit. Pre-redesign rows
-  are history, not comparable measurement.
-- **2026-08-23 XSP added** to `control` (additive). **Always read `pmcc` grouped by `symbol`, never
-  pooled**: each symbol is its own population.
-- **2026-08-28 entry spread gate**: `max_leg_spread_pct` is enforced at entry as well as at exit.
-- **2026-10-05 shield boundary** (`paper_loop.SHIELD_FROM`). All of these land together, and the loop
-  journals four `measurement_breaks` rows (`era`, `arms`, `symbols`, `pacing`), read from the config
-  as it stands:
-  - the held-long arms join control;
-  - the symbols become XSP/QQQ/GLD/IWM/SLV (TQQQ takes no new entries and runs off);
-  - `max_positions` goes from 3 to 6;
-  - held-long first entries are paced (`entry_symbols_per_session`);
-  - the era becomes `shield`.
+Several rule changes began on a date, and the rows either side are not comparable. **Never pool
+across them; every date, with its journaled break, is in
+[docs/history.md](docs/history.md#declared-boundaries).** What to remember when reading the ledger:
 
-  XSP control's rules are unchanged across it, but its roster and cap are not, so it is read per era.
-  If the deploy slips past the date, move `SHIELD_FROM` with it.
-- **2026-10-06 control retired, advice off.** `books.control.enabled: false`, pmcc `advice.enabled:
-  false` and the advisor's `modules.pmcc` off; experiment `exp-2026-10-01-pmcc-1` killed. Journaled as
-  `measurement_breaks` `arms` and `advice` rows dated 2026-10-06, by hand: `_note_shield_boundary` only
-  writes its own date. No new era: shield's rules and roster are untouched, and the two arms never
-  shared a position. Control and its advised twins ran off under their own rules (shorts 10-09 and
-  10-16); every one of their positions, and every TQQQ position, was closed by 2026-10-18.
-- **2026-10-12 to 10-19, six symbols added**, one a market day (`symbol_from`): SMH, AMZN, TSLA, AMD,
-  NVDA, PLTR — the first single stocks, physical settlement, with the earnings refusal (below, under "What can refuse").
-  Additive: each symbol is its own population, and no existing symbol's rules change. Journaled as
-  `symbols` (with `max_positions` raised for the larger roster) and `earnings` rows. A held-long
-  stock long sits deep (broker 0.90 is ~45–55% in the money on these IVs), and AMZN lists strikes
-  only down to about 48% below spot, which is where its long lands.
-- **2026-10-26 `shield_guard` joins** (`from` on its config block, `engine.arm_on`), journaled as an
-  `arms` row by `_note_arm_starts` on the first tick of the day. `shield_hold` plus `assignment_roll`:
-  the 2026-10-19 review found the hold arm's shorts deep in the money with almost no extrinsic
-  (SLV 1,071 exposed ticks, QQQ 675), the region where a live IRA short is assigned. It enters fresh,
-  two symbols a session, so its longs are not the pair's; compare weekly marked change per symbol.
-  Additive: no running arm's rules change.
-- **2026-10-06 long delta 0.88–0.92** (was 0.90–0.95, nearest 0.925): the source design's ~90-delta long,
-  journaled as `long_delta`. Measured by the BROKER's delta, which the live loop will select by: on
-  American-style ETFs its deep-call delta runs below parity, so 0.90 sits ~36–41% in the money (parity
-  ~0.94–0.97); on XSP the two agree (~24%). The XSP pair entered 2026-10-05 at ~0.925 stays as entered.
+- **Always read `pmcc` grouped by `symbol`, never pooled**: each symbol is its own population.
+- The era is `shield` from 2026-10-05 (`paper_loop.SHIELD_FROM`; if a deploy slips past the date,
+  move it with it). Rows before it are the `redesign` era and are history, not comparable measurement.
+- A new arm or symbol is additive: no running arm's rules change, and its first tick journals an
+  `arms` or `symbols` row.
 
 ## The experiment design
 
@@ -304,24 +273,7 @@ Its plan, kept in the session record:
 
 ## Commands
 
-```bash
-python -m cherrypick.pmcc.paper_loop --once        # one gated tick (what the supervisor spawns off-session)
-python -m cherrypick.pmcc.paper_loop --interval 60 # the in-session resident loop
-python -m cherrypick.pmcc.paper_loop --status      # one JSON health object (watchdog contract)
-python -m cherrypick.pmcc.paper_loop --settle --date 2026-10-09 --price 71.23 [--symbol SLV]  # official print
-python run.py status                               # open positions + the expiration plan
-python run.py headline [--era ALL]                 # closed results per arm and symbol
-python run.py tracker-index                        # every position the tracker can show
-python run.py tracker --position SLV:shield:2026-10-05   # one position, week by week
-python run.py weekly [--era ALL]                   # the arms' weekly A/B
-python run.py equity [--era ALL]                   # each arm's daily marked equity and tear sheet
-python run.py exposure                             # the early-assignment-exposure telemetry
-python ../../scripts/pmcc_leap_probe.py            # what each symbol lists ~1 year out (network, read-only)
-python ../../scripts/pmcc_shield_replay.py         # the 2011- replay behind the shield arms, put benchmark included
-python ../../scripts/pmcc_shield_replay.py --skew-check   # the model against the sampled skew
-python -m pytest                                   # temp CHERRYPICK_HOME; no broker, no streamer needed
-ruff check . && ruff format .                      # line-length 110
-```
+Commands to run the package, its tests and its lint are in [README.md](README.md#commands).
 
 Config: `config.example.json` → `config.json` (git-ignored) or `~/.cherrypick/config/pmcc.json`; the
 example is the design document — read its `_note` keys first. It ships the full roster; a

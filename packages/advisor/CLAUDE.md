@@ -263,11 +263,8 @@ with no advice at all. A module in `_BASE_KEY` still needs its own `advice.enabl
 and disabled, which reports itself), and **must** have a `factpack` section, or the model is asked to
 design experiments for a module it cannot see. `tests/test_factpack.py` pins both directions.
 
----
-CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
----
+Package guardrails, on top of the root's:
 
-> ⚠️ Suite-wide guardrails apply — see root CLAUDE.md. On top of those:
 > - **No AI, no network, no broker.** No `tastytrade`, `keyring`, `requests`, `socket`,
 >   `cherrypick.core.auth`/`broker`, `core.dxfeed`, `core.streamer` or `core.streamrequests` import
 >   may appear in `src/` — enforced by a source scan (`tests/test_guardrails.py`), and

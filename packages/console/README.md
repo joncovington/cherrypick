@@ -73,3 +73,17 @@ never writes it, no order path) and `docs/verify-notes.md` for the M0 spike find
 size); `console-desktop.cmd` / `./console-desktop.sh` at the repo root do the same. It is a window
 and nothing else — the supervisor still owns the server — and when the console is not answering it
 says what went wrong rather than showing a connection error. See [desktop/README.md](desktop/README.md).
+
+## Commands
+
+```bash
+pnpm install
+pnpm build                        # build shared + server + the SPA + the desktop main process
+pnpm dev:server                   # backend on :5070 with reload
+pnpm dev:web                      # Vite on :5173, proxying /api and /ws to :5070
+pnpm test                         # vitest
+pnpm typecheck                    # tsc --noEmit across all three workspaces
+python run.py dashboard --serve   # what the supervisor's `console` job invokes
+pnpm --filter @console/desktop start   # the desktop window
+pnpm ui-check --route /meic/performance --expect "drawdown"   # drive the REAL browser
+```

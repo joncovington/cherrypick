@@ -124,7 +124,10 @@ say, 12 trades after several weeks isn't a bug — check `regime_buckets` in the
 assuming a gate needs loosening; some strategies (e.g. `broken_wing_butterfly`) are inherently
 rare-regime and may only ever reach a directional read within a reasonable horizon.
 
-## Schedule
+## Schedule (historical)
+
+The schedule below was the original rollout (August 2026). It is kept as the record of how the program
+was meant to start; the harness now runs every night with no week count.
 
 - **Week 0 — setup & dry run.** One night, confirm every strategy constructs, size, cost,
   persist, and close with no error.

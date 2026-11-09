@@ -18,31 +18,7 @@ start at the root [documentation index](../../docs/README.md).
 
 ## Commands
 
-```bash
-# Fresh clone: scripts\dev-install.ps1 (or .sh) from the repo root, or pip install -e packages/core first.
-# From a source checkout use run.py (never create a root cherrypick.py — see Gotchas); if pip-installed, `cherrypick <cmd>`.
-python run.py doctor             # green/red readiness (read-only)
-python run.py install            # register the ONE anchor task, start supervisor + streamer/services, delete legacy per-job tasks; refuses while any live module is armed today (--force overrides)
-python run.py uninstall          # remove cherrypick-managed tasks
-python run.py status             # supervisor job registry + heartbeats (legacy schtasks snapshot on a pre-cutover box)
-python run.py watchdog           # one watchdog pass (the supervisor's 10-minute job)
-python run.py supervise          # supervisor daemon loop, foreground (--stop asks a running one to exit)
-python run.py ensure-supervisor  # the anchor's probe: restart a dead/stale supervisor; one CRITICAL after 3 failed probes
-python run.py streamer-health    # one streamer-liveness pass (the 60s in-session job)
-python run.py preopen-check      # deprecated alias for streamer-health (honours the legacy preopen flag)
-python run.py report             # cross-module paper P&L; --eod / --date YYYY-MM-DD for one session; --live reads the live-tagged ledgers (never feeds calibrate/promotion)
-python run.py calibrate          # per-arm calibration readings + promotion recommendations
-python run.py positions          # live P/L of the REAL broker account (read-only, on demand); --detail / --account <last4> / --json
-python run.py manage             # daily position evaluation: broker snapshot (read-only) judged by packages/manage
-python run.py archive            # monthly rotation of finished months' reports + logs to logs/archive/ (--dry-run / --month YYYY-MM)
-python run.py backup             # nightly suite backup (the suite-backup job, 01:30 ET): ONE verified zip, rewritten; a bad night never replaces it (--dry-run / --list / --verify / --restore-to DIR)
-python run.py settings           # local config editor + secrets manager on loopback:8804; --organize [target] [--apply] reorders configs instead
-python run.py migrate-home       # dry-run move of config into ~/.cherrypick (--apply to perform)
-python run.py queue-add --study item17 --task fetch-chains --task-args '{"requests": "<file>"}'  # queue a research task named study/step (slugs; step defaults to the kind; --output for a script's conclusion); queue-list [--study] / queue-cancel --task-id N; the research-queue job runs it
-python -m pytest                 # default lane `-m "not live" -q`; markers unit, live, windows
-python -m pytest tests/test_report.py::test_report_unifies_pnl_net_of_costs_across_modules  # one test
-ruff check . ; ruff format .     # line-length 110
-```
+Commands to run the package, its tests and its lint are in [README.md](README.md#commands).
 
 Every other verb (`ps`/`restart`/`stop`/`start`, `service`, `dolt-*`, the live safeguards,
 `notify-*`, `sent`, `capabilities`) is in [docs/orchestrator-cli.md](../../docs/orchestrator-cli.md).

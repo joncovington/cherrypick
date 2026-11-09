@@ -1,9 +1,9 @@
 # cherrypick-core
 
 Shared core library for the **cherrypick** trading suite. Every other Python package in this monorepo
-depends on it — the strategy modules (meic, earnings, flies, bwb, calendars, pmcc, curve,
-contango), the streamer, gex, the orchestrator, review, advisor, overview, technicals, manage,
-backtest and desk — so the auth,
+depends on it — the strategy modules (meic, earnings, calendars, contango, weeklyput, and the retired
+flies, bwb, pmcc and curve), the streamer, gex, the orchestrator, review, advisor, overview,
+technicals, fundamentals, manage, backtest and desk — so the auth,
 market-data, fee, risk, calendar, GEX, ledger and reporting concerns are implemented **once**.
 
 > Distribution name is `cherrypick-core`; it imports as the **`cherrypick.core`** namespace package,
@@ -17,7 +17,8 @@ market-data, fee, risk, calendar, GEX, ledger and reporting concerns are impleme
    session lazily and lets callers inject the factory.)
 2. **The core imports nothing from a consumer.** Everything a consumer supplies (service name,
    thread-local flag, session factory, snapshots) is **injected or parameterized**, never reached back
-   into. No tool enforces this today; it is a review rule (see [CLAUDE.md](CLAUDE.md)).
+   into. `tests/test_core_imports_no_consumer.py` enforces it, deriving the consumers from the
+   package directories (see [CLAUDE.md](CLAUDE.md)).
 3. **Portable + secret-safe.** No hardcoded machine paths; credentials live in the OS keyring only.
 
 ## Layout (native namespace: `cherrypick/` has no `__init__.py`; the package is `cherrypick/core/`)
@@ -64,6 +65,21 @@ cherrypick/core/
   structures/      shared option-structure arithmetic
   trace/           one closed position's entry and management trace
   viz/             money formatting and the section contract
+  progress/        how far a long job has got, written by the job and read by anyone
+  schemas/         JSON Schema files shared with the console (data, not code)
+  american.py      an American option's value (Bjerksund-Stensland), a model never a price
+  chaindelta.py    a chain's deltas computed from its own mids
+  environment.py   the suite's one market-environment label
+  external_report.py  the external-reports contract (one JSON file per report)
+  incomerules.py   the income screens' strike rule
+  killcriteria.py  a live arm's written, frozen condition for being wrong
+  legbars.py       liquidity bars for a leg or a spread
+  legmarks.py      one position leg priced at a mark
+  procs.py         CPU-bound children at full speed (the EcoQoS opt-out)
+  robustness.py    what a declared test states before and reports after
+  slices.py        an arm's results cut by setup, with guardrails
+  treasury.py      Treasury's daily par yield curve
+  valuation.py     an unlevered DCF from plain numbers
   bs.py            Black-Scholes-Merton price, delta and implied vol (a model, never a price)
   home.py          the one resolver for ~/.cherrypick
   jsonio.py        the one atomic JSON writer

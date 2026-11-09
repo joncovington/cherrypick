@@ -6,9 +6,7 @@ kept so it can be reinstated. To reinstate: set `modules.bwb.enabled` to true in
 derives the bwb jobs from the module switch. Live trading stays behind its own gate and per-day arm
 (`/live-bwb-start` and `--arm` refuse while the module is off).
 
-> **Vocabulary.** This module's **book** (the config key `books`) is the suite's **arm** (root
-> `CLAUDE.md`). The ledger column has been `bwb_positions.arm` since 2026-09-23; prose and the
-> console say `arm`.
+The module's `books` config key is the root's `arm`; the ledger column is `bwb_positions.arm`.
 
 A daily-laddered SPX put broken-wing butterfly; the root file gives the posture. Every book enters
 the IDENTICAL BWB from the same plan on the same tick and differs only in whether/when the add-on
@@ -66,8 +64,8 @@ per position**, then the trigger disarms for good. Armed until expiry, no cutoff
 **hold everything to expiry** on every book — early exit is reserved for a future experiment.
 
 **A missed add-on is skipped for good** (`bwb addon-missed --position-id ... --reason ... --apply`,
-dry run without `--apply`). When the loop was down while a trigger may have been met (the
-2026-10-08 power outage, 10:35-16:00 ET), the trigger is not reconstructed (rules 4 and 7): the
+dry run without `--apply`). When the loop was down while a trigger may have been met (a
+power outage, say), the trigger is not reconstructed (rules 4 and 7): the
 position is stamped `addon_missed_at`/`addon_missed_reason`, management holds it as
 `addon_missed` and never arms or fires it, its latches keep updating, and `fire_counts` reports it
 as `missed`, outside the fire rate. A later measured fire would be a different, later trade than the
@@ -158,9 +156,9 @@ affecting.
 7. **No fallback paths in v1** — triggers refuse on missing data rather than degrade.
 8. **Measurement breaks are journaled rows** (`measurement_breaks`).
 9. **`bounce_pullback` must stay above zero** — config-lint guards it; at zero bounce equals delta.
-10. **Never pool across a journaled break.** `trigger_ticks_unmeasured` (2026-08-24..27, every row
-    `measured = 0`) must not pool with later rows; rows before 2026-09-18 carry an overstated
-    `entry_max_loss` and a doubled body settlement fee, derivable and not rewritten (history doc).
+10. **Never pool across a journaled break.** The dates are in
+    [docs/history.md](docs/history.md#declared-boundaries); a row before a boundary was produced under
+    a rule that no longer holds, and is derivable but never rewritten.
 11. **Implied variance at entry is recorded, never acted on** (2026-10-09). `entry_iv_vol` with
     `entry_iv_complete = 0` is a lower bound (the cache's strike window cut the wings); rows before
     2026-10-09 carry none.
@@ -263,22 +261,7 @@ Built to test whether the paper result survives a fill without disturbing the pa
 
 ## Commands
 
-```bash
-python -m cherrypick.bwb.paper_loop --once        # one gated tick
-python -m cherrypick.bwb.paper_loop --interval 60 # the in-session resident loop
-python -m cherrypick.bwb.paper_loop --status      # one JSON health object (watchdog contract)
-python -m cherrypick.bwb.paper_loop --settle --date 2026-09-18 --price 6400.10  # official print
-python run.py status | worksheet | fires          # positions + expiration / worksheet / fire counts
-python run.py iv-premium [--windows]            # implied at entry vs realised to expiry, per window
-python run.py live-gap | entry-context           # live arm vs paper per session; entry vol per position (read-only)
-python -m pytest                                  # temp CHERRYPICK_HOME; no broker, no streamer
-ruff check . && ruff format .                     # line-length 110
-
-python -m cherrypick.bwb.live_loop --once         # LIVE dry-run smoke: preflights, places nothing
-python -m cherrypick.bwb.live_loop --status       # armed_for / pending / orphans / breaker / broker_held
-python -m cherrypick.bwb.live_loop --settle --price 6400.10 --date 2026-09-18   # official print
-python -m cherrypick.bwb.fee_reconcile            # settled live rows vs broker transactions
-```
+Commands to run the package, its tests and its lint are in [README.md](README.md#commands).
 
 `--once --live` is the real tick. `--install-task` is the agent path `/live-bwb-start` calls after its own
 YES, and `--disarm` (alias `--uninstall-task`) disarms; a person arms with `--arm --confirm YES`, which

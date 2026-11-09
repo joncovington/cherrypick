@@ -24,20 +24,11 @@ The Earnings Agent is a rules-based options trading system that:
 
 ### 7 Strategies (all defined-risk)
 
-Profit targets and stops are the shipped `config.example.json` values (`strategies.<name>`).
-
-| Strategy | Profit target | Stop | Best For |
-|----------|---|---|---|
-| Iron Fly | 25% of credit | 1.5× credit | Medium IV |
-| Iron Condor | 50% of credit | 1.5× credit | Wide range |
-| Directional Spread | 50% of credit | 2.0× credit | IV skew |
-| Broken Wing Butterfly | 25% of credit | 2.0× credit | Asymmetric IV |
-| ATM Calendar | 15% of debit | 50% of debit | Low IV |
-| Double Calendar | 15% of debit | 50% of debit (plus a 0.45-delta leg stop) | Overpriced moves |
-| Expected-Move Butterfly | fly worth 50% of its width | none (the debit is the max loss) | Measuring a directional fly's fills (paper only) |
-
-The two calendars stay registered but open nothing in the forced-sampling books from 2026-10-15
-(`strat_test_harness.STRAT_TEST_RETIRED`).
+Structure, entry gates and exit rules for each are in the one strategy table,
+[Strategy Guide](./05-strategies.md); the shipped profit targets and stops are in
+[Exit Strategy Guide](./10-exits.md) and `config.example.json` (`strategies.<name>`). The two calendars
+(from 2026-10-15) and `broken_wing_butterfly` (from 2026-10-26) stay registered but open nothing in the
+forced-sampling books (`strat_test_harness.STRAT_TEST_RETIRED`).
 
 ### Key Metrics
 

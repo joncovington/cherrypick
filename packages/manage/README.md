@@ -595,7 +595,7 @@ the money as a share of the strike (negative is in the money) and its time value
 `early exercise` (a call in the money with less time value than a dividend going ex before expiry, or
 any short in the money with time value under `attention.near_zero_extrinsic`; never a cash-settled
 index), `in the money`, or `near` (within `attention.near_pct`, 3%), worst first; every leg with
-`attention.expiring_days` (7) or fewer left is listed apart. The live loops' 0DTE legs are left out.
+`attention.expiring_days` (7) or fewer left is listed apart. 0DTE legs on `exclude.zero_dte_underlyings` are left out (a loop or the hand manages those).
 A reading, not a rule: it fires nothing. The orchestrator posts each listed name once a session
 (`managealert.py`), from the full runs and the minute re-marks; the console draws it on Live -> wheel.
 
@@ -625,7 +625,7 @@ the stock's move is the shares', each once; **dividends** are on their day; **fe
 closed spans paid. `net` is puts + calls + shares + dividends, per name and for the account, over 1M,
 3M, 6M, 1Y, YTD and ALL by the closing day, and by calendar month. Every closed span is listed (`lots`,
 with how it ended), and what is still held is `open`, its cash so far, never counted as kept. The
-live loops' 0DTE legs and spans the history entered mid-position are counted aside with their legs
+0DTE legs on `exclude.zero_dte_underlyings` and spans the history entered mid-position are counted aside with their legs
 and net, as the pace counts them. The console's Live -> wheel tab draws it above the cycles.
 
 The evaluation's `ledger` counts the wheel's names alone (2026-11-05): the names with a cycle, which
@@ -652,7 +652,7 @@ account-wide history is that account's), as the evaluation's `premium`:
   cash settled (the cash row joins the leg its quantity row closed).
 
 Six calendar months (ET) and the current week. Two things are left out of both and stated with their
-count and net: 0DTE legs on `exclude.zero_dte_underlyings` (the live loops' own books) and legs the
+count and net: 0DTE legs on `exclude.zero_dte_underlyings` (positions a trading loop or the hand manages the same day) and legs the
 history entered by a close (opened before the 400 days it reaches). Only option legs count. The
 history is the snapshot's `account_transactions` (v15); a snapshot without it, or a failed read,
 gives the target alone and the reason.
@@ -671,8 +671,9 @@ are the comparison. A book that keeps far less than it collects is paying for it
 - **Fees are known only for a reconciled chain.** A trade priced from its open legs shows gross P&L only, and its basis misses any earlier roll.
 - **Ex-dividend dates are the last declared ones.** The rule fires once the next ex-date is announced.
 - **Earnings dates are the broker's expected dates**, which can move.
-- **SPX 0DTE is left out** (`exclude.zero_dte_underlyings`): a same-day, cash-settled position is
-  managed by the loop that placed it and settles at the close.
+- **0DTE on the listed underlyings is left out** (`exclude.zero_dte_underlyings`, SPX by default): a
+  same-day, cash-settled position is managed by whoever placed it (a trading loop, or the hand) and
+  settles at the close. The exclusion is about the position's lifetime, not about any one module.
 - **A covered call the PMCC link does not reach counts only its two chains.** Earlier shorts sold in orders of
   their own and expired are not in its basis, and an ambiguous pairing (two lone longs or shorts on
   one name) is left split.

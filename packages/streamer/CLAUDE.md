@@ -22,17 +22,7 @@ belongs to the always-on producer because a consumer's cadence is not guaranteed
 
 ## Commands
 
-```bash
-python run.py               # run the daemon in the foreground (Ctrl-C / SIGTERM to stop)
-python run.py --status      # print one JSON health object (running, pid, oldest_event_age_s, ...) and exit
-python run.py --stop        # SIGTERM a running daemon
-python run.py --symbol SPX --symbol XSP   # override the configured symbols for this run
-python run.py --secrets-set    # store the shared tastytrade OAuth bearer secrets (hidden input) in the keyring
-python run.py --secrets-status # print which shared OAuth secrets are present (JSON)
-python run.py --prune       # report dead chain rows in the cache; add --apply to delete them
-python -m pytest            # lifecycle tests; no broker/streamer required (temp $CHERRYPICK_HOME)
-ruff check . && ruff format .             # line-length 110
-```
+Commands to run the package, its tests and its lint are in [README.md](README.md#commands).
 
 Config: copy `config.example.json` → `config.json` (git-ignored, machine-local), or place
 `~/.cherrypick/config/streamer.json`.

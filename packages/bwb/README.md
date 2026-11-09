@@ -51,3 +51,22 @@ python -m pytest
 Config: with no config of its own, bwb runs from the shipped `config.example.json`. Your own goes in
 `~/.cherrypick/config/bwb.json` (or a package-local `config.json`, or a file named by `BWB_CONFIG`).
 The example's `_note` keys are the design document.
+
+## Commands
+
+```bash
+python -m cherrypick.bwb.paper_loop --once        # one gated tick
+python -m cherrypick.bwb.paper_loop --interval 60 # the in-session resident loop
+python -m cherrypick.bwb.paper_loop --status      # one JSON health object (watchdog contract)
+python -m cherrypick.bwb.paper_loop --settle --date 2026-09-18 --price 6400.10  # official print
+python run.py status | worksheet | fires          # positions + expiration / worksheet / fire counts
+python run.py iv-premium [--windows]            # implied at entry vs realised to expiry, per window
+python run.py live-gap | entry-context           # live arm vs paper per session; entry vol per position (read-only)
+python -m pytest                                  # temp CHERRYPICK_HOME; no broker, no streamer
+ruff check . && ruff format .                     # line-length 110
+
+python -m cherrypick.bwb.live_loop --once         # LIVE dry-run smoke: preflights, places nothing
+python -m cherrypick.bwb.live_loop --status       # armed_for / pending / orphans / breaker / broker_held
+python -m cherrypick.bwb.live_loop --settle --price 6400.10 --date 2026-09-18   # official print
+python -m cherrypick.bwb.fee_reconcile            # settled live rows vs broker transactions
+```

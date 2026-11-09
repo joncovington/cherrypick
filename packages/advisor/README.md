@@ -2,8 +2,13 @@
 
 The deterministic half of the suite's AI advisor: fact packs in, bounded paper experiments out.
 
+**Status: paused (2026-10-25) until the redesign.** New experiments are admitted `queued` and nothing
+new is activated; running ones finish. It stays paused until the redesign in
+[docs/advisor-redesign-plan.md](../../docs/advisor-redesign-plan.md) lands (qualification on net, not
+enactment). See [CLAUDE.md](CLAUDE.md) for what pausing does.
+
 After each close a scheduled script shows an AI model a **fact pack**: a deterministic,
-aggregate-only snapshot of what the paper books did today (plus clearly labelled read-only live
+aggregate-only snapshot of what the paper arms did today (plus clearly labelled read-only live
 context). The model is asked what it notices and what it would change. That one deep run, at 17:00
 ET by default, designs experiments and passes verdicts. Light intraday checkpoints are still
 supported but none are scheduled by default; list their times in `advisor.checkpoints` to bring
@@ -20,7 +25,7 @@ be imported by a loop.
 |---|---|
 | **Can** | Read every module's paper data, and live data read-only for context |
 | **Can** | Issue a bounded, single-session, expiring advice artifact for the next paper session |
-| **Can** | Run any number of experiments per module concurrently (unlimited by default, capped via `max_experiments_per_module`), each its own `advised:<experiment-name>` book beside the shared control |
+| **Can** | Run any number of experiments per module concurrently (unlimited by default, capped via `max_experiments_per_module`), each its own `advised:<experiment-name>` arm beside the shared control |
 | **Can** | Propose anything at all — new arms, new strategies, whole new modules — as propose-only memos |
 | **Can** | Queue a backtest spec for packages/backtest to run over the design window only, when `advisor.backtest_proposals` is on (off by default); a result is at most a reason to propose a paper experiment |
 | **Cannot** | Touch a live account, in any way, ever |

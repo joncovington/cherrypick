@@ -164,19 +164,8 @@ See [Configuration Guide](./03-configuration.md) for every parameter and what it
 
 ## Strategy Comparison
 
-All seven strategies are defined-risk — max loss is known at entry for every one of them.
-
-| Strategy | Structure | Entry | Hold |
-|---|---|---|---|
-| `iron_fly` | Short ATM straddle + long OTM wings | Credit | Overnight |
-| `iron_condor` | Short OTM put spread + short OTM call spread | Credit | Overnight |
-| `directional_credit_spread` | Short OTM put or call spread (side by skew) | Credit | Overnight |
-| `broken_wing_butterfly` | Skip-strike butterfly, wings sized to skew | Credit | Overnight |
-| `atm_calendar` | Short front-month + long back-month, one side | Debit | Multi-day |
-| `double_calendar` | ATM calendar on both call and put side | Debit | Multi-day |
-| `expected_move_butterfly` | 1-2-1 fly, body at spot ± EM, side by rr25 skew (paper only) | Debit | To the 15:20 expiry close or take-profit |
-
-The two calendars open nothing in the forced-sampling books from 2026-10-15.
+All seven strategies are defined-risk: max loss is known at entry for every one of them. Structure,
+entry and hold for each are in the one strategy table, [Strategy Guide](./05-strategies.md).
 
 ---
 

@@ -125,20 +125,12 @@ for the exact couplings.
 
 ## The 7 Strategies
 
-All defined-risk, all evaluated nightly against live tastytrade chains and DoltHub data:
-
-| Strategy | Structure | Best For |
-|---|---|---|
-| `iron_fly` | Short ATM straddle + long OTM wings | Medium IV, balanced risk/reward |
-| `iron_condor` | Short OTM put spread + short OTM call spread | Wide expected range, directional-neutral |
-| `directional_credit_spread` | Short OTM put or call spread (side chosen by skew) | Directional bias / IV skew |
-| `broken_wing_butterfly` | Asymmetric (skip-strike) butterfly, wings sized to skew | Asymmetric expected moves |
-| `atm_calendar` | Short front-month + long back-month, same strike | Low IV, term-structure edge |
-| `double_calendar` | ATM calendar on both the call and put side | Low IV, symmetric term structure |
-| `expected_move_butterfly` | 1-2-1 debit fly, body at spot +/- EM, side by skew (paper only) | Measuring a directional fly's real fills |
-
-`atm_calendar` and `double_calendar` stay registered but open nothing in the forced-sampling books
-from 2026-10-15 (`strat_test_harness.STRAT_TEST_RETIRED`; see
+All defined-risk, all evaluated nightly against live tastytrade chains and DoltHub data: `iron_fly`,
+`iron_condor`, `directional_credit_spread`, `broken_wing_butterfly`, `atm_calendar`,
+`double_calendar` and `expected_move_butterfly` (paper only). Each one's structure, entry gates and
+exit rules are in the one strategy table, [Strategy Guide](./docs/05-strategies.md). The two calendars
+(from 2026-10-15) and `broken_wing_butterfly` (from 2026-10-26) are registered but open nothing in the
+forced-sampling books (`strat_test_harness.STRAT_TEST_RETIRED`; see
 [docs/operating-history.md](./docs/operating-history.md)).
 
 See [docs/05-strategies.md](./docs/05-strategies.md) for full structure, entry conditions, and

@@ -7,8 +7,9 @@ across all of them.
 It drives the modules **by subprocess**, using paths from config — it never imports them, never edits
 their internals, and **never places a live order** itself. Its one live-adjacent configuration action is
 onboarding: helping you pick which account a module would trade in if you ever enabled live trading.
-(It does run a module's own live loop as a job while a human has armed that module for the day — flies,
-bwb and MEIC; see [guardrails-and-modes.md](../../docs/guardrails-and-modes.md).)
+(It does run a module's own live loop as a job while a human has armed that module for the day: MEIC,
+and flies or bwb if you reinstate them. Earnings is paper-only. A person arms a loop with `--arm
+--confirm YES` on its CLI; see [guardrails-and-modes.md](../../docs/guardrails-and-modes.md).)
 
 New to the suite? Start with [QUICKSTART.md](../../QUICKSTART.md) or the
 [User Guide](../../docs/PROJECT.md) instead — they cover installing and running the whole thing in plain
@@ -51,13 +52,23 @@ console and Dolt running by design; `python run.py stop --all` after it is the f
 `python run.py capabilities` shows whether this machine can carry the optional features (`dolt` for
 earnings and technicals, `claude` for the advisor and narratives), and `--detect --write` records it.
 Push notifications are **off by default**: every channel list in `config.example.json` is `["log"]`,
-so add `desktop`, `discord` or `slack` to turn one on (webhooks via `run.py secrets-set`).
+so add `desktop`, `discord`, `slack` or `telegram` to turn one on (webhooks, and the Telegram bot token
+and chat ID, via `run.py secrets-set --channel <name>`; never in a config file).
 
 **External reports** let you add your own daily report without touching the suite: list a script under
 `~/.cherrypick` in `config.json`'s `external_reports`, and the supervisor runs it each day and the
 console draws the JSON it writes (optionally posting a text card to Discord). `python run.py
 external-check <file>` shows what a report file will look like, or why it will not. See the
 [guide](../../docs/guide/external-reports.md).
+
+**Retired modules ship off.** Flies, curve, pmcc and bwb are retired: each has `modules.<name>.enabled`
+false, so the supervisor derives none of their jobs.
+Their ledgers and code stay, and the console keeps their pages under Experiments. A retired module that
+still holds open positions is wound down by its own setting (pmcc's `defaults.wind_down` closes what is
+open and the module goes off once flat; curve's last spreads were managed to their expiry). To reinstate
+one, set its module switch and its arms' `enabled` flags back to true (each module's CLAUDE.md says
+which); a live loop of a retired module also refuses to arm while its switch is off, on both the
+`--arm` and the slash-command path.
 
 Every other command — calibration, the end-of-day review, reconcile, archive, backup, secrets, onboarding
 — is in the [CLI reference](../../docs/orchestrator-cli.md), which documents all of them and is checked
@@ -100,3 +111,31 @@ ruff check . && ruff format .       # line-length 110
 - [docs/README.md](../../docs/README.md) — the suite documentation index.
 - `docs/design.md` and `ROADMAP.md` in this package are **frozen records**, not current reference; each
   says so in its own header.
+
+## Commands
+
+```bash
+# Fresh clone: scripts\dev-install.ps1 (or .sh) from the repo root, or pip install -e packages/core first.
+# From a source checkout use run.py (never create a root cherrypick.py — see Gotchas); if pip-installed, `cherrypick <cmd>`.
+python run.py doctor             # green/red readiness (read-only)
+python run.py install            # register the ONE anchor task, start supervisor + streamer/services, delete legacy per-job tasks; refuses while any live module is armed today (--force overrides)
+python run.py uninstall          # remove cherrypick-managed tasks
+python run.py status             # supervisor job registry + heartbeats (legacy schtasks snapshot on a pre-cutover box)
+python run.py watchdog           # one watchdog pass (the supervisor's 10-minute job)
+python run.py supervise          # supervisor daemon loop, foreground (--stop asks a running one to exit)
+python run.py ensure-supervisor  # the anchor's probe: restart a dead/stale supervisor; one CRITICAL after 3 failed probes
+python run.py streamer-health    # one streamer-liveness pass (the 60s in-session job)
+python run.py preopen-check      # deprecated alias for streamer-health (honours the legacy preopen flag)
+python run.py report             # cross-module paper P&L; --eod / --date YYYY-MM-DD for one session; --live reads the live-tagged ledgers (never feeds calibrate/promotion)
+python run.py calibrate          # per-arm calibration readings + promotion recommendations
+python run.py positions          # live P/L of the REAL broker account (read-only, on demand); --detail / --account <last4> / --json
+python run.py manage             # daily position evaluation: broker snapshot (read-only) judged by packages/manage
+python run.py archive            # monthly rotation of finished months' reports + logs to logs/archive/ (--dry-run / --month YYYY-MM)
+python run.py backup             # nightly suite backup (the suite-backup job, 01:30 ET): ONE verified zip, rewritten; a bad night never replaces it (--dry-run / --list / --verify / --restore-to DIR)
+python run.py settings           # local config editor + secrets manager on loopback:8804; --organize [target] [--apply] reorders configs instead
+python run.py migrate-home       # dry-run move of config into ~/.cherrypick (--apply to perform)
+python run.py queue-add --study item17 --task fetch-chains --task-args '{"requests": "<file>"}'  # queue a research task named study/step (slugs; step defaults to the kind; --output for a script's conclusion); queue-list [--study] / queue-cancel --task-id N; the research-queue job runs it
+python -m pytest                 # default lane `-m "not live" -q`; markers unit, live, windows
+python -m pytest tests/test_report.py::test_report_unifies_pnl_net_of_costs_across_modules  # one test
+ruff check . ; ruff format .     # line-length 110
+```

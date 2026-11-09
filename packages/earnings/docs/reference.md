@@ -8,6 +8,8 @@ All operations via `python -m cherrypick.earnings.tt <command>` (broker), `pytho
 cherrypick.earnings.scanner <command>` (engine), `python -m cherrypick.earnings.strategies.<name>
 <command>` (strategy). JSON to stdout.
 
+`--profile` is the flag's historic spelling: it selects an arm (the whole `strat_test` family, or one `strat_test:<strategy>` arm). The ledger column is `arm`.
+
 | Command | Purpose |
 |---|---|
 | `python -m cherrypick.earnings.scanner get_calendar --date MM/DD/YYYY` | Tickers with earnings on this date |
