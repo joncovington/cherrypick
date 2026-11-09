@@ -24,9 +24,20 @@ and the workflow's "on main" check below would need relaxing to match. Until the
 
 ## While developing
 
-Every PR with a change a user would notice adds a line under `## [Unreleased]` in `CHANGELOG.md`,
-saying what changed and anything a user has to do. That section is the next release's notes, so it is
+The changelog is written in `## [Unreleased]` as PRs land, not at the end. Every PR with a change a
+user would notice adds a line there, saying what changed and anything a user has to do. A
+measurement boundary goes in too, with its date. That section is the next release's notes, so it is
 written for the person upgrading, not as a commit log.
+
+CI enforces it with a warning: a PR that changes files under `packages/*/src`, `scripts/` or
+`install.*` without editing `CHANGELOG.md` gets one
+([`tools/check_changelog_touched.py`](../tools/check_changelog_touched.py)). It never fails the
+build, since a refactor or a test-only fix needs no line. Label the PR `no-changelog` to skip it.
+
+Before the tag, the notes are rewritten as one `## vX.Y.Z` section in the shape of v0.11.0: a short
+narrative, `### Upgrading`, `### What's new` and `### In detail`. `release/manifest.json` gets the same
+release's upgrade notes, which `run.py upgrade` shows before it changes anything; keep the two
+consistent.
 
 ## The release manifest
 
