@@ -1,6 +1,6 @@
 """The window each arm's analysis is read over: its own era where the ledger can say, else the suite's.
 
-docs/strategy-analysis-plan.md, decision of 2026-10-17. A figure means something only over trades
+(packages/core/docs/module-map.md) A figure means something only over trades
 that were made under the same rules. The suite's evidence window (its `data_epoch`) is one bound;
 an arm's own measurement breaks are a tighter one: an arm added, a gate changed, an arm retired.
 The regime cuts already scope each arm this way, and the analysis now does too, through the same

@@ -53,7 +53,7 @@ dashboard rather than something anyone wanted here:
 - **Equity 2x-slippage restatement, best/worst-day metrics, and the VIX right-axis overlay** — three
   ways to make one chart busier. Best/worst-day is already legible in the daily calendar beside it,
   and a VIX overlay on a cumulative-P&L axis invites eyeballed causation, which is exactly what the
-  regime cuts in `docs/metrics-plan.md` are the disciplined version of. *The data-epoch marker in
+  regime cuts (`/flies/regime`, `/meic/regime`) are the disciplined version of. *The data-epoch marker in
   that same row is NOT struck* and stays wanted: it marks declared measurement breaks on a curve
   that must never be read across them, which is a suite-wide rule made visible.
 - **MEIC per-leg put/call status badges and stop-adjustment columns** — detail for a live-managed

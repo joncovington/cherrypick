@@ -58,7 +58,7 @@ python run.py gex-gate                       # what the negative-GEX gate refuse
   entries on paper's own book as of each entry (flies' method), replay-only entry episodes, credit
   differences, and each side's worst cost on a full-day replay. No SPX arm ran a per-side stop in the
   recorder era, so the worst-cost path stands in for the plan's stops-matched check. The pass test
-  was declared in `docs/quote-history-replay-plan.md` (Phase 2) before any number was read;
+  was declared in `docs/quote-history-replay-plan.md (tag archive/docs-2026-11)` (Phase 2) before any number was read;
   `packages/backtest`'s validation reads its summary. Each session replays on the delta it ran with
   (`delta_source_since`); `--delta-source` replays every session on one source instead, which is how
   backtest's validation compares a vendor's history with the recording.
@@ -155,7 +155,7 @@ fired, `*_settle_value` what the side was worth unstopped — **recorded for sto
   recorder keeps SPX's chain quotes every ~15 s (`core.quotehistory`), covering every leg MEIC has
   traded since 09-01. The MEIC replay on it (`meic.replay`, above) prices a fired stop at the first
   recorded cost past its trigger, the gap-through `stop_policies` cannot see; Phase 2 of
-  [quote-history-replay-plan.md](../../../docs/quote-history-replay-plan.md).
+  [quote-history-replay-plan.md](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/quote-history-replay-plan.md).
   Nothing before 10-13 is recoverable.
 
 **A width (or any arm) comparison must be bucketed on whether the reference arm fired that session**

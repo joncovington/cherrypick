@@ -13,7 +13,7 @@ import { readAnalysisAsync } from "../services/analysisBridge.js";
 
 /**
  * One module's strategy analysis, per arm, via `services/analysisBridge.ts`
- * (docs/strategy-analysis-plan.md). It reads exactly what the performance slide reads -- the same
+ * (packages/core/docs/module-map.md). It reads exactly what the performance slide reads -- the same
  * ledger file for the mode, the same suite epoch, the same stamped module era -- so a figure here
  * and the reading beside it always describe the same trades. The module's id goes to the bridge
  * so its declared allocations apply; the file is read by core, never here. Nothing is computed in

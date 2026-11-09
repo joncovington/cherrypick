@@ -338,7 +338,7 @@ comparison stops meaning anything. Entry-side ideas are still worth having; they
 propose-only `creative` memos on the console's Advisor page.
 
 Draft manifests for every module, and the supervised sequence for turning this on, are in
-[docs/history/advisor-bounds-draft.md](../../../docs/history/advisor-bounds-draft.md).
+[docs/history/advisor-bounds-draft.md (tag archive/docs-2026-11)](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/history/advisor-bounds-draft.md).
 
 ## `management` — the position lifecycle
 

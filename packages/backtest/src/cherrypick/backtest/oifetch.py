@@ -1,5 +1,5 @@
 """The open-interest fetch: each name's open interest per contract per session, every expiry within
-`MAX_DAYS`. Item 30 (`docs/edge-hypotheses-plan.md`) builds monthly-expiry GEX walls from it.
+`MAX_DAYS`. Item 30 (`research/edge-hypotheses-plan.md`) builds monthly-expiry GEX walls from it.
 
 **What is kept,** per (name, session), in `open_interest.db` beside the other licensed stores:
 

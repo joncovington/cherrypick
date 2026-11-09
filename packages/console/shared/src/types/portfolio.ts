@@ -1,6 +1,6 @@
 // ------------------------------------------------------------------- the portfolio reading (shared)
 // Compare's portfolio tab (`GET /api/portfolio`): how a chosen set of arms -- one per module --
-// behaves held together, from `python -m cherrypick.core.portfolio` (docs/strategy-analysis-plan.md
+// behaves held together, from `python -m cherrypick.core.portfolio` (packages/core/docs/module-map.md
 // Phase 5). Field names are core's own, snake_case, passed through.
 
 import type { TradingMode } from "./status.js";

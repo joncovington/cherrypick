@@ -1,7 +1,7 @@
 """cherrypick.core.robustness — what a declared test states before it runs, and reports after it passes.
 
-`docs/trading-book-review-plan.md` B12, B13 and B9; the declaration template in
-`docs/edge-hypotheses-plan.md` names each line these functions fill.
+trading-book-review-plan (archived)` B12, B13 and B9; the declaration template in
+`research/edge-hypotheses-plan.md` names each line these functions fill.
 
 - **B12, minimum detectable effect** (`planned_mde`): the smallest edge the planned sample can detect
   at the pass bar, from the spread of comparable past results, so a "no verdict" says what it rules

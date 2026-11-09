@@ -159,7 +159,7 @@ only the write to the keyring uses the full number.
 secrets (in the orchestrator: Slack/Discord webhook URLs, and Telegram's bot token and chat ID as two
 entries) live in the OS keyring, never in files, env vars, or logs.
 
-**The shared-credential model** (see [onboarding-redesign.md](history/onboarding-redesign.md)): the tastytrade
+**The shared-credential model** (see [onboarding-redesign.md](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/history/onboarding-redesign.md)): the tastytrade
 login lives once in the shared `cherrypick-broker` keyring service, which every module's store reads
 *through* as a fallback; a module's own service, when set, always wins — that's the override and
 per-module rotation layer, and it's what `connect --module` writes. The suite-wide account designation

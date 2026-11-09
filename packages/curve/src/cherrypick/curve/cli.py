@@ -5,7 +5,7 @@ Subcommands (all read-only):
     regime          the regime series (curve_regime) plus the module's own read of it
     worksheet       the live per-position worksheet
     exposure        the early-assignment-exposure telemetry
-    excursions      per-closed-position MAE/MFE (docs/metrics-plan.md Phase 2) plus distributions
+    excursions      per-closed-position MAE/MFE (packages/core/docs/module-map.md) plus distributions
     equity          each arm's daily marked equity (open positions at their marks) and its tear sheet
     regime-history  the VIX/VIX3M regime replay over stored history — a SEPARATION BENCHMARK for
                     the signal, never suite P&L; see `regime_history.py`.

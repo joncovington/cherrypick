@@ -99,7 +99,7 @@ never a faster full watchdog tick.
   into this package — the GEX math once drifted ~75× when it was copied.
 
 Development guidance and the full invariant list: [CLAUDE.md](CLAUDE.md). Why the streamer was split
-out of MEIC: [docs/history/streamer-package-plan.md](../../docs/history/streamer-package-plan.md). The
+out of MEIC: [docs/history/streamer-package-plan.md (tag archive/docs-2026-11)](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/history/streamer-package-plan.md). The
 incidents behind the rules: [docs/history.md](docs/history.md).
 
 ## Commands

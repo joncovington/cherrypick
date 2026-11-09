@@ -1,4 +1,4 @@
-"""Item 55, the defined-risk index collar as a hedge for a long-delta book (docs/edge-hypotheses-plan.md):
+"""Item 55, the defined-risk index collar as a hedge for a long-delta book (research/edge-hypotheses-plan.md):
 the coverage plan, the design run and the holdout run.
 
     python packages/backtest/scripts/index_collar_item55.py plan [--out-dir DIR]

@@ -86,7 +86,7 @@ remaining files keep the numbers they were written with, so existing links stay 
 - [Strategy Optimization Research](./strategy-optimization.md) — Hypotheses queued for paper-test validation
 - [File Size Exceptions](./file-size-exceptions.md) — Documented exceptions to the 500-line guideline
 - [Operating History](./operating-history.md) — Dated incidents behind the rules in `CLAUDE.md`
-- [Earnings screener plan](../../../docs/history/earnings-screener-plan.md) — The navigator-rule history study
+- [Earnings screener plan](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/history/earnings-screener-plan.md) — The navigator-rule history study
   (no edge after costs) and the earnings calendar. Both live in `packages/technicals` and on the
   console's Screeners page, not in this module
 

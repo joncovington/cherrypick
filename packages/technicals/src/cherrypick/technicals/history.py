@@ -1,4 +1,4 @@
-"""Dolt's whole daily history, for the historical study (docs/signal-log-plan.md, Phase 1).
+"""Dolt's whole daily history, for the historical study (research/signal-log-plan.md, Phase 1).
 
 Landed into `history.db` (`paths.history_db()`) in the same schema as `eod.db`, so the store's own
 reading of it (`store.raw_bars`, `store.adjusted_bars`) applies unchanged: the same split dedupe,

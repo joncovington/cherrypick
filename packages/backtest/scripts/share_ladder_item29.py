@@ -1,4 +1,4 @@
-"""Item 29, the share ladder in options (docs/edge-hypotheses-plan.md): on the ladder's trigger days, a
+"""Item 29, the share ladder in options (research/edge-hypotheses-plan.md): on the ladder's trigger days, a
 call debit spread, a put credit spread or a ZEBRA in place of the share lot, each paired against shares
 of the same entry delta over the same closes.
 

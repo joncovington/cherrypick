@@ -2,7 +2,7 @@ import { fmtMoney } from "./DataTable";
 
 /**
  * Daily net P&L calendar: one cell per session, alpha-scaled green/red, ISO-week columns with
- * Monday at the top. Extracted from the MEIC page (2026-08-23, docs/metrics-plan.md step 0) so
+ * Monday at the top. Shared (first built on the MEIC page) so
  * every module's history tab can carry the same consistency-at-a-glance view — the journal-tool
  * survey's single most-loved widget. Missing weekdays render as neutral cells (a holiday is not
  * a zero day); the window is the most recent 90 sessions.

@@ -1,4 +1,4 @@
-"""Item 48, the stop of MEIC's live rule (docs/edge-hypotheses-plan.md): `pm-200` entering once a day,
+"""Item 48, the stop of MEIC's live rule (research/edge-hypotheses-plan.md): `pm-200` entering once a day,
 14:00-14:30, with its per-side stop at 1.8, 1.9, 2.0 and 2.2 times the whole credit, each priced three
 ways -- as the loop fills it today, and as a stop-limit resting at the broker at both of its fill
 bounds -- against the same rule held to settlement.

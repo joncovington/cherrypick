@@ -4,7 +4,7 @@
 opened: the expiry value comes from the stock's close. So instead of every name's every chain every
 session -- weeks of requests at the account's tier, which serves single stocks from 2016 at about a
 second a session-chain and has no whole-market daily file -- a study writes the list of entry
-sessions it needs, and this fetches exactly those (docs/edge-hypotheses-plan.md, item 14).
+sessions it needs, and this fetches exactly those (research/edge-hypotheses-plan.md, item 14).
 
 **The request file** is JSON: ``{"requests": [{"symbol", "session", "expiration"}, ...]}`` (a bare
 list also reads). Its order is kept; a repeated request is fetched once.

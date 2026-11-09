@@ -120,7 +120,7 @@ def exposure(conn) -> dict:
 
 
 def excursions(conn, era: str | None = CURRENT_ERA) -> dict:
-    """MAE/MFE per CLOSED position, plus their distributions (docs/metrics-plan.md Phase 2).
+    """MAE/MFE per CLOSED position, plus their distributions (packages/core/docs/module-map.md).
 
     `era=CURRENT_ERA` (the default) scopes to the module's current evidence window, same rule as
     `headline`; `era="ALL"` disables the filter.

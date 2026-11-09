@@ -1,4 +1,4 @@
-"""Item 26, the dip-buying share ladder on leveraged funds (docs/edge-hypotheses-plan.md): buy a lot
+"""Item 26, the dip-buying share ladder on leveraged funds (research/edge-hypotheses-plan.md): buy a lot
 7% under the latest 4:00 pm close, sell each lot 4% over its own cost, no stop.
 
     python scripts/share_ladder_item26.py study [--json PATH] [--names A,B]

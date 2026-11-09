@@ -9,7 +9,7 @@ import { closePooledDbs } from "../src/readers/db.js";
 import { armMeta, isBookModule, readBookGuide } from "../src/readers/experimentGuide.js";
 
 /**
- * The arm guide for the book modules (2026-10-27, docs/history/progress-queue-arms-plan.md phase 3): the same
+ * The arm guide for the book modules (2026-10-27, docs/history/progress-queue-arms-plan.md (tag archive/docs-2026-11) phase 3): the same
  * derivation flies and MEIC have, over calendars, pmcc, curve, contango and bwb -- their `books`/`arms`
  * registry, their `<prefix>_positions` ledger keyed by `entry_session`, and the newer one-setting-a-row
  * `measurement_breaks`. An arm's `_summary`, `_since` and `_retired` are fields, not notes.

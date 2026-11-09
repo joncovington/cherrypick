@@ -1,7 +1,7 @@
 """Large options orders: prints grouped into orders, each order's side read from its fill, and the
 size distribution the "large" test needs. Pure: plain rows in, plain rows out.
 
-The rules are `docs/flow-signal-plan.md`'s, declared before any history was read, and they are the
+The rules are `research/flow-signal-plan.md`'s, declared before any history was read, and they are the
 same for every source: the ThetaData fetch here, and the broker's nightly feed later, which imports
 this module so the two cannot read an order differently.
 

@@ -92,7 +92,7 @@ export interface IncomeListPayload {
 /**
  * Our own credit-spread list (`technicals` `creditspreads.py`, income-lists version 2, 2026-10-24):
  * the chart setups' fresh entries as spreads on the 30-45 day monthly. UNTESTED -- item 17 of
- * docs/edge-hypotheses-plan.md will judge it. Prices are per share at the working price, a credit +.
+ * research/edge-hypotheses-plan.md will judge it. Prices are per share at the working price, a credit +.
  */
 
 /** One spread: the short against one long. Every money figure per share. */

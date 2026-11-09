@@ -73,7 +73,7 @@ and what all automation runs.
 **Research item** — One numbered question in the suite's research queue (for example item 57, the weekly
 index put). Each is declared with a pass test before it is run, then recorded as pass, fail or open, and
 the verdicts decide which arms a module carries. They are tracked in
-[edge-hypotheses-plan.md](edge-hypotheses-plan.md) and its [`hypotheses.json`](hypotheses.json).
+[edge-hypotheses-plan.md](../research/edge-hypotheses-plan.md) and its [`hypotheses.json`](../research/hypotheses.json).
 
 **Advised twin** — An arm the optional AI advisor proposes (`advised:<base>`), run in paper beside its
 control and judged by the same qualification gate as any other arm. It never touches a live loop.

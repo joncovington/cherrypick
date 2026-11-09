@@ -1,6 +1,6 @@
 """The earnings calendar: every announcement in the next 30 days, in the vendor's calendar layout.
 
-Step 2 of docs/history/earnings-screener-plan.md. One row per announcement, joined from data already held
+Step 2 of earnings-screener-plan (archived). One row per announcement, joined from data already held
 locally -- never the broker, so this stays credential-free:
 
 - **when:** the local Dolt calendar (`earnings.earnings_calendar`, date and before/after the open)
@@ -265,7 +265,7 @@ def our_reads(day: str, symbols: list[str], conn=None, lookup=None) -> dict[str,
 
     Direction is Bearing (`compass.py`): the lookup fitted on every saved security list, applied to
     our trend scores and our 1-10 score. Read from our bars, it names the vendor's strong states
-    85-95% of the time (docs/history/earnings-screener-plan.md, gap 4). Strength is that 1-10 score itself:
+    85-95% of the time (earnings-screener-plan (archived), gap 4). Strength is that 1-10 score itself:
     `levels.rank_score`'s decile on the whole-market cut-offs the landing stored. Both are read on the
     store's last bar on or before `day` -- the morning's landing, so the PREVIOUS session's close at
     the 19:10 build: the same close the vendor's list describes. Names the store does not hold are

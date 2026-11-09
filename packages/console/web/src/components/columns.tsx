@@ -11,7 +11,7 @@ import type { SortHeader } from "./DataTable";
  * something (Live → today's `working`) sets it from the rows: `detailOnly: !anyWorking`. A column
  * removed in both views is simply not declared.
  *
- * `secondary` (2026-10-30, docs/console-review-plan.md batch 3) takes a column out of the row in
+ * `secondary` takes a column out of the row in
  * EVERY view and into the row's expanded line (`SecondaryCells`). Only a table that has an expanded
  * line may use it: a secondary column in a table without one would be a figure no view shows.
  */

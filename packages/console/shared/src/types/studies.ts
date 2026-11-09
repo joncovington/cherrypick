@@ -1,7 +1,7 @@
 import type { BacktestScorecard } from "./backtest.js";
 /**
- * The studies board (`run.py hypotheses-board`; packages/orchestrator `hypotheses.board`, 2026-10-29,
- * docs/studies-board-plan.md): each row of the hypothesis register joined with its result files'
+ * The studies board (`run.py hypotheses-board`; packages/orchestrator `hypotheses.board`):
+ * each row of the hypothesis register joined with its result files'
  * verdicts and its research-queue rows. The register decides the status; a verdict is the word the
  * study wrote, never worked out from figures. The console renames the reply and decides nothing.
  */

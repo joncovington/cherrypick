@@ -657,7 +657,7 @@ export function SetupsPage() {
                   {isOpen && (
                     <tr>
                       <td colSpan={COLUMNS + (tested ? 1 : 0)}>
-                        {/* Out of the row since 2026-10-30 (docs/console-review-plan.md batch 3). */}
+                        {/* Out of the row since 2026-10-30. */}
                         <table className="data-table secondary-cells" aria-label={`${r.symbol} prices and context`}>
                           <thead>
                             <tr>

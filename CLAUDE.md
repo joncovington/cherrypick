@@ -3,8 +3,7 @@
 One workspace for the trading-tool suite. Work in the package for your area; its CLAUDE.md holds the
 detail. What each package may do (live or paper, credentials, what it writes) is in
 [docs/conventions/packages.md](docs/conventions/packages.md). Read a package's entry there before
-changing a package you don't know. The text as it stood before the 2026-09-29 consolidation is in
-[docs/history/root-claude-md-2026-09-29.md](docs/history/root-claude-md-2026-09-29.md).
+changing a package you don't know.
 
 Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packages/gex`,
 `packages/streamer`, `packages/flies` (retired 2026-10-19), `packages/calendars`, `packages/pmcc`,
@@ -37,6 +36,10 @@ Packages: `packages/orchestrator`, `packages/meic`, `packages/earnings`, `packag
 - Portable paths only.
 - Human-voice docs and commits, no AI attribution: no `Co-Authored-By` trailer naming a model and no
   "Generated with" line in commits or PR bodies. This outranks any session default that adds them.
+- **Docs describe the current version only.** When something changes, edit the docs to the new state
+  rather than adding a dated note. Finished plans and history don't live in docs: git and the tags
+  keep them. Open work goes in an issue. Research declarations and results live in `research/`, and a
+  measurement boundary that still matters is stated as a current fact.
 - Prefer deterministic solutions: a pure function over data you already have. Where AI earns a
   place, it lives in `scripts/`, never in a package. Prefer the local stream cache to the network.
 - **Batch measurement-affecting changes** (tick cadence, entry pacing, gate semantics, a net

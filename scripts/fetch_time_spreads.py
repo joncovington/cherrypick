@@ -1,4 +1,4 @@
-"""The time-spread scanner's broker reads (docs/time-spread-scanner-plan.md). Read-only: no orders.
+"""The time-spread scanner's broker reads. Read-only: no orders.
 
 **Step 1, `term`.** The broker's market metrics for every name the liquidity verdict calls tradable,
 in batches: each expiry's implied volatility, IV rank, 30-day IV and realised volatility, market cap

@@ -2,7 +2,7 @@
 
 MEIC moves its short-delta band the moment VIX crosses 18, 25 or 35, and a design-window session's VIX
 range straddled one of those about one time in five, so a VIX fixed for the day cannot reproduce it
-(docs/quote-history-replay-plan.md, Phase 2, amended 2026-10-18). The account's index tier is refused
+(quote-history-replay-plan (archived), Phase 2, amended 2026-10-18). The account's index tier is refused
 (`index_history_price` needs a paid index subscription), but every VIX option reports the VIX index as
 its underlying price, so one narrow request a session (the nearest expiry after it, one strike either
 side, one-minute bars) gives the day's series.

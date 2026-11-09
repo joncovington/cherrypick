@@ -5,7 +5,7 @@ Subcommands (all read-only over the module's own ledger):
     headline   per-arm, per-structure results through the analytics layer
     policies   the derived exit-policy comparison table — the module's whole point
     validate   the derivation checked against the control arm's real recorded results
-    excursions per-closed-position MAE/MFE (docs/metrics-plan.md Phase 2) plus distributions
+    excursions per-closed-position MAE/MFE (packages/core/docs/module-map.md) plus distributions
 
 The paper loop's own argv (`python -m cherrypick.calendars.paper_loop --once|--interval|--settle|
 --status`) is what the orchestrator drives; this CLI is the human read side.

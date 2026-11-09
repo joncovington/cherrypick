@@ -23,7 +23,7 @@ def test_chain_paths_must_exist_under_their_folder():
     assert any("does not exist" in p for p in problems)
     problems = hy.check({"hypotheses": [{**NEW, "tests": ["scripts/weeklyput_item69.py"]}]})
     assert any("must sit under packages/" in p for p in problems)
-    problems = hy.check({"hypotheses": [{**NEW, "scripts": ["scripts/../docs/hypotheses.json"]}]})
+    problems = hy.check({"hypotheses": [{**NEW, "scripts": ["scripts/../research/hypotheses.json"]}]})
     assert any("must sit under" in p for p in problems)
     # A package's own code is not a study script, though the backtest's scripts folder is.
     src = "packages/backtest/src/cherrypick/backtest/stores.py"

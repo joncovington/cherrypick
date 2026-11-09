@@ -1,8 +1,8 @@
 # technicals — fitting record
 
 The dated record of how each vendor rule was fitted, moved out of `packages/technicals/CLAUDE.md`
-(which keeps each rule, its defining numbers, and what is still unsolved). The plan is
-[`docs/market-report-plan.md`](../../../docs/market-report-plan.md).
+(which keeps each rule, its defining numbers, and what is still unsolved). What the
+report runs is in [reference.md](reference.md), "The market report: what runs".
 
 Fits after 2026-09-29 (the rotation refit to the daily quadrant, analyst revisions, the bearing, the
 signal board, the income screens and the public security list) are recorded with their numbers in

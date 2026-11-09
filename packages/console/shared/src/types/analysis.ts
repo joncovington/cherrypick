@@ -1,7 +1,7 @@
 // ------------------------------------------------------------------- strategy analysis (shared)
 // One analysis per arm tag, from `python -m cherrypick.core.analysis read` via
 // `server/src/readers/analysis.ts::readModuleAnalysis` / `GET /api/analysis/:module`
-// (docs/strategy-analysis-plan.md). Field names inside `analysis` stay the bridge's snake_case,
+// (packages/core/docs/module-map.md). Field names inside `analysis` stay the bridge's snake_case,
 // verbatim, as `ModulePerformanceGroup.reading` does.
 
 import type { PerformanceModuleId } from "./performance.js";

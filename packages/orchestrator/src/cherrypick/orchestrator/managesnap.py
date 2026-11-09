@@ -18,7 +18,7 @@ Metrics and history come from the first enabled module whose broker tool answers
 failure to get either is recorded in the snapshot, never fatal: the evaluation still runs every rule
 that needs only prices, and says what was unavailable.
 
-Version 3 (2026-10-18) adds what a portfolio reading needs (docs/history/portfolio-guidance-plan.md): each
+Version 3 (2026-10-18) adds what a portfolio reading needs (portfolio-guidance-plan (archived)): each
 underlying's beta and three-month correlation to SPY as the broker states them -- the beta the broker's
 own beta-weighted delta uses, so the two can agree -- and the benchmark's metrics whether or not it is
 held, since a beta-weighted delta is priced in its units. The account's kind (margin or cash, IRA or
@@ -60,7 +60,7 @@ Version 10 carries the account's orders as the broker lists them for the day (`w
 through the broker tool's read-only `get_working_orders`): working ones and the day's filled or
 cancelled ones alike, each slimmed to its id, status, underlying, type, price and legs, with every
 account number left out. manage counts a call still being sold against shares as already written
-(docs/skate-plan.md step 5 reads it for the wheel view's resting buy-to-close).
+(the wheel view reads it for its resting buy-to-close).
 
 Version 11 carries `roll_chains`: for every expiry in which one underlying is short both a put and a
 call (a short strangle or straddle, or anything holding one), that expiry's chain, quoted, ROLL_STRIKES
@@ -69,7 +69,7 @@ tastylive strategy guide's defence), and needs a strike that is listed and a pri
 it, which the trade's own legs cannot supply. One read per such expiry; none when the account holds
 none.
 
-Version 12 carries `skate_bands`, the skate screen's range bands (docs/skate-plan.md step 1) for the
+Version 12 carries `skate_bands`, the skate screen's range bands for the
 names the account holds, so the wheel view can judge each short strike against today's band and
 `reevaluate` still gets the same answer twice. A file read, not a broker call: the newest
 `technicals/skate/<day>.json` on or before the session and at most SKATE_MAX_SESSIONS trading sessions
@@ -86,7 +86,7 @@ read-only from the technicals history store (`technicals/history.db`, Dolt's raw
 tradable name from 2015, topped up daily). Not the end-of-day store `eod.db`: that holds only the
 market report's names, and on 2026-10-19 52 of 458 tradable names had no bars there (IVV, FXI, BRK.B
 among them), the reason the income stress reading moved to the history store too (#440).
-manage's PMCC view (docs/skate-plan.md step 6) solves the long's delta at entry from its opening fill
+manage's PMCC view solves the long's delta at entry from its opening fill
 and that day's close, carrying the dividend yield (the dividends gone ex in the year before, over the
 close), and today's from the same dividends over today's price. The store's raw dividend table is
 used as Dolt states it, not reconciled with the broker's. A close the store does not hold yet (a long
@@ -115,7 +115,7 @@ gets the same answer. A local file read, never the broker. A folder that cannot 
 `live_known_orders_error`; a snapshot without the field has no hand 0DTE view.
 
 Version 17 (2026-11-06) carries `time_spreads`: the session's own time-spread reading
-(scripts/fetch_time_spreads.py; docs/time-spread-scanner-plan.md), the shortlist's quoted chains manage
+(scripts/fetch_time_spreads.py), the shortlist's quoted chains manage
 builds calendars and diagonals from. A local file read, never the broker; only today's file counts, and
 its absence is the reading's `error`. A snapshot without the field has no time-spread rows.
 

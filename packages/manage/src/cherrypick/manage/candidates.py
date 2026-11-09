@@ -1,4 +1,4 @@
-"""Income trades from our own universe, sized to the account (docs/history/portfolio-guidance-plan.md, 4).
+"""Income trades from our own universe, sized to the account (portfolio-guidance-plan (archived), 4).
 
 A pure function of the evening `income` reading the snapshot carries (`fetch_screener_greeks.py
 income`: every tradable name's cycle-monthly chain, quoted in regular hours, with its earnings dates,
@@ -579,7 +579,7 @@ def screen_fit(
     held: float,
     written: float,
 ) -> dict[str, Any]:
-    """Whether the Screeners lists' trades on this name fit the account (income review plan, item 5),
+    """Whether the Screeners lists' trades on this name fit the account (packages/manage/README.md),
     for the console to badge them: account-blind lists, judged here where the account's rules live.
 
     - `short_put`: {strike: {bp, fits}} for every out-of-the-money put within the lists' delta

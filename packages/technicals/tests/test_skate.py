@@ -1,4 +1,4 @@
-"""The skate screen's range band and its history (docs/skate-plan.md, step 1).
+"""The skate screen's range band and its history.
 
 Each test pins one thing a row depends on. A band a tick too wide, or an expiry that quietly spans
 an earnings report, reads exactly like a good candidate, so the failures here are the point.

@@ -1,4 +1,4 @@
-"""Item 58, the closing fly (docs/edge-hypotheses-plan.md): a 0DTE SPX iron fly or narrow condor sold
+"""Item 58, the closing fly (research/edge-hypotheses-plan.md): a 0DTE SPX iron fly or narrow condor sold
 from the 15:55 quote and held to the 16:00 settlement, scored on two structure arms.
 
     python packages/backtest/scripts/close_fly_item58.py [--start 2022-05-16] [--end 2024-12-31]

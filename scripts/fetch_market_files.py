@@ -11,7 +11,8 @@ The parsers are overview's own (`cherrypick.overview.files`), so a file is check
 code that will read it, and a download that parses to less than the file on disk (a truncated or
 wrong file) is refused rather than written over good history.
 
-Why these sources (docs/market-report-plan.md, "Sources, verified"): Cboe's daily SKEW file replaces
+Why these sources (packages/technicals/docs/reference.md, "The market report"): Cboe's daily SKEW file
+replaces
 the stream's SKEW history, which delivered five scattered rows in 270 days; Treasury posts its curve
 by about 18:00 ET, a day ahead of FRED; BEA's release-dates file is keyless. BLS refuses scripts,
 so CPI, jobs and PPI dates come only through FRED's release-dates API, which needs a free key

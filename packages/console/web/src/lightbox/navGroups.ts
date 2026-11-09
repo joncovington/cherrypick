@@ -305,7 +305,7 @@ export type CalendarsSlideId = (typeof CALENDARS_SLIDES)[number]["id"];
  * - Config has a page per `fieldMeta.ts` section plus `prefs`, read from that list rather than
  *   copied, so a section added there is a page here without a second edit.
  */
-// 2026-10-30 (docs/console-review-plan.md, batch 2): `volume` is the skew tab's third chart, and
+// 2026-10-30: `volume` is the skew tab's third chart, and
 // `history` is a sparkline of today's recorded net GEX on `gex`, with when each symbol last recorded.
 export const GEX_SLIDES = [
   { id: "gex", label: "gex" },
@@ -347,7 +347,7 @@ export const REPORTS_SLIDES = [
  */
 export const COMPARE_SLIDES = [
   { id: "arms", label: "arms" },
-  // 2026-10-17: every arm's risk shape over its own window, from core.analysis (docs/strategy-analysis-plan.md).
+  // Every arm's risk shape over its own window, from core.analysis (packages/core/docs/module-map.md).
   { id: "risk", label: "risk" },
   // 2026-10-17: every arm's settled net per session as a month grid with weekly totals.
   { id: "calendar", label: "calendar" },
@@ -385,7 +385,7 @@ export const SCREENERS_SLIDES = [
 
 export const ADVISOR_SLIDES = [{ id: "advisor", label: "advisor" }] as const satisfies readonly NavSlide[];
 
-// 2026-10-30 (docs/console-review-plan.md batch 4): the paper-only experiments and the flies record, one page.
+// 2026-10-30: the paper-only experiments and the flies record, one page.
 export const EXPERIMENTS_SLIDES = [{ id: "experiments", label: "experiments" }] as const satisfies readonly NavSlide[];
 
 /**

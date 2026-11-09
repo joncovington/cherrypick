@@ -1,6 +1,7 @@
 """Next week's earnings for the market report, each with the move its options imply.
 
-Phase 5 of docs/market-report-plan.md. For every stock the technicals store holds (the universe
+Part of the market report (packages/technicals/docs/reference.md). For every stock the technicals store
+holds (the universe
 candidates and the captured names) with an announcement in the next `DAYS` calendar days on the
 local Dolt earnings calendar, this prices the at-the-money straddle on the first expiration the
 market can trade the print on, and turns it into an expected move with the suite's one definition,

@@ -47,7 +47,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/console/                   # the console's own store
   data/gex/gex_history.db         # GEX spot trail + regime history + the suite-level market-regime
                                   #   series (market_regime_history / daily_closes; read via
-                                  #   cherrypick.core.regime — see docs/regime-recorder-plan.md)
+                                  #   cherrypick.core.regime — see packages/gex/CLAUDE.md)
   data/technicals/eod.db          # technicals' end-of-day store (bars, splits, dividends, IV)
   data/fundamentals/              # packages/fundamentals' store; valuation/<session>.json is the fair-value file the Screeners tab reads
   data/market-files/              # fetched public files: the event calendar, Treasury CSVs, OCC volume, VIX-curve bars

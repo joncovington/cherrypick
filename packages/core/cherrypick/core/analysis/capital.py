@@ -1,6 +1,6 @@
 """Capital for an arm, two ways: the risk it was observed to carry, and an allocation a person declares.
 
-docs/strategy-analysis-plan.md, Phase 0. Return and drawdown mean little as dollars alone: $3,000 is
+(packages/core/docs/module-map.md) Return and drawdown mean little as dollars alone: $3,000 is
 a disaster for an arm risking $500 and a rounding error for one risking $50,000. Two denominators,
 because they answer different questions:
 

@@ -22,7 +22,7 @@ const EXCURSIONS_HELP: CardHelpContent = {
 };
 
 /**
- * MAE/MFE (docs/metrics-plan.md Phase 2) -- the deepest a position went against its entry and the
+ * MAE/MFE (packages/core/docs/module-map.md) -- the deepest a position went against its entry and the
  * best it got before close, per `services/excursionsBridge.ts`. Distribution tiles first (the
  * suite-wide summary every module's reading already carries elsewhere), then one point per
  * position: x = MAE (always <= 0), y = MFE (always >= 0), colored by tag -- so a cluster near the

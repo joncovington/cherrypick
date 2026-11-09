@@ -54,7 +54,7 @@ export function railHalves<T extends NavLinkDef>(links: readonly T[]): { above: 
 }
 
 /**
- * The rail's Modules section (2026-10-30, docs/console-review-plan.md batch 4): the live-capable
+ * The rail's Modules section: the live-capable
  * modules, then the Experiments page. Each keeps its digit whether or not another is on: `2` is BWB
  * every day, so a module switched off no longer moves the others' keys.
  */

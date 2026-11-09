@@ -1,4 +1,4 @@
-"""Item 68, MEIC's live rule on QQQ and NDX (docs/edge-hypotheses-plan.md): `pm-200` entering once a day,
+"""Item 68, MEIC's live rule on QQQ and NDX (research/edge-hypotheses-plan.md): `pm-200` entering once a day,
 14:00-14:30, on each symbol at its SPX-equivalent wing and at the width the config gives it today.
 
     python packages/backtest/scripts/meic_symbols_item68.py --step coverage
@@ -23,7 +23,7 @@ above zero with t above 2.
 
 **Reported, never judged:** each arm's net over buying power beside SPX `live-1400`'s over the same
 sessions (item 23's recorded runs); the correlation of its session nets with SPX's; the two together;
-in the design window the fill stress of docs/edge-hypotheses-plan.md's verdict-fill convention
+in the design window the fill stress of research/edge-hypotheses-plan.md's verdict-fill convention
 (each arm again halfway from mid to the natural fill, a quarter of every leg's spread); per arm the
 entries left open at the session's end, which for QQQ, physically settled, is a close the 15:30
 force-close missed.

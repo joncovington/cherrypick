@@ -6,7 +6,7 @@ import { TESTED_STATUS } from "../src/lib/testedStatus";
 const renderToText = (el: Parameters<typeof renderToString>[0]) => renderToString(el).replace(/<!-- -->/g, "");
 
 /**
- * Batch 1 of docs/console-review-plan.md, "say what is true": each module's summary opens with which
+ * Say what is true: each module's summary opens with which
  * ledger it is, whether live has traded, a stale day labelled as the last traded one, and what
  * history says; Flow says when a later capture was refused.
  */

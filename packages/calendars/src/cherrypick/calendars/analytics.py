@@ -80,7 +80,7 @@ def em_vs_realized(conn) -> list[dict]:
 def excursions(conn) -> dict:
     """MAE/MFE per CLOSED position (one `dc_positions` row -- one side, one arm, one week; the
     same per-trade granularity `cherrypick.core.ledgers`'s `dc_week` reader uses), plus their
-    distributions (docs/metrics-plan.md Phase 2).
+    distributions (packages/core/docs/module-map.md).
 
     `core.metrics.excursions` owns the generic MAE/MFE computation; this is the module-specific
     half -- pairing `dc_marks`' per-tick `front`/`back` leg mids (by `marked_at`, one shared

@@ -1,4 +1,4 @@
-"""Item 34, the option-to-stock premium ratio (docs/edge-hypotheses-plan.md): do stocks whose options
+"""Item 34, the option-to-stock premium ratio (research/edge-hypotheses-plan.md): do stocks whose options
 trade heavily relative to their shares underperform, over the next five sessions, those whose options
 trade lightly?
 

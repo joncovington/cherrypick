@@ -1,5 +1,5 @@
 """The order rules (flow.py), on synthetic prints: each rule from the plan, and the cases it exists for.
-docs/flow-signal-plan.md declares them; nothing here is fitted to data."""
+research/flow-signal-plan.md declares them; nothing here is fitted to data."""
 
 from __future__ import annotations
 

@@ -153,7 +153,7 @@ what is unsolved, and scheduling.
   will score (1/2/3/5 strikes, 0.25/0.5/0.75 of the move). **Untested**: the rule says so until item 17
   runs. No history store, no list (never an empty one).
 - **The fair-value file** moved to `packages/fundamentals` on 2026-10-29 (its `CLAUDE.md` and
-  `docs/history/fair-value-model-plan.md`). The income lists read its file by path
+  `docs/history/fair-value-model-plan.md (tag archive/docs-2026-11)`). The income lists read its file by path
   (`paths.fair_value_dir()`), never by import: fundamentals reads this package for prices.
 - **The security list** (`securities.py`, `securities`, 2026-10-17): every listed symbol's type
   (Nasdaq Trader's directory), options (any OCC volume in 20 sessions) and a liquidity rank that is
@@ -179,7 +179,7 @@ what is unsolved, and scheduling.
   the vendor's filed under it and the one before, to learn which close its evening lists describe.
   Mirrored to tastytrade by hand (`scripts/sync_stage_watchlists.py --apply`), never on a schedule.
 - **The earnings calendar** (`earnings_calendar.py`, `earnings-calendar`, 2026-10-17;
-  docs/history/earnings-screener-plan.md): every announcement in the next 30 days, joined from local data
+  docs/history/earnings-screener-plan.md (tag archive/docs-2026-11)): every announcement in the next 30 days, joined from local data
   and the local Dolt.
   - **Date and time:** a confirmed broker date wins, then Dolt's, then a broker estimate. The time of
     day comes from the broker (with its own date), then Nasdaq's public calendar
@@ -272,7 +272,7 @@ what is unsolved, and scheduling.
   scored against the vendor's tables, which are mostly illiquid names. Benchmarks, rotation funds
   and cash indexes are reference series and are never judged.
 - **The historical study** (`history.py`, `universe.py`, `study.py`, `tuning_names.py`; plan and
-  reasons in [docs/signal-log-plan.md](../../../docs/signal-log-plan.md), Phase 1, analysis plan v2).
+  reasons in [research/signal-log-plan.md](../../../research/signal-log-plan.md), Phase 1, analysis plan v2).
   - **`history.db`** is Dolt's whole daily history from 2011, every name, in `eod.db`'s schema. It
     is a research store, rebuildable from Dolt and read by nothing nightly, so `store.adjusted_bars`
     reads it unchanged.
@@ -323,7 +323,93 @@ what is unsolved, and scheduling.
   signals, RS leaders and (v2) largest movers with volume against the 50-session average, into
   `data/technicals/report-<session>.json`. **Nothing downstream recomputes them.**
 
-## The skate bands
+## The market report: what runs
+
+The market report is the morning's read of the whole market: the pre-open pack
+(`packages/overview`) plus this package's end-of-day readings, both shown on the console's Morning
+tab. It runs on broker, public and local Dolt data only. The split follows the suite's fences:
+anything that reaches the network is a script in `scripts/` that writes a dated file under
+`~/.cherrypick/data/`; the engines here are pure functions over those files and the stored bars;
+overview stays credential-free and network-free.
+
+- **The pack's market readings** (overview, pack v4): the pre-market tape (the index futures, crude
+  and Brent from `scripts/refresh_futures_contracts.py`'s contract map, plus NDX, DJX and IWM as
+  quote-only legs; IWM stands for the Russell 2000 because the stream carries nothing for that
+  index); the weekly expected move (VIX over the square root of 52) beside 10-session realised
+  volatility; VIX, VVIX, VXN and SKEW as percentiles of their past year, from Cboe's daily files
+  because the stream's SKEW is intermittent; the prior session's Treasury par curve with its spreads
+  and changes; a 30-day constant-maturity 25-delta risk reversal from Cboe's delayed SPX chain
+  (kept apart from SKEW and never shown under that name); the coming week's releases (BEA always,
+  FRED when a key is stored, plus the FOMC dates; no consensus estimates); and the week's earnings
+  with the implied move. `scripts/fetch_market_files.py` writes the files (18:45 ET, retry 07:45),
+  `scripts/fetch_earnings_moves.py` the earnings moves (the earnings module's expiration rule and the
+  suite's 0.85 x straddle expected move).
+- **The end-of-day report** (`report`, 06:30 ET): breadth, stages by sector, rotation, leaders and the
+  scan signals, plus `movers` (report version 2): the session's eight largest gains and losses with
+  volume against each name's 50-session average. The narrative script reads the movers, the pack's
+  calendar and `scripts/fetch_headlines.py`'s titles (08:45 ET; six RSS
+  feeds; title, link and time only, no article bodies); a mover with no reported reason is marked
+  unexplained. Headlines and prose stay in `scripts/morning_narrative.py`, never in a package.
+- **The chart view** (`/charts/technicals`, `chart.py`): our candles, levels, CCI and signal marker
+  for a name.
+- **The stock universe** (`scripts/build_stock_universe.py`: `harvest`, `measure`, `build`,
+  `watchlist`; 11:00, 14:00 and after the close; off by default, `market_report.universe`). Candidates
+  are the stocks (not funds or indexes) whose median OCC volume over the last 20 stored sessions is at
+  least 10,000 contracts a day, plus the underlyings the follow feed trades. A candidate is kept only
+  when it is very liquid by measurement inside regular hours: the stock's spread within 0.05% of mid
+  or a cent; the worse of its at-the-money call and put on the standard monthly expiry nearest 30
+  days (never a weekly) within 3% of mid or five cents; and a median of 10,000 option contracts a day
+  over the last ten sessions. Each needs three sessions; fewer is pending, never a pass. A name moving
+  to the monthly is judged on its monthly readings once it has three. tastytrade's liquidity rating is
+  recorded beside the verdict and decides nothing. `universe/universe.json` lists every name with its
+  reasons, in or out. The members are mirrored to a private tastytrade watchlist named
+  `cherrypick universe` (`watchlist`, own switch `market_report.universe_watchlist`, off by default):
+  the suite's one scheduled write to the broker account, never an order. It previews unless
+  `--apply`, replaces only the list it created, and refuses to cut more than half the names at once;
+  SPX, NDX, SPY, QQQ and IWM are pinned. The stage counts of this universe are compared with the
+  vendor's as rates, never totals, because the two universes differ.
+- **Sectors** use Yahoo's taxonomy with GICS names for Consumer Discretionary, Consumer Staples and
+  Financials; `universe/sectors.json` is rebuilt each evening and warns when a label is unknown or a
+  name changes sector, and `universe/sectors.manual.json` fills gaps. `scripts/fetch_sectors.py`
+  fills names the map lacks.
+- **The asset-class benchmark is AOR**, not VBINX: Dolt carries it and it is an ETF like every other
+  rotation entry. Its stock sleeve is global where a 60/40 built from SPY and AGG would be US-only.
+- **No trade ideas.** The report is read-side; the suite's only discretionary order path is
+  `packages/desk`, and a report that suggests a trade would say so.
+- **Not run:** the vendor-fed collectors (editions, chart pages, screeners; `market_report.collector`,
+  off) and everything scored against them are described in the engines' entries above. Large options
+  trades (flow) are not part of the report (issue #998).
+
+## The skate screen
+
+A screen for short options sold where the seller does not want assignment: covered calls above a
+name's recent range and cash-secured puts below it, on the options-tradable names. "Skate" means
+collect the premium and avoid assignment (the other objective, getting assigned on purpose at a price
+a valuation likes, is not built). It is a read surface, the console's Skate tab; it places no order
+and opens no paper position, and it needs none of the income lists. The method's credit is in
+[strategy-sources.md](../../../docs/strategy-sources.md). Once a skate trade is open in the real
+account, the wheel view in `packages/manage` follows it.
+
+**The band** is our own reconstruction of a range band, named for what it is. Range = highest high
+less lowest low over N sessions (N = the trading days to expiry; this fitted the published examples
+better than average true range), smoothed by a 10-day simple average; upper band = close + haircut x
+range, lower band = close - haircut x range. Two bands are computed for every name, side and Friday
+expiry out to 63 days: **fixed** (haircut 0.75 at every expiry) and **by expiry** (a schedule in
+config, 0.65 for expiries of 14 days or fewer and 0.75 beyond; a row says so when both land on the
+same price). For each band the **skate rate** is the share of past days on which the same band, at the
+same strike offset, held to the close N sessions later, over 11 years and the last 3, on a grid of
+strikes from 2% inside the band to 5% past it, so the quote step reads the rate at whatever listed
+strike it quotes. A strike is not chosen by delta: on average the band matches delta and does not beat
+it, but the gap between the two is systematic (where delta's implied odds were low history did
+better, where they were high history fell short), so history minus implied is the screen, not the band
+alone. An expiry whose band has fewer than 250 windows to judge it on is dropped.
+
+`python -m cherrypick.technicals skate` (job `technicals-skate`, 06:45 ET) writes
+`data/technicals/skate/<date>.json`, the plan for the quote step with the history each row is judged
+by. It needs only the history store, the verdicts, the broker earnings dates and the chain listings.
+An expiry that spans a stock's report is dropped (shorter ones stay), and so is a stock whose report
+date is unknown, since unknown is never clear; funds, which never report, are exempt. Sessions to
+expiry come from `cherrypick.core.calendar.trading_days_between`.
 
 `skate.py` records history on **split-adjusted, never dividend-adjusted** prices
 (`skate.price_bars`): an option's strike stays put when the price drops on an ex-date, so a
@@ -333,14 +419,62 @@ Yahoo's fund category, each entry's `evidence` saying which); its tests fail whe
 removed. An expiry that spans a stock's report is dropped, the shorter ones kept, and the band file
 records each name's trailing dividend yield.
 
-**The score** (`skate.score`, `best_expiries`, `select`; skate plan step 2) is read by
-`scripts/fetch_screener_greeks.py skate` (jobs `report-skate-quotes-1/2`, 12:00 and 15:05 ET): the
-morning's bands snapped to listed strikes and quoted in regular hours; history at the strike read off
+**The quotes and the score** (`skate.score`, `best_expiries`, `select`) are read by
+`scripts/fetch_screener_greeks.py skate` (jobs `report-skate-quotes-1/2`, 12:00 and 15:05 ET). It is
+its own mode and its own jobs, not a pass inside the screener `measure`, so a failure cannot touch the
+screener legs. Quotes come in regular hours because an after-close book runs wide. Stage one quotes
+every name-side once, on its cycle monthly (or, where a report comes first, its furthest expiry before
+it), at each band's strike and one either side. Stage two quotes every weekly to 63 days for the 60
+name-sides whose tradable band strike has the widest history-minus-implied gap. Both read each band
+moved to the run's price (`skate.shift_for`: band + spot - the band day's close), so a name that has
+moved through its band since the close is not quoted on a strike already in the money. The broker's
+REST quotes carry no IV, so implied volatility is solved from the mid by `cherrypick.core.bs` (r = 4%,
+the name's trailing dividend yield), and the implied skate is 1 - N(d2) for a call and 1 - N(-d2) for a
+put, since a skate is judged at expiry (delta is N(d1), the wrong odds). The run writes
+`screener-greeks/skate/<date>/<HHMM>.json`. The score: the morning's bands snapped to listed strikes;
+history at the strike read off
 the band's curve, implied odds from an IV solved at the mid, skate yield, hard filters (two-sided,
 tight, open interest) and soft thresholds as a marker. Each leg also carries the fee to open one
 short contract (`cherrypick.core.fees`), the net premium and net yield, and the band's history
 window count; these are shown only -- the best expiry, `select` and the forward record stay on the
 gross, and ranking by net is the user's decision.
+
+Skate yield is premium / capital x 365 / days (capital is the strike for a put, the shares for a
+call): a comparison figure, never a median across mixed durations. The **hard filters** hide a row
+(open interest at least 100, the leg bars' spread, no earnings in the cycle); the **soft thresholds**
+(skate rate at least 84% over the history and 80% over the last 3 years, skate yield at least 6%;
+config `skate.soft`) only mark it, so a "passing only" toggle is the one way they narrow the list.
+Per name-side and band the best expiry is the one with the most premium per day on the bid among legs
+that pass the hard filters, shown beside the monthly. That best expiry is **not a tested edge**: the
+put at 14 days against the monthly, held, closed at half credit or rolled (research item 25) gave no
+verdict, so the monthly stays the default. `skate.mark_both_sides` marks a name whose call and put
+both pass every soft threshold. The Skate tab is described in the
+[screeners guide](../../../docs/guide/screeners.md) and
+[console pages](../../console/docs/pages.md).
+
+**The forward record** (`skate_record.py`, run by the `technicals-skate` job after the bands, or alone
+as `python -m cherrypick.technicals skate-record`; a failure is reported and never fails the bands)
+keeps what the tab showed and reads what happened. A row is a session's newest scheduled quote run, per
+name-side and band: the band's pick on its best expiry, only when it passed the hard filters. A strike
+is kept once, the first session it was shown, since the same strike seen again is the same bet and
+counting it daily would shrink the noise the test is judged by. Recording starts at 2026-10-20, the
+first session whose picks were scored against the run's price. The outcome is read from split-adjusted
+closes: `skated` (the close at expiry on the safe side), `tested` (skated, but a bar reached the strike
+on the way; counted as skated in the test, as the skate rate counts it) or `through` (finished past
+it). The declared test: rows with history minus implied above 5 points must skate more often than their
+implied rate, and more often than rows below zero, each by more than the binomial noise (one-sided
+z > 1.645: the row count's own Poisson-binomial spread against implied, a two-proportion z against the
+below-zero rows), judged per band once 20 distinct expiry dates have settled, weeklies included, about
+five months at the screen's weekly-heavy picks. Until then the record says it is not yet decision-grade
+and the tab says the gap is a history estimate. Both bands are recorded, so the same record answers
+whether the by-expiry band's closer short-dated strikes skate at their implied rate and whether their
+extra premium per day survives the extra tests. The reading is `skate/record.json` beside the bands,
+with the rows in `record.db`.
+
+**What the screen leaves out.** Placing, rolling or closing anything (the desk is the only discretionary
+order path, and nothing automated may import it); support and resistance levels, which the technicals
+do not reproduce; and what a breach costs, since a skate rate is a frequency and weighing the loss needs
+licensed option prices that stay local.
 
 ## Tool Reference
 
@@ -397,7 +531,7 @@ calendar fact known before the open, so it keeps the rule above.
 
 **Slice report (B5, 2026-10-24).** `slices` runs `core.slices` over an arm's trades with this
 package's entry context: mean R per cell, n, interval, cells under 30 greyed. In-sample description
-only; a cell is never a gate, and a good one is declared in `docs/hypotheses.json` and tested.
+only; a cell is never a gate, and a good one is declared in `research/hypotheses.json` and tested.
 Since 2026-11-01 it also cuts by weekday and event day. Those are whole-day cuts, so each ranked
 cell carries a `placebo`: its per-session mean against random sets of as many sessions
 (`core.stats.day_placebo`), where `beaten_by` near 0.5 is what chance gives. A whole-day cell is

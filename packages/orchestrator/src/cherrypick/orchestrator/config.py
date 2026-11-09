@@ -457,7 +457,7 @@ def manage_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     mk = mg.get("marks") if isinstance(mg.get("marks"), dict) else {}
     ts = mg.get("time_spreads") if isinstance(mg.get("time_spreads"), dict) else {}
     return {
-        # The time-spread scanner (docs/time-spread-scanner-plan.md, `run.py time-spreads`): a read-only
+        # The time-spread scanner (`run.py time-spreads`): a read-only
         # scan of the tradable names' term structure and the shortlist's chains, then one full snapshot
         # so the portfolio page sizes the rows. On whenever manage is; 'enabled': false turns it off alone.
         "time_spreads": {
@@ -677,7 +677,8 @@ VENDOR_COLLECTOR_KEYS = _vendor.VENDOR_COLLECTOR_KEYS
 
 def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved scheduling for the vendor-edition collector (scripts/fetch_vendor_edition.py), the
-    fixture feed for docs/market-report-plan.md. OFF by default: it needs a subscription login
+    fixture feed for the market report (packages/technicals/docs/reference.md). OFF by default: it needs
+    a subscription login
     stored first (`credentials` / `login`), and a job that fails every morning for want of one is
     noise.
 
@@ -739,7 +740,7 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # that closes half an hour before the bell.
         "income_chains_at": mr.get("income_chains_at", "14:45"),
         # `skate_quotes_at`: the skate screen's strikes quoted and scored in regular hours
-        # (`fetch_screener_greeks.py skate`, docs/skate-plan.md), after each measure and clear of the
+        # (`fetch_screener_greeks.py skate`), after each measure and clear of the
         # income pass. The first run of a day lists the chains (~6 min); the second reuses them.
         "skate_quotes_at": list(mr.get("skate_quotes_at", ["12:00", "15:05"])),
     }

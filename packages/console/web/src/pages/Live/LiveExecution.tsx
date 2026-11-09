@@ -3,7 +3,7 @@ import { fmtUsd } from "../../components/summary/kit";
 import { useBridged } from "../../lib/bridged";
 
 /**
- * A live arm's execution record (B10, docs/trading-book-review-plan.md), as a card on that arm's own
+ * A live arm's execution record (B10, docs/trading-book-review-plan.md (tag archive/docs-2026-11)), as a card on that arm's own
  * Live tab: its week beside its P&L -- fill rate, slippage against the mid at submit, time to fill,
  * and the human overrides (a cleared kill block, a config change in session, a manual close). Below
  * it, live against its paper mirror over the sessions live was working, split into its parts with

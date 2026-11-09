@@ -1,5 +1,5 @@
 /**
- * The earnings calendar (2026-10-17; docs/history/earnings-screener-plan.md): every announcement in the next
+ * The earnings calendar (2026-10-17; docs/history/earnings-screener-plan.md (tag archive/docs-2026-11)): every announcement in the next
  * 30 days, as `python -m cherrypick.technicals earnings-calendar` writes it each evening
  * (`technicals/earnings-calendar/<day>.json`). The console reads the file and re-derives nothing.
  */

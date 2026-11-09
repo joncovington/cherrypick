@@ -1,4 +1,4 @@
-"""The skate screen, step 1: the range band and how often it has held (docs/skate-plan.md).
+"""The skate screen: the range band and how often it has held.
 
 "Skate" is selling an option you do not want assigned: a covered call above the stock's recent
 range, a cash-secured put below it. The band is our reconstruction of a published method whose
@@ -13,10 +13,10 @@ makes on the tab: `fixed` (one haircut at every expiry) and `by_expiry` (a sched
 by default). Where both land on the same price the row says so.
 
 **History at a grid of strikes, not at a strike.** The listed strikes are known only to the quote
-step (step 2), so for each band this records the skate rate a strike would have had at each offset
+step, so for each band this records the skate rate a strike would have had at each offset
 past the band, 0 to 5% in quarter points: the share of past sessions on which the close `n`
 sessions later stayed below band x (1 + offset) for a call, above band x (1 - offset) for a put.
-The score (step 3) reads the rate at the listed strike off that curve. Rates come for the whole
+The score reads the rate at the listed strike off that curve. Rates come for the whole
 history from `history_from` and for the last `recent_years`.
 
 **Bars are adjusted for splits and nothing else** (`price_bars`). A split changes the strike with
@@ -63,7 +63,7 @@ DEFAULTS: dict[str, Any] = {
     "offset_step": 0.0025,
     "offset_min": -0.02,
     "offset_max": 0.05,
-    # The score (step 2/3): Black-Scholes rate, the hard filters that drop a leg, the soft
+    # The score: Black-Scholes rate, the hard filters that drop a leg, the soft
     # thresholds shown as a marker, how many name-sides the second quote stage takes, and the
     # month the test odds are stated over.
     "rate": 0.04,
@@ -379,7 +379,7 @@ def build(
 
 
 # ------------------------------------------------------------------------------------------------
-# Pure: planning the regular-hours quotes and scoring them (docs/skate-plan.md, steps 2 and 3).
+# Pure: planning the regular-hours quotes and scoring them.
 # `scripts/fetch_screener_greeks.py skate` lists the chains and fetches the quotes; every choice it
 # makes comes from here, and the scored file is what the console reads.
 #
@@ -751,7 +751,7 @@ def _best_passes(entry: dict, band: str) -> bool:
 
 def mark_both_sides(rows: list[dict]) -> None:
     """Set each row's `both_sides` per band: the name's call AND put best picks both pass every soft
-    threshold (plan step 3), a name the range brackets from both sides at once. In place; rows need
+    threshold, a name the range brackets from both sides at once. In place; rows need
     `best` set first."""
     passing: dict[tuple[str, str], set[str]] = {}
     for e in rows:

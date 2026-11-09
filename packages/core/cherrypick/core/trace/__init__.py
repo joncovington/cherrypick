@@ -1,6 +1,6 @@
 """One closed position's trace: how it got in, and what was decided while it was held.
 
-docs/strategy-analysis-plan.md: "a trade opens a drawer with ... its attempt and decision trace". The
+(packages/core/docs/module-map.md) A trade opens to its attempt and decision trace. The
 realised P&L says how a trade ended; the trace says what the loop tried and refused on the way in,
 and what it weighed each tick while it held -- the difference between "the exit rule fired late"
 and "the exit rule was blocked by a wide spread for forty minutes".

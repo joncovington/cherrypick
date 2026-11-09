@@ -220,7 +220,7 @@ DEFAULT_RULES: dict[str, Any] = {
             "confidence": 50,
         },
     },
-    # The wheel (wheel.py, docs/skate-plan.md step 5): rules on the short options and shares of a wheel
+    # The wheel (wheel.py): rules on the short options and shares of a wheel
     # cycle that reconciles. They rank with every other rule by action (a close or a stop still
     # outranks a roll); an unreconciled cycle gets none of them, only a review saying so.
     "wheel": {
@@ -236,7 +236,7 @@ DEFAULT_RULES: dict[str, Any] = {
         # skate call band (`band`: "fixed" or "by_expiry"). Never a strike without the band.
         "next_leg": {"enabled": True, "band": "fixed", "confidence": 50},
     },
-    # The PMCC view (pmcc.py, docs/skate-plan.md step 6): a call diagonal is a PMCC only when its long
+    # The PMCC view (pmcc.py): a call diagonal is a PMCC only when its long
     # was entered at `entry_min_delta` or more, or `positions.<SYM>.intent` is "pmcc"; "diagonal"
     # keeps it out. Its rules fire only on a recognised PMCC whose orders reconcile (an unreconciled
     # one gets a review saying so), into the trade holding the short, ranked by action with the
@@ -345,7 +345,7 @@ DEFAULT_RULES: dict[str, Any] = {
         "near_share": 0.8,
     },
     "pricing": {"rate": 0.04, "grid_low": 0.01, "grid_high": 3.0, "grid_steps": 600},
-    # The account as one book (portfolio.py, docs/history/portfolio-guidance-plan.md). Every band is a retail
+    # The account as one book (portfolio.py, portfolio-guidance-plan (archived)). Every band is a retail
     # heuristic with no published out-of-sample evidence, hence the low confidences.
     "portfolio": {
         "enabled": True,

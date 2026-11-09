@@ -22,7 +22,7 @@ import { ScreenerLayout } from "./ScreenerParts";
 import { Section } from "../../components/Section";
 
 /**
- * The earnings calendar's forward record (2026-10-17; docs/history/earnings-screener-plan.md, step 5): every
+ * The earnings calendar's forward record (2026-10-17; docs/history/earnings-screener-plan.md (tag archive/docs-2026-11), step 5): every
  * past announcement, what the calendar showed the session before it, and what happened. Read-only;
  * `technicals earnings-record` builds every figure each morning.
  *

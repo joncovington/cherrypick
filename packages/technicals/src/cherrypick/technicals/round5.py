@@ -1,6 +1,6 @@
 """Round 5 of the historical study: the 1-10 relative-strength score inside the vendor's fundamentals.
 
-The declaration, its reasons and the decision rule are in docs/signal-log-plan.md ("Round 5"),
+The declaration, its reasons and the decision rule are in research/signal-log-plan.md ("Round 5"),
 committed before this module first ran. In brief:
 
 - **The score** is our reproduction of the vendor's 1-10 (`levels.rank_score`'s decile across the

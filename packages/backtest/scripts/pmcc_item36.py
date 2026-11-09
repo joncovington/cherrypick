@@ -1,4 +1,4 @@
-"""Item 36, pmcc's own rule at real quotes (docs/edge-hypotheses-plan.md, section 36).
+"""Item 36, pmcc's own rule at real quotes (research/edge-hypotheses-plan.md, section 36).
 
     python packages/backtest/scripts/pmcc_item36.py listing [--out-dir DIR]  # the listing probes, a
     fetch-chain-paths file python packages/backtest/scripts/pmcc_item36.py plan [--out-dir DIR]     # the

@@ -1,4 +1,4 @@
-"""Item 49, the dip-sold put on TQQQ (docs/edge-hypotheses-plan.md): a cash-secured 16-delta put sold by
+"""Item 49, the dip-sold put on TQQQ (research/edge-hypotheses-plan.md): a cash-secured 16-delta put sold by
 a resting order 20% over the ask, against the same put sold at the close and against buying it back at
 the defence line instead of rolling.
 

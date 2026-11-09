@@ -1,4 +1,4 @@
-"""Item 30, monthly-expiry GEX walls (docs/edge-hypotheses-plan.md), Test A: does price stop short of
+"""Item 30, monthly-expiry GEX walls (research/edge-hypotheses-plan.md), Test A: does price stop short of
 a wall built from the expiry a 20-60 day trade sells, more often than of any level that far away?
 
     python packages/backtest/scripts/gex_walls_item30.py requests [--out FILE]   # monthly chain paths still

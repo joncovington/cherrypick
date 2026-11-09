@@ -78,7 +78,7 @@ sessions, now retired, with pessimistic accounting in both directions.
 - **Reopens when** a 10-wide (or wider) legged arm is back on the roster for its own reasons and has
   15+ sessions of its own — the salvage is then a replay over its rows, not a reason to run the arm.
 - **2026-10-14: now a declared question of the quote-history replay, not an arm**
-  ([docs/quote-history-replay-plan.md](../../../docs/quote-history-replay-plan.md), "the wing
+  ([docs/quote-history-replay-plan.md (tag archive/docs-2026-11)](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/quote-history-replay-plan.md), "the wing
   width"). Widths 5/10/15/20 at width-scaled buying-power caps, read on net per session and net ÷
   maximum risk at 20 sessions out of sample from 10-13; this salvage grid is its second stage, on
   any width that passes.

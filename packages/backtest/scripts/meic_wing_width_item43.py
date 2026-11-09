@@ -1,4 +1,4 @@
-"""Item 43, the wing width of MEIC's live rule (docs/edge-hypotheses-plan.md): `pm-200` entering once
+"""Item 43, the wing width of MEIC's live rule (research/edge-hypotheses-plan.md): `pm-200` entering once
 a day, 14:00-14:30, at 15, 20, 25 and 30 points wide, each paired with the same rule at its own 10.
 
     python packages/backtest/scripts/meic_wing_width_item43.py --window design|holdout [--workers N] [--json

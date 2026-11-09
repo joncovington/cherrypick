@@ -3,10 +3,10 @@ description: The time-spread scanner — today's calendars and diagonals, sized 
 argument-hint: [--scan] | [--force] | [--name SYMBOL]
 ---
 
-Show the **time-spread scanner**'s day (docs/time-spread-scanner-plan.md): calendars and diagonals on
+Show the **time-spread scanner**'s day: calendars and diagonals on
 the tradable names whose front week is priced rich to the back month, and the ones that fit the
 account. It reads the account read-only and places nothing. **No tested edge**: the rows are ordered
-by the front/back IV ratio, an untested hypothesis (research item 54). Say so every time.
+by the front/back IV ratio, an untested hypothesis (research item 54 found no edge in it). Say so every time. The method is in packages/manage/README.md, "Time spreads".
 
 ## Route on `$ARGUMENTS`
 

@@ -4,7 +4,7 @@ How the suite runs day to day: what is installed, what starts when, what "health
 09:00 ET, and which warnings are noise. Each table cites its source so it can be re-verified rather
 than trusted; `tools/check_docs.py` checks the job and port tables against the code. The record of the
 2026-07-29 cutover, the old rollback note and the gaps that have since been fixed are in
-[history/operations-2026-07-29-cutover.md](history/operations-2026-07-29-cutover.md).
+[history/operations-2026-07-29-cutover.md](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/history/operations-2026-07-29-cutover.md).
 
 ## The model, in one paragraph
 

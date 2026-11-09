@@ -9,7 +9,7 @@ itself, never anything later):
 
 Raw bars, not adjusted: a price test on split-adjusted history would read a 2012 NVDA at thirty
 cents. A missing volume counts as zero, which can only keep a name out. The thresholds are the ones
-decided on 2026-10-04 (docs/signal-log-plan.md): names a trader could fill at the open, about 1,050
+decided on 2026-10-04 (research/signal-log-plan.md): names a trader could fill at the open, about 1,050
 in 2011 rising to about 2,900 by 2026.
 
 VIEW_DOLLAR_VOLUME is the study's "$300M a day" view: the best stock-only stand-in for options

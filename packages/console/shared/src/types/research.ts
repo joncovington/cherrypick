@@ -1,5 +1,5 @@
 /**
- * The book-review read surfaces (docs/trading-book-review-plan.md): B10's execution record and B5's
+ * The book-review read surfaces (docs/trading-book-review-plan.md (tag archive/docs-2026-11)): B10's execution record and B5's
  * slice reports. Both are computed on the Python side; the console renames and renders.
  */
 

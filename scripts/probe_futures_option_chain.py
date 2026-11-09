@@ -2,7 +2,7 @@
 
 The streamer's chain path is equity/index only (`core.streamer._fetch_full_chain` calls
 `get_option_chain`, i.e. `/option-chains/{symbol}`). Before any producer work for /MNQ
-(docs/history/ivan-plan.md, Phase 3), this asks the two futures endpoints the SDK already wraps
+(ivan-plan (archived), Phase 3), this asks the two futures endpoints the SDK already wraps
 and reports the facts that design depends on, rather than assuming them:
 
   - flat:   `get_future_option_chain`  -> /futures-option-chains/{product}         (one FutureOption per item)
@@ -41,7 +41,7 @@ from cherrypick.core import home as _home
 from cherrypick.core import streamcache
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 
-# The DTE spans docs/history/ivan-plan.md would select from: near18 (21-45), control/nodip (45-60), and the
+# The DTE spans ivan-plan (archived) would select from: near18 (21-45), control/nodip (45-60), and the
 # roll target (out to max_roll_dte).
 DTE_SPANS = {"near18": (21, 45), "control": (45, 60), "roll": (90, 180)}
 # Put-band depths below the reference price, as a fraction of it: the entry band's deep edge and

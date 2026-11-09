@@ -313,7 +313,7 @@ with the overlay, the rule flies' paper loop uses, which flies' replay accepts),
 DESIGN window only, and writes each result back. Each is a trial. Every run replays from its own
 snapshot of the flies config, kept beside its ledgers (`flies-config.json`).
 
-**The flow fetch** (`fetch-flow`, `flowfetch.py`; `docs/flow-signal-plan.md` step 1): each stock's
+**The flow fetch** (`fetch-flow`, `flowfetch.py`; `research/flow-signal-plan.md` step 1): each stock's
 day of option prints with the quote at each, grouped into orders by `flow.py` (pure, and the same
 rules the broker's nightly feed will import), every order of `flow.KEEP_PREMIUM` or more kept with
 its contract's open interest either side, and every order's premium in a per-day histogram for the

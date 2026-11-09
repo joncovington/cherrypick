@@ -10,7 +10,7 @@ import { StudyCards, notesHref, notesName, planUrl } from "./StudyCards";
 import { resultLabel, statusWord, studyHref, useStudies } from "./studyIndex";
 
 /**
- * The Backtest page's studies tab (2026-10-29, docs/studies-board-plan.md; as cards 2026-11-03): what
+ * The Backtest page's studies tab (as cards): what
  * we tested and what we found. One tile per hypothesis-register item, read through
  * `/api/backtest/studies` (the orchestrator's `hypotheses-board`), opening to a lightbox with its
  * decision, verdicts, run figures, grid, declaration, rivals and queue rows (`StudyCards.tsx`).
@@ -122,7 +122,7 @@ export function BacktestStudiesTab() {
         ) : null}
         {b.unregistered.length > 0 ? (
           <p className="pnl-neg" style={{ margin: "0 0 8px" }}>
-            Ran with no register row: {b.unregistered.join(", ")}. Add each to <code>docs/hypotheses.json</code>.
+            Ran with no register row: {b.unregistered.join(", ")}. Add each to <code>research/hypotheses.json</code>.
           </p>
         ) : null}
         {b.rows.length === 0 ? <p className="muted">The register has no rows.</p> : <StudyCards board={b} />}
@@ -151,7 +151,7 @@ export function BacktestStudiesTab() {
             ) : null}
             <HelpSection title="One card per register item">
               <p>
-                One card per item in the hypothesis register (<code>docs/hypotheses.json</code>). A verdict is the word the study wrote in
+                One card per item in the hypothesis register (<code>research/hypotheses.json</code>). A verdict is the word the study wrote in
                 its result file; the files stay on this machine.
               </p>
             </HelpSection>

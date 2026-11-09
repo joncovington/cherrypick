@@ -1,6 +1,6 @@
 """The historical study: the chart setups over 2011 onward, scored under analysis plan v2.
 
-docs/signal-log-plan.md holds the plan and its reasons; this is its arithmetic. In brief:
+research/signal-log-plan.md holds the plan and its reasons; this is its arithmetic. In brief:
 
 - **Universe**: a name counts on a session only if `universe.membership` admits it, from data up to
   the session before.

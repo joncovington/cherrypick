@@ -1,4 +1,4 @@
-"""The replay's decision-level validation (docs/quote-history-replay-plan.md, Phase 1 stage 2).
+"""The replay's decision-level validation (quote-history-replay-plan (archived), Phase 1 stage 2).
 
 A path replay drifts from paper the moment one decision differs (control centres at the money, so a
 half-point of spot between two quote readers flips the side), and every later decision then differs

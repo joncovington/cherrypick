@@ -1,5 +1,5 @@
 """core.analysis.capital: observed peak risk and dated declared allocations
-(docs/strategy-analysis-plan.md, Phase 0)."""
+(packages/core/docs/module-map.md)."""
 
 import argparse
 import json

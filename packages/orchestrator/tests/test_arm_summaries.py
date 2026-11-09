@@ -1,6 +1,6 @@
 """Every arm a module's example config declares carries a one-line `_summary` (2026-10-27).
 
-The console's arm cards lead with that line (docs/history/progress-queue-arms-plan.md, phase 3); an arm
+The console's arm cards lead with that line (progress-queue-arms-plan (archived), phase 3); an arm
 without one shows only its name, which is the gap the cards exist to close. Driven off each module's
 own example config -- whatever registry it declares, under whichever spelling -- so a new arm is
 covered the day it is added, and a new module by adding its file here. `_since` and `_retired`, where

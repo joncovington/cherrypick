@@ -1,5 +1,5 @@
 """Fetch Aswath Damodaran's public valuation inputs: the monthly implied equity risk premium and the
-interest-coverage-to-rating table (docs/history/fair-value-model-plan.md).
+interest-coverage-to-rating table (fair-value-model-plan (archived)).
 
 **Why.** The fair-value model used a fixed 5% equity premium and priced debt at its coupon (interest
 over the balance), which for a weak borrower is far below what a lender would charge (AAL, 2026-10-28).

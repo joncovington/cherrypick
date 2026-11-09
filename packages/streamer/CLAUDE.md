@@ -2,7 +2,7 @@
 
 > The suite's standalone market-data daemon. Suite context: the root
 > [documentation index](../../docs/README.md); why it was split out of MEIC:
-> [docs/history/streamer-package-plan.md](../../docs/history/streamer-package-plan.md). Dated incident
+> [docs/history/streamer-package-plan.md (tag archive/docs-2026-11)](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/history/streamer-package-plan.md). Dated incident
 > detail behind the rules below: [docs/history.md](docs/history.md).
 
 ## What this is
@@ -42,7 +42,9 @@ Config: copy `config.example.json` → `config.json` (git-ignored, machine-local
   - **A `window_hint` is a `(below, above)` span, not a width.** A plain count is symmetric;
     `{"down": N, "up": M}` is directional. Both normalise through `streamcache.window_span`, the union
     takes the max **per side**, and `window_strike_count` floors both sides, so a directional hint can
-    only ask for more on one side, never narrow the other (see `docs/streamer-subscription-budget.md`).
+    only ask for more on one side, never narrow the other (see "Subscription budget and guard rails"
+    below). pmcc declares its deep window downward-only: its long sits far below spot, and the mirror
+    strikes above spot were the largest block of subscriptions nothing read.
   - **A window carries only the events its symbol's declarers need.** `window_events` (`Quote`,
     `Greeks`, `Summary` = open interest, `Trade` = option volume) and `nearest_window: false` narrow a
     symbol only when EVERY module declaring it opts down; a silent declarer keeps all four events and
@@ -91,6 +93,44 @@ Config: copy `config.example.json` → `config.json` (git-ignored, machine-local
   start/status/stop argv contract it uses for every daemon.
 - **`cherrypick.core`** holds the engine (`core.streamer`), cache schema (`core.streamcache`), auth
   and home resolver.
+
+## Subscription budget and guard rails
+
+DXLink kills the socket ("Your subscription rate is too high") when a connection subscribes too much
+too fast, and a producer that re-sends the identical burst on every reconnect can never recover. Four
+guards keep that from happening, and the first is the only one that removes the failure mode: the
+others lower the odds.
+
+- **Subscribes are paced** (`cherrypick.core.streamer`, `_send_subs`, the one choke point for every
+  subscribe and unsubscribe). Chunks of `SUBSCRIBE_CHUNK` symbols are spaced by `SUBSCRIBE_PACE_S`,
+  and a token bucket (`SUBSCRIBE_BURST` at once, refilled at `SUBSCRIBE_PER_MINUTE`, one token per
+  symbol per event type) holds the average down, because the limit is a budget over about a minute and
+  not a per-second rate. A rate cut halves the refill (never under `SUBSCRIBE_MIN_PER_MINUTE`) and
+  empties the bucket; each clean hour earns a quarter of the base back. A full resubscribe takes
+  minutes, with the underlyings first so spot is fresh while strikes fill in.
+- **Windows carry only what their readers read**: directional hints, `window_events` and
+  `nearest_window` (above), and Quote/Greeks filtered by what a symbol can publish.
+- **A declared budget.** `streamrequests.estimate_subscriptions` / `budget_status` model the cost from
+  the same registry union the producer subscribes from, and the watchdog raises a finding past
+  `DEFAULT_SUBSCRIPTION_BUDGET` (12,000), or past `streamer.subscription_budget` where set, read from
+  the producer's own `config/streamer.json` first and the suite config second. The finding names the
+  largest symbol as well as the total, because one declaration usually dominates. It is an estimate
+  and will not equal the producer's own `subscribed_symbols`; it exists to catch a change of order of
+  magnitude when a module declares an expensive underlying.
+- **Reconnect churn is a finding of its own.** The watchdog reads the `reconnect_count` that
+  `--status` reports and warns when it climbs faster than a healthy day (0-2 a day): a process that
+  keeps coming back looks healthy at every instant and is not.
+
+`window_strike_count` is the base window, per side, for symbols no module widens by hint (SPX, SPY).
+The shipped example sets 60; a machine near its budget sets 30 in `config/streamer.json`, which is
++-150 points on SPX and about +-4% on SPY, well outside every module's strikes that read the base
+window. Raise it only outside market hours, watching the reconnect count. A parameter cut under an
+outage is a guess with a deadline: re-measure it against what the readers need (pmcc's deep-window
+bound was cut and restored this way; see `packages/pmcc/docs/window-parameters.md`).
+
+Every resident paper loop touches its heartbeat at the top of each tick
+(`cherrypick.core.home.heartbeat_path`), so the freshness check has one unconditional signal for a
+hold-to-expiry module that has finished entering and is otherwise quiet.
 
 ## Invariants (do not violate)
 

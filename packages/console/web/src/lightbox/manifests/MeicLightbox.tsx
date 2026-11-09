@@ -267,7 +267,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
       ),
     },
     { id: "regime", label: MEIC_LABEL.regime, render: () => <RegimeCutsTab module="meic" arm={profile} /> },
-    // One tab since 2026-10-30 (docs/console-review-plan.md, batch 2): the suite's calibration reading
+    // One tab since 2026-10-30: the suite's calibration reading
     // every module shares, then MEIC's own performance view, which was the `calibration` tab.
     {
       id: "performance",

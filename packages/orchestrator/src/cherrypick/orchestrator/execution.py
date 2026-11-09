@@ -1,6 +1,6 @@
 """`cherrypick execution` — the execution record of each live arm, read weekly beside its P&L.
 
-`docs/trading-book-review-plan.md` B10. The loops follow their rules by construction, so the process
+trading-book-review-plan (archived)` B10. The loops follow their rules by construction, so the process
 breaks in two other places: the fill, and a person stepping in. This reads both from what the live
 ledgers already record -- files only, no broker, nothing written.
 

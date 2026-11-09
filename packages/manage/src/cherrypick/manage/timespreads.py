@@ -1,4 +1,4 @@
-"""The time-spread scanner's pure parts (docs/time-spread-scanner-plan.md).
+"""The time-spread scanner's pure parts.
 
 A calendar or diagonal sells a front expiry against a later one; the scanner looks for names whose
 front week is priced rich to the back month. The hypothesis behind it -- a front-week premium the

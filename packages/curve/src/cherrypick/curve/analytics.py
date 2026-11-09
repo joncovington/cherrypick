@@ -101,7 +101,7 @@ def regime_series(conn, *, limit: int = 60) -> list[dict]:
 
 
 def excursions(conn) -> dict:
-    """MAE/MFE per CLOSED position (docs/metrics-plan.md Phase 2), plus their distributions.
+    """MAE/MFE per CLOSED position (packages/core/docs/module-map.md), plus their distributions.
 
     `core.metrics.excursions` owns the generic MAE/MFE computation; this function is the module-
     specific half the plan calls for -- pairing `curve_marks`' per-tick `close_cost` (the spread's

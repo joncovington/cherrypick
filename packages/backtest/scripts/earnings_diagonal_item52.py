@@ -1,4 +1,4 @@
-"""Item 52, diagonals across an earnings report (docs/edge-hypotheses-plan.md): the request files and
+"""Item 52, diagonals across an earnings report (research/edge-hypotheses-plan.md): the request files and
 the study.
 
     python packages/backtest/scripts/earnings_diagonal_item52.py requests [--out-dir DIR]

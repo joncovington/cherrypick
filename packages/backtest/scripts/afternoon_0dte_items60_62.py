@@ -1,4 +1,4 @@
-"""Items 60-62 (docs/edge-hypotheses-plan.md): three afternoon reads of the SPX 0DTE chain.
+"""Items 60-62 (research/edge-hypotheses-plan.md): three afternoon reads of the SPX 0DTE chain.
 
     python packages/backtest/scripts/afternoon_0dte_items60_62.py fomc     [--json PATH]                 #
     item 60 python packages/backtest/scripts/afternoon_0dte_items60_62.py sandwich [--start D --end D] [--json

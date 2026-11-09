@@ -1,6 +1,6 @@
 """Round 4 of the historical study: the vendor's relative-strength breakout, declared before it was run.
 
-The declaration, its reasons and the decision rule are in docs/signal-log-plan.md ("Round 4"),
+The declaration, its reasons and the decision rule are in research/signal-log-plan.md ("Round 4"),
 committed before this module first ran. In brief:
 
 - `rs-break`: a close above the prior LOOKBACK sessions' highest close on which close / SPY's close

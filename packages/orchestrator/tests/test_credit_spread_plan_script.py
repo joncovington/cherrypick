@@ -2,7 +2,7 @@
 as declared, item 17 is its own.
 
 Item 14's plan has already been fetched and run, so its spec must never drift; item 17's is what
-docs/edge-hypotheses-plan.md declares. The universe rule is checked on a scratch store.
+research/edge-hypotheses-plan.md declares. The universe rule is checked on a scratch store.
 """
 
 from __future__ import annotations

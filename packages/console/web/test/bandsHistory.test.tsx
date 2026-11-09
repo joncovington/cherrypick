@@ -4,7 +4,7 @@ import type { ManageBand, ManageBandsSession } from "@console/shared";
 import { BandsHistoryView } from "../src/pages/Live/BandsHistory";
 
 /**
- * The bands over time (docs/console-review-plan.md batch 5). Each point is placed against the band
+ * The bands over time. Each point is placed against the band
  * that session's evaluation stated, and "inside" is manage's flag, never worked out here: a value the
  * page could place inside its bounds still reads as outside when manage said so.
  */

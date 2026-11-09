@@ -1,4 +1,4 @@
-"""Item 50, item 43's wider wings with live's gates on (docs/edge-hypotheses-plan.md): `pm-200`
+"""Item 50, item 43's wider wings with live's gates on (research/edge-hypotheses-plan.md): `pm-200`
 entering once a day, 14:00-14:30, at 15 and 20 points wide with its credit floor and call-delta
 ceiling as live has them, each paired with the same rule at its own 10.
 

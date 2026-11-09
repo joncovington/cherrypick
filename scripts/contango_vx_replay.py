@@ -2,7 +2,7 @@
 
     python scripts/contango_vx_replay.py DATA_DIR [--fetch] [--start 2018-03-01] [--end ...]
 
-`docs/vxm-plan.md` deferred a /VXM arm "until after a quarter of SVXY paper". That question does not
+`research/vxm-plan.md` deferred a /VXM arm "until after a quarter of SVXY paper". That question does not
 need the paper run: CFE publishes every VX contract's daily settlement from 2013-05-20, so the arm
 can be replayed now. This script does that, through the module's own rule (`regime.target_state`, with
 each arm's thresholds from the contango config) and sets the result beside

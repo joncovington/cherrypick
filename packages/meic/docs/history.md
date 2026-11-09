@@ -53,7 +53,7 @@ measurement is journaled as a break on the arms it touches.
   09:30–09:35; capture moved into the streamer (`_track_orb`, later `packages/streamer/orb.py`).
 - **2026-07-21** — the standalone `packages/streamer` became the producer; this module's streamer
   remained as rollback until 2026-10-18. The cache moved from `data/meic` to `data/marketdata`
-  (`docs/history/streamer-package-plan.md` at the repo root).
+  (`docs/history/streamer-package-plan.md (tag archive/docs-2026-11)` at the repo root).
 - **2026-08-09** — supervisor cutover: `meic-paper` runs every 60 s under the orchestrator daemon,
   replacing the module-registered 2-minute `cherrypick-meic-paper-loop` schtasks task.
 - **2026-08-14** — `packages/advisor` replaced the retired `cherrypick advise` as the advice producer,

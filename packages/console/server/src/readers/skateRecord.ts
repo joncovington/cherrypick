@@ -1,5 +1,5 @@
 /**
- * The skate screen's forward record for the Skate tab (docs/skate-plan.md step 4).
+ * The skate screen's forward record for the Skate tab.
  *
  * `technicals.skate_record`, run each morning by the `technicals-skate` job, keeps the rows the tab
  * showed, settles them at expiry from the history store and writes its reading beside the bands as

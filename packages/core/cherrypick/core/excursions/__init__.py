@@ -1,7 +1,7 @@
 """One closed position's mark path, and its best and worst point: the excursion.
 
-docs/strategy-analysis-plan.md: "best and worst excursion per position, with the time each happened,
-from the marks tables". How far a trade went for and against before it ended is what an exit rule
+(packages/core/docs/module-map.md) Best and worst excursion per position, with the time each happened,
+from the marks tables. How far a trade went for and against before it ended is what an exit rule
 is tuned against, and the realised P&L alone cannot show it.
 
 Every module records marks differently, so each path says which BASIS it is in, and a reader puts

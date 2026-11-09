@@ -1,6 +1,6 @@
 {
   "_header": "===== cherrypick-weeklyput -- item 57's unhedged arm in paper (EXPERIMENTAL, paper-only) =====",
-  "_what_this_is": "On each weekly expiry that is not a standard monthly (and whose 7-day trade shares no session with a monthly's), sell the put nearest 10 delta on each name in the last minutes of the session seven calendar days before the expiry, and hold it to the expiry's posted close. No hedge, no stop. The rule is item 57's (docs/edge-hypotheses-plan.md), declared for paper as item 69. Copy to ~/.cherrypick/config/weeklyput.json (or a git-ignored config.json here).",
+  "_what_this_is": "On each weekly expiry that is not a standard monthly (and whose 7-day trade shares no session with a monthly's), sell the put nearest 10 delta on each name in the last minutes of the session seven calendar days before the expiry, and hold it to the expiry's posted close. No hedge, no stop. The rule is item 57's (research/edge-hypotheses-plan.md), declared for paper as item 69. Copy to ~/.cherrypick/config/weeklyput.json (or a git-ignored config.json here).",
   "_source_note": "stream_cache_db overrides the shared stream cache path; null means the suite default.",
   "source": {
     "stream_cache_db": null

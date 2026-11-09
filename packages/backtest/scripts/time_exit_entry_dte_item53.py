@@ -1,4 +1,4 @@
-"""Item 53, the time exit for short premium opened inside 30 DTE (docs/edge-hypotheses-plan.md): the
+"""Item 53, the time exit for short premium opened inside 30 DTE (research/edge-hypotheses-plan.md): the
 coverage plan, the design run and the holdout run.
 
     python packages/backtest/scripts/time_exit_entry_dte_item53.py plan [--out-dir DIR]

@@ -1,4 +1,4 @@
-"""flies.replay: a recorded session run through the paper loop's own tick (docs/quote-history-replay-plan.md).
+"""flies.replay: a recorded session run through the paper loop's own tick (quote-history-replay-plan (archived)).
 
 The guards, each broken on purpose while this was written: a replayed tick touches nothing but its
 scratch ledger (no heartbeat, no log file, no advice decision, which WRITES the live loop's file); a

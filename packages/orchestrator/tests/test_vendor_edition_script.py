@@ -6,8 +6,8 @@ thing and asserts that exactly that check fires. The vendor's own HTML cannot be
 edition here is built to the same shape; the last test runs the checks over the real saved editions
 when they are present on this machine and skips otherwise.
 
-It lives here because the orchestrator schedules the job; it moves to the market-report package
-once that package exists (docs/market-report-plan.md, "Where the code goes").
+It lives here because the orchestrator schedules the job; it could move
+to the technicals package (packages/technicals/docs/reference.md).
 """
 
 from __future__ import annotations

@@ -116,7 +116,7 @@ and ignores cross-construction interactions. At 10 sessions it is a check of the
   the loop reads, with skip as the default. It would choose among engine-generated candidates only,
   and be benchmarked against a random chooser with the same take rate.
 - **1-minute candle features.** The suite's intraday history (the gex spot trail, from 2026-07-16)
-  is too short; [range-features.md](../../../docs/range-features.md) declined that question for the
+  is too short; [range-features.md](../../../research/range-features.md) declined that question for the
   same reason, and its daily version closed with no finding. An opening-range feature joins
   procedure version 2 only if the [openingrange.md](openingrange.md) holdout passes its checkpoint.
 - **Re-enabling retired legged arms** (width-2, gex) as sources. Their evidence is thin and from

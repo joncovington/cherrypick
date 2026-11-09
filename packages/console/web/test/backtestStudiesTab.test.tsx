@@ -63,7 +63,7 @@ function row(over: Partial<StudyRow>): StudyRow {
     title: "The short delta of MEIC's live rule",
     status: "failed",
     legacy: false,
-    pointer: "docs/edge-hypotheses-plan.md#23-the-short-delta",
+    pointer: "research/edge-hypotheses-plan.md#23-the-short-delta",
     outcome: "live stays at 16 delta",
     measure: "net per session",
     expected: "a positive paired difference",
@@ -293,7 +293,7 @@ describe("studies tab", () => {
     const declaration = dialog(row({}), "declaration");
     expect(declaration).toContain("t &gt; 2, Holm, both halves");
     expect(declaration).toContain("a calm span");
-    expect(declaration).toContain(planUrl("docs/edge-hypotheses-plan.md#23-the-short-delta")!);
+    expect(declaration).toContain(planUrl("research/edge-hypotheses-plan.md#23-the-short-delta")!);
     const queue = dialog(row({}), "queue");
     expect(queue).toContain("d12: fail · d20: fail");
     expect(queue).toContain("holdout done");

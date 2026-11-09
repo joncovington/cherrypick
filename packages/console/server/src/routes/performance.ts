@@ -103,7 +103,7 @@ export function registerPerformanceRoutes(app: FastifyInstance, config: ConsoleC
     return readArmsRisk(config, mode);
   });
 
-  // The per-arm strategy analysis (docs/strategy-analysis-plan.md), over the same modules, window
+  // The per-arm strategy analysis (packages/core/docs/module-map.md), over the same modules, window
   // and ledger as the performance read above.
   app.get<ModuleQuery>("/api/analysis/:module", async (req, reply) => {
     const { module } = req.params;

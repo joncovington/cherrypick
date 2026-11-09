@@ -1,7 +1,7 @@
 /**
  * The cumulative-equity curve with its underwater (drawdown) plot beneath, drawn as one pair —
  * the tearsheet's canonical panel. Extracted from the flies performance tab (2026-08-23,
- * docs/metrics-plan.md step 0) so every module's performance/history surface can carry it.
+ * packages/console/docs/pages.md) so every module's performance/history surface can carry it.
  * Deliberately spare like the source: the pair answers "how did it grow and how much did holding
  * it hurt" at a glance; axes and richer annotation stay with the page that needs them.
  */

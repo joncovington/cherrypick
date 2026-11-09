@@ -1,4 +1,4 @@
-"""cherrypick.core.rangefeatures: the declared study (docs/range-features.md).
+"""cherrypick.core.rangefeatures: the declared study (research/range-features.md).
 
 The first test is the guard the declaration requires before any statistic is read: every feature
 computed on the full history must equal the same feature computed on bars cut off at that session.

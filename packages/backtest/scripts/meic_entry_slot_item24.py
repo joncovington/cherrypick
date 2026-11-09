@@ -1,4 +1,4 @@
-"""Item 24, the entry slot of MEIC's live rule (docs/edge-hypotheses-plan.md; hypothesis 2's held-out
+"""Item 24, the entry slot of MEIC's live rule (research/edge-hypotheses-plan.md; hypothesis 2's held-out
 test): one condor a session entered in a 30-minute slot, 12:00 to 13:30, each paired with the same rule
 at 14:00, the slot live trades.
 

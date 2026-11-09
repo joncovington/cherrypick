@@ -1,4 +1,4 @@
-"""Item 45, a published GEX share strategy out of sample (docs/edge-hypotheses-plan.md): its inputs.
+"""Item 45, a published GEX share strategy out of sample (research/edge-hypotheses-plan.md): its inputs.
 
     python packages/backtest/scripts/gex_strategy_item45.py plan [--cell pilot|P|N] [--out FILE]      #
     open-interest plan python packages/backtest/scripts/gex_strategy_item45.py requests [--cell pilot|P|N]

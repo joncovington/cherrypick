@@ -45,7 +45,7 @@ REVERSION_STOP_ATR = 2.0  # x ATR(14) at entry, under the entry close
 SQUEEZE_LOOKBACK, SQUEEZE_RECENT = 120, 5
 VOLUME_AVG, VOLUME_MULT = 50, 1.5
 SUPERTREND_N, SUPERTREND_MULT = 10, 3.0
-# Round 3 of the historical study (docs/signal-log-plan.md): the Vortex in its authors' period, and
+# Round 3 of the historical study (research/signal-log-plan.md): the Vortex in its authors' period, and
 # the RSI divergence in TradingView's Divergence Indicator defaults (pivots 5 bars either side, 5 to
 # 60 bars apart). Study-only: the chart does not draw these setups.
 VORTEX_N = 14
@@ -145,7 +145,7 @@ SETUPS = (
 )
 
 # Setups the historical study scores and the chart does not draw: round 3's two setups from published
-# infographics, declared before they were run (docs/signal-log-plan.md, "Round 3"), and each with one
+# infographics, declared before they were run (research/signal-log-plan.md, "Round 3"), and each with one
 # of its two conditions removed, so the study can say which half does the work. A long and a short of
 # one family are separate positions, as on the chart.
 STUDIED = (

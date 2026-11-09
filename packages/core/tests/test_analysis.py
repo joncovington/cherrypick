@@ -1,5 +1,5 @@
 """core.analysis: streaks, drawdown episodes, profit durability, the reshuffle stress test, and the
-per-arm reading and CLI built from them (docs/strategy-analysis-plan.md, Phase 1)."""
+per-arm reading and CLI built from them (packages/core/docs/module-map.md)."""
 
 import argparse
 import sqlite3

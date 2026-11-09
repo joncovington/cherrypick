@@ -20,7 +20,7 @@ function row(over: Partial<StudyRow>): StudyRow {
     title: "A study",
     status: "declared",
     legacy: false,
-    pointer: "docs/edge-hypotheses-plan.md#69-a-study",
+    pointer: "research/edge-hypotheses-plan.md#69-a-study",
     outcome: null,
     measure: "net",
     expected: "> 0",

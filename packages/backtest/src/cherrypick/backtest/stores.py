@@ -33,7 +33,7 @@ STORES: list[dict[str, str]] = [
         "file": "SPX-60s-wide.db",
         "holds": "SPX-60s.db's sessions with 40 strikes each side of spot, not 20: wings to about 40 points",
         "built_by": "python -m cherrypick.backtest fetch --cadence 60 --store-tag wide (research queue)",
-        "used_by": "items 42 and 44, wide-wing MEIC condors (docs/edge-hypotheses-plan.md)",
+        "used_by": "items 42 and 44, wide-wing MEIC condors (research/edge-hypotheses-plan.md)",
     },
     {
         "file": "QQQ-60s-wide.db",
@@ -78,7 +78,7 @@ STORES: list[dict[str, str]] = [
         "file": "flow.db",
         "holds": "large options orders per name and session",
         "built_by": "python -m cherrypick.backtest fetch-flow --plan FILE",
-        "used_by": "the flow-signal study (docs/flow-signal-plan.md)",
+        "used_by": "the flow-signal study (research/flow-signal-plan.md)",
     },
     {
         "file": "open_interest.db",
@@ -106,13 +106,13 @@ STORES: list[dict[str, str]] = [
         "file": "SPX-time-warp.db",
         "holds": "SPXW next-expiry chains 15:45-15:55 ET, and that expiry's next session at 5 min",
         "built_by": "packages/backtest/scripts/fetch_spx_time_warp.py",
-        "used_by": "item 19, the Time Warp test (docs/edge-hypotheses-plan.md)",
+        "used_by": "item 19, the Time Warp test (research/edge-hypotheses-plan.md)",
     },
     {
         "file": "SPX-convex-stack.db",
         "holds": "SPXW ~5-DTE chains 15:40-15:50 ET Mon/Thu, then that expiry to expiry at 5 min",
         "built_by": "packages/backtest/scripts/fetch_spx_convex_stack.py",
-        "used_by": "item 20, the Convex Stack test (docs/edge-hypotheses-plan.md)",
+        "used_by": "item 20, the Convex Stack test (research/edge-hypotheses-plan.md)",
     },
 ]
 

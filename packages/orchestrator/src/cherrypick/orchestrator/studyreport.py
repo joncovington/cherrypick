@@ -1,4 +1,4 @@
-"""`cherrypick study-report` — one study's result files read as a report (docs/studies-board-plan.md).
+"""`cherrypick study-report` — one study's result files read as a report.
 
 The board (`hypotheses.board`) shows each result file's verdict word. This reads the figures behind it,
 so the console's Report tab can chart every arm and say in plain words what they show. Everything
@@ -739,7 +739,7 @@ def advice(study: dict, own: list[dict], verdicts: list[dict], steps: list[str])
     if words and not study.get("outcome") and study.get("status") in ("declared", "running"):
         add(
             "register",
-            "Record the outcome in docs/hypotheses.json: the result files have verdicts and the register"
+            "Record the outcome in research/hypotheses.json: the result files have verdicts and the register"
             " row still says declared.",
             "a verdict is written but not recorded",
         )

@@ -1,4 +1,4 @@
-"""`get_excursions` (docs/metrics-plan.md Phase 2): MAE/MFE per closed trade, mirrored from the
+"""`get_excursions` (packages/core/docs/module-map.md): MAE/MFE per closed trade, mirrored from the
 already-tracked max_unrealized_pnl/min_unrealized_pnl columns rather than derived from a raw mark
 path -- this module already tracks the running best/worst on every usable mark (test_only_a_usable
 _mark_moves_the_excursion, test_db_paper_lifecycle.py), so `get_excursions` only needs to expose

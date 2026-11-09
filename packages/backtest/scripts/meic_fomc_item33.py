@@ -1,4 +1,4 @@
-"""Item 33, MEIC on Fed decision days (docs/edge-hypotheses-plan.md): does the live rule net less on a
+"""Item 33, MEIC on Fed decision days (research/edge-hypotheses-plan.md): does the live rule net less on a
 scheduled FOMC decision day than on other sessions, enough that skipping those days raises its net?
 
     python packages/backtest/scripts/meic_fomc_item33.py calendar [--cpi-file FILE]

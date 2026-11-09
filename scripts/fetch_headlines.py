@@ -1,13 +1,14 @@
 """The morning's headlines, for the narrative only: title, link, source and time, nothing else.
 
-Phase 7 of docs/market-report-plan.md. The report's prior-session movers and week-ahead sections are
+Part of the market report (packages/technicals/docs/reference.md). The report's prior-session movers and
+week-ahead sections are
 prose over headlines; the movers and the calendar are data the suite already computes, and this
-supplies the headlines. It fetches the RSS feeds the plan verified (Fed press releases, CNBC, the
+supplies the headlines. It fetches the RSS feeds verified (Fed press releases, CNBC, the
 MarketWatch and WSJ markets feeds -- Reuters' is dead) once each, keeps what was published in the
 last `WINDOW_HOURS`, drops duplicates across feeds, and writes
 `~/.cherrypick/data/market-report/headlines/<date>.json`.
 
-**Title, link and time only**, as the plan says: no article bodies are fetched or stored. The one
+**Title, link and time only**, by design: no article bodies are fetched or stored. The one
 reader is `scripts/morning_narrative.py`, outside every package, so a failed feed costs a line of
 context in a note and nothing else. A feed that fails is recorded with its error, never retried in
 a loop.

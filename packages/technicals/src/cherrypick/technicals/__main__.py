@@ -564,7 +564,7 @@ def cmd_study_run(args) -> int:
 
 
 def cmd_study_round2(args) -> int:
-    """Round 2 (docs/signal-log-plan.md): stage A tests the declared family on half A; stage B
+    """Round 2 (research/signal-log-plan.md): stage A tests the declared family on half A; stage B
     re-tests only stage A's survivors on half B."""
     from . import hypotheses as hy
 
@@ -604,7 +604,7 @@ def cmd_study_round2(args) -> int:
 
 
 def cmd_study_round3(args) -> int:
-    """Round 3 (docs/signal-log-plan.md): the two infographic setups, long and short, each against
+    """Round 3 (research/signal-log-plan.md): the two infographic setups, long and short, each against
     the random and the matched baseline, on every name."""
     from . import round3
 
@@ -636,7 +636,7 @@ def cmd_study_round3(args) -> int:
 
 
 def cmd_study_round4(args) -> int:
-    """Round 4 (docs/signal-log-plan.md): the relative-strength breakout, with and without its volume
+    """Round 4 (research/signal-log-plan.md): the relative-strength breakout, with and without its volume
     rule, on the $20M-$300M slice the exploratory look never saw."""
     from . import round4
 
@@ -647,7 +647,7 @@ def cmd_study_round4(args) -> int:
 
 
 def cmd_study_round5(args) -> int:
-    """Round 5 (docs/signal-log-plan.md): the 1-10 score inside the fundamentals label, against the
+    """Round 5 (research/signal-log-plan.md): the 1-10 score inside the fundamentals label, against the
     same label and trigger at the other scores."""
     from . import round5
 
@@ -658,7 +658,7 @@ def cmd_study_round5(args) -> int:
 
 
 def cmd_study_round6(args) -> int:
-    """Round 6 (docs/signal-log-plan.md): an analyst revision inside the trend+RS direction, against
+    """Round 6 (research/signal-log-plan.md): an analyst revision inside the trend+RS direction, against
     the same direction without one. `--count` reports frequencies only and scores nothing."""
     from . import round6
 
@@ -675,7 +675,7 @@ def cmd_study_round6(args) -> int:
 
 
 def cmd_study_round7(args) -> int:
-    """Round 7 (docs/signal-log-plan.md): entering a bearing, against random entry. `--count`
+    """Round 7 (research/signal-log-plan.md): entering a bearing, against random entry. `--count`
     reports frequencies only and scores nothing."""
     from . import round7
 
@@ -844,7 +844,7 @@ def main(argv: list[str] | None = None) -> int:
     sg = sub.add_parser("score-signals", help="our scan rules against every saved scan list")
     sg.add_argument("--rules", choices=["fit-2026-10-27", "fit-2026-09-29"], help="default: fit-2026-10-27")
     sg.set_defaults(fn=cmd_score_signals)
-    hi = sub.add_parser("history", help="the historical study's store (docs/signal-log-plan.md)")
+    hi = sub.add_parser("history", help="the historical study's store (research/signal-log-plan.md)")
     hs = hi.add_subparsers(dest="history_cmd", required=True)
     hs.add_parser("land", help="land Dolt's whole daily history into history.db").set_defaults(
         fn=cmd_history_land

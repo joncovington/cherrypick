@@ -1,6 +1,6 @@
 """The quote-history replay: a recorded session run through MEIC's own engine, tick by tick.
 
-docs/quote-history-replay-plan.md, Phase 2. Each recorded sample of SPX's 0DTE chain (the gex
+quote-history-replay-plan (archived), Phase 2. Each recorded sample of SPX's 0DTE chain (the gex
 recorder's 15 s history from 2026-10-13, or any file in its schema -- packages/backtest's vendor
 stores) is rebuilt as the snapshot `paper_loop.run_iteration` would have built at that instant and
 handed to `paper.process_symbol` under `paper.pinned_clock`, so the rules that run are the paper

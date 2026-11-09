@@ -40,8 +40,8 @@ import {
 } from "./manageParts";
 
 /**
- * Live → wheel: each wheel cycle packages/manage follows on the account (`wheel.py`, docs/skate-plan.md
- * step 5), one card per cycle, and the wheel rules that fired on the trades holding its legs.
+ * Live → wheel: each wheel cycle packages/manage follows on the account (`wheel.py`),
+ * one card per cycle, and the wheel rules that fired on the trades holding its legs.
  *
  * It computes nothing. Status, the bases, the breakeven, every P&L figure and the skate yield are
  * manage's; "tested", "at or under the buy-to-close" and "beyond the band" are manage's flags, read and

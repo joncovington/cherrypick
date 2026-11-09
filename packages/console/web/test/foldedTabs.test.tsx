@@ -5,7 +5,7 @@ import { RecordedToday, fmtRecorded } from "../src/lightbox/manifests/GexLightbo
 import { incomeListFrom } from "../src/pages/Screeners/OwnListTab";
 
 /**
- * Batch 2 of docs/console-review-plan.md: GEX's
+ * GEX's
  * `history` became a line on `gex`. What each fold must keep: an old address opens its own table, and
  * a symbol the recorder stopped writing never reads as recorded today.
  */

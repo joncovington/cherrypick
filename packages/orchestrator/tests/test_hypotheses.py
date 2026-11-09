@@ -21,7 +21,7 @@ NEW = {
     "rule": "lower bound > 0 in both halves",
     "mechanism": "fear premium after a down day",
     "rivals": [{"explanation": "market drift", "check": "same entries on up days"}],
-    "pointer": "docs/edge-hypotheses-plan.md#the-rule-this-plan-follows",
+    "pointer": "research/edge-hypotheses-plan.md#the-rule-this-plan-follows",
     "scripts": ["packages/backtest/scripts/credit_spread_item17.py"],
     "tests": ["packages/backtest/tests/test_credit_spread_item18_script.py"],
 }
@@ -42,7 +42,8 @@ def test_a_new_row_must_state_its_parts_and_rivals():
 
 
 def test_bad_status_pointer_and_duplicates_are_caught():
-    rows = [copy.deepcopy(NEW), {**NEW, "status": "maybe", "pointer": "docs/edge-hypotheses-plan.md#nope"}]
+    bad = {**NEW, "status": "maybe", "pointer": "research/edge-hypotheses-plan.md#nope"}
+    rows = [copy.deepcopy(NEW), bad]
     problems = hy.check({"hypotheses": rows})
     assert any("unique integer" in p for p in problems)
     assert any("not one of" in p for p in problems)

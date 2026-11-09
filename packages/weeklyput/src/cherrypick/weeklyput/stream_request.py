@@ -1,7 +1,7 @@
 """Declare this module's stream needs: the four names, the cycle's expiry, the puts it may sell.
 
 Writes `~/.cherrypick/state/stream_requests/weeklyput.json`. The request is narrow on purpose (the
-suite's subscription budget, `docs/streamer-subscription-budget.md`):
+subscription budget, `packages/streamer/CLAUDE.md`):
 
 - `symbols`: SPX, SPY, QQQ, IWM, for spot and the session's posted close (`stream_summary`).
   `nearest_window` is false for each: this module never reads the nearest expiry as such.

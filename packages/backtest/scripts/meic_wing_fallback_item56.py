@@ -1,4 +1,4 @@
-"""Item 56, the wide wing when its floor allows, else live's 10 (docs/edge-hypotheses-plan.md): `pm-200`
+"""Item 56, the wide wing when its floor allows, else live's 10 (research/edge-hypotheses-plan.md): `pm-200`
 entering once a day, 14:00-14:30, at 15 (or 20) points wide at the first tick that width's gates all
 pass, and at 10 wide at the first tick 10's gates pass if that comes first.
 

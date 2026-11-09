@@ -1,4 +1,4 @@
-"""Item 39, the contango module's own rule on real daily prices (docs/edge-hypotheses-plan.md): holding
+"""Item 39, the contango module's own rule on real daily prices (research/edge-hypotheses-plan.md): holding
 SVXY while VIX/VIX3M is below 0.97 and SHV otherwise, and two declared changes to the exit, against
 holding SVXY.
 

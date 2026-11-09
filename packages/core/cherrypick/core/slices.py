@@ -1,6 +1,6 @@
 """cherrypick.core.slices — an arm's results cut by setup and condition, with guardrails (B5).
 
-`docs/trading-book-review-plan.md` B5. Each cell is one value of one dimension (an environment, an
+trading-book-review-plan (archived)` B5. Each cell is one value of one dimension (an environment, an
 ATR band, an entry hour, ...) with its n, its mean in R (net in dollars where the schema has no R,
 and it says so), and a 95% Student's t interval. A cell under `MIN_N` trades is greyed: shown, never
 ranked. The report says how many cells it holds, so one strong cell reads in context.

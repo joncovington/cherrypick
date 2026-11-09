@@ -4,7 +4,7 @@ import type { ManageBand, ManagePremium } from "@console/shared";
 import { PremiumPaceCard } from "../src/pages/Live/PremiumPace";
 
 /**
- * The premium pace (docs/console-review-plan.md batch 5): theta against manage's target, and
+ * The premium pace: theta against manage's target, and
  * collected beside kept per month. Every figure is manage's; the foot row adds up the months above
  * it, and what manage left out of `kept` is stated, never silently dropped.
  */

@@ -1,4 +1,4 @@
-"""core.portfolio: how a set of arms behaves held together (docs/strategy-analysis-plan.md Phase 5).
+"""core.portfolio: how a set of arms behaves held together (packages/core/docs/module-map.md).
 
 The guards, each broken on purpose while this was written: a period before an arm's first close is
 not zero-filled; equal-risk weighting leaves correlations unchanged and equalises the arms' spread;

@@ -17,7 +17,7 @@ import { Section } from "../../components/Section";
  * giving the credit share of the width (30-40% since 2026-11-07) at the working price. Every figure is the builder's; this formats and
  * filters, and ranks nothing -- rows are by symbol.
  *
- * NO TESTED EDGE: item 17 of docs/edge-hypotheses-plan.md (run 2026-10-25) found no setup, side, short
+ * NO TESTED EDGE: item 17 of research/edge-hypotheses-plan.md (run 2026-10-25) found no setup, side, short
  * or width that passed after costs. The tab reads the rows by a SELECTION (the user's choice the same
  * day): the credit-share rule (every row, the default) or one of the study's least-bad mean-reversion
  * put cells (0.20 or 0.40 delta, 5 strikes), which keep only their rows and show their own short and

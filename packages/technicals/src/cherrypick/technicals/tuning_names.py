@@ -3,7 +3,7 @@
 Two families had a rule changed after looking at 2023-2026 on these names: the pullbacks (the RSI
 window, 2026-10-03) and the breakouts (Supertrend already on the trade's side, 2026-10-04). The
 historical study judges those four setup-sides only on data the changes never saw -- before
-`study.TUNING_END`, or on names outside this list (docs/signal-log-plan.md). Frozen as a literal, so
+`study.TUNING_END`, or on names outside this list (research/signal-log-plan.md). Frozen as a literal, so
 the holdout cannot move when the nightly universe widens. 527 names.
 """
 

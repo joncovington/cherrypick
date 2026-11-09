@@ -1,6 +1,6 @@
 """Round 2 of the historical study: nine improvements, declared before they were run.
 
-The declaration, its reasons and the decision rule are in docs/signal-log-plan.md ("Round 2"),
+The declaration, its reasons and the decision rule are in research/signal-log-plan.md ("Round 2"),
 committed before this module first ran. In brief:
 
 - Each hypothesis starts from one setup and changes one thing: a filter at entry (`FILTERS`) or a

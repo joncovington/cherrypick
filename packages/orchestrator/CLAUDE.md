@@ -158,7 +158,7 @@ ledgers copy through SQLite's online backup API and are quick_checked, a night w
   full run's, is a needs-a-look name not yet posted that session (`managealert.py`, `manage.attention_notify`).
   `manage-time-spreads` (10:30 ET, on with manage, `manage.time_spreads`) runs `run.py time-spreads`:
   the read-only scan script `scripts/fetch_time_spreads.py`, then one full snapshot so the portfolio
-  page sizes its calendars and diagonals (docs/time-spread-scanner-plan.md; no tested edge).
+  page sizes its calendars and diagonals (no tested edge).
 - The end-of-day review is `packages/review`: jobs `review-provisional` (16:30 ET) and `review-final`
   (10:15 next morning), trading days only, invoke `python -m cherrypick.review`
   (`cfgmod.review_settings`; on by default, opt out with `"review": {"enabled": false}`).

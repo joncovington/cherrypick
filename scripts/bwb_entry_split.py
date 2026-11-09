@@ -3,9 +3,9 @@
     python scripts/bwb_history_backtest.py run --start 2011-01-03 --bars auto --out ROWS.json
     python scripts/bwb_entry_split.py ROWS.json [--cboe-dir DIR]
 
-Hypothesis 6 in docs/edge-hypotheses-plan.md. Video 11 enters its put broken-wing butterflies on down
+Hypothesis 6 in research/edge-hypotheses-plan.md. Video 11 enters its put broken-wing butterflies on down
 days (richer premium, strikes further from spot) and avoids all-time highs (thin premium). The base
-structure has no edge from 2011 (docs/history-studies-2026-10.md), so a filter has to create one, not
+structure has no edge from 2011 (research/history-studies-2026-10.md), so a filter has to create one, not
 polish one. This reads the backtest's own position rows (`--out`) and splits them by two things known
 before the 10:00 entry: the S&P's previous-session return, and how far its previous close sat below
 its running all-time high. Read-only.

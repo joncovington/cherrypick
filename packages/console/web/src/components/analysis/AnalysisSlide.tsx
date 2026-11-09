@@ -25,7 +25,7 @@ import { TileGrid } from "../performance/TileGrid";
 
 /**
  * The strategy-analysis slide: per arm, what the headline reading does not say
- * (docs/strategy-analysis-plan.md). Generic over every module `GET /api/analysis/:module` reads, as
+ * (packages/core/docs/module-map.md). Generic over every module `GET /api/analysis/:module` reads, as
  * `PerformanceSlide` is, and read over the same ledger and window.
  *
  * Presentation only. Every figure comes off `core.analysis` through the bridge; the only arithmetic

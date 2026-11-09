@@ -7,8 +7,8 @@ keeps the story of how each was found.
 
 pmcc's deep-ITM long sits far below spot while its short sits at it. A symmetric strike count bought an
 identical block of strikes above spot that no module could read, and on 2026-08-24 that block was the
-largest single waste in the suite's subscription budget (`docs/streamer-subscription-budget.md` at the
-repo root). Window hints became `(below, above)` spans, unioned per side.
+largest single waste in the suite's subscription budget (see "Subscription budget and guard rails" in
+`../CLAUDE.md`). Window hints became `(below, above)` spans, unioned per side.
 
 ## Summary closes erased by a later event (fixed 2026-08-27)
 
