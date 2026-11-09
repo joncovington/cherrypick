@@ -1,5 +1,5 @@
 {
-  "_note": "B7 of docs/trading-book-review-plan.md: one row per hypothesis. Statuses and pointers only, never licensed figures (results stay under ~/.cherrypick). Legacy rows (items 1-17) predate the register: their four parts, mechanism and rivals live in the plan section they point to. From item 18 every field is required. `results` names each result file as a `{home}/...` path (the file stays on this machine); a row from item 18 with a verdict must name one. `outcome` is the decision in words, never a figure. From item 18 a row also names its `scripts` (under scripts/) and `tests` (under packages/*/tests/): with the pointer, the research-queue rows keyed by `study` and the results, the whole study chain. Checked by `cherrypick hypotheses check`.",
+  "_note": "B7 of docs/trading-book-review-plan.md: one row per hypothesis. Statuses and pointers only, never licensed figures (results stay under ~/.cherrypick). Legacy rows (items 1-17) predate the register: their four parts, mechanism and rivals live in the plan section they point to. From item 18 every field is required. `results` names each result file as a `{home}/...` path to its .json (the file stays on this machine; its .md notes beside it are found on their own and never listed); a row from item 18 with a verdict must name one. `outcome` is the decision in words, never a figure. From item 18 a row also names its `scripts` (under scripts/) and `tests` (under packages/*/tests/): with the pointer, the research-queue rows keyed by `study` and the results, the whole study chain. Checked by `cherrypick hypotheses check`.",
   "hypotheses": [
     {
       "id": 1,
@@ -1151,8 +1151,7 @@
         "packages/backtest/tests/test_earnings_item31_study_script.py"
       ],
       "results": [
-        "{home}/data/backtest/results/research/item31/results.json",
-        "{home}/data/backtest/results/research/item31/results.md"
+        "{home}/data/backtest/results/research/item31/results.json"
       ],
       "retest": null,
       "retests": [],
@@ -1355,8 +1354,7 @@
         "packages/bwb/tests/test_item35_script.py"
       ],
       "results": [
-        "{home}/data/backtest/results/research/item35/results.json",
-        "{home}/data/backtest/results/research/item35/results.md"
+        "{home}/data/backtest/results/research/item35/results.json"
       ],
       "retest": null,
       "retests": [],
@@ -1407,8 +1405,7 @@
         "packages/backtest/tests/test_pmcc_item36_script.py"
       ],
       "results": [
-        "{home}/data/backtest/results/research/item36/results.json",
-        "{home}/data/backtest/results/research/item36/results.md"
+        "{home}/data/backtest/results/research/item36/results.json"
       ],
       "retest": null,
       "retests": [],
@@ -1940,8 +1937,7 @@
         "packages/backtest/tests/test_variance_premium_item46_script.py"
       ],
       "results": [
-        "{home}/data/backtest/results/research/item46/results.json",
-        "{home}/data/backtest/results/research/item46/results.md"
+        "{home}/data/backtest/results/research/item46/results.json"
       ],
       "retest": null,
       "retests": [],
@@ -2103,8 +2099,7 @@
       ],
       "results": [
         "{home}/data/backtest/results/research/item49/results-design.json",
-        "{home}/data/backtest/results/research/item49/results-holdout.json",
-        "{home}/data/backtest/results/research/item49/results.md"
+        "{home}/data/backtest/results/research/item49/results-holdout.json"
       ],
       "retest": null,
       "retests": [],

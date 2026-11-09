@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
-import type { ModuleSummarySlice, TradingMode } from "@console/shared";
+import type { ModuleSummarySlice, SuiteFeatures, TradingMode } from "@console/shared";
+import { isModuleVisible } from "../../lib/visibility";
+import { useFeatures } from "../../lib/useFeatures";
 import { StatusLine, useModuleSummary } from "../../components/summary/ModuleSummary";
 import { fmtUsd } from "../../components/summary/kit";
 import { etToday } from "../../components/table/DateRange";
@@ -130,11 +132,18 @@ function FliesRecord() {
   );
 }
 
+/** The experiments whose module is on: one switched off loses its card with its pages (the rail's rule). */
+export function shownExperiments(f: SuiteFeatures | undefined) {
+  return EXPERIMENTS.filter((e) => isModuleVisible(e.id, f));
+}
+
 export function ExperimentsPage() {
+  const shown = shownExperiments(useFeatures());
   return (
     <div className="pf-layout">
       <Section concept="edge" tag="paper experiments" question="What have the experiments earned?">
-        {EXPERIMENTS.map((e) => (
+        {shown.length === 0 ? <p className="muted">Every paper experiment is switched off.</p> : null}
+        {shown.map((e) => (
           <ExperimentCard key={e.id} id={e.id} label={e.label} what={e.what} />
         ))}
       </Section>

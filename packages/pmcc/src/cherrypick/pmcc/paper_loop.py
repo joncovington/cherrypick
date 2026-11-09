@@ -184,6 +184,8 @@ def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]
     on a baseline day. Every tag here is on the roster the stream request subscribes for -- the
     2026-08-27 lesson (`stream_window.entry_possible`) holds for every twin, not just the first."""
     _cfg.section(config, "defaults", label="pmcc", log=_log)  # says so once if the block moved
+    if (config.get("defaults") or {}).get(management.WIND_DOWN):
+        return [], {}  # retiring: nothing enters, advised twins included; management closes what is held
     declared = _cfg.registry(config, label="pmcc", log=_log)
     _cfg.undeclared(
         declared,

@@ -82,6 +82,9 @@ PARAM_DEFAULTS = {
 }
 
 HELD_LONG = "held_long"
+#: The retirement switch (`defaults.wind_down: true`): no arm enters (`paper_loop.session_books`) and
+#: every open position closes at the next tick its execution gate allows, recorded with this reason.
+WIND_DOWN = "wind_down"
 
 
 @dataclass(frozen=True)
@@ -143,6 +146,9 @@ def evaluate(
     if spot is None or short_tv is None:
         return Decision("hold", "unpriced_mark")
 
+    if params.get(WIND_DOWN):
+        return Decision("close_all", WIND_DOWN, {"short_tv": short_tv, "spot": spot})
+
     if params.get("tv_managed_exit", False):
         if short_tv <= params.get("tv_close_threshold", 0.10):
             return Decision("close_all", "tv_exhausted", {"short_tv": short_tv, "spot": spot})
@@ -190,7 +196,12 @@ def evaluate_held_long(
 
     `short` is `{"strike", "expiration", "tv", "entry_tv"}` for the open short, or None. A short
     without a price holds (`unpriced_mark`) rather than acting on a hole; the stop and the long roll
-    still fire when their own inputs are known."""
+    still fire when their own inputs are known.
+
+    `wind_down` (the module's retirement switch, `defaults.wind_down`) comes before all of them:
+    close all, through the same execution gate as any other close."""
+    if params.get(WIND_DOWN):
+        return Decision("close_all", WIND_DOWN, {"long_dte": long_dte})
     long_cost = float(position.get("long_entry_mid") or 0.0) * 100 * int(position.get("quantity") or 1)
     stop = params.get("stop_loss_frac")
     if stop and pnl is not None and long_cost > 0 and pnl["net"] <= -stop * long_cost:
