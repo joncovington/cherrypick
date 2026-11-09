@@ -198,6 +198,15 @@ function LiveIcon() {
 }
 
 /* A server rack — the supervisor's services and logs. */
+function HelpIcon() {
+  return (
+    <Svg>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.7M12 16.8h.01" />
+    </Svg>
+  );
+}
+
 function SystemIcon() {
   return (
     <Svg>
@@ -265,6 +274,7 @@ const ICONS: Record<string, (p: NavIconProps) => ReactNode> = {
   "/advisor": AdvisorIcon,
   "/live": LiveIcon,
   "/system": SystemIcon,
+  "/help": HelpIcon,
   "/meic": MeicIcon,
   "/flies": FliesIcon,
   "/pmcc": PmccIcon,

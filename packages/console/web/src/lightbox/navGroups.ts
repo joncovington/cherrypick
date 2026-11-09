@@ -416,6 +416,16 @@ export const SYSTEM_SLIDES = [
   { id: "logs", label: "logs" },
 ] as const satisfies readonly NavSlide[];
 
+/**
+ * Help (2026-11-09): the user guides in docs/guide, in the order docs/guide/README.md gives them, and
+ * the FAQ. One `guides` tab holds every guide page (its own table of contents picks the page, at
+ * `/help/<slug>`), so a new guide needs no tab.
+ */
+export const HELP_SLIDES = [
+  { id: "guides", label: "guides" },
+  { id: "faq", label: "faq" },
+] as const satisfies readonly NavSlide[];
+
 export const CONFIG_SLIDES: readonly NavSlide[] = [
   ...SECTIONS.map((s) => ({ id: s.id, label: s.title.toLowerCase() })),
   { id: "prefs", label: "prefs" },
@@ -578,6 +588,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   advisor: { slides: ADVISOR_SLIDES },
   experiments: { slides: EXPERIMENTS_SLIDES },
   system: { slides: SYSTEM_SLIDES, legacy: { modules: "health" } },
+  help: { slides: HELP_SLIDES },
   config: { slides: CONFIG_SLIDES, legacy: { dev: "timing" } },
 };
 

@@ -44,6 +44,7 @@ export const SUITE_LINKS: readonly NavLinkDef[] = [
   { to: "/backtest", label: "Backtest", key: "b", section: "research" },
   { to: "/advisor", label: "Advisor", key: "a", section: "research" },
   { to: "/system", label: "System", key: "s", section: "suite" },
+  { to: "/help", label: "Help", key: "h", section: "suite" },
 ];
 
 /** The suite links above the modules, and those below them. */

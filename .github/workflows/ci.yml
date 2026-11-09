@@ -66,6 +66,10 @@ jobs:
       # real account. Allow a legitimate line with `personal-ok: <reason>` (tools/check_personal.py).
       - name: Check no personal account data
         run: python tools/check_personal.py
+      # The console's Help page serves docs/guide/: index, links, images, FAQ shape and the commands
+      # the guides quote must still match the code (tools/check_guide.py).
+      - name: Check the user guide
+        run: python tools/check_guide.py
       # The repo-root scripts/ belong to no package, so no package job linted them, and 17 findings
       # and 8 unformatted files built up unseen (cleared 2026-10-05). The ruff version is read from
       # core's own pin, so this can never lint scripts/ under a different ruff than the packages.

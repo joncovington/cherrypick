@@ -70,6 +70,18 @@ Within a page, a column, tile or card is left to detail by marking it `detailOnl
 (`Column`, `HeadRow`/`headersOf`, `Cells`), so dropping one cannot misalign a row. The Live tables use
 it (2026-10-21); a column removed from both views is simply not declared.
 
+**Help page** (`/help`, 2026-11-09): the user guide in the checkout's `docs/guide/`, so the guide always
+matches the code it describes. Two tabs. `guides` holds every page at `/help/<slug>` (its own route in
+`App.tsx`, since a slug is not a tab id): a table of contents grouped and ordered by
+`docs/guide/README.md`, with a search over titles and headings; the page; "On this page"; and the
+previous and next pages in index order. `faq` (`/help/faq`) shows `faq.md` as collapsible rows, with a
+filter, expand-all and deep links (`/help/faq#<question>`) that open the row. The server
+(`readers/help.ts`) serves only slugs the index lists, and images from `docs/images/` by bare name
+(PNG, JPEG, WebP; never SVG). Markdown is `react-markdown` + `remark-gfm`, pinned, with no raw-HTML
+plugin, so a guide's HTML is shown as text. Headings carry GitHub's anchor ids, and a link to another
+guide stays in the app while a link to any other repo file opens it on GitHub. `tools/check_guide.py`
+(CI) keeps the index, links, anchors, images, the FAQ's shape and the quoted commands true.
+
 **System page** (`/system`): the suite's own health, read-only, from the files the suite writes
 (supervisor registry and heartbeat, watchdog and its renotify memory, holds, pid files, stamps).
 A tile's level is the suite's verdict (a watchdog finding, or the supervisor's own heartbeat rule),

@@ -10,7 +10,7 @@ export type TradingModuleId = (typeof TRADING_MODULE_ORDER)[number];
  * The suite-level surfaces: not module books, but pages on the same frame as the trading modules
  * (since 2026-09-25) -- a rail of tabs and a content pane -- rather than a separate page style.
  */
-export const SUITE_ORDER = ["live", "reports", "charts", "gex", "gexpanel", "screeners", "experiments", "compare", "backtest", "advisor", "system", "config"] as const;
+export const SUITE_ORDER = ["live", "reports", "charts", "gex", "gexpanel", "screeners", "experiments", "compare", "backtest", "advisor", "system", "help", "config"] as const;
 
 export type SuiteId = (typeof SUITE_ORDER)[number];
 
@@ -48,6 +48,7 @@ export const MODULE_LABEL: Record<ModuleId, string> = {
   backtest: "Backtest",
   advisor: "Advisor",
   system: "System",
+  help: "Help",
   config: "Config",
 };
 

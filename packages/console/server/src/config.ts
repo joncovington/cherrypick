@@ -12,7 +12,8 @@ const CHERRYPICK = cherrypickHome();
 // in a dev checkout or a built one. Used to reach a sibling module's SOURCE tree (its own declared
 // arms/profiles, not runtime data) for the one thing this package has no other way to know:
 // whether a calibration tag is currently active or retired; and by the System page, which asks
-// git (read-only) what code the checkout holds. Everything else this package reads stays under
+// git (read-only) what code the checkout holds; and by the Help page, which serves the user guide
+// (docs/guide, docs/images; `readers/help.ts`). Everything else this package reads stays under
 // ~/.cherrypick; these are the exceptions, and they stay read-only.
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 
