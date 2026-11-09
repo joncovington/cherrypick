@@ -20,6 +20,14 @@ index, an FAQ with a fixed shape, images, and commands a reader will paste:
   7. A `--flag` in a `run.py <verb> ...` command appears in the orchestrator CLI source. A flag
      that was renamed would otherwise send a reader at an argparse error.
 
+  8. Every page the console's rail links to (navLinks.ts, Help aside) has a guide: some page the
+     index lists names its route in inline code (`/live`, or a tab under it). A new console page
+     without a guide fails here rather than going unexplained.
+  9. Every image in `docs/images/` is in `docs/images/shots.json`: a console screenshot with the
+     route it shows and the console source files that draw it (so `scripts/reshoot.py` can take it
+     again and CI can warn when those files change without it), or a `manual` entry for an image
+     that is not a console screenshot. Each route must be a console page and each source must exist.
+
 Rules 5-7 look only inside inline code and fenced code, so prose cannot trip them. Config-key drift
 (keys named in config.example.json) is not checked: the guides do not tie a key to a file name in
 a form that can be matched without false positives.
@@ -29,6 +37,7 @@ Plain stdlib; run `python tools/check_guide.py`. Exits non-zero with one line pe
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -42,6 +51,10 @@ GUIDE = "docs/guide"
 IMAGES = "docs/images"
 WEB_SRC = "packages/console/web/src"
 MAX_IMAGE_BYTES = 150 * 1024
+SHOTS = "docs/images/shots.json"
+NAV_LINKS = "packages/console/web/src/components/shell/navLinks.ts"
+MODULE_ORDER = "packages/console/web/src/lightbox/moduleOrder.ts"
+_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 _ITEM = re.compile(r"^- \[([^\]]+)\]\(([a-z0-9-]+\.md)\): (\S.*)$")
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
@@ -213,7 +226,7 @@ def check_images(root: Path) -> list[str]:
     if img.is_dir():
         corpus = "\n".join(p.read_text(encoding="utf-8") for p in _md_files(root))
         for f in sorted(img.iterdir()):
-            if not f.is_file():
+            if not f.is_file() or f.suffix.lower() not in _IMAGE_EXT:
                 continue
             rel = _rel(root, f)
             if f.name not in corpus:
@@ -319,8 +332,107 @@ def check_commands(root: Path) -> list[str]:
     return findings
 
 
+def _nav_routes(root: Path) -> list[str]:
+    """Every top-level console page the rail links to, Help itself excepted."""
+    p = root / NAV_LINKS
+    if not p.is_file():
+        return []
+    routes = re.findall(r'\bto:\s*"(/[a-z][a-z0-9-]*)"', p.read_text(encoding="utf-8"))
+    return sorted({r for r in routes if r != "/help"})
+
+
+def check_coverage(root: Path) -> list[str]:
+    """Rule 8: each rail page is named, as an inline-code route, by some page the index lists."""
+    listed = {s for _n, _t, s in _index(root)[0]}
+    named: set[str] = set()
+    for p in _pages(root):
+        if p.stem not in listed:
+            continue
+        for _n, seg in _code_segments(_lines(p)):
+            for m in re.finditer(r"(?<![\w/])(/[a-z][a-z0-9-]*)(?=[/?#\s]|$)", seg):
+                named.add(m.group(1))
+    return [
+        f"{NAV_LINKS}:1: rule 8: console page `{r}` has no guide page "
+        f"(name the route in inline code, e.g. `{r}`)"
+        for r in _nav_routes(root)
+        if r not in named
+    ]
+
+
+def _page_ids(root: Path) -> set[str]:
+    p = root / MODULE_ORDER
+    if not p.is_file():
+        return set()
+    text = p.read_text(encoding="utf-8")
+    ids: set[str] = {"help"}
+    for name in ("TRADING_MODULE_ORDER", "SUITE_ORDER"):
+        m = re.search(rf"{name}\s*=\s*\[([^\]]*)\]", text)
+        if m:
+            ids |= set(re.findall(r'"([a-z0-9-]+)"', m.group(1)))
+    return ids
+
+
+def check_shots(root: Path) -> list[str]:
+    """Rule 9: every image is in docs/images/shots.json, and every entry is one that can be reshot."""
+    img = root / IMAGES
+    images = (
+        sorted(f.name for f in img.iterdir() if f.is_file() and f.suffix.lower() in _IMAGE_EXT)
+        if img.is_dir()
+        else []
+    )
+    manifest_path = root / SHOTS
+    if not manifest_path.is_file():
+        return [f"{SHOTS}:1: rule 9: no manifest, but {IMAGES} has images"] if images else []
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        shots = list(manifest.get("shots", []))
+        manual = list(manifest.get("manual", []))
+        int(manifest["demo"]["seed"])
+    except (ValueError, KeyError, TypeError, AttributeError) as err:
+        return [f"{SHOTS}:1: rule 9: unreadable manifest ({err})"]
+    findings: list[str] = []
+    listed: dict[str, int] = {}
+    for e in shots + manual:
+        f = e.get("file") if isinstance(e, dict) else None
+        if not isinstance(f, str):
+            findings.append(f"{SHOTS}:1: rule 9: an entry has no `file`")
+            continue
+        listed[f] = listed.get(f, 0) + 1
+        if f not in images:
+            findings.append(f"{SHOTS}:1: rule 9: `{f}` is listed but not in {IMAGES}")
+    findings += [f"{SHOTS}:1: rule 9: `{f}` is listed more than once" for f, c in listed.items() if c > 1]
+    findings += [f"{IMAGES}/{f}:1: rule 9: image is not in shots.json" for f in images if f not in listed]
+    pages = _page_ids(root)
+    for e in shots:
+        if not isinstance(e, dict) or not isinstance(e.get("file"), str):
+            continue
+        f, route = e["file"], e.get("route")
+        if not isinstance(route, str) or not route:
+            findings.append(f"{SHOTS}:1: rule 9: `{f}` has no route")
+        elif pages and route.strip("/").split("/")[0].split("?")[0] not in pages:
+            findings.append(f"{SHOTS}:1: rule 9: `{f}`'s route `{route}` is not a console page")
+        sources = e.get("sources")
+        if not isinstance(sources, list) or not sources:
+            findings.append(f"{SHOTS}:1: rule 9: `{f}` names no source files")
+        else:
+            findings += [
+                f"{SHOTS}:1: rule 9: `{f}`'s source `{s}` does not exist"
+                for s in sources
+                if not (root / str(s)).is_file()
+            ]
+    return findings
+
+
 def check(root: Path = ROOT) -> list[str]:
-    return check_index(root) + check_links(root) + check_images(root) + check_faq(root) + check_commands(root)
+    return (
+        check_index(root)
+        + check_links(root)
+        + check_images(root)
+        + check_faq(root)
+        + check_commands(root)
+        + check_coverage(root)
+        + check_shots(root)
+    )
 
 
 def main() -> int:

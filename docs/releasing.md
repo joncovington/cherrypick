@@ -32,10 +32,14 @@ written for the person upgrading, not as a commit log.
 
 1. **Check `main` is green.** The latest CI run on `main` passes, and nothing half-finished is
    waiting behind a feature switch that ships on.
-2. **Name the release in the changelog**, in a PR of its own. Rename `## [Unreleased]` to
+2. **Retake the guide's screenshots.** With the console built, run `python scripts/reshoot.py`. It
+   builds a demo home, shoots every image in `docs/images/shots.json` again and lists the ones that
+   changed. Look at each changed image, and commit them in a PR of their own (or with the changelog
+   PR) if they are right. ([demo-home.md](demo-home.md) has the rules the demo data keeps.)
+3. **Name the release in the changelog**, in a PR of its own. Rename `## [Unreleased]` to
    `## vX.Y.Z — YYYY-MM-DD — <a short name>` (the date and the name follow em dashes, as every
    earlier heading does), and put a fresh, empty `## [Unreleased]` above it. Merge it.
-3. **Tag the merge commit on `main`** and push the tag:
+4. **Tag the merge commit on `main`** and push the tag:
 
    ```bash
    git fetch origin
@@ -43,12 +47,12 @@ written for the person upgrading, not as a commit log.
    git push origin vX.Y.Z
    ```
 
-4. **The Release workflow publishes it** ([`.github/workflows/release.yml`](../.github/workflows/release.yml)).
+5. **The Release workflow publishes it** ([`.github/workflows/release.yml`](../.github/workflows/release.yml)).
    It refuses a tag that is not on `main`, cuts that version's section out of the changelog with
    [`tools/release_notes.py`](../tools/release_notes.py) (and refuses a tag whose section is
    missing, undated or empty), then creates the GitHub Release with the section as its notes. GitHub
    attaches the source ZIP and tarball itself.
-5. **Check the result**: the release is at the top of the Releases page with its notes, and
+6. **Check the result**: the release is at the top of the Releases page with its notes, and
    `/releases/latest` opens it.
 
 If the workflow fails, nothing was published. Fix the cause (usually the changelog section), then
@@ -56,7 +60,7 @@ move the tag and push it again:
 
 ```bash
 git push --delete origin vX.Y.Z && git tag -d vX.Y.Z
-# fix, merge, then tag and push as in step 3
+# fix, merge, then tag and push as in step 4
 ```
 
 **Never move a tag once its release is published.** Someone has installed it; a correction is the next

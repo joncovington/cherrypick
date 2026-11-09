@@ -50,6 +50,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # The merge commit and its base, for the screenshot warning's diff (HEAD^1 is the base).
+          fetch-depth: 2
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
@@ -70,6 +73,12 @@ jobs:
       # the guides quote must still match the code (tools/check_guide.py).
       - name: Check the user guide
         run: python tools/check_guide.py
+      # A PR that changes a console page a guide screenshot shows, without the screenshot, gets a
+      # warning (never a failure: often the picture is still right). The label screenshots-ok says a
+      # person looked. tools/check_screenshots_fresh.py; retake with scripts/reshoot.py.
+      - name: Warn about guide screenshots that may be stale
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'screenshots-ok')
+        run: git diff --name-only HEAD^1 HEAD | python tools/check_screenshots_fresh.py
       # The repo-root scripts/ belong to no package, so no package job linted them, and 17 findings
       # and 8 unformatted files built up unseen (cleared 2026-10-05). The ruff version is read from
       # core's own pin, so this can never lint scripts/ under a different ruff than the packages.

@@ -150,7 +150,14 @@ def test_rule3_oversize_image(tmp_path):
 
 
 def test_rule3_referenced_small_image_passes(tmp_path):
-    root = build(tmp_path, {"docs/images/ok.png": b"x" * 150 * 1024, **alpha("![x](../images/ok.png)\n")})
+    root = build(
+        tmp_path,
+        {
+            "docs/images/ok.png": b"x" * 150 * 1024,
+            "docs/images/shots.json": manifest(manual=[{"file": "ok.png"}]),
+            **alpha("![x](../images/ok.png)\n"),
+        },
+    )
     assert cg.check(root) == []
 
 
@@ -210,6 +217,132 @@ def test_rule7_unknown_flag(tmp_path):
 def test_rule7_flags_of_other_commands_ignored(tmp_path):
     root = build(tmp_path, alpha("`node ui-check.mjs --route x` and `python run.py status`\n"))
     assert cg.check(root) == []
+
+
+# ---- rule 8
+NAV = (
+    'export const SUITE_LINKS = [\n  { to: "/live", label: "Live" },\n  { to: "/help", label: "Help" },\n];\n'
+)
+
+
+def test_rule8_console_page_without_a_guide(tmp_path):
+    root = build(tmp_path, {cg.NAV_LINKS: NAV})
+    out = rules(cg.check(root))
+    assert "rule 8: console page `/live` has no guide page" in out
+    assert "`/help`" not in out  # Help is the guide itself
+
+
+def test_rule8_route_or_tab_in_inline_code_covers_it(tmp_path):
+    for body in ("It is at `/live`.\n", "Open `/live/positions`.\n", "See `/live?pf=x`.\n"):
+        root = build(tmp_path, {cg.NAV_LINKS: NAV, **alpha(body)})
+        assert cg.check(root) == [], body
+
+
+def test_rule8_prose_or_a_longer_route_does_not_count(tmp_path):
+    for body in ("It is at /live.\n", "Open `/livestock`.\n", "Path `docs/live`.\n"):
+        root = build(tmp_path, {cg.NAV_LINKS: NAV, **alpha(body)})
+        assert "rule 8" in rules(cg.check(root)), body
+
+
+def test_rule8_an_unlisted_page_does_not_count(tmp_path):
+    root = build(tmp_path, {cg.NAV_LINKS: NAV, "docs/guide/beta.md": "# Beta\n\n`/live`\n"})
+    assert "rule 8: console page `/live`" in rules(cg.check(root))
+
+
+# ---- rule 9
+ORDER = (
+    'export const TRADING_MODULE_ORDER = ["meic"] as const;\n'
+    'export const SUITE_ORDER = ["live", "config"] as const;\n'
+)
+SRC = "packages/console/web/src/pages/Live/LiveTodayPage.tsx"
+
+
+def manifest(shots: list | None = None, manual: list | None = None) -> str:
+    import json
+
+    return json.dumps({"demo": {"seed": 7, "days": 30}, "shots": shots or [], "manual": manual or []})
+
+
+def shot(**over) -> dict:
+    return {"file": "live-today.png", "route": "live/today", "card": None, "sources": [SRC], **over}
+
+
+def with_shot(tmp_path, entry: dict, extra: dict | None = None) -> Path:
+    return build(
+        tmp_path,
+        {
+            cg.MODULE_ORDER: ORDER,
+            SRC: "",
+            "docs/images/live-today.png": b"png",
+            "docs/images/shots.json": manifest([entry]),
+            **alpha("![x](../images/live-today.png)\n"),
+            **(extra or {}),
+        },
+    )
+
+
+def test_rule9_a_good_entry_passes(tmp_path):
+    assert cg.check(with_shot(tmp_path, shot())) == []
+
+
+def test_rule9_image_not_in_the_manifest(tmp_path):
+    root = with_shot(
+        tmp_path,
+        shot(),
+        {
+            "docs/images/other.png": b"png",
+            **alpha("![x](../images/live-today.png) ![y](../images/other.png)\n"),
+        },
+    )
+    assert "docs/images/other.png:1: rule 9: image is not in shots.json" in rules(cg.check(root))
+
+
+def test_rule9_images_without_any_manifest(tmp_path):
+    root = build(tmp_path, {"docs/images/a.png": b"png", **alpha("![x](../images/a.png)\n")})
+    assert "rule 9: no manifest" in rules(cg.check(root))
+
+
+def test_rule9_listed_but_missing_and_listed_twice(tmp_path):
+    root = with_shot(
+        tmp_path, shot(), {"docs/images/shots.json": manifest([shot(), shot()], [{"file": "gone.png"}])}
+    )
+    out = rules(cg.check(root))
+    assert "`gone.png` is listed but not in docs/images" in out
+    assert "`live-today.png` is listed more than once" in out
+
+
+def test_rule9_route_that_is_not_a_console_page(tmp_path):
+    assert "is not a console page" in rules(cg.check(with_shot(tmp_path, shot(route="nowhere/tab"))))
+
+
+def test_rule9_missing_or_absent_sources(tmp_path):
+    assert "names no source files" in rules(cg.check(with_shot(tmp_path, shot(sources=[]))))
+    out = rules(cg.check(with_shot(tmp_path, shot(sources=["web/src/pages/Live/LiveTodayPage.tsx"]))))
+    assert "source `web/src/pages/Live/LiveTodayPage.tsx` does not exist" in out
+
+
+def test_rule9_unreadable_manifest(tmp_path):
+    root = with_shot(tmp_path, shot(), {"docs/images/shots.json": "{not json"})
+    assert "rule 9: unreadable manifest" in rules(cg.check(root))
+
+
+# ---- the stale-screenshot warning (tools/check_screenshots_fresh.py)
+def test_fresh_warns_only_when_a_source_changes_without_the_image():
+    import check_screenshots_fresh as fresh
+
+    m = {"shots": [shot()]}
+    assert fresh.stale({SRC}, m) == [("live-today.png", [SRC])]
+    assert fresh.stale({SRC, "docs/images/live-today.png"}, m) == []
+    assert fresh.stale({"README.md"}, m) == []
+
+
+def test_fresh_prints_a_warning_and_never_fails(tmp_path, capsys):
+    import check_screenshots_fresh as fresh
+
+    root = with_shot(tmp_path, shot())
+    assert fresh.main(stdin=f"{SRC}\n", root=root) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("::warning file=docs/images/live-today.png::") and "screenshots-ok" in out
 
 
 # ---- the real tree
