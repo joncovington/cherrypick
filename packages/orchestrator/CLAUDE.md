@@ -147,7 +147,22 @@ idempotent, never touching the current month or an active `.log`, off the reliab
 `backup.py` (the `suite-backup` job) keeps ONE zip of the suite's own data, rewritten nightly: live
 ledgers copy through SQLite's online backup API and are quick_checked, a night with a problem lands as
 `.failed.zip` and never replaces the good one, `restore` refuses the live home, and `doctor` warns past
-36h. Only `.dolt/` is skipped, never its parent: `data/earnings` holds ledgers beside one.
+36h. Only `.dolt/` is skipped, never its parent: `data/earnings` holds ledgers beside one. The one
+exception to "restore refuses the live home" is `restore_over_home`, which only `upgrade --rollback`
+calls, with the suite stopped.
+
+**`upgrade`** (`orchestrator/upgrade.py`, the root `upgrade.*` wrappers) moves an install to a newer
+release and back, and is the one orchestrator command that stops the whole suite and changes the code
+on disk. Its refusals are the load-bearing part: a live loop armed today, an open live leg or pending
+order, or a live book it cannot read refuses and no flag overrides it; `--force-window` waives the
+quiet window (derived from the job table by `quiet_window`, never written down) and nothing else.
+Everything outside goes through `Ports`, so the tests run the flow on fakes. A ZIP install unzips into
+a NEW sibling folder, never over the old; a rollback restores the pre-upgrade backup because ledgers
+migrate forward and old code must not read new data. Data migrations live in `orchestrator/migrations/`
+(its docstring: prefer a compatibility shim or a doctor warning to a migration) and must match the
+release manifest (`release/manifest.json`, read by the release workflow and by `upgrade`). The step
+list and flags are in [docs/orchestrator-cli.md](../../docs/orchestrator-cli.md) and
+[docs/guide/upgrading.md](../../docs/guide/upgrading.md).
 
 **This package holds no AI and no review or advisor logic; it only schedules them.**
 - The position evaluation is `packages/manage`: job `manage-eval` (10:00 ET, trading days, OFF until

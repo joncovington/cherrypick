@@ -372,9 +372,20 @@ page, turns amber and reads "v0.11.2 · v0.12.0 available", linking to the new r
 asks GitHub at most every six hours; to turn that off, set `"update_check": false` in
 `~/.cherrypick/config/console.json`.
 
-Stop the suite (`uninstall.cmd` / `./uninstall.sh`; history and settings are kept), get the new
-release, and run the installer again. With the ZIP, unzip the new release over the old folder. With
-git, from the checkout:
+**From v0.12.0 on, run the upgrade script** from the installed folder, on a quiet evening after the
+close: `upgrade.cmd` on Windows, `./upgrade.sh` elsewhere (or `/cherrypick-upgrade` in Claude Code).
+It shows the new release's notes and asks, backs up (`run.py backup`), fetches the release (a git
+checkout fetches the tag; a ZIP install unzips into a new folder next to the old one), stops the suite,
+runs the new release's installer, migrates the data, starts everything and checks it. It refuses while
+a live loop is armed or a live position is open, and outside the quiet window after the close
+(`--force-window` waives the window only). `upgrade.cmd --rollback` puts the old release and the
+pre-upgrade backup back. `--to v0.13.0` names a release; `--dry-run` checks everything and changes
+nothing. [docs/guide/upgrading.md](docs/guide/upgrading.md) has the whole page.
+
+**From v0.11.x to v0.12.0 the move is manual,** because v0.11 has no upgrade script. Stop the suite
+(`uninstall.cmd` / `./uninstall.sh`; history and settings are kept), run `run.py backup`, get the new
+release and run the installer again. With the ZIP, unzip the new release into a new folder (or over
+the old one). With git, from the checkout:
 
 ```bash
 git fetch --tags origin

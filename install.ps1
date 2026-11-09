@@ -10,6 +10,8 @@
 #   -SkipDolt   do not offer the Dolt setup (earnings and technicals stay off)
 #   -WithDesk   accepted and ignored: the manual desk was removed in v0.12.0
 #   -NoStart    install only; do not start the suite
+#   -Upgrade    what `run.py upgrade` passes: an install over an existing home, with the questions only a
+#               first install needs left out (Dolt, the broker login, the first lists)
 #   -ConfigHistory [-ConfigRemote <url>]   keep a git history of your settings (see below)
 
 param(
@@ -19,9 +21,12 @@ param(
     [switch]$SkipBootstrap,
     [switch]$WithDesk,
     [switch]$NoStart,
+    [switch]$Upgrade,
     [switch]$ConfigHistory,
     [string]$ConfigRemote = ""
 )
+
+if ($Upgrade) { $Yes = $true; $SkipDolt = $true; $SkipBootstrap = $true }
 
 $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
@@ -197,6 +202,8 @@ try {
 } catch { $connected = $false }
 if ($connected) {
     Note "Already connected."
+} elseif ($Upgrade) {
+    Warn "Not connected. Run this installer again without -Upgrade to connect."
 } elseif (Ask "Connect now?" $true) {
     & $VPy -m cherrypick.core.auth setup
     if ($LASTEXITCODE -ne 0) { Warn "Not connected. Run this installer again to try once more." }

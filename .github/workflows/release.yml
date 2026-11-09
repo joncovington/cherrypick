@@ -2,7 +2,9 @@ name: Release
 
 # A pushed `v*` tag publishes a GitHub Release, with that version's CHANGELOG.md section as its notes.
 # The install docs point at the latest release, so this is the one step that changes what a new
-# install gets: merging to main does not. docs/releasing.md has the whole procedure.
+# install gets: merging to main does not. The release also carries release/manifest.json as the asset
+# `release-manifest.json` (what `run.py upgrade` reads), and a tag with no manifest entry is refused.
+# docs/releasing.md has the whole procedure.
 
 on:
   push:
@@ -33,7 +35,13 @@ jobs:
         run: |
           python tools/release_notes.py "$GITHUB_REF_NAME" > notes.md
           python tools/release_notes.py --title "$GITHUB_REF_NAME" > title.txt
+      # `run.py upgrade` reads this asset from the release page before it downloads anything, so a
+      # release without a well-formed entry would upgrade people blind. Refused before publishing.
+      - name: The manifest has an entry for this tag
+        run: python tools/check_release_manifest.py "$GITHUB_REF_NAME"
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "$(cat title.txt)" --notes-file notes.md
+        run: |
+          cp release/manifest.json release-manifest.json
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$(cat title.txt)" --notes-file notes.md release-manifest.json
