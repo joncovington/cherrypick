@@ -28,6 +28,24 @@ Every PR with a change a user would notice adds a line under `## [Unreleased]` i
 saying what changed and anything a user has to do. That section is the next release's notes, so it is
 written for the person upgrading, not as a commit log.
 
+## The release manifest
+
+Every release has an entry in [`release/manifest.json`](../release/manifest.json). It is what
+`run.py upgrade` shows a person before it changes anything, so it is written for them:
+
+- `upgrading`: what someone upgrading should know (not empty);
+- `manual_steps`: anything they have to do by hand;
+- `config_changes`: config keys the release added, renamed or removed, each `{file, key, note}`
+  (`/cherrypick-upgrade` checks the person's config against these);
+- `measurement_boundaries`: changes that move a measured number, so a series breaks at this release;
+- `migrations`: the ids of the data migrations it ships, in the order they run;
+- `first_with_upgrade_tooling`: true on the first release that has `upgrade`.
+
+A PR that adds a migration (`orchestrator/migrations/`, whose docstring says to prefer a shim or a
+`doctor` warning) adds its id to the entry of the release it ships in, creating the entry if that
+release has none yet; a test keeps the registry and the manifest in agreement. The entry's notes are
+final text before the tag is cut, usually in the changelog PR.
+
 ## Cutting a release
 
 1. **Check `main` is green.** The latest CI run on `main` passes, and nothing half-finished is
@@ -38,7 +56,8 @@ written for the person upgrading, not as a commit log.
    PR) if they are right. ([demo-home.md](demo-home.md) has the rules the demo data keeps.)
 3. **Name the release in the changelog**, in a PR of its own. Rename `## [Unreleased]` to
    `## vX.Y.Z — YYYY-MM-DD — <a short name>` (the date and the name follow em dashes, as every
-   earlier heading does), and put a fresh, empty `## [Unreleased]` above it. Merge it.
+   earlier heading does), and put a fresh, empty `## [Unreleased]` above it. In the same PR, write the
+   version's entry in `release/manifest.json` (see above). Merge it.
 4. **Tag the merge commit on `main`** and push the tag:
 
    ```bash
@@ -50,8 +69,10 @@ written for the person upgrading, not as a commit log.
 5. **The Release workflow publishes it** ([`.github/workflows/release.yml`](../.github/workflows/release.yml)).
    It refuses a tag that is not on `main`, cuts that version's section out of the changelog with
    [`tools/release_notes.py`](../tools/release_notes.py) (and refuses a tag whose section is
-   missing, undated or empty), then creates the GitHub Release with the section as its notes. GitHub
-   attaches the source ZIP and tarball itself.
+   missing, undated or empty), refuses a tag with no well-formed entry in the manifest
+   ([`tools/check_release_manifest.py`](../tools/check_release_manifest.py)), then creates the GitHub
+   Release with the section as its notes and the manifest attached as `release-manifest.json`, which
+   `upgrade` reads from the release page. GitHub attaches the source ZIP and tarball itself.
 6. **Check the result**: the release is at the top of the Releases page with its notes, and
    `/releases/latest` opens it.
 
@@ -78,7 +99,8 @@ patch version.
   ```
 
   In PowerShell the last line is `git checkout (git describe --tags --abbrev=0 origin/main)`. This
-  leaves git in "detached HEAD" at the tag, which is expected. To upgrade later: stop the suite,
+  leaves git in "detached HEAD" at the tag, which is expected. To upgrade later, run `upgrade.cmd` or
+  `./upgrade.sh` (v0.12.0 and later; [the guide](guide/upgrading.md)), or by hand: stop the suite,
   `git fetch --tags origin`, the same `git checkout` line, then run the installer again.
 - **Developers** clone `main` and work there; the per-package setup pages do exactly that.
 
