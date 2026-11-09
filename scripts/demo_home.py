@@ -178,8 +178,24 @@ class Market:
     quote. SPX, XSP and SPY move together (they are the same index at different sizes).
     """
 
-    START = {"SPX": 5880.0, "QQQ": 512.0, "IWM": 236.0, "AAA": 47.8, "BBB": 112.4, "CCC": 83.2, "DDD": 30.6}
-    VOL = {"SPX": 0.0085, "QQQ": 0.011, "IWM": 0.0125, "AAA": 0.018, "BBB": 0.015, "CCC": 0.02, "DDD": 0.024}
+    START = {
+        "SPX": 5880.0,
+        "QQQ": 512.0,
+        "IWM": 236.0,
+        "AAA": 47.8,
+        "BBB": 112.4,
+        "CCC": 83.2,
+        "DDD": 30.6,
+    }
+    VOL = {
+        "SPX": 0.0085,
+        "QQQ": 0.011,
+        "IWM": 0.0125,
+        "AAA": 0.018,
+        "BBB": 0.015,
+        "CCC": 0.02,
+        "DDD": 0.024,
+    }
 
     def __init__(self, ctx: Ctx) -> None:
         rng = ctx.rng("market")
@@ -301,6 +317,47 @@ def write_configs(ctx: Ctx) -> None:
 MEIC_ENTRY_TIMES = {"control": ["10:15", "12:30", "14:00"], "gex-gate": ["10:30", "13:00"]}
 
 
+def _band(value: float, low: float, high: float, names: tuple[str, str, str]) -> str:
+    return names[0] if value < low else names[2] if value > high else names[1]
+
+
+def _regime_tags(rng: random.Random, ivr: float) -> dict:
+    """The regime buckets and their floats an entry records (meic regime.py's vocabulary and default cuts)."""
+    ratio = round(rng.uniform(0.7, 1.4), 3)
+    atr = round(rng.uniform(0.005, 0.018), 4)
+    rng_pct = round(rng.uniform(0.002, 0.011), 4)
+    flip = round(rng.uniform(0.5, 3.0), 2)
+    skew = round(rng.uniform(-0.15, 0.15), 3)
+    offset = round(rng.uniform(-0.002, 0.002), 4)
+    drift = round(rng.uniform(-0.004, 0.004), 4)
+    return {
+        "entry_vol_implied_bucket": _band(ivr, 0.30, 0.60, ("low", "normal", "high")),
+        "entry_vol_implied_value": ivr,
+        "entry_vol_event_bucket": "event" if ratio >= 1.3 else "compression" if ratio <= 0.75 else "normal",
+        "entry_vol_event_value": ratio,
+        "entry_vol_realized_bucket": _band(atr, 0.008, 0.015, ("low", "normal", "high")),
+        "entry_vol_realized_value": atr,
+        "entry_vol_intraday_bucket": _band(rng_pct, 0.003, 0.008, ("low", "normal", "high")),
+        "entry_vol_intraday_value": rng_pct,
+        "entry_gex_bucket": "deep_positive",
+        "entry_gex_value": flip,
+        "entry_skew_bucket": "put_skew" if skew > 0.05 else "call_skew" if skew < -0.05 else "flat",
+        "entry_skew_value": skew,
+        "entry_center_offset_bucket": "above_spot"
+        if offset > 0.001
+        else "below_spot"
+        if offset < -0.001
+        else "at_spot",
+        "entry_center_offset_value": offset,
+        "entry_trend_bucket": "up_from_open"
+        if drift > 0.002
+        else "down_from_open"
+        if drift < -0.002
+        else "flat",
+        "entry_trend_value": drift,
+    }
+
+
 def write_meic(ctx: Ctx, mk: Market) -> dict:
     """Paper iron condors on SPX, two arms, every one held to settlement (no per-side stop)."""
     rng = ctx.rng("meic")
@@ -417,6 +474,7 @@ def write_meic(ctx: Ctx, mk: Market) -> dict:
                     "call_max_cost": round(call_loss + rng.uniform(0, 0.8), 2),
                     "minutes_to_close": int(390 * (1 - frac)),
                 }
+                row.update(_regime_tags(rng, row["iv_rank_at_entry"]))
                 insert(con, "ic_trades", row)
                 for side, sp in (("put", put_pnl), ("call", call_pnl)):
                     loss = put_loss if side == "put" else call_loss
@@ -758,9 +816,69 @@ def write_earnings(ctx: Ctx, mk: Market) -> list[dict]:
             "symbols": watch,
         },
     )
+    _write_earnings_controls(ctx, mk, con, out)
     con.commit()
     con.close()
     return out
+
+
+def _write_earnings_controls(ctx: Ctx, mk: Market, con: sqlite3.Connection, taken: list[dict]) -> None:
+    """The strat_test control arms the Strategies tab reads: two strategies on the same events.
+
+    A control arm trades every event with no entry rule, so the verdict can ask whether a rule has an
+    edge. These rows are paper, closed and add up like the default arm's (entry plus exit is gross,
+    gross less both cost columns is net).
+    """
+    rng = ctx.rng("earnings-controls")
+    for strat, bias in (("iron_fly", 0.0), ("expected_move_butterfly", 0.12)):
+        for t in taken:
+            d = t["day"]
+            sym = t["order_id"].split("-")[-1]
+            nxt = _next_trading_day(d)
+            spot = mk.close[sym][d]
+            em = spot * rng.uniform(0.045, 0.075)
+            wing = max(1.0, round(em))
+            credit = round(wing * rng.uniform(0.45, 0.6), 2)
+            move = rng.gauss(0, 1) * em * 0.85 * (1 - bias)
+            stopped = abs(move) > em * 1.15
+            debit = round(wing if stopped else max(0.0, wing - abs(move)) * rng.uniform(0.9, 1.0), 2)
+            gross = money((credit - debit) * 100)
+            slip_e, slip_x = round(rng.uniform(2, 5), 2), round(rng.uniform(2, 5), 2)
+            insert(
+                con,
+                "trades",
+                {
+                    "order_id": f"C{d.strftime('%y%m%d')}-{strat[:2].upper()}-{sym}",
+                    "strategy": strat,
+                    "symbol": sym,
+                    "expiration": _friday_on_or_after(nxt).isoformat(),
+                    "short_strike": round(spot),
+                    "entry_credit": credit,
+                    "exit_debit": debit,
+                    "pnl": gross,
+                    "opened_at": ctx.epoch(d, "15:46"),
+                    "closed_at": ctx.epoch(nxt, "09:46"),
+                    "arm": f"strat_test:{strat}",
+                    "quantity": 1,
+                    "capital_at_risk": money((wing - credit) * 100),
+                    "entry_cost": money(2.6 + slip_e),
+                    "exit_cost": money(2.6 + slip_x),
+                    "entry_context": json.dumps(
+                        {
+                            "iv_rv_ratio": round(rng.uniform(1.0, 1.8), 2),
+                            "term_structure": round(rng.uniform(1.0, 1.4), 2),
+                            "winrate": round(rng.uniform(0.5, 0.8), 2),
+                            "expected_move_pct": round(100 * em / spot, 2),
+                        }
+                    ),
+                    "status": "closed",
+                    "exit_reason": "stop_loss" if stopped else "time_exit",
+                    "hold_days": 1,
+                    "max_unrealized_pnl": money(abs(rng.gauss(0, 30))) if stopped else None,
+                    "entry_slippage": slip_e,
+                    "exit_slippage": slip_x,
+                },
+            )
 
 
 # ------------------------------------------------------------------------------ calendars
@@ -1501,7 +1619,7 @@ def write_manage(ctx: Ctx, mk: Market) -> None:
             ],
         }
     )
-    metric("CCC", beta=0.95, iv_rank=29.0)
+    metric("CCC", beta=0.95, iv_rank=33.0)
 
     # --- SPY: a put credit spread ----------------------------------------------------------------------------
     spy = spot_of("SPY")
@@ -2330,6 +2448,735 @@ def write_reports(ctx: Ctx) -> None:
     ov_render.write(pack["session"])
 
 
+# ------------------------------------------------------------------------------ market pages
+# The Screeners earnings, time-spread and fair-value tabs, the Charts technicals and setups tabs and
+# the MEIC regime cuts. Their producers reach a broker, Dolt or the vendor's data, so each file is
+# written here in the shape the console's reader takes, through the package's own pure functions
+# wherever one exists (manage's time-spread structures, technicals' chart and watchlist builders,
+# MEIC's regime-cuts writer).
+SECTORS = {"AAA": "Technology", "BBB": "Consumer Staples", "CCC": "Energy", "DDD": "Industrials"}
+COMPANIES = {
+    "AAA": "AAA Systems",
+    "BBB": "BBB Foods",
+    "CCC": "CCC Energy",
+    "DDD": "DDD Mobility",
+}
+IV_RANKS = {"AAA": 44.0, "BBB": 38.0, "CCC": 33.0, "DDD": 51.0}
+# What the evening calendar reads for each name: our direction code and its label, and the 1-10 strength.
+EDGES = {
+    "AAA": ("sb", "strong bull", 9),
+    "BBB": ("bn", "bull", 7),
+    "CCC": ("sbe", "strong bear", 2),
+    "DDD": ("sb", "strong bull", 8),
+}
+
+
+def _walk(rng: random.Random, n: int, target: float, vol: float, drift: float) -> list[float]:
+    """n closes ending exactly on `target`: a seeded walk, rescaled."""
+    px, path = 1.0, []
+    for _ in range(n):
+        px *= 1 + drift + vol * rng.gauss(0, 1)
+        path.append(px)
+    scale = target / path[-1]
+    return [round(p * scale, 2) for p in path]
+
+
+def _sessions_after(d: date, n: int) -> date:
+    for _ in range(n):
+        d = _next_trading_day(d)
+    return d
+
+
+def write_earnings_calendar(ctx: Ctx, mk: Market, taken: list[dict]) -> None:
+    """The evening calendar (Screeners, earnings) and its forward record (earnings record)."""
+    use_this_checkout()
+    from cherrypick.technicals import earnings_calendar as ec
+
+    D = ctx.day
+    cut = 50.0
+    monthly = date(2027, 1, 15)
+    rows = []
+    for i, sym in enumerate(SINGLE_NAMES):
+        report = _sessions_after(D, i + 1)
+        timing = "amc" if i % 2 == 0 else "bmo"
+        entry = report if timing == "amc" else _sessions_after(D, i)
+        react = _next_trading_day(report) if timing == "amc" else report
+        price = mk.close[sym][D]
+        ev_exp = _friday_on_or_after(react + timedelta(days=1))
+        iv = {"AAA": 0.74, "BBB": 0.62, "CCC": 0.81, "DDD": 0.9}[sym]
+        sd = price * iv * math.sqrt(max(1, (ev_exp - D).days) / 365.0)
+        em = sd * 0.85
+        edge, label, strength = EDGES[sym]
+        sug = ec.suggestion(edge, IV_RANKS[sym], price, em, cut)
+        if sug is not None:
+            sug["expiry"] = monthly.isoformat()
+            sug = {k: round(v, 4) if isinstance(v, float) else v for k, v in sug.items()}
+        rows.append(
+            {
+                "symbol": sym,
+                "company": COMPANIES[sym],
+                "date": report.isoformat(),
+                "timing": timing,
+                "timing_source": "broker",
+                "usual_timing": None,
+                "date_source": "broker",
+                "date_confirmed": i != 3,
+                "date_gap_days": 0 if i != 3 else 2,
+                "entry_session": entry.isoformat(),
+                "reaction_day": react.isoformat(),
+                "type": "Common Stock",
+                "region": "US",
+                "edge": edge,
+                "edge_label": label,
+                "strength": strength,
+                "read_session": D.isoformat(),
+                "iv_rank": IV_RANKS[sym],
+                "liquidity_rank": [1, 1, 2, 1][i],
+                "optionable": True,
+                "sector": SECTORS[sym],
+                "price": price,
+                "event_expiry": ev_exp.isoformat(),
+                "event_iv": iv,
+                "event_expiry_days": (ev_exp - react).days,
+                "sd_move": round(sd, 4),
+                "sd_move_pct": round(100 * sd / price, 2),
+                "em_move": round(em, 4),
+                "em_move_pct": round(100 * em / price, 2),
+                "suggestion": sug,
+            }
+        )
+    rows.sort(key=lambda r: (r["date"], r["symbol"]))
+    _write_earnings_legs(ctx, rows)
+    write_json(
+        ctx.p("data", "technicals", "earnings-calendar", f"{D.isoformat()}.json"),
+        {
+            "session": D.isoformat(),
+            "window_days": 30,
+            "settings": {"iv_rank_cut": cut, "window_days": 30, "trade_expiry": "cycle"},
+            "inputs": {
+                "security_list": D.isoformat(),
+                "security_source": "demo",
+                "expiry_iv": D.isoformat(),
+                "broker_dates": D.isoformat(),
+                "nasdaq_times": D.isoformat(),
+                "close_date": D.isoformat(),
+            },
+            "rows": rows,
+        },
+    )
+    _write_earnings_record(ctx, mk, taken)
+
+
+def _write_earnings_legs(ctx: Ctx, rows: list[dict]) -> None:
+    """The regular-hours reading of each suggested spread on listed strikes (the tab's liquid-trade column)."""
+    use_this_checkout()
+    from cherrypick.manage import pricing
+
+    D = ctx.day
+    out = []
+    for r in rows:
+        sug = r["suggestion"]
+        if sug is None:
+            continue
+        step = 2.5 if r["price"] >= 100 else 1.0
+        long_k = round(sug["long"] / step) * step
+        short_k = round(sug["short"] / step) * step
+        if long_k == short_k:
+            short_k += step if sug["right"] == "C" else -step
+        years = max(1, (date.fromisoformat(sug["expiry"]) - D).days) / 365.0
+        iv = r["event_iv"] * 0.6
+        quotes = {}
+        for role, k in (("long", long_k), ("short", short_k)):
+            mid = pricing.price(r["price"], float(k), years, iv, sug["right"], 0.04)
+            half = max(0.03, round(mid * 0.015, 2))
+            quotes[role] = (k, round(mid - half, 2), round(mid + half, 2))
+        lb, la = quotes["long"][1], quotes["long"][2]
+        sb, sa = quotes["short"][1], quotes["short"][2]
+        width = abs(short_k - long_k)
+        if sug["kind"] == "debit":
+            mid, natural = (lb + la) / 2 - (sb + sa) / 2, la - sb
+            max_loss = mid * 100
+        else:
+            mid, natural = (sb + sa) / 2 - (lb + la) / 2, sb - la
+            max_loss = (width - mid) * 100
+        out.append(
+            {
+                "symbol": r["symbol"],
+                "date": r["date"],
+                "kind": sug["kind"],
+                "right": sug["right"],
+                "expiry": sug["expiry"],
+                "width": width,
+                "legs": [
+                    {
+                        "role": role,
+                        "strike": quotes[role][0],
+                        "quote": {
+                            "bid": quotes[role][1],
+                            "ask": quotes[role][2],
+                            "open_interest": 1200,
+                            "volume": 340,
+                        },
+                        "passes": True,
+                    }
+                    for role in ("long", "short")
+                ],
+                "mid": round(mid, 2),
+                "natural": round(natural, 2),
+                "share_of_width": round(mid / width, 4),
+                "max_loss": round(max_loss, 2),
+                "passes": True,
+            }
+        )
+    write_json(
+        ctx.p("data", "market-report", "screener-greeks", "earnings-legs", D.isoformat(), "1530.json"),
+        {"measured_at": ctx.iso(D, "15:30"), "calendar_day": D.isoformat(), "rows": out},
+    )
+
+
+def _record_leg(share: float, risk: float, fees: float, slip: float) -> dict:
+    """One mark of the suggested spread: it entered at `risk` dollars and is worth `share` of that."""
+    gross = money((share - 1.0) * risk)
+    return {
+        "entry": risk,
+        "exit": money(risk * share),
+        "gross": gross,
+        "fees": fees,
+        "slippage": slip,
+        "net": money(gross - fees - slip),
+        "risk": risk,
+    }
+
+
+def _write_earnings_record(ctx: Ctx, mk: Market, taken: list[dict]) -> None:
+    """Each past announcement against its expected move, and the suggested spread's money on its marks."""
+    rng = ctx.rng("earnings-record")
+    reads = [
+        ("sb", "strong bull"),
+        ("bn", "bull"),
+        ("sbe", "strong bear"),
+        ("mx", "neutral"),
+        ("sb", "strong bull"),
+        ("bp", "pullback"),
+    ]
+    rows = []
+    for n, t in enumerate(taken):
+        sym = t["order_id"].split("-")[-1]
+        d = t["day"]
+        nxt = _next_trading_day(d)
+        em = round(rng.uniform(4.2, 7.8), 2)
+        move = round(rng.gauss(0, 1) * em * 0.85, 2)
+        edge, label = reads[n % len(reads)]
+        strong = edge in ("sb", "sbe")
+        right_way = (move > 0) == (edge == "sb")
+        spread = None
+        if strong:
+            width = 5.0
+            mid = round(width * rng.uniform(0.35, 0.6), 2)
+            risk = money(mid * 100)
+            fees = round(rng.uniform(2.6, 5.2), 2)
+            slip = round(rng.uniform(1.5, 4.5), 2)
+
+            react = _record_leg(
+                rng.uniform(0.2, 1.9) if right_way else rng.uniform(0.0, 0.9), risk, fees, slip
+            )
+            day2 = _record_leg(max(0.0, react["exit"] / risk + rng.uniform(-0.25, 0.2)), risk, fees, slip)
+            spread = {
+                "state": "entered",
+                "kind": "debit",
+                "right": "C" if edge == "sb" else "P",
+                "expiry": _third_friday(
+                    (d + timedelta(days=45)).year, (d + timedelta(days=45)).month
+                ).isoformat(),
+                "strikes": [round(mk.close[sym][d]), round(mk.close[sym][d]) + (5 if edge == "sb" else -5)],
+                "entry_reading": f"{d.isoformat()}/1545.json",
+                "entry_mid": mid,
+                "liquid_at_entry": True,
+                "react": react,
+                "day2": day2,
+            }
+        rows.append(
+            {
+                "symbol": sym,
+                "company": COMPANIES[sym],
+                "date": d.isoformat(),
+                "calendar_day": mk.prev(d).isoformat(),
+                "timing": "amc",
+                "reaction_day": nxt.isoformat(),
+                "edge": edge,
+                "edge_label": label,
+                "liquidity_rank": [1, 1, 2, 1][SINGLE_NAMES.index(sym)],
+                "region": "US",
+                "move_pct": round(move, 2),
+                "em_move_pct": em,
+                "event_expiry": _friday_on_or_after(nxt).isoformat(),
+                "event_expiry_days": (_friday_on_or_after(nxt) - nxt).days,
+                "move_over_em": round(abs(move) / em, 2),
+                "inside_em": abs(move) <= em,
+                "direction_right": right_way if strong else None,
+                "spread": spread,
+            }
+        )
+
+    def totals(which: str) -> dict:
+        legs = [r["spread"][which] for r in rows if r["spread"]]
+        net = sum(x["net"] for x in legs)
+        risk = sum(x["risk"] for x in legs)
+        return {
+            "n": len(legs),
+            "net": money(net),
+            "won": round(sum(1 for x in legs if x["net"] > 0) / len(legs), 4) if legs else None,
+            "return_on_risk": round(net / risk, 4) if risk else None,
+        }
+
+    ratios = sorted(r["move_over_em"] for r in rows)
+    strong_rows = [r for r in rows if r["direction_right"] is not None]
+    write_json(
+        ctx.p("data", "technicals", "earnings-calendar", "record.json"),
+        {
+            "as_of": ctx.iso(ctx.day, "19:10"),
+            "summary": {
+                "announcements": len(rows),
+                "measured_moves": len(rows),
+                "compared": len(rows),
+                "inside_em": round(sum(1 for r in rows if r["inside_em"]) / len(rows), 4),
+                "median_move_over_em": ratios[len(ratios) // 2] if ratios else None,
+                "earnings_week": {
+                    "max_days": 7,
+                    "n": len(rows),
+                    "inside_em": round(sum(1 for r in rows if r["inside_em"]) / len(rows), 4),
+                    "median_move_over_em": ratios[len(ratios) // 2] if ratios else None,
+                },
+                "strong_reads": len(strong_rows),
+                "direction_right": round(
+                    sum(1 for r in strong_rows if r["direction_right"]) / len(strong_rows), 4
+                )
+                if strong_rows
+                else None,
+                "spreads_react": totals("react"),
+                "spreads_day2": totals("day2"),
+            },
+            "rows": rows,
+        },
+    )
+
+
+def write_time_spreads(ctx: Ctx, mk: Market) -> None:
+    """The scanner's day (Screeners, time spreads): term rows, quoted chains for the shortlist, and the
+    structures manage's own `timespreads.build_all` makes from them."""
+    use_this_checkout()
+    from cherrypick.manage import pricing, timespreads
+    from cherrypick.manage import rules as manage_rules
+
+    D = ctx.day
+    rules = manage_rules.effective(None)[0]
+    front, back = date(2026, 11, 20), date(2026, 12, 18)
+    ivs = {  # (front, back) at-the-money IV; the front/back ratio is the scanner's untested ordering
+        "AAA": (0.48, 0.40),
+        "BBB": (0.30, 0.29),
+        "CCC": (0.58, 0.44),
+        "DDD": (0.50, 0.40),
+    }
+    caps = {"AAA": 62e9, "BBB": 41e9, "CCC": 55e9, "DDD": 9e9}
+    terms, chains = [], {}
+    for sym in SINGLE_NAMES:
+        f_iv, b_iv = ivs[sym]
+        terms.append(
+            timespreads.term_row(
+                {
+                    "symbol": sym,
+                    "iv_rank": IV_RANKS[sym] / 100,
+                    "iv_30d": round(100 * (f_iv + b_iv) / 2, 1),
+                    "hv_30d": round(100 * b_iv * 0.8, 1),
+                    "market_cap": caps[sym],
+                    "beta": 1.1,
+                    "earnings_date": None,
+                    "sector": SECTORS[sym],
+                    "expiries": [(front, f_iv), (back, b_iv)],
+                },
+                D,
+            )
+        )
+    short = timespreads.shortlist(terms)
+    for sym in short:
+        spot = mk.close[sym][D]
+        step = 0.5 if spot < 60 else 1.0
+        view = {}
+        for key, exp, iv in (("front", front, ivs[sym][0]), ("back", back, ivs[sym][1])):
+            dte = (exp - D).days
+            opts = []
+            k = math.floor(spot * 0.85 / step) * step
+            while k <= spot * 1.15:
+                for right in ("C", "P"):
+                    mid = pricing.price(spot, float(k), dte / 365.0, iv, right, 0.04)
+                    if mid < 0.1:
+                        continue
+                    half = max(0.02, round(mid * 0.025, 2))
+                    opts.append(
+                        {
+                            "strike": float(k),
+                            "right": right,
+                            "option": occ(sym, exp, right, k),
+                            "bid": round(mid - half, 2),
+                            "ask": round(mid + half, 2),
+                            "volume": 80,
+                            "open_interest": 900,
+                        }
+                    )
+                k = round(k + step, 4)
+            view[key] = {"expiration": exp.isoformat(), "dte": dte, "options": opts}
+        chains[sym] = {"spot": spot, **view}
+    doc = {
+        "taken_at": ctx.iso(D, "10:30"),
+        "complete": True,
+        "problem": None,
+        "universe": len(SINGLE_NAMES),
+        "read": len(SINGLE_NAMES),
+        "passing": sum(1 for t in terms if t["passes"]),
+        "rule": timespreads.RULE,
+        "shortlist": short,
+        "rows": terms,
+        "chains": chains,
+    }
+    built = timespreads.build_all(doc, D, rules)
+    doc.pop("chains")  # the file the console reads keeps the structures, not every quote
+    doc.update({"structures": built["rows"], "structures_dropped": built["dropped"], "order": built["order"]})
+    write_json(ctx.p("data", "time-spreads", f"{D.isoformat()}.json"), doc)
+
+
+def write_valuation(ctx: Ctx, mk: Market) -> None:
+    """The fair-value file (Screeners, fair value): a small DCF per name whose bridge adds up."""
+    D = ctx.day
+    inputs = {
+        "AAA": dict(rev=9.8e9, g=0.11, margin=0.27, wacc=0.092, beta=1.25, gap=-0.24, debt=1.4e9, cash=3.1e9),
+        "BBB": dict(rev=21.5e9, g=0.04, margin=0.15, wacc=0.071, beta=0.62, gap=0.12, debt=9.0e9, cash=2.2e9),
+        "CCC": dict(rev=14.2e9, g=0.03, margin=0.19, wacc=0.088, beta=1.1, gap=0.03, debt=6.5e9, cash=1.4e9),
+    }
+    tg, years = 0.025, 5
+    rows: dict[str, dict] = {}
+    for sym, p in inputs.items():
+        spot = mk.close[sym][D]
+        rev, forecast, pv_forecast = p["rev"], [], 0.0
+        for y in range(1, years + 1):
+            g = p["g"] + (tg - p["g"]) * (y - 1) / (years - 1)
+            rev *= 1 + g
+            ebit = rev * p["margin"]
+            nopat = ebit * 0.79
+            da, capex, wc = rev * 0.045, rev * 0.055, rev * 0.004
+            fcf = nopat + da - capex - wc
+            disc = 1 / (1 + p["wacc"]) ** (y - 0.5)
+            pv = fcf * disc
+            pv_forecast += pv
+            forecast.append(
+                {
+                    "year": D.year + y - 1,
+                    "revenue": round(rev),
+                    "growth": round(g, 4),
+                    "ebit_margin": p["margin"],
+                    "fcf": round(fcf),
+                    "growth_source": "consensus" if y == 1 else "fade",
+                    "ebit": round(ebit),
+                    "nopat": round(nopat),
+                    "da": round(da),
+                    "capex": round(capex),
+                    "wc_change": round(wc),
+                    "discount": round(disc, 4),
+                    "pv": round(pv),
+                }
+            )
+        terminal = forecast[-1]["fcf"] * (1 + tg) / (p["wacc"] - tg)
+        pv_terminal = terminal / (1 + p["wacc"]) ** years
+        ev = pv_forecast + pv_terminal
+        equity = ev - p["debt"] + p["cash"]
+        shares = round(
+            equity / (spot / (1 + p["gap"]))
+        )  # sized so the invented price sits `gap` from the value
+        p = {**p, "shares": shares}
+        fair = round(equity / shares, 2)
+        rows[sym] = {
+            "symbol": sym,
+            "type": "Common Stock",
+            "sector": SECTORS[sym],
+            "state": "valued",
+            "reason": None,
+            "spot": spot,
+            "spot_date": D.isoformat(),
+            "fiscal_year_end": f"{D.year - 1}-12-31",
+            "fair_value": fair,
+            "low": round(fair * 0.84, 2),
+            "high": round(fair * 1.19, 2),
+            "gap": round(spot / fair - 1, 4),
+            "wacc": p["wacc"],
+            "beta": p["beta"],
+            "beta_raw": round(p["beta"] * 1.08, 2),
+            "market_cap": round(spot * p["shares"]),
+            "growth_y1": round(p["g"], 4),
+            "ebit_margin": p["margin"],
+            "terminal_share": round(pv_terminal / ev, 4),
+            "implied_ev_ebitda": round(
+                (spot * p["shares"] + p["debt"] - p["cash"]) / (p["rev"] * (p["margin"] + 0.045)), 2
+            ),
+            "implied_margin": round(p["margin"] * spot / fair, 4),
+            "implied_growth": round(p["g"] * 1.4, 4),
+            "implied_growth_edge": None,
+            "best_margin": round(p["margin"] * 1.15, 4),
+            "best_growth": round(p["g"] * 1.8, 4),
+            "reach": "below value" if spot < fair else "within history",
+            "consensus_used": True,
+            "terminal_growth": tg,
+            "forecast": forecast,
+            "bridge": {
+                "pv_forecast": round(pv_forecast),
+                "pv_terminal": round(pv_terminal),
+                "ev": round(ev),
+                "debt": p["debt"],
+                "cash": p["cash"],
+                "equity": round(equity),
+                "shares": p["shares"],
+            },
+            "flags": ["terminal_heavy"] if pv_terminal / ev > 0.75 else [],
+        }
+    rows["DDD"] = {
+        "symbol": "DDD",
+        "type": "Common Stock",
+        "sector": SECTORS["DDD"],
+        "state": "no-statements",
+        "reason": "no annual statements filed yet (a recent listing)",
+        "spot": mk.close["DDD"][D],
+        "spot_date": D.isoformat(),
+    }
+    write_json(
+        ctx.p("data", "fundamentals", "valuation", f"{D.isoformat()}.json"),
+        {
+            "built_at": ctx.iso(D, "19:30"),
+            "universe": "the demo's four names",
+            "names": len(rows),
+            "states": {"valued": 3, "no-statements": 1},
+            "rule": {
+                "forecast_years": years,
+                "terminal_growth": tg,
+                "risk_free": 0.041,
+                "risk_free_source": "demo",
+                "equity_premium": 0.046,
+                "beta": "bounded regression slope",
+                "edge": "no tested edge",
+            },
+            "rows": rows,
+        },
+    )
+
+
+def write_charts(ctx: Ctx, mk: Market) -> None:
+    """Charts, technicals and setups: bars on a longer invented history, then technicals' own `chart.build`
+    (indicators, grid, signals, setups), watchlist rows and reads. Nothing is read from a real store."""
+    use_this_checkout()
+    import tempfile
+
+    from cherrypick.technicals import chart, setup_read, store, watchlist
+
+    D = ctx.day
+    rng = ctx.rng("charts")
+    days = _trading_days(D, 320)
+    names = {
+        **{n: mk.close[n][D] for n in SINGLE_NAMES},
+        "SPY": mk.px("SPY", D),
+        "QQQ": mk.close["QQQ"][D],
+        "IWM": mk.close["IWM"][D],
+    }
+    vols = {
+        "AAA": 0.018,
+        "BBB": 0.015,
+        "CCC": 0.02,
+        "DDD": 0.024,
+        "SPY": 0.0085,
+        "QQQ": 0.011,
+        "IWM": 0.0125,
+    }
+    base_volume = {
+        "AAA": 5.2e6,
+        "BBB": 3.1e6,
+        "CCC": 6.8e6,
+        "DDD": 2.4e6,
+        "SPY": 60e6,
+        "QQQ": 40e6,
+        "IWM": 25e6,
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        conn = store.connect(Path(tmp) / "eod.db")
+        for sym, target in names.items():
+            closes = _walk(rng, len(days), target, vols[sym], 0.0005)
+            bars, prev = [], closes[0]
+            for d, c in zip(days, closes, strict=True):
+                hi = max(prev, c) * (1 + abs(rng.gauss(0, vols[sym] * 0.5)))
+                lo = min(prev, c) * (1 - abs(rng.gauss(0, vols[sym] * 0.5)))
+                bars.append(
+                    (
+                        sym,
+                        d.isoformat(),
+                        round(prev, 2),
+                        round(hi, 2),
+                        round(lo, 2),
+                        c,
+                        round(base_volume[sym] * rng.uniform(0.6, 1.5)),
+                    )
+                )
+                prev = c
+            conn.executemany("INSERT INTO bars VALUES (?,?,?,?,?,?,?)", bars)
+            conn.execute(
+                "INSERT INTO listings VALUES (?, ?)", (sym, 1 if sym in ("SPY", "QQQ", "IWM") else 0)
+            )
+            iv = round(vols[sym] * 16, 3)
+            conn.execute(
+                "INSERT INTO iv VALUES (?,?,?,?,?,?)", (sym, D.isoformat(), iv, iv * 1.6, iv * 0.7, iv * 0.8)
+            )
+        store.put_rank_cutoffs(
+            conn, D.isoformat(), 400, [-0.15, -0.08, -0.03, 0.0, 0.04, 0.08, 0.13, 0.2, 0.3]
+        )
+        conn.commit()
+        out = chart.charts_dir()
+        spy = {b.date: b.close for b in store.adjusted_bars(conn, "SPY")}
+        spy_above = chart.hypotheses.spy_regime(conn)
+        written, rows, spans = [], [], {}
+        for sym in names:
+            doc = chart.build(conn, sym, D.isoformat(), spy_above)
+            if doc is None:
+                continue
+            doc["generated_at"] = ctx.iso(D, "19:10")
+            chart._write(out / f"{sym}.json", doc)
+            written.append({"symbol": sym, "vendor": False})
+            rows.extend(watchlist.rows(doc, spy, None, set(names)))
+            for key, held in setup_read.hold_spans(doc).items():
+                spans.setdefault(key, []).extend(held)
+        conn.close()
+    index = {
+        "chart_version": chart.CHART_VERSION,
+        "generated_at": ctx.iso(D, "19:10"),
+        "session": D.isoformat(),
+        "symbols": written,
+    }
+    chart._write(out / "index.json", index)
+    try:
+        setup_read.annotate(rows, index["session"], setup_read.medians(spans))
+    except Exception as exc:  # noqa: BLE001 -- the table still lands without its reads
+        print(f"demo: setup reads skipped: {type(exc).__name__}: {exc}"[:200])
+        for r in rows:
+            r.pop("read", None)
+    watchlist.write(out, rows, index["session"], None)
+
+
+def write_regime_cuts(ctx: Ctx) -> None:
+    """MEIC's regime-cuts artifact, by MEIC's own writer, from the ledger the demo just wrote."""
+    use_this_checkout()
+    import contextlib
+    import io
+
+    from cherrypick.meic import regime_cuts
+
+    with contextlib.redirect_stdout(io.StringIO()):  # the writer prints the artifact it wrote
+        code = regime_cuts.main(["--write", "--session", ctx.day.isoformat()])
+    if code != 0:
+        raise SystemExit(f"generation failed: meic regime_cuts exited {code}")
+
+
+def write_external(ctx: Ctx) -> None:
+    """Two external reports (Reports, external): one plain table and one that uses the presentation
+    hints (formats, signed tone, a stacked bar, a scaled bar, a key and a footnote). Invented figures."""
+    use_this_checkout()
+    from cherrypick.core import external_report
+
+    rng = ctx.rng("external")
+    as_of = ctx.iso(ctx.day, "16:30")
+    flow = []
+    for sym in SINGLE_NAMES:
+        trades = rng.randint(180, 900)
+        mix = [round(trades * f) for f in (rng.uniform(0.45, 0.6), rng.uniform(0.25, 0.35))]
+        mix.append(max(1, trades - sum(mix)))
+        net = rng.randint(-60, 85)
+        flow.append(
+            {
+                "cells": [
+                    {"text": sym, "tone": "strong", "suffix": {"text": SECTORS[sym].lower()}},
+                    round(trades * rng.uniform(9_000, 41_000)),
+                    trades,
+                    net,
+                    rng.randint(31, 78),
+                    mix,
+                    {"text": "", "marker": "square", "tone": "warn" if net < 0 else "pos"},
+                ]
+            }
+        )
+    flow.sort(key=lambda r: -r["cells"][1])
+    flow[0]["emphasis"] = "strong"
+    hinted = {
+        "schema": 1,
+        "id": "premium-flow",
+        "title": "Premium flow by name",
+        "source": "the demo's own invented figures",
+        "as_of": as_of,
+        "stale_after_hours": 8760,
+        "summary": "Four names, one session, every figure invented for the documentation.",
+        "show_source_foot": False,
+        "sections": [
+            {
+                "heading": "Premium by name",
+                "numbered": True,
+                "table": {
+                    "columns": [
+                        "Name",
+                        {"label": "Premium", "format": "money"},
+                        {"label": "Trades", "format": "int"},
+                        {"label": "Score", "format": "signed", "tone": "sign"},
+                        {"label": "Win rate", "format": "percent", "bar": {"scale": [0, 100], "track": True}},
+                        {
+                            "label": "Trade size",
+                            "stack": [{"label": "1 lot"}, {"label": "2-10"}, {"label": "11+"}],
+                        },
+                        {"label": "Flag", "align": "left"},
+                    ],
+                    "rows": flow,
+                },
+                "key": [
+                    {"tag": "buy", "tone": "pos", "label": "net buying", "text": "the score is above zero"},
+                    {
+                        "tag": "sell",
+                        "tone": "warn",
+                        "label": "net selling",
+                        "text": "the score is below zero",
+                    },
+                ],
+                "footnote": "Score is buying less selling in contracts, scaled to 100. Win rate is the share of the session's trades that closed above their entry.",
+            },
+            {
+                "heading": "How to read it",
+                "text": "Rows are ordered by premium. The bar beside the win rate runs from 0 to 100 on every row, so two bars compare directly; the stacked bar splits each name's trades by size.",
+            },
+        ],
+    }
+    plain = {
+        "schema": 1,
+        "id": "sector-tally",
+        "title": "Sector tally",
+        "source": "the demo's own invented figures",
+        "as_of": as_of,
+        "stale_after_hours": 8760,
+        "sections": [
+            {
+                "heading": "Names by sector",
+                "table": {
+                    "columns": ["Sector", "Names", "Note"],
+                    "rows": [[SECTORS[s], 1, "demo"] for s in SINGLE_NAMES],
+                },
+            }
+        ],
+    }
+    for doc in (hinted, plain):
+        path = ctx.p("data", "external", f"{doc['id']}.json")
+        write_json(path, doc)
+        problems = external_report.check_file(path).problems
+        if problems:
+            raise SystemExit(f"generation failed: external report {doc['id']}: {problems}")
+
+
 def scrub(ctx: Ctx) -> None:
     """Make what the packages wrote reproducible and portable: their wall-clock stamps and the absolute
     home path they recorded become a fixed stamp and `$CHERRYPICK_HOME`."""
@@ -2338,11 +3185,14 @@ def scrub(ctx: Ctx) -> None:
     fixed = ctx.iso(ctx.day, "16:30")
     stamp = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+\+00:00)")
     forms = {str(ctx.out), ctx.out.as_posix(), json.dumps(str(ctx.out))[1:-1]}
-    for path in sorted(ctx.out.glob("data/*/*")) + sorted(ctx.out.glob("data/manage/*.json")):
+    for path in sorted(ctx.out.glob("data/*/*")) + sorted(ctx.out.glob("data/*/*/*.json")):
         if path.suffix not in {".json", ".md"} or not path.is_file():
             continue
         text = path.read_text(encoding="utf-8")
-        new = stamp.sub(fixed, text)
+        # A package stamps `generated_at` with the wall clock, in whichever offset it likes.
+        new = re.sub(
+            r'("generated_at":\s*")[^"]*"', lambda m: m.group(1) + fixed + '"', stamp.sub(fixed, text)
+        )
         for form in forms:
             new = new.replace(form, "$CHERRYPICK_HOME")
         if new != text:
@@ -2384,7 +3234,7 @@ def build(out: Path, seed: int, day: date, days: int) -> Ctx:
     mk = Market(ctx)
     write_configs(ctx)
     write_meic(ctx, mk)
-    write_earnings(ctx, mk)
+    taken = write_earnings(ctx, mk)
     write_calendars(ctx, mk)
     write_contango(ctx, mk)
     write_weeklyput(ctx, mk)
@@ -2393,6 +3243,12 @@ def build(out: Path, seed: int, day: date, days: int) -> Ctx:
     write_screeners(ctx, mk)
     write_gex(ctx, mk)
     write_reports(ctx)
+    write_earnings_calendar(ctx, mk, taken)
+    write_time_spreads(ctx, mk)
+    write_valuation(ctx, mk)
+    write_charts(ctx, mk)
+    write_regime_cuts(ctx)
+    write_external(ctx)
     write_logs(ctx)
     scrub(ctx)
     refresh_live(out, day, None, 0)

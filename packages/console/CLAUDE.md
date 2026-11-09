@@ -49,7 +49,8 @@ alone):
   shared-type change also needs `pnpm --filter @console/shared build` first.
 - **`pnpm ui-check` drives real Chrome** — clicks, expectations, screenshots, console errors;
   `--dump <file>` writes the rendered DOM. `--card <title text>` crops `--shot` to one grid card
-  that has drawn its chart, and fails rather than falling back to the page;
+  that has drawn its chart, and fails rather than falling back to the page.
+  `--selector <css>` crops to any element instead (`.mf-slide` is one tab's content).
   `scripts/flies_payoff_post.py` captures the flies payoff card this way, and a person's own
   poster can capture the cards of the External reports page the same way (each section of a report is
   a card titled by its heading, at `/reports/external/<id>`), so changing a card's title text or
