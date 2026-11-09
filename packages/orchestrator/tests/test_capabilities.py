@@ -80,7 +80,9 @@ def test_the_scheduler_derives_no_dolt_or_ai_jobs_without_the_capabilities(tmp_p
     monkeypatch.setattr(cfgmod, "STATE_DIR", tmp_path)
 
     def derive(cfg):
-        jobs, errors = jobspec.derive_jobs(cfg, launcher="run.py", pythonw="pythonw", now=NOW)
+        jobs, errors = jobspec.derive_jobs(
+            cfg, launcher="run.py", pythonw="pythonw", now=NOW, pipelines=False
+        )
         assert not errors, errors
         return {j.id: j for j in jobs}
 

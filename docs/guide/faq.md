@@ -128,6 +128,13 @@ its rules suggest.
 Onto the Wheel page, in the same cycle as the put. You'll see the shares, what they really cost you
 after all the premium, and the covered call the rules suggest next.
 
+### I just traded. When does the positions page catch up?
+
+Within a minute or two of the last fill, during the session (09:36 to 16:10 ET). A trade that
+arrives as no order (an assignment, an exercise, a transfer) is found by a check of your held
+positions every five minutes. Discord hears about it only when the list of trades needing action
+changes. See [Live](live.md) for the settings.
+
 ### What's the difference between the two costs it shows for my shares?
 
 The tax basis is the price you got the shares at. The wheel basis is what they've really cost once
@@ -204,6 +211,10 @@ On purpose. The suite shows the account masked, with only the last four digits.
 
 Check whether the computer slept. A sleeping laptop misses its jobs. *Always-on machine* covers how
 to stop that.
+
+The morning and evening data runs (`morning-data`, `evening-data`) go in order. If one step fails, the
+System page and the warning name that step, and the steps that read its output do not run on stale
+files; the run is retried from the failed step.
 
 ### I changed a setting and nothing happened.
 

@@ -38,8 +38,8 @@ fake clocks) and spawns short-lived headless ticks, recording per-job state in
 stdlib + local files only — no broker, network or AI.
 
 **A daily job that runs several times is one job with `JobSpec.times_et`** (`manage-eval`,
-`market-files`, `report-screener-measure`, `report-skate-quotes`, `universe-measure`,
-`technicals-earnings-calendar`); `at_et` is the first time, so a reader of `at_et` still sees the day's
+`report-screener-measure`, `report-skate-quotes`, `universe-measure`, and `market-files` and
+`technicals-earnings-calendar` before the pipelines take one of their times); `at_et` is the first time, so a reader of `at_et` still sees the day's
 first run. The slot that matters at `now` is the latest time already passed, and `last_fire_day` holds
 `YYYY-MM-DD@HH:MM` for it. A slot's catch-up (`slot_catchup_minutes`, one per time, else
 `catchup_minutes`) ends at the earlier of its own limit and the next slot, so a missed slot is stamped
@@ -47,6 +47,26 @@ missed but never run late once a later slot has begun. A failed run's retries ar
 Jobs that differ in argv, gate or trigger stay separate jobs. A bare-date stamp from before a job had
 several times covers the slots that had begun when it last started, so the first pass after a restart
 does not run the day again.
+
+**The morning and evening data runs are two pipelines** (`morning-data`, `evening-data`;
+`jobspec.PIPELINES`, `orchestrator/pipeline.py`, `run.py pipeline <name>`), each ONE supervisor job
+whose steps run in order, every step its own subprocess with the argv, gate and switch of the job it
+replaced (`JobSpec.steps`, built by `fold_pipelines` from the ordinary job specs, so a step that is off
+in config stays listed off and is skipped; `derive_jobs(pipelines=False)` returns the plain jobs, which
+`bootstrap` runs once). A step never starts before the one ahead of it has ended or before its own `*_at`
+time. A failed step stops the run (the rest recorded `not_run`) unless its `independent` flag is set:
+nothing later reads what it writes, or it is a fetch that keeps its last good file on failure and the
+next step reads that, as before. A step off in config or gated out by `trading_days_only` is `skipped`,
+not failed. The pipeline starts at its first enabled step's time, catches up for its longest step's
+catch-up, and is retried from the failed step (`RETRY_ON_FAILURE`; a same-day run after a failure
+resumes, `--fresh` does not). Results: `state/pipeline.<name>.json` (status, exit code, seconds, stderr
+tail), the compact form in the registry row's `steps` (`supervisor._record_exit`), a `last_error` whose
+last line is `pipeline <name>: step <id> failed (exit N)`, and the `jobs.failed` finding, which names
+the step (`watchdog._failed_pipeline_step`). `market-files` and `technicals-earnings-calendar` run twice
+a day: their evening and first-pass times join the pipeline, the morning retry and the late pass stay
+jobs of their own. Which member is independent is a judgement made in `PIPELINES`; changing it, or a
+member's place, changes what a failure leaves unrun. The pipeline waits in its own process for a later
+step's time, so it is a long-lived child (the evening one ends after the 20:15 revisions fetch).
 
 **A job fed only by the vendor follows `market_report.collector`** (`cherrypick.core.vendor`, the
 switch every vendor reader shares): the collector itself, the two greeks runs over the vendor's list
@@ -172,9 +192,21 @@ list and flags are in [docs/orchestrator-cli.md](../../docs/orchestrator-cli.md)
   read-only). The rules and verdicts are manage's; the evaluation runs by subprocess. Between the full
   runs, `manage-marks` (every 60 s, 09:36-16:10 ET) reads the stream cache's quotes for what the day's
   stored snapshot holds and hands them to manage's `remark`: no broker call. Its first minute of the
-  day, and the minute after a fill the `account-alerts` inbox heard since the stored snapshot (once
-  30 s old), it takes a full snapshot instead (`managerefresh.py`); until 10:00 the evaluation is
-  `early` and the list is not posted. Its one post, like the
+  day, and a minute when the account changed, it takes a full snapshot instead (`managerefresh.py`,
+  `manage.on_change`): a fill the `account-alerts` inbox heard since the snapshot began, once no newer
+  one has arrived for `settle_seconds` (a roll's legs are one run), or a difference between the
+  broker's held legs (account and symbol, signed quantity) and the stored snapshot's, which catches an
+  assignment, exercise or transfer that arrives as no order. The legs are read through `positions`,
+  read-only, at most every `positions_check_seconds`, and never while a fill is settling; a failed
+  read or no snapshot for today is "cannot tell", not a difference. No such run starts within
+  `min_gap_seconds` of the stored snapshot's start; the request stays, so it runs once the gap has
+  passed, and a fill that lands while a snapshot is being read gets one more run after it (the
+  snapshot records `started_at`). Every full run records its `reason` in `manage.last.json`. With
+  `on_change` on, a run posts only when the trades needing action differ from the last post's, the
+  day's first run always posts, `notify_every_minutes` is the floor between posts, and the post
+  names the reason (`managepost.signature`, `post_due_on_change`). Off, a fill waits 30 s and the
+  post follows the timer. Until 10:00 the evaluation is `early` and the list is not posted. Its other
+  post, like the
   full run's, is a needs-a-look name not yet posted that session (`managealert.py`, `manage.attention_notify`).
   `manage-time-spreads` (10:30 ET, on with manage, `manage.time_spreads`) runs `run.py time-spreads`:
   the read-only scan script `scripts/fetch_time_spreads.py`, then one full snapshot so the portfolio
@@ -266,7 +298,8 @@ filename; override with `paper.sla_state_prefix`.
   quote is withheld, not priced, and a leg **neither source can price** is reported and excluded,
   never counted as zero. The others, each scheduled: `live-positions` (designated live accounts
   against the live ledgers, its verdict in `state/live_positions.last.json` for the watchdog to read),
-  `managesnap.py` (the `manage-eval` snapshot), `desk_notifier`'s order-status poll, and the
+  `managesnap.py` (the `manage-eval` snapshot, and the `positions` read `manage-marks` makes every few
+  minutes to compare held legs), and the
   `account-alerts` resident job (`cherrypick.core.live.account_alerts`: the designated
   account's order stream plus a REST read of today's orders, through every trading session, so a
   resting stop's fill after the disarm or a manual order is heard; it records, never acts, and gets

@@ -59,6 +59,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/overview/                  # morning-<day>.json fact packs + renders + notes
   data/external/                  # <id>.json reports your own scripts write (docs/guide/external-reports.md); the console reads them
   state/external_posts.json       # the last as_of each external report posted to Discord, so one is posted once
+  state/pipeline.<name>.json      # the last run of an ordered data run (`morning-data`, `evening-data`): each step's status, exit code, seconds and, for a failure, its stderr tail
   data/advisor/                   # advisor.db, fact packs, checkpoints
   logs/                           # suite logs
   data/review/                    # eod-<day>.json fact sets + renders + notes
@@ -168,7 +169,7 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | `config_backup` | **off** (opt in; `run.py config-backup --init --enable`, the installer, or the Config page) | `config-backup` |
 | `log_archive` | **on**, day 1 @ 03:30 | `log-archive` (monthly) |
 | `reconcile.schedule` | **off** by default, daily 16:30 when enabled — worth turning on once any module trades live, since it diffs the live ledger against the broker | `reconcile` |
-| `manage` | **off** (`enabled`), daily at `at` (10:00 ET), and at each `also_at` time; the minute re-mark (`marks`) follows it | `manage-eval`, `manage-marks` |
+| `manage` | **off** (`enabled`), daily at `at` (10:00 ET), and at each `also_at` time; the minute re-mark (`marks`) follows it, and `on_change` (on) makes a fill or a change in held positions start an extra evaluation and posts follow the list, not the clock | `manage-eval`, `manage-marks` |
 | `backtest` | **off** (`fetch`), daily at `fetch_at` (18:45 ET); the store count follows `fetch` unless `inventory` is set | `backtest-fetch`, `backtest-inventory` |
 | `live_positions` | **on** | `live-positions` |
 | `account_alerts` | **on** whenever a module has a live loop and a keyring service; trading days 09:00–18:00, armed or not | `account-alerts` |

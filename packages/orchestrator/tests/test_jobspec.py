@@ -265,7 +265,7 @@ def suite_cfg(**overrides):
     return cfg
 
 
-def derive(cfg, now=None, arm_records=None, include_retired=True):
+def derive(cfg, now=None, arm_records=None, include_retired=True, pipelines=False):
     """The full table by default, a retired feature's switched-off jobs included, so their specs stay
     tested for the day the feature is switched back on."""
     return jobspec.derive_jobs(
@@ -275,6 +275,7 @@ def derive(cfg, now=None, arm_records=None, include_retired=True):
         now=now or et(2026, 8, 10, 12, 0),
         arm_records=arm_records,
         include_retired=include_retired,
+        pipelines=pipelines,
     )
 
 

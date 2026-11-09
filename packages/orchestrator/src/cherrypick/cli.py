@@ -117,6 +117,11 @@ Subcommands:
   external-run         Run one `external_reports` entry (its id after the verb): the person's
                        script, then the check, then the Discord post when the entry asks for one.
                        The supervisor's `external-<id>` job.
+  pipeline             Run an ordered data run's steps (`morning-data` or `evening-data`, after the
+                       verb), each as its own subprocess; a failed step stops the run unless it is
+                       independent. The result per step is in the job's `status` row and
+                       state/pipeline.<name>.json. --fresh ignores steps an earlier failed run
+                       today finished. The supervisor's pipeline jobs.
 """
 
 from __future__ import annotations
@@ -917,9 +922,13 @@ def _run_review(cfg, *, final: bool) -> None:
     _emit(rec)
 
 
-def _manage_post_due(cfg, session: str | None, every: int) -> bool:
-    """Whether this manage run posts (managepost.post_due over `state/manage.last_post.json`), and,
-    when it does, the record of it for the next run to read."""
+def _manage_post_due(cfg, session: str | None, every: int, sig: list[str] | None = None) -> bool:
+    """Whether this manage run posts, and, when it does, the record of it for the next run to read.
+
+    With `sig` (the trades needing action, `managepost.signature`; given while `manage.on_change` is on)
+    a run posts when that set differs from the last post's, `every` minutes being the floor between posts
+    (`managepost.post_due_on_change`). Without it, by the timer alone (`managepost.post_due`) over
+    `state/manage.last_post.json`."""
     from cherrypick.orchestrator import managepost
 
     path = cfgmod.state_file("manage.last_post.json")
@@ -928,9 +937,14 @@ def _manage_post_due(cfg, session: str | None, every: int) -> bool:
     except (OSError, json.JSONDecodeError):
         last = None
     now = timeutil.now_et(cfg.get("timezone", "America/New_York"))
-    if not managepost.post_due(last, now, session, every):
+    if sig is None:
+        if not managepost.post_due(last, now, session, every):
+            return False
+        write_json_atomic(path, {"session": session, "at": now.isoformat()}, indent=None)
+        return True
+    if not managepost.post_due_on_change(last, now, session, every, sig):
         return False
-    write_json_atomic(path, {"session": session, "at": now.isoformat()}, indent=None)
+    write_json_atomic(path, {"session": session, "at": now.isoformat(), "signature": sig}, indent=None)
     return True
 
 
@@ -942,10 +956,10 @@ def _run_manage(cfg) -> None:
     into its own home for the console. The evaluation is advice: nothing on this path places, closes
     or sizes an order, so a failed pass costs a missing page and is a WARNING.
     """
-    _emit(_manage_full(cfg))
+    _emit(_manage_full(cfg, "scheduled run"))
 
 
-def _manage_full(cfg) -> dict:
+def _manage_full(cfg, reason: str = "scheduled run") -> dict:
     """One full snapshot and evaluation, its posts included; the run's record. The scheduled runs call it
     through `_run_manage`, and `manage-marks` calls it on the minute a fill or a new day needs one
     (`managerefresh.why_full`)."""
@@ -982,7 +996,15 @@ def _manage_full(cfg) -> dict:
         ok, error = False, f"{type(exc).__name__}: {exc}"
 
     counts = (result or {}).get("counts") or {}
-    rec = {"ok": ok, "error": error, "session": (result or {}).get("session"), "counts": counts}
+    # `reason` says why this run happened (the scheduled time, a fill, a position change, a scan): in the
+    # run record the console and `status` read, and in the post.
+    rec = {
+        "ok": ok,
+        "error": error,
+        "session": (result or {}).get("session"),
+        "counts": counts,
+        "reason": reason,
+    }
     write_json_atomic(hb_path, rec)
     _append_log(log_path, {**rec, "result": result})
 
@@ -992,6 +1014,10 @@ def _manage_full(cfg) -> dict:
         doc = json.loads(Path(written).read_text(encoding="utf-8")) if ok and written else {}
     except (OSError, json.JSONDecodeError):
         doc = {}
+    from cherrypick.orchestrator import managepost
+
+    # While runs follow the account, a post follows the trades needing action, not the clock.
+    sig = managepost.signature(doc) if doc and settings["on_change"]["enabled"] else None
     if not ok:
         notifier.notify(
             "WARNING", "manage", "Position evaluation failed", f"{error or 'see logs/manage.log'}"
@@ -1000,15 +1026,14 @@ def _manage_full(cfg) -> dict:
         # Marks from before the open, or its first half hour, are not to be acted on: the list waits
         # for the first run past `early.verdicts_from` (needs-a-look still posts, below).
         rec["list_held"] = "early" if doc.get("early") else "pre_open"
-    elif settings["notify"] and _manage_post_due(cfg, rec["session"], settings["notify_every_minutes"]):
+    elif settings["notify"] and _manage_post_due(cfg, rec["session"], settings["notify_every_minutes"], sig):
         # A run posts its list, the all-hold one included: the runs are at times a person chose
         # (`manage.at`, `manage.also_at`) to read what needs managing -- no more often than
         # `manage.notify_every_minutes`, so frequent runs refresh the console without flooding Discord.
-        from cherrypick.orchestrator import managepost
-
+        # With `manage.on_change` on, only when the trades needing action changed (see above).
         at = timeutil.now_et(cfg.get("timezone", "America/New_York")).strftime("%H:%M")
         if doc:
-            title, message, embed = managepost.build(doc, at)
+            title, message, embed = managepost.build(doc, at, reason)
         else:
             acting = {a: n for a, n in counts.items() if a not in managepost.QUIET}
             title = "Position evaluation"
@@ -1078,10 +1103,36 @@ def _run_time_spreads(cfg, force: bool = False) -> None:
     }
     _append_log(log_path, rec)
     if ok and result.get("written") and cfgmod.manage_settings(cfg)["enabled"]:
-        rec["manage"] = _manage_full(cfg).get("ok")
+        rec["manage"] = _manage_full(cfg, "time-spread scan").get("ok")
     _emit({**result, **rec})
     if not ok:
         sys.exit(1)
+
+
+def _manage_positions_change(cfg, now, today: str, every_seconds: int) -> str | None:
+    """What differs between the broker's held legs and the stored snapshot's, or None. The broker is
+    read at most once per `every_seconds` (`state/manage.positions-check.json`), through the same
+    read-only `positions` the snapshot starts with; a failed read, or no snapshot for today, is "cannot
+    tell", never a difference."""
+    from cherrypick.orchestrator import managerefresh
+    from cherrypick.orchestrator import positions as positions_mod
+
+    path = cfgmod.state_file("manage.positions-check.json")
+    try:
+        last = json.loads(path.read_text(encoding="utf-8")).get("at")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        last = None
+    if isinstance(last, (int, float)) and 0 <= now.timestamp() - last < every_seconds:
+        return None
+    write_json_atomic(path, {"at": now.timestamp()}, indent=None)
+    stored = managerefresh.stored_legs(cfgmod.state_file("manage.snapshot.json"), today)
+    if stored is None:
+        return None
+    try:
+        current = managerefresh.held_legs(positions_mod.run(cfg))
+    except Exception:  # noqa: BLE001 -- an unreadable broker is no news; the schedule still runs
+        return None
+    return managerefresh.leg_changes(stored, current)
 
 
 def _run_manage_marks(cfg) -> None:
@@ -1101,9 +1152,41 @@ def _run_manage_marks(cfg) -> None:
     # A trade since the stored snapshot, or no snapshot today yet: this minute takes a full one.
     snap_session, snap_at = managerefresh.stored_snapshot(cfgmod.state_file("manage.snapshot.json"))
     fill_at = managerefresh.latest_fill(Path(account_alerts.data_dir()) / account_alerts.INBOX_FILENAME)
-    reason = managerefresh.why_full(now, now.date().isoformat(), snap_session, snap_at, fill_at)
+    today = now.date().isoformat()
+    oc = cfgmod.manage_settings(cfg)["on_change"]
+    if oc["enabled"]:
+        reason = managerefresh.why_full(
+            now,
+            today,
+            snap_session,
+            snap_at,
+            fill_at,
+            settle_seconds=oc["settle_seconds"],
+            min_gap_seconds=oc["min_gap_seconds"],
+        )
+        quiet_for = (now - snap_at).total_seconds() if snap_at is not None else 0.0
+        fill_pending = snap_at is not None and fill_at is not None and fill_at > snap_at
+        if (
+            reason is None
+            and snap_session == today
+            and not fill_pending
+            and quiet_for >= oc["min_gap_seconds"]
+        ):
+            # A change no order announces (an assignment, an exercise, a transfer): the broker's held
+            # legs against the stored snapshot's, read at most every `positions_check_seconds`.
+            reason = managerefresh.why_full(
+                now,
+                today,
+                snap_session,
+                snap_at,
+                None,
+                min_gap_seconds=oc["min_gap_seconds"],
+                positions_change=_manage_positions_change(cfg, now, today, oc["positions_check_seconds"]),
+            )
+    else:
+        reason = managerefresh.why_full(now, today, snap_session, snap_at, fill_at)
     if reason is not None:
-        full = _manage_full(cfg)
+        full = _manage_full(cfg, reason)
         rec.update({"ok": full["ok"], "full_snapshot": reason, "session": full.get("session")})
         if not full["ok"]:
             rec["error"] = full.get("error")
@@ -1359,7 +1442,7 @@ def cmd_bootstrap(cfg) -> None:
     from .orchestrator import bootstrap, jobspec
 
     jobs, _ = jobspec.derive_jobs(
-        cfg, pythonw=cfgmod.pythonw_exe(), launcher=str(_LAUNCHER), now=timeutil.now_et()
+        cfg, pythonw=cfgmod.pythonw_exe(), launcher=str(_LAUNCHER), now=timeutil.now_et(), pipelines=False
     )
     report = bootstrap.run(bootstrap.plan(jobs, sys.executable))
     _emit(report)
@@ -1940,6 +2023,25 @@ def cmd_external_run(cfg, report_id: str | None) -> None:
     _emit(out)
     if not out.get("ok"):
         sys.exit(1)
+
+
+def cmd_pipeline(cfg, name: str | None, fresh: bool = False) -> None:
+    """The supervisor's `morning-data` and `evening-data` jobs: run the pipeline's steps in order
+    (orchestrator/pipeline.py). Exit 1 when any step failed."""
+    from cherrypick.orchestrator import pipeline
+
+    if not name:
+        print("pipeline needs a name: " + " | ".join(jobspec_names()), file=sys.stderr)
+        sys.exit(2)
+    code = pipeline.main(name, cfg, fresh=fresh)
+    if code:
+        sys.exit(code)
+
+
+def jobspec_names() -> list[str]:
+    from cherrypick.orchestrator import jobspec
+
+    return list(jobspec.PIPELINES)
 
 
 def cmd_power_watch(cfg) -> None:
@@ -2599,6 +2701,7 @@ def build_parser() -> argparse.ArgumentParser:
             "remind-run",
             "external-check",
             "external-run",
+            "pipeline",
         ],
     )
     parser.add_argument(
@@ -2833,12 +2936,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="For restart/stop/start: a supervisor job (console, flies-paper, ...), `streamer`, or a "
         "service id -- `ps` lists them. For service: prepare | status | uninstall. For external-check: "
-        "the report file. For external-run: the entry's id",
+        "the report file. For external-run: the entry's id. For pipeline: morning-data | evening-data",
     )
     parser.add_argument(
         "--query",
         default=None,
         help="For dolt-sql: the SQL to run, through the running Dolt server (name the database as NAME)",
+    )
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="For pipeline: run every step again, ignoring the steps an earlier failed run today finished",
     )
     parser.add_argument(
         "--direct",
@@ -3043,6 +3151,7 @@ def main() -> None:
         "remind-run": lambda: cmd_remind_run(cfg),
         "external-check": lambda: cmd_external_check(args.name),
         "external-run": lambda: cmd_external_run(cfg, args.name),
+        "pipeline": lambda: cmd_pipeline(cfg, args.name, fresh=args.fresh),
     }
     dispatch[args.command]()
 

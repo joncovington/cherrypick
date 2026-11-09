@@ -744,7 +744,8 @@ def _check_earnings_calendar(cfg: dict[str, Any]) -> list[Finding]:
                 "earnings.calendar",
                 WARN,
                 "Earnings calendar coverage unknown",
-                "No state/dolt_data.json — the earnings-dolt-pull job has never completed, so "
+                "No state/dolt_data.json — the morning-data pipeline's earnings-dolt-pull step has never "
+                "completed, so "
                 "nothing is refreshing the announcement calendar the scanner reads.",
             )
         ]
@@ -775,7 +776,7 @@ def _check_earnings_calendar(cfg: dict[str, Any]) -> list[Finding]:
                 f"The announcement calendar reaches only {max_date} ({remaining} day(s) ahead). "
                 "Past it the scanner finds nothing and the module stops trading SILENTLY — no "
                 "error, no ledger row. Run scripts/refresh_dolt_data.py or check the "
-                "earnings-dolt-pull job.",
+                "earnings-dolt-pull step.",
             )
         ]
     return [
@@ -2519,6 +2520,17 @@ def _check_live_positions(in_session: bool) -> list[Finding]:
 _FIXED_JOB_LOOKBACK_SECONDS = 24 * 3600
 
 
+def _failed_pipeline_step(st: dict[str, Any]) -> dict[str, Any] | None:
+    """The step a pipeline's registry row says failed (`pipeline.summary`): the one that stopped the
+    last run, else the first that failed; None for any other job or a run with no failed step."""
+    steps = (st.get("steps") or {}).get("steps") if isinstance(st.get("steps"), dict) else None
+    failed = [s for s in steps or [] if s.get("status") == "failed"]
+    if not failed:
+        return None
+    wanted = st["steps"].get("failed_step")
+    return next((s for s in failed if s.get("id") == wanted), failed[0])
+
+
 def _fixed_time_job_findings(jobs: dict[str, dict[str, Any]], now: datetime) -> list[Finding]:
     """Daily and monthly jobs that FAILED (non-zero exit, no retry left) or were MISSED (their window
     closed before they could start) in the last day. Pure over the registry rows.
@@ -2558,7 +2570,14 @@ def _fixed_time_job_findings(jobs: dict[str, dict[str, Any]], now: datetime) -> 
             and recent(st.get("last_exit_at"))
         ):
             said = (str(st.get("last_error") or "").strip().splitlines() or [""])[-1][:120]
-            failed.append(f"{jid} (exit {code}{': ' + said if said else ''})")
+            stop = _failed_pipeline_step(st)
+            if stop:
+                # A pipeline names the step that failed, with that step's own exit code.
+                failed.append(
+                    f"{jid} step {stop['id']} (exit {stop.get('exit_code')}{': ' + said if said else ''})"
+                )
+            else:
+                failed.append(f"{jid} (exit {code}{': ' + said if said else ''})")
             failed_ids.append(f"{jid}@{st.get('last_exit_at')}")
     # One finding per kind, not per job: after an outage every window of the day closes at once, and
     # twenty-six separate warnings bury the one that matters.
