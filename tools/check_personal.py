@@ -123,8 +123,12 @@ def check_line(rel: str, n: int, line: str) -> list[str]:
         if not _allowed(rel, rule):
             found.append(f"{rel}:{n}: {rule}: {line.strip()[:140]}")
 
+    # A heading's anchor slug carries the same words joined by hyphens
+    # (`#16-put-credit-spreads-on-the-funds-the-user-trades`), so the phrases are also tried with
+    # each hyphen read as a space.
+    spaced = line.replace("-", " ")
     for rule, pat in PHRASES:
-        if pat.search(line):
+        if pat.search(line) or pat.search(spaced):
             add(rule)
     for m in _NINE.finditer(line):
         if _FAKE_ID.match(m.group(1)):

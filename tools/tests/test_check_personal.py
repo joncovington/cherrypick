@@ -37,6 +37,7 @@ def rules(line: str, rel: str = "docs/x.md") -> list[str]:
         ("the entry order 479793516 filled at 0.43", "order-id"),
         ('"entry_order_id": "489436397",', "order-id"),
         ("Put credit spreads, order 479793516.", "order-id"),
+        ("see plan.md#16-put-credit-spreads-on-the-funds-the-user-trades", "owner-trades"),
         ('"account_number": "5WT99991"', "account-number"),
         ("account number 123456789012 was shown", "account-number"),
     ],
