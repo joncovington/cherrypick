@@ -15,6 +15,7 @@ path of the result file, never a licensed figure.
 | [history-studies-2026-10.md](history-studies-2026-10.md), [-b](history-studies-2026-10-b.md), [-c](history-studies-2026-10-c.md) | Questions answered from history rather than by waiting: each one modelled, with a pass test declared before the run. |
 | [flow-signal-plan.md](flow-signal-plan.md) | Large options orders as a signal: the declared test (research item 32). It failed. |
 | [signal-log-plan.md](signal-log-plan.md) | The chart setups' historical study, scored against a matched random baseline. No setup was profitable after costs and better than random. |
+| [openingrange.md](openingrange.md) | The frozen contract of the opening-range study (09:30 to 10:00 ET against the session's travel), a declared holdout read by `core.openingrange` and the console. It gates nothing. |
 | [range-features.md](range-features.md) | The declared range-features study: four chart features against a HAR baseline for SPX range. It found nothing. |
 | [box-edge-0dte-routine.md](box-edge-0dte-routine.md) | A daily SPX 0DTE routine reconstructed from public sessions, tested as reversion at the expected-move box edge (research item 8). It failed. |
 | [breakeven-condor.md](breakeven-condor.md) | The 0DTE break-even iron condor and its fit as a MEIC arm. |

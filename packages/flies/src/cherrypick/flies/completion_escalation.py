@@ -7,7 +7,7 @@ placement is pure cost (75-78% of live completions fill at today's limit), so ea
 the limit only on a trigger: minutes unfilled, or spot moving away from the completing side.
 
 **Not the first look.** `scripts/flies_stranded_replay.py`'s `salvage` family asked the same thing
-of paper control on 2026-09-28 and found nothing (experiment-log: 0 of 24 cells beat the base on
+of paper control on 2026-09-28 and found nothing (0 of 24 cells beat the base on
 the 5-wide, because a stranded spread's best completing debit comes ~3 minutes after entry). That
 replay priced completions with paper's modelled debit. This one uses what paper never had: the live
 order path's own quotes (`fly_order_path`, recorded from 2026-10-02), and the fill rule those quotes

@@ -223,7 +223,8 @@ with `python packages/orchestrator/run.py secrets-set --channel discord`.
 
 ### How do I upgrade?
 
-The console's status bar chip tells you when a new release is out. Stop the suite (`uninstall.cmd`
-or `./uninstall.sh`, which keeps your history and settings), get the new release, run the installer
-again, and read that release's notes on the Releases page first: they say what changed and anything
-you need to do.
+The console's status bar chip tells you when a new release is out. Run `upgrade.cmd` (or
+`./upgrade.sh`, or `/cherrypick-upgrade` in Claude Code) on a quiet evening after the close. It shows the
+new release's notes, backs up, installs, migrates, restarts and checks, and `--rollback` undoes it. It
+refuses while a live loop is armed or a live position is open. [Upgrading](upgrading.md) has the detail,
+including the one manual move from v0.11 to v0.12.

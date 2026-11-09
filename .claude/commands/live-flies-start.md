@@ -111,7 +111,7 @@ confirmation, a current status readout, and a visible way to stop.
    quarter-end session: arming succeeded, but the loop places no new entries all day (fills,
    resting orders and settlement still run), and the watchdog posts the same warning to Discord.
 
-4b. **The intraday agent, chosen for today** (packages/flies/docs/intraday-agent-plan.md). Only when
+4b. **The intraday agent, chosen for today** (packages/flies/docs/intraday-agent.md). Only when
    `--status`'s `intraday_agent.enabled` is true; otherwise skip this step and say the agent is off.
    - Show the `intraday_agent` block from `--status`: the model, `live_mode_max`, the modes on
      offer (`offered_modes`), and for each criterion its value and pass. "null" means it cannot be

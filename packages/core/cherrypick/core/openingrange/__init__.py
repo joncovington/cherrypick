@@ -9,7 +9,7 @@ asked against recorded rows instead of intuition.
 **A declared holdout, not a pre-registration, and the difference is the point.** The feature set
 below was chosen after examining 38 sessions of this same data, so those sessions are IN-SAMPLE.
 What is frozen on the declaration date is the DEFINITIONS -- not the names -- and every session
-after it is out-of-sample. `packages/flies/docs/openingrange.md` holds the contract: the outcomes
+after it is out-of-sample. `research/openingrange.md` holds the contract: the outcomes
 in causal order, the sign expected per module, the decision rule, and what would retire it.
 Calling this pre-registered would be the first dishonest sentence in the study.
 
@@ -118,7 +118,7 @@ def features(
     expected_buckets: int | None = None,
 ) -> dict:
     """The declared features over one session's opening bars. Frozen definitions -- see
-    `packages/flies/docs/openingrange.md`; changing one of these is a new declaration, not a fix.
+    `research/openingrange.md`; changing one of these is a new declaration, not a fix.
 
     Refuses rather than guesses: a window missing any bucket is `unmeasured`, because a range
     measured over four of six buckets is a different measure wearing the same name. Features that
@@ -350,7 +350,7 @@ def study(
         "in_sample_reference": _split(in_sample, "in_sample"),
         "checkpoint_ready": len(out_of_sample) >= MIN_OUT_OF_SAMPLE,
         "not_pnl": "A description of the market and of completion rates; no trade was priced here.",
-        "declared": "packages/flies/docs/openingrange.md",
+        "declared": "research/openingrange.md",
     }
     if conditioner:
         cells = {}

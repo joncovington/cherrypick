@@ -1,4 +1,4 @@
-"""The intraday agent on live (docs/intraday-agent-plan.md, step 4): the day's selection on the arm
+"""The intraday agent on live (docs/intraday-agent.md, step 4): the day's selection on the arm
 record, what each mode lets a decision do, the stamp the shadow is scored on, and the scoring."""
 
 import json

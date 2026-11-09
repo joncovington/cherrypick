@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "releases": {
+    "v0.12.0": {
+      "first_with_upgrade_tooling": true,
+      "upgrading": [
+        "This is the first release with `run.py upgrade`. Moving from v0.11.x to v0.12.0 is manual (docs/guide/upgrading.md); from here on `upgrade` does it."
+      ],
+      "manual_steps": [],
+      "config_changes": [],
+      "measurement_boundaries": [],
+      "migrations": []
+    }
+  }
+}

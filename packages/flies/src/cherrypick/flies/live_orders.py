@@ -5,7 +5,7 @@ Turns the engine's decisions (the same `plan` dicts the paper book records) into
 on every leg quote. Nothing here talks to a broker, a DB, or a file — `live_loop.py` owns
 submission (through core.broker's preflight + governor) and `broker_cli.py` owns the CLI.
 
-Two orders exist in this strategy (live v1 is legged-only — see docs/live-trading-plan.md):
+Two orders exist in this strategy (live v1 is legged-only — see docs/live.md):
 
   entry_spec       step 1 — sell the opening credit spread (STO short strike, BTO wing)
   completion_spec  step 2 — buy the completing vertical (BTO far strike, STO the centre
@@ -56,7 +56,7 @@ def entry_spec(snapshot: dict, plan: dict) -> dict:
     Sell to open the centre (the short strike), buy to open the wing; Day limit at the plan's
     modeled credit floored to the tick.
 
-    Live v1 is legged-only (docs/live-trading-plan.md) -- `debit_first`/`bwb_roll` are paper-only
+    Live v1 is legged-only (docs/live.md) -- `debit_first`/`bwb_roll` are paper-only
     research arms with no live order builders of their own, and `live_loop.py` never calls their
     evaluate_* functions. This explicit shape check is the second, independent guard: a plan from
     either paper-only mode carries a different key set (`debit` or `far_width`, never `credit`

@@ -3,8 +3,7 @@
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
 Simulates every strategy's entries, exits, and P&L across a real earnings calendar without ever
-touching the live tastytrade account's orders, positions, or buying power. Earnings is paper-only
-since v0.12.0, so this is the only mode. The scanner, ranking and selection logic are the
+touching the tastytrade account's orders, positions, or buying power. Earnings is paper-only. The scanner, ranking and selection logic are the
 production ones, so paper results are a genuine test of the system's current calibration, not a
 separate toy implementation. The unattended paper loop
 (`paper_loop.py`, ticked every 60 s by the supervisor) runs the forced-sampling harness into the
@@ -19,7 +18,7 @@ places nothing, but logs its evaluation to `scan_log` and `entry_reviews`). What
 ## Data separation (hard requirement)
 
 Paper trades are stored in `paper_trades.db`, a **separate SQLite file** from
-`earnings_trades.db` (the history of the live orders placed before v0.12.0; nothing writes it now) — both in the shared cherrypick data home (`~/.cherrypick/data/earnings` by
+`earnings_trades.db` (the history of the orders placed before v0.12.0; nothing writes it) — both in the shared cherrypick data home (`~/.cherrypick/data/earnings` by
 default, or `$EARNINGS_DATA_DIR`; resolved by `cherrypick/earnings/paths.py`) — written and read exclusively through `cherrypick/earnings/db_paper.py` — a separate
 CLI module from `cherrypick/earnings/db.py`, not a `--paper` flag on the same one. There is no code path, table,
 or flag that can query both databases through one connection. This was a deliberate design
@@ -29,7 +28,7 @@ bug can never blend simulated and real P&L by a forgotten filter.
 Both databases' `trades` table is strategy-agnostic — a `strategy` column identifies which of
 the seven opened it — so every strategy's paper results land in the same database,
 distinguishable via `get_pnl_summary --strategy <name>` or its `by_strategy` breakdown, without a
-schema change. An `arm` column (named `profile` until 2026-09-24; the flag is still `--profile`) does
+schema change. An `arm` column (the flag is still `--profile`) does
 the same for the forced-sampling test books (default `'default'` for the production loop; `'strat_test:<strategy>'` per-strategy, or `'strat_test'`
 combined, for the forced-sampling program — see [Strat-Test Portfolios](./strat-test-portfolios.md)).
 
@@ -53,9 +52,9 @@ The ranked path, summarized here (the supervisor's paper loop runs the forced-sa
 account's actual buying power/margin, which would incorrectly couple a simulated fill to whatever
 happens to be sitting in the connected account.
 
-**Close (the original design, during and after `close_window_start`, e.g. `09:45` ET the next
-morning).** The paper loop instead holds on the entry session, then applies the managed rules in
-[Exit Strategy Guide](./10-exits.md).
+**Close (a manual `/paper-start` cycle, during and after `close_window_start`, e.g. `09:45` ET the
+next morning).** The supervisor's paper loop instead holds on the entry session, then applies the
+managed rules in [Exit Strategy Guide](./10-exits.md).
 1. For positions closing as a single unit (`legs_json`): fetch live quotes for every leg's exact
    option symbol, compute the exit debit via `scanner.compute_generic_exit_debit()` (buy back
    short legs at ask, sell long legs at bid — the conservative, cross-the-spread convention that
@@ -77,10 +76,11 @@ trade at that size would actually risk.
 
 Every paper trade also records `entry_cost`/`exit_cost` from `cherrypick/earnings/costs.py`'s tastytrade fee
 model (commission, clearing, regulatory pass-throughs, and a slippage haircut off the quoted
-bid-ask width) — kept separate from the raw `pnl` column, which always stays gross. The haircut is
-charged on entries only: entries price at mid, but exits price on the natural side (shorts at the
-ask, longs at the bid), which already concedes the spread inside `pnl`, so `costs.natural_exit_costs`
-records an exit's fees with `exit_slippage` 0 (docs/operating-history.md, 2026-10-23). Cost-adjusted
+bid-ask width) — kept separate from the raw `pnl` column, which always stays gross. A position entered
+on or after 2026-10-26 is marked and closed at mid, with the haircut charged on both sides
+(`costs.exit_costs`). An older position exits on the natural side (shorts at the ask, longs at the
+bid), which already concedes the spread inside `pnl`, so `costs.natural_exit_costs` records only its
+fees with `exit_slippage` 0 (see [measurement boundaries](./measurement-boundaries.md)). Cost-adjusted
 expectancy is computed downstream by `strategy_metrics.py`, not baked into `pnl` itself. See
 `CLAUDE.md`'s Database section and `docs/strategy-testing-plan.md` for why this separation
 matters.

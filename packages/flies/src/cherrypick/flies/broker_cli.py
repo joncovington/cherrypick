@@ -8,7 +8,7 @@ governor). It is deliberately tiny — everything reusable already lives in core
 
 **Live submission is gated and OFF.** `--live` requires `live.enabled: true` in this module's
 config, a non-empty `live.gate0_confirmed` attestation (who/when Gate 0 of
-docs/live-trading-plan.md was judged passed), `live.arm` naming a configured arm, a designated
+docs/live.md was judged passed), `live.arm` naming a configured arm, a designated
 account, and today's arm record from `/live-flies-start` -- every gate the live tick checks
 (`live_gates`). Without them every submission is a dry run -- the real preflight against the
 real designated account, placing nothing.
@@ -107,7 +107,7 @@ def live_gates(config: dict, *, designated=_READ, when=None) -> list[str]:
 
     live = config.get("live") or {}
     if not live.get("enabled"):
-        return ["live.enabled is false (docs/live-trading-plan.md, Gate 0 first)"]
+        return ["live.enabled is false (docs/live.md, Gate 0 first)"]
     if designated is _READ:
         designated = creds.designated_account()
     unmet = live_loop.readiness(config, designated=designated)

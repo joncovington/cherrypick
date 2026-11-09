@@ -37,7 +37,7 @@ import { Tile as CountTile } from "../../components/performance/Tile";
 import { useTimeline } from "./TimelineCard";
 
 /**
- * The intraday agent (packages/flies/docs/intraday-agent-plan.md): what it decided today, how its
+ * The intraday agent (packages/flies/docs/intraday-agent.md): what it decided today, how its
  * paper arm stands against `trend-rule` and `control`, and what the evidence lets live offer.
  *
  * Nothing on this slide judges. Pass/fail, the paired bound, the offered modes and every settled

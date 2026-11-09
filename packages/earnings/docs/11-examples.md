@@ -174,7 +174,7 @@ If `NVEX` is accepted under both `iron_condor` and `directional_credit_spread`,
 (`strat_test:iron_condor` and `strat_test:directional_credit_spread`) — so every strategy that
 qualifies gets its own sample and its own equity curve, not just the single best. Meanwhile that
 same night's `rank_strategies.py get_ranked_symbols` run would have picked only `iron_condor`
-(the higher-scoring one) for the actual production paper/live book (`arm='default'`). Every
+(the higher-scoring one) for the ranked production paper book (`arm='default'`). Every
 book is a separate `arm` value in the same database, so running both the same night doesn't
 conflict — it's how the forced-sampling program accumulates a usable sample for every strategy
 instead of starving whichever one rarely wins the head-to-head comparison.

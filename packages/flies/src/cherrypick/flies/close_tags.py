@@ -1,4 +1,4 @@
-"""Tagged closes of stranded verticals: tag, don't gate (docs/intraday-agent-plan.md).
+"""Tagged closes of stranded verticals: tag, don't gate (docs/intraday-agent.md).
 
 The `trend-rule` and `intraday-agent` arms decide when a stranded vertical should be closed rather
 than ridden to settlement. Paper flies has no intraday close any more (the pre-close exit was

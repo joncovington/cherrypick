@@ -34,7 +34,7 @@ value_at = _tracker.value_at
 # `"shield"` (2026-10-05 ->, `paper_loop.SHIELD_FROM`): the held-long arms `shield` and
 # `shield_hold` join control, and the symbols become XSP, QQQ, GLD, IWM and SLV (TQQQ runs off). It
 # closes `"redesign"`, whose XSP control rules carry on unchanged but whose roster, symbols and
-# position cap do not -- docs/shield-study.md and the CLAUDE.md boundary note.
+# position cap do not -- research/pmcc-shield-study.md and the CLAUDE.md boundary note.
 #
 # `"redesign"` (2026-08-23 -> 2026-10-04), stamped by `book.enter_position` on every new row,
 # closed the pre-redesign window — TNA/UPRO alongside TQQQ, the `keltner`/`roll` arms, the

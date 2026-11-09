@@ -64,7 +64,7 @@ DEFAULT_MIN_GEX_STRIKES = 20
 
 # From this session the GEX surface takes open interest at any age for a strike whose gamma is live,
 # and drops leftover gamma rows -- the gex recorder's input rule, so the two surfaces agree (2026-10-06,
-# a `gex_surface` break; docs/experiment-log.md 2026-10-05). Before it, OI was held to
+# a `gex_surface` break). Before it, OI was held to
 # `max_gex_input_age_seconds` like gamma. OI is a once-a-day exchange number the streamer's Summary
 # events rarely refresh, so by the afternoon most strikes had lost theirs (124 of 202 on 2026-10-05)
 # and the surface moved: that afternoon net GEX read -4.1bn here against +25.9bn from the recorder's

@@ -1,8 +1,7 @@
 # cherrypick-advisor — Operational Instructions
 
 > Operating contract for the suite's **AI advisor machinery**. Suite-wide context is in the root
-> [documentation index](../../docs/README.md). The incidents and measurements behind the rules below
-> are in [docs/history.md](docs/history.md).
+> [documentation index](../../docs/README.md).
 
 This package lets an AI influence the paper books **without any AI running inside a suite package**.
 It holds every deterministic part: the fact packs the model reads, the parse-and-validate of its
@@ -39,7 +38,7 @@ The advisor reads live facts (context a competent observer would want) but canno
 
 ## Experiments
 
-**Paused (2026-10-25).** `advisor.paused` admits new experiments `queued` and activates nothing new,
+**Paused.** `advisor.paused` admits new experiments `queued` and activates nothing new,
 while active ones run to their end. It stays on until the redesign (issue #995) lands: qualification on net, not
 win rate; an MDE at admission; the hypothesis register in the prompt; and multiplicity. Any truthy
 value counts as paused, a malformed one included. While paused:
@@ -51,16 +50,14 @@ value counts as paused, a malformed one included. While paused:
   row and the admission say `queued_because`/`reason` `paused`). **Lifting the pause activates none of
   them.** Each waits for an operator: `activate <id>` releases it into the ordinary queue (refused while
   still paused; the cap and FIFO apply, and it re-issues tomorrow's artifact as a kill does), and
-  `kill <id>` drops it. Rows the pause queued before the column existed were held by the migration,
-  read from their `created` journal row.
+  `kill <id>` drops it.
 
 **Paper arms are the real test.** A proposal's test is a next-session paper arm beside its control,
 scored through `cherrypick.core.profiles.group_by_tag` and `qualify_readings`. Default length is
 **15 sessions** because the promotion gate needs min 14 days and min sample 20; shorter is
 structurally `underpowered`.
 
-**Backtests are a fenced pre-screen (2026-10-17; changes the earlier "there will be no replay
-engine").** With `advisor.backtest_proposals` on (OFF by default; switching it on is a measurement
+**Backtests are a fenced pre-screen.** With `advisor.backtest_proposals` on (OFF by default; switching it on is a measurement
 break for the advisor, to be declared like any other), a `backtest_spec` reply is admitted through the
 same gates as an experiment (the module's switch, its own advice bounds via `check_params`) and only
 QUEUED (`backtest_requests`). packages/backtest runs it by its own verb (`run-advised`), over the
@@ -83,9 +80,8 @@ active experiment, each validated on its own, each naming its own book via the r
 admission, unique per module, `-2` suffixed on a duplicate name; a nameless experiment keeps the
 legacy `advised:<base>`). `max_experiments_per_module` is **null = unlimited**; set a number to cap,
 and over-cap specs are admitted `queued` and activate FIFO — on a kill, and at every deep run, so a
-raised cap fills that evening (before 2026-10-25, only when an experiment ended). The `enactment` table is keyed
-`(session, module, experiment_id)`, `''` for a module-session with no artifact. Before 2026-09-17 the
-cap was one per module by construction; the retag moved historical rows onto their experiment's tag.
+raised cap fills that evening. The `enactment` table is keyed
+`(session, module, experiment_id)`, `''` for a module-session with no artifact.
 
 **Rows are stamped with their experiment.** The artifact, the session decision and every advised row
 a module writes carry `experiment_id` (`core.advice.stamp_for`, never on a control row).
@@ -102,14 +98,12 @@ plan their advised twin from the base book its tag names.
 **Calendar exit.** An active experiment concludes as `stalled` after twice its length in calendar
 sessions (verdict computed, `underpowered` on its face), and the queued one activates — otherwise a
 module that stopped recording decisions holds its slot forever. The clock starts at
-`activated_session` (2026-10-25), so time spent queued is not counted; a row activated before that
-column existed has none and keeps counting from `created_session`.
+`activated_session`, so time spent queued is not counted; a row with none counts from
+`created_session`.
 
 ## A session counts when a loop applied it
 
-`sessions_run` advances on what the loop recorded, not on an artifact being written (the 2026-08-25
-incident: two of five artifacts were ignored and both experiments would have counted the session as
-spent). `enactment.py` reconciles, and the evening pass scores the session that ended before issuing
+`sessions_run` advances on what the loop recorded, not on an artifact being written (an ignored artifact must not count as a session spent). `enactment.py` reconciles, and the evening pass scores the session that ended before issuing
 the next:
 
 - **enacted** — the loop's recorded decision matches the artifact's admitted params. A reject-all
@@ -125,7 +119,8 @@ the next:
   - *scanning* — the loop applied the params but its scan accepted no candidate, so the advice had
     nothing to decide. Discovered from a `scan_log` table with an `outcome` column
     (`factpack.candidates_accepted`), so it reaches earnings and nothing that keeps no scan. **A
-    declared break for the counter on 2026-09-16: do not pool earnings `sessions_run` across it.**
+    declared break for the counter: earnings `sessions_run` before 2026-09-16 counted differently;
+    do not pool across it.**
 - **not_enacted** — issued, and the loop's record disagrees or is absent. Costs the experiment
   nothing, because it bought nothing.
 - **no_artifact** — nothing issued; nothing to reconcile.
@@ -158,7 +153,7 @@ The model only *recommends*; its recommendation is stored beside the numbers, ne
 A verdict below the qualification thresholds is labelled `underpowered` — never silently passed or
 failed. Stored verdicts are **recomputed every time a recommendation is attached**.
 
-Each pair also carries **`paired`** (2026-10-12): the advised book against its base session by
+Each pair also carries **`paired`**: the advised book against its base session by
 session through `core.compare.pair_with_control` — the console compare page's rule — with the
 seeded 95% interval on the mean difference, the exact sign test and `sessions_to_decision`. It sits
 beside `qualification` and moves no threshold. It is **kept out of `delta` and out of the fact
@@ -170,10 +165,9 @@ advised row have an identical twin in the base on its session, to the cent?), an
 `no_exposure` and `conclusion` (`no_exposure` / `underpowered` / `measured`), ahead of any pass or
 fail: `declared` when every param is one the module's bounds say cannot act on the base (a rule's
 `arms`), `never_diverged` when the rows show it. No closed advised rows is no evidence either way.
-Admission, `tune` and `enact` refuse the declared case outright through `core.advice` (2026-10-12:
-bwb's `delta-trigger-early` and both earlier `flip_buffer` experiments sat on `control`, which never
-arms, and matched it row for row). The pack carries these fields from the 2026-10-15
-boundary.
+Admission, `tune` and `enact` refuse the declared case outright through `core.advice` (an
+experiment on an arm that never fires matches its base row for row). The pack carries these fields
+from the 2026-10-15 boundary.
 
 **A `kill` recommendation is actioned; `keep` and `promote` are recorded** (`advisor.kill_on_verdict`,
 on by default; off restores record-only; never actioned while paused, above). Admitting a kill takes the same path as a human `kill`:
@@ -185,8 +179,7 @@ console `kill` re-issues the same way, so a kill after the 17:00 pass leaves no 
 ## Checkpoints and admission
 
 - The schedule is **`advisor-deep` at 17:00 and nothing else.** Light slots cannot issue anything
-  (only the deep slot's `enact` writes artifacts) and, measured over 36 of them, produced almost
-  nothing actionable.
+  (only the deep slot's `enact` writes artifacts) and produced almost nothing actionable.
 - A slot whose model call produced no reply is a **failed checkpoint row** (`checkpoint-failed`), and
   stays re-runnable.
 - `admit` carries the freeze itself (`--force` to override), because the console reaches it directly;
@@ -233,8 +226,7 @@ read from `data/<module>/regime_cuts.json`. Absent or an unreadable `cut_version
 another session's artifact carries `_stale`. Thinning rules: books under three sessions collapse to
 `_thin_books`; dimensions under 50% coverage or degenerate are dropped and named under `_dropped`;
 cross-tabs keep the six largest non-thin cells; every cell is ONE string, sessions first; **a thin
-cell carries no P&L at all** (a hand-cut two-dimension read once made a one-cell effect look
-predictive). Single-dimension cells may carry a trailing ` fragile`; per-module `paired` (p < 0.10)
+cell carries no P&L at all** (a one-cell effect reads as predictive). Single-dimension cells may carry a trailing ` fragile`; per-module `paired` (p < 0.10)
 and `sign_changed` lists are capped at `REGIME_CUTS_LIST_MAX`, strongest first; `multiplicity` is
 carried verbatim; `underpowered` appears only when true. flies' `gate_replay` rides here as one string
 per replayable gate rule, and its additive book keys (`completion_latency_min`, `miss_gap`) are
@@ -257,8 +249,7 @@ that block stops counting flies' voided rows, `void_reason` set, on either side)
 ## The module list is derived, not restated
 
 `bounds._BASE_KEY` is the source of truth. `MODULES`, `enactment.MODULES`, `factpack.MODULES` and
-`settings.DEFAULTS["modules"]` all derive from it — hand-kept copies once silently left bwb and curve
-with no advice at all. A module in `_BASE_KEY` still needs its own `advice.enabled` (curve is listed
+`settings.DEFAULTS["modules"]` all derive from it — a hand-kept copy would silently leave a module with no advice. A module in `_BASE_KEY` still needs its own `advice.enabled` (curve is listed
 and disabled, which reports itself), and **must** have a `factpack` section, or the model is asked to
 design experiments for a module it cannot see. `tests/test_factpack.py` pins both directions.
 
@@ -282,7 +273,7 @@ Package guardrails, on top of the root's:
 | `python -m cherrypick.advisor init-db` | Create/migrate `data/advisor/advisor.db`. Idempotent. |
 | `python -m cherrypick.advisor factpack --slot {open,am1,am2,midday,pm1,pm2,close,deep} [--session D]` | Build one deterministic fact pack and print its path. |
 | `python -m cherrypick.advisor admit --slot S [--session D] --raw <path> [--force]` | Parse a raw model reply, validate every proposal against module bounds, record admissions and rejections. |
-| `python -m cherrypick.advisor propose --module M --name N --param K=V [...] --hypothesis T --success-metric T [--sessions N] [--note T]` | A person proposes an experiment. Same admission as a model proposal (`admit_spec`: bounds, cap/queue, dedup, its own book), no checkpoint row, journaled `proposed_by_human`. Cannot reach past the module's `advice.bounds`. Added 2026-09-29; before it, a human had to hand-feed `admit` a model-shaped reply, which skewed checkpoint stats and attribution. |
+| `python -m cherrypick.advisor propose --module M --name N --param K=V [...] --hypothesis T --success-metric T [--sessions N] [--note T]` | A person proposes an experiment. Same admission as a model proposal (`admit_spec`: bounds, cap/queue, dedup, its own book), no checkpoint row, journaled `proposed_by_human`. Cannot reach past the module's `advice.bounds`. |
 | `python -m cherrypick.advisor checkpoint-failed --slot S [--session D] --error <text> [--model A] [--model-id M]` | Record a slot whose model call produced no reply as a failed checkpoint row. |
 | `python -m cherrypick.advisor enact [--session D]` | Issue the next session's advice artifact for every active experiment. Runs nightly, unconditionally. |
 | `python -m cherrypick.advisor enactment [--session D]` | Did each module apply the artifact issued for a session? Per module, with the reason when it did not. |
@@ -305,7 +296,7 @@ console holds no advisor logic.
   (which `bounds.resolve` uses). Within this package the artifact literal is built in one place,
   `experiments.artifact_for`, for both `check_params` and `enact._issue`.
 - `cherrypick.core.ledgers` — per-schema net/risk/session rules. Do not add another implementation;
-  its docstring records what happened the first three times.
+  its docstring says why.
 - `cherrypick.core.profiles` — `group_by_tag` and `qualify_readings`, the suite's one
   arm-comparison and promotion gate.
 - Deliberately NOT folded, because the difference is the point: the dotted-param split (`bounds`

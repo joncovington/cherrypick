@@ -142,7 +142,7 @@ MAX_QUOTE_AGE_SECONDS = 120
 # `stream_trades` row (`volume` is DXLink's `day_volume`). Stored raw, as everything here is: the
 # volume in a minute, and SPY's VWAP, are read-side differences between consecutive samples. SPY
 # rather than SPX because the index has no volume. Started for the flies intraday agent's pack
-# (packages/flies/docs/intraday-agent-plan.md); there is no history before it.
+# (packages/flies/docs/intraday-agent.md); there is no history before it.
 VOLUME_READINGS: dict[str, str] = {"spy_volume": "SPY"}
 
 FUTURES_READINGS = {"vx1": ("VX", 0), "vx2": ("VX", 1), "zn1": ("ZN", 0)}

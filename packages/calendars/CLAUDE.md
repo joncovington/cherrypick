@@ -6,9 +6,26 @@ Weekly SPY double calendars, a paper-only forward exit-parameter experiment (pos
 Every Monday (Tuesday after a Monday holiday) at 10:00 ET: a put calendar at the expected-move-down
 strike and a call calendar at the expected-move-up strike, shorts expiring that Friday, longs the
 following Monday. Entry is deliberately unconditional; the one question is **which exit rule makes
-this structure worth anything, net of costs?** The underlying was SPX until 2026-08-15 (why SPY, not
-XSP: [docs/history.md](docs/history.md)). Suite-wide context: the root
-[documentation index](../../docs/README.md).
+this structure worth anything, net of costs?** The underlying is SPY, chosen for buying power (a
+calendar's requirement is its debit, and SPY is a tenth of SPX's notional for the same structure). XSP is
+the same tenth but its median option spread is 26% of mid against a `max_leg_spread_pct` of 0.25, so the
+median leg would fail the execution gate; SPY's median is 3%. What SPY costs is the settlement model
+(physical delivery, below). Suite-wide context: the root [documentation index](../../docs/README.md).
+
+## Measurement boundaries (never pool across these)
+
+- **2026-08-15:** the underlying changed from SPX to SPY. Rows before it are SPX.
+- **2026-09-17:** advice tags settle; `advised:control` / `advised:friday:control` before it still
+  resolve by name.
+- **2026-10-12:** `validate_against_control` tolerance tightened from $0.50 to $0.01. The old tolerance
+  hid a $0.49 bias on every `path` week (the long disposal's cost was missing from the recorded-close
+  fallback), so `expiry-longs-mon` in the policy table is $0.44-0.49 a week lower than before. This
+  corrected a wrong number, not a measurement. The same day the exit grid began to cover `friday:path`
+  and the Friday arms were validated; the Friday weeks before it were neither in the table nor validated.
+- **2026-10-15:** `time_exit` left the advice bounds. The read side already replays every time exit over
+  every week's real marks, so a forward advised arm on it buys nothing the replay does not. The
+  parameter stays for an arm to set.
+- **Exit-gate absolute spread floor** (`exit_gate_absolute_spread_floor`, journaled): see honesty rule 8.
 
 ## The experiment design
 
@@ -20,10 +37,10 @@ strikes, mids and modelled costs — so any divergence is exit policy and nothin
   settlement, longs ride the weekend and sell on their Monday expiration morning. Its job is the
   recorded per-tick mark path (`dc_marks`) everything else derives from.
 - **`advised:<experiment name>`** (paper, off by default): mechanism in `packages/core/CLAUDE.md`;
-  required here because this module has exits. Pre-2026-09-17 tags `advised:control` /
-  `advised:friday:control` still resolve by name in `engine.base_book` and
-  `management.effective_params`. Open books keep being marked, managed and settled under the params
-  frozen on their own rows, whatever today's decision says.
+  required here because this module has exits. The session's advice decision is recorded BEFORE the
+  ex-dividend gate, so the advisor scores a refused week as advice that governed nothing. Open arms keep
+  being marked, managed and settled under the params frozen on their own rows, whatever today's decision
+  says.
 
 **`control` and `path` differ in short AND long handling at once — a deliberate exemption** from
 the one-variable rule. Single-variable questions are answered by the read-side grid. Do not "fix" it
@@ -39,23 +56,20 @@ own marks and must match its real recorded net **to the cent**; `expiry-longs-mo
 `path`. The Friday regime's `friday:control` and `friday:path` are validated the same way, and
 `friday:path` weeks feed the table under their own `dc_7_*` tag (`PATH_ARMS`, `VALIDATED_ARMS` —
 an arm joins only by being named there). A derivation that cannot reproduce the books beside it has no business ranking policies.
-The default tolerance is $0.01 (rounding); it was $0.50 until 2026-10-12, which hid a $0.49 bias on
-every `path` week (the long disposal's cost was missing from the recorded-close fallback).
+The tolerance is $0.01 (rounding).
 
-**A Friday-entry regime is built and trading** (enabled 2026-08-24 on the live config, first entry
-2026-09-04; the example ships `friday_entry.enabled: false`) —
+**A Friday-entry regime** (`friday_entry`; the example ships it `enabled: false`) —
 [docs/friday-entry-arm.md](docs/friday-entry-arm.md) (`dc_7_10` vs this `dc_4_7`). It is NOT a fourth
 book: it prices its own snapshot and strikes at 15:50-16:00 on the Friday before (`friday_entry`
 block, `clock.friday_entry_plan`), books `friday:control` and `friday:path` (`engine.FRIDAY_PREFIX`;
 `base_book` reads the last segment, so they manage, settle and dispose as their bases), and is
-skipped while the week's Monday-regime exits are still pending. Through 10-12 it entered 4 weeks
-(16 rows); 08-28, 09-11 and 09-18 were skipped. Not yet true, and say so before reading it:
-- **`dc_paired_debits` was empty until the 2026-10-12 fix** — the Monday-moment price of the Friday
-  strikes, the low-variance Friday-vs-Monday read. The past weeks cannot be backfilled.
-- **The read-side grid has covered it only since 2026-10-12**: `friday:path` feeds the table under
-  its own `dc_7_*` tag and both Friday arms are validated to the cent (above); before that the
-  Friday weeks were neither in the table nor validated.
-- **Its arrival was never journaled as a break**, though friday-entry-arm.md says it should be.
+skipped while the week's Monday-regime exits are still pending. Read it with these in mind:
+- **`dc_paired_debits`** (the Monday-moment price of the Friday strikes, the low-variance
+  Friday-vs-Monday read) holds rows only from 2026-10-19; earlier weeks cannot be backfilled, because
+  the cache keeps no Monday-morning history. The 15-paired-weeks bar in the regime doc counts from there.
+- **The regime's arrival (first entry 2026-09-04) was never journaled as a break**, though the regime
+  doc says it should be: a reader comparing the module's weeks across that date must know which regime
+  they are reading.
 
 ## Two settlement styles, one set of numbers
 
@@ -80,7 +94,10 @@ the share term is zero — so one settlement path, derivation and validation ser
 while shares are outstanding (`finalize_if_done` treats them as an open leg), and an undisposed
 share position makes an expiry policy `derivable: False`, never zero.
 
-**Ex-dividend weeks are excluded, not modelled.** Entry refuses the whole week when a declared
+**Ex-dividend weeks are excluded, not modelled.** SPY's ex-dates land on the short-expiry Friday, and an
+ITM short call is really assigned at the close *before* the ex-date, a session before this module books
+anything; an ex-div week is a different trade from the one under test, and the third-Friday rule fails on
+the issuer's own dates while aggregators disagree by a day. Entry refuses the whole week when a declared
 ex-date falls in `[entry_session, back_expiration]` — the full span, because Friday-delivered shares
 ride the weekend. Dates live in config's `dividends` block, declared from the issuer's schedule and
 **refreshed annually by hand**: they cannot be computed and cannot be fetched (no network on a loop
@@ -131,10 +148,11 @@ journaled (`not_weekly_listed`), never traded on the AM monthly.
 
 **Liveness is published, not inferred.** The loop touches `state/calendars.heartbeat` at the **top
 of every tick, before any gate**, and the supervisor measures silence against it. **Never make this
-loop's log carry reliability meaning again**: every log line is event-driven, and supervising on it
-once had the loop restarted every two minutes, losing up to 61% of a session's ticks (history doc).
+loop's log carry reliability meaning again**: every log line is event-driven, so a week holding no
+position writes nothing and a healthy quiet loop looks wedged; supervising on it restarts the loop and
+loses ticks, which would punch holes in the mark path.
 
-## Live-trading prerequisites (user directive 2026-08-16)
+## Live-trading prerequisites
 
 Skipping ex-div weeks is a paper simplification only. Any live path MUST first have (a)
 **post-assignment management** — detecting surprise/early assignment and a defined disposal/repair
@@ -186,6 +204,6 @@ the example is the design document — read its `_note` keys first.
 ## Status
 
 Complete and tested end to end. The policy table is empty until completed weeks exist and
-underpowered until many do. The first scheduled Monday (2026-08-17) took no position
-(`no_fresh_quotes`, journaled `week_skipped_entry_window_exhausted`) — correct behaviour on a stale
-cache, and worth watching on entry Mondays.
+underpowered until many do. A Monday with no fresh option quotes in the cache takes no position
+(`no_fresh_quotes`, journaled `week_skipped_entry_window_exhausted`): correct behaviour on a stale cache,
+and worth watching on entry Mondays.

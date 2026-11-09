@@ -111,7 +111,7 @@ also supported: one arm, one symbol, a worst-case buying-power cap, armed fresh 
 `flies-live` job.
 
 → Depth: [`flies/README.md`](../packages/flies/README.md),
-[`flies/docs/live-trading-plan.md`](../packages/flies/docs/live-trading-plan.md).
+[`flies/docs/live.md`](../packages/flies/docs/live.md).
 
 ## BWB — daily-laddered put broken-wing butterflies (retired 2026-11-08, off by default)
 

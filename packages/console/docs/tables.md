@@ -1,6 +1,6 @@
 # Tables
 
-Moved from the console CLAUDE.md. Read before changing a trade or history table.
+Read before changing a trade or history table.
 
 ## The trade table standard
 
@@ -62,13 +62,13 @@ row never mixes a pill with a box. A select that **sets an option inside a card*
 range, the pager's page size, a Config field) stays `text-input`. A scope select narrowed off its
 default adds `scope-select-off-default`, which reads amber on either class. The pill is capped at
 16rem: a select is as wide as its longest option, and uncapped, MEIC's arm list in the number face
-pushed its header onto a third line and off a phone's edge (2026-10-18).
+pushed its header onto a third line and off a phone's edge.
 
 ## Sorting a table
 
 Sort where ranking is a useful read: money, counts, rates, dates, symbol, arm, prices, sizes. A click
 cycles largest first, smallest first, the table's own order; nulls sink either way; the header is a
-button (`.th-sort`). **Where the rows live decides how** (2026-10-16):
+button (`.th-sort`). **Where the rows live decides how**:
 
 - **A server-paged table sorts on the server, never in the browser.** Sorting one fetched page would
   rank 100 rows and call it the history. `usePage().toggleSort` sends `sort`/`dir` with the page;

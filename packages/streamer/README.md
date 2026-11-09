@@ -90,17 +90,15 @@ never a faster full watchdog tick.
 
 ## Boundaries
 
-- **Exactly one producer writes the cache: this one.** MEIC's in-module rollback streamer was removed
-  on 2026-10-18. Two producers would mean two DXLink connections into one account; a PID
+- **Exactly one producer writes the cache: this one.**
+  Two producers would mean two DXLink connections into one account; a PID
   single-instance guard plus the orchestrator knowing only this producer is what enforces it.
 - **No trading policy lives here.** No account REST poller, no HTTP API, no order path. A module
   declares what it needs in `state/stream_requests/` and reads the cache.
 - **The engine itself is in `cherrypick.core`** (`core.streamer`, `core.streamcache`). Do not fork it
   into this package — the GEX math once drifted ~75× when it was copied.
 
-Development guidance and the full invariant list: [CLAUDE.md](CLAUDE.md). Why the streamer was split
-out of MEIC: [docs/history/streamer-package-plan.md (tag archive/docs-2026-11)](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/history/streamer-package-plan.md). The
-incidents behind the rules: [docs/history.md](docs/history.md).
+Development guidance and the full invariant list: [CLAUDE.md](CLAUDE.md).
 
 ## Commands
 

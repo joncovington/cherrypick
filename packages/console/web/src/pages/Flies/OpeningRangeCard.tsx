@@ -40,7 +40,7 @@ export const OPENING_RANGE_HELP: CardHelpContent = {
       <HelpSection title="Raw observations only">
         <p>
           No ATR, no regime, no judgement: the half hour before either entry window opens, as it was. Those definitions live once, in
-          <code> cherrypick.core.openingrange</code>, and the study they feed is declared in <code>flies/docs/openingrange.md</code>. This
+          <code> cherrypick.core.openingrange</code>, and the study they feed is declared in <code>research/openingrange.md</code>. This
           gates nothing.
         </p>
       </HelpSection>

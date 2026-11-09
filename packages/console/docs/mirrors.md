@@ -1,6 +1,6 @@
 # Mirrors and bridges
 
-Moved from the console CLAUDE.md, which keeps the rule: mirror a query, bridge a derivation, and pin
+The console CLAUDE.md keeps the rule: mirror a query, bridge a derivation, and pin
 a mirror with a test against the module itself. These are the current ones.
 
 - `server/test/pmcc-mirror.test.ts` — open count, book set and each book's net vs `run.py headline`,
@@ -18,7 +18,7 @@ a mirror with a test against the module itself. These are the current ones.
   change for flies; the test tolerates a different pick only when both peaks agree to the cent. The
   forest sentence says what the floor knows and no more ("from 7659 upward", "at or below 7645",
   "locked").
-- **Model a trade is bridged** (`services/manageModelBridge.ts`, 2026-11-04): `/api/manage/model`
+- **Model a trade is bridged** (`services/manageModelBridge.ts`): `/api/manage/model`
   runs `python -m cherrypick.manage model` with the name and the leg text, refused here before any
   process starts unless both read as manage reads them (`LEG`, `server/test/manage-model-bridge.test.ts`).
   The pricing is manage's American model and the caps its ruleset's; it prices and sends nothing.

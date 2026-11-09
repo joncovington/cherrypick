@@ -973,7 +973,7 @@ def derive_jobs(
         ),
     )
 
-    # --- flies-intraday-agent: the agent's paper decisions (packages/flies/docs/intraday-agent-plan.md)
+    # --- flies-intraday-agent: the agent's paper decisions (packages/flies/docs/intraday-agent.md)
     flies_on = "flies" in cfgmod.enabled_modules(cfg)
     add(
         "flies-intraday-agent",

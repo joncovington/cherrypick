@@ -20,13 +20,13 @@ That tag is controlled by the top-level `strat_test_portfolio` config key:
 | `strat_test_portfolio` | Behavior |
 |---|---|
 | `"per_strategy"` (default) | Each strategy's trades are tagged `strat_test:<strategy>` (e.g. `strat_test:iron_fly`), so every strategy has its **own** book — its own open positions, P&L ledger, and equity curve. A newly added strategy automatically gets its own stream the first night it fires; nothing else has to be wired up. |
-| `"combined"` | All forced-sampling trades share a single `strat_test` book (the original behaviour). One blended P&L across every strategy. |
+| `"combined"` | All forced-sampling trades share a single `strat_test` book. One blended P&L across every strategy. |
 
-Two books are closed to new entries: `strat_test:atm_calendar` and `strat_test:double_calendar` from
-2026-10-15 (`STRAT_TEST_RETIRED`). `strat_test:expected_move_butterfly` opens from 2026-10-14
-(`STRAT_TEST_STARTS`).
+Three books are closed to new entries (`STRAT_TEST_RETIRED`): `strat_test:atm_calendar` and
+`strat_test:double_calendar` from 2026-10-15, and `strat_test:broken_wing_butterfly` from 2026-10-26.
+`strat_test:expected_move_butterfly` opens from 2026-10-14 (`STRAT_TEST_STARTS`).
 
-The expensive live scan (`rank_strategies.evaluate_symbol` per calendar entry, which makes the
+The expensive scan (`rank_strategies.evaluate_symbol` per calendar entry, which makes the
 tastytrade/DoltHub calls) still runs **once** per night regardless of this setting; the only
 thing `strat_test_portfolio` changes is how the resulting trades are bucketed for reporting.
 Per-strategy is the default because the whole point of the test is to judge strategies
@@ -44,10 +44,10 @@ Reporting and the orchestrator's read side group by that per-strategy book tag:
   harness ran in `per_strategy` or `combined` mode. Narrow to one strategy with `--strategy
   <name>`, or to a date range with `--since YYYY-MM-DD`.
 - The orchestrator's `report` and `calibrate` read the same paper ledger and group by the same
-  book tags. Because each strategy is now its own book rather than a rung on a risk ladder,
+  book tags. Because each strategy is its own book rather than a rung on a risk ladder,
   `calibrate` gives **per-book readings only** — there's no "graduate to the next rung"
-  promotion for the earnings module (the earnings calibration ladder in the orchestrator config
-  was emptied deliberately; see the [orchestrator](../../orchestrator) docs).
+  promotion for the earnings module (its calibration ladder in the orchestrator config is empty;
+  see the [orchestrator](../../orchestrator) docs).
 
 `db_paper.py get_pnl_summary` exposes the same split directly via its `by_profile` breakdown
 (and `--profile <book>` / `--strategy <name>` filters) for a quick raw-P&L check.
@@ -56,10 +56,9 @@ Reporting and the orchestrator's read side group by that per-strategy book tag:
 
 ## Attribution: the `arm` column
 
-Every forced-sampling trade and every `scan_log` row carries the `arm` column (named `profile` until
-2026-09-24; the report flags are still spelled `--profile`) that holds its
-book tag (`strat_test:<strategy>` in per-strategy mode, `strat_test` in combined mode; the
-production paper/live loop uses `'default'`). `trades` also carries `quantity` and
+Every forced-sampling trade and every `scan_log` row carries the `arm` column (the report
+flags are still spelled `--profile`) that holds its book tag (`strat_test:<strategy>` in per-strategy
+mode, `strat_test` in combined mode; the ranked production path uses `'default'`). `trades` also carries `quantity` and
 `capital_at_risk` from `sizing.compute_position_size`. This is what lets a single shared
 `paper_trades.db` hold every strategy's book side by side without a schema change per strategy —
 the reporting layer just filters on `arm`.
@@ -87,7 +86,7 @@ one contract controls 100 shares.
 
 Every strategy is defined-risk, so max loss comes straight from the order's own
 strikes/debit — there is no naked/undefined-risk margin proxy. The BWB gap approximation is
-an **estimate** to be refined once real paper fills accumulate.
+an **estimate**.
 
 ---
 

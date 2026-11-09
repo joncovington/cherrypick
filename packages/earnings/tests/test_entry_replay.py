@@ -1,4 +1,4 @@
-"""Phase 3 of the control-book plan: scoring a proposed entry screen over recorded outcomes.
+"""The entry replay: scoring a proposed entry screen over recorded outcomes.
 
 The rule this module exists to carry, and the one most likely to erode: a name that was never traded
 has no return. Widening the control lifts that only for names inside the new bar; everything outside

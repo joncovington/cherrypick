@@ -32,7 +32,7 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
             By put-call parity a deep call plus a short in-the-money weekly call is a short weekly put plus a far
             out-of-the-money long put: the position earns the variance premium on the weekly, with a crash floor far
             below. Whether that premium is there is exactly what the short leg tests; the replay behind these arms
-            found it turns on the implied-volatility level (packages/pmcc/docs/shield-study.md).
+            found it turns on the implied-volatility level (research/pmcc-shield-study.md).
           </p>
           <p className="muted">
             {symbols.length > 0 ? symbols.join(", ") : "No symbols configured"} — one position per symbol and arm

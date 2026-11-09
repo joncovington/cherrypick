@@ -28,7 +28,7 @@ export const TESTED_STATUS: Readonly<Record<string, TestedStatus>> = {
   pmcc: {
     words:
       "No tested edge in the short calls: their edge in history rests on the implied-vol assumption, and the roll policy and the dynamic short delta were both studied and closed.",
-    source: "packages/pmcc/docs/shield-study.md",
+    source: "research/pmcc-shield-study.md",
   },
   calendars: {
     words: "Not tested for edge: the replay matches the paper ledger to the cent, but no study has asked whether the double calendar pays.",

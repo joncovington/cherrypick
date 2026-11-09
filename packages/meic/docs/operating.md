@@ -49,7 +49,7 @@ Before committing real capital, run the parallel-shadow paper engine. It evaluat
 
 **Inside the suite (the normal setup), there is nothing to start.** The orchestrator's supervisor — installed by the suite installer through `run.py install` — runs the paper loop as its `meic-paper` job: a short-lived `python -m cherrypick.meic.paper_loop --once` process every 60 seconds (`modules.meic.paper.tick_interval_seconds`), headless, time-gated to market hours and self-healing. The OS scheduler holds one entry for the whole suite, not one per module. The supervisor also restarts a stalled streamer, sends notifications, and adds the cross-module read side (`cherrypick report` / `calibrate` / the console). It drives this module by subprocess only — it never places live orders or edits this config. To stop paper collection, switch the module off (`modules.meic.enabled` in `~/.cherrypick/config.json`).
 
-At the 16:00 ET settlement pass the loop rolls the session into `daily_summary`, which is what the suite review (`packages/review`) reads for this module. The module's own EOD reports were retired 2026-08-13.
+At the 16:00 ET settlement pass the loop rolls the session into `daily_summary`, which is what the suite review (`packages/review`) reads for this module. The module writes no paper EOD report of its own.
 
 Manage the session directly:
 
@@ -59,13 +59,13 @@ python -m cherrypick.meic.paper_loop --once            # run a single manual ite
 python -m cherrypick.review build --session <date>     # the suite review for one session (all modules)
 ```
 
-For a multi-day, profile-by-profile performance write-up (equity curves, risk-adjusted metrics, graduation-gate checklist):
+For a multi-day, arm-by-arm performance write-up (equity curves, risk-adjusted metrics, graduation-gate checklist):
 
 ```
 /paper-report
 ```
 
-**Standalone (no supervisor).** Run `python -m cherrypick.meic.paper_loop` in a terminal, or wire a cron job to `--once`. The loop's own Windows scheduled task (`--install-task`) was removed on 2026-10-08; the supervisor is the unattended driver on every OS. See [paper-trading.md](paper-trading.md) for the engine design, fee model and graduation criteria.
+**Standalone (no supervisor).** Run `python -m cherrypick.meic.paper_loop` in a terminal, or wire a cron job to `--once`. The module has no scheduled task of its own; the supervisor is the unattended driver on every OS. See [paper-trading.md](paper-trading.md) for the engine design, fee model and graduation criteria.
 
 ---
 
@@ -116,11 +116,9 @@ for what each holds).
 
 The console reads `meic_trades.db` and `paper_trades.db` from the data home
 (`~/.cherrypick/data/meic/` by default), read-only. In paper scope the Performance view can be
-filtered by risk profile as well as by symbol.
+filtered by arm as well as by symbol.
 
-The compact suite-dashboard card this module used to emit (`cherrypick.meic.section`) went with the
-suite dashboard on 2026-08-12. The console reads the ledger directly, so there is no payload to keep
-in sync any more — which is why deleting the card cost nothing.
+The console reads the ledger directly, so there is no section payload to keep in sync.
 
 ---
 
@@ -158,10 +156,9 @@ You can also trigger it manually at any time. `/eod-report` accepts a scope argu
 /eod-report paper --date 2026-07-08
 ```
 
-The **live** report is a plain-English synthesis (agent-written). This module's own paper reports
-(`paper-eod-<date>.md`, `eod-analysis-<date>.md`) were retired 2026-08-13; the suite review
-(`packages/review`) now covers MEIC, flies and earnings in one versioned fact set, with MEIC split by
-arm. `python -m cherrypick.review build --session <d>`.
+The **live** report is a plain-English synthesis (agent-written). Paper is reported by the suite review
+(`packages/review`), which covers MEIC and the other modules in one versioned fact set, with MEIC split
+by arm. `python -m cherrypick.review build --session <d>`.
 
 The suite review builds on the ledger directly — see the suite
 [reporting docs](../../../docs/reporting-and-dashboard.md).

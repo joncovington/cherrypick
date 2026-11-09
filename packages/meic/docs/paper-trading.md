@@ -1,15 +1,13 @@
-# Paper-Trading Multi-Profile Evaluation
+# Paper-Trading Multi-Arm Evaluation
 
 **What this covers:** how MEIC's simulated (no real money) trading works, why it uses a custom
-engine instead of the broker's own sandbox, and the bar a risk profile has to clear before it's
+engine instead of the broker's own sandbox, and the bar an arm has to clear before it's
 trusted with real capital. Part of the [MEIC module](../README.md) in the cherrypick suite.
 
 Capital-free evaluation of every enabled arm in the registry (`control` on a base install; see
 `docs/paper-experiments.md` for how arms are designed) on identical market conditions. A graduated
-arm reaches live by being named in `live.arm`, with live-only sizing in the `live` block. The
-four-tier risk ladder this document originally evaluated (conservative / moderate / aggressive /
-very-aggressive) has been disabled for paper since 2026-08-07 and no longer ships (see
-`docs/risk-profiles.md`). This document
+arm reaches live by being named in `live.arm`, with live-only sizing in the `live` block. (The
+example preset ladder in `docs/risk-profiles.md` is not part of paper.) This document
 is the operating reference; `.claude/commands/paper-loop.md` and `.claude/commands/paper-report.md`
 are the operational skills.
 
@@ -29,13 +27,13 @@ quotes**, and only stubbing the two broker-mutating calls (submit, close).
   VIX, GEX) and evaluates **every enabled arm independently against it** — they're virtual
   sub-accounts with no shared capital constraint, so all of them can hold positions on the same
   day. This removes market-regime confounding between streams and needs far fewer calendar
-  weeks than testing profiles sequentially.
+  weeks than testing arms sequentially.
 - **Deterministic, not agent-judged.** `cherrypick/meic/paper.py`'s gate evaluator and fill/exit engine
   encode a fixed policy: wing width = the widest candidate in the arm's `wing_widths_by_symbol` (or
   its `wing_width_points`) that clears its fee-aware credit floor; entry price = mid less
   `slippage_frac_of_spread` × the leg spreads; no discretionary skips.
-  This means paper results measure the **profile parameters**, reproducibly — not the live
-  agent's session-by-session judgment, which sits on top of a graduated profile afterward.
+  This means paper results measure the **arm parameters**, reproducibly — not the live
+  agent's session-by-session judgment, which sits on top of a graduated arm afterward.
 - **Isolated storage.** All paper (and replay) trades live in `paper_trades.db` in the data home
   (`~/.cherrypick/data/meic/` by default; see [`cherrypick/meic/paths.py`](../src/cherrypick/meic/paths.py)), written via
   `db.call()` (`cherrypick/meic/db.py`) — an in-process dispatcher, not a subprocess per write —
@@ -60,12 +58,9 @@ Paper P&L is net of the **exact tastytrade fee schedule** (`paper.open_fees`,
   full-IC close closes 4. (MEIC has no profit-target close.)
 - **Expired / settled:** $5 per ITM strike among the sides held to settlement, never per
   contract (the broker settles each option symbol as one event); an OTM leg costs nothing.
-  Charged nothing at all until 2026-09-24 ("expiration is not a transaction"), which was right
-  for an OTM leg and wrong for an ITM one -- 2,379 ITM settlements went uncharged, $11,895.
-  History was re-settled the same day (`scripts/archive/meic_resettle_expiry_fees.py`: fees only, `pnl`
-  untouched, `daily_summary` rebuilt, 99 rows with no recorded settlement price left as they
-  were), so rows on both sides of the fix mean the same thing and no measurement break was
-  journaled.
+  Expiry is a transaction for an ITM strike and not for an OTM one. Settlement fees are charged
+  from 2026-09-24; history was re-settled for it (fees only, `pnl` untouched), so rows on both sides
+  of that date mean the same thing and no measurement break was journaled.
 
 This means a stopped IC correctly pays open+close costs and an expired IC pays open plus its ITM
 settlement,
@@ -74,7 +69,7 @@ negative — net P&L instead of an optimistic flat-average estimate.
 
 ## SPX historical replay
 
-> ⚠️ **Disabled by policy — do not run against 0DTESPX (ToS-incompatible, confirmed 2026-07-13).**
+> ⚠️ **Disabled by policy — do not run against 0DTESPX (ToS-incompatible).**
 > `cherrypick/meic/paper_replay.py`'s design (systematically walking past sessions, caching each day locally,
 > deriving a local dataset) is exactly what 0DTESPX's acceptable-use policy forbids — "bulk
 > extraction of the historical dataset is not permitted, at any pace … building a local copy or a
@@ -155,7 +150,7 @@ escalates a failed close to `CRITICAL` (see CLAUDE.md Step 2 / stop-management.m
 
 ## Metrics & graduation gate
 
-Virtual bankroll: **$100,000 per profile**. A profile is eligible for live only when **all six**
+Virtual bankroll: **$100,000 per arm**. An arm is eligible for live only when **all six**
 hold, net of fees, over the test window:
 
 | Gate | Threshold | Rationale |
@@ -192,7 +187,7 @@ likely overfit), avg-win/avg-loss, max consecutive losses, realised-vs-unrealise
   computed price — the single biggest realism gap versus Tier-1 broker simulators (which model
   volume-weighted slippage and land within ~8–12% of live). The graduation discount is what
   covers it.
-- **Deterministic ≠ the live agent.** The engine measures profile *parameters* with judgment
+- **Deterministic ≠ the live agent.** The engine measures arm *parameters* with judgment
   held constant; the live agent's session-by-session discretion sits on top of a graduated
   profile, so paper P&L is a mechanical baseline, not a live forecast.
 - **Replay's GEX and VIX1D-ratio gates never fire** (data unavailable) — replay entry

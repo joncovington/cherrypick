@@ -9,7 +9,7 @@ by which rule, and how sure is the ruleset** — the question that was being ans
 position at a time, with the rules re-derived each time.
 
 **It is advice, and read-only.** It evaluates a snapshot file and writes only into
-`~/.cherrypick/data/manage`, plus its own stream request (`stream_request.py`, 2026-10-22): the newest
+`~/.cherrypick/data/manage`, plus its own stream request (`stream_request.py`): the newest
 evaluation's held legs, their underlyings and the benchmark as quote-only `legs`, never `symbols`, so
 the console can mark them live between runs. A re-run of a past session does not rewrite it. It has
 no broker credentials and no network: the snapshot is taken by
@@ -40,7 +40,7 @@ import it. The closing order an evaluation lists is what a person would enter, p
   when, against which snapshot and how many legs moved.
 
 The legs `exclude.zero_dte_underlyings` leaves out are not dropped silently: each account's
-`zero_dte` block (`zerodte.py`, 2026-11-03) splits today's fills on them into the live loops' (order
+`zero_dte` block (`zerodte.py`) splits today's fills on them into the live loops' (order
 ids the loops publish, snapshot v16 `live_known_orders`) and the hand's, and reconciles the hand's
 against what is held. It judges nothing; the console's Live → today hand row reads it. Legs that
 expired on an earlier day (the broker lists them until it processes the expiry) are set aside in
@@ -78,7 +78,7 @@ of that day, not today's.
 - **A PMCC is recognised, never assumed** (`pmcc.py`). The shape is a call diagonal; it is a PMCC only
   when the long's delta at entry clears the floor, or an intent says `"pmcc"`: `trades.<LONG CONTRACT>`
   for that PMCC alone, beating `positions.<SYMBOL>` for the name. A rolled long is a new PMCC and does
-  not inherit its old contract's intent (user, 2026-11-06), but its money does: the chain runs back
+  not inherit its old contract's intent, but its money does: the chain runs back
   through a roll in one order, or one in two orders that `trades.<NEW LONG>.continues` confirms; an
   unconfirmed one is flagged (`possible_roll`), never stitched on a guess. That
   delta is recorded once from the first full snapshot after the fill (`entrydelta.py`, the store

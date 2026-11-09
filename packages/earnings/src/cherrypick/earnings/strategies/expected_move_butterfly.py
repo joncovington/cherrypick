@@ -2,7 +2,7 @@
 fly above when the read is bullish, a put fly below when it is bearish -- opened the afternoon
 before the print and held to the expiry close or a take-profit. Paper only.
 
-**What history says before this runs** (packages/earnings/docs/expected-move-fly-plan.md,
+**What history says before this runs** (packages/earnings/docs/expected-move-fly.md,
 scripts/emfly_history.py, 4,950 events 2020-2026): at mid the fly is fairly priced, costs take
 16-18% of the debit, and a side call needs to be right 68-83% of the time to break even; the best
 signal found is right about 53%. This book exists to measure real fills against that, not because

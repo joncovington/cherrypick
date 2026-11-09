@@ -28,7 +28,7 @@ ARMS = ("control", "shield", "shield_hold", "shield_guard")
 # into a copy of control -- which `defaults` alone would make it, with a P&L that still looks
 # plausible. Open positions are managed through the same merge (`management.effective_params`), so
 # an arm dropped from the config still manages what it holds by its own rules. The values are the
-# shield study's (docs/shield-study.md): a year-long long chosen by delta alone (no extrinsic
+# shield study's (research/pmcc-shield-study.md): a year-long long chosen by delta alone (no extrinsic
 # fallback) in 0.88-0.92, nearest 0.90 -- the source design's own "90ish" (0.90-0.95, nearest 0.925, until the
 # 2026-10-06 boundary) -- a 0.70-delta weekly short, its 30% stop; `shield` alone rolls early (at 85%
 # of the short's extrinsic decayed, or on a breach). The delta is the broker's, as the live loop will

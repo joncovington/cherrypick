@@ -22,8 +22,7 @@ video was read off its page.
 | [`packages/meic/CLAUDE.md`](../packages/meic/CLAUDE.md), [`docs/agent-loop.md`](../packages/meic/docs/agent-loop.md) and [`docs/reference.md`](../packages/meic/docs/reference.md) | The operating contract: the guardrails (CLAUDE.md), the agent loop step by step (agent-loop.md), the full config table with every key's meaning and default (reference.md), and the pinned decisions (e.g. the stop basis is fixed in code, never a config choice). |
 | [`packages/meic/docs/strategy.md`](../packages/meic/docs/strategy.md) (188 lines) | **The strategy document.** IC structure, delta targeting with the VIX-banded scale, session classification, OTM guardrails, the entry price strategies against CBOE Complex Order Book constraints, stop management with the tightening triggers, post-stop evaluation, and the three exit paths (no profit target; cash-settled symbols expire, physically settled force-closed). |
 | [`packages/meic/GATES.md`](../packages/meic/GATES.md) (416 lines) | The complete entry-gate catalog: 33 gates in 12 sections, in evaluation order, each with trigger, effect, config key, rationale and IC/ORB impact. |
-| [`packages/meic/docs/paper-experiments.md`](../packages/meic/docs/paper-experiments.md) | The study record: the breakeven identity the module sits against, the 2026-08 four-stream forward test, and the four derived stop policies (`stop-none`, `stop-0.75-net`, `stop-2.0-side`, `strike-touch`) computed read-side from recorded paths. |
-| [`packages/meic/docs/history.md`](../packages/meic/docs/history.md) | The dated narrative behind each rule, with the numbers (the 2026-06-30 fee floor's origin, the 2026-07-01 streamer stall that produced `stale_warning`, …). |
+| [`packages/meic/docs/paper-experiments.md`](../packages/meic/docs/paper-experiments.md) | How the paper arms are designed and read: the breakeven identity the module sits against, the independent-sampling model, and the four derived stop policies (`stop-none`, `stop-0.75-net`, `stop-2.0-side`, `strike-touch`) computed read-side from recorded paths. |
 | [`docs/strategy-engines.md`](strategy-engines.md) | The suite-level summary of what MEIC trades and how it gates. |
 
 ### The strategy in brief
@@ -84,7 +83,6 @@ cited for them. Same for the delta scale and every gate value.
 | [`packages/bwb/README.md`](../packages/bwb/README.md) | The structure, the four books and the live pilot's rulebook in plain terms — start here. |
 | [`packages/bwb/CLAUDE.md`](../packages/bwb/CLAUDE.md) | The full experiment design: the base structure strike by strike, the four triggers in one table, the add-on lifecycle, the honesty rules (the trigger-tick substrate that makes a read-side threshold replay possible, `addon_missed`, fire counts as the honest sample), the live-path contract. |
 | [`packages/bwb/config.example.json`](../packages/bwb/config.example.json) | **"The example's `_note` keys are the design document"** — every parameter's meaning, its default and the reason it cannot be otherwise (why `credit_floor` is a declared zero, why `delta` and `bounce` differ by exactly one condition, why `flip_buffer` is 1.001). |
-| [`packages/bwb/docs/history.md`](../packages/bwb/docs/history.md) | The lineage section and the incident narratives: the trigger ticks that measured nothing for four sessions, the add-on that could never price (SPX vs SPXW roots), the missed-add-on rule born of the 2026-10-08 power outage. |
 | [`docs/strategy-engines.md`](strategy-engines.md) | The suite-level summary. |
 
 ### The strategy in brief
@@ -107,7 +105,7 @@ that blocks entries only.
 
 - **2026-08-22** — a "1-3-2 put condor" is floated as a fourth book for `packages/ratios`.
 - **`22ec497d` (2026-08-23) — "add bwb and curve modules."** bwb absorbs and supersedes the float.
-  Per [`docs/history.md`](../packages/bwb/docs/history.md)'s lineage section, what survived of the
+  Per [`packages/bwb/CLAUDE.md`](../packages/bwb/CLAUDE.md), what survived of the
   condor is exactly three things: the 1-3-2 shape, the add-on as a plain matched vertical (which
   keeps the combined position defined-risk by construction), and the reversal-not-falling-knife entry
   philosophy. It shipped with the four books already the experiment's design; `ratios` kept jade
@@ -163,12 +161,12 @@ genre. The experiment is the suite's; the structure is the genre's.
 
 | File | What it holds |
 |---|---|
-| [`packages/earnings/README.md`](../packages/earnings/README.md) | Plain-language start: what the module does, paper vs live, the Dolt dependency. |
-| [`packages/earnings/CLAUDE.md`](../packages/earnings/CLAUDE.md) | The operating contract: the six strategies, the engine-vs-strategy split, the unattended paper loop's clock-derived phases, the advised-twin mechanism. |
+| [`packages/earnings/README.md`](../packages/earnings/README.md) | Plain-language start: what the module does (paper-only), the Dolt dependency. |
+| [`packages/earnings/CLAUDE.md`](../packages/earnings/CLAUDE.md) | The operating contract: the seven strategies, the engine-vs-strategy split, the unattended paper loop's clock-derived phases, the advised-twin mechanism. |
 | [`packages/earnings/docs/screening-criteria.md`](../packages/earnings/docs/screening-criteria.md) | **The declared source of truth for the screen**: Layer 0 (which names reach the screen at all — the AMC-never-BMO assumption for Dolt's mostly-NULL `when` column), the seven hard filters, the five soft criteria with their three strictness levels. |
 | [`packages/earnings/docs/05-strategies.md`](../packages/earnings/docs/05-strategies.md) | Each strategy's structure, entry gates and exits with worked examples — and, unusually, a house-rules admission wherever no published study exists. |
-| [`packages/earnings/docs/strategy-optimization.md`](../packages/earnings/docs/strategy-optimization.md) | Research-backed optimization hypotheses, each with the literature behind it and a **Sources** section — the module's own literature review. |
-| [`packages/earnings/docs/strategy-testing-plan.md`](../packages/earnings/docs/strategy-testing-plan.md) | The forward test: strat_test force-samples all six strategies nightly, so every hypothesis gets a sample. |
+| [`packages/earnings/docs/strategy-optimization.md`](../packages/earnings/docs/strategy-optimization.md) | Research-backed optimization hypotheses, each with the literature behind it; the written sources are credited below. |
+| [`packages/earnings/docs/strategy-testing-plan.md`](../packages/earnings/docs/strategy-testing-plan.md) | The forward test: strat_test force-samples every strategy nightly, so every hypothesis gets a sample. |
 | [`packages/earnings/docs/10-exits.md`](../packages/earnings/docs/10-exits.md) | The full exit ladder: expiry close, pin guard, per-strategy target/stop, session cap, the PEAD gate, and the execution gates that hold a decided close. |
 
 ### The strategy in brief
@@ -221,7 +219,7 @@ move-dispersion. Two real bugs were found during the reimplementation, including
 sign-convention error that initially rejected exactly the candidates the screen exists to find.
 
 **The written sources the module itself cites.** [`docs/strategy-optimization.md`](../packages/earnings/docs/strategy-optimization.md)
-closes with a Sources section backing each hypothesis: iron condor/fly earnings mechanics and the
+draws on these written sources, credited here only: iron condor/fly earnings mechanics and the
 50–75% earnings profit target (apexvol.com, optionsamurai.com, projectoption.com, schwab.com),
 calendar term-structure and DTE spacing (steadyoptions.com, optionstradingiq.com, MenthorQ's
 [ACES earnings-calendar guide](https://menthorq.com/guide/aces-earnings-calendar-strategy/)), skew
@@ -280,14 +278,10 @@ has never referenced.
 
 | File | What it holds |
 |---|---|
-| [`packages/flies/README.md`](../packages/flies/README.md) (222 lines) | "The idea in plain terms" and the two ways a credit is manufactured — start here. |
-| [`packages/flies/CLAUDE.md`](../packages/flies/CLAUDE.md) and [`docs/reference.md`](../packages/flies/docs/reference.md) | The full statement: what the strategy actually is and the honesty rules (CLAUDE.md); **"The arms"** (the canonical arm list) and the layout (reference.md). |
+| [`packages/flies/README.md`](../packages/flies/README.md)  | "The idea in plain terms" and the two ways a credit is manufactured — start here. |
+| [`packages/flies/CLAUDE.md`](../packages/flies/CLAUDE.md) and [`docs/reference.md`](../packages/flies/docs/reference.md) | The full statement: what the strategy actually is and the honesty rules (CLAUDE.md); **"The arms"** (the canonical arm list), the completion-timing rule, the iron arm's negative result and the layout (reference.md). |
 | [`packages/flies/docs/faq.md`](../packages/flies/docs/faq.md) | The strategy explained question by question, including why only SPX/XSP (European, cash-settled) and never SPY or /ES-/MES futures options. |
-| [`packages/flies/docs/history.md`](../packages/flies/docs/history.md) (850 lines) | The verbatim dated record every rule came from — including the 2026-08-01 XSP→SPX switch (fees 41.4% drag vs 10.9%). |
-| [`packages/flies/docs/experiment-log.md`](../packages/flies/docs/experiment-log.md) | The append-only per-session record since 2026-07-20 — the evidence behind the standing conclusions. |
-| [`packages/flies/docs/completion-timing.md`](../packages/flies/docs/completion-timing.md) | Why the completion gate is first-qualifying-tick, measured and then confirmed against the optimal-stopping literature. |
-| [`packages/flies/docs/iron-completion.md`](../packages/flies/docs/iron-completion.md) | The retired iron arm's negative result, kept as required. |
-| [`packages/flies/docs/live-trading-plan.md`](../packages/flies/docs/live-trading-plan.md) | The Gate-0 statistical bar and the live pilot's rulebook. |
+| [`packages/flies/docs/live.md`](../packages/flies/docs/live.md) | The Gate-0 statistical bar and the live pilot's rulebook. |
 | [`packages/flies/tests/fixtures/books.json`](../packages/flies/tests/fixtures/books.json) | **Three real tastytrade order chains, transcribed** — the strategy's origin artefact, shipped as regression fixtures. |
 
 ### The strategy in brief
@@ -316,15 +310,14 @@ a physically settled symbol would deliver shares or a futures position instead o
 This is the honest answer to "which study or video is flies based on": **none is cited, and the
 origin commit says why** — the structure came out of real order chains the operator had placed, not
 out of a published method. The distinctive pieces (the debit-first 15-delta OTM pair, the bwb roll,
-the completion gates, the arm methodology) are the suite's own, measured in the experiment log.
+the completion gates, the arm methodology) are the suite's own, measured in the module's own ledgers.
 
 ### External references the repo cites
 
 - **du Toit & Peskir, "Selling a stock at the ultimate maximum"** — *The Annals of Applied
   Probability* 2009, Vol. 19, No. 3, pp. 983–1014 (arXiv:[0908.1014](https://arxiv.org/abs/0908.1014),
   DOI [10.1214/08-AAP566](https://doi.org/10.1214/08-aap566)). Cited in
-  [`docs/completion-timing.md`](../packages/flies/docs/completion-timing.md) under "What the theory
-  says": the finite-deadline optimal-stopping result is bang-bang in the drift — against adverse
+  [`docs/reference.md`](../packages/flies/docs/reference.md) under "Completion timing": the finite-deadline optimal-stopping result is bang-bang in the drift — against adverse
   drift, sell immediately (first-qualifying-tick is optimal, which is what the ledger found);
   under favorable drift, the optimal rule is a trailing retracement from the running maximum,
   tightening to zero as the deadline approaches. That second branch is why the door stays open on
@@ -425,7 +418,7 @@ failed our replay after costs, on our data, and nothing more.
 
 | Source | Link | What we took | What we measured |
 |---|---|---|---|
-| **Theta Profits** (YouTube interview channel), the "Income Shield" video with its host, Tom King | [P43DluId17o](https://www.youtube.com/watch?v=P43DluId17o) | The held-long PMCC: a ~1-year call near 0.90 delta, a ~0.70-delta weekly call sold against it | Our replay against the suite's older PMCC arm, then paper arms since 2026-10-06: [`packages/pmcc/docs/shield-study.md`](../packages/pmcc/docs/shield-study.md). The held long does most of the work; the short's edge rests on the IV assumption |
+| **Theta Profits** (YouTube interview channel), the "Income Shield" video with its host, Tom King | [P43DluId17o](https://www.youtube.com/watch?v=P43DluId17o) | The held-long PMCC: a ~1-year call near 0.90 delta, a ~0.70-delta weekly call sold against it | Our replay against the suite's older PMCC arm, then paper arms since 2026-10-06: [`research/pmcc-shield-study.md`](../research/pmcc-shield-study.md). The held long does most of the work; the short's edge rests on the IV assumption |
 | **Theta Profits**, the 0DTE break-even iron condor interview | [Fj41ojAdwJ8](https://www.youtube.com/watch?v=Fj41ojAdwJ8) | An hourly 0DTE condor whose per-side stop equals the whole credit | The rules as stated and the proposed MEIC arm: [`breakeven-condor.md`](../research/breakeven-condor.md); items 41 and 42 of [`edge-hypotheses-plan.md`](../research/edge-hypotheses-plan.md) test it after costs |
 | **Theta Profits**, the twenty-interview review (2024-09 to 2026-06) | [thetaprofits.com](https://www.thetaprofits.com/) | A list of ideas, each stated as the edge it would need | [`edge-hypotheses-plan.md`](../research/edge-hypotheses-plan.md), every item with its declared test and result |
 | The skate objective, from two public videos: "Stop Picking Wheel Strategy Strikes by Delta" (Theta Profits) and "Ep73 - My Exact Process for Trading Covered Calls" (Market Taker Mentoring) | [pd6KYv5O0b4](https://www.youtube.com/watch?v=pd6KYv5O0b4), [_7sX9naKTaE](https://www.youtube.com/watch?v=_7sX9naKTaE) | Short strikes sold outside the stock's recent range, and the covered-call process around them | [the skate screen](../packages/technicals/docs/reference.md); the range band matches delta on average and does not beat it |
@@ -446,7 +439,7 @@ against it. Every named source found:
 
 | Module | Source | Where recorded |
 |---|---|---|
-| **PMCC** | Tom King's "Income Shield" (Theta Profits, [video `P43DluId17o`](https://www.youtube.com/watch?v=P43DluId17o)): a ~1-year call at about 0.925 delta, a ~0.70-delta weekly call sold against it | [`packages/pmcc/docs/shield-study.md`](../packages/pmcc/docs/shield-study.md) |
+| **PMCC** | Tom King's "Income Shield" (Theta Profits, [video `P43DluId17o`](https://www.youtube.com/watch?v=P43DluId17o)): a ~1-year call at about 0.925 delta, a ~0.70-delta weekly call sold against it | [`research/pmcc-shield-study.md`](../research/pmcc-shield-study.md) |
 | **ivan** (shelved /NQ proposal; TQQQ version proposed 2026-11-02) | Rob and Maria Helmick, "Math Makes Money" on YouTube, described in full on Theta Profits' *My Trade* segment recorded 2026-09-14 — their own parameter table is carried, thresholds converted to percentages. Maria's written entry rules come from the Math Makes Money newsletter, Issue 32 (2026-07-07) | [`docs/history/ivan-plan.md (tag archive/docs-2026-11)`](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/history/ivan-plan.md) |
 | **volcrush** (plan-only branch) | Option Omega's "Tasty Vol Crush" — an SPX short-call backtest, 2013–2026 | commit `e51318bf`, 2026-10-09 |
 | **GEX engine** | What gexbot.com, SpotGamma and MenthorQ sell — a self-hosted lightweight take | [`packages/gex/README.md`](../packages/gex/README.md) |

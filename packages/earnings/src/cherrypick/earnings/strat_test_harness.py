@@ -306,7 +306,7 @@ def _entry_context(criteria: dict, composite_score) -> dict:
 
 # --- Per-symbol entry review (the data reviewed for a symbol + the chosen/rejected decision) ---------
 # Strategies retired from strat_test, each with the first session it opens nothing (2026-10-12,
-# docs/operating-history.md). Dated in code because the registry has no per-strategy switch and a
+# docs/measurement-boundaries.md). Dated in code because the registry has no per-strategy switch and a
 # deleted `strategies.<name>` block would raise rather than disable; dated so it can merge before the
 # boundary and bind on it. The 20-session review in the config's own note set the rule: fewer than 5
 # entries, or losing, retires the calendars. Through 10-12 atm_calendar ran 56 trades at 21% won for
@@ -330,7 +330,7 @@ def strategy_retired(strategy_name: str, session: str) -> bool:
 # dated-in-code shape as STRAT_TEST_RETIRED. Before that session the screen row is still written and
 # the opening is refused as an execution-stage `strategy_not_started` drop. expected_move_butterfly
 # starts 2026-10-14, ahead of the 10-19 boundary at the operator's request, under its own
-# `strat_test_strategies` break (docs/operating-history.md).
+# `strat_test_strategies` break (docs/measurement-boundaries.md).
 STRAT_TEST_STARTS = {"expected_move_butterfly": "2026-10-14"}
 
 
@@ -750,7 +750,7 @@ def cmd_run_entries(args) -> dict:
                 drop("strategy_not_started")
                 continue
             # From 2026-10-28 only a name the suite's liquidity verdict calls tradable opens
-            # (universe.py; docs/operating-history.md). The advised twins open only beside this
+            # (universe.py; docs/measurement-boundaries.md). The advised twins open only beside this
             # entry, so they are gated with it.
             refused = universe.refusal(symbol, scan_date, verdict)
             if refused:

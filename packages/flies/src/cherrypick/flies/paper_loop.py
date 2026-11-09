@@ -266,7 +266,7 @@ def _note_completion_rule(conn, config: dict) -> None:
                 "unchanged, the price is the resting limit live fills at instead of the modelled debit "
                 "(about $4 a completion less); completion P&L either side of it is not poolable"
             ),
-            detail="docs/fill-model.md; live: 42 of 42 completions 2026-08-03..10-02 filled at their limit",
+            detail="docs/reference.md, Fill realism",
         )
     except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
         _log(f"completion-rule journaling failed (non-fatal): {type(exc).__name__}: {exc}")
@@ -280,7 +280,7 @@ INTRADAY_ARMS = ("trend-rule", "intraday-agent")
 
 
 def _note_intraday_arms(conn, config: dict) -> None:
-    """Journal the intraday-agent plan's two arms onto the roster (docs/intraday-agent-plan.md), once
+    """Journal the intraday-agent plan's two arms onto the roster (docs/intraday-agent.md), once
     a machine's config enables them. Each is control plus one variable, so control's numbers mean
     what they meant; the arms' own books start at their first session. Idempotent, best-effort."""
     try:
@@ -368,7 +368,7 @@ def _note_gex_surface_rule(conn) -> None:
                 "entry_/completion_gex_* tags either side of it are not poolable"
             ),
             detail=(
-                "docs/experiment-log.md 2026-10-05: OI held to the 1800 s gamma limit dropped 124 of 202 "
+                "OI held to the 1800 s gamma limit dropped 124 of 202 "
                 "rows that afternoon; control's stored net GEX had the recorder's opposite sign on 47 of 348 entries"
             ),
         )
@@ -517,7 +517,7 @@ def _note_live_shadow_arm(conn, config: dict) -> None:
                 f"{live.get('completion_cutoff') or engine.LIVE_DEFAULT_COMPLETION_CUTOFF}, buying-power cap "
                 f"${live.get('max_open_margin_dollars')}); read against the live ledger, not control"
             ),
-            detail="docs/experiment-log.md 2026-10-12; tests/test_live_shadow.py lists what paper cannot express",
+            detail="docs/reference.md, The arms; tests/test_live_shadow.py lists what paper cannot express",
         )
     except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
         _log(f"live-shadow arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
@@ -547,7 +547,7 @@ def _note_range_centre_arm(conn, config: dict) -> None:
                 f"centre sits more than center_above_spot_max ({arm.get('center_above_spot_max')}) points "
                 "above spot"
             ),
-            detail="docs/experiment-log.md 2026-10-14",
+            detail="docs/reference.md, The arms",
         )
     except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
         _log(f"range-centre arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
@@ -569,7 +569,7 @@ def _note_window_1300_arm(conn, config: dict) -> None:
                 "window-1300 arm enters the roster: control with its entries confined to "
                 f"{arm.get('entry_windows')}"
             ),
-            detail="docs/experiment-log.md 2026-10-14",
+            detail="docs/reference.md, The arms",
         )
     except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
         _log(f"window-1300 arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
@@ -591,7 +591,7 @@ def _note_window_1230_arm(conn, config: dict) -> None:
                 "window-1230 arm enters the roster: control with its entries confined to "
                 f"{arm.get('entry_windows')}"
             ),
-            detail="docs/experiment-log.md 2026-10-16",
+            detail="docs/reference.md, The arms",
         )
     except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
         _log(f"window-1230 arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
