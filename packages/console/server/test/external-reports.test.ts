@@ -91,6 +91,73 @@ describe("the reader", () => {
   });
 });
 
+describe("presentation hints", () => {
+  const hinted = (): Record<string, unknown> =>
+    good({
+      sections: [
+        {
+          heading: "T",
+          numbered: true,
+          footnote: "a note",
+          key: [{ tag: "V>OI", tone: "warn", text: "volume over OI" }],
+          table: {
+            columns: [
+              "name",
+              { label: "premium", format: "money", tone: "sign" },
+              { label: "size", stack: [{ label: "a" }, { label: "b" }] },
+            ],
+            rows: [
+              [{ value: "x", suffix: { text: "sweep" } }, 24040000, [3, 1]],
+              { cells: ["y", null, null], emphasis: "dim" },
+            ],
+          },
+        },
+      ],
+    });
+
+  it("a hinted report is read whole", () => {
+    write("demo", hinted());
+    const out = readExternalReports(config, NOW);
+    expect(out.invalid).toEqual([]);
+    expect(out.reports[0]!.sections[0]).toMatchObject({ numbered: true, footnote: "a note" });
+  });
+
+  it("a stacked cell with the wrong number of segments is refused with its place, nothing drawn", () => {
+    const doc = hinted();
+    ((doc["sections"] as any[])[0].table.rows[0] as unknown[])[2] = [3, 1, 9];
+    write("demo", doc);
+    const out = readExternalReports(config, NOW);
+    expect(out.reports).toEqual([]);
+    expect(out.invalid[0]!.reasons.join(" ")).toContain("rows[0][2]: a stacked cell is 2 numbers");
+    expect(JSON.stringify(out.invalid)).not.toContain("24040000");
+  });
+
+  it("the source foot is on unless the report turns it off", () => {
+    write("demo", good());
+    write("quiet", good({ id: "quiet", show_source_foot: false }));
+    const by = Object.fromEntries(readExternalReports(config, NOW).reports.map((r) => [r.id, r.showSourceFoot]));
+    expect(by).toEqual({ demo: true, quiet: false });
+  });
+
+  it("a bar scale whose min is not below its max is refused", () => {
+    const doc = hinted();
+    (doc["sections"] as any[])[0].table.columns[1] = { label: "premium", format: "money", bar: { scale: [100, -100] } };
+    expect(validateReport(doc, "demo").join(" ")).toContain("columns[1].bar.scale: min 100 must be below max -100");
+  });
+
+  it("a sign tone on a text column is refused", () => {
+    const doc = hinted();
+    (doc["sections"] as any[])[0].table.columns[0] = { label: "name", tone: "sign" };
+    expect(validateReport(doc, "demo").join(" ")).toContain("tone 'sign' needs a numeric format");
+  });
+
+  it("a cell that is an object is judged as an object, so the reason names the field", () => {
+    const doc = hinted();
+    ((doc["sections"] as any[])[0].table.rows[0] as unknown[])[0] = { value: 1, tone: "red" };
+    expect(validateReport(doc, "demo").join(" ")).toContain("rows[0][0].tone: must be one of pos, neg, warn, muted, strong");
+  });
+});
+
 describe("the validator and the Python one agree", () => {
   const cases = JSON.parse(
     fs.readFileSync(path.join(REPO_ROOT, "packages", "core", "tests", "fixtures", "external_report_cases.json"), "utf8"),

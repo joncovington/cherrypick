@@ -1,7 +1,11 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import type { ExternalReportsPayload } from "@console/shared";
+import type { ExternalFormat, ExternalReportsPayload } from "@console/shared";
+import { formatValue } from "../src/lib/externalFormat";
 
 /**
  * The External reports page, rendered with the hook mocked (a hook that never resolves under a server
@@ -15,7 +19,8 @@ let payload: ExternalReportsPayload;
 vi.mock("../src/lib/api", () => ({
   useExternalReports: () => ({ data: payload, isLoading: false, isError: false }),
 }));
-const { ExternalReportsPage, barPercent, barScales } = await import("../src/pages/External/ExternalReportsPage");
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+const { ExternalReportsPage, barPercent, barScales, stackWidths } = await import("../src/pages/External/ExternalReportsPage");
 
 const report = (over: Record<string, unknown> = {}) => ({
   id: "demo", title: "Demo report", source: "my script", asOf: "2026-11-09T16:30:00-05:00", staleAfterHours: 24,
@@ -128,8 +133,8 @@ describe("bars", () => {
     expect(html).toContain('style="width:100%"'); // 10 is the column's largest
     expect(html).toContain('style="width:50%"');
     expect(html).toContain('aria-hidden="true"'); // the picture is hidden; the number is not
-    expect(html).toMatch(/<\/span>10<\/td>/);
-    expect(html).toMatch(/<\/span>-5<\/td>/);
+    expect(html).toMatch(/>10<span class="external-bar/);
+    expect(html).toMatch(/>-5<span class="external-bar/);
   });
 
   it("an all-positive column is a single-sided bar, and no hint draws none", () => {
@@ -139,6 +144,159 @@ describe("bars", () => {
     set([barred([["a", 4]], [])]);
     expect(render("/reports/external/demo")).not.toContain("external-bar");
   });
+});
+
+describe("bar options and the source foot", () => {
+  const scored = (bar: unknown) =>
+    report({
+      sections: [
+        {
+          heading: "Scored",
+          table: { columns: ["name", { label: "score", format: "signed", tone: "sign", bar }], rows: [["a", 50], ["b", -25], ["c", null]] },
+        },
+      ],
+    });
+
+  it("a fixed scale draws against its own ends, not the column's largest", () => {
+    const table = { columns: ["n", { label: "s", bar: { scale: [-100, 100] as [number, number], track: true, own_column: true } }], rows: [["a", 50], ["b", -25]] };
+    const scale = barScales(table).get(1)!;
+    expect(scale).toMatchObject({ min: -100, max: 100, signed: true, track: true, own: true });
+    expect(barPercent(50, scale)).toBe(50);
+    expect(barPercent(-25, scale)).toBe(25);
+    expect(barPercent(500, scale)).toBe(100);
+    const lopsided = barScales({ ...table, columns: ["n", { label: "s", bar: { scale: [-50, 100] as [number, number] } }] }).get(1)!;
+    expect(barPercent(-25, lopsided)).toBe(50);
+    expect(barPercent(25, lopsided)).toBe(25);
+  });
+
+  it("without a scale a column bar keeps the column's largest magnitude, and the list is shorthand", () => {
+    const table = { rows: [["a", 10], ["b", 5]], columns: ["n", { label: "s", bar: {} }] };
+    expect(barScales(table).get(1)).toEqual({ max: 10, signed: false });
+    expect(barScales({ rows: table.rows, bars: [1] }).get(1)).toEqual({ max: 10, signed: false });
+  });
+
+  it("an own-column bar sits in a column of its own after the number, on a track", () => {
+    set([scored({ scale: [-100, 100], track: true, own_column: true })]);
+    const html = render("/reports/external/demo");
+    expect(html).toContain('<th class="external-barcol"></th>');
+    expect(html.match(/<td class="external-barcol">/g)).toHaveLength(3);
+    expect(html).toContain("external-bar external-bar-signed external-bar-track");
+    expect(html).toContain('style="width:50%"');
+    expect(html).toMatch(/>\+50<\/td><td class="external-barcol">/); // the number alone in its cell
+    expect(html).not.toMatch(/>\+50<span class="external-bar/);
+  });
+
+  it("a bar with no own column stays beside the number", () => {
+    set([scored({ scale: [-100, 100] })]);
+    const html = render("/reports/external/demo");
+    expect(html).not.toContain("external-barcol");
+    expect(html).toMatch(/\+50<span class="external-bar/);
+  });
+
+  it("a report may hide the source foot; the card keeps its capture mark and the overview keeps the source", () => {
+    set([report({ showSourceFoot: false })]);
+    const tab = render("/reports/external/demo");
+    expect(tab).not.toContain("my script, as of");
+    expect(tab).not.toContain("gcard-foot");
+    expect(tab).toContain("external-mark");
+    expect(render("/reports/external")).toContain("my script");
+    set([report({ showSourceFoot: true })]);
+    expect(render("/reports/external/demo")).toContain("my script, as of");
+  });
+});
+
+describe("presentation hints", () => {
+  const one = (section: Record<string, unknown>) => {
+    set([report({ sections: [{ heading: "Hinted", ...section }] })]);
+    return render("/reports/external/demo");
+  };
+  const table = (columns: unknown[], rows: unknown[]) => ({ table: { columns, rows } });
+
+  it("formats a column, right-aligned, and the figure stays as text", () => {
+    const html = one(table([{ label: "premium", format: "money" }, "name"], [[24040000, "x"], [null, "y"]]));
+    expect(html).toContain('<th class="external-right">premium</th>');
+    expect(html).toContain('<td class="external-right">$24.04M</td>');
+    expect(html).toContain("<td class=\"external-right\">—</td>");
+  });
+
+  it("a sign tone colours by sign, and a cell's own tone beats the column's", () => {
+    const html = one(table([{ label: "score", format: "signed", tone: "sign" }], [[76], [-44], [0], [{ value: 5, tone: "warn" }]]));
+    expect(html).toContain('class="external-right external-tone-pos">+76');
+    expect(html).toContain('class="external-right external-tone-neg">−44');
+    expect(html).toContain('<td class="external-right">0</td>');
+    expect(html).toContain('class="external-right external-tone-warn">+5');
+  });
+
+  it("a cell object shows its text over its value, a muted suffix and a marker", () => {
+    const html = one(table(["a"], [[{ value: 1, text: "shown", suffix: { text: "sweep" }, marker: "square" }]]));
+    expect(html).toContain("external-marker external-marker-square");
+    expect(html).toContain("shown");
+    expect(html).not.toContain(">1<");
+    expect(html).toContain('<span class="external-suffix external-tone-muted"> sweep</span>');
+  });
+
+  it("a row's emphasis is a class on the row", () => {
+    const html = one(table(["a"], [{ cells: ["x"], emphasis: "strong" }, { cells: ["y"], emphasis: "dim" }, ["z"]]));
+    expect(html).toContain('<tr class="external-row-strong">');
+    expect(html).toContain('<tr class="external-row-dim">');
+    expect(html).toContain("<tr><td>z</td></tr>");
+  });
+
+  it("a numbered table counts its rows from 1", () => {
+    const html = one({ ...table(["a"], [["x"], ["y"]]), numbered: true });
+    expect(html).toContain('<th class="external-right external-narrow">#</th>');
+    expect(html).toContain('<td class="external-right external-index">2</td>');
+  });
+
+  it("a stacked column draws a legend in the header and one bar per row, proportions as the tooltip", () => {
+    const stack = [{ label: "1 lot" }, { label: "2-10" }];
+    const html = one(table([{ label: "size", stack }], [[[3, 1]], [null], [[0, 0]]]));
+    expect(html).toContain("external-legend");
+    expect(html).toContain("1 lot");
+    expect(html).toContain('title="1 lot 75% · 2-10 25%"');
+    expect(html.match(/class="external-stack"/g)).toHaveLength(1); // null and all-zero are dashes
+    expect(html).toContain("external-stack-seg external-stack-1");
+    expect(html).toContain("external-stack-seg external-stack-2");
+  });
+
+  it("stack widths are in proportion, a sliver is kept visible, and nothing to draw is empty", () => {
+    expect(stackWidths([1, 1])).toEqual([80, 80]);
+    const w = stackWidths([1000, 1, 0]);
+    expect(w[2]).toBe(0);
+    expect(w[1]).toBeGreaterThanOrEqual(3);
+    expect(w.reduce((a, b) => a + b, 0)).toBeCloseTo(160, 5);
+    expect(stackWidths([0, null])).toEqual([]);
+  });
+
+  it("a key and a footnote draw under the table, tags in their tone", () => {
+    const html = one({
+      ...table(["a"], [["x"]]),
+      key: [{ tag: "V>OI", tone: "warn", label: "volume over OI", text: "explains it" }],
+      footnote: "a note",
+    });
+    expect(html).toContain('<span class="external-key-tag external-tone-warn">V&gt;OI</span> volume over OI');
+    expect(html).toContain("<dd>explains it</dd>");
+    expect(html).toContain('<p class="external-footnote">a note</p>');
+  });
+
+  it("a plain report draws none of it", () => {
+    set([report()]);
+    const html = render("/reports/external/demo");
+    for (const gone of ["external-legend", "external-key", "external-footnote", "external-marker", "external-row-"]) {
+      expect(html).not.toContain(gone);
+    }
+  });
+});
+
+describe("formats read as the shared table says", () => {
+  const cases = JSON.parse(
+    fs.readFileSync(path.join(REPO_ROOT, "packages", "core", "tests", "fixtures", "external_report_cases.json"), "utf8"),
+  ).formats as Array<[ExternalFormat, string | number | null, string]>;
+  for (const [fmt, value, shown] of cases) {
+    it(`${fmt} ${String(value)} is ${shown}`, () => {
+      expect(formatValue(fmt, value)).toBe(shown);
+    });
+  }
 });
 
 describe("tabs follow the files", () => {

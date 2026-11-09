@@ -182,3 +182,63 @@ def test_the_schema_file_loads_and_names_every_contract_field():
         "stale_after_hours",
         "sections",
     }
+
+
+# ------------------------------------------------------------------------------ presentation hints
+FORMATS = json.loads((Path(__file__).parent / "fixtures" / "external_report_cases.json").read_text("utf-8"))[
+    "formats"
+]
+
+
+@pytest.mark.parametrize("fmt,value,shown", FORMATS)
+def test_formats_read_as_the_shared_table_says(fmt, value, shown):
+    """The console formats the same values in its own test from the same table."""
+    assert er.format_value(fmt, value) == shown
+
+
+def hinted():
+    doc = good()
+    doc["sections"][0] = {
+        "heading": "Table",
+        "numbered": True,
+        "footnote": "a note",
+        "key": [{"tag": "V>OI", "tone": "warn", "text": "volume over OI"}],
+        "table": {
+            "columns": [
+                "name",
+                {"label": "premium", "format": "money", "tone": "sign"},
+                {"label": "size", "stack": [{"label": "a"}, {"label": "b"}]},
+            ],
+            "rows": [
+                [{"value": "x", "suffix": {"text": "sweep"}}, 24040000, [3, 1]],
+                {"cells": ["y", None, None], "emphasis": "dim"},
+            ],
+        },
+    }
+    return doc
+
+
+def test_a_hinted_report_is_valid_and_describe_names_the_hints(tmp_path):
+    result = er.check_file(write(tmp_path, hinted()), now=NOW)
+    assert result.valid, result.problems
+    line = next(x for x in er.describe(result) if x.startswith("hints:"))
+    assert line == (
+        "hints: 1 column formatted, 1 stacked bar, toned cells, 1 emphasised row,"
+        " numbered, key of 1, footnote"
+    )
+
+
+def test_a_plain_report_describes_no_hints(tmp_path):
+    lines = er.describe(er.check_file(write(tmp_path, good()), now=NOW))
+    assert not any(x.startswith("hints:") for x in lines)
+
+
+def test_a_hint_that_disagrees_with_its_cells_is_refused_with_the_place(tmp_path):
+    doc = hinted()
+    doc["sections"][0]["table"]["rows"][0][2] = [3, 1, 9]
+    problems = er.check_file(write(tmp_path, doc), now=NOW).problems
+    assert any("rows[0][2]: a stacked cell is 2 numbers" in p for p in problems), problems
+    doc = hinted()
+    doc["sections"][0]["table"]["columns"][0] = {"label": "name", "tone": "sign"}
+    problems = er.check_file(write(tmp_path, doc), now=NOW).problems
+    assert any("tone 'sign' needs a numeric format" in p for p in problems), problems

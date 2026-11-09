@@ -16,6 +16,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from decimal import ROUND_HALF_UP, Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -68,8 +69,12 @@ def _kind(value: Any) -> str:
 def _check(value: Any, schema: dict[str, Any], path: str) -> list[str]:
     """Why `value` breaks `schema`, each reason led by the path to the offending part."""
     here = path or "report"
+    if "$ref" in schema:
+        schema = load_schema()["$defs"][schema["$ref"].rsplit("/", 1)[-1]]
     if "const" in schema and value != schema["const"]:
         return [f"{here}: must be {schema['const']!r}"]
+    if "enum" in schema and value not in schema["enum"]:
+        return [f"{here}: must be one of {', '.join(map(str, schema['enum']))}"]
     if "type" in schema:
         wanted = schema["type"] if isinstance(schema["type"], list) else [schema["type"]]
         if not any(_TYPES[t](value) for t in wanted):
@@ -118,8 +123,19 @@ def _check(value: Any, schema: dict[str, Any], path: str) -> list[str]:
     if "oneOf" in schema:
         tried = [_check(value, branch, path) for branch in schema["oneOf"]]
         if sum(1 for t in tried if not t) != 1:
-            # Report the branch the value came nearest to: the one with the fewest reasons.
-            problems += min(tried, key=len) or [f"{here}: matches more than one shape"]
+            # Report the branch the value came nearest to: among the branches whose type fits the
+            # value (a cell that is an object is judged as an object, not as a string), the one with
+            # the fewest reasons.
+            fits = [
+                t
+                for branch, t in zip(schema["oneOf"], tried, strict=True)
+                if "type" not in branch
+                or any(
+                    _TYPES[k](value)
+                    for k in ([branch["type"]] if isinstance(branch["type"], str) else branch["type"])
+                )
+            ]
+            problems += min(fits or tried, key=len) or [f"{here}: matches more than one shape"]
     return problems
 
 
@@ -134,19 +150,200 @@ def validate_document(doc: Any, expected_id: str | None = None) -> list[str]:
         table = section.get("table")
         if table is None:
             continue
-        width = len(table["columns"])
-        for r, row in enumerate(table["rows"]):
-            if len(row) != width:
-                problems.append(f"sections[{i}].table.rows[{r}]: {len(row)} cells for {width} columns")
-                break
-        else:
-            for col in table.get("bars", []):
-                where = f"sections[{i}].table.bars"
-                if col >= width:
-                    problems.append(f"{where}: column {col} does not exist ({width} columns)")
-                elif any(isinstance(row[col], str) for row in table["rows"]):
-                    problems.append(f"{where}: column {col} ({table['columns'][col]!r}) is not numeric")
+        problems += _table_problems(f"sections[{i}].table", table)
     return problems
+
+
+# ------------------------------------------------------------------------------ presentation hints
+NUMERIC_FORMATS = ("money", "compact", "int", "percent", "signed", "decimal")
+# A percent column's numbers are percents (56 is 56%), so a value past this is a unit mistake.
+PERCENT_LIMIT = 1000
+MINUS = "−"
+
+
+def column_spec(column: Any) -> dict[str, Any]:
+    """A column (a string or an object) as one dict with every hint defaulted."""
+    spec = {"label": column} if isinstance(column, str) else dict(column)
+    spec.setdefault("format", "text")
+    spec.setdefault("tone", "none")
+    spec.setdefault("stack", None)
+    spec.setdefault("bar", None)
+    spec.setdefault("align", "left" if spec["format"] == "text" and not spec["stack"] else "right")
+    return spec
+
+
+def cell_parts(cell: Any) -> dict[str, Any]:
+    """A cell (scalar, array or object) as {value, text, tone, suffix, marker}, absent parts None."""
+    if isinstance(cell, dict):
+        return {k: cell.get(k) for k in ("value", "text", "tone", "suffix", "marker")}
+    return {"value": cell, "text": None, "tone": None, "suffix": None, "marker": None}
+
+
+def row_cells(row: Any) -> list[Any]:
+    return row["cells"] if isinstance(row, dict) else row
+
+
+def _fixed(value: float, places: int) -> str:
+    """Grouped and rounded half up on the exact value, as JavaScript's toFixed does, so the console
+    and this module print the same text."""
+    step = Decimal(1).scaleb(-places)
+    return f"{Decimal(value).quantize(step, rounding=ROUND_HALF_UP):,.{places}f}"
+
+
+def format_value(fmt: str, value: Any) -> str:
+    """`value` as the column's `fmt` shows it: a dash for null, a string as written. Money is whole
+    dollars (24_040_000 is $24.04M); percent takes the percent number itself (56 is 56%)."""
+    if value is None:
+        return "—"
+    if not _is_number(value):
+        return str(value)
+    mag = abs(value)
+    sign = MINUS if value < 0 else ""
+    if fmt == "money":
+        if mag >= 1e9:
+            body = _fixed(mag / 1e9, 2) + "B"
+        elif mag >= 1e6:
+            body = _fixed(mag / 1e6, 2) + "M"
+        elif mag >= 1e5:
+            body = _fixed(mag / 1e3, 0) + "K"
+        elif mag >= 1e3:
+            body = _fixed(mag / 1e3, 1) + "K"
+        else:
+            body = _fixed(mag, 2)
+        return f"{sign}${body}"
+    if fmt == "compact":
+        if mag >= 1e9:
+            return f"{sign}{_fixed(mag / 1e9, 1)}B"
+        if mag >= 1e6:
+            return f"{sign}{_fixed(mag / 1e6, 1)}M"
+        if mag >= 1e3:
+            return f"{sign}{_fixed(mag / 1e3, 1)}K"
+        return f"{sign}{_fixed(mag, 0)}"
+    if fmt == "int":
+        return f"{sign}{_fixed(mag, 0)}"
+    if fmt == "percent":
+        whole = _fixed(mag, 1).rstrip("0").rstrip(".")
+        return f"{sign}{whole}%"
+    if fmt == "signed":
+        rounded = _fixed(mag, 0)
+        return "0" if rounded == "0" else f"{'+' if value > 0 else MINUS}{rounded}"
+    shown = _fixed(mag, 6).rstrip("0").rstrip(".")
+    return f"{sign}{shown}"
+
+
+def cell_text(column: Any, cell: Any) -> str:
+    """What one cell reads as plain text: its `text` if it has one, else its value formatted by the
+    column, then its suffix. A stacked cell reads as its numbers joined by a slash."""
+    if isinstance(cell, list):
+        return "/".join(format_value("compact", n) for n in cell)
+    parts = cell_parts(cell)
+    text = (
+        parts["text"]
+        if parts["text"] is not None
+        else format_value(column_spec(column)["format"], parts["value"])
+    )
+    suffix = parts["suffix"]
+    return f"{text} {suffix['text']}" if suffix and suffix["text"] else text
+
+
+def _table_problems(where: str, table: dict[str, Any]) -> list[str]:
+    cols = [column_spec(c) for c in table["columns"]]
+    width = len(cols)
+    rows = table["rows"]
+    for r, row in enumerate(rows):
+        if len(row_cells(row)) != width:
+            return [f"{where}.rows[{r}]: {len(row_cells(row))} cells for {width} columns"]
+    problems: list[str] = []
+    for c, col in enumerate(cols):
+        name = f"{where}.columns[{c}] ({col['label']!r})"
+        stack = col["stack"]
+        if col["tone"] == "sign" and col["format"] not in NUMERIC_FORMATS:
+            problems.append(f"{name}: tone 'sign' needs a numeric format")
+        if stack and col["format"] != "text":
+            problems.append(f"{name}: a stacked column takes no format")
+        for r, row in enumerate(rows):
+            cell = row_cells(row)[c]
+            at = f"{where}.rows[{r}][{c}]"
+            value = cell if isinstance(cell, list) else cell_parts(cell)["value"]
+            if stack:
+                if cell is None or (isinstance(cell, dict) and value is None):
+                    continue
+                if not isinstance(value, list) or len(value) != len(stack):
+                    problems.append(f"{at}: a stacked cell is {len(stack)} numbers, one per segment")
+                elif any(isinstance(n, (int, float)) and n < 0 for n in value):
+                    problems.append(f"{at}: a stacked segment cannot be negative")
+                continue
+            if isinstance(value, list):
+                problems.append(f"{at}: an array is only for a stacked column")
+            elif col["format"] == "percent" and _is_number(value) and abs(value) > PERCENT_LIMIT:
+                problems.append(f"{at}: {value} is over {PERCENT_LIMIT} (a percent column takes 56 for 56%)")
+    for col in table.get("bars", []):
+        at = f"{where}.bars"
+        if col >= width:
+            problems.append(f"{at}: column {col} does not exist ({width} columns)")
+        else:
+            problems += _bar_problems(at, col, cols[col], rows, "column")
+    for c, col in enumerate(cols):
+        bar = col.get("bar")
+        if bar is None:
+            continue
+        name = f"{where}.columns[{c}].bar"
+        scale = bar.get("scale")
+        if scale is not None and not scale[0] < scale[1]:
+            problems.append(f"{name}.scale: min {scale[0]} must be below max {scale[1]}")
+        problems += _bar_problems(name, c, col, rows, "column")
+    return problems
+
+
+def _bar_problems(at: str, c: int, col: dict[str, Any], rows: list[Any], word: str) -> list[str]:
+    if col["stack"]:
+        return [f"{at}: {word} {c} ({col['label']!r}) is stacked already"]
+    if any(isinstance(cell_parts(row_cells(row)[c])["value"], str) for row in rows):
+        return [f"{at}: {word} {c} ({col['label']!r}) is not numeric"]
+    return []
+
+
+def hints_used(doc: dict[str, Any]) -> list[str]:
+    """A short phrase per kind of presentation hint the report uses, for `describe`."""
+    columns = formatted = stacks = marked = toned = 0
+    numbered = keyed = notes = emphasised = 0
+    for section in doc["sections"]:
+        table = section.get("table")
+        if table is None:
+            continue
+        numbered += bool(section.get("numbered"))
+        keyed += len(section.get("key", []))
+        notes += bool(section.get("footnote"))
+        for col in table["columns"]:
+            if isinstance(col, dict):
+                columns += 1
+                formatted += col.get("format", "text") != "text" or col.get("tone") == "sign"
+                stacks += bool(col.get("stack"))
+        for row in table["rows"]:
+            emphasised += isinstance(row, dict) and "emphasis" in row
+            for cell in row_cells(row):
+                if isinstance(cell, dict):
+                    toned += cell.get("tone") is not None or cell.get("suffix") is not None
+                    marked += cell.get("marker") is not None
+    bars = sum(len(s["table"].get("bars", [])) for s in doc["sections"] if "table" in s)
+    bars += sum(
+        isinstance(c, dict) and "bar" in c
+        for s in doc["sections"]
+        if "table" in s
+        for c in s["table"]["columns"]
+    )
+    out = [
+        (formatted, f"{formatted} column{'' if formatted == 1 else 's'} formatted"),
+        (stacks, f"{stacks} stacked bar{'' if stacks == 1 else 's'}"),
+        (bars, f"{bars} bar column{'' if bars == 1 else 's'}"),
+        (toned, "toned cells"),
+        (marked, "markers"),
+        (emphasised, f"{emphasised} emphasised row{'' if emphasised == 1 else 's'}"),
+        (numbered, "numbered"),
+        (keyed, f"key of {keyed}"),
+        (notes, "footnote"),
+    ]
+    return [text for n, text in out if n]
 
 
 @dataclass
@@ -210,4 +407,7 @@ def describe(result: CheckResult) -> list[str]:
             lines.append(f"section: {section['heading']} (table, {n} row{'' if n == 1 else 's'})")
         else:
             lines.append(f"section: {section['heading']} (text, {len(section['text'])} characters)")
+    hints = hints_used(doc)
+    if hints:
+        lines.append(f"hints: {', '.join(hints)}")
     return lines

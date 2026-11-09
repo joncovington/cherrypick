@@ -9933,7 +9933,7 @@ button.chip[aria-pressed][data-hue="special"],
   display: inline-flex;
   width: 84px;
   height: 8px;
-  margin-right: 0.6em;
+  margin-left: 0.8em;
   vertical-align: middle;
 }
 .external-bar-half {
@@ -9955,4 +9955,190 @@ button.chip[aria-pressed][data-hue="special"],
 }
 .external-bar-neg {
   background: var(--neg);
+}
+
+/* ---- External reports: presentation hints (2026-11-08) ----
+   A table's own look, set by the report: formats, tones, a stacked bar with its legend, a key under
+   the table and a footnote at the card's foot. Every colour is an existing theme token, so each works
+   in light and dark. Rows are a step tighter than a full-page table, as the Options flow tables were. */
+.gcard.external-card {
+  --stack-1: var(--text-dim);
+  --stack-2: color-mix(in srgb, var(--neg) 50%, transparent);
+  --stack-3: var(--accent);
+  --stack-4: var(--warn);
+  --stack-5: var(--chart-special);
+  --stack-6: var(--chart-orange);
+}
+.external-table {
+  font-size: 13px;
+}
+.external-table th,
+.external-table td {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+.external-table th.external-right,
+.external-table td.external-right {
+  text-align: right;
+}
+.external-table th.external-narrow {
+  width: 1%;
+}
+.external-table th.external-wide {
+  width: 45%;
+}
+.external-index {
+  color: var(--text-muted);
+}
+.external-table tr.external-row-strong td {
+  color: var(--text);
+  font-weight: 600;
+}
+.external-table tr.external-row-dim td {
+  color: var(--text-muted);
+}
+/* After the row rules, at the same weight, so a cell's own tone beats its row's. */
+.external-table tr td.external-tone-pos,
+.external-key-tag.external-tone-pos {
+  color: var(--pos);
+}
+.external-table tr td.external-tone-neg,
+.external-key-tag.external-tone-neg {
+  color: var(--neg);
+}
+.external-table tr td.external-tone-warn,
+.external-key-tag.external-tone-warn {
+  color: var(--warn);
+}
+.external-table tr td.external-tone-muted,
+.external-key-tag.external-tone-muted {
+  color: var(--text-muted);
+}
+.external-table tr td.external-tone-strong,
+.external-key-tag.external-tone-strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.external-suffix {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.external-suffix.external-tone-pos {
+  color: var(--pos);
+}
+.external-suffix.external-tone-neg {
+  color: var(--neg);
+}
+.external-suffix.external-tone-warn {
+  color: var(--warn);
+}
+.external-marker {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 0.5em;
+  background: var(--text-muted);
+  vertical-align: baseline;
+}
+.external-marker-dot {
+  border-radius: 50%;
+}
+.external-marker.external-tone-pos {
+  background: var(--pos);
+}
+.external-marker.external-tone-neg {
+  background: var(--neg);
+}
+.external-marker.external-tone-warn {
+  background: var(--warn);
+}
+.external-marker.external-tone-strong {
+  background: var(--text);
+}
+.external-stack {
+  display: inline-flex;
+  height: 10px;
+  vertical-align: middle;
+}
+.external-stack-seg {
+  display: block;
+  height: 100%;
+}
+.external-stack-1 {
+  background: var(--stack-1);
+}
+.external-stack-2 {
+  background: var(--stack-2);
+}
+.external-stack-3 {
+  background: var(--stack-3);
+}
+.external-stack-4 {
+  background: var(--stack-4);
+}
+.external-stack-5 {
+  background: var(--stack-5);
+}
+.external-stack-6 {
+  background: var(--stack-6);
+}
+.external-legend {
+  margin-left: 0.8em;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.external-legend > span {
+  margin-right: 0.7em;
+  white-space: nowrap;
+}
+.external-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+}
+/* The key under a table: a tag in its tone, an optional label, and the text that explains it. */
+.external-key {
+  margin: 0.6rem 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.external-key > div {
+  display: flex;
+  gap: 0.6em;
+  line-height: 1.5;
+}
+.external-key dt {
+  min-width: 16em;
+  font-family: var(--num-face);
+  color: var(--text);
+}
+.external-key dd {
+  margin: 0;
+}
+.external-key-tag {
+  margin-right: 0.2em;
+}
+.external-footnote {
+  margin: 0.6rem 0 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.external-suffix.external-tone-strong {
+  color: var(--text);
+}
+
+/* A bar with its own column after the number, and a grey track under any bar. */
+.external-bar-track {
+  background: var(--track);
+}
+.external-table th.external-barcol,
+.external-table td.external-barcol {
+  width: 1%;
+  padding-left: 0;
+}
+.external-barcol .external-bar {
+  margin-left: 0;
 }

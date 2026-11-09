@@ -174,11 +174,15 @@ def card_payload(doc: dict[str, Any]) -> dict[str, Any]:
     description = head
     if table is not None:
         heading = next(s["heading"] for s in doc["sections"] if "table" in s)
-        body = [" | ".join(_cell(c) for c in table["columns"])]
+        columns = table["columns"]
+        body = [" | ".join(_cell(_report.column_spec(c)["label"]) for c in columns)]
         budget = DESCRIPTION_BUDGET - len(head) - len(heading) - 40  # fences, heading, the "more" line
         shown = 0
         for row in table["rows"][:MAX_CARD_ROWS]:
-            line = " | ".join(_cell(c) for c in row)
+            line = " | ".join(
+                _cell(_report.cell_text(col, c))
+                for col, c in zip(columns, _report.row_cells(row), strict=True)
+            )
             if len("\n".join(body)) + len(line) + 1 > budget:
                 break
             body.append(line)

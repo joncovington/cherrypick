@@ -142,6 +142,23 @@ with no source named in the code: the file says its own title and source.
   nothing to scale has none. The bar is `aria-hidden`: the number stays in the cell as text. Both
   validators refuse a bar on a column holding text or past the last column (shared cases). The Discord
   text card ignores the hint. A list of positions, not a per-column object, because tables are positional.
+  A column object may instead carry `bar: {scale: [min, max], track, own_column}`: a fixed scale (a value is
+  drawn against its own side's end, the zero line off the middle when the scale is lopsided), a grey track
+  (`--track`) and a bar column of its own after the number. `show_source_foot: false` drops the card foot
+  (a hidden svg then stays as the capture mark); the overview still shows source and `as_of`.
+- **Presentation hints** (schema 1, all optional, `lib/externalFormat.ts` and the `Section` component).
+  A column is a string or `{label, align, format, tone, width, stack}`; a cell a scalar or
+  `{value, text, tone, suffix, marker}`; a row an array or `{cells, emphasis}`; a section may add
+  `numbered`, `key` and `footnote`. Formats (`money`, `compact`, `int`, `percent`, `signed`, `decimal`)
+  are pure functions checked against the `formats` table in `external_report_cases.json`, which the
+  Python module (what the Discord card prints) is checked against too. `percent` takes the percent number
+  itself (56 is 56%). Tones are theme tokens (`external-tone-*`: `--pos`, `--neg`, `--warn`,
+  `--text-muted`, `--text`), so they read in light and dark. A stacked column draws one bar per row from
+  an array of numbers, its segment labels as a legend in the header; segment colours are `--stack-1..6`,
+  defined on `.external-card` from existing tokens (the console has no separate categorical palette). A
+  segment that has any value is kept at least 3 px wide (`stackWidths`). Every figure stays in its cell
+  as text and the bars are `aria-hidden` or carry the shares as a title. Rows are a step tighter than a
+  full-page table, as the old flow tables were. Invalid hints make the file invalid with the place named.
 - **An invalid file** gets a tab listing every reason and none of its content; a deep link to an id with
   no file reads "No such report" with a link back, not an error.
 - **Validation** is the reader's: each file is judged against `packages/core/cherrypick/core/schemas/
