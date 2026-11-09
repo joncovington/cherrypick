@@ -71,6 +71,16 @@ it). Pick a quiet evening after the close, with no live loop armed.
   cutoff to manage what it holds (stops, fills, settlement). A held condor with a live gate unmet
   raises the new CRITICAL `live_unmanaged`. MEIC live entries are one contract; a larger configured
   quantity refuses entries and blocks arming.
+- **The morning and evening data runs are two pipelines.** `morning-data` and `evening-data` replace
+  28 jobs in `status` and on the System page. A pipeline catches up for its longest step (720 minutes
+  morning, 600 evening), so after a long sleep a short-window step can run later than it would have
+  as a job; those reruns rebuild the same files. A failed run is retried twice from the failed step.
+  Per-step timings are in `status` and `state/pipeline.<name>.json`.
+- **manage runs and posts differently.** The fill wait is 60 seconds (was 30), no snapshot is taken
+  within 2 minutes of the last, `manage-marks` reads the broker's positions every 5 minutes in
+  session, and scheduled runs post only when the action list changes. Set `manage.on_change` to
+  `{"enabled": false}` for the old timer-only post and 30-second wait. This changes when
+  evaluations exist, not how any trade's money is computed.
 - **The scheduler changed.** Eighteen job rows are gone: a daily job that runs at several times is one
   job with several times (`manage-eval`, `report-screener-measure`, `report-skate-quotes`,
   `universe-measure`, `market-files`, `technicals-earnings-calendar`). `status` and the System page list
@@ -178,17 +188,24 @@ never pool across them. Each module's own list (MEIC `docs/reference.md#declared
   quiet window, on low disk, on a dirty or development checkout, and while the opt-in Windows service is
   on (stop the service first). `docs/guide/upgrading.md` has the detail. The release workflow now refuses
   a tag unless `release/manifest.json` has a well-formed entry for it.
+- **The morning and evening data runs are two pipelines.** `morning-data` (05:30) and `evening-data`
+  (18:35) replace 28 jobs. Each runs its steps in order, each as its own subprocess with the same
+  switch and trading-day gate as before, and `run.py pipeline` runs one by hand. A failed landing or
+  security-list step now stops the steps that read it, where they used to run on yesterday's store; a
+  failed fetch stops nothing and is named. `run.py status` shows the two rows, and each step's result
+  is in `state/pipeline.<name>.json`.
+- **manage evaluates when the account changes.** A fill waits 60 seconds for the next one (so a roll's
+  legs are one run) and no run starts within 2 minutes of the last. Every 5 minutes the broker's held
+  legs are compared with the stored snapshot, which catches an assignment, exercise or transfer no
+  order announces. Scheduled runs post only when the list of trades needing action changes
+  (`manage.on_change`; `{"enabled": false}` restores the old behaviour).
 - **Operations.** Eighteen job rows merged into multi-time jobs; an always-on `account-alerts` service;
   throttling opt-out for the supervisor and its jobs; dated reminders that close when their condition
   holds; CI installs uv from PyPI with retries.
 
-**Still to land before the tag** (slots for pull requests that are open; replace with a line each, or
+**Still to land before the tag** (a slot for a pull request that is open; replace with a line, or
 delete):
 
-- <!-- TODO(#1007): manage evaluates when the account changes (fills settle for 60 s, no run within 2
-  minutes of the last, a positions check every 5 minutes) and posts only when the list changes.
-  `manage.on_change` turns it off. -->
-- <!-- TODO(morning-evening): the morning and evening pipelines. -->
 - <!-- TODO(topic-guides): the topic guides in docs/guide/. -->
 
 ### In detail
@@ -273,6 +290,22 @@ Grouped by area. Dates are the session a change began to bind.
   `packages/fundamentals` that failed both halves of its test.
 
 **Orchestrator and operations**
+
+- **Pipelines.** The morning order is: Dolt pull, index bars, SEC facts and Damodaran (independent
+  fetches; a failure keeps the last good file), then the landing steps (`technicals-land`, `-history`,
+  `-fundamentals`, `fundamentals-land`, which stop the run), then the report, stage lists, fair value,
+  screeners, board, skate, earnings record and adjust check (independent). The evening order is:
+  dollar volume, sectors, earnings times and the evening market-files fetch, then the security list and
+  IV ranks (stop the run), liquidity, the earnings calendar's first pass (stops the run, since the
+  strikes read it), then strikes, dividends, Yahoo adjusted and revisions. A step waits for its own
+  configured time (the `*_at` keys mean earliest start) and for the step before it. `earnings-moves`,
+  `universe-daily`, `backtest-fetch`, `technicals-income-lists`, `report-income-chains`,
+  `vol-curve-bars`, `pmcc-earnings-refresh`, the 07:45 `market-files` retry and the 23:40 calendar pass
+  stay jobs of their own. Old per-step registry rows are pruned when the supervisor restarts.
+- **manage's `on_change` block** (`enabled`, `settle_seconds` 60, `min_gap_seconds` 120,
+  `positions_check_seconds` 300). Every full run records its `reason` in `manage.last.json`, and the
+  post says what started the run. Evaluations are still one file per session, so the console's bands
+  over time, the attention list and `reevaluate` see no extra rows.
 
 - Research queue, job progress files (`core.progress`), arm cards for every paper module, dated
   reminders, stable trade IDs, execution record, per-arm kill criteria, a studies board and a study
