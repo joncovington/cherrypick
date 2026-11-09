@@ -19,7 +19,7 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 | Screeners | `/screeners` | two groups, eight tabs. Screens: earnings, earnings record, signal board, skate. Income lists: puts & calls, credit spreads, time spreads, fair value | The suite's own screens and income lists. The Dolt-backed tabs show a set-up card, not a blank, without Dolt. |
 | Compare | `/compare` | arms, risk, calendar, portfolio, slices | Every arm side by side. Left off the rail in the simple view. |
 | Backtest | `/backtest` | studies, queue, runs, data | Research studies and the queue. Fails closed: hidden unless the suite says the backtest feature is on (licensed data). Left off the rail in the simple view. |
-| Advisor | `/advisor` | advisor | The advisor's experiments roll-up. Paused since 2026-10-25 pending the redesign. Left off the rail in the simple view. |
+| Advisor | `/advisor` | advisor | The advisor's experiments roll-up. Paused. Left off the rail in the simple view. |
 | System | `/system` | health, supervisor, data, environment, logs | The suite's own health, read-only. Left off the rail in the simple view. |
 | Config | `/config` | arms, modules & symbols, timing & cadence, alerts, position rules, then prefs | The one place configuration is edited, through the orchestrator's config editor. Always lists every toggle. |
 
@@ -28,15 +28,15 @@ A page the suite has switched off is not shown (see *What is off is not shown* b
 | Module | Route | Tabs | Status |
 |---|---|---|---|
 | MEIC | `/meic` | today, arms, forest, attempts, positions, history, sessions, exits, regime cuts, performance, analysis, costs, advisor, help | Active; live behind its own gate. |
-| BWB | `/bwb` | today, positions, history, decisions, arms, entry vol, live vs paper, performance, analysis, advisor, help | Retired 2026-11-08; ships off. |
+| BWB | `/bwb` | today, positions, history, decisions, arms, entry vol, live vs paper, performance, analysis, advisor, help | Retired; ships off. |
 | Earnings | `/earnings` | today, positions, history, decisions, screening, strategies, advisor | Active; paper only. |
 | Experiments | `/experiments` | experiments | The comparison page for the paper-only experiments and the retired modules below. |
-| PMCC | `/pmcc` | today, by arm, positions, tracker, history, decisions, arms, performance, analysis, costs, advisor, help | Retired 2026-11-08; ships off. |
+| PMCC | `/pmcc` | today, by arm, positions, tracker, history, decisions, arms, performance, analysis, costs, advisor, help | Retired; ships off. |
 | Calendars | `/calendars` | today, plan, positions, history, decisions, arms, policies, performance, analysis, advisor, help | Experimental; paper only. |
-| Curve | `/curve` | today, regime, positions, history, decisions, arms, performance, analysis, costs, advisor, help | Retired 2026-11-01; ships off. |
+| Curve | `/curve` | today, regime, positions, history, decisions, arms, performance, analysis, costs, advisor, help | Retired; ships off. |
 | Contango | `/contango` | today, regime, positions, history, decisions, arms, performance, analysis, costs, help | Experimental; paper only. |
 | Weekly put | `/weeklyput` | today, cycles, positions, history, decisions, performance, costs, help (8 tabs) | Experimental; paper only. |
-| Flies | `/flies` | session, summary, forest, timeline, positions, history, books, opening range, attempts, decisions, gates vs control, live vs paper, selector, regime cuts, intraday agent, completion, performance, analysis, costs, advisor, help | Retired 2026-10-19; ships off. |
+| Flies | `/flies` | session, summary, forest, timeline, positions, history, books, opening range, attempts, decisions, gates vs control, live vs paper, selector, regime cuts, intraday agent, completion, performance, analysis, costs, advisor, help | Retired; ships off. |
 
 The simple view shows a shorter tab list per page (`ModuleNavDecl.simple`); the detail view shows all.
 Keyboard: `g` plus the page's key for suite pages, a bare digit for the four modules on the rail,
@@ -44,7 +44,7 @@ Keyboard: `g` plus the page's key for suite pages, a bare digit for the four mod
 
 The sections below are the working notes for each page. Read the section for a page before changing it.
 
-**Shell.** A grid, not a stack (2026-10-12): the brand head and the top bar are row 1's two
+**Shell.** A grid, not a stack: the brand head and the top bar are row 1's two
 halves (ticker, session chip, the simple/detail view switch, clock), the rail and the content pane are row
 2's, the status bar (health chips, watchdog/session/morning phase, logs, and the suite version
 last) is row 3. The version chip (`shell/VersionChip.tsx`, `/api/version`) is plain while this
@@ -53,7 +53,7 @@ available", once a newer one is out — the one place a release is announced. Th
 head's underline is the same grid track as the top bar's — one rule across the window in both
 rail widths — and the rail's vertical is the brand head's right border continued by the nav's,
 unbroken from the top of the window to the status bar. **The rail is the one nav** (mounted in
-the shell since 2026-10-11, on every page; collapsed to a 64px icon strip by default, its own
+the shell, on every page; collapsed to a 64px icon strip by default, its own
 toggle at its foot — the top bar holds no menu and never opens one). Below 1000px the rail's
 column stays the icon strip and an expanded rail opens over the content. There is no command palette: the keyboard hints
 (`g` + key for suite pages, a bare digit for modules, `j`/`k` for tabs) are in the rail's link
@@ -68,7 +68,7 @@ Simple view also leaves Compare, Backtest, Advisor and System off the rail (`SIM
 Within a page, a column, tile or card is left to detail by marking it `detailOnly` and filtering with
 `useColumns` (`components/columns.tsx`); a table declares each column once, header and cell together
 (`Column`, `HeadRow`/`headersOf`, `Cells`), so dropping one cannot misalign a row. The Live tables use
-it (2026-10-21); a column removed from both views is simply not declared.
+it; a column removed from both views is simply not declared.
 
 **Page design tests.** A page or tab earns its place by answering one of four questions: would a
 person open it, and for what; is it clear (a short card with a small set of figures beats a row with
@@ -105,7 +105,7 @@ today, open, closed and performance tabs. The module pages stay whole and reacha
 the chosen one out under Experiments while you are on it. Flies is a record card on the same page
 with its paper and live all-time nets; its tabs stay because it may be reinstated.
 
-**Help page** (`/help`, 2026-11-09): the user guide in the checkout's `docs/guide/`, so the guide always
+**Help page** (`/help`): the user guide in the checkout's `docs/guide/`, so the guide always
 matches the code it describes. Two tabs. `guides` holds every page at `/help/<slug>` (its own route in
 `App.tsx`, since a slug is not a tab id): a table of contents grouped and ordered by
 `docs/guide/README.md`, with a search over titles and headings; the page; "On this page"; and the
@@ -137,15 +137,15 @@ capabilities like Dolt and Claude Code. Every web rule is in `lib/visibility.ts`
 rows and the default log sources are filtered on the server with the same answer. **Fail open:**
 loading, `{ok: false}` or an id the reply does not name all show the thing, with a status-bar chip on
 failure. A Live tab named for a module (flies, meic) follows that module's live master switch,
-which the same reply carries as `live` (2026-10-18), but only once that loop is idle: it hides on an
+which the same reply carries as `live`, but only once that loop is idle: it hides on an
 explicit `false` AND a read Live Today payload reporting nothing for the loop (no open position,
 working or held order, orphan, overdue settlement or attention item; `liveLoopsInUse`). A switch
 turned off mid-session must not strand the one page showing what is still open, which Live Today
 links to (#422). An unread Live Today keeps it shown, and the account-wide tabs never leave. A direct URL to an off page renders `ModuleOffCard` (why, and a link to Config), never a 404
 and never the module. Config always lists every toggle. Calendars, pmcc, curve and contango carry
-an `experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`. Flies, bwb, pmcc and curve are retired (2026-10-19, 2026-11-08, 2026-11-08, 2026-11-01) and ship off, so a fresh install shows each as off until it is reinstated; Live → pmcc is the real account's view and stays.
+an `experimental` chip, listed once in `moduleOrder.ts`'s `EXPERIMENTAL_MODULES`. Flies, bwb, pmcc and curve are retired and ship off, so a fresh install shows each as off until it is reinstated; Live → pmcc is the real account's view and stays.
 
-- **The Dolt-backed Screeners tabs are shown off, not hidden** (2026-10-19, the user's choice):
+- **The Dolt-backed Screeners tabs are shown off, not hidden** (the user's choice):
   earnings, earnings record, signal board and skate (`SCREENERS_NEED_DOLT`). With `features.technicals`
   false the tab renders `pages/Screeners/NeedsDolt.tsx` in place of its content: Dolt not set up
   (`capabilities.dolt`) gets the install steps and the INSTALL link, the switch off points to Config.
@@ -172,7 +172,7 @@ four tabs, because its write actions are wired through page-spanning state (`nav
   `ModuleFrame` compares the two tab lists at runtime and says so **on the page** on a mismatch.
 - **A renamed tab keeps its old id as an alias**, resolved before the first-tab fallback
   (`/flies/exits` → `divergence`); a fall-through looks like a working link showing the wrong page.
-- **The rail's order is a decision, pinned by `navLinks.test.ts`** (2026-10-18): Live first, the
+- **The rail's order is a decision, pinned by `navLinks.test.ts`**: Live first, the
   market reads (Reports, Charts, GEX, Screeners) above the modules, the modules
   live-capable first (`TRADING_MODULE_ORDER`), then Research and the suite's own pages, Config last.
   Inside every module the tables group (positions, history) follows the today group.
@@ -290,12 +290,8 @@ the setups watchlist:
     page says so on every setup (`web/test/chartPage.test.tsx`, shown to fail when hidden).
     Levels are `?levels=ours|all|off`: our own swing levels (the default), those and our grid's high
     and low ("With grid"), or none; never the setup lines. Each is drawn from its own date and kept
-    out of the autoscale. **Nothing of the vendor's is shown** (2026-10-27): the file still carries
-    its last capture (2026-10-23) under `vendor`, and the reader still shapes it, but the levels, the
-    dashed trend line, the comparison card, its sentiment, rank and IV rank, and the index's "captured"
-    marks are gone, because a frozen capture beside today's bars reads as current. A saved
-    `?levels=vendor` link falls back to the default (`web/test/chartPage.test.tsx`, shown to fail
-    against the old page). Entry and exit arrows are both amber: an arrow marks an event, and green
+    out of the autoscale. **Nothing of an outside source's is shown**: a frozen capture beside today's bars reads as
+    current. A saved `?levels=vendor` link falls back to the default (`web/test/chartPage.test.tsx`). Entry and exit arrows are both amber: an arrow marks an event, and green
     or red would read as a gain or a loss.
 - `/charts/setups` is the setups watchlist (`pages/Setups/SetupsPage.tsx`, `GET /api/technicals/setups`
   over `charts/setups-index.json`): recent entries and exits, or open positions, long and short,
@@ -307,57 +303,53 @@ the setups watchlist:
   (`names=all` is the way out). With no label it cuts nothing, because an unknown flag would empty
   it.
 
-**Screeners** (`/screeners`, 2026-10-16; `lightbox/manifests/ScreenersLightbox.tsx`) — eight tabs in two
-groups, `screens` and `income lists` (2026-10-18 order). Our own screens first: the earnings calendar, its forward record and the signal
-board. Then the income lists: short puts, covered calls and credit spreads, one tab each. The fidelity
-tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/reference.md`.
-
-- **Time spreads** (2026-11-06; `TimeSpreadsTab.tsx`; manage's README, "Time spreads"): the day's
+**Screeners** (`/screeners`; `lightbox/manifests/ScreenersLightbox.tsx`) — eight tabs in two
+groups, `screens` and `income lists`. Our own screens first: the earnings calendar, its forward record and the signal
+board. Then the income lists: short puts, covered calls and credit spreads, one tab each. 
+- **Time spreads** (`TimeSpreadsTab.tsx`; manage's README, "Time spreads"): the day's
   calendars and diagonals on the names whose front week is priced rich to the back month, unsized,
   from `scripts/fetch_time_spreads.py`'s file through `readers/timeSpreads.ts`
   (`GET /api/screeners/time-spreads[?day=]`). Broker reads only, so no Dolt card. **No tested edge**:
   rows are in the scan's order, by the front/back IV ratio, labelled an untested hypothesis (item 54),
   and every figure is modelled. Live, portfolio shows the same rows sized to the account
   (`TimeSpreadsCard.tsx`, manage's `book.time_spreads`), under the income card.
-- **The income lists are OURS only** (2026-10-24). The vendor's subscription ended, so its saved days
-  are no longer shown, there is no source toggle, and the vendor reader and its route are gone. Its
-  files stay on disk under `~/.cherrypick`. All three tabs read `technicals income-lists`' file through
+- **The income lists are OURS only**: no outside source is shown and there is no source toggle. All three tabs read `technicals income-lists`' file through
   `readers/incomeLists.ts` (`GET /api/screeners/own/:list[?day=]`); the reader and page decide nothing.
-- **Short puts and covered calls** (2026-10-19; `OwnListTab.tsx`): our options-tradable universe, the
+- **Short puts and covered calls** (`OwnListTab.tsx`): our options-tradable universe, the
   strike nearest 16 delta (put on the cycle monthly, call on the monthly 30-45 days out), at the
   working price. **The rows are in symbol order and are never ranked by yield**, and the standing "No
   tested edge" note above the table is never removed while the list shows: the rule is the least-bad
   cell of two studies that found no edge (`cherrypick.core.incomerules`). Defaults hide a thin option
   and a trade with earnings inside it, each with its escape; an unknown or past date stays shown,
   marked.
-- **Credit spreads** (2026-10-24; `CreditSpreadTab.tsx`, `readCreditSpreadList`): the chart setups'
+- **Credit spreads** (`CreditSpreadTab.tsx`, `readCreditSpreadList`): the chart setups'
   fresh entries as spreads, built by `technicals creditspreads.py`. A long setup is a put spread, its
   mirror a call spread, on the 30-45 day monthly. The short is nearest 0.40 delta and the pick is the
-  widest long giving 30-40% of the width (35-40% until 2026-11-07). **"Not yet tested"** heads the table for as long as the
+  widest long giving 30-40% of the width. **"Not yet tested"** heads the table for as long as the
   builder's rule says so (item 17). A row with no width in the band stays, marked, and is hidden only by
   the "With a 30-40% width" filter, never by "Liquid trade". Each row opens its width table (1/2/3/5
   strikes, 0.25/0.5/0.75 of the move). Credits are per share (`cr`) and max loss is per contract. Rows
   are by symbol. A session built before the list, or without the history store, says so (`built`
   false) rather than showing an empty table. Behind `NeedsDolt` (`SCREENERS_NEED_DOLT`): the setups
   come from the history store.
-- **Vs fair on every income-list row** (2026-10-27; income-lists version 3, `FairCell` in
+- **Vs fair on every income-list row** (income-lists version 3, `FairCell` in
   `OwnListTab.tsx`, shared with the credit-spread tab): the price against the session's DCF estimate
   from the fair-value file, the range and the builder's flags in the cell's title (a `†` marks a
   flagged row). `n/a` for a fund, a bank or a REIT; `—` with the reason for a name the model has no
   value for, or a list built before the fields. **A model estimate, tested 2018–26 with no edge**, in the
   header's title; the column never orders the list.
-- **Fair value** (2026-10-27; `ValuationTab.tsx`, `readers/valuation.ts`,
+- **Fair value** (`ValuationTab.tsx`, `readers/valuation.ts`,
   `GET /api/screeners/valuation[?day=]`): the fair-value file `technicals valuation` writes each
   session (`cherrypick.core.valuation` on Dolt's annual statements, a regression beta and the
   consensus sales growth from the history store): per name its state (valued, not applicable, no
   statements, refused -- with the reason), price, fair value, the grid range, the gap, WACC, beta
   (the broker's beside it where it disagrees), year-one growth, margin, the terminal value's share of
-  EV, the implied EV/EBITDA, the reverse DCF (2026-10-28: the margin and the growth the price needs, each beside the company's best of five years, and the builder's reach: below value, within history, beyond history) and the builder's flags. Views: valued (default), pmcc (its configured
+  EV, the implied EV/EBITDA, the reverse DCF (the margin and the growth the price needs, each beside the company's best of five years, and the builder's reach: below value, within history, beyond history) and the builder's flags. Views: valued (default), pmcc (its configured
   symbols, badged from pmcc's own config through `readers/pmcc.ts`, its funds not applicable) and
   all. **"Tested 2018–26: no edge"** heads the table and is never removed; rows are by symbol, and a column
   sort is the reader's own click. Behind `NeedsDolt`: the statements come from the local Dolt clone.
 
-  **The earnings tab** (2026-10-17; `pages/Screeners/EarningsCalendarTab.tsx`,
+  **The earnings tab** (`pages/Screeners/EarningsCalendarTab.tsx`,
   `readers/earningsCalendar.ts`, `GET /api/screeners/earnings[?day=]`) is the earnings calendar,
   laid out like the vendor's: grouped by day, with its columns and filters.
   - **Data:** the reader renames `technicals earnings-calendar`'s per-session file and decides
@@ -370,7 +362,7 @@ tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/
     cells stay on one line each.
   - **One read, ours:** direction and strength are ours (Bearing), the tooltip naming the close they
     are as of; IV rank is the broker's. The vendor's values stay in the file and the reader never
-    reads them, so nothing here shows or filters on them (the user's choice, 2026-10-17).
+    reads them, so nothing here shows or filters on them (a deliberate choice).
   - **A standing note** says the suggested spread has no edge in history. It is never removed while
     the column shows.
   - **The spread as read:** the reader joins the latest `screener-greeks/earnings-legs/` reading
@@ -396,7 +388,7 @@ tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/
   filters. Approximate methods carry "≈"; the note names what is not counted and that the board is
   not a tested signal.
 
-  **The skate tab** (2026-10-19; `SkateTab.tsx`, `skateRows.ts`, `readers/skate.ts`,
+  **The skate tab** (`SkateTab.tsx`, `skateRows.ts`, `readers/skate.ts`,
   `GET /api/screeners/skate[?day=]`; technicals' reference, "The skate screen") reads the newest scheduled run of
   `fetch_screener_greeks.py skate` (`market-report/screener-greeks/skate/<session>/<HHMM>.json`;
   a `*.trial.json` is never read) and decides nothing: rates, gap, yields, the hard and soft verdicts
@@ -412,7 +404,7 @@ tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/
   - "vs spot" is the strike against the quote's spot, a display figure: the band is set on the
     band day's close, so a name that has moved can have its pick at or through the money, and those
     top the gap sort.
-  - **The forward record** (2026-10-20; `SkateRecord.tsx`, `readers/skateRecord.ts`,
+  - **The forward record** (`SkateRecord.tsx`, `readers/skateRecord.ts`,
     `GET /api/screeners/skate/record`) sits below the table and passes through
     `data/technicals/skate/record.json`. Its own route, not a field on the run payload: it is one
     file for the screen, not a session's. `decision_grade` and each band's `passes` are the file's,
@@ -420,7 +412,7 @@ tab was retired on 2026-10-19; its final rates are in `packages/technicals/docs/
     `passes` is "no verdict stated". No pass tone before decision-grade, the test stated in words
     from the file's `test`, and a missing or unreadable file said plainly, never zeros. `record.db`'s
     rows are not read.
-**Compare's risk tab** (`/compare/risk`, 2026-10-17, `pages/Compare/RiskTab.tsx` over
+**Compare's risk tab** (`/compare/risk`, `pages/Compare/RiskTab.tsx` over
 `GET /api/analysis` → `readers/analysis.ts::readArmsRisk`) — every arm of every module on one
 sortable table, each over its own window (the analysis tab's rule), with peak risk, net over the
 largest peak, max drawdown and drawdown over peak, the block-reordered 95th percentile, net without
@@ -435,7 +427,7 @@ bridge still spawns synchronously, holding the whole server for its subprocess; 
 move to the async spawner too. This is the arms overview: it lives here, beside the paired comparison, rather
 than as a second page that would repeat Compare's arm list.
 
-**Compare's portfolio tab** (`/compare/portfolio`, 2026-10-17, `pages/Compare/PortfolioTab.tsx` over
+**Compare's portfolio tab** (`/compare/portfolio`, `pages/Compare/PortfolioTab.tsx` over
 `GET /api/portfolio` → `readers/portfolio.ts` → `python -m cherrypick.core.portfolio read`) — one
 chosen arm per module held together, a bridge.
 - **Resolving arms:** each arm resolves to its module's ledger, schema and era as the calendar's
@@ -446,7 +438,7 @@ chosen arm per module held together, a bridge.
 - **Labelling:** every figure shows its periods. Thin rows are dimmed and carry no tone, and
   equal-risk scale factors are shown per arm.
 
-**Compare's calendar tab** (`/compare/calendar`, 2026-10-17, `pages/Compare/CalendarTab.tsx` over
+**Compare's calendar tab** (`/compare/calendar`, `pages/Compare/CalendarTab.tsx` over
 `GET /api/calendar` → `readers/pnlCalendar.ts`) — every arm's settled net per session as a Mon–Fri
 month grid with a weekly total, filterable by module and arm, a day drilling to the arms that
 traded it. The nets are `core.metrics`' own `session_nets_dated` (the performance tab's series, read
@@ -457,8 +449,7 @@ month's days dimmed, so every row adds up to its total; a month's own total coun
 An arm in a day's detail opens to its trades (`GET /api/calendar/trades` → `readPnlTrades` →
 `python -m cherrypick.core.metrics trades`), fetched on click. That command shares `read`'s one
 record read in core, so the rows sum to the cell. The table says "does not reconcile" if they ever
-do not, and that has never been seen (every arm-session of the last five sessions, paper and live,
-checked on 2026-10-17). The calendar and risk tabs follow the page's paper/live toggle; the arms
+do not, and that is not expected. The calendar and risk tabs follow the page's paper/live toggle; the arms
 tab is paper only and shows none. A trade with a position id opens to its excursion
 (`GET /api/calendar/excursion` → `services/excursionBridge.ts` → `python -m cherrypick.core.excursions
 read`), a bridge: best and worst with their times, the exit, the basis named (a gross path and a net
@@ -495,7 +486,7 @@ the intervals, paired differences, t bounds, sign tests and projections are `cor
   recorded capital (flies) shows a dash there, never zero, and a partial record says how many trades
   carry one.
 
-**Backtest** (`/backtest`, 2026-10-17, `lightbox/manifests/BacktestLightbox.tsx`,
+**Backtest** (`/backtest`, `lightbox/manifests/BacktestLightbox.tsx`,
 `pages/Backtest/BacktestPage.tsx`) — `packages/backtest`'s replays over licensed vendor history, the
 ONLY place those results appear, and fail closed (above). `GET /api/backtest/overview` and
 `/api/backtest/runs/:id` (`routes/backtest.ts` → `services/backtestBridge.ts` → `python -m
@@ -503,28 +494,27 @@ cherrypick.backtest read overview|run --id`, async, memoised 30 s) each 404 with
 unless the features answer says `backtest: true`; a run id is checked against the runner's shape
 (`BACKTEST_RUN_ID` in `@console/shared`) and anything else is a 400 that spawns nothing. A bridge,
 not a mirror: the unlock verdict, every check, the paired interval and `no_exposure` are the module's.
-Tabs (`studies` first, and the landing tab, then `queue`, `runs`, `data`, from 2026-11-03;
-`validation` folded into `data`, its old URL landing there; `slices` moved to Compare, its old URL
-redirected): `studies` (2026-10-29, `pages/Backtest/StudiesTab.tsx`, `GET /api/backtest/studies` →
+Tabs (`studies` first, and the landing tab, then `queue`, `runs`, `data`;
+`validation` is part of `data`, and `slices` is on Compare; the old URLs redirect): `studies` (`pages/Backtest/StudiesTab.tsx`, `GET /api/backtest/studies` →
 `services/studiesBridge.ts` → `python -m cherrypick.cli hypotheses-board`, behind the same gate
 because the verdicts are read from licensed result files): what we
-tested and what we found. A mosaic (2026-11-03, `pages/Backtest/StudyCards.tsx`): one tile per
+tested and what we found. A mosaic (`pages/Backtest/StudyCards.tsx`): one tile per
 hypothesis-register item, in progress / declared / finished / observations order, the study with a
 task running now as a large tile first. A finished tile's big word is the register's status, with
 "2 pass · 5 fail" when the newest result's arms disagree; an in-progress tile shows its step and one
 segment per queue step; a declared one what it expects; each carries stale (a replay correction since
 the result), its window and provisional, all read from the board. A tile whose newest result names a
-runner run (2026-11-03; a study script's own label is passed over) also draws that run in brief,
+runner run (a study script's own label is passed over) also draws that run in brief,
 from one `GET /api/backtest/summaries?ids=` read for the board (`read summaries`): each arm's
 running net as a thin line, the arm with the highest mean drawn over the rest, and that arm's
 "$xx.xx / session" with "best of N" (control left out of both while it trades on another scale,
 and never the arm named while another arm has a mean). The board's words never wait on it. Group
-chips filter (`?group=`); **This week** (`?group=week`, 2026-11-07, `pages/Backtest/StudyWeek.tsx`,
+chips filter (`?group=`); **This week** (`?group=week`, `pages/Backtest/StudyWeek.tsx`,
 `GET /api/backtest/studies/digest?since=` → `services/studyReportBridge.ts` → `cherrypick.cli
 study-report --since`) shows the studies with a result or a finished step since Monday, newest
 first, under their verdict counts and the ones that gave no reading; the counts are the
 orchestrator's. A tile opens a lightbox (`?study=`, so back closes it; Esc,
-← → and a swipe step through the tiles in layout order) with five tabs. **report** (2026-11-07,
+← → and a swipe step through the tiles in layout order) with five tabs. **report** (
 `pages/Backtest/StudyReport.tsx`, `GET /api/backtest/studies/:study/report` → `study-report
 --study`, fetched on open): what the figures say, what to do next (each suggestion with the figure
 that prompted it), the gates the study uses in plain words, every arm charted by window on the
@@ -543,12 +533,12 @@ result and log). Phones get two columns and a full-screen lightbox. A study may 
 figures, written under the home and never committed); the lightbox's queue tab links to it, opening full width
 on the tab (`?study=&notes=<result file>`), rendered as elements
 by `lib/miniMarkdown.tsx`, never as HTML. A result file is shown by its name only. `?study=` opens its
-lightbox. The other tabs point back (2026-10-30, `pages/Backtest/studyIndex.ts`, one shared fetch): a
+lightbox. The other tabs point back (`pages/Backtest/studyIndex.ts`, one shared fetch): a
 queue row carries its study's verdict as a chip linking to the board, the runs list has a `study`
 column, a run report opens with an "in plain English" card (what ran, the study it answers and
 that study's verdict and decision, control's net, each arm against control and where its interval
 sits against zero, all the report's figures worded), and the `provisional` chip links to
-data), `data` (as cards 2026-11-03, `pages/Backtest/DataCards.tsx`: "is history trusted?" first and
+data), `data` (as cards, `pages/Backtest/DataCards.tsx`: "is history trusted?" first and
 large, the answer the module's unlock verdicts give, then one row per validation with its cadence,
 sessions compared, dates, what stands in the way (the checks outside tolerance, or the session
 count) and a dot per check from `vendor_within_tolerance`; the licence (a line while it is active
@@ -558,7 +548,7 @@ years its largest dated table covers, size, the largest table's rows and the ses
 refused, missing and "count pending" marked (the read never counts), filters on `?stores=`. A
 validation opens a lightbox (`?item=validation:<file>`) with the module's tables as tabs: checks,
 replay measures, quotes and GEX profile per session; a store (`?item=store:<file>`) opens what it
-holds, its tables, the code that rebuilds it and the sessions refused, with why), `runs` (as cards 2026-11-03, `pages/Backtest/RunsCards.tsx`: one tile per replay, newest first and
+holds, its tables, the code that rebuilds it and the sessions refused, with why), `runs` (as cards, `pages/Backtest/RunsCards.tsx`: one tile per replay, newest first and
 the newest large, module chips on `?module=`; a tile names the study whose result file names the run
 and that study's verdict, else says none does. A tile opens a lightbox on `?run=` with five tabs:
 summary (the "in plain English" card, then each arm's net a session toned by sign, trades a session,
@@ -567,19 +557,19 @@ control trades more than ten times as often as the arms, as MEIC's sampling arm 
 so and that the study judges against its own base arm), equity (each arm's running net), health and
 calendar (one arm at a time, the run cards' own checks and month grid), and settings. `?run=&full=1`
 reads one report: each arm's summary, the pairing with control, trials, fill model, code commit, data
-fingerprint, refused sessions, and the run cards, 2026-10-26, `pages/Backtest/RunCards.tsx`: per arm
-a one-line settings strip (2026-11-01: cadence, fill model, and the params that differ from
-control, or "settings not recorded" for an older provisional run), the health checks (2026-11-01,
+fingerprint, refused sessions, and the run cards, `pages/Backtest/RunCards.tsx`: per arm
+a one-line settings strip (cadence, fill model, and the params that differ from
+control, or "settings not recorded" for an older provisional run), the health checks (
 flagged ones on top, each a sentence against its bar), the
 account, equity and drawdown, edge trend, deepest drawdowns, month-by-year grid, trades, premium
 (fee drag, capture rate) and how trades ended, all the module's `cards.py`. `?capital=` (whole
 dollars, `BACKTEST_CAPITAL`, else a 400 that spawns nothing) picks one account for every arm; absent,
 each arm reads against its own peak session risk. The account changes percentages only, never a
-dollar), `queue` (2026-10-24; `pages/Backtest/QueueTab.tsx`,
+dollar), `queue` (`pages/Backtest/QueueTab.tsx`,
 `GET /api/backtest/queue` → `services/researchQueueBridge.ts` → `python -m cherrypick.cli queue-list`,
 behind the same gate): the research tasks the supervisor runs, read-only. Each row's state and why a
 queued row waits are the orchestrator's words, shown verbatim, and a file argument is shown by its name
-only. What the queue is doing, not what a study found, as cards (2026-11-03): the running task as a
+only. What the queue is doing, not what a study found, as cards: the running task as a
 large tile (its overall share done, time left, and a meter per phase from its progress file), runs
 started by hand still going beside it, then up next, numbered in the runner's order (ready first,
 oldest first, split on the orchestrator's `waits`; the page works out no run order), each with the
@@ -597,7 +587,7 @@ Detail view only (`SIMPLE_HIDDEN_PAGES`); shortcut `g b`.
 
 **The arm picker** (flies, MEIC; the header's `ArmSelect`) narrows what a tab already read; it never
 changes a read. A tab whose content is one block per arm follows it: session, forest, timeline,
-attempts, decisions, positions, history, and (2026-10-17) performance, analysis, costs and regime
+attempts, decisions, positions, history, and performance, analysis, costs and regime
 cuts. Advised books stay with their arm (`lib/armTag.ts`: `<arm>@<experiment>` is that arm). On
 performance the cumulative chart keeps `control` beside the picked arm as its reference; on regime
 cuts the document-level chance baseline still counts the whole cut, and says so. A tab whose point
@@ -605,7 +595,7 @@ is a comparison across arms (gates vs control, live vs paper, selector) or a mod
 (summary, advisor, agent) deliberately ignores it. The picked arm is page state, kept across tabs
 because the frame stays mounted; it is not in the URL.
 
-**MEIC's `arms` tab** (2026-11-04, `pages/Meic/MeicArmCards.tsx`) is a card per arm in the studies
+**MEIC's `arms` tab** (`pages/Meic/MeicArmCards.tsx`) is a card per arm in the studies
 mosaic's tiles, from two reads the page already makes (the forest and the attempts, under the page's
 scope): a large tile with every arm's payoff at expiry drawn together and their realised net (it
 opens `forest`), then each arm's realised net, its payoff in small, entered / stopped / open, and its
@@ -621,15 +611,14 @@ computed server-side to the cent, presentation arithmetic only in the component,
 suite's one layout, tone from a number's sign — and each module's summary carries its own KPIs in
 its own vocabulary: entry-time and weekday bands are MEIC's, capture and capital-at-risk mean
 nothing to a legged flies book, cash deployed is contango's alone. There is deliberately no
-central summary page: one was built under Reports and withdrawn the same day (2026-10-11,
-`docs/history.md`) — the modules' KPIs are not the same book, and a shared surface kept flattening
+central summary page: a shared one was tried under Reports and withdrawn — the modules' KPIs are not the same book, and a shared surface kept flattening
 them to their common denominator or growing a registry of per-module exceptions.
 What is module-local is the content, not the mechanism: the simple/detail view is shared, and
 each module decides what its simple view lists.
 
 **A summary follows its page header.** MEIC's slide always took the page's scope and session; the
-generic `/api/summary/:module` summaries did not until 2026-10-16, so on flies the header's arm /
-symbol / era / date controls looked dead on the summary tab. Now the manifest passes `scope`
+generic `/api/summary/:module` summaries take it the same way, so the header's arm /
+symbol / era / date controls act on the summary tab. The manifest passes `scope`
 (`{arm, symbol, era}`) and `day`/`onDay` into `ModuleSummary`, the route forwards `arm`/`symbol`/
 `era` beside `date`/`range`/`mode`, and `SummaryQuery` carries them. Each reader applies them
 through one shared `scopeTrades` post-fetch filter over its own `SummaryTrade[]` (so every module
@@ -680,7 +669,7 @@ the Advisor page only.
 own (`flies`, `meic`; each hidden when that module's live switch is off and the loop is idle, see *What is off*). The
 account-wide set is `LIVE_ACCOUNT_WIDE` in `lib/visibility.ts`, the one copy: those tabs are always shown and wear the
 suite badge. The simple view lists `today`, the four account views and `meic` (flies is retired and off by default). The execution record
-(B10, below) was an account-wide `execution` tab until 2026-11-06; it is now a card on its arm's own tab (MEIC's, the
+(B10, below) is a card on its arm's own tab (MEIC's, the
 only live ledger it reads), and `/live/execution` lands on `meic`. `test/manifestSlides.test.ts` holds every manifest's tabs equal to its `navGroups.ts` declaration. The
 `flies` tab is the pilot's day over `GET /api/live/flies` (`routes/live.ts` → `readers/fliesLive.ts`), composing existing readers
 (`services/liveLock`, `readFliesLoopStatus`, `readFliesJournal`, `readFliesAnalytics`) plus settled
@@ -733,7 +722,7 @@ net per period, the intraday series and the broker account. Rules, stated on the
   purpose — daily against per trade — and the page labels which is which.
 
 **The Live page's `meic` tab** (`pages/Live/MeicLivePage.tsx` over `GET /api/live/meic` →
-`readers/meicLive.ts`, 2026-10-15) is MEIC's live loop from files alone: the arm record (armed =
+`readers/meicLive.ts`) is MEIC's live loop from files alone: the arm record (armed =
 dated today; past `live.disarm_time` is said), the halt flag, the orphan / hold / broker-health files
 beside `meic_trades.db` (read as `core.execution` reads them: an unreadable hold file is held), open
 ICs (`live_loop.overdue_settlement`'s status list; `pending` is a working order with no entry cash; a
@@ -741,17 +730,17 @@ side with a recorded close cost is closed) and resolved history (`stopped`/`expi
 through `meicTradeCash` and the MEIC page's own history columns, less slippage (a live fill is the
 broker's). Cancelled rows are in neither table. No curve or feed: the live loop writes no marks and
 no `loop_log`, so there is no loop pill either. Pinned by `server/test/meic-live-reader.test.ts`.
-**Live vs paper** (2026-10-30, `pages/Live/MeicLiveGap.tsx` over `GET /api/live/meic/gap` →
+**Live vs paper** (`pages/Live/MeicLiveGap.tsx` over `GET /api/live/meic/gap` →
 `readers/meicLiveGap.ts`) follows the history: each live condor beside the paper arm `live-shadow`
 (`follows_live`, so it trades what the `live` block trades) from the first live session on, paired
 per session with the same strikes first, then entry order. The gap is live net less paper net, + in
 live's favour; paired totals are the sums of their rows, and paper condors on days live sat out are
 counted on their own line. Pinned by `server/test/meic-live-gap.test.ts`. The **execution by week** card
-(B10, 2026-11-06, below) closes the tab. Its gap is against the same paper arm but over every session live was
+(B10, below) closes the tab. Its gap is against the same paper arm but over every session live was
 working, so it also counts the entries live missed; each card says which sessions it counts.
 
 **The Live page's `today` tab** (`pages/Live/LiveTodayPage.tsx` over `GET /api/live/today` →
-`readers/liveToday.ts`, 2026-10-15) opens `/live`. Since 2026-11-04 it is a mosaic: a large card
+`readers/liveToday.ts`) opens `/live`. It is a mosaic: a large card
 (the suite's net and its parts, armed, the halt flag, needs a person, and what to do today; a click on
 it opens Live → positions) and a card per live loop with the simple view's fields (arm, state, open,
 worst case, mark, net, loss breaker, working when any is). A loop's card opens the shared lightbox
@@ -770,7 +759,7 @@ submissions, a tripped breaker, overdue settlement, failing broker contact, an u
 (resolved today, gross − fees − settlement, broker fills): any loop's failed read makes it n/r, and
 the worst case and the mark are each loop's own measure, shown per loop, never added. `/live/today`
 is this tab now, not an alias for flies. Pinned by `server/test/live-today.test.ts`.
-**The hand row** (2026-11-03, `readers/liveHand.ts`, `pages/Live/HandToday.tsx`) sits under the loops:
+**The hand row** (`readers/liveHand.ts`, `pages/Live/HandToday.tsx`) sits under the loops:
 today's 0DTE trades placed by hand on the names manage leaves to the loops, which no loop manages,
 stops, force-closes or settles. It reads TODAY's manage evaluation's `zero_dte` block
 (`manage/zerodte.py`) and splits, reconciles and sums nothing: a fill is a loop's when its order id is
@@ -784,9 +773,9 @@ still lists until it processes the expiry (`expired_held`), are muted: they appe
 a 0DTE session, and red there would teach the eye to pass over red. Pinned by `server/test/live-hand.test.ts` and `web/test/liveTodayPage.test.tsx`.
 
 **The Live page's `positions` and `portfolio` tabs** read packages/manage's evaluation
-(`readers/manage.ts`); they were one `manage` tab until 2026-10-18, and `/live/manage` lands on
-`positions`. `positions` is a card per trade (2026-11-04, `pages/Live/PositionCards.tsx`; it was two
-tables, action needed and holding), titled by manage's stable trade ID (`XYZ-260401-1`, kept through
+(`readers/manage.ts`); `/live/manage` lands on
+`positions`. `positions` is a card per trade (`pages/Live/PositionCards.tsx`; action needed and
+holding are one card each), titled by manage's stable trade ID (`XYZ-260401-1`, kept through
 rolls; the dialog marks a provisional ID and any ID a join merged into it): the trade's action, its P&L net of fees, capture (manage's gross figure, the one take-profit judges, so labelled before fees) and short DTE,
 and its broker order chain down the card (open, rolls, then "now, close at mid" with what the chain
 took in), from manage's own `chain`. A trade with no reconciled chain shows its opening alone and
@@ -796,7 +785,7 @@ lightbox (`?trade=`) with the whole chain, every leg, each order's fees and the 
 (the sum of its own signed cash, nothing re-priced), and the evaluation's detail. The ruleset follows;
 `portfolio` is
 the account as one book. Both open with the same evaluation
-header (its caveats qualify both) and the same six-tile account strip. **Since 2026-11-06 the portfolio
+header (its caveats qualify both) and the same six-tile account strip. **The portfolio
 tab is laid out by question** (`pages/Live/PortfolioLayout.tsx`): what needs my attention (the
 guidance), am I paid enough (an income card, theta's dial beside the premium pace's target, and where
 the theta comes from), which way am I leaning (a direction card, delta's dial with what 1% is worth and,
@@ -819,26 +808,25 @@ manage's own `expiring` line beneath it, never in its totals. **Every band and e
 the reading's `bands`**: the dial draws manage's band and takes amber only from its `inside` flag,
 never from where the needle sits (`web/test/managePortfolioCards.test.tsx` shows a needle inside its
 band drawn as outside when the flag says so). Long and short delta carry no tone. An evaluation
-written before the reading has `portfolio: null` and draws no cards. **Premium pace** (2026-10-30,
-`pages/Live/PremiumPace.tsx`, the income card's lightbox since 2026-11-06): manage's `premium` (theta against its target on the
+written before the reading has `portfolio: null` and draws no cards. **Premium pace** (
+`pages/Live/PremiumPace.tsx`, the income card's lightbox): manage's `premium` (theta against its target on the
 theta band's scale, this week, six months of collected beside kept with a foot row that adds them up,
 and what manage left out). It draws nothing for an evaluation written before it existed or for an
-account that is not the broker tool's designated one. **Bands over time** (2026-10-30,
+account that is not the broker tool's designated one. **Bands over time** (
 `pages/Live/BandsHistory.tsx`, `GET /api/manage/bands` → `readManageBandsHistory`) is the "over time"
 lightbox on the income, direction and room cards: every stored evaluation's delta, theta and buying-power reading against that session's
 own band (the delta band moves with theta, the buying-power cap with the VIX), amber from manage's
 flag only; one point per session, its last run. Both tabs' header shows manage's
 `pre_open` as a red line (a snapshot taken before 09:30 ET reads yesterday's close and leaves today's
 expiring legs unpriced). The contribution cards sum the names past their five into one "others"
-row, so the rows add up to the book; the lightbox lists every name. **Live marks** (2026-10-22, `readers/manageLive.ts`,
+row, so the rows add up to the book; the lightbox lists every name. **Live marks** (`readers/manageLive.ts`,
 `/api/manage/live`, `pages/Live/LiveMarks.tsx`) re-price the NEWEST evaluation's legs from the stream
 cache every five seconds: per-trade live P&L and capture on the evaluation's own basis, fees and
 capture denominator, and an "at TP" / "at stop" chip against the evaluation's own levels (the
-portfolio tab's live greeks card, which repeated the evaluation's delta and theta, went on
-2026-11-06; the payload still carries the book's streamed delta and theta). Display only: no verdict is
+payload carries the book's streamed delta and theta). Display only: no verdict is
 re-judged and no in/out-of-band flag is drawn for a live figure (that stays the evaluation's). A trade
 or book figure with any quote over 120 s old reads a dash, never part-marked. A past session shows
-none. Under the status line (2026-11-04) each account's day P&L (each leg's mark less the broker's
+none. Under the status line each account's day P&L (each leg's mark less the broker's
 previous close, which manage now carries per leg) and an estimated net liq (the evaluation's, moved
 by the evaluated legs' marks; cash and the left-out 0DTE legs are the snapshot's), with the legs the
 stream is not carrying named in red: either figure is a dash while one is. While manage's evaluation
@@ -855,7 +843,7 @@ the worst cell, the two end columns and theta, green where better than now and r
 manage's sized income trades in the package's own ranking (never re-sorted here), money in the suite's
 layout. Risk is the figure the per-trade cap was applied to: a short put's stress loss, never its
 strike. The card always says the prices are a day old and to re-quote before sending. Its "waiting
-for room" list is manage's `waiting` list, drawn as trade cards like the fits (2026-11-06): each at its `if_room` size, with a chip coloured by
+for room" list is manage's `waiting` list, drawn as trade cards like the fits: each at its `if_room` size, with a chip coloured by
 manage's own `bp_level` (ok / over / far over, never graded here) and a theta-over chip; the too-big
 list leaves out a row already shown as waiting. An "ex earnings buying power" checkbox swaps in
 manage's `ex_earnings` list, the same candidates sized with the earnings trades' buying power freed;
@@ -864,33 +852,33 @@ manage's reason where manage refused one. There is no earnings column: manage dr
 report inside it, so a known date is always after expiry. An unknown one is an `earnings unknown`
 chip on the name.
 
-**The wheel's names only** (2026-11-05). Live -> wheel shows the names the wheel follows and no other:
+**The wheel's names only**. Live -> wheel shows the names the wheel follows and no other:
 needs a look, expiring, the payoff strip and the ledger. The names are manage's (`wheel.names`, the
 names with a cycle). The console keeps only those names' items from manage's account-wide `attention`
 and `payoff`, which the alert post still reads whole, and the ledger arrives already summed over them
 (`ledger.scope`, named in its header). An evaluation from before carries no names and shows the
 whole account as it did.
 
-**Live -> wheel's payoff** (2026-11-04, `pages/Live/PayoffCard.tsx`): a strip of held names, each
+**Live -> wheel's payoff** (`pages/Live/PayoffCard.tsx`): a strip of held names, each
 with manage's P&L now and breakevens, opening its chart in the lightbox (`?payoff=`): the nearest
 expiry's curve always, a dated curve by chip, the evaluation's price and the stream's live price
 marked, the legs with their solved vols, and the model, rate and yield source stated. A curve manage
 could not draw (a leg no vol prices), or with an unreadable point, is not drawn, never zero-filled.
 
-The payoff lightbox's second tab, **model a trade** (2026-11-04), takes up to six legs (side,
+The payoff lightbox's second tab, **model a trade**, takes up to six legs (side,
 contracts, expiry, strike, right, an optional price) and shows manage's model of them
 (`/api/manage/model`, bridged): the credit or debit, the worst case at expiry (or "unbounded"),
 delta and theta, implied against realised vol, the chart with the trade over the name's expiry curve
 without it, each leg's price and where it came from, and the candidate caps as bars, red past a cap.
 It prices a hypothesis; nothing is sent, and the console still has no order path.
 
-**Live -> wheel's needs a look** (2026-11-04, `pages/Live/AttentionCard.tsx`) heads the tab: manage's
+**Live -> wheel's needs a look** (`pages/Live/AttentionCard.tsx`) heads the tab: manage's
 `attention` items worst first, each with its level and why, a meter of its distance against the alert
 threshold (full at the strike or through it), spot and time value; and every leg expiring within the
 ruleset's days. The level is manage's, never worked out from the distance beside it
 (`web/test/attentionCard.test.tsx`).
 
-**Live -> wheel's ledger** (2026-11-04, `pages/Live/LedgerDesk.tsx`) sits above the cycles: manage's
+**Live -> wheel's ledger** (`pages/Live/LedgerDesk.tsx`) sits above the cycles: manage's
 `ledger` for the window in `?lw=` (1M, 3M, 6M, 1Y, YTD, ALL; ALL by default) as tiles (net, puts,
 calls, shares, dividends, fees), each month's net as a bar about zero (its sources in the bar's
 title), the 0DTE legs left out with their count and net, and a card per name with something closed
@@ -898,7 +886,7 @@ in the window. A card opens the name's closed spans and what it still holds (`?l
 of the spans; the header's CSV is every name's. Every figure is manage's for the window shown, never
 a sum worked out on the page (`web/test/ledgerDesk.test.tsx` gives a net its parts do not add to).
 
-**The Live page's `wheel` tab** (2026-10-20, `pages/Live/WheelCards.tsx`) is the third view of the
+**The Live page's `wheel` tab** (`pages/Live/WheelCards.tsx`) is the third view of the
 same evaluation: the account's `wheel` (packages/manage `wheel.py`), one
 card per cycle. Like its siblings it never leaves the rail (there is no manage switch in the features
 reply; the shared header says when no evaluation exists). The reader passes `wheel` and each trade's
@@ -918,7 +906,7 @@ flag that disagrees with the arithmetic both ways and was shown to fail against 
 The shared pieces of the evaluation's tabs (action chip, detail card, rows, the per-share and fee
 formats, the status, tested and check-roll chips, the band text) are in `manageParts.tsx`.
 
-**PMCC's `by arm` tab** (`board`, 2026-11-04, `pages/Pmcc/PmccArmBoard.tsx`) is a column per arm
+**PMCC's `by arm` tab** (`board`, `pages/Pmcc/PmccArmBoard.tsx`) is a column per arm
 with an open position, the symbols it holds stacked as cards (long and short legs, rolls, net, and an
 "exposed N" chip where the short's extrinsic fell under the assignment threshold on N marked ticks).
 PMCC is read per symbol, never pooled, so an arm's head is a bar per symbol and its rule in a line,
@@ -929,7 +917,7 @@ the tracker (the long bought, every short sold and how it ended, then now), and 
 every position's P&L on one chart. Reads `/api/pmcc` and the bridged tracker only. The `arms` tab
 stays the closed-results comparison.
 
-**The Live page's `pmcc` tab** (2026-10-20, `pages/Live/PmccCards.tsx`) is the fourth view: the
+**The Live page's `pmcc` tab** (`pages/Live/PmccCards.tsx`) is the fourth view: the
 account's `pmcc` (packages/manage `pmcc.py`), one card per name whose calls
 have a PMCC's shape, recognised or not, in the wheel cards' columns wherever they mean the same thing.
 Each card's title, visible while collapsed, carries manage's `recognition` as a chip: `PMCC`,
@@ -947,7 +935,7 @@ live-switch rule runs: the paper module has no live gate, the features reply nam
 tab would otherwise vanish (`visibility.test.ts`, shown to fail with the check removed). The reader
 passes `pmcc` and each trade's `pmcc` note (or its `error`) through, nulls kept; an evaluation from
 before the view has `pmcc: null` and says so, and an empty one says how a PMCC is recognised (a long
-call entered at 0.70 delta or more, or `intent: "pmcc"`; an evaluation from before 2026-11-04
+call entered at 0.70 delta or more, or `intent: "pmcc"`; an evaluation from before the field
 also names its day limits). The width card says "passes, thin" where manage flags a passing cost over
 three quarters of the width, with the cost's share beside it. A card shows the long (delta at entry
 with its source, "recorded N s after the fill" with the band the underlying's likely move puts on it
@@ -962,9 +950,9 @@ check's pass and the assignment exposure are manage's flags**: `web/test/pmccCar
 each a flag that disagrees with the figures beside it, both ways, and was shown to fail against chips
 re-derived from them.
 
-**There is no Overview page** (removed 2026-10-16): `/` redirects to `/live`, whose `today` tab is
-the every-loop summary. The morning phase chip moved to the status bar and the alert-daemon chip to
-the Live header. Its two endpoints went with it; `readers/liveBooks.ts` stays, because `liveToday`
+**There is no Overview page**: `/` redirects to `/live`, whose `today` tab is
+the every-loop summary. The morning phase chip is in the status bar and the alert-daemon chip in
+the Live header. `readers/liveBooks.ts` stays, because `liveToday`
 reads bwb's ledger status through its `LIVE_BOOKS` specs and `live-books.test.ts` covers them.
 
 **Flies intraday agent tab** (`/flies/agent`, `pages/Flies/AgentSlide.tsx` over
@@ -988,7 +976,7 @@ module, is the "live shadow" table in the Paper view, read off the same file.
 - A pack is served as the model saw it, `_` keys removed as `intraday_pack.for_model` removes them.
   A close is a tag priced at natural, never a fill, and the page says so.
 
-**GEX** (`/gex`, two tabs since 2026-10-30: gex, with the recorded day as a sparkline, and iv
+**GEX** (`/gex`, two tabs: gex, with the recorded day as a sparkline, and iv
 skew, with volume) computes its profile in TypeScript, mirroring `core.gex`: `analytics/gex.ts`'s `strikeGamma` (one gamma per strike, the OTM side's) and
 `netWalls` (no wall without a strike on its own side of zero) are the core's `strike_gamma` and
 `net_walls`, and `services/gexProfile.ts`'s `LEFTOVER_ROW_SECONDS` is `core.gex.LEFTOVER_ROW_SECONDS`.
@@ -1001,12 +989,12 @@ the broker's once-a-day count as of the open and never moves intraday. GEX by vo
 read and the default (the panel's walls open on `walls by volume`); `components/GexOiNote.tsx` holds the
 one note both pages show, and the GEX card's help repeats it.
 
-**GEX panel** (`/gexpanel`, 2026-10-31, experimental, SPX only) copies a third-party 0DTE walls panel
+**GEX panel** (`/gexpanel`, experimental, SPX only) copies a third-party 0DTE walls panel
 over the GEX page's own profile (`GET /api/gex/panel` → `services/gexPanel.ts`, which calls
 `buildGexProfile` and adds the chain's straddles from `stream_quotes`), beside today's spot trail with
 the levels drawn on it. Broker data only. Recomputed on every request (the page polls every 15 s), so
 the moves follow each quote and the clock to expiry. The levels are defined in `analytics/gexPanel.ts`,
-since the panel it copies defines none (common usage researched 2026-10-31). Off-hours (2026-11-01) it
+since the panel it copies defines none. Off-hours it
 shows the **next session's** chain (`buildGexProfile(..., "next_session")`: today's before the open,
 else the next weekday's, and only that date's expiration, never another module's later window),
 chipped, with its greeks' time; the GEX page keeps the last session's. The last session's chain at its
@@ -1016,8 +1004,8 @@ close had every wall on the strikes beside spot and no move left. Without the ne
 - **Walls** are the common call and put walls: the three largest call-gamma strikes above spot and put-gamma strikes below
   it, with the side's volume over its OI. Ranking on net left a put-heavy chain with no call wall. A
   toggle weights the gamma by **open interest** (the broker's once-a-day count) or **the session's
-  volume** (the GEX page's flow basis): a 0DTE chain trades many times its OI (SPX 2026-10-30's walls
-  17x to 560x). Net GEX is shown on both bases.
+  volume** (the GEX page's flow basis): a 0DTE chain trades many times its OI (an SPX chain's walls
+  moved 17x to 560x). Net GEX is shown on both bases.
 - **The 1-sigma move to expiry**, two ways: the straddle interpolated to spot between the strikes
   either side, over sqrt(2/pi) = 0.798 (an ATM straddle prices the mean absolute move), and spot x ATM
   IV x sqrt(time to the 16:00 expiry, 365-day year). Live quotes older than 120 s
@@ -1032,7 +1020,7 @@ close had every wall on the strikes beside spot and no move left. Without the ne
   adds a straight line to every payout, so a max pain within two held strikes of either end is marked
   "(edge)". The whole chain's OI would take a Summary subscription per option, not wanted for this.
   **Zero gamma** is the GEX page's.
-- **Flow** (2026-11-01): the session's prints from gex's `gex_prints` (broker TimeAndSale, recorded when
+- **Flow**: the session's prints from gex's `gex_prints` (broker TimeAndSale, recorded when
   gex's `prints` block is on), each signed by the feed's aggressor side, else the quote at the print
   (between bid and ask: unsigned, never guessed). Spread legs, extended hours, cancelled and invalid
   prints are excluded and counted. A customer's net buy of either right leaves the dealer that much
@@ -1074,7 +1062,7 @@ the bridge passes `--module`, never the file). Bridged, never mirrored.
 
 - "net / largest peak" is the whole net over the single largest peak. It is never labelled "return on
   peak risk": that is the performance slide's Σ net / Σ session peaks, a per-day figure (live flies
-  control, 2026-10-16: -6.2% there, -96% here). A test keeps the two names apart.
+  control: -6.2% there, -96% here, in one case). A test keeps the two names apart.
 - Flies records each book's session peak at settlement (`fly_books.peak_risk`), which core reads.
 - "Breakdowns" are core's bucket tables (`core.analysis.buckets`): P&L by weekday, entry hour,
   release day and month, one column set. A row under core's `min_sessions` is `thin`: dimmed, chip,
@@ -1090,20 +1078,20 @@ the bridge passes `--module`, never the file). Bridged, never mirrored.
   on `Breakdowns` and absent for flies and MEIC, so one table list serves both. An entry the
   recorder did not cover reads "unmeasured".
 - "Worse fills" is core's slippage ladder: the net at 1/1.5/2/3× the slippage the module modelled,
-  over the trades that record slippage. Where that is not all of them (flies from 2026-09-24) it
+  over the trades that record slippage. Where that is not all of them (flies before its slippage was recorded) it
   says so and starts from those trades' own net, never the arm's. An undeclared allocation reads "none declared" with dashes, never zero;
   a refused allocation file is a page-level chip with core's reason, and the rest still renders.
 
 - It reads the performance slide's ledger per mode (`performance.ts::moduleLedgerPath`), suite epoch
   and stamped module era, and the bridge groups arms as `core.metrics`' does. A reply whose `version`
   is not `ANALYSIS_VERSION` is refused, not drawn.
-- **Each arm is read over its own era** (version 2, 2026-10-17; `core.analysis.windows`): where the
+- **Each arm is read over its own era** (`core.analysis.windows`): where the
   module's `measurement_breaks` name arms (flies, MEIC), its latest break, else the module's latest
   book-wide one, by `core.regimecuts`' own rule, so this and the regime cuts agree. Modules whose
   breaks name no arm read the suite window, and say why. The suite epoch is always the floor. Every
   arm card states its window (`WindowLine`). The performance slide still reads the suite window, so
-  the two can differ, and the page says so: flies control read +$1,546 over the suite window and
-  -$2,891 over its era since the 10-05 completion-rule break.
+  the two can differ, and the page says so: an arm can read positive over the suite window and
+  negative over its own era.
 - A withheld stress test (under 20 sessions) says why and shows dashes. A drawdown is shown as the
   loss it is; its tone comes from that sign. The reordered percentile can sit BELOW the recorded
   drawdown: that is a reading (the real order was among the worst), not a defect.
@@ -1140,13 +1128,13 @@ several chances to disagree about which base a book shadows.
 
 ## Book-review read surfaces
 
-**The book-review read surfaces (2026-10-24).** Live → `meic`'s *execution by week* card (B10; its own Live tab until 2026-11-06, `pages/Live/LiveExecution.tsx`) renders the orchestrator's
+**The book-review read surfaces.** Live → `meic`'s *execution by week* card (B10; `pages/Live/LiveExecution.tsx`) renders the orchestrator's
 `execution --json` through `services/executionBridge.ts`: each live arm's week, fill rate, slippage
 against the mid at submit, overrides, and the gap to its paper mirror. A closed trade with no recorded
 net is out of its week's net and said beside the count (`unpriced`, "1 + 1 no net"), never counted as zero. Compare → `slices` (B5;
-under Backtest until 2026-10-30, `/backtest/slices` redirects) reads the `technicals slices` JSON
+`/backtest/slices` redirects) reads the `technicals slices` JSON
 under `data/technicals/slices/` (`readers/slices.ts`), behind the backtest gate because a report may
 come from a licensed replay: the tab fails closed (`FAIL_CLOSED_SLIDES`, `visibility.ts`; off, unknown
 or unread, it leaves the rail and its URL falls to Compare's first tab) and the server refuses
 `/api/backtest/slices` on its own. Greyed cells stay greyed and the page
-says a cell is never a gate. Both rename and render; every rule is the Python side's. From 2026-10-28 an "In plain English" card heads each report: what the report is and what R means, the overall result against zero, one sentence a dimension (one group, too few groups with 30 trades, separated -- two groups' 95% intervals do not overlap -- or overlapping), the upshot, and how to use it. The reading is the reader's (`analysis`, `readDimension`); the card only words it. From 2026-11-01 the weekday and event-day cuts show a Days column and "Random days as good" (`placebo.beaten_by`, the share of random sets of as many days that did at least as well), and the card adds that reading to a whole-day dimension's sentence, because a trade interval overstates days whose trades move together. Both columns appear only where the report carries them.
+says a cell is never a gate. Both rename and render; every rule is the Python side's. An "In plain English" card heads each report: what the report is and what R means, the overall result against zero, one sentence a dimension (one group, too few groups with 30 trades, separated -- two groups' 95% intervals do not overlap -- or overlapping), the upshot, and how to use it. The reading is the reader's (`analysis`, `readDimension`); the card only words it. The weekday and event-day cuts show a Days column and "Random days as good" (`placebo.beaten_by`, the share of random sets of as many days that did at least as well), and the card adds that reading to a whole-day dimension's sentence, because a trade interval overstates days whose trades move together. Both columns appear only where the report carries them.

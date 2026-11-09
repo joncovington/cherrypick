@@ -59,7 +59,7 @@ the mechanism is not module-specific, and what the arm record means lives in `ch
 hand each trading day. Note the precise concurrency rule: at most one *incomplete* position at a time.
 An open short vertical always blocks a new entry; a **completed** fly blocks only while its floor is
 negative, so several completed flies can be open at once. See
-[`packages/flies/docs/live-trading-plan.md`](../packages/flies/docs/live-trading-plan.md) for the
+[`packages/flies/docs/live.md`](../packages/flies/docs/live.md) for the
 complete rulebook.
 
 Every other guardrail on this page — masked accounts, keyring-only credentials, no AI/network on a

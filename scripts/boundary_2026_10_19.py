@@ -57,7 +57,7 @@ from pathlib import Path
 
 BOUNDARY = "2026-10-15"
 EARLIEST_APPLY = "2026-10-14"
-JOURNAL = "docs/experiment-log.md and each module's journal, 2026-10-12"
+JOURNAL = "each module's journal, 2026-10-12"
 
 FLIES_RETIRE = {
     "debit-first-up": "read at 15 sessions: -$1,155 behind control 09-21..10-12; the debit-first family "
@@ -78,7 +78,7 @@ LIVE_SHADOW = {
     "param from the live block (engine.live_mirror_params); any other key here is ignored. Read against "
     "the live ledger over the same sessions, never against control.",
 }
-# control plus one variable each (declared 2026-10-14, docs/experiment-log.md 2026-10-14). The step
+# control plus one variable each (declared 2026-10-14). The step
 # copies the machine's own control and lays these on top, so neither can differ from it in anything else.
 FLIES_ADD = {
     "range-centre": (
@@ -260,7 +260,7 @@ def step_flies(plan: Plan, h: Path, *, selector: bool, mid_first: bool) -> None:
                     **control,
                     **variable,
                     "enabled": True,
-                    "_note": f"From {BOUNDARY} (docs/experiment-log.md 2026-10-14): {what}. One variable vs "
+                    "_note": f"From {BOUNDARY}: {what}. One variable vs "
                     "control: keep every other key identical to control's.",
                 }
         if selector and "selector" in arms and not arms["selector"].get("enabled", True):
@@ -292,8 +292,7 @@ def step_flies(plan: Plan, h: Path, *, selector: bool, mid_first: bool) -> None:
                     "the fresh mid on a "
                     "structure's first order of the day, conceding to mid - 0.125 x spread after one tick; "
                     "entry credits and fill rates either side of it are not poolable",
-                    "detail": "docs/experiment-log.md 2026-10-12; "
-                    "switched on by scripts/boundary_2026_10_19.py",
+                    "detail": "docs/reference.md, The arms; switched on by scripts/boundary_2026_10_19.py",
                 },
             )
         )

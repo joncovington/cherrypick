@@ -207,7 +207,7 @@ def advised_entries(decision: dict | None) -> dict[str, dict]:
 
 
 # --------------------------------------------------------------------------- the boundary
-# The first session of the shield boundary (docs/shield-study.md). Entries from the deploy on are
+# The first session of the shield boundary (research/pmcc-shield-study.md). Entries from the deploy on are
 # stamped `analytics.CURRENT_ERA`; if the deploy slips past this date, move it with the deploy.
 SHIELD_FROM = "2026-10-05"
 _PRE_SHIELD = {"arms": "control", "symbols": "TQQQ, XSP", "max_positions": "3"}

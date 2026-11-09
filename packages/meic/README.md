@@ -87,7 +87,7 @@ Then, inside Claude Code, pick a track:
 
 **Paper trading (recommended first)** — no capital, no live orders, runs every enabled arm side by side. In the normal setup there is nothing to start: the orchestrator's supervisor runs the paper loop as its `meic-paper` job, evaluating every configured symbol every 60 seconds during market hours (`modules.meic.paper.tick_interval_seconds`). Without the supervisor — a bare checkout — keep the loop going in a terminal with `python -m cherrypick.meic.paper_loop`, or wire a cron job to `python -m cherrypick.meic.paper_loop --once` every minute. `/paper-start` starts nothing itself: it checks the streamer, the console and that the supervisor's `meic-paper` job is listed.
 
-On a base install the paper loop runs one arm, `control`. Any other arm is this machine's own configuration in `~/.cherrypick/config/meic.risk.json` (see [Risk Profiles](#risk-profiles)). The AI advisor's `advised:<name>` books also need Claude Code and `advisor.enabled` in the suite config; both are off on a base install.
+On a base install the paper loop runs one arm, `control`. Any other arm is this machine's own configuration in `~/.cherrypick/config/meic.risk.json` (see [Risk presets](#risk-presets)). The AI advisor's `advised:<name>` books also need Claude Code and `advisor.enabled` in the suite config; both are off on a base install.
 
 **Live trading (experimental, off by default, at your own risk)** — the deterministic live loop, armed one day at a time. Set `enable_live_trading`, `live.symbol` and `live.gate0_confirmed` in `~/.cherrypick/config/meic.json`, then, from the repo root:
 
@@ -133,11 +133,11 @@ for the exact couplings.
 
 ## Design highlights
 
-- **Parallel-shadow paper trading** — every trading day, `control` and every active AI-advisor experiment (each its own `advised:<name>` book, any number running at once since 2026-09-17) are evaluated deterministically against the *same* live-quote snapshot per symbol, each as its own virtual account. Advised books need Claude Code and `advisor.enabled`, both off on a base install. No capital, no live orders, apples-to-apples stream comparison. Recorded sessions can be replayed through the same engine (`python -m cherrypick.meic.replay`, over the gex recorder's quote history from 2026-10-13). See [docs/paper-trading.md](docs/paper-trading.md) and [docs/paper-experiments.md](docs/paper-experiments.md).
+- **Parallel-shadow paper trading** — every trading day, `control` and every active AI-advisor experiment (each its own `advised:<name>` book, any number running at once) are evaluated deterministically against the *same* live-quote snapshot per symbol, each as its own virtual account. Advised books need Claude Code and `advisor.enabled`, both off on a base install. No capital, no live orders, apples-to-apples stream comparison. Recorded sessions can be replayed through the same engine (`python -m cherrypick.meic.replay`, over the gex recorder's quote history from 2026-10-13). See [docs/paper-trading.md](docs/paper-trading.md) and [docs/paper-experiments.md](docs/paper-experiments.md).
 - **Corrected MEIC exit rules** — iron condors have exactly three exits: a per-side software stop (switched off in the shipped paper `control` arm, which holds to settlement or force-close), a time-based force-close **before the bell for non-cash-settled symbols only** (QQQ/IWM/equities — avoids physical assignment), and **left-to-expire cash settlement for cash-settled symbols** (SPX/XSP). There is **no profit-target exit** — that was removed as it isn't part of MEIC. Event days (FOMC, triple-witching, quarterly) still force-close everything as risk overrides.
 - **One read surface, both books** — the console tags every row with the mode it came from, so paper and live can never be confused for one another.
 - **Realistic fee modelling** — the paper engine charges tastytrade's exact broad-based-index-options fee schedule per leg (commission, clearing, ORF, per-symbol exchange fee, TAF on sells), so simulated P&L reflects real cost drag.
-- **Unattended, self-healing loop** — the suite's supervisor fires a short-lived paper-loop process every 60 seconds during market hours (the OS scheduler holds one entry for the whole suite, not one per module): headless, time-gated, and persistent across sessions. At the 16:00 settlement pass it rolls the session into `daily_summary`, which the suite review reads; this module's own EOD reports were retired on 2026-08-13.
+- **Unattended, self-healing loop** — the suite's supervisor fires a short-lived paper-loop process every 60 seconds during market hours (the OS scheduler holds one entry for the whole suite, not one per module): headless, time-gated, and persistent across sessions. At the 16:00 settlement pass it rolls the session into `daily_summary`, which the suite review reads.
 - **Automated end-of-day reporting** — the suite review (`packages/review`) covers this module alongside the other modules, split by arm, on two daily passes. `/eod-report` still produces the agent-synthesized LIVE write-up. Bounded log rotation keeps every log file from growing without limit.
 
 ---
@@ -171,26 +171,27 @@ the trade:
 7. **Account-wide caps** — max concurrent condors and max daily entries are shared across every traded symbol, not per-symbol.
 8. **Event calendars** — hard blackouts/tighter rules around FOMC announcements, quarterly expiry, and triple witching.
 
-## Risk Profiles
+## Risk presets
 
-> ⚠️ **The four-tier table below is an example ladder, not shipped.** It is history, and no longer ships. It was disabled for paper on
-> 2026-08-07, and since 2026-10-01 the package carries only `config.risk.example.json`, an arm
-> registry holding `control` alone. Every other arm, the ladder tiers included, is a machine's own
-> configuration in `~/.cherrypick/config/meic.risk.json` (or the file `$MEIC_RISK_CONFIG` names);
-> MEIC reads that file when it exists and the shipped example otherwise. `/set-risk-profile` reads
-> that same registry and refuses to run when only the shipped example exists. The tiers' values and rationale stay in [docs/risk-profiles.md](docs/risk-profiles.md);
-> the arm design is in [docs/paper-experiments.md](docs/paper-experiments.md).
+> **The four-tier ladder is an example, not shipped.** The package carries only
+> `config.risk.example.json`, an arm registry holding `control` alone. Every other arm, the ladder tiers
+> included, is a machine's own configuration in
+> `~/.cherrypick/config/meic.risk.json` (or the file `$MEIC_RISK_CONFIG` names); MEIC reads that file when
+> it exists and the shipped example otherwise. `/set-risk-profile` reads that same registry and refuses to
+> run when only the shipped example exists. The tiers' values and rationale are in
+> [docs/risk-profiles.md](docs/risk-profiles.md); the arm design is in
+> [docs/paper-experiments.md](docs/paper-experiments.md).
 
-On a machine whose own registry holds them, the tiers switch MEIC's live entry-gate thresholds with a single command instead of hand-editing `~/.cherrypick/config/meic.json`. A **risk profile** bundles IV-rank floors, credit minimums, delta limits, and stop triggers — each preset offsets its gate relaxations with a tighter stop so you're reallocating risk, not just adding it. (Concurrency caps used to be part of that offset too; since 2026-08-01 every profile runs uncapped, so the stop is the ladder's only remaining offset — see `docs/risk-profiles.md`.)
+On a machine whose own registry holds them, the tiers switch MEIC's live entry-gate thresholds with a single command instead of hand-editing `~/.cherrypick/config/meic.json`. A preset bundles IV-rank floors, credit minimums, delta limits, and stop triggers, and each one offsets its gate relaxations with a tighter stop so you're reallocating risk, not just adding it (every arm runs uncapped, so the stop is the only offset).
 
-| Profile | What it does | Trade-off |
+| Preset | What it does | Trade-off |
 |---|---|---|
 | **conservative** | Strict IV-rank (≥30%) and credit floors, wide OTM buffers, latest entry time (12:00 PM) | Fewest trades (~1–2/day), highest per-trade safety margin |
 | **moderate** | Slightly relax IV-rank (≥22%) and credit floors, enter earlier (11:00 AM) | ~1 more trade/day, thinner credit cushion but offset by tighter 93% stop |
-| **aggressive** | Tier 1 + accept closer-to-money strikes (delta 0.22, OTM tighter) | ~2–3 more trades/week, each one riskier but the 90% stop limits per-trade exposure |
-| **very-aggressive** | Tier 2 + trade through higher-VIX (≤30) and trending (ATR ≤2.0% of price) conditions; stop at 85% | Most trades (~3–5 more/week on active weeks), each with high gamma/pin risk; only for deliberate short experiments |
+| **aggressive** | Moderate + accept closer-to-money strikes (delta 0.22, OTM tighter) | ~2–3 more trades/week, each one riskier but the 90% stop limits per-trade exposure |
+| **very-aggressive** | Aggressive + trade through higher-VIX (≤30) and trending (ATR ≤2.0% of price) conditions; stop at 85% | Most trades (~3–5 more/week on active weeks), each with high gamma/pin risk; only for deliberate short experiments |
 
-Use `/set-risk-profile <name>` to switch (the config is backed up to `meic.json.bak` first, and the change takes effect on the next loop). It only applies a name your registry holds, and it changes what the **live** path would trade — experimental, off by default, at your own risk. Never apply a paper sampling arm (`control`, `bp-*`, …) to live config (see the warning in `.claude/commands/set-risk-profile.md`). See [docs/risk-profiles.md](docs/risk-profiles.md) for the full rationale, decision tree, and when to escalate.
+Use `/set-risk-profile <name>` to switch (the config is backed up to `meic.json.bak` first, and the change takes effect on the next loop). It only applies a name your registry holds, and it changes what the **live** path would trade — experimental, off by default, at your own risk. Never apply a paper sampling arm (`control`, `bp-*`, …) to live config (see the warning in `.claude/commands/set-risk-profile.md`). To choose what live trades, name a registry arm in `live.arm` instead. See [docs/risk-profiles.md](docs/risk-profiles.md) for the full rationale and when to escalate.
 
 ## Paper trading
 
@@ -206,8 +207,7 @@ python run.py headline                                # per-arm results + what i
 
 Under the supervisor, the paper loop stops when the module is switched off (`modules.meic.enabled`
 in `~/.cherrypick/config.json`). Without the supervisor, run `python -m cherrypick.meic.paper_loop`
-in a terminal (or `--start` for a detached daemon); the loop's own scheduled task (`--install-task`)
-was removed on 2026-10-08.
+in a terminal (or `--start` for a detached daemon); the module has no scheduled task of its own.
 
 Every 60 seconds during market hours, the engine takes one live-quote snapshot per symbol and runs every enabled arm against it deterministically — synthetic fills at mid less a modelled slippage haircut (`slippage_frac_of_spread`, 0.125 of the bid-ask by default), each arm its own virtual account, tastytrade's exact fee schedule applied per leg. Writes go only to `paper_trades.db` in the data home; the live account and `meic_trades.db` are never touched, and no live order is ever submitted (paper mode is not gated by `enable_live_trading`).
 
@@ -217,8 +217,7 @@ A pre-registered **graduation gate** (≥30 filled ICs, positive expectancy, ≥
 
 The console — `http://127.0.0.1:5070/meic`, opened with `/console`. It reads **both** ledgers and
 tags every row with the mode it came from, so paper and live are separated by the data rather than by
-which port you opened (this module's own two-port dashboard, 5050 live / 5051 paper, was retired on
-2026-08-12). The MEIC page has a left rail of tabs:
+which port you opened. The MEIC page has a left rail of tabs:
 
 - **session** — one session's net, positions, costs, net by arm and why entries were refused
 - **summary** — the gauge-led day summary
@@ -251,9 +250,9 @@ Everything runs locally against your own tastytrade account — no cloud depende
 - [Strategy](docs/strategy.md) — MEIC structure, wing width selection, stops, exit rules, EOD settlement handling
 - [Entry gates](GATES.md) — the full entry-gate stack in evaluation order
 - [Paper trading](docs/paper-trading.md) — the parallel-shadow engine, fee model, historical replay, graduation gate, known limitations
-- [Paper experiments](docs/paper-experiments.md) — how arms are designed and read, and the record of every closed or retired study
-- [Risk Profiles](docs/risk-profiles.md) — the retired four-tier ladder (no longer shipped): its trade-offs and full rationale
-- [History](docs/history.md) — dated incidents, audits and arm changes behind the rules in `CLAUDE.md`
+- [Paper experiments](docs/paper-experiments.md) — how arms are designed and read
+- [Risk presets and arm design rules](docs/risk-profiles.md) — the example four-tier ladder and the rules every arm obeys
+- [Reference](docs/reference.md) — the read-side CLI, advisor bounds, arms, declared boundaries and every config key
 - [`CLAUDE.md`](CLAUDE.md) — the agent's operating instructions (loop steps, config reference, guardrails)
 
 **Suite-level:** [cherrypick README](../../README.md) · [suite user guide](../../docs/PROJECT.md) · [orchestrator](../orchestrator)
@@ -288,7 +287,7 @@ cherrypick/
     │   ├── analytics.py             # Read-only query layer: by_arm, breakeven_scorecard, regime cuts
     │   ├── paper.py                 # Deterministic parallel-shadow paper engine (every enabled arm)
     │   ├── paper_loop.py            # Unattended paper loop (one --once tick per spawn) + daily roll-up
-    │   ├── paper_practice.py        # 0DTESPX-backed practice-mode backtester (see paper-practice-plan.md)
+    │   ├── paper_practice.py        # 0DTESPX-backed practice-mode backtester (see docs/0dtespx-api.md)
     │   ├── paper_replay.py          # SPX historical-replay mode (0DTESPX data; bulk mode disabled)
     │   ├── cli.py                   # Read-only CLI behind run.py (headline, arms, regime, exits, stops, …)
     │   ├── regime_cuts.py           # Nightly regime-cuts artifact (the supervisor's meic-regime-cuts job)
@@ -308,11 +307,10 @@ cherrypick/
     │   ├── operating.md             # Running and monitoring the agent
     │   ├── strategy.md              # MEIC strategy details and exit rules
     │   ├── paper-trading.md         # Paper-trading engine, fee model, graduation gate
-    │   ├── paper-experiments.md     # The closed forward test + retired-study design record
-    │   ├── paper-practice-plan.md   # Structured plan for building paper-workflow confidence
-    │   ├── risk-profiles.md         # The retired risk ladder and its rationale
-    │   ├── history.md               # Dated incidents, audits and arm changes
-    │   └── 0dtespx-api.md           # 0DTESPX API/ToS notes (historical-replay data source)
+    │   ├── paper-experiments.md     # How paper arms are designed and read
+    │   ├── risk-profiles.md         # The example preset ladder and the arm design rules
+    │   ├── reference.md             # Read-side CLI, advisor bounds, arms, boundaries, config keys
+    │   └── 0dtespx-api.md           # 0DTESPX API/ToS notes and the practice backtester
     ├── .claude/
     │   └── commands/
     │       ├── meic-start.md        # /meic-start — launch full live session
@@ -357,8 +355,7 @@ orchestrator and this module read the same files. Resolved by [`cherrypick/meic/
 
 ~/.cherrypick/data/marketdata/       # shared across every module, not MEIC-owned
 └── stream_cache.db                  # Live streamer cache (quotes/greeks/OI/volume/GEX history) —
-                                      # written by the standalone streamer (packages/streamer), the
-                                      # producer since the 2026-07-21 cutover
+                                      # written by the standalone streamer (packages/streamer)
 ```
 
 ---

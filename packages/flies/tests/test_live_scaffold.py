@@ -1,4 +1,4 @@
-"""The live scaffold (docs/live-trading-plan.md): gates, order builders, and the gated loop.
+"""The live scaffold (docs/live.md): gates, order builders, and the gated loop.
 
 Everything here is offline — the broker is a fake, and the point under test is that the
 scaffold is INERT by default: no gate, no order.
@@ -151,7 +151,7 @@ def _arm_for(day: str) -> None:
 
 
 def test_broker_cli_live_gates_are_the_same_posture():
-    assert live_gates({}) == ["live.enabled is false (docs/live-trading-plan.md, Gate 0 first)"]
+    assert live_gates({}) == ["live.enabled is false (docs/live.md, Gate 0 first)"]
     assert live_gates({"live": {"enabled": True}}, designated="5W1", when=_GATE_WHEN)  # no attestation
     _arm_for(_GATE_DAY)
     assert live_gates(BASE_CFG, designated="5W1", when=_GATE_WHEN) == []

@@ -144,7 +144,7 @@ def _offer_migration(cfg: dict[str, Any], prompt_fn=input) -> list[dict[str, Any
         if out.get("skipped_conflicts"):
             print(
                 f"      {service}: CONFLICT on {out['skipped_conflicts']} — shared holds a "
-                "different value; resolve deliberately (see docs/onboarding-redesign.md)."
+                "different value. Decide which is right; the module's copy was left in place."
             )
         elif out.get("ok"):
             print(f"      {service}: migrated {out.get('migrated', [])}")

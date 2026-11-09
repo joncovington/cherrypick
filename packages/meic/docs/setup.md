@@ -115,14 +115,14 @@ the package. Safe to run multiple times.
 
 ### 6. Start the streamer daemon (recommended)
 
-Since the 2026-07-21 producer cutover, the **standalone streamer** (`packages/streamer`, a sibling
+The **standalone streamer** (`packages/streamer`, a sibling
 package) is the suite's single writer of the shared stream cache — run it from the monorepo root:
 
 ```bash
 python ../streamer/run.py
 ```
 
-It is the only producer (MEIC's own rollback streamer was removed on 2026-10-18), and it
+It is the only producer, and it
 maintains a persistent DXLink WebSocket so quote/greeks/chain reads are served from cache instead of
 a cold connection each time. `/meic-start` and `/paper-start` both check/start it automatically as
 their first step (see `.claude/commands/meic-start.md`); the console is already running.

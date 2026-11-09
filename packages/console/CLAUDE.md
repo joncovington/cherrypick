@@ -4,10 +4,9 @@ The suite's only read surface: one app over every module's read models — the L
 trading modules (MEIC, earnings, calendars, contango, weeklyput, and the retired flies, bwb, PMCC and curve, which ship off by default), GEX,
 Charts, Screeners, Compare, Backtest and System — plus the advisor and the reports. Every module
 remains a producer this package reads; it touches none of their code. The dashboards it replaced
-survive only at the `pre-console-only` tag, and the scout research surfaces are retired too, so **no
-path here touches an order** — `dry-run-only.test.ts` pins `postOrderDryRun` to the scope probe alone
-and scans every reader. See `docs/parity.md` for what survived the teardown and why, and
-[docs/history.md](docs/history.md) for the dated stories behind the rules below.
+survive only at the `pre-console-only` tag, so **no path here touches an order** —
+`dry-run-only.test.ts` pins `postOrderDryRun` to the scope probe alone and scans every reader.
+[docs/not-covered.md](docs/not-covered.md) lists what the console does not cover.
 
 **The supervisor keeps this running** as an always-on resident job (`console` in
 `state/supervisor-jobs.json`), with no clock window or trading-day gate — a read surface only open in
@@ -78,12 +77,12 @@ alone):
   read transaction, so they cannot starve WAL checkpointing.
 - **A reader that states a total and its breakdown reads one snapshot** (`withReadSnapshot`). Each
   statement is otherwise its own transaction, so a total from one query and rows from another can
-  straddle a module's write: the MEIC summary's hero stopped equalling the sum of its arms
-  mid-session (2026-10-16). The snapshot lasts one synchronous read; the summary readers use it.
+  straddle a module's write, and a summary's hero would stop equalling the sum of its arms
+  mid-session. The snapshot lasts one synchronous read; the summary readers use it.
 - **⚠️ `withReadOnlyDb` swallows EVERY throw into its fallback and the request still returns 200.**
   Deliberate (a store may be absent because the module never ran here), but **a broken reader is
   indistinguishable from an empty one**, and a green `vitest` run is not evidence a reader change
-  works. It has produced two real defects that both looked healthy. So: after changing a reader, hit
+  works. It has hidden defects behind a healthy-looking page. So: after changing a reader, hit
   the endpoint on a rebuilt, restarted server and check the payload is populated, not merely 200; and
   where a reader can meet a store whose shape varies (older paper book, live book, fixture), ask
   `sqlite_master` which tables exist rather than naming one and relying on the catch.
@@ -95,7 +94,7 @@ alone):
     defect.
   - **A failed day resolve must narrow, never widen.** `null` from `latestTradeDate` means "latest
     day" and becomes NO date clause — right for an empty ledger, wrong for a throw, which would widen
-    the answer to the whole era (once: 289 rows beside a 34-position day). A thrown resolve now scopes
+    the answer to the whole era (289 rows beside a 34-position day). A thrown resolve scopes
     to a day that matches nothing: showing nothing is visibly wrong, showing the era looks plausible.
     The `sqlite_master` guard covers a missing table; this covers schema drift inside a present one.
   - **Reader throws are audible.** Each is recorded per store (path, message, count, last seen),
@@ -121,7 +120,7 @@ alone):
     says so.
   - What the page offers is an allow-list (`web/src/pages/Config/fieldMeta.ts`); the suite has no JSON
     schema, so that map is the form's schema. Every field must edit a key some code reads
-    (`configFieldsAreRead.test.ts`; "MEIC loop interval" edited a dead key until 2026-09-29). Writes are gated like the orchestrator's settings server
+    (`configFieldsAreRead.test.ts`). Writes are gated like the orchestrator's settings server
     (loopback Host, CSRF, JSON content type), deliberately **not** on the broker credential scope — a
     config file is not the broker.
 - **The Advisor page's two buttons are the second bounded exception, and hold no logic either.** Kill
@@ -167,7 +166,7 @@ alone):
   enforces. Earlier eras stay reachable through a visible scope control using the shared `"ALL"`
   convention; widening is a stated choice, never the default. Filtering to nothing is reported as a
   filtered-out result, not an empty page. pmcc scopes its arm comparison and weekly A/B to its own
-  `CURRENT_ERA` with an era picker (2026-10-05; `test/pmcc-era.test.ts` pins the copy to the
+  `CURRENT_ERA` with an era picker (`test/pmcc-era.test.ts` pins the copy to the
   module's), and its performance slide to the same era by the stamp on each row (`MODULE_ERA` in
   `readers/performance.ts`, through `core.metrics read --era`); history stays the full record, bounded
   by its date range. Calendars needs no bound until a second era exists.

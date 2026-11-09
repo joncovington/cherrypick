@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Flies broker credentials — OS keyring only, service `fliesagent`.
 
-Part of the live scaffold (docs/live-trading-plan.md). The store/session pattern is MEIC's,
+Part of the live scaffold (docs/live.md). The store/session pattern is MEIC's,
 through the shared `cherrypick.core.auth`: OAuth secrets live in the OS keyring, never in
 files/env/logs, and the orchestrator's `connect`/`account` onboarding delegates to this
 module's hidden-input CLI (`keyring_service: "fliesagent"` on the orchestrator side).

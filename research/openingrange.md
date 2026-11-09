@@ -1,8 +1,8 @@
 **What this covers:** the frozen contract for the opening-range study — what is measured, against
 what, which way the effect should point, and what result would retire it. Declared **2026-09-22**.
-Part of the [flies module](../README.md) in the cherrypick suite. The findings, when there are any,
-go to [experiment-log.md](experiment-log.md); this file is the declaration and does not change
-except to record that it was retired.
+Part of the flies research (see [packages/flies](../packages/flies/README.md)). The findings, when there
+are any, are added at the end of this file; the declaration above them does not change except to record
+that the study was retired.
 
 # The opening range (09:30–10:00 ET)
 
@@ -109,7 +109,7 @@ mechanism, not for it.
   suspected.
 - Or flies and MEIC move the same direction → the mechanism is wrong, whatever the significance.
 
-Retirement is recorded here and the finding written to `experiment-log.md`.
+Retirement is recorded here, with the finding.
 
 ## Status
 

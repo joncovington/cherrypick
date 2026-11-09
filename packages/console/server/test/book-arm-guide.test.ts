@@ -29,7 +29,7 @@ const CURVE = {
     wall: {
       enabled: false,
       _summary: "A call-side BWB at the GEX call wall.",
-      _retired: "Retired 2026-10-15 (docs/experiment-log.md): no edge at any width.",
+      _retired: "Retired 2026-10-15: no edge at any width.",
     },
     near: { enabled: true, short_delta_target: 0.4, _summary: "A 0.40-delta short.", _since: "2026-10-06" },
   },
@@ -134,10 +134,10 @@ describe("armMeta", () => {
   });
 
   it("takes the date out of a prose _retired, and keeps the prose as a note", () => {
-    expect(armMeta({ _retired: "Retired 2026-10-15 (docs/experiment-log.md): no edge." }).retiredOn).toBe("2026-10-15");
+    expect(armMeta({ _retired: "Retired 2026-10-15: no edge." }).retiredOn).toBe("2026-10-15");
     const wall = arm("wall");
     expect(wall.retiredOn).toBe("2026-10-15");
-    expect(wall.notes).toEqual([{ key: "retired", text: "Retired 2026-10-15 (docs/experiment-log.md): no edge at any width." }]);
+    expect(wall.notes).toEqual([{ key: "retired", text: "Retired 2026-10-15: no edge at any width." }]);
     expect(arm("hook").notes).toEqual([]); // a bare date is a field only
   });
 });

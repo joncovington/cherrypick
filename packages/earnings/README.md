@@ -1,16 +1,14 @@
 # cherrypick-earnings
 
 > **⚠️ Experimental, educational software — not financial advice.** cherrypick is a prototype for
-> learning about and researching options strategies. This module is **paper-only** (since v0.12.0): it
-> places no order. Paper results are simulated and do not represent actual trading; options trading
+> learning about and researching options strategies. This module is **paper-only**: it places no order. Paper results are simulated and do not represent actual trading; options trading
 > involves substantial risk of loss and is not suitable for all investors. Provided "as is", without
 > warranty. **Read [DISCLAIMER.md](../../DISCLAIMER.md) before use.**
 
 **What this module does:** earnings trades defined-risk options strategies around company
 earnings announcements — opening a position the afternoon before a report and managing it after
 the announcement. It picks from seven different structures each night based on which one fits that
-stock's setup best. It runs as **paper trading** (simulated) only; live trading was removed in
-v0.12.0. It's one strategy module in the
+stock's setup best. It runs as **paper trading** (simulated) only. It's one strategy module in the
 cherrypick suite, alongside the 0DTE iron-condor module, the butterfly module, and the GEX
 engine. Most of what you do here is run terminal commands, or ask Claude to run a
 `/`-prefixed command for you — no coding required.
@@ -24,14 +22,13 @@ engine. Most of what you do here is run terminal commands, or ask Claude to run 
 > drives it by subprocess (`cherrypick install`), never by import. See [How this fits the suite](#how-this-fits-the-suite) below, this module's own
 > [docs/](docs/README.md), and the suite-wide [documentation index](../../docs/README.md).
 
-An autonomous options trading agent for overnight earnings plays. It scans the daily earnings
-calendar, evaluates seven defined-risk options strategies against live market data, ranks
-candidates, and manages entries and exits around the announcement. The agent-driven loop opens
-before the close and closes in the next morning's close window (the calendars can run longer). The
-unattended paper loop manages positions instead: a loser closes on the first morning, a winner short
-of its target can be carried up to three trading sessions, and anything that expires is settled at
-intrinsic. Nothing but the expiry close and the pin guard acts on the entry session, and
-`expected_move_butterfly` is held to the 15:20 expiry close or its take-profit.
+A paper-trading engine for overnight earnings plays. It scans the daily earnings calendar, evaluates
+seven defined-risk options strategies against live market data, ranks candidates, and manages entries
+and exits around the announcement. The unattended paper loop opens positions before the close and
+manages them afterwards: a loser closes on the first morning, a winner short of its target can be
+carried up to three trading sessions, and anything that expires is settled at intrinsic. Nothing but the
+expiry close and the pin guard acts on the entry session, and `expected_move_butterfly` is held to the
+15:20 expiry close or its take-profit.
 
 Every strategy is **defined-risk**: max loss is known at entry. Undefined-risk/naked strategies
 (naked straddles, strangles, naked puts/calls) were deliberately excluded — a single-name
@@ -129,9 +126,9 @@ All defined-risk, all evaluated nightly against live tastytrade chains and DoltH
 `iron_condor`, `directional_credit_spread`, `broken_wing_butterfly`, `atm_calendar`,
 `double_calendar` and `expected_move_butterfly` (paper only). Each one's structure, entry gates and
 exit rules are in the one strategy table, [Strategy Guide](./docs/05-strategies.md). The two calendars
-(from 2026-10-15) and `broken_wing_butterfly` (from 2026-10-26) are registered but open nothing in the
-forced-sampling books (`strat_test_harness.STRAT_TEST_RETIRED`; see
-[docs/operating-history.md](./docs/operating-history.md)).
+and `broken_wing_butterfly` are registered but open nothing in the forced-sampling books
+(`strat_test_harness.STRAT_TEST_RETIRED`; the dates are in
+[docs/measurement-boundaries.md](./docs/measurement-boundaries.md)).
 
 See [docs/05-strategies.md](./docs/05-strategies.md) for full structure, entry conditions, and
 exit rules per strategy, and [docs/screening-criteria.md](./docs/screening-criteria.md) for the
@@ -168,12 +165,12 @@ spec this system runs against; commands and config options are in [docs/referenc
 
 ## Paper only
 
-Earnings is paper-only since v0.12.0. Persistence is `cherrypick/earnings/db_paper.py`, and nothing
+Persistence is `cherrypick/earnings/db_paper.py`, and nothing
 submits an order: the module builds the order spec and records the simulated fill. It still sources
 live quotes, chains and greeks from the real tastytrade session (needed to size and price orders
 realistically). A leftover `enable_live_trading` or `live` key in `~/.cherrypick/config/earnings.json`
-is ignored; `python run.py doctor` flags it and it can be deleted. The old `earnings_trades.db` is the
-history of the orders placed before the change; nothing writes it now.
+is ignored; `python run.py doctor` flags it and it can be deleted. `earnings_trades.db` holds the
+orders placed before v0.12.0; nothing writes it.
 
 Two commands, writing to isolated books:
 
@@ -184,10 +181,9 @@ Two commands, writing to isolated books:
 - **`/paper-trading-start`** — one-shot production-ranking analysis (`rank_strategies.py`): what
   the ranking would pick tonight, without submitting anything.
 
-The module's own EOD reports were retired 2026-08-13 — the suite review covers every module in one
-place: `python -m cherrypick.review build --session <date>`. Track accumulated (multi-day) results
-with `python -m cherrypick.earnings.strategy_report` (text), or on the console's earnings page (the
-module's HTML strategy dashboard was retired with the other dashboards on 2026-08-12).
+The module writes no EOD report: the suite review covers every module in one place
+(`python -m cherrypick.review build --session <date>`). Track accumulated (multi-day) results with
+`python -m cherrypick.earnings.strategy_report` (text), or on the console's earnings page.
 
 ---
 
@@ -207,6 +203,8 @@ pytest
 - [docs/05-strategies.md](./docs/05-strategies.md) — strategy-by-strategy structure and rules
 - [docs/screening-criteria.md](./docs/screening-criteria.md) — hard filters and the accept/reject screen (source
   of truth for what gates a candidate)
+- [docs/measurement-boundaries.md](./docs/measurement-boundaries.md) — the dates results must not be
+  pooled across
 - `CLAUDE.md` — the authoritative operational spec (how it runs, database schema); its tool
   reference and config options are in [docs/reference.md](docs/reference.md)
 

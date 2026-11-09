@@ -6,8 +6,7 @@
 > `~/.cherrypick/config.json`. It is paper-only either way, and a base install runs only the
 > `control` book (see below).
 
-Weekly SPY double calendars (SPX until 2026-08-15), paper-only, built as a **forward
-exit-parameter experiment**.
+Weekly SPY double calendars, paper-only, built as a **forward exit-parameter experiment**.
 
 The trade: every Monday (Tuesday after a Monday holiday) from 10:00 ET, buy one put calendar at the
 expected-move-down strike and one call calendar at the expected-move-up strike — short legs expiring
@@ -30,8 +29,7 @@ exits, so the module doesn't guess — it measures:
   slippage stack, and validated to the cent against the control book's real results on every run;
 - optional `advised:<experiment name>` books (off unless the advisor and this module's `advice`
   block are both switched on) run the AI advisor's admitted exit params (frozen per
-  row at entry) as real books beside the control — one book per concurrent advisor experiment
-  since 2026-09-17 (`advised:control` before);
+  row at entry) as real books beside the control — one book per concurrent advisor experiment;
 - an optional Friday-entry regime (`friday_entry`, off in the example) enters the same week's
   calendars at Friday's close as `friday:control` and `friday:path` (`dc_7_10`), never pooled with
   the Monday `dc_4_7`: [docs/friday-entry-arm.md](docs/friday-entry-arm.md).

@@ -1,4 +1,4 @@
-"""The flies intraday agent's historical replay (packages/flies/docs/intraday-agent-plan.md, step 5).
+"""The flies intraday agent's historical replay (packages/flies/docs/intraday-agent.md, step 5).
 
 Asks the model, minute by minute, over the recorded sessions in `intraday_replay`'s window, through
 the forward job's own `run_tick`, prompt and fenced call (`flies_intraday_agent.py`), then scores the

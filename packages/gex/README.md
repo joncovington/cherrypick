@@ -29,7 +29,7 @@ loop uses for its GEX regime gate — and never places orders or touches live tr
 Part of the **cherrypick** trading-tool suite. This package is the **producer**: it computes the GEX
 profile and its recorder writes the spot trail, a GEX regime snapshot about every five minutes, and
 an intraday market-regime sample (vol complex, breadth, cross-asset quotes) during regular hours.
-The **console** (`packages/console`) is the only thing that renders it — this module's own dashboard and its suite-dashboard section card were retired on 2026-08-12. See
+The **console** (`packages/console`) is the only thing that renders it (this module serves nothing itself). See
 the suite's [documentation index](../../docs/README.md) for the big picture.
 
 ## Two ways to run

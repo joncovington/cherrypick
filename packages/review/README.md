@@ -46,5 +46,4 @@ in the `review` block of `~/.cherrypick/config.json`. A third job, `review-narra
 runs the narrative script after the final pass; it is off by default (`review.narrative`) and needs
 the `claude` capability (Claude Code, recorded by `run.py capabilities`).
 
-Operating contract and the rules the fact set enforces: [CLAUDE.md](CLAUDE.md). Incidents behind
-those rules: [docs/history.md](docs/history.md).
+Operating contract and the rules the fact set enforces: [CLAUDE.md](CLAUDE.md).

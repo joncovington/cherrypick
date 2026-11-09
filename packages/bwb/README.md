@@ -1,7 +1,7 @@
 # cherrypick-bwb
 
-**Retired 2026-11-08; off by default.** The owner switched its entries off; the code, ledgers and docs are
-kept so it can be reinstated. To reinstate: set `modules.bwb.enabled` to true in the suite config and
+**Retired; off by default.** The module ships switched off and stays in the tree so it can be reinstated.
+Its history found no arm that wins after costs (research/history-studies-2026-10.md). To reinstate: set `modules.bwb.enabled` to true in the suite config and
 `enabled` to true on the `control` arm (and on `bounce` or `flip` if wanted) in `bwb.json`; the supervisor
 derives the bwb jobs from the module switch. Live trading stays behind its own gate and per-day arm
 (`/live-bwb-start` and `--arm` refuse while the module is off).
@@ -15,20 +15,19 @@ derives the bwb jobs from the module switch. Live trading stays behind its own g
 
 bwb: a module that lays a **daily-laddered SPX put broken-wing butterfly** at the
 expected move for a net credit, ~7 DTE, held to expiry — a new one every session, so ~5-7
-positions ride concurrently per book at steady state. Four books trade the IDENTICAL base
+positions ride concurrently per arm at steady state. The arms trade the IDENTICAL base
 structure; the only variable is whether/when a reversal-triggered put credit spread add-on fires,
-turning the fly into a 1-3-2: `control` (never), `delta` (raw |delta| touch), `bounce` (confirmed
-pullback off a peak), `flip` (a gamma-flip reclaim). `delta` and a fifth, call-side `wall` book
-were retired at the 2026-10-15 boundary; their rows stay readable. Since the module's retirement the
-example config ships every arm off (`enabled: false`, each with a `_retired` note). Once reinstated, turn
-`control`, and `bounce` or `flip` if wanted, on in `~/.cherrypick/config/bwb.json`. SPX is cash-settled and European-style — no
+turning the fly into a 1-3-2: `control` (never), `bounce` (confirmed pullback off a peak), `flip` (a
+gamma-flip reclaim). The code also keeps the retired `delta` (raw |delta| touch) and call-side `wall`
+arms, so their rows stay readable. The example config ships every arm off (`enabled: false`, each with
+a `_retired` note); once reinstated, turn `control`, and `bounce` or `flip` if wanted, on in
+`~/.cherrypick/config/bwb.json`. SPX is cash-settled and European-style — no
 assignment machinery, no dividend calendar, the cleanest settlement model in the suite.
 
 See [CLAUDE.md](CLAUDE.md) for the experiment design, the honesty rules, the trigger-tick
 substrate that makes a read-side threshold replay possible later, and the layout.
 
-Paper by default. Since 2026-09-18 one arm (`live.arm`, `control` in the example) can trade
-**live**. Live trading is experimental, off by default and at your own risk. Nothing trades until your
+Paper by default. One arm (`live.arm`, `control` in the example) can trade **live**. Live trading is experimental, off by default and at your own risk. Nothing trades until your
 own config sets `live.enabled` and fills in `live.gate0_confirmed`, and then only on a day armed by
 `/live-bwb-start`, which shows the disclaimer verbatim and requires an explicit YES (without Claude Code:
 `python -m cherrypick.bwb.live_loop --arm --confirm YES`, which prints `DISCLAIMER.md` and arms nothing

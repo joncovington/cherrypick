@@ -22,13 +22,13 @@ rule. Across all 247 captures held on 2026-10-03, the two never picked different
 `chart.vendor_view` applies it (`VIEW_PER_SIDE = 2`, `VIEW_KINDS`), and every vendor level in the
 chart file carries `vendor_view: true/false` (`chart_version` 4).
 
-**From 2026-10-04 this view was for comparison only, and since 2026-10-27 the console no longer
-shows it.** The subscription ended 2026-10-24, so the last capture (2026-10-23) would sit beside
-current bars as if it were current. The chart file still carries `vendor_view`. The chart draws our
+**This view is for comparison only, and the console does not show it**: the last capture
+(2026-10-23) would sit beside current bars as if it were current. The chart file still carries
+`vendor_view`. The chart draws our
 own levels (`swings.py`, see [setups.md](setups.md)); nothing in the setups or the watchlist reads
 the vendor's levels.
 
-## How it was measured (2026-10-03)
+## How it was measured
 
 - **The evidence.** The vendor's chart page prints a summary under the chart, "Support $106.60
   (−4.99%) $94.10 (−16.13%) … Resistance $113.60 (1.25%) $129.38 (15.31%)", listing the levels it

@@ -1535,7 +1535,7 @@ def _example_defaults():
 def test_regime_trend_band_is_documented_and_unchanged():
     """`regime_trend_points` was readable by the engine but documented nowhere outside engine.py
     (audit 2026-08-06). It ships at the engine's own default, so copying the example cannot retune
-    the flat band — the value docs/centre-lag.md records as having been wrong at 5."""
+    the flat band — the value docs/reference.md (Centre lag) records as having been wrong at 5."""
     from cherrypick.flies import engine
 
     defaults = _example_defaults()

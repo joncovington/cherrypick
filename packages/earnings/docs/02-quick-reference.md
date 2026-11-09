@@ -74,9 +74,9 @@ Every candidate has to clear the shared liquidity/quality gates in
 
 ---
 
-## Exit Mechanics (In Order)
+## Exit Mechanics of a Manual Cycle (In Order)
 
-The original same-session exit rules, kept here for the thresholds they set:
+A manual `/paper-start` cycle (not the supervisor's paper loop) closes on these same-session rules:
 
 1. **Early exit check** — the first morning after entry, between market open and
    `close_window_start` (default `09:45` ET): profit-target and stop checks per strategy run against

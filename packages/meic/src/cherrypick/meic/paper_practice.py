@@ -3,7 +3,7 @@
 Drives our REAL entry logic (paper.evaluate_entry, unchanged) through 0DTESPX.com *practice
 sessions* — the platform's server-side replay sandbox — instead of extracting their historical
 dataset. This is the ToS-COMPLIANT counterpart to src/paper_replay.py (which is disabled: its
-bulk-extraction design violates 0DTESPX acceptable use). See docs/paper-practice-plan.md and
+bulk-extraction design violates 0DTESPX acceptable use). See
 docs/0dtespx-api.md.
 
 Compliance posture (enforced by construction):

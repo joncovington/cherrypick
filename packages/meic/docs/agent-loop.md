@@ -9,7 +9,7 @@ the `tt` command table, then the Loop Steps. The rules in CLAUDE.md apply throug
 |---|---|---|
 | `python -m cherrypick.meic.tt get_connection_status` | Verify OAuth session and account access | No |
 | `python -m cherrypick.meic.tt get_market_overview --symbols XSP` | IV rank, underlying price, market summary | No |
-| `python -m cherrypick.meic.tt get_transactions --underlyings GLD --since 2026-01-01` | Trade history per underlying, GET only -- the order chains the daily position evaluation (packages/manage) judges | No |
+| `python -m cherrypick.meic.tt get_transactions --underlyings AAA --since 2026-01-01` | Trade history per underlying, GET only -- the order chains the daily position evaluation (packages/manage) judges | No |
 | `python -m cherrypick.meic.fee_reconcile [--date D] [--symbol S] [--apply]` | Settled LIVE rows' fees against the broker's: trade lines by the row's own order ids, settlement lines per contract on the sides `ic_spread_legs` records `expired`. Dry-run reports; `--apply` writes `fees`/`settlement_fees` and keeps the model once in `fee_reconciliations`. The gross is reported, never written (it is split per side in `ic_spread_legs`). The supervisor's `meic-fee-reconcile` job runs it with `--apply` daily, armed or not | No |
 | `python -m cherrypick.meic.live_loop --status \| --once [--live] \| --settle-overdue \| --settle --date D --price P [--symbol S] \| --arm --confirm YES \| --install-task \| --disarm` | The deterministic live loop: its state with no broker read (`--status`); one tick, dry-run unless `--live`; past sessions settled at their own official close; arm or disarm today (`--arm --confirm YES` is the human path and prints `DISCLAIMER.md`; `--install-task` is the `/live-meic-start` path after its own YES; `--uninstall-task` still disarms) | `--live`: Yes |
 | `python -m cherrypick.meic.tt get_quote --symbol XSP` | Last trade price (stream cache → DXLink fallback) | No |
@@ -171,8 +171,8 @@ the `tt` command table, then the Loop Steps. The rules in CLAUDE.md apply throug
    **Quarterly expiry hard stops** (`quarterly_expiry_dates` / `triple_witching_dates`): (a) no entries
    in open_volatile; (b) call OTM ≥ 0.0067; (c) halt entries for the session once intraday range exceeds
    0.5% of spot; (d) on triple witching, no entries after 12:30 and force-close all by 14:00.
-   (e) **Live only: no new entry all day on a quarterly expiry** (the last trading day of a quarter,
-   2026-09-30). `tt execute_trade --live` refuses any opening order that day with
+   (e) **Live only: no new entry all day on a quarterly expiry** (the last trading day of a quarter).
+   `tt execute_trade --live` refuses any opening order that day with
    `quarter_end_no_new_entries`; closes still go through. Paper keeps (a)-(c) and trades the day.
 
    **Regime gate (ICs only)**: `trending_regime` rejects IC entries for this symbol this iteration. A

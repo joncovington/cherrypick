@@ -7,7 +7,7 @@
 Read-only; runnable from anywhere; ledgers resolve off `$CHERRYPICK_HOME` (default `~/.cherrypick`).
 
 **The question.** The delta-placed bwb arms (`bwb-up`/`-down`, `-w2`) are held almost entirely by
-their own `min_bwb_credit_pct_of_tail` floor (experiment-log 2026-09-30). From 2026-09-30 every bwb
+their own `min_bwb_credit_pct_of_tail` floor (2026-09-30). From 2026-09-30 every bwb
 attempt row carries the structure it was offered in `proposed_legs` -- each leg's strike, sign,
 quantity, bid, ask and delta -- so a refused bwb can be priced and settled against the session's
 print without a chain. This replay asks what the arm would have made had the floor been lower, and
