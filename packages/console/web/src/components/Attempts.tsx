@@ -15,6 +15,7 @@ import {
   type SortOption,
 } from "./FilterSort";
 import { ChoiceGroup } from "../pages/Flies/FliesFilter";
+import { GuideLink } from "./GuideLink";
 
 /** Modules with a per-arm entry decision. calendars has none — its books share one entry plan. */
 import type { AttemptsModule } from "@console/shared";
@@ -241,6 +242,7 @@ function armRailHelp(module: AttemptsModule, mode: TradingMode, breaks: Array<{ 
             market with the same money. The bar splits the refusals by rule.
           </p>
         </HelpSection>
+        <GuideLink to="/help/experimenting-with-arms#reading-an-arm" />
       </>
     ),
   };

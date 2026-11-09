@@ -20,6 +20,7 @@ import { fmtMoney } from "../../lib/format";
 import { TimeSpreadsBody, timeSpreadsHelp } from "./TimeSpreadsCard";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
 import { TradeCards, candidateModel } from "./TradeCard";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * Income trades from our own universe, sized to the account (packages/manage `candidates.py`): the
@@ -582,6 +583,7 @@ export function incomeHelp(c: ManageCandidates): CardHelpContent {
         <HelpSection title="How they are listed">
           <p>By symbol, never ranked. Call spreads are off: short delta comes from the hedge when the book needs it.</p>
         </HelpSection>
+        <GuideLink to="/help/income-trades#step-2-selling-the-put" />
       </>
     ),
   };

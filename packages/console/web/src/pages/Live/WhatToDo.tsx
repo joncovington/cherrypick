@@ -3,6 +3,7 @@ import type { LiveTodayPayload, ManagePayload, ManageTrade } from "@console/shar
 import { Card } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { ACTION_PRIORITY, earningsInLife } from "./ManagePage";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * What to do today: one list from reads Live
@@ -92,6 +93,7 @@ export const WHAT_TO_DO_HELP: CardHelpContent = {
       <HelpSection title="Advice only">
         <p>Advice only: nothing on this list places or changes an order.</p>
       </HelpSection>
+      <GuideLink to="/help/live#today" />
     </>
   ),
 };

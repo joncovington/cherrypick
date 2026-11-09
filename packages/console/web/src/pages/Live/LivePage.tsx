@@ -23,6 +23,7 @@ import { Section } from "../../components/Section";
 import { structureLegs } from "../Flies/structure";
 import { BoxButton, BoxButtons } from "./portfolioBoxContext";
 import { TradeCards, type TradeCardModel } from "./TradeCard";
+import { GuideLink } from "../../components/GuideLink";
 
 const ACTIVITY_PAGE_SIZES = [10, 25, 50, 100] as const;
 
@@ -340,6 +341,7 @@ const PILOT_HELP: CardHelpContent = {
       <HelpSection title="The mark">
         <p>A mark is a mid, not a fill. Exposure is every open position&apos;s own worst case, net of fees and the assignment reserve: the figure the buying-power cap reads.</p>
       </HelpSection>
+      <GuideLink to="/help/live#meic-and-flies" />
     </>
   ),
 };

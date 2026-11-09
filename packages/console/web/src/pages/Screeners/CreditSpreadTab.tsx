@@ -9,6 +9,7 @@ import { TradeCards, dayMonth, type TradeCardModel } from "../Live/TradeCard";
 import { FAIR_TITLE, earningsText, fairText } from "./OwnListTab";
 import { BoxOpenButton, PanelChoice, ScreenerCard, ScreenerLayout, SessionSelect, SymbolSearch, useParamState, useScreenerBoxes, type ScreenerBox } from "./ScreenerParts";
 import { Section } from "../../components/Section";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * Our own credit-spread list (2026-10-24): the chart setups' fresh entries as spreads on the 30-45 day
@@ -371,6 +372,7 @@ export function creditHelp(tested: string | null, selection: { label: string; ru
             <p>No row for: {dropped.map(([k, v]) => `${v} (${k})`).join(", ")}.</p>
           </HelpSection>
         ) : null}
+        <GuideLink to="/help/screeners#the-income-lists" />
       </>
     ),
   };

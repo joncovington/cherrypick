@@ -36,6 +36,7 @@ import {
   pickCycle,
   putModel,
 } from "./weeklyputModels";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * weeklyput's pages (packages/weeklyput): item 57's unhedged short put on SPX, SPY, QQQ and IWM,
@@ -596,6 +597,7 @@ export function WeeklyputHelp({ status }: { status: WeeklyputStatus | undefined 
   const window = status?.decisionWindow ?? "15:45–15:55 ET (12:45–12:55 on an early close)";
   return (
     <div className="pf-layout">
+      <GuideLink to="/help/strategy-pages#weekly-put-weeklyput" />
       <Section concept="stand" tag="the rule" question="What does this module do?">
         <Card title="the weekly put" collapseKey="weeklyput-help-rule">
           <div className="pmcc-prose">

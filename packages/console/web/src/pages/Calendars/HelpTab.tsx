@@ -2,6 +2,7 @@ import type { CalendarsPayload } from "@console/shared";
 import { Card, fmtNum, fmtPct } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
 import { Section } from "../../components/Section";
+import { GuideLink } from "../../components/GuideLink";
 
 const PARAMS_HELP: CardHelpContent = {
   title: "The settings",
@@ -28,6 +29,7 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
   const p = data?.params;
   return (
     <div className="pf-layout">
+      <GuideLink to="/help/strategy-pages#calendars-calendars" />
       <Section concept="stand" tag="the module" question="What is this module?">
       <Card title="what this module is" collapseKey="cal-help-what" className="view-fade">
         <div className="cal-prose">

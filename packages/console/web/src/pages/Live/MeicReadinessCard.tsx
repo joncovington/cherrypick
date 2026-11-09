@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { LiveMeicReadiness } from "@console/shared";
 import { Card } from "../../components/DataTable";
 import { HelpSection, type CardHelpContent } from "../../components/CardHelp";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * Whether MEIC's live loop may be armed, as the module answers it (`arm_verdict`, bridged by the
@@ -23,6 +24,7 @@ export const READINESS_HELP: CardHelpContent = {
       <HelpSection title="Halt flag">
         <p>It blocks new condors only: fills are still confirmed and open condors still stopped and closed. Clearing it arms nothing.</p>
       </HelpSection>
+      <GuideLink to="/help/live#meic-and-flies" />
     </>
   ),
 };

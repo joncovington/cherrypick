@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { LockStatusPayload, ModuleGateView } from "@console/shared";
 import { useLockStatus, useSetLock } from "./useConfigModel";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The live-trading lock.
@@ -101,6 +102,8 @@ export function LockHero() {
             )}
           </p>
           {data !== undefined && <div className="lock-hero-path muted">{data.haltFlagPath}</div>}
+          <GuideLink to="/help/going-live#the-halt-flag" label="Read the guide: the halt flag →" />
+          <GuideLink to="/help/going-live#what-the-per-day-arm-does" label="Read the guide: how arming works →" />
         </div>
 
         <div className="lock-hero-action">

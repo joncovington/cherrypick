@@ -7,6 +7,7 @@ import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/Ca
 import { FilterGroup, FilterSortButton, FilterSortPanel, FilterSummary, FilterSwitch } from "../../components/FilterSort";
 import { ScreenerLayout } from "./ScreenerParts";
 import { Section } from "../../components/Section";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The signal board (2026-10-17): each listed stock's count of methods agreeing on one side, from our
@@ -95,6 +96,7 @@ export const boardHelp = (data: SignalBoardPayload): CardHelpContent => {
             original board's.
           </p>
         </HelpSection>
+        <GuideLink to="/help/screeners#the-screens" />
       </>
     ),
   };

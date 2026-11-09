@@ -8,6 +8,7 @@ import { ListViewContext, ViewSwitch, useListView, useViewChoice } from "../../c
 import { useBridged } from "../../lib/bridged";
 import { BtRows, type BtRow } from "./BtRows";
 import { CardLightbox, LightboxFrame, useOpenParam, type LightboxTab } from "./CardLightbox";
+import { GuideLink } from "../../components/GuideLink";
 
 /**
  * The Backtest page's queue tab (2026-10-24; laid out again 2026-10-27, docs/history/progress-queue-arms-plan.md (tag archive/docs-2026-11)
@@ -849,6 +850,7 @@ export function BacktestQueueTab() {
                 card. The running task stays large either way.
               </p>
             </HelpSection>
+            <GuideLink to="/help/research-and-backtests#the-research-queue" />
           </>
         ),
       }}

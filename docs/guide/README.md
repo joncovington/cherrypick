@@ -4,6 +4,12 @@ How to use the suite: what each part of the console shows, how to read it, and w
 The console's **Help** page shows these same pages. This file is its index: the order here is the
 order there, and a page that is not listed here is not served.
 
+## Getting started
+
+- [Your first week](first-week.md): what runs on its own and when, a morning and evening routine, what a normal first week looks like, and when to worry.
+- [Reading results honestly](reading-results.md): the money columns, why paper flatters, provisional results, measurement boundaries, and what a verdict means.
+- [Income trades, start to finish](income-trades.md): one made-up name, AAA, from the skate screen through the put, the wheel, assignment and covered calls, plus the PMCC step.
+
 ## The console
 
 - [The console at a glance](console-tour.md): the rail, the top bar, the status bar's chips, and how pages and tabs work.
@@ -15,8 +21,17 @@ order there, and a page that is not listed here is not served.
 - [Research](research.md): comparing arms, backtests and the advisor.
 - [System and Config](system-and-config.md): the suite's health, its settings, and the halt switch.
 
-## Keeping it current
+## Trading and research
 
+- [Going live safely](going-live.md): what live means here, the locks, arming for a day, the halt flag, and the first days.
+- [Experimenting with arms](experimenting-with-arms.md): add a variant beside the control, when an edit takes effect, how to read it on Compare, and when to stop.
+- [Research and backtests](research-and-backtests.md): the research register, declared tests, the research queue, the ThetaData backtest package and how to read a study, with the licence rule up front.
+
+## Running it
+
+- [Running on an always-on machine](always-on-machine.md): sleep, Windows Update restarts, power cuts, battery warnings, power throttling, the Windows service, and macOS and Linux.
+- [Troubleshooting and recovery](troubleshooting.md): reading doctor and status, the logs, the usual failures, restarting the supervisor, and what to do after an outage.
+- [Privacy](privacy.md): what leaves the machine, what stays, where credentials live, and how to wipe everything.
 - [Upgrading](upgrading.md): move to a newer release with `upgrade`, what makes it refuse, rolling back, and the one manual move from v0.11.
 
 ## Reports and data

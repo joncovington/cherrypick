@@ -8,6 +8,7 @@ import { useValuation } from "../../lib/api";
 import { BoxOpenButton, ScreenerCard, ScreenerLayout, SessionSelect, SymbolSearch, Tabs, useParamState, useScreenerBoxes, type ScreenerBox } from "./ScreenerParts";
 import { Section } from "../../components/Section";
 import { Dial, ValuationDetail, flagText, money, needsGrowth, pct, stateLabel, stretch, stretchText, type DetailSection } from "./ValuationDetail";
+import { GuideLink } from "../../components/GuideLink";
 
 export { ValuationDetail, stretch } from "./ValuationDetail";
 
@@ -297,6 +298,7 @@ export function valueHelp(universe: string | null | undefined, terminal: number 
             and decide nothing.
           </p>
         </HelpSection>
+        <GuideLink to="/help/screeners#the-income-lists" />
       </>
     ),
   };

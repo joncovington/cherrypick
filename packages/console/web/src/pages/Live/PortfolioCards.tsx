@@ -11,6 +11,7 @@ import { RiskGraph } from "./ScenarioCards";
 import { TradeCards, hedgeModel } from "./TradeCard";
 import { BoxButton, BoxButtons } from "./portfolioBoxContext";
 import { HelpSection, HelpWarn, type CardHelpContent } from "../../components/CardHelp";
+import { GuideLink } from "../../components/GuideLink";
 /**
  * The account read as one book (packages/manage `portfolio.py`), as cards: a dial for beta-weighted
  * delta against its band, meters for theta and the break-even move, the stress line, where the delta
@@ -628,6 +629,7 @@ export const INCOME_HELP: CardHelpContent = {
       <HelpSection title="More is not more edge">
         <p>Theta is paid for by gamma: a book earning more per day is also short more movement.</p>
       </HelpSection>
+      <GuideLink to="/help/live#portfolio" />
     </>
   ),
 };
@@ -656,6 +658,7 @@ export function directionHelp(p: ManagePortfolio): CardHelpContent {
         <HelpSection title="The hedge line">
           <p>While delta is outside its band, manage sizes a hedge; its headline shows here and the cards open under a hedge, sized.</p>
         </HelpSection>
+        <GuideLink to="/help/live#portfolio" />
       </>
     ),
   };
@@ -674,6 +677,7 @@ export const STRESS_HELP: CardHelpContent = {
       <HelpSection title="The graph">
         <p>The book's P&L across moves, now and at the nearest expiry. The full graph, with every figure on hover, is under risk graph.</p>
       </HelpSection>
+      <GuideLink to="/help/live#portfolio" />
     </>
   ),
 };
@@ -712,6 +716,7 @@ export function guidanceHelp(p: ManagePortfolio): CardHelpContent {
         <HelpSection title="Each item">
           <p>A portfolio rule the book is outside of today: its reason, the rule's confidence, and the names driving it in each figure's own unit.</p>
         </HelpSection>
+        <GuideLink to="/help/live#portfolio" />
       </>
     ),
   };
@@ -730,6 +735,7 @@ export const ROOM_HELP: CardHelpContent = {
       <HelpSection title="Your limits">
         <p>Each measure beside the limit it is judged against, and manage's word on it. The full list and the ruleset open under your limits and ruleset.</p>
       </HelpSection>
+      <GuideLink to="/help/live#portfolio" />
     </>
   ),
 };
