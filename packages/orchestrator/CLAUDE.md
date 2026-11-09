@@ -192,9 +192,21 @@ list and flags are in [docs/orchestrator-cli.md](../../docs/orchestrator-cli.md)
   read-only). The rules and verdicts are manage's; the evaluation runs by subprocess. Between the full
   runs, `manage-marks` (every 60 s, 09:36-16:10 ET) reads the stream cache's quotes for what the day's
   stored snapshot holds and hands them to manage's `remark`: no broker call. Its first minute of the
-  day, and the minute after a fill the `account-alerts` inbox heard since the stored snapshot (once
-  30 s old), it takes a full snapshot instead (`managerefresh.py`); until 10:00 the evaluation is
-  `early` and the list is not posted. Its one post, like the
+  day, and a minute when the account changed, it takes a full snapshot instead (`managerefresh.py`,
+  `manage.on_change`): a fill the `account-alerts` inbox heard since the snapshot began, once no newer
+  one has arrived for `settle_seconds` (a roll's legs are one run), or a difference between the
+  broker's held legs (account and symbol, signed quantity) and the stored snapshot's, which catches an
+  assignment, exercise or transfer that arrives as no order. The legs are read through `positions`,
+  read-only, at most every `positions_check_seconds`, and never while a fill is settling; a failed
+  read or no snapshot for today is "cannot tell", not a difference. No such run starts within
+  `min_gap_seconds` of the stored snapshot's start; the request stays, so it runs once the gap has
+  passed, and a fill that lands while a snapshot is being read gets one more run after it (the
+  snapshot records `started_at`). Every full run records its `reason` in `manage.last.json`. With
+  `on_change` on, a run posts only when the trades needing action differ from the last post's, the
+  day's first run always posts, `notify_every_minutes` is the floor between posts, and the post
+  names the reason (`managepost.signature`, `post_due_on_change`). Off, a fill waits 30 s and the
+  post follows the timer. Until 10:00 the evaluation is `early` and the list is not posted. Its other
+  post, like the
   full run's, is a needs-a-look name not yet posted that session (`managealert.py`, `manage.attention_notify`).
   `manage-time-spreads` (10:30 ET, on with manage, `manage.time_spreads`) runs `run.py time-spreads`:
   the read-only scan script `scripts/fetch_time_spreads.py`, then one full snapshot so the portfolio
@@ -286,7 +298,8 @@ filename; override with `paper.sla_state_prefix`.
   quote is withheld, not priced, and a leg **neither source can price** is reported and excluded,
   never counted as zero. The others, each scheduled: `live-positions` (designated live accounts
   against the live ledgers, its verdict in `state/live_positions.last.json` for the watchdog to read),
-  `managesnap.py` (the `manage-eval` snapshot), `desk_notifier`'s order-status poll, and the
+  `managesnap.py` (the `manage-eval` snapshot, and the `positions` read `manage-marks` makes every few
+  minutes to compare held legs), and the
   `account-alerts` resident job (`cherrypick.core.live.account_alerts`: the designated
   account's order stream plus a REST read of today's orders, through every trading session, so a
   resting stop's fill after the disarm or a manual order is heard; it records, never acts, and gets

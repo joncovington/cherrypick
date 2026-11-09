@@ -60,7 +60,9 @@ def test_the_minute_job_takes_the_full_path_on_a_fill_and_the_re_mark_otherwise(
     monkeypatch.setattr(cli.timeutil, "now_et", lambda tz=None: NOW)
     calls = []
     monkeypatch.setattr(
-        cli, "_manage_full", lambda cfg: calls.append("full") or {"ok": True, "session": "2026-11-05"}
+        cli,
+        "_manage_full",
+        lambda cfg, reason="x": calls.append("full") or {"ok": True, "session": "2026-11-05"},
     )
     monkeypatch.setattr(managesnap, "marks_overlay", lambda *a, **k: calls.append("remark") or None)
     monkeypatch.setattr(cli, "_emit", lambda rec: None)
