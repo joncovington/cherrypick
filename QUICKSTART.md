@@ -153,6 +153,8 @@ What you will see:
 Right after installing, before the first trading session, the pages are mostly empty: that is
 expected.
 
+**Optional: your own reports.** If you write small scripts of your own, the console can show what they produce (and post it to Discord): see [docs/guide/external-reports.md](docs/guide/external-reports.md). Nothing is set up until you add one.
+
 **Optional: the console in its own window.** If you would rather have cherrypick as a desktop app
 than a browser tab, double-click **`console-desktop.cmd`** in the installation folder (Windows), or
 run `./console-desktop.sh` in a terminal there (Mac). The first time takes a minute while it builds.

@@ -333,9 +333,12 @@ export const LIVE_SLIDES = [
   { id: "meic", label: "meic" },
 ] as const satisfies readonly NavSlide[];
 
+// `external` (2026-11-08): the reports a person's own scripts write to data/external
+// (docs/guide/external-reports.md), drawn source-neutrally.
 export const REPORTS_SLIDES = [
   { id: "morning", label: "morning" },
   { id: "eod", label: "eod" },
+  { id: "external", label: "external" },
 ] as const satisfies readonly NavSlide[];
 
 /**
@@ -379,20 +382,6 @@ export const SCREENERS_SLIDES = [
   { id: "time-spreads", label: "time spreads" },
   { id: "valuation", label: "fair value" },
 ] as const satisfies readonly NavSlide[];
-
-/**
- * Options flow (2026-10-03): QuikOptions' Hot Options Report, one capture a session
- * (`docs/quikoptions-plan.md`). `today` is the page at a glance and links into the site's four
- * tables, each in full. They were four tabs until 2026-10-30 (docs/console-review-plan.md, batch 2)
- * and are one `tables` tab now, the table chosen in the page; the old ids land on their own table.
- */
-export const FLOW_SLIDES = [
-  { id: "today", label: "today" },
-  { id: "derived", label: "derived flow" },
-  { id: "tables", label: "tables" },
-] as const satisfies readonly NavSlide[];
-
-export type FlowSlideId = (typeof FLOW_SLIDES)[number]["id"];
 
 export const ADVISOR_SLIDES = [{ id: "advisor", label: "advisor" }] as const satisfies readonly NavSlide[];
 
@@ -567,11 +556,6 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   gex: { slides: GEX_SLIDES, legacy: { volume: "skew", history: "gex" } },
   gexpanel: { slides: GEX_PANEL_SLIDES },
-  flow: {
-    slides: FLOW_SLIDES,
-    simple: ["today"],
-    legacy: { birdseye: "tables", trades: "tables", spreads: "tables", voloi: "tables" },
-  },
   // Simple leaves out flies (2026-10-21): the module is retired, and its live tab is its history.
   live: { slides: LIVE_SLIDES, simple: ["today", "positions", "portfolio", "wheel", "pmcc", "meic"], legacy: { manage: "positions", execution: "meic" } },
   charts: { slides: CHARTS_SLIDES },

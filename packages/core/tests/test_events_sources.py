@@ -105,7 +105,7 @@ def test_umich_note_reads_the_preliminary_with_its_time():
 
 def test_the_preliminary_reading_fred_never_lists_is_on_the_calendar(tmp_path):
     """2026-10-09 read as a known, release-free day: FRED's release 91 is the final reading only.
-    QuikOptions' calendar showed the gap (docs/quikoptions-plan.md)."""
+    An independent calendar showed the gap."""
     cal = _store(tmp_path)
     oct9 = ev.day_events(date(2026, 10, 9), root=cal)
     assert [(e["label"], e["time_et"], e["source"]) for e in oct9["events"]] == [("UMich", "10:00", "UMich")]

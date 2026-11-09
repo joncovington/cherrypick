@@ -413,9 +413,9 @@ def _installed_chrome_version(pw) -> str:
 # One browser profile, one process (2026-10-09). The supervisor runs one browser job at a time, but
 # a person's `login`, a hand-run capture or a probe started beside a scheduled run all open the SAME
 # profile -- and a second Chrome on a profile in use dies ("Target page, context or browser has been
-# closed"). Every browser command of both collectors takes this lock first; a second one waits a few
-# minutes, then gives up with a plain message instead of crashing Chrome. Shared with the QuikOptions
-# collector (loaded from beside it), so the two cannot drift apart.
+# closed"). Every browser command of the collector takes this lock first; a second one waits a few
+# minutes, then gives up with a plain message instead of crashing Chrome. Once shared with another
+# collector (since removed from the suite).
 # ------------------------------------------------------------------------------------------------
 PROFILE_LOCK_WAIT_S = 600
 PROFILE_BUSY_EXIT = 75  # EX_TEMPFAIL: try again later

@@ -161,6 +161,10 @@ with an *experimental* chip.
   every other package's data, and kept running by the supervisor rather than started by hand. A module or
   feature that is switched off, or needs a capability this machine lacks, is hidden. It replaced the
   suite dashboard and every per-module dashboard on 2026-08-12.
+- **Your own reports (optional)** — write a small script that saves a JSON report under `~/.cherrypick`,
+  list it in `config.json`, and the console draws it under Reports > external (optionally posting a text
+  card to Discord). Nothing is shipped or run until you add one: see
+  [the guide](docs/guide/external-reports.md).
 - **The end-of-day review on disk** — one versioned, deterministic fact set per session covering every
   module (`packages/review`), with rendered reports built from it and (opt-in, needs Claude Code) an
   AI-written narrative over it. The fact set stays the source of record; it replaced the old per-module EOD reports on

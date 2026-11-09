@@ -1,6 +1,6 @@
 """The outbound record (notify.notifier.send_webhook): every webhook send, kept so it can be checked.
 
-On 2026-10-07 two questions had no answer the suite could give: what the 10-05 QuikOptions post had
+On 2026-10-07 two questions had no answer the suite could give: what the 10-05 report post had
 actually said, and whether a hand-posted correction had gone out at all. The posts' own logs said
 only "posted". These pin what the record must hold for both: the text and images sent, where, the
 message id Discord returned, and the files the message was built from, so `run.py sent --stale`
@@ -55,7 +55,7 @@ def test_a_send_is_recorded_with_its_text_images_id_and_inputs(tmp_path):
     image.write_bytes(b"png")
     out = notifier.send_webhook(
         URL, {"content": "TCP Options Report"}, [image], channel="discord_reporting",
-        source="quikoptions-post", kind="report", session="2026-10-05", inputs=[capture],
+        source="external-vix-history", kind="report", session="2026-10-05", inputs=[capture],
         opener=_opener(seen),
     )  # fmt: skip
     assert out == {"ok": True, "status": 200, "message_id": "1234567890", "error": None}
@@ -63,7 +63,7 @@ def test_a_send_is_recorded_with_its_text_images_id_and_inputs(tmp_path):
     (rec,) = _records()
     assert rec["content"] == "TCP Options Report" and rec["message_id"] == "1234567890"
     assert (rec["channel"], rec["source"], rec["kind"], rec["session"]) == (
-        "discord_reporting", "quikoptions-post", "report", "2026-10-05",
+        "discord_reporting", "external-vix-history", "report", "2026-10-05",
     )  # fmt: skip
     assert rec["attachments"][0]["name"] == "card.png" and len(rec["attachments"][0]["sha256"]) == 64
     assert rec["inputs"][0]["path"] == str(capture) and "sha256" in rec["inputs"][0]
@@ -205,7 +205,7 @@ def test_notify_send_reads_its_text_from_a_file_and_links_the_correction(tmp_pat
     monkeypatch.setattr(secrets, "read_entry", lambda name: URL)
     monkeypatch.setattr(notifier.urllib.request, "urlopen", lambda req, timeout: _Resp())
     original = notifier.send_webhook(
-        URL, {"content": "report"}, channel="discord_reporting", source="quikoptions-post", kind="report",
+        URL, {"content": "report"}, channel="discord_reporting", source="external-vix-history", kind="report",
         session="2026-10-05", opener=lambda req, timeout: _Resp(200, b'{"id": "111"}'),
     )  # fmt: skip
     text = tmp_path / "correction.md"
@@ -249,7 +249,7 @@ def test_sent_stale_names_the_changed_input(tmp_path, capsys):
     capture = tmp_path / "2026-10-05.json"
     capture.write_text("{}", encoding="utf-8")
     notifier.send_webhook(
-        URL, {"content": "report"}, channel="discord", source="quikoptions-post", kind="report",
+        URL, {"content": "report"}, channel="discord", source="external-vix-history", kind="report",
         session="2026-10-05", inputs=[capture], opener=_opener([]),
     )  # fmt: skip
     capture.write_text('{"reparsed": true}', encoding="utf-8")

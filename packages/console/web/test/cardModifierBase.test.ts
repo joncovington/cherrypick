@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
  * `.cards` owns the grid — `display: grid` and the 0.75rem gap — and `.cards-pairs` / `.cards-wide`
  * set only the track shape. Written alone (`className="cards-pairs"`) the container is not a grid at
  * all: the cards stack with no gap and the intended columns never happen. Four call sites had drifted
- * that way (Flow's trades / vol-OI / birdseye and PMCC's tracker), invisible because both pages are
+ * that way (a removed page's tables and PMCC's tracker), invisible because both pages are
  * off — the layout only breaks when the page is turned on.
  *
  * The modifier names come from the stylesheet, so a new `.cards-*` modifier is covered without a list

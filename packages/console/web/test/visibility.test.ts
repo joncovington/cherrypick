@@ -120,11 +120,6 @@ describe("gex, the advisor and the reports", () => {
     expect(isSlideVisible("flies", "session", fliesOff)).toBe(true);
   });
 
-  it("Options flow follows the options_flow feature, and is shown while the reply does not name it", () => {
-    expect(isModuleVisible("flow", withOff({ features: { ...ALL_ON.features, options_flow: false } }))).toBe(false);
-    expect(isModuleVisible("flow", withOff({ features: { ...ALL_ON.features, options_flow: true } }))).toBe(true);
-    expect(isModuleVisible("flow", ALL_ON)).toBe(true);
-  });
 
   it("the technicals chart follows technicals; the narratives follow their own features", () => {
     const off = withOff({ features: { advisor: true, technicals: false, review_narrative: false, morning_narrative: true } });
@@ -242,7 +237,7 @@ describe("backtest fails closed", () => {
 
   it("leaves every other page's fail-open rule alone", () => {
     for (const f of [undefined, failed]) {
-      for (const id of ["earnings", "gex", "advisor", "flow", "system"]) {
+      for (const id of ["earnings", "gex", "advisor", "system"]) {
         expect(isModuleVisible(id, f)).toBe(true);
         expect(isHiddenAsUnknown(id, f)).toBe(false);
       }

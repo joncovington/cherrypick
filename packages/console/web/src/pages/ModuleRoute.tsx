@@ -23,8 +23,10 @@ import { ModuleOffCard } from "./ModuleOffCard";
  * It also means a reader sees their place immediately, with only the content arriving late,
  * rather than an empty screen for the length of a chunk fetch.
  */
-export function ModuleRoute() {
-  const { module = "", slide = "" } = useParams();
+export function ModuleRoute({ forced }: { forced?: { module: string; slide: string } } = {}) {
+  const params = useParams();
+  const module = forced?.module ?? params.module ?? "";
+  const slide = forced?.slide ?? params.slide ?? "";
   const features = useFeatures();
   const liveInUse = useLiveLoopsInUse(features);
   const view = useViewMode();

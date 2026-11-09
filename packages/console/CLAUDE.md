@@ -1,7 +1,7 @@
 # console (unified web UI)
 
 The suite's only read surface: one app over every module's read models — the Live page, the eight
-trading modules (MEIC, earnings, calendars, contango, and the retired flies, bwb, PMCC and curve, which ship off by default), GEX, Options flow,
+trading modules (MEIC, earnings, calendars, contango, and the retired flies, bwb, PMCC and curve, which ship off by default), GEX,
 Charts, Screeners, Compare, Backtest and System — plus the advisor and the reports. Every module
 remains a producer this package reads; it touches none of their code. The dashboards it replaced
 survive only at the `pre-console-only` tag, and the scout research surfaces are retired too, so **no
@@ -61,10 +61,10 @@ alone):
 - **`pnpm ui-check` drives real Chrome** — clicks, expectations, screenshots, console errors;
   `--dump <file>` writes the rendered DOM. `--card <title text>` crops `--shot` to one grid card
   that has drawn its chart, and fails rather than falling back to the page;
-  `scripts/flies_payoff_post.py` captures the flies payoff card this way, and the QuikOptions
-  Discord series captures the Options flow page's `today` cards (each titled `<name> — <session>`;
-  some from `/post/flow`, a capture-only page outside the shell, with no rail or header and in no
-  nav), so changing a card's title text breaks those posts. Prefer `--route` over `--click`: every slide is
+  `scripts/flies_payoff_post.py` captures the flies payoff card this way, and a person's own
+  poster can capture the cards of the External reports page the same way (each section of a report is
+  a card titled by its heading, at `/reports/external/<id>`), so changing a card's title text or
+  dropping the glyph `--card` waits for breaks those posts. Prefer `--route` over `--click`: every slide is
   addressable, and on the frame `--click` cannot reach a tab (it skips anything inside a `<nav>`, and
   the rail is one).
 - **Under Git Bash, prefix it with `MSYS_NO_PATHCONV=1`**, or `--route /flies` arrives as

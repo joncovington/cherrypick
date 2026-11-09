@@ -38,8 +38,8 @@ coverage (`python -m cherrypick.core.quotehistory coverage`, which reads only th
 `core.impliedvar check` for VIX9D and VIX, whose refusal (`not_bracketed`) is a reading, not a
 failure (`spawnModuleCli`'s `okStatuses`).
 
-**What is off is not shown.** Whether a module, GEX (the `gex-recorder` service), Options flow
-(`options_flow`, i.e. `quikoptions.enabled`), the advisor, the technicals cards or a narrative is on comes **only** from the orchestrator's `configcli` op
+**What is off is not shown.** Whether a module, GEX (the `gex-recorder` service),
+the advisor, the technicals cards or a narrative is on comes **only** from the orchestrator's `configcli` op
 `features` (`services/featuresBridge.ts`, memoised 15 s and dropped on every config save or halt
 toggle; `GET /api/features`), never from reading the config here — `enabled` already folds in
 capabilities like Dolt and Claude Code. Every web rule is in `lib/visibility.ts`; the desk
@@ -82,7 +82,7 @@ four tabs, because its write actions are wired through page-spanning state (`nav
 - **A renamed tab keeps its old id as an alias**, resolved before the first-tab fallback
   (`/flies/exits` → `divergence`); a fall-through looks like a working link showing the wrong page.
 - **The rail's order is a decision, pinned by `navLinks.test.ts`** (2026-10-18): Live first, the
-  market reads (Reports, Charts, Options flow, GEX, Screeners) above the modules, the modules
+  market reads (Reports, Charts, GEX, Screeners) above the modules, the modules
   live-capable first (`TRADING_MODULE_ORDER`), then Research and the suite's own pages, Config last.
   Inside every module the tables group (positions, history) follows the today group.
 - **A tab change is a handoff, not a remount.** The frame body stays mounted, the slide subtree is
@@ -108,7 +108,7 @@ four tabs, because its write actions are wired through page-spanning state (`nav
   `.card-subhead`, not in a short card beside it.
 
 **Reports** (`/reports`) holds the morning pack (`packages/overview`) and the EOD review
-(`packages/review`) as tabs; each tab renders its own page component unchanged, so neither report gains
+(`packages/review`) as tabs, and the reports a person's own scripts write (the External reports tab, below); each of the first two renders its own page component unchanged, so neither report gains
 a second place its shape is decided. The tab is in the URL (`/reports/eod`) because reports get sent, and
 `/morning` and `/review` redirect rather than 404.
 
@@ -118,6 +118,38 @@ a second place its shape is decided. The tab is in the URL (`/reports/eod`) beca
   close and would show the morning what it could not have known. A test pins the `<` and was shown to
   fail at `<=`.
 - Its leaders and scan matches link to the technicals chart, which is on the Charts page.
+
+**External reports** (`/reports/external`, the third Reports tab; `pages/External/ExternalReportsPage.tsx`,
+reader `readers/externalReports.ts`, route `GET /api/external-reports`, types `shared/types/externalReports.ts`)
+draws whatever a person's own scripts wrote to `data/external/<id>.json` (`docs/guide/external-reports.md`),
+with no source named in the code: the file says its own title and source.
+
+- **The tabs follow the files.** An *overview* tab lists every report (title, source label, `as_of`, a
+  fresh or stale badge, and each invalid file with its reason), each row linking to that report's own
+  tab at `/reports/external/<id>`. A new file adds a tab and a removed one takes it away; there is no
+  config. The strip is the page's own, not the rail's: the rail is static data (`navGroups.ts`) that
+  `ModuleFrame` checks against each manifest's slide list, and a tab list that depends on the server's
+  files cannot live there without breaking that check. The rail has the one `external` entry; the
+  report tabs route through the same frame (`App.tsx`, `ModuleRoute`'s `forced` module and slide).
+- **A report's tab** shows the title, a stale badge when `as_of` is older than `stale_after_hours`, the
+  source and age, the one-line summary, and each section as its own grid card titled by its heading: a
+  table section as a table (null cells are a dash, never 0), a text section as plain text. Every card
+  carries a small glyph so `ui-check --card "<heading>"` can capture it.
+- **Bars.** A table may carry `bars: [column index, ...]` (schema 1, optional): those numeric columns get
+  an inline bar beside the number, scaled by the column's largest magnitude (`barScales` / `barPercent` in
+  the page). A column with any negative value gets a zero line in the middle, negatives drawn to its left
+  in `--neg` and positives in `--pos` (both defined in each theme); a null cell has no bar and a column of
+  nothing to scale has none. The bar is `aria-hidden`: the number stays in the cell as text. Both
+  validators refuse a bar on a column holding text or past the last column (shared cases). The Discord
+  text card ignores the hint. A list of positions, not a per-column object, because tables are positional.
+- **An invalid file** gets a tab listing every reason and none of its content; a deep link to an id with
+  no file reads "No such report" with a link back, not an error.
+- **Validation** is the reader's: each file is judged against `packages/core/cherrypick/core/schemas/
+  external_report.schema.json`, the same file `cherrypick.core.external_report` reads, by a small
+  interpreter of the subset that file uses (`readers/externalReports.ts`). `external_report_cases.json`
+  (in core's test fixtures) is run by both languages' tests so the two validators cannot drift. Files
+  over 512 KiB are refused unparsed. The folder is `data/external/` (`config.paths.externalDir`).
+  Read-only; the console never runs a script.
 
 **Charts** (`/charts`, `lightbox/manifests/ChartsLightbox.tsx`) — three tabs: two charts and
 the setups watchlist:
