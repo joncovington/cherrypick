@@ -128,6 +128,13 @@ its rules suggest.
 Onto the Wheel page, in the same cycle as the put. You'll see the shares, what they really cost you
 after all the premium, and the covered call the rules suggest next.
 
+### I just traded. When does the positions page catch up?
+
+Within a minute or two of the last fill, during the session (09:36 to 16:10 ET). A trade that
+arrives as no order (an assignment, an exercise, a transfer) is found by a check of your held
+positions every five minutes. Discord hears about it only when the list of trades needing action
+changes. See [Live](live.md) for the settings.
+
 ### What's the difference between the two costs it shows for my shares?
 
 The tax basis is the price you got the shares at. The wheel basis is what they've really cost once

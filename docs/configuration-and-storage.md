@@ -168,7 +168,7 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | `config_backup` | **off** (opt in; `run.py config-backup --init --enable`, the installer, or the Config page) | `config-backup` |
 | `log_archive` | **on**, day 1 @ 03:30 | `log-archive` (monthly) |
 | `reconcile.schedule` | **off** by default, daily 16:30 when enabled — worth turning on once any module trades live, since it diffs the live ledger against the broker | `reconcile` |
-| `manage` | **off** (`enabled`), daily at `at` (10:00 ET), and at each `also_at` time; the minute re-mark (`marks`) follows it | `manage-eval`, `manage-marks` |
+| `manage` | **off** (`enabled`), daily at `at` (10:00 ET), and at each `also_at` time; the minute re-mark (`marks`) follows it, and `on_change` (on) makes a fill or a change in held positions start an extra evaluation and posts follow the list, not the clock | `manage-eval`, `manage-marks` |
 | `backtest` | **off** (`fetch`), daily at `fetch_at` (18:45 ET); the store count follows `fetch` unless `inventory` is set | `backtest-fetch`, `backtest-inventory` |
 | `live_positions` | **on** | `live-positions` |
 | `account_alerts` | **on** whenever a module has a live loop and a keyring service; trading days 09:00–18:00, armed or not | `account-alerts` |

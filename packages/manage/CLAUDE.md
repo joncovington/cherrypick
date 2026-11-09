@@ -32,7 +32,7 @@ import it. The closing order an evaluation lists is what a person would enter, p
   Live → positions and Live → portfolio tabs). Nothing downstream re-derives a verdict, a level or a confidence.
 - `snapshot-<session>.json` — the snapshot it was judged on, kept so `reevaluate` can re-run a past
   session under changed rules and get the same answer twice.
-- `marks-<session>.json` — between full snapshots (every 30 minutes), the stream cache's quotes the
+- `marks-<session>.json` — between full snapshots (every 30 minutes, sooner after a fill or a change in held positions: the orchestrator's `manage.on_change`), the stream cache's quotes the
   snapshot was last moved to (`remark.py`, the orchestrator's `manage-marks` job, once a minute): held
   legs and spots re-priced through `core.legmarks`, nothing else re-read. Kept while that snapshot
   stands and removed by the next full one, so `reevaluate` and `check-roll` read the same quotes the
