@@ -1,4 +1,4 @@
-"""The intraday agent's fact pack sees nothing after its own instant (docs/intraday-agent-plan.md).
+"""The intraday agent's fact pack sees nothing after its own instant (docs/intraday-agent.md).
 
 The guard is truncation invariance, the `core.rangefeatures` rule: the pack at T must be identical
 whether the stores also hold everything after T or have it deleted. A pack that leaked one later

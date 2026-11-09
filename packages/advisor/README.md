@@ -2,7 +2,7 @@
 
 The deterministic half of the suite's AI advisor: fact packs in, bounded paper experiments out.
 
-**Status: paused (2026-10-25) until the redesign.** New experiments are admitted `queued` and nothing
+**Status: paused until the redesign.** New experiments are admitted `queued` and nothing
 new is activated; running ones finish. It stays paused until the redesign (issue #995) lands (qualification on net, not
 enactment). See [CLAUDE.md](CLAUDE.md) for what pausing does.
 

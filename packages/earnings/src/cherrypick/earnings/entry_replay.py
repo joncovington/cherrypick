@@ -1,7 +1,7 @@
 """Score a proposed entry screen against what the recorded scans actually saw.
 
-Phase 3 of `docs/control-book-plan.md`, modelled on calendars' `exit_policies.py`. The advisor's
-twin cannot express an entry-side change — a looser screen produces a position the control does not
+Read-side entry replay (`docs/screening-criteria.md`, "Replaying a screen"), modelled on calendars'
+`exit_policies.py`. The advisor's twin cannot express an entry-side change — a looser screen produces a position the control does not
 hold, so nothing pairs — which is why entry screening moves to the read side: a wide control plus a
 replay that scores proposed screens over recorded outcomes.
 

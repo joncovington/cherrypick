@@ -13,6 +13,16 @@ Subcommands:
                        live-armed for today (--force overrides).
   uninstall            Anchor task off first, then stop the supervisor, remove legacy tasks, and
                        stop managed services.
+  upgrade              Move this install to a newer release (--to vX.Y.Z; default the latest): refuses
+                       while a live loop is armed or a live position is open, and outside the quiet
+                       window after the close (--force-window waives the window only); shows the
+                       target's notes, backs up, fetches, stops, installs, migrates, starts and
+                       verifies. --dry-run stops after the notes; --yes skips the question.
+                       --rollback undoes the last upgrade: old code, and the pre-upgrade backup put
+                       back over the data, because ledgers migrate forward and old code must never
+                       read data the new code has touched.
+  migrations           The data migrations a release ships: applied and pending ids. --dry-run
+                       previews, --apply runs the pending ones (what `upgrade` calls on the new code).
   status               Show the supervisor job registry + heartbeats (falls back to the legacy
                        schtasks snapshot on a pre-cutover box).
   doctor               One green/red readiness check (read-only). --fast skips the authenticated
@@ -483,6 +493,30 @@ def cmd_uninstall(cfg) -> None:
 
 
 # --------------------------------------------------------------------------- status
+def cmd_upgrade(cfg, args) -> None:
+    """`upgrade` / `upgrade --rollback` (orchestrator.upgrade). Prints its own progress; exit 1 on a
+    refusal or a step that stopped."""
+    from cherrypick.orchestrator import upgrade as _upgrade
+
+    opts = _upgrade.Options(
+        to=args.to, yes=args.yes, force_window=args.force_window, dry_run=args.dry_run, rollback=args.rollback
+    )
+    sys.exit(_upgrade.run(cfg, opts))
+
+
+def cmd_migrations(args) -> None:
+    """Applied and pending data migrations; `--dry-run` previews and `--apply` runs the pending ones."""
+    from cherrypick.orchestrator import migrations
+
+    if args.apply or args.dry_run:
+        res = migrations.run_pending(dry_run=not args.apply)
+        _emit(res)
+        if not res["ok"]:
+            sys.exit(1)
+        return
+    _emit(migrations.listing())
+
+
 def cmd_status(cfg) -> None:
     from cherrypick.orchestrator import supersnap
 
@@ -2523,6 +2557,8 @@ def build_parser() -> argparse.ArgumentParser:
             "config-backup",
             "install",
             "uninstall",
+            "upgrade",
+            "migrations",
             "status",
             "doctor",
             "watchdog",
@@ -2710,7 +2746,24 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="For review: build the provisional pass (the default; accepted so the job argv is explicit)",
     )
-    parser.add_argument("--yes", action="store_true", help="For account --set: skip the confirmation prompt")
+    parser.add_argument(
+        "--yes", action="store_true", help="For account --set and upgrade: skip the confirmation prompt"
+    )
+    parser.add_argument(
+        "--to", default=None, help="For upgrade: the release to move to, vX.Y.Z (default: the latest release)"
+    )
+    parser.add_argument(
+        "--rollback",
+        action="store_true",
+        help="For upgrade: undo the last upgrade. Restores the pre-upgrade backup over the data and "
+        "brings the old code back; ledgers migrate forward, so old code never reads new data",
+    )
+    parser.add_argument(
+        "--force-window",
+        action="store_true",
+        help="For upgrade: run outside the quiet window. Waives that check only; an armed live loop "
+        "or an open live position still refuses",
+    )
     parser.add_argument("--host", default=None, help="For settings: bind host (default 127.0.0.1)")
     parser.add_argument("--port", type=int, default=None, help="For settings: bind port (default 8804)")
     parser.add_argument("--no-browser", action="store_true", help="For settings: do not open a browser")
@@ -2727,7 +2780,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="For migrate-home: perform the move; for retests: queue the rows (default is a dry run)",
+        help="For migrate-home: perform the move; for retests: queue the rows (default is a dry run); "
+        "for migrations: run the pending migrations",
     )
     parser.add_argument(
         "--month",
@@ -2950,6 +3004,8 @@ def main() -> None:
     dispatch = {
         "install": lambda: cmd_install(cfg, force=args.force),
         "uninstall": lambda: cmd_uninstall(cfg),
+        "upgrade": lambda: cmd_upgrade(cfg, args),
+        "migrations": lambda: cmd_migrations(args),
         "status": lambda: cmd_status(cfg),
         "doctor": lambda: cmd_doctor(cfg, fast=args.fast),
         "capabilities": lambda: cmd_capabilities(cfg, args),

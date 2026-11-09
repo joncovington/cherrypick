@@ -7,8 +7,7 @@ Guidance for Claude Code when working in the gex package.
 cherrypick-gex is the **GEX (gamma-exposure) engine and market recorder** — the compute half of a
 self-hosted commercial GEX service. It computes GEX through the shared `cherrypick.core.gex`
 engine and records the spot trail; the **console** renders it at <http://127.0.0.1:5070/gex>. It
-serves nothing itself (its old dashboard, WebSocket push and section card are recoverable from the
-`pre-console-only` tag), places no orders, and never touches live trading.
+serves nothing itself, places no orders, and never touches live trading.
 
 The recorder also carries the **suite-level market-regime series** (`src/cherrypick/gex/regime.py`;
 the readings and rules are below): one row per
@@ -26,8 +25,8 @@ commodity proxies, the eleven SPDR sectors) into `market_regime_history`, plus a
 - **A missing `day_close` is recovered from the NEXT session's `prev_day_close`**, only where the
   calendar confirms the two rows are consecutive trading days (a `prev_day_close` carries no date).
   It repairs retroactively, and recovered rows are sourced `stream_summary:prev_day_close`.
-- **`daily_sessions` keeps each finished session's exchange open/high/low/close** (2026-10-14,
-  `regime.harvest_daily_sessions`), harvested beside the closes. The day's range is what flies'
+- **`daily_sessions` keeps each finished session's exchange open/high/low/close**
+  (`regime.harvest_daily_sessions`), harvested beside the closes. The day's range is what flies'
   `range-high` arm, trend tag and band placement read, and the spot trail misses a touch between
   samples. Sessions before today only (today's range still moves), append-only, and a row with a
   missing high or low is left for a later run, never filled in.
@@ -71,13 +70,12 @@ commodity proxies, the eleven SPDR sectors) into `market_regime_history`, plus a
   a regime-conditioned gate reads its own snapshot on its own decision path and stamps its own row,
   as MEIC and bwb do, never a minutes-old sample from another process's database.
 
-**Coverage: did a session's recordings land?** (2026-10-14, `coverage.py`, `run.py coverage
---session D`, JSON.) The heartbeat proves the recorder is alive, not that each series is on disk,
-and the two came apart on 2026-10-13: from 14:53 the spot trail and quotes stopped (no SPX spot)
-while the GEX series carried on. Each series is judged against its own cadence's allowance
+**Coverage: did a session's recordings land?** (`coverage.py`, `run.py coverage
+--session D`, JSON.) The heartbeat proves the recorder is alive, not that each series is on disk:
+the spot trail and quotes can stop while the GEX series carries on. Each series is judged against its own cadence's allowance
 (`MAX_GAP_SECONDS`), the session edges included and the close taken from the calendar (13:00 on an
 early close); quotes only where the machine records them; `daily_sessions` for the previous
-session, from 2026-10-15. The orchestrator's watchdog runs it once per finished session and
+session. The orchestrator's watchdog runs it once per finished session and
 notifies on any failing series. Read-only.
 - **`regime.INTERMITTENT_INTRADAY`** declares readings the feed serves only in bursts (SKEW). They
   stay in `READINGS` and the value is still never recorded, but the refusal is EXPECTED: rows say
@@ -86,23 +84,23 @@ notifies on any failing series. Read-only.
 - **An entitlement probe answers "is this entitled", not "can this sustain a series".** Watch a new
   reading for a session before admitting it on one print.
 
-**Flow is recorded beside positioning** (2026-10-05, `service.FLOW_COLUMNS`): each regime row also
+**Flow is recorded beside positioning** (`service.FLOW_COLUMNS`): each regime row also
 carries chain-wide call and put contracts traded, their dollar gamma, and the calls traded at the call
-wall and the puts at the put wall, all session-cumulative. Raw measures, NULL before that date and never
+wall and the puts at the put wall, all session-cumulative. Raw measures, NULL before 2026-10-05 and never
 backfilled (the cache keeps no volume history). The columns arrive by `ALTER TABLE` on the live
 database, so every reader selects by name. They exist to ask whether call volume outweighing put
 volume at the walls moves spot. The whole-chain `net_gex_vol` sign could not answer that: it tracked
 spot against the open and predicted nothing after it.
 - **Volume covers the streamed window only:** today's 0DTE expiration, the contracts the streamer
-  subscribes (about ±300 SPX points, 204 of 484 listed on 2026-10-05). `volume_contracts` and
+  subscribes (about ±300 SPX points, roughly 40% of the listed contracts). `volume_contracts` and
   `volume_low_strike`/`volume_high_strike` record that window on every row, so a jump in a total can
   be told apart from the window moving.
 - **The full per-strike profile is kept** in `gex_profile_history` (`service.PROFILE_COLUMNS`: OI,
   volume, gamma and IV per side), one row per strike with any data, joined to its regime row on
   `(symbol, ts)`. About 100 strikes × 78 readings a session. It is what lets a past session's walls,
-  flip or flow be recomputed under any definition; nothing before 2026-10-05 exists to rebuild.
+  flip or flow be recomputed under any definition; nothing before 2026-10-05 exists to rebuild (the boundary for any wall, flip or flow study).
 
-**The chain's quotes are kept too** (from 2026-10-13, `gex_quote_samples` + `gex_quotes`, `service.record_quotes`):
+**The chain's quotes are kept too** (nothing before 2026-10-13; `gex_quote_samples` + `gex_quotes`, `service.record_quotes`):
 every recorder tick (~15 s, the cadence flies' paper loop prices at, so a brief completion touch is not missed) per symbol in RTH, the 20 strikes each side of spot (~100 SPX points, so a trend day's stranded vertical stays priceable) on both rights of the same chain
 the profile reads, with bid, ask, mid, quote age and a fresh delta. Only quotes
 `core.streamcache.usable_quote` accepts at 120 s (the age flies prices with), so a missing row means
@@ -111,8 +109,7 @@ recorder rather than one per module; a replay of a rule a module never ran price
 - **Spot is not stored with it.** `gex_spot_history` has it every tick; `core.quotehistory.session`
   joins it at-or-before, within 60 s, and hands each minute back in a flies snapshot's shape.
 - **Normalised: a sample row per (symbol, tick), the quotes keyed by it** (`WITHOUT ROWID`, side as
-  `QUOTE_SIDES`' integer). The first layout repeated the sample's columns on every quote: 15.3 MB for
-  a synthetic session, 7.9 MB in this one. Changed before any session was recorded; an empty
+  `QUOTE_SIDES`' integer), about half the size of repeating the sample's columns on every quote. An empty
   `gex_quote_history` is dropped, one with rows never. Readers go through `core.quotehistory`.
 - **About 80 quotes a tick, ~125k a session (~8 MB, ~2 GB a year) per symbol.** Nothing prunes it.
 - **Held strikes too** (`quote_history.held_strikes`, on unless `false`): every strike of the
@@ -120,7 +117,7 @@ recorder rather than one per module; a replay of a rule a module never ran price
   streamer keeps subscribed), on both rights, so a stranded vertical past the 20 is still recorded.
   Content, not measurement: nothing reads it yet.
 
-**The chain's prints are kept too** (from 2026-11-01, `gex_prints`, `service.record_prints`): every
+**The chain's prints are kept too** (nothing before 2026-11-01; `gex_prints`, `service.record_prints`): every
 options print of the nearest chain, from the broker's DXLink `TimeAndSale`, copied raw from the cache's
 tape every tick, for a flow-adjusted GEX that moves with the session's trades rather than the overnight
 open interest alone. Off unless the `prints` block turns it on; turning it on declares the opt-in event
@@ -151,13 +148,12 @@ silence-supervised", never to a restart.
 Two modes: **piggyback** (default — `source.stream_cache_db` resolves to the suite's shared cache,
 `~/.cherrypick/data/marketdata/stream_cache.db`, read read-only) or **standalone**, development only:
 `run.py stream` writes whatever `source.stream_cache_db` resolves to, which by default is the SHARED
-cache, so repoint it at a private file (e.g. `data/stream_cache.db`) first. Since 2026-10-19 the
+cache, so repoint it at a private file (e.g. `data/stream_cache.db`) first. The
 engine refuses the shared path to any writer but `packages/streamer`, so on a default config it exits
 saying so.
 
 Suite context: the root [documentation index](../../docs/README.md), especially
-[strategy-engines.md](../../docs/strategy-engines.md). The incidents behind the rules here are in
-[docs/history.md](docs/history.md).
+[strategy-engines.md](../../docs/strategy-engines.md).
 
 ## Commands
 
@@ -197,43 +193,41 @@ file's directory.
   `source.stream_cache_db` resolves to, which by default is the SHARED cache: repoint it at a private
   file first (the engine refuses the shared path otherwise). The shared cache has one writer.
 - **GEX math and the streaming engine stay in `cherrypick.core`.** Never fork dollar-gamma / walls /
-  zero-gamma or the streamer into this package (a copied GEX calculation once drifted ~75×).
+  zero-gamma or the streamer into this package (a copied GEX calculation drifted ~75×).
 - **The GEX horizon is forward-only.** `provider.snapshot_from_stream_cache` picks the nearest
   expiration **at or after today** that has live greeks, never a passed one — `stream_greeks` is never
-  pruned, so an expired chain keeps its last gammas (38% of readings came from one before this).
+  pruned, so an expired chain keeps its last gammas and would win a nearest-by-distance pick, freezing the reading.
   Historical expired-chain rows are **filtered on read, not deleted**: `core.regime` requires
   `expiration >= trade_date`. This series (`gex_regime_history`) is not MEIC's gate input — the gate
   reads its own same-tick 0DTE snapshot — so it affects the advisor's pack, the console's GEX page and
   `core.regime.regime_at`, not `meic.analytics.gex_gate_counterfactual`. It **is** a gate input for
-  flies' `wall-clear` arm (from 2026-10-12), which reads the walls through `core.regime.gex_at` each
+  flies' `wall-clear` arm, which reads the walls through `core.regime.gex_at` each
   tick and fails open past 600 s: a recorder stall turns that arm into control, silently except in
   the join. Keep the 5-minute cadence and the column meanings stable, or journal the change there.
 - **GEX regime rows are RTH only** (`core.clock.in_rth`). Off-hours the session's chain has no greeks
-  yet, so the horizon falls forward to whatever chain is still streaming — another expiry — and until
-  2026-09-30 the recorder filed that under today: 79% of the rows on disk, and the overview's pre-open
-  levels and the advisor's "open" walls read them. `record_regimes` now writes nothing off-hours, and
-  every reader (`core.regime`, overview's levels, the advisor's snapshot and walls) filters on read
-  as well, the expired-chain rule's posture. The 15,014 off-hours rows were removed on 2026-10-01 with
-  `repair-history --apply` (3,952 RTH rows kept); the full table is in
-  `gex_history.db.bak-20261001001211` beside the DB. `repair-history` alone only reports.
+  yet, so the horizon falls forward to whatever chain is still streaming — another expiry — and filing
+  that under today would feed the overview's pre-open levels and the advisor's "open" walls the wrong
+  chain. `record_regimes` writes nothing off-hours, and every reader (`core.regime`, overview's levels,
+  the advisor's snapshot and walls) filters on read as well, the expired-chain rule's posture. Rows
+  recorded off-hours before 2026-09-30 were removed with `repair-history --apply`; the command alone
+  only reports, and copies the DB first when it applies.
 - **Leftover strikes are not summed.** A strike the producer's window re-centred away from keeps its
   last greeks forever; `core.gex.LEFTOVER_ROW_SECONDS` (re-exported by `provider`) drops rows that far
-  behind their chain's newest. Flies' snapshot uses the same constant from 2026-10-06 and the
+  behind their chain's newest. Flies' snapshot uses the same constant (snapshots before 2026-10-06 did not) and the
   console's `gexProfile.ts` the same cut, so change it in core or not at all. Negligible on a 0DTE chain; on a multi-day extra
   window it moved zero-gamma 545 points.
-- **One gamma per strike (from 2026-10-12).** `core.gex.strike_gamma` gives a strike's call and put
+- **One gamma per strike** (readings before 2026-10-12 netted each side with its own gamma; don't
+  pool across that date). `core.gex.strike_gamma` gives a strike's call and put
   the out-of-the-money side's gamma, so net GEX is gamma x (call OI - put OI). Netting each side
-  with its own feed gamma let 0DTE quote noise pick a balanced at-the-money strike's sign: on
-  2026-10-09 SPX 7790 flickered between +301M and a negative net, and with it the console's put
-  wall (7730 to 7790) and nearest zero gamma (7765 to 7791). Over 215 recorded snapshots it cut
-  zero-gamma jumps of more than 15 points from 6 to 2 and the cumulative flip's from 7 to 2, and
-  left the flip unchanged in 180 of 191. It does NOT steady the put wall (37 jumps before, 43
+  with its own feed gamma let 0DTE quote noise pick a balanced at-the-money strike's sign, and with
+  it the put wall and the nearest zero gamma. Over 215 recorded snapshots the one-gamma rule cut
+  zero-gamma jumps of more than 15 points from 6 to 2 and left the flip unchanged in 180 of 191. It does NOT steady the put wall (37 jumps before, 43
   after): that is the arg-min over many similar far-OTM put strikes, a different cause. The
   recorded `call_gamma`/`put_gamma` are still the feed's own. The console's `analytics/gex.ts` mirrors
   it (`strikeGamma`); change both or neither. Journaled in flies (`gex_surface`) and bwb (its flip).
-- **A wall needs a strike on its own side of zero** (2026-10-09, `core.gex.net_walls`): with no
-  negative strike there is no put wall, and with no positive one no call wall (an expired chain once
-  named 3000 as SPX's put wall, a 0-against-0 tie on the chain's first row). The console's `netWalls`
+- **A wall needs a strike on its own side of zero** (`core.gex.net_walls`): with no
+  negative strike there is no put wall, and with no positive one no call wall (a 0-against-0 tie on an expired chain's
+  first row named a nonsense put wall). The console's `netWalls`
   mirrors it; change both or neither. The console also shows a near-tied wall's runner-up
   (`contestedWalls`, above 80% of the wall's net); that is display only and measures nothing
   differently.

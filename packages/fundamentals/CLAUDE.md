@@ -1,7 +1,7 @@
 # cherrypick-fundamentals — Operational Instructions
 
 > Company fundamentals and the fair-value model's inputs, and the fair-value file the Screeners tab and
-> the technicals income lists read. Moved out of `packages/technicals` on 2026-10-29. The method and its
+> the technicals income lists read. The method and its
 > gaps are in [`docs/history/fair-value-model-plan.md (tag archive/docs-2026-11)`](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/history/fair-value-model-plan.md); the arithmetic is
 > `cherrypick.core.valuation` (version 2).
 

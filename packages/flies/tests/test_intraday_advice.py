@@ -1,4 +1,4 @@
-"""The intraday agent's deterministic half (docs/intraday-agent-plan.md): when a tick is worth a call,
+"""The intraday agent's deterministic half (docs/intraday-agent.md): when a tick is worth a call,
 what a reply may say, the decision file a loop reads and its expiry, and the record of every pack.
 Every tick here runs a fake model -- the package never calls one."""
 

@@ -1,12 +1,11 @@
 # cherrypick-review — Operational Instructions
 
 > Operating contract for the suite's cross-module **end-of-day review**. Suite-wide context is in
-> the root [documentation index](../../docs/README.md); the incidents behind these rules are in
-> [docs/history.md](docs/history.md).
+> the root [documentation index](../../docs/README.md).
 
 Every session this package answers **what did the suite do today, was it what we expected, and what
 should change** — for every module with a ledger reader, together, because answering it per package
-produced report families that could not be compared.
+produces report families that cannot be compared.
 
 **It is read-only over every other package.** It reads ledgers through `cherrypick.core.ledgers` and
 writes only into `~/.cherrypick/data/review`. It never opens, closes, adjusts or cancels anything,
@@ -26,7 +25,7 @@ they cannot disagree.
 ## Rules the fact set enforces
 
 - **`None` is not zero.** A field with no recorded value is null (averaging missing slippage as zero
-  once understated earnings' cost by ~90%).
+  understates a module's cost).
 - **Costs are separate columns** (fact set v10): `fees`, `settlement` (null and counted when
   unrecorded) and `slippage` with its `slippage_basis` (`in_gross` for meic/flies, a charged `cost`
   elsewhere), from `core.ledgers`' record parts. The total `cost` stays beside them for older readers.
@@ -44,7 +43,7 @@ they cannot disagree.
 ## The arms are the experiment — never collapse them
 
 A module's arms run against the same underlying on the same sessions: a paired comparison, and the
-reason they exist. A module-level total averages them and hides the finding. So `by_arm` rides on
+reason they exist. A module-level total averages them and hides the finding (one arm can take no stops and return well while a sibling stops a quarter of its book). So `by_arm` rides on
 every module block and every trend (`by_profile` before fact set v8), grouped through
 `cherrypick.core.profiles.group_by_tag`
 (never a hand-rolled grouping). The render shows the table only when a module has more than one arm,
@@ -69,7 +68,8 @@ is the correct output, not a defect.
 Review also **detects** unjournaled regime changes and reports them — it never writes one, because
 deciding that a book changed is a judgement about what the module did. The detector needs all three
 conditions: a departure from the trailing median, a departure from the preceding session (or one event
-re-reports daily), and an absolute floor (or it fires on ratios of trivial counts).
+re-reports daily), and an absolute floor (or it fires on ratios of trivial counts, such as 6 trades to 2).
+Without the second condition one event is re-reported every session until the median catches up.
 
 ## The narrative lives outside every package
 
@@ -91,7 +91,7 @@ against open issues.
 
 `reconcile` re-counts each module's totals with **independent SQL** and reports deltas rather than
 merely failing. Proving the code equals itself is worthless; the failures worth catching are scope
-differences (the earnings reader does no SQL date pushdown, which once reported every closed trade as
+differences (the earnings reader does no SQL date pushdown, which would report every closed trade as
 settling today). Run it after any change to a collector and after any module changes its schema.
 
 Every reviewed schema has its own independent query, bwb, curve, contango and weeklyput included. A session
@@ -117,5 +117,4 @@ Package guardrail, on top of the root's:
 
 `cherrypick.core.ledgers` is the single Python home for per-schema net, cost, capital and session
 rules, and for the concentration arithmetic. The orchestrator's report and this package both import
-from it. **Do not add another implementation** — its docstring records what happened the first three
-times.
+from it. **Do not add another implementation** — its docstring records why.

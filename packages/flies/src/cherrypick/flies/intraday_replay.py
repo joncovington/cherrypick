@@ -1,5 +1,5 @@
 """The intraday agent's historical replay: the trend gate, replayed over recorded sessions
-(docs/intraday-agent-plan.md, "Answering in weeks").
+(docs/intraday-agent.md, "Answering in weeks").
 
 The model is asked at each minute of a past session through the same `run_tick` the forward job uses,
 on packs built as of that minute (`intraday_pack`, whose look-ahead test is mutant

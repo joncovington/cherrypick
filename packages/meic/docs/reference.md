@@ -1,7 +1,39 @@
 # MEIC module reference
 
-Moved from the meic CLAUDE.md, which keeps how the module runs, its boundaries, the live rules and the
-database rules. The live block (`live.arm` and live-only sizing) stays there too.
+The meic CLAUDE.md keeps how the module runs, the live rules and the database rules, including the live
+block (`live.arm` and live-only sizing). This file holds the read-side CLI, the advisor's bounds, the arms,
+the declared boundaries and the config keys.
+
+## Declared boundaries
+
+Rows on either side of these dates were produced under a different rule. **Never pool across one.**
+`analytics` and the console read the current era by default (`CURRENT_ERA = "advisor"`, from the
+`ic_trades.era` column), and a boundary that changes a measurement is journaled in `measurement_breaks` as
+a break on the arms it touches. A boundary date is a fact about the data.
+
+| Date | What changed in the numbers |
+|---|---|
+| 2026-08-01 | Every arm became an uncapped independent-sampling stream. Earlier rows have book semantics (capped concurrency, spacing) and are not comparable. |
+| 2026-08-21 | Advisor era. `control` became the permissive sampling substrate (study gates off, no per-side stop, `overlap_scope: "none"`), the old gated `control` and the `sign`, `control-drift`, `width-5` and `width-10` arms retired; day-one rows re-stamped to the new names (`meic_control_redefinition`). `analytics.CURRENT_ERA` starts here. |
+| 2026-09-24 | The ledger column `risk_profile` became `arm`. Derived stop pricing changed: a fired derived side is priced at its trigger, not its running maximum (see "Deriving stop policies"). Paper charges the $5 per ITM strike settlement fee; history was re-settled for it, so both sides of the date mean the same thing. |
+| 2026-09-28 | `live-shadow` and `bp-5k` / `bp-10k` / `bp-25k` added (`arm_added` break 2026-09-29). The gex regime tag re-derives every row with a sign flag, a label correction, not a measurement break. |
+| 2026-10-14 | The `live` block: live-only sizing leaves the top level (breaks on `live-shadow` and its followers). |
+| 2026-10-15 | Live settles on the official print only. Live fees are reconciled against the broker (`fee_reconcile`). `regime_gex_block_mode` available. |
+| 2026-10-19 | `pm-200` is the arm `live.arm` names (the registry arm live trades; stops back on for live and its followers). Followers that would run as `live-shadow` under another name retired. |
+| 2026-10-24 | Live kill criteria (`live.kill`) gate new ICs. |
+| 2026-10-25 | A closed live IC with no net (`pnl` or `fees` NULL) refuses new ICs. |
+| 2026-10-27 | A manual (agent-path) opening order obeys the loop's entry rules. |
+| 2026-11-02 | The arm gates new ICs only (management runs unarmed); settlement asks the broker first; entries are written ahead of their order; the manage-only snapshot; `MAX_LIVE_QUANTITY` of one. `live.resting_stop` is available, off by default: **switching it on is a measurement boundary against `live-shadow`.** |
+
+Other facts about the data:
+
+- Rows from 2026-07-13 to 2026-07-27 in the retired ladder era were scored with a `None` underlying as
+  zero intrinsic (full credit). `CURRENT_ERA` excludes them; settlement without a price is refused now.
+- Max favourable excursion is not stored, and the quote-history recorder only holds SPX chain quotes from
+  2026-10-13 (every leg MEIC has traded since 2026-09-01); nothing before is recoverable.
+- Live fill improvement: a live row's stop and expiry P&L read the per-side credits split from the fill,
+  so the sides add up to the row's net (`entry_fill_credits`, from 2026-10-12). Earlier live rows used the
+  quote-time modelled sides.
 
 ## Read-side CLI
 
@@ -58,8 +90,7 @@ python run.py gex-gate                       # what the negative-GEX gate refuse
   entries on paper's own book as of each entry (flies' method), replay-only entry episodes, credit
   differences, and each side's worst cost on a full-day replay. No SPX arm ran a per-side stop in the
   recorder era, so the worst-cost path stands in for the plan's stops-matched check. The pass test
-  was declared in `docs/quote-history-replay-plan.md (tag archive/docs-2026-11)` (Phase 2) before any number was read;
-  `packages/backtest`'s validation reads its summary. Each session replays on the delta it ran with
+  was declared before any number was read; `packages/backtest`'s validation reads its summary. Each session replays on the delta it ran with
   (`delta_source_since`); `--delta-source` replays every session on one source instead, which is how
   backtest's validation compares a vendor's history with the recording.
 
@@ -82,12 +113,12 @@ off the shipped `config.example.json`, so a new bound is covered the moment it i
   without the sign rule, window or spacing of the `bp-*` arms — so it measures the unspaced cap; the
   bound's note says so for the model.
 
-## Risk profiles and arms
+## Arms
 
 **Live presets (not shipped).** `/set-risk-profile <name>` applies a named preset from the machine's own
 arm registry (`paths.risk_profiles_path`) to `~/.cherrypick/config/meic.json`, live on the next
-iteration; it refuses while only the shipped control-only example exists. The four-tier ladder below is an **example ladder, not shipped**: it no
-longer ships with the package; it exists only in a registry a machine has built, as **live-only**
+iteration; it refuses while only the shipped control-only example exists. The four-tier ladder below is an
+**example ladder, not shipped**: it exists only in a registry a machine has built, as **live-only**
 presets, all `enabled: false` for paper:
 
 - **conservative**: IV rank ≥30%, credit ≥15%, wide OTM buffers, latest entry 12:00. ~1–2 trades/day.
@@ -98,25 +129,28 @@ presets, all `enabled: false` for paper:
 - **very-aggressive**: aggressive + VIX ≤30 and 5-day ATR ≤2.0%; offset by max_concurrent_ics=2,
   stop_trigger_ratio=0.85. **Deliberate short experiments only** (1-week windows).
 
-Full rationale and progression: [docs/risk-profiles.md](risk-profiles.md).
+Full rationale and progression: [risk-profiles.md](risk-profiles.md).
 
 **Paper arms (the arm registry).** The registry is `$MEIC_RISK_CONFIG`, else the machine's own
 `~/.cherrypick/config/meic.risk.json`, else the shipped control-only `config.risk.example.json`
-(`paths.risk_profiles_path`); before 2026-10-01 it was `config.risk.json` in this package. A working
-registry is `control` plus the advisor's books and a few arm-scoped additions; `packages/advisor`
-designs and runs every experiment. `control` IS the permissive sampling substrate (formerly `open`: study gates off, no per-side stop, `overlap_scope: "none"`, full
-per-side path recording) — see the `meic_control_redefinition` measurement break. Every row carries its
-era (`ic_trades.era`, from `analytics.CURRENT_ERA` via `cmd_save_trade`), journaled in
-`measurement_breaks`. The closed 2026-08 forward test is recorded in
-[docs/paper-experiments.md](paper-experiments.md) and [docs/history.md](history.md).
+(`paths.risk_profiles_path`). A working registry is `control` plus the advisor's books and a few
+arm-scoped additions; `packages/advisor` designs and runs every experiment. `control` IS the permissive
+sampling substrate (study gates off, no per-side stop, `overlap_scope: "none"`, full per-side path
+recording). Every row carries its era (`ic_trades.era`, from `analytics.CURRENT_ERA` via `cmd_save_trade`),
+journaled in `measurement_breaks`. How arms are designed and read is in
+[paper-experiments.md](paper-experiments.md).
 
 - **`live-shadow`** carries no overrides, only `follows_live: true`: it resolves to exactly the dict
   `live_loop.run_once` trades (`paper.live_params`) and keeps doing so as the config changes;
   `test_risk_profiles.py` pins it override-free and equal to the live params. Control's result
   describes a configuration live does not run, so this arm is live's paper measurement. Other arms
   with `follows_live: true` resolve to `paper.live_params` plus their one override, so each is live
-  with one thing changed. Which followers exist is the machine registry's business; their dated
-  history is in [docs/history.md](history.md).
+  with one thing changed; a follower whose override equals live's own value would be `live-shadow`
+  under another name, and `test_risk_profiles.py` refuses it. Which followers exist is the machine
+  registry's business. `live-shadow` differs from `control` on many settings (IV-rank floor, the
+  negative-GEX block, OTM floors, the VIX / VIX1D-ratio / ATR pauses, per-side stops, an earlier entry
+  end, `overlap_scope: shorts`, late-entry bias), so its attempts show which of those gates keeps live
+  dark; gates are checked in order (`paper.evaluate_entry`), so an earlier gate masks a later one.
 - **`bp-5k` / `bp-10k` / `bp-25k`** — control's gates and hold-to-expiry exits under live-account limits:
   `max_open_bp_dollars` (open ICs' (width − credit) × 100 plus the candidate's must fit, checked per
   candidate so a too-wide candidate falls to a narrower one — `paper.ic_buying_power`),
@@ -126,9 +160,8 @@ era (`ic_trades.era`, from `analytics.CURRENT_ERA` via `cmd_save_trade`), journa
 - **New arms are arm-scoped** (`arm_added` break at first session), so no other arm's clock moves.
 - **Retired arms stay in the machine's registry, `enabled: false`, with a written `_disabled_note` verdict —
   never silently deleted** (per `docs/paper-experiments.md`'s kill rule): a defined-but-forgotten arm is
-  worse than a documented-and-off one. The ladder no longer ships; `/set-risk-profile` reads the
-  machine's registry through `paths.risk_profiles_path`; **paper study streams must never be applied to
-  live config.**
+  worse than a documented-and-off one. `/set-risk-profile` reads the machine's registry through
+  `paths.risk_profiles_path`; **paper study streams must never be applied to live config.**
 
 **Deriving stop policies read-side (`analytics.stop_grid`, `stop_policies.score_grid`).** The whole
 `stop_trigger_ratio` curve comes from recorded rows: `*_max_cost` says whether a threshold would have
@@ -154,9 +187,8 @@ fired, `*_settle_value` what the side was worth unstopped — **recorded for sto
   instrumentation, not a read-side fix. **That instrumentation exists from 2026-10-13:** the gex
   recorder keeps SPX's chain quotes every ~15 s (`core.quotehistory`), covering every leg MEIC has
   traded since 09-01. The MEIC replay on it (`meic.replay`, above) prices a fired stop at the first
-  recorded cost past its trigger, the gap-through `stop_policies` cannot see; Phase 2 of
-  [quote-history-replay-plan.md](https://github.com/joncovington/cherrypick/blob/archive/docs-2026-11/docs/quote-history-replay-plan.md).
-  Nothing before 10-13 is recoverable.
+  recorded cost past its trigger, the gap-through `stop_policies` cannot see. Nothing before 10-13 is
+  recoverable.
 
 **A width (or any arm) comparison must be bucketed on whether the reference arm fired that session**
 (`analytics.control_fired`). A stricter-gated arm can go dark on a session its looser siblings trade,
@@ -177,7 +209,7 @@ sample to get an answer is the same error as reading a structural identity as a 
   `wing_width` in ONE place. Option type is part of leg identity (a short put and long call at one
   strike never net).
 - **Adopting either on an existing arm is an experiment-design decision, not a config tidy-up.**
-  `control` is the permissive sampling arm, not a copy of the live defaults (since 2026-08-21);
+  `control` is the permissive sampling arm, not a copy of the live defaults;
   changing its overlap rule changes what it measures.
 
 **`entry_attempts` records what the gates refused, and why**: one uncollapsed row per evaluated
@@ -191,7 +223,7 @@ went 1,313 iterations without a fill). `daily_ic_trade_target` is soft: past it 
 by `over_target_credit_multiple`. Ladder thresholds are derived per arm from its own `min_iv_rank` /
 credit floor (`low_iv_credit_floor_iv_rank_offset`, `low_iv_credit_relief_multiple`,
 `late_entry_bias_iv_rank_offset`) — a shared absolute flattens the ladder. Invariants any change must
-preserve: [docs/risk-profiles.md](risk-profiles.md#design-rationale).
+preserve: [risk-profiles.md](risk-profiles.md#design-rationale).
 
 ## Config Options
 
@@ -201,10 +233,10 @@ preserve: [docs/risk-profiles.md](risk-profiles.md#design-rationale).
 | `delta_target` | `0.18` | Fallback target delta only if VIX is unavailable; kept below the 0.19 late/open-volatile ceilings |
 | `delta_target_vix_low` / `_vix_elevated` / `_vix_high` / `_vix_crisis` | `0.16` / `0.14` / `0.12` / `0.10` | Target delta by VIX band `≤18` / `≤25` / `≤35` / `>35`. A documented convention, not backtested for this strategy |
 | `vix_band_low_max` / `_elevated_max` / `_high_max` | `18` / `25` / `35` | VIX band boundaries |
-| `delta_source` / `delta_source_since` | `"stream"` / unset | Which delta picks the short strikes (and the call-delta ceiling): `"stream"`, the data feed's (it lags its quotes by about a minute, measured 2026-10-26), or `"computed"`, `core.chaindelta` from the chain's own mids at that instant. Loop-level, read from the top level by the paper loop and through the merged params by live, so every profile's menu shares one source. `delta_source_since` is the declared boundary: a validation replay uses `"stream"` for sessions before it, so it reproduces what they did, while a history run evaluates the rule as configured now. |
+| `delta_source` / `delta_source_since` | `"stream"` / unset | Which delta picks the short strikes (and the call-delta ceiling): `"stream"`, the data feed's (it lags its quotes by about a minute), or `"computed"`, `core.chaindelta` from the chain's own mids at that instant. Loop-level, read from the top level by the paper loop and through the merged params by live, so every arm's menu shares one source. `delta_source_since` is the declared boundary: a validation replay uses `"stream"` for sessions before it, so it reproduces what they did, while a history run evaluates the rule as configured now. |
 | `max_wing_width` | `10` | Upper bound (points); the agent picks the width per entry |
 | `wing_widths_by_symbol` | per-symbol lists | Candidate widths per instrument, scanned widest-first (10 points is ~0.13% of SPX but ~3.4% of IWM). `DEFAULT` covers unlisted symbols |
-| `equalize_credit` | `false` | Opt-in (per profile): also build put-wing/call-wing width-pair candidates and enter the most credit-balanced one that clears every gate, instead of widest-first. Hidden from every profile without the key, so existing books are untouched. `wing_width` records the wider wing; `put_wing`/`call_wing` on the row hold each side's own |
+| `equalize_credit` | `false` | Opt-in (per arm): also build put-wing/call-wing width-pair candidates and enter the most credit-balanced one that clears every gate, instead of widest-first. Hidden from every arm without the key, so existing books are untouched. `wing_width` records the wider wing; `put_wing`/`call_wing` on the row hold each side's own |
 | `quantity` | `1` | Contracts per IC |
 | `daily_ic_trade_target` | `200` | Guidance, never a cap — a never-binding backstop under independent sampling. `0` disables IC entries (ORB-only) |
 | `overlap_scope` | `"shorts"` | Check against this arm's open positions on the same symbol: `"all"` (any shared strike), `"shorts"` (exact repeat of the short pair), `"none"`, `"sign"` (see above). Default `"all"`. **Live sees only the arm `live.arm` names** (none: the top level); no other arm's value reaches it |

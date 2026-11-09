@@ -7,7 +7,7 @@ exit rule fires. The engine is `src/cherrypick/technicals/setups.py`, the indica
 The console only draws what the file says.
 
 This page records what each indicator is for, why the four setups are paired the way they are, and
-the decisions taken while building them (2026-10-03).
+the decisions taken while building them.
 
 ## Why the arrows changed
 
@@ -114,7 +114,7 @@ to reduce.
   its lowest of 120 sessions), on volume above 1.5 × the mean of the 50 sessions before, **with
   Supertrend(10, 3) already up**. Today's volume is excluded from the average it is compared against.
 - **Exit:** the first close with Supertrend(10, 3) down.
-- **Why Supertrend must already be up (added 2026-10-04, before the rules were frozen):** without
+- **Why Supertrend must already be up (added before the rules were frozen):** without
   it, a breakout entered while Supertrend was still down exited on the very next close. That
   happened on 33 of 45 such entries; the breakdown mirror, 47 of 57. Those were one-day round trips,
   two fills for nothing, not breakouts failing. With the condition, next-bar exits fell from 13.3%
@@ -170,7 +170,7 @@ Two things this means in practice (measured 2026-10-03):
 - **The parameters are constants at the top of `setups.py`.** Changing one changes what every arrow
   means, so say so in the commit and here.
 
-## The short mirrors (2026-10-04)
+## The short mirrors
 
 Each long setup has a short mirror: every comparison reversed, highs for lows, the upper band for
 the lower, an overbought RSI for an oversold one. A long and a short of the same family are separate
@@ -203,8 +203,7 @@ computed from our own bars. The vendor is used only to check our calculations:
 - **Our support and resistance** (`swings.py`) are compared with the levels the vendor's chart
   draws, and the result is recorded below. The comparison is never a target.
 
-The chart drew the vendor's levels as "Vendor's view" (and in "All") for comparison until
-2026-10-27. The subscription ended 2026-10-24, and the chart now draws only ours.
+The chart draws only our levels.
 
 ## Our own support and resistance (`swings.py`)
 
@@ -223,7 +222,7 @@ one of ours lies within 1% of one of theirs on 20% of their levels with 5 bars, 
 with 20 (within 2%: 30%, 35%, 34%). The overlap is modest, as it should be: how the vendor picks its
 levels is unsolved, and ours are a different, stated rule, not an attempt to copy theirs.
 
-## How often they fire (527 charts, 2026-10-03)
+## How often they fire
 
 These are frequencies, not results. Nothing here scores whether a setup makes money.
 
@@ -282,9 +281,9 @@ The short rows, and both breakout rows after their Supertrend condition, were co
 - Not scored against outcomes, and no costs. A setup firing often says nothing about whether it
   should be traded.
 - The rules are textbook, not tuned. If they are ever tuned, do it on a declared sample and say
-  which, as `docs/fitting-record.md` does for the vendor fits.
+  which.
 
-## Historical evidence (2026-10-04, analysis plan v2)
+## Historical evidence
 
 The historical study (`study run`, plan in `research/signal-log-plan.md`) scored every setup over
 2011-01-03 to 2026-10-02. The universe was chosen as of each day: price ≥ $5 and 50-session median
@@ -331,7 +330,7 @@ a family-wise 5%. The full results, with every sub-period and view, are in
   liquid names. That moves the absolute net figures, not the comparison with the baseline, which
   pays the same costs.
 
-## Round 2: one improvement confirmed (2026-10-04)
+## Round 2: one improvement confirmed
 
 Nine improvements were declared before they were run (`research/signal-log-plan.md`, "Round 2"):
 filters on the long mean reversion, market-regime filters on SPY's 200-session SMA, and two
@@ -377,7 +376,7 @@ Results: `round2-stageA-20261004-141804.json` and `round2-stageB-20261004-142845
 study folder. The watchlist lists the rule's own trades under "Tested edge"
 ([setups-watchlist.md](setups-watchlist.md)).
 
-## Round 3: two infographic setups, neither worth trading (2026-10-04)
+## Round 3: two infographic setups, neither worth trading
 
 The user brought two setups from Fingrad's indicator-pair infographics. They were declared before
 running (`research/signal-log-plan.md`, "Round 3") and scored like round 1, on every name over
@@ -454,7 +453,7 @@ they are not tests.
 - **The squeeze setup's matched baseline is thin.** Closes outside the band are rare, so it rests
   on a median of 3 draws an entry. Its effective sample (828) only just clears the 780 threshold.
 
-## Round 4: the vendor's relative-strength breakout, worse than random (2026-10-09)
+## Round 4: the vendor's relative-strength breakout, worse than random
 
 The vendor's relative strength is price divided by the S&P 500, and its signal is that ratio at a
 new high with a price breakout. Fitted to their dated calls, the lookback is about 21 sessions.
@@ -494,7 +493,7 @@ effective entries. The full results are in `round4-20261009-152840.json` in the 
 - **The 21-session hold was chosen after the exploratory look.** It is one of three horizons that
   look tried, and the look found no edge at the other two either.
 
-## Round 5: the 1-10 score inside the fundamentals, no help and sometimes worse (2026-10-09)
+## Round 5: the 1-10 score inside the fundamentals, no help and sometimes worse
 
 The vendor reads its 1-10 relative-strength score only where the fundamentals are clear. Their
 claim is that a low score with compelling fundamentals means the price has not caught up, while a
@@ -546,7 +545,7 @@ when entries cluster (the Bearish-trend row).
 - **The stage test is too small to judge** (633 effective entries against 780).
 - **Fixed 21-session holds**, where the vendor manages option positions.
 
-## Round 6: an analyst revision adds no weight to the bearing (2026-10-15)
+## Round 6: an analyst revision adds no weight to the bearing
 
 The vendor's board counts an analyst revision as one more agreeing tag once its direction read is
 set. Round 6 asks whether a revision that session improves a name already in a strong bearing,
@@ -598,7 +597,7 @@ Nothing passes. The full results are in `round6-20261016-053221.json` in the stu
   2025.
 - **Fixed 21-session holds**, next-open fills: a pre-open note's first-day move is never captured.
 
-## Round 7: entering a bearing does not beat random entry (2026-10-16)
+## Round 7: entering a bearing does not beat random entry
 
 The vendor's stacked method rests on its direction read, our *bearing*. The earnings list trades
 only strong bull and strong bear names, and the board is read against it. Round 7 asks whether

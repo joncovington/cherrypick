@@ -35,6 +35,16 @@ PMCC, and a few ordinary positions), skate, put, call and credit-spread screener
 board, the end-of-day reviews and a morning pack, GEX history with a one-expiry chain, a stream cache,
 and the supervisor and watchdog files that make System read healthy.
 
+It also holds:
+- the earnings calendar and its forward record;
+- the time-spread scan, built by manage's own `timespreads.build_all` from invented quotes;
+- the fair-value file, a small DCF whose bridge adds up;
+- a chart for each name, and the setups watchlist (technicals' own `chart.build` and `watchlist.rows`
+  over an invented bar history);
+- MEIC's regime cuts (MEIC's own writer over the demo ledger, whose entries carry regime tags);
+- the earnings strategies' control arms;
+- two external reports, one plain and one using every presentation hint.
+
 ## Serve it
 
 Build the console once (`pnpm --dir packages/console install`, then the shared, server and web builds),
@@ -68,16 +78,33 @@ For a one-off shot:
 ```
 export CHERRYPICK_HOME=~/demo-home
 cd packages/console
-node tools/ui-check.mjs --route live/wheel --shot wheel.png --full
+node tools/ui-check.mjs --route live/wheel --selector .mf-slide --viewport 1500x2600 --shot wheel.png
 ```
 
-Check the first line it prints: the URL must say 5391. Routes are the rail's, with tabs after a slash:
-`live/positions`, `screeners/skate`, `system/health`. `--card <title>` crops to one card and
-`--scale 2` doubles the pixels for print.
+**Set `CHERRYPICK_HOME` first, on its own line.** If it is unset, `ui-check` falls back to the real
+console's port and photographs the real console. Check the first line it prints: the URL must say 5391.
+
+Routes are the rail's, with tabs after a slash: `live/positions`, `screeners/skate`, `system/health`.
+- `--card <title>` crops to one card that has drawn a chart.
+- `--selector <css>` crops to any element. `.mf-slide` is a tab's whole content without the rail, header
+  and footer. The app scrolls an inner container, so give a viewport tall enough that it does not scroll.
+- `--scale 2` doubles the pixels for print.
+
+The console reads the wall clock. Taken outside a trading day, the pages that mean "today" (Live, today)
+read as a quiet day, and an external report says how many hours old it is. When it matters, take Live,
+today on a trading day.
+
+Look at every image before it goes into a document:
+- The Config shots leave out the hero strip, because it prints the home's real folder.
+- System, environment is not shot, because it reads this machine's own host name, interpreter path and
+  git state.
 
 ## The fake-data rules
 
-- Index and fund trades use only SPX, XSP, SPY, QQQ and IWM. Single names are AAA, BBB, CCC and DDD.
+- Index and fund trades use only SPX, XSP, SPY, QQQ and IWM. Single names are AAA, BBB, CCC and DDD,
+  the suite's placeholder tickers, and none is in technicals' seed universe. A test in
+  `packages/orchestrator/tests/test_demo_home_script.py` fails if one is. Company names on the calendar
+  (AAA Systems and the like) are as invented as the tickers.
 - The account is `****0000`.
 - Every price, fill, strike and P&L is invented and the rows add up the way the real ones must
   ([money-layout.md](conventions/money-layout.md)): entry plus exit is gross, gross less each cost
@@ -93,7 +120,11 @@ module normally holds. Look at a screenshot before it goes into a document.
 
 ## Not yet populated
 
-These pages render their empty state on the demo home: Screeners earnings calendar, earnings record,
-time spreads and fair value; Charts technicals and setups; Earnings decisions and strategies; MEIC regime
-cuts and analysis; System environment; Live flies. Advisor, Backtest and the retired
-modules (flies, curve, PMCC, BWB) are off by design.
+Two pages render their empty state on the demo home:
+- Live flies, because the module is retired.
+- System environment, which reads the machine it runs on (host name, interpreter, the checkout's git
+  state). A home has nothing that could stand in for that.
+
+Advisor, Backtest and the retired modules (flies, curve, PMCC, BWB) are off by design, which is why
+Reports, end of day and Compare list them as absent. The income lists do not carry the fair-value
+columns, so a row there reads "no fair value" beside a fair-value tab that has a value.

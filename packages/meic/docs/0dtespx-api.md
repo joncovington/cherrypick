@@ -1,21 +1,20 @@
 # 0DTESPX.com API — reference notes
 
-**What this covers:** a technical/legal reference on a third-party historical-data API MEIC's
-paper-trading replay feature considered using, and why the module doesn't use it the way it
-originally planned to. More detailed and code-oriented than the rest of this module's docs. Part
-of the [MEIC module](../README.md) in the cherrypick suite.
+**What this covers:** a technical and legal reference on a third-party historical-data API, what the
+module may do with it (practice sessions through `paper_practice.py`) and what it may not (bulk
+extraction through `paper_replay.py`, which is disabled). More detailed and code-oriented than the rest
+of this module's docs. Part of the [MEIC module](../README.md) in the cherrypick suite.
 
 Research notes on the [0DTESPX.com](https://www.0dtespx.com) API, sourced from the OpenAPI spec
 (`/openapi.yaml`), the [walkthrough](https://www.0dtespx.com/docs/api/walkthrough),
 [`/llms.txt`](https://www.0dtespx.com/llms.txt), and the
 [rate-limits](https://www.0dtespx.com/docs/api/rate-limits) / [access](https://www.0dtespx.com/docs/access)
-pages, cross-checked against live probing. Relevant because `cherrypick/meic/paper_replay.py` drives our paper
-engine from this API. **Read the Acceptable-use verdict first — it changes what we should build.**
+pages, cross-checked against live probing. `cherrypick/meic/paper_replay.py` (disabled) and
+`cherrypick/meic/paper_practice.py` both talk to this API. **Read the Acceptable-use verdict first.**
 
-## Acceptable-use verdict (decision-critical)
+## Acceptable-use verdict
 
-**Our local-cache replay design violates 0DTESPX's terms.** Verbatim from the rate-limits page and
-`/llms.txt`:
+**A local-cache replay violates 0DTESPX's terms.** Verbatim from the rate-limits page and `/llms.txt`:
 
 > "Bulk extraction of the historical dataset is **not permitted, at any pace**. Systematically
 > walking the archive of past sessions … to build **a local copy or a derivative dataset** violates
@@ -25,8 +24,8 @@ engine from this API. **Read the Acceptable-use verdict first — it changes wha
 `cherrypick/meic/paper_replay.py` does exactly the prohibited thing: it walks each session 09:30–16:00 at a 120s
 cadence, **caches every day to `replay_cache/<date>.json`**, and derives a local `paper_trades.db`.
 That is "systematically walking the archive … to build a local copy or a derivative dataset." Pacing
-under the credit budget does not make it permitted. **Conclusion: do not rewrite the replay adapter
-to pull raw option-chain snapshots; the tool should not be used against this API.**
+under the credit budget does not make it permitted. **The replay tool stays disabled; never rewrite it
+to pull raw option-chain snapshots.**
 
 **Sanctioned alternatives** for historical validation (the platform runs the simulation server-side;
 you never extract the dataset):
@@ -36,9 +35,10 @@ you never extract the dataset):
 - **Strategy builder + backtester** — express a strategy in their builder (`/strategies`,
   `/strategies/preview`) and the platform backtests it over full history server-side.
 
-Both require re-expressing MEIC logic in *their* order/strategy model rather than running our own
-engine, so neither is a drop-in for our local paper engine. The compliant path that needs no
-0DTESPX at all remains **forward paper on tastytrade** (what `paper_loop.py` already does).
+The strategy builder requires re-expressing MEIC in *their* strategy model. Practice sessions let our
+own entry logic drive their sandbox, which is what `paper_practice.py` does (below). The path that needs
+no 0DTESPX at all is **forward paper on tastytrade** (what `paper_loop.py` does) and the quote-history
+replay (`python -m cherrypick.meic.replay`, see [reference.md](reference.md)).
 
 ## Base URL & auth
 
@@ -137,17 +137,43 @@ disallowed regardless of pacing** (see verdict above).
 
 `GET /user` returns a per-user `fee_schedule` and `slippage` (default `0.05`). For SPX options the
 schedule is `open 1.72/leg`, `close 0.72/leg`, `exercise 5` — which **matches cherrypick.core.fees to
-the cent** (open 4×1.72 = 6.88 vs 6.8866; close/side 1.44 vs 1.4433). `PATCH /user` accepts
-`fee_schedule`/`slippage` (204), so they are tunable, but that mutates the account **globally** (web
-app included). The practice backtester (`cherrypick/meic/paper_practice.py`) therefore runs on 0DTESPX's basis
-without alignment (it already ≈ ours); the only residual vs. tastytrade forward paper is the 0.05
-slippage baked into fills. See docs/paper-practice-plan.md § Fee & slippage.
+the cent** (open 4×1.72 = 6.88 vs 6.8866; close/side 1.44 vs 1.4433; close full 2.88 vs 2.8866;
+expire 0). `PATCH /user` accepts `fee_schedule`/`slippage` (204), so they are tunable, but that mutates
+the account **globally** (web app included), and since the fees already match it would move per-IC P&L by
+under a cent. **Do not mutate the account.** The practice backtester runs on 0DTESPX's basis (tagged
+`cost_basis="0dtespx"`); the only residual against tastytrade forward paper is the 0.05 slippage baked into
+its fills, so practice P&L is fee-comparable to forward paper but carries a small extra modelled slippage
+on each entry and stop.
 
-## Bottom line for cherrypick-meic
+## The practice backtester (`paper_practice.py`)
 
-`cherrypick/meic/paper_replay.py` cannot be used against this API without violating its terms. The Cloudflare/UA
-fix and the `login`/`request_code` helpers stay useful only if we pivot to the **sanctioned**
-practice-session / backtest API (a separate, server-side integration). Otherwise, historical
-validation of the paper experiment cells should come from **forward paper on tastytrade**, and this
-doc plus the replay tool serve as reference only. Recommend not investing further in the
-raw-snapshot replay path.
+`cherrypick/meic/paper_practice.py` drives MEIC's real decision logic through practice sessions instead of
+extracting data. It is SPX-only (the platform has no XSP, QQQ or IWM), separate from forward paper and from
+`paper_replay.py`, and its results live on 0DTESPX's cost basis, not directly comparable to tastytrade P&L.
+
+- **Reuse, not a fork.** It imports `paper.evaluate_entry`, the arm loader, `_merged_params`,
+  `union_widths_for_symbol` and the staggering unchanged. Only the fill, mark, exit and settlement layer is
+  its own, targeting the 0DTESPX order and position model.
+- **One tick.** The driver opens a practice session per arm, steps the clock 09:35 to 16:00 ET at 120 s,
+  and per tick (a) manages stops from the free position marks, shared across arms, (b) takes at most ONE
+  metered chain snapshot, shared by every SPX-eligible arm, and runs `paper.evaluate_entry` for each,
+  placing the IC as one 4-leg limit order, and (c) lets the session settle at 16:00. SPX is cash-settled,
+  so ICs are left to expire; event-day closes reuse `paper.force_close_active`.
+- **Compliance by construction.** The chain is read only at an entry-eligible tick, consumed in memory
+  and discarded; stop monitoring uses the free position marks, never a chain read; only our own trades
+  and results are written. Credits are budgeted well under the 10,000 bucket, `429` honours
+  `Retry-After`, and a `usage_percent` pre-check pauses a batch when the bucket is low. This is trading
+  and research use, not walking the archive.
+- **Fill hardening.** Fills are confirmed by position reconciliation (a stop-close can return no fill);
+  order POSTs carry an `Idempotency-Key` so a retried tick cannot double-place; closing limits come from
+  current marks plus a small cushion, mirroring `stop_limit_ratio`.
+- **`iv_rank` is a VIX-band pseudo rank** (`_VIX_IV_RANK_BANDS`), because a true rank needs a year of VIX
+  closes and the API has no multi-day series (one call per past date is itself disallowed). Every row is
+  tagged `iv_rank_source="vix_band"` so it stays distinct from forward paper's native rank.
+- **Results** go to `practice_trades.db` in the data home (the `ic_trades` schema, tagged
+  `execution_mode="practice_0dtespx"`), so live, forward-paper and practice cost bases never blend.
+- **CLI.** `python -m cherrypick.meic.paper_practice run --date D` (or `--start/--end` for a paced batch;
+  `--profiles a,b`, `--cadence`, `--dry` to log intended entries without placing), `report --start --end`
+  for the per-arm roll-up, `status` for the bucket fill, `login --email` to store a token.
+  Tests (`tests/test_paper_practice.py`) run against canned fixtures and never touch the API.
+- **Limits.** SPX-only, and a separate lens from forward paper, not a substitute.

@@ -1,6 +1,6 @@
 """The intraday agent's fact pack: what the session looked like at one instant, and nothing after it.
 
-docs/intraday-agent-plan.md. A pure function over three read-only stores -- the GEX recorder's
+docs/intraday-agent.md. A pure function over three read-only stores -- the GEX recorder's
 history (spot, the regime readings, the minute market readings) and this module's paper ledger --
 evaluated AS OF one epoch. The same function serves the live tick, the paper arm, the historical
 replay and the rule fitted from the stored packs, so all four see identical inputs.

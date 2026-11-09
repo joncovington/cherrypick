@@ -1,5 +1,5 @@
 """The intraday agent's deterministic half: when to ask, what a valid answer is, the decision file a
-loop reads, and the record of every pack (docs/intraday-agent-plan.md).
+loop reads, and the record of every pack (docs/intraday-agent.md).
 
 **No model is called from here.** The suite keeps AI outside the packages (root CLAUDE.md): the call
 lives in `scripts/flies_intraday_agent.py`, which hands `run_tick` an `ask(prompt, pack_json)`

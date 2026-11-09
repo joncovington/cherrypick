@@ -2,13 +2,12 @@
 
 > _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
 
-How positions get closed. Positions used to be force-closed the morning after entry, on the reasoning
-that the overnight IV crush was the whole edge. They are **managed** now: marked once a minute,
-exited when a rule says so, and carried across sessions when carrying them is the better bet.
+How positions get closed. Positions are **managed**: marked once a minute, exited when a rule says so,
+and carried across sessions when carrying them is the better bet.
 
-> **Measurement break, 2026-08-12.** Both the exit timing and the per-strategy thresholds changed on
-> this date, so win rate, expectancy and hold time all shift with it. Results either side are not
-> comparable and must never be pooled. Recorded as a `lifecycle_cutover` row in `measurement_breaks`
+> **Measurement boundary, 2026-08-12.** The managed lifecycle and its per-strategy thresholds began on
+> this date, so win rate, expectancy and hold time on earlier rows are not comparable. Never pool across
+> it. See [measurement boundaries](./measurement-boundaries.md); the dates are also journalled
 > (`python -m cherrypick.earnings.db_paper get_measurement_breaks`).
 
 ---
@@ -27,9 +26,9 @@ so a tick can be reasoned about without knowing anything about the tick before i
 | `open_window` | 09:30–09:40 | **marks, never acts** |
 | `management` | 09:40–15:40 | marks, decides, acts |
 | `entry` | 15:35, once daily | the forced-sampling entry scan |
-| `eod` | 16:00–16:30 | bounds the session and records an iteration; writes nothing since the reports moved to `packages/review` (2026-08-13) |
+| `eod` | 16:00–16:30 | bounds the session and records an iteration; writes nothing; `packages/review` builds the reports |
 
-The times above are for a normal 16:00 close. On an early-close day (13:00; 2026-11-27, 2026-12-24)
+The times above are for a normal 16:00 close. On an early-close day (13:00)
 every clock is the same offset from that day's close, from one pure function of the date
 (`session_clock.for_date`): the expiry close at close − 30 minutes (12:30), the pin guard window
 ending at the close, `management` ending at close − 20 minutes (12:40), and `eod` from the close
@@ -47,12 +46,14 @@ Dolt-derived metric (winrate, IV/RV, market cap, average volume, historical move
 pre-market by `forward_scan` for the next ten trading days. The fast, perishable half — live price,
 expected move, term structure, spread, open interest — is fetched at entry, where it has to be fresh.
 
-That split exists because the entry scan costs roughly **35s of fixed overhead plus 8s per symbol**
-(measured over eight real runs: 17 symbols took 1m17s, 35 took 5m24s). The heaviest night on record,
-87 symbols, extrapolates to about twelve minutes — which at the old 15:45 start would have finished
-*past* the 15:55 entry window. The scan now starts at **15:35** (`entry_scan_at`, deliberately its own
-key rather than `entry_window_start`, which means "when may entries be placed at all") and reads the
-morning snapshot to **pre-filter** its candidate list.
+That split exists because the entry scan costs roughly **35s of fixed overhead plus 8s per symbol**,
+so a heavy night (dozens of symbols) takes many minutes and must start early enough to finish inside the
+15:55 entry window. The scan starts at **15:35** (`entry_scan_at`, deliberately its own key rather than
+`entry_window_start`, which means "when may entries be placed at all") and reads the morning snapshot
+to **pre-filter** its candidate list. A scan that fails before opening anything is retried on the next
+tick until `entry_window_end`; one that opened something is never run twice. Each symbol opens as soon
+as its own scan finishes, so which names get in on a heavy night is bounded by the window, not by the
+slowest name.
 
 The pre-filter drops a name only on criteria that cannot move intraday — **winrate, average volume,
 market cap** — and only against the *near-miss* floor, the loosest bar any `symbol_screen` setting can
@@ -88,23 +89,22 @@ only ever turn a *hold* into a *close*, never the reverse.
    the position is resolved at **intrinsic against the expiration day's own settlement close**,
    read from the local `stocks.ohlcv` history rather than a quote. Reason `expired` when every leg
    has gone, `front_expiry` when only a calendar's front month has and the back is closed at its own
-   real market. See *Settlement* below. Since 2026-09-24 reaching this step is a **failed exit**
-   (the settle event carries `failed_exit`): step 1 should have traded the position out.
-1. **Expiry close** — from `expiry_close_time` (15:20 ET, 40 minutes before the close; 12:20 on an early-close day; 15:30 before 2026-11-06) on the expiration day of **any** leg,
+   real market. See *Settlement* below. Reaching this step is a **failed exit** (the settle event
+   carries `failed_exit`): step 1 should have traded the position out.
+1. **Expiry close** — from `expiry_close_time` (15:20 ET, 40 minutes before the close; 12:20 on an early-close day) on the expiration day of **any** leg,
    every position closes, whatever its P&L and whatever else is true. These are physically settled
    single names: an ITM leg that expires is an exercise or an assignment — shares, an overnight gap
    and fees — so the house rule is to trade out, never to settle. Read off each leg's own symbol, so
    a calendar whose front month expires today closes too. Neither the spread gate nor the per-tick
-   execution cap holds it back (see below). Reason `expiry_close`. It exists because the alternative
-   happened: 71 positions entered 2026-08-25..27 rode to their 2026-08-28 expiry with exits already
-   decided and refused by the gates, until the quotes were gone.
+   execution cap holds it back (see below). Reason `expiry_close`. Without it a position whose exit
+   the gates keep refusing rides to expiry until the quotes are gone.
 2. **Pin guard** — any **short** strike within `pin_guard_dollars` (1.00) of spot inside the last
    `pin_guard_window_minutes` (60) of its expiration day. Fires on *proximity*, not on being in the
    money: assignment is decided by the settlement print, which has not happened yet. Reason `pin_risk`.
 2b. **Entry session** — on the session a position was opened (`sessions_held == 0`), nothing below
    acts. The report has not happened, and a fresh mark is only the spread. Reason `entry_session`
-   (a hold). Added 2026-10-17, after 23 positions were closed minutes after the 15:35 scan
-   (docs/operating-history.md).
+   (a hold). Without it, the tick after the 15:35 scan marks a new position at its round-trip spread and
+   closes it as a loser within minutes.
 2c. **Assignment-risk guard** — any **short** leg in the money that its holder has reason to exercise
    early closes the whole position (reason `assignment_risk`). Two rules, per share, on the leg's mid:
    (a) a **call** whose time value (mid less intrinsic) is below the next cash dividend going ex after
@@ -138,11 +138,9 @@ only ever turn a *hold* into a *close*, never the reverse.
    reverting. Reason `pead_loser`; disable per strategy with `close_losers_first_morning: false`.
 
    **"First check" means the first check that could act.** The loop marks every position from the
-   09:30 open, but nothing executes before `exec_window_start` (09:40). The gate used to count a
-   position's first check as "no mark yet this session", which the 09:30 mark spent, so it never
-   fired: from 2026-10-17 there were no executed `pead_loser` closes and 137 refused. A position
-   is now owed its first check of a session until an evaluation at or after the exec window start
-   comes back with no gate on it (`management.first_check_pending`, read from the session's
+   09:30 open, but nothing executes before `exec_window_start` (09:40), so "no mark yet this session"
+   would never be true when the gate could act. A position is owed its first check of a session until
+   an evaluation at or after the exec window start comes back with no gate on it (`management.first_check_pending`, read from the session's
    `management_events`, so a restart does not change it). A `pead_loser` verdict held by
    `spread_too_wide`, `tick_execution_cap`, `close_failed` or an unusable mark has not been acted
    on, so the next tick is owed the same check; the spread-gate patience then settles it. A winner
@@ -166,7 +164,7 @@ verdict with `executed = 0` and the gate that held it, and the next tick reconsi
 |---|---|
 | `before_exec_window` | earlier than `exec_window_start` (09:40) |
 | `open_window` | the tick's phase never acts |
-| `spread_too_wide` | a leg wide in percent (`max_leg_spread_pct`, 0.35 of mid) **and** in money (`max_leg_spread_abs`, $0.05), judged per leg. Percent alone refused the win case — a near-worthless short quotes 0.00/0.01, a one-cent buyback that reads as a 200% spread; before 2026-08-31 that blocked 32 positions' profit-target exits and every one rode to expiry instead. A leg quoting a 0.00 bid uses the looser `max_leg_spread_abs_zero_bid` ($0.20) |
+| `spread_too_wide` | a leg wide in percent (`max_leg_spread_pct`, 0.35 of mid) **and** in money (`max_leg_spread_abs`, $0.05), judged per leg. Percent alone refuses the win case — a near-worthless short quotes 0.00/0.01, a one-cent buyback that reads as a 200% spread. A leg quoting a 0.00 bid uses the looser `max_leg_spread_abs_zero_bid` ($0.20) |
 | `unusable_mark` | the position could not be priced at all this tick |
 | `tick_execution_cap` | more than `max_executions_per_tick` (3) closes already taken; deferred a minute |
 | `close_failed` | the close itself failed; `close_attempts` is bumped and it becomes `stranded` at 2 |
@@ -186,30 +184,29 @@ decision is the cache's; the price on the ledger should be one we could actually
 
 ### The exit_reason taxonomy
 
-Every close records one, on the trade itself (`trades.exit_reason`). Before this it reached only
-`scan_log`, joinable back to a trade by nothing better than (date, symbol, strategy) — which cannot
-identify a position held across several sessions at all.
+Every close records one, on the trade itself (`trades.exit_reason`), since a position held across
+several sessions cannot be identified from (date, symbol, strategy) alone.
 
 `profit_target` · `stop_loss` · `pead_loser` · `max_hold` · `expiry_close` · `pin_risk` · `assignment_risk` · `leg_stop_delta` ·
 `time_exit` · `iv_crush_backstop` · `close_window` · `expired` · `front_expiry` ·
-`legacy_next_morning` (every pre-cutover exit).
+`legacy_next_morning` (every exit before the managed lifecycle).
 
-### The same-session backstop, and why it no longer binds
+### The same-session backstop
 
 `exit_after_announcement_minutes` (240) closes a position unconditionally that many minutes after
 entry. Eighteen hours pass between a 15:45 entry and the first morning mark, so left in force it
-would fire on **every** position before any management rule was reached — multi-day holds would be
+would fire on **every** position before any management rule was reached, and multi-day holds would be
 unreachable while appearing to work. The management layer therefore injects a value past any hold it
-could preempt. Lowering `management.exit_after_announcement_minutes` re-enables the old behaviour; the
-top-level key still applies to the agent-driven loop, which has no session cap of its own.
+could preempt. The top-level key applies only to a manual `/paper-start` cycle, which has no session
+cap of its own.
 
 ## Settlement
 
-> **Measurement break, 2026-08-31.** Positions that expire now record a result instead of hanging
-> open. Recorded as an `expiry_settlement` row in `measurement_breaks`.
+> **Measurement boundary, 2026-08-31.** Positions that expire record a result instead of hanging open
+> (an `expiry_settlement` row in `measurement_breaks`).
 
-Every rule above assumes a market: read a mark, compare it to a threshold, close by trading out.
-That assumption fails the morning after expiration, and until 2026-08-31 nothing noticed.
+Every rule above assumes a market: read a mark, compare it to a threshold, close by trading out. That
+assumption fails the morning after expiration.
 
 An expired contract does not stop quoting. The feed keeps answering with a zero bid against a stale
 ask, which prices out as a usable-looking mark with a plausible mid and a 200% spread. So the
@@ -217,12 +214,8 @@ position marked fine, the engine decided to close it, and `spread_too_wide` refu
 tick, on a spread that could never narrow, because there was nothing left to trade. `close_attempts`
 never reached 1. Positions did not fail to close; they never got as far as trying.
 
-The first expiration to run entirely under the 2026-08-12 managed lifecycle was 2026-08-28, and it
-stranded **59 positions** across all six strategies. Every prior expiration had cleared completely,
-because the pre-cutover design force-closed everything the next morning (`legacy_next_morning`,
-64 of the 83 closes on file) whether or not it could be priced sensibly. Retiring that sweep removed
-the only thing that had been resolving expiries, and nothing replaced it. `front_expiry` had been
-named in the schema since before the cutover and never had a producer.
+Nothing else resolves an expiry in the managed lifecycle, so settlement does. (`front_expiry` is the
+reason for a calendar whose front month has expired.)
 
 **What an expired option is worth is not a quote.** It is intrinsic against the settlement print — a
 number with no bid-ask width, no slippage, and no dependence on anyone still making a market. That
@@ -241,8 +234,7 @@ Two shapes arrive, and they are different trades:
 
 **No share delivery is modelled, and does not need to be.** These are defined-risk verticals in one
 expiration: an assigned short and an exercised long net to the cash difference between the strikes,
-which is what intrinsic already says. That is why earnings is tractable where `pmcc`'s assignment
-problem was not. The calendars avoid it by ending at front expiry rather than carrying a naked back
+which is what intrinsic already says. The calendars avoid it by ending at front expiry rather than carrying a naked back
 leg — which is what the structure's own thesis does anyway.
 
 Settlement reaches the ledger through `scanner.compute_generic_exit_debit`, the same function every
@@ -251,7 +243,7 @@ same column name. The zero-width quotes also make the cost model come out right 
 spread means no slippage haircut, and the fee stack reduces to the clearing and regulatory
 pass-throughs an expiring contract really does incur.
 
-The loop settles at expiry by itself now. For a backlog that accumulated before it could:
+The loop settles at expiry by itself. For a backlog:
 
 ```bash
 python -m cherrypick.earnings.paper_loop settle-expired          # dry run, prints what it would do
@@ -269,10 +261,10 @@ and the number is a reasoned starting point. Say which, always — the two invit
 
 | Strategy | Target | Stop | Time rule | Basis |
 |---|---|---|---|---|
-| `iron_fly` | 25% of credit | 1.5× credit | 3 sessions | **Research-backed.** A fly's max-profit zone is a *point*, not a band, so the convention manages it at 25% where a condor's band supports 50%. Was `0.50` before the cutover. |
+| `iron_fly` | 25% of credit | 1.5× credit | 3 sessions | **Research-backed.** A fly's max-profit zone is a *point*, not a band, so the convention manages it at 25% where a condor's band supports 50%. |
 | `iron_condor` | 50% of credit | 1.5× credit | 3 sessions | **Research-backed.** Practitioner guidance puts the earnings capture at 50–75% by mid-morning. A breached short side closes the whole position; no rolling. |
-| `directional_credit_spread` | 50% of credit | 2.0× credit | 3 sessions | **House rule.** No published backtest of stop multiples for an *overnight earnings* vertical was found; this is the generic credit-spread convention carried over. Stop widened from 1.5× at the cutover to match it. |
-| `broken_wing_butterfly` | 25% of credit | 2.0× credit, plus `leg_stop_delta_abs` 0.60 | 3 sessions | **House rule.** tastylive has traded BWBs into earnings but published no management study. Exits through the *credit*-spread path despite pricing as a net debit. |
+| `directional_credit_spread` | 50% of credit | 2.0× credit | 3 sessions | **House rule.** No published backtest of stop multiples for an *overnight earnings* vertical was found; this is the generic credit-spread convention carried over. |
+| `broken_wing_butterfly` | 25% of credit | 2.0× credit, plus `leg_stop_delta_abs` 0.60 | 3 sessions | **House rule.** No management study was found. Exits through the *credit*-spread path despite pricing as a net debit. |
 | `double_calendar` | 15% of debit | 50% of debit | front-leg 5 DTE; leg-delta 0.45 | **Research-backed.** A 30-name backtest puts the target at 15% of debit, usually hit within minutes of the open, at an 87% win rate. Stop and time exit from the same source. |
 | `expected_move_butterfly` | fly worth 50% of its width (far touch) | none (the debit is the max loss) | the 15:20 expiry close; not in `OVERNIGHT` | **House rule, from history.** `scripts/emfly_history.py`: holding to expiry or to this take-profit lost least of six rules on 4,950 events; closing on the reaction day lost most. |
 | `atm_calendar` | 15% of debit | 50% of debit | front-leg 5 DTE | **Thin.** No earnings-specific backtest as clean as the double calendar's; aligned with it deliberately rather than guessed at separately. |
@@ -300,7 +292,6 @@ a late reaction to a 09:33 signal.
 
 ```
 09:41  exit_debit 4.50 → profit 0.50, short of target; position is a WINNER → hold
-       (this used to close unconditionally at 09:45)
 day 2  still working, still a winner                        → hold
 day 3  session cap reached                                  → closed, exit_reason=max_hold
 ```
@@ -332,42 +323,12 @@ otherwise stand.
 
 ---
 
-## A Realistic Example: `iron_fly` Overnight Hold (agent-driven loop)
-
-```
-Entry (day 1, 15:32 ET): AAPL iron_fly, entry credit $5.10 for 3 contracts
-Overnight: unmonitored, earnings announced after close
-
-Next morning, 09:15 ET (early-exit check):
-  Live quotes pulled, exit_debit computed at $2.10
-  profit = $5.10 - $2.10 = $3.00 ≥ $5.10 * 0.25 ($1.28) → close_all, reason: profit_target
-  Position closed, save_close records the trade
-
-Result: no need to wait for the 09:45 close-window backstop -- the early-exit check already
-caught the profit target.
-```
-
-And a case where the early-exit check doesn't fire:
-
-```
-Next morning, 09:15 ET (early-exit check):
-  exit_debit computed at $4.00
-  profit = $5.10 - $4.00 = $1.10, below the $1.28 target
-  exit_debit ($4.00) below the $7.65 stop-loss threshold (1.5x $5.10)
-  → hold
-
-09:45 ET (unconditional close):
-  Still open → close regardless of the current $1.10 unrealized profit
-```
-
----
-
 ## Troubleshooting
 
-**"Position didn't close at the early-exit check, but I expected it to"**
+**"Position didn't close, but I expected it to"**
 Check the actual `exit_debit` computed from live quotes against the specific formula above —
-the position may simply not have hit either threshold yet. In the agent-driven loop it still closes
-at the close-window backstop; the paper loop carries it under the session cap and PEAD gate instead.
+the position may simply not have hit either threshold yet. The paper loop carries it under the session
+cap and PEAD gate; only a manual `/paper-start` cycle closes it at the close-window backstop.
 
 **"`double_calendar` closed one side but left the other open"**
 That's `action: close_side` working as intended — one side crossed `leg_stop_delta_abs` while
@@ -404,20 +365,19 @@ The loop's own observability, and what each surface answers.
 ```bash
 python -m cherrypick.earnings.paper_loop status        # phase, last tick, open positions, lock
 python -m cherrypick.earnings.paper_loop once          # run one tick by hand
-python -m cherrypick.earnings.db_paper get_iterations --session_date 2026-08-12
+python -m cherrypick.earnings.db_paper get_iterations --session_date YYYY-MM-DD
 python -m cherrypick.earnings.db_paper get_management_events --order_id <id>
 python -m cherrypick.earnings.db_paper get_measurement_breaks
 ```
 
 **Reading the failure modes.** A stretch of `loop_iterations` rows with `status` other than `ok` is a
-feed problem; a stretch with *no rows at all* during the session is the loop not running. Those two
-were indistinguishable before this table existed, which is exactly why it does. A position whose
+feed problem; a stretch with *no rows at all* during the session is the loop not running. That table exists
+because those two would otherwise be indistinguishable. A position whose
 marks are mostly `usable = 0` is unpriceable rather than unmanaged — it is being looked at every
 minute and refused, and the refusal reason says why.
 
-**Stranded positions.** Two failed closes and a position's `status` becomes `stranded`. That
-threshold used to be applied inside a single sweep, so a position missing one attempt per day looked
-fresh every morning; it outlives the run that noticed it now. It stays `status = 'stranded'` on the
+**Stranded positions.** Two failed closes and a position's `status` becomes `stranded`. The
+count outlives the run that noticed it. It stays `status = 'stranded'` on the
 ledger and still carries real risk.
 
 ## Troubleshooting

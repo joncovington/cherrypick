@@ -46,14 +46,14 @@ interpolated and never zero. The replay does not re-run the cap after a swap: la
 are taken as recorded, and the twin's own exposure is not charged against the cap.
 
 **What the ledgers can answer today (2026-10-04).** Every `fly_order_path` row through 2026-10-02
-is a backfilled spot trail with no quotes (docs/fill-model.md, "Backfill": there is no quote history
+is a backfilled spot trail with no quotes (flies reference, Fill realism: there is no quote history
 to recover), so C1 at natural is unmeasured on every refusal so far. What can be said is a bound:
 a completion limit that rested UNFILLED at t means the natural was above it, so C1 valued at the
 resting limit (`c1_bound`) is an upper bound on C1, never a measurement of it.
 
 **Caveats.** Three sessions is a smoke test. The twin is paper's modelled fill standing in for a
 live fill that never happened; paper and live complete by different rules and the gap between them
-is what packages/flies/docs/fill-model.md exists to measure. Neither option becomes a rule unless
+is what the flies reference (Fill realism) exists to measure. Neither option becomes a rule unless
 it pays net on the sessions it acted on, and a live completion-gate change would be
 measurement-affecting, with a declared break and a judging rule written first.
 """
@@ -81,7 +81,7 @@ TWIN_TOLERANCE_SECONDS = 60.0
 DEFAULT_SINCE = "2026-09-25"  # the cap became live's only sizing gate
 CAVEAT = (
     "Smoke test over few sessions. The freed slot is valued by paper's twin entry, a modelled fill "
-    "standing in for a live fill that never happened (packages/flies/docs/fill-model.md). C1 at "
+    "standing in for a live fill that never happened (flies reference, Fill realism). C1 at "
     "natural needs order-path quotes, which the backfilled history does not have; c1_bound is an "
     "upper bound on C1, not a measurement."
 )

@@ -1,19 +1,16 @@
 # cherrypick-core
 
 Shared library for the suite, consumed by every package as `cherrypick.core.*`. See
-[README.md](README.md) for the design invariants and layout; [CUTOVER.md](CUTOVER.md) is the frozen
-record of the original submodule cutover.
+[README.md](README.md) for the design invariants and layout.
 
-**This monorepo is the source of truth.** Core was landed from the standalone `cherrypick-core` repo
-by `git subtree add` (history preserved); that repo is archived read-only and there is nothing to keep
-in sync. Its one former out-of-repo consumer, `tastytrade-mcp`, is retired.
+**This monorepo is the source of truth.** Core has no other copy to keep in sync.
 
 ## Stay import-self-contained
 
 **The core imports nothing from a consumer.** Everything a consumer supplies is injected or
 parameterized, never reached back into; a new core module imports only `cherrypick.core.*` and the
 standard library. This keeps `git subtree split --prefix=packages/core` a byte-identical reproduction
-of the standalone repo — the escape hatch if core ever has to be split out again.
+of core as a standalone repo — the escape hatch if core ever has to be split out.
 
 `tests/test_core_imports_no_consumer.py` checks the invariant directly. It derives the consumers from
 the `packages/*/src/cherrypick/*` directories, so a new package is covered the day it lands, and fails
@@ -56,15 +53,15 @@ the live path. Both the orchestrator and the module loop validate through this s
   sides, from the artifact entry's `base`). Absent means every base.
 - **Every module's `advice` block is its own**, never inherited from another module's bounds.
 - **One book per experiment.** The artifact and decision carry an `experiments` list; each validated
-  entry opens its own slug-safe `advised:<experiment name>` book (`advised_tag`, `slug`). An artifact
-  or decision from before 2026-09-17 reads as one legacy `advised:<base>` entry, and modules still
-  read that tag by name for history.
+  entry opens its own slug-safe `advised:<experiment name>` book (`advised_tag`, `slug`). An older
+  artifact or decision with no `experiments` list reads as one legacy `advised:<base>` entry, and
+  modules still read that tag by name for history.
 - **`advised_books(decision)`** is what every consumer opens one book per; **`stamp_for(book,
   decision)`** is the one rule that puts `experiment_id` on an advised row and never on control's
   (`experiment_for` resolves it per book; older artifacts fall back to parsing the advisor stamp).
 - **`session_decision` is the read-once rule, and a baseline decision is never persisted** — a process
   reaching the day with an advice-less config must not fix that day for the loop that runs after it
-  (meic and earnings each once lost their most informative session that way).
+  (the loop would lose its advised session).
 
 A module's own experiment names, `advice.bounds` and book naming live in that module's CLAUDE.md.
 

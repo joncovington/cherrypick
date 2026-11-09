@@ -15,6 +15,10 @@ order there, and a page that is not listed here is not served.
 - [Research](research.md): comparing arms, backtests and the advisor.
 - [System and Config](system-and-config.md): the suite's health, its settings, and the halt switch.
 
+## Keeping it current
+
+- [Upgrading](upgrading.md): move to a newer release with `upgrade`, what makes it refuse, rolling back, and the one manual move from v0.11.
+
 ## Reports and data
 
 - [External reports](external-reports.md): show a report of your own as a console tab, and post it to Discord.

@@ -1,4 +1,4 @@
-"""The flies intraday agent's model call (packages/flies/docs/intraday-agent-plan.md).
+"""The flies intraday agent's model call (packages/flies/docs/intraday-agent.md).
 
 The one place the agent's model is invoked, and outside the package on purpose (root CLAUDE.md):
 everything deterministic -- when a tick is worth a call, what a valid reply is, the decision file a

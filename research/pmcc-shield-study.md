@@ -1,7 +1,7 @@
 # The shield study: what the held-long arms were expected to do, and why these five symbols
 
-*Dated record, 2026-10-04. This is the evidence behind the `shield` and `shield_hold` arms and the
-symbol change at the Part 1 boundary. It is a replay over modelled prices, not a result. The arms
+*Study record, 2026-10-04 (pmcc is retired and off by default). This is the evidence behind the `shield`
+and `shield_hold` arms and their five ETF symbols. It is a replay over modelled prices, not a result. The arms
 exist so that weeks of real quotes can say what fifteen years of a model cannot.*
 
 Re-run with `python scripts/pmcc_shield_replay.py --until 2026-10-02` (add `--fetch` the first
@@ -12,7 +12,7 @@ year-long expiry deep enough to trade.
 ## What was compared
 
 The design comes from a published held-long income design (credited in
-[strategy-sources.md](../../../docs/strategy-sources.md)): hold a ~1-year
+[strategy-sources.md](../docs/strategy-sources.md)): hold a ~1-year
 call at about 0.925 delta, and every week sell a ~0.70-delta call against it. By put-call parity, a
 deep long call plus a short ITM weekly call is a short ~30-delta weekly put plus a far-OTM long put.
 It earns the variance premium on the weekly, with a crash floor far below.
@@ -24,8 +24,8 @@ It earns the variance premium on the weekly, with a crash floor far below.
 | `shield` | as `shield_hold` | as `shield_hold` | also rolls early at 85% decayed or on a breach, at most once a session |
 
 **Sizing.** One share-equivalent per dollar of NAV at entry, held until the position closes. Every
-figure is therefore a percentage of the stock value controlled. Tom's spreadsheet states returns on
-the long's cost, about a third of that, so his percentages run about three times these.
+figure is therefore a percentage of the stock value controlled. The source's spreadsheet states returns on
+the long's cost, about a third of that, so its percentages run about three times these.
 
 ## The model, and the check that moved it
 
@@ -45,7 +45,7 @@ reads 4.9% against 4.7%.
 too rich. Every short-premium figure it produced was optimistic by roughly that much, and the
 numbers below replace it.
 
-QQQ and IWM borrow XSP's fit. GLD and SLV use the video's own SLV prices. No weekly benchmark exists
+QQQ and IWM borrow XSP's fit. GLD and SLV use the source's own SLV prices. No weekly benchmark exists
 for them, so their figures carry less weight.
 
 ## Results, 2011-03-16 to 2026-10-01, IV at the fitted level
@@ -89,7 +89,7 @@ is sold, can.
   fell 15.0%).
 - The low beta comes from capped upside, not from protection.
 
-**4. The 30% stop is mixed; it is kept because it is Tom's rule, and it is measured.**
+**4. The 30% stop is mixed; it is kept because it is the source design's rule, and it is measured.**
 
 | | XSP | QQQ | GLD | IWM | SLV |
 |---|---|---|---|---|---|
@@ -201,8 +201,7 @@ of the following 21 sessions, since 2011.
 - **DIA, EEM, EFA, FXI, XLK, XBI**: too thin, under 60k calls a day.
 - **TLT and HYG**: monthly dividends, so a refused short every month.
 - **EWZ, USO, GDX, KWEB, ARKK, KRE, SMH, XLE, XLF**: ATM spreads of 5.5% to 29%, most with fat
-  tails. (SMH was added on 2026-10-12 after a broker-measured candidate screen: docs/history.md,
-  "Single stocks join".)
+  tails. (SMH was added on 2026-10-12 after a broker-measured candidate screen).
 - **IBIT**: too short a history to replay.
 
 ## The year-long expiry: why the pick is a standard monthly

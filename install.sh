@@ -11,6 +11,8 @@
 #   --skip-bootstrap     do not build the income lists' universe now (it builds this evening)
 #   --with-desk          accepted and ignored: the manual desk was removed in v0.12.0
 #   --no-start           install only; do not start the suite
+#   --upgrade            what `run.py upgrade` passes: an install over an existing home, with the
+#                        questions only a first install needs left out (Dolt, broker login, first lists)
 #   --config-history [--config-remote URL]  keep a git history of your settings
 #
 # The supervisor's cron backend on POSIX is newer than the Windows one and less proven; see
@@ -18,7 +20,7 @@
 
 set -euo pipefail
 
-YES=0; ACCEPT=0; SKIP_DOLT=0; SKIP_BOOTSTRAP=0; WITH_DESK=0; NO_START=0; CONFIG_HISTORY=0; CONFIG_REMOTE=""
+YES=0; ACCEPT=0; SKIP_DOLT=0; SKIP_BOOTSTRAP=0; WITH_DESK=0; NO_START=0; UPGRADE=0; CONFIG_HISTORY=0; CONFIG_REMOTE=""
 EXPECT_REMOTE=0
 for arg in "$@"; do
     if [ "$EXPECT_REMOTE" = 1 ]; then CONFIG_REMOTE="$arg"; EXPECT_REMOTE=0; continue; fi
@@ -31,7 +33,8 @@ for arg in "$@"; do
         --skip-bootstrap) SKIP_BOOTSTRAP=1 ;;
         --with-desk) WITH_DESK=1 ;;
         --no-start) NO_START=1 ;;
-        -h|--help) sed -n 2,15p "$0"; exit 0 ;;
+        --upgrade) UPGRADE=1; YES=1; SKIP_DOLT=1; SKIP_BOOTSTRAP=1 ;;
+        -h|--help) sed -n 2,17p "$0"; exit 0 ;;
         *) echo "unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -182,6 +185,8 @@ note "get them). They are stored in your system keyring, never in a file."
 CONNECTED="$("$VPY" -m cherrypick.core.auth status 2>/dev/null | "$VPY" -c "import json,sys; s=json.load(sys.stdin)['secrets']; print(bool(s.get('client_secret') and s.get('refresh_token')))" 2>/dev/null || echo False)"
 if [ "$CONNECTED" = True ]; then
     note "Already connected."
+elif [ "$UPGRADE" = 1 ]; then
+    warn "Not connected. Run this installer again without --upgrade to connect."
 elif ask "Connect now?" y; then
     "$VPY" -m cherrypick.core.auth setup || warn "Not connected. Run this installer again to try once more."
 else

@@ -164,7 +164,7 @@ normal and not a bug.
 
 Before relying on the supervisor's paper loop, use `/paper-start` (see
 `docs/strategy-testing-plan.md`) to force-sample every open strategy nightly (the two calendars are
-retired from 2026-10-15) into isolated
+retired from the harness) into isolated
 per-strategy strat_test paper books — this validates the whole pipeline end-to-end (scan, screen,
 size, cost-adjust, persist, close) and starts building the sample size needed to evaluate each
 strategy, without touching the main paper book:
@@ -184,8 +184,7 @@ Check progress at any time with:
 
 ```bash
 python -m cherrypick.earnings.strategy_report
-# The HTML view of these numbers is the console's Earnings page (http://127.0.0.1:5070/earnings);
-# strategy_dashboard.py was retired 2026-08-12 when the console became the suite's one read surface.
+# The HTML view of these numbers is the console's Earnings page (http://127.0.0.1:5070/earnings).
 ```
 
 > **Inside the suite:** you don't have to run this by hand day to day. The [orchestrator](../../orchestrator)'s
@@ -200,7 +199,7 @@ python -m cherrypick.earnings.strategy_report
 
 ## Step 8: Let the supervisor run it
 
-Earnings is paper-only since v0.12.0. Once `cherrypick install` has registered the supervisor, its
+Earnings is paper-only. Once `cherrypick install` has registered the supervisor, its
 `earnings-paper` job runs the whole day from its own clock; there is no separate agent session to
 start. A leftover `enable_live_trading` or `live` key in your config is ignored, and
 `python run.py doctor` says it can be deleted.

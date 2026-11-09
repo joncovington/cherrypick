@@ -11,10 +11,7 @@ stalls. It never edits a module's internals and **never places live trades** —
 action is onboarding (`connect`/`account`, below). It does run a module's OWN live loop as a job while
 a human has armed that module for the day, and a few live safeguards (see *Paper ↔ live isolation*).
 
-What shipped is in git history (`ROADMAP.md` is a frozen Stage 0 record). The design rationale is
-[`docs/design.md`](docs/design.md) (a 2026-07-11 research report, not updated as work ships); the
-incidents behind the rules below are in [`docs/history.md`](docs/history.md); suite-wide human docs
-start at the root [documentation index](../../docs/README.md).
+Suite-wide human docs start at the root [documentation index](../../docs/README.md).
 
 ## Commands
 
@@ -38,8 +35,7 @@ anchor task `cherrypick-supervisor` → `ensure-supervisor`, derives every job f
 (`orchestrator/jobspec.py`: pure ET/DST-correct schedule math, per-job windows/catchup, tested with
 fake clocks) and spawns short-lived headless ticks, recording per-job state in
 `state/supervisor-jobs.json` and its heartbeat in `state/supervisor.last.json` (atomic writes). It is
-stdlib + local files only — no broker, network or AI — and every registration check dual-reads
-(schtasks fallback) until the transition window closes.
+stdlib + local files only — no broker, network or AI.
 
 **A daily job that runs several times is one job with `JobSpec.times_et`** (`manage-eval`,
 `report-screener-measure`, `report-skate-quotes`, `universe-measure`, and `market-files` and
@@ -74,7 +70,7 @@ step's time, so it is a long-lived child (the evening one ends after the 20:15 r
 
 **A job fed only by the vendor follows `market_report.collector`** (`cherrypick.core.vendor`, the
 switch every vendor reader shares): the collector itself, the two greeks runs over the vendor's list
-rows, and `technicals-screeners` (2026-10-27). With it off they are disabled with that reason rather
+rows, and `technicals-screeners`. With it off they are disabled with that reason rather
 than left to no-op every night. A job that only *partly* reads a vendor file keeps running and drops
 that part itself: `technicals-stage-lists` (its score against the vendor's watchlists),
 `technicals-securities` (the comparison with the vendor's list) and `report-screener-measure`,
@@ -98,13 +94,13 @@ lines through `core.redact` and puts them in `supervisor.log` and the registry a
   `supersnap.job_run_info` so the live-loop check does not read its code as a failed tick. A request
   older than 10 minutes is ignored, so it cannot excuse a later crash.
 - **An early run is a different request and never stops anything** (`request_run`,
-  `state/run-requested.<job>.json`, 2026-11-02): an idle, enabled interval job runs at the next pass;
+  `state/run-requested.<job>.json`): an idle, enabled interval job runs at the next pass;
   a running one is left alone and the request spent. `live-fill-alerts` asks it for the owning
   `<module>-live` when a known order fills or ends, so the loop confirms in seconds. Older than two
   minutes, it is dropped.
-- **A `*-live` job never climbs the crash ladder** (2026-11-02): its backoff cap is its own tick
-  interval, so a failing live tick comes back every tick. The ladder's 10-minute cap held a stopped
-  MEIC put side unmanaged for 20 minutes after quotes returned.
+- **A `*-live` job never climbs the crash ladder**: its backoff cap is its own tick interval, so a
+  failing live tick comes back every tick. The ladder's 10-minute cap would leave a stopped live side
+  unmanaged after quotes return.
 - **Holds** (`orchestrator/holds.py`, `state/holds.json`): a held name is stopped and never started,
   by the supervisor or the watchdog's auto-restart, and its findings go OK. Two exceptions, on
   purpose: a held LIVE loop is still a WARN in session, and any hold over 12 hours is a WARN.
@@ -137,18 +133,17 @@ watch:
   the service's supervisor with `supervise --restart`. `doctor` and `install` report Windows Update's
   active hours against the suite's day (`winupdate.py`).
 - **Under the Windows service, daemon stop/start/restart go through the supervisor** (`daemonreq`).
-  The streamer and services run in session 0, where the desktop cannot stop them (2026-10-09:
-  `restart gex-recorder` failed with Access is denied and left the recorder held). The CLI queues a
+  The streamer and services run in session 0, where the desktop cannot stop them (a direct
+  stop fails with Access is denied). The CLI queues a
   request in `state/daemon_requests/`; each pass runs it as a `--direct` child with the supervisor's
   rights, and the child files the result the CLI waits on. Only restart/stop/start of a configured
-  daemon is ever run. A restart whose stop fails now releases its hold.
+  daemon is ever run. A restart whose stop fails releases its hold.
 - **The Dolt sql-server is the managed daemon `dolt-server`** (`proc.DOLT_DAEMON`, `run.py
   dolt-server-status|start|stop`), so status/stop/restart reach it like the streamer; `ensure-dolt`
   leaves it down while held. Stop ends only the process listening on the Dolt port, and only if it
   is dolt. **Never run a bare `dolt` command in `data/earnings` from the desktop** while the service
   runs the server: dolt 2.4 reads `.dolt/sql-server.info`, gets Access Denied checking the PID, takes
-  the server for dead and deletes the file, then opens the clone read-only (2026-10-09: the nightly
-  pull failed). Use `run.py dolt-sql <db> --query "..."`, which connects by address.
+  the server for dead and deletes the file, then opens the clone read-only. Use `run.py dolt-sql <db> --query "..."`, which connects by address.
 
 **The watchdog** (`orchestrator/watchdog.py`, a 10-minute job) checks each module's paper pipeline (job
 present, data fresh in-session, streamer alive, earnings SLA met), the supervisor/anchor, and the
@@ -158,12 +153,11 @@ and pushes alerts through `notify/notifier.py`, with a dedup / re-notify / recov
 (`members`: `jobs.failed`, `jobs.missed`, one id per job and stamp) is re-posted only when a new
 incident joins, never on the `renotify_minutes` clock, and posts one all-clear when the list empties.
 
-**Recording coverage** (2026-10-14, `_check_recording_coverage`). Once per finished session (15
+**Recording coverage** (`_check_recording_coverage`). Once per finished session (15
 minutes after the calendar's close), the watchdog runs the gex recorder's `run.py coverage --session
 D` by subprocess and caches the verdict in `state/recording_coverage.json`. Each series with a gap
-is a `members` entry, so a session's gaps notify once. The recorder's heartbeat cannot see this: on
-2026-10-13 the spot trail and quotes stopped at 14:53 while the process and its GEX series ran on,
-and the quote history it lost cannot be fetched again.
+is a `members` entry, so a session's gaps notify once. The recorder's heartbeat cannot see this: the spot trail and quotes can stop while the process and
+its GEX series run on, and the quote history lost cannot be fetched again.
 
 **Read side.** `report.py` (`run(session=…)` scopes to one settlement day) and `calibrate.py`, over the
 ledger readers in **`cherrypick.core.ledgers`**. Read-only and file-only. The console is the one page
@@ -173,7 +167,22 @@ idempotent, never touching the current month or an active `.log`, off the reliab
 `backup.py` (the `suite-backup` job) keeps ONE zip of the suite's own data, rewritten nightly: live
 ledgers copy through SQLite's online backup API and are quick_checked, a night with a problem lands as
 `.failed.zip` and never replaces the good one, `restore` refuses the live home, and `doctor` warns past
-36h. Only `.dolt/` is skipped, never its parent: `data/earnings` holds ledgers beside one.
+36h. Only `.dolt/` is skipped, never its parent: `data/earnings` holds ledgers beside one. The one
+exception to "restore refuses the live home" is `restore_over_home`, which only `upgrade --rollback`
+calls, with the suite stopped.
+
+**`upgrade`** (`orchestrator/upgrade.py`, the root `upgrade.*` wrappers) moves an install to a newer
+release and back, and is the one orchestrator command that stops the whole suite and changes the code
+on disk. Its refusals are the load-bearing part: a live loop armed today, an open live leg or pending
+order, or a live book it cannot read refuses and no flag overrides it; `--force-window` waives the
+quiet window (derived from the job table by `quiet_window`, never written down) and nothing else.
+Everything outside goes through `Ports`, so the tests run the flow on fakes. A ZIP install unzips into
+a NEW sibling folder, never over the old; a rollback restores the pre-upgrade backup because ledgers
+migrate forward and old code must not read new data. Data migrations live in `orchestrator/migrations/`
+(its docstring: prefer a compatibility shim or a doctor warning to a migration) and must match the
+release manifest (`release/manifest.json`, read by the release workflow and by `upgrade`). The step
+list and flags are in [docs/orchestrator-cli.md](../../docs/orchestrator-cli.md) and
+[docs/guide/upgrading.md](../../docs/guide/upgrading.md).
 
 **This package holds no AI and no review or advisor logic; it only schedules them.**
 - The position evaluation is `packages/manage`: job `manage-eval` (10:00 ET, trading days, OFF until
@@ -224,11 +233,11 @@ filename; override with `paper.sla_state_prefix`.
 
 ## Invariants (do not violate — the reasons are load-bearing)
 
-- **A reminder reads an allow-list and acts on nothing** (`reminders.py`, 2026-11-01). Its conditions
+- **A reminder reads an allow-list and acts on nothing** (`reminders.py`). Its conditions
   are `KINDS` (config's module switch, a module's own `--status` field), never a command, and a
   reminder only tells a person: it never changes config itself (`test_reminders.py`; each guard was
   shown to fail).
-- **A research-queue row never names a command** (`researchqueue.py`, 2026-10-24). The supervisor is a
+- **A research-queue row never names a command** (`researchqueue.py`). The supervisor is a
   service with the broker credentials in reach, so a row is an allow-listed kind (`KINDS`) whose argv
   the kind builds: a resumable backtest fetch, or a `scripts/` file git knows, with string arguments
   and no shell. Widening `KINDS` is a reviewed code change, never a config or a row. A ThetaData task
@@ -247,15 +256,15 @@ filename; override with `paper.sla_state_prefix`.
   mirrors it). It writes **exactly one thing: the halt flag**, via `set_halt` (create to halt, delete
   to clear), so a stop is reachable from a surface a human is looking at; the console's halt toggle
   routes through it. It never writes `enable_live_trading`, a module's config or code, or an order.
-  **The halt stops new live risk only** (2026-10-08): every live loop refuses new entries (and bwb
+  **The halt stops new live risk only**: every live loop refuses new entries (and bwb
   add-ons) while it is up, and still confirms fills, manages working orders, stops and closes, and
-  settles. Before that date it stopped the whole tick, so a halt left open positions unmanaged.
+  settles. Stopping the whole tick would leave open positions unmanaged.
   The broker-touching live-ops view was deliberately never ported to the console; `reconcile` answers
   that half.
 - **Paper ↔ live isolation.** The orchestrator never places, cancels or sizes an order and never
   flips `enable_live_trading`. It does run a module's OWN live loop as the `<module>-live` job (and
   the companions its arm record names) only while a human's per-day arm record is valid
-  (`core.live`, `jobspec`). The exception is `MANAGES_WHILE_DISARMED` (meic, 2026-11-02): that job
+  (`core.live`, `jobspec`). The exception is `MANAGES_WHILE_DISARMED` (meic): that job
   also runs unarmed on trading days from the open to the disarm cutoff, because its tick manages
   what the book holds and refuses only new entries without the arm; with a flat book it ends
   without a broker call. The watchdog watches it for freshness while the book holds positions, and
@@ -278,7 +287,7 @@ filename; override with `paper.sla_state_prefix`.
   never counted as zero. The others, each scheduled: `live-positions` (designated live accounts
   against the live ledgers, its verdict in `state/live_positions.last.json` for the watchdog to read),
   `managesnap.py` (the `manage-eval` snapshot), `desk_notifier`'s order-status poll, and the
-  `account-alerts` resident job (`cherrypick.core.live.account_alerts`, 2026-11-02: the designated
+  `account-alerts` resident job (`cherrypick.core.live.account_alerts`: the designated
   account's order stream plus a REST read of today's orders, through every trading session, so a
   resting stop's fill after the disarm or a manual order is heard; it records, never acts, and gets
   a seam with its live gate shut). A new one needs an equally explicit reason.
@@ -300,7 +309,7 @@ filename; override with `paper.sla_state_prefix`.
   deliberately NOT wired in, and a refusal is data (`ok: false` plus a `code`) on exit 0 so a caller
   can tell "the config said no" from "the bridge is broken". Keep new ops thin. Its `features` op
   (`capabilities.py`) is the console's only answer to "what is on": `capabilities`, `modules`
-  (switch plus capabilities), `services`, `features` (`backtest` fails closed) and, from 2026-10-18, `live`, each module's live master
+  (switch plus capabilities), `services`, `features` (`backtest` fails closed) and `live`, each module's live master
   switch read as `liveops` reads it. An unreadable switch is omitted, never `false`, so the console
   fails open.
 - **Onboarding (`connect`/`account`) is the one live-config action.** `orchestrator/connect.py` and
@@ -313,14 +322,14 @@ filename; override with `paper.sla_state_prefix`.
 - **A resident job's liveness is PUBLISHED by the job, never inferred from its log.** `silence_file`
   is a heartbeat the job writes each tick (`cfgmod.resident_heartbeat_path` → `state/<name>.heartbeat`,
   convention owned by `cherrypick.core.home.heartbeat_path`). **Never point a `silence_file` at a log**
-  (a quiet calendars loop was restarted 107 times in one session). A job with no heartbeat degrades
+  (a quiet loop looks silent and gets restarted over and over). A job with no heartbeat degrades
   **safely**: `_resident_silent` returns False, it is not silence-supervised, and the watchdog reports
   the gap — restarting on "I can't tell" is the failure being fixed.
 - **A WINDOWED resident that exits 0 is believed, not restarted.** `module_stopped` marks it idle until
   its window reopens (cleared in the `not want` branch). Scoped three ways: **windowed only** (the
   console has no window, so its clean exit still takes the backoff ladder); **settled only** (an exit
   0 immediately after start is `_EXIT_TOO_SOON` and takes the ladder); **a dead adopted orphan is a
-  failure** (`_EXIT_UNKNOWN`). A module that exits 0 wrongly now stays down for its window, so
+  failure** (`_EXIT_UNKNOWN`). A module that exits 0 wrongly stays down for its window, so
   `watchdog._check_resident_health` reporting it is not optional.
 - **Ambiguity is reported, never remediated — restart is the most expensive remedy.** An unjudgeable
   child is left running. `watchdog._check_resident_health` (mirrored in `doctor`) reports restart
@@ -338,7 +347,7 @@ filename; override with `paper.sla_state_prefix`.
   at the open loses the opening range for good (and a restart still needs a 240s settle). Tighter watching means a tighter cadence on THIS job,
   never a faster full tick. It **reuses** `_check_streamer_health` (never a copy), writes **no
   heartbeat** (the full tick owns that), and stops at the door on a non-trading day. `run_preopen`
-  stays a deprecated alias until the transition closes.
+  stays a deprecated alias.
 - **The watchdog's only trading-adjacent action is benign remediation**, gated on `auto_restart`; it
   never places, cancels or closes an order:
   - restart the **streamer** (top-level `streamer` block, gated on `streamer.session_start`, default 09:15 ET,
@@ -357,8 +366,8 @@ filename; override with `paper.sla_state_prefix`.
   - recycle a producer whose **subscription grew** (the union of stream requests, read through
     `cherrypick.core.streamrequests` like the streamer itself): **growth only**, never a hash, since a
     shrink is harmless. A new symbol recycles on sight; a **hint-only widening waits out
-    `servicecfg.HINT_RECYCLE_COOLDOWN_S`** from the last launch (a decaying hint once restarted the
-    producer every five minutes for two hours), and the reason says it is holding off.
+    `servicecfg.HINT_RECYCLE_COOLDOWN_S`** from the last launch (a decaying hint would otherwise restart the
+    producer every few minutes), and the reason says it is holding off.
 - **Every spawned process is headless.** Daemons and services start through the detached no-window
   launcher (`watchdog._start_streamer`: `pythonw` + `DETACHED|NO_WINDOW|NEW_GROUP`); every other
   `subprocess.run`/`Popen` passes `creationflags=CREATE_NO_WINDOW` (`orchestrator/util.py`, 0

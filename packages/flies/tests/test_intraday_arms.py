@@ -1,4 +1,4 @@
-"""The intraday agent plan's two paper arms (docs/intraday-agent-plan.md): the agent's gate applied per
+"""The intraday agent plan's two paper arms (docs/intraday-agent.md): the agent's gate applied per
 tick with the rule as its fallback, and closes TAGGED at natural, never executed."""
 
 import pytest

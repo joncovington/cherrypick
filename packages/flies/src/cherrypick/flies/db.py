@@ -461,7 +461,7 @@ _ADDED_POSITION_COLUMNS = {
     "best_debit_at": "TEXT",
     "completion_latency_min": "REAL",
     "spot_at_completion": "REAL",
-    # Live scaffold (docs/live-trading-plan.md): broker order ids on the position row. Paper rows
+    # Live scaffold (docs/live.md): broker order ids on the position row. Paper rows
     # simply leave them NULL -- the live ledger is a separate FILE (live_db_path), same schema.
     "entry_order_id": "TEXT",
     "completion_order_id": "TEXT",
@@ -510,7 +510,7 @@ _ADDED_POSITION_COLUMNS = {
     # Signed centre-vs-spot at entry/completion (2026-08-04; NULL for earlier rows). Unlike the four
     # above this is a property of OUR choice, not of the market -- and it is the one that decides
     # which side engine.choose_side legs into, hence which way spot must move to complete at all.
-    # See engine._classify_center_offset and docs/centre-lag.md. Descriptive; nothing gates on it.
+    # See engine._classify_center_offset and docs/reference.md (Centre lag). Descriptive; nothing gates on it.
     "entry_center_offset_bucket": "TEXT",
     "completion_center_offset_bucket": "TEXT",
     # Session drift from the day's own open (2026-08-04; NULL for earlier rows and for any session

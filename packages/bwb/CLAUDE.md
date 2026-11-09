@@ -10,9 +10,28 @@ The module's `books` config key is the root's `arm`; the ledger column is `bwb_p
 
 A daily-laddered SPX put broken-wing butterfly; the root file gives the posture. Every book enters
 the IDENTICAL BWB from the same plan on the same tick and differs only in whether/when the add-on
-fires. Ledger schema: **`bwb_132`**. The narrow live path (2026-09-18) is one arm, armed per day,
-writing its own ledger. History and incident narratives: [docs/history.md](docs/history.md).
+fires. Ledger schema: **`bwb_132`**. The narrow live path is one arm, armed per day, writing its own
+ledger. The add-on keeps the 1-3-2 shape of an earlier put-condor idea: a plain matched vertical, which keeps
+the combined position defined-risk by construction, entered on a reversal rather than a falling knife.
 Suite-wide context: the root [documentation index](../../docs/README.md).
+
+## Measurement boundaries (never pool across one)
+
+A row before a boundary was produced under a rule that no longer holds; it is derivable but never
+rewritten.
+
+| Date | What changed |
+|---|---|
+| 2026-08-24..27 | the trigger-tick substrate recorded nothing usable (every row `measured = 0`, journaled as `trigger_ticks_unmeasured`) |
+| 2026-09-17 | advice tags settle: `advised:control` / `advised:delta` before it still resolve |
+| 2026-09-18 | `entry_max_loss` and the body's settlement fee corrected: earlier rows overstate the worst case by the narrow width and charge the $5 event fee twice on the doubled body |
+| 2026-09-26 | add-on bracket quotes recorded from here; anything priced off tick quotes starts 2026-09-28 |
+| 2026-10-08 | a power outage (10:35-16:00 ET): triggers not reconstructed, affected positions stamped `addon_missed` |
+| 2026-10-09 | implied variance and the vol term structure recorded at entry; earlier rows carry none |
+| 2026-10-15 | `delta` and `wall` arms retired (`enabled` false, never a deleted block: an absent built-in arm runs by default); their open rows are managed and settled from the ledger |
+| 2026-10-24 | live kill criteria (`live.kill`) |
+
+The ledger column `book` became `arm` on 2026-09-23.
 
 ## The base structure (every book, identical)
 
@@ -40,7 +59,7 @@ doubly so here because a zero credit floor cannot screen out an illusory opening
 | book | add-on trigger |
 |---|---|
 | `control` | never — the BWB rides alone to expiry |
-| `delta` | the near wing's \|delta\| reaches `delta_trigger` (50Δ) — raw proximity. **Retired from 2026-10-15** (docs/history.md) |
+| `delta` | the near wing's \|delta\| reaches `delta_trigger` (50Δ) — raw proximity. **Retired from 2026-10-15** (its modelled backtest lost more than `control`'s) |
 | `bounce` | peak \|delta\| since entry >= `delta_trigger` AND current <= `delta_trigger - bounce_pullback` (45Δ). No `bounce_peak` key: delta and bounce differ by exactly one condition |
 | `flip` | spot traded below `gamma_flip` since entry AND reclaimed to >= `flip * flip_buffer` (1.001) |
 
@@ -51,8 +70,7 @@ by name in `engine.base_book` and `management.effective_params`; the `wall` book
 base. The add-on params (`delta_trigger`, `bounce_pullback`, `flip_buffer`, `addon_credit_floor`)
 declare `arms` in their bounds — none acts on `control`, which never arms — and
 `tests/test_advice_arms.py` derives each list from `management.evaluate`, so a drifted list fails.
-The boundary script copied the same `arms` keys into the deployed config at the 2026-10-15
-boundary.
+The 2026-10-15 boundary script copied the same `arms` keys into the deployed config.
 
 **The add-on** (identical for all three arms): a put credit spread bracketing the far wing — SELL
 one increment above, BUY one below — which must itself price as a credit (`addon_credit_floor`, a
@@ -85,10 +103,10 @@ basis, NOT the GEX recorder's ~5-min history, so a stalled recorder cannot freez
 basis is stamped on every trigger row. A chain with no OI cached yet refuses `insufficient_gex_data`,
 so `flip` cannot arm until OI accumulates.
 
-### The `wall` book (opt-in, 2026-08-31; retired from 2026-10-15) — outside the paired design
+### The `wall` book (opt-in, retired) — outside the paired design
 
-Retired because a $300-a-week edge would take ~126 weeks to read at its $1,353 weekly sd
-(docs/history.md). Kept below as the record.
+Retired because a $300-a-week edge would take ~126 weeks to read at its $1,353 weekly sd. The code keeps
+it, so its rows stay readable.
 
 `books.wall` trades a CALL-side BWB with the body at the GEX call wall (read off the same
 `gamma_flip_reading` as the flip trigger): +1 near (one increment below) / −2 body / +1 far (two
@@ -119,7 +137,8 @@ the below-flip latch — identical across the four base books. That keeps "when 
 have fired on control" answerable, and makes a forward-recorded read-side replay possible (the
 calendars `exit_policies` pattern — never vendor-imagined). `trigger_coverage()` splits `measured`
 into `spot_measured` / `flip_measured` and carries a `total_failure` flag: ticks recorded with none
-measured is a defect, not thin data (four such sessions went unnoticed; see history).
+measured is a defect, not thin data: a coverage ratio that reads as a number is easy to miss, so check
+the flag.
 
 **The add-on bracket's own quotes are recorded only from 2026-09-26** (`engine.addon_bracket`, the
 one rule `plan_addon` also uses). Anything priced off tick quotes starts at 2026-09-28.
@@ -156,9 +175,9 @@ affecting.
 7. **No fallback paths in v1** — triggers refuse on missing data rather than degrade.
 8. **Measurement breaks are journaled rows** (`measurement_breaks`).
 9. **`bounce_pullback` must stay above zero** — config-lint guards it; at zero bounce equals delta.
-10. **Never pool across a journaled break.** The dates are in
-    [docs/history.md](docs/history.md#declared-boundaries); a row before a boundary was produced under
-    a rule that no longer holds, and is derivable but never rewritten.
+10. **Never pool across a journaled break.** The dates are in the measurement-boundaries table above; a
+    row before a boundary was produced under a rule that no longer holds, and is derivable but never
+    rewritten.
 11. **Implied variance at entry is recorded, never acted on** (2026-10-09). `entry_iv_vol` with
     `entry_iv_complete = 0` is a lower bound (the cache's strike window cut the wings); rows before
     2026-10-09 carry none.
@@ -174,15 +193,16 @@ affecting.
 SPX is cash-settled and European: an expiring leg books intrinsic against the settlement print; no
 shares, no assignment, no dividend calendar. The event fee lands the next business day.
 
-## Live (2026-09-18) — one arm, per-day armed, every fill the broker's word
+## Live — one arm, per-day armed, every fill the broker's word
 
-Built to test whether the paper result survives a fill without disturbing the paper books.
+The live path tests whether the paper result survives a fill, without disturbing the paper books. It
+refuses to arm while `modules.bwb.enabled` is false.
 
 - **Gating** (guardrail): `live.enabled`, `live.gate0_confirmed`, a per-day arm record
   (`/live-bwb-start`, a literal YES each day), a designated account, and `live.arm` naming a base
   book — every one re-checked on every tick and every submission, all guarded from the settings
   surface. One list: `broker_cli.live_gates` is `live_loop.readiness` plus the arm record read as
-  the dead-man's switch reads it (2026-10-12; a missing `live.arm` refuses in both). **The suite halt flag stops new risk only** (2026-10-08): the entry is refused
+  the dead-man's switch reads it (a missing `live.arm` refuses in both). **The suite halt flag stops new risk only**: the entry is refused
   (`halt_flag_present`) and an armed add-on deferred, while fills are confirmed, resting orders
   managed and the ladder settled. Never run `--install-task` outside `/live-bwb-start`; a person arms with `--arm --confirm YES`.
 - **The structure is the paper structure.** `engine.plan_entry` plans it; `live_orders.entry_spec`

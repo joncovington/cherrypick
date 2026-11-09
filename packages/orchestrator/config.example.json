@@ -94,7 +94,7 @@
       "enabled": false,
       "_retired": "Retired 2026-10-19, the owner retired it; off by default. May be reinstated; see packages/flies/README.md.",
       "path": "../flies",
-      "_broker_note": "Live-scaffold onboarding (docs/live-trading-plan.md in the module): flies has no tt.py, so its config-declared broker/credential CLI is broker_cli.py; `cherrypick connect/account --module flies` drive it exactly like MEIC's tt.py. keyring service fliesagent; live_db is the SEPARATE live ledger read only by `report --live` (never by calibrate/promotion).",
+      "_broker_note": "Live-scaffold onboarding (docs/live.md in the module): flies has no tt.py, so its config-declared broker/credential CLI is broker_cli.py; `cherrypick connect/account --module flies` drive it exactly like MEIC's tt.py. keyring service fliesagent; live_db is the SEPARATE live ledger read only by `report --live` (never by calibrate/promotion).",
       "keyring_service": "fliesagent",
       "broker_tool": [
         "-m",

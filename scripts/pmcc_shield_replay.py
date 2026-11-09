@@ -2,7 +2,7 @@
 
     python scripts/pmcc_shield_replay.py                        # every symbol, every arm
     python scripts/pmcc_shield_replay.py --symbols SLV GLD
-    python scripts/pmcc_shield_replay.py --until 2026-10-02     # the window docs/shield-study.md states
+    python scripts/pmcc_shield_replay.py --until 2026-10-02     # the shield study window
     python scripts/pmcc_shield_replay.py --fetch                # fetch the Cboe vol-index files first
     python scripts/pmcc_shield_replay.py --skew-check           # the model against the sampled quotes
     python scripts/pmcc_shield_replay.py --policy-study --symbols XSP QQQ GLD IWM SLV SMH

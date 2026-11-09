@@ -1,18 +1,16 @@
-# Earnings time spreads: screen and direction plan
+# Earnings time spreads: the endurable-gap screen
 
 A screen for every earnings time spread (single calendar, straddle calendar, double calendar and
 diagonal), built on one quantity, the **modelled endurable gap**, with a combined side/direction read
-that picks the structure. Status: **the engine is built, nothing else (2026-10-17).**
-`cherrypick/earnings/time_spread.py` holds the event split, the endurable gap, coverage, the scores
-and the side ladder as pure functions. `tests/test_time_spread.py` pins them to this doc's worked
-example. No strategy, scan or replay reads them yet. We revisit this once backtesting data is
-available; every threshold below is a placeholder until a history study sets it.
+that picks the structure. `cherrypick/earnings/time_spread.py` holds the event split, the endurable gap,
+coverage, the scores and the side ladder as pure functions, and `tests/test_time_spread.py` pins them to
+this doc's worked example. **No strategy, scan or replay reads them.** Every threshold below is a
+placeholder until a history study on intraday options data sets it.
 
 ## Why it needs a screen at all
 
-Both calendar strategies lost in `strat_test`. By 2026-10-12, `atm_calendar` had run 56 trades, 21%
-won, for −$6,349, and `double_calendar` 35 trades, 14% won, for −$3,660. Both were retired from the
-harness ([operating-history.md](operating-history.md)). The unscreened trade is not an edge. The
+Both calendar strategies lost in `strat_test` and are retired from the harness (see
+[measurement boundaries](./measurement-boundaries.md)). The unscreened trade is not an edge. The
 question here is whether a subset that can be picked out before entry is one.
 
 The premise is the usual calendar one. Both expiries price the same announcement, but the front
@@ -39,49 +37,6 @@ announcement the position has three sources of P&L:
 Costs come off all three. At a fair price the average outcome is about zero before costs. **The edge,
 if there is one, is choosing names whose gaps are reliably smaller than the options price.** That is
 what the screen is for.
-
-### A real trade: TXN call calendar, January 2026
-
-A single ATM-ish call calendar, opened the afternoon before the report and closed the next morning:
-exactly the hold this plan assumes.
-
-**Entry, 2026-01-27 14:38, the day before earnings**
-
-| Action | Qty | Expiry | Strike | Price |
-|---|---|---|---|---|
-| Buy to open | +5 | 20 Feb 26 (24 days) | 197.5 call | 8.68 |
-| Sell to open | −5 | 30 Jan 26 weekly (3 days) | 197.5 call | 6.78 |
-| **Net** | | | | **1.90 debit** (−$950) |
-
-**Exit, 2026-01-28 08:30 (as stamped, probably Central time; options don't trade at 08:30 ET), the day after**
-
-| Action | Qty | Expiry | Strike | Price |
-|---|---|---|---|---|
-| Sell to close | −5 | 20 Feb 26 | 197.5 call | 11.92 |
-| Buy to close | +5 | 30 Jan 26 weekly | 197.5 call | 9.57 |
-| **Net** | | | | **2.35 credit** (+$1,175) |
-
-**Leg by leg** (whole position, 5 contracts × 100):
-
-| Leg | Entry | Exit | P&L |
-|---|---|---|---|
-| Long Feb 197.5 call | −$4,340 | +$5,960 | +$1,620 |
-| Short Jan 30 197.5 call | +$3,390 | −$4,785 | −$1,395 |
-| **Gross** | −$950 | +$1,175 | **+$225** (+24% on the debit) |
-
-Fees on the suite's schedule are about $12 ($1 a contract to open, nothing to close, plus
-pass-throughs), so net is about **+$213**. Both fills were limits, so the slippage is already inside
-the prices.
-
-**What happened.** Both calls rose, so the stock gapped up through the strike. The front call at 9.57
-with two days left is now mostly intrinsic value, which puts the stock somewhere around 205–207. That
-is inferred from the price, not observed. The short front lost $1,395, but the long back gained
-$1,620: it kept its time value and its delta, while the front's event premium vanished. The gap was
-roughly 4–5% (also inferred, from a pre-report price near the strike), but it was **inside the trade's endurable gap**, so it still paid. A gap well
-past that and the two calls converge toward the same intrinsic value, and the spread collapses
-toward zero.
-
-It is one trade, so it shows the mechanism, not an edge.
 
 ### Worked example: straddle calendar
 
@@ -153,10 +108,9 @@ the profit. In this normal model the move is symmetric, so a fall works the same
 
 In the gap case both sides lose about equally. The call calendar goes from 1.60 (4.23 − 2.63) to
 1.20 (7.23 − 6.03), −$40. The put calendar goes from 1.60 to 1.22, −$38. Straddle calendars at the
-same strike are two equal calendars, so they win and lose together. TXN's call calendar won on a gap
-of about that size. The likely reasons are that its gap was a little smaller (inferred, not observed)
-and that its back month kept more IV than this model's assumption that it falls to base vol. That
-second point is exactly the back-leg variable the screen measures.
+same strike are two equal calendars, so they win and lose together. A real calendar can still win
+on a gap this size if its back month keeps more IV than the model's assumption that it falls to base
+vol. That is exactly the back-leg variable the screen measures.
 
 ### Worked example: OTM call calendar
 
@@ -224,11 +178,6 @@ ladder below has a higher break-even hit rate.
   significantly lower when they appear. The leg orientation needs confirming from the full paper.
 - **Inverted term structures predict weak straddle returns** outside earnings (Vasquez, JFQA 2017).
   That is supportive of the short front, but not an earnings test.
-- **A practitioner backtest of this exact structure** (short front straddle, long back straddle,
-  ~50 delta, in the day before, out the day after) found it the best of four, at about +0.9% of the
-  stock price per trade (205 trades 2020–21, 54 out of sample). Costs were not modelled. One of its
-  triggers was a *high* ex-earnings IV over historical vol, which runs against a mean-reversion
-  worry about the long back leg.
 
 ## The modelled endurable gap
 
@@ -295,9 +244,9 @@ below), not the fixed call side `atm_calendar` uses.
   existing record-only version of this.
 - The Gao traits: small, high-kurtosis or erratic-surprise names.
 
-**Measured, not filtered:** the back leg's ex-event IV over non-event realised vol. The
-mean-reversion argument and the practitioner trigger point in opposite directions, so the backtest
-decides its sign before it becomes a gate.
+**Measured, not filtered:** the back leg's ex-event IV over non-event realised vol. A
+mean-reversion argument says a high ex-event IV on the back leg is a risk, and a momentum argument says
+the opposite, so the backtest decides its sign before it becomes a gate.
 
 **The checklist items** this covers, for reference: timing, single event, term-structure inversion,
 coverage, cushion, smile shape, name traits, back-leg valuation, costs over debit, liquidity on both
@@ -312,7 +261,7 @@ strike, so a call calendar at S + x does best near S + x and loses on an oversho
 signal sets the side; the expected-move offset sets the distance.
 
 **The bar is high.** The expected-move butterfly study, the nearest shape we have, needed the side
-call right 68–83% of the time after costs ([expected-move-fly-plan.md](expected-move-fly-plan.md)).
+call right 68–83% of the time after costs ([expected-move-fly.md](expected-move-fly.md)).
 Our best signal there was 53%. A calendar's bar should be lower (a wider tent, and the front crush
 pays even when the stock sits still), but it has to be measured: **the break-even hit rate for each
 structure comes first, before any signal is read.**
@@ -350,53 +299,21 @@ show it.
 
 Declared before it runs, as the earlier history studies were.
 
-- **Step 0, on rows we already have:** if coverage means anything, the 91 retired paper calendars
-  should have lost mainly at low coverage. If the losers had high coverage too, the idea fails here.
-  Declared 2026-10-17, before it ran (`scripts/time_spread_step0.py`):
-  - **Rows.** Every `strat_test:atm_calendar` and `strat_test:double_calendar` row. Rows closed
-    within 10 minutes of opening are excluded: they were closed before the report by the
-    entry-tick bug, and saw no event.
-  - **Inputs, all recorded at entry.** The Dolt chains do not list most of these trades' expiries,
-    so the chain is not re-read.
-    - Front ATM IV is the short legs' live IV (`entry_iv`).
-    - Back ATM IV is front ÷ (1 − `term_structure`), the row's own `entry_context` value.
-    - Spot is the entry tick's mark (`position_marks`).
-    - Strikes and expiries come from `legs_json`.
-    - Leg prices are Black-Scholes at those IVs, with the back legs moved so the net equals the
-      recorded debit.
-    - Costs are the row's own entry and exit costs.
-    - The model's hold is one day.
-  - **Past gaps:** the last 12 reactions before the entry date, signed, pre-report close to
-    reaction close, from the Dolt calendar and bars, as the winrate check takes them.
-  - **Approximations, stated:**
-    - A double calendar's OTM legs take the ATM IVs (a flat smile).
-    - The rows' real exits differ from the model's next-morning hold, so P&L is as recorded.
-  - **Pass:** the high-coverage half has a higher mean net P&L than the low half, and coverage's
-    rank correlation with net P&L is positive. Both, or the idea fails here. With about 90 rows this
-    is a direction, not a significance test.
-  - **Result (2026-10-17): passes as declared, weakly, and still loses money.**
-    - **Sample.** 101 rows; 10 excluded as instant closes; 91 kept.
-      - 70 scored.
-      - 21 refused for missing entry inputs: July rows with no recorded term structure, −$3,080
-        between them.
-    - **The declared test.** The high-coverage half (0.42–0.75) averaged **−$48** a trade and won
-      34%. The low half (0–0.33) averaged **−$154** and won 17%. Spearman +0.23.
-    - **The other scores.** Cushion pointed the same way (+0.14). Richness pointed the *other* way
-      (−0.21): names priced richest against their own past gaps did worst.
-    - **Exploratory, not declared: the stronger separator is whether the model says the entry pays
-      on an unchanged stock after costs.**
-      - **Rows it says lose with no move** (no endurable interval, 28 of 70): −$182 a trade, 7%
-        won. That includes 15 ATM calendars, none of which won.
-      - **The other 42:** −$47 a trade, 38% won.
-      - **Within those 42, coverage separates nothing:** −$49 at or above the median, −$43 below.
-      - So the declared correlation comes mostly from the rows that lose unchanged.
-    - **What it means.** The screen's first gate should be the debit itself, with the model
-      refusing an entry that loses unchanged after costs. That gate is cheap, and here it would
-      have cut the losses by about 70%. But no group in this sample made money, so screening alone
-      does not rescue these two strategies as configured. The history study decides the rest,
-      with that gate declared as a candidate before it runs. The sample is small, the exits mixed
-      (`time_exit` 56, `front_expiry` 14), and August to October improved month on month (−$132,
-      −$89, −$46 a trade) for reasons this cannot separate.
+- **Step 0, on rows we already have** (`scripts/time_spread_step0.py`, ran before this was built out):
+  if coverage means anything, the retired paper calendars should have lost mainly at low coverage.
+  Inputs are all recorded at entry (the Dolt chains do not list most of those trades' expiries):
+  front ATM IV is the short legs' `entry_iv`, back ATM IV is front ÷ (1 − `term_structure`), spot is
+  the entry tick's mark, leg prices are Black-Scholes at those IVs, costs are the row's own. Rows closed
+  within 10 minutes of opening are excluded (see measurement boundaries). The declared pass was that the
+  high-coverage half beats the low half and the rank correlation is positive.
+  - **Result: passes weakly, and still loses money.** The high-coverage half averaged −$48 a trade and
+    won 34%; the low half −$154 and 17% (Spearman +0.23). Cushion pointed the same way; richness pointed
+    the other way. The stronger separator, exploratory and not declared, was whether the model says the
+    entry pays on an unchanged stock after costs: rows that lose with no move averaged −$182 a trade
+    and won 7%; the rest −$47 and 38%. Within the rest, coverage separated nothing.
+  - **What it means.** The screen's first gate should be the debit itself, refusing an entry that loses
+    unchanged after costs. That gate is cheap, but no group in the sample made money, so screening
+    alone does not rescue the two strategies as configured. The sample is small and the exits mixed.
 - **Grid, kept small:** the structures above, strike offsets of about 0, 0.5 and 1 × EM, two
   back-expiry rules, one or two exits. Each extra cell is another comparison.
 - **Every event priced both ways** (call side and put side), so a signal is scored on what it adds:
@@ -428,10 +345,10 @@ usable back month. Both point to running this on the intraday options history ra
 ## If it passes
 
 Re-opening time spreads is measurement-affecting: it changes which arms exist. So it lands at a
-declared boundary and is journaled in the operating history. The screened versions go in as new
-strategy keys, so `STRAT_TEST_RETIRED` stays truthful, and their rows are never pooled with the
-retired, unscreened ones, which ran under an older exit rule. Paper only, as with every new earnings
-strategy.
+declared boundary and is added to the [measurement boundaries](./measurement-boundaries.md). The
+screened versions go in as new strategy keys, so `STRAT_TEST_RETIRED` stays truthful, and their rows
+are never pooled with the retired, unscreened ones, which ran under an older exit rule. Paper only, as
+with every new earnings strategy.
 
 ## Sources
 
@@ -445,6 +362,3 @@ strategy.
   Finance 2025)](https://www.sfi.ch/en/publications/pricing-event-risk-evidence-from-concave-implied-volatility-curves.)
 - Vasquez, [Equity volatility term structures and the cross section of option returns (JFQA
   2017)](https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/equity-volatility-term-structures-and-the-cross-section-of-option-returns/F0A40E99FD2458367DD9A56A89783D38)
-- ORATS, [earnings options strategies backtest](https://orats.com/blog/earnings-options-strategies-backtest)
-- Checklist material: [earnings-watcher](https://earnings-watcher.com/wiki/calendar-spreads-around-earnings),
-  [OneOption](https://oneoption.com/options/calendar-spreads/)
