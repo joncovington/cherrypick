@@ -59,6 +59,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/overview/                  # morning-<day>.json fact packs + renders + notes
   data/external/                  # <id>.json reports your own scripts write (docs/guide/external-reports.md); the console reads them
   state/external_posts.json       # the last as_of each external report posted to Discord, so one is posted once
+  state/pipeline.<name>.json      # the last run of an ordered data run (`morning-data`, `evening-data`): each step's status, exit code, seconds and, for a failure, its stderr tail
   data/advisor/                   # advisor.db, fact packs, checkpoints
   logs/                           # suite logs
   data/review/                    # eod-<day>.json fact sets + renders + notes

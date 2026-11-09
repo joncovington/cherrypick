@@ -117,6 +117,11 @@ Subcommands:
   external-run         Run one `external_reports` entry (its id after the verb): the person's
                        script, then the check, then the Discord post when the entry asks for one.
                        The supervisor's `external-<id>` job.
+  pipeline             Run an ordered data run's steps (`morning-data` or `evening-data`, after the
+                       verb), each as its own subprocess; a failed step stops the run unless it is
+                       independent. The result per step is in the job's `status` row and
+                       state/pipeline.<name>.json. --fresh ignores steps an earlier failed run
+                       today finished. The supervisor's pipeline jobs.
 """
 
 from __future__ import annotations
@@ -1437,7 +1442,7 @@ def cmd_bootstrap(cfg) -> None:
     from .orchestrator import bootstrap, jobspec
 
     jobs, _ = jobspec.derive_jobs(
-        cfg, pythonw=cfgmod.pythonw_exe(), launcher=str(_LAUNCHER), now=timeutil.now_et()
+        cfg, pythonw=cfgmod.pythonw_exe(), launcher=str(_LAUNCHER), now=timeutil.now_et(), pipelines=False
     )
     report = bootstrap.run(bootstrap.plan(jobs, sys.executable))
     _emit(report)
@@ -2018,6 +2023,25 @@ def cmd_external_run(cfg, report_id: str | None) -> None:
     _emit(out)
     if not out.get("ok"):
         sys.exit(1)
+
+
+def cmd_pipeline(cfg, name: str | None, fresh: bool = False) -> None:
+    """The supervisor's `morning-data` and `evening-data` jobs: run the pipeline's steps in order
+    (orchestrator/pipeline.py). Exit 1 when any step failed."""
+    from cherrypick.orchestrator import pipeline
+
+    if not name:
+        print("pipeline needs a name: " + " | ".join(jobspec_names()), file=sys.stderr)
+        sys.exit(2)
+    code = pipeline.main(name, cfg, fresh=fresh)
+    if code:
+        sys.exit(code)
+
+
+def jobspec_names() -> list[str]:
+    from cherrypick.orchestrator import jobspec
+
+    return list(jobspec.PIPELINES)
 
 
 def cmd_power_watch(cfg) -> None:
@@ -2677,6 +2701,7 @@ def build_parser() -> argparse.ArgumentParser:
             "remind-run",
             "external-check",
             "external-run",
+            "pipeline",
         ],
     )
     parser.add_argument(
@@ -2911,12 +2936,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="For restart/stop/start: a supervisor job (console, flies-paper, ...), `streamer`, or a "
         "service id -- `ps` lists them. For service: prepare | status | uninstall. For external-check: "
-        "the report file. For external-run: the entry's id",
+        "the report file. For external-run: the entry's id. For pipeline: morning-data | evening-data",
     )
     parser.add_argument(
         "--query",
         default=None,
         help="For dolt-sql: the SQL to run, through the running Dolt server (name the database as NAME)",
+    )
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="For pipeline: run every step again, ignoring the steps an earlier failed run today finished",
     )
     parser.add_argument(
         "--direct",
@@ -3121,6 +3151,7 @@ def main() -> None:
         "remind-run": lambda: cmd_remind_run(cfg),
         "external-check": lambda: cmd_external_check(args.name),
         "external-run": lambda: cmd_external_run(cfg, args.name),
+        "pipeline": lambda: cmd_pipeline(cfg, args.name, fresh=args.fresh),
     }
     dispatch[args.command]()
 
