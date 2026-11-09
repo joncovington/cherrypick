@@ -96,6 +96,13 @@ it, and gives up with `session_in_use` after six hours. Every fetch, the nightly
 using `client_for` take it; the Theta Terminal and the library used by hand do not, so never run
 those while a fetch runs.
 
+**A check by hand while a fetch runs goes to STAGE**, the vendor's second environment:
+`client_for(settings, env="STAGE")`. Its login leaves the PROD session alive and takes no lock
+(checked 2026-11-08). It serves the same quotes, but computes greeks and IV slightly differently
+from PROD, so a store is never built from it, and nothing in `src/` or `scripts/` asks for it
+(`tests/test_fence.py`). The PROD client always names its environment, so a stray
+`THETADATA_MDDS_TYPE` cannot move a fetch.
+
 How each field is rebuilt from the vendor is declared in `fetch.py`'s docstring. The two that differ
 from a recording in kind, and that validation must measure rather than assume:
 

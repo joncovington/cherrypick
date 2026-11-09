@@ -153,6 +153,57 @@ def test_the_lock_is_taken_before_the_login(monkeypatch):
     assert logins == []
 
 
+def _fake_library(monkeypatch):
+    logins = []
+
+    class Lib:
+        def __init__(self, **kw):
+            logins.append(kw)
+            self.stub = _Stub()
+
+    monkeypatch.setitem(sys.modules, "thetadata", types.SimpleNamespace(ThetaClient=Lib))
+    monkeypatch.setattr(td.credential, "read_key", lambda s: "k")
+    return logins
+
+
+SETTINGS = {"vendor": {"transport": "python"}}
+
+
+def test_the_environment_always_goes_to_the_library_explicitly(tmp_path, monkeypatch):
+    """Left out, the library reads THETADATA_MDDS_TYPE, and a stray variable would move a fetch."""
+    logins = _fake_library(monkeypatch)
+    monkeypatch.setattr(td, "session_lock_path", lambda: tmp_path / "thetadata-session.lock")
+    monkeypatch.setenv("THETADATA_MDDS_TYPE", "STAGE")
+    td.ThetaDataClient(SETTINGS).close()
+    assert logins[0]["mdds_type"] == "PROD"
+
+
+def test_a_stage_client_takes_no_lock_and_never_releases_a_prod_one(tmp_path, monkeypatch):
+    """STAGE is a second, independent login: it must not wait for the fetch's session, and closing
+    it must not free the PROD lock a client in the same process holds."""
+    logins = _fake_library(monkeypatch)
+    lock = tmp_path / "thetadata-session.lock"
+    monkeypatch.setattr(td, "session_lock_path", lambda: lock)
+    prod = td.ThetaDataClient(SETTINGS)
+    assert lock.read_text(encoding="utf-8") == str(os.getpid())
+
+    taken = []
+    monkeypatch.setattr(td, "take_session", lambda *a, **k: taken.append(1))
+    stage = td.ThetaDataClient(SETTINGS, env="STAGE")
+    assert taken == [] and logins[-1]["mdds_type"] == "STAGE" and stage.env == "STAGE"
+    stage.close()
+    assert lock.read_text(encoding="utf-8") == str(os.getpid()), "STAGE freed the PROD lock"
+    prod.close()
+    assert not lock.exists()
+
+
+def test_an_unknown_environment_is_refused_before_any_login(monkeypatch):
+    logins = _fake_library(monkeypatch)
+    with pytest.raises(VendorRefusal) as refused:
+        td.ThetaDataClient(SETTINGS, env="prod")
+    assert refused.value.reason == "unknown_env" and logins == []
+
+
 class _FakeLibClient:
     """Stands in for the library's client: the first one's call stalls, a reconnected one answers."""
 
