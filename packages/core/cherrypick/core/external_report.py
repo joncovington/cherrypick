@@ -89,6 +89,8 @@ def _check(value: Any, schema: dict[str, Any], path: str) -> list[str]:
                 f"{here}: must be ISO 8601 with a UTC offset (for example 2026-11-09T16:30:00-05:00)"
             )
     elif _is_number(value):
+        if "minimum" in schema and value < schema["minimum"]:
+            problems.append(f"{here}: below {schema['minimum']}")
         if "maximum" in schema and value > schema["maximum"]:
             problems.append(f"{here}: above {schema['maximum']}")
         if "exclusiveMinimum" in schema and value <= schema["exclusiveMinimum"]:
@@ -137,6 +139,13 @@ def validate_document(doc: Any, expected_id: str | None = None) -> list[str]:
             if len(row) != width:
                 problems.append(f"sections[{i}].table.rows[{r}]: {len(row)} cells for {width} columns")
                 break
+        else:
+            for col in table.get("bars", []):
+                where = f"sections[{i}].table.bars"
+                if col >= width:
+                    problems.append(f"{where}: column {col} does not exist ({width} columns)")
+                elif any(isinstance(row[col], str) for row in table["rows"]):
+                    problems.append(f"{where}: column {col} ({table['columns'][col]!r}) is not numeric")
     return problems
 
 

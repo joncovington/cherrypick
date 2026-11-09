@@ -135,6 +135,13 @@ with no source named in the code: the file says its own title and source.
   source and age, the one-line summary, and each section as its own grid card titled by its heading: a
   table section as a table (null cells are a dash, never 0), a text section as plain text. Every card
   carries a small glyph so `ui-check --card "<heading>"` can capture it.
+- **Bars.** A table may carry `bars: [column index, ...]` (schema 1, optional): those numeric columns get
+  an inline bar beside the number, scaled by the column's largest magnitude (`barScales` / `barPercent` in
+  the page). A column with any negative value gets a zero line in the middle, negatives drawn to its left
+  in `--neg` and positives in `--pos` (both defined in each theme); a null cell has no bar and a column of
+  nothing to scale has none. The bar is `aria-hidden`: the number stays in the cell as text. Both
+  validators refuse a bar on a column holding text or past the last column (shared cases). The Discord
+  text card ignores the hint. A list of positions, not a per-column object, because tables are positional.
 - **An invalid file** gets a tab listing every reason and none of its content; a deep link to an id with
   no file reads "No such report" with a link back, not an error.
 - **Validation** is the reader's: each file is judged against `packages/core/cherrypick/core/schemas/

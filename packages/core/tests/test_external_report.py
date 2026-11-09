@@ -153,6 +153,24 @@ def test_the_shared_cases_agree_with_the_console_reader(case):
     assert (problems == []) is case["valid"], problems
 
 
+def test_bar_problems_name_the_column(tmp_path):
+    def with_bars(bars):
+        doc = good()
+        doc["sections"][0]["table"]["bars"] = bars
+        return er.validate_document(doc, "demo")
+
+    assert with_bars([1]) == []  # a number column with a null in it is fine
+    assert "column 0 ('a') is not numeric" in with_bars([0])[0]
+    assert "column 5 does not exist (2 columns)" in with_bars([5])[0]
+    assert with_bars([-1]) and with_bars(["1"]) and with_bars([1.5])
+
+
+def test_the_discord_card_and_describe_ignore_bars(tmp_path):
+    doc = good()
+    doc["sections"][0]["table"]["bars"] = [1]
+    assert er.check_file(write(tmp_path, doc), now=NOW).valid
+
+
 def test_the_schema_file_loads_and_names_every_contract_field():
     schema = er.load_schema()
     assert set(schema["required"]) == {

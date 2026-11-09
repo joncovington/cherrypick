@@ -48,7 +48,16 @@ which both the Python check and the console read, so they cannot disagree.
 A **table section** is `{"heading": "...", "table": {"columns": ["a", "b"], "rows": [["x", 1], ["y", null]]}}`:
 up to 12 columns, up to 500 rows, every row as wide as the columns, and each cell a string (up to 200
 characters), a number or `null`. A **text section** is `{"heading": "...", "text": "..."}`, up to 5,000
-characters. A heading is 1 to 120 characters and is the title of the section's card. The whole file may
+characters. A table may also carry `"bars": [1, 3]`: the positions (counting from 0) of numeric columns to draw as
+a small bar beside the number. Each bar is scaled within its own column (the largest size in the column
+fills the track), a column with negative values gets a zero line in the middle with the negatives drawn
+to its left in the "negative" colour, and a `null` cell has no bar. The number always stays in the cell
+as text, so nothing is lost without the picture. A column that holds any text, or an index past the last
+column, makes the report invalid. It is optional and changes nothing else (the schema number stays 1):
+the Discord text card ignores it. It is one list of positions rather than a setting per column because a
+table is already a list of positional columns, and most tables bar one or two.
+
+A heading is 1 to 120 characters and is the title of the section's card. The whole file may
 not be over 512 KiB; a bigger one is refused without being read, so a script that runs away cannot
 freeze the console. Unknown fields are not allowed.
 
@@ -110,6 +119,8 @@ if the machine was asleep (inside four hours), and listed in `python run.py stat
 | `enabled` | Default `true`. `false` keeps the entry and lists the job off. |
 | `args` | Optional list of strings passed to the script. |
 | `timeout_minutes` | Optional, 1 to 180, default 15: how long the script may run. |
+| `retries` | Whole number 0 to 3, default 0. When the script exits non-zero, times out, or leaves an invalid report, the supervisor runs it again up to this many times. |
+| `retry_delay_minutes` | 0.5 to 120, default 10: the wait before each retry. A retry never runs past the four-hour catch-up window, each attempt is logged (`logs/supervisor.log`), and `python run.py status` shows the job's attempt count (`attempt`). The count starts over each day. |
 | `writes_report` | Default `true`: after the script, the suite checks `data/external/<id>.json` and fails the job if it is invalid. Set `false` for a step that does something else (a capture, a score) and only has to exit cleanly. |
 
 **Scripts that post for themselves.** Some scripts need more than a report: they take their own

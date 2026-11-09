@@ -36,6 +36,48 @@ function Glyph() {
   );
 }
 
+/** One barred column's scale: the largest magnitude in the column, and whether any value is negative
+ *  (then the track has a zero line in the middle and negatives grow to its left). */
+export interface BarScale {
+  max: number;
+  signed: boolean;
+}
+
+/** The scale of each column the table marks with `bars`, within that column only. A null or text cell
+ *  has no bar; a column with nothing to scale (all null, or all zero) gets none. */
+export function barScales(table: { rows: ExternalCell[][]; bars?: number[] | undefined }): Map<number, BarScale> {
+  const out = new Map<number, BarScale>();
+  for (const col of table.bars ?? []) {
+    const values = table.rows.map((r) => r[col]).filter((v): v is number => typeof v === "number");
+    const max = Math.max(0, ...values.map((v) => Math.abs(v)));
+    if (max > 0) out.set(col, { max, signed: values.some((v) => v < 0) });
+  }
+  return out;
+}
+
+/** Share of its half of the track a value fills, 0 to 100. */
+export function barPercent(value: number, scale: BarScale): number {
+  return Math.min(100, (Math.abs(value) / scale.max) * 100);
+}
+
+/** An inline bar beside the number, which stays in the cell as text: the bar is a picture of it. */
+function Bar({ value, scale }: { value: number; scale: BarScale }) {
+  const pct = barPercent(value, scale);
+  const negative = value < 0;
+  return (
+    <span className={`external-bar${scale.signed ? " external-bar-signed" : ""}`} aria-hidden="true">
+      {scale.signed && (
+        <span className="external-bar-half external-bar-left">
+          {negative && <span className="external-bar-fill external-bar-neg" style={{ width: `${String(pct)}%` }} />}
+        </span>
+      )}
+      <span className="external-bar-half external-bar-right">
+        {!negative && <span className="external-bar-fill external-bar-pos" style={{ width: `${String(pct)}%` }} />}
+      </span>
+    </span>
+  );
+}
+
 function Freshness({ report }: { report: ExternalReport }) {
   return report.stale ? (
     <span className="chip chip-warn" title={`Older than ${String(report.staleAfterHours)} hours`}>
@@ -60,6 +102,7 @@ function Section({ report, section }: { report: ExternalReport; section: Externa
     );
   }
   const { columns, rows } = section.table;
+  const scales = barScales(section.table);
   return (
     <GridCard label={section.heading} span={12} h={96} className="external-card" foot={foot}>
       {rows.length === 0 ? (
@@ -79,6 +122,9 @@ function Section({ report, section }: { report: ExternalReport; section: Externa
                 <tr key={r}>
                   {row.map((v, i) => (
                     <td key={i} className={typeof v === "number" ? "num" : undefined}>
+                      {scales.has(i) && typeof v === "number" ? (
+                        <Bar value={v} scale={scales.get(i)!} />
+                      ) : null}
                       {cell(v)}
                     </td>
                   ))}

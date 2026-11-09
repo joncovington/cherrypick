@@ -124,6 +124,47 @@
       }
     },
     {
+      "name": "bars on numeric columns, with a null and a negative",
+      "stem": "demo",
+      "valid": true,
+      "doc": {
+        "schema": 1, "id": "demo", "title": "T", "source": "s", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 24,
+        "sections": [ { "heading": "H", "table": { "columns": ["name", "net"], "bars": [1],
+                        "rows": [["a", 5], ["b", -3.5], ["c", null]] } } ]
+      }
+    },
+    {
+      "name": "a bar on a column holding text",
+      "stem": "demo",
+      "valid": false,
+      "doc": {
+        "schema": 1, "id": "demo", "title": "T", "source": "s", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 24,
+        "sections": [ { "heading": "H", "table": { "columns": ["name", "net"], "bars": [0], "rows": [["a", 5]] } } ]
+      }
+    },
+    {
+      "name": "a bar on a column that does not exist",
+      "stem": "demo",
+      "valid": false,
+      "doc": {
+        "schema": 1, "id": "demo", "title": "T", "source": "s", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 24,
+        "sections": [ { "heading": "H", "table": { "columns": ["name", "net"], "bars": [2], "rows": [["a", 5]] } } ]
+      }
+    },
+    {
+      "name": "a negative bar index",
+      "stem": "demo",
+      "valid": false,
+      "doc": {
+        "schema": 1, "id": "demo", "title": "T", "source": "s", "as_of": "2026-11-09T16:30:00-05:00",
+        "stale_after_hours": 24,
+        "sections": [ { "heading": "H", "table": { "columns": ["name", "net"], "bars": [-1], "rows": [["a", 5]] } } ]
+      }
+    },
+    {
       "name": "not an object",
       "stem": "demo",
       "valid": false,

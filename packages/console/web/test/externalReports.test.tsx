@@ -15,7 +15,7 @@ let payload: ExternalReportsPayload;
 vi.mock("../src/lib/api", () => ({
   useExternalReports: () => ({ data: payload, isLoading: false, isError: false }),
 }));
-const { ExternalReportsPage } = await import("../src/pages/External/ExternalReportsPage");
+const { ExternalReportsPage, barPercent, barScales } = await import("../src/pages/External/ExternalReportsPage");
 
 const report = (over: Record<string, unknown> = {}) => ({
   id: "demo", title: "Demo report", source: "my script", asOf: "2026-11-09T16:30:00-05:00", staleAfterHours: 24,
@@ -103,6 +103,41 @@ describe("a report's tab", () => {
     expect(html).toContain("gone");
     expect(html).toContain('href="/reports/external"');
     expect(html).not.toContain("could not be read");
+  });
+});
+
+describe("bars", () => {
+  const barred = (rows: unknown[][], bars: number[] = [1]) =>
+    report({ sections: [{ heading: "Net", table: { columns: ["name", "net"], rows, ...(bars.length > 0 ? { bars } : {}) } }] });
+
+  it("scales within the column, and a null has no bar", () => {
+    expect(barScales({ rows: [["a", 10], ["b", 5], ["c", null]], bars: [1] }).get(1)).toEqual({ max: 10, signed: false });
+    expect(barScales({ rows: [["a", 10], ["b", -20]], bars: [1] }).get(1)).toEqual({ max: 20, signed: true });
+    expect(barPercent(5, { max: 10, signed: false })).toBe(50);
+    expect(barScales({ rows: [["a", null]], bars: [1] }).size).toBe(0); // nothing to scale
+    expect(barScales({ rows: [["a", 0]], bars: [1] }).size).toBe(0);
+    expect(barScales({ rows: [["a", 3]] }).size).toBe(0); // no hint, no bars
+  });
+
+  it("draws a bar beside a number that stays as text, negatives left of a zero line in the other colour", () => {
+    set([barred([["a", 10], ["b", -5], ["c", null]])]);
+    const html = render("/reports/external/demo");
+    expect(html.match(/class="external-bar external-bar-signed"/g)).toHaveLength(2); // the null has none
+    expect(html).toContain("external-bar-pos");
+    expect(html).toContain("external-bar-neg");
+    expect(html).toContain('style="width:100%"'); // 10 is the column's largest
+    expect(html).toContain('style="width:50%"');
+    expect(html).toContain('aria-hidden="true"'); // the picture is hidden; the number is not
+    expect(html).toMatch(/<\/span>10<\/td>/);
+    expect(html).toMatch(/<\/span>-5<\/td>/);
+  });
+
+  it("an all-positive column is a single-sided bar, and no hint draws none", () => {
+    set([barred([["a", 4], ["b", 2]])]);
+    expect(render("/reports/external/demo")).toContain('class="external-bar"');
+    expect(render("/reports/external/demo")).not.toContain("external-bar-signed");
+    set([barred([["a", 4]], [])]);
+    expect(render("/reports/external/demo")).not.toContain("external-bar");
   });
 });
 

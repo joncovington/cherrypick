@@ -7,7 +7,11 @@
 export type ExternalCell = string | number | null;
 
 export type ExternalSection =
-  | { heading: string; table: { columns: string[]; rows: ExternalCell[][] } }
+  | {
+      heading: string;
+      /** `bars`: indices of numeric columns drawn with an inline bar beside the number (optional). */
+      table: { columns: string[]; rows: ExternalCell[][]; bars?: number[] };
+    }
   | { heading: string; text: string };
 
 /** A report that passed the contract. */

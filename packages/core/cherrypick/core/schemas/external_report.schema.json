@@ -37,6 +37,11 @@
                     "maxItems": 12,
                     "items": { "type": "string", "maxLength": 60 }
                   },
+                  "bars": {
+                    "type": "array",
+                    "maxItems": 12,
+                    "items": { "type": "integer", "minimum": 0 }
+                  },
                   "rows": {
                     "type": "array",
                     "maxItems": 500,

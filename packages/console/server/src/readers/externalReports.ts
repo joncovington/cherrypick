@@ -76,6 +76,7 @@ function check(value: unknown, schema: Json, at: string): string[] {
       problems.push(`${here}: must be ISO 8601 with a UTC offset (for example 2026-11-09T16:30:00-05:00)`);
     }
   } else if (isNumber(value)) {
+    if (typeof schema["minimum"] === "number" && value < schema["minimum"]) problems.push(`${here}: below ${schema["minimum"]}`);
     if (typeof schema["maximum"] === "number" && value > schema["maximum"]) problems.push(`${here}: above ${schema["maximum"]}`);
     if (typeof schema["exclusiveMinimum"] === "number" && value <= schema["exclusiveMinimum"]) {
       problems.push(`${here}: must be above ${schema["exclusiveMinimum"]}`);
@@ -121,7 +122,17 @@ export function validateReport(doc: unknown, expectedId?: string): string[] {
     if (!("table" in section)) return;
     const width = section.table.columns.length;
     const bad = section.table.rows.findIndex((row) => row.length !== width);
-    if (bad >= 0) problems.push(`sections[${i}].table.rows[${bad}]: ${section.table.rows[bad]!.length} cells for ${width} columns`);
+    if (bad >= 0) {
+      problems.push(`sections[${i}].table.rows[${bad}]: ${section.table.rows[bad]!.length} cells for ${width} columns`);
+      return;
+    }
+    for (const col of section.table.bars ?? []) {
+      const where = `sections[${i}].table.bars`;
+      if (col >= width) problems.push(`${where}: column ${col} does not exist (${width} columns)`);
+      else if (section.table.rows.some((row) => typeof row[col] === "string")) {
+        problems.push(`${where}: column ${col} ('${section.table.columns[col]}') is not numeric`);
+      }
+    }
   });
   return problems;
 }
