@@ -1,5 +1,5 @@
-"""Hypothesis 63's study (scripts/iwm_condor_timestop_item63.py): item 59's condor with a 7-day time
-stop, paired against item 59's own exit on the same entries. Invented quotes only (Black-Scholes
+"""Hypothesis 63's study (packages/backtest/scripts/iwm_condor_timestop_item63.py): item 59's condor with a
+7-day time stop, paired against item 59's own exit on the same entries. Invented quotes only (Black-Scholes
 prices around a made-up forward), no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
@@ -14,7 +14,7 @@ from pathlib import Path
 
 from cherrypick.core import bs
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "iwm_condor_timestop_item63.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "iwm_condor_timestop_item63.py"
 
 
 def _module():

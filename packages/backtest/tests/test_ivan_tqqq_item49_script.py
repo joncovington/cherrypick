@@ -1,6 +1,6 @@
-"""Hypothesis 49's study (scripts/ivan_tqqq_item49.py): the expiry, strike and tick rules, the resting
-order's fill, management (take profit, defence and roll, expiry, splits), the chain's money, the plan's
-missing spans and the verdict. Invented bars and Black-Scholes chains only, no store.
+"""Hypothesis 49's study (packages/backtest/scripts/ivan_tqqq_item49.py): the expiry, strike and tick rules,
+the resting order's fill, management (take profit, defence and roll, expiry, splits), the chain's money, the
+plan's missing spans and the verdict. Invented bars and Black-Scholes chains only, no store.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -17,7 +17,7 @@ import pytest
 from cherrypick.core import bs
 from cherrypick.core import fees as core_fees
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("ivan_tqqq_item49", SCRIPTS / "ivan_tqqq_item49.py")
 s49 = importlib.util.module_from_spec(_spec)
 sys.modules["ivan_tqqq_item49"] = s49

@@ -26,8 +26,10 @@ unreviewed code run by it. A kind builds its own argv from the row's arguments:
   `fetch-sessions` is the 0DTE store's own `fetch` over a date span, into a declared store variant
   (`store_tag`, e.g. items 42 and 44's wide store), of SPX or another declared `dataset` (QQQ, NDX
   for item 68); the nightly job stays the plain SPX store's writer.
-- `script`: a Python file checked into the repo's `scripts/` (git must know it), with string
-  arguments, no shell. It may not need the ThetaData session: it cannot be stopped mid-run.
+- `script`: a Python file checked into one of `SCRIPT_DIRS` (git must know it), with string
+  arguments, no shell. Studies on the backtest engine live in `packages/backtest/scripts/`
+  (2026-11-08), everything else in `scripts/`. It may not need the ThetaData session: it cannot be stopped
+  mid-run.
 
 **When a task may start** (`ready`):
 - one task at a time; a `running` row whose process is gone (a reboot, a killed supervisor) is put
@@ -122,6 +124,11 @@ CREATE TABLE IF NOT EXISTS tasks (
 # Kinds: the allow-list.
 
 
+#: Where a `script` row's file may sit, repo-relative. The study chain (`hypotheses.CHAIN_PATHS`)
+#: reads the same list.
+SCRIPT_DIRS = ("scripts/", "packages/backtest/scripts/")
+
+
 class Refused(ValueError):
     """A row the allow-list will not run, with why."""
 
@@ -154,11 +161,10 @@ def _workers(args: dict, default: int, most: int = 4) -> str:
 def _tracked_script(args: dict, root: Path, tracked: Callable[[Path, Path], bool]) -> list[str]:
     rel = args.get("path")
     if not isinstance(rel, str) or not rel.endswith(".py"):
-        raise Refused("a script needs 'path', a .py file under scripts/")
+        raise Refused(f"a script needs 'path', a .py file under {' or '.join(SCRIPT_DIRS)}")
     p = (root / rel).resolve()
-    scripts = (root / "scripts").resolve()
-    if scripts not in p.parents or not p.is_file():
-        raise Refused(f"{rel!r} is not a file under scripts/")
+    if not any((root / d).resolve() in p.parents for d in SCRIPT_DIRS) or not p.is_file():
+        raise Refused(f"{rel!r} is not a file under {' or '.join(SCRIPT_DIRS)}")
     if not tracked(root, p):
         raise Refused(f"{rel!r} is not checked into the repo: commit it first")
     extra = args.get("args", [])

@@ -13,7 +13,7 @@ import pytest
 
 from cherrypick.backtest import runner
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
 
 def test_each_replay_is_started_unthrottled(monkeypatch, tmp_path):

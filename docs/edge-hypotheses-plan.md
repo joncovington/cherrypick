@@ -120,7 +120,7 @@ Five of the eight have been tested against their declared pass tests
 - 1, post-earnings drift: closed;
 - 4 and 8, the box edge and the intraday direction reads: not being built (they ran on licensed
   data, so the results are kept locally under `~/.cherrypick`, per the licence). Their yearly
-  re-test (B14) runs `scripts/box_touch_history.py` on one calendar year, and on one year the box
+  re-test (B14) runs `packages/backtest/scripts/box_touch_history.py` on one calendar year, and on one year the box
   test's "positive in two-thirds of the years holding 20 or more touches" reduces to that single
   year, so the re-test is not identical to the original test;
 - 5, the EMA signal: closed;
@@ -786,7 +786,7 @@ reproduced (the best rule found picked 10-15% of its slots right).*
   - **Fetch size:** with five matched baselines a trade, about 60,000 one-session chain requests,
     about 46,000 of them in the deciding window. That is before the earnings exclusion, and
     overnight work for a few workers at about a second a request.
-- **The plan itself** (2026-10-20, local data only): `scripts/credit_spread_plan.py`.
+- **The plan itself** (2026-10-20, local data only): `packages/backtest/scripts/credit_spread_plan.py`.
   - **What it does:** applies every exclusion above and draws the five baselines per trade with a fixed
     seed. It writes `trades.json` and the fetch's `requests.json` under
     `~/.cherrypick/data/backtest/results/research/item14/`.
@@ -1106,7 +1106,7 @@ does. Declared here before any of it is run.*
   $100M universe takes in thinner chains than item 14's, which the leg-bar share reports;
   breakouts are rare, so their setup-sides may end as no verdict.
 - **The plan** (2026-10-24, local data only, before any option data was read):
-  `scripts/credit_spread_plan.py --item 17`, item 14's planner with item 17's spec. Its exclusions,
+  `packages/backtest/scripts/credit_spread_plan.py --item 17`, item 14's planner with item 17's spec. Its exclusions,
   baselines and request file are item 14's; re-run for item 14, it reproduces item 14's plan byte for
   byte. Seed 20261024. The universe is every name that ever traded $100M a day, less the declared
   leveraged, inverse and volatility funds.
@@ -1329,7 +1329,7 @@ two-session fetch smoke test read row counts only.*
   - costs at 1.5× and 2×;
   - the bootstrapped drawdown and losing streak;
   - the largest size inside a declared 10% of the account, with the account passed at run time.
-- **Data:** `scripts/fetch_spx_time_warp.py` writes `SPX-time-warp.db`, declared in
+- **Data:** `packages/backtest/scripts/fetch_spx_time_warp.py` writes `SPX-time-warp.db`, declared in
   `stores.STORES`. It holds each session's 15:45-15:55 chain for the next expiry at one minute,
   and that expiry's next session at five minutes. The study script reads only it and `SPX-60s.db`. Results go under the
   backtest data directory only. Its figures stay there; this plan records the verdict.
@@ -1443,7 +1443,7 @@ run.*
     and wider; arm B at 2× and 4×;
   - costs at 1.5× and 2×; the bootstrapped drawdown and losing streak; the largest size inside a
     declared 10% of the account, passed at run time.
-- **Data:** `scripts/fetch_spx_convex_stack.py` writes `SPX-convex-stack.db`, declared in
+- **Data:** `packages/backtest/scripts/fetch_spx_convex_stack.py` writes `SPX-convex-stack.db`, declared in
   `stores.STORES`: each entry's 15:40-15:50 chain at one minute, and that expiry on every session to
   expiry at five minutes. The study reads only it, `SPX-60s.db`'s spot history and daily closes, and
   Cboe's VIX history. Results go under the backtest data directory only; this plan records the
@@ -1530,7 +1530,7 @@ it is run.*
   measured in `validate`, not here); a fill is judged on mid, never on a print; a resting order
   left at the session's end opens nothing.
 - **Name split (B9):** does not apply; one symbol.
-- **Data:** no new store. `scripts/flies_entry_limit_item21.py` builds a scratch flies config from the
+- **Data:** no new store. `packages/backtest/scripts/flies_entry_limit_item21.py` builds a scratch flies config from the
   machine's (the six arms added) and runs `cherrypick.backtest.runner` over each window. Results go
   under the backtest data directory only; this plan records the verdict.
 - **Decides:**
@@ -1626,7 +1626,7 @@ whatever the design shows, on 2026-10-27. Declared here before any of it is run.
     buy-back at 09:45 and 10:30;
   - costs at 1.5× and 2×; the bootstrapped drawdown and losing streak; the largest size inside a
     declared 10% of the account, passed at run time.
-- **Data:** no new store. `scripts/overnight_condor_item22.py` reads `SPX-time-warp.db` (item 19's
+- **Data:** no new store. `packages/backtest/scripts/overnight_condor_item22.py` reads `SPX-time-warp.db` (item 19's
   store, which holds every session's 15:45-15:55 next-expiry chain and that expiry's next session at
   five minutes), `SPX-60s.db`'s daily closes and Cboe's VIX history. Results go under the backtest
   data directory only; this plan records the verdict.
@@ -1709,7 +1709,7 @@ here before any of it is run.*
 - **Declared limits (B11):** 60 s ticks; strikes by the replay's delta source; a stop fills under
   the fill model, not a recorded fill. VIX bands do not move the delta: every arm sets its own.
 - **Name split (B9):** does not apply; one symbol.
-- **Data:** no new store. `scripts/meic_delta_grid_item23.py` builds a scratch MEIC arm registry from
+- **Data:** no new store. `packages/backtest/scripts/meic_delta_grid_item23.py` builds a scratch MEIC arm registry from
   the machine's (the six arms added) and runs `cherrypick.backtest.runner` over each window. Results
   go under the backtest data directory only; this plan records the verdict.
 - **Decides:**
@@ -1784,7 +1784,7 @@ of it is run, and run after item 23's verdict.*
 - **Declared limits (B11):** 60 s ticks; one entry per slot, at the first tick that clears; strikes
   by the replay's delta source; stops under the fill model.
 - **Name split (B9):** does not apply; one symbol.
-- **Data:** no new store. `scripts/meic_entry_slot_item24.py --delta D` builds a scratch MEIC arm
+- **Data:** no new store. `packages/backtest/scripts/meic_entry_slot_item24.py --delta D` builds a scratch MEIC arm
   registry from the machine's (seven arms added) and runs `cherrypick.backtest.runner` over each
   window. Results go under the backtest data directory only; this plan records the verdict.
 - **Decides:**
@@ -1919,7 +1919,7 @@ that test. Declared here before any of it is fetched or run.*
   payoff shaping that did not pay. Every figure is in the local result
   (`~/.cherrypick/data/backtest/results/research/item25/results.json`).
 - **Clarified 2026-10-28, while building the replay, before any fetch or run**
-  (`scripts/skate_expiry_item25.py`). Where the declaration was silent:
+  (`packages/backtest/scripts/skate_expiry_item25.py`). Where the declaration was silent:
   - **The roll arm keeps the $0.03 buy-back.** The educator places it at the fill and rolls only
     when tested, so `roll` is `hold` plus the roll. A roll's new leg must pass the same spread bar.
   - **Unknown report dates.** A stock is clear only when no report falls in the span and Dolt shows
@@ -2384,7 +2384,7 @@ trip at the natural cost a sixth to a half of a spread's best case.*
   - The stress takes the options' fees and fills only. The share lot keeps its 0.05% a side.
 - **Data:** ThetaData Options Standard end-of-day chains for SOXL and TQQQ, fetched by a research-queue
   `fetch-chains` row into the backtest store, beside item 26's `bars.db` and item 28's Treasury files.
-  The replay is `scripts/share_ladder_item29.py`, run as `item29/plan`, `item29/fetch-chains` and
+  The replay is `packages/backtest/scripts/share_ladder_item29.py`, run as `item29/plan`, `item29/fetch-chains` and
   `item29/study`. The results are derived from licensed data, so they stay under
   `~/.cherrypick/data/backtest/results/research/item29/`, and this plan records the verdict without
   figures.
@@ -2494,7 +2494,7 @@ horizon: walls from the monthly a 20-60 day trade sells, read over 5 to 20 sessi
     result).
 - **Data:** the stored ThetaData end-of-day chains for the monthly expiries, with the 2023-25 monthlies
   fetched by a `fetch-chain-paths` row; open interest by the new `fetch-oi` (`oifetch.py`, its own
-  store `open_interest.db`). The study is `scripts/gex_walls_item30.py`, run as `item30/fetch-chain-paths`,
+  store `open_interest.db`). The study is `packages/backtest/scripts/gex_walls_item30.py`, run as `item30/fetch-chain-paths`,
   `item30/fetch-oi` and `item30/study`. The results are derived from licensed data, so they stay under
   `~/.cherrypick/data/backtest/results/research/item30/`, and this plan records the verdict without
   figures.
@@ -2774,7 +2774,7 @@ paper ledger has been running since 2026-07-15, and it is the thing asked about.
     for costs. The suite's liquidity verdict file for the pool.
   - *Licence.* Everything fetched and everything derived from it stays under
     `~/.cherrypick/data/backtest/results/research/item31/`, and this plan records the verdict without
-    figures. The replay is `scripts/earnings_item31.py`, run as `item31/plan`, `item31/pilot`,
+    figures. The replay is `packages/backtest/scripts/earnings_item31.py`, run as `item31/plan`, `item31/pilot`,
     `item31/fetch-chains` and `item31/study`.
 - **Decides** (the user is not going live; paper continues whatever this shows):
   - **An arm passes:** it is marked *eligible to be considered for live later*: that is all. The paper
@@ -2791,7 +2791,7 @@ paper ledger has been running since 2026-07-15, and it is the thing asked about.
     answer.
   - **"Pays, not for the report"** is reported as it is, not as a pass, and the premium is then looked for
     in the overnight alone (item 22's condor and item 19's flies are the nearest done).
-- **Settled with the build, before the first read (2026-10-30, `scripts/earnings_item31.py`).** The pilot
+- **Settled with the build, before the first read (2026-10-30, `packages/backtest/scripts/earnings_item31.py`).** The pilot
   chose the end-of-day basis, so the study is "The end-of-day fallback" for the whole window. Nothing
   below has read an outcome.
   - **The module's own code runs**: `fetch_price_and_term_structure`, `apply_tiering`, the three order
@@ -2899,7 +2899,7 @@ records only what had to be settled before the first read, and nothing here has 
     dropped; and the reading with the five most frequent names removed.
   - **The holdout fetch:** the grid rule carried on over 2025-07-01 to 2026-10-12 (every fifth session,
     counted on from the design grid), with the sessions before each report for the earnings test, by
-    `scripts/flow_fetch_plan.py` extended to the holdout. Fetching reads no outcome; the holdout is
+    `packages/backtest/scripts/flow_fetch_plan.py` extended to the holdout. Fetching reads no outcome; the holdout is
     still read once, after the design results.
 - **A gate, added 2026-10-30 before anything was read:** the second family gains **F7, no report
   ahead**: a tag is not counted when the name's next report has its reaction day inside the outcome
@@ -2907,7 +2907,7 @@ records only what had to be settled before the first read, and nothing here has 
   plan's earnings test asks apart; without them the tag asks about information outside reports.
   F7 on three tags at three cuts adds nine trials, so the second family is 49, deflated together.
   It replaces the reported reading with report windows dropped, which is now judged.
-- **Settled with the build, before the first read (2026-10-30, `scripts/flow_signal_item32.py`,
+- **Settled with the build, before the first read (2026-10-30, `packages/backtest/scripts/flow_signal_item32.py`,
   `cherrypick.backtest.flowstudy`):**
   - **The thin 2025 sessions were a calendar change, not missing data.** 2025-01-09 (a national day of
     mourning) became a closed day in the suite's calendar on 2026-10-25, after the grid was fetched,
@@ -3006,8 +3006,8 @@ Its sessions have never been split by Fed day.*
   days in all, so the holdout alone cannot confirm a small effect.
 - **Data:** the 60-second store, MEIC's replay, the Fed's calendar (public). Results stay under
   `~/.cherrypick/data/backtest/results/research/item33/`; this plan records the verdict without
-  figures. The study is `scripts/meic_fomc_item33.py`, run as `item33/study`.
-- **Settled with the build, before the first read (2026-10-30, `scripts/meic_fomc_item33.py`):**
+  figures. The study is `packages/backtest/scripts/meic_fomc_item33.py`, run as `item33/study`.
+- **Settled with the build, before the first read (2026-10-30, `packages/backtest/scripts/meic_fomc_item33.py`):**
   - **The arm is the live rule's single 14:00 entry,** item 23's `live-1400`, read from its stored
     design and holdout runs; the registry's `pm-200` enters every 30 minutes from 12:00 and is not
     the live rule. No replay is run and no holdout is spent by this item.
@@ -3066,7 +3066,7 @@ flow store's outcomes has been read.*
     reported; no borrow cost is charged, a declared limit.
 - **Declared limits (B11):** premium, not contracts; single-leg orders only; the histogram's buckets
   are coarse; grid sessions only; no borrow cost on the short leg.
-- **Settled with the build, before the first read (2026-10-30, `scripts/option_stock_ratio_item34.py`,
+- **Settled with the build, before the first read (2026-10-30, `packages/backtest/scripts/option_stock_ratio_item34.py`,
   `cherrypick.backtest.ratiostudy`):**
   - **The premium** counts each histogram bucket at its geometric midpoint; the underflow bucket
     (under $100) at $50 and the overflow bucket (over $10M) at its floor. The histogram holds every
@@ -3085,7 +3085,7 @@ flow store's outcomes has been read.*
     no holdout floor; item 32's is used), and is refused without a design pass or once spent.
 - **Data:** the flow store (design fetched; holdout by item 32's row) and the local bars. Results stay
   under `~/.cherrypick/data/backtest/results/research/item34/`, verdict here without figures. The
-  study is `scripts/option_stock_ratio_item34.py`, run as `item34/study`.
+  study is `packages/backtest/scripts/option_stock_ratio_item34.py`, run as `item34/study`.
 - **Decides:** **a pass** makes the ratio a candidate board method beside item 32's tags (read from
   the broker's nightly data, as item 32's would be); **a fail** closes it for this store and grid.
 - **Result (2026-10-31): fail; the holdout is not read.** The spread between the lowest and highest
@@ -3272,7 +3272,7 @@ computed.*
   - The 7 holiday-Thursday expiries (2023-04-06, 2024-03-28, 2025-04-17, 2025-07-03, 2026-04-02, 2026-06-18,
     2026-07-02) and the Thursday before each holiday (8-day entries for the next expiry) are
     not in the store (it was fetched for Friday expiries only); they need a fetch by the same
-    committed code (`scripts/fetch_addon_weeklies.py`, registered in `stores.STORES`, extended to take
+    committed code (`packages/backtest/scripts/fetch_addon_weeklies.py`, registered in `stores.STORES`, extended to take
     those dates). Until fetched, those entries drop and are counted. Two Fridays (2024-06-21, 2024-06-28)
     were refused by the vendor and cannot be fetched; their entries (about ten) drop.
   - Minute quotes, not the module's cache ticks; the vendor's delta feed lags the cache's.
@@ -3288,14 +3288,14 @@ computed.*
   - One lot of a $5/$10 structure at index levels from about 3,700 to 7,000; the wings are fixed in
     points, so the same rule is a different trade in 2022 and 2026. Reported by year, not scaled.
 - **Data:** the minute store `addon_weeklies.db` (registered in `stores.STORES`, built by
-  `scripts/fetch_addon_weeklies.py`; 222 Friday expiries with 5 entries each, minute stamps from 09:30
+  `packages/backtest/scripts/fetch_addon_weeklies.py`; 222 Friday expiries with 5 entries each, minute stamps from 09:30
   to 16:15, puts at all strikes in a band around spot), the 60-second store for the paper-validation
   gamma series, the exchange's public daily volatility and index files under `~/.cherrypick`, the
   paper ledger (validation only), `cherrypick.core.fees`. Everything fetched and derived stays under
   `~/.cherrypick/data/backtest/results/research/item35/`; this plan records the verdict without figures.
-  The study is a new script (`scripts/bwb_item35.py`), run as `item35/plan`, `item35/fetch`,
+  The study is a new script (`packages/backtest/scripts/bwb_item35.py`), run as `item35/plan`, `item35/fetch`,
   `item35/validate` and `item35/study`, queued as research-queue rows.
-- **Settled with the build, before the first read (2026-10-31, `scripts/bwb_item35.py`):**
+- **Settled with the build, before the first read (2026-10-31, `packages/backtest/scripts/bwb_item35.py`):**
   - The replay uses bwb's own entry planner, add-on planner, trigger management, execution gate and
     costs; only the chain reader is replaced. **The module's execution gate is applied** (a fire is
     held while any fly leg is missing or wider than 25% of its mid), as paper applies it.
@@ -3567,7 +3567,7 @@ All options history is the licensed store's end-of-day chains (`eod_chain_quotes
 `stores.STORES`. Nothing licensed enters the repo, a PR or an issue. Underlying closes and rates come
 from the local bar store and the T-bill series on disk. Results stay under
 `~/.cherrypick/data/backtest/results/research/item36/`; this plan records the verdict without figures. The
-study is `scripts/pmcc_item36.py`, run as `item36/plan` (writes the request files and counts),
+study is `packages/backtest/scripts/pmcc_item36.py`, run as `item36/plan` (writes the request files and counts),
 `item36/pilot` (SPY first: the fetch, the guards, no arm read), and `item36/study`.
 
 **What a full test needs, per symbol** (about 564 Fridays, 2016-01 to 2026-10):
@@ -3604,7 +3604,7 @@ an expiry not listed is a week without a short; `XSP(SPY)` is a stand-in; stocks
 and reports; the three variants and `shield_guard` have no paper twin before a boundary and so no
 live-fill check; an unlisted arm (other deltas, other expiries) is outside the sample by design.
 
-- **Settled with the build, before the first read (2026-10-31, `scripts/pmcc_item36.py`):**
+- **Settled with the build, before the first read (2026-10-31, `packages/backtest/scripts/pmcc_item36.py`):**
   - The replay imports pmcc's own long and short selection, entry planning, management (stop, rolls,
     assignment roll, decay and breach rolls in pmcc's order), expirations and costs; it reimplements
     none of them. Delta is computed from each chain's mids with the T-bill rate and trailing dividend
@@ -3854,10 +3854,10 @@ outcome of any arm has been read. `hook` is retired (it never fired) and is not 
   from 2019-06-21 to 2026-12-18, each from the first session it can be the target to its expiry (or the
   last stored session). Fetched by research-queue `fetch-chain-paths` rows, not by hand. The sample check
   uses `fetch-intraday-chains`. Spot from the technicals bars, ratio from the public index files. The
-  replay is `scripts/curve_item37.py`, run as `item37/plan`, `item37/fetch-chain-paths`,
+  replay is `packages/backtest/scripts/curve_item37.py`, run as `item37/plan`, `item37/fetch-chain-paths`,
   `item37/fetch-intraday` and `item37/study`. Results are derived from licensed data and stay under
   `~/.cherrypick/data/backtest/results/research/item37/`; this plan records the verdict without figures.
-- **Settled with the build, before the first read (2026-10-30, `scripts/curve_item37.py`):**
+- **Settled with the build, before the first read (2026-10-30, `packages/backtest/scripts/curve_item37.py`):**
   - The replay calls the module's own entry planner, management, exit-spread gate, costs, assignment
     and expiry code; it reimplements none of them. Each arm is the module's defaults with its one
     change; `hold-expiry` keeps the flip.
@@ -4048,7 +4048,7 @@ has been computed.*
       20 requests.
   - Everything fetched and derived stays under `~/.cherrypick/data/backtest/results/research/item38/`;
     this plan records the verdict without figures. The study is a new script
-    (`scripts/calendars_item38.py`), run as `item38/plan`, `item38/pilot`, `item38/fetch`,
+    (`packages/backtest/scripts/calendars_item38.py`), run as `item38/plan`, `item38/pilot`, `item38/fetch`,
     `item38/validate` and `item38/study`, queued as research-queue rows.
 - **Fills and costs: the paper ledger's basis,** so the replay and the paper check read the same fills.
   Each opening and closing leg at mid plus slippage of 12.5% of its quoted spread, capped at 15% of
@@ -4200,7 +4200,7 @@ has been computed.*
   - Weekly sampling stands in for 252 daily readings in the IV rank.
   - The historical ex-dividend dates are declared from the issuer's schedule and are only as good as
     that declaration.
-- **Settled with the build, before the first read (2026-10-31, `scripts/calendars_item38.py`):**
+- **Settled with the build, before the first read (2026-10-31, `packages/backtest/scripts/calendars_item38.py`):**
   - **The trim check is judged both ways.** Removing the five worst weeks can only raise a mean, so on
     its own it can never fail; the check that shows a mean living in a few big weeks is the five best
     removed. Both are judged; the best-removed one is the one that bites.
@@ -4544,7 +4544,7 @@ either rule below.*
   `~/.cherrypick/data/backtest/results/research/item40/`; this plan records the verdict without figures.
 - **Decides:** a pass is evidence for reinstating flies with that arm, paper first, the user's decision;
   a fail closes these two levers, and with the 10-17 sweep leaves no tested way round the strand.
-- **Settled with the build, before the first read (2026-10-31, `scripts/flies_item40.py`, flies
+- **Settled with the build, before the first read (2026-10-31, `packages/backtest/scripts/flies_item40.py`, flies
   `engine.strand_stop_*` and `evaluate_whole_fly`).** Nothing below has read an outcome.
   - **The stop's rule was corrected on 2026-10-31, before any read.** The declaration first said three
     times the credit received. That is a buy-back cost above the 5-point width for any credit over a
@@ -4676,7 +4676,7 @@ store holds them.*
 - **Name split (B9):** does not apply; one symbol.
 - **Data:** no new store. Needs PR #728 merged (the replay computes the verdicts, and the
   `stabilization_bars` and placebo keys exist); the script refuses to run without them.
-  `scripts/meic_stabilization_item41.py --step plan|study --window design|holdout` builds a scratch
+  `packages/backtest/scripts/meic_stabilization_item41.py --step plan|study --window design|holdout` builds a scratch
   MEIC arm registry from the machine's (the arms above added) and runs `cherrypick.backtest.runner`.
   Results go under the backtest data directory only; this plan records the verdict.
 - **Decides:**
@@ -4731,7 +4731,7 @@ store is fetched or any of it is run.*
   and the share of 12-delta shorts whose 40-point wing is inside it).
 - **Settled with the build, before any read (2026-10-31):** the store is built (#744, #745) and
   fetched as research-queue row `item42/fetch-wide-store` over 2022-05-16..2026-10-30.
-  `scripts/meic_be_condor_item42.py --step coverage` reports that reach for the wide store and the
+  `packages/backtest/scripts/meic_be_condor_item42.py --step coverage` reports that reach for the wide store and the
   plain one side by side, so what the wider fetch adds is on record; `--step study --window
   design|holdout` refuses until coverage has run and the wide store holds the window's sessions.
   `be-skip` uses item 41's measured refusal rate (the spot is the same in both stores), seed 42.
@@ -4817,7 +4817,7 @@ of it is run.*
 - **Declared limits (B11):** 60 s ticks; strikes beyond the stored ~100 points do not exist here; a
   stop fills under the fill model, not a recorded fill; one width per arm, never a per-side pair.
 - **Name split (B9):** does not apply; one symbol.
-- **Data:** no new store. `scripts/meic_wing_width_item43.py --window design|holdout` builds a scratch
+- **Data:** no new store. `packages/backtest/scripts/meic_wing_width_item43.py --window design|holdout` builds a scratch
   MEIC arm registry from the machine's (the arms above added) and runs `cherrypick.backtest.runner`.
   Results go under the backtest data directory only; this plan records the verdict.
 - **Decides:**
@@ -4907,7 +4907,7 @@ it is run.*
 - **Declared limits (B11):** item 43's, with ~200 points of strikes in place of ~100; item 41's for
   the gate (one spot print a minute, ATR threshold only, no IV mode).
 - **Name split (B9):** does not apply; one symbol.
-- **Data:** the script (`scripts/meic_wing_width_item44.py --step plan|study --window design|holdout`)
+- **Data:** the script (`packages/backtest/scripts/meic_wing_width_item44.py --step plan|study --window design|holdout`)
   is written after the store lands, in its own PR, and implements exactly the arms above. Results go
   under the backtest data directory only; this plan records the verdict.
 - **Settled with the build, before any read (2026-11-01):**
@@ -5051,7 +5051,7 @@ inputs are fetched.*
   vendor reports them, so a position spanning a split is adjusted by its ratio (NEE, 2020-10-27,
   4:1). Dividends are ignored, as the source does. The tradable label is hindsight.
 - **Name split (B9):** applies in cell N (ten names); not in cell P, whose names are the author's.
-- **Data:** `scripts/gex_strategy_item45.py plan|requests|bars|pilot|study --cell pilot|P|N`.
+- **Data:** `packages/backtest/scripts/gex_strategy_item45.py plan|requests|bars|pilot|study --cell pilot|P|N`.
   `plan` writes the open-interest plan, `requests` the chain requests (wide, the minute samples and
   the probe), `bars` the broker's 15-minute candles for the pilot (read-only, the shared credential),
   `pilot` the basis decision, `study` the arms. Inputs are fetched as research-queue rows; results
@@ -5147,7 +5147,7 @@ Declared before any of its inputs are fetched.*
   peso explanation cannot be ruled out from history. The names are today's choice.
 - **Name split (B9):** does not apply: four index names that are one market, and three funds. The
   per-name breadth rule above stands in for it.
-- **Data:** `scripts/variance_premium_item46.py plan|coverage|study`. `plan` writes the chain-path
+- **Data:** `packages/backtest/scripts/variance_premium_item46.py plan|coverage|study`. `plan` writes the chain-path
   requests (each name's monthly cycles; paths the store already holds are skipped by the fetch).
   `coverage` and `study` land in their own changes, before any P&L is read. Inputs are fetched as a
   research-queue row; results stay under the backtest data directory.
@@ -5232,7 +5232,7 @@ buys it back the session after. Declared before any of its inputs are fetched.*
   inside the session, no holding a pinned position longer, no rolls, no share hedge (his defences are
   not modelled; a next-day close takes the loss); the margin of a naked strangle is not charged; the
   tradable label is hindsight; the long average spans the calendar's years, not ten.
-- **Data:** `scripts/earnings_strangle_item47.py requests|study`. `requests` writes the end-of-day
+- **Data:** `packages/backtest/scripts/earnings_strangle_item47.py requests|study`. `requests` writes the end-of-day
   singles not already stored (the monthly on the entry and reaction sessions, for the events and the
   controls; about 9,200 on 2026-11-01). They are fetched as a research-queue row, and the study runs
   after them. Results stay under the backtest data directory.
@@ -5271,7 +5271,7 @@ loop. Declared here before any of it is run.*
 - **Look-alikes:** the 2026-10-18/19 `pm-hold` / `pm-095` / `pm-200` runs (0.95x lost to 2.0x in all
   three spans, and hold beat 2.0x in two calm spans); the 2026-10-18 condor study (whole-credit 2.0x
   the only stop rule positive in both halves); item 7 (stop mechanics, never run); the live stop
-  overshoot read (`scripts/meic_stop_overshoot.py`).
+  overshoot read (`packages/backtest/scripts/meic_stop_overshoot.py`).
 - **Rival explanations, each with its check:**
   - *A fill model, not a stop:* a minute's quotes cannot say where the ask crossed. **Check:** the
     resting stop runs at both bounds, `rest-*` (filled at the tick's ask) and `restbest-*` (filled at
@@ -5306,7 +5306,7 @@ loop. Declared here before any of it is run.*
 - **Declared limits (B11):** 60 s ticks; no outage is modelled, so the resting stop's main purpose,
   protection when the loop cannot run, is not measured here; the store keeps about 100 points either
   side of spot.
-- **Data:** no new store. `scripts/meic_stop_grid_item48.py --window design` builds a scratch MEIC
+- **Data:** no new store. `packages/backtest/scripts/meic_stop_grid_item48.py --window design` builds a scratch MEIC
   arm registry from the machine's and runs `cherrypick.backtest.runner`. Results go under the backtest
   data directory only; this plan records the verdict.
 - **Decides:**
@@ -5432,7 +5432,7 @@ backtest comes before any paper module. Declared here before any of it is run.*
   - the five-chain cap stands in for a fixed account.
 - **Data:** ThetaData Options Standard end-of-day chains for TQQQ, in the backtest store from item 29.
   QQQ's come the same way. Bars come from the technicals history.
-  - The replay is `scripts/ivan_tqqq_item49.py`.
+  - The replay is `packages/backtest/scripts/ivan_tqqq_item49.py`.
   - Its `expirations` lists both names' expiries once, by hand: it needs the vendor session, which a
     queued script may not hold.
   - Its `plan` writes every expiry path an arm could read that the store's records of finished work
@@ -5519,7 +5519,7 @@ is run.*
 - **Declared limits (B11):** item 43's: 60 s ticks; strikes beyond the stored ~100 points do not
   exist here; a stop fills under the fill model; one width per arm.
 - **Name split (B9):** does not apply; one symbol.
-- **Data:** no new store. `scripts/meic_wing_width_gated_item50.py --window design|holdout` builds a
+- **Data:** no new store. `packages/backtest/scripts/meic_wing_width_gated_item50.py --window design|holdout` builds a
   scratch MEIC arm registry from the machine's and runs `cherrypick.backtest.runner`. Its arithmetic
   is item 43's, loaded from that script. Results go under the backtest data directory only; this
   plan records the verdict.
@@ -5717,7 +5717,7 @@ a cheap back month. Declared before any of its inputs are fetched.*
 - **Data:** the licensed end-of-day chains, fetched as research-queue rows after item 31's study: the
   report weekly and the next monthly on the entry and reaction sessions (and the next session, for the
   day-2 variant), for each event and its control; Dolt for the back-month history and the skew cuts.
-  A script `scripts/earnings_diagonal_item52.py requests|study` writes the requests and runs the study;
+  A script `packages/backtest/scripts/earnings_diagonal_item52.py requests|study` writes the requests and runs the study;
   it is written and reviewed before anything is fetched. Results stay under the backtest data
   directory; the register records verdicts only.
 - **Decides:**
@@ -5727,7 +5727,7 @@ a cheap back month. Declared before any of its inputs are fetched.*
   - **A fail:** diagonals across a report are closed with the calendars. If B2 fails with the `cheap`
     cut too, the back-month wing does not rescue a short report strangle, and item 47's verdict is read
     beside it.
-- **Clarified 2026-11-06, before any fetch** (what the script `scripts/earnings_diagonal_item52.py`
+- **Clarified 2026-11-06, before any fetch** (what the script `packages/backtest/scripts/earnings_diagonal_item52.py`
   does where the stores or the text left a choice):
   - The licensed end-of-day chains carry no greeks, so every delta is solved from the mid with
     `core.american` at zero rate and the name's trailing-year dividend yield (broker dividend history
@@ -5806,8 +5806,8 @@ run; the plan step has only counted the cells.*
   one (every arm reads the same marks, so the paired difference shares the bias); monthly expiries only,
   so one entry a month per entry DTE, not weekly, since the store holds no SPY weeklies; early assignment
   and ex-dividend exercise not modelled; deltas are the store's.
-- **Data:** the licensed `SPY-monthly-1545.db` (`scripts/fetch_spy_monthly_1545.py`), already stored; no
-  fetch. `scripts/time_exit_entry_dte_item53.py plan|design|holdout` writes under
+- **Data:** the licensed `SPY-monthly-1545.db` (`packages/backtest/scripts/fetch_spy_monthly_1545.py`), already stored; no
+  fetch. `packages/backtest/scripts/time_exit_entry_dte_item53.py plan|design|holdout` writes under
   `results/research/item53/`; the register records verdicts only.
 - **Decides:**
   - **B confirmed for an entry DTE:** a proposal to give manage a scaled time exit for trades opened at
@@ -5869,7 +5869,7 @@ chain is fetched; the plan step only counts the requests.*
 - **Data:** end-of-day chains from the licensed `eod_chains.db`, fetched by the plan's request file
   (three chains a trade: front and back at entry, the back at the front's expiry) through the research
   queue's `fetch-chains`; closes and splits from the technicals history store.
-  `scripts/time_spread_ratio_item54.py plan|design|holdout` writes under `results/research/item54/`; the
+  `packages/backtest/scripts/time_spread_ratio_item54.py plan|design|holdout` writes under `results/research/item54/`; the
   register records verdicts only.
 - **Decides:**
   - **A ratio test confirmed for a structure:** the scanner may rank that structure by the ratio, and
@@ -5945,8 +5945,8 @@ has only counted the cycles.*
   options book, so how a hedge interacts with theta and gamma already held is not tested; the call
   spread's strike is chosen at the entry mid, so the realised net is zero only before costs; fractional
   units for equal delta, where a real 1-lot hedge is lumpier.
-- **Data:** the licensed `SPY-monthly-1545.db` (`scripts/fetch_spy_monthly_1545.py`), already stored; no
-  fetch. `scripts/index_collar_item55.py plan|design|holdout` writes under
+- **Data:** the licensed `SPY-monthly-1545.db` (`packages/backtest/scripts/fetch_spy_monthly_1545.py`), already stored; no
+  fetch. `packages/backtest/scripts/index_collar_item55.py plan|design|holdout` writes under
   `results/research/item55/`; the register records verdicts only.
 - **Decides:**
   - **K confirmed against N, C and D:** the "no tested edge" label comes off the collar, with the
@@ -6024,7 +6024,7 @@ is declared here knowing neither window is clean; the clean check is named below
   points do not exist here; a stop fills under the fill model. The composition assumes one entry a
   session in each arm and refuses otherwise.
 - **Name split (B9):** does not apply; one symbol.
-- **Data:** no new store and no new replay. `scripts/meic_wing_fallback_item56.py --window
+- **Data:** no new store and no new replay. `packages/backtest/scripts/meic_wing_fallback_item56.py --window
   design|holdout` reads item 50's results and both runs' ledgers (entry times, buying power) and
   writes under the backtest data directory only; this plan records the verdict.
 - **Decides:**
@@ -6134,7 +6134,7 @@ untouched sample of the same trade. Declared before any weekly path is fetched.*
   fixed by item 46's pass, not tuned here.
 - **Name split (B9):** does not apply: four index names that are one market. The 3-of-4 breadth rule
   stands in for it, as in item 46.
-- **Data:** `scripts/index_put_weekly_item57.py plan|coverage|study`, which loads item 46's script for
+- **Data:** `packages/backtest/scripts/index_put_weekly_item57.py plan|coverage|study`, which loads item 46's script for
   every piece of arithmetic (forward, leg pick, hedge, trade, fees, Newey-West, cell statistics, judge,
   store access) and adds only the weekly calendar, a 10-day path request, the unhedged trade and the
   two-arm judge. `plan` writes the chain-path requests for the weekly expiries and `--through` extends
@@ -6236,7 +6236,7 @@ No new fetch.*
   - neighbours: entry at 15:50, 15:53 and 15:57; wings 5, 15 and 20;
   - costs at 1.5× and 2×; the bootstrapped drawdown and losing streak; the largest size inside a
     declared 10% of the account, passed at run time.
-- **Data:** no new store. `scripts/close_fly_item58.py` reads `SPX-60s.db` (the 0DTE chain at one
+- **Data:** no new store. `packages/backtest/scripts/close_fly_item58.py` reads `SPX-60s.db` (the 0DTE chain at one
   minute, its spot trail and the daily closes) and Cboe's VIX history. Results go under the backtest
   data directory only; this plan records the verdict.
 - **Decides:**
@@ -6339,7 +6339,7 @@ Declared here before any of the fetched paths are read. The fetch is item 59's
   - neighbours: shorts at 0.12 and 0.20 delta; entry at 40 and 50 days; the target at 40% and 60%;
   - costs at 1.5× and 2×; the bootstrapped drawdown and losing streak; the largest size inside a
     declared 10% of the account, passed at run time.
-- **Data:** `scripts/iwm_condor_item59.py` reads `eod_chains.db` (IWM's chains and the fetched daily
+- **Data:** `packages/backtest/scripts/iwm_condor_item59.py` reads `eod_chains.db` (IWM's chains and the fetched daily
   paths) and Cboe's VIX history. Results go under the backtest data directory only; this plan records
   the verdict.
 - **Decides:**
@@ -6393,7 +6393,7 @@ any of it is run. No new fetch; the decision days are item 33's cached copy of t
 - **Declared limits:** settlement at `daily_closes` (the official close from 2024-05-13, the vendor's
   last print before); one-minute marks only; nothing reflects today's state.
 - **Robustness beside a pass:** wings 10 and 30.
-- **Data:** `scripts/afternoon_0dte_items60_62.py fomc`, `SPX-60s.db`. Results stay local.
+- **Data:** `packages/backtest/scripts/afternoon_0dte_items60_62.py fomc`, `SPX-60s.db`. Results stay local.
 - **Decides:** a pass leads to a forward paper read on the next meetings; a fail or no verdict closes
   the FOMC expected-move fly as specified.
 - **Result (2026-11-07): fail; the FOMC expected-move fly is closed.**
@@ -6453,7 +6453,7 @@ approved the test on 2026-11-07. Declared here before any of it is run.*
   positive; then the holdout with the same checks.
 - **Reported, never filters:** by side of the midpoint, by distance from it (0-5, 5-15, 15+ points),
   by year, by settlement source.
-- **Data:** `scripts/afternoon_0dte_items60_62.py fade`, `SPX-60s.db`. Results stay local.
+- **Data:** `packages/backtest/scripts/afternoon_0dte_items60_62.py fade`, `SPX-60s.db`. Results stay local.
 - **Decides:** a pass leads to a declared structure test (the one-sided fly) and a forward read; a
   fail closes the midpoint fade at 13:45.
 - **Result (2026-11-07): fail; the midpoint fade is closed.**
@@ -6519,7 +6519,7 @@ item 59's fetch and runs through item 59's script.*
   close; the stop day counts calendar days from the entry session; item 59's limits apply.
 - **Name split (B9):** does not apply; one symbol.
 - **Robustness report beside a pass (B13), never used to re-choose:** the stop at 5, 10 and 14 days.
-- **Data:** `scripts/iwm_condor_timestop_item63.py`, which loads `scripts/iwm_condor_item59.py` for
+- **Data:** `packages/backtest/scripts/iwm_condor_timestop_item63.py`, which loads `packages/backtest/scripts/iwm_condor_item59.py` for
   everything but the exit. Results go under the backtest data directory only.
 - **Decides:**
   - **A pass:** a proposal to manage's credit rules for a time stop on index condors, with the
@@ -6610,7 +6610,7 @@ fetched paths are read.*
   - the names are today's.
 - **Robustness report beside a pass (B13), never used to re-choose:** the step at 2% and 5%; the target
   at 15% and 40%; costs at 2×; by name.
-- **Data:** `scripts/backspread_bwb_item64.py requests` writes the path fetch (ten names, each monthly
+- **Data:** `packages/backtest/scripts/backspread_bwb_item64.py requests` writes the path fetch (ten names, each monthly
   from 2016, from 85 days out); `study` reads `eod_chains.db` and loads item 59's script for the
   chain, forward and delta. Results go under the backtest data directory only.
 - **Decides:**
@@ -6649,7 +6649,7 @@ on 2026-11-07. Declared here before any of it is run. No new fetch.*
   - settlement at `daily_closes` (the official close from 2024-05-13, the vendor's last print before);
   - strike steps of five points make the narrowest band coarse at high index levels; the
     interpolation is linear.
-- **Data:** `scripts/intraday_premium_map_item65.py`, `SPX-60s.db`. Results stay local.
+- **Data:** `packages/backtest/scripts/intraday_premium_map_item65.py`, `SPX-60s.db`. Results stay local.
 - **Decides:** nothing by itself. A consistent positive gap at one time and width is the input to a
   declared structure test (a fly or condor at that time, at working fills, with a holdout). No
   consistent gap closes the "time of day" lever for 0DTE premium.
@@ -6706,7 +6706,7 @@ before any of it is run. No new fetch: item 47's stored chains price it.*
   - above the other events' mean;
   - then the holdout's net and pair both positive (at least 100 trades).
 - **Declared limits:** item 47's, plus the monthly expiry above.
-- **Data:** `scripts/earnings_straddle_item66.py` (imports item 47's script), `eod_chains.db`, Dolt
+- **Data:** `packages/backtest/scripts/earnings_straddle_item66.py` (imports item 47's script), `eod_chains.db`, Dolt
   bars. Results stay local.
 - **Decides:** a pass leads to a proposal for the earnings module (a long-vol arm, paper first); a
   fail closes implied-against-past moves as a selector in both directions.
@@ -6795,7 +6795,7 @@ judged historically. Declared here before the study is run; no chain is fetched 
   close, stale marks counted. The number of trades empty chains removed is counted in the result file.
   The newly admitted events were never read before this run.
 - **Name split (B9):** applies, as item 31's.
-- **Data:** `scripts/earnings_paper_screen_item67.py mde|study|report`, which loads item 31's script for
+- **Data:** `packages/backtest/scripts/earnings_paper_screen_item67.py mde|study|report`, which loads item 31's script for
   every piece of arithmetic and adds only the two removed checks, the admission split, the three-arm
   Holm and the report. It reads item 31's event list, calendar and trades from
   `results/research/item31/` (read only). **No chain fetch is needed:** item 31's request plan covered
@@ -6888,7 +6888,7 @@ run.*
   store's close.
 - **Name split (B9):** does not apply; each symbol is judged on its own.
 - **Data:** two new stores, declared in `stores.STORES` and fetched by the research queue's
-  `fetch-sessions` with `dataset` QQQ and NDX (`store_tag` wide). `scripts/meic_symbols_item68.py --step
+  `fetch-sessions` with `dataset` QQQ and NDX (`store_tag` wide). `packages/backtest/scripts/meic_symbols_item68.py --step
   coverage`, then `--step study --window design|holdout`, builds a scratch MEIC arm registry per symbol
   from the machine's and runs `cherrypick.backtest.runner`. Results go under the backtest data directory
   only; this plan records the verdict.
@@ -6953,7 +6953,7 @@ expiries only, as judged. Declared here before the module's first entry.*
   assigned ETF put is booked as sold at the same close, the study's convention); a real assignment
   over a weekend is not in the number.
 - **Data:** the module's ledger, read-only; the chain-path store extended by
-  `scripts/index_put_weekly_item57.py plan --through DATE` and a research-queue fetch; results under
+  `packages/backtest/scripts/index_put_weekly_item57.py plan --through DATE` and a research-queue fetch; results under
   the backtest data directory (`results/research/item69/`).
 - **Decides:**
   - **A pass:** the replay describes the arm. Nothing goes live from this item: a live proposal

@@ -171,7 +171,8 @@ def test_rank_score_at_matches_the_live_rank_score():
 
 def test_selector_b_signals_on_a_fresh_count_of_three_on_a_counted_session():
     spec = importlib.util.spec_from_file_location(
-        "credit_spread_plan", SCRIPT.parent / "credit_spread_plan.py"
+        "credit_spread_plan",
+        SCRIPT.parents[1] / "packages" / "backtest" / "scripts" / "credit_spread_plan.py",
     )
     plan = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(plan)

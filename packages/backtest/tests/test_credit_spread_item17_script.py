@@ -1,5 +1,5 @@
-"""Hypothesis 17's study (scripts/credit_spread_item17.py): strikes, widths, expiry, settlement,
-baseline pairing and the declared pass rule.
+"""Hypothesis 17's study (packages/backtest/scripts/credit_spread_item17.py): strikes, widths, expiry,
+settlement, baseline pairing and the declared pass rule.
 
 Synthetic chains and rows only, no store. The pass rule is shown FIRING on a built-in effect and
 FAILING without one, because a check that cannot fire reads as coverage it is not.
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "credit_spread_item17.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "credit_spread_item17.py"
 
 
 def _module():

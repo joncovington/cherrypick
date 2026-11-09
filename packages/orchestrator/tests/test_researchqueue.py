@@ -172,6 +172,18 @@ def test_a_script_must_be_committed_under_scripts_and_take_only_string_arguments
         rq.build_argv("script", {"path": "scripts/draft.py"}, PY, root=root, tracked=_tracked)
     with pytest.raises(rq.Refused, match="under scripts/"):
         rq.build_argv("script", {"path": "../loose.py"}, PY, root=root, tracked=lambda r, p: True)
+    # The backtest engine's studies sit in packages/backtest/scripts/; the rest of a package does not.
+    bt = root / "packages" / "backtest"
+    (bt / "scripts").mkdir(parents=True)
+    (bt / "src").mkdir()
+    (bt / "scripts" / "study.py").write_text("print('{}')\n", encoding="utf-8")
+    (bt / "src" / "study.py").write_text("print(1)\n", encoding="utf-8")
+    moved = rq.build_argv(
+        "script", {"path": "packages/backtest/scripts/study.py"}, PY, root=root, tracked=_tracked
+    )
+    assert moved == [PY, str((bt / "scripts" / "study.py").resolve())]
+    with pytest.raises(rq.Refused, match="packages/backtest/scripts/"):
+        rq.build_argv("script", {"path": "packages/backtest/src/study.py"}, PY, root=root, tracked=_tracked)
     with pytest.raises(rq.Refused, match="list of strings"):
         rq.build_argv(
             "script", {"path": "scripts/study.py", "args": "--x; rm"}, PY, root=root, tracked=_tracked

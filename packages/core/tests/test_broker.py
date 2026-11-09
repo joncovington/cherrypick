@@ -787,7 +787,10 @@ def test_no_module_keeps_a_copy_of_what_core_owns():
     from pathlib import Path
 
     repo = Path(__file__).resolve().parents[3]
-    files = sorted((repo / "packages").glob("*/src/**/*.py")) + sorted((repo / "scripts").glob("*.py"))
+    files = sorted((repo / "packages").glob("*/src/**/*.py")) + sorted(
+        (repo / "packages").glob("*/scripts/*.py")
+    )
+    files += sorted((repo / "scripts").glob("*.py"))
     offenders = []
     for src in files:
         posix = src.as_posix()

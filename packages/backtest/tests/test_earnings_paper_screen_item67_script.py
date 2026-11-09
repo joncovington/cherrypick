@@ -1,5 +1,5 @@
-"""Item 67 (scripts/earnings_paper_screen_item67.py): item 31's replay with its two spread checks off.
-Invented chains, bars and records only: no Dolt, no store of real data.
+"""Item 67 (packages/backtest/scripts/earnings_paper_screen_item67.py): item 31's replay with its two spread
+checks off. Invented chains, bars and records only: no Dolt, no store of real data.
 
 Each guard is shown firing and shown failing, by breaking the invariant it holds. The tests that run
 the module's functions need the earnings package and are skipped without it (CI installs per job).
@@ -18,7 +18,7 @@ from cherrypick.core import bs, robustness
 
 from cherrypick.backtest import chainfetch
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
 
 def _load(name: str, file: str):

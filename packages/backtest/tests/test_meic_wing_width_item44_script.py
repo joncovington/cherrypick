@@ -1,5 +1,5 @@
-"""Hypothesis 44's study (scripts/meic_wing_width_item44.py): the arms it declares, its two verdicts and
-the holdout's order after item 43. Invented sessions and quotes only, no store.
+"""Hypothesis 44's study (packages/backtest/scripts/meic_wing_width_item44.py): the arms it declares, its two
+verdicts and the holdout's order after item 43. Invented sessions and quotes only, no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "meic_wing_width_item44", SCRIPTS / "meic_wing_width_item44.py"
 )

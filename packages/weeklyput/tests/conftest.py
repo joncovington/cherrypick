@@ -125,8 +125,11 @@ def config():
 
 
 def load_script(name: str):
-    """A study script from `scripts/`, loaded by path (they are not a package)."""
-    path = REPO / "scripts" / f"{name}.py"
+    """A study script, loaded by path (they are not a package): the backtest engine's studies sit in
+    `packages/backtest/scripts/`, the rest in `scripts/`."""
+    path = REPO / "packages" / "backtest" / "scripts" / f"{name}.py"
+    if not path.is_file():
+        path = REPO / "scripts" / f"{name}.py"
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules.setdefault(name, mod)

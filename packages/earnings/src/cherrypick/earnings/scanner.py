@@ -1029,7 +1029,7 @@ def term_inputs(ts: dict) -> dict:
 # report's own variance out of two expiries that both follow it; `straddle` is the earlier
 # definition, 0.85 x the front ATM straddle. The config key `expected_move_method` (top level)
 # chooses; the default is the event method. A study that must keep the old definition sets
-# `straddle` explicitly -- scripts/earnings_item31.py does.
+# `straddle` explicitly -- packages/backtest/scripts/earnings_item31.py does.
 EXPECTED_MOVE_METHODS = ("event_variance", "straddle")
 DEFAULT_EXPECTED_MOVE_METHOD = "event_variance"
 

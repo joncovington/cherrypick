@@ -1,5 +1,5 @@
-"""Hypothesis 57's study (scripts/index_put_weekly_item57.py): the weekly calendar, the unhedged trade and
-the two-arm judge. Invented chains and cells only, no store.
+"""Hypothesis 57's study (packages/backtest/scripts/index_put_weekly_item57.py): the weekly calendar, the
+unhedged trade and the two-arm judge. Invented chains and cells only, no store.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "index_put_weekly_item57", SCRIPTS / "index_put_weekly_item57.py"
 )

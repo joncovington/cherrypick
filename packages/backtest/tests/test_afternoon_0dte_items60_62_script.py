@@ -1,5 +1,5 @@
-"""Hypotheses 60-62 (scripts/afternoon_0dte_items60_62.py): the FOMC expected-move flies, the
-sandwich read and the midpoint fade. Invented quotes and trails only, no store.
+"""Hypotheses 60-62 (packages/backtest/scripts/afternoon_0dte_items60_62.py): the FOMC expected-move flies,
+the sandwich read and the midpoint fade. Invented quotes and trails only, no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -10,7 +10,7 @@ import importlib.util
 from datetime import date, timedelta
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "afternoon_0dte_items60_62.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "afternoon_0dte_items60_62.py"
 
 
 def _module():

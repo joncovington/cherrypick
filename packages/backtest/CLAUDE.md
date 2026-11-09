@@ -22,11 +22,15 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
   absent, which is always the case in CI.
 - **Every store is declared, with the code that rebuilds it (2026-10-25).** A new file in the vendor
   directory is added to `stores.STORES` in the same change that adds its fetch code, and that code is
-  committed (a package verb or a `scripts/` file; a test fails on a script that is not). The backup
-  skips licensed data and `purge` removes it, so a store survives only by being rebuildable. The Data
-  tab lists every declared store and flags any undeclared file. Two stores were built from session
-  scratch until this date (`addon_weeklies.db`, `SPY-monthly-1545.db`); their fetch code is now in
-  `scripts/`.
+  committed (a package verb or a script in `stores.SCRIPT_DIRS`; a test fails on a script that is
+  not). The backup skips licensed data and `purge` removes it, so a store survives only by being
+  rebuildable. The Data tab lists every declared store and flags any undeclared file. Two stores were
+  built from session scratch until this date (`addon_weeklies.db`, `SPY-monthly-1545.db`); their
+  fetch code is now committed.
+- **A script that imports this package lives in `packages/backtest/scripts/` (2026-11-08)**, not in
+  the root `scripts/`: every item study on the engine and the fetchers that fill its stores. Other
+  scripts stay at the root. The research queue and the study chain accept both folders, and a change
+  here runs every CI job, because other packages' tests load these scripts by path.
 - **The data must stay purgeable.** It lives in one directory carrying a marker file
   (`paths.LICENSED_MARKER`); `purge` removes only marked directories (dry run by default), and the
   nightly backup skips any marked directory (`orchestrator/backup.py` spells the same name; a test
@@ -192,8 +196,8 @@ backfilled; and the vendor store carries no volume, so the regime rows' flow col
 Built: the config, the key verbs, the licence clock, purge, the backup skip, the fence, the store, the
 fetch (SPXW 0DTE, any cadence the profile cadence divides), regime rows, validation and the flies
 and MEIC runners with their statistics, and the flow fetch (below). Its declared test (item 32) is built, not yet run: the rules are
-`flowstudy.py` (pure), the stores are read by `scripts/flow_signal_item32.py`, which reads its grid
-from the plan file (`scripts/flow_fetch_plan.py`, never recounted from the calendar) and spends the
+`flowstudy.py` (pure), the stores are read by `packages/backtest/scripts/flow_signal_item32.py`, which reads its grid
+from the plan file (`packages/backtest/scripts/flow_fetch_plan.py`, never recounted from the calendar) and spends the
 holdout once (a marker is written before the read).
 **The end-of-day chain fetch** (`chainfetch.py`, `fetch-chains`, `chains-status`, 2026-10-20):
 - **Event-driven:** a study writes the (name, session, expiry) requests it needs, and this fetches
@@ -286,7 +290,7 @@ draws it. Description only: it never re-chooses a setting or moves a verdict. A 
 the block with its script's `--annotate FILE`, which reads the file and replays nothing, so no holdout
 is spent twice.
 
-**The gates-off oracle** (`gateoracle.py`, `scripts/meic_gate_oracle.py --arm A`, 2026-10-31): what
+**The gates-off oracle** (`gateoracle.py`, `packages/backtest/scripts/meic_gate_oracle.py --arm A`, 2026-10-31): what
 each switchable entry gate a MEIC arm has on adds over the trigger it gates. One provisional run
 replays the arm, `A-open` (every listed gate off) and `A-no-<gate>` (each gate off alone); the read
 pairs each `-no-` arm with `A` per session (leave-one-out), and credits every `-open` trade to the
@@ -327,14 +331,14 @@ chain at the bars of a window of one session (`ThetaDataClient.chain_window`: qu
 volatility and the underlying's price per contract), from a `{requests: [{symbol, session, expiration,
 start, end, interval?}]}` file as `fetch-chains` reads. Its own store, `intraday_chains.db`, in the
 marked licensed directory; resumable, a refusal recorded and retried, `--stop-by` bounds a run, so the
-research queue runs it. The coverage pilot that decides item 31's basis is `scripts/earnings_item31.py`
+research queue runs it. The coverage pilot that decides item 31's basis is `packages/backtest/scripts/earnings_item31.py`
 (`plan`, `pilot`); it reads presence and counts, never a price.
 
 A request may also carry `strike_range` (a positive whole number of strikes either side of the money; item
 38 asks for 50, its listing probes 2); absent means the whole chain, as item 31's files always have. The
 range is no part of a request's identity, so two requests for overlapping bars of one expiry should ask for
 the same range, and a file repeating a window with two ranges is refused. Item 38 (the calendars module's
-own rule, `scripts/calendars_item38.py`) finds its start with the same verb: its listing step is a file of
+own rule, `packages/backtest/scripts/calendars_item38.py`) finds its start with the same verb: its listing step is a file of
 one-bar probes, not a call to the vendor's expirations list, which a `script` row may not make.
 
 **The add-on weeklies fetch** (`fetch-addon-weeklies`, `addonfetch.py`; item 35): SPXW weekly put minute
@@ -342,6 +346,6 @@ greeks over a bwb position's life, plus a 10:00 strip of ATM calls, from a `{req
 last}]}` file (an expiry and a span of sessions, so a Thursday entry into a Friday is a one-session
 request). It writes `addon_weeklies.db`, the add-on standalone study's store, in the shape that study
 read; `fetched_spans` records each request and a span replaces only its own sessions. The research queue
-runs it as a `fetch-addon-weeklies` row; `scripts/fetch_addon_weeklies.py requests` works out what the
+runs it as a `fetch-addon-weeklies` row; `packages/backtest/scripts/fetch_addon_weeklies.py requests` works out what the
 store lacks. `fetch-oi` keeps only an SPXW weekly's expiries within ten days (`oifetch.WEEKLY_ONLY`),
 not the hundred days of dailies the other roots keep.

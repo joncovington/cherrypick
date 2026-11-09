@@ -1,5 +1,5 @@
-"""Hypothesis 53's study (scripts/time_exit_entry_dte_item53.py): the entry session, the strikes, the
-exits of each arm, the fills and the declared decision rules. Invented chains only, no store.
+"""Hypothesis 53's study (packages/backtest/scripts/time_exit_entry_dte_item53.py): the entry session, the
+strikes, the exits of each arm, the fills and the declared decision rules. Invented chains only, no store.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -11,7 +11,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "time_exit_entry_dte_item53", SCRIPTS / "time_exit_entry_dte_item53.py"
 )

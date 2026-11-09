@@ -1,5 +1,5 @@
-"""Hypothesis 64's study (scripts/backspread_bwb_item64.py): the backspread, the spreads with a
-back-month long, the 1-3-2 and the 1-3-2 calendarized, each against holding the same delta in shares.
+"""Hypothesis 64's study (packages/backtest/scripts/backspread_bwb_item64.py): the backspread, the spreads
+with a back-month long, the 1-3-2 and the 1-3-2 calendarized, each against holding the same delta in shares.
 Invented quotes only (Black-Scholes prices around a made-up forward), no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
@@ -14,7 +14,7 @@ from pathlib import Path
 
 from cherrypick.core import bs
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "backspread_bwb_item64.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "backspread_bwb_item64.py"
 
 
 def _module():

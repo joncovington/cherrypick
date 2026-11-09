@@ -1,5 +1,5 @@
-"""Hypothesis 56's study (scripts/meic_wing_fallback_item56.py): the fallback rule composed tick by tick
-from two once-a-day arms. Invented sessions only.
+"""Hypothesis 56's study (packages/backtest/scripts/meic_wing_fallback_item56.py): the fallback rule composed
+tick by tick from two once-a-day arms. Invented sessions only.
 
 Each rule is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "meic_wing_fallback_item56", SCRIPTS / "meic_wing_fallback_item56.py"
 )

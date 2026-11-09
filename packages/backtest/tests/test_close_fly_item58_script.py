@@ -1,4 +1,4 @@
-"""Hypothesis 58's study (scripts/close_fly_item58.py): the closing fly's strikes, pricing,
+"""Hypothesis 58's study (packages/backtest/scripts/close_fly_item58.py): the closing fly's strikes, pricing,
 settlement, calendar labels and verdict. Invented quotes only, no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
@@ -10,7 +10,7 @@ import importlib.util
 from datetime import date, timedelta
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "close_fly_item58.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "close_fly_item58.py"
 
 
 def _module():

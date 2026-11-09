@@ -1,5 +1,5 @@
-"""Hypothesis 42's study (scripts/meic_be_condor_item42.py): the arms it declares, the coverage read and
-its verdict. Invented sessions and quotes only, no store.
+"""Hypothesis 42's study (packages/backtest/scripts/meic_be_condor_item42.py): the arms it declares, the
+coverage read and its verdict. Invented sessions and quotes only, no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -10,7 +10,7 @@ import importlib.util
 from datetime import date, timedelta
 from pathlib import Path
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("meic_be_condor_item42", SCRIPTS / "meic_be_condor_item42.py")
 st = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(st)

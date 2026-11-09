@@ -82,6 +82,17 @@ def test_shared_paths_run_everything():
         assert ccp.plan([path])["packages"] == ALL, path
 
 
+def test_a_backtest_study_script_runs_everything_but_the_package_s_own_code_does_not():
+    """Other packages' tests load the studies in packages/backtest/scripts/ by path, as they did
+    when those sat in scripts/; the package's own src and tests reach only its job."""
+    assert ccp.plan(["packages/backtest/scripts/meic_symbols_item68.py"]) == {
+        "packages": ALL,
+        "console": True,
+        "guards": True,
+    }
+    assert ccp.plan(["packages/backtest/src/cherrypick/backtest/stores.py"])["packages"] == ["backtest"]
+
+
 def test_an_unknown_package_directory_runs_everything():
     assert ccp.plan(["packages/newthing/src/x.py"])["packages"] == ALL
 

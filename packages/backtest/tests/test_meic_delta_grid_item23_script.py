@@ -1,5 +1,5 @@
-"""Hypothesis 23's study (scripts/meic_delta_grid_item23.py): the arms it declares and its verdict.
-Invented sessions only, no store.
+"""Hypothesis 23's study (packages/backtest/scripts/meic_delta_grid_item23.py): the arms it declares and its
+verdict. Invented sessions only, no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location(
     "meic_delta_grid_item23", SCRIPTS / "meic_delta_grid_item23.py"
 )

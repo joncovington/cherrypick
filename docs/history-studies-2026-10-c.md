@@ -63,7 +63,7 @@ years is positive, and the drift is not positive in both halves.
 - Daily bars only. Entry at the reaction close misses the video's possibly earlier entry.
 - The history screen needs four earlier positive reactions, so `rule` is thin before 2022.
 
-## 2. The expected-move box edge, and two direction reads (`scripts/box_touch_history.py`)
+## 2. The expected-move box edge, and two direction reads (`packages/backtest/scripts/box_touch_history.py`)
 
 **The question.** The reconstructed Daily Profit Play
 ([daily-0dte-routine.md](daily-0dte-routine.md)) earns only if SPX closes back inside the

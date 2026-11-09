@@ -151,7 +151,7 @@ def _script():
     import importlib.util
     import sys
 
-    path = Path(__file__).resolve().parents[3] / "scripts" / "meic_gate_oracle.py"
+    path = Path(__file__).resolve().parents[1] / "scripts" / "meic_gate_oracle.py"
     spec = importlib.util.spec_from_file_location("meic_gate_oracle", path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules["meic_gate_oracle"] = mod

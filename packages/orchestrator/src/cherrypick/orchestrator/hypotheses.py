@@ -13,7 +13,7 @@ Never figures: licensed results stay under `~/.cherrypick`, so the register can 
   structure and window, so a retest is a choice the declaration says out loud.
 - `rereads`: every logged rule change, and whether it has had its first `REREAD_AFTER` trades and is
   due a re-read (the counts come from the module's ledger).
-- **The study chain** (2026-11-07): a row from item 18 on names its `scripts` (under `scripts/`) and
+- **The study chain** (2026-11-07): a row from item 18 on names its `scripts` (under `SCRIPT_DIRS`) and
   `tests` (under `packages/*/tests/`), each a repo file that exists. With its `pointer` (the
   declaration), its research-queue rows (fetch, design, holdout, keyed by `study`) and its `results`,
   that is the whole study in one place. Scripts may be shared (items 60-62 run one); a result file
@@ -34,7 +34,7 @@ from pathlib import Path
 
 from cherrypick.core import home as core_home
 
-from .researchqueue import repo_root
+from .researchqueue import SCRIPT_DIRS, repo_root
 
 #: `retired` (2026-10-30): declared and closed without a run, its reason in the plan section. It has
 #: no verdict and no result files, sits with the finished rows, and is never re-tested.
@@ -50,7 +50,7 @@ ITEM_STUDY = re.compile(r"^item\d+$")
 REREAD_AFTER = 100
 #: From this item on a row names its scripts and tests (the study chain), as it must every other field.
 CHAIN_FROM = 18
-CHAIN_PATHS = {"scripts": "scripts/", "tests": "packages/"}
+CHAIN_PATHS: dict[str, tuple[str, ...]] = {"scripts": SCRIPT_DIRS, "tests": ("packages/",)}
 PLAN_HEADING = re.compile(r"^### (\d+)\.", re.M)
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -181,7 +181,7 @@ def _chain_problems(row: dict, tag: str, root: Path) -> list[str]:
             continue
         for p in paths:
             if not p.startswith(prefix) or ".." in p:
-                out.append(f"{tag}: {key} path {p} must sit under {prefix}")
+                out.append(f"{tag}: {key} path {p} must sit under {' or '.join(prefix)}")
             elif not (root / p).is_file():
                 out.append(f"{tag}: {key} path {p} does not exist")
     return out

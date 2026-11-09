@@ -1,4 +1,4 @@
-"""Item 35's study (scripts/bwb_item35.py) and its request builder (scripts/fetch_addon_weeklies.py): the
+"""Item 35's study (packages/backtest/scripts/bwb_item35.py) and its request builder (packages/backtest/scripts/fetch_addon_weeklies.py): the
 entry, the module's triggers over a minute series, the add-on variants, the gate, fills and stresses,
 settlement, the bootstrap, Holm, the beat-control pairing, the paper checks and the report.
 
@@ -19,7 +19,7 @@ from cherrypick.core import bs, fees
 
 from cherrypick.bwb import engine
 
-SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
+SCRIPTS = Path(__file__).resolve().parents[3] / "packages" / "backtest" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 import bwb_item35 as b35  # noqa: E402

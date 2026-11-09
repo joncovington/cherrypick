@@ -1,5 +1,5 @@
-"""The credit-spread planner's item specs (`scripts/credit_spread_plan.py`): item 14 stays as declared, item
-17 is its own.
+"""The credit-spread planner's item specs (`packages/backtest/scripts/credit_spread_plan.py`): item 14 stays
+as declared, item 17 is its own.
 
 Item 14's plan has already been fetched and run, so its spec must never drift; item 17's is what
 docs/edge-hypotheses-plan.md declares. The universe rule is checked on a scratch store.
@@ -11,7 +11,7 @@ import importlib.util
 import sqlite3
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "credit_spread_plan.py"
+SCRIPT = Path(__file__).resolve().parents[3] / "packages" / "backtest" / "scripts" / "credit_spread_plan.py"
 
 
 def _module():

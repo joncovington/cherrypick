@@ -99,7 +99,7 @@
       "retest": {
         "kind": "script",
         "args": {
-          "path": "scripts/box_touch_history.py",
+          "path": "packages/backtest/scripts/box_touch_history.py",
           "args": [
             "--start",
             "{start}",
@@ -211,7 +211,7 @@
       "retest": {
         "kind": "script",
         "args": {
-          "path": "scripts/box_touch_history.py",
+          "path": "packages/backtest/scripts/box_touch_history.py",
           "args": [
             "--start",
             "{start}",
@@ -436,7 +436,7 @@
       "rivals": [],
       "pointer": "docs/edge-hypotheses-plan.md#17-our-own-credit-spread-list-setup-side-and-width-per-symbol",
       "scripts": [
-        "scripts/credit_spread_item17.py"
+        "packages/backtest/scripts/credit_spread_item17.py"
       ],
       "tests": [
         "packages/backtest/tests/test_credit_spread_item17_script.py"
@@ -482,7 +482,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#18-mean-reversion-put-spreads-tested-once-on-the-holdout",
       "scripts": [
-        "scripts/credit_spread_item17.py"
+        "packages/backtest/scripts/credit_spread_item17.py"
       ],
       "tests": [
         "packages/backtest/tests/test_credit_spread_item18_script.py"
@@ -529,7 +529,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#19-the-time-warp-two-out-of-the-money-spx-flies-bought-at-the-close-sold-the-next-morning",
       "scripts": [
-        "scripts/time_warp_item19.py"
+        "packages/backtest/scripts/time_warp_item19.py"
       ],
       "tests": [
         "packages/backtest/tests/test_time_warp_item19_script.py"
@@ -581,7 +581,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#20-the-convex-stack-one-with-trend-spx-fly-bought-twice-a-week-at-about-5-dte",
       "scripts": [
-        "scripts/convex_stack_item20.py"
+        "packages/backtest/scripts/convex_stack_item20.py"
       ],
       "tests": [
         "packages/backtest/tests/test_convex_stack_item20_script.py"
@@ -633,7 +633,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#21-legged-spx-flies-with-a-resting-entry-limit-with-and-without-the-range-high-refusal",
       "scripts": [
-        "scripts/flies_entry_limit_item21.py"
+        "packages/backtest/scripts/flies_entry_limit_item21.py"
       ],
       "tests": [
         "packages/backtest/tests/test_flies_entry_limit_item21_script.py"
@@ -689,7 +689,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#22-the-overnight-condor-a-1dte-spx-iron-condor-sold-at-the-close-bought-back-the-next-morning",
       "scripts": [
-        "scripts/overnight_condor_item22.py"
+        "packages/backtest/scripts/overnight_condor_item22.py"
       ],
       "tests": [
         "packages/backtest/tests/test_overnight_condor_item22_script.py"
@@ -737,7 +737,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#23-the-short-delta-of-meics-live-rule-12-20-25-and-30-against-16",
       "scripts": [
-        "scripts/meic_delta_grid_item23.py"
+        "packages/backtest/scripts/meic_delta_grid_item23.py"
       ],
       "tests": [
         "packages/backtest/tests/test_meic_delta_grid_item23_script.py"
@@ -785,7 +785,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#24-the-entry-slot-of-meics-live-rule-1200-to-1330-against-1400",
       "scripts": [
-        "scripts/meic_entry_slot_item24.py"
+        "packages/backtest/scripts/meic_entry_slot_item24.py"
       ],
       "tests": [
         "packages/backtest/tests/test_meic_entry_slot_item24_script.py"
@@ -837,7 +837,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#25-the-skate-puts-expiry-and-management-14-days-against-the-monthly-held-halved-or-rolled",
       "scripts": [
-        "scripts/skate_expiry_item25.py"
+        "packages/backtest/scripts/skate_expiry_item25.py"
       ],
       "tests": [
         "packages/backtest/tests/test_skate_expiry_item25_script.py"
@@ -1038,7 +1038,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#29-the-share-ladder-in-options-a-call-debit-spread-a-put-credit-spread-or-a-zebra-in-place-of-the-share-lot",
       "scripts": [
-        "scripts/share_ladder_item29.py"
+        "packages/backtest/scripts/share_ladder_item29.py"
       ],
       "tests": [
         "packages/backtest/tests/test_share_ladder_item29_script.py"
@@ -1085,7 +1085,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#30-gex-walls-on-the-monthly-expiry-does-price-stop-short-of-them-over-the-next-two-weeks",
       "scripts": [
-        "scripts/gex_walls_item30.py"
+        "packages/backtest/scripts/gex_walls_item30.py"
       ],
       "tests": [
         "packages/backtest/tests/test_gex_walls_item30_script.py"
@@ -1144,7 +1144,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#31-the-earnings-modules-paper-rule-does-any-strategy-it-opens-earn-after-costs",
       "scripts": [
-        "scripts/earnings_item31.py"
+        "packages/backtest/scripts/earnings_item31.py"
       ],
       "tests": [
         "packages/backtest/tests/test_earnings_item31_script.py",
@@ -1200,7 +1200,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#32-large-options-orders-as-a-signal-the-flow-plans-declared-test-registered",
       "scripts": [
-        "scripts/flow_signal_item32.py"
+        "packages/backtest/scripts/flow_signal_item32.py"
       ],
       "tests": [
         "packages/backtest/tests/test_flow_signal_item32.py"
@@ -1243,7 +1243,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#33-meic-on-fed-decision-days-does-entering-at-the-1400-statement-cost-more-than-other-days",
       "scripts": [
-        "scripts/meic_fomc_item33.py"
+        "packages/backtest/scripts/meic_fomc_item33.py"
       ],
       "tests": [
         "packages/backtest/tests/test_meic_fomc_item33_script.py"
@@ -1289,7 +1289,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#34-the-option-to-stock-premium-ratio-does-heavy-option-trading-foretell-weaker-returns",
       "scripts": [
-        "scripts/option_stock_ratio_item34.py"
+        "packages/backtest/scripts/option_stock_ratio_item34.py"
       ],
       "tests": [
         "packages/backtest/tests/test_option_stock_ratio_item34.py"
@@ -1348,7 +1348,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#35-the-bwb-modules-whole-rule-at-real-quotes-does-the-put-broken-wing-butterfly-or-any-add-on-arm-earn-after-costs",
       "scripts": [
-        "scripts/bwb_item35.py"
+        "packages/backtest/scripts/bwb_item35.py"
       ],
       "tests": [
         "packages/bwb/tests/test_item35_script.py"
@@ -1399,7 +1399,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#36-pmccs-own-rule-on-real-quotes-the-shield-three-variants-and-two-baselines",
       "scripts": [
-        "scripts/pmcc_item36.py"
+        "packages/backtest/scripts/pmcc_item36.py"
       ],
       "tests": [
         "packages/backtest/tests/test_pmcc_item36_script.py"
@@ -1450,7 +1450,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#37-a-real-quote-test-of-curves-own-rule-the-contango-gated-vxx-call-spread-with-two-variants",
       "scripts": [
-        "scripts/curve_item37.py"
+        "packages/backtest/scripts/curve_item37.py"
       ],
       "tests": [
         "packages/backtest/tests/test_curve_item37_script.py"
@@ -1513,7 +1513,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#38-the-calendars-modules-own-rule-at-real-quotes-does-the-weekly-spy-double-calendar-earn-after-costs-entered-monday-or-the-friday-before",
       "scripts": [
-        "scripts/calendars_item38.py"
+        "packages/backtest/scripts/calendars_item38.py"
       ],
       "tests": [
         "packages/backtest/tests/test_calendars_item38_script.py"
@@ -1611,7 +1611,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#40-legged-flies-without-the-strand-tail-a-fixed-stop-on-an-uncompleted-vertical-and-the-whole-fly-bought-at-once",
       "scripts": [
-        "scripts/flies_item40.py"
+        "packages/backtest/scripts/flies_item40.py"
       ],
       "tests": [
         "packages/backtest/tests/test_flies_item40_script.py",
@@ -1663,7 +1663,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#41-the-stabilization-entry-gate-at-real-quotes-does-waiting-for-flat-five-minute-bars-improve-the-break-even-condor-or-the-1400-rule",
       "scripts": [
-        "scripts/meic_stabilization_item41.py"
+        "packages/backtest/scripts/meic_stabilization_item41.py"
       ],
       "tests": [
         "packages/backtest/tests/test_meic_stabilization_item41_script.py"
@@ -1711,7 +1711,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#42-the-break-even-condor-at-its-own-wing-widths-with-and-without-the-stabilization-gate",
       "scripts": [
-        "scripts/meic_be_condor_item42.py"
+        "packages/backtest/scripts/meic_be_condor_item42.py"
       ],
       "tests": [
         "packages/backtest/tests/test_meic_be_condor_item42_script.py"
@@ -1767,7 +1767,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#43-the-wing-width-of-meics-live-rule-15-20-25-and-30-against-10",
       "scripts": [
-        "scripts/meic_wing_width_item43.py"
+        "packages/backtest/scripts/meic_wing_width_item43.py"
       ],
       "tests": [
         "packages/backtest/tests/test_meic_wing_width_item43_script.py"
@@ -1823,7 +1823,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#44-the-stabilization-gate-across-wing-widths-10-to-40-on-meics-live-rule",
       "scripts": [
-        "scripts/meic_wing_width_item44.py"
+        "packages/backtest/scripts/meic_wing_width_item44.py"
       ],
       "tests": [
         "packages/backtest/tests/test_meic_wing_width_item44_script.py"
@@ -1879,7 +1879,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#45-a-published-gex-share-strategy-out-of-sample-buy-the-calm-after-an-implied-vol-spike",
       "scripts": [
-        "scripts/gex_strategy_item45.py"
+        "packages/backtest/scripts/gex_strategy_item45.py"
       ],
       "tests": [
         "packages/backtest/tests/test_gex_strategy_item45_script.py"
@@ -1931,7 +1931,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#46-where-implied-runs-above-realised-the-variance-premium-by-underlying-tenor-and-strike",
       "scripts": [
-        "scripts/variance_premium_item46.py"
+        "packages/backtest/scripts/variance_premium_item46.py"
       ],
       "tests": [
         "packages/backtest/tests/test_variance_premium_item46_script.py"
@@ -1986,7 +1986,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#47-selling-a-report-when-its-implied-move-is-above-its-past-moves-a-monthly-strangle-closed-the-next-day",
       "scripts": [
-        "scripts/earnings_strangle_item47.py"
+        "packages/backtest/scripts/earnings_strangle_item47.py"
       ],
       "tests": [
         "packages/backtest/tests/test_earnings_strangle_item47_script.py"
@@ -2033,7 +2033,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#48-the-stop-of-meics-live-rule-18-19-20-and-22-times-the-credit-filled-by-the-loop-or-resting-at-the-broker",
       "scripts": [
-        "scripts/meic_stop_grid_item48.py"
+        "packages/backtest/scripts/meic_stop_grid_item48.py"
       ],
       "tests": [
         "packages/backtest/tests/test_meic_stop_grid_item48_script.py"
@@ -2092,7 +2092,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#49-the-crazy-ivan-on-tqqq-a-cash-secured-16-delta-put-sold-by-a-resting-order-20-over-the-ask",
       "scripts": [
-        "scripts/ivan_tqqq_item49.py"
+        "packages/backtest/scripts/ivan_tqqq_item49.py"
       ],
       "tests": [
         "packages/backtest/tests/test_ivan_tqqq_item49_script.py"
@@ -2148,7 +2148,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#50-item-43s-wider-wings-with-lives-gates-on-15-and-20-against-the-live-rule",
       "scripts": [
-        "scripts/meic_wing_width_gated_item50.py"
+        "packages/backtest/scripts/meic_wing_width_gated_item50.py"
       ],
       "tests": [
         "packages/backtest/tests/test_meic_wing_width_gated_item50_script.py"
@@ -2208,7 +2208,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#51-dropping-the-call-side-when-the-vix-curve-is-stressed",
       "scripts": [
-        "scripts/meic_call_side_item51.py"
+        "packages/backtest/scripts/meic_call_side_item51.py"
       ],
       "tests": [
         "packages/backtest/tests/test_meic_call_side_item51_script.py"
@@ -2263,7 +2263,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#52-diagonals-across-an-earnings-report-the-short-weekly-takes-the-crush-the-monthly-long-keeps-its-value",
       "scripts": [
-        "scripts/earnings_diagonal_item52.py"
+        "packages/backtest/scripts/earnings_diagonal_item52.py"
       ],
       "tests": [
         "packages/backtest/tests/test_earnings_diagonal_item52_script.py"
@@ -2310,7 +2310,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#53-the-time-exit-for-short-premium-opened-inside-30-dte",
       "scripts": [
-        "scripts/time_exit_entry_dte_item53.py"
+        "packages/backtest/scripts/time_exit_entry_dte_item53.py"
       ],
       "tests": [
         "packages/backtest/tests/test_time_exit_entry_dte_item53_script.py"
@@ -2358,7 +2358,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#54-does-the-frontback-iv-ratio-predict-a-time-spreads-profit",
       "scripts": [
-        "scripts/time_spread_ratio_item54.py"
+        "packages/backtest/scripts/time_spread_ratio_item54.py"
       ],
       "tests": [
         "packages/backtest/tests/test_time_spread_ratio_item54_script.py"
@@ -2410,7 +2410,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#55-does-a-defined-risk-index-collar-improve-a-long-delta-book-after-costs",
       "scripts": [
-        "scripts/index_collar_item55.py"
+        "packages/backtest/scripts/index_collar_item55.py"
       ],
       "tests": [
         "packages/backtest/tests/test_index_collar_item55_script.py"
@@ -2466,7 +2466,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#56-the-wide-wing-when-its-floor-allows-else-lives-10-item-50s-arms-composed-tick-by-tick",
       "scripts": [
-        "scripts/meic_wing_fallback_item56.py"
+        "packages/backtest/scripts/meic_wing_fallback_item56.py"
       ],
       "tests": [
         "packages/backtest/tests/test_meic_wing_fallback_item56_script.py"
@@ -2526,7 +2526,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#57-item-46s-lone-pass-out-of-sample-the-index-10-delta-put-at-7-days-on-the-weekly-expiries-item-46-never-read-hedged-and-unhedged",
       "scripts": [
-        "scripts/index_put_weekly_item57.py"
+        "packages/backtest/scripts/index_put_weekly_item57.py"
       ],
       "tests": [
         "packages/backtest/tests/test_index_put_weekly_item57_script.py"
@@ -2582,7 +2582,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#58-the-closing-fly-a-0dte-spx-iron-fly-sold-at-1555-and-held-to-the-settlement",
       "scripts": [
-        "scripts/close_fly_item58.py"
+        "packages/backtest/scripts/close_fly_item58.py"
       ],
       "tests": [
         "packages/backtest/tests/test_close_fly_item58_script.py"
@@ -2634,7 +2634,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#59-the-45-day-iwm-condor-16-delta-shorts-5-delta-wings-closed-at-half-its-credit-or-at-21-days",
       "scripts": [
-        "scripts/iwm_condor_item59.py"
+        "packages/backtest/scripts/iwm_condor_item59.py"
       ],
       "tests": [
         "packages/backtest/tests/test_iwm_condor_item59_script.py"
@@ -2677,7 +2677,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#60-fomc-expected-move-flies-two-short-iron-flies-at-the-expected-move-sold-before-the-1400-statement",
       "scripts": [
-        "scripts/afternoon_0dte_items60_62.py"
+        "packages/backtest/scripts/afternoon_0dte_items60_62.py"
       ],
       "tests": [
         "packages/backtest/tests/test_afternoon_0dte_items60_62_script.py"
@@ -2716,7 +2716,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#61-the-1345-sandwich-read-on-2025-26-exploratory-item-9s-rule",
       "scripts": [
-        "scripts/afternoon_0dte_items60_62.py"
+        "packages/backtest/scripts/afternoon_0dte_items60_62.py"
       ],
       "tests": [
         "packages/backtest/tests/test_afternoon_0dte_items60_62_script.py"
@@ -2756,7 +2756,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#62-fade-to-the-days-midpoint-at-1345-does-spx-close-toward-it",
       "scripts": [
-        "scripts/afternoon_0dte_items60_62.py"
+        "packages/backtest/scripts/afternoon_0dte_items60_62.py"
       ],
       "tests": [
         "packages/backtest/tests/test_afternoon_0dte_items60_62_script.py"
@@ -2808,7 +2808,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#63-a-7-day-time-stop-on-item-59s-condor-paired-against-its-own-exit",
       "scripts": [
-        "scripts/iwm_condor_timestop_item63.py"
+        "packages/backtest/scripts/iwm_condor_timestop_item63.py"
       ],
       "tests": [
         "packages/backtest/tests/test_iwm_condor_timestop_item63_script.py"
@@ -2860,7 +2860,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#64-defined-risk-bullish-structures-on-slow-large-caps-against-holding-the-same-delta-in-shares",
       "scripts": [
-        "scripts/backspread_bwb_item64.py"
+        "packages/backtest/scripts/backspread_bwb_item64.py"
       ],
       "tests": [
         "packages/backtest/tests/test_backspread_bwb_item64_script.py"
@@ -2896,7 +2896,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#65-the-intraday-premium-map-implied-against-realised-odds-of-spx-closing-near-its-price-by-time-of-day",
       "scripts": [
-        "scripts/intraday_premium_map_item65.py"
+        "packages/backtest/scripts/intraday_premium_map_item65.py"
       ],
       "tests": [
         "packages/backtest/tests/test_items65_66_scripts.py"
@@ -2939,7 +2939,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#66-item-47s-mirror-a-long-straddle-across-an-earnings-report-when-its-implied-move-is-below-past-moves",
       "scripts": [
-        "scripts/earnings_straddle_item66.py"
+        "packages/backtest/scripts/earnings_straddle_item66.py"
       ],
       "tests": [
         "packages/backtest/tests/test_items65_66_scripts.py"
@@ -2995,7 +2995,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#67-the-earnings-modules-rule-with-papers-spread-screen-does-what-paper-actually-trades-earn-after-costs",
       "scripts": [
-        "scripts/earnings_paper_screen_item67.py"
+        "packages/backtest/scripts/earnings_paper_screen_item67.py"
       ],
       "tests": [
         "packages/backtest/tests/test_earnings_paper_screen_item67_script.py"
@@ -3054,7 +3054,7 @@
       ],
       "pointer": "docs/edge-hypotheses-plan.md#68-meics-live-rule-on-qqq-and-ndx-a-second-symbol-for-the-live-loop",
       "scripts": [
-        "scripts/meic_symbols_item68.py"
+        "packages/backtest/scripts/meic_symbols_item68.py"
       ],
       "tests": [
         "packages/backtest/tests/test_meic_symbols_item68_script.py"

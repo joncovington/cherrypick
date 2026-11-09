@@ -1,5 +1,5 @@
-"""Hypothesis 22's study (scripts/overnight_condor_item22.py): the overnight condor's pricing, strike
-choice, exits and verdict. Invented quotes only, no store.
+"""Hypothesis 22's study (packages/backtest/scripts/overnight_condor_item22.py): the overnight condor's
+pricing, strike choice, exits and verdict. Invented quotes only, no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -10,7 +10,7 @@ import importlib.util
 from datetime import date, timedelta
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "overnight_condor_item22.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "overnight_condor_item22.py"
 
 
 def _module():

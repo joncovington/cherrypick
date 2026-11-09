@@ -1,5 +1,5 @@
-"""Hypothesis 18's study (scripts/credit_spread_item17.py --item 18): one fixed cell, liquid entries
-and liquid baselines only, three bars. Invented rows only, no store.
+"""Hypothesis 18's study (packages/backtest/scripts/credit_spread_item17.py --item 18): one fixed cell, liquid
+entries and liquid baselines only, three bars. Invented rows only, no store.
 
 Each bar is shown firing and failing, because a check that cannot fire reads as coverage it is not.
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "credit_spread_item17.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "credit_spread_item17.py"
 
 
 def _module():
